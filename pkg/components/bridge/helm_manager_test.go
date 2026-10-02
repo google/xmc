@@ -1633,6 +1633,16 @@ func TestK8sHelmManager_ReleaseRepair(t *testing.T) {
 			mutate: func(r *mockHelmActionRunner) { r.releaseStatus = release.StatusPendingUpgrade },
 			want:   result{Reason: ReasonHelmReleaseStuck, ActuatedAfterHealth: true, FinalReason: ReasonHelmReleaseStuck},
 		},
+		{
+			name:   "release uninstalled with kept history is re-upgraded and recovers",
+			mutate: func(r *mockHelmActionRunner) { r.releaseStatus = release.StatusUninstalled },
+			want:   result{Reason: ReasonHelmReleaseNotReady, Reupgraded: true, FinalReason: ReasonComponentHealthy},
+		},
+		{
+			name:   "release being uninstalled is not repaired",
+			mutate: func(r *mockHelmActionRunner) { r.releaseStatus = release.StatusUninstalling },
+			want:   result{Reason: ReasonHelmReleaseNotReady, ActuatedAfterHealth: true, FinalReason: ReasonHelmReleaseNotReady},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1665,6 +1675,34 @@ func TestK8sHelmManager_ReleaseRepair(t *testing.T) {
 			}
 			if tt.want.Reupgraded && !mgr.IsComponentActuated(ref, generation) {
 				t.Error("IsComponentActuated() = false after repair upgrade, want true")
+			}
+		})
+	}
+}
+
+// TestReleaseNeedsRepair verifies that only missing, drifted, failed, or uninstalled releases trigger repair, and that
+// in-flight states such as uninstalling never do.
+func TestReleaseNeedsRepair(t *testing.T) {
+	tests := []struct {
+		reason string
+		status release.Status
+		want   bool
+	}{
+		{reason: ReasonHelmReleaseNotFound, status: release.StatusUnknown, want: true},
+		{reason: ReasonHelmReleaseDrifted, status: release.StatusDeployed, want: true},
+		{reason: ReasonHelmReleaseNotReady, status: release.StatusFailed, want: true},
+		{reason: ReasonHelmReleaseNotReady, status: release.StatusUninstalled, want: true},
+		{reason: ReasonHelmReleaseNotReady, status: release.StatusUninstalling, want: false},
+		{reason: ReasonHelmReleaseNotReady, status: release.StatusUnknown, want: false},
+		{reason: ReasonHelmReleaseNotReady, status: release.StatusSuperseded, want: false},
+		{reason: ReasonHelmReleaseStuck, status: release.StatusPendingUpgrade, want: false},
+		{reason: ReasonHelmStatusUnavailable, status: release.StatusUnknown, want: false},
+		{reason: ReasonComponentHealthy, status: release.StatusDeployed, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.reason+"/"+tt.status.String(), func(t *testing.T) {
+			if got := releaseNeedsRepair(tt.reason, tt.status); got != tt.want {
+				t.Errorf("releaseNeedsRepair(%q, %q) = %v, want %v", tt.reason, tt.status, got, tt.want)
 			}
 		})
 	}

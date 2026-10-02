@@ -1020,7 +1020,7 @@ func (m *K8sHelmManager) releaseHealth(ctx context.Context, ref ComponentRef) (b
 	if healthy {
 		healthy, reason, msg = m.releaseResourceHealth(ctx, releaseName, rel)
 	}
-	m.recordReleaseHealth(ctx, ref, healthy, reason)
+	m.recordReleaseHealth(ctx, ref, healthy, releaseNeedsRepair(reason, releaseStatus(rel)), reason)
 	return healthy, reason, msg
 }
 
@@ -1040,7 +1040,7 @@ func (m *K8sHelmManager) releaseResourceHealth(ctx context.Context, releaseName 
 }
 
 // recordReleaseHealth caches a healthy verdict, or marks the component for repair when the release needs re-applying.
-func (m *K8sHelmManager) recordReleaseHealth(ctx context.Context, ref ComponentRef, healthy bool, reason string) {
+func (m *K8sHelmManager) recordReleaseHealth(ctx context.Context, ref ComponentRef, healthy, repair bool, reason string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if healthy {
@@ -1050,7 +1050,7 @@ func (m *K8sHelmManager) recordReleaseHealth(ctx context.Context, ref ComponentR
 		m.healthVerifiedAt[ref.String()] = time.Now()
 		return
 	}
-	if !releaseNeedsRepair(reason) {
+	if !repair {
 		return
 	}
 	if m.repairNeeded == nil {
@@ -1060,12 +1060,15 @@ func (m *K8sHelmManager) recordReleaseHealth(ctx context.Context, ref ComponentR
 	logging.Warn(ctx, "Component Helm release needs repair; scheduling re-upgrade at current generation", "name", ref.Name, "namespace", ref.Namespace, "reason", reason)
 }
 
-// releaseNeedsRepair reports whether a health reason means the release must be re-applied: it is missing, in a
-// terminal non-deployed state, or its objects drifted. Transient and in-flight reasons never trigger repair.
-func releaseNeedsRepair(reason string) bool {
+// releaseNeedsRepair reports whether a health verdict means the release must be re-applied: it is missing, its
+// objects drifted, or its latest revision is terminally failed or uninstalled. Every other verdict, including a
+// release that is uninstalling, never triggers repair so the bridge cannot race another actor's Helm operation.
+func releaseNeedsRepair(reason string, status release.Status) bool {
 	switch reason {
-	case ReasonHelmReleaseNotFound, ReasonHelmReleaseNotReady, ReasonHelmReleaseDrifted:
+	case ReasonHelmReleaseNotFound, ReasonHelmReleaseDrifted:
 		return true
+	case ReasonHelmReleaseNotReady:
+		return status == release.StatusFailed || status == release.StatusUninstalled
 	}
 	return false
 }
