@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 # Generic contract checks for profile meta-charts, shared by the per-profile test packages.
 go_library(
@@ -33,4 +33,17 @@ go_library(
         "@sh_helm_helm_v3//pkg/chartutil",
         "@sh_helm_helm_v3//pkg/engine",
     ],
+)
+
+# Tests the checks against mutated copies of the stable-2026a chart, and the building blocks
+# against testdata/minichart.
+go_test(
+    name = "profilecontract_test",
+    srcs = [
+        "contract_test.go",
+        "render_test.go",
+    ],
+    data = ["//deploy/profiles/stable-2026a:chart"] + glob(["testdata/**"]),
+    embed = [":profilecontract"],
+    deps = ["@com_github_google_go_cmp//cmp"],
 )
