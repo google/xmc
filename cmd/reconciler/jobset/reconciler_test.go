@@ -131,12 +131,14 @@ func (m *mockMLRunCreator) UpdateMLRun(ctx context.Context, name string, opts *h
 
 type clientWithError struct {
 	client.Client
-	listErr  error
-	getErr   error
-	patchErr error
+	listErr             error
+	getErr              error
+	patchErr            error
+	lastListHasDeadline bool
 }
 
 func (c *clientWithError) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	_, c.lastListHasDeadline = ctx.Deadline()
 	if c.listErr != nil {
 		return c.listErr
 	}
@@ -1442,6 +1444,43 @@ func TestCheckPodsForUnschedulableTPUTopologyMismatch(t *testing.T) {
 		}
 		if !strings.Contains(got, "Work unit may be unschedulable") {
 			t.Errorf("Expected generic 'Work unit may be unschedulable' warning, got %q", got)
+		}
+	})
+
+	t.Run("node list error bounds context with deadline and falls back to generic warning", func(t *testing.T) {
+		errClient := &clientWithError{
+			Client:  fake.NewClientBuilder().WithScheme(scheme).Build(),
+			listErr: context.DeadlineExceeded,
+		}
+		rErr := &Reconciler{Client: errClient}
+		pods := []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "pod-tpu-pending-rbac", Namespace: "default"},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{
+						{
+							Type:    corev1.PodScheduled,
+							Status:  corev1.ConditionFalse,
+							Reason:  corev1.PodReasonUnschedulable,
+							Message: "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector.",
+						},
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeSelector: map[string]string{
+						constants.TPUTopologySelectorKey:    "2x2",
+						constants.TPUAcceleratorSelectorKey: "tpu-v6e-slice",
+					},
+				},
+			},
+		}
+		got := rErr.checkPodsForUnschedulable(ctx, pods)
+		if !errClient.lastListHasDeadline {
+			t.Error("Expected listAvailableTPUTopologies to set a deadline on the List context")
+		}
+		if !strings.Contains(got, "Work unit may be unschedulable") {
+			t.Errorf("Expected generic 'Work unit may be unschedulable' warning on node list error, got %q", got)
 		}
 	})
 }

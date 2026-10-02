@@ -538,6 +538,12 @@ func isNodeSelectorMismatchMessage(msg string) bool {
 	return strings.Contains(lower, "node affinity/selector") || strings.Contains(lower, "nodeselector") || strings.Contains(lower, "didn't match")
 }
 
+// tpuNodeListTimeout bounds the cached Node list call in listAvailableTPUTopologies
+// so an unsynced Node informer (e.g. on missing RBAC or API server latency) fails
+// fast and falls back to the generic unschedulable warning instead of blocking the
+// reconcile worker.
+const tpuNodeListTimeout = 5 * time.Second
+
 // listAvailableTPUTopologies returns a sorted list of unique TPU topologies advertised by nodes in the cluster.
 func (r *Reconciler) listAvailableTPUTopologies(ctx context.Context) ([]string, error) {
 	var nodeList corev1.NodeList
@@ -545,7 +551,9 @@ func (r *Reconciler) listAvailableTPUTopologies(ctx context.Context) ([]string, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse TPU topology label selector: %w", err)
 	}
-	if err := r.List(logging.Strip(ctx), &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+	listCtx, cancel := context.WithTimeout(logging.Strip(ctx), tpuNodeListTimeout)
+	defer cancel()
+	if err := r.List(listCtx, &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
 		return nil, fmt.Errorf("failed to list nodes with TPU topology label: %w", err)
 	}
 
