@@ -15,6 +15,8 @@
 
 """Unit tests for tools/resolve_test_scope.py."""
 
+import argparse
+import json
 import os
 import subprocess
 import tempfile
@@ -26,6 +28,7 @@ from tools.benchmark.resolve_test_scope import (
     _correlate_rebased_parent_tip,
     _get_merge_base,
     _normalize_subject,
+    apply_github_env_defaults,
     classify_modified_files,
     discover_bazel_rdeps_targets,
     find_enclosing_bazel_package,
@@ -858,6 +861,7 @@ class TestResolveTestScope(unittest.TestCase):
             )
             self.assertEqual(targets_root, [])
 
+    @patch.dict(os.environ, {"PATH": os.environ.get("PATH", "")}, clear=True)
     @patch("tools.benchmark.resolve_test_scope.get_git_modified_files")
     def test_main_passes_base_branch_and_head(self, mock_get_files):
         mock_get_files.return_value = ["README.md"]
@@ -879,6 +883,95 @@ class TestResolveTestScope(unittest.TestCase):
             base_ref="base_sha",
             head_ref="head_sha",
             base_branch="feat/parent",
+        )
+
+
+def _empty_args() -> argparse.Namespace:
+    return argparse.Namespace(
+        base=None, head=None, base_branch=None, event=None, ref=None, github_output=None
+    )
+
+
+class TestApplyGithubEnvDefaults(unittest.TestCase):
+    def _write_event(self, tmp: str, content: str) -> str:
+        path = Path(tmp) / "event.json"
+        path.write_text(content, encoding="utf-8")
+        return str(path)
+
+    def test_pull_request_prefers_payload_head_over_github_sha(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            event = json.dumps({"pull_request": {"base": {"sha": "b1"}, "head": {"sha": "h1"}}})
+            env = {
+                "GITHUB_EVENT_NAME": "pull_request",
+                "GITHUB_EVENT_PATH": self._write_event(tmp, event),
+                "GITHUB_SHA": "synthetic_merge",
+                "GITHUB_BASE_REF": "feat/parent",
+                "GITHUB_REF": "refs/pull/1/merge",
+                "GITHUB_OUTPUT": "/tmp/out",
+            }
+            args = apply_github_env_defaults(_empty_args(), env)
+        self.assertEqual(
+            (args.base, args.head, args.base_branch, args.event, args.ref, args.github_output),
+            ("b1", "h1", "feat/parent", "pull_request", "refs/pull/1/merge", "/tmp/out"),
+        )
+
+    def test_merge_group_uses_group_shas(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            event = json.dumps({"merge_group": {"base_sha": "mb", "head_sha": "mh"}})
+            env = {
+                "GITHUB_EVENT_NAME": "merge_group",
+                "GITHUB_EVENT_PATH": self._write_event(tmp, event),
+            }
+            args = apply_github_env_defaults(_empty_args(), env)
+        self.assertEqual((args.base, args.head, args.event), ("mb", "mh", "merge_group"))
+
+    def test_push_falls_back_to_origin_main_and_github_sha(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "GITHUB_EVENT_NAME": "push",
+                "GITHUB_EVENT_PATH": self._write_event(tmp, json.dumps({"after": "x"})),
+                "GITHUB_SHA": "push_sha",
+                "GITHUB_REF": "refs/heads/main",
+            }
+            args = apply_github_env_defaults(_empty_args(), env)
+        self.assertEqual((args.base, args.head, args.base_branch), ("origin/main", "push_sha", ""))
+
+    def test_missing_and_malformed_event_file_fall_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for path in (
+                str(Path(tmp) / "absent.json"),
+                self._write_event(tmp, "{not json"),
+                self._write_event(tmp, "[1, 2]"),
+            ):
+                env = {
+                    "GITHUB_EVENT_NAME": "pull_request",
+                    "GITHUB_EVENT_PATH": path,
+                    "GITHUB_SHA": "s",
+                }
+                args = apply_github_env_defaults(_empty_args(), env)
+                self.assertEqual((args.base, args.head), ("origin/main", "s"), path)
+
+    def test_explicit_flags_win(self):
+        args = argparse.Namespace(
+            base="B", head="H", base_branch="BB", event="E", ref="R", github_output="O"
+        )
+        env = {
+            "GITHUB_EVENT_NAME": "push",
+            "GITHUB_SHA": "s",
+            "GITHUB_REF": "r",
+            "GITHUB_OUTPUT": "o",
+        }
+        args = apply_github_env_defaults(args, env)
+        self.assertEqual(
+            (args.base, args.head, args.base_branch, args.event, args.ref, args.github_output),
+            ("B", "H", "BB", "E", "R", "O"),
+        )
+
+    def test_outside_actions_keeps_local_defaults(self):
+        args = apply_github_env_defaults(_empty_args(), {})
+        self.assertEqual(
+            (args.base, args.head, args.base_branch, args.event, args.ref, args.github_output),
+            (None, "HEAD", "", "pull_request", "", None),
         )
 
 

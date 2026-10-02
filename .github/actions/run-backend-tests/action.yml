@@ -34,25 +34,9 @@ runs:
   steps:
     - name: 'Classify Backend Test Requirement'
       id: 'classify'
-      env:
-        PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-        PR_BASE_REF: ${{ github.base_ref }}
-        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
-        GITHUB_SHA: ${{ github.sha }}
-        EVENT_NAME: ${{ github.event_name }}
-        GITHUB_REF: ${{ github.ref }}
       shell: bash
-      run: |
-        BASE_REF="${PR_BASE_SHA:-origin/main}"
-        HEAD_REF="${PR_HEAD_SHA:-${GITHUB_SHA}}"
-        python3 tools/benchmark/resolve_test_scope.py \
-          --base "${BASE_REF}" \
-          --base-branch "${PR_BASE_REF}" \
-          --head "${HEAD_REF}" \
-          --event "${EVENT_NAME}" \
-          --ref "${GITHUB_REF}" \
-          --no-rdeps \
-          --github-output "${GITHUB_OUTPUT}"
+      # Base/head/ref/event/output are derived from GITHUB_* env and GITHUB_EVENT_PATH.
+      run: python3 tools/benchmark/resolve_test_scope.py --no-rdeps
 
     - name: 'Set up Bazel'
       if: steps.classify.outputs.run_backend == 'true'
@@ -71,24 +55,8 @@ runs:
     - name: 'Resolve Backend Test Scope'
       if: steps.classify.outputs.run_backend == 'true'
       id: 'scope'
-      env:
-        PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-        PR_BASE_REF: ${{ github.base_ref }}
-        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
-        GITHUB_SHA: ${{ github.sha }}
-        EVENT_NAME: ${{ github.event_name }}
-        GITHUB_REF: ${{ github.ref }}
       shell: bash
-      run: |
-        BASE_REF="${PR_BASE_SHA:-origin/main}"
-        HEAD_REF="${PR_HEAD_SHA:-${GITHUB_SHA}}"
-        python3 tools/benchmark/resolve_test_scope.py \
-          --base "${BASE_REF}" \
-          --base-branch "${PR_BASE_REF}" \
-          --head "${HEAD_REF}" \
-          --event "${EVENT_NAME}" \
-          --ref "${GITHUB_REF}" \
-          --github-output "${GITHUB_OUTPUT}"
+      run: python3 tools/benchmark/resolve_test_scope.py
 
     - name: 'Verify Spanner Emulator Endpoint'
       if: steps.scope.outputs.run_backend == 'true'

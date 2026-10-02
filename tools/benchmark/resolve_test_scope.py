@@ -23,6 +23,7 @@ specific affected backend test targets.
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from collections import Counter
@@ -662,14 +663,67 @@ def write_github_output(github_output_path: str, result: dict[str, object]) -> N
         f.write(f"reason={result['reason']}\n")
 
 
+def load_event_payload(event_path: str | None) -> dict:
+    """Loads the GitHub event payload JSON, returning {} if missing or malformed."""
+    if not event_path:
+        return {}
+    try:
+        payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _sha_field(obj: object, key: str) -> str:
+    """Returns obj[key] as a string if obj is a dict, else an empty string."""
+    return str(obj.get(key) or "") if isinstance(obj, dict) else ""
+
+
+def _payload_shas(payload: dict) -> tuple[str, str]:
+    """Extracts (base_sha, head_sha) from a pull_request or merge_group payload."""
+    pr = payload.get("pull_request")
+    if isinstance(pr, dict):
+        return _sha_field(pr.get("base"), "sha"), _sha_field(pr.get("head"), "sha")
+    group = payload.get("merge_group")
+    return _sha_field(group, "base_sha"), _sha_field(group, "head_sha")
+
+
+def apply_github_env_defaults(args: argparse.Namespace, env: dict[str, str]) -> argparse.Namespace:
+    """Fills CLI options left unset (None) from GitHub Actions env vars and event payload.
+
+    Explicit flags always win. The payload head SHA is preferred over GITHUB_SHA,
+    which is a synthetic merge commit on pull_request events. Outside GitHub
+    Actions (no GITHUB_EVENT_NAME), legacy local defaults are preserved.
+    """
+    in_actions = bool(env.get("GITHUB_EVENT_NAME"))
+    base_sha, head_sha = _payload_shas(load_event_payload(env.get("GITHUB_EVENT_PATH")))
+    if args.base is None and in_actions:
+        args.base = base_sha or "origin/main"
+    if args.head is None:
+        args.head = head_sha or env.get("GITHUB_SHA") or "HEAD"
+    if args.base_branch is None:
+        args.base_branch = env.get("GITHUB_BASE_REF", "")
+    if args.event is None:
+        args.event = env.get("GITHUB_EVENT_NAME") or "pull_request"
+    if args.ref is None:
+        args.ref = env.get("GITHUB_REF", "")
+    if args.github_output is None:
+        args.github_output = env.get("GITHUB_OUTPUT") or None
+    return args
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--files", nargs="*", help="Optional explicit list of modified file paths.")
-    parser.add_argument("--base", help="Git diff base reference.")
-    parser.add_argument("--base-branch", default="", help="Git diff base branch name.")
-    parser.add_argument("--head", default="HEAD", help="Git diff head reference.")
-    parser.add_argument("--event", default="pull_request", help="GitHub event name.")
-    parser.add_argument("--ref", default="", help="GitHub ref name.")
+    parser.add_argument("--base", help="Git diff base reference (default: event payload base SHA).")
+    parser.add_argument(
+        "--base-branch", help="Git diff base branch name (default: $GITHUB_BASE_REF)."
+    )
+    parser.add_argument(
+        "--head", help="Git diff head reference (default: payload head SHA, $GITHUB_SHA, HEAD)."
+    )
+    parser.add_argument("--event", help="GitHub event name (default: $GITHUB_EVENT_NAME).")
+    parser.add_argument("--ref", help="GitHub ref name (default: $GITHUB_REF).")
     parser.add_argument(
         "--no-rdeps",
         action="store_true",
@@ -677,8 +731,10 @@ def main() -> None:
         dest="disable_rdeps",
         help="Disable Bazel rdeps scoping.",
     )
-    parser.add_argument("--github-output", help="Path to $GITHUB_OUTPUT file to write flags.")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--github-output", help="Path to $GITHUB_OUTPUT file (default: $GITHUB_OUTPUT)."
+    )
+    args = apply_github_env_defaults(parser.parse_args(), dict(os.environ))
 
     if args.files is not None:
         modified_files = args.files
