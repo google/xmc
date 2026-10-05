@@ -255,7 +255,7 @@ def main(argv: Sequence[str]) -> None:
             )
         )
         parts = created_wu.name.split("/")
-        wid = str(parts[3] if len(parts) >= 4 and parts[2] == "workUnits" else parts[-1])
+        wid = int(parts[3] if len(parts) >= 4 and parts[2] == "workUnits" else parts[-1])
         print(f"[2/3] Created WorkUnit: {created_wu.name} (WID: {wid})")
 
         if not create_dash:

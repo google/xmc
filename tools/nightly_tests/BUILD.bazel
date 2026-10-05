@@ -19,12 +19,18 @@ load("@rules_python//python:py_test.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "chart_artifact_job_verify.py",
     "clickhouse_metrics_job_verify.py",
     "common.py",
     "common_test.py",
     "format_visual_audit_summary.js",
     "format_visual_audit_summary_test.js",
     "gallery_template/index.html",
+    "init_container_job_verify.py",
+    "metrics_dashboard_job_verify.py",
+    "metrics_job_verify.py",
+    "multipod_job_verify.py",
+    "sidecar_verify.py",
     "simple_job_ui_verify.py",
     "simple_job_verify.py",
     "ui_entities_validator.py",
@@ -120,6 +126,66 @@ py_binary(
         ":ui_entities_validator_lib",
         ":weekly_visual_snapshot_lib",
         "@absl_py//absl/flags",
+    ],
+)
+
+py_binary(
+    name = "init_container_job_verify",
+    srcs = ["init_container_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "sidecar_verify",
+    srcs = ["sidecar_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "multipod_job_verify",
+    srcs = ["multipod_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "chart_artifact_job_verify",
+    srcs = ["chart_artifact_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "metrics_job_verify",
+    srcs = ["metrics_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "metrics_dashboard_job_verify",
+    srcs = ["metrics_dashboard_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
     ],
 )
 

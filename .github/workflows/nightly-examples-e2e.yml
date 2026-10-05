@@ -71,9 +71,20 @@ jobs:
         env:
           PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}'
         run: |
-          echo "Building clickhouse-metrics-job container image..."
-          docker build -t "us-docker.pkg.dev/${PROJECT_ID}/xmc/clickhouse-metrics-job:latest" -f examples/clickhouse_metrics_job/Dockerfile .
-          docker push "us-docker.pkg.dev/${PROJECT_ID}/xmc/clickhouse-metrics-job:latest"
+          set -euo pipefail
+          build_and_push() {
+            local image="us-docker.pkg.dev/${PROJECT_ID}/xmc/$1:latest"
+            echo "Building $1 container image..."
+            docker build -t "${image}" -f "examples/$2/Dockerfile" "${3:-examples/$2}"
+            docker push "${image}"
+          }
+          build_and_push clickhouse-metrics-job clickhouse_metrics_job .
+          build_and_push init-container-job     init_container_job
+          build_and_push sidecar-job            sidecar
+          build_and_push multipod-counter       multipod_job
+          build_and_push metrics-job            metrics_job            .
+          build_and_push chart-artifact-job     chart_artifact_job     .
+          build_and_push metrics-dashboard-job  metrics_dashboard_job  .
 
   run-and-verify-examples:
     name: 'Run & Verify: ${{ matrix.example.name }}'
@@ -98,12 +109,63 @@ jobs:
             verify_module: 'tools.nightly_tests.simple_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
+          - id: 'init_container_job'
+            name: 'Init Container Job'
+            example_path: 'examples/init_container_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.init_container_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            timeout_minutes: 15
+          - id: 'sidecar'
+            name: 'Sidecar Container Job'
+            example_path: 'examples/sidecar'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.sidecar_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            timeout_minutes: 15
+          - id: 'multipod_job'
+            name: 'Multi-Pod & Multi-Container Job'
+            example_path: 'examples/multipod_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.multipod_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            timeout_minutes: 15
+          - id: 'metrics_job'
+            name: 'Metrics Autologging Job'
+            example_path: 'examples/metrics_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.metrics_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            requires_clickhouse: true
+            timeout_minutes: 15
+          - id: 'chart_artifact_job'
+            name: 'Chart Artifact Job'
+            example_path: 'examples/chart_artifact_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.chart_artifact_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            requires_clickhouse: true
+            timeout_minutes: 15
           - id: 'clickhouse_metrics_job'
             name: 'ClickHouse Metrics Job'
             example_path: 'examples/clickhouse_metrics_job'
             entrypoint: 'launch.py'
             args: ''
             verify_module: 'tools.nightly_tests.clickhouse_metrics_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            requires_clickhouse: true
+            timeout_minutes: 15
+          - id: 'metrics_dashboard_job'
+            name: 'Metrics Dashboard Job'
+            example_path: 'examples/metrics_dashboard_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.metrics_dashboard_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: true
             timeout_minutes: 15
@@ -200,6 +262,7 @@ jobs:
           EXAMPLE_PATH: '${{ matrix.example.example_path }}'
           ENTRYPOINT: '${{ matrix.example.entrypoint }}'
           RAW_ARGS: '${{ matrix.example.args }}'
+          REQUIRES_CLICKHOUSE: '${{ matrix.example.requires_clickhouse }}'
         run: |
           set -euo pipefail
           if [ -n "${IAP_CLIENT_ID:-}" ]; then
@@ -211,6 +274,27 @@ jobs:
             export XMC_AUTH_TOKEN
           fi
           export XMC_USER_EMAIL="${ACTOR}@google.com"
+
+          if [ "${REQUIRES_CLICKHOUSE:-}" = "true" ] || [ "${EXAMPLE_ID:-}" = "xdash_dashboard" ]; then
+            if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', 50051), timeout=1).close()" >/dev/null 2>&1; then
+              echo "Starting Dashboard Service gRPC port-forward for launch..."
+              kubectl port-forward svc/dashboard-service 50051:50051 -n xmc >/tmp/dashboard-pf-launch.log 2>&1 &
+              DASH_PF_PID=$!
+              trap 'kill "${DASH_PF_PID}" 2>/dev/null || true' EXIT
+              for i in $(seq 1 15); do
+                if python3 -c "import socket; socket.create_connection(('127.0.0.1', 50051), timeout=1).close()" >/dev/null 2>&1; then
+                  echo "Dashboard Service gRPC port-forward ready on localhost:50051"
+                  break
+                fi
+                sleep 1
+              done
+              if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', 50051), timeout=1).close()" >/dev/null 2>&1; then
+                echo "::error::Dashboard Service gRPC port-forward failed to become ready on localhost:50051"
+                cat /tmp/dashboard-pf-launch.log || true
+                exit 1
+              fi
+            fi
+          fi
 
           echo "================================================================="
           echo " Launching Example: ${EXAMPLE_NAME} (${EXAMPLE_ID})"

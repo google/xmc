@@ -314,6 +314,34 @@ class CommonTest(unittest.TestCase):
             common.assert_work_unit_jobsets(mock_stub, "10", expected_jobs)
         self.assertEqual(common.assert_work_unit_jobsets(mock_stub, "10", None), [])
 
+    def test_assert_work_unit_artifacts(self) -> None:
+        mock_stub = mock.MagicMock()
+        art_results = [
+            {
+                "name": "artifacts/1",
+                "type": "chart",
+                "title": "Plot",
+                "metric_names": ["loss"],
+                "url": "",
+            }
+        ]
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.validate_artifacts",
+            return_value=art_results,
+        ) as mock_val:
+            res = common.assert_work_unit_artifacts(
+                mock_stub, "10", "1", ["chart"], ["loss"], timeout_sec=120
+            )
+            self.assertEqual(res, art_results)
+            mock_val.assert_called_once_with(
+                stub=mock_stub,
+                xid="10",
+                wid="1",
+                expected_artifact_types=["chart"],
+                expected_metric_names=["loss"],
+                timeout_sec=60,
+            )
+
     def test_verify_standard_workload(self) -> None:
         mock_stub = mock.MagicMock()
         mock_channel = mock.MagicMock()
@@ -331,6 +359,7 @@ class CommonTest(unittest.TestCase):
             mock.patch.object(common, "assert_experiment", return_value=mock_exp) as m_exp,
             mock.patch.object(common, "assert_work_units", return_value=wu_list) as m_wu,
             mock.patch.object(common, "assert_work_unit_jobsets", return_value=[]) as m_js,
+            mock.patch.object(common, "assert_work_unit_artifacts", return_value=[]) as m_art,
         ):
             common.verify_standard_workload(
                 ["script.py"],
@@ -338,11 +367,14 @@ class CommonTest(unittest.TestCase):
                 summary_title="Summary",
                 expected_title_pattern="Test",
                 expected_jobs=[{"name": "w1", "replicas": 1}],
+                expected_artifact_types=["chart"],
+                expected_metric_names=["loss"],
                 extra_step=extra_step,
             )
             m_exp.assert_called_once()
             m_wu.assert_called_once()
             m_js.assert_called_once()
+            m_art.assert_called_once()
             extra_step.assert_called_once_with(mock_stub, "10")
 
     def test_assert_clickhouse_metrics(self) -> None:
