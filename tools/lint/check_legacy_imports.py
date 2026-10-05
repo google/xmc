@@ -113,7 +113,7 @@ LINE_METRICS = (
     ),
     LineMetric(
         name="ts_legacy_module_paths",
-        path_regex=r"^cmd/ui/.*\.ts$",
+        path_regex=r"^cmd/ui/.*\.tsx?$",
         line_regex=r"['\"](javascript/closure/|third_party/|xmanager_cloud/|longrunning/)",
     ),
     LineMetric(
@@ -199,10 +199,14 @@ def collect_metrics(repo_root: Path, files: list[str]) -> dict[str, int]:
 
 
 def compare_to_baseline(current: dict[str, int], baseline: dict[str, int]) -> dict[str, Any]:
-    """Classifies each metric as regressed, improved (stale baseline), or unchanged."""
+    """Classifies each metric as regressed, improved (stale baseline), or unchanged.
+
+    Metrics missing on either side count as 0, so new metrics surface as
+    regressions and removed or renamed metrics surface as stale entries.
+    """
     regressed, improved = {}, {}
-    for name, value in current.items():
-        allowed = baseline.get(name, 0)
+    for name in sorted(current.keys() | baseline.keys()):
+        value, allowed = current.get(name, 0), baseline.get(name, 0)
         if value > allowed:
             regressed[name] = {"baseline": allowed, "current": value}
         elif value < allowed:
@@ -229,11 +233,16 @@ def load_baseline(path: Path) -> dict[str, int]:
 
 
 def write_baseline(path: Path, current: dict[str, int], baseline: dict[str, int]) -> None:
-    """Writes the baseline, refusing to raise any existing count."""
-    regressed = compare_to_baseline(current, baseline)["regressed"] if baseline else {}
-    if regressed:
+    """Writes the baseline, refusing to raise any count that already exists.
+
+    Metrics absent from the existing baseline (newly introduced checks) may be
+    established at their current count.
+    """
+    regressed = compare_to_baseline(current, baseline)["regressed"]
+    raised = sorted(name for name in regressed if name in baseline)
+    if raised:
         raise HandledError(
-            f"Refusing to raise baseline for: {sorted(regressed)}",
+            f"Refusing to raise baseline for: {raised}",
             "Remove the newly added google3-style constructs instead of raising the baseline.",
         )
     path.write_text(json.dumps(current, indent=2, sort_keys=True) + "\n")
