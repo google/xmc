@@ -134,7 +134,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 		logging.Info(ctx, "Attaching deletion protection finalizer", "name", in.Name)
 	}
 	if !in.Enabled {
-		if err := r.applyIntent(ctx, in, canonicalName, res); err != nil {
+		if err := r.applyDisabledIntent(ctx, in, canonicalName, res); err != nil {
 			return res, err
 		}
 		return r.reconcileDisabled(ctx, in, canonicalName, res)

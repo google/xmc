@@ -89,11 +89,6 @@ func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileCompon
 // active dependents exist (the workload keeps running; re-checked every deactivationRecheckInterval).
 // Otherwise the 1P workload is deleted, CompleteDeactivation finalizes the handshake, and the
 // component reports COMPONENT_STATE_DISABLED. Failures after teardown report DeactivationIncomplete.
-//
-// TODO(vluk): ReconcileComponent calls applyIntent before reconcileDisabled on every pass, which
-// resets CMS state to PENDING_RECONCILIATION even when already disabled at this generation or
-// throttled by recentDeactivationBlock, and fails on unregistered dependencies (unlike
-// registerIntent on the enabled path). Skip redundant intent writes and tolerate unregistered deps.
 func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if msg, ok := recentDeactivationBlock(in); ok {
 		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, false)
@@ -123,11 +118,28 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	setReadiness(res, in, ConditionStatusFalse, ConditionStatusFalse, reasonComponentDisabled, "Component is disabled")
-	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
+	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
 	logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
 	return res, nil
+}
+
+// applyDisabledIntent records the disabled component's intent in CMS. Like registerIntent on the
+// enabled path, a rejection because a dependency is not registered is tolerated: a disabled
+// component needs no dependencies. Deactivation then proceeds against any existing CMS record, and
+// a missing one (NotFound) is tolerated by prepareDeactivation and the final observed-state update.
+//
+// Intent is written on every pass, as on the enabled path. The resulting CMS generation bump for
+// unchanged intent comes from the store's SetComponentIntent and is addressed at the store level.
+func (r *Reconciler) applyDisabledIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
+	err := r.applyIntent(ctx, in, canonicalName, res)
+	notRegistered := dependencyNotRegisteredMessage(err)
+	if notRegistered == "" {
+		return err
+	}
+	logging.Info(ctx, "Deactivating component whose dependency is not registered in CMS", "name", canonicalName, "generation", in.Generation, "detail", notRegistered)
+	return nil
 }
 
 // prepareDeactivation runs the CMS safety check unless already disabled at this generation. It returns
@@ -161,10 +173,7 @@ func (r *Reconciler) reportDeactivationBlocked(ctx context.Context, in Reconcile
 		cond.LastTransitionTime = time.Now().UTC()
 	}
 	if wasTornDown(in) {
-		// TODO(vluk): this branch returns without updating CMS observed generation/state, leaving
-		// CMS stale after applyIntent mutated it. Report the DeactivationIncomplete outcome to CMS.
-		markDeactivationFailed(in, res, ReasonDeactivationIncomplete, "workload already removed; "+msg)
-		return res, nil
+		return r.reportGated(ctx, in, canonicalName, res, ReasonDeactivationIncomplete, "workload already removed; "+msg, ConditionStatusTrue)
 	}
 	return r.reportGated(ctx, in, canonicalName, res, ReasonDeactivationBlocked, msg, ConditionStatusFalse)
 }
@@ -207,20 +216,17 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 }
 
 // wasComponentPreviouslyActive infers from the last Ready condition whether a workload may exist;
-// gated (DependenciesNotReady, DependencyCycle) or disabled components never had one actuated.
-//
-// TODO(vluk): pre-actuation failures (IntentApplicationFailed, CMSDeactivationFailed) and
-// DeactivationIncomplete (already torn down) are treated as active. Combined with
-// HydrateComponentState(ctx, ref, 0, true) in deleteDisabledHelmComponent, this overrides an
-// inactive ConfigMap record and forces redundant Delete1PComponent calls. Exclude those reasons
-// and avoid forcing active state when the ConfigMap records the component as inactive.
+// gated (DependenciesNotReady, DependencyCycle) or disabled components never had one actuated, and
+// DeactivationIncomplete means an earlier pass already removed it. Transient error reasons such as
+// IntentApplicationFailed or CMSDeactivationFailed overwrite the previous reason, so they are
+// treated as active: an idempotent extra uninstall is cheaper than leaking a running workload.
 func wasComponentPreviouslyActive(existing []Condition) bool {
 	ready := findCondition(existing, ConditionTypeReady)
 	if ready == nil {
 		return false
 	}
 	switch ready.Reason {
-	case "", reasonComponentDisabled, ReasonDependenciesNotReady, ReasonDependencyCycle:
+	case "", reasonComponentDisabled, ReasonDependenciesNotReady, ReasonDependencyCycle, ReasonDeactivationIncomplete:
 		return ready.Status == ConditionStatusTrue
 	}
 	return true
