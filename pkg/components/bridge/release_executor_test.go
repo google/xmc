@@ -23,6 +23,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"helm.sh/helm/v3/pkg/chart"
@@ -623,6 +624,78 @@ func TestK8sHelmManager_AsyncUpgrade_PendingUntilCompletion(t *testing.T) {
 			if _, reason, _ := mgr.ComponentHealth(ctx, ref); reason != tt.wantReason {
 				t.Errorf("ComponentHealth() reason after completion = %q, want %q", reason, tt.wantReason)
 			}
+		})
+	}
+}
+
+// TestK8sHelmManager_TeardownWaitsForInFlightUpgrade verifies that Delete1PComponent never uninstalls a release while
+// an asynchronous upgrade of it is still running: the uninstall waits for the upgrade to finish.
+func TestK8sHelmManager_TeardownWaitsForInFlightUpgrade(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+		gate := make(chan struct{})
+		runner := &mockHelmActionRunner{upgradeGate: gate, upgradeStarted: make(chan struct{}, 1)}
+		mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithDebounceDuration(time.Millisecond))
+		defer mgr.Close()
+		if err := mgr.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true}); err != nil {
+			t.Fatalf("Ensure1PComponent failed: %v", err)
+		}
+		<-runner.upgradeStarted
+
+		deleteErr := make(chan error, 1)
+		go func() { deleteErr <- mgr.Delete1PComponent(ctx, ref) }()
+		synctest.Wait()
+		if got := runner.recordedOps(); len(got) != 0 {
+			t.Errorf("release operations while the upgrade is in flight = %v, want none", got)
+		}
+
+		close(gate)
+		if err := <-deleteErr; err != nil {
+			t.Fatalf("Delete1PComponent failed: %v", err)
+		}
+		if diff := cmp.Diff([]string{"upgrade", "uninstall"}, runner.recordedOps()); diff != "" {
+			t.Errorf("release operations mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
+// TestK8sHelmManager_TeardownDiscardsQueuedUpgrade verifies that tearing a component down discards its queued
+// asynchronous upgrade, so the upgrade cannot recreate a release that was just uninstalled or orphaned.
+func TestK8sHelmManager_TeardownDiscardsQueuedUpgrade(t *testing.T) {
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+	tests := []struct {
+		name     string
+		teardown func(context.Context, *K8sHelmManager) error
+		wantOps  []string
+	}{
+		{name: "Delete1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Delete1PComponent(ctx, ref) }, wantOps: []string{"uninstall"}},
+		{name: "Purge1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Purge1PComponent(ctx, ref) }, wantOps: []string{"uninstall"}},
+		{name: "Orphan1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Orphan1PComponent(ctx, ref) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx := context.Background()
+				runner := &mockHelmActionRunner{}
+				mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithDebounceDuration(100*time.Millisecond))
+				defer mgr.Close()
+				if err := mgr.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true}); err != nil {
+					t.Fatalf("Ensure1PComponent failed: %v", err)
+				}
+				if err := tt.teardown(ctx, mgr); err != nil {
+					t.Fatalf("%s failed: %v", tt.name, err)
+				}
+				time.Sleep(200 * time.Millisecond) // Let the debounce window elapse so the worker processes the queued upgrade.
+				synctest.Wait()
+
+				if diff := cmp.Diff(tt.wantOps, runner.recordedOps()); diff != "" {
+					t.Errorf("release operations mismatch (-want +got):\n%s", diff)
+				}
+				if mgr.isUpgradePending(ref) {
+					t.Errorf("upgrade still pending after %s", tt.name)
+				}
+			})
 		})
 	}
 }
