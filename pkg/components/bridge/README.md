@@ -128,9 +128,19 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 
 ---
 
-## Kubernetes Helm Manager (`helm_manager.go`)
+## Kubernetes Helm Manager (`helm_manager.go` and related files)
 
-`K8sHelmManager` implements `HelmManager` by synchronizing synthesized values into Kubernetes ConfigMaps, resolving per-component chart paths, executing independent per-component Helm releases, and tracking active 1P component states:
+`K8sHelmManager` implements `HelmManager` by synchronizing synthesized values into Kubernetes ConfigMaps, resolving per-component chart paths, executing independent per-component Helm releases, and tracking active 1P component states. Its implementation is split by responsibility:
+
+| File | Responsibility |
+| :--- | :--- |
+| `helm_manager.go` | `HelmManager` interface, construction options, and the `Ensure`/`Delete`/`Purge`/`Orphan` lifecycle entry points. |
+| `chart_resolver.go` | Per-component chart path resolution and validation. |
+| `component_values.go` | Read-modify-write of the `xmc-component-values` ConfigMap. |
+| `release_executor.go` | Sync and async Helm upgrade/uninstall execution, the upgrade lock, and the debounced worker queue. |
+| `release_health.go` | `ComponentHealth`, the deployed-verdict cache, and drift detection. |
+| `release_repair.go` | Repair marking (`NeedsRepair`) and repair backoff. |
+| `actuation_state.go` | Active/actuated generation tracking and cold-start hydration. |
 
 - **Per-Component Independent Release Scoping (`ComponentReleaseName`)**:
   - Each 1P component is actuated into a dedicated, decoupled Helm release formatted as `xmc-cmp-<name>` (e.g., `xmc-cmp-ray-operator`), preserving architectural blast-radius isolation from other components and the core platform release.

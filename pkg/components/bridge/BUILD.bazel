@@ -19,6 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "bridge",
     srcs = [
+        "actuation_state.go",
         "bridge_prober.go",
         "chart_resolver.go",
         "cms_client.go",
@@ -78,10 +79,12 @@ go_library(
 go_test(
     name = "bridge_test",
     srcs = [
+        "actuation_state_test.go",
         "bridge_prober_test.go",
         "chart_resolver_test.go",
         "cms_client_test.go",
         "component_values_test.go",
+        "components_rbac_test.go",
         "conditions_test.go",
         "coordinates_test.go",
         "dependency_readiness_test.go",
