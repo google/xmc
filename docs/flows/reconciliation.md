@@ -132,12 +132,12 @@ disappear from the API server before the Reconciler observed it, leaving the wor
 `STOPPING` forever with no event to ever fix it. With it, the ordering is guaranteed:
 
 1. Parse `xid` / `wid` / `eid` from the JobSet's labels.
-2. Hand a stopped-state update to the batcher.
-3. Only then remove the finalizer and patch the JobSet, letting the deletion complete.
+2. Remove the finalizer via an RFC 6902 JSON Patch (`test` + `remove` on `/metadata/finalizers/<idx>`) and patch the JobSet, letting the deletion complete.
+3. Hand a stopped-state update to the batcher once the patch succeeds.
 
-A conflict on the patch requeues; a `NotFound` is treated as already-done. A JobSet carrying the
-finalizer but with unparseable labels is logged and released rather than blocking deletion
-indefinitely — a stuck finalizer is worse than a lost state update.
+Scoping the precondition to `/metadata/finalizers/<idx>` instead of the whole object's `resourceVersion` ensures concurrent `.status` updates by the JobSet controller during teardown do not cause spurious conflicts, while still guarding against concurrent edits to the finalizer list. A failed `test` precondition (`422 Invalid`) requeues the request without counting as a reconcile error; a `NotFound` is treated as already-done. A JobSet carrying the finalizer but with unparseable labels is logged and released rather than blocking deletion indefinitely — a stuck finalizer is worse than a lost state update.
+
+Outside the deletion branch, event predicates filter out JobSets and Workloads with missing or unparseable XMC labels up front (while allowing later Update events that fix the labels). As a defensive guard if an object's labels are invalid when `Reconcile` reads from the cache, label parse failures are returned as `reconcile.TerminalError` — logged and counted, but not requeued by the rate limiter until a subsequent update fixes the labels.
 
 ### Startup pod checks
 
