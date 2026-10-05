@@ -269,7 +269,9 @@ def _check_log_monitor(
 def _parse_k8s_items(json_str: str) -> list[dict]:
     """Parses items list from kubectl JSON output."""
     try:
-        return json.loads(json_str).get("items", []) if json_str else []
+        data = json.loads(json_str) if json_str else {}
+        items = data.get("items") if isinstance(data, dict) else None
+        return [i for i in (items or []) if isinstance(i, dict)]
     except json.JSONDecodeError:
         return []
 
@@ -279,7 +281,7 @@ def _is_pod_ready(pod_json_str: str) -> bool:
     return any(
         (pod.get("status") or {}).get("phase") == "Running"
         and any(
-            c.get("type") == "Ready" and c.get("status") == "True"
+            isinstance(c, dict) and c.get("type") == "Ready" and c.get("status") == "True"
             for c in ((pod.get("status") or {}).get("conditions") or [])
         )
         for pod in _parse_k8s_items(pod_json_str)
@@ -292,16 +294,17 @@ def _are_component_crs_ready(crs_json_str: str) -> tuple[bool, int]:
     for item in items:
         enabled = (item.get("spec") or {}).get("enabled", True)
         status = item.get("status") or {}
-        conds = {c.get("type"): c.get("status") for c in (status.get("conditions") or [])}
-        state = status.get("state")
-        exp = (
-            f"COMPONENT_STATE_{'ENABLED' if enabled else 'DISABLED'}",
-            f"STATE_{'READY' if enabled else 'DISABLED'}",
+        cs = status.get("conditions") or []
+        conds = {c.get("type"): c.get("status") for c in cs if isinstance(c, dict)}
+        st, suffix = (
+            status.get("state"),
+            ("ENABLED", "READY") if enabled else ("DISABLED", "DISABLED"),
         )
+        exp = (f"COMPONENT_STATE_{suffix[0]}", f"STATE_{suffix[1]}")
         if (
             conds.get("Degraded") == "True"
             or conds.get("Ready") != str(enabled)
-            or (state and state not in exp)
+            or (st and st not in exp)
         ):
             name = (item.get("metadata") or {}).get("name", "unknown")
             print(f"❌ Component CR '{name}' not Ready.")

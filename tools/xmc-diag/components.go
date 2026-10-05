@@ -70,12 +70,11 @@ func CheckComponents(ctx context.Context, checker *ComponentChecker, cfg *Config
 	if len(list.Items) == 0 {
 		return ComponentsReport{Status: StatusFailed, Namespace: ns, Reason: fmt.Sprintf("no Component CRs found in namespace %q", ns)}
 	}
+	sort.Slice(list.Items, func(i, j int) bool { return list.Items[i].GetName() < list.Items[j].GetName() })
 	statuses, unhealthy := make([]ComponentStatus, 0, len(list.Items)), []string(nil)
 	for _, item := range list.Items {
-		statuses = append(statuses, deriveComponentStatus(item))
-	}
-	sort.Slice(statuses, func(i, j int) bool { return statuses[i].Name < statuses[j].Name })
-	for _, st := range statuses {
+		st := deriveComponentStatus(item)
+		statuses = append(statuses, st)
 		if !st.Healthy {
 			unhealthy = append(unhealthy, fmt.Sprintf("%s (%s)", st.Name, st.State))
 		}
@@ -106,15 +105,14 @@ func parseConditions(item unstructured.Unstructured) condSummary {
 	var c condSummary
 	conds, _, _ := unstructured.NestedSlice(item.Object, "status", "conditions")
 	for _, raw := range conds {
-		m, _ := raw.(map[string]any)
-		s, _ := m["status"].(string)
-		r, _ := m["reason"].(string)
-		msg, _ := m["message"].(string)
-		switch m["type"] {
-		case "Ready":
-			c.readyStatus, c.readyReason, c.readyMsg = s, r, msg
-		case "Degraded":
-			c.degStatus, c.degMsg = s, msg
+		m, ok := raw.(map[string]any)
+		if ok && m["type"] == "Ready" {
+			c.readyStatus, _ = m["status"].(string)
+			c.readyReason, _ = m["reason"].(string)
+			c.readyMsg, _ = m["message"].(string)
+		} else if ok && m["type"] == "Degraded" {
+			c.degStatus, _ = m["status"].(string)
+			c.degMsg, _ = m["message"].(string)
 		}
 	}
 	return c
