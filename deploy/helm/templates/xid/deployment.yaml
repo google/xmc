@@ -89,14 +89,3 @@ spec:
         - name: IAP_EXPECTED_GRPC_AUDIENCE
           value: {{ .Values.experimentStateServer.iap.grpcAudience | quote }}
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
-        args:
-        - "-alsologtostderr"
-        # Flags to disable internalVCSdependencies.
-        - "--enforce_kernel_ipv6_support=false"
-        - "--enable_streamz_rpc_service=false"
-        - "--logtostderr"
-        - "--securewrapper_dummyimpl_auth_user=$(USER)"
-        - "--streamz_servers="
-        - "--envelope_enabled=false"
-        - "--notracelog"
-        - "--remote_coredump_enabled"
