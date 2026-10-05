@@ -131,6 +131,8 @@ class CompileBlueprintTest(unittest.TestCase):
                         "ctk-out",
                         "--vars",
                         "helm_chart_content_hash=abc123",
+                        "--vars",
+                        "enable_components=false",
                         "-l",
                         "WARNING",
                         "-w",

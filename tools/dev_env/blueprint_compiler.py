@@ -95,7 +95,7 @@ def compile_blueprint(
     """
     purge_staged_artifacts(output_dir, deployment_name)
     chart_hash = compute_chart_content_hash(HELM_CHART_DIR)
-    extra_vars = ["--vars", "enable_components=true"] if enable_components else []
+    extra_vars = ["--vars", f"enable_components={'true' if enable_components else 'false'}"]
     run_command(
         [
             "./cluster-toolkit/gcluster",

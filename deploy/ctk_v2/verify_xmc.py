@@ -277,10 +277,10 @@ def _parse_k8s_items(json_str: str) -> list[dict]:
 def _is_pod_ready(pod_json_str: str) -> bool:
     """Returns True if at least one pod in the kubectl JSON list is Running and Ready."""
     return any(
-        pod.get("status", {}).get("phase") == "Running"
+        (pod.get("status") or {}).get("phase") == "Running"
         and any(
             c.get("type") == "Ready" and c.get("status") == "True"
-            for c in pod.get("status", {}).get("conditions", [])
+            for c in ((pod.get("status") or {}).get("conditions") or [])
         )
         for pod in _parse_k8s_items(pod_json_str)
     )
@@ -290,9 +290,9 @@ def _are_component_crs_ready(crs_json_str: str) -> tuple[bool, int]:
     """Returns (all_ready, count) for Component CRs in the kubectl JSON list."""
     items = _parse_k8s_items(crs_json_str)
     for item in items:
-        enabled = item.get("spec", {}).get("enabled", True)
-        status = item.get("status", {})
-        conds = {c.get("type"): c.get("status") for c in status.get("conditions", [])}
+        enabled = (item.get("spec") or {}).get("enabled", True)
+        status = item.get("status") or {}
+        conds = {c.get("type"): c.get("status") for c in (status.get("conditions") or [])}
         state = status.get("state")
         exp = (
             f"COMPONENT_STATE_{'ENABLED' if enabled else 'DISABLED'}",
@@ -303,7 +303,8 @@ def _are_component_crs_ready(crs_json_str: str) -> tuple[bool, int]:
             or conds.get("Ready") != str(enabled)
             or (state and state not in exp)
         ):
-            print(f"❌ Component CR '{item.get('metadata', {}).get('name', 'unknown')}' not Ready.")
+            name = (item.get("metadata") or {}).get("name", "unknown")
+            print(f"❌ Component CR '{name}' not Ready.")
             return False, len(items)
     return bool(items), len(items)
 
