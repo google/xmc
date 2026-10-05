@@ -48,7 +48,6 @@ def _verify_metrics(_stub: Any, xid: str) -> None:
         expected_metric_names=EXPECTED_METRICS,
         expected_min_rows=25,
         timeout_sec=common.get_flag(common.FLAGS, "timeout_sec", 600),
-        step_label="4/4",
     )
 
 

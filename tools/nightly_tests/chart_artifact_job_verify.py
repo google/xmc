@@ -51,12 +51,12 @@ def _verify_metrics_and_dashboard(_stub: Any, xid: str) -> None:
         expected_metric_names=EXPECTED_METRIC_NAMES,
         expected_min_rows=60,
         timeout_sec=common.get_flag(common.FLAGS, "timeout_sec", 600),
-        step_label="5/6",
+        step_label="Step 5",
     )
     common.assert_dashboard_chart_data(
         dashboard_id=f"chart_artifact_x{xid}_w1",
         min_hydrated_points=1,
-        step_label="6/6",
+        step_label="Step 6",
     )
 
 

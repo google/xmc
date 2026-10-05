@@ -475,6 +475,22 @@ def validate_jobset_topology(
     return validate_jobsets(work_unit, expected_jobs)
 
 
+def validate_work_unit_jobsets(
+    stub: Any,
+    xid: str,
+    expected_jobs: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Fetches WorkUnits for `xid` and validates the first WorkUnit's JobSet topology.
+
+    Standard single-template workloads share a homogeneous JobSet topology across
+    WorkUnits, so validating `raw_work_units[0]` suffices.
+    """
+    raw_work_units = _fetch_raw_work_units(stub, f"experiments/{xid}")
+    if not raw_work_units:
+        raise AssertionError(f"No WorkUnits found for experiment {xid}.")
+    return validate_jobsets(work_unit=raw_work_units[0], expected_jobs=expected_jobs)
+
+
 def _evaluate_single_wu(stub: Any, wu: Any, expected_queue: str | None = None) -> dict[str, Any]:
     """Extracts metadata and evaluates state for a single WorkUnit."""
     wu_name = getattr(wu, "name", "")
@@ -537,7 +553,7 @@ def _evaluate_work_units(
 
 
 def _fetch_raw_work_units(
-    stub: Any, parent_name: str, elapsed: float, timeout_sec: int
+    stub: Any, parent_name: str, elapsed: float = 0.0, timeout_sec: int = 0
 ) -> list[Any] | None:
     """Fetches raw work units from ESS stub, handling transient errors."""
     try:
@@ -933,7 +949,8 @@ def validate_clickhouse_metrics(
     strict_required: bool = True,
 ) -> dict[str, Any]:
     """Polls and asserts metric row arrival and value validity directly via ClickHouse SQL."""
-    start_time, last_error = time.monotonic(), None
+    start_time = time.monotonic()
+    last_error: Exception | None = None
     while time.monotonic() - start_time < timeout_sec:
         try:
             if res := _verify_clickhouse_sql_metrics_once(
@@ -943,7 +960,6 @@ def validate_clickhouse_metrics(
         except Exception as e:
             last_error = e
         time.sleep(poll_interval_sec)
-
     if strict_required:
         raise AssertionError(
             f"ClickHouse SQL metrics validation timed out after {timeout_sec}s for XID {xid}. "
@@ -1041,7 +1057,8 @@ def validate_dashboard_chart_data(
     strict_required: bool = True,
 ) -> dict[str, Any]:
     """Verifies Dashboard metadata and GetChartData hydration via Dashboard Service."""
-    start_time, last_error = time.monotonic(), None
+    start_time = time.monotonic()
+    last_error: Exception | None = None
     while time.monotonic() - start_time < timeout_sec:
         try:
             return _verify_dashboard_and_chart_data_once(
@@ -1055,6 +1072,8 @@ def validate_dashboard_chart_data(
                 break
         time.sleep(poll_interval_sec)
     if strict_required:
-        raise AssertionError(f"Dashboard GetChartData failed ({dashboard_id}): {last_error}")
+        raise AssertionError(
+            f"Dashboard GetChartData failed after {timeout_sec}s ({dashboard_id}): {last_error}"
+        )
     print(f"  [i] Dashboard check skipped/notice: {last_error}")
     return {"skipped": True}
