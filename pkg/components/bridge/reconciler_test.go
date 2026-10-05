@@ -745,6 +745,144 @@ func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T
 	}
 }
 
+// TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration guards against a component staying Ready while
+// objects of its Helm release were deleted out of band: the bridge must report drift, then re-apply the release
+// on the next pass without waiting for a new CR generation.
+func TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration(t *testing.T) {
+	ctx := context.Background()
+	runner := &mockHelmActionRunner{
+		installed: map[string]bool{componentKey("xmc", "xmc-cmp-ingestion"): true},
+		missing:   []string{"Role/ingestion-components-reader"},
+	}
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	r, err := NewReconciler(&mockCMS{}, nil, mgr)
+	if err != nil {
+		t.Fatalf("NewReconciler() failed: %v", err)
+	}
+	in := ReconcileComponentInput{
+		Namespace: "xmc", Name: "ingestion", Generation: 1,
+		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+		HasFinalizer: true, DeletionProtection: true, Enabled: true,
+		ExistingConditions: []Condition{
+			{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
+			{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
+		},
+	}
+
+	res, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("ReconcileComponent() detecting drift failed: %v", err)
+	}
+	wantDrifted := healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: ReasonHelmReleaseDrifted}
+	if diff := cmp.Diff(wantDrifted, extractHealthConditions(res.Conditions)); diff != "" {
+		t.Errorf("health conditions on drift detection mismatch (-want +got):\n%s", diff)
+	}
+	if got := runner.upgradeCalls; got != 0 {
+		t.Errorf("upgradeCalls after drift detection = %d, want 0", got)
+	}
+
+	in.ExistingConditions = res.Conditions
+	res, err = r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("ReconcileComponent() repairing drift failed: %v", err)
+	}
+	wantHealthy := healthConditions{ReadyStatus: ConditionStatusTrue, DegradedStatus: ConditionStatusFalse, Reason: ReasonComponentHealthy}
+	if diff := cmp.Diff(wantHealthy, extractHealthConditions(res.Conditions)); diff != "" {
+		t.Errorf("health conditions after repair mismatch (-want +got):\n%s", diff)
+	}
+	if got := runner.upgradeCalls; got != 1 {
+		t.Errorf("upgradeCalls after repair = %d, want 1 (repair must re-upgrade at the same generation)", got)
+	}
+}
+
+// TestReconcileComponent_DriftRepairBypassesDependencyHold guards against a drifted component with an unready
+// dependency being held as HelmUpgradePending (hiding the drift): repairing the already-actuated generation re-applies
+// an approved spec, so it is not held, and DependenciesReady=False is still reported.
+func TestReconcileComponent_DriftRepairBypassesDependencyHold(t *testing.T) {
+	ctx := context.Background()
+	runner := &mockHelmActionRunner{
+		installed: map[string]bool{componentKey("xmc", "xmc-cmp-ingestion"): true},
+		missing:   []string{"Role/ingestion-components-reader"},
+	}
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	defer mgr.Close()
+	r, err := NewReconciler(&mockCMS{}, nil, mgr)
+	if err != nil {
+		t.Fatalf("NewReconciler() failed: %v", err)
+	}
+	unready := NewDependencySnapshot([]unstructured.Unstructured{readyComponent("redpanda", func(u *unstructured.Unstructured) { setConditionStatus(u, 0, "status", ConditionStatusFalse) })})
+	in := ReconcileComponentInput{
+		Namespace: "xmc", Name: "ingestion", Generation: 1,
+		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: []string{"redpanda"}},
+		HasFinalizer: true, DeletionProtection: true, Enabled: true, Dependencies: unready,
+		ExistingConditions: []Condition{
+			{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
+			{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
+		},
+	}
+	type outcome struct {
+		Health            healthConditions
+		DependenciesReady string
+		UpgradeCalls      int
+	}
+	passes := []outcome{
+		{Health: healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: ReasonHelmReleaseDrifted}, DependenciesReady: ConditionStatusFalse, UpgradeCalls: 0},
+		{Health: healthConditions{ReadyStatus: ConditionStatusTrue, DegradedStatus: ConditionStatusFalse, Reason: ReasonComponentHealthy}, DependenciesReady: ConditionStatusFalse, UpgradeCalls: 1},
+	}
+	for i, want := range passes {
+		res, err := r.ReconcileComponent(ctx, in)
+		if err != nil {
+			t.Fatalf("pass %d: ReconcileComponent() failed: %v", i, err)
+		}
+		got := outcome{Health: extractHealthConditions(res.Conditions), UpgradeCalls: runner.upgradeCalls}
+		if c := findCondition(res.Conditions, ConditionTypeDependenciesReady); c != nil {
+			got.DependenciesReady = c.Status
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("pass %d: outcome mismatch (-want +got):\n%s", i, diff)
+		}
+		in.ExistingConditions = res.Conditions
+	}
+}
+
+// TestReconcileComponent_RepairOnlyBypassesHoldForActuatedGeneration verifies that a pending repair lets only the
+// already-actuated generation through an unready-dependency hold; a new generation is still held.
+func TestReconcileComponent_RepairOnlyBypassesHoldForActuatedGeneration(t *testing.T) {
+	unready := NewDependencySnapshot([]unstructured.Unstructured{readyComponent("redpanda", func(u *unstructured.Unstructured) { setConditionStatus(u, 0, "status", ConditionStatusFalse) })})
+	tests := []struct {
+		name       string
+		generation int64
+		wantReason string
+		wantEnsure int
+	}{
+		{name: "repair of actuated generation is not held", generation: 1, wantReason: ReasonComponentHealthy, wantEnsure: 1},
+		{name: "new generation is held", generation: 2, wantReason: ReasonHelmUpgradePending, wantEnsure: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helm := &mockHelm{active: true, repairNeeded: true, actuatedGenerations: map[string]int64{"xmc/ingestion": 1}}
+			r, err := NewReconciler(&mockCMS{}, nil, helm)
+			if err != nil {
+				t.Fatalf("NewReconciler() failed: %v", err)
+			}
+			res, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: tt.generation, HasFinalizer: true, Enabled: true,
+				Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: []string{"redpanda"}},
+				Dependencies: unready,
+			})
+			if err != nil {
+				t.Fatalf("ReconcileComponent() failed: %v", err)
+			}
+			if got := extractHealthConditions(res.Conditions).Reason; got != tt.wantReason {
+				t.Errorf("Ready reason = %q, want %q", got, tt.wantReason)
+			}
+			if helm.ensureCalls != tt.wantEnsure {
+				t.Errorf("Ensure1PComponent calls = %d, want %d", helm.ensureCalls, tt.wantEnsure)
+			}
+		})
+	}
+}
+
 // healthConditions captures the Ready/Degraded condition statuses and the Ready reason set by evaluateHealth.
 type healthConditions struct {
 	ReadyStatus    string

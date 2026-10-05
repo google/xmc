@@ -31,6 +31,7 @@ func TestHealthConditionStatuses(t *testing.T) {
 		{reason: ReasonHelmStatusUnavailable, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusFalse},
 		{reason: ReasonHelmReleaseStuck, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusTrue},
 		{reason: ReasonHelmReleaseNotReady, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusTrue},
+		{reason: ReasonHelmReleaseDrifted, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusTrue},
 	}
 	for _, tt := range tests {
 		ready, degraded := healthConditionStatuses(tt.healthy, tt.reason)

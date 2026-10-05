@@ -21,11 +21,20 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/cli-runtime/pkg/resource"
 
+	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"
 )
 
@@ -33,14 +42,19 @@ import (
 // which is sufficient for Helm's reachability check when using the in-memory storage driver.
 func newFakeAPIServerGetter(t *testing.T) genericclioptions.RESTClientGetter {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return newHandlerGetter(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/version" {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"major":"1","minor":"30","gitVersion":"v1.30.0"}`))
+		writeJSON(w, http.StatusOK, `{"major":"1","minor":"30","gitVersion":"v1.30.0"}`)
 	}))
+}
+
+// newHandlerGetter returns a RESTClientGetter whose kubeconfig points at an in-process API server backed by handler.
+func newHandlerGetter(t *testing.T, handler http.Handler) genericclioptions.RESTClientGetter {
+	t.Helper()
+	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
 	kubeconfig := filepath.Join(t.TempDir(), "kubeconfig")
@@ -49,9 +63,173 @@ func newFakeAPIServerGetter(t *testing.T) genericclioptions.RESTClientGetter {
 	if err := os.WriteFile(kubeconfig, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write kubeconfig: %v", err)
 	}
+	cacheDir := t.TempDir()
 	flags := genericclioptions.NewConfigFlags(false)
 	flags.KubeConfig = &kubeconfig
+	flags.CacheDir = &cacheDir
 	return flags
+}
+
+func writeJSON(w http.ResponseWriter, status int, body string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(body))
+}
+
+// newConfigMapAPIServerGetter serves discovery for core/v1 ConfigMaps and answers ConfigMap GETs (in any namespace,
+// since Helm's KubeClient resolves it from the getter) by name: names in present return 200, "broken" returns 500,
+// and every other name returns 404.
+func newConfigMapAPIServerGetter(t *testing.T, present ...string) genericclioptions.RESTClientGetter {
+	t.Helper()
+	return newHandlerGetter(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, name, isConfigMap := strings.Cut(r.URL.Path, "/configmaps/")
+		switch {
+		case r.URL.Path == "/version":
+			writeJSON(w, http.StatusOK, `{"major":"1","minor":"30","gitVersion":"v1.30.0"}`)
+		case r.URL.Path == "/api":
+			writeJSON(w, http.StatusOK, `{"kind":"APIVersions","versions":["v1"]}`)
+		case r.URL.Path == "/apis":
+			writeJSON(w, http.StatusOK, `{"kind":"APIGroupList","apiVersion":"v1","groups":[]}`)
+		case r.URL.Path == "/api/v1":
+			writeJSON(w, http.StatusOK, `{"kind":"APIResourceList","groupVersion":"v1","resources":[{"name":"configmaps","singularName":"configmap","namespaced":true,"kind":"ConfigMap","verbs":["get"]}]}`)
+		case isConfigMap && slices.Contains(present, name):
+			writeJSON(w, http.StatusOK, `{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"`+name+`"}}`)
+		case isConfigMap && name == "broken":
+			writeJSON(w, http.StatusInternalServerError, `{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"InternalError","code":500}`)
+		default:
+			writeJSON(w, http.StatusNotFound, `{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"NotFound","code":404}`)
+		}
+	}))
+}
+
+func configMapManifest(names ...string) string {
+	var b strings.Builder
+	for _, name := range names {
+		b.WriteString("---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: " + name + "\n")
+	}
+	return b.String()
+}
+
+func TestSDKHelmActionRunner_MissingResources(t *testing.T) {
+	tests := []struct {
+		name    string
+		runner  func(t *testing.T) *SDKHelmActionRunner
+		rel     *release.Release
+		want    []string
+		wantErr bool
+	}{
+		{
+			name:    "nil release",
+			runner:  func(t *testing.T) *SDKHelmActionRunner { return NewSDKHelmActionRunner(newConfigMapAPIServerGetter(t)) },
+			wantErr: true,
+		},
+		{
+			name:    "nil restClientGetter",
+			runner:  func(t *testing.T) *SDKHelmActionRunner { return NewSDKHelmActionRunner(nil) },
+			rel:     &release.Release{Name: "xmc-cmp-a", Namespace: "xmc"},
+			wantErr: true,
+		},
+		{
+			name: "all objects present",
+			runner: func(t *testing.T) *SDKHelmActionRunner {
+				return NewSDKHelmActionRunner(newConfigMapAPIServerGetter(t, "a", "b"), WithDriver("memory"))
+			},
+			rel: &release.Release{Name: "xmc-cmp-a", Namespace: "xmc", Manifest: configMapManifest("a", "b")},
+		},
+		{
+			name: "deleted objects are reported",
+			runner: func(t *testing.T) *SDKHelmActionRunner {
+				return NewSDKHelmActionRunner(newConfigMapAPIServerGetter(t, "a"), WithDriver("memory"))
+			},
+			rel:  &release.Release{Name: "xmc-cmp-a", Namespace: "xmc", Manifest: configMapManifest("a", "gone")},
+			want: []string{"ConfigMap/gone"},
+		},
+		{
+			name: "non-NotFound lookup error aborts the check",
+			runner: func(t *testing.T) *SDKHelmActionRunner {
+				return NewSDKHelmActionRunner(newConfigMapAPIServerGetter(t, "a"), WithDriver("memory"))
+			},
+			rel:     &release.Release{Name: "xmc-cmp-a", Namespace: "xmc", Manifest: configMapManifest("gone", "broken")},
+			wantErr: true,
+		},
+		{
+			name: "unparseable manifest",
+			runner: func(t *testing.T) *SDKHelmActionRunner {
+				return NewSDKHelmActionRunner(newConfigMapAPIServerGetter(t), WithDriver("memory"))
+			},
+			rel:     &release.Release{Name: "xmc-cmp-a", Namespace: "xmc", Manifest: "kind: [unterminated"},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.runner(t).MissingResources(context.Background(), tt.rel)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("MissingResources() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("MissingResources() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestFindMissingResources_AbortsBeforeGet verifies the checks that must stop the loop before info.Get() runs. The
+// infos have no Client, so reaching Get() would panic.
+func TestFindMissingResources_AbortsBeforeGet(t *testing.T) {
+	configMap := &unstructured.Unstructured{}
+	configMap.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	tests := []struct {
+		name    string
+		ctx     context.Context
+		info    *resource.Info
+		wantErr string
+	}{
+		{
+			name:    "cancelled context",
+			ctx:     cancelled,
+			info:    &resource.Info{Name: "a", Mapping: &meta.RESTMapping{GroupVersionKind: configMap.GroupVersionKind()}},
+			wantErr: context.Canceled.Error(),
+		},
+		{
+			name:    "nil REST mapping",
+			ctx:     context.Background(),
+			info:    &resource.Info{Name: "a", Object: configMap},
+			wantErr: `ConfigMap "a" of Helm release "xmc-cmp-a" has no REST mapping`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := findMissingResources(tt.ctx, "xmc-cmp-a", []*resource.Info{tt.info})
+			if err == nil || err.Error() != tt.wantErr {
+				t.Errorf("findMissingResources() = (%v, %v), want error %q", got, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestResourceKind(t *testing.T) {
+	configMap := &unstructured.Unstructured{}
+	configMap.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+	tests := []struct {
+		name string
+		info *resource.Info
+		want string
+	}{
+		{name: "from mapping", info: &resource.Info{Mapping: &meta.RESTMapping{GroupVersionKind: schema.GroupVersionKind{Kind: "Role"}}, Object: configMap}, want: "Role"},
+		{name: "from object", info: &resource.Info{Object: configMap}, want: "ConfigMap"},
+		{name: "object without kind", info: &resource.Info{Object: &unstructured.Unstructured{}}, want: "Unknown"},
+		{name: "neither", info: &resource.Info{}, want: "Unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resourceKind(tt.info); got != tt.want {
+				t.Errorf("resourceKind() = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestSDKHelmActionRunner_Status(t *testing.T) {
@@ -190,5 +368,17 @@ func TestSDKHelmActionRunner_ResolveChart_DefaultFallback(t *testing.T) {
 	}
 	if resolved.Metadata == nil || resolved.Metadata.APIVersion != "v2" {
 		t.Errorf("expected v2 metadata, got %v", resolved.Metadata)
+	}
+}
+
+// TestNewUpgradeAction_CapsReleaseHistory guards against component release Secrets accumulating without bound when
+// a release is upgraded repeatedly (e.g. by drift repairs): the SDK default MaxHistory of 0 means unlimited.
+func TestNewUpgradeAction_CapsReleaseHistory(t *testing.T) {
+	upgrade := newUpgradeAction(&action.Configuration{}, "xmc")
+	if upgrade.MaxHistory != componentReleaseMaxHistory {
+		t.Errorf("MaxHistory = %d, want %d", upgrade.MaxHistory, componentReleaseMaxHistory)
+	}
+	if upgrade.Namespace != "xmc" {
+		t.Errorf("Namespace = %q, want %q", upgrade.Namespace, "xmc")
 	}
 }

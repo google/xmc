@@ -140,6 +140,8 @@ type mockHelm struct {
 	actuatedGenerations             map[string]int64
 	// unhealthyReason, when non-empty, makes ComponentHealth report unhealthy with this reason. Defaults to healthy.
 	unhealthyReason string
+	// repairNeeded makes NeedsRepair report true for the actuated generation.
+	repairNeeded bool
 }
 
 func (m *mockHelm) Ensure1PComponent(ctx context.Context, ref ComponentRef, opts HelmComponentOptions) error {
@@ -204,6 +206,10 @@ func (m *mockHelm) IsComponentActuated(ref ComponentRef, generation int64) bool 
 		return false
 	}
 	return m.active && m.actuatedGenerations[ref.String()] == generation
+}
+
+func (m *mockHelm) NeedsRepair(ref ComponentRef, generation int64) bool {
+	return m != nil && m.repairNeeded && m.IsComponentActuated(ref, generation)
 }
 
 func (m *mockHelm) RecordActuation(ref ComponentRef, generation int64) {
