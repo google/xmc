@@ -311,46 +311,27 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 
 // Delete1PComponent uninstalls the 1P component Helm release and records it as disabled in the ConfigMap.
 func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef) error {
-	if m == nil {
-		return nil
-	}
-	targetNamespace, err := m.validateAndResolve(ref)
-	if err != nil {
-		return err
-	}
-	resolved := ComponentRef{Namespace: targetNamespace, Name: ref.Name}
-
-	modified, err := m.disableComponentValues(ctx, targetNamespace, ref.Name)
-	if err != nil {
-		return fmt.Errorf("failed to disable Helm values for %q: %w", ref.Name, err)
-	}
-
-	key := componentKey(targetNamespace, ref.Name)
-	if !modified && !m.IsComponentActive(resolved) && m.GetUpgradeError(resolved) == nil {
-		return nil
-	}
-
-	releaseName := ComponentReleaseName(ref.Name)
-	if err := m.uninstallRelease(ctx, releaseName, targetNamespace, resolved); err != nil {
-		return err
-	}
-
-	m.mu.Lock()
-	if m.activeState != nil {
-		m.activeState[key] = false
-	}
-	if m.actuatedGenerations != nil {
-		delete(m.actuatedGenerations, key)
-	}
-	m.clearRepairLocked(key)
-	m.mu.Unlock()
-
-	logging.Info(ctx, "Deleted 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
-	return nil
+	return m.uninstallComponent(ctx, ref, componentTeardown{action: "disable", updateValues: m.disableComponentValues, keepInactive: true})
 }
 
 // Purge1PComponent permanently uninstalls the Helm release and removes component values from the ConfigMap.
 func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef) error {
+	return m.uninstallComponent(ctx, ref, componentTeardown{action: "purge", updateValues: m.removeComponentValues})
+}
+
+// componentTeardown describes how uninstallComponent records a teardown.
+type componentTeardown struct {
+	// action names the teardown in errors and logs.
+	action string
+	// updateValues records the teardown in the values ConfigMap and reports whether it changed.
+	updateValues func(ctx context.Context, namespace, componentName string) (bool, error)
+	// keepInactive selects the state kept after uninstall; see forgetComponentLocked.
+	keepInactive bool
+}
+
+// uninstallComponent records the teardown in the values ConfigMap, uninstalls the component's release, and forgets its
+// state. It is a no-op when the values were already torn down, the component is inactive, and no upgrade failed.
+func (m *K8sHelmManager) uninstallComponent(ctx context.Context, ref ComponentRef, td componentTeardown) error {
 	if m == nil {
 		return nil
 	}
@@ -359,34 +340,21 @@ func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef)
 		return err
 	}
 	resolved := ComponentRef{Namespace: targetNamespace, Name: ref.Name}
-
-	modified, err := m.removeComponentValues(ctx, targetNamespace, ref.Name)
+	modified, err := td.updateValues(ctx, targetNamespace, ref.Name)
 	if err != nil {
-		return fmt.Errorf("failed to purge Helm values for %q: %w", ref.Name, err)
+		return fmt.Errorf("failed to %s Helm values for %q: %w", td.action, ref.Name, err)
 	}
-
-	key := componentKey(targetNamespace, ref.Name)
 	if !modified && !m.IsComponentActive(resolved) && m.GetUpgradeError(resolved) == nil {
 		return nil
 	}
-
 	releaseName := ComponentReleaseName(ref.Name)
 	if err := m.uninstallRelease(ctx, releaseName, targetNamespace, resolved); err != nil {
 		return err
 	}
-
 	m.mu.Lock()
-	if m.activeState != nil {
-		delete(m.activeState, key)
-	}
-	if m.actuatedGenerations != nil {
-		delete(m.actuatedGenerations, key)
-	}
-	delete(m.componentChartPaths, key)
-	m.clearRepairLocked(key)
+	m.forgetComponentLocked(componentKey(targetNamespace, ref.Name), td.keepInactive)
 	m.mu.Unlock()
-
-	logging.Info(ctx, "Purged 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
+	logging.Info(ctx, "Uninstalled 1P component Helm release", "action", td.action, "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
 	return nil
 }
 
@@ -403,14 +371,7 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 	m.setUpgradeErr(resolved, nil)
 	key := componentKey(targetNamespace, ref.Name)
 	m.mu.Lock()
-	if m.activeState != nil {
-		delete(m.activeState, key)
-	}
-	if m.actuatedGenerations != nil {
-		delete(m.actuatedGenerations, key)
-	}
-	delete(m.componentChartPaths, key)
-	m.clearRepairLocked(key)
+	m.forgetComponentLocked(key, false)
 	m.mu.Unlock()
 	logging.Info(ctx, "Orphaned 1P component Helm values", "name", ref.Name, "namespace", targetNamespace)
 	return nil

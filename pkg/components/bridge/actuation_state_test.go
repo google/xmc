@@ -25,6 +25,49 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 )
 
+// TestK8sHelmManager_TeardownForgetsState verifies that Delete keeps the component recorded as inactive with its chart
+// path override, while Purge and Orphan forget it entirely; all three drop the actuated generation.
+func TestK8sHelmManager_TeardownForgetsState(t *testing.T) {
+	ref := ComponentRef{Namespace: "xmc", Name: "metrics"}
+	key := componentKey(ref.Namespace, ref.Name)
+	type state struct {
+		Active, Known, Actuated, HasChartPath bool
+	}
+	tests := []struct {
+		name     string
+		teardown func(context.Context, *K8sHelmManager) error
+		want     state
+	}{
+		{name: "Delete1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Delete1PComponent(ctx, ref) }, want: state{Known: true, HasChartPath: true}},
+		{name: "Purge1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Purge1PComponent(ctx, ref) }},
+		{name: "Orphan1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Orphan1PComponent(ctx, ref) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
+			defer mgr.Close()
+			if err := mgr.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true, ChartPath: "components/metrics"}); err != nil {
+				t.Fatalf("Ensure1PComponent failed: %v", err)
+			}
+			mgr.RecordActuation(ref, 1)
+			if err := tt.teardown(ctx, mgr); err != nil {
+				t.Fatalf("%s failed: %v", tt.name, err)
+			}
+
+			mgr.mu.RLock()
+			defer mgr.mu.RUnlock()
+			var got state
+			got.Active, got.Known = mgr.activeState[key]
+			_, got.Actuated = mgr.actuatedGenerations[key]
+			_, got.HasChartPath = mgr.componentChartPaths[key]
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("state after %s mismatch (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
+
 func TestK8sHelmManager_ActuationTracking(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewClientset()

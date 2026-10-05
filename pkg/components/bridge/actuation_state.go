@@ -36,16 +36,7 @@ func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64)
 	key := componentKey(ref.Namespace, ref.Name)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if !m.activeState[key] {
-		return false
-	}
-	if m.upgradeErrs != nil && m.upgradeErrs[key] != nil {
-		return false
-	}
-	if m.actuatedGenerations == nil {
-		return false
-	}
-	return m.actuatedGenerations[key] == generation
+	return m.activeState[key] && m.upgradeErrs[key] == nil && m.actuatedGenerations[key] == generation
 }
 
 // RecordActuation records the generation at which the component was successfully actuated. A new generation resets
@@ -57,9 +48,6 @@ func (m *K8sHelmManager) RecordActuation(ref ComponentRef, generation int64) {
 	key := componentKey(ref.Namespace, ref.Name)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.actuatedGenerations == nil {
-		m.actuatedGenerations = make(map[string]int64)
-	}
 	if m.actuatedGenerations[key] != generation {
 		delete(m.repairBackoff, key)
 	}
@@ -145,15 +133,25 @@ func (m *K8sHelmManager) releaseContradictsReadyCR(ctx context.Context, ref Comp
 	return status != release.StatusDeployed && !status.IsPending()
 }
 
+// forgetComponentLocked drops the component's actuation and repair state after a teardown. With keepInactive, the
+// component stays recorded as inactive and keeps its chart path override (Delete); otherwise it is forgotten entirely
+// (Purge, Orphan). Callers must hold m.mu.
+func (m *K8sHelmManager) forgetComponentLocked(key string, keepInactive bool) {
+	delete(m.actuatedGenerations, key)
+	m.clearRepairLocked(key)
+	if keepInactive {
+		m.activeState[key] = false
+		return
+	}
+	delete(m.activeState, key)
+	delete(m.componentChartPaths, key)
+}
+
+// applyHydratedState records the hydrated activation and actuated generation for a component, never overwriting an
+// actuation already recorded in memory.
 func (m *K8sHelmManager) applyHydratedState(key string, observedGeneration int64, crReady bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.activeState == nil {
-		m.activeState = make(map[string]bool)
-	}
-	if m.actuatedGenerations == nil {
-		m.actuatedGenerations = make(map[string]int64)
-	}
 	activeInCM, hasCM := m.activeState[key]
 	if !crReady {
 		if observedGeneration > 0 && m.actuatedGenerations[key] == 0 {
@@ -169,8 +167,10 @@ func (m *K8sHelmManager) applyHydratedState(key string, observedGeneration int64
 	}
 }
 
+// hydrateNamespaceFromConfigMap records the enablement of every component in the namespace's values ConfigMap that
+// has no in-memory state yet. Callers must pass a non-empty namespace.
 func (m *K8sHelmManager) hydrateNamespaceFromConfigMap(ctx context.Context, namespace string) error {
-	if m == nil || m.client == nil || namespace == "" {
+	if m.client == nil {
 		return nil
 	}
 	cm, err := m.client.CoreV1().ConfigMaps(namespace).Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
@@ -183,9 +183,6 @@ func (m *K8sHelmManager) hydrateNamespaceFromConfigMap(ctx context.Context, name
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.activeState == nil {
-		m.activeState = make(map[string]bool)
-	}
 	for k, rawJSON := range cm.Data {
 		compName, ok := strings.CutSuffix(k, componentValuesKeySuffix)
 		if !ok {
