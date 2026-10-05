@@ -277,39 +277,56 @@ def run_migration(
     run_command(cmd)
 
 
+def check_pending_migrations(config: DeploymentConfig) -> list[tuple[str, str, str]]:
+    """Checks ESS and XID databases for pending Spanner migrations.
+
+    Args:
+      config: Loaded DeploymentConfig instance.
+
+    Returns:
+      List of (migrations_dir, spanner_instance, db_name) tuples with pending migrations.
+    """
+    log_info("Checking for pending database migrations...")
+    spanner_instance = f"xmc-{config.environment}"
+    targets = [
+        ("ess", f"experiment-db-{config.environment}"),
+        ("xid", f"xids-db-{config.environment}"),
+    ]
+    pending: list[tuple[str, str, str]] = []
+    for mig_dir, db_name in targets:
+        current, available = get_migration_status(config, mig_dir, spanner_instance, db_name)
+        log_info(f"{mig_dir.upper()} database version: current={current}, available={available}")
+        if available > current:
+            pending.append((mig_dir, spanner_instance, db_name))
+    return pending
+
+
+def apply_pending_migrations(config: DeploymentConfig, pending: list[tuple[str, str, str]]) -> None:
+    """Applies pending Spanner database migrations.
+
+    Args:
+      config: Loaded DeploymentConfig instance.
+      pending: List of (migrations_dir, spanner_instance, db_name) tuples to migrate.
+    """
+    for mig_dir, spanner_instance, db_name in pending:
+        run_migration(config, mig_dir, spanner_instance, db_name)
+    log_success("Migrations applied successfully.")
+
+
 def step_migrate(config: UpgradeConfig) -> None:
     """Checks and applies pending Spanner database migrations."""
-    log_info("Checking for pending database migrations...")
-
-    spanner_instance = f"xmc-{config.environment}"
-    ess_db = f"experiment-db-{config.environment}"
-    xid_db = f"xids-db-{config.environment}"
-
-    current_ess, max_ess = get_migration_status(config, "ess", spanner_instance, ess_db)
-    current_xid, max_xid = get_migration_status(config, "xid", spanner_instance, xid_db)
-
-    log_info(f"ESS database version: current={current_ess}, available={max_ess}")
-    log_info(f"XID database version: current={current_xid}, available={max_xid}")
-
-    has_pending = (max_ess > current_ess) or (max_xid > current_xid)
-
-    if not has_pending:
+    pending = check_pending_migrations(config)
+    if not pending:
         log_success("No pending migrations found. Databases are up to date.")
         return
 
     log_info("Pending migrations detected!")
-    if config.run_migrations:
-        log_info("Running pending migrations as requested...")
-        if max_ess > current_ess:
-            run_migration(config, "ess", spanner_instance, ess_db)
-        if max_xid > current_xid:
-            run_migration(config, "xid", spanner_instance, xid_db)
-        log_success("Migrations applied successfully.")
-    else:
+    if not config.run_migrations:
         print("STATUS: PENDING_MIGRATIONS")
-        print(f"ESS: current={current_ess}, available={max_ess}")
-        print(f"XID: current={current_xid}, available={max_xid}")
         sys.exit(10)
+
+    log_info("Running pending migrations as requested...")
+    apply_pending_migrations(config, pending)
 
 
 def step_images(config: UpgradeConfig) -> None:

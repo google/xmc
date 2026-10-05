@@ -46,8 +46,8 @@ from tools.common.tool_utils import (  # noqa: E402
 )
 from tools.dev_env.blueprint_compiler import compile_blueprint  # noqa: E402
 from tools.dev_env.upgrade_dev_env import (  # noqa: E402
-    get_migration_status,
-    run_migration,
+    apply_pending_migrations,
+    check_pending_migrations,
 )
 
 # ANSI Color Codes
@@ -530,27 +530,13 @@ def step_migrate(config: DeploymentConfig) -> None:
     Args:
         config: The loaded DeploymentConfig instance.
     """
-    log_info("Checking for pending database migrations...")
-    spanner_instance = f"xmc-{config.environment}"
-    ess_db = f"experiment-db-{config.environment}"
-    xid_db = f"xids-db-{config.environment}"
-
-    current_ess, max_ess = get_migration_status(config, "ess", spanner_instance, ess_db)
-    current_xid, max_xid = get_migration_status(config, "xid", spanner_instance, xid_db)
-
-    log_info(f"ESS database version: current={current_ess}, available={max_ess}")
-    log_info(f"XID database version: current={current_xid}, available={max_xid}")
-
-    if max_ess <= current_ess and max_xid <= current_xid:
+    pending = check_pending_migrations(config)
+    if not pending:
         log_success("No pending migrations found. Databases are up to date.")
         return
 
     log_info("Applying pending Spanner migrations...")
-    if max_ess > current_ess:
-        run_migration(config, "ess", spanner_instance, ess_db)
-    if max_xid > current_xid:
-        run_migration(config, "xid", spanner_instance, xid_db)
-    log_success("Migrations applied successfully.")
+    apply_pending_migrations(config, pending)
 
 
 def step_compute(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:

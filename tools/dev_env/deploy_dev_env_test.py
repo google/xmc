@@ -735,34 +735,34 @@ image_tag: latest
             "10.0.0.1", self.valid_config, self.dns_project, self.dns_zone
         )
 
-    @patch("tools.dev_env.deploy_dev_env.run_migration")
-    @patch("tools.dev_env.deploy_dev_env.get_migration_status")
-    def test_step_migrate_up_to_date(self, mock_status, mock_run_mig):
-        mock_status.side_effect = [(3, 3), (2, 2)]
+    @patch("tools.dev_env.deploy_dev_env.apply_pending_migrations")
+    @patch("tools.dev_env.deploy_dev_env.check_pending_migrations")
+    def test_step_migrate_up_to_date(self, mock_check, mock_apply):
+        mock_check.return_value = []
         deploy_dev_env.step_migrate(self.valid_config)
-        self.assertEqual(mock_status.call_count, 2)
-        mock_run_mig.assert_not_called()
+        mock_check.assert_called_once_with(self.valid_config)
+        mock_apply.assert_not_called()
 
-    @patch("tools.dev_env.deploy_dev_env.run_migration")
-    @patch("tools.dev_env.deploy_dev_env.get_migration_status")
-    def test_step_migrate_pending_migrations(self, mock_status, mock_run_mig):
-        mock_status.side_effect = [(1, 2), (2, 3)]
+    @patch("tools.dev_env.deploy_dev_env.apply_pending_migrations")
+    @patch("tools.dev_env.deploy_dev_env.check_pending_migrations")
+    def test_step_migrate_pending_migrations(self, mock_check, mock_apply):
+        pending = [
+            ("ess", "xmc-dev", "experiment-db-dev"),
+            ("xid", "xmc-dev", "xids-db-dev"),
+        ]
+        mock_check.return_value = pending
         deploy_dev_env.step_migrate(self.valid_config)
-        mock_run_mig.assert_has_calls(
-            [
-                call(self.valid_config, "ess", "xmc-dev", "experiment-db-dev"),
-                call(self.valid_config, "xid", "xmc-dev", "xids-db-dev"),
-            ]
-        )
+        mock_check.assert_called_once_with(self.valid_config)
+        mock_apply.assert_called_once_with(self.valid_config, pending)
 
-    @patch("tools.dev_env.deploy_dev_env.run_migration")
-    @patch("tools.dev_env.deploy_dev_env.get_migration_status")
-    def test_step_migrate_failure_or_dirty(self, mock_status, mock_run_mig):
-        mock_status.side_effect = SystemExit(1)
+    @patch("tools.dev_env.deploy_dev_env.apply_pending_migrations")
+    @patch("tools.dev_env.deploy_dev_env.check_pending_migrations")
+    def test_step_migrate_failure_or_dirty(self, mock_check, mock_apply):
+        mock_check.side_effect = SystemExit(1)
         with self.assertRaises(SystemExit) as cm:
             deploy_dev_env.step_migrate(self.valid_config)
         self.assertEqual(cm.exception.code, 1)
-        mock_run_mig.assert_not_called()
+        mock_apply.assert_not_called()
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     def test_step_gateway_api_not_enabled(self, mock_run):

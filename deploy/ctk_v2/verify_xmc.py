@@ -138,26 +138,17 @@ def _are_pods_healthy(pods_out: str) -> bool:
       True if at least one pod is present and all active pods are Running
       (N/N ready) or Completed/Succeeded/Terminating/Evicted, False otherwise.
     """
-    lines = [line.strip() for line in pods_out.strip().splitlines() if line.strip()]
-    if len(lines) < 2:
-        return False
-
     pods_count = 0
-    for line in lines[1:]:
+    for line in pods_out.strip().splitlines()[1:]:
         cols = line.split()
-        if len(cols) < 3:
+        if len(cols) < 3 or not re.match(r"^\d+/\d+$", cols[1]):
             continue
-        ready_col, status_col = cols[1], cols[2]
-        if not re.match(r"^\d+/\d+$", ready_col):
-            continue
-
         pods_count += 1
+        ready_col, status_col = cols[1], cols[2]
         if status_col in ("Completed", "Succeeded", "Terminating", "Evicted"):
             continue
-        if status_col != "Running":
-            return False
-        ready_parts = ready_col.split("/", 1)
-        if ready_parts[0] != ready_parts[1] or ready_parts[0] == "0":
+        ready, _, total = ready_col.partition("/")
+        if status_col != "Running" or ready != total or ready == "0":
             return False
     return pods_count > 0
 
