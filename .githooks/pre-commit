@@ -117,6 +117,14 @@ check_go() {
   fi
 }
 
+check_legacy_imports() {
+  echo "--> Running google3 Legacy Import Ratchet..."
+  if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_legacy_imports.py >/dev/null; then
+    echo "❌ google3 legacy import ratchet failed (see JSON error above)."
+    FAILED=1
+  fi
+}
+
 check_ui() {
   local ui_files
   if [ "$MODE" = "check" ]; then
@@ -406,6 +414,7 @@ check_security() {
 main() {
   check_bazel
   check_go
+  check_legacy_imports
   check_ui
   check_license
   check_python
