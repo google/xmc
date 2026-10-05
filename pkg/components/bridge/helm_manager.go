@@ -283,6 +283,8 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 	if err != nil {
 		return fmt.Errorf("failed to persist Helm values for %q: %w", ref.Name, err)
 	}
+	// TODO(vluk): Read the chart override, repair mark, activity and upgrade error under one m.mu critical section so
+	// a concurrent teardown cannot land between these checks and the upgrade (pre-existing check-then-act gap).
 	chartPathChanged := m.recordChartPathOverride(ref, opts.ChartPath)
 	repair := m.isRepairMarked(ref)
 	if !modified && !chartPathChanged && !repair && m.IsComponentActive(ref) && m.GetUpgradeError(ref) == nil {
