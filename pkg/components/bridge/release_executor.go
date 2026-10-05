@@ -219,6 +219,8 @@ func (m *K8sHelmManager) uninstallRelease(ctx context.Context, ref ComponentRef)
 
 func (m *K8sHelmManager) syncUpgradeWorker() {
 	defer m.wg.Done()
+	// TODO(vluk): Recover per request in executeComponentUpgrade and record the panic as the component's upgrade
+	// error; today a panicking upgrade records no outcome and stops this worker for good (pre-existing).
 	defer func() {
 		if r := recover(); r != nil {
 			logging.Error(context.Background(), "Recovered from panic in Helm upgrade worker", "panic", r)
