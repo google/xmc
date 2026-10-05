@@ -241,29 +241,23 @@ func ParseConditionsFromUnstructured(statusObj any) []Condition {
 }
 
 // ParseWrapperRef extracts WrapperRef from unstructured custom resource spec map.
+// Target coordinates are resolved by parseWrapperRef so their key aliases are defined once.
 func ParseWrapperRef(specObj any, defaultNamespace string) WrapperRef {
 	specMap, ok := specObj.(map[string]any)
 	if !ok || specMap == nil {
 		return WrapperRef{Namespace: defaultNamespace}
 	}
-	wrapperRaw, ok := specMap["wrapperRef"].(map[string]any)
-	if !ok || wrapperRaw == nil {
+	target := parseWrapperRef(specMap)
+	if target == nil {
 		return WrapperRef{}
 	}
-	ns := firstStr(wrapperRaw, "targetNamespace", "namespace")
-	if ns == "" {
-		ns = defaultNamespace
-	}
-	return WrapperRef{
-		Group:                    firstStr(wrapperRaw, "crdGroup", "group"),
-		Version:                  firstStr(wrapperRaw, "crdVersion", "version"),
-		Kind:                     firstStr(wrapperRaw, "crdKind", "kind"),
-		Name:                     firstStr(wrapperRaw, "targetName", "name"),
-		Namespace:                ns,
-		ObservedGenerationPath:   firstStr(wrapperRaw, "observedGenerationPath", "observed_generation_path"),
-		ReadyConditionPath:       firstStr(wrapperRaw, "readyConditionPath", "ready_condition_path", "readyPath"),
-		ExpectedReadyValue:       firstStr(wrapperRaw, "expectedReadyValue", "expected_ready_value"),
-		EndpointJSONPath:         firstStr(wrapperRaw, "endpointJsonPath", "endpoint_json_path", "endpointJsonpath"),
-		ConnectionSecretJSONPath: firstStr(wrapperRaw, "connectionSecretJsonPath", "connection_secret_json_path", "secretNameJsonpath"),
-	}
+	// parseWrapperRef returned a target, so spec.wrapperRef is a non-nil map.
+	wrapperRaw, _ := specMap["wrapperRef"].(map[string]any)
+	ref := ToBridgeWrapperRef(target, defaultNamespace)
+	ref.ObservedGenerationPath = firstStr(wrapperRaw, "observedGenerationPath", "observed_generation_path")
+	ref.ReadyConditionPath = firstStr(wrapperRaw, "readyConditionPath", "ready_condition_path", "readyPath")
+	ref.ExpectedReadyValue = firstStr(wrapperRaw, "expectedReadyValue", "expected_ready_value")
+	ref.EndpointJSONPath = firstStr(wrapperRaw, "endpointJsonPath", "endpoint_json_path", "endpointJsonpath")
+	ref.ConnectionSecretJSONPath = firstStr(wrapperRaw, "connectionSecretJsonPath", "connection_secret_json_path", "secretNameJsonpath")
+	return ref
 }

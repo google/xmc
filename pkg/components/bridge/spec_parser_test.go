@@ -373,3 +373,57 @@ func TestParseWrapperRef(t *testing.T) {
 		t.Errorf("ParseWrapperRef(camelCase) = %+v, want %+v", refCamel, wantCamel)
 	}
 }
+
+func TestParseWrapperRef_KeyAliases(t *testing.T) {
+	tests := []struct {
+		name string
+		spec map[string]any
+		want WrapperRef
+	}{
+		{name: "missing wrapperRef", spec: map[string]any{}, want: WrapperRef{}},
+		{name: "wrapperRef not a map", spec: map[string]any{"wrapperRef": "chi-cluster"}, want: WrapperRef{}},
+		{
+			name: "camelCase key wins over alias",
+			spec: map[string]any{"wrapperRef": map[string]any{
+				"crdKind": "ClickHouseInstallation", "kind": "Ignored",
+				"targetName": "chi-cluster", "name": "ignored",
+				"targetNamespace": "clickhouse-ns", "namespace": "ignored-ns",
+			}},
+			want: WrapperRef{Kind: "ClickHouseInstallation", Name: "chi-cluster", Namespace: "clickhouse-ns"},
+		},
+		{
+			name: "empty camelCase key falls back to alias",
+			spec: map[string]any{"wrapperRef": map[string]any{
+				"crdGroup": "", "group": "ray.io", "targetNamespace": "", "namespace": "ray-ns",
+			}},
+			want: WrapperRef{Group: "ray.io", Namespace: "ray-ns"},
+		},
+		{
+			name: "snake_case JSONPath aliases",
+			spec: map[string]any{"wrapperRef": map[string]any{
+				"name":                        "my-ray",
+				"observed_generation_path":    "status.obsGen",
+				"ready_condition_path":        "status.ready",
+				"expected_ready_value":        "True",
+				"endpoint_json_path":          "status.url",
+				"connection_secret_json_path": "status.secret",
+			}},
+			want: WrapperRef{
+				Name:                     "my-ray",
+				Namespace:                "default-ns",
+				ObservedGenerationPath:   "status.obsGen",
+				ReadyConditionPath:       "status.ready",
+				ExpectedReadyValue:       "True",
+				EndpointJSONPath:         "status.url",
+				ConnectionSecretJSONPath: "status.secret",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if diff := cmp.Diff(tt.want, ParseWrapperRef(tt.spec, "default-ns")); diff != "" {
+				t.Errorf("ParseWrapperRef() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

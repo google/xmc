@@ -16,9 +16,12 @@ package bridge
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -260,6 +263,57 @@ func TestReconcile_OperatorlessProfile3(t *testing.T) {
 	}
 	if resUnhealthy.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
 		t.Errorf("expected COMPONENT_STATE_PENDING_RECONCILIATION, got %v", resUnhealthy.State)
+	}
+}
+
+func TestVerifyEndpointHealth(t *testing.T) {
+	const endpoint = "http://svc.xmc:8080"
+	type verdict struct {
+		OK      bool
+		Reason  string
+		Message string
+	}
+	tests := []struct {
+		name     string
+		endpoint string
+		prober   *mockProber
+		want     verdict
+	}{
+		{name: "empty endpoint skips probe", prober: &mockProber{probeErr: errors.New("unused")}, want: verdict{OK: true}},
+		{name: "healthy discards probe message", endpoint: endpoint, prober: &mockProber{probeRes: &HealthProbeResult{Healthy: true, Message: "HTTP 200"}}, want: verdict{OK: true}},
+		{
+			name:     "probe error",
+			endpoint: endpoint,
+			prober:   &mockProber{probeErr: errors.New("connection refused")},
+			want:     verdict{Reason: "ProbeFailed", Message: "Health probe failed for http://svc.xmc:8080: connection refused"},
+		},
+		{
+			name:     "nil probe result",
+			endpoint: endpoint,
+			prober:   &mockProber{hasProbeRes: true},
+			want:     verdict{Reason: "ProbeFailed", Message: "Health probe returned nil result for http://svc.xmc:8080"},
+		},
+		{
+			name:     "unhealthy without message",
+			endpoint: endpoint,
+			prober:   &mockProber{probeRes: &HealthProbeResult{}},
+			want:     verdict{Reason: "ProbeUnhealthy", Message: "Health probe unhealthy for http://svc.xmc:8080"},
+		},
+		{
+			name:     "unhealthy with message",
+			endpoint: endpoint,
+			prober:   &mockProber{probeRes: &HealthProbeResult{Message: "HTTP 503 (unhealthy status)"}},
+			want:     verdict{Reason: "ProbeUnhealthy", Message: "HTTP 503 (unhealthy status)"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &Reconciler{prober: tt.prober}
+			ok, reason, msg := r.verifyEndpointHealth(context.Background(), tt.endpoint)
+			if diff := cmp.Diff(tt.want, verdict{OK: ok, Reason: reason, Message: msg}); diff != "" {
+				t.Errorf("verifyEndpointHealth() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
