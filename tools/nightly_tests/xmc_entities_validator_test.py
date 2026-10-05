@@ -746,6 +746,57 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 ],
             )
 
+    def test_validate_work_unit_jobsets(self) -> None:
+        job = SimpleNamespace(
+            name="demo-worker-1",
+            replicas=1,
+            init_containers=[],
+            sidecars=[],
+            spec=SimpleNamespace(name="primary-worker"),
+        )
+        wu = SimpleNamespace(
+            name="experiments/10/workUnits/1",
+            executable=SimpleNamespace(
+                jobset=SimpleNamespace(jobs=[job]),
+                HasField=lambda f: f == "jobset",
+            ),
+        )
+        stub = mock.MagicMock()
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu])
+        summaries = xmc_entities_validator.validate_work_unit_jobsets(
+            stub=stub,
+            xid="10",
+            expected_jobs=[{"name": "demo-worker-1", "replicas": 1}],
+        )
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(summaries[0]["name"], "demo-worker-1")
+
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[])
+        with self.assertRaisesRegex(AssertionError, "No WorkUnits found for experiment 10"):
+            xmc_entities_validator.validate_work_unit_jobsets(
+                stub=stub,
+                xid="10",
+                expected_jobs=[{"name": "demo-worker-1", "replicas": 1}],
+            )
+
+    def test_validate_dashboard_chart_data_timeout_includes_duration(self) -> None:
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.query_dashboard_http",
+            return_value={"chartIds": []},
+        ):
+            with self.assertRaises(AssertionError) as ctx:
+                xmc_entities_validator.validate_dashboard_chart_data(
+                    base_endpoint="http://localhost:8080",
+                    dashboard_id="exp_22_training_overview",
+                    timeout_sec=0.05,  # type: ignore[arg-type]
+                    poll_interval_sec=0.01,  # type: ignore[arg-type]
+                    strict_required=True,
+                )
+            self.assertIn(
+                "Dashboard GetChartData failed after 0.05s (exp_22_training_overview):",
+                str(ctx.exception),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

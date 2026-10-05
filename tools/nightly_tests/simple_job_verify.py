@@ -72,7 +72,7 @@ def _assert_all_work_unit_specs(stub: Any, xid: str) -> None:
     """Fetches raw work units and validates protobuf specifications for all units."""
     expected_work_units = common.resolve_expected_work_units(DEFAULT_WORK_UNITS)
     expected_queue = common.get_flag(FLAGS, "expected_queue", DEFAULT_QUEUE)
-    print("\n[3/3] Validating 100% Protobuf specifications for each WorkUnit...", flush=True)
+    print("\n[Step 3] Validating 100% Protobuf specifications for each WorkUnit...", flush=True)
     req = xmc_entities_validator._make_req("ListWorkUnitsRequest", parent=f"experiments/{xid}")
     raw_work_units = list(getattr(stub.ListWorkUnits(req), "work_units", []))
     if len(raw_work_units) != expected_work_units:
