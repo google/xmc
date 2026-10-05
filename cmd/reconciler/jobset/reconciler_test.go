@@ -748,9 +748,9 @@ func TestActuatorReconcilerFinalizer_PatchErrors(t *testing.T) {
 			wantErrorCount: 0,
 		},
 		{
-			name:           "Conflict",
-			patchErr:       &k8serrors.StatusError{ErrStatus: metav1.Status{Reason: metav1.StatusReasonConflict}},
-			wantResult:     ctrl.Result{Requeue: true},
+			name:           "InvalidPreconditionFailed",
+			patchErr:       &k8serrors.StatusError{ErrStatus: metav1.Status{Reason: metav1.StatusReasonInvalid}},
+			wantResult:     ctrl.Result{RequeueAfter: finalizerPatchRetryDelay},
 			wantErr:        false,
 			wantErrorCount: 0,
 		},

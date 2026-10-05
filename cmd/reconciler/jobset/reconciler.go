@@ -332,6 +332,11 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 	return ctrl.Result{}, nil
 }
 
+// finalizerPatchRetryDelay is the delay before retrying finalizer removal when
+// the RFC 6902 JSON Patch test precondition fails (HTTP 422 Invalid) due to a
+// concurrent metadata.finalizers edit.
+const finalizerPatchRetryDelay = 100 * time.Millisecond
+
 func (r *Reconciler) handlePatchError(ctx context.Context, jobSet *v1alpha2.JobSet, err error) (ctrl.Result, error) {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
@@ -339,11 +344,13 @@ func (r *Reconciler) handlePatchError(ctx context.Context, jobSet *v1alpha2.JobS
 		logging.Info(ctx, "JobSet not found while trying to patch finalizer, assuming already deleted.", "namespace", jobSet.Namespace)
 		return ctrl.Result{}, nil
 	}
-	if apierrors.IsConflict(err) {
-		// Requeue without returning an error so expected conflicts are not counted
+	if apierrors.IsInvalid(err) {
+		// For JSON Patch, a failed `test` precondition (concurrent finalizer list
+		// edit or stale cache index) is rejected by the API server with 422 Invalid.
+		// Requeue after a short delay without returning an error so it is not counted
 		// in reconcileErrorsTotal or logged at ERROR by controller-runtime.
-		logging.Debug(ctx, "Conflict patching finalizer for JobSet, requeuing.", "namespace", jobSet.Namespace)
-		return ctrl.Result{Requeue: true}, nil
+		logging.Debug(ctx, "Finalizer patch precondition failed for JobSet, requeuing.", "namespace", jobSet.Namespace)
+		return ctrl.Result{RequeueAfter: finalizerPatchRetryDelay}, nil
 	}
 	logging.Error(ctx, "Failed to patch finalizer for JobSet", "namespace", jobSet.Namespace, "error", err)
 	return ctrl.Result{}, fmt.Errorf("failed to patch finalizer for JobSet %s/%s: %w", jobSet.Namespace, jobSet.Name, err)
