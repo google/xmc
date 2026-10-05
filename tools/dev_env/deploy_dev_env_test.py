@@ -843,54 +843,72 @@ image_tag: latest
     @patch("time.sleep")
     def test_step_verify_success(self, mock_sleep, mock_run):
         cred_res = MagicMock()
-        verify_res = MagicMock()
         wait_res = MagicMock()
+        verify_res = MagicMock()
         cert_res = MagicMock()
         cert_res.stdout = "ACTIVE\n"
 
-        mock_run.side_effect = [cred_res, verify_res, wait_res, cert_res]
+        mock_run.side_effect = [cred_res, wait_res, verify_res, cert_res]
 
         deploy_dev_env.step_verify(self.valid_config, self.dns_project, self.dns_zone)
 
         self.assertEqual(mock_run.call_count, 4)
-        mock_run.assert_any_call(
+        mock_run.assert_has_calls(
             [
-                "gcloud",
-                "container",
-                "clusters",
-                "get-credentials",
-                "xmc-xmc-dev-dev",
-                "--region=us-central1",
-                "--project=my-project",
+                call(
+                    [
+                        "gcloud",
+                        "container",
+                        "clusters",
+                        "get-credentials",
+                        "xmc-xmc-dev-dev",
+                        "--region=us-central1",
+                        "--project=my-project",
+                    ]
+                ),
+                call(
+                    [
+                        "kubectl",
+                        "wait",
+                        "--for=condition=Programmed",
+                        "gateway/xmc-gateway",
+                        "-n",
+                        "xmc",
+                        "--timeout=300s",
+                    ]
+                ),
+                call(
+                    [sys.executable, "./deploy/ctk_v2/verify_xmc.py"],
+                    env=ANY,
+                    log_on_error=False,
+                ),
+                call(
+                    [
+                        "gcloud",
+                        "certificate-manager",
+                        "certificates",
+                        "describe",
+                        "xmc-cert-dev",
+                        "--project=my-project",
+                        "--format=value(managed.state)",
+                    ],
+                    capture_output=True,
+                    log_on_error=False,
+                ),
             ]
         )
-        mock_run.assert_any_call(
-            [sys.executable, "./deploy/ctk_v2/verify_xmc.py"], env=ANY, log_on_error=False
+
+    @patch("tools.dev_env.deploy_dev_env.run_command")
+    def test_step_verify_propagates_failure(self, mock_run):
+        cred_res = MagicMock()
+        wait_res = MagicMock()
+        verify_err = subprocess.CalledProcessError(
+            1, [sys.executable, "./deploy/ctk_v2/verify_xmc.py"]
         )
-        mock_run.assert_any_call(
-            [
-                "kubectl",
-                "wait",
-                "--for=condition=Programmed",
-                "gateway/xmc-gateway",
-                "-n",
-                "xmc",
-                "--timeout=300s",
-            ]
-        )
-        mock_run.assert_any_call(
-            [
-                "gcloud",
-                "certificate-manager",
-                "certificates",
-                "describe",
-                "xmc-cert-dev",
-                "--project=my-project",
-                "--format=value(managed.state)",
-            ],
-            capture_output=True,
-            log_on_error=False,
-        )
+        mock_run.side_effect = [cred_res, wait_res, verify_err]
+
+        with self.assertRaises(subprocess.CalledProcessError):
+            deploy_dev_env.step_verify(self.valid_config, self.dns_project, self.dns_zone)
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     def test_wait_for_gateway_programmed_success(self, mock_run):

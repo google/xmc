@@ -128,8 +128,37 @@ def _run_command(cmd: list[str]) -> str:
         return ""
 
 
-def _check_k8s_resources() -> None:
-    """Queries and displays basic GKE Kubernetes resource statuses."""
+def _are_pods_healthy(pods_out: str) -> bool:
+    """Verifies that pod table output contains healthy pods.
+
+    Args:
+      pods_out: Output string from `kubectl get pods -n xmc`.
+
+    Returns:
+      True if at least one pod is present and all active pods are Running
+      (N/N ready) or Completed/Succeeded/Terminating/Evicted, False otherwise.
+    """
+    pods_count = 0
+    for line in pods_out.strip().splitlines()[1:]:
+        cols = line.split()
+        if len(cols) < 3 or not re.match(r"^\d+/\d+$", cols[1]):
+            continue
+        ready_col, status_col = cols[1], cols[2]
+        if status_col in ("Completed", "Succeeded", "Terminating", "Evicted"):
+            continue
+        ready, _, total = ready_col.partition("/")
+        if status_col != "Running" or ready != total or ready == "0":
+            return False
+        pods_count += 1
+    return pods_count > 0
+
+
+def _check_k8s_resources() -> bool:
+    """Queries and displays basic GKE Kubernetes resource statuses.
+
+    Returns:
+      True if pod query succeeded and all pods are healthy, False otherwise.
+    """
     steps = [
         ("1. Pod Status", ["kubectl", "get", "pods", "-n", "xmc"]),
         ("2. Service Status", ["kubectl", "get", "svc", "-n", "xmc"]),
@@ -141,15 +170,24 @@ def _check_k8s_resources() -> None:
         ),
     ]
 
+    pods_out = ""
     for header, cmd in steps:
         print(f"\n--- {header} ---")
         out = _run_command(cmd)
+        if header == "1. Pod Status":
+            pods_out = out
         if out:
             sys.stdout.write(out)
 
+    return _are_pods_healthy(pods_out)
 
-def _check_connectivity() -> None:
-    """Inspects GKE Gateway IP address and actuator pod port forwarding info."""
+
+def _check_connectivity() -> bool:
+    """Inspects GKE Gateway IP address and actuator pod port forwarding info.
+
+    Returns:
+      True if both Gateway IP and actuator pod name are non-empty, False otherwise.
+    """
     print("\n--- 6. Test Connectivity ---")
     gw_ip_cmd = [
         "kubectl",
@@ -180,6 +218,7 @@ def _check_connectivity() -> None:
     actuator_pod = _run_command(actuator_pod_cmd).strip()
     print(f"Run: kubectl port-forward -n xmc {actuator_pod} 8080:8080")
     print("In another terminal run: curl http://localhost:8080/actuate/health")
+    return bool(gw_ip and actuator_pod)
 
 
 def _resolve_log_monitor_deployment_enabled(
@@ -216,7 +255,7 @@ def _check_log_monitor(
     region: str | None,
     project_id: str | None,
     log_monitor_deployment_enabled: bool = False,
-) -> None:
+) -> bool:
     """Checks readiness status of Cloud Run Log Monitor service when enabled.
 
     Args:
@@ -224,17 +263,20 @@ def _check_log_monitor(
       region: Target GCP region.
       project_id: Target GCP project ID.
       log_monitor_deployment_enabled: Whether Log Monitor runs as a GKE Deployment.
+
+    Returns:
+      True if Log Monitor check passes (or is handled by GKE deployment), False otherwise.
     """
     print("\n--- 7. Cloud Run Log Monitor Status ---")
     if log_monitor_deployment_enabled:
         print(
             "ℹ️ Skipping Cloud Run Log Monitor check: log_monitor_deployment_enabled is true (checked via GKE Pod Status)."
         )
-        return
+        return True
 
     if not environment or not region or not project_id:
         print("⚠️ Skipping Log Monitor check: ENVIRONMENT, REGION, or PROJECT_ID is not set.")
-        return
+        return False
 
     svc_name = f"xmc-log-monitor-{environment}"
     print(f"Checking Cloud Run Service: {svc_name} in {region}...")
@@ -258,38 +300,36 @@ def _check_log_monitor(
 
     if not status:
         print(f"❌ Log Monitor Cloud Run service {svc_name} not found or status is unavailable.")
-        return
+        return False
 
     print(f"Service Status (Ready): {status}")
 
     if status != "True":
         print("❌ Log Monitor Cloud Run service is NOT Ready.")
-        return
+        return False
 
     print("✅ Log Monitor Cloud Run service is running and Ready.")
+    return True
 
 
-def _check_components(enable_components: bool) -> None:
+def _check_components(enable_components: bool) -> bool:
     """Checks status of foundational component controllers if enabled.
 
     Args:
       enable_components: Whether foundational component controllers are enabled.
+
+    Returns:
+      True if component controller check succeeds or is skipped.
     """
     print("\n--- 8. Component Controllers Status ---")
     if not enable_components:
         print("ℹ️ Skipping Component Controllers check: enable_components is false.")
-        return
+        return True
 
     print(
         "ℹ️ Foundational Component Controllers enabled. Controller verification will be active once controller manifests land."
     )
-    # Controller pod checks will be activated once Task 1.2 Helm templates land:
-    # cmd = ["kubectl", "get", "pods", "-n", "xmc", "-l", "app=components-controller"]
-    # out = _run_command(cmd)
-    # if out:
-    #     sys.stdout.write(out)
-    # else:
-    #     print("❌ No component controller pods found or failed to query cluster.")
+    return True
 
 
 def main() -> int:
@@ -305,13 +345,15 @@ def main() -> int:
 
     env, region, project_id, enable_components = _resolve_config()
     log_monitor_deployment_enabled = _resolve_log_monitor_deployment_enabled()
-    _check_k8s_resources()
-    _check_connectivity()
-    _check_log_monitor(env, region, project_id, log_monitor_deployment_enabled)
-    _check_components(enable_components)
+    checks = [
+        _check_k8s_resources(),
+        _check_connectivity(),
+        _check_log_monitor(env, region, project_id, log_monitor_deployment_enabled),
+        _check_components(enable_components),
+    ]
 
     print("=========================================")
-    return 0
+    return 0 if all(checks) else 1
 
 
 if __name__ == "__main__":
