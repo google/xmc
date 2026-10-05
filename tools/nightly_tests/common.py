@@ -24,7 +24,7 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any
 
 from absl import app, flags
@@ -213,6 +213,156 @@ def print_success_summary(
         val_str = str(list(val)) if isinstance(val, (list, tuple)) else str(val)
         print(f"  • {label:<24}: {val_str}")
     print("=================================================================\n")
+
+
+def assert_experiment(
+    stub: Any,
+    xid: str,
+    expected_title_pattern: str,
+    step_label: str = "1/3",
+) -> Any:
+    """Asserts experiment existence and title pattern."""
+    print(f"\n[{step_label}] Asserting Experiment metadata for XID {xid}...")
+    experiment = xmc_entities_validator.validate_experiment(
+        stub=stub,
+        xid=xid,
+        expected_title_pattern=expected_title_pattern,
+    )
+    print(f"  [✓] Experiment Name   : {experiment.name}")
+    print(f"  [✓] Experiment Title  : {experiment.title}")
+    return experiment
+
+
+def assert_work_units(
+    stub: Any,
+    xid: str,
+    expected_count: int,
+    expected_queue: str,
+    expected_worker_names: Sequence[str],
+    timeout_sec: int,
+    step_label: str = "2/3",
+) -> list[dict[str, Any]]:
+    """Asserts work unit execution state, count, worker names, and queue mapping."""
+    print(
+        f"\n[{step_label}] Asserting {expected_count} WorkUnit(s) targeted at '{expected_queue}'..."
+    )
+    wu_results = xmc_entities_validator.validate_work_units(
+        stub=stub,
+        xid=xid,
+        expected_count=expected_count,
+        expected_queue=expected_queue,
+        expected_worker_names=expected_worker_names,
+        timeout_sec=timeout_sec,
+    )
+    for wu in wu_results:
+        print(
+            f"  [✓] WorkUnit #{wu['id']}: Worker='{wu['worker_name']}', "
+            f"Queue='{wu['queue']}', State='{wu['state']}'"
+        )
+    return wu_results
+
+
+def assert_work_unit_jobsets(
+    stub: Any,
+    xid: str,
+    expected_jobs: Sequence[dict[str, Any]] | None,
+    step_label: str = "3/3",
+) -> list[dict[str, Any]]:
+    """Fetches WorkUnits and validates JobSet topology and container definitions."""
+    if not expected_jobs:
+        return []
+    print(f"\n[{step_label}] Validating JobSet specifications...")
+    req = xmc_entities_validator._make_req("ListWorkUnitsRequest", parent=f"experiments/{xid}")
+    raw_work_units = list(getattr(stub.ListWorkUnits(req), "work_units", []))
+    if not raw_work_units:
+        raise AssertionError(f"No WorkUnits found for experiment {xid}.")
+    job_results = xmc_entities_validator.validate_jobsets(
+        work_unit=raw_work_units[0],
+        expected_jobs=expected_jobs,
+    )
+    for job in job_results:
+        print(
+            f"  [✓] Job '{job['name']}': Replicas={job['replicas']}, "
+            f"PrimaryContainer='{job['primary_container']}'"
+        )
+    return job_results
+
+
+def assert_clickhouse_metrics(
+    xid: str,
+    expected_metric_names: Sequence[str] | set[str],
+    expected_min_rows: int = 1,
+    timeout_sec: int = 60,
+    step_label: str = "4/5",
+) -> dict[str, Any]:
+    """Polls and asserts metric row arrival and value validity directly via ClickHouse SQL."""
+    endpoint = resolve_clickhouse_endpoint(get_flag(FLAGS, "clickhouse_endpoint"))
+    strict_required = bool(get_flag(FLAGS, "require_clickhouse_metrics", False))
+    print(f"\n[{step_label}] Validating ClickHouse SQL metric rows for XID {xid} via {endpoint}...")
+    return xmc_entities_validator.validate_clickhouse_metrics(
+        endpoint=endpoint,
+        xid=xid,
+        expected_metric_names=expected_metric_names,
+        expected_min_rows=expected_min_rows,
+        timeout_sec=timeout_sec,
+        strict_required=strict_required,
+    )
+
+
+def assert_dashboard_chart_data(
+    dashboard_id: str,
+    min_hydrated_points: int = 1,
+    timeout_sec: int = 20,
+    strict_required: bool | None = None,
+    step_label: str = "5/5",
+) -> dict[str, Any]:
+    """Verifies Dashboard metadata and GetChartData hydration via Dashboard Service."""
+    raw = (
+        get_flag(FLAGS, "dashboard_endpoint")
+        or os.environ.get("XMC_DASHBOARD_ENDPOINT")
+        or os.environ.get("DASHBOARD_ENDPOINT")
+    )
+    dash_ep = resolve_dashboard_endpoint(raw)
+    if strict_required is None:
+        strict_required = bool(
+            get_flag(FLAGS, "require_clickhouse_metrics", False)
+            or raw
+            or os.environ.get("XMANAGER_UI_URL")
+        )
+    print(f"\n[{step_label}] Verifying Dashboard '{dashboard_id}' & GetChartData via {dash_ep}...")
+    return xmc_entities_validator.validate_dashboard_chart_data(
+        base_endpoint=dash_ep,
+        dashboard_id=dashboard_id,
+        min_hydrated_points=min_hydrated_points,
+        timeout_sec=timeout_sec,
+        strict_required=strict_required,
+    )
+
+
+def verify_standard_workload(
+    argv: Sequence[str],
+    banner_title: str,
+    summary_title: str,
+    expected_title_pattern: str,
+    expected_jobs: Sequence[dict[str, Any]] | None = None,
+    expected_worker_names: Sequence[str] | None = None,
+    extra_step: Callable[[Any, str], None] | None = None,
+) -> None:
+    """Orchestrates standard Experiment, WorkUnit, and JobSet verification."""
+    validate_argv(argv)
+    xid, queue = parse_xid(get_flag(FLAGS, "xid")), get_flag(FLAGS, "expected_queue", "cpu-queue")
+    workers = expected_worker_names or ([expected_jobs[0]["name"]] if expected_jobs else [])
+    timeout, n_wus = get_flag(FLAGS, "timeout_sec", 600), resolve_expected_work_units(len(workers))
+    endpoint = get_flag(FLAGS, "endpoint")
+    print_banner(banner_title, {"XID": xid, "Title": expected_title_pattern, "Queue": queue})
+    with handle_verification_errors(), ess_channel_context(endpoint) as (stub, _):
+        exp = assert_experiment(stub, xid, expected_title_pattern, "1/3")
+        assert_work_units(stub, xid, n_wus, queue, workers, timeout, "2/3")
+        assert_work_unit_jobsets(stub, xid, expected_jobs, "3/3")
+        if extra_step:
+            extra_step(stub, xid)
+        ui = f"{resolve_ui_base_url()}/experiments/{xid}"
+        print_success_summary(summary_title, {"Experiment": exp.name, "Queue": queue, "UI": ui})
 
 
 def run_main(main_fn: Any) -> None:

@@ -264,6 +264,141 @@ class CommonTest(unittest.TestCase):
             common.run_main(mock_fn)
             mock_run.assert_called_once_with(mock_fn)
 
+    def test_assert_experiment(self) -> None:
+        mock_stub = mock.MagicMock()
+        mock_exp = SimpleNamespace(name="experiments/10", title="Test Exp")
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.validate_experiment",
+            return_value=mock_exp,
+        ) as mock_val:
+            res = common.assert_experiment(mock_stub, "10", "Test")
+            self.assertEqual(res, mock_exp)
+            mock_val.assert_called_once_with(
+                stub=mock_stub, xid="10", expected_title_pattern="Test"
+            )
+
+    def test_assert_work_units(self) -> None:
+        mock_stub = mock.MagicMock()
+        wu_list = [{"id": "1", "worker_name": "w1", "queue": "cpu-queue", "state": "COMPLETED"}]
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.validate_work_units",
+            return_value=wu_list,
+        ) as mock_val:
+            res = common.assert_work_units(mock_stub, "10", 1, "cpu-queue", ["w1"], 60)
+            self.assertEqual(res, wu_list)
+            mock_val.assert_called_once_with(
+                stub=mock_stub,
+                xid="10",
+                expected_count=1,
+                expected_queue="cpu-queue",
+                expected_worker_names=["w1"],
+                timeout_sec=60,
+            )
+
+    def test_assert_work_unit_jobsets(self) -> None:
+        mock_stub = mock.MagicMock()
+        raw_wu = SimpleNamespace(name="experiments/10/workUnits/1")
+        mock_stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[raw_wu])
+        expected_jobs = [{"name": "w1", "replicas": 1}]
+        job_results = [{"name": "w1", "replicas": 1, "primary_container": "w1"}]
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.validate_jobsets",
+            return_value=job_results,
+        ) as mock_val:
+            res = common.assert_work_unit_jobsets(mock_stub, "10", expected_jobs)
+            self.assertEqual(res, job_results)
+            mock_val.assert_called_once_with(work_unit=raw_wu, expected_jobs=expected_jobs)
+
+        mock_stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[])
+        with self.assertRaises(AssertionError):
+            common.assert_work_unit_jobsets(mock_stub, "10", expected_jobs)
+        self.assertEqual(common.assert_work_unit_jobsets(mock_stub, "10", None), [])
+
+    def test_verify_standard_workload(self) -> None:
+        mock_stub = mock.MagicMock()
+        mock_channel = mock.MagicMock()
+        mock_exp = SimpleNamespace(name="experiments/10", title="Test")
+        wu_list = [{"id": "1", "worker_name": "w1", "queue": "cpu-queue", "state": "COMPLETED"}]
+        extra_step = mock.MagicMock()
+        with (
+            mock.patch.object(
+                common, "get_flag", side_effect=lambda _, k, d=None: "10" if k == "xid" else d
+            ),
+            mock.patch(
+                "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+                return_value=(mock_stub, mock_channel),
+            ),
+            mock.patch.object(common, "assert_experiment", return_value=mock_exp) as m_exp,
+            mock.patch.object(common, "assert_work_units", return_value=wu_list) as m_wu,
+            mock.patch.object(common, "assert_work_unit_jobsets", return_value=[]) as m_js,
+        ):
+            common.verify_standard_workload(
+                ["script.py"],
+                banner_title="Banner",
+                summary_title="Summary",
+                expected_title_pattern="Test",
+                expected_jobs=[{"name": "w1", "replicas": 1}],
+                extra_step=extra_step,
+            )
+            m_exp.assert_called_once()
+            m_wu.assert_called_once()
+            m_js.assert_called_once()
+            extra_step.assert_called_once_with(mock_stub, "10")
+
+    def test_assert_clickhouse_metrics(self) -> None:
+        expected_res = {"total_rows": 50, "metrics": []}
+        with (
+            mock.patch.object(
+                common,
+                "get_flag",
+                side_effect=lambda _, k, d=None: True if k == "require_clickhouse_metrics" else d,
+            ),
+            mock.patch.object(
+                common, "resolve_clickhouse_endpoint", return_value="http://127.0.0.1:8123"
+            ),
+            mock.patch(
+                "tools.nightly_tests.xmc_entities_validator.validate_clickhouse_metrics",
+                return_value=expected_res,
+            ) as mock_val,
+        ):
+            res = common.assert_clickhouse_metrics(
+                "23", expected_metric_names=["train/loss"], expected_min_rows=50, timeout_sec=120
+            )
+            self.assertEqual(res, expected_res)
+            mock_val.assert_called_once_with(
+                endpoint="http://127.0.0.1:8123",
+                xid="23",
+                expected_metric_names=["train/loss"],
+                expected_min_rows=50,
+                timeout_sec=120,
+                strict_required=True,
+            )
+
+    def test_assert_dashboard_chart_data(self) -> None:
+        expected_res = {"dashboard_id": "exp_23_overview", "chart_id": "c1", "total_points": 5}
+        with (
+            mock.patch.object(common, "get_flag", return_value=None),
+            mock.patch.dict(
+                "os.environ", {"XMANAGER_UI_URL": "https://xmc.example.com"}, clear=True
+            ),
+            mock.patch.object(
+                common, "resolve_dashboard_endpoint", return_value="https://xmc.example.com"
+            ),
+            mock.patch(
+                "tools.nightly_tests.xmc_entities_validator.validate_dashboard_chart_data",
+                return_value=expected_res,
+            ) as mock_val,
+        ):
+            res = common.assert_dashboard_chart_data("exp_23_overview", min_hydrated_points=2)
+            self.assertEqual(res, expected_res)
+            mock_val.assert_called_once_with(
+                base_endpoint="https://xmc.example.com",
+                dashboard_id="exp_23_overview",
+                min_hydrated_points=2,
+                timeout_sec=20,
+                strict_required=True,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

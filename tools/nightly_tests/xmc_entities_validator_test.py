@@ -686,7 +686,12 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             self.assertEqual(res["total_rows"], 0)
 
     def test_validate_dashboard_chart_data_success(self) -> None:
-        dash_response = {"chartIds": ["dashboards/exp_22_training_overview/charts/loss_chart"]}
+        dash_response = {
+            "chartIds": [
+                "dashboards/exp_22_training_overview/charts/loss_chart",
+                "dashboards/exp_22_training_overview/charts/throughput_chart",
+            ]
+        }
         chart_response = {
             "plotsData": [
                 {
@@ -696,8 +701,10 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 }
             ]
         }
+        queried_urls: list[str] = []
 
         def mock_query(url: str, **kwargs: Any) -> Any:
+            queried_urls.append(url)
             if url.endswith(":getData"):
                 return chart_response
             return dash_response
@@ -713,7 +720,15 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             )
             self.assertEqual(res["dashboard_id"], "exp_22_training_overview")
             self.assertEqual(res["chart_id"], "loss_chart")
-            self.assertEqual(res["total_points"], 2)
+            self.assertEqual(res["total_points"], 4)
+            self.assertEqual(
+                queried_urls,
+                [
+                    "http://localhost:8080/v1/dashboards/exp_22_training_overview",
+                    "http://localhost:8080/v1/dashboards/exp_22_training_overview/charts/loss_chart:getData",
+                    "http://localhost:8080/v1/dashboards/exp_22_training_overview/charts/throughput_chart:getData",
+                ],
+            )
 
 
 if __name__ == "__main__":
