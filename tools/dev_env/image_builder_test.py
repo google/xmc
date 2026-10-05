@@ -95,6 +95,13 @@ class ImageBuilderTest(unittest.TestCase):
             specs[1], ("cmd/actuator", "actuator_image_tarball", "actuator_image:latest")
         )
 
+    def test_get_service_specs_components_maps_to_xmc_bridge(self) -> None:
+        specs = self.builder.get_service_specs(services=["components", "xmc_bridge"])
+        self.assertEqual(
+            specs,
+            [("cmd/xmc_bridge", "xmc_bridge_image_tarball", "xmc_bridge_image:latest")],
+        )
+
     def test_get_service_specs_invalid_name(self) -> None:
         with self.assertRaises(ValueError):
             self.builder.get_service_specs(services=["../invalid_path"])

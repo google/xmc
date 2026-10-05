@@ -191,6 +191,37 @@ python3 tools/dev_env/dev_env.py down
 > [!TIP]
 > Configuration parameters (such as project ID, Spanner instance, and microservices) can be configured via `deploy/local/xmanager-cloud-local.yaml`, environment variables, or CLI flags. See the [Configuration Architecture Guide](../../tools/dev_env/README.md#configuration-architecture-localdevconfig) for the full configuration reference and resolution precedence rules.
 
+### Developing & Testing XMC Components (`xmc_bridge` & `stable-2026a` Profile)
+
+To enable foundational XMC Components (`components.xmc.dev` CRD, `xmc-bridge-deployment`, and the `stable-2026a` profile):
+
+```bash
+# Local KinD environment with components enabled
+python3 tools/dev_env/dev_env.py up --enable-components
+
+# Hot-reload xmc_bridge after modifying cmd/xmc_bridge/ or pkg/components/
+python3 tools/dev_env/dev_env.py reload xmc_bridge
+
+# GKE Developer Environment deploy or upgrade with components enabled
+python3 tools/dev_env/deploy_dev_env.py --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
+  --dns-project <DNS_PROJECT> --dns-zone <DNS_ZONE> --enable-components
+python3 tools/dev_env/upgrade_dev_env.py --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
+  --enable-components
+```
+
+To run `cmd/xmc_bridge` directly on your workstation against a cluster:
+
+```bash
+# 1. Port-forward the in-cluster gRPC service (or run ComponentManagementService locally)
+kubectl port-forward svc/grpc-service -n xmc 50051:50051 &
+
+# 2. Run xmc_bridge locally using your active kubeconfig
+bazel run //cmd/xmc_bridge -- \
+  --cms-address=localhost:50051 \
+  --namespace=xmc \
+  --release-name=xmc
+```
+
 ---
 
 ## 6. Fast Reload Architecture & Optimization Roadmap

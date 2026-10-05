@@ -172,6 +172,7 @@ class ChangeDetectorTest(unittest.TestCase):
             (["cmd/rod_data_provider/jobs.go"], ["rod_data_provider"]),
             (["cmd/log_monitor/monitor.go"], ["log_monitor"]),
             (["cmd/components/main.go"], ["components"]),
+            (["cmd/xmc_bridge/main.go"], ["components"]),
             (["cmd/actuator/BUILD.bazel"], ["actuator"]),
         ]
 

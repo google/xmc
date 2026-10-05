@@ -69,12 +69,32 @@ type RedpandaReport struct {
 	Error           string           `json:"error,omitempty"`
 }
 
+type ComponentStatus struct {
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+	State   string `json:"state"`
+	Ready   bool   `json:"ready"`
+	Healthy bool   `json:"healthy"`
+	Message string `json:"message,omitempty"`
+}
+
+type ComponentsReport struct {
+	Status     DiagnosticStatus  `json:"status"`
+	Healthy    bool              `json:"healthy"`
+	Skipped    bool              `json:"skipped,omitempty"`
+	Namespace  string            `json:"namespace,omitempty"`
+	Components []ComponentStatus `json:"components,omitempty"`
+	Reason     string            `json:"reason,omitempty"`
+	Error      string            `json:"error,omitempty"`
+}
+
 // DiagReport aggregates diagnostic results across all infrastructure components.
 type DiagReport struct {
 	OverallStatus DiagnosticStatus `json:"overall_status"`
 	Timestamp     time.Time        `json:"timestamp"`
 	ClickHouse    ClickHouseReport `json:"clickhouse"`
 	Redpanda      RedpandaReport   `json:"redpanda"`
+	Components    ComponentsReport `json:"components"`
 }
 
 // ClickHouseQuerier abstracts ClickHouse database queries for testing.

@@ -30,8 +30,10 @@ from tools.common.tool_utils import (
     _bootstrap_venv,
     build_and_push_images,
     configure_docker_auth,
+    deploy_component_profile,
     ensure_venv,
     load_and_validate_config,
+    parse_bool_flag,
     parse_yaml_vars,
     run_tool,
 )
@@ -451,6 +453,70 @@ class TestBuildAndPushImages(unittest.TestCase):
         config = replace(self.valid_config, image_registry="")
         with self.assertRaises(ValueError):
             build_and_push_images(config)
+
+
+class TestComponentProfileAndFlags(unittest.TestCase):
+    """Tests for parse_bool_flag and deploy_component_profile."""
+
+    def setUp(self):
+        self.base_config = DeploymentConfig(
+            project_id="my-project",
+            deployment_name="xmc-dev",
+            region="us-central1",
+            environment="dev",
+            image_registry="us-central1-docker.pkg.dev/my-project/xmc",
+            image_tag="latest",
+        )
+
+    def test_parse_bool_flag(self):
+        self.assertTrue(parse_bool_flag(True))
+        self.assertFalse(parse_bool_flag(False))
+        self.assertTrue(parse_bool_flag("true"))
+        self.assertTrue(parse_bool_flag("1"))
+        self.assertTrue(parse_bool_flag("YES"))
+        self.assertFalse(parse_bool_flag("false"))
+        self.assertFalse(parse_bool_flag("0"))
+        self.assertFalse(parse_bool_flag(None))
+
+    @patch.dict(os.environ, {"ENABLE_COMPONENTS": "true"})
+    def test_load_config_enable_components_env_override(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cfg_path = Path(tmp_dir) / "cfg.yaml"
+            cfg_path.write_text(
+                "vars:\n"
+                "  deployment_name: xmc-dev\n"
+                "  project_id: my-project\n"
+                "  environment: dev\n"
+                "  region: us-central1\n"
+                "  domain_name: example.com\n"
+                "  image_registry: us-central1-docker.pkg.dev/my-project/xmc\n"
+                "  image_tag: latest\n",
+                encoding="utf-8",
+            )
+            cfg = load_and_validate_config(str(cfg_path))
+            self.assertTrue(cfg.enable_components)
+
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_disabled(self, mock_run):
+        deploy_component_profile(self.base_config)
+        mock_run.assert_not_called()
+
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_enabled(self, mock_run):
+        cfg = replace(self.base_config, enable_components=True)
+        deploy_component_profile(cfg)
+        mock_run.assert_called_once_with(
+            [
+                "helm",
+                "upgrade",
+                "--install",
+                "xmc-profile",
+                "./deploy/profiles/stable-2026a",
+                "-n",
+                "xmc",
+                "--wait",
+            ]
+        )
 
 
 if __name__ == "__main__":

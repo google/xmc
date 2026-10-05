@@ -40,6 +40,9 @@ class ServiceResolverTest(unittest.TestCase):
         self.assertEqual(resolve_service_name("dashboard"), "dashboard_service")
         self.assertEqual(resolve_service_name("health"), "health_service")
         self.assertEqual(resolve_service_name("comp"), "components")
+        self.assertEqual(resolve_service_name("bridge"), "components")
+        self.assertEqual(resolve_service_name("xmc_bridge"), "components")
+        self.assertEqual(resolve_service_name("xmc-bridge"), "components")
         self.assertEqual(resolve_service_name("monitor"), "log_monitor")
         self.assertEqual(resolve_service_name("ingestion"), "ingestion_gateway")
 
@@ -65,6 +68,8 @@ class ServiceResolverTest(unittest.TestCase):
         self.assertEqual(service_to_k8s_deployment_name("ui"), "ui-deployment")
         self.assertEqual(service_to_k8s_deployment_name("gw"), "gateway-proxy")
         self.assertEqual(service_to_k8s_deployment_name("ingestion_gateway"), "gateway-proxy")
+        self.assertEqual(service_to_k8s_deployment_name("components"), "xmc-bridge-deployment")
+        self.assertEqual(service_to_k8s_deployment_name("xmc_bridge"), "xmc-bridge-deployment")
         self.assertEqual(
             service_to_k8s_deployment_name("already-a-deployment"), "already-a-deployment"
         )
