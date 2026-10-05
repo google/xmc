@@ -16,7 +16,6 @@ package bridge
 
 import (
 	"context"
-	"math/rand/v2"
 	"time"
 
 	"helm.sh/helm/v3/pkg/release"
@@ -71,9 +70,6 @@ func (m *K8sHelmManager) recordRepairAttempt(ctx context.Context, ref ComponentR
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.repairNeeded, key)
-	if m.repairBackoff == nil {
-		m.repairBackoff = make(map[string]repairAttempt)
-	}
 	attempt := m.repairBackoff[key]
 	attempt.count++
 	attempt.last = now
@@ -89,11 +85,7 @@ func (m *K8sHelmManager) repairDelay(attempt int) time.Duration {
 	if shift := attempt - 1; shift < 16 && repairBackoffBase<<shift < repairBackoffMax {
 		delay = repairBackoffBase << shift
 	}
-	jitter := rand.Float64
-	if m.jitter != nil {
-		jitter = m.jitter
-	}
-	return delay + time.Duration(float64(delay)*repairBackoffJitter*jitter())
+	return delay + time.Duration(float64(delay)*repairBackoffJitter*m.jitter())
 }
 
 // clearRepairLocked drops the component's repair marker and backoff. Callers must hold m.mu.

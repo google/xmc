@@ -60,7 +60,7 @@ func (m *K8sHelmManager) releaseHealth(ctx context.Context, ref ComponentRef) (b
 	verifiedAt, cached := m.healthVerifiedAt[ref.String()]
 	m.mu.RUnlock()
 	if cached && time.Since(verifiedAt) < healthCacheTTL {
-		return true, ReasonComponentHealthy, fmt.Sprintf("Helm release %q deployed", releaseName)
+		return true, ReasonComponentHealthy, deployedMessage(releaseName)
 	}
 	rel, err := m.runner.Status(ctx, releaseName, ref.Namespace)
 	healthy, reason, msg := evaluateReleaseHealth(releaseName, rel, err)
@@ -74,14 +74,13 @@ func (m *K8sHelmManager) releaseHealth(ctx context.Context, ref ComponentRef) (b
 // releaseResourceHealth reports drift when objects rendered by a deployed release no longer exist in the cluster.
 // Lookup failures are transient: the deployed verdict is kept so an API blip never triggers a re-upgrade.
 func (m *K8sHelmManager) releaseResourceHealth(ctx context.Context, releaseName string, rel *release.Release) (bool, string, string) {
-	deployedMsg := fmt.Sprintf("Helm release %q deployed", releaseName)
 	missing, err := m.runner.MissingResources(ctx, rel)
 	if err != nil {
 		logging.Warn(ctx, "Failed to verify Helm release resources; trusting deployed status", "release", releaseName, "err", err)
-		return true, ReasonComponentHealthy, deployedMsg
+		return true, ReasonComponentHealthy, deployedMessage(releaseName)
 	}
 	if len(missing) == 0 {
-		return true, ReasonComponentHealthy, deployedMsg
+		return true, ReasonComponentHealthy, deployedMessage(releaseName)
 	}
 	return false, ReasonHelmReleaseDrifted, fmt.Sprintf("Helm release %q is missing %d resource(s) (%s); the bridge re-applies the release, rate-limited by repair backoff", releaseName, len(missing), strings.Join(missing, ", "))
 }
@@ -94,9 +93,6 @@ func (m *K8sHelmManager) recordReleaseHealth(ctx context.Context, ref ComponentR
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if healthy {
-		if m.healthVerifiedAt == nil {
-			m.healthVerifiedAt = make(map[string]time.Time)
-		}
 		m.healthVerifiedAt[ref.String()] = now
 		m.resetRepairBackoffIfStableLocked(key, now)
 		return
@@ -107,9 +103,6 @@ func (m *K8sHelmManager) recordReleaseHealth(ctx context.Context, ref ComponentR
 	if attempt, ok := m.repairBackoff[key]; ok && now.Before(attempt.notBefore) {
 		logging.Info(ctx, "Component Helm release needs repair; deferring re-upgrade until repair backoff elapses", "name", ref.Name, "namespace", ref.Namespace, "reason", reason, "attempts", attempt.count, "notBefore", attempt.notBefore)
 		return
-	}
-	if m.repairNeeded == nil {
-		m.repairNeeded = make(map[string]bool)
 	}
 	m.repairNeeded[key] = true
 	logging.Warn(ctx, "Component Helm release needs repair; scheduling re-upgrade at current generation", "name", ref.Name, "namespace", ref.Namespace, "reason", reason)
@@ -130,9 +123,15 @@ func evaluateReleaseHealth(releaseName string, rel *release.Release, statusErr e
 	if status != release.StatusDeployed {
 		return false, ReasonHelmReleaseNotReady, fmt.Sprintf("Helm release %q status is %q", releaseName, status)
 	}
-	return true, ReasonComponentHealthy, fmt.Sprintf("Helm release %q deployed", releaseName)
+	return true, ReasonComponentHealthy, deployedMessage(releaseName)
 }
 
+// deployedMessage is the condition message reported for a healthy, deployed release.
+func deployedMessage(releaseName string) string {
+	return fmt.Sprintf("Helm release %q deployed", releaseName)
+}
+
+// releaseStatus returns the release's status, or StatusUnknown when the release or its info is missing.
 func releaseStatus(rel *release.Release) release.Status {
 	if rel == nil || rel.Info == nil {
 		return release.StatusUnknown
