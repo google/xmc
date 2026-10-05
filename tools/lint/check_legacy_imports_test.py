@@ -118,6 +118,7 @@ class CollectMetricsTest(unittest.TestCase):
                 '- "-envelope_enabled=false"\n- "-ess_tls_cert_file="\n'
             ),
             "deploy/ctk_v2/m/main.tf": '"-alsologtostderr",\n"-log_keyword=x",\n',
+            "deploy/helm/templates/e.yaml": "args: ['--notracelog']\ncommand: run -vmodule=x\n",
             "cmd/ui/app/a.ts": "import { X } from 'javascript/closure/format/format';\n",
             "sdks/p.py": "from third_party.xmanager_cloud.x import y\n",
             "third_party/grpc_gateway.BUILD": "",
@@ -142,7 +143,7 @@ class CollectMetricsTest(unittest.TestCase):
                 "gazelle_resolve_directives": 1,
                 "go_legacy_root_imports": 3,
                 "go_unresolved_module_imports": 1,
-                "helm_google3_flags": 4,
+                "helm_google3_flags": 6,
                 "proto_third_party_paths": 2,
                 "python_legacy_paths": 1,
                 "third_party_files": 1,
