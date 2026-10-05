@@ -24,6 +24,12 @@ import (
 	"xmanager_cloud/logging/logging"
 )
 
+// asyncUpgradeTimeout bounds a single asynchronous Helm upgrade executed by the background worker.
+const asyncUpgradeTimeout = 5 * time.Minute
+
+// errManagerStopped is returned for upgrades requested after Close.
+var errManagerStopped = errors.New("helm manager is stopped")
+
 // upgradeRequest encapsulates a component upgrade request for debounced asynchronous execution.
 type upgradeRequest struct {
 	ref       ComponentRef
@@ -48,9 +54,6 @@ func (m *K8sHelmManager) setUpgradeErr(ref ComponentRef, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.healthVerifiedAt, ref.String())
-	if m.upgradeErrs == nil {
-		m.upgradeErrs = make(map[string]error)
-	}
 	if err != nil {
 		m.upgradeErrs[ref.String()] = err
 		return
@@ -58,13 +61,16 @@ func (m *K8sHelmManager) setUpgradeErr(ref ComponentRef, err error) {
 	delete(m.upgradeErrs, ref.String())
 }
 
+// failUpgrade records err as ref's last upgrade error and returns it.
+func (m *K8sHelmManager) failUpgrade(ref ComponentRef, err error) error {
+	m.setUpgradeErr(ref, err)
+	return err
+}
+
 // markUpgradePending records a new in-flight async upgrade for ref and returns its sequence number.
 func (m *K8sHelmManager) markUpgradePending(ref ComponentRef) uint64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.pendingUpgrades == nil {
-		m.pendingUpgrades = make(map[string]uint64)
-	}
 	m.upgradeSeq++
 	m.pendingUpgrades[ref.String()] = m.upgradeSeq
 	delete(m.healthVerifiedAt, ref.String())
@@ -92,28 +98,18 @@ func (m *K8sHelmManager) GetUpgradeError(ref ComponentRef) error {
 	if m == nil {
 		return nil
 	}
-	targetNamespace, err := m.validateAndResolve(ref)
-	if err != nil {
+	if _, err := m.validateAndResolve(ref); err != nil {
 		return err
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.upgradeErrs[ComponentRef{Namespace: targetNamespace, Name: ref.Name}.String()]
+	return m.upgradeErrs[ref.String()]
 }
 
+// acquireUpgradeLock takes the semaphore that serializes Helm release operations, giving up when ctx is done.
 func (m *K8sHelmManager) acquireUpgradeLock(ctx context.Context) error {
-	if m == nil {
-		return nil
-	}
-	m.mu.Lock()
-	if m.upgradeSem == nil {
-		m.upgradeSem = make(chan struct{}, 1)
-	}
-	sem := m.upgradeSem
-	m.mu.Unlock()
-
 	select {
-	case sem <- struct{}{}:
+	case m.upgradeSem <- struct{}{}:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -121,96 +117,87 @@ func (m *K8sHelmManager) acquireUpgradeLock(ctx context.Context) error {
 }
 
 func (m *K8sHelmManager) releaseUpgradeLock() {
-	if m == nil {
-		return
-	}
-	m.mu.RLock()
-	sem := m.upgradeSem
-	m.mu.RUnlock()
-	if sem != nil {
-		select {
-		case <-sem:
-		default:
-		}
+	select {
+	case <-m.upgradeSem:
+	default:
 	}
 }
 
-func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, values map[string]any) error {
-	if m == nil {
-		return nil
-	}
-	if ref.Namespace == "" {
-		err := errors.New("component namespace must not be empty")
-		m.setUpgradeErr(ref, err)
-		return err
-	}
-	releaseName := ComponentReleaseName(ref.Name)
-	if releaseName == "" {
-		err := errors.New("helm release name must not be empty; cannot actuate release upgrade")
-		m.setUpgradeErr(ref, err)
-		return err
-	}
-	if m.runner == nil {
-		err := errors.New("helm action runner is uninitialized; cannot actuate release upgrade")
-		m.setUpgradeErr(ref, err)
-		return err
-	}
-	targetNamespace := ref.Namespace
-	resolvedChartPath := m.resolveChartPathForComponent(ref)
-
+// registerProducer reports whether the manager still accepts upgrades and, if so, registers the caller with
+// producerWg so Close waits for it. Callers that get true must call m.producerWg.Done when finished.
+func (m *K8sHelmManager) registerProducer() bool {
 	m.stopMu.RLock()
+	defer m.stopMu.RUnlock()
 	if m.stopped {
-		m.stopMu.RUnlock()
-		return errors.New("helm manager is stopped")
+		return false
 	}
 	m.producerWg.Add(1)
-	m.stopMu.RUnlock()
+	return true
+}
+
+func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, values map[string]any) error {
+	if ref.Namespace == "" {
+		return m.failUpgrade(ref, errors.New("component namespace must not be empty"))
+	}
+	if ComponentReleaseName(ref.Name) == "" {
+		return m.failUpgrade(ref, errors.New("helm release name must not be empty; cannot actuate release upgrade"))
+	}
+	if m.runner == nil {
+		return m.failUpgrade(ref, errors.New("helm action runner is uninitialized; cannot actuate release upgrade"))
+	}
+	resolvedChartPath := m.resolveChartPathForComponent(ref)
+	if !m.registerProducer() {
+		return errManagerStopped
+	}
 	defer m.producerWg.Done()
 
 	if m.syncExecution {
-		return m.executeSyncUpgrade(ctx, ref, targetNamespace, resolvedChartPath, values)
+		return m.executeSyncUpgrade(ctx, ref, ref.Namespace, resolvedChartPath, values)
 	}
-
 	if err := ctx.Err(); err != nil {
-		m.setUpgradeErr(ref, err)
-		return err
+		return m.failUpgrade(ref, err)
 	}
+	return m.enqueueUpgrade(ctx, upgradeRequest{ref: ref, namespace: ref.Namespace, chartPath: resolvedChartPath, values: values})
+}
 
-	seq := m.markUpgradePending(ref)
+// enqueueUpgrade hands req to the async worker and marks it pending until the worker records its outcome.
+func (m *K8sHelmManager) enqueueUpgrade(ctx context.Context, req upgradeRequest) error {
+	req.seq = m.markUpgradePending(req.ref)
 	select {
 	case <-m.stopCh:
-		m.clearUpgradePending(ref, seq)
-		return errors.New("helm manager is stopped")
-	case m.upgradeChan <- upgradeRequest{ref: ref, namespace: targetNamespace, chartPath: resolvedChartPath, values: values, seq: seq}:
+		m.clearUpgradePending(req.ref, req.seq)
+		return errManagerStopped
+	case m.upgradeChan <- req:
 		return nil
 	case <-ctx.Done():
-		m.clearUpgradePending(ref, seq)
-		m.setUpgradeErr(ref, ctx.Err())
-		return ctx.Err()
+		m.clearUpgradePending(req.ref, req.seq)
+		return m.failUpgrade(req.ref, ctx.Err())
 	}
 }
 
 func (m *K8sHelmManager) executeSyncUpgrade(ctx context.Context, ref ComponentRef, targetNamespace, chartPath string, values map[string]any) error {
 	m.setUpgradeErr(ref, nil)
-	releaseName := ComponentReleaseName(ref.Name)
-
 	if err := m.acquireUpgradeLock(ctx); err != nil {
-		m.setUpgradeErr(ref, err)
-		return err
+		return m.failUpgrade(ref, err)
 	}
 	defer m.releaseUpgradeLock()
 
 	if err := ctx.Err(); err != nil {
-		m.setUpgradeErr(ref, err)
+		return m.failUpgrade(ref, err)
+	}
+	err := m.upgradeRelease(ctx, ComponentReleaseName(ref.Name), targetNamespace, chartPath, values)
+	m.setUpgradeErr(ref, err)
+	return err
+}
+
+// upgradeRelease loads the component chart at chartPath (nil selects the runner's default chart) and upgrades the
+// release with values. Callers must serialize release operations.
+func (m *K8sHelmManager) upgradeRelease(ctx context.Context, releaseName, namespace, chartPath string, values map[string]any) error {
+	chartObj, err := m.loadComponentChart(chartPath)
+	if err != nil {
 		return err
 	}
-	chartObj, loadErr := m.loadComponentChart(chartPath)
-	if loadErr != nil {
-		m.setUpgradeErr(ref, loadErr)
-		return loadErr
-	}
-	_, err := m.runner.Upgrade(ctx, releaseName, targetNamespace, chartObj, values)
-	m.setUpgradeErr(ref, err)
+	_, err = m.runner.Upgrade(ctx, releaseName, namespace, chartObj, values)
 	return err
 }
 
@@ -220,8 +207,7 @@ func (m *K8sHelmManager) uninstallRelease(ctx context.Context, releaseName, targ
 		return nil
 	}
 	if err := m.acquireUpgradeLock(ctx); err != nil {
-		m.setUpgradeErr(resolved, err)
-		return err
+		return m.failUpgrade(resolved, err)
 	}
 	defer m.releaseUpgradeLock()
 
@@ -250,26 +236,28 @@ func (m *K8sHelmManager) syncUpgradeWorker() {
 			if !ok {
 				return
 			}
-			batch := []upgradeRequest{req}
-			timer := time.NewTimer(m.debounceDuration)
-		debounceLoop:
-			for {
-				select {
-				case <-m.stopCh:
-					timer.Stop()
-					break debounceLoop
-				case nextReq, ok := <-m.upgradeChan:
-					if !ok {
-						timer.Stop()
-						break debounceLoop
-					}
-					batch = append(batch, nextReq)
-				case <-timer.C:
-					break debounceLoop
-				}
+			m.processUpgradeBatch(m.collectDebouncedBatch(req))
+		}
+	}
+}
+
+// collectDebouncedBatch gathers the requests that arrive within debounceDuration of first. It returns early when
+// the manager stops or the upgrade channel closes.
+func (m *K8sHelmManager) collectDebouncedBatch(first upgradeRequest) []upgradeRequest {
+	batch := []upgradeRequest{first}
+	timer := time.NewTimer(m.debounceDuration)
+	defer timer.Stop()
+	for {
+		select {
+		case <-m.stopCh:
+			return batch
+		case req, ok := <-m.upgradeChan:
+			if !ok {
+				return batch
 			}
-			timer.Stop()
-			m.processUpgradeBatch(batch)
+			batch = append(batch, req)
+		case <-timer.C:
+			return batch
 		}
 	}
 }
@@ -316,23 +304,14 @@ func (m *K8sHelmManager) processUpgradeBatch(batch []upgradeRequest) {
 func (m *K8sHelmManager) executeComponentUpgrade(req upgradeRequest) {
 	// Deferred so the marker is cleared only after setUpgradeErr records the outcome (and even on panic).
 	defer m.clearUpgradePending(req.ref, req.seq)
-	parentCtx := context.Background()
-	if m != nil && m.ctx != nil {
-		parentCtx = m.ctx
-	}
-	execCtx, cancel := context.WithTimeout(parentCtx, 5*time.Minute)
+	execCtx, cancel := context.WithTimeout(m.ctx, asyncUpgradeTimeout)
 	defer cancel()
 
 	releaseName := ComponentReleaseName(req.ref.Name)
 	upgradeErr := func() error {
 		m.upgradeMu.Lock()
 		defer m.upgradeMu.Unlock()
-		chartObj, loadErr := m.loadComponentChart(req.chartPath)
-		if loadErr != nil {
-			return loadErr
-		}
-		_, err := m.runner.Upgrade(execCtx, releaseName, req.namespace, chartObj, req.values)
-		return err
+		return m.upgradeRelease(execCtx, releaseName, req.namespace, req.chartPath, req.values)
 	}()
 
 	m.setUpgradeErr(req.ref, upgradeErr)
