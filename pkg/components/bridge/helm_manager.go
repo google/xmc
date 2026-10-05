@@ -1102,10 +1102,10 @@ func (m *K8sHelmManager) hydrateNamespaceFromConfigMap(ctx context.Context, name
 		m.activeState = make(map[string]bool)
 	}
 	for k, rawJSON := range cm.Data {
-		if !strings.HasSuffix(k, ".json") {
+		compName, ok := strings.CutSuffix(k, componentValuesKeySuffix)
+		if !ok {
 			continue
 		}
-		compName := strings.TrimSuffix(k, ".json")
 		stateKey := componentKey(namespace, compName)
 		if _, exists := m.activeState[stateKey]; exists {
 			continue
