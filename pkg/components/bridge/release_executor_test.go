@@ -282,24 +282,23 @@ func TestK8sHelmManager_ExecuteBatch_UpgradePanicUnlock(t *testing.T) {
 		WithSyncExecution(true),
 	)
 	defer mgr.Close()
+	ref := ComponentRef{Namespace: "xmc", Name: "panic-comp"}
 
 	defer func() {
 		r := recover()
 		if r == nil {
 			t.Fatal("expected panic from panicHelmActionRunner")
 		}
-		// Verify m.upgradeMu is unlocked by successfully acquiring it with TryLock
-		if !mgr.upgradeMu.TryLock() {
-			t.Error("expected upgradeMu to be unlocked after panic")
-		} else {
-			mgr.upgradeMu.Unlock()
+		if held := len(mgr.upgradeSem); held != 0 {
+			t.Errorf("upgrade lock held after panic: len(upgradeSem) = %d, want 0", held)
 		}
 	}()
 
 	mgr.executeComponentUpgrade(upgradeRequest{
-		ref:       ComponentRef{Namespace: "xmc", Name: "panic-comp"},
+		ref:       ref,
 		namespace: "xmc",
 		values:    map[string]any{"key": "val"},
+		seq:       mgr.markUpgradePending(ref),
 	})
 }
 
