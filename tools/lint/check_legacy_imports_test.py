@@ -163,12 +163,17 @@ class BaselineTest(unittest.TestCase):
                 cli.write_baseline(path, {"a": 2}, {"a": 1})
             self.assertFalse(path.exists())
 
-    def test_write_baseline_allows_decrease_and_initial_creation(self):
+    def test_write_baseline_allows_decrease_initial_creation_and_new_keys(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "b.json"
             cli.write_baseline(path, {"a": 2}, {})
-            cli.write_baseline(path, {"a": 1}, {"a": 2})
-            self.assertEqual(json.loads(path.read_text()), {"a": 1})
+            cli.write_baseline(path, {"a": 1, "b": 5}, {"a": 2})
+            self.assertEqual(json.loads(path.read_text()), {"a": 1, "b": 5})
+
+    def test_compare_flags_removed_metric_as_stale(self):
+        diff = cli.compare_to_baseline({"a": 1}, {"a": 1, "gone": 3})
+        self.assertEqual(diff["improved"], {"gone": {"baseline": 3, "current": 0}})
+        self.assertEqual(diff["regressed"], {})
 
     def test_load_baseline_missing_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
