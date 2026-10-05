@@ -22,6 +22,7 @@ exports_files([
     "__init__.py",
     "blueprint_compiler.py",
     "change_detector.py",
+    "chart_fingerprint.py",
     "chart_sanitizer.py",
     "cluster_diagnostics.py",
     "config.py",
@@ -42,6 +43,7 @@ py_library(
     srcs = ["blueprint_compiler.py"],
     imports = ["../.."],
     deps = [
+        ":chart_fingerprint_lib",
         "//tools/common:tool_utils",
     ],
 )
@@ -52,6 +54,21 @@ py_test(
     imports = ["../.."],
     deps = [
         ":blueprint_compiler_lib",
+    ],
+)
+
+py_library(
+    name = "chart_fingerprint_lib",
+    srcs = ["chart_fingerprint.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "chart_fingerprint_test",
+    srcs = ["chart_fingerprint_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":chart_fingerprint_lib",
     ],
 )
 

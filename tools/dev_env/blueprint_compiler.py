@@ -26,8 +26,10 @@ import shutil
 from pathlib import Path
 
 from tools.common.tool_utils import log_info, run_command
+from tools.dev_env.chart_fingerprint import compute_chart_content_hash
 
 BLUEPRINT_PATH = "deploy/ctk_v2/xmanager-cloud.yaml"
+HELM_CHART_DIR = Path("deploy/helm")
 DEFAULT_OUTPUT_DIR = Path("ctk-out")
 
 
@@ -79,12 +81,17 @@ def compile_blueprint(
 ) -> None:
     """Purges staged artifacts and re-compiles the XMC blueprint.
 
+    The umbrella chart's content hash is passed as the
+    `helm_chart_content_hash` blueprint variable so that template-only chart
+    changes alter the Helm release inputs and trigger a real Helm upgrade.
+
     Args:
         config_path: Path to the deployment configuration YAML.
         deployment_name: Deployment name used to locate the staging directory.
         output_dir: Cluster Toolkit output directory.
     """
     purge_staged_artifacts(output_dir, deployment_name)
+    chart_hash = compute_chart_content_hash(HELM_CHART_DIR)
     run_command(
         [
             "./cluster-toolkit/gcluster",
@@ -94,6 +101,8 @@ def compile_blueprint(
             config_path,
             "-o",
             str(output_dir),
+            "--vars",
+            f"helm_chart_content_hash={chart_hash}",
             "-l",
             "WARNING",
             "-w",
