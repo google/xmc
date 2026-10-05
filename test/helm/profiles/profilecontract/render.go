@@ -239,10 +239,15 @@ func ComponentOverrides(name string, vals map[string]any) map[string]any {
 	return map[string]any{"components": map[string]any{name: vals}}
 }
 
-// errorContains returns an error unless err is non-nil and its message contains want.
+// errorContains returns an error unless err is non-nil and its message contains want. When err
+// is nil, the returned message says the render succeeded so that callers matching on it cannot
+// mistake the echoed want for a real render failure.
 func errorContains(err error, want string) error {
-	if err == nil || !strings.Contains(err.Error(), want) {
-		return fmt.Errorf("Render() error = %v, want error containing %q", err, want)
+	if err == nil {
+		return fmt.Errorf("render succeeded, want error containing %q", want)
+	}
+	if !strings.Contains(err.Error(), want) {
+		return fmt.Errorf("render error = %v, want error containing %q", err, want)
 	}
 	return nil
 }

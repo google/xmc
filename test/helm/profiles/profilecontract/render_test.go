@@ -157,15 +157,20 @@ func TestErrorContains(t *testing.T) {
 	tests := []struct {
 		name    string
 		err     error
-		wantErr bool
+		wantErr string
 	}{
-		{name: "nil error", err: nil, wantErr: true},
-		{name: "other error", err: errors.New("boom"), wantErr: true},
-		{name: "matching error", err: errors.New("render: want-this failed"), wantErr: false},
+		{name: "nil error", err: nil, wantErr: `render succeeded, want error containing "want-this"`},
+		{name: "unrelated error", err: errors.New("boom"), wantErr: `render error = boom, want error containing "want-this"`},
+		{name: "matching error", err: errors.New("render: want-this failed")},
 	}
 	for _, tt := range tests {
-		if got := errorContains(tt.err, "want-this"); (got != nil) != tt.wantErr {
-			t.Errorf("%s: errorContains() = %v, want error: %t", tt.name, got, tt.wantErr)
+		got := errorContains(tt.err, "want-this")
+		gotMsg := ""
+		if got != nil {
+			gotMsg = got.Error()
+		}
+		if gotMsg != tt.wantErr {
+			t.Errorf("%s: errorContains() = %q, want %q", tt.name, gotMsg, tt.wantErr)
 		}
 	}
 }

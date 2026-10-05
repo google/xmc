@@ -152,16 +152,16 @@ func TestContractChecks_DetectViolations(t *testing.T) {
 		{name: "profile default differs from standalone chart", wantCheck: "MatchesStandaloneDefaults", wantErr: "redpanda differs from standalone chart", mutate: func(t *testing.T, s *Spec) {
 			replaceInFile(t, *s, "values.yaml", "redpanda:\n    enabled: false", "redpanda:\n    enabled: true")
 		}},
-		{name: "schema accepts reserved keys", wantCheck: "RejectsInvalidInstalls", wantErr: `want error containing "componentClass"`, mutate: func(t *testing.T, s *Spec) {
+		{name: "schema accepts reserved keys", wantCheck: "RejectsInvalidInstalls", wantErr: `render succeeded, want error containing "componentClass"`, mutate: func(t *testing.T, s *Spec) {
 			replaceInFile(t, *s, "values.schema.json", `"enum": ["enabled",`, `"enum": ["componentClass", "chartVersion", "enabled",`)
 		}},
-		{name: "schema accepts any namespace", wantCheck: "RejectsInvalidInstalls", wantErr: `want error containing "namespace"`, mutate: func(t *testing.T, s *Spec) {
+		{name: "schema accepts any namespace", wantCheck: "RejectsInvalidInstalls", wantErr: `render succeeded, want error containing "namespace"`, mutate: func(t *testing.T, s *Spec) {
 			replaceInFile(t, *s, "values.schema.json", `"pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"`, `"pattern": ".*"`)
 		}},
-		{name: "release-name guard removed", wantCheck: "RejectsInvalidInstalls", wantErr: "xmc-cmp-* component release", mutate: func(t *testing.T, s *Spec) {
+		{name: "release-name guard removed", wantCheck: "RejectsInvalidInstalls", wantErr: `render succeeded, want error containing "must not be installed as an xmc-cmp-* component release"`, mutate: func(t *testing.T, s *Spec) {
 			replaceInFile(t, *s, "templates/components.yaml", `hasPrefix "xmc-cmp-"`, `hasPrefix "never-"`)
 		}},
-		{name: "missing component file tolerated", wantCheck: "ComponentFileErrors", wantErr: "required file", mutate: func(t *testing.T, s *Spec) {
+		{name: "missing component file tolerated", wantCheck: "ComponentFileErrors", wantErr: `render succeeded, want error containing "required file \"components/redpanda/values.yaml\" is missing"`, mutate: func(t *testing.T, s *Spec) {
 			replaceInFile(t, *s, "templates/_helpers.tpl", "{{- if not ($root.Files.Glob $path) -}}", "{{- if false -}}")
 		}},
 		{name: "component directory missing from catalog", wantCheck: "CatalogIsConsistent", wantErr: "catalog differs from components/ directories", mutate: func(t *testing.T, s *Spec) {
@@ -193,6 +193,22 @@ func TestContractChecks_DetectViolations(t *testing.T) {
 				t.Errorf("%s error = %v, want error containing %q", tt.wantCheck, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestRejectsInvalidInstalls_UnrelatedFailureIsNotReportedAsSuccess guards the matrix rows above:
+// a profile whose templates fail to parse rejects every invalid install for the wrong reason, so
+// the check must report mismatched errors and never claim that a render succeeded.
+func TestRejectsInvalidInstalls_UnrelatedFailureIsNotReportedAsSuccess(t *testing.T) {
+	t.Parallel()
+	s := copyProfile(t)
+	replaceInFile(t, s, "templates/components.yaml", "{{- end }}", "{{- end }}\n{{")
+	err := checkErrors(t, s, "RejectsInvalidInstalls")
+	if err == nil {
+		t.Fatal("RejectsInvalidInstalls error = nil, want errors for a profile that fails to parse")
+	}
+	if strings.Contains(err.Error(), "render succeeded") {
+		t.Errorf("RejectsInvalidInstalls error = %v, want no %q for a profile that fails to parse", err, "render succeeded")
 	}
 }
 
