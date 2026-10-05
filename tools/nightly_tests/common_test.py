@@ -366,13 +366,13 @@ class CommonTest(unittest.TestCase):
                 banner_title="Banner",
                 summary_title="Summary",
                 expected_title_pattern="Test",
-                expected_jobs=[{"name": "w1", "replicas": 1}],
+                expected_jobs=[{"name": "w1", "replicas": 1}, {"name": "w2", "replicas": 1}],
                 expected_artifact_types=["chart"],
                 expected_metric_names=["loss"],
                 extra_step=extra_step,
             )
             m_exp.assert_called_once()
-            m_wu.assert_called_once()
+            m_wu.assert_called_once_with(mock_stub, "10", 1, "cpu-queue", ["w1"], 600, "2/4")
             m_js.assert_called_once()
             m_art.assert_called_once()
             extra_step.assert_called_once_with(mock_stub, "10")
@@ -421,11 +421,14 @@ class CommonTest(unittest.TestCase):
                 return_value=expected_res,
             ) as mock_val,
         ):
-            res = common.assert_dashboard_chart_data("exp_23_overview", min_hydrated_points=2)
+            res = common.assert_dashboard_chart_data(
+                "exp_23_overview", min_hydrated_points=2, expected_chart_id="c1"
+            )
             self.assertEqual(res, expected_res)
             mock_val.assert_called_once_with(
                 base_endpoint="https://xmc.example.com",
                 dashboard_id="exp_23_overview",
+                expected_chart_id="c1",
                 min_hydrated_points=2,
                 timeout_sec=20,
                 strict_required=True,

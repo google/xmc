@@ -729,6 +729,22 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                     "http://localhost:8080/v1/dashboards/exp_22_training_overview/charts/throughput_chart:getData",
                 ],
             )
+            queried_urls.clear()
+            single_res = xmc_entities_validator.validate_dashboard_chart_data(
+                base_endpoint="http://localhost:8080",
+                dashboard_id="exp_22_training_overview",
+                expected_chart_id="dashboards/exp_22_training_overview/charts/throughput_chart",
+                timeout_sec=5,
+            )
+            self.assertEqual(single_res["chart_id"], "throughput_chart")
+            self.assertEqual(single_res["total_points"], 2)
+            self.assertEqual(
+                queried_urls,
+                [
+                    "http://localhost:8080/v1/dashboards/exp_22_training_overview",
+                    "http://localhost:8080/v1/dashboards/exp_22_training_overview/charts/throughput_chart:getData",
+                ],
+            )
 
     # =========================================================================
     # Phase 2: validate_artifacts Tests
