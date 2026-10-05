@@ -288,7 +288,9 @@ jobs:
           fi
 
       - name: 'Start Service Port-Forwards'
-        if: steps.filter-check.outputs.should_run == 'true' && matrix.example.requires_clickhouse == true
+        if: steps.filter-check.outputs.should_run == 'true' && (matrix.example.requires_clickhouse == true || matrix.example.id == 'xdash_dashboard')
+        env:
+          REQUIRES_CLICKHOUSE: '${{ matrix.example.requires_clickhouse }}'
         run: |
           set -euo pipefail
           # Bridge the external GitHub Actions runner to internal GKE ClusterIP services
@@ -312,7 +314,9 @@ jobs:
             fi
           }
           start_port_forward "Dashboard Service gRPC" "xmc" "dashboard-service" 50051
-          start_port_forward "ClickHouse HTTP" "xmc-metrics" "clickhouse" 8123
+          if [ "${REQUIRES_CLICKHOUSE:-}" = "true" ]; then
+            start_port_forward "ClickHouse HTTP" "xmc-metrics" "clickhouse" 8123
+          fi
 
       - name: 'Launch Example Workload'
         id: launch-example
