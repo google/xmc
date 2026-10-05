@@ -475,6 +475,7 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_images")
     @patch("tools.dev_env.deploy_dev_env.step_apis")
     @patch("tools.dev_env.deploy_dev_env.step_primary")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_compute")
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
     @patch("tools.dev_env.deploy_dev_env.step_prereqs")
@@ -487,6 +488,7 @@ image_tag: latest
         mock_prereqs,
         mock_gw_api,
         mock_compute,
+        mock_migrate,
         mock_primary,
         mock_apis,
         mock_images,
@@ -515,6 +517,7 @@ image_tag: latest
         mock_images.assert_called_once()
         mock_apis.assert_called_once()
         mock_primary.assert_called_once()
+        mock_migrate.assert_called_once()
         mock_compute.assert_called_once()
         mock_gw_api.assert_called_once()
         mock_prereqs.assert_called_once()
@@ -528,6 +531,7 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_images")
     @patch("tools.dev_env.deploy_dev_env.step_apis")
     @patch("tools.dev_env.deploy_dev_env.step_primary")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_compute")
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
     @patch("tools.dev_env.deploy_dev_env.step_prereqs")
@@ -540,6 +544,7 @@ image_tag: latest
         mock_prereqs,
         mock_gw_api,
         mock_compute,
+        mock_migrate,
         mock_primary,
         mock_apis,
         mock_images,
@@ -571,6 +576,7 @@ image_tag: latest
         mock_apis.assert_not_called()
 
         mock_primary.assert_called_once()
+        mock_migrate.assert_called_once()
         mock_compute.assert_called_once()
         mock_gw_api.assert_called_once()
         mock_prereqs.assert_called_once()
@@ -584,6 +590,7 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_images")
     @patch("tools.dev_env.deploy_dev_env.step_apis")
     @patch("tools.dev_env.deploy_dev_env.step_primary")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_compute")
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
     @patch("tools.dev_env.deploy_dev_env.step_prereqs")
@@ -596,6 +603,7 @@ image_tag: latest
         mock_prereqs,
         mock_gw_api,
         mock_compute,
+        mock_migrate,
         mock_primary,
         mock_apis,
         mock_images,
@@ -626,6 +634,7 @@ image_tag: latest
         mock_images.assert_not_called()
         mock_apis.assert_not_called()
         mock_primary.assert_not_called()
+        mock_migrate.assert_not_called()
 
         mock_compute.assert_called_once()
 
@@ -725,6 +734,35 @@ image_tag: latest
         mock_apply_dns.assert_called_once_with(
             "10.0.0.1", self.valid_config, self.dns_project, self.dns_zone
         )
+
+    @patch("tools.dev_env.deploy_dev_env.run_migration")
+    @patch("tools.dev_env.deploy_dev_env.get_migration_status")
+    def test_step_migrate_up_to_date(self, mock_status, mock_run_mig):
+        mock_status.side_effect = [(3, 3), (2, 2)]
+        deploy_dev_env.step_migrate(self.valid_config)
+        self.assertEqual(mock_status.call_count, 2)
+        mock_run_mig.assert_not_called()
+
+    @patch("tools.dev_env.deploy_dev_env.run_migration")
+    @patch("tools.dev_env.deploy_dev_env.get_migration_status")
+    def test_step_migrate_pending_migrations(self, mock_status, mock_run_mig):
+        mock_status.side_effect = [(1, 2), (2, 3)]
+        deploy_dev_env.step_migrate(self.valid_config)
+        mock_run_mig.assert_has_calls(
+            [
+                call(self.valid_config, "ess", "xmc-dev", "experiment-db-dev"),
+                call(self.valid_config, "xid", "xmc-dev", "xids-db-dev"),
+            ]
+        )
+
+    @patch("tools.dev_env.deploy_dev_env.run_migration")
+    @patch("tools.dev_env.deploy_dev_env.get_migration_status")
+    def test_step_migrate_failure_or_dirty(self, mock_status, mock_run_mig):
+        mock_status.side_effect = SystemExit(1)
+        with self.assertRaises(SystemExit) as cm:
+            deploy_dev_env.step_migrate(self.valid_config)
+        self.assertEqual(cm.exception.code, 1)
+        mock_run_mig.assert_not_called()
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     def test_step_gateway_api_not_enabled(self, mock_run):
@@ -853,6 +891,17 @@ image_tag: latest
             capture_output=True,
             log_on_error=False,
         )
+
+    @patch("tools.dev_env.deploy_dev_env.run_command")
+    def test_step_verify_propagates_failure(self, mock_run):
+        cred_res = MagicMock()
+        verify_err = subprocess.CalledProcessError(
+            1, [sys.executable, "./deploy/ctk_v2/verify_xmc.py"]
+        )
+        mock_run.side_effect = [cred_res, verify_err]
+
+        with self.assertRaises(subprocess.CalledProcessError):
+            deploy_dev_env.step_verify(self.valid_config, self.dns_project, self.dns_zone)
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     def test_wait_for_gateway_programmed_success(self, mock_run):

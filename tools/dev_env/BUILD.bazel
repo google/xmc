@@ -352,6 +352,7 @@ py_library(
     imports = ["../.."],
     deps = [
         ":blueprint_compiler_lib",
+        ":upgrade_dev_env_lib",
         "//tools/common:tool_utils",
     ],
 )
@@ -362,6 +363,7 @@ py_binary(
     imports = ["../.."],
     deps = [
         ":deploy_dev_env_lib",
+        ":upgrade_dev_env_lib",
         "//tools/common:tool_utils",
     ],
 )
@@ -372,6 +374,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":deploy_dev_env_lib",
+        ":upgrade_dev_env_lib",
         "//tools/common:tool_utils",
     ],
 )

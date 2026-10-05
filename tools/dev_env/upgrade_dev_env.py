@@ -204,12 +204,12 @@ def extract_migration_version(sql_files: list[Path]) -> int:
 
 
 def get_migration_status(
-    config: UpgradeConfig, migrations_dir: str, spanner_instance: str, db_name: str
+    config: DeploymentConfig, migrations_dir: str, spanner_instance: str, db_name: str
 ) -> tuple[int, int]:
     """Fetches local maximum SQL migration version and current database state.
 
     Args:
-      config: Loaded UpgradeConfig instance.
+      config: Loaded DeploymentConfig instance.
       migrations_dir: Relative migrations directory name ('ess' or 'xid').
       spanner_instance: Target Spanner instance name.
       db_name: Target Spanner database name.
@@ -252,12 +252,12 @@ def get_migration_status(
 
 
 def run_migration(
-    config: UpgradeConfig, migrations_dir: str, spanner_instance: str, db_name: str
+    config: DeploymentConfig, migrations_dir: str, spanner_instance: str, db_name: str
 ) -> None:
     """Executes database schema migrations via Bazel command.
 
     Args:
-      config: Loaded UpgradeConfig instance.
+      config: Loaded DeploymentConfig instance.
       migrations_dir: Migration directory name ('ess' or 'xid').
       spanner_instance: Target Spanner instance ID.
       db_name: Target Spanner database ID.

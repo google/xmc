@@ -45,6 +45,10 @@ from tools.common.tool_utils import (  # noqa: E402
     run_command,
 )
 from tools.dev_env.blueprint_compiler import compile_blueprint  # noqa: E402
+from tools.dev_env.upgrade_dev_env import (  # noqa: E402
+    get_migration_status,
+    run_migration,
+)
 
 # ANSI Color Codes
 BOLD = "\033[1m"
@@ -67,6 +71,7 @@ STEPS = [
     "images",
     "apis",
     "primary",
+    "migrate",
     "compute",
     "gateway-api",
     "prereqs",
@@ -519,6 +524,35 @@ def step_primary(config: DeploymentConfig, dns_project: str, dns_zone: str) -> N
     apply_dns_records(gateway_ip, config, dns_project, dns_zone)
 
 
+def step_migrate(config: DeploymentConfig) -> None:
+    """Checks and applies pending Spanner database migrations.
+
+    Args:
+        config: The loaded DeploymentConfig instance.
+    """
+    log_info("Checking for pending database migrations...")
+    spanner_instance = f"xmc-{config.environment}"
+    ess_db = f"experiment-db-{config.environment}"
+    xid_db = f"xids-db-{config.environment}"
+
+    current_ess, max_ess = get_migration_status(config, "ess", spanner_instance, ess_db)
+    current_xid, max_xid = get_migration_status(config, "xid", spanner_instance, xid_db)
+
+    log_info(f"ESS database version: current={current_ess}, available={max_ess}")
+    log_info(f"XID database version: current={current_xid}, available={max_xid}")
+
+    if max_ess <= current_ess and max_xid <= current_xid:
+        log_success("No pending migrations found. Databases are up to date.")
+        return
+
+    log_info("Applying pending Spanner migrations...")
+    if max_ess > current_ess:
+        run_migration(config, "ess", spanner_instance, ess_db)
+    if max_xid > current_xid:
+        run_migration(config, "xid", spanner_instance, xid_db)
+    log_success("Migrations applied successfully.")
+
+
 def step_compute(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Deploys the compute group (GKE Cluster and Node pools).
 
@@ -723,14 +757,11 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
         "REGION": config.region,
         "PROJECT_ID": config.project_id,
     }
-    try:
-        run_command(
-            [sys.executable, "./deploy/ctk_v2/verify_xmc.py"],
-            env=env_vars,
-            log_on_error=False,
-        )
-    except subprocess.CalledProcessError:
-        print("Diagnostic script reported warnings.")
+    run_command(
+        [sys.executable, "./deploy/ctk_v2/verify_xmc.py"],
+        env=env_vars,
+        log_on_error=False,
+    )
 
     _wait_for_gateway_programmed()
     cert_name = f"xmc-cert-{config.environment}"
@@ -757,6 +788,7 @@ def run_deployment(args: argparse.Namespace) -> None:
         "images": lambda: step_images(config),
         "apis": lambda: step_apis(config, args.dns_project, args.dns_zone),
         "primary": lambda: step_primary(config, args.dns_project, args.dns_zone),
+        "migrate": lambda: step_migrate(config),
         "compute": lambda: step_compute(config, args.dns_project, args.dns_zone),
         "gateway-api": lambda: step_gateway_api(config, args.dns_project, args.dns_zone),
         "prereqs": lambda: step_prereqs(config, args.dns_project, args.dns_zone),
