@@ -45,7 +45,7 @@ compat_go_library(
         "//pkg/auth/oauth2/mock",
         "//pkg/components/cms",
         "//pkg/components/store",
-        "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//cloudidentity/v1beta1",
         "@org_golang_google_api//option",

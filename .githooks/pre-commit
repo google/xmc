@@ -189,8 +189,6 @@ check_license() {
 
   echo "--> Running License Header Check (addlicense)..."
   local ignores=(
-    -ignore "third_party/**"
-    -ignore "**/third_party/**"
     -ignore "**/node_modules/**"
     -ignore "**/.angular/**"
     -ignore "**/dist/**"

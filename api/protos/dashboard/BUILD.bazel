@@ -61,12 +61,12 @@ proto_library(
 
 go_proto_compiler(
     name = "go_grpc_gateway",
-    plugin = "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:protoc-gen-grpc-gateway",
+    plugin = "@com_github_grpc_ecosystem_grpc_gateway_v2//protoc-gen-grpc-gateway",
     suffix = ".pb.gw.go",
     visibility = ["//visibility:public"],
     deps = [
-        "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
-        "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:utilities",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//utilities",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//grpclog:go_default_library",
         "@org_golang_google_grpc//metadata:go_default_library",
