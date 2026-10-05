@@ -505,18 +505,11 @@ class TestComponentProfileAndFlags(unittest.TestCase):
     def test_deploy_component_profile_enabled(self, mock_run):
         cfg = replace(self.base_config, enable_components=True)
         deploy_component_profile(cfg)
-        mock_run.assert_called_once_with(
-            [
-                "helm",
-                "upgrade",
-                "--install",
-                "xmc-profile",
-                "./deploy/profiles/stable-2026a",
-                "-n",
-                "xmc",
-                "--wait",
-            ]
-        )
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        self.assertEqual(cmd[:4], ["helm", "upgrade", "--install", "xmc-profile"])
+        self.assertTrue(cmd[4].endswith("deploy/profiles/stable-2026a"))
+        self.assertEqual(cmd[5:], ["-n", "xmc", "--wait"])
 
 
 if __name__ == "__main__":
