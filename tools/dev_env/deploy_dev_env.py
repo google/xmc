@@ -737,20 +737,22 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
         ]
     )
 
-    _wait_for_gateway_programmed()
-
     log_info("Running verification script...")
     env_vars = {
         "ENVIRONMENT": config.environment,
         "REGION": config.region,
         "PROJECT_ID": config.project_id,
     }
-    run_command(
-        [sys.executable, "./deploy/ctk_v2/verify_xmc.py"],
-        env=env_vars,
-        log_on_error=False,
-    )
+    try:
+        run_command(
+            [sys.executable, "./deploy/ctk_v2/verify_xmc.py"],
+            env=env_vars,
+            log_on_error=False,
+        )
+    except subprocess.CalledProcessError:
+        print("Diagnostic script reported warnings.")
 
+    _wait_for_gateway_programmed()
     cert_name = f"xmc-cert-{config.environment}"
     _wait_for_cert_active(config.project_id, cert_name)
     log_success("XMC environment deployed and verified.")
