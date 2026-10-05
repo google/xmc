@@ -245,6 +245,12 @@ def get_migration_status(
             " manually before proceeding."
         )
 
+    if res.returncode != 0:
+        error_exit(
+            f"Failed to query migration version for '{db_name}' (exit {res.returncode}):\n"
+            f"{output.strip()}"
+        )
+
     ver_match = re.search(r"Version:\s*([0-9]+)", output)
     current_version = int(ver_match.group(1)) if ver_match else 0
 

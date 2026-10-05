@@ -143,13 +143,13 @@ def _are_pods_healthy(pods_out: str) -> bool:
         cols = line.split()
         if len(cols) < 3 or not re.match(r"^\d+/\d+$", cols[1]):
             continue
-        pods_count += 1
         ready_col, status_col = cols[1], cols[2]
         if status_col in ("Completed", "Succeeded", "Terminating", "Evicted"):
             continue
         ready, _, total = ready_col.partition("/")
         if status_col != "Running" or ready != total or ready == "0":
             return False
+        pods_count += 1
     return pods_count > 0
 
 
