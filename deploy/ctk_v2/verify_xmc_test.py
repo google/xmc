@@ -201,6 +201,22 @@ vars:
         with mock.patch.object(sys, "stdout", captured):
             self.assertFalse(verify_xmc._check_k8s_resources())
 
+    def test_are_pods_healthy_ignores_terminating_evicted_and_warnings(self):
+        pods_out = (
+            "NAME      READY   STATUS        RESTARTS   AGE\n"
+            "Warning: some kubectl warning line\n"
+            "shortline\n"
+            "pod-1     1/1     Running       0          5m\n"
+            "pod-old   1/1     Terminating   0          10m\n"
+            "pod-ev    0/1     Evicted       0          12m\n"
+            "pod-job   0/1     Succeeded     0          2m\n"
+        )
+        self.assertTrue(verify_xmc._are_pods_healthy(pods_out))
+
+    def test_are_pods_healthy_only_non_pod_lines_returns_false(self):
+        pods_out = "NAME      READY   STATUS\nWarning: no real pods here\nshort\n"
+        self.assertFalse(verify_xmc._are_pods_healthy(pods_out))
+
     @mock.patch.object(verify_xmc, "_run_command")
     def test_check_connectivity(self, mock_run):
         def run_cmd_side_effect(cmd):

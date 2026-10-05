@@ -135,26 +135,31 @@ def _are_pods_healthy(pods_out: str) -> bool:
       pods_out: Output string from `kubectl get pods -n xmc`.
 
     Returns:
-      True if at least one pod is present and all pods are Running (N/N ready)
-      or Completed/Succeeded, False otherwise.
+      True if at least one pod is present and all active pods are Running
+      (N/N ready) or Completed/Succeeded/Terminating/Evicted, False otherwise.
     """
     lines = [line.strip() for line in pods_out.strip().splitlines() if line.strip()]
     if len(lines) < 2:
         return False
 
+    pods_count = 0
     for line in lines[1:]:
         cols = line.split()
         if len(cols) < 3:
-            return False
-        ready_col, status_col = cols[1], cols[2]
-        if status_col in ("Completed", "Succeeded"):
             continue
-        if status_col != "Running" or "/" not in ready_col:
+        ready_col, status_col = cols[1], cols[2]
+        if not re.match(r"^\d+/\d+$", ready_col):
+            continue
+
+        pods_count += 1
+        if status_col in ("Completed", "Succeeded", "Terminating", "Evicted"):
+            continue
+        if status_col != "Running":
             return False
         ready_parts = ready_col.split("/", 1)
         if ready_parts[0] != ready_parts[1] or ready_parts[0] == "0":
             return False
-    return True
+    return pods_count > 0
 
 
 def _check_k8s_resources() -> bool:

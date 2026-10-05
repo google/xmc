@@ -751,6 +751,8 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
         ]
     )
 
+    _wait_for_gateway_programmed()
+
     log_info("Running verification script...")
     env_vars = {
         "ENVIRONMENT": config.environment,
@@ -763,7 +765,6 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
         log_on_error=False,
     )
 
-    _wait_for_gateway_programmed()
     cert_name = f"xmc-cert-{config.environment}"
     _wait_for_cert_active(config.project_id, cert_name)
     log_success("XMC environment deployed and verified.")
