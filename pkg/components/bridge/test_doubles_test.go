@@ -70,9 +70,7 @@ func (m *mockCMS) CompleteDeactivation(ctx context.Context, in *componentspb.Com
 type mockProber struct {
 	healthy     bool
 	msg         string
-	resStatus   *ResourceStatus
 	status      *ResourceStatus
-	hasStatus   bool
 	detectErr   error
 	nilStatus   bool
 	probeErr    error
@@ -80,8 +78,6 @@ type mockProber struct {
 	hasProbeRes bool
 }
 
-// TODO(vluk): resStatus and status overlap, and the second resStatus check below is unreachable.
-// Consolidate them into a single field; summarizeGate also lacks a nil guard on res.
 func (m *mockProber) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
 	if m == nil {
 		return &ResourceStatus{Found: true, Ready: true}, nil
@@ -92,14 +88,8 @@ func (m *mockProber) DetectStatus(ctx context.Context, ref WrapperRef) (*Resourc
 	if m.nilStatus {
 		return nil, nil
 	}
-	if m.resStatus != nil {
-		return m.resStatus, nil
-	}
-	if m.hasStatus || m.status != nil {
+	if m.status != nil {
 		return m.status, nil
-	}
-	if m.resStatus != nil {
-		return m.resStatus, nil
 	}
 	return &ResourceStatus{Found: true, Ready: m.healthy, Message: m.msg}, nil
 }
