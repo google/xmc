@@ -153,6 +153,35 @@ class RunLinterTest(unittest.TestCase):
             self.temp_dir / f"{prof_rel}/components/redpanda",
         )
 
+    def test_discover_lint_targets_profile_meta_chart_is_single_target(self) -> None:
+        """Tests that a profile meta-chart is one target with rules; nested charts are not re-linted."""
+        prof_rel = "profiles/stable-2026a"
+        rules_file = self.create_file(f"{prof_rel}/rules.yaml", "staticChecks: {}\n")
+        self.create_file(
+            f"{prof_rel}/Chart.yaml",
+            "apiVersion: v2\nname: xmc-profile-stable-2026a\nversion: 1.0.0\n",
+        )
+        self.create_file(f"{prof_rel}/templates/components.yaml", "")
+        for comp in ("ingestion-gateway", "redpanda"):
+            self.create_file(
+                f"{prof_rel}/components/{comp}/Chart.yaml",
+                f"apiVersion: v2\nname: {comp}\nversion: 0.1.0\n",
+            )
+            self.create_file(
+                f"{prof_rel}/components/{comp}/templates/component.yaml",
+                "apiVersion: xmc.dev/v1alpha1\nkind: Component\n",
+            )
+
+        targets = run_linter.discover_lint_targets([self.temp_dir / "profiles"])
+        self.assertEqual(
+            targets,
+            [
+                run_linter.LintTarget(
+                    manifests_dir=self.temp_dir / prof_rel, rules_config=rules_file
+                )
+            ],
+        )
+
     def test_resolve_linter_binary(self) -> None:
         """Tests resolving explicit binary or pre-built executable candidates."""
         self.assertEqual(
