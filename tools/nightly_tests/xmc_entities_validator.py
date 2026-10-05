@@ -892,9 +892,9 @@ def _verify_dashboard_and_chart_data_once(
     chart_ids = dash_data.get("chartIds") or dash_data.get("chart_ids") or []
     if not chart_ids:
         raise AssertionError(f"Dashboard '{dashboard_id}' has no associated chartIds.")
-    target_ids = (
-        [expected_chart_id] if expected_chart_id else [str(cid).split("/")[-1] for cid in chart_ids]
-    )
+    target_ids = [
+        str(cid).split("/")[-1] for cid in ([expected_chart_id] if expected_chart_id else chart_ids)
+    ]
     total_pts = sum(
         _verify_single_chart_data(base, dashboard_id, cid, min_hydrated_points)
         for cid in target_ids

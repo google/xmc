@@ -315,6 +315,7 @@ def assert_dashboard_chart_data(
     timeout_sec: int = 20,
     strict_required: bool | None = None,
     step_label: str = "5/5",
+    expected_chart_id: str | None = None,
 ) -> dict[str, Any]:
     """Verifies Dashboard metadata and GetChartData hydration via Dashboard Service."""
     raw = (
@@ -333,6 +334,7 @@ def assert_dashboard_chart_data(
     return xmc_entities_validator.validate_dashboard_chart_data(
         base_endpoint=dash_ep,
         dashboard_id=dashboard_id,
+        expected_chart_id=expected_chart_id,
         min_hydrated_points=min_hydrated_points,
         timeout_sec=timeout_sec,
         strict_required=strict_required,
