@@ -18,8 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
+
+	"helm.sh/helm/v3/pkg/storage/driver"
 
 	"xmanager_cloud/internal/logging"
 )
@@ -38,14 +39,6 @@ type upgradeRequest struct {
 	values    map[string]any
 	// seq identifies this enqueue in pendingUpgrades so only the latest request clears the in-flight marker.
 	seq uint64
-}
-
-func isReleaseNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "release: not found") || strings.Contains(msg, "not found")
 }
 
 // setUpgradeErr records (or clears) the last upgrade/uninstall error for ref. Every call marks a release
@@ -216,7 +209,7 @@ func (m *K8sHelmManager) uninstallRelease(ctx context.Context, ref ComponentRef)
 
 	m.dropPendingUpgrade(ref)
 	_, err := m.runner.Uninstall(ctx, releaseName, ref.Namespace)
-	if err != nil && !isReleaseNotFound(err) {
+	if err != nil && !errors.Is(err, driver.ErrReleaseNotFound) {
 		m.setUpgradeErr(ref, err)
 		return fmt.Errorf("failed to uninstall Helm release %q: %w", releaseName, err)
 	}

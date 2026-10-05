@@ -17,6 +17,7 @@ package bridge
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -28,6 +29,7 @@ import (
 
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/storage/driver"
 )
 
 func TestK8sHelmManager_SyncUpgrade(t *testing.T) {
@@ -695,6 +697,35 @@ func TestK8sHelmManager_TeardownDiscardsQueuedUpgrade(t *testing.T) {
 					t.Errorf("upgrade still pending after %s", tt.name)
 				}
 			})
+		})
+	}
+}
+
+// TestK8sHelmManager_UninstallReleaseNotFound verifies that only a missing release (driver.ErrReleaseNotFound, however
+// wrapped) counts as a successful uninstall; unrelated "not found" errors still fail.
+func TestK8sHelmManager_UninstallReleaseNotFound(t *testing.T) {
+	tests := []struct {
+		name         string
+		uninstallErr error
+		wantErr      bool
+	}{
+		{name: "success"},
+		{name: "wrapped release not found", uninstallErr: fmt.Errorf("helm uninstall failed: %w", fmt.Errorf("uninstall: Release not loaded: %w", driver.ErrReleaseNotFound))},
+		{name: "namespace not found", uninstallErr: errors.New(`namespaces "xmc" not found`), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+			runner := &mockHelmActionRunner{uninstallErr: tt.uninstallErr}
+			mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+			defer mgr.Close()
+
+			if err := mgr.uninstallRelease(context.Background(), ref); (err != nil) != tt.wantErr {
+				t.Errorf("uninstallRelease() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err := mgr.GetUpgradeError(ref); (err != nil) != tt.wantErr {
+				t.Errorf("GetUpgradeError() = %v, wantErr %v", err, tt.wantErr)
+			}
 		})
 	}
 }
