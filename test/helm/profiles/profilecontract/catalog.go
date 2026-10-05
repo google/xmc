@@ -49,7 +49,7 @@ func catalogConsistency(s Spec) error {
 		return err
 	}
 	for _, doc := range docs {
-		rendered = append(rendered, DocName(doc))
+		rendered = append(rendered, docName(doc))
 	}
 	src, err := readProfileSources(chartDir)
 	if err != nil {

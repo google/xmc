@@ -36,8 +36,10 @@ var realProfile = Spec{
 // the copy, so a test can break one file without affecting other tests.
 func copyProfile(t *testing.T) Spec {
 	t.Helper()
-	src, dst := ChartDir(t, realProfile), t.TempDir()
-	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+	src, err := chartDir(realProfile)
+	fatalOnError(t, err)
+	dst := t.TempDir()
+	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

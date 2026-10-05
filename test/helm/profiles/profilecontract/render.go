@@ -54,16 +54,9 @@ type Spec struct {
 	Components []string
 }
 
-// ChartDir locates the profile chart: s.ChartRelPath itself when absolute, otherwise in Bazel
+// chartDir locates the profile chart: s.ChartRelPath itself when absolute, otherwise in Bazel
 // runfiles (TEST_SRCDIR) or, under plain go test, in the closest ancestor of the working
 // directory that contains it.
-func ChartDir(t *testing.T, s Spec) string {
-	t.Helper()
-	dir, err := chartDir(s)
-	fatalOnError(t, err)
-	return dir
-}
-
 func chartDir(s Spec) (string, error) {
 	rel := filepath.FromSlash(s.ChartRelPath)
 	candidates := []string{rel}
@@ -94,14 +87,7 @@ func fatalOnError(t *testing.T, err error) {
 	}
 }
 
-// LoadChart loads the chart at dir through the Helm SDK, applying .helmignore.
-func LoadChart(t *testing.T, dir string) *chart.Chart {
-	t.Helper()
-	ch, err := loadChart(dir)
-	fatalOnError(t, err)
-	return ch
-}
-
+// loadChart loads the chart at dir through the Helm SDK, applying .helmignore.
 func loadChart(dir string) (*chart.Chart, error) {
 	ch, err := loader.Load(dir)
 	if err != nil {
@@ -152,9 +138,9 @@ func loadProfileWithFileEdit(s Spec, path, data string, remove bool) (*chart.Cha
 	return ch, nil
 }
 
-// Render renders ch with overrides through the Helm SDK, including values.schema.json
+// render renders ch with overrides through the Helm SDK, including values.schema.json
 // validation, and returns rendered templates keyed by "<chart>/<path>".
-func Render(ch *chart.Chart, releaseName string, overrides map[string]any) (map[string]string, error) {
+func render(ch *chart.Chart, releaseName string, overrides map[string]any) (map[string]string, error) {
 	opts := chartutil.ReleaseOptions{Name: releaseName, Namespace: "xmc", Revision: 1, IsInstall: true}
 	vals, err := chartutil.ToRenderValues(ch, overrides, opts, nil)
 	if err != nil {
@@ -174,9 +160,9 @@ func RenderDocs(t *testing.T, ch *chart.Chart, overrides map[string]any) []map[s
 }
 
 func renderDocs(ch *chart.Chart, overrides map[string]any) ([]map[string]any, error) {
-	rendered, err := Render(ch, DefaultRelease, overrides)
+	rendered, err := render(ch, DefaultRelease, overrides)
 	if err != nil {
-		return nil, fmt.Errorf("Render(%s, %v) failed: %w", ch.Name(), overrides, err)
+		return nil, fmt.Errorf("render(%s, %v) failed: %w", ch.Name(), overrides, err)
 	}
 	components := ch.Name() + "/templates/components.yaml"
 	paths := []string{components}
@@ -196,14 +182,7 @@ func renderDocs(ch *chart.Chart, overrides map[string]any) ([]map[string]any, er
 	return docs, nil
 }
 
-// DecodeDocs decodes every non-empty YAML document in manifest.
-func DecodeDocs(t *testing.T, manifest string) []map[string]any {
-	t.Helper()
-	docs, err := decodeDocs(manifest)
-	fatalOnError(t, err)
-	return docs
-}
-
+// decodeDocs decodes every non-empty YAML document in manifest.
 func decodeDocs(manifest string) ([]map[string]any, error) {
 	var docs []map[string]any
 	dec := yaml.NewDecoder(strings.NewReader(manifest))
@@ -232,8 +211,8 @@ func Lookup(doc any, keys ...string) any {
 	return doc
 }
 
-// DocName returns metadata.name of a decoded document, or "" when it is absent.
-func DocName(doc map[string]any) string {
+// docName returns metadata.name of a decoded document, or "" when it is absent.
+func docName(doc map[string]any) string {
 	name, _ := Lookup(doc, "metadata", "name").(string)
 	return name
 }
@@ -248,7 +227,7 @@ func DocByName(t *testing.T, docs []map[string]any, name string) map[string]any 
 
 func docByName(docs []map[string]any, name string) (map[string]any, error) {
 	for _, doc := range docs {
-		if DocName(doc) == name {
+		if docName(doc) == name {
 			return doc, nil
 		}
 	}
@@ -260,12 +239,7 @@ func ComponentOverrides(name string, vals map[string]any) map[string]any {
 	return map[string]any{"components": map[string]any{name: vals}}
 }
 
-// AssertErrorContains fails the test unless err is non-nil and its message contains want.
-func AssertErrorContains(t *testing.T, err error, want string) {
-	t.Helper()
-	fatalOnError(t, errorContains(err, want))
-}
-
+// errorContains returns an error unless err is non-nil and its message contains want.
 func errorContains(err error, want string) error {
 	if err == nil || !strings.Contains(err.Error(), want) {
 		return fmt.Errorf("Render() error = %v, want error containing %q", err, want)

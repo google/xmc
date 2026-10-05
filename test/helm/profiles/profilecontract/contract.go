@@ -124,7 +124,7 @@ func rendersComponents(s Spec, overrides map[string]any) error {
 		want = append(want, "Component/"+name)
 	}
 	for _, doc := range docs {
-		got = append(got, fmt.Sprintf("%v/%s", doc["kind"], DocName(doc)))
+		got = append(got, fmt.Sprintf("%v/%s", doc["kind"], docName(doc)))
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		return fmt.Errorf("rendered kind/name mismatch (-want +got):\n%s", diff)
@@ -178,9 +178,9 @@ func renderStandalone(s Spec, component string, overrides map[string]any) ([]map
 	if err != nil {
 		return nil, err
 	}
-	rendered, err := Render(ch, DefaultRelease, overrides)
+	rendered, err := render(ch, DefaultRelease, overrides)
 	if err != nil {
-		return nil, fmt.Errorf("Render(%s) failed: %w", component, err)
+		return nil, fmt.Errorf("render(%s) failed: %w", component, err)
 	}
 	return decodeDocs(rendered[component+"/templates/component.yaml"])
 }
@@ -197,7 +197,7 @@ func renderFails(s Spec, releaseName string, overrides map[string]any, wantErr s
 	if err != nil {
 		return err
 	}
-	_, err = Render(ch, releaseName, overrides)
+	_, err = render(ch, releaseName, overrides)
 	return errorContains(err, wantErr)
 }
 
@@ -291,7 +291,7 @@ func componentFileErrorsCases(s Spec) []contractCase {
 				if err != nil {
 					return err
 				}
-				_, err = Render(ch, DefaultRelease, nil)
+				_, err = render(ch, DefaultRelease, nil)
 				return errorContains(err, tt.wantErr(path))
 			}})
 		}

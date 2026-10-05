@@ -50,8 +50,9 @@ func TestChartDir(t *testing.T) {
 			if tt.wd != "" {
 				t.Chdir(tt.wd)
 			}
-			if got := ChartDir(t, Spec{ChartRelPath: tt.rel}); got != tt.want {
-				t.Errorf("ChartDir(%q) = %q, want %q", tt.rel, got, tt.want)
+			got, err := chartDir(Spec{ChartRelPath: tt.rel})
+			if err != nil || got != tt.want {
+				t.Errorf("chartDir(%q) = %q, %v, want %q", tt.rel, got, err, tt.want)
 			}
 		})
 	}
@@ -95,10 +96,10 @@ func TestLoadProfileWithFileEdit(t *testing.T) {
 
 func TestRenderDocs_DecodesEveryTemplate(t *testing.T) {
 	t.Parallel()
-	ch := LoadChart(t, ChartDir(t, miniChart))
+	ch := LoadProfile(t, miniChart)
 	var got []string
 	for _, doc := range RenderDocs(t, ch, map[string]any{"name": "custom"}) {
-		got = append(got, DocName(doc))
+		got = append(got, docName(doc))
 	}
 	if diff := cmp.Diff([]string{"custom"}, got); diff != "" {
 		t.Errorf("rendered names mismatch (-want +got):\n%s", diff)
@@ -110,9 +111,10 @@ func TestRenderDocs_DecodesEveryTemplate(t *testing.T) {
 
 func TestDecodeDocs(t *testing.T) {
 	t.Parallel()
-	got := DecodeDocs(t, "a: 1\n---\n---\nb: 2\n")
+	got, err := decodeDocs("a: 1\n---\n---\nb: 2\n")
+	fatalOnError(t, err)
 	if diff := cmp.Diff([]map[string]any{{"a": 1}, {"b": 2}}, got); diff != "" {
-		t.Errorf("DecodeDocs() mismatch (-want +got):\n%s", diff)
+		t.Errorf("decodeDocs() mismatch (-want +got):\n%s", diff)
 	}
 	if _, err := decodeDocs("a: [b"); err == nil {
 		t.Error("decodeDocs() error = nil, want a decode error")
@@ -142,7 +144,7 @@ func TestLookup(t *testing.T) {
 func TestDocByName(t *testing.T) {
 	t.Parallel()
 	docs := []map[string]any{{"kind": "A"}, {"metadata": map[string]any{"name": "b"}}}
-	if got := DocByName(t, docs, "b"); DocName(got) != "b" {
+	if got := DocByName(t, docs, "b"); docName(got) != "b" {
 		t.Errorf("DocByName(b) = %v, want the document named b", got)
 	}
 	if _, err := docByName(docs, "c"); err == nil {
@@ -166,7 +168,6 @@ func TestErrorContains(t *testing.T) {
 			t.Errorf("%s: errorContains() = %v, want error: %t", tt.name, got, tt.wantErr)
 		}
 	}
-	AssertErrorContains(t, errors.New("want-this"), "want-this")
 }
 
 func TestComponentOverrides(t *testing.T) {
