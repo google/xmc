@@ -112,8 +112,8 @@ type ReconcileComponentInput struct {
 // 1. Validates input name and spec.
 // 2. If IsDeleting, delegates to reconcileDeletion (gated by DeletionProtection).
 // 3. Attaches deletion protection finalizer if not already present.
-// 4. If !Enabled, synchronizes intent via applyIntent and handles deactivation via
-// reconcileDisabled (gated by CMS deactivation safety).
+// 4. If !Enabled, synchronizes intent via applyDisabledIntent (tolerating a dependency that is not
+// registered in CMS) and handles deactivation via reconcileDisabled (gated by CMS deactivation safety).
 // 5. Otherwise delegates to reconcileEnabled (dependency gating, intent, actuation, health).
 func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileComponentInput) (*ReconcileResult, error) {
 	if in.Name == "" || in.Spec == nil {
