@@ -129,7 +129,6 @@ content = content.replace("go:embed xmanager_cloud/experiment_state_server/stati
 content = content.replace("xmanager_cloud/experiment_state_server/static", "static")
 content = content.replace("fs.Sub(embedFS, \\"xmanager_cloud/experiment_state_server/static\\")", "fs.Sub(embedFS, \\"static\\")")
 content = content.replace("go:embed xmanager_cloud/xid_service/proto/xid_messages.pb", "go:embed xid_messages.pb")
-content = content.replace("func (r *Registry) Load(req *pluginpb.CodeGeneratorRequest) error {", "func (r *Registry) LoadGrpcAPIServiceFromYAML(yamlFile string) error { return fmt.Errorf(\\\"YAML configuration is not supported\\\") }\\nfunc (r *Registry) LoadOpenAPIDefinitionFromYAML(yamlFile string) error { return fmt.Errorf(\\\"YAML configuration is not supported\\\") }\\nfunc (r *Registry) Load(req *pluginpb.CodeGeneratorRequest) error {")
 if "FileDescriptorSet" in content: content = content.replace("emptypb \\\"google.golang.org/protobuf/types/known/emptypb\\\"", "emptypb \\\"google.golang.org/protobuf/types/known/emptypb\\\"\\n\\tdescpb \\\"google.golang.org/protobuf/types/descriptorpb\\\"")
 content = content.replace("xmanager_cloud/storage/spanner/migrations/commands/commands", "xmanager_cloud/internal/storage/spanner/migrations/commands")
 content = content.replace("xmanager_cloud/storage/spanner/migrations/driver/spannerdriver", "xmanager_cloud/internal/storage/spanner/migrations/driver")
