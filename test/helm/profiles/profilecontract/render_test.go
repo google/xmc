@@ -24,7 +24,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// miniChart is a two-file chart that exercises the building blocks without a profile.
+// miniChart is a minimal chart with one profile-shaped component file, components/demo/values.yaml,
+// that exercises the building blocks without a profile.
 var miniChart = Spec{ChartRelPath: "test/helm/profiles/profilecontract/testdata/minichart"}
 
 // TestChartDir resolves charts through every lookup strategy. It cannot run in parallel because
@@ -69,8 +70,8 @@ func TestLoadProfileWithFileEdit(t *testing.T) {
 		remove           bool
 		want             []string
 	}{
-		{name: "replace", path: "files/x.txt", data: "new", want: []string{"files/x.txt=new"}},
-		{name: "remove", path: "files/x.txt", remove: true, want: nil},
+		{name: "replace", path: "components/demo/values.yaml", data: "enabled: true\n", want: []string{"components/demo/values.yaml=enabled: true\n"}},
+		{name: "remove", path: "components/demo/values.yaml", remove: true, want: nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -86,7 +87,7 @@ func TestLoadProfileWithFileEdit(t *testing.T) {
 	}
 	t.Run("unknown file", func(t *testing.T) {
 		t.Parallel()
-		if _, err := loadProfileWithFileEdit(miniChart, "files/missing.txt", "", true); err == nil {
+		if _, err := loadProfileWithFileEdit(miniChart, "components/demo/missing.yaml", "", true); err == nil {
 			t.Error("loadProfileWithFileEdit() error = nil, want unknown file error")
 		}
 	})
