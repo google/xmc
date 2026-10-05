@@ -271,11 +271,11 @@ const (
 func TestRunChecks_SpannerMetadata(t *testing.T) {
 	checker := &HealthChecker{
 		cfg: &Config{
-			EssURL:                 "http://invalid",
-			XidAddr:                "invalid:50051",
-			ActuatorURL:            "http://invalid",
-			ReconcilerURL:          "http://invalid",
-			LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
+			EssURL:        "http://invalid",
+			XidAddr:       "invalid:50051",
+			ActuatorURL:   "http://invalid",
+			ReconcilerURL: "http://invalid",
+			LogMonitorURL: "http://invalid",
 		},
 		httpClient: &http.Client{
 			Timeout: 10 * time.Millisecond,
@@ -450,7 +450,7 @@ func TestRunChecks_LogMonitorMissingConfig(t *testing.T) {
 			XidAddr:                "invalid:50051",
 			ActuatorURL:            "http://invalid",
 			ReconcilerURL:          "http://invalid",
-			LogMonitorResourceName: "", // Empty to trigger config error
+			LogMonitorResourceName: "",
 		},
 		httpClient: &http.Client{
 			Timeout: 10 * time.Millisecond,
@@ -464,12 +464,10 @@ func TestRunChecks_LogMonitorMissingConfig(t *testing.T) {
 
 	res := checker.RunChecks(context.Background())
 
-	// Expect 8 components (including Log Monitor)
 	if len(res.Components) != 8 {
 		t.Errorf("expected 8 components, got %d", len(res.Components))
 	}
 
-	// Verify Log Monitor is in the list and reports unhealthy with config error
 	var lmComp *spb.ComponentHealth
 	for _, comp := range res.Components {
 		if comp.Name == "Log Monitor" {
@@ -666,6 +664,35 @@ func TestRunChecks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunChecks_LogMonitorURL(t *testing.T) {
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/readyz" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer httpServer.Close()
+
+	checker := &HealthChecker{
+		cfg: &Config{
+			LogMonitorURL: httpServer.URL,
+		},
+		httpClient: httpServer.Client(),
+	}
+
+	res := checker.RunChecks(context.Background())
+	for _, comp := range res.Components {
+		if comp.Name == "Log Monitor" {
+			if comp.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
+				t.Fatalf("expected Log Monitor to be healthy via HTTP /readyz, got %v (err: %q)", comp.HealthState, comp.ErrorMessage)
+			}
+			return
+		}
+	}
+	t.Fatal("Log Monitor component not found in results")
 }
 
 type mockComponentsInfoProvider struct {

@@ -41,6 +41,8 @@ ALL_SERVICES_ENABLED = {
     "healthServiceDeployment.enabled": "true",
     "healthService.gcpServiceAccount": "xmc-hs-sa@example.iam.gserviceaccount.com",
     "ingestionGatewayDeployment.enabled": "true",
+    "logMonitorDeployment.enabled": "true",
+    "logMonitor.gcpServiceAccount": "xmc-lm-sa@example.iam.gserviceaccount.com",
     "rodDeployment.enabled": "true",
     "ui.enabled": "true",
 }

@@ -65,7 +65,7 @@ vars:
   # Toggles public endpoints access on GKE Control Plane
   gcp_public_cidrs_access_enabled: false
 
-  # If true, deletion protection will be enabled on supported resources (databases, Cloud Run)
+  # If true, deletion protection will be enabled on supported resources (databases)
   deletion_protection: false
 
   # Enable Metrics Pipeline (Ingestion Gateway & ROD Data Provider)
@@ -95,6 +95,9 @@ vars:
 
   # Enable Resource Optimization & Diagnostics (ROD) Data Provider
   rod_deployment_enabled: true
+
+  # Run Log Monitor as a GKE Deployment instead of a Cloud Run service
+  log_monitor_deployment_enabled: false
 
   # Enable Health Service (backs the Admin Panel)
   health_service_deployment_enabled: true

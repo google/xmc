@@ -220,9 +220,12 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		redisPingClient = publisher
 	}
 
-	cloudRunService, err := run.NewService(ctx)
-	if err != nil {
-		logging.Warn(ctx, "Failed to create cloud run client, Cloud Run checks will report UNSPECIFIED", "error", err)
+	var cloudRunService *run.Service
+	if cfg.LogMonitorURL == "" && cfg.LogMonitorResourceName != "" {
+		cloudRunService, err = run.NewService(ctx)
+		if err != nil {
+			logging.Warn(ctx, "Failed to create cloud run client, Cloud Run checks will report UNSPECIFIED", "error", err)
+		}
 	}
 
 	customProvider, compSpannerClient := initCustomComponentsProvider(ctx, cfg)

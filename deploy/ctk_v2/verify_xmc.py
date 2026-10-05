@@ -182,19 +182,56 @@ def _check_connectivity() -> None:
     print("In another terminal run: curl http://localhost:8080/actuate/health")
 
 
+def _resolve_log_monitor_deployment_enabled(
+    config_path: pathlib.Path | None = None,
+) -> bool:
+    """Resolves log_monitor_deployment_enabled from environment or YAML config.
+
+    Args:
+      config_path: Optional explicit Path to xmanager-cloud-deployment.yaml.
+
+    Returns:
+      True if log_monitor_deployment_enabled is enabled, False otherwise.
+    """
+    env_flag = os.environ.get("LOG_MONITOR_DEPLOYMENT_ENABLED")
+    if env_flag is not None:
+        return _parse_bool(env_flag)
+
+    if config_path is None:
+        config_path = pathlib.Path(__file__).parent / "xmanager-cloud-deployment.yaml"
+
+    if not config_path.is_file():
+        return False
+
+    try:
+        content = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+    return _parse_bool(_extract_yaml_val(content, "log_monitor_deployment_enabled"))
+
+
 def _check_log_monitor(
     environment: str | None,
     region: str | None,
     project_id: str | None,
+    log_monitor_deployment_enabled: bool = False,
 ) -> None:
-    """Checks readiness status of Cloud Run Log Monitor service.
+    """Checks readiness status of Cloud Run Log Monitor service when enabled.
 
     Args:
       environment: Target deployment environment.
       region: Target GCP region.
       project_id: Target GCP project ID.
+      log_monitor_deployment_enabled: Whether Log Monitor runs as a GKE Deployment.
     """
     print("\n--- 7. Cloud Run Log Monitor Status ---")
+    if log_monitor_deployment_enabled:
+        print(
+            "ℹ️ Skipping Cloud Run Log Monitor check: log_monitor_deployment_enabled is true (checked via GKE Pod Status)."
+        )
+        return
+
     if not environment or not region or not project_id:
         print("⚠️ Skipping Log Monitor check: ENVIRONMENT, REGION, or PROJECT_ID is not set.")
         return
@@ -267,9 +304,10 @@ def main() -> int:
     print("=========================================")
 
     env, region, project_id, enable_components = _resolve_config()
+    log_monitor_deployment_enabled = _resolve_log_monitor_deployment_enabled()
     _check_k8s_resources()
     _check_connectivity()
-    _check_log_monitor(env, region, project_id)
+    _check_log_monitor(env, region, project_id, log_monitor_deployment_enabled)
     _check_components(enable_components)
 
     print("=========================================")

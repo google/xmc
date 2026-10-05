@@ -61,3 +61,17 @@ func activeHealthCheck(sc health.SpannerHealthClient, listener *Listener) http.H
 		fmt.Fprintln(w, "OK")
 	}
 }
+
+// livenessCheck returns an HTTP handler that reports whether the Pub/Sub listener is still running.
+// It skips Spanner so a dependency outage does not restart the pod; a stopped listener is never
+// restarted in-process, so only a pod restart recovers it.
+func livenessCheck(listener *Listener) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if listener == nil || !listener.IsHealthy() {
+			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "OK")
+	}
+}

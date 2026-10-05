@@ -73,7 +73,8 @@ func main() {
 
 	// HTTP server for health checks
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", activeHealthCheck(health.NewSpannerHealthClient(stgComp.Client), listener))
+	mux.HandleFunc("/readyz", activeHealthCheck(health.NewSpannerHealthClient(stgComp.Client), listener))
+	mux.HandleFunc("/healthz", livenessCheck(listener))
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	server := &http.Server{Addr: addr, Handler: mux}
