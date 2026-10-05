@@ -25,6 +25,24 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
+func TestComponentReleaseName(t *testing.T) {
+	tests := []struct {
+		component string
+		release   string
+	}{
+		{component: "", release: ""},
+		{component: "ray-operator", release: "xmc-cmp-ray-operator"},
+	}
+	for _, tt := range tests {
+		if got := ComponentReleaseName(tt.component); got != tt.release {
+			t.Errorf("ComponentReleaseName(%q) = %q, want %q", tt.component, got, tt.release)
+		}
+		if got := componentNameFromRelease(tt.release); got != tt.component {
+			t.Errorf("componentNameFromRelease(%q) = %q, want %q", tt.release, got, tt.component)
+		}
+	}
+}
+
 func TestK8sHelmManager_Lifecycle(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewClientset()

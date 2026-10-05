@@ -53,6 +53,13 @@ func (m *K8sHelmManager) NeedsRepair(ref ComponentRef, generation int64) bool {
 	return m.repairNeeded[key] && m.activeState[key] && m.actuatedGenerations[key] == generation
 }
 
+// isRepairMarked reports whether the component is marked for repair, regardless of generation.
+func (m *K8sHelmManager) isRepairMarked(ref ComponentRef) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.repairNeeded[componentKey(ref.Namespace, ref.Name)]
+}
+
 // resetRepairBackoffIfStableLocked drops the repair backoff once the release has stayed healthy for repairBackoffMax
 // after the last repair. Resetting on any healthy verdict would defeat the backoff: a repaired release is briefly
 // healthy before an actor that keeps deleting its objects strikes again. Callers must hold m.mu.

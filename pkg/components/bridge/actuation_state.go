@@ -82,7 +82,7 @@ func (m *K8sHelmManager) HydrateComponentState(ctx context.Context, ref Componen
 	if m == nil {
 		return nil
 	}
-	if _, err := m.validateAndResolve(ref); err != nil {
+	if err := validateComponentRef(ref); err != nil {
 		return nil
 	}
 	key := componentKey(ref.Namespace, ref.Name)
