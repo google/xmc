@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -27,7 +28,6 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"xmanager_cloud/logging/logging"
 	xmcclickhouse "xmanager_cloud/pkg/clickhouse"
 	"xmanager_cloud/pkg/components/crreader"
 )
@@ -71,7 +71,7 @@ func ResolveOptions(ctx context.Context, src Source) (*clickhouse.Options, error
 		if !xmcclickhouse.Configured() {
 			return nil, ErrNotConfigured
 		}
-		logging.Info(ctx, "ClickHouse Component CR is absent or disabled; falling back to static environment configuration", "namespace", ns, "component", ClickHouseComponentName)
+		slog.InfoContext(ctx, "ClickHouse Component CR is absent or disabled; falling back to static environment configuration", "namespace", ns, "component", ClickHouseComponentName)
 		return xmcclickhouse.GetOptions()
 	}
 	if err != nil {
@@ -95,7 +95,7 @@ func ResolveOptions(ctx context.Context, src Source) (*clickhouse.Options, error
 	}
 	database := firstNonEmpty(params["defaultDatabase"], defaultDatabase)
 	username := firstNonEmpty(params["user"], defaultUser)
-	logging.Info(ctx, "ClickHouse configuration resolved from Component CR",
+	slog.InfoContext(ctx, "ClickHouse configuration resolved from Component CR",
 		"namespace", ns, "component", ClickHouseComponentName, "source", addrSource, "addrs", addrs, "database", database, "user", username)
 	return &clickhouse.Options{
 		Addr:        addrs,
