@@ -27,15 +27,21 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	constants "xmanager_cloud/kubernetes/common/constants"
+)
+
+const (
+	componentCRDGroup          = "xmc.dev"
+	componentCRDVersion        = "v1alpha1"
+	componentCRDResource       = "components"
+	defaultComponentsNamespace = "xmc"
 )
 
 // ComponentGVR returns the GroupVersionResource for XMC Component custom resources.
 func ComponentGVR() schema.GroupVersionResource {
 	return schema.GroupVersionResource{
-		Group:    constants.ComponentCRDGroup,
-		Version:  constants.ComponentCRDVersion,
-		Resource: constants.ComponentCRDResource,
+		Group:    componentCRDGroup,
+		Version:  componentCRDVersion,
+		Resource: componentCRDResource,
 	}
 }
 
@@ -44,7 +50,7 @@ func ResolveNamespace(ns string) string {
 	if trimmed := strings.TrimSpace(ns); trimmed != "" {
 		return trimmed
 	}
-	return constants.DefaultComponentsNamespace
+	return defaultComponentsNamespace
 }
 
 // Getter retrieves a Kubernetes Component Custom Resource by namespace and name.
