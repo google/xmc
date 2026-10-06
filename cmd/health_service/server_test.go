@@ -1185,8 +1185,8 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 		if resp.SystemInfo.IsSchedulingPaused {
 			t.Errorf("expected IsSchedulingPaused to default to false on repo error, got true")
 		}
-		if !strings.Contains(resp.SystemInfo.SchedulingPauseError, "spanner read timeout") {
-			t.Errorf("expected SchedulingPauseError to contain %q, got %q", "spanner read timeout", resp.SystemInfo.SchedulingPauseError)
+		if resp.SystemInfo.SchedulingPauseError != schedulingPauseUnavailableError {
+			t.Errorf("expected SchedulingPauseError to be %q, got %q", schedulingPauseUnavailableError, resp.SystemInfo.SchedulingPauseError)
 		}
 	})
 

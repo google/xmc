@@ -46,6 +46,10 @@ type LazyComponentsProvider interface {
 
 var _ spb.HealthServiceServer = (*server)(nil)
 
+// schedulingPauseUnavailableError is returned to clients instead of the raw
+// repository error, which is only logged server-side.
+const schedulingPauseUnavailableError = "scheduling pause state unavailable"
+
 type server struct {
 	spb.UnimplementedHealthServiceServer
 	cfg            *Config
@@ -117,16 +121,18 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 		}
 	}
 
-	if resp.SystemInfo != nil && s.cfg != nil && s.cfg.FeatureFlags.PauseSchedulingEnabled && s.pauseScheduler != nil {
-		paused, err := s.pauseScheduler.IsPaused(ctx)
-		if err != nil {
-			logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
-			resp.SystemInfo.SchedulingPauseError = err.Error()
-		} else {
-			resp.SystemInfo.IsSchedulingPaused = paused
-		}
+	if resp.SystemInfo == nil || s.cfg == nil || !s.cfg.FeatureFlags.PauseSchedulingEnabled || s.pauseScheduler == nil {
+		return resp, nil
 	}
 
+	paused, err := s.pauseScheduler.IsPaused(ctx)
+	if err != nil {
+		logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
+		resp.SystemInfo.SchedulingPauseError = schedulingPauseUnavailableError
+		return resp, nil
+	}
+
+	resp.SystemInfo.IsSchedulingPaused = paused
 	return resp, nil
 }
 
