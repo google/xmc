@@ -991,41 +991,30 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
     # =========================================================================
 
     def test_validate_dashboard_success_with_charts(self) -> None:
-        mock_dashboard_data = {
-            "name": "dashboards/example_vcc",
-            "title": "VCC Comparative Dashboard",
-            "chart_ids": ["chart_1", "chart_2"],
+        routes = {
+            "/v1/dashboards/example_vcc": {
+                "name": "dashboards/example_vcc",
+                "title": "VCC Comparative Dashboard",
+                "chart_ids": ["chart_1", "chart_2"],
+            },
+            "/v1/charts/chart_1": {"name": "charts/chart_1", "title": "Loss vs Steps"},
+            "/v1/charts/chart_2": {"name": "charts/chart_2", "title": "Accuracy vs Steps"},
         }
-        mock_chart_1 = {"name": "charts/chart_1", "title": "Loss vs Steps"}
-        mock_chart_2 = {"name": "charts/chart_2", "title": "Accuracy vs Steps"}
+        expected = {
+            "dashboard_id": "example_vcc",
+            "expected_title": "VCC Comparative",
+            "expected_chart_ids": ["chart_1", "chart_2"],
+        }
 
         def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
-            url = req.full_url
-            if "/v1/dashboards/example_vcc" in url:
-                resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
-                resp.status = 200  # type: ignore
-                return resp
-            if "/v1/charts/chart_1" in url:
-                resp = io.BytesIO(json.dumps(mock_chart_1).encode("utf-8"))
-                resp.status = 200  # type: ignore
-                return resp
-            if "/v1/charts/chart_2" in url:
-                resp = io.BytesIO(json.dumps(mock_chart_2).encode("utf-8"))
-                resp.status = 200  # type: ignore
-                return resp
-            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)  # type: ignore
+            for path, payload in routes.items():
+                if path in req.full_url:
+                    return io.BytesIO(json.dumps(payload).encode("utf-8"))
+            raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)  # type: ignore
 
         with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
             results = xmc_entities_validator.validate_dashboard(
-                dashboard_endpoint="localhost:8080",
-                expected_dashboards=[
-                    {
-                        "dashboard_id": "example_vcc",
-                        "expected_title": "VCC Comparative",
-                        "expected_chart_ids": ["chart_1", "chart_2"],
-                    }
-                ],
-                timeout_sec=5,
+                "localhost:8080", [expected], timeout_sec=5
             )
             self.assertEqual(len(results), 1)
             self.assertEqual(results[0]["dashboard_id"], "example_vcc")
