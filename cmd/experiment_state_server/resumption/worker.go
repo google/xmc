@@ -24,6 +24,7 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
+	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -142,11 +143,11 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 			return err
 		}
 
-		stop, resumptionTime, err := w.shouldStopReplay(ctx, req.ResumptionRunID, resumptionWorkerID)
+		state, err := w.store.PauseState().Get(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get pause state during batch iteration: %w", err)
 		}
-		if stop {
+		if shouldStopReplay(ctx, state, req.ResumptionRunID, resumptionWorkerID) {
 			return nil
 		}
 
@@ -169,7 +170,7 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 			return nil
 		}
 
-		if err := w.replayBatch(ctx, req.ResumptionRunID, resumptionTime, batch); err != nil {
+		if err := w.replayBatch(ctx, req.ResumptionRunID, state.UpdatedAt, batch); err != nil {
 			return err
 		}
 
@@ -240,32 +241,28 @@ func (w *ResumptionWorker) waitOrCancel(ctx context.Context) error {
 	}
 }
 
-func (w *ResumptionWorker) shouldStopReplay(ctx context.Context, runID, resumptionWorkerID string) (bool, time.Time, error) {
-	state, err := w.store.PauseState().Get(ctx)
-	if err != nil {
-		return false, time.Time{}, fmt.Errorf("failed to get pause state during batch iteration: %w", err)
-	}
+func shouldStopReplay(ctx context.Context, state *pausestate.PauseSchedulingState, runID, resumptionWorkerID string) bool {
 	if state.SchedulingPaused {
 		logging.Info(ctx, "Scheduling re-paused mid-resumption; halting replay loop",
 			"resumption_run_id", runID,
 			"resumption_worker_id", resumptionWorkerID)
-		return true, time.Time{}, nil
+		return true
 	}
 	if state.ResumptionRunID != runID {
 		logging.Info(ctx, "Resumption run ID changed mid-resumption; halting replay loop",
 			"expected_run_id", runID,
 			"current_run_id", state.ResumptionRunID,
 			"resumption_worker_id", resumptionWorkerID)
-		return true, time.Time{}, nil
+		return true
 	}
 	if state.ResumptionWorkerID != resumptionWorkerID {
 		logging.Info(ctx, "Resumption worker fenced; another worker claimed the resumption process",
 			"resumption_run_id", runID,
 			"current_worker_id", state.ResumptionWorkerID,
 			"resumption_worker_id", resumptionWorkerID)
-		return true, time.Time{}, nil
+		return true
 	}
-	return false, state.UpdatedAt, nil
+	return false
 }
 
 func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resumptionTime time.Time, batch []*pausedtask.PausedTask) error {
