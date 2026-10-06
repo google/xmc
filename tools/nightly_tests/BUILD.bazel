@@ -196,7 +196,6 @@ py_binary(
     imports = ["../.."],
     deps = [
         ":common",
-        ":xmc_entities_validator_lib",
     ],
 )
 
