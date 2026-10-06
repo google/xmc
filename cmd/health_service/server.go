@@ -118,12 +118,14 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 	}
 
 	isSchedulingPaused := false
-	paused, err := s.pauseScheduler.IsPaused(ctx)
-	if err != nil {
-		// TODO(pausescheduling): Propagate error in response when pause scheduling check fails.
-		logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
-	} else {
-		isSchedulingPaused = paused
+	if s.cfg != nil && s.cfg.FeatureFlags.PauseSchedulingEnabled && s.pauseScheduler != nil {
+		paused, err := s.pauseScheduler.IsPaused(ctx)
+		if err != nil {
+			// TODO(pausescheduling): Propagate error in response when pause scheduling check fails.
+			logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
+		} else {
+			isSchedulingPaused = paused
+		}
 	}
 	if resp.SystemInfo != nil {
 		resp.SystemInfo.IsSchedulingPaused = isSchedulingPaused
@@ -297,8 +299,11 @@ func (s *server) PauseScheduling(ctx context.Context, req *spb.PauseSchedulingRe
 	if err := s.guard.CheckAdminRole(ctx); err != nil {
 		return nil, err
 	}
-	if !s.cfg.FeatureFlags.PauseSchedulingEnabled {
+	if s.cfg == nil || !s.cfg.FeatureFlags.PauseSchedulingEnabled {
 		return nil, status.Errorf(codes.FailedPrecondition, "pause scheduling feature is disabled")
+	}
+	if s.pauseScheduler == nil {
+		return nil, status.Error(codes.Unavailable, "pause scheduler is not configured")
 	}
 	if err := s.pauseScheduler.Pause(ctx); err != nil {
 		logging.Error(ctx, "Failed to pause scheduling", "error", err)
@@ -312,8 +317,11 @@ func (s *server) ResumeScheduling(ctx context.Context, req *spb.ResumeScheduling
 	if err := s.guard.CheckAdminRole(ctx); err != nil {
 		return nil, err
 	}
-	if !s.cfg.FeatureFlags.PauseSchedulingEnabled {
+	if s.cfg == nil || !s.cfg.FeatureFlags.PauseSchedulingEnabled {
 		return nil, status.Errorf(codes.FailedPrecondition, "pause scheduling feature is disabled")
+	}
+	if s.pauseScheduler == nil {
+		return nil, status.Error(codes.Unavailable, "pause scheduler is not configured")
 	}
 	if _, err := s.pauseScheduler.Resume(ctx); err != nil {
 		logging.Error(ctx, "Failed to resume scheduling", "error", err)

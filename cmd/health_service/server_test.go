@@ -1155,7 +1155,12 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 	})
 
 	t.Run("handles repository read errors gracefully", func(t *testing.T) {
-		cfg := &Config{CacheTTL: 1 * time.Minute}
+		cfg := &Config{
+			CacheTTL: 1 * time.Minute,
+			FeatureFlags: featureflags.Flags{
+				PauseSchedulingEnabled: true,
+			},
+		}
 		failingRepo := &failingPauseStateRepo{err: errors.New("spanner read timeout")}
 		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(failingRepo))
 		defer s.Close()
@@ -1166,6 +1171,67 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 		}
 		if resp.SystemInfo.IsSchedulingPaused {
 			t.Errorf("expected IsSchedulingPaused to default to false on repo error, got true")
+		}
+	})
+
+	t.Run("returns false when feature flag is disabled even if repo is paused", func(t *testing.T) {
+		cfg := &Config{
+			CacheTTL: 1 * time.Minute,
+			FeatureFlags: featureflags.Flags{
+				PauseSchedulingEnabled: false,
+			},
+		}
+		repo := pausestate.NewFake()
+		if err := repo.Set(ctx, &pausestate.PauseSchedulingState{SchedulingPaused: true}); err != nil {
+			t.Fatalf("failed to set paused state: %v", err)
+		}
+		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(repo))
+		defer s.Close()
+
+		resp, err := s.GetHealthStatus(ctx, &spb.GetHealthStatusRequest{})
+		if err != nil {
+			t.Fatalf("GetHealthStatus failed: %v", err)
+		}
+		if resp.SystemInfo.IsSchedulingPaused {
+			t.Errorf("expected IsSchedulingPaused to be false when feature flag is disabled, got true")
+		}
+	})
+
+	t.Run("handles nil pauseScheduler gracefully", func(t *testing.T) {
+		cfg := &Config{
+			CacheTTL: 1 * time.Minute,
+			FeatureFlags: featureflags.Flags{
+				PauseSchedulingEnabled: true,
+			},
+		}
+		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, nil)
+		defer s.Close()
+
+		resp, err := s.GetHealthStatus(ctx, &spb.GetHealthStatusRequest{})
+		if err != nil {
+			t.Fatalf("GetHealthStatus failed with nil pauseScheduler: %v", err)
+		}
+		if resp.SystemInfo.IsSchedulingPaused {
+			t.Errorf("expected IsSchedulingPaused to be false with nil pauseScheduler, got true")
+		}
+
+		if _, err := s.PauseScheduling(ctx, &spb.PauseSchedulingRequest{}); status.Code(err) != codes.Unavailable {
+			t.Errorf("expected PauseScheduling to return Unavailable with nil pauseScheduler, got %v", err)
+		}
+		if _, err := s.ResumeScheduling(ctx, &spb.ResumeSchedulingRequest{}); status.Code(err) != codes.Unavailable {
+			t.Errorf("expected ResumeScheduling to return Unavailable with nil pauseScheduler, got %v", err)
+		}
+	})
+
+	t.Run("handles nil cfg gracefully in mutating handlers", func(t *testing.T) {
+		s := newServer(nil, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, nil)
+		defer s.Close()
+
+		if _, err := s.PauseScheduling(ctx, &spb.PauseSchedulingRequest{}); status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("expected PauseScheduling to return FailedPrecondition with nil cfg, got %v", err)
+		}
+		if _, err := s.ResumeScheduling(ctx, &spb.ResumeSchedulingRequest{}); status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("expected ResumeScheduling to return FailedPrecondition with nil cfg, got %v", err)
 		}
 	})
 }

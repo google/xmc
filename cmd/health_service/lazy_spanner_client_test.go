@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -32,11 +33,11 @@ const (
 	testXidDBPath = "projects/p/instances/i/databases/xid"
 )
 
-func newTestSpannerClient(t *testing.T, database string) *spanner.Client {
+func newTestSpannerClient(t *testing.T, database string) (*spanner.Client, error) {
 	t.Helper()
 	conn, err := grpc.NewClient("localhost:0", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		t.Fatalf("failed to create test grpc conn: %v", err)
+		return nil, fmt.Errorf("failed to create test grpc conn: %w", err)
 	}
 	t.Cleanup(func() {
 		_ = conn.Close()
@@ -44,9 +45,9 @@ func newTestSpannerClient(t *testing.T, database string) *spanner.Client {
 
 	client, err := spanner.NewClient(context.Background(), database, option.WithGRPCConn(conn))
 	if err != nil {
-		t.Fatalf("failed to create test spanner client: %v", err)
+		return nil, fmt.Errorf("failed to create test spanner client: %w", err)
 	}
-	return client
+	return client, nil
 }
 
 func TestHealthServiceLazySpannerWrapper_EmptyDBPaths(t *testing.T) {
@@ -81,9 +82,9 @@ func TestHealthServiceLazySpannerWrapper_LazyInitAndCaching(t *testing.T) {
 		case testXidDBPath:
 			xidCalls.Add(1)
 		default:
-			t.Fatalf("unexpected database path: %s", database)
+			return nil, fmt.Errorf("unexpected database path: %s", database)
 		}
-		return newTestSpannerClient(t, database), nil
+		return newTestSpannerClient(t, database)
 	}
 
 	wrapper := NewHealthServiceLazySpannerWrapper(testEssDBPath, testXidDBPath, factory)
@@ -143,18 +144,24 @@ func TestHealthServiceLazySpannerWrapper_LazyInitAndCaching(t *testing.T) {
 		t.Fatalf("expected XID factory call count to be 1, got %d", xidCalls.Load())
 	}
 
-	// 4. Close resets state so subsequent calls re-initialize.
+	// 4. Close marks wrapper as closed and rejects subsequent calls without re-initializing.
 	if err := wrapper.Close(); err != nil {
 		t.Fatalf("unexpected Close error: %v", err)
 	}
-	if _, err := wrapper.EssHealthClient(ctx); err != nil {
-		t.Fatalf("EssHealthClient after Close failed: %v", err)
+	if _, err := wrapper.EssHealthClient(ctx); !errors.Is(err, errSpannerWrapperClosed) {
+		t.Fatalf("expected errSpannerWrapperClosed after Close for EssHealthClient, got %v", err)
 	}
-	if _, err := wrapper.XidHealthClient(ctx); err != nil {
-		t.Fatalf("XidHealthClient after Close failed: %v", err)
+	if _, err := wrapper.ComponentsProvider(ctx); !errors.Is(err, errSpannerWrapperClosed) {
+		t.Fatalf("expected errSpannerWrapperClosed after Close for ComponentsProvider, got %v", err)
 	}
-	if essCalls.Load() != 2 || xidCalls.Load() != 2 {
-		t.Fatalf("expected factory counts to be 2 after Close and re-init, got ess=%d xid=%d", essCalls.Load(), xidCalls.Load())
+	if _, err := wrapper.Storage(ctx); !errors.Is(err, errSpannerWrapperClosed) {
+		t.Fatalf("expected errSpannerWrapperClosed after Close for Storage, got %v", err)
+	}
+	if _, err := wrapper.XidHealthClient(ctx); !errors.Is(err, errSpannerWrapperClosed) {
+		t.Fatalf("expected errSpannerWrapperClosed after Close for XidHealthClient, got %v", err)
+	}
+	if essCalls.Load() != 1 || xidCalls.Load() != 1 {
+		t.Fatalf("expected factory counts to remain 1 after Close, got ess=%d xid=%d", essCalls.Load(), xidCalls.Load())
 	}
 }
 
@@ -167,7 +174,7 @@ func TestHealthServiceLazySpannerWrapper_InitialFailureThenLazyRecovery(t *testi
 		if shouldFail.Load() {
 			return nil, errors.New("simulated startup connection timeout")
 		}
-		return newTestSpannerClient(t, database), nil
+		return newTestSpannerClient(t, database)
 	}
 
 	wrapper := NewHealthServiceLazySpannerWrapper(testEssDBPath, testXidDBPath, factory)
@@ -203,6 +210,34 @@ func TestHealthServiceLazySpannerWrapper_InitialFailureThenLazyRecovery(t *testi
 	}
 }
 
+func TestHealthServiceLazySpannerWrapper_CanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var factoryCalled atomic.Bool
+	factory := func(ctx context.Context, database string) (*spanner.Client, error) {
+		factoryCalled.Store(true)
+		return newTestSpannerClient(t, database)
+	}
+
+	wrapper := NewHealthServiceLazySpannerWrapper(testEssDBPath, testXidDBPath, factory)
+	if _, err := wrapper.EssHealthClient(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled for EssHealthClient, got %v", err)
+	}
+	if _, err := wrapper.ComponentsProvider(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled for ComponentsProvider, got %v", err)
+	}
+	if _, err := wrapper.Storage(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled for Storage, got %v", err)
+	}
+	if _, err := wrapper.XidHealthClient(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled for XidHealthClient, got %v", err)
+	}
+	if factoryCalled.Load() {
+		t.Fatal("expected factory not to be called when context is already canceled")
+	}
+}
+
 func TestHealthServiceLazySpannerWrapper_NilClientFromFactory(t *testing.T) {
 	ctx := context.Background()
 	factory := func(ctx context.Context, database string) (*spanner.Client, error) {
@@ -229,7 +264,7 @@ func TestHealthServiceLazySpannerWrapper_ConcurrentAccess(t *testing.T) {
 		case testXidDBPath:
 			xidCalls.Add(1)
 		}
-		return newTestSpannerClient(t, database), nil
+		return newTestSpannerClient(t, database)
 	}
 
 	wrapper := NewHealthServiceLazySpannerWrapper(testEssDBPath, testXidDBPath, factory)
@@ -261,5 +296,44 @@ func TestHealthServiceLazySpannerWrapper_ConcurrentAccess(t *testing.T) {
 	}
 	if xidCalls.Load() != 1 {
 		t.Fatalf("expected XID factory to be called once under concurrency, got %d", xidCalls.Load())
+	}
+}
+
+func TestHealthServiceLazySpannerWrapper_CloseBeforeInit(t *testing.T) {
+	ctx := context.Background()
+	var factoryCalled atomic.Bool
+	factory := func(ctx context.Context, database string) (*spanner.Client, error) {
+		factoryCalled.Store(true)
+		return newTestSpannerClient(t, database)
+	}
+
+	wrapper := NewHealthServiceLazySpannerWrapper(testEssDBPath, testXidDBPath, factory)
+	if err := wrapper.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	if _, err := wrapper.EssHealthClient(ctx); !errors.Is(err, errSpannerWrapperClosed) {
+		t.Errorf("expected errSpannerWrapperClosed for EssHealthClient, got %v", err)
+	}
+	if _, err := wrapper.ComponentsProvider(ctx); !errors.Is(err, errSpannerWrapperClosed) {
+		t.Errorf("expected errSpannerWrapperClosed for ComponentsProvider, got %v", err)
+	}
+	if _, err := wrapper.Storage(ctx); !errors.Is(err, errSpannerWrapperClosed) {
+		t.Errorf("expected errSpannerWrapperClosed for Storage, got %v", err)
+	}
+	if _, err := wrapper.XidHealthClient(ctx); !errors.Is(err, errSpannerWrapperClosed) {
+		t.Errorf("expected errSpannerWrapperClosed for XidHealthClient, got %v", err)
+	}
+	if factoryCalled.Load() {
+		t.Errorf("expected factory not to be called when wrapper is closed before init")
+	}
+}
+
+func TestHealthServiceLazySpannerWrapper_CloseIdempotent(t *testing.T) {
+	wrapper := NewHealthServiceLazySpannerWrapper(testEssDBPath, testXidDBPath, nil)
+	for i := 0; i < 3; i++ {
+		if err := wrapper.Close(); err != nil {
+			t.Errorf("call %d: unexpected error on Close: %v", i+1, err)
+		}
 	}
 }

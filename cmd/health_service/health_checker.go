@@ -36,8 +36,9 @@ type RedisPingClient interface {
 	Ping(ctx context.Context) error
 }
 
-// LazySpannerCheckerProvider provides lazy access to Spanner health clients for ESS and XID databases.
+// LazySpannerCheckerProvider provides lazy access to Spanner health clients and custom components provider.
 type LazySpannerCheckerProvider interface {
+	LazyComponentsProvider
 	EssHealthClient(ctx context.Context) (health.SpannerHealthClient, error)
 	XidHealthClient(ctx context.Context) (health.SpannerHealthClient, error)
 }
@@ -45,7 +46,6 @@ type LazySpannerCheckerProvider interface {
 type HealthCheckerParams struct {
 	Config                   *Config
 	LazySpanner              LazySpannerCheckerProvider
-	LazyComponents           LazyComponentsProvider
 	RedisClient              RedisPingClient
 	CloudRunService          *run.Service
 	EssExpectedSchemaVersion int64
@@ -57,7 +57,6 @@ type HealthChecker struct {
 	httpClient               *http.Client
 	xidConn                  *grpc.ClientConn
 	lazySpanner              LazySpannerCheckerProvider
-	lazyComponents           LazyComponentsProvider
 	redisClient              RedisPingClient
 	cloudRunService          *run.Service
 	essExpectedSchemaVersion int64
@@ -83,7 +82,6 @@ func NewHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
 		},
 		xidConn:                  conn,
 		lazySpanner:              params.LazySpanner,
-		lazyComponents:           params.LazyComponents,
 		redisClient:              params.RedisClient,
 		cloudRunService:          params.CloudRunService,
 		essExpectedSchemaVersion: params.EssExpectedSchemaVersion,
@@ -139,7 +137,7 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 	var customCompHealths []summary.ComponentHealth
 	var customCompErr error
 
-	checkComponents := c.cfg != nil && c.cfg.EnableComponents && c.lazyComponents != nil
+	checkComponents := c.cfg != nil && c.cfg.EnableComponents && c.cfg.EssSpannerDatabase != "" && c.lazySpanner != nil
 	if checkComponents {
 		wg.Add(1)
 		go func() {
@@ -171,10 +169,7 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 }
 
 func (c *HealthChecker) checkCustomComponents(ctx context.Context) ([]summary.ComponentHealth, error) {
-	if c.lazyComponents == nil {
-		return nil, fmt.Errorf("custom components provider not initialized")
-	}
-	provider, err := c.lazyComponents.ComponentsProvider(ctx)
+	provider, err := c.lazySpanner.ComponentsProvider(ctx)
 	if err != nil {
 		return nil, err
 	}

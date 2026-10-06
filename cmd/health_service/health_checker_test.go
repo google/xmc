@@ -785,16 +785,14 @@ func TestHealthChecker_RunChecks_WithCustomComponents(t *testing.T) {
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config: &Config{
-			XidAddr:          xidListener.Addr().String(),
-			EssURL:           httpServer.URL,
-			ActuatorURL:      httpServer.URL,
-			ReconcilerURL:    httpServer.URL,
-			EnableComponents: true,
+			XidAddr:            xidListener.Addr().String(),
+			EssURL:             httpServer.URL,
+			ActuatorURL:        httpServer.URL,
+			ReconcilerURL:      httpServer.URL,
+			EnableComponents:   true,
+			EssSpannerDatabase: "projects/test/instances/test/databases/test",
 		},
 		LazySpanner: &mockLazySpanner{
-			componentsProvider: mockProvider,
-		},
-		LazyComponents: &mockLazySpanner{
 			componentsProvider: mockProvider,
 		},
 	})
@@ -854,16 +852,14 @@ func TestHealthChecker_RunChecks_CustomComponentsError(t *testing.T) {
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config: &Config{
-			XidAddr:          xidListener.Addr().String(),
-			EssURL:           httpServer.URL,
-			ActuatorURL:      httpServer.URL,
-			ReconcilerURL:    httpServer.URL,
-			EnableComponents: true,
+			XidAddr:            xidListener.Addr().String(),
+			EssURL:             httpServer.URL,
+			ActuatorURL:        httpServer.URL,
+			ReconcilerURL:      httpServer.URL,
+			EnableComponents:   true,
+			EssSpannerDatabase: "projects/test/instances/test/databases/test",
 		},
 		LazySpanner: &mockLazySpanner{
-			componentsProvider: mockProvider,
-		},
-		LazyComponents: &mockLazySpanner{
 			componentsProvider: mockProvider,
 		},
 	})
@@ -911,18 +907,16 @@ func TestHealthChecker_RunChecks_LazySpannerInitError(t *testing.T) {
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config: &Config{
-			XidAddr:          xidListener.Addr().String(),
-			EssURL:           httpServer.URL,
-			ActuatorURL:      httpServer.URL,
-			ReconcilerURL:    httpServer.URL,
-			EnableComponents: true,
+			XidAddr:            xidListener.Addr().String(),
+			EssURL:             httpServer.URL,
+			ActuatorURL:        httpServer.URL,
+			ReconcilerURL:      httpServer.URL,
+			EnableComponents:   true,
+			EssSpannerDatabase: "projects/test/instances/test/databases/test",
 		},
 		LazySpanner: &mockLazySpanner{
 			essHealthErr:  errors.New("ess spanner init failed"),
 			xidHealthErr:  errors.New("xid spanner init failed"),
-			componentsErr: errors.New("components provider init failed"),
-		},
-		LazyComponents: &mockLazySpanner{
 			componentsErr: errors.New("components provider init failed"),
 		},
 	})
@@ -947,5 +941,54 @@ func TestHealthChecker_RunChecks_LazySpannerInitError(t *testing.T) {
 	}
 	if comp := compMap["Custom Components Provider"]; comp == nil || comp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
 		t.Errorf("expected Custom Components Provider to be UNHEALTHY on lazy init error, got %+v", comp)
+	}
+}
+
+func TestHealthChecker_RunChecks_CustomComponentsSkippedWhenSpannerDbEmpty(t *testing.T) {
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer httpServer.Close()
+
+	xidListener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("failed to create xid listener: %v", err)
+	}
+	defer xidListener.Close()
+
+	xidServer := grpc.NewServer()
+	xidHealthServer := health.NewServer()
+	xidHealthServer.SetServingStatus("xmc.XidService", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(xidServer, xidHealthServer)
+	go func() {
+		_ = xidServer.Serve(xidListener)
+	}()
+	defer xidServer.Stop()
+
+	mockProvider := &mockComponentsInfoProvider{}
+
+	checker, err := NewHealthChecker(HealthCheckerParams{
+		Config: &Config{
+			XidAddr:            xidListener.Addr().String(),
+			EssURL:             httpServer.URL,
+			ActuatorURL:        httpServer.URL,
+			ReconcilerURL:      httpServer.URL,
+			EnableComponents:   true,
+			EssSpannerDatabase: "", // Empty database path
+		},
+		LazySpanner: &mockLazySpanner{
+			componentsProvider: mockProvider,
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create health checker: %v", err)
+	}
+	defer checker.Close()
+
+	res := checker.RunChecks(context.Background())
+	for _, comp := range res.Components {
+		if comp != nil && comp.Type == spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT {
+			t.Errorf("expected no custom components when EssSpannerDatabase is empty, got: %+v", comp)
+		}
 	}
 }

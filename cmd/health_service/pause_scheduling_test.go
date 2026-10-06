@@ -52,11 +52,11 @@ func (r *failingPauseStateRepo) Set(ctx context.Context, state *pausestate.Pause
 }
 
 type fakeLazyStorage struct {
-	storage storage.Storage
+	storage PauseSchedulingStorage
 	err     error
 }
 
-func (f *fakeLazyStorage) Storage(ctx context.Context) (storage.Storage, error) {
+func (f *fakeLazyStorage) Storage(ctx context.Context) (PauseSchedulingStorage, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

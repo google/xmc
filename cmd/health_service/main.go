@@ -176,7 +176,6 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config:                   cfg,
 		LazySpanner:              lazySpanner,
-		LazyComponents:           lazySpanner,
 		RedisClient:              redisPingClient,
 		CloudRunService:          cloudRunService,
 		EssExpectedSchemaVersion: version.EssExpectedSchemaVersion(),

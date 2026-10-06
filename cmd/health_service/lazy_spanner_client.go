@@ -16,11 +16,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	health "xmanager_cloud/common/health"
-	"xmanager_cloud/internal/storage"
 	spannerstorage "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/summary"
@@ -28,11 +28,14 @@ import (
 	"cloud.google.com/go/spanner"
 )
 
+var errSpannerWrapperClosed = errors.New("spanner wrapper is closed")
+
 // SpannerClientFactory defines a factory function to instantiate a Spanner client.
 type SpannerClientFactory func(ctx context.Context, database string) (*spanner.Client, error)
 
 // DefaultSpannerClientFactory creates a real Spanner client using spanner.NewClient.
-func DefaultSpannerClientFactory(ctx context.Context, database string) (*spanner.Client, error) {
+// It uses context.Background() so short-lived request timeouts do not cancel the cached client's session pool.
+func DefaultSpannerClientFactory(_ context.Context, database string) (*spanner.Client, error) {
 	return spanner.NewClient(context.Background(), database)
 }
 
@@ -49,13 +52,15 @@ type HealthServiceLazySpannerWrapper struct {
 	factory SpannerClientFactory
 
 	essMu              sync.Mutex
+	essClosed          bool
 	essDBPath          string
 	essClient          *spanner.Client
 	essHealthClient    health.SpannerHealthClient
 	componentsProvider summary.CustomComponentsInfoProvider
-	storage            storage.Storage
+	storage            PauseSchedulingStorage
 
 	xidMu           sync.Mutex
+	xidClosed       bool
 	xidDBPath       string
 	xidClient       *spanner.Client
 	xidHealthClient health.SpannerHealthClient
@@ -133,8 +138,8 @@ func (w *HealthServiceLazySpannerWrapper) ComponentsProvider(ctx context.Context
 	return w.componentsProvider, nil
 }
 
-// Storage returns the lazily-initialized Spanner-backed storage.Storage for the ESS database.
-func (w *HealthServiceLazySpannerWrapper) Storage(ctx context.Context) (storage.Storage, error) {
+// Storage returns the lazily-initialized Spanner-backed PauseSchedulingStorage for the ESS database.
+func (w *HealthServiceLazySpannerWrapper) Storage(ctx context.Context) (PauseSchedulingStorage, error) {
 	w.essMu.Lock()
 	defer w.essMu.Unlock()
 
@@ -156,9 +161,10 @@ func (w *HealthServiceLazySpannerWrapper) Storage(ctx context.Context) (storage.
 	return w.storage, nil
 }
 
-// Close closes any initialized underlying Spanner clients and resets cached providers.
+// Close closes any initialized underlying Spanner clients and marks the wrapper as closed.
 func (w *HealthServiceLazySpannerWrapper) Close() error {
 	w.essMu.Lock()
+	w.essClosed = true
 	if w.essClient != nil {
 		w.essClient.Close()
 		w.essClient = nil
@@ -169,6 +175,7 @@ func (w *HealthServiceLazySpannerWrapper) Close() error {
 	w.essMu.Unlock()
 
 	w.xidMu.Lock()
+	w.xidClosed = true
 	if w.xidClient != nil {
 		w.xidClient.Close()
 		w.xidClient = nil
@@ -179,12 +186,18 @@ func (w *HealthServiceLazySpannerWrapper) Close() error {
 	return nil
 }
 
-func (w *HealthServiceLazySpannerWrapper) ensureClientLocked(ctx context.Context, dbPath, dbName string, cachedClient *spanner.Client) (*spanner.Client, error) {
+func (w *HealthServiceLazySpannerWrapper) ensureClientLocked(ctx context.Context, dbPath, dbName string, cachedClient *spanner.Client, closed bool) (*spanner.Client, error) {
+	if closed {
+		return nil, errSpannerWrapperClosed
+	}
 	if dbPath == "" {
 		return nil, fmt.Errorf("%s spanner database path is not configured", dbName)
 	}
 	if cachedClient != nil {
 		return cachedClient, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	client, err := w.factory(ctx, dbPath)
 	if err != nil {
@@ -197,7 +210,7 @@ func (w *HealthServiceLazySpannerWrapper) ensureClientLocked(ctx context.Context
 }
 
 func (w *HealthServiceLazySpannerWrapper) ensureEssClientLocked(ctx context.Context) (*spanner.Client, error) {
-	client, err := w.ensureClientLocked(ctx, w.essDBPath, "ess", w.essClient)
+	client, err := w.ensureClientLocked(ctx, w.essDBPath, "ess", w.essClient, w.essClosed)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +219,7 @@ func (w *HealthServiceLazySpannerWrapper) ensureEssClientLocked(ctx context.Cont
 }
 
 func (w *HealthServiceLazySpannerWrapper) ensureXidClientLocked(ctx context.Context) (*spanner.Client, error) {
-	client, err := w.ensureClientLocked(ctx, w.xidDBPath, "xid", w.xidClient)
+	client, err := w.ensureClientLocked(ctx, w.xidDBPath, "xid", w.xidClient, w.xidClosed)
 	if err != nil {
 		return nil, err
 	}

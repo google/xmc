@@ -43,9 +43,16 @@ var (
 	errTaskQueuePublisherNotConfigured = errors.New("task queue publisher is not configured")
 )
 
-// LazyStorageProvider provides lazy access to Spanner-backed storage.
+// PauseSchedulingStorage provides the transactional and pause scheduling repositories
+// required by PauseScheduler.
+type PauseSchedulingStorage interface {
+	storage.TransactionRunner
+	storage.PauseSchedulingStore
+}
+
+// LazyStorageProvider provides lazy access to Spanner-backed pause scheduling storage.
 type LazyStorageProvider interface {
-	Storage(ctx context.Context) (storage.Storage, error)
+	Storage(ctx context.Context) (PauseSchedulingStorage, error)
 }
 
 // PauseScheduler manages the pause scheduling domain logic, state persistence,
@@ -87,6 +94,8 @@ type pauseScheduler struct {
 	maxBacklogThreshold int
 }
 
+var _ PauseScheduler = (*pauseScheduler)(nil)
+
 // NewPauseScheduler creates a new PauseScheduler with the provided dependencies and configuration.
 func NewPauseScheduler(params PauseSchedulerParams) PauseScheduler {
 	return &pauseScheduler{
@@ -106,7 +115,7 @@ func (p *pauseScheduler) Close() error {
 	return nil
 }
 
-func (p *pauseScheduler) storage(ctx context.Context) (storage.Storage, error) {
+func (p *pauseScheduler) storage(ctx context.Context) (PauseSchedulingStorage, error) {
 	if p.lazyStorage == nil {
 		return nil, errStorageNotConfigured
 	}
@@ -127,13 +136,19 @@ func (p *pauseScheduler) Pause(ctx context.Context) error {
 		return err
 	}
 
-	state := &pausestate.PauseSchedulingState{
-		SchedulingPaused:   true,
-		ResumptionRunID:    "",
-		ResumptionWorkerID: "",
-	}
-	if err := st.PauseState().Set(ctx, state); err != nil {
-		return fmt.Errorf("failed to persist pause scheduling state: %w", err)
+	err = st.RunInTransaction(ctx, func(txCtx context.Context, tx *storage.Transaction) error {
+		state := &pausestate.PauseSchedulingState{
+			SchedulingPaused:   true,
+			ResumptionRunID:    "",
+			ResumptionWorkerID: "",
+		}
+		if err := tx.PauseState.Set(txCtx, state); err != nil {
+			return fmt.Errorf("failed to persist pause scheduling state: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	return p.broadcastPauseEvent(ctx)
 }
@@ -152,23 +167,12 @@ func (p *pauseScheduler) Resume(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	// TODO(pausescheduling): Move state check and update into a Spanner read-write transaction.
-	current, err := st.PauseState().Get(ctx)
+	resumptionRunID, newlyResumed, err := persistResumeState(ctx, st)
 	if err != nil {
-		return "", fmt.Errorf("failed to retrieve pause scheduling state: %w", err)
+		return "", err
 	}
-	if current != nil && !current.SchedulingPaused {
-		return current.ResumptionRunID, nil
-	}
-
-	resumptionRunID := uuid.NewString()
-	state := &pausestate.PauseSchedulingState{
-		SchedulingPaused:   false,
-		ResumptionRunID:    resumptionRunID,
-		ResumptionWorkerID: "",
-	}
-	if err := st.PauseState().Set(ctx, state); err != nil {
-		return "", fmt.Errorf("failed to persist resume scheduling state: %w", err)
+	if !newlyResumed {
+		return resumptionRunID, nil
 	}
 
 	if err := p.broadcastResumeEvent(ctx, resumptionRunID); err != nil {
@@ -179,6 +183,40 @@ func (p *pauseScheduler) Resume(ctx context.Context) (string, error) {
 	}
 
 	return resumptionRunID, nil
+}
+
+func persistResumeState(ctx context.Context, st PauseSchedulingStorage) (string, bool, error) {
+	var resumptionRunID string
+	var newlyResumed bool
+	err := st.RunInTransaction(ctx, func(txCtx context.Context, tx *storage.Transaction) error {
+		resumptionRunID = ""
+		newlyResumed = false
+
+		current, err := tx.PauseState.Get(txCtx)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve pause scheduling state: %w", err)
+		}
+		if current != nil && !current.SchedulingPaused {
+			resumptionRunID = current.ResumptionRunID
+			return nil
+		}
+
+		resumptionRunID = uuid.NewString()
+		newlyResumed = true
+		state := &pausestate.PauseSchedulingState{
+			SchedulingPaused:   false,
+			ResumptionRunID:    resumptionRunID,
+			ResumptionWorkerID: "",
+		}
+		if err := tx.PauseState.Set(txCtx, state); err != nil {
+			return fmt.Errorf("failed to persist resume scheduling state: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", false, err
+	}
+	return resumptionRunID, newlyResumed, nil
 }
 
 func (p *pauseScheduler) broadcastPauseEvent(ctx context.Context) error {
