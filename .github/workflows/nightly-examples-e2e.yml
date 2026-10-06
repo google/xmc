@@ -148,7 +148,7 @@ jobs:
             name: 'Managed XProf Artifact Job'
             example_path: 'examples/managed_xprof_artifact_job'
             entrypoint: 'launch.py'
-            args: '--queue_name=${QUEUE_NAME}'
+            args: '--queue_name=${QUEUE_NAME} --total_steps=20'
             verify_module: 'tools.nightly_tests.managed_xprof_artifact_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15

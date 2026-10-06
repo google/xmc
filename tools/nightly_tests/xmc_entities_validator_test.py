@@ -1278,6 +1278,11 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 stub, "20", {"missing": {"pool": "cpups"}}
             )
 
+    def test_stop_work_units(self) -> None:
+        stub = mock.MagicMock()
+        xmc_entities_validator.stop_work_units(stub, "20")
+        stub.BatchStopWorkUnits.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

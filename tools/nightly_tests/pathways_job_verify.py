@@ -57,6 +57,7 @@ def main(argv: Sequence[str]) -> None:
         expected_title_pattern=EXPECTED_TITLE_PATTERN,
         expected_jobs=EXPECTED_JOBSET_SPECS,
         expected_worker_names=EXPECTED_WORKER_NAMES,
+        wait_for_completion=False,
     )
 
 

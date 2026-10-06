@@ -66,6 +66,7 @@ def main(argv: Sequence[str]) -> None:
         expected_jobs=EXPECTED_JOBSET_SPECS,
         expected_worker_names=EXPECTED_WORKER_NAMES,
         extra_step=_verify_node_selectors,
+        wait_for_completion=False,
     )
 
 

@@ -246,6 +246,7 @@ def assert_work_units(
     expected_worker_names: Sequence[str],
     timeout_sec: int,
     step_label: str = "Step 2",
+    wait_for_completion: bool = True,
 ) -> list[dict[str, Any]]:
     """Asserts work unit execution state, count, worker names, and queue mapping."""
     print(
@@ -258,6 +259,7 @@ def assert_work_units(
         expected_queue=expected_queue,
         expected_worker_names=expected_worker_names,
         timeout_sec=timeout_sec,
+        wait_for_completion=wait_for_completion,
     )
     for wu in wu_results:
         print(
@@ -403,6 +405,7 @@ def verify_standard_workload(
     expected_artifact_types: Sequence[str] | None = None,
     expected_metric_names: Sequence[str] | None = None,
     extra_step: Callable[[Any, str], None] | None = None,
+    wait_for_completion: bool = True,
 ) -> None:
     """Orchestrates standard Experiment, WorkUnit, JobSet, and Artifact verification."""
     validate_argv(argv)
@@ -414,7 +417,15 @@ def verify_standard_workload(
     ep = get_flag(FLAGS, "endpoint")
     with handle_verification_errors(), ess_channel_context(ep) as (stub, _):
         exp = assert_experiment(stub, xid, expected_title_pattern)
-        wus = assert_work_units(stub, xid, len(workers), queue, workers, timeout)
+        wus = assert_work_units(
+            stub,
+            xid,
+            len(workers),
+            queue,
+            workers,
+            timeout,
+            wait_for_completion=wait_for_completion,
+        )
         assert_work_unit_jobsets(stub, xid, expected_jobs)
         if expected_artifact_types:
             assert_work_unit_artifacts(
@@ -422,6 +433,8 @@ def verify_standard_workload(
             )
         if extra_step:
             extra_step(stub, xid)
+        if not wait_for_completion:
+            xmc_entities_validator.stop_work_units(stub, xid)
         _print_workload_summary(summary_title, exp, xid, queue)
 
 

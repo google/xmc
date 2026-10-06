@@ -39,6 +39,7 @@ def _build_work_unit(
     image_path: str,
     queue_name: str,
     programmatic_steps: int = 10,
+    total_steps: int = 10000,
     matrix_size: int = 2000,
 ) -> work_unit_pb2.WorkUnit:
     """Builds a single-job WorkUnit running the JAX profiler workload."""
@@ -68,6 +69,7 @@ def _build_work_unit(
                                 "-u",
                                 "/app/worker.py",
                                 f"--programmatic_steps={programmatic_steps}",
+                                f"--total_steps={total_steps}",
                                 f"--matrix_size={matrix_size}",
                             ],
                             resources=resources,
@@ -79,15 +81,8 @@ def _build_work_unit(
     )
 
 
-def main() -> None:
-    logging.getLogger("dotenv.main").setLevel(logging.ERROR)
-    dotenv.load_dotenv()
-
-    project_id = os.environ.get("PROJECT_ID")
-    default_image = os.environ.get("IMAGE_PATH")
-    if not default_image and project_id:
-        default_image = f"us-docker.pkg.dev/{project_id}/xmc/programmatic-xprof-job:latest"
-
+def _build_arg_parser(default_image: str | None) -> argparse.ArgumentParser:
+    """Constructs the CLI argument parser for ManagedXprof experiment launch."""
     parser = argparse.ArgumentParser(description="Launch XMC + Diagon Profiling Experiment")
     parser.add_argument(
         "--experiment_name",
@@ -95,51 +90,23 @@ def main() -> None:
         default="ManagedXprof WorkUnit Artifact Example",
         help="Title of the experiment in XMC UI",
     )
-    parser.add_argument(
-        "--display_name",
-        default="",
-        help="UI display name for ManagedXprof artifact (defaults to <experiment_title>_<work_unit_id>)",
-    )
-    parser.add_argument(
-        "--run_group",
-        default="",
-        help="Run group (tag) for the ManagedXprof profiling session (defaults to <experiment_title>)",
-    )
-    parser.add_argument(
-        "--num_work_units",
-        type=int,
-        default=1,
-        help="Number of work units to launch (default: 1)",
-    )
-    parser.add_argument(
-        "--image_path",
-        default=default_image,
-        help="Container image to run in the cluster",
-    )
+    parser.add_argument("--display_name", default="", help="UI display name for ManagedXprof")
+    parser.add_argument("--run_group", default="", help="Run group for ManagedXprof session")
+    parser.add_argument("--num_work_units", type=int, default=1, help="Number of work units")
+    parser.add_argument("--image_path", default=default_image, help="Container image")
     parser.add_argument(
         "--queue_name",
         default=os.environ.get("QUEUE_NAME", "cpu-queue"),
         help="Scheduling queue (default: cpu-queue)",
     )
-    parser.add_argument(
-        "--programmatic_steps",
-        type=int,
-        default=10,
-        help="Initial steps traced programmatically (default: 10)",
-    )
-    parser.add_argument(
-        "--matrix_size",
-        type=int,
-        default=2000,
-        help="Size of square matrices for profiling (default: 2000)",
-    )
-    args = parser.parse_args()
+    parser.add_argument("--programmatic_steps", type=int, default=10, help="Initial traced steps")
+    parser.add_argument("--total_steps", type=int, default=10000, help="Total steps to run")
+    parser.add_argument("--matrix_size", type=int, default=2000, help="Matrix dimension")
+    return parser
 
-    if not args.image_path:
-        parser.error(
-            "PROJECT_ID environment variable must be set when --image_path is not specified."
-        )
 
+def _resolve_ui_base_url() -> str:
+    """Resolves and normalizes XMANAGER_UI_URL from environment variables."""
     domain = (os.environ.get("XMC_DOMAIN", "").strip() or "example.com").rstrip("/")
     if not domain.startswith(("http://", "https://")):
         domain = f"https://{domain}"
@@ -148,68 +115,74 @@ def main() -> None:
         ui_base_url = f"https://{ui_base_url}"
     ui_base_url = ui_base_url.rstrip("/")
     os.environ["XMANAGER_UI_URL"] = ui_base_url
+    return ui_base_url
 
-    print(f"🚀 Launching experiment '{args.experiment_name}'")
-    print(f"   Image: {args.image_path}")
-    print(f"   Queue: {args.queue_name} (Work Units: {args.num_work_units})")
 
-    with xm_cloud.create_experiment(
-        experiment_title=args.experiment_name,
-        acls=xid_messages_pb2.XidAcls(
-            owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
+def _create_work_unit_with_xprof_artifact(
+    stub: object,
+    experiment_resource_name: str,
+    xid: int,
+    args: argparse.Namespace,
+) -> None:
+    """Creates a WorkUnit and attaches its EXECUTION-phase ManagedXprof artifact."""
+    work_unit = _build_work_unit(
+        args.image_path,
+        args.queue_name,
+        programmatic_steps=args.programmatic_steps,
+        total_steps=args.total_steps,
+        matrix_size=args.matrix_size,
+    )
+    created_wu = stub.create_work_unit(  # type: ignore[attr-defined]
+        ess_api_pb2.CreateWorkUnitRequest(parent=experiment_resource_name, work_unit=work_unit)
+    )
+    parts = created_wu.name.split("/")
+    wid = parts[3] if len(parts) >= 4 and parts[2] == "workUnits" else parts[-1]
+    wu_name = f"experiments/{xid}/workUnits/{wid}"
+    print(f"✅ Created Work Unit: {wu_name}")
+
+    artifact = artifact_pb2.Artifact(
+        tags=["diagon-e2e", "managed_xprof"],
+        notes="Work-unit-level ManagedXprof artifact for MLRun creation",
+        lifecycle_phase=artifact_pb2.Artifact.LifecyclePhase.EXECUTION,
+        payload=artifact_pb2.ArtifactPayload(
+            managed_xprof=artifact_pb2.ManagedXprofArtifact(
+                display_name=args.display_name or f"{args.experiment_name}_{wid}",
+                run_group=args.run_group or args.experiment_name,
+            )
         ),
-    ) as experiment:
-        stub = experiment._experiment_state_stub
-        xid = int(experiment.resource_name.split("/")[-1])
+    )
+    created_artifact = stub.create_artifact(  # type: ignore[attr-defined]
+        ess_api_pb2.CreateArtifactRequest(parent=wu_name, artifact=artifact)
+    )
+    print(f"📎 Attached ManagedXprof artifact: {created_artifact.name}")
 
+
+def main() -> None:
+    """Launches the ManagedXprof experiment and attaches profiling artifacts."""
+    logging.getLogger("dotenv.main").setLevel(logging.ERROR)
+    dotenv.load_dotenv()
+
+    project_id = os.environ.get("PROJECT_ID")
+    default_image = os.environ.get("IMAGE_PATH") or (
+        f"us-docker.pkg.dev/{project_id}/xmc/programmatic-xprof-job:latest" if project_id else None
+    )
+    parser = _build_arg_parser(default_image)
+    args = parser.parse_args()
+    if not args.image_path:
+        parser.error("PROJECT_ID environment variable must be set when --image_path is omitted.")
+
+    ui_base_url = _resolve_ui_base_url()
+    print(f"🚀 Launching experiment '{args.experiment_name}' (Image: {args.image_path})")
+    acls = xid_messages_pb2.XidAcls(
+        owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
+    )
+    with xm_cloud.create_experiment(experiment_title=args.experiment_name, acls=acls) as exp:
+        xid = int(exp.resource_name.split("/")[-1])
         for _ in range(args.num_work_units):
-            # 1. Create Work Unit
-            work_unit = _build_work_unit(
-                args.image_path,
-                args.queue_name,
-                programmatic_steps=args.programmatic_steps,
-                matrix_size=args.matrix_size,
+            _create_work_unit_with_xprof_artifact(
+                exp._experiment_state_stub, exp.resource_name, xid, args
             )
-            created_wu = stub.create_work_unit(
-                ess_api_pb2.CreateWorkUnitRequest(
-                    parent=experiment.resource_name,
-                    work_unit=work_unit,
-                )
-            )
-            parts = created_wu.name.split("/")
-            wid = parts[3] if len(parts) >= 4 and parts[2] == "workUnits" else parts[-1]
-            wu_name = f"experiments/{xid}/workUnits/{wid}"
-            print(f"✅ Created Work Unit: {wu_name}")
-
-            display_name = args.display_name or f"{args.experiment_name}_{wid}"
-            run_group = args.run_group or args.experiment_name
-
-            # 2. Attach ManagedXprof artifact immediately after work unit creation.
-            # This is needed to make sure the reconciler is able to find the xprof artifact
-            # during MLRun creation (EXECUTION phase triggers MLRun creation).
-            # Note: A future improvement is synchronizing artifact and workunit creation,
-            # which is not prioritized for now.
-            artifact = artifact_pb2.Artifact(
-                tags=["diagon-e2e", "managed_xprof"],
-                notes="Work-unit-level ManagedXprof artifact for MLRun creation",
-                lifecycle_phase=artifact_pb2.Artifact.LifecyclePhase.EXECUTION,
-                payload=artifact_pb2.ArtifactPayload(
-                    managed_xprof=artifact_pb2.ManagedXprofArtifact(
-                        display_name=display_name,
-                        run_group=run_group,
-                    )
-                ),
-            )
-            created_artifact = stub.create_artifact(
-                ess_api_pb2.CreateArtifactRequest(
-                    parent=wu_name,
-                    artifact=artifact,
-                )
-            )
-            print(f"📎 Attached ManagedXprof artifact: {created_artifact.name}")
-
-        dashboard_url = f"{ui_base_url}/experiments/{xid}"
-        print(f"\n🎉 Success! View Experiment Dashboard:\n👉 {dashboard_url}\n")
+        print(f"\n🎉 Success! View Experiment Dashboard:\n👉 {ui_base_url}/experiments/{xid}\n")
 
 
 if __name__ == "__main__":

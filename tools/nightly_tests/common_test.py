@@ -330,6 +330,7 @@ class CommonTest(unittest.TestCase):
                 expected_queue="cpu-queue",
                 expected_worker_names=["w1"],
                 timeout_sec=60,
+                wait_for_completion=True,
             )
 
     def test_assert_work_unit_jobsets(self) -> None:
@@ -465,7 +466,9 @@ class CommonTest(unittest.TestCase):
                 expected_jobs=[{"name": "demo-worker-1", "replicas": 1}],
                 expected_worker_names=["demo-worker-1", "demo-worker-2"],
                 extra_step=None,
+                wait_for_completion=False,
             )
+            mock_stub.BatchStopWorkUnits.assert_called_once()
             mock_channel.close.assert_called_once()
 
     def test_verify_standard_workload_exit_codes(self) -> None:

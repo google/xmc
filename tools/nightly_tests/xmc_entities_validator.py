@@ -756,6 +756,13 @@ def wait_for_experiment_state(
     )
 
 
+def stop_work_units(stub: Any, xid: str) -> None:
+    """Stops all WorkUnits for an experiment via BatchStopWorkUnits RPC."""
+    req = _make_req("BatchStopWorkUnitsRequest", parent=f"experiments/{xid}")
+    stub.BatchStopWorkUnits(req)
+    print(f"  [✓] Stopped pending WorkUnits for experiments/{xid}")
+
+
 def _normalize_artifact_type(type_name: str) -> str:
     """Normalizes artifact type string (e.g., 'ChartArtifact' -> 'chart')."""
     base = type_name.strip().split(".")[-1]

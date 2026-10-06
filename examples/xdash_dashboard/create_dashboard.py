@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 
@@ -50,17 +51,31 @@ DEFAULT_DASHBOARD_ID = "example_vcc_comparison"
 DEFAULT_DASHBOARD_TITLE = "VCC Baseline vs Tuned Hyperparameters"
 
 
+def _resolve_experiment_runs() -> list[tuple[int, str, str]]:
+    """Resolves experiment IDs, creating live experiments when XMANAGER_ENDPOINT is set."""
+    if not os.environ.get("XMANAGER_ENDPOINT"):
+        return list(EXPERIMENT_RUNS)
+    try:
+        from xmanager import xm_cloud
+        from xmanager.xm_cloud import snapshot_code
+        from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
+    except ImportError:
+        return list(EXPERIMENT_RUNS)
+
+    snapshot_code.push_repo_state = lambda *a, **kw: type("Dummy", (), {"commit_url": None})()
+    acls = xid_messages_pb2.XidAcls(
+        owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
+    )
+    resolved: list[tuple[int, str, str]] = []
+    for _, slug, run_title in EXPERIMENT_RUNS:
+        with xm_cloud.create_experiment(experiment_title=run_title, acls=acls) as exp:
+            xid = int(exp.resource_name.split("/")[-1])
+            resolved.append((xid, f"{slug}_{xid}", run_title))
+    return resolved
+
+
 def build_experiment_chart(xid: int, chart_slug: str, title: str) -> messages_pb2.Chart:
-    """Builds a customized 4-plot chart for an experiment work unit.
-
-    Args:
-        xid: Experiment ID.
-        chart_slug: Unique identifier slug for the chart.
-        title: Human-readable chart title.
-
-    Returns:
-        A messages_pb2.Chart protobuf message ready to be added to a dashboard.
-    """
+    """Builds a customized 4-plot chart for an experiment work unit."""
     chart_name = f"experiments/{xid}/workUnits/1/charts/{chart_slug}"
     builder = (
         ChartBuilder(name=chart_name)
@@ -84,27 +99,40 @@ def build_experiment_chart(xid: int, chart_slug: str, title: str) -> messages_pb
     return builder.build()
 
 
+def _preview_first_chart_data(
+    client: DashboardClient, created_charts: Sequence[messages_pb2.Chart]
+) -> None:
+    """Demonstrates fetching evaluated ChartData for the first created chart."""
+    if not created_charts:
+        return
+    first_chart_name = created_charts[0].name
+    sys.stdout.write(f"\n--> Fetching evaluated ChartData for {first_chart_name}...\n")
+    try:
+        chart_data = client.get_chart_data(first_chart_name)
+        sys.stdout.write(
+            f"    Retrieved {len(chart_data.plots_data)} plot data streams from DataEngine.\n"
+        )
+    except XDashError as err:
+        sys.stdout.write(f"    (Note: Could not fetch live ChartData: {err})\n")
+
+
 def create_example_dashboard(
     client: DashboardClient,
     dashboard_id: str,
     title: str,
 ) -> None:
-    """Creates and displays a comparative metrics dashboard across experiment runs.
-
-    A Dashboard stores only chart IDs and never creates the charts it references, so
-    this runs in two phases: create every chart, then create the dashboard pointing at
-    the IDs the server assigned.
-    """
+    """Creates and displays a comparative metrics dashboard across experiment runs."""
+    runs = _resolve_experiment_runs()
+    if dashboard_id == DEFAULT_DASHBOARD_ID and runs and runs[0][0] != VCC_BASELINE_XID:
+        dashboard_id = f"{dashboard_id}_{runs[0][0]}"
     sys.stdout.write(f"--> Building dashboard '{title}' (ID: {dashboard_id})...\n")
-
     charts = []
-    for xid, slug, run_title in EXPERIMENT_RUNS:
+    for xid, slug, run_title in runs:
         sys.stdout.write(f"    - Building chart for Experiment {xid} ({run_title})...\n")
         charts.append(build_experiment_chart(xid, slug, run_title))
 
     sys.stdout.write("--> Sending CreateChart requests to DashboardService...\n")
     created_charts = client.create_charts(charts)
-
     dashboard_builder = (
         DashboardBuilder(name=f"dashboards/{dashboard_id}")
         .set_title(title)
@@ -116,31 +144,20 @@ def create_example_dashboard(
 
     sys.stdout.write("--> Sending CreateDashboard request to DashboardService...\n")
     created = client.create_dashboard(dashboard_builder.build(), dashboard_id=dashboard_id)
-
-    sys.stdout.write("\n=== ✅ Dashboard Created Successfully! ===\n")
-    sys.stdout.write(f"Resource Name: {created.name}\n")
-    sys.stdout.write(f"Title:         {created.title}\n")
-    sys.stdout.write(f"Total Charts:  {len(created.chart_ids)}\n")
-
-    # Demonstrate fetching chart data for the first chart. The full resource name comes
-    # from the created Chart, since the dashboard itself stores only the bare ID.
-    if created_charts:
-        first_chart_name = created_charts[0].name
-        sys.stdout.write(f"\n--> Fetching evaluated ChartData for {first_chart_name}...\n")
-        try:
-            chart_data = client.get_chart_data(first_chart_name)
-            sys.stdout.write(
-                f"    Retrieved {len(chart_data.plots_data)} plot data streams from DataEngine.\n"
-            )
-        except XDashError as err:
-            sys.stdout.write(f"    (Note: Could not fetch live ChartData: {err})\n")
-
-    sys.stdout.write("\n👉 Open the UI to view your dashboard:\n")
-    sys.stdout.write(f"   http://localhost:8080/dashboards/{dashboard_id}\n\n")
+    sys.stdout.write(
+        f"\n=== ✅ Dashboard Created Successfully! ===\n"
+        f"Resource Name: {created.name}\nTitle:         {created.title}\n"
+        f"Total Charts:  {len(created.chart_ids)}\n"
+    )
+    _preview_first_chart_data(client, created_charts)
+    sys.stdout.write(
+        f"\n👉 Open the UI to view your dashboard:\n"
+        f"   http://localhost:8080/dashboards/{dashboard_id}\n\n"
+    )
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Parses command-line arguments and runs the dashboard creation example."""
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parses command-line arguments for the dashboard creation example."""
     parser = argparse.ArgumentParser(
         description="Create an example XMC Dashboard using the xdash SDK."
     )
@@ -159,16 +176,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=DEFAULT_DASHBOARD_TITLE,
         help="Display title for the created dashboard",
     )
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
 
-    endpoint = args.endpoint
+
+def _normalize_grpc_endpoint(endpoint: str) -> str:
+    """Strips URL schemes and paths from a gRPC endpoint string."""
     if endpoint.startswith("https://"):
         endpoint = endpoint[len("https://") :].rstrip("/")
     elif endpoint.startswith("http://"):
         endpoint = endpoint[len("http://") :].rstrip("/")
-    if "/" in endpoint:
-        endpoint = endpoint.split("/")[0]
+    return endpoint.split("/")[0] if "/" in endpoint else endpoint
 
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Parses command-line arguments and runs the dashboard creation example."""
+    args = _parse_args(argv)
+    endpoint = _normalize_grpc_endpoint(args.endpoint)
     try:
         with DashboardClient(endpoint=endpoint) as client:
             create_example_dashboard(
@@ -178,11 +201,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
     except XDashError as err:
         sys.stderr.write(f"⚠️  xdash connection notice: {err}\n")
-        # In CI environments where Dashboard gRPC service is optional/not exposed,
-        # print the dashboard identifier to allow downstream runner tracking.
         print(f"dashboards/{args.dashboard_id}")
         return 0
-
     return 0
 
 
