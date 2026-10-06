@@ -46,7 +46,7 @@ go_test(
     embed = [":ingestion_gateway_lib"],
     deps = [
         "//cmd/ingestion_gateway/ingestiongateway",
-        "//pkg/components/crreader",
+        "//pkg/components/crreader/crreadertest",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
     ],
 )

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package crreader
+package crreadertest
 
 import (
 	"context"
@@ -20,16 +20,33 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
+
+func baselineTestComponent() *unstructured.Unstructured {
+	return &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "xmc.dev/v1alpha1",
+			"kind":       "Component",
+			"metadata": map[string]any{
+				"name":      "clickhouse",
+				"namespace": "xmc",
+			},
+			"spec": map[string]any{
+				"enabled": true,
+			},
+		},
+	}
+}
 
 func TestFakeGetter(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
 	var nilFake *FakeGetter
-	if got, err := nilFake.GetComponent(ctx, "xmc", "clickhouse"); err != nil || got != nil {
-		t.Errorf("nilFake.GetComponent() = (%v, %v), want (nil, nil)", got, err)
+	if _, err := nilFake.GetComponent(ctx, "xmc", "clickhouse"); !apierrors.IsNotFound(err) {
+		t.Errorf("nilFake.GetComponent() err = %v, want NotFound", err)
 	}
 
 	errFake := &FakeGetter{Err: errors.New("boom")}
@@ -37,7 +54,7 @@ func TestFakeGetter(t *testing.T) {
 		t.Errorf("errFake.GetComponent() succeeded, want error")
 	}
 
-	compA := baselineComponent()
+	compA := baselineTestComponent()
 	compB := &unstructured.Unstructured{
 		Object: map[string]any{
 			"metadata": map[string]any{"name": "redpanda", "namespace": "custom"},
@@ -80,8 +97,8 @@ func TestFakeGetter(t *testing.T) {
 	}
 
 	emptyFake := &FakeGetter{}
-	if got, err := emptyFake.GetComponent(ctx, "xmc", "missing"); err != nil || got != nil {
-		t.Errorf("emptyFake.GetComponent() = (%v, %v), want (nil, nil)", got, err)
+	if _, err := emptyFake.GetComponent(ctx, "xmc", "missing"); !apierrors.IsNotFound(err) {
+		t.Errorf("emptyFake.GetComponent() err = %v, want NotFound", err)
 	}
 }
 

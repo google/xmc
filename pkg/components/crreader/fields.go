@@ -17,6 +17,7 @@ package crreader
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -31,19 +32,24 @@ const (
 	StateDeleted = "COMPONENT_STATE_DELETED"
 )
 
-// IsDisabled reports whether a Component CR is nil, has spec.enabled=false,
-// or is in a disabled, disabling, or deleted status state.
+// IsDisabled reports whether a Component CR is nil or empty, has spec.enabled=false,
+// has malformed spec.enabled or status.state fields, or is in a disabled, disabling, or deleted status state.
 func IsDisabled(comp *unstructured.Unstructured) bool {
-	if comp == nil || comp.Object == nil {
+	if comp == nil || len(comp.Object) == 0 {
 		return true
 	}
-	if enabled, ok, err := SpecEnabled(comp); err == nil && ok && !enabled {
+	enabled, ok, err := SpecEnabled(comp)
+	if err != nil {
 		return true
 	}
-	if state, err := StatusState(comp); err == nil {
-		return state == StateDisabled || state == StateDisabling || state == StateDeleted
+	if ok && !enabled {
+		return true
 	}
-	return false
+	state, err := StatusState(comp)
+	if err != nil {
+		return true
+	}
+	return state == StateDisabled || state == StateDisabling || state == StateDeleted
 }
 
 // SpecEnabled extracts spec.enabled from a Component CR.
@@ -65,16 +71,16 @@ func StatusState(comp *unstructured.Unstructured) (string, error) {
 
 // Parameters extracts spec.parameters as a string map from a Component CR.
 func Parameters(comp *unstructured.Unstructured) (map[string]string, error) {
-	return NestedStringMap(comp, "spec", "parameters")
+	return nestedStringMap(comp, "spec", "parameters")
 }
 
 // AccessEnvVars extracts status.access.envVars as a string map from a Component CR.
 func AccessEnvVars(comp *unstructured.Unstructured) (map[string]string, error) {
-	return NestedStringMap(comp, "status", "access", "envVars")
+	return nestedStringMap(comp, "status", "access", "envVars")
 }
 
-// NestedStringMap extracts a nested map at fields from a Component CR and coerces scalar values to strings.
-func NestedStringMap(comp *unstructured.Unstructured, fields ...string) (map[string]string, error) {
+// nestedStringMap extracts a nested map at fields from a Component CR and coerces scalar values to strings.
+func nestedStringMap(comp *unstructured.Unstructured, fields ...string) (map[string]string, error) {
 	if comp == nil || comp.Object == nil {
 		return nil, nil
 	}
@@ -82,10 +88,10 @@ func NestedStringMap(comp *unstructured.Unstructured, fields ...string) (map[str
 	if err != nil || !ok || raw == nil {
 		return nil, err
 	}
-	if _, isAnyMap := raw.(map[string]any); !isAnyMap {
-		if _, isStrMap := raw.(map[string]string); !isStrMap {
-			return nil, fmt.Errorf("field %s is not a map (got %T)", strings.Join(fields, "."), raw)
-		}
+	switch raw.(type) {
+	case map[string]any, map[string]string:
+	default:
+		return nil, fmt.Errorf("field %s is not a map (got %T)", strings.Join(fields, "."), raw)
 	}
 	return CoerceStringMap(raw), nil
 }
@@ -127,7 +133,11 @@ func formatScalarValue(v any) string {
 		return val
 	case json.Number:
 		return val.String()
-	default:
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case int, int64, bool:
 		return fmt.Sprintf("%v", val)
+	default:
+		return ""
 	}
 }

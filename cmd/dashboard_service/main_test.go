@@ -37,7 +37,7 @@ import (
 	"xmanager_cloud/internal/dashboard/dataengine"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
-	"xmanager_cloud/pkg/components/crreader"
+	"xmanager_cloud/pkg/components/crreader/crreadertest"
 )
 
 func TestSetupHTTPHandler(t *testing.T) {
@@ -439,7 +439,7 @@ func TestConnectClickHouseWithSource(t *testing.T) {
 	t.Run("surfaces component resolution error", func(t *testing.T) {
 		conn := connectClickHouseWithSource(componentconfig.Source{
 			Enabled: true,
-			Getter:  &crreader.FakeGetter{Err: errors.New("rbac forbidden")},
+			Getter:  &crreadertest.FakeGetter{Err: errors.New("rbac forbidden")},
 		}, nil)
 		if _, err := conn(ctx); err == nil || !strings.Contains(err.Error(), "rbac forbidden") {
 			t.Errorf("conn() error = %v, want rbac forbidden", err)
@@ -486,7 +486,7 @@ func TestIsClickHouseExpected(t *testing.T) {
 		t.Setenv("CLICKHOUSE_HOST", "")
 		t.Setenv("CLICKHOUSE_DSN", "")
 		cfg.EnableComponents = true
-		getter := &crreader.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}
+		getter := &crreadertest.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}
 		if isClickHouseExpected(ctx, getter) {
 			t.Errorf("isClickHouseExpected() = true, want false")
 		}
@@ -502,7 +502,7 @@ func TestIsClickHouseExpected(t *testing.T) {
 				"status": map[string]any{"state": "COMPONENT_STATE_DISABLED"},
 			},
 		}
-		getter := &crreader.FakeGetter{Component: u}
+		getter := &crreadertest.FakeGetter{Component: u}
 		if isClickHouseExpected(ctx, getter) {
 			t.Errorf("isClickHouseExpected() = true, want false")
 		}
@@ -518,7 +518,7 @@ func TestIsClickHouseExpected(t *testing.T) {
 				"status": map[string]any{"state": "COMPONENT_STATE_ENABLED"},
 			},
 		}
-		getter := &crreader.FakeGetter{Component: u}
+		getter := &crreadertest.FakeGetter{Component: u}
 		if !isClickHouseExpected(ctx, getter) {
 			t.Errorf("isClickHouseExpected() = false, want true")
 		}
@@ -530,7 +530,7 @@ func TestInitDataEngineWithGetter_UnconfiguredReturnsNil(t *testing.T) {
 	t.Setenv("CLICKHOUSE_HOST", "")
 	t.Setenv("CLICKHOUSE_DSN", "")
 	cfg.EnableComponents = true
-	getter := &crreader.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}
+	getter := &crreadertest.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}
 
 	provider := initDataEngineWithGetter(ctx, getter)
 	if provider != nil {

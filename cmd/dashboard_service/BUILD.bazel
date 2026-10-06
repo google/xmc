@@ -80,7 +80,7 @@ compat_go_test(
         "//internal/dashboard/dataengine",
         "//pkg/auth/oauth2",
         "//pkg/clickhouse/componentconfig",
-        "//pkg/components/crreader",
+        "//pkg/components/crreader/crreadertest",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
         "@io_k8s_apimachinery//pkg/api/errors",

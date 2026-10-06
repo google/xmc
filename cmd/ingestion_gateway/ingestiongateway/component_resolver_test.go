@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"xmanager_cloud/pkg/components/crreader"
+	"xmanager_cloud/pkg/components/crreader/crreadertest"
 )
 
 func baselineRedpandaComponent() *unstructured.Unstructured {
@@ -79,7 +80,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				MinReplicas:      1,
 				EnableComponents: false,
 			},
-			getter:      &crreader.FakeGetter{Err: errors.New("should not be called")},
+			getter:      &crreadertest.FakeGetter{Err: errors.New("should not be called")},
 			wantBrokers: []string{"static-broker:9092"},
 			wantTopic:   "static-topic",
 		},
@@ -95,7 +96,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				EnableComponents:    true,
 				ComponentsNamespace: "xmc",
 			},
-			getter:      &crreader.FakeGetter{Component: baselineRedpandaComponent()},
+			getter:      &crreadertest.FakeGetter{Component: baselineRedpandaComponent()},
 			wantBrokers: []string{"redpanda-live.xmc.svc.cluster.local:9092"},
 			wantTopic:   "xmc-metrics-from-component",
 		},
@@ -111,7 +112,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				EnableComponents:    true,
 				ComponentsNamespace: "xmc",
 			},
-			getter: &crreader.FakeGetter{Component: func() *unstructured.Unstructured {
+			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
 				u := baselineRedpandaComponent()
 				delete(u.Object, "status")
 				return u
@@ -131,7 +132,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				EnableComponents:    true,
 				ComponentsNamespace: "xmc",
 			},
-			getter: &crreader.FakeGetter{Component: func() *unstructured.Unstructured {
+			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
 				u := baselineRedpandaComponent()
 				_ = unstructured.SetNestedField(u.Object, false, "spec", "enabled")
 				return u
@@ -151,7 +152,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				EnableComponents:    true,
 				ComponentsNamespace: "xmc",
 			},
-			getter:      &crreader.FakeGetter{Err: errors.New("k8s api unavailable")},
+			getter:      &crreadertest.FakeGetter{Err: errors.New("k8s api unavailable")},
 			wantBrokers: []string{"static-broker:9092"},
 			wantTopic:   "static-topic",
 			wantErr:     true,
@@ -182,7 +183,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				TopicName:        "static-topic",
 				EnableComponents: true,
 			},
-			getter:      &crreader.FakeGetter{Err: errors.New("should not be called")},
+			getter:      &crreadertest.FakeGetter{Err: errors.New("should not be called")},
 			wantBrokers: []string{"static-broker:9092"},
 			wantTopic:   "static-topic",
 		},
@@ -197,7 +198,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				MinReplicas:      1,
 				EnableComponents: true,
 			},
-			getter: &crreader.FakeGetter{Component: func() *unstructured.Unstructured {
+			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
 				u := baselineRedpandaComponent()
 				_ = unstructured.SetNestedField(u.Object, "COMPONENT_STATE_DISABLED", "status", "state")
 				return u
@@ -206,7 +207,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 			wantTopic:   "static-topic",
 		},
 		{
-			name: "preserves static config when Component CR is nil",
+			name: "preserves static config when Component CR is empty",
 			cfg: &Config{
 				Port:             "8080",
 				MessageBus:       MessageBusRedpanda,
@@ -216,7 +217,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				MinReplicas:      1,
 				EnableComponents: true,
 			},
-			getter:      &crreader.FakeGetter{Component: nil},
+			getter:      &crreadertest.FakeGetter{Component: &unstructured.Unstructured{}},
 			wantBrokers: []string{"static-broker:9092"},
 			wantTopic:   "static-topic",
 		},
@@ -231,7 +232,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				MinReplicas:      1,
 				EnableComponents: true,
 			},
-			getter: &crreader.FakeGetter{Component: func() *unstructured.Unstructured {
+			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
 				u := baselineRedpandaComponent()
 				_ = unstructured.SetNestedField(u.Object, "redpanda-live.xmc.svc.cluster.local:9093", "status", "access", "envVars", "ENDPOINT")
 				return u
@@ -250,7 +251,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				MinReplicas:      1,
 				EnableComponents: true,
 			},
-			getter: &crreader.FakeGetter{Component: func() *unstructured.Unstructured {
+			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
 				u := baselineRedpandaComponent()
 				_ = unstructured.SetNestedField(u.Object, "", "status", "access", "envVars", "PORT")
 				_ = unstructured.SetNestedField(u.Object, "9094", "spec", "parameters", "kafkaPort")
@@ -270,7 +271,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				MinReplicas:      1,
 				EnableComponents: true,
 			},
-			getter: &crreader.FakeGetter{Component: func() *unstructured.Unstructured {
+			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
 				u := baselineRedpandaComponent()
 				delete(u.Object, "status")
 				_ = unstructured.SetNestedField(u.Object, "", "spec", "parameters", "brokerEndpoints")
@@ -290,7 +291,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				MinReplicas:      1,
 				EnableComponents: true,
 			},
-			getter: &crreader.FakeGetter{Component: func() *unstructured.Unstructured {
+			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
 				u := baselineRedpandaComponent()
 				_ = unstructured.SetNestedField(
 					u.Object,
@@ -316,7 +317,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				MinReplicas:      1,
 				EnableComponents: true,
 			},
-			getter:      &crreader.FakeGetter{Component: baselineRedpandaComponent()},
+			getter:      &crreadertest.FakeGetter{Component: baselineRedpandaComponent()},
 			wantBrokers: []string{"static-broker:9092"},
 			wantTopic:   "static-topic",
 			wantErr:     true,
@@ -332,7 +333,7 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				MinReplicas:      1,
 				EnableComponents: true,
 			},
-			getter: &crreader.FakeGetter{Component: &unstructured.Unstructured{
+			getter: &crreadertest.FakeGetter{Component: &unstructured.Unstructured{
 				Object: map[string]any{
 					"apiVersion": "components.xmc.dev/v1alpha1",
 					"kind":       "Component",

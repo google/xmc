@@ -28,7 +28,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"xmanager_cloud/pkg/components/crreader"
+	"xmanager_cloud/pkg/components/crreader/crreadertest"
 )
 
 func baselineClickHouseCR() *unstructured.Unstructured {
@@ -64,18 +64,18 @@ func baselineClickHouseCR() *unstructured.Unstructured {
 	}
 }
 
-func modifyCR(mutator func(u *unstructured.Unstructured)) *crreader.FakeGetter {
+func modifyCR(mutator func(u *unstructured.Unstructured)) *crreadertest.FakeGetter {
 	u := baselineClickHouseCR()
 	mutator(u)
-	return &crreader.FakeGetter{Component: u}
+	return &crreadertest.FakeGetter{Component: u}
 }
 
 func crSource(mutator func(u *unstructured.Unstructured)) Source {
 	return Source{Enabled: true, Getter: modifyCR(mutator), Secrets: baselineSecrets()}
 }
 
-func baselineSecrets() *crreader.FakeSecretReader {
-	return &crreader.FakeSecretReader{
+func baselineSecrets() *crreadertest.FakeSecretReader {
+	return &crreadertest.FakeSecretReader{
 		Secrets: map[string]map[string]string{
 			"xmc/clickhouse-live-secret": {"clickhouse-password": "live-secret-pw\n"},
 			"xmc/clickhouse-secret":      {"clickhouse-password": "spec-secret-pw"},
@@ -120,10 +120,10 @@ func TestResolveOptions(t *testing.T) {
 		{name: "enabled source with nil getter returns hard error", src: Source{Enabled: true}, wantErr: true},
 		{
 			name: "NotFound CR falls back to static env options",
-			src:  Source{Enabled: true, Getter: &crreader.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}},
+			src:  Source{Enabled: true, Getter: &crreadertest.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}},
 			want: baseEnvSummary,
 		},
-		{name: "non-NotFound API error returns hard error", src: Source{Enabled: true, Getter: &crreader.FakeGetter{Err: errors.New("forbidden")}}, wantErr: true},
+		{name: "non-NotFound API error returns hard error", src: Source{Enabled: true, Getter: &crreadertest.FakeGetter{Err: errors.New("forbidden")}}, wantErr: true},
 		{
 			name: "spec.enabled=false CR falls back to static env options",
 			src: crSource(func(u *unstructured.Unstructured) {
@@ -159,7 +159,7 @@ func TestResolveOptions(t *testing.T) {
 				t.Setenv("CLICKHOUSE_HOST", "")
 				t.Setenv("CLICKHOUSE_DSN", "")
 			},
-			src:     Source{Enabled: true, Getter: &crreader.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}},
+			src:     Source{Enabled: true, Getter: &crreadertest.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}},
 			wantErr: true,
 		},
 		{
@@ -205,7 +205,7 @@ func TestResolveOptions(t *testing.T) {
 				}
 				t.Setenv("CLICKHOUSE_PASSWORD_FILE", pwFile)
 			},
-			src:  Source{Enabled: true, Getter: &crreader.FakeGetter{Component: baselineClickHouseCR()}},
+			src:  Source{Enabled: true, Getter: &crreadertest.FakeGetter{Component: baselineClickHouseCR()}},
 			want: crSummary([]string{"ch-live.xmc-metrics.svc.cluster.local:9440"}, "analytics", "ch_reader", " csi-pw "),
 		},
 		{
@@ -216,12 +216,12 @@ func TestResolveOptions(t *testing.T) {
 		},
 		{
 			name:    "nil SecretReader without CSI returns hard error",
-			src:     Source{Enabled: true, Getter: &crreader.FakeGetter{Component: baselineClickHouseCR()}},
+			src:     Source{Enabled: true, Getter: &crreadertest.FakeGetter{Component: baselineClickHouseCR()}},
 			wantErr: true,
 		},
 		{
 			name:    "missing Secret or key returns hard error",
-			src:     Source{Enabled: true, Getter: &crreader.FakeGetter{Component: baselineClickHouseCR()}, Secrets: &crreader.FakeSecretReader{}},
+			src:     Source{Enabled: true, Getter: &crreadertest.FakeGetter{Component: baselineClickHouseCR()}, Secrets: &crreadertest.FakeSecretReader{}},
 			wantErr: true,
 		},
 		{
