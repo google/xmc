@@ -11,7 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+moved {
+  from = google_project_service.run_api
+  to   = google_project_service.run_api[0]
+}
+
 resource "google_project_service" "run_api" {
+  count              = var.log_monitor_deployment_enabled ? 0 : 1
   project            = var.project_id
   service            = "run.googleapis.com"
   disable_on_destroy = false
@@ -35,13 +41,20 @@ resource "google_project_service_identity" "pubsub_sa" {
   service  = "pubsub.googleapis.com"
 }
 
+# When log_monitor_deployment_enabled is true, the Log Monitor runs in GKE via the Helm chart
+# (deploy/helm/templates/log-monitor) and this Cloud Run service is not created.
+moved {
+  from = google_cloud_run_v2_service.log_monitor
+  to   = google_cloud_run_v2_service.log_monitor[0]
+}
 
 resource "google_cloud_run_v2_service" "log_monitor" {
+  count               = var.log_monitor_deployment_enabled ? 0 : 1
   provider            = google-beta
-  project             = google_project_service.run_api.project
+  project             = google_project_service.run_api[0].project
   name                = "xmc-log-monitor-${var.environment}"
   location            = var.region
-  deletion_protection = var.deletion_protection
+  deletion_protection = false
 
   ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 

@@ -24,6 +24,25 @@ import (
 	"xmanager_cloud/logging/logging"
 )
 
+// claimKey is the context key under which processMessage stores the claim of the message being
+// handled, so that ExtendClaim can extend it.
+type claimKey struct{}
+
+type claim struct {
+	msgID      string
+	workerID   string
+	extendChan chan<- struct{}
+}
+
+func withClaim(ctx context.Context, c claim) context.Context {
+	return context.WithValue(ctx, claimKey{}, c)
+}
+
+func claimFromContext(ctx context.Context) (claim, bool) {
+	c, ok := ctx.Value(claimKey{}).(claim)
+	return c, ok
+}
+
 const (
 	// DefaultBatchSize is the default batch size for reading messages from Redis. Defaults to 1 to
 	// achieve maximum concurrency.
@@ -97,6 +116,34 @@ func (c *ConsumerClient) AckMessage(ctx context.Context, msgID string) {
 	c.XAck(ctx, c.StreamName, c.GroupName, msgID)
 }
 
+// ExtendClaim extends the message lease by resetting the message's idle timer in the Redis PEL
+// and resetting the local execution timeout monitor.
+func (c *ConsumerClient) ExtendClaim(ctx context.Context) error {
+	cl, ok := claimFromContext(ctx)
+	if !ok {
+		return fmt.Errorf("no message claim found in context")
+	}
+
+	err := c.Client.XClaim(ctx, &redis.XClaimArgs{
+		Stream:   c.StreamName,
+		Group:    c.GroupName,
+		Consumer: cl.workerID,
+		MinIdle:  0,
+		Messages: []string{cl.msgID},
+	}).Err()
+	if err != nil {
+		return fmt.Errorf("failed to extend claim for message %s: %w", cl.msgID, err)
+	}
+
+	select {
+	case cl.extendChan <- struct{}{}:
+	default:
+	}
+
+	logging.Debug(ctx, "Extended message claim", "taskID", cl.msgID, "workerID", cl.workerID)
+	return nil
+}
+
 func getFailedCount(msg redis.XMessage) int {
 	var failedCount int
 	if fs, ok := msg.Values["failedAttempts"].(string); ok {
@@ -164,31 +211,51 @@ func (c *ConsumerClient) processMessage(ctx context.Context, msg redis.XMessage,
 		return
 	}
 
+	extendChan := make(chan struct{}, 1)
+	taskCtx := withClaim(ctx, claim{msgID: msg.ID, workerID: workerID, extendChan: extendChan})
+
 	// Run logic in goroutine
 	go func() {
-		result = c.TaskHandler(ctx, workerID, msg.Values["data"].(string))
+		result = c.TaskHandler(taskCtx, workerID, msg.Values["data"].(string))
 		close(done)
 	}()
 
-	select {
-	case <-done:
-		if result.WasRunSuccessful {
-			c.AckMessage(ctx, msg.ID)
-		} else {
-			msg = increaseFailedCount(ctx, msg)
+	timer := time.NewTimer(c.ProcessTimeout)
+	defer timer.Stop()
 
-			if result.ShouldBeRetried {
-				c.handleCrashedTask(ctx, msg, "function_error_retryable")
-			} else {
-				c.moveToDLQ(ctx, msg, "non_retryable_error")
+	for {
+		select {
+		case <-done:
+			if result.WasRunSuccessful {
 				c.AckMessage(ctx, msg.ID)
-			}
-		}
+			} else {
+				msg = increaseFailedCount(ctx, msg)
 
-	case <-time.After(c.ProcessTimeout):
-		msg = increaseFailedCount(ctx, msg)
-		// Case: Local Timeout (Worker is alive but too slow)
-		c.handleTimedOutTask(ctx, msg, "timeout")
+				if result.ShouldBeRetried {
+					c.handleCrashedTask(ctx, msg, "function_error_retryable")
+				} else {
+					c.moveToDLQ(ctx, msg, "non_retryable_error")
+					c.AckMessage(ctx, msg.ID)
+				}
+			}
+			return
+
+		case <-extendChan:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(c.ProcessTimeout)
+			logging.Debug(ctx, "Reset task timeout after claim extension", "taskID", msg.ID, "timeout", c.ProcessTimeout)
+
+		case <-timer.C:
+			msg = increaseFailedCount(ctx, msg)
+			// Case: Local Timeout (Worker is alive but too slow)
+			c.handleTimedOutTask(ctx, msg, "timeout")
+			return
+		}
 	}
 }
 

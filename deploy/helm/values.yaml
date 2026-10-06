@@ -33,6 +33,7 @@ health_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/health-s
 dashboard_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/dashboard-service-dev:latest"
 rod_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/rod-dev:latest"
 ingestion_gateway_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ingestion-gateway-dev:latest"
+log_monitor_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/log-monitor-dev:latest"
 xmc_bridge_custom_image: ""
 
 featureFlags:
@@ -109,6 +110,17 @@ rodDeployment:
   enabled: true
   serviceAccountName: "rod-data-provider-service-account"
   gcpServiceAccount: ""
+
+logMonitorDeployment:
+  enabled: false
+
+logMonitor:
+  gcpServiceAccount: ""
+  # Pub/Sub subscription ID (not the full resource path) created by the log_monitor module.
+  subscriptionId: "xmc-log-monitor-subscription-YOUR_ENVIRONMENT_NAME"
+  # Must match the keyword the logging sink filters on (log_monitor module logging_sink_custom_keyword).
+  logKeyword: "XMC LOG:"
+  maxConcurrentUpdates: 10
 
 healthService:
   gcpServiceAccount: ""

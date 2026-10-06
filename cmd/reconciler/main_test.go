@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 // TestNewMLRunCreatorReturnsNilInterfaceOnError guards against the typed-nil
@@ -47,5 +48,8 @@ func TestLoadConfig(t *testing.T) {
 	cfg := Load()
 	if cfg.MetricsPort != 8082 {
 		t.Errorf("Load().MetricsPort = %d, want 8082", cfg.MetricsPort)
+	}
+	if cfg.ReconciliationTimeout != 2*time.Minute {
+		t.Errorf("Load().ReconciliationTimeout = %v, want %v", cfg.ReconciliationTimeout, 2*time.Minute)
 	}
 }

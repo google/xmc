@@ -22,6 +22,7 @@ import (
 	"io"
 
 	"xmanager_cloud/internal/broadcast"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/task_queue_redis/redisclient"
 
@@ -29,6 +30,10 @@ import (
 )
 
 var (
+	// errStorageNotConfigured is returned when scheduling state operations are requested
+	// but the lazy storage provider is not configured.
+	errStorageNotConfigured = errors.New("storage provider is not configured")
+
 	// errBroadcastPublisherNotConfigured is returned when scheduling state changes are requested
 	// but the broadcast publisher is unavailable, so actuators could not be notified.
 	errBroadcastPublisherNotConfigured = errors.New("broadcast publisher is not configured")
@@ -37,6 +42,18 @@ var (
 	// publisher is unavailable, so the resumption trigger could not be dispatched.
 	errTaskQueuePublisherNotConfigured = errors.New("task queue publisher is not configured")
 )
+
+// PauseSchedulingStorage provides the transactional and pause scheduling repositories
+// required by PauseScheduler.
+type PauseSchedulingStorage interface {
+	storage.TransactionRunner
+	storage.PauseSchedulingStore
+}
+
+// LazyStorageProvider provides lazy access to Spanner-backed pause scheduling storage.
+type LazyStorageProvider interface {
+	Storage(ctx context.Context) (PauseSchedulingStorage, error)
+}
 
 // PauseScheduler manages the pause scheduling domain logic, state persistence,
 // broadcast notifications, and task queue trigger dispatching.
@@ -56,11 +73,11 @@ type PauseScheduler interface {
 
 // PauseSchedulerParams holds the dependencies and configuration for PauseScheduler.
 type PauseSchedulerParams struct {
-	PauseStateRepository pausestate.Repository
-	BroadcastPublisher   broadcast.Publisher
-	TaskQueuePublisher   redisclient.Publisher
-	BatchSize            int
-	MaxBacklogThreshold  int
+	LazyStorage         LazyStorageProvider
+	BroadcastPublisher  broadcast.Publisher
+	TaskQueuePublisher  redisclient.Publisher
+	BatchSize           int
+	MaxBacklogThreshold int
 }
 
 type schedulingResumeTrigger struct {
@@ -70,21 +87,23 @@ type schedulingResumeTrigger struct {
 }
 
 type pauseScheduler struct {
-	pauseStateRepository pausestate.Repository
-	broadcastPublisher   broadcast.Publisher
-	taskQueuePublisher   redisclient.Publisher
-	batchSize            int
-	maxBacklogThreshold  int
+	lazyStorage         LazyStorageProvider
+	broadcastPublisher  broadcast.Publisher
+	taskQueuePublisher  redisclient.Publisher
+	batchSize           int
+	maxBacklogThreshold int
 }
+
+var _ PauseScheduler = (*pauseScheduler)(nil)
 
 // NewPauseScheduler creates a new PauseScheduler with the provided dependencies and configuration.
 func NewPauseScheduler(params PauseSchedulerParams) PauseScheduler {
 	return &pauseScheduler{
-		pauseStateRepository: params.PauseStateRepository,
-		broadcastPublisher:   params.BroadcastPublisher,
-		taskQueuePublisher:   params.TaskQueuePublisher,
-		batchSize:            params.BatchSize,
-		maxBacklogThreshold:  params.MaxBacklogThreshold,
+		lazyStorage:         params.LazyStorage,
+		broadcastPublisher:  params.BroadcastPublisher,
+		taskQueuePublisher:  params.TaskQueuePublisher,
+		batchSize:           params.BatchSize,
+		maxBacklogThreshold: params.MaxBacklogThreshold,
 	}
 }
 
@@ -96,18 +115,40 @@ func (p *pauseScheduler) Close() error {
 	return nil
 }
 
+func (p *pauseScheduler) storage(ctx context.Context) (PauseSchedulingStorage, error) {
+	if p.lazyStorage == nil {
+		return nil, errStorageNotConfigured
+	}
+	st, err := p.lazyStorage.Storage(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize storage: %w", err)
+	}
+	return st, nil
+}
+
 // Pause updates the global scheduling state to paused and broadcasts the pause event.
 func (p *pauseScheduler) Pause(ctx context.Context) error {
 	if p.broadcastPublisher == nil {
 		return errBroadcastPublisherNotConfigured
 	}
-	state := &pausestate.PauseSchedulingState{
-		SchedulingPaused:   true,
-		ResumptionRunID:    "",
-		ResumptionWorkerID: "",
+	st, err := p.storage(ctx)
+	if err != nil {
+		return err
 	}
-	if err := p.pauseStateRepository.Set(ctx, state); err != nil {
-		return fmt.Errorf("failed to persist pause scheduling state: %w", err)
+
+	err = st.RunInTransaction(ctx, func(txCtx context.Context, tx *storage.Transaction) error {
+		state := &pausestate.PauseSchedulingState{
+			SchedulingPaused:   true,
+			ResumptionRunID:    "",
+			ResumptionWorkerID: "",
+		}
+		if err := tx.PauseState.Set(txCtx, state); err != nil {
+			return fmt.Errorf("failed to persist pause scheduling state: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	return p.broadcastPauseEvent(ctx)
 }
@@ -121,24 +162,17 @@ func (p *pauseScheduler) Resume(ctx context.Context) (string, error) {
 	if p.taskQueuePublisher == nil {
 		return "", errTaskQueuePublisherNotConfigured
 	}
-
-	// TODO(pausescheduling): Move state check and update into a Spanner read-write transaction.
-	current, err := p.pauseStateRepository.Get(ctx)
+	st, err := p.storage(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to retrieve pause scheduling state: %w", err)
-	}
-	if current != nil && !current.SchedulingPaused {
-		return current.ResumptionRunID, nil
+		return "", err
 	}
 
-	resumptionRunID := uuid.NewString()
-	state := &pausestate.PauseSchedulingState{
-		SchedulingPaused:   false,
-		ResumptionRunID:    resumptionRunID,
-		ResumptionWorkerID: "",
+	resumptionRunID, newlyResumed, err := persistResumeState(ctx, st)
+	if err != nil {
+		return "", err
 	}
-	if err := p.pauseStateRepository.Set(ctx, state); err != nil {
-		return "", fmt.Errorf("failed to persist resume scheduling state: %w", err)
+	if !newlyResumed {
+		return resumptionRunID, nil
 	}
 
 	if err := p.broadcastResumeEvent(ctx, resumptionRunID); err != nil {
@@ -149,6 +183,40 @@ func (p *pauseScheduler) Resume(ctx context.Context) (string, error) {
 	}
 
 	return resumptionRunID, nil
+}
+
+func persistResumeState(ctx context.Context, st PauseSchedulingStorage) (string, bool, error) {
+	var resumptionRunID string
+	var newlyResumed bool
+	err := st.RunInTransaction(ctx, func(txCtx context.Context, tx *storage.Transaction) error {
+		resumptionRunID = ""
+		newlyResumed = false
+
+		current, err := tx.PauseState.Get(txCtx)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve pause scheduling state: %w", err)
+		}
+		if current != nil && !current.SchedulingPaused {
+			resumptionRunID = current.ResumptionRunID
+			return nil
+		}
+
+		resumptionRunID = uuid.NewString()
+		newlyResumed = true
+		state := &pausestate.PauseSchedulingState{
+			SchedulingPaused:   false,
+			ResumptionRunID:    resumptionRunID,
+			ResumptionWorkerID: "",
+		}
+		if err := tx.PauseState.Set(txCtx, state); err != nil {
+			return fmt.Errorf("failed to persist resume scheduling state: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", false, err
+	}
+	return resumptionRunID, newlyResumed, nil
 }
 
 func (p *pauseScheduler) broadcastPauseEvent(ctx context.Context) error {
@@ -193,7 +261,11 @@ func (p *pauseScheduler) publishResumeTrigger(ctx context.Context, resumptionRun
 
 // IsPaused returns whether scheduling is currently paused according to repository state.
 func (p *pauseScheduler) IsPaused(ctx context.Context) (bool, error) {
-	state, err := p.pauseStateRepository.Get(ctx)
+	st, err := p.storage(ctx)
+	if err != nil {
+		return false, err
+	}
+	state, err := st.PauseState().Get(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to retrieve pause scheduling state: %w", err)
 	}

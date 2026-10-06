@@ -43,7 +43,8 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 *   **`dashboard_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Dashboard Service backend and UI visualization components for custom chart and dashboard visualizations.
 *   **`rod_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Resource Optimization & Diagnostics (ROD) Data Provider.
 *   **`health_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Health Service backing the Admin Panel.
-*   **`enable_components`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision foundational component controllers. With components enabled, `enable_metrics` no longer deploys the Ingestion Gateway from the umbrella chart; the gateway becomes an optional component installed from [its component chart](../profiles/stable-2026a/components/ingestion-gateway/README.md).
+*   **`log_monitor_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Controls whether the Log Monitor runs as a GKE Deployment (`true`) or as a Cloud Run service (`false`).
+*   **`enable_components`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision foundational component controllers. With components enabled, `enable_metrics` no longer deploys the Ingestion Gateway from the umbrella chart; the gateway becomes an optional component. Declare its `Component` CR through the [`stable-2026a` profile](../profiles/stable-2026a/README.md); `xmc-bridge` then installs the workload from [its component chart](../profiles/stable-2026a/components/ingestion-gateway/README.md).
 *   **`enable_managed_mldiagnostics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to enable Google Cloud Managed ML Diagnostics on the GKE cluster, enable the Hypercompute Cluster API, and configure IAM roles for MLRun management and GCS trace uploads.
 *   **`managed_xprof_gcs_bucket`**: GCS bucket for Managed XProf profiling data (e.g. `gs://<project>-mlruns`). When set, the actuator injects the GCS destination into workload JobSets so Managed ML Diagnostics (xprof) captures land in GCS. Requires Managed ML Diagnostics enabled on the cluster (see [Managed ML Diagnostics (Managed XProf)](#managed-ml-diagnostics-managed-xprof)).
 
@@ -94,6 +95,9 @@ Navigate into your master directory containing the `cluster-toolkit` folder and 
 ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d deploy/ctk_v2/xmanager-cloud-deployment.yaml -o ctk-out -l WARNING -w --force
 ```
 This command compiles the modules and generates the `xmc-v2-run` deployment folder inside `ctk-out/` containing the generated Terraform code.
+
+> [!IMPORTANT]
+> `gcluster create --force` copies the Helm chart into `ctk-out/<deployment_name>/.ghpc/staged/` but never deletes files that were removed from the repository, so deleted templates keep being deployed. When re-compiling an existing deployment after Helm templates were removed or renamed, delete that directory first (`rm -rf ctk-out/<deployment_name>/.ghpc/staged`); `gcluster create` re-stages every file. The `tools/dev_env` deploy and upgrade tooling does this automatically.
 
 ### Step 2: Provision the Infrastructure
 Execute the deployment to begin provisioning:

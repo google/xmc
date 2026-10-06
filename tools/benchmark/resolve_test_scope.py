@@ -23,8 +23,10 @@ specific affected backend test targets.
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 CORE_INFRA_FILES: set[str] = {
@@ -36,6 +38,11 @@ CORE_INFRA_FILES: set[str] = {
     "MODULE.bazel.lock",
     "BUILD.bazel",
     "compat.bzl",
+    ".bazelrc",
+    ".bazelversion",
+    ".github/workflows/unit-tests.yml",
+    ".github/actions/run-backend-tests/action.yml",
+    "tools/benchmark/resolve_test_scope.py",
 }
 
 NON_CODE_PREFIXES: tuple[str, ...] = (
@@ -105,6 +112,10 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
         if clean_f in CORE_INFRA_FILES:
             has_core_infra = True
 
+        if clean_f.startswith(".github/actions/run-ui-tests/"):
+            has_ui = True
+            continue
+
         if is_non_code_file(clean_f):
             continue
 
@@ -133,16 +144,295 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
     }
 
 
-def get_git_modified_files(base_ref: str | None = None, head_ref: str = "HEAD") -> list[str]:
+def _get_merge_base(ref_a: str, ref_b: str) -> str | None:
+    """Returns the merge-base commit SHA between ref_a and ref_b, or None on failure."""
+    res = subprocess.run(
+        ["git", "merge-base", ref_a, ref_b],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if res.returncode != 0:
+        return None
+    return res.stdout.strip() or None
+
+
+def _is_ancestor(ancestor_ref: str, descendant_ref: str) -> bool:
+    """Returns True if ancestor_ref is an ancestor of descendant_ref."""
+    res = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor_ref, descendant_ref],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    return res.returncode == 0
+
+
+def _normalize_subject(subject: str) -> str:
+    """Strips trailing PR number suffixes like ' (#123)' from commit subjects."""
+    s = subject.strip()
+    if s.endswith(")") and " (#" in s:
+        prefix, _, suffix = s.rpartition(" (#")
+        if suffix[:-1].isdigit():
+            return prefix.strip()
+    return s
+
+
+def _compute_patch_id(diff_text: str) -> str | None:
+    """Computes a stable git patch-id from unified diff text."""
+    if not diff_text.strip():
+        return None
+    res = subprocess.run(
+        ["git", "patch-id", "--stable"],
+        input=diff_text,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
+    return res.stdout.strip().split()[0]
+
+
+def _compute_bulk_patch_ids(shas: list[str]) -> dict[str, str]:
+    """Computes stable git patch-ids in bulk for a list of commit SHAs."""
+    if not shas:
+        return {}
+    log_res = subprocess.run(
+        ["git", "log", "-p", "--no-walk", *shas],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    if log_res.returncode != 0 or not log_res.stdout.strip():
+        return {}
+    patch_res = subprocess.run(
+        ["git", "patch-id", "--stable"],
+        input=log_res.stdout,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if patch_res.returncode != 0:
+        return {}
+    return {
+        parts[1]: parts[0]
+        for line in patch_res.stdout.splitlines()
+        if len(parts := line.split()) >= 2
+    }
+
+
+def _index_parent_commits(
+    parent_base: str,
+    target_ref: str,
+    allow_subject_fallback: bool,
+) -> tuple[set[str], Counter[str]]:
+    """Indexes active (non-reverted) parent commits by patch-id and 1-to-1 subject count."""
+    parent_log = subprocess.run(
+        ["git", "log", "--reverse", "--format=%H %s", f"{parent_base}..{target_ref}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if parent_log.returncode != 0 or not parent_log.stdout.strip():
+        return set(), Counter()
+
+    active_commits: list[tuple[str, str]] = []
+    for line in parent_log.stdout.splitlines():
+        parts = line.strip().split(" ", 1)
+        if not parts or not parts[0]:
+            continue
+        sha = parts[0]
+        raw_subj = parts[1].strip() if len(parts) > 1 else ""
+        if raw_subj.startswith('Revert "') and raw_subj.endswith('"'):
+            reverted = _normalize_subject(raw_subj[len('Revert "') : -1])
+            active_commits = [c for c in active_commits if c[1] != reverted]
+            continue
+        active_commits.append((sha, _normalize_subject(raw_subj)))
+
+    parent_shas = [sha for sha, _ in active_commits]
+    patch_ids = set(_compute_bulk_patch_ids(parent_shas).values())
+    subjects = (
+        Counter(subj for _, subj in active_commits if subj) if allow_subject_fallback else Counter()
+    )
+    return patch_ids, subjects
+
+
+def _match_cumulative_squash_prefix(
+    candidate_base: str,
+    prefix_commits: list[list[str]],
+    parent_patch_ids: set[str],
+    current_correlated: str,
+) -> str:
+    """Checks if a multi-commit prefix matches a squash-merge commit patch-id."""
+    if not parent_patch_ids or current_correlated == prefix_commits[-1][0]:
+        return current_correlated
+    for sha, _ in reversed(prefix_commits):
+        if sha == current_correlated:
+            break
+        diff_res = subprocess.run(
+            ["git", "diff", candidate_base, sha],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        if diff_res.returncode == 0 and _compute_patch_id(diff_res.stdout) in parent_patch_ids:
+            return sha
+    return current_correlated
+
+
+def _correlate_rebased_parent_tip(
+    parent_base: str,
+    target_ref: str,
+    candidate_base: str,
+    head_ref: str,
+    allow_subject_fallback: bool = False,
+) -> str:
+    """Advances candidate_base past rebased/squash-merged parent commits matching target_ref."""
+    try:
+        parent_patch_ids, parent_subjects = _index_parent_commits(
+            parent_base, target_ref, allow_subject_fallback
+        )
+        if not parent_patch_ids and not parent_subjects:
+            return candidate_base
+
+        head_log = subprocess.run(
+            ["git", "log", "--reverse", "--format=%H %s", f"{candidate_base}..{head_ref}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        if head_log.returncode != 0 or not head_log.stdout.strip():
+            return candidate_base
+
+        commits = [
+            line.strip().split(" ", 1) for line in head_log.stdout.splitlines() if line.strip()
+        ]
+        prefix_commits = [parts for parts in commits[:-1] if len(parts) == 2]
+        if not prefix_commits:
+            return candidate_base
+
+        head_patch_ids = (
+            _compute_bulk_patch_ids([c[0] for c in prefix_commits]) if parent_patch_ids else {}
+        )
+        correlated = candidate_base
+        for sha, subj in prefix_commits:
+            norm_subj = _normalize_subject(subj)
+            patch_id = head_patch_ids.get(sha)
+            if patch_id and patch_id in parent_patch_ids:
+                correlated = sha
+                if parent_subjects[norm_subj] > 0:
+                    parent_subjects[norm_subj] -= 1
+            elif allow_subject_fallback and parent_subjects[norm_subj] > 0:
+                correlated = sha
+                parent_subjects[norm_subj] -= 1
+            else:
+                break
+
+        return _match_cumulative_squash_prefix(
+            candidate_base, prefix_commits, parent_patch_ids, correlated
+        )
+    except Exception:
+        return candidate_base
+
+
+def resolve_effective_base_ref(
+    base_ref: str,
+    head_ref: str = "HEAD",
+    base_branch: str | None = None,
+) -> str:
+    """Resolves the closest merge-base across origin/<base_branch>, base_ref, and origin/main.
+
+    Includes both mb_branch and mb_base (suppressing mb_base only when origin/<base_branch> is
+    an ancestor of base_ref due to a rewound stack parent), excludes merge-bases equal to
+    head_ref, and correlates rewritten parent commits across gh-stack rebases and squash-merges.
+    """
+    clean_branch = (base_branch or "").strip()
+    if not clean_branch and base_ref in {"origin/main", "main", "HEAD~1"}:
+        return base_ref
+
+    is_stacked_branch = bool(clean_branch and clean_branch not in {"main", "origin/main"})
+    branch_ref = f"origin/{clean_branch}" if is_stacked_branch else ""
+    mb_branch = _get_merge_base(branch_ref, head_ref) if is_stacked_branch else None
+    mb_base = _get_merge_base(base_ref, head_ref)
+    if mb_branch and mb_base and mb_branch != mb_base and _is_ancestor(branch_ref, base_ref):
+        mb_base = None
+
+    mb_main = (
+        _get_merge_base("origin/main", head_ref)
+        if base_ref not in {"origin/main", "main"}
+        else None
+    )
+    merge_bases = list(
+        dict.fromkeys(mb for mb in (mb_branch, mb_base, mb_main) if mb and mb != head_ref)
+    )
+    if not merge_bases:
+        return base_ref
+
+    candidate = merge_bases[0]
+    if len(merge_bases) > 1:
+        indep = subprocess.run(
+            ["git", "merge-base", "--independent", *merge_bases],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        indep_set = (
+            {line.strip() for line in indep.stdout.splitlines() if line.strip()}
+            if indep.returncode == 0
+            else set()
+        )
+        for mb in merge_bases:
+            if mb in indep_set:
+                candidate = mb
+                break
+
+    if is_stacked_branch and candidate == mb_main:
+        target_ref = branch_ref if mb_branch else base_ref
+        parent_base = mb_branch or mb_base or candidate
+        return _correlate_rebased_parent_tip(
+            parent_base, target_ref, candidate, head_ref, allow_subject_fallback=True
+        )
+    if clean_branch in {"main", "origin/main"} and candidate != base_ref:
+        return _correlate_rebased_parent_tip(
+            candidate, base_ref, candidate, head_ref, allow_subject_fallback=False
+        )
+    return candidate
+
+
+def get_git_modified_files(
+    base_ref: str | None = None,
+    head_ref: str = "HEAD",
+    base_branch: str | None = None,
+) -> list[str]:
     """Retrieves modified files using git diff against base_ref, falling back to git status."""
     try:
+        effective_base = "HEAD~1"
         if base_ref:
-            cmd = ["git", "diff", "--name-only", f"{base_ref}...{head_ref}"]
+            effective_base = resolve_effective_base_ref(base_ref, head_ref, base_branch)
+            cmd = ["git", "diff", "--name-only", f"{effective_base}...{head_ref}"]
         else:
-            # Compare against HEAD~1 if no base provided
             cmd = ["git", "diff", "--name-only", "HEAD~1...HEAD"]
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=15)
+        if result.returncode != 0 and base_ref and head_ref != "HEAD":
+            effective_base = resolve_effective_base_ref(base_ref, "HEAD", base_branch)
+            result = subprocess.run(
+                ["git", "diff", "--name-only", f"{effective_base}...HEAD"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
+            )
         if result.returncode == 0:
             return [line.strip().strip('"') for line in result.stdout.splitlines() if line.strip()]
 
@@ -220,10 +510,15 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
         clean_f = f.strip()
         if not clean_f or is_non_code_file(clean_f):
             continue
-        if not clean_f.endswith(CODE_EXTENSIONS) and Path(clean_f).name not in BUILD_FILE_NAMES:
+        is_code_or_build = (
+            clean_f.endswith(CODE_EXTENSIONS) or Path(clean_f).name in BUILD_FILE_NAMES
+        )
+        if clean_f.startswith("cmd/ui/") and not is_code_or_build:
             continue
 
         pkg = find_enclosing_bazel_package(clean_f, cwd=cwd)
+        if not is_code_or_build and pkg in {None, "//"}:
+            return []
         if pkg:
             pkg_target = f"{pkg}:all" if pkg != "//" else "//:all"
             changed_pkgs.add(pkg_target)
@@ -278,14 +573,27 @@ def resolve_test_scope(
     cwd: Path | None = None,
 ) -> dict[str, object]:
     """Main entry point for test scope resolution."""
-    # Main branch push events always run full regression suites
-    if event_name == "push" and ref in {"refs/heads/main", "main"}:
+    # Main branch push / dispatch / schedule events always run full regression suites
+    if event_name in {"push", "workflow_dispatch", "schedule"} and ref in {
+        "refs/heads/main",
+        "main",
+        "",
+    }:
         return {
             "run_backend": True,
             "run_ui": True,
             "backend_mode": "all",
             "bazel_targets": "//... -//cmd/ui/...",
             "reason": "main branch push full regression",
+        }
+
+    if not any(f.strip() for f in files):
+        return {
+            "run_backend": True,
+            "run_ui": True,
+            "backend_mode": "all",
+            "bazel_targets": "//... -//cmd/ui/...",
+            "reason": "no modified files detected; defaulting to full test suite for safety",
         }
 
     classification = classify_modified_files(files)
@@ -355,13 +663,67 @@ def write_github_output(github_output_path: str, result: dict[str, object]) -> N
         f.write(f"reason={result['reason']}\n")
 
 
+def load_event_payload(event_path: str | None) -> dict:
+    """Loads the GitHub event payload JSON, returning {} if missing or malformed."""
+    if not event_path:
+        return {}
+    try:
+        payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _sha_field(obj: object, key: str) -> str:
+    """Returns obj[key] as a string if obj is a dict, else an empty string."""
+    return str(obj.get(key) or "") if isinstance(obj, dict) else ""
+
+
+def _payload_shas(payload: dict) -> tuple[str, str]:
+    """Extracts (base_sha, head_sha) from a pull_request or merge_group payload."""
+    pr = payload.get("pull_request")
+    if isinstance(pr, dict):
+        return _sha_field(pr.get("base"), "sha"), _sha_field(pr.get("head"), "sha")
+    group = payload.get("merge_group")
+    return _sha_field(group, "base_sha"), _sha_field(group, "head_sha")
+
+
+def apply_github_env_defaults(args: argparse.Namespace, env: dict[str, str]) -> argparse.Namespace:
+    """Fills CLI options left unset (None) from GitHub Actions env vars and event payload.
+
+    Explicit flags always win. The payload head SHA is preferred over GITHUB_SHA,
+    which is a synthetic merge commit on pull_request events. Outside GitHub
+    Actions (no GITHUB_EVENT_NAME), legacy local defaults are preserved.
+    """
+    in_actions = bool(env.get("GITHUB_EVENT_NAME"))
+    base_sha, head_sha = _payload_shas(load_event_payload(env.get("GITHUB_EVENT_PATH")))
+    if args.base is None and in_actions:
+        args.base = base_sha or "origin/main"
+    if args.head is None:
+        args.head = head_sha or env.get("GITHUB_SHA") or "HEAD"
+    if args.base_branch is None:
+        args.base_branch = env.get("GITHUB_BASE_REF", "")
+    if args.event is None:
+        args.event = env.get("GITHUB_EVENT_NAME") or "pull_request"
+    if args.ref is None:
+        args.ref = env.get("GITHUB_REF", "")
+    if args.github_output is None:
+        args.github_output = env.get("GITHUB_OUTPUT") or None
+    return args
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--files", nargs="*", help="Optional explicit list of modified file paths.")
-    parser.add_argument("--base", help="Git diff base reference.")
-    parser.add_argument("--head", default="HEAD", help="Git diff head reference.")
-    parser.add_argument("--event", default="pull_request", help="GitHub event name.")
-    parser.add_argument("--ref", default="", help="GitHub ref name.")
+    parser.add_argument("--base", help="Git diff base reference (default: event payload base SHA).")
+    parser.add_argument(
+        "--base-branch", help="Git diff base branch name (default: $GITHUB_BASE_REF)."
+    )
+    parser.add_argument(
+        "--head", help="Git diff head reference (default: payload head SHA, $GITHUB_SHA, HEAD)."
+    )
+    parser.add_argument("--event", help="GitHub event name (default: $GITHUB_EVENT_NAME).")
+    parser.add_argument("--ref", help="GitHub ref name (default: $GITHUB_REF).")
     parser.add_argument(
         "--no-rdeps",
         action="store_true",
@@ -369,13 +731,19 @@ def main() -> None:
         dest="disable_rdeps",
         help="Disable Bazel rdeps scoping.",
     )
-    parser.add_argument("--github-output", help="Path to $GITHUB_OUTPUT file to write flags.")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--github-output", help="Path to $GITHUB_OUTPUT file (default: $GITHUB_OUTPUT)."
+    )
+    args = apply_github_env_defaults(parser.parse_args(), dict(os.environ))
 
     if args.files is not None:
         modified_files = args.files
     else:
-        modified_files = get_git_modified_files(base_ref=args.base, head_ref=args.head)
+        modified_files = get_git_modified_files(
+            base_ref=args.base,
+            head_ref=args.head,
+            base_branch=args.base_branch,
+        )
 
     print(f"DEBUG modified_files: {modified_files}", file=sys.stderr)
 

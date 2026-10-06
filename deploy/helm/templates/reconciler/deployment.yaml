@@ -45,11 +45,11 @@ spec:
             drop:
             - ALL
         ports:
-        # Dedicated metrics port served by the reconciler's own metrics server,
-        # which exposes the global default registry (the reconciler's promauto
-        # metrics, e.g. jobset_reconciler_mlrun_*). The manager's built-in
-        # server (":8081") serves only the controller-runtime registry and is
-        # not scraped. Named so PodMonitoring can reference it.
+        # Metrics port served by the controller-runtime manager's metrics
+        # server. It exposes the controller-runtime registry, which holds both
+        # the built-in controller/workqueue metrics and the reconciler's own
+        # metrics (e.g. jobset_reconciler_mlrun_*). Named so PodMonitoring can
+        # reference it.
         - containerPort: {{ .Values.reconciler | default dict | dig "monitoring" "port" 8082 }}
           name: metrics
         envFrom:

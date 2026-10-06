@@ -15,7 +15,7 @@ The chart orchestrates the following backend and frontend microservices:
 | **`reconciler`** | Workload status watcher observing Kubernetes `JobSet` pod events and synchronizing state back to the database. | Cloud Spanner, Kubernetes API (In-Cluster or Remote) |
 | **`xid_service`** | Unique distributed identifier generator for experiments and work units. | Cloud Spanner (`xids-db`) |
 | **`ui`** | Angular-based web management console. | ESS, Dex / OAuth2 Gateway |
-| **`log_monitor`** | Log aggregation and streaming sidecar daemon. | Cloud Logging, Cloud Spanner |
+| **`log_monitor`** | Pub/Sub subscriber turning filtered workload log entries into work unit status messages. Needs the subscription from `deploy/ctk_v2/modules/log_monitor`. | Pub/Sub, Cloud Spanner (`experiment-db`) |
 
 ---
 

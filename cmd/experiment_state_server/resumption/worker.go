@@ -22,6 +22,7 @@ import (
 
 	"golang/uuid/uuid"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/kubernetes/common/constants"
@@ -35,11 +36,16 @@ const (
 )
 
 // TaskQueue defines the task queue operations used by the resumption worker:
-// enqueuing actuation tasks and checking the downstream backlog.
+// enqueuing resumed actuation tasks and checking the downstream backlog.
 type TaskQueue interface {
-	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
+	EnqueueResumedWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string, resumptionRunID string, resumptionTime time.Time) error
 	// CalculateBacklogLength returns the consumer group's backlog, capped just above maxThreshold.
 	CalculateBacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error)
+}
+
+// ClaimExtender extends the lease of the Redis message that triggered the resumption.
+type ClaimExtender interface {
+	ExtendClaim(ctx context.Context) error
 }
 
 // Worker defines the contract for running paused task resumption.
@@ -47,24 +53,31 @@ type Worker interface {
 	StartResumption(ctx context.Context, req Request) error
 }
 
+// Store provides the pause scheduling repositories and transactions used by the
+// resumption worker, so reads and transactional writes share a single backend.
+type Store interface {
+	storage.TransactionRunner
+	storage.PauseSchedulingStore
+}
+
 // ResumptionWorker coordinates the continuous batch replay of paused tasks.
 type ResumptionWorker struct {
-	pauseStateRepo        pausestate.Repository
-	pausedTaskRepo        pausedtask.Repository
+	store                 Store
 	taskQueue             TaskQueue
+	claimExtender         ClaimExtender
 	throttlePauseDuration time.Duration
 }
 
 // NewResumptionWorker creates a new ResumptionWorker with required dependencies.
 func NewResumptionWorker(
-	pauseStateRepo pausestate.Repository,
-	pausedTaskRepo pausedtask.Repository,
+	store Store,
 	taskQueue TaskQueue,
+	claimExtender ClaimExtender,
 ) *ResumptionWorker {
 	return &ResumptionWorker{
-		pauseStateRepo:        pauseStateRepo,
-		pausedTaskRepo:        pausedTaskRepo,
+		store:                 store,
 		taskQueue:             taskQueue,
+		claimExtender:         claimExtender,
 		throttlePauseDuration: defaultThrottlePauseDuration,
 	}
 }
@@ -86,32 +99,37 @@ func (w *ResumptionWorker) StartResumption(ctx context.Context, req Request) err
 }
 
 func (w *ResumptionWorker) registerWorker(ctx context.Context, runID, resumptionWorkerID string) (bool, error) {
-	state, err := w.pauseStateRepo.Get(ctx)
-	if err != nil {
-		return false, fmt.Errorf("failed to get pause state: %w", err)
-	}
-	if state.SchedulingPaused {
-		logging.Info(ctx, "Scheduling is paused; skipping resumption execution",
-			"resumption_run_id", runID,
-			"resumption_worker_id", resumptionWorkerID)
-		return false, nil
-	}
-	if state.ResumptionRunID != runID {
-		logging.Info(ctx, "Resumption run ID mismatch; skipping stale or unauthorized trigger",
-			"expected_run_id", state.ResumptionRunID,
-			"trigger_run_id", runID,
-			"resumption_worker_id", resumptionWorkerID)
-		return false, nil
-	}
+	registered := false
+	err := w.store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+		registered = false
+		state, err := tx.PauseState.Get(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get pause state: %w", err)
+		}
+		if state.SchedulingPaused {
+			logging.Info(ctx, "Scheduling is paused; skipping resumption execution",
+				"resumption_run_id", runID,
+				"resumption_worker_id", resumptionWorkerID)
+			return nil
+		}
+		if state.ResumptionRunID != runID {
+			logging.Info(ctx, "Resumption run ID mismatch; skipping stale or unauthorized trigger",
+				"expected_run_id", state.ResumptionRunID,
+				"trigger_run_id", runID,
+				"resumption_worker_id", resumptionWorkerID)
+			return nil
+		}
 
-	state.ResumptionWorkerID = resumptionWorkerID
-	state.UpdatedAt = time.Now().UTC()
+		state.ResumptionWorkerID = resumptionWorkerID
+		state.UpdatedAt = time.Now().UTC()
 
-	// TODO(pausescheduling): Execute Get-and-Set atomically inside a Spanner ReadWriteTransaction once transactional repository support is introduced.
-	if err := w.pauseStateRepo.Set(ctx, state); err != nil {
-		return false, fmt.Errorf("failed to set pause state for worker registration: %w", err)
-	}
-	return true, nil
+		if err := tx.PauseState.Set(ctx, state); err != nil {
+			return fmt.Errorf("failed to set pause state for worker registration: %w", err)
+		}
+		registered = true
+		return nil
+	})
+	return registered, err
 }
 
 func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resumptionWorkerID string) error {
@@ -125,11 +143,11 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 			return err
 		}
 
-		stop, err := w.shouldStopReplay(ctx, req.ResumptionRunID, resumptionWorkerID)
+		state, err := w.store.PauseState().Get(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get pause state during batch iteration: %w", err)
 		}
-		if stop {
+		if shouldStopReplay(ctx, state, req.ResumptionRunID, resumptionWorkerID) {
 			return nil
 		}
 
@@ -141,7 +159,7 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 			continue
 		}
 
-		batch, err := w.pausedTaskRepo.ListPending(ctx, batchSize)
+		batch, err := w.store.PausedTasks().ListPending(ctx, batchSize)
 		if err != nil {
 			return fmt.Errorf("failed to list pending paused tasks: %w", err)
 		}
@@ -152,11 +170,11 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 			return nil
 		}
 
-		if err := w.replayBatch(ctx, req.ResumptionRunID, batch); err != nil {
+		if err := w.replayBatch(ctx, req.ResumptionRunID, state.UpdatedAt, batch); err != nil {
 			return err
 		}
 
-		// TODO(pausescheduling): Extend message lease via heartbeat during batch processing.
+		w.extendClaim(ctx, req.ResumptionRunID)
 	}
 }
 
@@ -181,7 +199,7 @@ func (w *ResumptionWorker) throttleIfBusy(ctx context.Context, req Request) (boo
 		"pause_duration", w.pauseDuration(),
 		"resumption_run_id", req.ResumptionRunID)
 
-	// TODO(pausescheduling): Call ExtendClaim once lease extension is implemented.
+	w.extendClaim(ctx, req.ResumptionRunID)
 
 	if err := w.waitOrCancel(ctx); err != nil {
 		return false, err
@@ -198,6 +216,17 @@ func (w *ResumptionWorker) pauseDuration() time.Duration {
 	return w.throttlePauseDuration
 }
 
+// extendClaim keeps the trigger message leased so it is not timed out or
+// reclaimed mid-replay. Failures are not fatal: ResumptionWorkerID fencing
+// prevents duplicate replay if another worker takes over.
+func (w *ResumptionWorker) extendClaim(ctx context.Context, runID string) {
+	if err := w.claimExtender.ExtendClaim(ctx); err != nil {
+		logging.Warn(ctx, "Failed to extend resumption trigger claim",
+			"error", err,
+			"resumption_run_id", runID)
+	}
+}
+
 // waitOrCancel blocks the calling goroutine for the worker's pause duration,
 // returning early with ctx.Err() if the context is cancelled first.
 func (w *ResumptionWorker) waitOrCancel(ctx context.Context) error {
@@ -212,35 +241,31 @@ func (w *ResumptionWorker) waitOrCancel(ctx context.Context) error {
 	}
 }
 
-func (w *ResumptionWorker) shouldStopReplay(ctx context.Context, runID, resumptionWorkerID string) (bool, error) {
-	state, err := w.pauseStateRepo.Get(ctx)
-	if err != nil {
-		return false, fmt.Errorf("failed to get pause state during batch iteration: %w", err)
-	}
+func shouldStopReplay(ctx context.Context, state *pausestate.PauseSchedulingState, runID, resumptionWorkerID string) bool {
 	if state.SchedulingPaused {
 		logging.Info(ctx, "Scheduling re-paused mid-resumption; halting replay loop",
 			"resumption_run_id", runID,
 			"resumption_worker_id", resumptionWorkerID)
-		return true, nil
+		return true
 	}
 	if state.ResumptionRunID != runID {
 		logging.Info(ctx, "Resumption run ID changed mid-resumption; halting replay loop",
 			"expected_run_id", runID,
 			"current_run_id", state.ResumptionRunID,
 			"resumption_worker_id", resumptionWorkerID)
-		return true, nil
+		return true
 	}
 	if state.ResumptionWorkerID != resumptionWorkerID {
 		logging.Info(ctx, "Resumption worker fenced; another worker claimed the resumption process",
 			"resumption_run_id", runID,
 			"current_worker_id", state.ResumptionWorkerID,
 			"resumption_worker_id", resumptionWorkerID)
-		return true, nil
+		return true
 	}
-	return false, nil
+	return false
 }
 
-func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch []*pausedtask.PausedTask) error {
+func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resumptionTime time.Time, batch []*pausedtask.PausedTask) error {
 	resolutions := make([]pausedtask.TaskResolution, 0, len(batch))
 	now := time.Now().UTC()
 
@@ -277,8 +302,7 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch 
 			continue
 		}
 
-		// TODO(pausescheduling): Inject resumption_run_id and resumption_time into task metadata once proto fields are added.
-		if err := w.taskQueue.EnqueueWorkUnitTask(taskCtx, task.Target, task.WorkUnit, task.Action, task.OperationName); err != nil {
+		if err := w.taskQueue.EnqueueResumedWorkUnitTask(taskCtx, task.Target, task.WorkUnit, task.Action, task.OperationName, runID, resumptionTime); err != nil {
 			publishErr = fmt.Errorf("failed to enqueue work unit task %s: %w", task.TaskID, err)
 			break
 		}
@@ -294,7 +318,9 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, batch 
 	}
 
 	if len(resolutions) > 0 {
-		if err := w.pausedTaskRepo.MarkProcessed(ctx, resolutions); err != nil {
+		if err := w.store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+			return tx.PausedTasks.MarkProcessed(ctx, resolutions)
+		}); err != nil {
 			return errors.Join(publishErr, fmt.Errorf("failed to mark paused tasks as processed: %w", err))
 		}
 	}

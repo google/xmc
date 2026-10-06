@@ -13,7 +13,7 @@
 # limitations under the License.
 
 name: 'Run Go & Backend Unit Tests'
-description: 'Resolves test scope and executes Go and backend Bazel unit tests'
+description: 'Resolves test scope and executes Go and backend Bazel unit tests (requires actions/checkout with fetch-depth: 0)'
 
 inputs:
   test-timeout-seconds:
@@ -34,21 +34,9 @@ runs:
   steps:
     - name: 'Classify Backend Test Requirement'
       id: 'classify'
-      env:
-        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        GITHUB_SHA: ${{ github.sha }}
-        EVENT_NAME: ${{ github.event_name }}
-        GITHUB_REF: ${{ github.ref }}
       shell: bash
-      run: |
-        BASE_REF="${PR_BASE_SHA:-origin/main}"
-        python3 tools/benchmark/resolve_test_scope.py \
-          --base "${BASE_REF}" \
-          --head "${GITHUB_SHA}" \
-          --event "${EVENT_NAME}" \
-          --ref "${GITHUB_REF}" \
-          --no-rdeps \
-          --github-output "${GITHUB_OUTPUT}"
+      # Base/head/ref/event/output are derived from GITHUB_* env and GITHUB_EVENT_PATH.
+      run: python3 tools/benchmark/resolve_test_scope.py --no-rdeps
 
     - name: 'Set up Bazel'
       if: steps.classify.outputs.run_backend == 'true'
@@ -67,20 +55,8 @@ runs:
     - name: 'Resolve Backend Test Scope'
       if: steps.classify.outputs.run_backend == 'true'
       id: 'scope'
-      env:
-        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        GITHUB_SHA: ${{ github.sha }}
-        EVENT_NAME: ${{ github.event_name }}
-        GITHUB_REF: ${{ github.ref }}
       shell: bash
-      run: |
-        BASE_REF="${PR_BASE_SHA:-origin/main}"
-        python3 tools/benchmark/resolve_test_scope.py \
-          --base "${BASE_REF}" \
-          --head "${GITHUB_SHA}" \
-          --event "${EVENT_NAME}" \
-          --ref "${GITHUB_REF}" \
-          --github-output "${GITHUB_OUTPUT}"
+      run: python3 tools/benchmark/resolve_test_scope.py
 
     - name: 'Verify Spanner Emulator Endpoint'
       if: steps.scope.outputs.run_backend == 'true'

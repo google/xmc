@@ -45,10 +45,12 @@ go_library(
 go_test(
     name = "linter_test",
     srcs = [
+        "chart_renderer_internal_test.go",
         "chart_renderer_test.go",
         "constraints_test.go",
         "dag_test.go",
         "diagnostic_test.go",
+        "linter_internal_test.go",
         "linter_test.go",
         "manifest_decoder_test.go",
         "manifest_test.go",
@@ -58,13 +60,10 @@ go_test(
     ],
     data = [
         "//deploy/helm:chart",
-        "//deploy/profiles/stable-2026a:rules",
-        "//deploy/profiles/stable-2026a/components/clickhouse:chart",
-        "//deploy/profiles/stable-2026a/components/ingestion-gateway:chart",
-        "//deploy/profiles/stable-2026a/components/redpanda:chart",
+        "//deploy/profiles/stable-2026a:chart",
     ],
+    embed = [":linter"],
     deps = [
-        ":linter",
         "@com_github_google_go_cmp//cmp",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@sh_helm_helm_v3//pkg/chart/loader",

@@ -19,10 +19,10 @@ import (
 	"time"
 
 	"golang/cmp/cmp"
-	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	fmpb "protobuf/field_mask_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"
@@ -830,7 +830,6 @@ func TestConvertJobSetToWorkUnitExecutionUpdate(t *testing.T) {
 		podErrorMsg       string
 		startupWarningMsg string
 		want              *storagepkg.WorkUnitExecutionUpdate
-		wantErr           bool
 	}{
 		{
 			name: "successful conversion",
@@ -912,7 +911,6 @@ func TestConvertJobSetToWorkUnitExecutionUpdate(t *testing.T) {
 				},
 				UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state", "status.detailed_status", "status.system_message", "metadata.management_cluster", "metadata.type", "metadata.resource_name", "metadata.namespace", "metadata.service_account"}},
 			},
-			wantErr: false,
 		},
 		{
 			name: "failed conversion",
@@ -1021,11 +1019,7 @@ func TestConvertJobSetToWorkUnitExecutionUpdate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			time := time.Now()
 
-			got, err := ConvertJobSetToWorkUnitExecutionUpdate(t.Context(), tc.jobSet, tc.wid, tc.eid, "test-project", "test-location", "test-cluster", tc.podErrorMsg, tc.startupWarningMsg)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("ConvertJobSetToWorkUnitExecutionUpdate() error = %v, wantErr %v", err, tc.wantErr)
-				return
-			}
+			got := ConvertJobSetToWorkUnitExecutionUpdate(t.Context(), tc.jobSet, tc.wid, tc.eid, "test-project", "test-location", "test-cluster", tc.podErrorMsg, tc.startupWarningMsg)
 			if diff := cmp.Diff(tc.want, got, protocmp.Transform(), protocmp.IgnoreFields(&spb.StructuredMessage{}, "create_time"), protocmp.IgnoreFields(&spb.WorkUnitStatus{}, "state_update_time")); diff != "" {
 				t.Errorf("ConvertJobSetToWorkUnitExecutionUpdate() returned diff (-want +got):\n%s", diff)
 			}

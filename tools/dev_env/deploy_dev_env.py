@@ -44,6 +44,7 @@ from tools.common.tool_utils import (  # noqa: E402
     log_success,
     run_command,
 )
+from tools.dev_env.blueprint_compiler import compile_blueprint  # noqa: E402
 
 # ANSI Color Codes
 BOLD = "\033[1m"
@@ -461,21 +462,7 @@ def step_compile(
         config_path: Path to the configuration file.
     """
     log_info("Compiling XMC blueprint using gcluster...")
-    run_command(
-        [
-            "./cluster-toolkit/gcluster",
-            "create",
-            "deploy/ctk_v2/xmanager-cloud.yaml",
-            "-d",
-            config_path,
-            "-o",
-            "ctk-out",
-            "-l",
-            "WARNING",
-            "-w",
-            "--force",
-        ]
-    )
+    compile_blueprint(config_path, config.deployment_name)
     log_success("Blueprint compiled successfully under 'ctk-out/'.")
 
 

@@ -61,14 +61,14 @@ variable "environment" {
   description = "The environment name."
 }
 
-variable "deletion_protection" {
-  description = "If true, deletion protection will be enabled on created resources."
-  type        = bool
-  default     = false
-}
-
 variable "max_concurrent_updates" {
   type        = number
   description = "The maximum number of concurrent updates to Spanner during one batch log processing."
   default     = 10
+}
+
+variable "log_monitor_deployment_enabled" {
+  type        = bool
+  description = "When true, the Log Monitor runs as a GKE Deployment managed by Helm instead of a Cloud Run service."
+  default     = false
 }

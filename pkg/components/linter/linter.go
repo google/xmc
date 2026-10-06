@@ -67,39 +67,89 @@ func (l *Linter) ValidateDirectory(dir string) (*ValidationResult, error) {
 	return res, nil
 }
 
-func (l *Linter) collectManifests(dir string, res *ValidationResult) ([]*RawManifest, []*ComponentManifest, error) {
-	var rawManifests []*RawManifest
-	var compManifests []*ComponentManifest
+// manifestSet holds the raw and Component manifests decoded from a group of files.
+type manifestSet struct {
+	raws  []*RawManifest
+	comps []*ComponentManifest
+}
 
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil || d.IsDir() {
+func (l *Linter) collectManifests(dir string, res *ValidationResult) ([]*RawManifest, []*ComponentManifest, error) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to resolve absolute path of %q: %w", dir, err)
+	}
+
+	// Manifests of nested chart roots are kept apart so that mergeNestedManifests can drop the
+	// Components their enclosing chart already renders.
+	var top, nested manifestSet
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil || d.IsDir() || !isManifestFile(path) {
 			return walkErr
 		}
-		ext := strings.ToLower(filepath.Ext(path))
-		if (ext != ".yaml" && ext != ".yml") || isChartOrRulesConfigFile(path) {
-			return nil
+		chartRoot := findChartRoot(path)
+		set := &top
+		if chartRoot != "" && isNestedChartRoot(absDir, chartRoot) {
+			set = &nested
 		}
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			res.AddError(path, 1, "FILE_READ_ERROR", fmt.Sprintf("failed to read file: %v", readErr))
-			return nil
-		}
-		if chartRoot := findChartRoot(path); chartRoot != "" {
-			var renderErr error
-			if data, renderErr = RenderChartTemplate(chartRoot, path); renderErr != nil {
-				res.AddError(path, 1, "YAML_SYNTAX", fmt.Sprintf("failed to render chart template in %s: %v", path, renderErr))
-				return nil
-			}
-		}
-		raws, comps := l.parseManifestFile(path, data, res)
-		rawManifests = append(rawManifests, raws...)
-		compManifests = append(compManifests, comps...)
+		raws, comps := l.readManifestFile(path, chartRoot, res)
+		set.raws = append(set.raws, raws...)
+		set.comps = append(set.comps, comps...)
 		return nil
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to scan manifests in %q: %w", dir, err)
 	}
-	return rawManifests, compManifests, nil
+	merged := mergeNestedManifests(top, nested)
+	return merged.raws, merged.comps, nil
+}
+
+// isManifestFile reports whether path is a YAML file that may contain Kubernetes manifests.
+func isManifestFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return (ext == ".yaml" || ext == ".yml") && !isChartOrRulesConfigFile(path)
+}
+
+// readManifestFile reads path, renders it against chartRoot when it belongs to a Helm chart, and
+// decodes the result. Read and render failures are reported on res.
+func (l *Linter) readManifestFile(path, chartRoot string, res *ValidationResult) ([]*RawManifest, []*ComponentManifest) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		res.AddError(path, 1, "FILE_READ_ERROR", fmt.Sprintf("failed to read file: %v", err))
+		return nil, nil
+	}
+	if chartRoot != "" {
+		if data, err = RenderChartTemplate(chartRoot, path); err != nil {
+			res.AddError(path, 1, "YAML_SYNTAX", fmt.Sprintf("failed to render chart template in %s: %v", path, err))
+			return nil, nil
+		}
+	}
+	return l.parseManifestFile(path, data, res)
+}
+
+// mergeNestedManifests appends the manifests of nested chart roots to top, except each nested
+// Component (and its raw document) whose canonical name a top-level chart already renders. The
+// enclosing chart renders that Component itself, typically with profile-level values, so linting
+// the nested copy too would only report DUPLICATE_COMPONENT_NAME. All other nested documents are
+// kept, so nested templates are still rendered and checked.
+func mergeNestedManifests(top, nested manifestSet) manifestSet {
+	rendered := make(map[string]bool, len(top.comps))
+	for _, c := range top.comps {
+		if name := naming.CanonicalComponentName(c.Metadata.Name); name != "" {
+			rendered[name] = true
+		}
+	}
+	for _, r := range nested.raws {
+		isComponent := isComponentGroup(r.APIVersion) && r.Kind == "Component"
+		if !isComponent || !rendered[naming.CanonicalComponentName(r.Metadata.Name)] {
+			top.raws = append(top.raws, r)
+		}
+	}
+	for _, c := range nested.comps {
+		if !rendered[naming.CanonicalComponentName(c.Metadata.Name)] {
+			top.comps = append(top.comps, c)
+		}
+	}
+	return top
 }
 
 func (l *Linter) parseManifestFile(path string, data []byte, res *ValidationResult) ([]*RawManifest, []*ComponentManifest) {

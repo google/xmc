@@ -4,6 +4,7 @@
     "outDir": "./out-tsc/spec",
     "types": ["jasmine"],
     "paths": {
+      "app/*": ["./app/*"],
       "xmanager_cloud/ui/app/*": ["./app/*"],
       "jasmine": ["./app/stubs/jasmine.ts"],
       "javascript/closure/format/format": ["./app/stubs/format.ts"],

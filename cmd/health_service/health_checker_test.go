@@ -268,20 +268,52 @@ const (
 	mockXidExpectedVersion = int64(1)
 )
 
+type mockLazySpanner struct {
+	essHealthClient    commonhealth.SpannerHealthClient
+	essHealthErr       error
+	xidHealthClient    commonhealth.SpannerHealthClient
+	xidHealthErr       error
+	componentsProvider summary.CustomComponentsInfoProvider
+	componentsErr      error
+}
+
+func (m *mockLazySpanner) EssHealthClient(ctx context.Context) (commonhealth.SpannerHealthClient, error) {
+	if m.essHealthErr != nil {
+		return nil, m.essHealthErr
+	}
+	return m.essHealthClient, nil
+}
+
+func (m *mockLazySpanner) XidHealthClient(ctx context.Context) (commonhealth.SpannerHealthClient, error) {
+	if m.xidHealthErr != nil {
+		return nil, m.xidHealthErr
+	}
+	return m.xidHealthClient, nil
+}
+
+func (m *mockLazySpanner) ComponentsProvider(ctx context.Context) (summary.CustomComponentsInfoProvider, error) {
+	if m.componentsErr != nil {
+		return nil, m.componentsErr
+	}
+	return m.componentsProvider, nil
+}
+
 func TestRunChecks_SpannerMetadata(t *testing.T) {
 	checker := &HealthChecker{
 		cfg: &Config{
-			EssURL:                 "http://invalid",
-			XidAddr:                "invalid:50051",
-			ActuatorURL:            "http://invalid",
-			ReconcilerURL:          "http://invalid",
-			LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
+			EssURL:        "http://invalid",
+			XidAddr:       "invalid:50051",
+			ActuatorURL:   "http://invalid",
+			ReconcilerURL: "http://invalid",
+			LogMonitorURL: "http://invalid",
 		},
 		httpClient: &http.Client{
 			Timeout: 10 * time.Millisecond,
 		},
-		essHealthClient:          &mockSpannerHealthClient{version: 6, dirty: false},
-		xidHealthClient:          &mockSpannerHealthClient{version: 1, dirty: true},
+		lazySpanner: &mockLazySpanner{
+			essHealthClient: &mockSpannerHealthClient{version: 6, dirty: false},
+			xidHealthClient: &mockSpannerHealthClient{version: 1, dirty: true},
+		},
 		redisClient:              &mockRedisClient{},
 		essExpectedSchemaVersion: 6,
 		xidExpectedSchemaVersion: 1,
@@ -298,6 +330,26 @@ func TestRunChecks_SpannerMetadata(t *testing.T) {
 	}
 	if res.XidDbSchemaVersion != "1 (dirty)" {
 		t.Errorf("expected XID version '1 (dirty)', got %q", res.XidDbSchemaVersion)
+	}
+}
+
+func TestCheckSpanner_NilLazySpanner(t *testing.T) {
+	checker := &HealthChecker{}
+
+	essComp, essVersion := checker.CheckSpannerESS(context.Background())
+	if essComp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY || essComp.ErrorMessage != "spanner client not initialized" {
+		t.Errorf("expected UNHEALTHY with 'spanner client not initialized', got %+v", essComp)
+	}
+	if essVersion != "" {
+		t.Errorf("expected empty version, got %q", essVersion)
+	}
+
+	xidComp, xidVersion := checker.CheckSpannerXID(context.Background())
+	if xidComp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY || xidComp.ErrorMessage != "spanner client not initialized" {
+		t.Errorf("expected UNHEALTHY with 'spanner client not initialized', got %+v", xidComp)
+	}
+	if xidVersion != "" {
+		t.Errorf("expected empty version, got %q", xidVersion)
 	}
 }
 
@@ -450,13 +502,15 @@ func TestRunChecks_LogMonitorMissingConfig(t *testing.T) {
 			XidAddr:                "invalid:50051",
 			ActuatorURL:            "http://invalid",
 			ReconcilerURL:          "http://invalid",
-			LogMonitorResourceName: "", // Empty to trigger config error
+			LogMonitorResourceName: "",
 		},
 		httpClient: &http.Client{
 			Timeout: 10 * time.Millisecond,
 		},
-		essHealthClient:          &mockSpannerHealthClient{version: 6, dirty: false},
-		xidHealthClient:          &mockSpannerHealthClient{version: 1, dirty: false},
+		lazySpanner: &mockLazySpanner{
+			essHealthClient: &mockSpannerHealthClient{version: 6, dirty: false},
+			xidHealthClient: &mockSpannerHealthClient{version: 1, dirty: false},
+		},
 		redisClient:              &mockRedisClient{},
 		essExpectedSchemaVersion: 6,
 		xidExpectedSchemaVersion: 1,
@@ -464,12 +518,10 @@ func TestRunChecks_LogMonitorMissingConfig(t *testing.T) {
 
 	res := checker.RunChecks(context.Background())
 
-	// Expect 8 components (including Log Monitor)
 	if len(res.Components) != 8 {
 		t.Errorf("expected 8 components, got %d", len(res.Components))
 	}
 
-	// Verify Log Monitor is in the list and reports unhealthy with config error
 	var lmComp *spb.ComponentHealth
 	for _, comp := range res.Components {
 		if comp.Name == "Log Monitor" {
@@ -633,8 +685,10 @@ func TestRunChecks(t *testing.T) {
 					ReconcilerURL:          httpServer.URL,
 					LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
 				},
-				EssHealthClient:          &mockSpannerHealthClient{version: tc.essVersion, dirty: tc.essSpannerDirty, err: tc.essSpannerErr},
-				XidHealthClient:          &mockSpannerHealthClient{version: tc.xidVersion, dirty: tc.xidSpannerDirty, err: tc.xidSpannerErr},
+				LazySpanner: &mockLazySpanner{
+					essHealthClient: &mockSpannerHealthClient{version: tc.essVersion, dirty: tc.essSpannerDirty, err: tc.essSpannerErr},
+					xidHealthClient: &mockSpannerHealthClient{version: tc.xidVersion, dirty: tc.xidSpannerDirty, err: tc.xidSpannerErr},
+				},
 				RedisClient:              &mockRedisClient{err: tc.redisErr},
 				CloudRunService:          cloudRunService,
 				EssExpectedSchemaVersion: mockEssExpectedVersion,
@@ -666,6 +720,35 @@ func TestRunChecks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunChecks_LogMonitorURL(t *testing.T) {
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/readyz" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer httpServer.Close()
+
+	checker := &HealthChecker{
+		cfg: &Config{
+			LogMonitorURL: httpServer.URL,
+		},
+		httpClient: httpServer.Client(),
+	}
+
+	res := checker.RunChecks(context.Background())
+	for _, comp := range res.Components {
+		if comp.Name == "Log Monitor" {
+			if comp.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
+				t.Fatalf("expected Log Monitor to be healthy via HTTP /readyz, got %v (err: %q)", comp.HealthState, comp.ErrorMessage)
+			}
+			return
+		}
+	}
+	t.Fatal("Log Monitor component not found in results")
 }
 
 type mockComponentsInfoProvider struct {
@@ -729,12 +812,16 @@ func TestHealthChecker_RunChecks_WithCustomComponents(t *testing.T) {
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config: &Config{
-			XidAddr:       xidListener.Addr().String(),
-			EssURL:        httpServer.URL,
-			ActuatorURL:   httpServer.URL,
-			ReconcilerURL: httpServer.URL,
+			XidAddr:            xidListener.Addr().String(),
+			EssURL:             httpServer.URL,
+			ActuatorURL:        httpServer.URL,
+			ReconcilerURL:      httpServer.URL,
+			EnableComponents:   true,
+			EssSpannerDatabase: "projects/test/instances/test/databases/test",
 		},
-		ComponentsProvider: mockProvider,
+		LazySpanner: &mockLazySpanner{
+			componentsProvider: mockProvider,
+		},
 	})
 	if err != nil {
 		t.Fatalf("failed to create health checker: %v", err)
@@ -792,12 +879,16 @@ func TestHealthChecker_RunChecks_CustomComponentsError(t *testing.T) {
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config: &Config{
-			XidAddr:       xidListener.Addr().String(),
-			EssURL:        httpServer.URL,
-			ActuatorURL:   httpServer.URL,
-			ReconcilerURL: httpServer.URL,
+			XidAddr:            xidListener.Addr().String(),
+			EssURL:             httpServer.URL,
+			ActuatorURL:        httpServer.URL,
+			ReconcilerURL:      httpServer.URL,
+			EnableComponents:   true,
+			EssSpannerDatabase: "projects/test/instances/test/databases/test",
 		},
-		ComponentsProvider: mockProvider,
+		LazySpanner: &mockLazySpanner{
+			componentsProvider: mockProvider,
+		},
 	})
 	if err != nil {
 		t.Fatalf("failed to create health checker: %v", err)
@@ -817,5 +908,114 @@ func TestHealthChecker_RunChecks_CustomComponentsError(t *testing.T) {
 	}
 	if customComps[0].Name != "Custom Components Provider" || customComps[0].HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
 		t.Errorf("unexpected component health: %+v", customComps[0])
+	}
+}
+
+func TestHealthChecker_RunChecks_LazySpannerInitError(t *testing.T) {
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer httpServer.Close()
+
+	xidListener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("failed to create xid listener: %v", err)
+	}
+	defer xidListener.Close()
+
+	xidServer := grpc.NewServer()
+	xidHealthServer := health.NewServer()
+	xidHealthServer.SetServingStatus("xmc.XidService", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(xidServer, xidHealthServer)
+	go func() {
+		_ = xidServer.Serve(xidListener)
+	}()
+	defer xidServer.Stop()
+
+	checker, err := NewHealthChecker(HealthCheckerParams{
+		Config: &Config{
+			XidAddr:            xidListener.Addr().String(),
+			EssURL:             httpServer.URL,
+			ActuatorURL:        httpServer.URL,
+			ReconcilerURL:      httpServer.URL,
+			EnableComponents:   true,
+			EssSpannerDatabase: "projects/test/instances/test/databases/test",
+		},
+		LazySpanner: &mockLazySpanner{
+			essHealthErr:  errors.New("ess spanner init failed"),
+			xidHealthErr:  errors.New("xid spanner init failed"),
+			componentsErr: errors.New("components provider init failed"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create health checker: %v", err)
+	}
+	defer checker.Close()
+
+	res := checker.RunChecks(context.Background())
+	compMap := make(map[string]*spb.ComponentHealth)
+	for _, comp := range res.Components {
+		if comp != nil {
+			compMap[comp.Name] = comp
+		}
+	}
+
+	if comp := compMap["Spanner ESS"]; comp == nil || comp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		t.Errorf("expected Spanner ESS to be UNHEALTHY on lazy init error, got %+v", comp)
+	}
+	if comp := compMap["Spanner XID"]; comp == nil || comp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		t.Errorf("expected Spanner XID to be UNHEALTHY on lazy init error, got %+v", comp)
+	}
+	if comp := compMap["Custom Components Provider"]; comp == nil || comp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		t.Errorf("expected Custom Components Provider to be UNHEALTHY on lazy init error, got %+v", comp)
+	}
+}
+
+func TestHealthChecker_RunChecks_CustomComponentsSkippedWhenSpannerDbEmpty(t *testing.T) {
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer httpServer.Close()
+
+	xidListener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("failed to create xid listener: %v", err)
+	}
+	defer xidListener.Close()
+
+	xidServer := grpc.NewServer()
+	xidHealthServer := health.NewServer()
+	xidHealthServer.SetServingStatus("xmc.XidService", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(xidServer, xidHealthServer)
+	go func() {
+		_ = xidServer.Serve(xidListener)
+	}()
+	defer xidServer.Stop()
+
+	mockProvider := &mockComponentsInfoProvider{}
+
+	checker, err := NewHealthChecker(HealthCheckerParams{
+		Config: &Config{
+			XidAddr:            xidListener.Addr().String(),
+			EssURL:             httpServer.URL,
+			ActuatorURL:        httpServer.URL,
+			ReconcilerURL:      httpServer.URL,
+			EnableComponents:   true,
+			EssSpannerDatabase: "", // Empty database path
+		},
+		LazySpanner: &mockLazySpanner{
+			componentsProvider: mockProvider,
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create health checker: %v", err)
+	}
+	defer checker.Close()
+
+	res := checker.RunChecks(context.Background())
+	for _, comp := range res.Components {
+		if comp != nil && comp.Type == spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT {
+			t.Errorf("expected no custom components when EssSpannerDatabase is empty, got: %+v", comp)
+		}
 	}
 }
