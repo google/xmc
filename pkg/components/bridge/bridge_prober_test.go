@@ -16,6 +16,7 @@ package bridge
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -125,9 +126,11 @@ func TestBridgeProber_ProbeHealthMessageFallbacks(t *testing.T) {
 		name     string
 		spec     *componentspb.ComponentSpec
 		probeRes *HealthProbeResult
+		probeErr error
 		wantOK   bool
 		wantMsg  string
 	}{
+		{name: "CR probe error", spec: crSpec, probeErr: errors.New("connection refused"), wantMsg: "health probe error: connection refused"},
 		{name: "CR unhealthy without message", spec: crSpec, probeRes: &HealthProbeResult{}, wantMsg: "health probe failed"},
 		{name: "CR unhealthy with message", spec: crSpec, probeRes: &HealthProbeResult{Message: "HTTP 503"}, wantMsg: "HTTP 503"},
 		{name: "CR healthy without message", spec: crSpec, probeRes: &HealthProbeResult{Healthy: true}, wantOK: true, wantMsg: "CR is ready"},
@@ -136,7 +139,7 @@ func TestBridgeProber_ProbeHealthMessageFallbacks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bp := NewBridgeProber(detector, &mockProberDirect{probeRes: tt.probeRes}, time.Second)
+			bp := NewBridgeProber(detector, &mockProberDirect{probeRes: tt.probeRes, err: tt.probeErr}, time.Second)
 			ok, msg := bp.ProbeHealth(context.Background(), tt.spec, "xmc")
 			if ok != tt.wantOK || msg != tt.wantMsg {
 				t.Errorf("ProbeHealth() = (%v, %q), want (%v, %q)", ok, msg, tt.wantOK, tt.wantMsg)

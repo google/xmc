@@ -129,21 +129,16 @@ func (p *BridgeProber) endpointVerdict(ctx context.Context, endpoint, healthyMsg
 	return true, healthyMsg
 }
 
+// probe3PEndpoint actively probes endpoint and returns the verdict with the probe's message.
 func (p *BridgeProber) probe3PEndpoint(ctx context.Context, endpoint string) (bool, string) {
-	if endpoint == "" || p.healthProber == nil {
-		return true, ""
+	probeRes, err := probeEndpointHealth(ctx, p.healthProber, endpoint, p.probeTimeout)
+	if errors.Is(err, errNilProbeResult) {
+		return false, err.Error()
 	}
-	probeRes, err := p.healthProber.Probe(ctx, endpoint, p.probeTimeout)
 	if err != nil {
 		return false, fmt.Sprintf("health probe error: %v", err)
 	}
-	if probeRes == nil {
-		return false, "health prober returned nil result"
-	}
-	if !probeRes.Healthy {
-		return false, probeRes.Message
-	}
-	return true, probeRes.Message
+	return probeRes.Healthy, probeRes.Message
 }
 
 func firstNonEmptyToken(val string) string {
