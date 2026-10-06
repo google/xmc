@@ -61,7 +61,7 @@ jobs:
               - 'deploy/helm/**'
               - '.github/workflows/lint.yml'
 
-      # 1. Python Linting (Ruff)
+      # 1. Python Linting (Ruff & Mypy)
       - name: 'Install Ruff'
         run: |
           if ! command -v ruff &>/dev/null; then
@@ -73,6 +73,17 @@ jobs:
 
       - name: 'Verify Code Formatting (Ruff)'
         run: ruff format --check .
+
+      - name: 'Install Mypy'
+        run: |
+          if ! command -v mypy &>/dev/null; then
+            pip install --no-cache-dir mypy
+          fi
+
+      - name: 'Run Mypy Static Type Check'
+        run: |
+          PY_FILES=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" -not -name "dev_env.py")
+          mypy $PY_FILES
 
       # 2. Go Linting & Formatting (gofmt, golangci-lint, buildifier, addlicense)
       - name: 'Set up Go'
