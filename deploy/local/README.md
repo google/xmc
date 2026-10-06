@@ -193,16 +193,20 @@ python3 tools/dev_env/dev_env.py down
 
 ### Developing & Testing XMC Components (`xmc_bridge` & `stable-2026a` Profile)
 
-To enable foundational XMC Components (`components.xmc.dev` CRD, `xmc-bridge-deployment`, and the `stable-2026a` profile):
+To enable foundational XMC Components (`components.xmc.dev` CRD and `xmc-bridge-deployment` in local KinD, plus automatic installation of the `stable-2026a` profile on GKE):
 
 ```bash
-# Local KinD environment with components enabled
+# Local KinD environment with components enabled (CRD + xmc-bridge-deployment)
 python3 tools/dev_env/dev_env.py up --enable-components
 
-# Hot-reload xmc_bridge after modifying cmd/xmc_bridge/ or pkg/components/
-python3 tools/dev_env/dev_env.py reload xmc_bridge
+# Optional: install the stable-2026a Component CR profile into local KinD
+helm upgrade --install xmc-profile ./deploy/profiles/stable-2026a -n xmc --wait
 
-# GKE Developer Environment deploy or upgrade with components enabled
+# Hot-reload xmc_bridge after modifying cmd/xmc_bridge/ or pkg/components/
+# (or set enable_components: true in deploy/local/xmanager-cloud-local.yaml / ENABLE_COMPONENTS=true)
+python3 tools/dev_env/dev_env.py reload xmc_bridge --enable-components
+
+# GKE Developer Environment deploy or upgrade with components enabled (CRD + xmc-bridge + stable-2026a profile)
 python3 tools/dev_env/deploy_dev_env.py --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
   --dns-project <DNS_PROJECT> --dns-zone <DNS_ZONE> --enable-components
 python3 tools/dev_env/upgrade_dev_env.py --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
