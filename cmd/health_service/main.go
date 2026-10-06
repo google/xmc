@@ -38,6 +38,7 @@ import (
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/task_queue_redis/redisclient"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	cloudidentity "google.golang.org/api/cloudidentity/v1beta1"
 	"google.golang.org/api/option"
 
@@ -253,6 +254,7 @@ func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Auth
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+	mux.Handle("/metrics", promhttp.Handler())
 
 	authenticatedGwmux := authenticator.Authenticate(gwmux)
 

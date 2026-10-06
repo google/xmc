@@ -28,6 +28,8 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // mockPausedTaskRepo overrides Create; the embedded Repository is nil and must not be called.
@@ -420,6 +422,82 @@ func TestTaskPauseHandler_IsPaused_ResumptionTime(t *testing.T) {
 			if diff := cmp.Diff(tc.wantState, cache.State()); diff != "" {
 				t.Errorf("State() mismatch (-want +got):\n%s", diff)
 			}
+			wantGauge := 0.0
+			if tc.wantState.IsPaused {
+				wantGauge = 1.0
+			}
+			if got := testutil.ToFloat64(schedulingPausedGauge); got != wantGauge {
+				t.Errorf("xmc_actuator_scheduling_paused = %v, want %v", got, wantGauge)
+			}
 		})
+	}
+}
+
+func TestHandlePause_BufferedTasksMetrics(t *testing.T) {
+	ctx := context.Background()
+	pausedTasksBufferedTotal.Reset()
+
+	cache := NewCache()
+	cache.Update(State{IsPaused: true, UpdatedAt: time.Now()})
+	repo := &mockPausedTaskRepo{}
+	txRunner := &storage.MockStorage{
+		PausedTaskRepository: repo,
+	}
+	h, err := NewPauseHandler(cache, txRunner)
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
+
+	actions := []struct {
+		label   string
+		payload *actuatortaskpb.ActuatorPayload
+	}{
+		{
+			label:   "create",
+			payload: newCreatePayload(),
+		},
+		{
+			label: "restart",
+			payload: &actuatortaskpb.ActuatorPayload{
+				Target: proto.String("experiments/100/workUnits/200/executions/1"),
+				Action: &actuatortaskpb.Action{
+					Action: &actuatortaskpb.Action_Restart{Restart: &actuatortaskpb.RestartAction{}},
+				},
+				WorkUnit: &essmsgpb.WorkUnit{
+					Name: "experiments/100/workUnits/200",
+					CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+						Name: "experiments/100/workUnits/200/executions/2",
+					},
+				},
+			},
+		},
+		{
+			label: "update",
+			payload: &actuatortaskpb.ActuatorPayload{
+				Target: proto.String("experiments/100/workUnits/200/executions/1"),
+				Action: &actuatortaskpb.Action{
+					Action: &actuatortaskpb.Action_Update{Update: &actuatortaskpb.UpdateAction{}},
+				},
+				WorkUnit: &essmsgpb.WorkUnit{Name: "experiments/100/workUnits/200"},
+			},
+		},
+	}
+
+	for _, a := range actions {
+		if err := h.HandlePause(ctx, a.payload, "trace-id"); err != nil {
+			t.Fatalf("HandlePause(%s) unexpected error: %v", a.label, err)
+		}
+		if got := testutil.ToFloat64(pausedTasksBufferedTotal.WithLabelValues(a.label)); got != 1 {
+			t.Errorf("xmc_actuator_paused_tasks_buffered_total{action=%s} = %v, want 1", a.label, got)
+		}
+	}
+
+	// Verify failed transaction does not increment buffered counter
+	txRunner.UpdateWorkUnitExecutionsErr = errors.New("tx failure")
+	if err := h.HandlePause(ctx, newCreatePayload(), "trace-id"); err == nil {
+		t.Fatalf("expected error from HandlePause(), got nil")
+	}
+	if got := testutil.ToFloat64(pausedTasksBufferedTotal.WithLabelValues("create")); got != 1 {
+		t.Errorf("xmc_actuator_paused_tasks_buffered_total{action=create} after failed tx = %v, want 1", got)
 	}
 }

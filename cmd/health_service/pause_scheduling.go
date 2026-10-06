@@ -27,7 +27,25 @@ import (
 	"xmanager_cloud/task_queue_redis/redisclient"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+var schedulingPauseEventsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "xmc_scheduling_pause_events_total",
+		Help: "Total count of pause and resume operations triggered via the Health Service API",
+	},
+	[]string{"action", "status"},
+)
+
+func recordPauseSchedulingEvent(action string, err error) {
+	statusLabel := "success"
+	if err != nil {
+		statusLabel = "error"
+	}
+	schedulingPauseEventsTotal.WithLabelValues(action, statusLabel).Inc()
+}
 
 var (
 	// errStorageNotConfigured is returned when scheduling state operations are requested
@@ -127,7 +145,11 @@ func (p *pauseScheduler) storage(ctx context.Context) (PauseSchedulingStorage, e
 }
 
 // Pause updates the global scheduling state to paused and broadcasts the pause event.
-func (p *pauseScheduler) Pause(ctx context.Context) error {
+func (p *pauseScheduler) Pause(ctx context.Context) (err error) {
+	defer func() {
+		recordPauseSchedulingEvent("pause", err)
+	}()
+
 	if p.broadcastPublisher == nil {
 		return errBroadcastPublisherNotConfigured
 	}
@@ -155,7 +177,11 @@ func (p *pauseScheduler) Pause(ctx context.Context) error {
 
 // Resume updates the global scheduling state to unpaused with a newly generated run ID,
 // broadcasts the resume event, and publishes the task queue resume trigger.
-func (p *pauseScheduler) Resume(ctx context.Context) (string, error) {
+func (p *pauseScheduler) Resume(ctx context.Context) (_ string, err error) {
+	defer func() {
+		recordPauseSchedulingEvent("resume", err)
+	}()
+
 	if p.broadcastPublisher == nil {
 		return "", errBroadcastPublisherNotConfigured
 	}

@@ -26,6 +26,7 @@ import (
 	"xmanager_cloud/task_queue_redis/redisclient"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 type failingPauseStateRepo struct {
@@ -655,6 +656,59 @@ func TestPauseSchedulerClose(t *testing.T) {
 		scheduler := NewPauseScheduler(PauseSchedulerParams{})
 		if err := scheduler.Close(); err != nil {
 			t.Errorf("Close() error = %v, want nil", err)
+		}
+	})
+}
+
+func TestPauseScheduler_Metrics(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("increments pause success and error counters", func(t *testing.T) {
+		schedulingPauseEventsTotal.Reset()
+		fakeRepo := pausestate.NewFake()
+		scheduler := newFakePauseScheduler(fakeRepo)
+
+		if err := scheduler.Pause(ctx); err != nil {
+			t.Fatalf("Pause() unexpected error: %v", err)
+		}
+		if got := testutil.ToFloat64(schedulingPauseEventsTotal.WithLabelValues("pause", "success")); got != 1 {
+			t.Errorf("xmc_scheduling_pause_events_total{action=pause,status=success} = %v, want 1", got)
+		}
+		if got := testutil.ToFloat64(schedulingPauseEventsTotal.WithLabelValues("pause", "error")); got != 0 {
+			t.Errorf("xmc_scheduling_pause_events_total{action=pause,status=error} = %v, want 0", got)
+		}
+
+		failingScheduler := newFakePauseScheduler(&failingPauseStateRepo{err: errors.New("db error")})
+		if err := failingScheduler.Pause(ctx); err == nil {
+			t.Fatalf("expected error from Pause(), got nil")
+		}
+		if got := testutil.ToFloat64(schedulingPauseEventsTotal.WithLabelValues("pause", "error")); got != 1 {
+			t.Errorf("xmc_scheduling_pause_events_total{action=pause,status=error} = %v, want 1", got)
+		}
+	})
+
+	t.Run("increments resume success and error counters", func(t *testing.T) {
+		schedulingPauseEventsTotal.Reset()
+		fakeRepo := pausestate.NewFake()
+		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{SchedulingPaused: true})
+		scheduler := newFakePauseScheduler(fakeRepo)
+
+		if _, err := scheduler.Resume(ctx); err != nil {
+			t.Fatalf("Resume() unexpected error: %v", err)
+		}
+		if got := testutil.ToFloat64(schedulingPauseEventsTotal.WithLabelValues("resume", "success")); got != 1 {
+			t.Errorf("xmc_scheduling_pause_events_total{action=resume,status=success} = %v, want 1", got)
+		}
+		if got := testutil.ToFloat64(schedulingPauseEventsTotal.WithLabelValues("resume", "error")); got != 0 {
+			t.Errorf("xmc_scheduling_pause_events_total{action=resume,status=error} = %v, want 0", got)
+		}
+
+		failingScheduler := newFakePauseScheduler(&failingPauseStateRepo{err: errors.New("db error")})
+		if _, err := failingScheduler.Resume(ctx); err == nil {
+			t.Fatalf("expected error from Resume(), got nil")
+		}
+		if got := testutil.ToFloat64(schedulingPauseEventsTotal.WithLabelValues("resume", "error")); got != 1 {
+			t.Errorf("xmc_scheduling_pause_events_total{action=resume,status=error} = %v, want 1", got)
 		}
 	})
 }

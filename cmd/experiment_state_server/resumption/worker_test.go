@@ -33,6 +33,8 @@ import (
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/task_queue_redis/redisclient"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 type enqueuedTaskCall struct {
@@ -890,4 +892,125 @@ func TestResumptionWorker_BacklogThrottling_WorkerFenced(t *testing.T) {
 	if len(publisher.calls) != 0 {
 		t.Errorf("expected 0 published tasks when fenced, got %d", len(publisher.calls))
 	}
+}
+
+func TestResumptionWorker_Metrics(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("records replayed, skipped_stopped, and skipped_obsolete task counters by action", func(t *testing.T) {
+		resumptionTasksTotal.Reset()
+		resumptionErrorsTotal.Reset()
+
+		pauseRepo := pausestate.NewFake()
+		_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{
+			SchedulingPaused: false,
+			ResumptionRunID:  "run-metrics",
+		})
+		taskRepo := pausedtask.NewFake()
+		publisher := &mockPublisher{}
+
+		// 1. Create -> replayed
+		_ = taskRepo.Create(ctx, testValidTask(1, "task-create-replayed", int64(essmsgpb.Priority_NORMAL), time.Now()))
+
+		// 2. Restart -> skipped_stopped (terminal state)
+		_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+			XID:      1,
+			WID:      2,
+			TaskID:   "task-restart-stopped",
+			Target:   "experiments/1/workUnits/2/executions/1",
+			Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Restart{Restart: &actuatortaskpb.RestartAction{}}},
+			Priority: int64(essmsgpb.Priority_NORMAL),
+			WorkUnit: &essmsgpb.WorkUnit{
+				Name:     "experiments/1/workUnits/2",
+				Priority: essmsgpb.Priority_NORMAL,
+				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+					Name: "experiments/1/workUnits/2/executions/1",
+					Status: &essmsgpb.WorkUnitStatus{
+						State: essmsgpb.WorkUnitStatus_STOPPED,
+					},
+				},
+			},
+		})
+
+		// 3. Update -> skipped_obsolete (priority mismatch)
+		_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+			XID:      1,
+			WID:      3,
+			TaskID:   "task-update-obsolete",
+			Target:   "experiments/1/workUnits/3/executions/1",
+			Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Update{Update: &actuatortaskpb.UpdateAction{}}},
+			Priority: int64(essmsgpb.Priority_LOW),
+			WorkUnit: &essmsgpb.WorkUnit{
+				Name:     "experiments/1/workUnits/3",
+				Priority: essmsgpb.Priority_HIGH,
+				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+					Name: "experiments/1/workUnits/3/executions/1",
+					Status: &essmsgpb.WorkUnitStatus{
+						State: essmsgpb.WorkUnitStatus_RUNNING,
+					},
+				},
+			},
+		})
+
+		worker := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
+		if err := worker.StartResumption(ctx, Request{ResumptionRunID: "run-metrics", BatchSize: 10}); err != nil {
+			t.Fatalf("StartResumption() unexpected error: %v", err)
+		}
+
+		if got := testutil.ToFloat64(resumptionTasksTotal.WithLabelValues("create", "replayed")); got != 1 {
+			t.Errorf("xmc_resumption_tasks_total{action=create,result=replayed} = %v, want 1", got)
+		}
+		if got := testutil.ToFloat64(resumptionTasksTotal.WithLabelValues("restart", "skipped_stopped")); got != 1 {
+			t.Errorf("xmc_resumption_tasks_total{action=restart,result=skipped_stopped} = %v, want 1", got)
+		}
+		if got := testutil.ToFloat64(resumptionTasksTotal.WithLabelValues("update", "skipped_obsolete")); got != 1 {
+			t.Errorf("xmc_resumption_tasks_total{action=update,result=skipped_obsolete} = %v, want 1", got)
+		}
+	})
+
+	t.Run("increments throttles counter when backlog meets or exceeds threshold", func(t *testing.T) {
+		before := testutil.ToFloat64(resumptionThrottlesTotal)
+		backlogCalc := &mockBacklogCalculator{backlogValues: []int64{10, 5, 1}}
+		worker, _, _ := newThrottleTestWorker(t, backlogCalc)
+
+		if err := worker.StartResumption(ctx, throttleTestRequest(5)); err != nil {
+			t.Fatalf("StartResumption() unexpected error: %v", err)
+		}
+
+		after := testutil.ToFloat64(resumptionThrottlesTotal)
+		if delta := after - before; delta != 2 {
+			t.Errorf("xmc_resumption_throttles_total delta = %v, want 2", delta)
+		}
+	})
+
+	t.Run("records fetch, publish, and commit stage errors", func(t *testing.T) {
+		resumptionErrorsTotal.Reset()
+
+		// 1. Fetch error
+		pauseRepo := pausestate.NewFake()
+		_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-err"})
+		fetchErrRepo := &errPausedTaskRepo{Fake: pausedtask.NewFake(), listPendingErr: errors.New("fetch err")}
+		workerFetch := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: fetchErrRepo}, newMockTaskQueue(&mockPublisher{}, nil), redisclient.NewFakeClient())
+		_ = workerFetch.StartResumption(ctx, Request{ResumptionRunID: "run-err", BatchSize: 10})
+		if got := testutil.ToFloat64(resumptionErrorsTotal.WithLabelValues("fetch")); got != 1 {
+			t.Errorf("xmc_resumption_errors_total{stage=fetch} = %v, want 1", got)
+		}
+
+		// 2. Publish error
+		pubTaskRepo := pausedtask.NewFake()
+		_ = pubTaskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
+		workerPublish := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: pubTaskRepo}, newMockTaskQueue(&mockPublisher{err: errors.New("publish err")}, nil), redisclient.NewFakeClient())
+		_ = workerPublish.StartResumption(ctx, Request{ResumptionRunID: "run-err", BatchSize: 10})
+		if got := testutil.ToFloat64(resumptionErrorsTotal.WithLabelValues("publish")); got != 1 {
+			t.Errorf("xmc_resumption_errors_total{stage=publish} = %v, want 1", got)
+		}
+
+		// 3. Commit error
+		commitTaskRepo := &errPausedTaskRepo{Fake: pubTaskRepo, markProcessedErr: errors.New("commit err")}
+		workerCommit := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: commitTaskRepo}, newMockTaskQueue(&mockPublisher{}, nil), redisclient.NewFakeClient())
+		_ = workerCommit.StartResumption(ctx, Request{ResumptionRunID: "run-err", BatchSize: 10})
+		if got := testutil.ToFloat64(resumptionErrorsTotal.WithLabelValues("commit")); got != 1 {
+			t.Errorf("xmc_resumption_errors_total{stage=commit} = %v, want 1", got)
+		}
+	})
 }

@@ -28,11 +28,37 @@ import (
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 const (
 	// defaultThrottlePauseDuration is the pause interval when downstream queue backlog exceeds threshold.
 	defaultThrottlePauseDuration = 10 * time.Second
+)
+
+var (
+	resumptionTasksTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "xmc_resumption_tasks_total",
+			Help: "Total tasks processed during replay, differentiating replayed tasks from skipped/cancelled workloads.",
+		},
+		[]string{"action", "result"},
+	)
+	resumptionThrottlesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "xmc_resumption_throttles_total",
+			Help: "Number of times the resumption worker throttled and paused replay for 10s due to downstream backlog (>= max_backlog_threshold).",
+		},
+	)
+	resumptionErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "xmc_resumption_errors_total",
+			Help: "Total count of errors encountered by the resumption worker during replay batches.",
+		},
+		[]string{"stage"},
+	)
 )
 
 // TaskQueue defines the task queue operations used by the resumption worker:
@@ -161,6 +187,7 @@ func (w *ResumptionWorker) runBatchLoop(ctx context.Context, req Request, resump
 
 		batch, err := w.store.PausedTasks().ListPending(ctx, batchSize)
 		if err != nil {
+			resumptionErrorsTotal.WithLabelValues("fetch").Inc()
 			return fmt.Errorf("failed to list pending paused tasks: %w", err)
 		}
 		if len(batch) == 0 {
@@ -193,6 +220,7 @@ func (w *ResumptionWorker) throttleIfBusy(ctx context.Context, req Request) (boo
 		return false, nil
 	}
 
+	resumptionThrottlesTotal.Inc()
 	logging.Info(ctx, "Tasks queue backlog exceeded threshold; pausing replay",
 		"backlog", backlog,
 		"max_backlog_threshold", maxThreshold,
@@ -267,6 +295,9 @@ func shouldStopReplay(ctx context.Context, state *pausestate.PauseSchedulingStat
 
 func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resumptionTime time.Time, batch []*pausedtask.PausedTask) error {
 	resolutions := make([]pausedtask.TaskResolution, 0, len(batch))
+	// metricRecord holds the xmc_resumption_tasks_total labels, recorded only after a successful commit.
+	type metricRecord struct{ action, result string }
+	records := make([]metricRecord, 0, len(batch))
 	now := time.Now().UTC()
 
 	var publishErr error
@@ -299,6 +330,7 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resump
 				ResumptionRunID:  runID,
 				ProcessedTime:    now,
 			})
+			records = append(records, metricRecord{taskActionLabel(task.Action), skipReasonResultLabel(reason)})
 			continue
 		}
 
@@ -315,14 +347,42 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resump
 			ResumptionRunID:  runID,
 			ProcessedTime:    now,
 		})
+		records = append(records, metricRecord{taskActionLabel(task.Action), "replayed"})
+	}
+	if publishErr != nil {
+		resumptionErrorsTotal.WithLabelValues("publish").Inc()
 	}
 
 	if len(resolutions) > 0 {
 		if err := w.store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 			return tx.PausedTasks.MarkProcessed(ctx, resolutions)
 		}); err != nil {
+			resumptionErrorsTotal.WithLabelValues("commit").Inc()
 			return errors.Join(publishErr, fmt.Errorf("failed to mark paused tasks as processed: %w", err))
+		}
+		for _, r := range records {
+			resumptionTasksTotal.WithLabelValues(r.action, r.result).Inc()
 		}
 	}
 	return publishErr
+}
+
+func taskActionLabel(action *actuatortaskpb.Action) string {
+	switch {
+	case action.GetCreate() != nil:
+		return "create"
+	case action.GetRestart() != nil:
+		return "restart"
+	case action.GetUpdate() != nil:
+		return "update"
+	default:
+		return "unknown"
+	}
+}
+
+func skipReasonResultLabel(reason TaskFilterReason) string {
+	if reason == ReasonTerminalState {
+		return "skipped_stopped"
+	}
+	return "skipped_obsolete"
 }
