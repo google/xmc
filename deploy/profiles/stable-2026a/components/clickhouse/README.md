@@ -54,6 +54,9 @@ All values under `spec.parameters` are rendered as strings in [`templates/compon
 
 ## 3. Configuration & Rendered Manifest Examples
 
+> [!NOTE]
+> Admins enable ClickHouse through the [`stable-2026a` profile](../../README.md) by setting `components.clickhouse.enabled=true`. The standalone `helm template` commands below only preview what this chart renders.
+
 ### Example 1: Minimum Valid User Configuration (`values.yaml` Without Optional Overrides)
 
 Because all identity and default connection/credentials `parameters` fields are pre-configured by the chart, the **minimum valid user `values.yaml` override** required to activate the ClickHouse component is simply:

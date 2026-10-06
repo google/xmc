@@ -156,6 +156,7 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
             r'<script id="embedded-manifest"[^>]*>(.*?)</script>', html, re.DOTALL
         )
         self.assertIsNotNone(script_match)
+        assert script_match is not None
         embedded_json = json.loads(script_match.group(1))
         self.assertEqual(
             embedded_json["captures"][0]["title"], "T </script><script>alert(1)</script>"

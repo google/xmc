@@ -34,6 +34,7 @@ type Config struct {
 	KubeAPIBurst                     int
 	MldiagnosticsEnvironment         string
 	MetricsPort                      int
+	ReconciliationTimeout            time.Duration
 }
 
 // Flags and ConfigMap configurations.
@@ -52,6 +53,7 @@ var (
 	kubeAPIBurst                     int
 	mldiagnosticsEnvironment         string
 	metricsPort                      int
+	reconciliationTimeout            time.Duration
 )
 
 // init runs when the package is imported. It defines CLI flags and loads ConfigMaps.
@@ -77,6 +79,7 @@ func registerConfigs() {
 	configutil.Float64Env(&kubeAPIQPS, "kube_api_qps", 100)
 	configutil.IntEnv(&kubeAPIBurst, "kube_api_burst", 200)
 	configutil.IntEnv(&metricsPort, "metrics_port", 8082)
+	configutil.DurationEnv(&reconciliationTimeout, "reconciliation_timeout", 2*time.Minute)
 }
 
 // Load returns a Config struct populated with values from ConfigMaps and parsed flags.
@@ -98,5 +101,6 @@ func Load() Config {
 		KubeAPIBurst:                     kubeAPIBurst,
 		MldiagnosticsEnvironment:         mldiagnosticsEnvironment,
 		MetricsPort:                      metricsPort,
+		ReconciliationTimeout:            reconciliationTimeout,
 	}
 }

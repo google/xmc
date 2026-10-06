@@ -16,6 +16,7 @@
     "module": "ES2022",
     "lib": ["ES2024", "dom"],
     "paths": {
+      "app/*": ["./app/*"],
       "xmanager_cloud/ui/app/*": ["./app/*"],
       "jasmine": ["./app/stubs/jasmine.ts"],
       "javascript/closure/format/format": ["./app/stubs/format.ts"],

@@ -15,20 +15,13 @@
 // Package bridge implements the GitOps Bridge Controller reconciliation loop.
 package bridge
 
-// TODO: Split this file by responsibility (conditions.go, spec_parser.go,
-// wrapper_reconciler.go, lifecycle.go, reconciler.go); see google/xmc#992 review.
-
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
-	"time"
 
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -39,232 +32,13 @@ import (
 )
 
 const (
-	FinalizerDeletionProtection      = "finalizers.xmc.dev/deletion-protection"
-	ConditionTypeReady               = "Ready"
-	ConditionTypeDegraded            = "Degraded"
-	ConditionTypeDeletionBlocked     = "DeletionBlocked"
-	ConditionTypeDeactivationBlocked = "DeactivationBlocked"
-	ConditionStatusTrue              = "True"
-	ConditionStatusFalse             = "False"
 	// ReasonDependenciesNotReady marks an enabled component waiting on unready spec.dependencies.
 	ReasonDependenciesNotReady = "DependenciesNotReady"
-	// ReasonDeactivationBlocked marks a disabled component kept running because enabled components depend on it.
-	ReasonDeactivationBlocked = "DeactivationBlocked"
-	// ReasonDeactivationIncomplete marks a disabled component whose workload was removed before the CMS handshake completed.
-	ReasonDeactivationIncomplete = "DeactivationIncomplete"
 	// ReasonDependencyCycle marks an enabled component that is part of a spec.dependencies cycle.
 	ReasonDependencyCycle = "DependencyCycle"
-	// ConditionTypeDependenciesReady is informational on actuated components with dependencies; it does not affect Ready.
-	ConditionTypeDependenciesReady = "DependenciesReady"
-	reasonComponentDisabled        = "ComponentDisabled"
-	// deactivationRecheckInterval throttles PrepareDeactivation while deactivation is blocked.
-	deactivationRecheckInterval = 30 * time.Second
 	// dependencyNotFoundMessagePrefix mirrors store.DependencyNotFoundMessagePrefix (pinned by a test).
 	dependencyNotFoundMessagePrefix = "dependency not found:"
 )
-
-// Ready/Degraded condition reasons reported by component health evaluation.
-const (
-	// ReasonComponentHealthy indicates the component is healthy (for 1P: Helm release deployed, no upgrade pending or failed).
-	ReasonComponentHealthy = "ComponentHealthy"
-	// ReasonHealthProbeFailed indicates the prober-based health check failed.
-	ReasonHealthProbeFailed = "HealthProbeFailed"
-	// ReasonInvalidComponentRef indicates the component reference is missing a name or namespace.
-	ReasonInvalidComponentRef = "InvalidComponentRef"
-	// ReasonHelmUpgradeFailed indicates the last Helm upgrade for the component failed.
-	ReasonHelmUpgradeFailed = "HelmUpgradeFailed"
-	// ReasonHelmUpgradePending indicates a Helm upgrade is queued or running; progress, not a fault (Degraded=False).
-	ReasonHelmUpgradePending = "HelmUpgradePending"
-	// ReasonHelmRunnerUninitialized indicates no Helm action runner is configured, so release state cannot be verified.
-	ReasonHelmRunnerUninitialized = "HelmRunnerUninitialized"
-	// ReasonHelmReleaseNotFound indicates the component's Helm release does not exist.
-	ReasonHelmReleaseNotFound = "HelmReleaseNotFound"
-	// ReasonHelmReleaseNotReady indicates the latest release revision is in a terminal non-deployed state (e.g. failed).
-	ReasonHelmReleaseNotReady = "HelmReleaseNotReady"
-	// ReasonHelmReleaseStuck indicates the release is pending-install/upgrade/rollback with no upgrade in flight in this bridge.
-	ReasonHelmReleaseStuck = "HelmReleaseStuck"
-	// ReasonHelmStatusUnavailable indicates a transient failure querying Helm release status; health is left unchanged.
-	ReasonHelmStatusUnavailable = "HelmStatusUnavailable"
-)
-
-// CMSClient defines the interface for communicating with the CMS control plane.
-type CMSClient interface {
-	// SetComponentIntent registers or updates declarative component intent in CMS.
-	SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error)
-	// UpdateObservedGeneration updates the observed generation, state, and status message of a component in CMS.
-	UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error)
-	// ExecuteDeletion executes component deletion in the CMS backend.
-	ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error)
-	// PrepareDeactivation validates deactivation safety (FailedPrecondition on active dependents) and marks the component DISABLING.
-	PrepareDeactivation(ctx context.Context, in *componentspb.PrepareDeactivationRequest, opts ...grpc.CallOption) (*componentspb.PrepareDeactivationResponse, error)
-	// CompleteDeactivation transitions a DISABLING component to DISABLED.
-	CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error)
-}
-
-// StatusDetectorHealthProber defines the status detection and active health checking interface for 3P custom resources.
-type StatusDetectorHealthProber interface {
-	// DetectStatus queries the target 3P custom resource to determine readiness and extract access coordinates.
-	DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error)
-	// Probe executes an active HTTP/TCP probe against target.
-	Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error)
-	// ProbeHealth evaluates the runtime health of a component based on its spec and default namespace, returning health status and message.
-	ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec, defaultNamespace string) (bool, string)
-}
-
-// BridgeProber combines StatusDetector and HealthProber into StatusDetectorHealthProber.
-type BridgeProber struct {
-	detector     StatusDetector
-	healthProber HealthProber
-	probeTimeout time.Duration
-}
-
-var _ StatusDetectorHealthProber = (*BridgeProber)(nil)
-
-// NewBridgeProber creates a BridgeProber combining detector and health prober.
-func NewBridgeProber(detector StatusDetector, prober HealthProber, probeTimeout time.Duration) *BridgeProber {
-	if probeTimeout <= 0 {
-		probeTimeout = 5 * time.Second
-	}
-	return &BridgeProber{
-		detector:     detector,
-		healthProber: prober,
-		probeTimeout: probeTimeout,
-	}
-}
-
-// DetectStatus queries the target 3P resource via the underlying dynamic StatusDetector.
-func (p *BridgeProber) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
-	if p.detector == nil {
-		return nil, errors.New("status detector is uninitialized")
-	}
-	return p.detector.DetectStatus(ctx, ref)
-}
-
-// Probe executes an active HTTP/TCP health probe against target using the configured probe timeout.
-func (p *BridgeProber) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
-	if p.healthProber == nil {
-		return nil, errors.New("health prober is uninitialized")
-	}
-	if timeout <= 0 {
-		timeout = p.probeTimeout
-	}
-	return p.healthProber.Probe(ctx, target, timeout)
-}
-
-// ProbeHealth evaluates whether a component is healthy based on its spec and default namespace.
-// For 3P wrappers, it queries the status detector and verifies endpoint health via active probing.
-// Non-3P components are reported healthy; the Reconciler only relies on this for 1P components when no
-// HelmManager is configured, otherwise 1P health comes from HelmManager.ComponentHealth.
-func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec, defaultNamespace string) (bool, string) {
-	if spec == nil {
-		return false, "spec is nil"
-	}
-	if spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
-		return true, "Component healthy"
-	}
-	if spec.GetWrapperRef() == nil {
-		return p.probeOperatorlessHealth(ctx, spec)
-	}
-	wRef := ToBridgeWrapperRef(spec.GetWrapperRef(), defaultNamespace)
-	if p.detector == nil {
-		return false, "status detector is uninitialized"
-	}
-	res, err := p.detector.DetectStatus(ctx, wRef)
-	if err != nil {
-		return false, fmt.Sprintf("status detection error: %v", err)
-	}
-	if res == nil {
-		return false, "status detector returned nil status"
-	}
-	if !res.Found {
-		return false, res.Message
-	}
-	if !res.Ready {
-		return false, res.Message
-	}
-	if ok, probeMsg := p.probe3PEndpoint(ctx, res.Endpoint); !ok {
-		return false, probeMsg
-	} else if probeMsg != "" {
-		return true, probeMsg
-	}
-	return true, res.Message
-}
-
-func (p *BridgeProber) probeOperatorlessHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string) {
-	endpoint := resolveProbeEndpoint(spec.GetParameters())
-	if endpoint == "" {
-		return false, "no wrapperRef or connection endpoint parameters configured"
-	}
-	ok, probeMsg := p.probe3PEndpoint(ctx, endpoint)
-	if !ok {
-		if probeMsg == "" {
-			return false, "health probe failed"
-		}
-		return false, probeMsg
-	}
-	if probeMsg != "" {
-		return true, probeMsg
-	}
-	return true, "Component healthy"
-}
-
-func (p *BridgeProber) probe3PEndpoint(ctx context.Context, endpoint string) (bool, string) {
-	if endpoint == "" || p.healthProber == nil {
-		return true, ""
-	}
-	probeRes, err := p.healthProber.Probe(ctx, endpoint, p.probeTimeout)
-	if err != nil {
-		return false, fmt.Sprintf("health probe error: %v", err)
-	}
-	if probeRes == nil {
-		return false, "health prober returned nil result"
-	}
-	if !probeRes.Healthy {
-		return false, probeRes.Message
-	}
-	return true, probeRes.Message
-}
-
-type serverClientAdapter struct {
-	server componentspb.ComponentManagerServiceServer
-}
-
-// NewCMSClientAdapter creates a CMSClient adapter wrapping an in-process gRPC server.
-func NewCMSClientAdapter(s componentspb.ComponentManagerServiceServer) CMSClient {
-	return &serverClientAdapter{server: s}
-}
-
-func (a *serverClientAdapter) SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error) {
-	return a.server.SetComponentIntent(ctx, in)
-}
-func (a *serverClientAdapter) UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error) {
-	return a.server.UpdateObservedGeneration(ctx, in)
-}
-func (a *serverClientAdapter) ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error) {
-	return a.server.ExecuteDeletion(ctx, in)
-}
-func (a *serverClientAdapter) PrepareDeactivation(ctx context.Context, in *componentspb.PrepareDeactivationRequest, opts ...grpc.CallOption) (*componentspb.PrepareDeactivationResponse, error) {
-	return a.server.PrepareDeactivation(ctx, in)
-}
-func (a *serverClientAdapter) CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error) {
-	return a.server.CompleteDeactivation(ctx, in)
-}
-
-// Condition represents a standardized Kubernetes custom resource condition.
-type Condition struct {
-	// Type is the condition identifier (e.g. Ready, Degraded, DeletionBlocked).
-	Type string
-	// Status is the condition state ("True" or "False").
-	Status string
-	// Reason is a single-word camelCase reason explaining the condition transition.
-	Reason string
-	// Message is a human-readable description of the condition details.
-	Message string
-	// ObservedGeneration records the metadata.generation at the time of evaluation.
-	ObservedGeneration int64
-	// LastTransitionTime records when the condition transitioned between status values.
-	LastTransitionTime time.Time
-}
 
 // AccessStatus encapsulates network and access metadata (such as environment variables) for a component.
 type AccessStatus struct {
@@ -338,8 +112,8 @@ type ReconcileComponentInput struct {
 // 1. Validates input name and spec.
 // 2. If IsDeleting, delegates to reconcileDeletion (gated by DeletionProtection).
 // 3. Attaches deletion protection finalizer if not already present.
-// 4. If !Enabled, synchronizes intent via applyIntent and handles deactivation via
-// reconcileDisabled (gated by CMS deactivation safety).
+// 4. If !Enabled, synchronizes intent via applyDisabledIntent (tolerating a dependency that is not
+// registered in CMS) and handles deactivation via reconcileDisabled (gated by CMS deactivation safety).
 // 5. Otherwise delegates to reconcileEnabled (dependency gating, intent, actuation, health).
 func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileComponentInput) (*ReconcileResult, error) {
 	if in.Name == "" || in.Spec == nil {
@@ -360,7 +134,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 		logging.Info(ctx, "Attaching deletion protection finalizer", "name", in.Name)
 	}
 	if !in.Enabled {
-		if err := r.applyIntent(ctx, in, canonicalName, res); err != nil {
+		if err := r.applyDisabledIntent(ctx, in, canonicalName, res); err != nil {
 			return res, err
 		}
 		return r.reconcileDisabled(ctx, in, canonicalName, res)
@@ -457,37 +231,6 @@ func (r *Reconciler) actuateAndEvaluate(ctx context.Context, in ReconcileCompone
 	return r.evaluateHealth(ctx, in, canonicalName, res)
 }
 
-// reconcileDeletion handles component teardown when a deletionTimestamp is present.
-// If DeletionProtection is true, deletion is blocked, DeletionBlocked condition is set to True,
-// and finalizers remain intact. Otherwise, CMS ExecuteDeletion is called first to validate
-// deletion safety before mutating Kubernetes resources. If CMS reports NotFound, deletion
-// is treated as idempotently completed in CMS and proceeds to 1P workload teardown.
-func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	if in.DeletionProtection {
-		logging.Warn(ctx, "Component deletion blocked by deletion protection", "name", in.Name, "generation", in.Generation)
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDeletionBlocked, ConditionStatusTrue, in.Generation, "DeletionProtectionEnabled", fmt.Sprintf("Cannot delete %q: deletionProtection is enabled", in.Name))
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, "DeletingBlocked", "Deletion blocked by deletion protection")
-		return res, nil
-	}
-	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
-		if status.Code(err) != codes.NotFound {
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "CMSDeletionFailed", err.Error())
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "CMSDeletionFailed", err.Error())
-			return res, fmt.Errorf("failed to execute deletion in CMS: %w", err)
-		}
-		logging.Info(ctx, "Component already deleted in CMS, proceeding with workload teardown", "name", canonicalName)
-	} else {
-		logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
-	}
-	if err := r.teardown1PComponent(ctx, in, res); err != nil {
-		return res, err
-	}
-	res.RemoveFinalizer = true
-	res.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
-	return res, nil
-}
-
 // resolveComponentRef returns the ComponentRef from HelmOpts with fallback to input Name and Namespace.
 func resolveComponentRef(in ReconcileComponentInput) ComponentRef {
 	ref := in.HelmOpts.Ref
@@ -500,32 +243,11 @@ func resolveComponentRef(in ReconcileComponentInput) ComponentRef {
 	return ref
 }
 
-func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
-	if in.Spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT || r.helmManager == nil {
-		return nil
-	}
-	ref := resolveComponentRef(in)
-	if in.Spec.GetDeletionPolicy() == componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN {
-		if err := r.helmManager.Orphan1PComponent(ctx, ref); err != nil {
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmOrphanFailed", err.Error())
-			setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmOrphanFailed", err.Error())
-			return fmt.Errorf("failed to orphan 1P Helm component: %w", err)
-		}
-		return nil
-	}
-	if err := r.helmManager.Purge1PComponent(ctx, ref); err != nil {
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmDeletionFailed", err.Error())
-		return fmt.Errorf("failed to delete 1P Helm component: %w", err)
-	}
-	return nil
-}
 func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
 	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec})
 	if err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "IntentApplicationFailed", err.Error())
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "IntentApplicationFailed", err.Error())
+		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "IntentApplicationFailed", err.Error())
 		return fmt.Errorf("failed to apply component intent to CMS: %w", err)
 	}
 	if setResp != nil && setResp.GetComponent() != nil && setResp.GetComponent().GetStatus() != nil {
@@ -533,101 +255,6 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	}
 	logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "state", res.State.String())
 	return nil
-}
-
-// reconcileDisabled deactivates a component (enabled: false). PrepareDeactivation blocks while
-// active dependents exist (the workload keeps running; re-checked every deactivationRecheckInterval).
-// Otherwise the 1P workload is deleted, CompleteDeactivation finalizes the handshake, and the
-// component reports COMPONENT_STATE_DISABLED. Failures after teardown report DeactivationIncomplete.
-func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	if msg, ok := recentDeactivationBlock(in); ok {
-		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, false)
-	}
-	prepared, err := r.prepareDeactivation(ctx, in, canonicalName)
-	if status.Code(err) == codes.FailedPrecondition {
-		msg := fmt.Sprintf("Cannot disable %q: %s", in.Name, status.Convert(err).Message())
-		logging.Info(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
-		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, true)
-	}
-	if err != nil {
-		err = fmt.Errorf("failed to prepare deactivation in CMS: %w", err)
-		markDeactivationFailed(in, res, "CMSDeactivationFailed", err.Error())
-		return res, err
-	}
-	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
-		if err := r.deleteDisabledHelmComponent(ctx, in, res); err != nil {
-			return res, err
-		}
-	}
-	if prepared {
-		if _, err := r.cmsClient.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: canonicalName}); err != nil {
-			err = fmt.Errorf("failed to complete deactivation in CMS: %w", err)
-			markDeactivationFailed(in, res, ReasonDeactivationIncomplete, err.Error())
-			return res, err
-		}
-	}
-	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reasonComponentDisabled, "Component is disabled")
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, reasonComponentDisabled, "Component is disabled")
-	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
-		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
-	}
-	logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
-	return res, nil
-}
-
-// prepareDeactivation runs the CMS safety check unless already disabled at this generation. It returns
-// true when CompleteDeactivation must follow; a CMS NotFound means there is nothing to guard.
-func (r *Reconciler) prepareDeactivation(ctx context.Context, in ReconcileComponentInput, canonicalName string) (bool, error) {
-	if ready := findCondition(in.ExistingConditions, ConditionTypeReady); ready != nil && ready.Reason == reasonComponentDisabled && ready.ObservedGeneration == in.Generation {
-		return false, nil
-	}
-	_, err := r.cmsClient.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: canonicalName})
-	if status.Code(err) == codes.NotFound {
-		return false, nil
-	}
-	return err == nil, err
-}
-
-// recentDeactivationBlock returns the DeactivationBlocked message if CMS rejected deactivation at
-// this generation less than deactivationRecheckInterval ago (its LastTransitionTime is the last check).
-func recentDeactivationBlock(in ReconcileComponentInput) (string, bool) {
-	c := findCondition(in.ExistingConditions, ConditionTypeDeactivationBlocked)
-	if c == nil || c.Status != ConditionStatusTrue || c.ObservedGeneration != in.Generation || time.Since(c.LastTransitionTime) >= deactivationRecheckInterval {
-		return "", false
-	}
-	return c.Message, true
-}
-
-// reportDeactivationBlocked reports DeactivationBlocked=True with msg; checked marks a fresh CMS
-// check, restarting the recheck interval. Ready keeps DeactivationIncomplete if the workload is gone.
-func (r *Reconciler) reportDeactivationBlocked(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, msg string, checked bool) (*ReconcileResult, error) {
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDeactivationBlocked, ConditionStatusTrue, in.Generation, ReasonDeactivationBlocked, msg)
-	if cond := findCondition(res.Conditions, ConditionTypeDeactivationBlocked); checked && cond != nil {
-		cond.LastTransitionTime = time.Now().UTC()
-	}
-	if wasTornDown(in) {
-		markDeactivationFailed(in, res, ReasonDeactivationIncomplete, "workload already removed; "+msg)
-		return res, nil
-	}
-	return r.reportGated(ctx, in, canonicalName, res, ReasonDeactivationBlocked, msg, ConditionStatusFalse)
-}
-
-// wasTornDown reports whether a previous pass removed the workload without completing deactivation.
-func wasTornDown(in ReconcileComponentInput) bool {
-	ready := findCondition(in.ExistingConditions, ConditionTypeReady)
-	return ready != nil && ready.Reason == ReasonDeactivationIncomplete
-}
-
-// markDeactivationFailed records Ready=False, Degraded=True with reason, or DeactivationIncomplete
-// once an earlier pass removed the workload (the handshake is retried every pass).
-func markDeactivationFailed(in ReconcileComponentInput, res *ReconcileResult, reason, msg string) {
-	if wasTornDown(in) {
-		reason = ReasonDeactivationIncomplete
-	}
-	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reason, msg)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, reason, msg)
 }
 
 // unreadyDependenciesMessage returns "waiting on dependencies: ..." naming every unready dependency,
@@ -680,8 +307,7 @@ func setDependenciesReadyCondition(res *ReconcileResult, in ReconcileComponentIn
 // generation changes, so details would go stale). NotFound is tolerated: it may not be registered yet.
 func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, msg, degraded string) (*ReconcileResult, error) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reason, msg)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degraded, in.Generation, reason, msg)
+	setReadiness(res, in, ConditionStatusFalse, degraded, reason, msg)
 	if !shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) {
 		return res, nil
 	}
@@ -693,30 +319,9 @@ func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput
 	return res, nil
 }
 
-func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
-	if r.helmManager == nil {
-		logging.Warn(ctx, "HelmManager is nil for 1P component deletion", "name", in.Name, "namespace", in.Namespace)
-		return nil
-	}
-	ref := resolveComponentRef(in)
-	wasPreviouslyActive := wasComponentPreviouslyActive(in.ExistingConditions)
-	if err := r.helmManager.HydrateComponentState(ctx, ref, 0, wasPreviouslyActive); err != nil {
-		logging.Warn(ctx, "Failed to hydrate Helm state from cluster; continuing with CR status fallback", "name", in.Name, "namespace", in.Namespace, "err", err)
-	}
-	if !r.helmManager.IsComponentActive(ref) && !wasPreviouslyActive {
-		return nil
-	}
-	if err := r.helmManager.Delete1PComponent(ctx, ref); err != nil {
-		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, "HelmDeletionFailed", err.Error())
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, "HelmDeletionFailed", err.Error())
-		return fmt.Errorf("failed to delete 1P Helm component: %w", err)
-	}
-	return nil
-}
-
 // ensure1PComponent sets component enablement and parameter values in the Helm release. When
-// holdUpgrade is true (dependencies unready), a pending install/upgrade is skipped and held is true.
+// holdUpgrade is true (dependencies unready), a pending install/upgrade is skipped and held is true;
+// a repair of the already-actuated generation is not held, since it re-applies an approved spec.
 func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult, holdUpgrade bool) (held bool, err error) {
 	if in.Spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
 		return false, nil
@@ -730,11 +335,12 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 	if err := r.helmManager.HydrateComponentState(ctx, ref, in.Generation, readyAtGen); err != nil {
 		logging.Warn(ctx, "Failed to hydrate Helm state from cluster; continuing with CR status fallback", "name", in.Name, "namespace", in.Namespace, "err", err)
 	}
-	if r.helmManager.IsComponentActuated(ref, in.Generation) {
+	repair := r.helmManager.NeedsRepair(ref, in.Generation)
+	if !repair && r.helmManager.IsComponentActuated(ref, in.Generation) {
 		logging.Debug(ctx, "1P component already actuated at current generation, skipping Helm upgrade", "name", in.Name, "generation", in.Generation)
 		return false, nil
 	}
-	if holdUpgrade {
+	if holdUpgrade && !repair {
 		logging.Debug(ctx, "Holding 1P Helm upgrade until dependencies are ready", "name", in.Name, "generation", in.Generation)
 		return true, nil
 	}
@@ -742,27 +348,12 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 	in.HelmOpts.Enabled = in.Enabled
 	if err := r.helmManager.Ensure1PComponent(ctx, ref, in.HelmOpts); err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, ReasonHelmUpgradeFailed, err.Error())
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, ReasonHelmUpgradeFailed, err.Error())
+		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, ReasonHelmUpgradeFailed, err.Error())
 		return false, fmt.Errorf("failed to ensure 1P Helm component: %w", err)
 	}
 	r.helmManager.RecordActuation(ref, in.Generation)
 	logging.Debug(ctx, "Ensured 1P Helm component", "name", in.Name, "namespace", in.Namespace, "generation", in.Generation)
 	return false, nil
-}
-
-// wasComponentPreviouslyActive infers from the last Ready condition whether a workload may exist;
-// gated (DependenciesNotReady, DependencyCycle) or disabled components never had one actuated.
-func wasComponentPreviouslyActive(existing []Condition) bool {
-	ready := findCondition(existing, ConditionTypeReady)
-	if ready == nil {
-		return false
-	}
-	switch ready.Reason {
-	case "", reasonComponentDisabled, ReasonDependenciesNotReady, ReasonDependencyCycle:
-		return ready.Status == ConditionStatusTrue
-	}
-	return true
 }
 
 func isReadyAtGeneration(existing []Condition, generation int64) bool {
@@ -797,29 +388,12 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	if isHealthy {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
 	}
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, readyStatus, in.Generation, reason, healthMsg)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degradedStatus, in.Generation, reason, healthMsg)
-
-	if shouldSyncToCMS(in.ExistingConditions, readyStatus, in.Generation) {
-		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, fmt.Sprintf("Ready=%s", readyStatus)); err != nil {
-			return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
-		}
-		resetReadyTransitionTime(res.Conditions)
+	setReadiness(res, in, readyStatus, degradedStatus, reason, healthMsg)
+	if err := r.syncReadyToCMS(ctx, in, canonicalName, res, readyStatus); err != nil {
+		return res, err
 	}
 	logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", isHealthy, "reason", reason)
 	return res, nil
-}
-
-// healthConditionStatuses maps a health verdict to Ready/Degraded statuses. Pending upgrades and
-// unknown (transient) status are not faults, so they report Degraded=False.
-func healthConditionStatuses(healthy bool, reason string) (ready, degraded string) {
-	if healthy {
-		return ConditionStatusTrue, ConditionStatusFalse
-	}
-	if reason == ReasonHelmUpgradePending || reason == ReasonHelmStatusUnavailable {
-		return ConditionStatusFalse, ConditionStatusFalse
-	}
-	return ConditionStatusFalse, ConditionStatusTrue
 }
 
 // preserveHealthConditions copies the existing Ready/Degraded conditions into res and derives the state from them.
@@ -895,56 +469,6 @@ func (r *Reconciler) ReconcileWithDependencies(ctx context.Context, obj *unstruc
 	})
 }
 
-// ParseSpecFromUnstructured converts an unstructured spec map into a typed protobuf ComponentSpec,
-// alongside the boolean flags deletionProtection (default true) and enabled (default true).
-func ParseSpecFromUnstructured(specObj any) (*componentspb.ComponentSpec, bool, bool) {
-	specMap, ok := specObj.(map[string]any)
-	if !ok || specMap == nil {
-		return &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}, true, true
-	}
-	spec := &componentspb.ComponentSpec{
-		Type:           parseComponentType(specMap),
-		DeletionPolicy: parseDeletionPolicy(specMap),
-		Version:        extractStr(specMap, "version"),
-		Description:    extractStr(specMap, "description"),
-		WrapperRef:     parseWrapperRef(specMap),
-		Manifests:      parseManifests(specMap),
-		Parameters:     parseParameters(specMap),
-		Dependencies:   parseDependencies(specMap),
-	}
-	return spec, extractBool(specMap, "deletionProtection", true), extractBool(specMap, "enabled", true)
-}
-
-// parseDependencies converts the unstructured spec.dependencies list into canonical component names,
-// preserving declaration order and dropping duplicate and non-string entries. Strings with an empty
-// canonical name (e.g. "" or "/") are kept verbatim so CMS rejects the spec with
-// InvalidArgument instead of the bridge silently dropping a dependency edge.
-func parseDependencies(m map[string]any) []string {
-	raw, ok := m["dependencies"].([]any)
-	if !ok {
-		return nil
-	}
-	var res []string
-	seen := make(map[string]bool, len(raw))
-	for _, v := range raw {
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
-		name := naming.CanonicalComponentName(s)
-		if name == "" {
-			res = append(res, s)
-			continue
-		}
-		if seen[name] {
-			continue
-		}
-		seen[name] = true
-		res = append(res, name)
-	}
-	return res
-}
-
 // dropSelfDependency removes references to canonicalName from deps, logging a warning when found,
 // because a component that depends on itself could never become ready. deps must already be
 // canonical (parseDependencies is the bridge's single canonicalization point).
@@ -958,535 +482,4 @@ func dropSelfDependency(ctx context.Context, deps []string, canonicalName string
 		res = append(res, dep)
 	}
 	return res
-}
-
-// parseParameters converts an unstructured parameters map into a string map.
-func parseParameters(m map[string]any) map[string]string {
-	raw, ok := m["parameters"].(map[string]any)
-	if !ok || len(raw) == 0 {
-		return nil
-	}
-	res := make(map[string]string, len(raw))
-	for k, v := range raw {
-		switch val := v.(type) {
-		case string:
-			res[k] = val
-		case float64:
-			if val == float64(int64(val)) {
-				res[k] = strconv.FormatInt(int64(val), 10)
-			} else {
-				res[k] = strconv.FormatFloat(val, 'f', -1, 64)
-			}
-		case int:
-			res[k] = strconv.Itoa(val)
-		case int64:
-			res[k] = strconv.FormatInt(val, 10)
-		case bool:
-			res[k] = strconv.FormatBool(val)
-		case nil:
-			// skip
-		default:
-			res[k] = fmt.Sprintf("%v", v)
-		}
-	}
-	if len(res) == 0 {
-		return nil
-	}
-	return res
-}
-
-// parseManifests converts an unstructured manifests slice into a slice of YAML string documents.
-func parseManifests(m map[string]any) []string {
-	raw, ok := m["manifests"].([]any)
-	if !ok {
-		return nil
-	}
-	var res []string
-	for _, v := range raw {
-		if s, ok := v.(string); ok {
-			res = append(res, s)
-		}
-	}
-	return res
-}
-
-// extractBool extracts a boolean key from map m, returning def if missing or of invalid type.
-func extractBool(m map[string]any, k string, def bool) bool {
-	if v, ok := m[k].(bool); ok {
-		return v
-	}
-	return def
-}
-
-// extractStr extracts a string key from map m, returning "" if missing or of invalid type.
-func extractStr(m map[string]any, k string) string {
-	if v, ok := m[k].(string); ok {
-		return v
-	}
-	return ""
-}
-
-// extractInt extracts an int64 integer key from map m. Handles standard Go numeric types
-// (int64, int, int32, float64), json.Number, and string representations.
-func extractInt(m map[string]any, k string) int64 {
-	v, ok := m[k]
-	if !ok {
-		return 0
-	}
-	switch val := v.(type) {
-	case int64:
-		return val
-	case int:
-		return int64(val)
-	case int32:
-		return int64(val)
-	case float64:
-		return int64(val)
-	case json.Number:
-		if i, err := val.Int64(); err == nil {
-			return i
-		}
-	case string:
-		if i, err := strconv.ParseInt(val, 10, 64); err == nil {
-			return i
-		}
-	}
-	return 0
-}
-
-// parseComponentType parses the componentType string field into its corresponding protobuf enum.
-func parseComponentType(m map[string]any) componentspb.ComponentType {
-	if ct, ok := m["componentType"].(string); ok && ct == "COMPONENT_TYPE_CUSTOM_3P_WRAPPER" {
-		return componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER
-	}
-	return componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT
-}
-
-// parseDeletionPolicy parses the deletionPolicy string field into its corresponding protobuf enum (Delete vs Orphan).
-func parseDeletionPolicy(m map[string]any) componentspb.DeletionPolicy {
-	if dp, ok := m["deletionPolicy"].(string); ok && (dp == "Orphan" || dp == "DELETION_POLICY_ORPHAN") {
-		return componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN
-	}
-	return componentspb.DeletionPolicy_DELETION_POLICY_DELETE
-}
-
-// parseWrapperRef extracts a 3P wrapper reference from the unstructured spec map,
-// supporting both camelCase and protobuf field names.
-func parseWrapperRef(m map[string]any) *componentspb.WrapperRef {
-	wr, ok := m["wrapperRef"].(map[string]any)
-	if !ok || wr == nil {
-		return nil
-	}
-	return &componentspb.WrapperRef{
-		CrdGroup:        firstNonEmpty(extractStr(wr, "crdGroup"), extractStr(wr, "group")),
-		CrdVersion:      firstNonEmpty(extractStr(wr, "crdVersion"), extractStr(wr, "version")),
-		CrdKind:         firstNonEmpty(extractStr(wr, "crdKind"), extractStr(wr, "kind")),
-		TargetName:      firstNonEmpty(extractStr(wr, "targetName"), extractStr(wr, "name")),
-		TargetNamespace: firstNonEmpty(extractStr(wr, "targetNamespace"), extractStr(wr, "namespace")),
-	}
-}
-
-// firstNonEmpty returns the first string in values that is not empty, or "" if all are empty.
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-// ParseConditionsFromUnstructured extracts and parses a slice of Condition objects from the .status map,
-// converting lastTransitionTime RFC3339 strings into time.Time values.
-func ParseConditionsFromUnstructured(statusObj any) []Condition {
-	statusMap, ok := statusObj.(map[string]any)
-	if !ok || statusMap == nil {
-		return nil
-	}
-	condsList, ok := statusMap["conditions"].([]any)
-	if !ok {
-		return nil
-	}
-	var res []Condition
-	for _, cObj := range condsList {
-		if cMap, ok := cObj.(map[string]any); ok {
-			c := Condition{
-				Type: extractStr(cMap, "type"), Status: extractStr(cMap, "status"),
-				Reason: extractStr(cMap, "reason"), Message: extractStr(cMap, "message"),
-				ObservedGeneration: extractInt(cMap, "observedGeneration"),
-			}
-			if ltt, ok := cMap["lastTransitionTime"].(string); ok {
-				if t, err := time.Parse(time.RFC3339, ltt); err == nil {
-					c.LastTransitionTime = t
-				}
-			}
-			res = append(res, c)
-		}
-	}
-	return res
-}
-
-// updateObservedCMS sends an UpdateObservedGeneration RPC to CMS.
-func (r *Reconciler) updateObservedCMS(ctx context.Context, name string, gen int64, state componentspb.ComponentState, statusMsg string) error {
-	_, err := r.cmsClient.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
-		Name: name, ObservedGeneration: gen, State: state, StatusMessage: statusMsg,
-	})
-	return err
-}
-
-const defaultCMSHeartbeatInterval = 5 * time.Minute
-
-// shouldSyncToCMS determines whether an UpdateObservedGeneration RPC to CMS should be executed.
-// Under the Hybrid Probing Model (Drift 1), periodic steady-state health probe ticks bypass
-// CMS and Cloud Spanner to eliminate write amplification. CMS is only invoked when:
-// 1. Initial reconciliation (no existing Ready condition reported).
-// 2. State/readiness transitions (e.g. Ready=True <-> Ready=False).
-// 3. Metadata generation update (CR spec modified).
-// 4. Coarse heartbeat interval expiration (>= 5 minutes).
-func shouldSyncToCMS(existingConditions []Condition, targetStatus string, currentGen int64) bool {
-	var existingReady *Condition
-	for i := range existingConditions {
-		if existingConditions[i].Type == ConditionTypeReady {
-			existingReady = &existingConditions[i]
-			break
-		}
-	}
-	if existingReady == nil {
-		return true
-	}
-	if existingReady.ObservedGeneration != currentGen {
-		return true
-	}
-	if existingReady.Status != targetStatus {
-		return true
-	}
-	if existingReady.LastTransitionTime.IsZero() || time.Since(existingReady.LastTransitionTime) >= defaultCMSHeartbeatInterval {
-		return true
-	}
-	return false
-}
-
-// resetReadyTransitionTime updates LastTransitionTime on the Ready condition to current UTC time.
-// This resets the heartbeat timer after a successful sync to CMS.
-func resetReadyTransitionTime(conditions []Condition) {
-	now := time.Now().UTC()
-	for i := range conditions {
-		if conditions[i].Type == ConditionTypeReady {
-			conditions[i].LastTransitionTime = now
-			return
-		}
-	}
-}
-
-// setCondition inserts or updates a Condition in the conditions slice. If the condition already
-// existed with the same status, its lastTransitionTime is preserved; otherwise, it is updated to time.Now().UTC().
-func setCondition(conditions *[]Condition, existing []Condition, condType, status string, gen int64, reason, message string) {
-	transitionTime := time.Now().UTC()
-	for _, c := range existing {
-		if c.Type == condType && c.Status == status && !c.LastTransitionTime.IsZero() {
-			transitionTime = c.LastTransitionTime
-			break
-		}
-	}
-	upsertCondition(conditions, Condition{Type: condType, Status: status, ObservedGeneration: gen, LastTransitionTime: transitionTime, Reason: reason, Message: message})
-}
-
-// upsertCondition replaces the entry in conditions with the same Type as c, or appends c.
-func upsertCondition(conditions *[]Condition, c Condition) {
-	for i := range *conditions {
-		if (*conditions)[i].Type == c.Type {
-			(*conditions)[i] = c
-			return
-		}
-	}
-	*conditions = append(*conditions, c)
-}
-
-// resolveAndValidateWrapperRef resolves WrapperRef from input and validates namespace isolation.
-func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, string, string) {
-	ref := in.WrapperOpts
-	if ref.Name == "" && in.Spec.GetWrapperRef() != nil {
-		ref = ToBridgeWrapperRef(in.Spec.GetWrapperRef(), in.Namespace)
-	}
-	if ref.Name == "" && resolveOperatorlessEndpoint(in) == "" {
-		return ref, "InvalidWrapperRef", "3P wrapper target name is empty"
-	}
-	if in.Namespace != "" && ref.Namespace != "" && ref.Namespace != in.Namespace {
-		return ref, "CrossNamespaceForbidden", fmt.Sprintf("cross-namespace wrapperRef is forbidden (component in %q cannot target %q)", in.Namespace, ref.Namespace)
-	}
-	return ref, "", ""
-}
-
-func resolveOperatorlessEndpoint(in ReconcileComponentInput) string {
-	if in.WrapperOpts.EndpointJSONPath != "" && !strings.HasPrefix(in.WrapperOpts.EndpointJSONPath, "$") {
-		return in.WrapperOpts.EndpointJSONPath
-	}
-	if in.Spec == nil || in.Spec.GetWrapperRef() != nil {
-		return ""
-	}
-	return resolveProbeEndpoint(in.Spec.GetParameters())
-}
-
-func firstNonEmptyToken(val string) string {
-	if val == "" {
-		return ""
-	}
-	for _, part := range strings.Split(val, ",") {
-		if first := strings.TrimSpace(part); first != "" {
-			return first
-		}
-	}
-	return ""
-}
-
-func resolveProbeEndpoint(params map[string]string) string {
-	if len(params) == 0 {
-		return ""
-	}
-	if ep := firstNonEmptyToken(params["healthCheckEndpoint"]); ep != "" {
-		return ep
-	}
-	return resolveConnectionEndpoint(params)
-}
-
-func resolveConnectionEndpoint(params map[string]string) string {
-	if len(params) == 0 {
-		return ""
-	}
-	for _, k := range []string{"endpoint", "clusterEndpoints", "brokerEndpoints"} {
-		if first := firstNonEmptyToken(params[k]); first != "" {
-			return first
-		}
-	}
-	host := firstNonEmptyToken(params["host"])
-	if host == "" {
-		return ""
-	}
-	return formatHostEndpoint(host, params)
-}
-
-func formatHostEndpoint(host string, params map[string]string) string {
-	if strings.Count(host, ":") == 1 || (strings.HasPrefix(host, "[") && strings.Contains(host, "]:")) {
-		return host
-	}
-	for _, pk := range []string{"nativePort", "kafkaPort", "port", "httpPort"} {
-		port := strings.TrimSpace(params[pk])
-		if port == "" {
-			continue
-		}
-		if strings.Count(host, ":") > 1 && !strings.HasPrefix(host, "[") {
-			return fmt.Sprintf("[%s]:%s", host, port)
-		}
-		return fmt.Sprintf("%s:%s", host, port)
-	}
-	return host
-}
-
-// reconcile3PWrapper executes the reconciliation lifecycle for a third-party custom resource wrapper,
-// querying the dynamic StatusDetector to evaluate CR readiness and reporting state to CMS.
-func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	if r.prober == nil {
-		return r.reconcile3PWrapperFallback(ctx, in, canonicalName, res)
-	}
-	ref, unreadyReason, unreadyMsg := resolveAndValidateWrapperRef(in)
-	if unreadyReason != "" {
-		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, unreadyReason, unreadyMsg)
-	}
-	if ref.Name == "" {
-		if endpoint := resolveOperatorlessEndpoint(in); endpoint != "" {
-			return r.reconcileOperatorlessWrapper(ctx, in, canonicalName, res, endpoint)
-		}
-	}
-
-	resStatus, err := r.prober.DetectStatus(ctx, ref)
-	if err != nil {
-		if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "StatusDetectionFailed", err.Error()); cmsErr != nil {
-			return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w (CMS update failed: %v)", ref.Namespace, ref.Name, err, cmsErr)
-		}
-		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w", ref.Namespace, ref.Name, err)
-	}
-	if resStatus == nil {
-		errmsg := "status detector returned nil status"
-		if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "StatusDetectionFailed", errmsg); cmsErr != nil {
-			return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s (CMS update failed: %v)", ref.Namespace, ref.Name, errmsg, cmsErr)
-		}
-		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s", ref.Namespace, ref.Name, errmsg)
-	}
-	if !resStatus.Found {
-		reason := "ResourceNotFound"
-		if strings.Contains(resStatus.Message, "CRD not installed") {
-			reason = "CRDNotFound"
-		}
-		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, resStatus.Message)
-	}
-	if !resStatus.Ready {
-		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "ResourceNotReady", resStatus.Message)
-	}
-
-	if ok, reason, msg := r.verifyEndpointHealth(ctx, resStatus.Endpoint); !ok {
-		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, msg)
-	}
-
-	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
-}
-
-// reconcile3PWrapperFallback performs health evaluation when no dynamic status detector is configured.
-func (r *Reconciler) reconcile3PWrapperFallback(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	isHealthy, healthMsg := true, "Component is active"
-	if r.prober != nil {
-		isHealthy, healthMsg = r.prober.ProbeHealth(ctx, in.Spec, in.Namespace)
-	}
-	if !isHealthy {
-		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, ReasonHealthProbeFailed, healthMsg)
-	}
-	return r.handle3PReadyStatus(ctx, in, canonicalName, res, nil)
-}
-
-// reconcileOperatorlessWrapper handles Profile 3 (Operator-less static or external SaaS components).
-// It bypasses CRD status detection and validates runtime availability via direct TCP/HTTP health probes.
-func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, probeEndpoint string) (*ReconcileResult, error) {
-	if ok, reason, msg := r.verifyEndpointHealth(ctx, probeEndpoint); !ok {
-		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, msg)
-	}
-	connEndpoint := probeEndpoint
-	var secretName string
-	if in.Spec != nil && in.Spec.GetParameters() != nil {
-		if ce := resolveConnectionEndpoint(in.Spec.GetParameters()); ce != "" {
-			connEndpoint = ce
-		}
-		secretName = in.Spec.GetParameters()["secretName"]
-	}
-	resStatus := &ResourceStatus{
-		Found:            true,
-		Ready:            true,
-		Endpoint:         connEndpoint,
-		ConnectionSecret: secretName,
-		Message:          "Static endpoint is reachable and healthy",
-	}
-	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
-}
-
-// verifyEndpointHealth performs an active probe against endpoint (if non-empty) to verify data-plane availability.
-func (r *Reconciler) verifyEndpointHealth(ctx context.Context, endpoint string) (bool, string, string) {
-	if endpoint == "" || r.prober == nil {
-		return true, "", ""
-	}
-	probeRes, err := r.prober.Probe(ctx, endpoint, 0)
-	if err != nil {
-		return false, "ProbeFailed", fmt.Sprintf("Health probe failed for %s: %v", endpoint, err)
-	}
-	if probeRes == nil {
-		return false, "ProbeFailed", fmt.Sprintf("Health probe returned nil result for %s", endpoint)
-	}
-	if !probeRes.Healthy {
-		msg := probeRes.Message
-		if msg == "" {
-			msg = fmt.Sprintf("Health probe unhealthy for %s", endpoint)
-		}
-		return false, "ProbeUnhealthy", msg
-	}
-	return true, "", ""
-}
-
-// handle3PUnreadyStatus sets Ready=False and Degraded=True status conditions when 3P health or readiness fails.
-func (r *Reconciler) handle3PUnreadyStatus(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, message string) (*ReconcileResult, error) {
-	if message == "" {
-		message = fmt.Sprintf("3P wrapper %s is not ready: %s", in.Name, reason)
-	}
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusFalse, in.Generation, reason, message)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusTrue, in.Generation, reason, message)
-	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-	if shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) {
-		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil {
-			return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
-		}
-		resetReadyTransitionTime(res.Conditions)
-	}
-	return res, nil
-}
-
-// handle3PReadyStatus transitions component state to COMPONENT_STATE_ENABLED and populates Ready=True conditions.
-func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, resStatus *ResourceStatus) (*ReconcileResult, error) {
-	msg := "3P wrapper resource is operational and ready"
-	if resStatus != nil && resStatus.Message != "" {
-		msg = resStatus.Message
-	}
-	res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
-	populateAccessEnvVars(res, resStatus)
-
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ConditionStatusTrue, in.Generation, ReasonComponentHealthy, msg)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, ConditionStatusFalse, in.Generation, ReasonComponentHealthy, msg)
-
-	if shouldSyncToCMS(in.ExistingConditions, ConditionStatusTrue, in.Generation) {
-		if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=True"); err != nil {
-			return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
-		}
-		resetReadyTransitionTime(res.Conditions)
-	}
-	return res, nil
-}
-
-func populateAccessEnvVars(res *ReconcileResult, resStatus *ResourceStatus) {
-	if res == nil || resStatus == nil {
-		return
-	}
-	if res.Access == nil {
-		res.Access = &AccessStatus{EnvVars: make(map[string]string)}
-	}
-	if res.Access.EnvVars == nil {
-		res.Access.EnvVars = make(map[string]string)
-	}
-
-	coords := ParseCoordinates(resStatus.Endpoint, resStatus.ConnectionSecret)
-	if coords.RawEndpoint != "" {
-		res.Access.EnvVars["ENDPOINT"] = coords.RawEndpoint
-	}
-	if coords.Host != "" {
-		res.Access.EnvVars["HOST"] = coords.Host
-	}
-	if coords.Port != "" {
-		res.Access.EnvVars["PORT"] = coords.Port
-	}
-	if coords.Scheme != "" {
-		res.Access.EnvVars["SCHEME"] = coords.Scheme
-	}
-	if coords.SecretName != "" {
-		res.Access.EnvVars["SECRET_NAME"] = coords.SecretName
-	}
-}
-
-// ParseWrapperRef extracts WrapperRef from unstructured custom resource spec map.
-func ParseWrapperRef(specObj any, defaultNamespace string) WrapperRef {
-	specMap, ok := specObj.(map[string]any)
-	if !ok || specMap == nil {
-		return WrapperRef{Namespace: defaultNamespace}
-	}
-	wrapperRaw, ok := specMap["wrapperRef"].(map[string]any)
-	if !ok || wrapperRaw == nil {
-		return WrapperRef{}
-	}
-	getString := func(keys ...string) string {
-		for _, k := range keys {
-			if v, exists := wrapperRaw[k].(string); exists && v != "" {
-				return v
-			}
-		}
-		return ""
-	}
-	ns := getString("targetNamespace", "namespace")
-	if ns == "" {
-		ns = defaultNamespace
-	}
-	return WrapperRef{
-		Group:                    getString("crdGroup", "group"),
-		Version:                  getString("crdVersion", "version"),
-		Kind:                     getString("crdKind", "kind"),
-		Name:                     getString("targetName", "name"),
-		Namespace:                ns,
-		ObservedGenerationPath:   getString("observedGenerationPath", "observed_generation_path"),
-		ReadyConditionPath:       getString("readyConditionPath", "ready_condition_path", "readyPath"),
-		ExpectedReadyValue:       getString("expectedReadyValue", "expected_ready_value"),
-		EndpointJSONPath:         getString("endpointJsonPath", "endpoint_json_path", "endpointJsonpath"),
-		ConnectionSecretJSONPath: getString("connectionSecretJsonPath", "connection_secret_json_path", "secretNameJsonpath"),
-	}
 }

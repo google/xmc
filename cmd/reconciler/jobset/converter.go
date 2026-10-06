@@ -19,7 +19,7 @@ import (
 	"net/url"
 	"time"
 
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fmpb "protobuf/field_mask_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -246,7 +246,7 @@ func targetSuccessPolicySatisfied(jobSet *v1alpha2.JobSet) bool {
 }
 
 // ConvertJobSetToWorkUnitExecutionUpdate converts a JobSet to a WorkUnitExecutionUpdate.
-func ConvertJobSetToWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha2.JobSet, wid int64, eid int64, project, location, clusterName, podErrorMsg, startupWarningMsg string) (*storagepkg.WorkUnitExecutionUpdate, error) {
+func ConvertJobSetToWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha2.JobSet, wid int64, eid int64, project, location, clusterName, podErrorMsg, startupWarningMsg string) *storagepkg.WorkUnitExecutionUpdate {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
 	var state spb.WorkUnitStatus_WorkUnitState
@@ -311,7 +311,7 @@ func ConvertJobSetToWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha
 				"metadata.service_account",
 			},
 		},
-	}, nil
+	}
 }
 
 func convertK8sJobSetStatusToProto(k8sStatus v1alpha2.JobSetStatus) *spb.JobSetStatus {

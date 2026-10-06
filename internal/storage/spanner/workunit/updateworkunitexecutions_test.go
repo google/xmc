@@ -1574,3 +1574,70 @@ func TestUpdateWorkUnitExecutions_SavesLatestMessage(t *testing.T) {
 		t.Errorf("Message UserFacingText = %q, want %q", gotMsg.GetUserFacingText(), "New Message")
 	}
 }
+
+func TestTxRepository_UpdateWorkUnitExecutions(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storageClient, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
+	}
+
+	const xid = 128
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 1)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 2)
+
+	completed := func(wid, eid int64) *storage.WorkUnitExecutionUpdate {
+		return &storage.WorkUnitExecutionUpdate{
+			WID: wid,
+			EID: eid,
+			WorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Status: &essmsgpb.WorkUnitStatus{
+					State:           essmsgpb.WorkUnitStatus_COMPLETED,
+					StateUpdateTime: timestamppb.New(time.Now()),
+				},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
+		}
+	}
+	updates := []*storage.WorkUnitExecutionUpdate{
+		completed(1, 1),
+		completed(2, 2), // Stale: the current execution of work unit 2 is 1.
+	}
+
+	err = storageClient.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+		_, err := tx.WorkUnits.UpdateWorkUnitExecutions(ctx, xid, updates)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("RunInTransaction(UpdateWorkUnitExecutions) failed: %v", err)
+	}
+
+	for _, tc := range []struct {
+		wid       int64
+		wantState essmsgpb.WorkUnitStatus_WorkUnitState
+	}{
+		{wid: 1, wantState: essmsgpb.WorkUnitStatus_COMPLETED},
+		{wid: 2, wantState: essmsgpb.WorkUnitStatus_INITIALIZING},
+	} {
+		gotWu, err := storageClient.FetchWorkUnit(ctx, xid, tc.wid)
+		if err != nil {
+			t.Fatalf("FetchWorkUnit(%d) failed: %v", tc.wid, err)
+		}
+		if got := gotWu.GetCurrentWorkUnitExecution().GetStatus().GetState(); got != tc.wantState {
+			t.Errorf("work unit %d state = %v, want %v", tc.wid, got, tc.wantState)
+		}
+	}
+
+	exp, err := storageClient.FetchExperiment(ctx, xid)
+	if err != nil {
+		t.Fatalf("FetchExperiment(%d) failed: %v", xid, err)
+	}
+	if got := spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_INITIALIZING); got != 1 {
+		t.Errorf("experiment INITIALIZING count = %d, want 1", got)
+	}
+	if got := spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_COMPLETED); got != 1 {
+		t.Errorf("experiment COMPLETED count = %d, want 1", got)
+	}
+}

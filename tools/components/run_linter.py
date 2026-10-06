@@ -220,7 +220,7 @@ def run_linter_on_target(
     output_format: str,
     cwd: Path | None = None,
 ) -> LintResult:
-    """Executes the xmc-linter against a single lint target directory."""
+    """Executes the component-linter against a single lint target directory."""
     work_dir = cwd if cwd is not None else get_base_directory()
     cmd = build_linter_command(target, linter_binary, output_format)
     try:

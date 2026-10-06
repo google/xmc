@@ -1,0 +1,29 @@
+{{/*
+Copyright 2026 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+The license header is a template comment so that it is not emitted into rendered manifests.
+
+Renders one Component CR per catalog component, in dependency order. Workload
+templates of the component charts are never rendered here; xmc-bridge installs
+them as separate xmc-cmp-<name> releases.
+*/}}
+{{- if hasPrefix "xmc-cmp-" .Release.Name -}}
+{{- fail (printf "release %q: the stable-2026a profile must not be installed as an xmc-cmp-* component release" .Release.Name) -}}
+{{- end -}}
+{{- range $name := list "redpanda" "clickhouse" "ingestion-gateway" }}
+---
+# Rendered from: components/{{ $name }}/templates/component.yaml
+{{ include "xmc-profile.component" (list $ $name) | trim }}
+{{- end }}

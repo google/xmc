@@ -20,7 +20,9 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "__init__.py",
+    "blueprint_compiler.py",
     "change_detector.py",
+    "chart_fingerprint.py",
     "chart_sanitizer.py",
     "cluster_diagnostics.py",
     "config.py",
@@ -35,6 +37,40 @@ exports_files([
     "spanner_manager.py",
     "upgrade_dev_env.py",
 ])
+
+py_library(
+    name = "blueprint_compiler_lib",
+    srcs = ["blueprint_compiler.py"],
+    imports = ["../.."],
+    deps = [
+        ":chart_fingerprint_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "blueprint_compiler_test",
+    srcs = ["blueprint_compiler_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":blueprint_compiler_lib",
+    ],
+)
+
+py_library(
+    name = "chart_fingerprint_lib",
+    srcs = ["chart_fingerprint.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "chart_fingerprint_test",
+    srcs = ["chart_fingerprint_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":chart_fingerprint_lib",
+    ],
+)
 
 py_library(
     name = "change_detector_lib",
@@ -315,6 +351,7 @@ py_library(
     srcs = ["deploy_dev_env.py"],
     imports = ["../.."],
     deps = [
+        ":blueprint_compiler_lib",
         "//tools/common:tool_utils",
     ],
 )
@@ -344,6 +381,7 @@ py_library(
     srcs = ["upgrade_dev_env.py"],
     imports = ["../.."],
     deps = [
+        ":blueprint_compiler_lib",
         "//tools/common:tool_utils",
     ],
 )

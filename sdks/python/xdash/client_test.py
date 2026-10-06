@@ -338,6 +338,22 @@ class DashboardClientTest(unittest.TestCase):
     def test_close_without_channel_is_noop(self) -> None:
         self.client.close()
 
+    def test_execute_rpc_forwards_auth_token_metadata(self) -> None:
+        expected = messages_pb2.Dashboard(name="dashboards/123", title="Test Dash")
+        self.mock_stub.GetDashboard.return_value = expected
+
+        with patch.dict("os.environ", {"XMC_AUTH_TOKEN": "test-jwt-token"}, clear=False):
+            self.client.get_dashboard("dashboards/123")
+        self.assertEqual(
+            self.mock_stub.GetDashboard.call_args.kwargs,
+            {"metadata": (("authorization", "Bearer test-jwt-token"),)},
+        )
+
+        self.mock_stub.GetDashboard.reset_mock()
+        with patch.dict("os.environ", {"XMC_AUTH_TOKEN": "", "AUTH_TOKEN": ""}, clear=False):
+            self.client.get_dashboard("dashboards/123")
+        self.assertEqual(self.mock_stub.GetDashboard.call_args.kwargs, {})
+
 
 class ChannelSecurityTest(unittest.TestCase):
     """Tests for how DashboardClient chooses between plaintext and TLS channels."""

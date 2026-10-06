@@ -65,13 +65,47 @@ func isChartOrRulesConfigFile(path string) bool {
 func findChartRoot(filePath string) string {
 	absPath, _ := filepath.Abs(filePath)
 	for dir := filepath.Dir(absPath); filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
-		for _, name := range []string{"Chart.yaml", "Chart.yml"} {
-			if info, err := os.Stat(filepath.Join(dir, name)); err == nil && !info.IsDir() {
-				return dir
-			}
+		if hasChartFile(dir) {
+			return dir
 		}
 	}
 	return ""
+}
+
+// hasChartFile reports whether dir directly contains a Chart.yaml or Chart.yml file.
+func hasChartFile(dir string) bool {
+	for _, name := range []string{"Chart.yaml", "Chart.yml"} {
+		if info, err := os.Stat(filepath.Join(dir, name)); err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+// isNestedChartRoot reports whether dir is a Helm chart root enclosed by another chart root located
+// at or below absWalkRoot (an absolute path). The enclosing chart may render the nested chart's
+// Components itself (for example a profile meta-chart reading components/<name>/ via .Files), so
+// the linter still renders nested charts but drops their Components that the enclosing chart
+// already renders (see mergeNestedManifests). Vendored subcharts under <parent>/charts/ and chart
+// roots whose parent chart lies outside absWalkRoot are not nested.
+func isNestedChartRoot(absWalkRoot, dir string) bool {
+	if !hasChartFile(dir) {
+		return false
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	// findChartRoot starts its search at the parent of absDir, so it returns the enclosing chart.
+	outer := findChartRoot(absDir)
+	if outer == "" {
+		return false
+	}
+	if filepath.Dir(absDir) == filepath.Join(outer, "charts") {
+		return false
+	}
+	rel, err := filepath.Rel(absWalkRoot, outer)
+	return err == nil && filepath.IsLocal(rel)
 }
 
 // RenderChartTemplate loads the Helm chart at chartRoot (using a thread-safe cache) and renders templatePath

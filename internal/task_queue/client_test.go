@@ -31,6 +31,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"xmanager_cloud/common/interfaces"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/security/securitytest"
@@ -678,4 +679,48 @@ func TestClient_CalculateBacklogLength(t *testing.T) {
 			t.Fatalf("err = %v, want %v", err, wantErr)
 		}
 	})
+}
+
+func TestEnqueueResumedWorkUnitTask(t *testing.T) {
+	ctx := t.Context()
+	c, fakeRedis := createTaskQueueClient(ctx, t)
+
+	resumptionTime := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+	runID := "run-abc-123"
+
+	err := c.EnqueueResumedWorkUnitTask(
+		ctx,
+		"experiments/1/workUnits/1",
+		&essmsgpb.WorkUnit{Name: "experiments/1/workUnits/1"},
+		&actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
+		"operations/op1",
+		runID,
+		resumptionTime,
+	)
+	if err != nil {
+		t.Fatalf("EnqueueResumedWorkUnitTask() failed: %v", err)
+	}
+
+	if len(fakeRedis.Messages) != 1 {
+		t.Fatalf("expected 1 message in redis, got %d", len(fakeRedis.Messages))
+	}
+
+	var redisTask interfaces.RedisTask
+	if err := json.Unmarshal([]byte(fakeRedis.Messages[0]), &redisTask); err != nil {
+		t.Fatalf("failed to unmarshal redis message: %v", err)
+	}
+
+	var payload actuatortaskpb.ActuatorPayload
+	if err := protojson.Unmarshal(redisTask.Payload, &payload); err != nil {
+		t.Fatalf("failed to unmarshal actuator payload: %v", err)
+	}
+
+	wantMeta := &actuatortaskpb.Metadata{
+		OperationName:   proto.String("operations/op1"),
+		ResumptionRunId: proto.String(runID),
+		ResumptionTime:  timestamppb.New(resumptionTime),
+	}
+	if diff := cmp.Diff(wantMeta, payload.GetMetadata(), protocmp.Transform(), protocmp.IgnoreFields(&actuatortaskpb.Metadata{}, "idempotency_key", "trace_id")); diff != "" {
+		t.Errorf("Metadata mismatch (-want +got):\n%s", diff)
+	}
 }

@@ -11,7 +11,7 @@ This package provides CLI harnesses, telemetry extractors, and deterministic ass
 - [`teardown_benchmark.py`](teardown_benchmark.py): Safely terminates benchmark subagents and removes temporary Git worktrees after trajectory comparison completes.
 - [`analyze_diff_and_synthesize.py`](analyze_diff_and_synthesize.py): Extracts structured Git diffs and categorizes modifications across `.agents/rules/` and `.agents/skills/`.
 - [`extract_telemetry.py`](extract_telemetry.py): Extracts structured subagent telemetry embedded in GitHub PR review comments.
-- [`resolve_test_scope.py`](resolve_test_scope.py): Resolves affected Bazel test targets from Git diffs for selective test execution.
+- [`resolve_test_scope.py`](resolve_test_scope.py): Resolves affected Bazel test targets from Git diffs for selective test execution, including closest merge-base resolution (`--base`, `--base-branch`, `--head`) for stacked PR branches.
 - [`analyze_ci_performance.py`](analyze_ci_performance.py): Analyzes CI workflow run durations and bottlenecks.
 
 ---

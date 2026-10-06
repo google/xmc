@@ -21,6 +21,7 @@ go_library(
     srcs = ["resolver.go"],
     importpath = "xmanager_cloud/pkg/clickhouse/componentconfig",
     deps = [
+        "//internal/logging",
         "//pkg/clickhouse",
         "//pkg/components/crreader",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",

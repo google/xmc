@@ -16,40 +16,34 @@ package workload
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"testing"
 	"time"
 
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
-	k8serrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/types/types"
-	clientgoscheme "golang/k8s_io/client_go/v/v0_23/kubernetes/scheme/scheme"
+	"golang/cmp/cmp"
 	"golang/prometheus/client/prometheus/testutil/testutil"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/event/event"
+	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
+	"xmanager_cloud/logging/logging"
 	storagepkg "xmanager_cloud/storage/storage"
 )
-
-type clientWithError struct {
-	client.Client
-	getErr error
-}
-
-func (c *clientWithError) Get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
-	if c.getErr != nil {
-		return c.getErr
-	}
-	return c.Client.Get(ctx, key, obj)
-}
 
 type mockStorageUpdater struct {
 	calls     map[int64][]*storagepkg.WorkUnitExecutionUpdate
@@ -132,12 +126,13 @@ func TestNewReconciler_Validation(t *testing.T) {
 
 func TestWorkloadReconciler_GetErrors(t *testing.T) {
 	scheme := newScheme()
-	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
-	rec, err := NewReconciler(Params{
-		Client: &clientWithError{
-			Client: cl,
-			getErr: k8serrors.NewInternalError(errors.New("API server unavailable")),
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(interceptor.Funcs{
+		Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+			return k8serrors.NewInternalError(errors.New("API server unavailable"))
 		},
+	}).Build()
+	rec, err := NewReconciler(Params{
+		Client:  cl,
 		Scheme:  scheme,
 		Batcher: shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{}),
 		ManagementClusterInfo: &spb.ClusterInfo{
@@ -221,6 +216,7 @@ func TestWorkloadReconciler(t *testing.T) {
 }
 
 func TestWorkloadReconciler_NoLabels(t *testing.T) {
+	reconcileErrorsTotal.Reset()
 	scheme := newScheme()
 	workload := &v1beta1.Workload{
 		ObjectMeta: metav1.ObjectMeta{
@@ -247,12 +243,57 @@ func TestWorkloadReconciler_NoLabels(t *testing.T) {
 			Namespace: "default",
 		},
 	})
-	if err != nil {
-		t.Fatalf("Reconcile() returned unexpected error: %v", err)
+	if !errors.Is(err, reconcile.TerminalError(nil)) {
+		t.Fatalf("Reconcile() error = %v, want terminal error", err)
 	}
-
 	if len(rec.Batcher.Updates) != 0 {
 		t.Errorf("Expected 0 updates in batcher, got %d", len(rec.Batcher.Updates))
+	}
+	if val := testutil.ToFloat64(reconcileErrorsTotal.WithLabelValues()); val != 1 {
+		t.Errorf("reconcileErrorsTotal counter mismatch: got %v, want 1", val)
+	}
+}
+
+func TestWorkloadReconciler_ConvertError(t *testing.T) {
+	reconcileErrorsTotal.Reset()
+	scheme := newScheme()
+	workload := &v1beta1.Workload{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-workload",
+			Namespace: "default",
+		},
+		Spec: workloadSpecWithNecessaryLabels,
+		Status: v1beta1.WorkloadStatus{
+			ClusterName: ptr.To("missing-worker-cluster"),
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects([]runtime.Object{workload}...).Build()
+	rec, err := NewReconciler(Params{
+		Client:  cl,
+		Scheme:  scheme,
+		Batcher: shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{}),
+		ManagementClusterInfo: &spb.ClusterInfo{
+			Project: "mgmt-project",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
+	}
+
+	_, err = rec.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      "test-workload",
+			Namespace: "default",
+		},
+	})
+	if err == nil {
+		t.Fatal("Reconcile() error = nil, want non-nil conversion error")
+	}
+	if errors.Is(err, reconcile.TerminalError(nil)) {
+		t.Errorf("Reconcile() error = %v, want retryable (non-terminal) error", err)
+	}
+	if val := testutil.ToFloat64(reconcileErrorsTotal.WithLabelValues()); val != 1 {
+		t.Errorf("reconcileErrorsTotal counter mismatch: got %v, want 1", val)
 	}
 }
 
@@ -412,11 +453,86 @@ func TestWorkloadReconciler_Inadmissible(t *testing.T) {
 	}
 }
 
+// levelRecorder is a slog.Handler that records the level of every log record
+// it receives, so tests can assert on emitted log severities. Handlers derived
+// via WithAttrs/WithGroup are new instances (per the slog.Handler contract) that
+// share the same levels slice.
+type levelRecorder struct {
+	levels *[]slog.Level
+}
+
+func (h *levelRecorder) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *levelRecorder) Handle(_ context.Context, r slog.Record) error {
+	*h.levels = append(*h.levels, r.Level)
+	return nil
+}
+
+func (h *levelRecorder) WithAttrs([]slog.Attr) slog.Handler { return &levelRecorder{levels: h.levels} }
+
+func (h *levelRecorder) WithGroup(string) slog.Handler { return &levelRecorder{levels: h.levels} }
+
+func TestHasValidXMCLabels(t *testing.T) {
+	testCases := []struct {
+		name       string
+		podLabels  map[string]string
+		want       bool
+		wantLevels []slog.Level
+	}{
+		{
+			name:       "valid labels logs nothing",
+			podLabels:  workloadSpecWithNecessaryLabels.PodSets[0].Template.Labels,
+			want:       true,
+			wantLevels: nil,
+		},
+		{
+			name:       "missing labels logs warning",
+			podLabels:  nil,
+			want:       false,
+			wantLevels: []slog.Level{slog.LevelWarn},
+		},
+		{
+			name: "invalid labels logs error",
+			podLabels: map[string]string{
+				constants.ExperimentIDLabel: "invalid",
+				constants.WorkUnitIDLabel:   "1",
+				constants.ExecutionIDLabel:  "1",
+			},
+			want:       false,
+			wantLevels: []slog.Level{slog.LevelError},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var recordedLevels []slog.Level
+			ctx := logging.WithLogger(t.Context(), slog.New(&levelRecorder{levels: &recordedLevels}))
+			workload := &v1beta1.Workload{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-workload"},
+				Spec: v1beta1.WorkloadSpec{
+					PodSets: []v1beta1.PodSet{{
+						Template: corev1.PodTemplateSpec{
+							ObjectMeta: metav1.ObjectMeta{Labels: tc.podLabels},
+						},
+					}},
+				},
+			}
+
+			if got := hasValidXMCLabels(ctx, workload); got != tc.want {
+				t.Errorf("hasValidXMCLabels() = %v, want %v", got, tc.want)
+			}
+			if diff := cmp.Diff(tc.wantLevels, recordedLevels); diff != "" {
+				t.Errorf("hasValidXMCLabels() logged unexpected levels (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestWorkloadPredicate_Create(t *testing.T) {
 	p := workloadPredicate(context.Background())
 	testCases := []struct {
 		name string
-		obj  client.Object
+		obj  *v1beta1.Workload
 		want bool
 	}{
 		{
@@ -457,11 +573,6 @@ func TestWorkloadPredicate_Create(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "not a workload object",
-			obj:  &metav1.PartialObjectMetadata{},
-			want: false,
-		},
-		{
 			name: "nil object",
 			obj:  nil,
 			want: false,
@@ -470,7 +581,7 @@ func TestWorkloadPredicate_Create(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			evt := event.CreateEvent{Object: tc.obj}
+			evt := event.TypedCreateEvent[*v1beta1.Workload]{Object: tc.obj}
 			if got := p.Create(evt); got != tc.want {
 				t.Errorf("Predicate CreateFunc() = %v, want %v", got, tc.want)
 			}
@@ -564,11 +675,32 @@ func TestWorkloadPredicate_Update(t *testing.T) {
 			}(),
 			want: false,
 		},
+		{
+			name: "labels added on update",
+			old: func() *v1beta1.Workload {
+				w := baseWorkload.DeepCopy()
+				w.Spec.PodSets[0].Template.Labels = nil
+				return w
+			}(),
+			new: func() *v1beta1.Workload {
+				w := baseWorkload.DeepCopy()
+				w.ResourceVersion = "2"
+				w.Generation = 2
+				return w
+			}(),
+			want: true,
+		},
+		{
+			name: "nil old object",
+			old:  nil,
+			new:  baseWorkload,
+			want: false,
+		},
 	}
 
 	for _, tc := range updateCases {
 		t.Run(tc.name, func(t *testing.T) {
-			evt := event.UpdateEvent{
+			evt := event.TypedUpdateEvent[*v1beta1.Workload]{
 				ObjectOld: tc.old,
 				ObjectNew: tc.new,
 			}
@@ -576,5 +708,37 @@ func TestWorkloadPredicate_Update(t *testing.T) {
 				t.Errorf("Predicate UpdateFunc() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestWorkloadPredicate_DeleteAndGeneric(t *testing.T) {
+	p := workloadPredicate(context.Background())
+	obj := &v1beta1.Workload{Spec: workloadSpecWithNecessaryLabels}
+	if p.Delete(event.TypedDeleteEvent[*v1beta1.Workload]{Object: obj}) {
+		t.Error("Predicate DeleteFunc() = true, want false")
+	}
+	if p.Generic(event.TypedGenericEvent[*v1beta1.Workload]{Object: obj}) {
+		t.Error("Predicate GenericFunc() = true, want false")
+	}
+}
+
+func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
+	// Label-less vectors only appear in Gather once a child exists.
+	reconcileTotal.WithLabelValues()
+	reconcileErrorsTotal.WithLabelValues()
+	reconcileDuration.WithLabelValues()
+	updatesSentTotal.WithLabelValues()
+	mfs, err := ctrlmetrics.Registry.Gather()
+	if err != nil {
+		t.Fatalf("ctrlmetrics.Registry.Gather() failed: %v", err)
+	}
+	registered := make(map[string]bool, len(mfs))
+	for _, mf := range mfs {
+		registered[mf.GetName()] = true
+	}
+	for _, name := range []string{"workload_reconcile_total", "workload_reconcile_errors_total", "workload_reconcile_duration_milliseconds", "workload_updates_sent_to_batcher_total"} {
+		if !registered[name] {
+			t.Errorf("metric family %q not registered on ctrlmetrics.Registry", name)
+		}
 	}
 }

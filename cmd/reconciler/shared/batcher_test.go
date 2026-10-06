@@ -27,6 +27,7 @@ import (
 	"golang/prometheus/client/prometheus/testutil/testutil"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	metricspb "prometheus_model/metrics_go_proto"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	storagepkg "xmanager_cloud/storage/storage"
@@ -236,7 +237,7 @@ func TestProcessBatches_Metrics(t *testing.T) {
 			t.Errorf("updateWorkUnitExecutionsDuration for xid 456 is not a prometheus.Observer")
 		}
 		// Check that the updateWorkUnitExecutionsDuration histogram has observations.
-		mfs, err := prometheus.DefaultGatherer.Gather()
+		mfs, err := ctrlmetrics.Registry.Gather()
 		if err != nil {
 			t.Fatalf("Failed to gather metrics: %v", err)
 		}
@@ -269,7 +270,7 @@ func TestProcessBatches_Metrics(t *testing.T) {
 		}
 
 		// Gather metrics
-		mfs, err := prometheus.DefaultGatherer.Gather()
+		mfs, err := ctrlmetrics.Registry.Gather()
 		if err != nil {
 			t.Fatalf("Failed to gather metrics: %v", err)
 		}

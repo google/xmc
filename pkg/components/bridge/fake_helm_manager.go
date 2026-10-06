@@ -30,6 +30,8 @@ type FakeHelmManager struct {
 	DeleteErr           error
 	// UnhealthyReason, when non-empty, makes ComponentHealth report unhealthy with this reason. Defaults to healthy.
 	UnhealthyReason string
+	// RepairNeeded marks component keys (ref.String()) whose actuated release must be re-applied; see NeedsRepair.
+	RepairNeeded map[string]bool
 }
 
 var _ HelmManager = (*FakeHelmManager)(nil)
@@ -64,6 +66,7 @@ func (f *FakeHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRe
 	}
 	f.ActiveComponents[ref.String()] = opts.Enabled
 	f.AppliedValues[ref.String()] = BuildHelmValues(opts)
+	delete(f.RepairNeeded, ref.String())
 	return nil
 }
 
@@ -176,6 +179,17 @@ func (f *FakeHelmManager) IsComponentActuated(ref ComponentRef, generation int64
 	}
 	gen, ok := f.ActuatedGenerations[ref.String()]
 	return ok && gen == generation && f.ActiveComponents[ref.String()]
+}
+
+// NeedsRepair reports whether the component is marked in RepairNeeded and is active at the given actuated generation.
+func (f *FakeHelmManager) NeedsRepair(ref ComponentRef, generation int64) bool {
+	if f == nil || ref.Name == "" {
+		return false
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := ref.String()
+	return f.RepairNeeded[key] && f.ActiveComponents[key] && f.ActuatedGenerations[key] == generation
 }
 
 // RecordActuation records the generation at which the component was actuated.
