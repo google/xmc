@@ -50,7 +50,7 @@ This document defines coding standards and conventions for Go development across
 - **Pre-allocating Map Capacity**: Specify initial capacity `make(map[K]V, capacity)` whenever map entry counts are known to prevent runtime re-allocations.
 - **Deterministic Map Iteration**: Map iteration in Go is non-deterministic. Always sort slice outputs derived from map keys prior to serialization or return.
 
-## 9. Context Safety in `defer` Cleanups & Error Branches
+## 9. Context Safety in `defer` Cleanups & Shared Resource Rebuilds
 - **Fresh Cleanup Context**: Deferred cleanup functions (`Teardown`, `Close`, container termination) MUST NOT pass a parent context (`ctx`) that might already be canceled or timed out. Wrap the context creation and cleanup call inside a deferred closure so the timeout begins when cleanup actually starts:
   ```go
   defer func() {
@@ -59,6 +59,7 @@ This document defines coding standards and conventions for Go development across
       c.Terminate(cleanupCtx)
   }()
   ```
+- **Detached Context for Shared Initializers & Rebuilds (`context.WithoutCancel`)**: Operations that initialize, refresh, or hot-swap a **process-scoped shared resource or cache** (such as `singleflight.Group` callbacks or mutex-serialized connection/cache rebuilds whose result is stored on a shared struct for subsequent requests) MUST detach from the triggering caller's or readiness probe's cancellation using `context.WithTimeout(context.WithoutCancel(ctx), timeout)` so a short-lived caller deadline cannot abort a shared dial or cache refresh. Per-request queries, RPCs, and health pings on an already-established handle MUST NOT use `context.WithoutCancel` and MUST propagate `ctx` directly.
 
 ## 10. Two-Tier Service Constructor & Runtime Composition Root Architecture
 To enable high-fidelity, decoupled unit testing without bloated mock setups or cloud SDK coupling, all Go gRPC/HTTP services and controllers MUST follow the **Two-Tier Constructor & Composition Root Pattern**:
@@ -115,6 +116,7 @@ graph TD
 
 ### 3. Tier 3: Minimal Binary Entrypoint (`main.go` / `run()`)
 - `main()` and `run(ctx, cfg) error` act strictly as the outer process bootstrapper: load configuration, invoke `NewRuntimeServer`, wire `HealthCheckers()` into HTTP/gRPC multiplexers, set up OS signal traps, and coordinate graceful shutdown.
+- **End-to-End Test-Seam Forwarding & Lazy Secondary Client Init**: When an entrypoint helper accepts an injected interface for testing (e.g., `initDataEngineWithGetter(ctx, cfg, customGetter)` or `optionalGetter ...ComponentGetter`), it MUST forward that injected dependency through **all** downstream resolver, dialer, and readiness closures rather than only the initial startup check, and initialize conditional secondary cluster clients (e.g., `SecretReader` when file-mounted CSI credentials may take precedence) lazily on first call so unit tests injecting a fake never trigger real in-cluster client construction.
 
 ## 11. Integration Testing & Testcontainers Best Practices
 - **Host File Mount Permissions**: Call `os.Chmod(path, 0644)` on temporary host files mounted into Docker containers so non-root container users (e.g. `clickhouse`) have read access.
