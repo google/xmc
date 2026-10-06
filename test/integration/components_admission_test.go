@@ -76,12 +76,7 @@ func startAdmissionEnvtest(ctx context.Context, t *testing.T) admissionClients {
 	testEnv := &envtest.Environment{
 		BinaryAssetsDirectory:   resolveEnvtestAssets(t),
 		ControlPlaneStopTimeout: 10 * time.Second,
-		CRDInstallOptions: envtest.CRDInstallOptions{
-			Paths:              []string{crdDir},
-			ErrorIfPathMissing: true,
-			PollInterval:       10 * time.Millisecond,
-			MaxTime:            5 * time.Second,
-		},
+		CRDInstallOptions:       envtest.CRDInstallOptions{Paths: []string{crdDir}, ErrorIfPathMissing: true, PollInterval: 10 * time.Millisecond, MaxTime: 5 * time.Second},
 	}
 	cfg, err := testEnv.Start()
 	if err != nil {
@@ -107,10 +102,7 @@ func grantComponentRBAC(ctx context.Context, t *testing.T, kubeClient kubernetes
 	binding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: "xmc-components-test-operator-binding"},
 		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: role.Name},
-		Subjects: []rbacv1.Subject{
-			{Kind: "User", Name: "system:serviceaccount:xmc:gitops-reconciler"},
-			{Kind: "Group", Name: "xmc-platform-admins"},
-		},
+		Subjects:   []rbacv1.Subject{{Kind: "User", Name: "system:serviceaccount:xmc:gitops-reconciler"}, {Kind: "Group", Name: "xmc-platform-admins"}},
 	}
 	if _, err := kubeClient.RbacV1().ClusterRoleBindings().Create(ctx, binding, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("failed to create ClusterRoleBinding: %v", err)
