@@ -215,6 +215,7 @@ def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         "--no-auto-migrate",
+        "--skip-migrations",
         dest="auto_migrate",
         action="store_false",
         default=None,

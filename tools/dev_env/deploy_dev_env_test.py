@@ -475,20 +475,20 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_images")
     @patch("tools.dev_env.deploy_dev_env.step_apis")
     @patch("tools.dev_env.deploy_dev_env.step_primary")
-    @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_compute")
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
     @patch("tools.dev_env.deploy_dev_env.step_prereqs")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_app")
     @patch("tools.dev_env.deploy_dev_env.step_verify")
     def test_main_flow_all_steps(
         self,
         mock_verify,
         mock_app,
+        mock_migrate,
         mock_prereqs,
         mock_gw_api,
         mock_compute,
-        mock_migrate,
         mock_primary,
         mock_apis,
         mock_images,
@@ -517,10 +517,10 @@ image_tag: latest
         mock_images.assert_called_once()
         mock_apis.assert_called_once()
         mock_primary.assert_called_once()
-        mock_migrate.assert_called_once()
         mock_compute.assert_called_once()
         mock_gw_api.assert_called_once()
         mock_prereqs.assert_called_once()
+        mock_migrate.assert_called_once()
         mock_app.assert_called_once()
         mock_verify.assert_called_once()
 
@@ -531,20 +531,20 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_images")
     @patch("tools.dev_env.deploy_dev_env.step_apis")
     @patch("tools.dev_env.deploy_dev_env.step_primary")
-    @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_compute")
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
     @patch("tools.dev_env.deploy_dev_env.step_prereqs")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_app")
     @patch("tools.dev_env.deploy_dev_env.step_verify")
     def test_main_flow_start_from(
         self,
         mock_verify,
         mock_app,
+        mock_migrate,
         mock_prereqs,
         mock_gw_api,
         mock_compute,
-        mock_migrate,
         mock_primary,
         mock_apis,
         mock_images,
@@ -576,10 +576,10 @@ image_tag: latest
         mock_apis.assert_not_called()
 
         mock_primary.assert_called_once()
-        mock_migrate.assert_called_once()
         mock_compute.assert_called_once()
         mock_gw_api.assert_called_once()
         mock_prereqs.assert_called_once()
+        mock_migrate.assert_called_once()
         mock_app.assert_called_once()
         mock_verify.assert_called_once()
 
@@ -590,20 +590,20 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_images")
     @patch("tools.dev_env.deploy_dev_env.step_apis")
     @patch("tools.dev_env.deploy_dev_env.step_primary")
-    @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_compute")
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
     @patch("tools.dev_env.deploy_dev_env.step_prereqs")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_app")
     @patch("tools.dev_env.deploy_dev_env.step_verify")
     def test_main_flow_only(
         self,
         mock_verify,
         mock_app,
+        mock_migrate,
         mock_prereqs,
         mock_gw_api,
         mock_compute,
-        mock_migrate,
         mock_primary,
         mock_apis,
         mock_images,
@@ -634,12 +634,12 @@ image_tag: latest
         mock_images.assert_not_called()
         mock_apis.assert_not_called()
         mock_primary.assert_not_called()
-        mock_migrate.assert_not_called()
 
         mock_compute.assert_called_once()
 
         mock_gw_api.assert_not_called()
         mock_prereqs.assert_not_called()
+        mock_migrate.assert_not_called()
         mock_app.assert_not_called()
         mock_verify.assert_not_called()
 
@@ -739,7 +739,8 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.check_pending_migrations")
     def test_step_migrate_up_to_date(self, mock_check, mock_apply):
         mock_check.return_value = []
-        deploy_dev_env.step_migrate(self.valid_config)
+        res = deploy_dev_env.step_migrate(self.valid_config)
+        self.assertFalse(res)
         mock_check.assert_called_once_with(self.valid_config)
         mock_apply.assert_not_called()
 
@@ -751,7 +752,8 @@ image_tag: latest
             ("xid", "xmc-dev", "xids-db-dev"),
         ]
         mock_check.return_value = pending
-        deploy_dev_env.step_migrate(self.valid_config)
+        res = deploy_dev_env.step_migrate(self.valid_config)
+        self.assertTrue(res)
         mock_check.assert_called_once_with(self.valid_config)
         mock_apply.assert_called_once_with(self.valid_config, pending)
 
@@ -763,6 +765,86 @@ image_tag: latest
             deploy_dev_env.step_migrate(self.valid_config)
         self.assertEqual(cm.exception.code, 1)
         mock_apply.assert_not_called()
+
+    @patch("tools.dev_env.deploy_dev_env.run_gcluster_deploy")
+    @patch("tools.dev_env.deploy_dev_env.step_restart")
+    def test_step_app_without_restart(self, mock_restart, mock_gcluster):
+        deploy_dev_env.step_app(
+            self.valid_config,
+            self.dns_project,
+            self.dns_zone,
+            restart_deployments=False,
+        )
+        mock_gcluster.assert_called_once_with(self.valid_config.deployment_name, "xmc_app")
+        mock_restart.assert_not_called()
+
+    @patch("tools.dev_env.deploy_dev_env.run_gcluster_deploy")
+    @patch("tools.dev_env.deploy_dev_env.step_restart")
+    def test_step_app_with_restart(self, mock_restart, mock_gcluster):
+        deploy_dev_env.step_app(
+            self.valid_config,
+            self.dns_project,
+            self.dns_zone,
+            restart_deployments=True,
+        )
+        mock_gcluster.assert_called_once_with(self.valid_config.deployment_name, "xmc_app")
+        mock_restart.assert_called_once_with(self.valid_config)
+
+    @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
+    @patch("tools.dev_env.deploy_dev_env.run_checks")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
+    def test_run_deployment_skip_migrations(
+        self,
+        mock_migrate,
+        mock_run_checks,
+        mock_load_config,
+    ):
+        mock_load_config.return_value = self.valid_config
+        deploy_dev_env.main(
+            [
+                "--config",
+                "config.yaml",
+                "--dns-project",
+                "p",
+                "--dns-zone",
+                "z",
+                "--only",
+                "migrate",
+                "--skip-migrations",
+            ]
+        )
+        mock_migrate.assert_not_called()
+
+    @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
+    @patch("tools.dev_env.deploy_dev_env.run_checks")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
+    @patch("tools.dev_env.deploy_dev_env.step_app")
+    @patch("tools.dev_env.deploy_dev_env.step_verify")
+    def test_run_deployment_triggers_restart_on_migration(
+        self,
+        mock_verify,
+        mock_app,
+        mock_migrate,
+        mock_run_checks,
+        mock_load_config,
+    ):
+        mock_load_config.return_value = self.valid_config
+        mock_migrate.return_value = True
+        deploy_dev_env.main(
+            [
+                "--config",
+                "config.yaml",
+                "--dns-project",
+                "p",
+                "--dns-zone",
+                "z",
+                "--start-from",
+                "migrate",
+            ]
+        )
+        mock_migrate.assert_called_once()
+        mock_app.assert_called_once_with(self.valid_config, "p", "z", restart_deployments=True)
+        mock_verify.assert_called_once()
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     def test_step_gateway_api_not_enabled(self, mock_run):
