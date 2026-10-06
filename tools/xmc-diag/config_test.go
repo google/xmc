@@ -67,6 +67,31 @@ func TestParseFlags_Defaults(t *testing.T) {
 	if cfg.DialWithSeedOnly {
 		t.Errorf("Default DialWithSeedOnly = true, want false")
 	}
+	if !cfg.CheckComponents {
+		t.Errorf("Default CheckComponents = false, want true")
+	}
+	if cfg.CheckComponentsExplicit {
+		t.Errorf("Default CheckComponentsExplicit = true, want false")
+	}
+	if cfg.Namespace != "xmc" {
+		t.Errorf("Default Namespace = %q, want xmc", cfg.Namespace)
+	}
+}
+
+func TestParseFlags_ComponentFlags(t *testing.T) {
+	cfg, err := ParseFlags([]string{"--check-components=true", "--namespace=custom-ns", "--kubeconfig=/tmp/kc"})
+	if err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+	if !cfg.CheckComponents || !cfg.CheckComponentsExplicit {
+		t.Errorf("CheckComponents=%v Explicit=%v, want true/true", cfg.CheckComponents, cfg.CheckComponentsExplicit)
+	}
+	if cfg.Namespace != "custom-ns" {
+		t.Errorf("Namespace = %q, want custom-ns", cfg.Namespace)
+	}
+	if cfg.Kubeconfig != "/tmp/kc" {
+		t.Errorf("Kubeconfig = %q, want /tmp/kc", cfg.Kubeconfig)
+	}
 }
 
 func TestParseFlags_ValidationErrors(t *testing.T) {
