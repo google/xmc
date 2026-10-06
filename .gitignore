@@ -6,6 +6,9 @@
 # Environment-specific values overrides
 /deploy/helm/environments/values-*.yaml
 
+# Locally packaged profile charts (helm package)
+/deploy/profiles/*/*.tgz
+
 # Node.js and Angular
 cmd/ui/node_modules/
 cmd/ui/.angular/
