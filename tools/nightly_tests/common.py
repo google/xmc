@@ -70,6 +70,16 @@ flags.DEFINE_bool(
     False,
     "Whether ClickHouse metric arrival assertion is strictly required",
 )
+flags.DEFINE_string(
+    "dashboard_id",
+    None,
+    "Resource ID slug for the dashboard",
+)
+flags.DEFINE_string(
+    "expected_title_pattern",
+    None,
+    "Expected title pattern for the experiment or dashboard",
+)
 
 
 def get_flag(flags_obj: Any, name: str, default: Any = None) -> Any:
@@ -438,6 +448,101 @@ def verify_standard_workload(
         finally:
             if not wait_for_completion:
                 xmc_entities_validator.stop_work_units(stub, xid)
+
+
+def assert_dashboard(
+    dashboard_endpoint: str,
+    dashboard_id: str,
+    expected_title_pattern: str,
+    min_charts: int = 1,
+    timeout_sec: int = 120,
+) -> dict[str, Any]:
+    """Queries and validates a standalone dashboard and its constituent charts via REST API."""
+    print(f"\n[1/2] Querying and validating Dashboard '{dashboard_id}'...")
+    spec = {
+        "dashboard_id": dashboard_id,
+        "expected_title": expected_title_pattern,
+        "min_charts": min_charts,
+    }
+    dash_results = xmc_entities_validator.validate_dashboard(
+        endpoint=dashboard_endpoint, expected_dashboards=[spec], timeout_sec=timeout_sec
+    )
+    if not dash_results:
+        raise AssertionError(f"Dashboard '{dashboard_id}' was not returned by endpoint.")
+    dash_info = dash_results[0]
+    print(f"  [✓] Dashboard ID      : {dash_info.get('id') or dash_info.get('dashboard_id', '')}")
+    print(f"  [✓] Dashboard Title   : {dash_info['title']}")
+    print(f"  [✓] Referenced Charts : {len(dash_info.get('chart_ids', []))}")
+    print("\n[2/2] Validating Constituent Charts...")
+    for chart in dash_info.get("charts", []):
+        cid = chart.get("name", chart.get("id", "unknown"))
+        print(f"  [✓] Chart '{cid}': Title='{chart.get('title', '')}'")
+    return dash_info
+
+
+def _print_dashboard_banner(
+    banner_title: str,
+    dashboard_id: str,
+    expected_title_pattern: str,
+    dashboard_endpoint: str,
+    timeout_sec: int,
+) -> None:
+    """Prints the standalone dashboard verification header banner."""
+    print_banner(
+        banner_title,
+        [
+            ("Dashboard ID", dashboard_id),
+            ("Expected Title Pattern", f"'{expected_title_pattern}'"),
+            ("Dashboard REST Endpoint", dashboard_endpoint),
+            ("Timeout", f"{timeout_sec}s"),
+        ],
+    )
+
+
+def _print_dashboard_summary(
+    summary_title: str, dashboard_id: str, dash_info: dict[str, Any]
+) -> None:
+    """Prints the standalone dashboard verification success summary."""
+    print_success_summary(
+        summary_title,
+        [
+            ("Dashboard ID", dashboard_id),
+            ("Dashboard Title", dash_info["title"]),
+            ("Validated Charts", len(dash_info.get("charts", []))),
+            ("Web UI Link", f"{resolve_ui_base_url()}/dashboards/{dashboard_id}"),
+        ],
+    )
+
+
+def verify_dashboard_workload(
+    argv: Sequence[str],
+    banner_title: str,
+    summary_title: str,
+    default_dashboard_id: str,
+    expected_title_pattern: str,
+    expected_min_charts: int = 1,
+    default_timeout_sec: int = 120,
+) -> None:
+    """Orchestrates standalone Dashboard and constituent Chart verification via REST API."""
+    validate_argv(argv)
+    raw_id = get_flag(FLAGS, "dashboard_id", None) or get_flag(FLAGS, "xid", None)
+    parsed_id = parse_xid(raw_id, required=False) or default_dashboard_id
+    dashboard_id = f"{default_dashboard_id}_{parsed_id}" if parsed_id.isdigit() else parsed_id
+    title_pattern = get_flag(FLAGS, "expected_title_pattern", expected_title_pattern)
+    timeout_sec = get_flag(FLAGS, "timeout_sec", default_timeout_sec)
+    raw_ep = (
+        get_flag(FLAGS, "dashboard_endpoint", None)
+        or os.environ.get("XMC_DASHBOARD_REST_ENDPOINT")
+        or os.environ.get("XMC_DASHBOARD_ENDPOINT")
+        or os.environ.get("DASHBOARD_ENDPOINT")
+    )
+    dash_ep = resolve_dashboard_endpoint(raw_ep)
+    _print_dashboard_banner(banner_title, dashboard_id, title_pattern, dash_ep, timeout_sec)
+    with handle_verification_errors():
+        dash_info = assert_dashboard(
+            dash_ep, dashboard_id, title_pattern, expected_min_charts, timeout_sec
+        )
+        _print_dashboard_summary(summary_title, dashboard_id, dash_info)
 
 
 def run_main(main_fn: Any) -> None:

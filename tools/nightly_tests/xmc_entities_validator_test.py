@@ -1302,6 +1302,20 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 )
             self.assertEqual(mock_open.call_count, 1)
 
+    def test_validate_dashboard_min_charts_assertion(self) -> None:
+        mock_data = {"name": "dashboards/dash_1", "title": "VCC", "chart_ids": ["c1"]}
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.query_dashboard_http",
+            return_value=mock_data,
+        ):
+            with self.assertRaisesRegex(AssertionError, "expected at least 3 constituent charts"):
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=[{"dashboard_id": "dash_1", "min_charts": 3}],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

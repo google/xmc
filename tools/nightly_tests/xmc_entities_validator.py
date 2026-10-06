@@ -933,7 +933,7 @@ def _extract_dashboard_id(exp_dash: dict[str, Any]) -> str:
 def _assert_dashboard_metadata(
     dash_id: str, dash_data: dict[str, Any], exp_dash: dict[str, Any]
 ) -> list[str]:
-    """Asserts title pattern and expected chart IDs for fetched dashboard data."""
+    """Asserts title pattern, chart count, and expected chart IDs for fetched dashboard data."""
     dash_title = dash_data.get("title", "")
     if "expected_title" in exp_dash and exp_dash["expected_title"] not in dash_title:
         raise AssertionError(
@@ -941,6 +941,12 @@ def _assert_dashboard_metadata(
             f"expected '{exp_dash['expected_title']}', found '{dash_title}'."
         )
     chart_ids = dash_data.get("chart_ids") or dash_data.get("chartIds") or []
+    min_charts = int(exp_dash.get("min_charts", 0))
+    if min_charts > 0 and len(chart_ids) < min_charts:
+        raise AssertionError(
+            f"Dashboard '{dash_id}' expected at least {min_charts} constituent "
+            f"charts, found {len(chart_ids)} (chart_ids: {chart_ids})."
+        )
     if "expected_chart_ids" in exp_dash:
         exp_cids = exp_dash["expected_chart_ids"]
         missing = set(exp_cids) - set(chart_ids)

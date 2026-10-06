@@ -239,8 +239,6 @@ py_binary(
     imports = ["../.."],
     deps = [
         ":common",
-        ":xmc_entities_validator_lib",
-        "@absl_py//absl/flags",
     ],
 )
 
