@@ -33,6 +33,7 @@ py_library(
         "phases.py",
         "spanner.py",
         "spanner_retry.py",
+        "step_summary.py",
         "test_executor.py",
         "ui_diagnostics.py",
     ],
@@ -132,5 +133,11 @@ py_test(
 py_test(
     name = "infra_retry_test",
     srcs = ["infra_retry_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "step_summary_test",
+    srcs = ["step_summary_test.py"],
     deps = [":orchestration_lib"],
 )

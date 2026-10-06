@@ -45,11 +45,13 @@ try:
     from test.e2e.lib.config import parse_args  # noqa: E402
     from test.e2e.lib.infra_retry import run_attempt, run_with_infra_retry  # noqa: E402
     from test.e2e.lib.outcome import Outcome  # noqa: E402
+    from test.e2e.lib.step_summary import append_step_summary  # noqa: E402
 except ImportError:
     from lib import cancellation  # noqa: E402
     from lib.config import parse_args  # noqa: E402
     from lib.infra_retry import run_attempt, run_with_infra_retry  # noqa: E402
     from lib.outcome import Outcome  # noqa: E402
+    from lib.step_summary import append_step_summary  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,6 +73,7 @@ def main() -> int:
     except Exception:
         logger.exception("E2E harness error outside the lifecycle phases")
         return int(Outcome.HARNESS_ERROR)
+    append_step_summary(result)
     return int(result.outcome)
 
 

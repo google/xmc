@@ -63,14 +63,15 @@ class TestHarnessResult(unittest.TestCase):
             attempts=(
                 AttemptResult.for_failed_phase(Phase.SPANNER_SETUP, images_built=True),
                 AttemptResult(outcome=Outcome.PASSED),
-            )
+            ),
+            duration_seconds=412.0,
         )
 
         self.assertIs(result.outcome, Outcome.PASSED)
 
     def test_rejects_empty_attempts(self):
         with self.assertRaises(ValueError):
-            HarnessResult(attempts=())
+            HarnessResult(attempts=(), duration_seconds=0.0)
 
 
 if __name__ == "__main__":

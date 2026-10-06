@@ -28,9 +28,11 @@ class TestMain(unittest.TestCase):
     def setUp(self):
         self.cfg = MagicMock()
         self.controller = MagicMock()
+        self.append_step_summary = MagicMock()
         for name, mock in (
             ("parse_args", MagicMock(return_value=self.cfg)),
             ("cancellation", MagicMock(CONTROLLER=self.controller)),
+            ("append_step_summary", self.append_step_summary),
         ):
             patcher = patch.object(runner, name, mock)
             patcher.start()
@@ -44,12 +46,13 @@ class TestMain(unittest.TestCase):
         ]
         for attempt, expected_exit_code in cases:
             with self.subTest(outcome=attempt.outcome.name):
-                result = HarnessResult(attempts=(attempt,))
+                result = HarnessResult(attempts=(attempt,), duration_seconds=1.0)
                 with patch.object(runner, "run_with_infra_retry", return_value=result) as retry:
                     exit_code = runner.main()
 
                 self.assertEqual(exit_code, expected_exit_code)
                 retry.assert_called_once_with(self.cfg, runner.run_attempt)
+                self.append_step_summary.assert_called_with(result)
         self.controller.install_signal_handlers.assert_called()
 
     def test_returns_harness_error_for_unexpected_exception(self):
@@ -58,6 +61,8 @@ class TestMain(unittest.TestCase):
             self.assertLogs("xmc_e2e_runner", level="ERROR"),
         ):
             self.assertEqual(runner.main(), 4)
+
+        self.append_step_summary.assert_not_called()
 
     def test_propagates_system_exit(self):
         with (

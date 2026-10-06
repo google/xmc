@@ -172,10 +172,11 @@ class TestRunWithInfraRetry(unittest.TestCase):
         self.assertEqual(stdout.count("::warning::"), 1)
 
     def test_does_not_retry_infra_failure_that_ended_after_window(self):
-        with patch.object(infra_retry.time, "monotonic", side_effect=[0.0, 481.0]):
+        with patch.object(infra_retry.time, "monotonic", side_effect=[0.0, 481.0, 482.0]):
             result, _, stdout = self._run(_make_config(), [_INFRA_FAILURE])
 
         self.assertEqual(result.attempts, (_INFRA_FAILURE,))
+        self.assertEqual(result.duration_seconds, 482.0)
         self.assertEqual(stdout, "")
 
     def test_arms_harness_deadline_for_the_run_only(self):

@@ -135,7 +135,7 @@ def run_with_infra_retry(
         attempt_runner: Runs one full attempt (setup, tests, teardown) and classifies it.
 
     Returns:
-        The results of all attempts.
+        The results of all attempts and their total duration.
     """
     start = time.monotonic()
     deadline = cancellation.CONTROLLER.start_deadline(HARNESS_DEADLINE_SECONDS)
@@ -148,7 +148,7 @@ def run_with_infra_retry(
             attempts.append(attempt_runner(retry_cfg))
     finally:
         deadline.cancel()
-    return HarnessResult(attempts=tuple(attempts))
+    return HarnessResult(attempts=tuple(attempts), duration_seconds=time.monotonic() - start)
 
 
 def _exit_if_stopped_by_signal() -> None:
