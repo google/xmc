@@ -15,6 +15,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -142,8 +143,8 @@ func TestRestartWorkUnitExecutions_WorkUnitNotFound(t *testing.T) {
 	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 
 	_, err = restartWorkUnitExecutions(ctx, storageClient, "test@example.com", xid, wids)
-	if status.ExtractCanonicalCode(err) != status.Internal {
-		t.Errorf("restartWorkUnitExecutions for non-existent work unit returned error %v, want Internal", err)
+	if status.ExtractCanonicalCode(err) != status.NotFound {
+		t.Errorf("restartWorkUnitExecutions for non-existent work unit returned error %v, want NotFound", err)
 	}
 }
 
@@ -181,5 +182,20 @@ func TestRestartWorkUnitExecutions_RetryIsIdempotent(t *testing.T) {
 	}
 	if gotCount := spanner.ChildStateCountInState(t, mockStorage.UpdatedExperiment, essmsgpb.WorkUnitStatus_FAILED); gotCount != 0 {
 		t.Errorf("FAILED count after retried transaction = %d, want 0", gotCount)
+	}
+}
+
+func TestRestartWorkUnitExecutions_PreservesAborted(t *testing.T) {
+	ctx := context.Background()
+	mockStorage := &storage.MockStorage{
+		FetchWorkUnitErr: status.ErrAborted,
+	}
+
+	_, err := restartWorkUnitExecutions(ctx, mockStorage, "test@example.com", 123, []int64{1})
+	if !errors.Is(err, status.ErrAborted) {
+		t.Errorf("restartWorkUnitExecutions error = %v, want errors.Is(err, status.ErrAborted)", err)
+	}
+	if status.ExtractCanonicalCode(err) != status.Aborted {
+		t.Errorf("restartWorkUnitExecutions canonical code = %v, want Aborted", status.ExtractCanonicalCode(err))
 	}
 }
