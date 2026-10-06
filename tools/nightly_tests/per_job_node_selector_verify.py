@@ -50,24 +50,42 @@ EXPECTED_NODE_SELECTORS: dict[str, dict[str, str]] = {
 }
 
 
-def _validate_node_selector_mappings(stub: Any, xid: str) -> None:
-    """Validates nodeSelector key-value mappings on actual job objects."""
+def _fetch_first_work_unit_jobs(stub: Any, xid: str) -> dict[str, Any]:
+    """Returns a mapping of job name to KubernetesJob from the first WorkUnit."""
     req = xmc_entities_validator._make_req("ListWorkUnitsRequest", parent=f"experiments/{xid}")
-    raw_work_units = list(getattr(stub.ListWorkUnits(req), "work_units", []))
-    jobset = getattr(raw_work_units[0].executable, "jobset", None)
-    actual_jobs = {getattr(j, "name", ""): j for j in getattr(jobset, "jobs", [])}
-    for job_name, expected_ns in EXPECTED_NODE_SELECTORS.items():
-        actual_job = actual_jobs.get(job_name)
-        if actual_job is None:
-            raise AssertionError(f"Job '{job_name}' missing from JobSet jobs.")
-        actual_ns = dict(getattr(actual_job, "node_selector", {}))
-        for k, v in expected_ns.items():
-            if actual_ns.get(k) != v:
-                raise AssertionError(
-                    f"Job '{job_name}' node_selector['{k}'] mismatch: "
-                    f"expected '{v}', found '{actual_ns.get(k)}'."
-                )
-        print(f"  [✓] Verified node_selector for '{job_name}': {actual_ns}")
+    work_units = stub.ListWorkUnits(req).work_units
+    if not work_units:
+        raise AssertionError(f"No WorkUnits found for experiment {xid}.")
+    return {job.name: job for job in work_units[0].executable.jobset.jobs}
+
+
+def _assert_job_node_selector(
+    jobs_by_name: dict[str, Any],
+    job_name: str,
+    expected_selector: dict[str, str],
+) -> None:
+    """Asserts that a single JobSet job contains all expected node_selector entries."""
+    job = jobs_by_name.get(job_name)
+    if job is None:
+        raise AssertionError(f"Job '{job_name}' missing from JobSet jobs.")
+
+    actual_selector = dict(job.node_selector)
+    for label_key, expected_val in expected_selector.items():
+        actual_val = actual_selector.get(label_key)
+        if actual_val != expected_val:
+            raise AssertionError(
+                f"Job '{job_name}' node_selector['{label_key}'] mismatch: "
+                f"expected '{expected_val}', found '{actual_val}'."
+            )
+    print(f"  [✓] Verified node_selector for '{job_name}': {actual_selector}")
+
+
+def _validate_node_selector_mappings(stub: Any, xid: str) -> None:
+    """Validates nodeSelector key-value mappings on each expected JobSet job."""
+    print("\n[Step 4] Validating per-job node_selector constraints...")
+    jobs_by_name = _fetch_first_work_unit_jobs(stub, xid)
+    for job_name, expected_selector in EXPECTED_NODE_SELECTORS.items():
+        _assert_job_node_selector(jobs_by_name, job_name, expected_selector)
 
 
 def main(argv: Sequence[str]) -> None:
