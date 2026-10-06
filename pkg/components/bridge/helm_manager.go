@@ -23,15 +23,11 @@ import (
 	"sync"
 	"time"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/cli"
-	"helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/storage/driver"
 
 	"xmanager_cloud/logging/logging"
 )
@@ -315,46 +311,27 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 
 // Delete1PComponent uninstalls the 1P component Helm release and records it as disabled in the ConfigMap.
 func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef) error {
-	if m == nil {
-		return nil
-	}
-	targetNamespace, err := m.validateAndResolve(ref)
-	if err != nil {
-		return err
-	}
-	resolved := ComponentRef{Namespace: targetNamespace, Name: ref.Name}
-
-	modified, err := m.disableComponentValues(ctx, targetNamespace, ref.Name)
-	if err != nil {
-		return fmt.Errorf("failed to disable Helm values for %q: %w", ref.Name, err)
-	}
-
-	key := componentKey(targetNamespace, ref.Name)
-	if !modified && !m.IsComponentActive(resolved) && m.GetUpgradeError(resolved) == nil {
-		return nil
-	}
-
-	releaseName := ComponentReleaseName(ref.Name)
-	if err := m.uninstallRelease(ctx, releaseName, targetNamespace, resolved); err != nil {
-		return err
-	}
-
-	m.mu.Lock()
-	if m.activeState != nil {
-		m.activeState[key] = false
-	}
-	if m.actuatedGenerations != nil {
-		delete(m.actuatedGenerations, key)
-	}
-	m.clearRepairLocked(key)
-	m.mu.Unlock()
-
-	logging.Info(ctx, "Deleted 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
-	return nil
+	return m.uninstallComponent(ctx, ref, componentTeardown{action: "disable", updateValues: m.disableComponentValues, keepInactive: true})
 }
 
 // Purge1PComponent permanently uninstalls the Helm release and removes component values from the ConfigMap.
 func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef) error {
+	return m.uninstallComponent(ctx, ref, componentTeardown{action: "purge", updateValues: m.removeComponentValues})
+}
+
+// componentTeardown describes how uninstallComponent records a teardown.
+type componentTeardown struct {
+	// action names the teardown in errors and logs.
+	action string
+	// updateValues records the teardown in the values ConfigMap and reports whether it changed.
+	updateValues func(ctx context.Context, namespace, componentName string) (bool, error)
+	// keepInactive selects the state kept after uninstall; see forgetComponentLocked.
+	keepInactive bool
+}
+
+// uninstallComponent records the teardown in the values ConfigMap, uninstalls the component's release, and forgets its
+// state. It is a no-op when the values were already torn down, the component is inactive, and no upgrade failed.
+func (m *K8sHelmManager) uninstallComponent(ctx context.Context, ref ComponentRef, td componentTeardown) error {
 	if m == nil {
 		return nil
 	}
@@ -363,34 +340,21 @@ func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef)
 		return err
 	}
 	resolved := ComponentRef{Namespace: targetNamespace, Name: ref.Name}
-
-	modified, err := m.removeComponentValues(ctx, targetNamespace, ref.Name)
+	modified, err := td.updateValues(ctx, targetNamespace, ref.Name)
 	if err != nil {
-		return fmt.Errorf("failed to purge Helm values for %q: %w", ref.Name, err)
+		return fmt.Errorf("failed to %s Helm values for %q: %w", td.action, ref.Name, err)
 	}
-
-	key := componentKey(targetNamespace, ref.Name)
 	if !modified && !m.IsComponentActive(resolved) && m.GetUpgradeError(resolved) == nil {
 		return nil
 	}
-
 	releaseName := ComponentReleaseName(ref.Name)
 	if err := m.uninstallRelease(ctx, releaseName, targetNamespace, resolved); err != nil {
 		return err
 	}
-
 	m.mu.Lock()
-	if m.activeState != nil {
-		delete(m.activeState, key)
-	}
-	if m.actuatedGenerations != nil {
-		delete(m.actuatedGenerations, key)
-	}
-	delete(m.componentChartPaths, key)
-	m.clearRepairLocked(key)
+	m.forgetComponentLocked(componentKey(targetNamespace, ref.Name), td.keepInactive)
 	m.mu.Unlock()
-
-	logging.Info(ctx, "Purged 1P component Helm release", "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
+	logging.Info(ctx, "Uninstalled 1P component Helm release", "action", td.action, "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
 	return nil
 }
 
@@ -407,189 +371,8 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 	m.setUpgradeErr(resolved, nil)
 	key := componentKey(targetNamespace, ref.Name)
 	m.mu.Lock()
-	if m.activeState != nil {
-		delete(m.activeState, key)
-	}
-	if m.actuatedGenerations != nil {
-		delete(m.actuatedGenerations, key)
-	}
-	delete(m.componentChartPaths, key)
-	m.clearRepairLocked(key)
+	m.forgetComponentLocked(key, false)
 	m.mu.Unlock()
 	logging.Info(ctx, "Orphaned 1P component Helm values", "name", ref.Name, "namespace", targetNamespace)
-	return nil
-}
-
-// IsComponentActuated returns true if the component is active and was actuated at the given generation without errors.
-func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64) bool {
-	if m == nil || ref.Name == "" || ref.Namespace == "" {
-		return false
-	}
-	key := componentKey(ref.Namespace, ref.Name)
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if !m.activeState[key] {
-		return false
-	}
-	if m.upgradeErrs != nil && m.upgradeErrs[key] != nil {
-		return false
-	}
-	if m.actuatedGenerations == nil {
-		return false
-	}
-	return m.actuatedGenerations[key] == generation
-}
-
-// RecordActuation records the generation at which the component was successfully actuated. A new generation resets
-// the component's repair backoff.
-func (m *K8sHelmManager) RecordActuation(ref ComponentRef, generation int64) {
-	if m == nil || ref.Name == "" || ref.Namespace == "" {
-		return
-	}
-	key := componentKey(ref.Namespace, ref.Name)
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.actuatedGenerations == nil {
-		m.actuatedGenerations = make(map[string]int64)
-	}
-	if m.actuatedGenerations[key] != generation {
-		delete(m.repairBackoff, key)
-	}
-	m.actuatedGenerations[key] = generation
-}
-
-// IsComponentActive returns true if the component is recorded as enabled.
-func (m *K8sHelmManager) IsComponentActive(ref ComponentRef) bool {
-	if m == nil || ref.Name == "" || ref.Namespace == "" {
-		return false
-	}
-	key := componentKey(ref.Namespace, ref.Name)
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.activeState[key]
-}
-
-// HydrateFromCluster populates in-memory active state from the release ConfigMap (<namespace>/xmc-component-values)
-// on controller startup to avoid cold-start state drift.
-func (m *K8sHelmManager) HydrateFromCluster(ctx context.Context) error {
-	if m == nil || m.client == nil || m.namespace == "" {
-		return nil
-	}
-	return m.hydrateNamespaceFromConfigMap(ctx, m.namespace)
-}
-
-// HydrateComponentState synchronizes in-memory activeState and actuatedGenerations for a component
-// from cluster storage and existing CR status conditions on cold start.
-// Before trusting a Ready=True CR as proof of actuation, it verifies that the component's Helm release is
-// actually deployed; otherwise the component is treated as not actuated so the next Ensure re-installs it.
-func (m *K8sHelmManager) HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error {
-	if m == nil {
-		return nil
-	}
-	if _, err := m.validateAndResolve(ref); err != nil {
-		return nil
-	}
-	key := componentKey(ref.Namespace, ref.Name)
-	m.mu.RLock()
-	_, known := m.activeState[key]
-	m.mu.RUnlock()
-	var hydrateErr error
-	if !known {
-		hydrateErr = m.hydrateNamespaceFromConfigMap(ctx, ref.Namespace)
-	}
-	if crReady && m.wouldRecordHydratedActuation(key, observedGeneration) && m.releaseContradictsReadyCR(ctx, ref) {
-		logging.Warn(ctx, "Component CR reports Ready but its Helm release is missing or failed; forcing re-actuation", "name", ref.Name, "namespace", ref.Namespace, "generation", observedGeneration)
-		crReady = false
-	}
-	m.applyHydratedState(key, observedGeneration, crReady)
-	return hydrateErr
-}
-
-// wouldRecordHydratedActuation reports whether hydrating a Ready CR at observedGeneration would record a new actuation.
-func (m *K8sHelmManager) wouldRecordHydratedActuation(key string, observedGeneration int64) bool {
-	if observedGeneration <= 0 {
-		return false
-	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.actuatedGenerations[key] == 0
-}
-
-// releaseContradictsReadyCR queries Helm (outside m.mu) and reports whether the release definitively contradicts a
-// Ready CR: it is missing or in a terminal non-deployed state (failed, superseded, uninstalled, ...). Transient query
-// errors and pending-* states keep trusting the CR: re-upgrading would only bump a revision or fail with "another
-// operation is in progress"; ComponentHealth surfaces pending-* releases as HelmReleaseStuck instead.
-func (m *K8sHelmManager) releaseContradictsReadyCR(ctx context.Context, ref ComponentRef) bool {
-	if m.runner == nil {
-		return true
-	}
-	rel, err := m.runner.Status(ctx, ComponentReleaseName(ref.Name), ref.Namespace)
-	if errors.Is(err, driver.ErrReleaseNotFound) {
-		return true
-	}
-	if err != nil {
-		logging.Warn(ctx, "Failed to verify Helm release during hydration; trusting CR status", "name", ref.Name, "namespace", ref.Namespace, "err", err)
-		return false
-	}
-	status := releaseStatus(rel)
-	// TODO(components): Treat "uninstalling" (and other transient statuses) consistently with releaseNeedsRepair so
-	// cold-start hydration doesn't force a re-actuation on bridge restart.
-	return status != release.StatusDeployed && !status.IsPending()
-}
-
-func (m *K8sHelmManager) applyHydratedState(key string, observedGeneration int64, crReady bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.activeState == nil {
-		m.activeState = make(map[string]bool)
-	}
-	if m.actuatedGenerations == nil {
-		m.actuatedGenerations = make(map[string]int64)
-	}
-	activeInCM, hasCM := m.activeState[key]
-	if !crReady {
-		if observedGeneration > 0 && m.actuatedGenerations[key] == 0 {
-			m.activeState[key] = false
-		}
-		return
-	}
-	if observedGeneration == 0 || !hasCM || activeInCM {
-		m.activeState[key] = true
-		if observedGeneration > 0 && m.actuatedGenerations[key] == 0 {
-			m.actuatedGenerations[key] = observedGeneration
-		}
-	}
-}
-
-func (m *K8sHelmManager) hydrateNamespaceFromConfigMap(ctx context.Context, namespace string) error {
-	if m == nil || m.client == nil || namespace == "" {
-		return nil
-	}
-	cm, err := m.client.CoreV1().ConfigMaps(namespace).Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.activeState == nil {
-		m.activeState = make(map[string]bool)
-	}
-	for k, rawJSON := range cm.Data {
-		compName, ok := strings.CutSuffix(k, componentValuesKeySuffix)
-		if !ok {
-			continue
-		}
-		stateKey := componentKey(namespace, compName)
-		if _, exists := m.activeState[stateKey]; exists {
-			continue
-		}
-		if enabled, ok := extractComponentEnabledFromValuesJSON(compName, rawJSON); ok {
-			m.activeState[stateKey] = enabled
-		}
-	}
 	return nil
 }
