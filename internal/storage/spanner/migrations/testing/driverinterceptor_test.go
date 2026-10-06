@@ -104,6 +104,23 @@ CREATE TABLE T2 (B INT64);`,
 				"",
 			}, "\n"),
 		},
+		{
+			name: "v13 WorkUnitState enum update is skipped on up",
+			content: `CREATE TABLE T1 (A INT64);
+ALTER PROTO BUNDLE UPDATE (cloud.xmanager.v1.WorkUnitStatus.WorkUnitState);`,
+			dbName:    "ess",
+			direction: UP,
+			version:   13,
+			want:      "CREATE TABLE T1 (A INT64);\n",
+		},
+		{
+			name:      "WorkUnitState enum update is kept for other versions",
+			content:   "ALTER PROTO BUNDLE UPDATE (cloud.xmanager.v1.WorkUnitStatus.WorkUnitState);",
+			dbName:    "ess",
+			direction: UP,
+			version:   14,
+			want:      "ALTER PROTO BUNDLE UPDATE (cloud.xmanager.v1.WorkUnitStatus.WorkUnitState);\n",
+		},
 	}
 
 	for _, tt := range tests {
