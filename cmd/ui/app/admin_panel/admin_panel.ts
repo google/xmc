@@ -71,6 +71,7 @@ export class AdminPanelPage {
 
   protected readonly isRefreshing = signal<boolean>(false);
   protected readonly isUpdatingPauseState = signal<boolean>(false);
+  protected readonly localSchedulingPaused = signal<boolean | null>(null);
 
   private readonly refreshTrigger$ = new BehaviorSubject<boolean>(false);
   private readonly configRefreshTrigger$ = new BehaviorSubject<void>(undefined);
@@ -126,7 +127,9 @@ export class AdminPanelPage {
     () => this.healthStatus() === undefined && !this.healthStatusError(),
   );
 
-  protected readonly localSchedulingPaused = signal<boolean | null>(null);
+  protected readonly isSchedulingPauseError = computed(() =>
+    Boolean(this.healthStatus()?.systemInfo?.schedulingPauseError),
+  );
 
   protected readonly isSchedulingPaused = computed(() => {
     if (this.localSchedulingPaused() !== null) {
@@ -166,7 +169,13 @@ export class AdminPanelPage {
   }
 
   protected onToggleSchedulingPause(pause: boolean): void {
-    if (!this.isPauseSchedulingEnabled() || this.isUpdatingPauseState()) return;
+    if (
+      !this.isPauseSchedulingEnabled() ||
+      this.isUpdatingPauseState() ||
+      this.isSchedulingPauseError()
+    ) {
+      return;
+    }
 
     this.isUpdatingPauseState.set(true);
     const request$ = pause

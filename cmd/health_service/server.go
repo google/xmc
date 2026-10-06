@@ -117,18 +117,14 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 		}
 	}
 
-	isSchedulingPaused := false
-	if s.cfg != nil && s.cfg.FeatureFlags.PauseSchedulingEnabled && s.pauseScheduler != nil {
+	if resp.SystemInfo != nil && s.cfg != nil && s.cfg.FeatureFlags.PauseSchedulingEnabled && s.pauseScheduler != nil {
 		paused, err := s.pauseScheduler.IsPaused(ctx)
 		if err != nil {
-			// TODO(pausescheduling): Propagate error in response when pause scheduling check fails.
 			logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
+			resp.SystemInfo.SchedulingPauseError = err.Error()
 		} else {
-			isSchedulingPaused = paused
+			resp.SystemInfo.IsSchedulingPaused = paused
 		}
-	}
-	if resp.SystemInfo != nil {
-		resp.SystemInfo.IsSchedulingPaused = isSchedulingPaused
 	}
 
 	return resp, nil

@@ -85,6 +85,7 @@ message SystemInfo {
   string observability_url = 4;
   bool is_scheduling_paused = 5;
   string build_version = 6;
+  string scheduling_pause_error = 7;
 }
 
 message ComponentHealth {

@@ -164,6 +164,7 @@ declare module 'xmanager_cloud/health_service/proto/api.jsonpb_decls' {
     observabilityUrl?: string;
     isSchedulingPaused?: boolean;
     buildVersion?: string;
+    schedulingPauseError?: string;
     [key: string]: any;
   }
   export interface HealthStatusResponse {
