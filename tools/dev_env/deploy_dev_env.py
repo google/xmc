@@ -48,6 +48,7 @@ from tools.dev_env.blueprint_compiler import compile_blueprint  # noqa: E402
 from tools.dev_env.upgrade_dev_env import (  # noqa: E402
     apply_pending_migrations,
     check_pending_migrations,
+    step_restart,
 )
 
 # ANSI Color Codes
@@ -71,10 +72,10 @@ STEPS = [
     "images",
     "apis",
     "primary",
-    "migrate",
     "compute",
     "gateway-api",
     "prereqs",
+    "migrate",
     "app",
     "verify",
 ]
@@ -109,6 +110,11 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Start/resume deployment from this step onwards",
     )
     parser.add_argument("--only", choices=STEPS, help="Execute ONLY this specific step and exit")
+    parser.add_argument(
+        "--skip-migrations",
+        action="store_true",
+        help="Skip automatic Cloud Spanner database schema migrations",
+    )
 
     parsed_args = parser.parse_args(args)
 
@@ -524,19 +530,23 @@ def step_primary(config: DeploymentConfig, dns_project: str, dns_zone: str) -> N
     apply_dns_records(gateway_ip, config, dns_project, dns_zone)
 
 
-def step_migrate(config: DeploymentConfig) -> None:
+def step_migrate(config: DeploymentConfig) -> bool:
     """Checks and applies pending Spanner database migrations.
 
     Args:
         config: The loaded DeploymentConfig instance.
+
+    Returns:
+        True if pending migrations were applied, False otherwise.
     """
     pending = check_pending_migrations(config)
     if not pending:
         log_success("No pending migrations found. Databases are up to date.")
-        return
+        return False
 
     log_info("Applying pending Spanner migrations...")
     apply_pending_migrations(config, pending)
+    return True
 
 
 def step_compute(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
@@ -625,17 +635,28 @@ def step_images(config: DeploymentConfig) -> None:
     build_and_push_images(config)
 
 
-def step_app(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
+def step_app(
+    config: DeploymentConfig,
+    dns_project: str,
+    dns_zone: str,
+    *,
+    restart_deployments: bool = False,
+) -> None:
     """Deploys xmc_app group (Helm release).
 
     Args:
         config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
+        restart_deployments: If True, triggers rolling restarts across microservice
+          deployments to ensure pods run with updated schema versions.
     """
     log_info("Deploying xmc_app group (Helm release)...")
     run_gcluster_deploy(config.deployment_name, "xmc_app")
     log_success("XMC application Helm release deployed successfully.")
+    if restart_deployments:
+        log_info("Spanner migrations were applied; rolling service deployments...")
+        step_restart(config)
 
 
 def _wait_for_gateway_programmed() -> None:
@@ -768,6 +789,18 @@ def run_deployment(args: argparse.Namespace) -> None:
     # Run validations (corresponds to run_checks in bash)
     run_checks(config, args.dns_project, args.dns_zone)
 
+    migrations_applied = False
+    skip_migrations = (
+        getattr(args, "skip_migrations", False) or getattr(args, "auto_migrate", None) is False
+    )
+
+    def _execute_migrate() -> None:
+        nonlocal migrations_applied
+        if skip_migrations:
+            log_info("Skipping database migrations as requested (--skip-migrations).")
+            return
+        migrations_applied = step_migrate(config)
+
     # Define step mapping
     step_map = {
         "check": lambda: step_check(config, args.dns_project, args.dns_zone),
@@ -775,11 +808,16 @@ def run_deployment(args: argparse.Namespace) -> None:
         "images": lambda: step_images(config),
         "apis": lambda: step_apis(config, args.dns_project, args.dns_zone),
         "primary": lambda: step_primary(config, args.dns_project, args.dns_zone),
-        "migrate": lambda: step_migrate(config),
         "compute": lambda: step_compute(config, args.dns_project, args.dns_zone),
         "gateway-api": lambda: step_gateway_api(config, args.dns_project, args.dns_zone),
         "prereqs": lambda: step_prereqs(config, args.dns_project, args.dns_zone),
-        "app": lambda: step_app(config, args.dns_project, args.dns_zone),
+        "migrate": _execute_migrate,
+        "app": lambda: step_app(
+            config,
+            args.dns_project,
+            args.dns_zone,
+            restart_deployments=migrations_applied,
+        ),
         "verify": lambda: step_verify(config, args.dns_project, args.dns_zone),
     }
 
