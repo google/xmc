@@ -15,6 +15,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
 
 py_library(
     name = "e2e_pkg",
@@ -31,6 +32,19 @@ py_binary(
     srcs = ["runner.py"],
     main = "runner.py",
     visibility = ["//visibility:public"],
+    deps = [
+        ":e2e_pkg",
+        "//test/e2e/lib:orchestration_lib",
+    ],
+)
+
+py_test(
+    name = "runner_test",
+    srcs = [
+        "runner.py",
+        "runner_test.py",
+    ],
+    main = "runner_test.py",
     deps = [
         ":e2e_pkg",
         "//test/e2e/lib:orchestration_lib",

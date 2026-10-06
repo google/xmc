@@ -18,27 +18,40 @@ from __future__ import annotations
 
 import concurrent.futures
 import contextlib
+import functools
 import logging
 import os
 import shutil
 import signal
 import sys
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator, Sequence
 from typing import Any
 
 from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.helm_deployer import HelmDeployer
 from test.e2e.lib.image_builder import ImageBuilder
 from test.e2e.lib.kind import KindClusterManager
+from test.e2e.lib.phases import Phase, phase_scope
 from test.e2e.lib.spanner import SpannerManager
 from test.e2e.lib.test_executor import PlaywrightTestExecutor
 
 logger = logging.getLogger("xmc_e2e_runner")
 
 
+def _run_in_phase(phase: Phase, task: Callable[[], Any]) -> Any:
+    """Runs ``task`` and tags any failure with ``phase``."""
+    with phase_scope(phase):
+        return task()
+
+
 class E2EOrchestrator:
-    """Coordinates the full E2E setup, execution, and teardown."""
+    """Coordinates the full E2E setup, execution, and teardown.
+
+    Attributes:
+        images_built: Whether the container images were built, so that a retry can reuse
+            them. Final once ``run`` returns or raises.
+    """
 
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
@@ -47,6 +60,7 @@ class E2EOrchestrator:
         self.builder = ImageBuilder(config)
         self.helm = HelmDeployer(config)
         self.tester = PlaywrightTestExecutor(config)
+        self.images_built = False
 
     @contextlib.contextmanager
     def managed_lifecycle(self) -> Generator[None, None, None]:
@@ -79,7 +93,13 @@ class E2EOrchestrator:
                 shutil.rmtree(self.cfg.temp_dir, ignore_errors=True)
 
     def run(self) -> None:
-        """Executes the full end-to-end lifecycle."""
+        """Executes the full end-to-end lifecycle.
+
+        Raises:
+            PhaseError: If a lifecycle phase fails, with the original exception as its
+                ``__cause__``. Teardown has completed before this propagates.
+            SystemExit: With ``128 + signum`` on SIGINT or SIGTERM.
+        """
         start_time = time.time()
         logger.info("================================================================")
         logger.info(" Starting XMC Headless E2E Test Suite")
@@ -93,45 +113,64 @@ class E2EOrchestrator:
 
         def _signal_handler(signum: int, _frame: Any) -> None:
             logger.warning("Received signal %d. Triggering cleanup and exiting...", signum)
-            sys.exit(1)
+            sys.exit(128 + signum)
 
         signal.signal(signal.SIGINT, _signal_handler)
         signal.signal(signal.SIGTERM, _signal_handler)
 
         with self.managed_lifecycle():
-            logger.info("=== Phase 1: Building Container Images & Initializing KinD Cluster ===")
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor1:
-                builder_future = executor1.submit(self.builder.build_all)
-                kind_future = executor1.submit(self.kind.setup)
-                futures = [builder_future, kind_future]
-                try:
-                    for future in concurrent.futures.as_completed(futures):
-                        future.result()
-                    images = builder_future.result()
-                except BaseException:
-                    for future in futures:
-                        future.cancel()
-                    raise
-
-            logger.info(
-                "=== Phase 2: Loading Container Images & Provisioning Spanner Databases ==="
-            )
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor2:
-                load_future = executor2.submit(self.kind.load_images, images)
-                spanner_future = executor2.submit(self.spanner.setup)
-                futures = [load_future, spanner_future]
-                try:
-                    for future in concurrent.futures.as_completed(futures):
-                        future.result()
-                except BaseException:
-                    for future in futures:
-                        future.cancel()
-                    raise
-
-            self.helm.deploy()
-            self.tester.execute()
+            self._run_phases()
 
         elapsed = time.time() - start_time
         logger.info("================================================================")
         logger.info("🎉 E2E Test Suite Succeeded in %.2f seconds! 🎉", elapsed)
         logger.info("================================================================")
+
+    def _run_phases(self) -> None:
+        """Runs the setup phases and then the test phase, tagging failures with their phase."""
+        logger.info("=== Phase 1: Building Container Images & Initializing KinD Cluster ===")
+        images, _ = self._run_concurrently(
+            [(Phase.IMAGE_BUILD, self._build_images), (Phase.KIND_CREATE, self.kind.setup)]
+        )
+
+        logger.info("=== Phase 2: Loading Container Images & Provisioning Spanner Databases ===")
+        self._run_concurrently(
+            [
+                (Phase.IMAGE_LOAD, functools.partial(self.kind.load_images, images)),
+                (Phase.SPANNER_SETUP, self.spanner.setup),
+            ]
+        )
+
+        with phase_scope(Phase.HELM_DEPLOY):
+            self.helm.deploy()
+        with phase_scope(Phase.TESTS):
+            self.tester.execute()
+
+    def _build_images(self) -> list[str]:
+        """Builds the container images and records that they were built."""
+        images = self.builder.build_all()
+        self.images_built = True
+        return images
+
+    def _run_concurrently(self, tasks: Sequence[tuple[Phase, Callable[[], Any]]]) -> list[Any]:
+        """Runs phase-tagged tasks in parallel and returns their results in task order.
+
+        Args:
+            tasks: Pairs of the lifecycle phase and the zero-argument callable implementing it.
+
+        Returns:
+            The task results, in the order of ``tasks``.
+
+        Raises:
+            PhaseError: For the first task that fails, once the other tasks have finished.
+        """
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+            futures = [executor.submit(_run_in_phase, phase, task) for phase, task in tasks]
+            try:
+                for future in concurrent.futures.as_completed(futures):
+                    future.result()
+            except BaseException:
+                for future in futures:
+                    future.cancel()
+                raise
+        return [future.result() for future in futures]

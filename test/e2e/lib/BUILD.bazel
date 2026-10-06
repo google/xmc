@@ -25,8 +25,11 @@ py_library(
         "dex_authenticator.py",
         "helm_deployer.py",
         "image_builder.py",
+        "infra_retry.py",
         "kind.py",
         "orchestrator.py",
+        "outcome.py",
+        "phases.py",
         "spanner.py",
         "spanner_retry.py",
         "test_executor.py",
@@ -104,5 +107,23 @@ py_test(
 py_test(
     name = "dex_authenticator_test",
     srcs = ["dex_authenticator_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "phases_test",
+    srcs = ["phases_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "outcome_test",
+    srcs = ["outcome_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "infra_retry_test",
+    srcs = ["infra_retry_test.py"],
     deps = [":orchestration_lib"],
 )
