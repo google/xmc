@@ -207,7 +207,7 @@ jobs:
             name: 'xDash Dashboard Builder'
             example_path: 'examples/xdash_dashboard'
             entrypoint: 'create_dashboard.py'
-            args: '--endpoint="${XMC_DASHBOARD_ENDPOINT}"'
+            args: '--endpoint="localhost:50051"'
             verify_module: 'tools.nightly_tests.xdash_dashboard_verify'
             expected_queue: ''
             timeout_minutes: 15
@@ -219,7 +219,6 @@ jobs:
       XMC_DOMAIN: 'xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}'
       XMANAGER_ENDPOINT: 'grpc.xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}:443'
       XMANAGER_UI_URL: 'https://xmc-nightly.${{ secrets.GCP_DOMAIN_NAME }}'
-      XMC_DASHBOARD_ENDPOINT: 'localhost:50051'
       IAP_CLIENT_ID: '${{ secrets.GCP_IAP_CLIENT_ID }}'
       XMC_CLIENT_SA: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
       QUEUE_NAME: ${{ inputs.queue_name || 'cpu-queue' }}
