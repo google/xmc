@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 
@@ -48,6 +49,29 @@ EXPERIMENT_RUNS = [
 DEFAULT_ENDPOINT = "localhost:8080"
 DEFAULT_DASHBOARD_ID = "example_vcc_comparison"
 DEFAULT_DASHBOARD_TITLE = "VCC Baseline vs Tuned Hyperparameters"
+
+
+def _resolve_experiment_runs() -> list[tuple[int, str, str]]:
+    """Resolves experiment IDs, creating live experiments when XMANAGER_ENDPOINT is set."""
+    if not os.environ.get("XMANAGER_ENDPOINT"):
+        return list(EXPERIMENT_RUNS)
+    try:
+        from xmanager import xm_cloud
+        from xmanager.xm_cloud import snapshot_code
+        from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
+    except ImportError:
+        return list(EXPERIMENT_RUNS)
+
+    snapshot_code.push_repo_state = lambda *a, **kw: type("Dummy", (), {"commit_url": None})()
+    acls = xid_messages_pb2.XidAcls(
+        owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
+    )
+    resolved: list[tuple[int, str, str]] = []
+    for _, slug, run_title in EXPERIMENT_RUNS:
+        with xm_cloud.create_experiment(experiment_title=run_title, acls=acls) as exp:
+            xid = int(exp.resource_name.split("/")[-1])
+            resolved.append((xid, f"{slug}_{xid}", run_title))
+    return resolved
 
 
 def build_experiment_chart(xid: int, chart_slug: str, title: str) -> messages_pb2.Chart:
@@ -95,10 +119,13 @@ def create_example_dashboard(
     this runs in two phases: create every chart, then create the dashboard pointing at
     the IDs the server assigned.
     """
+    runs = _resolve_experiment_runs()
+    if dashboard_id == DEFAULT_DASHBOARD_ID and runs and runs[0][0] != VCC_BASELINE_XID:
+        dashboard_id = f"{dashboard_id}_{runs[0][0]}"
     sys.stdout.write(f"--> Building dashboard '{title}' (ID: {dashboard_id})...\n")
 
     charts = []
-    for xid, slug, run_title in EXPERIMENT_RUNS:
+    for xid, slug, run_title in runs:
         sys.stdout.write(f"    - Building chart for Experiment {xid} ({run_title})...\n")
         charts.append(build_experiment_chart(xid, slug, run_title))
 
