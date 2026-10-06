@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -36,13 +37,17 @@ import (
 // ClickHouseComponentName is the canonical Kubernetes Component CR name for ClickHouse.
 const ClickHouseComponentName = "clickhouse"
 
+// ErrNotConfigured indicates that ClickHouse is not configured because the Component CR is absent
+// or disabled and static environment variables are not set.
+var ErrNotConfigured = errors.New("clickhouse is not configured")
+
 const (
 	defaultPort        = "9000"
 	defaultDatabase    = "default"
 	defaultUser        = "default"
 	defaultSecretName  = "clickhouse-secret"
 	defaultSecretKey   = "clickhouse-password"
-	defaultDialTimeout = 10 * time.Second
+	defaultDialTimeout = 5 * time.Second
 )
 
 // Source holds the configuration and readers required to resolve ClickHouse options from a Component CR.
@@ -74,7 +79,10 @@ func ResolveOptions(ctx context.Context, src Source) (*clickhouse.Options, error
 	}
 	ns := crreader.ResolveNamespace(src.Namespace)
 	comp, err := src.Getter.GetComponent(ctx, ns, ClickHouseComponentName)
-	if apierrors.IsNotFound(err) || (err == nil && crreader.IsDisabled(comp)) {
+	if apierrors.IsNotFound(err) || (err == nil && (comp == nil || crreader.IsDisabled(comp))) {
+		if !xmcclickhouse.Configured() {
+			return nil, ErrNotConfigured
+		}
 		logging.Info(ctx, "ClickHouse Component CR is absent or disabled; falling back to static environment configuration", "namespace", ns, "component", ClickHouseComponentName)
 		return xmcclickhouse.GetOptions()
 	}
@@ -105,21 +113,44 @@ func ResolveOptions(ctx context.Context, src Source) (*clickhouse.Options, error
 		Addr:        addrs,
 		Auth:        clickhouse.Auth{Database: database, Username: username, Password: password},
 		DialTimeout: defaultDialTimeout,
-		Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
 	}, nil
 }
 
 func resolveAddresses(ns string, params, envVars map[string]string) ([]string, string, error) {
 	envPort := firstNonEmpty(envVars["PORT"], params["nativePort"], defaultPort)
-	if host := strings.TrimSpace(envVars["HOST"]); host != "" {
-		addr, err := joinValidatedHostPort(host, envPort)
-		return []string{addr}, "status.access.envVars.HOST", err
+	specPort := firstNonEmpty(params["nativePort"], defaultPort)
+
+	// If status.access.envVars["ENDPOINT"] contains multiple endpoints, prefer it.
+	if endpoint := strings.TrimSpace(envVars["ENDPOINT"]); strings.Contains(endpoint, ",") {
+		addrs, err := parseEndpoints(endpoint, envPort)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(addrs) > 1 {
+			return addrs, "status.access.envVars.ENDPOINT", nil
+		}
 	}
+
+	// Preserve multi-replica clusterEndpoints when xmc-bridge only populates the first probed endpoint.
+	if clusterEndpoints := strings.TrimSpace(params["clusterEndpoints"]); strings.Contains(clusterEndpoints, ",") {
+		addrs, err := parseEndpoints(clusterEndpoints, specPort)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(addrs) > 1 {
+			return addrs, "spec.parameters.clusterEndpoints", nil
+		}
+	}
+
+	// Check status.access.envVars["ENDPOINT"] before HOST.
 	if endpoint := strings.TrimSpace(envVars["ENDPOINT"]); endpoint != "" {
 		addrs, err := parseEndpoints(endpoint, envPort)
 		return addrs, "status.access.envVars.ENDPOINT", err
 	}
-	specPort := firstNonEmpty(params["nativePort"], defaultPort)
+	if host := strings.TrimSpace(envVars["HOST"]); host != "" {
+		addr, err := joinValidatedHostPort(host, envPort)
+		return []string{addr}, "status.access.envVars.HOST", err
+	}
 	if clusterEndpoints := strings.TrimSpace(params["clusterEndpoints"]); clusterEndpoints != "" {
 		addrs, err := parseEndpoints(clusterEndpoints, specPort)
 		return addrs, "spec.parameters.clusterEndpoints", err
@@ -156,10 +187,11 @@ func normalizeEndpointToken(token, defaultPortStr string) (string, error) {
 	if host, port, err := net.SplitHostPort(token); err == nil {
 		return joinValidatedHostPort(host, port)
 	}
-	if strings.Contains(token, ":") && net.ParseIP(token) == nil {
+	cleanToken := strings.TrimPrefix(strings.TrimSuffix(token, "]"), "[")
+	if strings.Contains(token, ":") && net.ParseIP(cleanToken) == nil {
 		return "", fmt.Errorf("invalid ClickHouse endpoint %q", token)
 	}
-	return joinValidatedHostPort(token, defaultPortStr)
+	return joinValidatedHostPort(cleanToken, defaultPortStr)
 }
 
 func joinValidatedHostPort(host, portStr string) (string, error) {

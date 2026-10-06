@@ -247,16 +247,31 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
         )
         self.assertIn('enable_components: "true"', manifest)
 
-    def test_components_rbac_omitted_without_components_and_metrics(self) -> None:
-        """The reader Role is only rendered when dashboard, components, and metrics are all on."""
+    def test_components_rbac_omitted_without_components(self) -> None:
+        """The reader Role is only rendered when dashboard and components are both on."""
         for values in (
-            {"dashboardServiceDeployment.enabled": "true", "metrics.enabled": "true"},
-            {"dashboardServiceDeployment.enabled": "true", "componentsDeployment.enabled": "true"},
+            {"dashboardServiceDeployment.enabled": "true", "componentsDeployment.enabled": "false"},
+            {"dashboardServiceDeployment.enabled": "true"},
         ):
             self.assertNotIn(
                 "dashboard-service-components-reader",
                 render_template(DASHBOARD_SERVICEACCOUNT, values),
             )
+
+    def test_components_rbac_rendered_when_components_enabled_even_without_metrics(self) -> None:
+        """The reader Role renders when components are on, even if metrics.enabled is false."""
+        manifest = render_template(
+            DASHBOARD_SERVICEACCOUNT,
+            {
+                "dashboardServiceDeployment.enabled": "true",
+                "componentsDeployment.enabled": "true",
+                "metrics.enabled": "false",
+            },
+        )
+        self.assertIn("name: dashboard-service-components-reader", manifest)
+        self.assertIn("name: dashboard-service-components-reader-binding", manifest)
+        self.assertIn('resourceNames: ["clickhouse"]', manifest)
+        self.assertIn('resourceNames: ["clickhouse-secret"]', manifest)
 
     def test_components_rbac_grants_component_and_secret_get_when_csi_disabled(self) -> None:
         """Without CSI, the Role grants get on the clickhouse Component CR and password Secret."""
