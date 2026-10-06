@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 // asyncUpgradeTimeout bounds a single asynchronous Helm upgrade executed by the background worker.
