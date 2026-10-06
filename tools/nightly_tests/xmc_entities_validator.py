@@ -740,8 +740,12 @@ def _fetch_raw_artifacts(
 
 def _extract_artifact_payload_info(art: Any) -> tuple[str, Any]:
     """Extracts normalized payload type and active subtype object from an Artifact."""
-    payload: Any = getattr(art, "payload", None)
-    which = payload.WhichOneof("type") if hasattr(payload, "WhichOneof") else None
+    payload = getattr(art, "payload", None)
+    which = (
+        payload.WhichOneof("type")
+        if payload is not None and hasattr(payload, "WhichOneof")
+        else None
+    )
     if not which:
         return "", None
     return _normalize_artifact_type(which), getattr(payload, which, None)
