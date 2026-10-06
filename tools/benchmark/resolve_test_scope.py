@@ -533,6 +533,9 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
         f"in $t except attr('tags', 'manual', $t)"
     )
 
+    # TODO: Fresh CI runners have no fetched external repositories, so this `bazel query
+    # --fetch=false` fails and CI silently falls back to the full backend suite. Fix by fetching
+    # external repositories before the query (or by dropping --fetch=false).
     try:
         res = subprocess.run(
             [

@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import traceback
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -113,19 +114,25 @@ def _bootstrap_venv(venv_dir: Path) -> None:
     if not setup_script.is_file():
         setup_script = Path(__file__).resolve().parent.parent / "setup_venv.py"
     if setup_script.is_file():
+        # Setup and pip output goes to stderr so that tools keep stdout JSON-only.
         subprocess.run(
             [sys.executable, str(setup_script), "--venv-dir", str(venv_dir)],
             check=True,
+            stdout=sys.stderr,
         )
 
 
 class HandledError(Exception):
-    """Exception raised for errors that are handled with instructions."""
+    """Exception raised for errors that are handled with instructions.
 
-    def __init__(self, message, instruction):
+    details optionally carries structured data that run_tool adds to the error JSON.
+    """
+
+    def __init__(self, message: str, instruction: str, details: Mapping[str, Any] | None = None):
         super().__init__(message)
         self.message = message
         self.instruction = instruction
+        self.details = details
 
 
 def run_tool(parser: argparse.ArgumentParser, main_fn):
@@ -154,6 +161,8 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
             "message": e.message,
             "instruction": e.instruction,
         }
+        if e.details is not None:
+            output["details"] = dict(e.details)
         print(json.dumps(output, indent=2), file=sys.stderr)
         sys.exit(1)
 

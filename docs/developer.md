@@ -211,6 +211,30 @@ The **UI** is the frontend portal of XMC, hosting the Angular single-page applic
 
 ---
 
+## Running Affected Unit Tests
+
+Before opening a pull request, run the Bazel unit tests affected by your change, scoped the same way as PR CI:
+
+```bash
+python3 ./tools/run_affected_tests.py            # Resolve the scope and run the affected Bazel tests
+python3 ./tools/run_affected_tests.py --dry-run  # Print the resolved scope without running tests
+```
+
+The tool collects every file changed since the merge base of `--base-ref` (default `origin/main`) and `HEAD`, including staged, unstaged, and untracked (non-ignored) files; a renamed file counts as both its old and new path. It scopes them with [`resolve_test_scope.py`](../tools/benchmark/resolve_test_scope.py) using pull request semantics and runs `bazel test` on the resolved targets with the flags of the CI `bazel test` step, except the CI-only `--config=ci`, `--remote_upload_local_results`, `--repository_cache`, and `--experimental_repository_cache_hardlinks` flags.
+
+- **Output**: stdout carries only the JSON result, which lists the changed files, the resolved scope, the passed targets, and `log_path`. Bazel output goes to the `log_path` file, which the first Bazel command creates in a new temporary directory; `log_path` is `null` when no Bazel command ran. Bazel output and the resolver's diagnostics are also streamed to stderr when stderr is a terminal or `--verbose` is passed. Per-target results come from the Bazel Build Event Protocol file written next to the log.
+- **Exit codes**: `0` when tests pass, for a dry run, or when nothing needs to run; `1` for test failures and other handled errors; `2` for unexpected errors. When tests fail or do not build, the error JSON on stderr has a `details` object with the failed targets and their status and test logs, the targets that did not run (for example because the build failed first), any build errors, and the log path.
+- **Spanner emulator**: Tests that depend on `//internal/storage/spanner/emulator` need a running emulator. Start one as described in [Running Spanner Database Health Unit Tests](#running-spanner-database-health-unit-tests).
+- **Full-suite fallback**: The resolver selects the full backend suite (`//... -//cmd/ui/...`) when a core infrastructure file changes (such as `MODULE.bazel`, `go.mod`, the root `BUILD.bazel`, or `.bazelrc`), when a changed non-code file belongs to no Bazel package below the repository root (such as files under `.github/` or untracked scratch files at the root), when its Bazel dependency query finds no affected test targets, and when that offline (`--fetch=false`) query fails or times out, typically because external repositories are not fetched yet. `bazel fetch //...` is not enough, because it skips repositories that only other platforms need, so in a fresh clone or worktree run this once first:
+
+  ```bash
+  bazel query --keep_going --noimplicit_deps 'deps(//... except //cmd/ui/...)' > /dev/null
+  ```
+
+  CI runners start without fetched repositories, so CI currently runs the full backend suite for every pull request that needs backend tests. Run with `--dry-run` to check the scope before running tests.
+
+---
+
 ## Continuous Integration
 
 [![XMC Unit Tests](https://github.com/google/xmc/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/google/xmc/actions/workflows/unit-tests.yml)

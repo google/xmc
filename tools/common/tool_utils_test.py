@@ -22,6 +22,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from types import MappingProxyType
 from unittest.mock import ANY, MagicMock, patch
 
 from tools.common.tool_utils import (
@@ -149,6 +150,16 @@ class TestToolUtils(unittest.TestCase):
             mock_run.assert_called_once()
 
     @patch("subprocess.run")
+    def test_bootstrap_venv_sends_setup_output_to_stderr(self, mock_run):
+        """Setup and pip output must not mix with the JSON that tools print to stdout."""
+        with (
+            tempfile.TemporaryDirectory() as tmp_dir,
+            patch("pathlib.Path.is_file", return_value=True),
+        ):
+            _bootstrap_venv(Path(tmp_dir) / "venv")
+        self.assertIs(mock_run.call_args.kwargs["stdout"], sys.stderr)
+
+    @patch("subprocess.run")
     def test_bootstrap_venv_pip_index_url_fallback(self, mock_run):
         env = dict(os.environ)
         env.pop("PIP_INDEX_URL", None)
@@ -215,6 +226,33 @@ class TestToolUtils(unittest.TestCase):
         self.assertEqual(output["error_type"], "handled")
         self.assertEqual(output["message"], "something went wrong")
         self.assertEqual(output["instruction"], "please fix it")
+        self.assertNotIn("details", output)
+
+    def test_run_tool_handled_error_with_details(self):
+        """Test that the details of a HandledError are added to the error JSON."""
+        details = {"failed_targets": [{"target": "//a:a_test", "status": "FAILED"}]}
+        main_fn = MagicMock(side_effect=HandledError("tests failed", "fix them", details))
+
+        captured_stderr = io.StringIO()
+        with (
+            patch("sys.stderr", captured_stderr),
+            self.assertRaises(SystemExit) as exit_ctx,
+        ):
+            run_tool(MagicMock(), main_fn)
+
+        self.assertEqual(exit_ctx.exception.code, 1)
+        self.assertEqual(json.loads(captured_stderr.getvalue())["details"], details)
+
+    def test_run_tool_handled_error_with_read_only_mapping_details(self):
+        """Test that details given as a non-dict Mapping still serialize to the error JSON."""
+        details = MappingProxyType({"log_path": "/tmp/bazel.log"})
+        main_fn = MagicMock(side_effect=HandledError("tests failed", "fix them", details))
+
+        captured_stderr = io.StringIO()
+        with patch("sys.stderr", captured_stderr), self.assertRaises(SystemExit):
+            run_tool(MagicMock(), main_fn)
+
+        self.assertEqual(json.loads(captured_stderr.getvalue())["details"], dict(details))
 
     def test_run_tool_unhandled_error(self):
         """Test tool runner with an unexpected Exception."""
