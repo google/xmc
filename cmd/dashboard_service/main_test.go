@@ -283,7 +283,7 @@ func TestChartDataEngine_NilProviderStaysNilInterface(t *testing.T) {
 }
 
 func TestChartDataEngine_WrapsProvider(t *testing.T) {
-	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(false, ""))
+	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(false, "", nil))
 
 	got := chartDataEngine(provider)
 
@@ -458,9 +458,60 @@ func TestBuildClickHouseResolver_InvalidKubeconfigSurfacesErrorOnResolve(t *test
 	}
 	t.Setenv("KUBECONFIG", badKubeconfig)
 
-	resolve := buildClickHouseResolver(true, "xmc")
+	resolve := buildClickHouseResolver(true, "xmc", nil)
 	if _, _, err := resolve(context.Background()); err == nil {
 		t.Errorf("resolve() with invalid kubeconfig succeeded, want error")
+	}
+}
+
+func TestBuildClickHouseResolver_UsesCustomGetter(t *testing.T) {
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
+	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
+	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
+		t.Fatalf("failed to write invalid kubeconfig: %v", err)
+	}
+	t.Setenv("KUBECONFIG", badKubeconfig)
+
+	pwFile := t.TempDir() + "/ch-pw"
+	if err := os.WriteFile(pwFile, []byte("secret-pw\n"), 0600); err != nil {
+		t.Fatalf("failed to write password file: %v", err)
+	}
+	t.Setenv("CLICKHOUSE_PASSWORD_FILE", pwFile)
+	cr := &unstructured.Unstructured{
+		Object: map[string]any{
+			"spec": map[string]any{
+				"enabled":    true,
+				"parameters": map[string]any{"host": "127.0.0.1", "nativePort": "9000"},
+			},
+			"status": map[string]any{"state": "COMPONENT_STATE_ENABLED"},
+		},
+	}
+	customGetter := &crreadertest.FakeGetter{Component: cr}
+
+	resolve := buildClickHouseResolver(true, "xmc", customGetter)
+	fp, connect, err := resolve(context.Background())
+	if err != nil {
+		t.Fatalf("resolve() with customGetter error: %v", err)
+	}
+	if fp == "" || connect == nil {
+		t.Errorf("resolve() returned fp=%q, connect=%v; want non-empty fp and non-nil connect", fp, connect)
+	}
+
+	// When CLICKHOUSE_PASSWORD_FILE is unset, lazySecretReader attempts K8s Secret initialization and surfaces kubeconfig error.
+	t.Setenv("CLICKHOUSE_PASSWORD_FILE", "")
+	if _, _, err := resolve(context.Background()); err == nil {
+		t.Errorf("resolve() without password file and invalid kubeconfig succeeded, want secret reader init error")
+	}
+
+	// Verify lazySecretReader delegates when reader is pre-populated.
+	lazy := &lazySecretReader{
+		reader: &crreadertest.FakeSecretReader{
+			Secrets: map[string]map[string]string{"xmc/ch": {"pw": "val"}},
+		},
+	}
+	if got, err := lazy.GetSecretValue(context.Background(), "xmc", "ch", "pw"); err != nil || got != "val" {
+		t.Errorf("lazy.GetSecretValue() = (%q, %v), want (\"val\", nil)", got, err)
 	}
 }
 

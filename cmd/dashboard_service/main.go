@@ -117,15 +117,35 @@ func initAuthenticator(ctx context.Context, projectID string) (*oauth2.Authentic
 	return oauth2.NewAuthenticator(oauthCfg), oauthCfg, nil
 }
 
+type lazySecretReader struct {
+	mu     sync.Mutex
+	reader crreader.SecretReader
+}
+
+func (l *lazySecretReader) GetSecretValue(ctx context.Context, namespace, name, key string) (string, error) {
+	l.mu.Lock()
+	if l.reader == nil {
+		r, err := crreader.NewK8sSecretReader()
+		if err != nil {
+			l.mu.Unlock()
+			return "", fmt.Errorf("failed to initialize kubernetes secret reader: %w", err)
+		}
+		l.reader = r
+	}
+	reader := l.reader
+	l.mu.Unlock()
+	return reader.GetSecretValue(ctx, namespace, name, key)
+}
+
 // buildClickHouseResolver constructs the dynamic resolver the dataengine Provider uses on dial and readiness checks.
-func buildClickHouseResolver(enableComponents bool, namespace string) dataengine.Resolver {
+func buildClickHouseResolver(enableComponents bool, namespace string, customGetter crreader.Getter) dataengine.Resolver {
 	if !enableComponents {
 		return resolveClickHouseWithSource(componentconfig.Source{Enabled: false}, nil)
 	}
 	var (
 		mu      sync.Mutex
-		getter  crreader.Getter
-		secrets crreader.SecretReader
+		getter  = customGetter
+		secrets = &lazySecretReader{}
 	)
 	return func(ctx context.Context) (string, dataengine.Connector, error) {
 		mu.Lock()
@@ -137,18 +157,10 @@ func buildClickHouseResolver(enableComponents bool, namespace string) dataengine
 			}
 			getter = g
 		}
-		if secrets == nil {
-			s, err := crreader.NewK8sSecretReader()
-			if err != nil {
-				mu.Unlock()
-				return "", nil, fmt.Errorf("failed to initialize kubernetes secret reader: %w", err)
-			}
-			secrets = s
-		}
-		g, s := getter, secrets
+		g := getter
 		mu.Unlock()
 
-		src := componentconfig.Source{Enabled: true, Namespace: namespace, Getter: g, Secrets: s}
+		src := componentconfig.Source{Enabled: true, Namespace: namespace, Getter: g, Secrets: secrets}
 		return resolveClickHouseWithSource(src, nil)(ctx)
 	}
 }
@@ -193,7 +205,7 @@ func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGet
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
-	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(enableComponents, componentsNamespace))
+	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(enableComponents, componentsNamespace, customGetter))
 	dialCtx, cancel := context.WithTimeout(ctx, dataEngineStartupTimeout)
 	defer cancel()
 	if _, err := provider.Engine(dialCtx); err != nil {

@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sync/singleflight"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	"xmanager_cloud/internal/logging"
 )
 
 // defaultRetryInterval bounds how often a Provider redials ClickHouse.
@@ -180,17 +181,27 @@ func (p *Provider) Ping(ctx context.Context) error {
 func (p *Provider) pingDynamic(ctx context.Context) error {
 	fp, connect, err := p.resolve(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to resolve clickhouse configuration: %w", err)
+		logging.Warn(ctx, "Failed to resolve ClickHouse configuration during readiness check, keeping active engine", "error", err)
+		return p.pingActive(ctx, fmt.Errorf("failed to resolve clickhouse configuration: %w", err))
 	}
 	if connect == nil {
-		return fmt.Errorf("failed to resolve clickhouse configuration: connector must not be nil")
+		logging.Warn(ctx, "Resolved nil ClickHouse connector during readiness check, keeping active engine")
+		return p.pingActive(ctx, fmt.Errorf("failed to resolve clickhouse configuration: connector must not be nil"))
 	}
 	if !p.hasFingerprint(fp) {
 		if err := p.rebuildIfChanged(ctx, fp, connect); err != nil {
-			return err
+			logging.Warn(ctx, "Failed to rebuild ClickHouse data engine after configuration change, keeping active engine", "error", err)
+			return p.pingActive(ctx, err)
 		}
 	}
 	return p.engine.Load().Ping(ctx)
+}
+
+func (p *Provider) pingActive(ctx context.Context, candidateErr error) error {
+	if current := p.engine.Load(); current != nil {
+		return current.Ping(ctx)
+	}
+	return candidateErr
 }
 
 func (p *Provider) rebuildIfChanged(ctx context.Context, fingerprint string, connect Connector) error {
@@ -203,7 +214,10 @@ func (p *Provider) rebuildIfChanged(ctx context.Context, fingerprint string, con
 }
 
 func (p *Provider) rebuild(ctx context.Context, fingerprint string, connect Connector) error {
-	conn, err := connect(ctx)
+	dialCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.dialTimeout())
+	defer cancel()
+
+	conn, err := connect(dialCtx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to clickhouse: %w", err)
 	}
@@ -215,7 +229,7 @@ func (p *Provider) rebuild(ctx context.Context, fingerprint string, connect Conn
 		closeConn(conn)
 		return fmt.Errorf("failed to initialize data engine: %w", err)
 	}
-	if err := engine.Ping(ctx); err != nil {
+	if err := engine.Ping(dialCtx); err != nil {
 		closeConn(conn)
 		return fmt.Errorf("failed to ping clickhouse: %w", err)
 	}

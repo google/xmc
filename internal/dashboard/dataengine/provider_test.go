@@ -543,7 +543,7 @@ func TestDynamicProviderPreservesExistingEngineOnRebuildFailure(t *testing.T) {
 	tests := []struct {
 		name           string
 		nextResolve    Resolver
-		checkAfterPing func(t *testing.T, err error)
+		checkAfterPing func(t *testing.T)
 	}{
 		{
 			name: "resolver error on Ping",
@@ -574,12 +574,9 @@ func TestDynamicProviderPreservesExistingEngineOnRebuildFailure(t *testing.T) {
 			nextResolve: func(ctx context.Context) (string, Connector, error) {
 				return "fp-v2", func(context.Context) (ClickHouseConn, error) { return unhealthyNewConn, nil }, nil
 			},
-			checkAfterPing: func(t *testing.T, err error) {
+			checkAfterPing: func(t *testing.T) {
 				if !unhealthyNewConn.closed.Load() {
 					t.Error("unhealthyNewConn.closed = false, want failed replacement connection closed")
-				}
-				if err == nil || !errors.Is(err, errors.Unwrap(err)) {
-					t.Errorf("Ping() error = %v, want wrapped error", err)
 				}
 			},
 		},
@@ -607,15 +604,15 @@ func TestDynamicProviderPreservesExistingEngineOnRebuildFailure(t *testing.T) {
 			activeResolve = tt.nextResolve
 			mu.Unlock()
 
-			pingErr := provider.Ping(context.Background())
-			if pingErr == nil {
-				t.Fatal("Ping() succeeded on broken config update, want error")
+			// While connV1 remains healthy, Ping() falls back to pinging connV1 so the pod stays ready.
+			if err := provider.Ping(context.Background()); err != nil {
+				t.Fatalf("Ping() returned error %v when active v1 engine is still healthy, want nil", err)
 			}
 			if connV1.closed.Load() {
 				t.Error("connV1.closed = true, want existing engine connection kept open when rebuild fails")
 			}
 			if tt.checkAfterPing != nil {
-				tt.checkAfterPing(t, pingErr)
+				tt.checkAfterPing(t)
 			}
 
 			data, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
@@ -625,7 +622,74 @@ func TestDynamicProviderPreservesExistingEngineOnRebuildFailure(t *testing.T) {
 			if got := data.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.5 {
 				t.Errorf("summary LatestValue = %v, want 0.5 from preserved v1 engine", got)
 			}
+
+			// If the active v1 engine also becomes unreachable, Ping() surfaces the active engine's ping error.
+			activeErr := errors.New("active v1 clickhouse went down")
+			connV1.pingFn = func(context.Context) error { return activeErr }
+			if err := provider.Ping(context.Background()); !errors.Is(err, activeErr) {
+				t.Errorf("Ping() with unhealthy active engine = %v, want %v", err, activeErr)
+			}
 		})
+	}
+}
+
+func TestDynamicProviderRebuildDetachesFromCallerCancellation(t *testing.T) {
+	connV1 := newSummaryConn("loss", 0.5)
+	connV2 := newSummaryConn("loss", 0.2)
+
+	var (
+		mu            sync.Mutex
+		currentFP     = "fp-v1"
+		dialStarted   = make(chan struct{})
+		releaseDial   = make(chan struct{})
+		errDuringDial error
+	)
+
+	provider := NewDynamicProvider(func(ctx context.Context) (string, Connector, error) {
+		mu.Lock()
+		fp := currentFP
+		mu.Unlock()
+		if fp == "fp-v1" {
+			return fp, func(context.Context) (ClickHouseConn, error) { return connV1, nil }, nil
+		}
+		return fp, func(dialCtx context.Context) (ClickHouseConn, error) {
+			close(dialStarted)
+			<-releaseDial
+			errDuringDial = dialCtx.Err()
+			return connV2, nil
+		}, nil
+	}, WithRetryInterval(0), WithCloseGracePeriod(0))
+
+	if err := provider.Ping(context.Background()); err != nil {
+		t.Fatalf("initial Ping() error: %v", err)
+	}
+
+	mu.Lock()
+	currentFP = "fp-v2"
+	mu.Unlock()
+
+	probeCtx, cancelProbe := context.WithCancel(context.Background())
+	pingDone := make(chan error, 1)
+	go func() {
+		pingDone <- provider.Ping(probeCtx)
+	}()
+
+	<-dialStarted
+	cancelProbe()
+	close(releaseDial)
+
+	// Because probeCtx was cancelled, the final active engine Ping(probeCtx) may see context.Canceled,
+	// but the rebuild itself must have completed with an uncanceled dialCtx and swapped to connV2.
+	<-pingDone
+	if errDuringDial != nil {
+		t.Errorf("rebuild dial context err = %v after probe cancellation, want nil", errDuringDial)
+	}
+	data, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
+	if err != nil {
+		t.Fatalf("FetchChartData() after rebuild error: %v", err)
+	}
+	if got := data.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.2 {
+		t.Errorf("summary LatestValue after rebuild = %v, want 0.2 from connV2", got)
 	}
 }
 
