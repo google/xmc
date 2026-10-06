@@ -479,12 +479,14 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
     @patch("tools.dev_env.deploy_dev_env.step_prereqs")
     @patch("tools.dev_env.deploy_dev_env.step_migrate")
+    @patch("tools.dev_env.deploy_dev_env.step_addons")
     @patch("tools.dev_env.deploy_dev_env.step_app")
     @patch("tools.dev_env.deploy_dev_env.step_verify")
     def test_main_flow_all_steps(
         self,
         mock_verify,
         mock_app,
+        mock_addons,
         mock_migrate,
         mock_prereqs,
         mock_gw_api,
@@ -521,6 +523,7 @@ image_tag: latest
         mock_gw_api.assert_called_once()
         mock_prereqs.assert_called_once()
         mock_migrate.assert_called_once()
+        mock_addons.assert_called_once_with(self.valid_config)
         mock_app.assert_called_once()
         mock_verify.assert_called_once()
 
@@ -535,12 +538,14 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
     @patch("tools.dev_env.deploy_dev_env.step_prereqs")
     @patch("tools.dev_env.deploy_dev_env.step_migrate")
+    @patch("tools.dev_env.deploy_dev_env.step_addons")
     @patch("tools.dev_env.deploy_dev_env.step_app")
     @patch("tools.dev_env.deploy_dev_env.step_verify")
     def test_main_flow_start_from(
         self,
         mock_verify,
         mock_app,
+        mock_addons,
         mock_migrate,
         mock_prereqs,
         mock_gw_api,
@@ -580,6 +585,7 @@ image_tag: latest
         mock_gw_api.assert_called_once()
         mock_prereqs.assert_called_once()
         mock_migrate.assert_called_once()
+        mock_addons.assert_called_once_with(self.valid_config)
         mock_app.assert_called_once()
         mock_verify.assert_called_once()
 
@@ -594,12 +600,14 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
     @patch("tools.dev_env.deploy_dev_env.step_prereqs")
     @patch("tools.dev_env.deploy_dev_env.step_migrate")
+    @patch("tools.dev_env.deploy_dev_env.step_addons")
     @patch("tools.dev_env.deploy_dev_env.step_app")
     @patch("tools.dev_env.deploy_dev_env.step_verify")
     def test_main_flow_only(
         self,
         mock_verify,
         mock_app,
+        mock_addons,
         mock_migrate,
         mock_prereqs,
         mock_gw_api,
@@ -640,6 +648,7 @@ image_tag: latest
         mock_gw_api.assert_not_called()
         mock_prereqs.assert_not_called()
         mock_migrate.assert_not_called()
+        mock_addons.assert_not_called()
         mock_app.assert_not_called()
         mock_verify.assert_not_called()
 
@@ -790,6 +799,50 @@ image_tag: latest
         mock_gcluster.assert_called_once_with(self.valid_config.deployment_name, "xmc_app")
         mock_restart.assert_called_once_with(self.valid_config)
 
+    @patch("tools.dev_env.deploy_dev_env.run_command")
+    def test_step_addons_disabled(self, mock_run):
+        self.valid_config.enable_metrics = False
+        deploy_dev_env.step_addons(self.valid_config)
+        mock_run.assert_not_called()
+
+    @patch("pathlib.Path.read_text", return_value="CREATE TABLE test;")
+    @patch("tools.dev_env.deploy_dev_env.run_command")
+    def test_step_addons_enabled(self, mock_run, mock_read_text):
+        self.valid_config.enable_metrics = True
+        dry_run_out = MagicMock(stdout="apiVersion: v1\n")
+        mock_run.return_value = dry_run_out
+
+        deploy_dev_env.step_addons(self.valid_config)
+
+        mock_run.assert_any_call(
+            [
+                "gcloud",
+                "container",
+                "clusters",
+                "get-credentials",
+                "xmc-xmc-dev-dev",
+                "--region=us-central1",
+                "--project=my-project",
+            ]
+        )
+        mock_run.assert_any_call(
+            ["kubectl", "apply", "-f", "deploy/addons/metrics/manifests/metrics-addons.yaml"]
+        )
+        mock_run.assert_any_call(
+            [
+                "kubectl",
+                "exec",
+                "-i",
+                "-n",
+                "xmc-metrics",
+                "clickhouse-0",
+                "--",
+                "clickhouse-client",
+                "--multiquery",
+            ],
+            input_data="CREATE TABLE test;",
+        )
+
     @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
     @patch("tools.dev_env.deploy_dev_env.run_checks")
     @patch("tools.dev_env.deploy_dev_env.step_migrate")
@@ -817,13 +870,40 @@ image_tag: latest
 
     @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
     @patch("tools.dev_env.deploy_dev_env.run_checks")
+    @patch("tools.dev_env.deploy_dev_env.step_verify")
+    def test_run_deployment_skip_verification(
+        self,
+        mock_verify,
+        mock_run_checks,
+        mock_load_config,
+    ):
+        mock_load_config.return_value = self.valid_config
+        deploy_dev_env.main(
+            [
+                "--config",
+                "config.yaml",
+                "--dns-project",
+                "p",
+                "--dns-zone",
+                "z",
+                "--only",
+                "verify",
+                "--skip-verification",
+            ]
+        )
+        mock_verify.assert_not_called()
+
+    @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
+    @patch("tools.dev_env.deploy_dev_env.run_checks")
     @patch("tools.dev_env.deploy_dev_env.step_migrate")
+    @patch("tools.dev_env.deploy_dev_env.step_addons")
     @patch("tools.dev_env.deploy_dev_env.step_app")
     @patch("tools.dev_env.deploy_dev_env.step_verify")
     def test_run_deployment_triggers_restart_on_migration(
         self,
         mock_verify,
         mock_app,
+        mock_addons,
         mock_migrate,
         mock_run_checks,
         mock_load_config,
@@ -843,6 +923,7 @@ image_tag: latest
             ]
         )
         mock_migrate.assert_called_once()
+        mock_addons.assert_called_once_with(self.valid_config)
         mock_app.assert_called_once_with(self.valid_config, "p", "z", restart_deployments=True)
         mock_verify.assert_called_once()
 

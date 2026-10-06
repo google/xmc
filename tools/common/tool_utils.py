@@ -39,6 +39,7 @@ class DeploymentConfig:
     image_tag: str
     namespace: str = "xmc"
     domain_name: str | None = None
+    enable_metrics: bool = False
 
     @property
     def gke_cluster(self) -> str:
@@ -277,6 +278,13 @@ def load_and_validate_config(
         if pattern and not re.match(pattern, str(val)):
             raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
 
+    raw_metrics = config.get("enable_metrics", False)
+    enable_metrics = (
+        raw_metrics
+        if isinstance(raw_metrics, bool)
+        else str(raw_metrics).strip().lower() in ("true", "1", "yes")
+    )
+
     return DeploymentConfig(
         project_id=config["project_id"],
         deployment_name=config["deployment_name"],
@@ -286,6 +294,7 @@ def load_and_validate_config(
         image_tag=config["image_tag"],
         domain_name=config.get("domain_name"),
         namespace=config.get("namespace", "xmc"),
+        enable_metrics=enable_metrics,
     )
 
 
@@ -319,6 +328,7 @@ def run_command(
     log_on_error: bool = True,
     log_cmd: bool = True,
     cwd: Path | str | None = None,
+    input_data: str | None = None,
 ) -> subprocess.CompletedProcess:
     """Helper to run shell commands with unified logging and error handling.
 
@@ -330,6 +340,7 @@ def run_command(
         log_on_error: Whether to log errors on failure.
         log_cmd: Whether to log the command being executed.
         cwd: Optional working directory for subprocess execution.
+        input_data: Optional stdin string to pass to the subprocess.
 
     Returns:
         A subprocess.CompletedProcess object.
@@ -341,16 +352,17 @@ def run_command(
         log_info(f"Running: {' '.join(cmd)}")
 
     proc_env = os.environ.copy() | {str(k): str(v) for k, v in (env or {}).items()}
+    run_kwargs: dict[str, Any] = {
+        "env": proc_env,
+        "text": True,
+        "capture_output": capture_output,
+        "cwd": str(cwd) if cwd else None,
+    }
+    if input_data is not None:
+        run_kwargs["input"] = input_data
 
     try:
-        return subprocess.run(
-            cmd,
-            env=proc_env,
-            check=check,
-            text=True,
-            capture_output=capture_output,
-            cwd=str(cwd) if cwd else None,
-        )
+        return subprocess.run(cmd, check=check, **run_kwargs)
     except subprocess.CalledProcessError:
         if log_on_error:
             log_error(f"Command failed: {' '.join(cmd)}")

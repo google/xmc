@@ -131,12 +131,14 @@ class DevEnvCliTest(unittest.TestCase):
             "--dns-zone",
             "test-dns-zone",
             "--skip-migrations",
+            "--skip-verification",
         ]
         parsed = self.parser.parse_args(args)
         parsed.func(parsed)
         mock_run.assert_called_once()
         called_args = mock_run.call_args[0][0]
         self.assertFalse(called_args.auto_migrate)
+        self.assertTrue(called_args.skip_verification)
 
     def test_gke_deploy_missing_required_args(self) -> None:
         """Verifies gke-deploy fails when required flags are omitted."""
