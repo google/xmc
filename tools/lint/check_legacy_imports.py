@@ -18,9 +18,11 @@
 Counts google3-era constructs (legacy Go import roots, unresolved module
 import paths, compat.bzl targets, gazelle resolve overrides, third_party proto
 paths, google3 runtime flags in Helm, and legacy UI/Python paths) and compares
-them against a checked-in baseline. The check fails when any count grows, and
-also when a count shrinks without the baseline being lowered, so that progress
-is locked in. See https://github.com/google/xmc/issues/1066.
+them against a checked-in baseline. The check fails only when a count grows.
+When a count shrinks, the check passes and reports the stale entries so the
+pre-commit hook can lower the baseline with --update-baseline; CI therefore
+never fails just because another change on main removed leftovers. See
+https://github.com/google/xmc/issues/1066.
 """
 
 import argparse
@@ -38,7 +40,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 
-DEFAULT_BASELINE = Path(__file__).resolve().parent / "legacy_imports_baseline.json"
+BASELINE_RELPATH = Path("tools/lint/legacy_imports_baseline.json")
 GO_MODULE_PREFIX = "xmanager_cloud/"
 
 # First path segments of google3-style Go import paths (none are Go stdlib).
@@ -155,14 +157,23 @@ def is_legacy_root_import(path: str) -> bool:
     return path.split("/", 1)[0] in LEGACY_GO_ROOTS
 
 
-def is_unresolved_module_import(path: str, repo_root: Path) -> bool:
-    """Reports whether a module-prefixed import does not map to a repo directory."""
+def is_unresolved_module_import(path: str, tracked_dirs: frozenset[str]) -> bool:
+    """Reports whether a module-prefixed import does not map to a tracked directory."""
     if not path.startswith(GO_MODULE_PREFIX):
         return False
-    return not (repo_root / path.removeprefix(GO_MODULE_PREFIX)).is_dir()
+    return path.removeprefix(GO_MODULE_PREFIX) not in tracked_dirs
 
 
-def count_go_imports(repo_root: Path, files: list[str]) -> dict[str, int]:
+def tracked_directories(files: list[str]) -> frozenset[str]:
+    """Returns every directory that contains at least one tracked file."""
+    return frozenset(
+        parent.as_posix() for f in files for parent in Path(f).parents if parent != Path(".")
+    )
+
+
+def count_go_imports(
+    repo_root: Path, files: list[str], tracked_dirs: frozenset[str]
+) -> dict[str, int]:
     """Counts legacy-root and unresolved module imports across Go files."""
     counts = {"go_legacy_root_imports": 0, "go_unresolved_module_imports": 0}
     for rel in files:
@@ -171,7 +182,7 @@ def count_go_imports(repo_root: Path, files: list[str]) -> dict[str, int]:
         for path in extract_go_imports(_read_text(repo_root / rel)):
             if is_legacy_root_import(path):
                 counts["go_legacy_root_imports"] += 1
-            elif is_unresolved_module_import(path, repo_root):
+            elif is_unresolved_module_import(path, tracked_dirs):
                 counts["go_unresolved_module_imports"] += 1
     return counts
 
@@ -191,7 +202,7 @@ def count_line_metric(metric: LineMetric, repo_root: Path, files: list[str]) -> 
 def collect_metrics(repo_root: Path, files: list[str]) -> dict[str, int]:
     """Computes all ratchet metrics for the given tracked files."""
     scanned = [f for f in files if f not in SELF_EXCLUDED]
-    metrics = count_go_imports(repo_root, scanned)
+    metrics = count_go_imports(repo_root, scanned, tracked_directories(files))
     metrics["third_party_files"] = sum(1 for f in scanned if f.startswith("third_party/"))
     for metric in LINE_METRICS:
         metrics[metric.name] = count_line_metric(metric, repo_root, scanned)
@@ -249,9 +260,13 @@ def write_baseline(path: Path, current: dict[str, int], baseline: dict[str, int]
 
 
 def check_legacy_imports(args: argparse.Namespace) -> dict[str, Any]:
-    """Runs the ratchet check or updates the baseline."""
+    """Runs the ratchet check or updates the baseline.
+
+    Only increases fail. Decreases are reported under `stale_baseline` so the
+    pre-commit hook can lower the baseline, without failing CI.
+    """
     repo_root = Path(args.repo_root).resolve()
-    baseline_path = Path(args.baseline)
+    baseline_path = Path(args.baseline) if args.baseline else repo_root / BASELINE_RELPATH
     current = collect_metrics(repo_root, list_tracked_files(repo_root))
     if args.update_baseline:
         existing = load_baseline(baseline_path) if baseline_path.is_file() else {}
@@ -263,12 +278,11 @@ def check_legacy_imports(args: argparse.Namespace) -> dict[str, Any]:
             f"google3 legacy constructs increased: {json.dumps(diff['regressed'])}",
             "Use OSS import paths and standard Bazel rules; see github.com/google/xmc/issues/1066.",
         )
-    if diff["improved"]:
-        raise HandledError(
-            f"Legacy counts dropped but baseline is stale: {json.dumps(diff['improved'])}",
-            "Run tools/lint/check_legacy_imports.py --update-baseline and commit the result.",
-        )
-    return {"metrics": current, "total": sum(current.values())}
+    return {
+        "metrics": current,
+        "total": sum(current.values()),
+        "stale_baseline": diff["improved"],
+    }
 
 
 def _read_text(path: Path) -> str:
@@ -279,7 +293,11 @@ def main() -> None:
     """CLI entrypoint."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo-root", default=str(_REPO_ROOT), help="Repository root.")
-    parser.add_argument("--baseline", default=str(DEFAULT_BASELINE), help="Baseline JSON path.")
+    parser.add_argument(
+        "--baseline",
+        default=None,
+        help=f"Baseline JSON path (default: <repo-root>/{BASELINE_RELPATH}).",
+    )
     parser.add_argument(
         "--update-baseline",
         action="store_true",
