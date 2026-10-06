@@ -160,7 +160,7 @@ func SyncComponentFinalizers(ctx context.Context, client dynamic.Interface, defa
 		return nil, errors.New("dynamic client must not be nil")
 	}
 	resClient := client.Resource(ComponentGVR).Namespace(resolveTargetNamespace(item, defaultNamespace))
-	current := item
+	current := item.DeepCopy()
 	var updated *unstructured.Unstructured
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		if !applyFinalizerMutation(ctx, current, res) {

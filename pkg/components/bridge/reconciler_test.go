@@ -1650,6 +1650,11 @@ func locateEnvtestBinaries(t *testing.T) string {
 		return envDir
 	}
 	if srcDir := os.Getenv("TEST_SRCDIR"); srcDir != "" {
+		for _, sub := range []string{"+http_archive+kubebuilder_envtest", "+repo_import+kubebuilder_envtest", "kubebuilder_envtest"} {
+			if p := filepath.Join(srcDir, sub); func() bool { _, err := os.Stat(filepath.Join(p, "kube-apiserver")); return err == nil }() {
+				return p
+			}
+		}
 		var found string
 		_ = filepath.WalkDir(srcDir, func(p string, d os.DirEntry, err error) error {
 			if err == nil && !d.IsDir() && d.Name() == "kube-apiserver" {
