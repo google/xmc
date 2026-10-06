@@ -92,3 +92,29 @@ python3 test/e2e/runner.py
 - `--skip-build`: Skips Bazel compilation and reuses existing container images.
 - `--custom-kind-node-image <image>`: Overrides the KinD node image (e.g. to test custom Kubernetes versions).
 - `--spanner-instance <instance>`: Target specific Spanner instance for testing.
+
+---
+
+## OSS 3P Component KinD E2E Suites (`clickhouse_3p_test.go`, `redpanda_3p_test.go`)
+
+In addition to the full-platform Playwright orchestrator, `test/e2e` includes standalone Go KinD integration suites that verify `xmc-bridge` 3P `Component` CR reconciliation, active health probing, `.status.access.envVars` projection, typed component config resolvers, and live connectivity from mock ML workload pods:
+
+- **ClickHouse 3P E2E Suite** ([clickhouse_3p_test.go](clickhouse_3p_test.go)): Deploys `clickhouse/clickhouse-server:24.3-alpine` inside KinD and validates both operator-managed `wrapperRef` (`ClickHouseInstallation`) discovery and `stable-2026a` operator-less active probing, `componentconfig.ResolveOptions`, and live SQL execution (`CREATE TABLE`, `INSERT`, `SELECT`) from a mock ML workload Pod injected with `.status.access.envVars`.
+- **Redpanda 3P E2E Suite** ([redpanda_3p_test.go](redpanda_3p_test.go)): Deploys `docker.redpanda.com/redpandadata/redpanda:v24.1.1` inside KinD and validates both operator-managed `wrapperRef` (`Cluster`) discovery and `stable-2026a` operator-less active probing, `ingestiongateway.ResolveRedpandaComponentConfig`, and live Kafka topic creation, message production, and consumption (`rpk topic create/produce/consume`) from a mock ML workload Pod injected with `.status.access.envVars`.
+- **KinD 3P Harness** ([kind_3p_harness_test.go](kind_3p_harness_test.go)): Provisions an isolated ephemeral KinD cluster (or attaches to `KIND_CLUSTER_NAME` when set), preloads container images, installs [crd.yaml](../../deploy/helm/templates/components/crd.yaml), bridges cluster-local service probes over KinD `NodePort`s, and drives in-process CMS and `xmc-bridge` reconciliation.
+
+### Running the 3P Component E2E Suites
+
+```bash
+# Run hermetic unit tests for the KinD 3P harness:
+bazel test //test/e2e:kind_3p_harness_unit_test
+
+# Run live KinD E2E integration suites (provisions and tears down an ephemeral KinD cluster):
+bazel test //test/e2e:clickhouse_3p_test --test_output=streamed
+bazel test //test/e2e:redpanda_3p_test --test_output=streamed
+
+# Optionally reuse an existing KinD cluster:
+bazel test //test/e2e:clickhouse_3p_test //test/e2e:redpanda_3p_test \
+  --test_env=KIND_CLUSTER_NAME=xmc-dev --test_output=streamed
+```
+
