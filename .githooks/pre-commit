@@ -293,12 +293,12 @@ check_mypy() {
   fi
 
   local mypy_bin=""
-  if command -v mypy >/dev/null 2>&1; then
-    mypy_bin="mypy"
-  elif [ -f "./tools/common/venv/bin/mypy" ]; then
+  if [ -f "./tools/common/venv/bin/mypy" ]; then
     mypy_bin="./tools/common/venv/bin/mypy"
   elif [ -f "./tools/venv/bin/mypy" ]; then
     mypy_bin="./tools/venv/bin/mypy"
+  elif command -v mypy >/dev/null 2>&1; then
+    mypy_bin="mypy"
   elif [ -f "${HOME}/.local/bin/mypy" ]; then
     mypy_bin="${HOME}/.local/bin/mypy"
   elif python3 -m mypy --version >/dev/null 2>&1; then
@@ -312,13 +312,6 @@ check_mypy() {
     fi
     if [ -x "./tools/common/venv/bin/pip" ] && ./tools/common/venv/bin/pip install --quiet mypy >/dev/null 2>&1; then
       mypy_bin="./tools/common/venv/bin/mypy"
-    else
-      python3 -m pip install --user --quiet mypy >/dev/null 2>&1 || true
-      if [ -f "${HOME}/.local/bin/mypy" ]; then
-        mypy_bin="${HOME}/.local/bin/mypy"
-      elif python3 -m mypy --version >/dev/null 2>&1; then
-        mypy_bin="python3 -m mypy"
-      fi
     fi
   fi
 
