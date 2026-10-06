@@ -474,6 +474,22 @@ def validate_jobset_topology(
     return validate_jobsets(work_unit, expected_jobs)
 
 
+def validate_work_unit_jobsets(
+    stub: Any,
+    xid: str,
+    expected_jobs: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Fetches WorkUnits for `xid` and validates the first WorkUnit's JobSet topology.
+
+    Standard single-template workloads share a homogeneous JobSet topology across
+    WorkUnits, so validating `raw_work_units[0]` suffices.
+    """
+    raw_work_units = _fetch_raw_work_units(stub, f"experiments/{xid}")
+    if not raw_work_units:
+        raise AssertionError(f"No WorkUnits found for experiment {xid}.")
+    return validate_jobsets(work_unit=raw_work_units[0], expected_jobs=expected_jobs)
+
+
 def _evaluate_single_wu(stub: Any, wu: Any, expected_queue: str | None = None) -> dict[str, Any]:
     """Extracts metadata and evaluates state for a single WorkUnit."""
     wu_name = getattr(wu, "name", "")
@@ -536,7 +552,7 @@ def _evaluate_work_units(
 
 
 def _fetch_raw_work_units(
-    stub: Any, parent_name: str, elapsed: float, timeout_sec: int
+    stub: Any, parent_name: str, elapsed: float = 0.0, timeout_sec: int = 0
 ) -> list[Any] | None:
     """Fetches raw work units from ESS stub, handling transient errors."""
     try:
@@ -753,6 +769,28 @@ def query_clickhouse_sql(
     )
 
 
+def _log_and_check_clickhouse_metrics(
+    xid: str,
+    total_rows: int,
+    rows: list[dict[str, Any]],
+    expected_metric_names: Sequence[str] | set[str] | None,
+) -> None:
+    """Logs ClickHouse metric summary and asserts expected metric names are present."""
+    print(f"  [✓] ClickHouse Table 'xmc_metrics': {total_rows} total rows found for XID {xid}.")
+    for r in rows:
+        print(
+            f"    - Metric '{r['metric_name']}': {r['row_count']} samples, avg={float(r['avg_val']):.4f}"
+        )
+    if expected_metric_names:
+        metric_names = {r["metric_name"] for r in rows}
+        missing = set(expected_metric_names) - metric_names
+        if missing:
+            raise AssertionError(
+                f"Expected metrics {sorted(missing)} not found in ClickHouse for XID {xid}. "
+                f"Found: {sorted(metric_names)}"
+            )
+
+
 def _verify_clickhouse_sql_metrics_once(
     endpoint: str,
     xid: str,
@@ -764,34 +802,16 @@ def _verify_clickhouse_sql_metrics_once(
     query = (
         f"SELECT metric_name, count() as row_count, avg(metric_value) as avg_val, "
         f"min(metric_value) as min_val, max(metric_value) as max_val "
-        f"FROM xmc_metrics WHERE xid = {numeric_xid} "
-        f"GROUP BY metric_name FORMAT JSON"
+        f"FROM xmc_metrics WHERE xid = {numeric_xid} GROUP BY metric_name FORMAT JSON"
     )
     res = query_clickhouse_sql(endpoint, query)
-    if not res or "data" not in res or not res["data"]:
+    rows = res.get("data") if isinstance(res, dict) else None
+    if not rows:
         return None
-    rows = res["data"]
     total_rows = sum(int(r.get("row_count", 0)) for r in rows)
     if total_rows < expected_min_rows:
         return None
-
-    metric_names = {r["metric_name"] for r in rows}
-    print(f"  [✓] ClickHouse Table 'xmc_metrics': {total_rows} total rows found for XID {xid}.")
-    for r in rows:
-        m_name = r["metric_name"]
-        c = r["row_count"]
-        avg_v = float(r["avg_val"])
-        print(f"    - Metric '{m_name}': {c} samples, avg={avg_v:.4f}")
-
-    if expected_metric_names:
-        expected_set = set(expected_metric_names)
-        if not expected_set.issubset(metric_names):
-            missing = expected_set - metric_names
-            raise AssertionError(
-                f"Expected metrics {sorted(missing)} not found in ClickHouse for XID {xid}. "
-                f"Found: {sorted(metric_names)}"
-            )
-
+    _log_and_check_clickhouse_metrics(xid, total_rows, rows, expected_metric_names)
     return {"total_rows": total_rows, "metrics": rows}
 
 
@@ -810,17 +830,12 @@ def validate_clickhouse_metrics(
     while time.monotonic() - start_time < timeout_sec:
         try:
             if res := _verify_clickhouse_sql_metrics_once(
-                endpoint,
-                xid,
-                expected_metric_names=expected_metric_names,
-                expected_min_rows=expected_min_rows,
+                endpoint, xid, expected_metric_names, expected_min_rows
             ):
                 return res
         except Exception as e:
             last_error = e
-
         time.sleep(poll_interval_sec)
-
     if strict_required:
         raise AssertionError(
             f"ClickHouse SQL metrics validation timed out after {timeout_sec}s for XID {xid}. "
@@ -860,6 +875,25 @@ def _count_hydrated_chart_points(plots_data: list[dict[str, Any]]) -> int:
     return total_points
 
 
+def _verify_single_chart_data(
+    base: str, dashboard_id: str, chart_id: str, min_hydrated_points: int
+) -> int:
+    """Queries GetChartData for a single chart and asserts hydrated point threshold."""
+    chart_data = query_dashboard_http(f"{base}/charts/{chart_id}:getData")
+    plots_data = chart_data.get("plotsData") or chart_data.get("plots_data") or []
+    if not plots_data:
+        raise AssertionError(f"GetChartData for '{chart_id}' returned empty plotsData.")
+    pts = _count_hydrated_chart_points(plots_data)
+    if pts < min_hydrated_points:
+        raise AssertionError(
+            f"GetChartData for '{chart_id}' returned {pts} points (< {min_hydrated_points})."
+        )
+    print(
+        f"  [✓] Verified Dashboard '{dashboard_id}' & GetChartData ('{chart_id}'): {len(plots_data)} plots, {pts} points."
+    )
+    return pts
+
+
 def _verify_dashboard_and_chart_data_once(
     base_endpoint: str,
     dashboard_id: str,
@@ -867,30 +901,26 @@ def _verify_dashboard_and_chart_data_once(
     min_hydrated_points: int = 1,
 ) -> dict[str, Any]:
     """Fetches dashboard metadata and GetChartData once and asserts hydrated points."""
-    clean_base = base_endpoint.rstrip("/").removesuffix("/v1/dashboards")
-    dash_data = query_dashboard_http(f"{clean_base}/v1/dashboards/{dashboard_id}")
+    base = (
+        f"{base_endpoint.rstrip('/').removesuffix('/v1/dashboards')}/v1/dashboards/{dashboard_id}"
+    )
+    dash_data = query_dashboard_http(base)
     chart_ids = dash_data.get("chartIds") or dash_data.get("chart_ids") or []
     if not chart_ids:
         raise AssertionError(f"Dashboard '{dashboard_id}' has no associated chartIds.")
-
-    chart_id = expected_chart_id or str(chart_ids[0]).split("/")[-1]
-
-    chart_data_url = f"{clean_base}/v1/dashboards/{dashboard_id}/charts/{chart_id}:getData"
-    chart_data = query_dashboard_http(chart_data_url)
-    plots_data = chart_data.get("plotsData") or chart_data.get("plots_data") or []
-    if not plots_data:
-        raise AssertionError(f"GetChartData for '{chart_id}' returned empty plotsData.")
-    total_points = _count_hydrated_chart_points(plots_data)
-    if total_points < min_hydrated_points:
-        raise AssertionError(
-            f"GetChartData for '{chart_id}' returned {total_points} hydrated data points, "
-            f"expected at least {min_hydrated_points}."
-        )
-    print(
-        f"  [✓] Verified Dashboard '{dashboard_id}' & GetChartData ('{chart_id}'): "
-        f"{len(plots_data)} plots, {total_points} hydrated data points."
+    target_ids = [
+        str(cid).split("/")[-1] for cid in ([expected_chart_id] if expected_chart_id else chart_ids)
+    ]
+    total_pts = sum(
+        _verify_single_chart_data(base, dashboard_id, cid, min_hydrated_points)
+        for cid in target_ids
     )
-    return {"dashboard_id": dashboard_id, "chart_id": chart_id, "total_points": total_points}
+    return {"dashboard_id": dashboard_id, "chart_id": target_ids[0], "total_points": total_pts}
+
+
+def _is_fatal_dashboard_error(err: Exception) -> bool:
+    """Returns True if the error indicates a fatal unconfigured DataEngine."""
+    return isinstance(err, AssertionError) and "data engine is not configured" in str(err).lower()
 
 
 def validate_dashboard_chart_data(
@@ -908,24 +938,18 @@ def validate_dashboard_chart_data(
     while time.monotonic() - start_time < timeout_sec:
         try:
             return _verify_dashboard_and_chart_data_once(
-                base_endpoint=base_endpoint,
-                dashboard_id=dashboard_id,
-                expected_chart_id=expected_chart_id,
-                min_hydrated_points=min_hydrated_points,
+                base_endpoint, dashboard_id, expected_chart_id, min_hydrated_points
             )
-        except AssertionError as err:
-            if "data engine is not configured" in str(err).lower():
+        except Exception as err:
+            if _is_fatal_dashboard_error(err):
                 raise
             last_error = err
-        except Exception as err:
-            last_error = err
-            if not strict_required:
-                print(f"  [i] Dashboard check skipped/notice: {err}")
-                return {"skipped": True}
+            if not isinstance(err, AssertionError) and not strict_required:
+                break
         time.sleep(poll_interval_sec)
     if strict_required:
         raise AssertionError(
-            f"Dashboard GetChartData verification failed after {timeout_sec}s for '{dashboard_id}': {last_error}"
+            f"Dashboard GetChartData failed after {timeout_sec}s ({dashboard_id}): {last_error}"
         )
     print(f"  [i] Dashboard check skipped/notice: {last_error}")
     return {"skipped": True}

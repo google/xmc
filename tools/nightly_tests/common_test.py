@@ -18,10 +18,47 @@ from __future__ import annotations
 
 import io
 import unittest
+from collections.abc import Sequence
 from types import SimpleNamespace
+from typing import Any
 from unittest import mock
 
-from tools.nightly_tests import common
+from tools.nightly_tests import common, xmc_entities_validator
+
+
+def _make_fake_wu(
+    xid: str,
+    wu_id: int,
+    job_names: Sequence[str],
+    queue: str = "cpu-queue",
+    state: int = xmc_entities_validator.STATE_COMPLETED,
+) -> SimpleNamespace:
+    """Builds a stub-level fake WorkUnit protobuf namespace for orchestration tests."""
+    jobs = [
+        SimpleNamespace(
+            name=name,
+            replicas=1,
+            init_containers=[],
+            sidecars=[],
+            spec=SimpleNamespace(name=name),
+        )
+        for name in job_names
+    ]
+    executable = SimpleNamespace(
+        jobset=SimpleNamespace(jobs=jobs),
+        scheduling_constraints=SimpleNamespace(queue_name=queue),
+        HasField=lambda f: f in ("jobset", "scheduling_constraints"),
+    )
+    execution = SimpleNamespace(
+        status=SimpleNamespace(state=state),
+        HasField=lambda f: f == "status",
+    )
+    return SimpleNamespace(
+        name=f"experiments/{xid}/workUnits/{wu_id}",
+        executable=executable,
+        current_work_unit_execution=execution,
+        HasField=lambda f: f == "current_work_unit_execution",
+    )
 
 
 class CommonTest(unittest.TestCase):
@@ -263,6 +300,242 @@ class CommonTest(unittest.TestCase):
         with mock.patch.object(common.app, "run") as mock_run:
             common.run_main(mock_fn)
             mock_run.assert_called_once_with(mock_fn)
+
+    def test_assert_experiment(self) -> None:
+        mock_stub = mock.MagicMock()
+        mock_exp = SimpleNamespace(name="experiments/10", title="Test Exp")
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.validate_experiment",
+            return_value=mock_exp,
+        ) as mock_val:
+            res = common.assert_experiment(mock_stub, "10", "Test")
+            self.assertEqual(res, mock_exp)
+            mock_val.assert_called_once_with(
+                stub=mock_stub, xid="10", expected_title_pattern="Test"
+            )
+
+    def test_assert_work_units(self) -> None:
+        mock_stub = mock.MagicMock()
+        wu_list = [{"id": "1", "worker_name": "w1", "queue": "cpu-queue", "state": "COMPLETED"}]
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.validate_work_units",
+            return_value=wu_list,
+        ) as mock_val:
+            res = common.assert_work_units(mock_stub, "10", 1, "cpu-queue", ["w1"], 60)
+            self.assertEqual(res, wu_list)
+            mock_val.assert_called_once_with(
+                stub=mock_stub,
+                xid="10",
+                expected_count=1,
+                expected_queue="cpu-queue",
+                expected_worker_names=["w1"],
+                timeout_sec=60,
+            )
+
+    def test_assert_work_unit_jobsets(self) -> None:
+        mock_stub = mock.MagicMock()
+        raw_wu = SimpleNamespace(name="experiments/10/workUnits/1")
+        mock_stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[raw_wu])
+        expected_jobs = [{"name": "w1", "replicas": 1}]
+        job_results = [{"name": "w1", "replicas": 1, "primary_container": "w1"}]
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.validate_jobsets",
+            return_value=job_results,
+        ) as mock_val:
+            res = common.assert_work_unit_jobsets(mock_stub, "10", expected_jobs)
+            self.assertEqual(res, job_results)
+            mock_val.assert_called_once_with(work_unit=raw_wu, expected_jobs=expected_jobs)
+
+        mock_stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[])
+        with self.assertRaises(AssertionError):
+            common.assert_work_unit_jobsets(mock_stub, "10", expected_jobs)
+        self.assertEqual(common.assert_work_unit_jobsets(mock_stub, "10", None), [])
+
+    def test_verify_standard_workload_stub_boundary_and_num_work_units_isolation(self) -> None:
+        mock_stub = mock.MagicMock()
+        mock_channel = mock.MagicMock()
+        mock_stub.GetExperiment.return_value = SimpleNamespace(
+            name="experiments/10", title="Test Workload"
+        )
+        mock_stub.ListWorkUnits.return_value = SimpleNamespace(
+            work_units=[_make_fake_wu("10", 1, ["w1", "w2"])]
+        )
+        extra_step = mock.MagicMock()
+        flag_values = {"xid": "10", "endpoint": "custom-ess:9090"}
+        with (
+            mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "3"}, clear=True),
+            mock.patch.object(
+                common,
+                "get_flag",
+                side_effect=lambda _, k, d=None: flag_values.get(k, d),
+            ),
+            mock.patch(
+                "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+                return_value=(mock_stub, mock_channel),
+            ) as mock_create_stub,
+            mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,
+        ):
+            common.verify_standard_workload(
+                ["script.py"],
+                banner_title="Banner",
+                summary_title="Summary",
+                expected_title_pattern="Test",
+                expected_jobs=[{"name": "w1", "replicas": 1}, {"name": "w2", "replicas": 1}],
+                extra_step=extra_step,
+            )
+            mock_create_stub.assert_called_once_with("custom-ess:9090")
+            extra_step.assert_called_once_with(mock_stub, "10")
+            mock_channel.close.assert_called_once()
+            output = mock_stdout.getvalue()
+            self.assertIn("WorkUnits               : 1", output)
+            self.assertIn("Workers                 : ['w1']", output)
+            self.assertIn("Job 'w1': Replicas=1", output)
+            self.assertIn("Job 'w2': Replicas=1", output)
+            self.assertIn("Test Workload", output)
+
+    def test_verify_standard_workload_worker_names_precedence_and_extra_step_none(self) -> None:
+        mock_stub = mock.MagicMock()
+        mock_channel = mock.MagicMock()
+        mock_stub.GetExperiment.return_value = SimpleNamespace(
+            name="experiments/16", title="Demo Workload"
+        )
+        mock_stub.ListWorkUnits.return_value = SimpleNamespace(
+            work_units=[
+                _make_fake_wu("16", 1, ["demo-worker-1"]),
+                _make_fake_wu("16", 2, ["demo-worker-2"]),
+            ]
+        )
+        with (
+            mock.patch.object(
+                common, "get_flag", side_effect=lambda _, k, d=None: "16" if k == "xid" else d
+            ),
+            mock.patch(
+                "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+                return_value=(mock_stub, mock_channel),
+            ),
+        ):
+            common.verify_standard_workload(
+                ["script.py"],
+                banner_title="Banner",
+                summary_title="Summary",
+                expected_title_pattern="Demo Workload",
+                expected_jobs=[{"name": "demo-worker-1", "replicas": 1}],
+                expected_worker_names=["demo-worker-1", "demo-worker-2"],
+                extra_step=None,
+            )
+            mock_channel.close.assert_called_once()
+
+    def test_verify_standard_workload_exit_codes(self) -> None:
+        mock_stub = mock.MagicMock()
+        mock_channel = mock.MagicMock()
+        for exc, expected_code in (
+            (AssertionError("title mismatch"), 1),
+            (RuntimeError("gRPC transport failure"), 2),
+        ):
+            with self.subTest(exc=type(exc).__name__, expected_code=expected_code):
+                mock_stub.GetExperiment.side_effect = exc
+                with (
+                    mock.patch.object(
+                        common,
+                        "get_flag",
+                        side_effect=lambda _, k, d=None: "10" if k == "xid" else d,
+                    ),
+                    mock.patch(
+                        "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+                        return_value=(mock_stub, mock_channel),
+                    ),
+                    mock.patch("sys.stderr", new_callable=io.StringIO),
+                    self.assertRaises(SystemExit) as ctx,
+                ):
+                    common.verify_standard_workload(
+                        ["script.py"],
+                        banner_title="Banner",
+                        summary_title="Summary",
+                        expected_title_pattern="Test",
+                        expected_worker_names=["w1"],
+                    )
+                self.assertEqual(ctx.exception.code, expected_code)
+
+    def test_assert_clickhouse_metrics(self) -> None:
+        expected_res = {"total_rows": 50, "metrics": []}
+        with (
+            mock.patch.object(
+                common,
+                "get_flag",
+                side_effect=lambda _, k, d=None: True if k == "require_clickhouse_metrics" else d,
+            ),
+            mock.patch.object(
+                common, "resolve_clickhouse_endpoint", return_value="http://127.0.0.1:8123"
+            ),
+            mock.patch(
+                "tools.nightly_tests.xmc_entities_validator.validate_clickhouse_metrics",
+                return_value=expected_res,
+            ) as mock_val,
+        ):
+            res = common.assert_clickhouse_metrics(
+                "23", expected_metric_names=["train/loss"], expected_min_rows=50, timeout_sec=120
+            )
+            self.assertEqual(res, expected_res)
+            mock_val.assert_called_once_with(
+                endpoint="http://127.0.0.1:8123",
+                xid="23",
+                expected_metric_names=["train/loss"],
+                expected_min_rows=50,
+                timeout_sec=120,
+                strict_required=True,
+            )
+
+    def test_assert_dashboard_chart_data(self) -> None:
+        expected_res = {"dashboard_id": "exp_23_overview", "chart_id": "c1", "total_points": 5}
+        cases: list[tuple[str, dict[str, Any], dict[str, str], bool]] = [
+            ("unset_env_and_flags", {}, {}, False),
+            (
+                "xmanager_ui_url_alone_is_not_strict",
+                {},
+                {"XMANAGER_UI_URL": "https://xmc.example.com"},
+                False,
+            ),
+            ("require_clickhouse_metrics_flag", {"require_clickhouse_metrics": True}, {}, True),
+            ("dashboard_endpoint_flag", {"dashboard_endpoint": "localhost:9090"}, {}, True),
+            (
+                "xmc_dashboard_endpoint_env",
+                {},
+                {"XMC_DASHBOARD_ENDPOINT": "https://dash.example.com"},
+                True,
+            ),
+            (
+                "dashboard_endpoint_env",
+                {},
+                {"DASHBOARD_ENDPOINT": "https://dash.example.com"},
+                True,
+            ),
+        ]
+        for name, flag_overrides, env_vars, expected_strict in cases:
+            with self.subTest(case=name):
+                with (
+                    mock.patch.object(
+                        common,
+                        "get_flag",
+                        side_effect=lambda _, k, d=None, fo=flag_overrides: fo.get(k, d),
+                    ),
+                    mock.patch.dict("os.environ", env_vars, clear=True),
+                    mock.patch(
+                        "tools.nightly_tests.xmc_entities_validator.validate_dashboard_chart_data",
+                        return_value=expected_res,
+                    ) as mock_val,
+                ):
+                    res = common.assert_dashboard_chart_data(
+                        "exp_23_overview", min_hydrated_points=2, expected_chart_id="c1"
+                    )
+                    self.assertEqual(res, expected_res)
+                    mock_val.assert_called_once_with(
+                        base_endpoint=mock.ANY,
+                        dashboard_id="exp_23_overview",
+                        expected_chart_id="c1",
+                        min_hydrated_points=2,
+                        timeout_sec=20,
+                        strict_required=expected_strict,
+                    )
 
 
 if __name__ == "__main__":

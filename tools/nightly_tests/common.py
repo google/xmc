@@ -15,8 +15,13 @@
 """Common utilities and verification abstractions for XMC nightly tests.
 
 Provides standard command-line flags, gRPC channel lifecycle managers,
-endpoint resolution, argument validation, and formatted logging helpers
+endpoint resolution, argument validation, formatted logging helpers, and
+workload verification step runners (`assert_*`, `verify_standard_workload`)
 used across XMC verification CLI scripts.
+
+TODO(xmc): Split this module by responsibility (verifier_cli,
+endpoint_resolution, ess_session, verification_report, workload_verification)
+and delete it. Do not add new helpers here.
 """
 
 from __future__ import annotations
@@ -24,7 +29,7 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any
 
 from absl import app, flags
@@ -213,6 +218,180 @@ def print_success_summary(
         val_str = str(list(val)) if isinstance(val, (list, tuple)) else str(val)
         print(f"  • {label:<24}: {val_str}")
     print("=================================================================\n")
+
+
+def assert_experiment(
+    stub: Any,
+    xid: str,
+    expected_title_pattern: str,
+    step_label: str = "Step 1",
+) -> Any:
+    """Asserts experiment existence and title pattern."""
+    print(f"\n[{step_label}] Asserting Experiment metadata for XID {xid}...")
+    experiment = xmc_entities_validator.validate_experiment(
+        stub=stub,
+        xid=xid,
+        expected_title_pattern=expected_title_pattern,
+    )
+    print(f"  [✓] Experiment Name   : {experiment.name}")
+    print(f"  [✓] Experiment Title  : {experiment.title}")
+    return experiment
+
+
+def assert_work_units(
+    stub: Any,
+    xid: str,
+    expected_count: int,
+    expected_queue: str,
+    expected_worker_names: Sequence[str],
+    timeout_sec: int,
+    step_label: str = "Step 2",
+) -> list[dict[str, Any]]:
+    """Asserts work unit execution state, count, worker names, and queue mapping."""
+    print(
+        f"\n[{step_label}] Asserting {expected_count} WorkUnit(s) targeted at '{expected_queue}'..."
+    )
+    wu_results = xmc_entities_validator.validate_work_units(
+        stub=stub,
+        xid=xid,
+        expected_count=expected_count,
+        expected_queue=expected_queue,
+        expected_worker_names=expected_worker_names,
+        timeout_sec=timeout_sec,
+    )
+    for wu in wu_results:
+        print(
+            f"  [✓] WorkUnit #{wu['id']}: Worker='{wu['worker_name']}', "
+            f"Queue='{wu['queue']}', State='{wu['state']}'"
+        )
+    return wu_results
+
+
+def assert_work_unit_jobsets(
+    stub: Any,
+    xid: str,
+    expected_jobs: Sequence[dict[str, Any]] | None,
+    step_label: str = "Step 3",
+) -> list[dict[str, Any]]:
+    """Validates the first WorkUnit's JobSet topology (homogeneous across standard WorkUnits)."""
+    if not expected_jobs:
+        return []
+    print(f"\n[{step_label}] Validating JobSet specifications...")
+    job_results = xmc_entities_validator.validate_work_unit_jobsets(
+        stub=stub,
+        xid=xid,
+        expected_jobs=expected_jobs,
+    )
+    for job in job_results:
+        print(
+            f"  [✓] Job '{job['name']}': Replicas={job['replicas']}, "
+            f"PrimaryContainer='{job['primary_container']}'"
+        )
+    return job_results
+
+
+def assert_clickhouse_metrics(
+    xid: str,
+    expected_metric_names: Sequence[str] | set[str],
+    expected_min_rows: int = 1,
+    timeout_sec: int = 60,
+    step_label: str = "Step 4",
+) -> dict[str, Any]:
+    """Polls and asserts metric row arrival and value validity directly via ClickHouse SQL."""
+    endpoint = resolve_clickhouse_endpoint(get_flag(FLAGS, "clickhouse_endpoint"))
+    strict_required = bool(get_flag(FLAGS, "require_clickhouse_metrics", False))
+    print(f"\n[{step_label}] Validating ClickHouse SQL metric rows for XID {xid} via {endpoint}...")
+    return xmc_entities_validator.validate_clickhouse_metrics(
+        endpoint=endpoint,
+        xid=xid,
+        expected_metric_names=expected_metric_names,
+        expected_min_rows=expected_min_rows,
+        timeout_sec=timeout_sec,
+        strict_required=strict_required,
+    )
+
+
+def assert_dashboard_chart_data(
+    dashboard_id: str,
+    min_hydrated_points: int = 1,
+    timeout_sec: int = 20,
+    step_label: str = "Step 5",
+    expected_chart_id: str | None = None,
+) -> dict[str, Any]:
+    """Verifies Dashboard metadata and GetChartData hydration via Dashboard Service."""
+    raw = (
+        get_flag(FLAGS, "dashboard_endpoint")
+        or os.environ.get("XMC_DASHBOARD_ENDPOINT")
+        or os.environ.get("DASHBOARD_ENDPOINT")
+    )
+    dash_ep = resolve_dashboard_endpoint(raw)
+    strict_required = bool(get_flag(FLAGS, "require_clickhouse_metrics", False) or raw)
+    print(f"\n[{step_label}] Verifying Dashboard '{dashboard_id}' & GetChartData via {dash_ep}...")
+    return xmc_entities_validator.validate_dashboard_chart_data(
+        base_endpoint=dash_ep,
+        dashboard_id=dashboard_id,
+        expected_chart_id=expected_chart_id,
+        min_hydrated_points=min_hydrated_points,
+        timeout_sec=timeout_sec,
+        strict_required=strict_required,
+    )
+
+
+def _print_workload_banner(
+    banner_title: str,
+    xid: str,
+    expected_title: str,
+    queue: str,
+    workers: Sequence[str],
+    timeout: int,
+) -> None:
+    """Prints the standard workload verification header banner."""
+    print_banner(
+        banner_title,
+        {
+            "XID": xid,
+            "Title": expected_title,
+            "Queue": queue,
+            "WorkUnits": len(workers),
+            "Workers": workers,
+            "Timeout": f"{timeout}s",
+        },
+    )
+
+
+def _print_workload_summary(summary_title: str, exp: Any, xid: str, queue: str) -> None:
+    """Prints the standard workload verification success summary."""
+    ui_url = f"{resolve_ui_base_url()}/experiments/{xid}"
+    details = {"Experiment": exp.name, "Title": exp.title, "Queue": queue, "UI": ui_url}
+    print_success_summary(summary_title, details)
+
+
+def verify_standard_workload(
+    argv: Sequence[str],
+    banner_title: str,
+    summary_title: str,
+    expected_title_pattern: str,
+    expected_jobs: Sequence[dict[str, Any]] | None = None,
+    expected_worker_names: Sequence[str] | None = None,
+    extra_step: Callable[[Any, str], None] | None = None,
+) -> None:
+    """Orchestrates standard Experiment, WorkUnit, and JobSet verification."""
+    validate_argv(argv)
+    xid = parse_xid(get_flag(FLAGS, "xid"))
+    queue = get_flag(FLAGS, "expected_queue", "cpu-queue")
+    workers = expected_worker_names or ([expected_jobs[0]["name"]] if expected_jobs else [])
+    timeout = get_flag(FLAGS, "timeout_sec", 600)
+    _print_workload_banner(banner_title, xid, expected_title_pattern, queue, workers, timeout)
+    with (
+        handle_verification_errors(),
+        ess_channel_context(get_flag(FLAGS, "endpoint")) as (stub, _),
+    ):
+        exp = assert_experiment(stub, xid, expected_title_pattern)
+        assert_work_units(stub, xid, len(workers), queue, workers, timeout)
+        assert_work_unit_jobsets(stub, xid, expected_jobs)
+        if extra_step:
+            extra_step(stub, xid)
+        _print_workload_summary(summary_title, exp, xid, queue)
 
 
 def run_main(main_fn: Any) -> None:
