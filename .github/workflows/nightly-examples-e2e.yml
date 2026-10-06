@@ -210,6 +210,7 @@ jobs:
             args: '--endpoint="localhost:50051"'
             verify_module: 'tools.nightly_tests.xdash_dashboard_verify'
             expected_queue: ''
+            requires_clickhouse: true
             timeout_minutes: 15
 
     env:
@@ -295,9 +296,7 @@ jobs:
           fi
 
       - name: 'Start Service Port-Forwards'
-        if: steps.filter-check.outputs.should_run == 'true' && (matrix.example.requires_clickhouse == true || matrix.example.id == 'xdash_dashboard')
-        env:
-          REQUIRES_CLICKHOUSE: '${{ matrix.example.requires_clickhouse }}'
+        if: steps.filter-check.outputs.should_run == 'true' && matrix.example.requires_clickhouse == true
         run: |
           set -euo pipefail
           # Bridge the external GitHub Actions runner to internal GKE ClusterIP services
@@ -321,9 +320,7 @@ jobs:
             fi
           }
           start_port_forward "Dashboard Service gRPC" "xmc" "dashboard-service" 50051
-          if [ "${REQUIRES_CLICKHOUSE:-}" = "true" ]; then
-            start_port_forward "ClickHouse HTTP" "xmc-metrics" "clickhouse" 8123
-          fi
+          start_port_forward "ClickHouse HTTP" "xmc-metrics" "clickhouse" 8123
 
       - name: 'Launch Example Workload'
         id: launch-example

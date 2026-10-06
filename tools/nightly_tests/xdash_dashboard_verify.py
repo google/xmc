@@ -105,8 +105,9 @@ def _print_summary(dashboard_id: str, dash_info: dict[str, Any], ui_base_url: st
 def main(argv: Sequence[str]) -> None:
     """Main verification routine for xdash_dashboard."""
     common.validate_argv(argv)
-    raw_id = common.get_flag(FLAGS, "xid", None) or common.get_flag(FLAGS, "dashboard_id", None)
-    dashboard_id = common.parse_xid(raw_id, required=False) or DEFAULT_DASHBOARD_ID
+    raw_id = common.get_flag(FLAGS, "dashboard_id", None) or common.get_flag(FLAGS, "xid", None)
+    parsed_id = common.parse_xid(raw_id, required=False) or DEFAULT_DASHBOARD_ID
+    dashboard_id = f"{DEFAULT_DASHBOARD_ID}_{parsed_id}" if parsed_id.isdigit() else parsed_id
     expected_title_pattern = common.get_flag(FLAGS, "expected_title_pattern", DEFAULT_TITLE_PATTERN)
     timeout_sec = common.get_flag(FLAGS, "timeout_sec", DEFAULT_TIMEOUT_SEC)
     raw_dash_ep = (
