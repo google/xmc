@@ -39,15 +39,20 @@ type healthChecker interface {
 	Close() error
 }
 
+// LazyComponentsProvider provides lazy access to the custom components info provider.
+type LazyComponentsProvider interface {
+	ComponentsProvider(ctx context.Context) (summary.CustomComponentsInfoProvider, error)
+}
+
 var _ spb.HealthServiceServer = (*server)(nil)
 
 type server struct {
 	spb.UnimplementedHealthServiceServer
-	cfg                *Config
-	checker            healthChecker
-	guard              AdminRoleGuard
-	componentsProvider summary.CustomComponentsInfoProvider
-	pauseScheduler     PauseScheduler
+	cfg            *Config
+	checker        healthChecker
+	guard          AdminRoleGuard
+	lazySpanner    LazyComponentsProvider
+	pauseScheduler PauseScheduler
 
 	// Caching
 	cacheMu      sync.RWMutex
@@ -63,7 +68,7 @@ func newServer(
 	cfg *Config,
 	checker healthChecker,
 	guard AdminRoleGuard,
-	componentsProvider summary.CustomComponentsInfoProvider,
+	lazySpanner LazyComponentsProvider,
 	pauseScheduler PauseScheduler,
 ) *server {
 	var limiter *rate.Limiter
@@ -74,7 +79,7 @@ func newServer(
 		cfg:                 cfg,
 		checker:             checker,
 		guard:               guard,
-		componentsProvider:  componentsProvider,
+		lazySpanner:         lazySpanner,
 		pauseScheduler:      pauseScheduler,
 		forceRefreshLimiter: limiter,
 	}
@@ -113,12 +118,14 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 	}
 
 	isSchedulingPaused := false
-	paused, err := s.pauseScheduler.IsPaused(ctx)
-	if err != nil {
-		// TODO(pausescheduling): Propagate error in response when pause scheduling check fails.
-		logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
-	} else {
-		isSchedulingPaused = paused
+	if s.cfg != nil && s.cfg.FeatureFlags.PauseSchedulingEnabled && s.pauseScheduler != nil {
+		paused, err := s.pauseScheduler.IsPaused(ctx)
+		if err != nil {
+			// TODO(pausescheduling): Propagate error in response when pause scheduling check fails.
+			logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
+		} else {
+			isSchedulingPaused = paused
+		}
 	}
 	if resp.SystemInfo != nil {
 		resp.SystemInfo.IsSchedulingPaused = isSchedulingPaused
@@ -247,10 +254,18 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 }
 
 func (s *server) listCustomComponentConfigs(ctx context.Context) ([]*spb.ConfigGroup, error) {
-	if s.componentsProvider == nil {
+	if s.cfg == nil || !s.cfg.EnableComponents || s.lazySpanner == nil {
 		return nil, nil
 	}
-	customConfigs, err := s.componentsProvider.GetComponentsConfig(ctx)
+	provider, err := s.lazySpanner.ComponentsProvider(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		logging.Warn(ctx, "Failed to initialize custom components provider", "error", err)
+		return nil, nil
+	}
+	customConfigs, err := provider.GetComponentsConfig(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -284,8 +299,11 @@ func (s *server) PauseScheduling(ctx context.Context, req *spb.PauseSchedulingRe
 	if err := s.guard.CheckAdminRole(ctx); err != nil {
 		return nil, err
 	}
-	if !s.cfg.FeatureFlags.PauseSchedulingEnabled {
+	if s.cfg == nil || !s.cfg.FeatureFlags.PauseSchedulingEnabled {
 		return nil, status.Errorf(codes.FailedPrecondition, "pause scheduling feature is disabled")
+	}
+	if s.pauseScheduler == nil {
+		return nil, status.Error(codes.Unavailable, "pause scheduler is not configured")
 	}
 	if err := s.pauseScheduler.Pause(ctx); err != nil {
 		logging.Error(ctx, "Failed to pause scheduling", "error", err)
@@ -299,8 +317,11 @@ func (s *server) ResumeScheduling(ctx context.Context, req *spb.ResumeScheduling
 	if err := s.guard.CheckAdminRole(ctx); err != nil {
 		return nil, err
 	}
-	if !s.cfg.FeatureFlags.PauseSchedulingEnabled {
+	if s.cfg == nil || !s.cfg.FeatureFlags.PauseSchedulingEnabled {
 		return nil, status.Errorf(codes.FailedPrecondition, "pause scheduling feature is disabled")
+	}
+	if s.pauseScheduler == nil {
+		return nil, status.Error(codes.Unavailable, "pause scheduler is not configured")
 	}
 	if _, err := s.pauseScheduler.Resume(ctx); err != nil {
 		logging.Error(ctx, "Failed to resume scheduling", "error", err)

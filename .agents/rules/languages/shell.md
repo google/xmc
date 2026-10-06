@@ -15,6 +15,14 @@ This document defines standards for shell script usage across the codebase.
 set -euo pipefail
 ```
 - **Variable Expansion Quoting & Braces**: Always double-quote variable expansions and use explicit curly braces (`"${VAR}"`) to prevent word splitting, variable name ambiguity, path globbing issues, and shell expansion vulnerabilities.
+- **Variable Placeholder Consolidation in Playbooks & Snippets**: Shell snippets in playbooks and documentation must declare placeholders as explicit variables at the top of the block (`BASE_TAG="<base_tag>"`, `VERSION="<version>"`) rather than embedding `<placeholders>` inline deep inside command arguments.
+- **Resumption State Loading Pattern**: When scripts or shell blocks resume multi-turn operations from a state file, use conditional parameter expansion and fallback loading:
+  ```bash
+  STATE_FILE="${ARTIFACT_DIR:-/tmp}/release_state.json"
+  if [[ -z "${TARGET_SHA:-}" && -f "${STATE_FILE}" ]]; then
+    TARGET_SHA=$(jq -r '.target_sha // empty' "${STATE_FILE}")
+  fi
+  ```
 - **Executable File Modes**: Ensure shell scripts have appropriate executable permissions set (`chmod +x`).
 
 ## 3. Command Substitution & Payload Truncation Safety

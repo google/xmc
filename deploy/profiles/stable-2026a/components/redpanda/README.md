@@ -62,6 +62,9 @@ When `componentsDeployment.enabled` (`enable_components`) is `true`, `ingestion-
 
 ## 4. Configuration & Rendered Manifest Examples
 
+> [!NOTE]
+> Admins enable Redpanda through the [`stable-2026a` profile](../../README.md) by setting `components.redpanda.enabled=true`. The standalone `helm template` commands below only preview what this chart renders.
+
 ### Example 1: Minimum Valid User Configuration (`values.yaml` Without Optional Overrides)
 
 Because `metadata.name`, `spec.componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER`, `spec.componentClass: "event-stream"`, `spec.version`, and all default `parameters` fields are pre-configured by the chart, the **minimum valid user `values.yaml` override** required to activate the Redpanda component is simply:

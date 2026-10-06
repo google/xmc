@@ -60,10 +60,7 @@ go_test(
     ],
     data = [
         "//deploy/helm:chart",
-        "//deploy/profiles/stable-2026a:rules",
-        "//deploy/profiles/stable-2026a/components/clickhouse:chart",
-        "//deploy/profiles/stable-2026a/components/ingestion-gateway:chart",
-        "//deploy/profiles/stable-2026a/components/redpanda:chart",
+        "//deploy/profiles/stable-2026a:chart",
     ],
     embed = [":linter"],
     deps = [

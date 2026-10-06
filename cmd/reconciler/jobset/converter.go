@@ -246,7 +246,7 @@ func targetSuccessPolicySatisfied(jobSet *v1alpha2.JobSet) bool {
 }
 
 // ConvertJobSetToWorkUnitExecutionUpdate converts a JobSet to a WorkUnitExecutionUpdate.
-func ConvertJobSetToWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha2.JobSet, wid int64, eid int64, project, location, clusterName, podErrorMsg, startupWarningMsg string) (*storagepkg.WorkUnitExecutionUpdate, error) {
+func ConvertJobSetToWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha2.JobSet, wid int64, eid int64, project, location, clusterName, podErrorMsg, startupWarningMsg string) *storagepkg.WorkUnitExecutionUpdate {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
 	var state spb.WorkUnitStatus_WorkUnitState
@@ -311,7 +311,7 @@ func ConvertJobSetToWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha
 				"metadata.service_account",
 			},
 		},
-	}, nil
+	}
 }
 
 func convertK8sJobSetStatusToProto(k8sStatus v1alpha2.JobSetStatus) *spb.JobSetStatus {
