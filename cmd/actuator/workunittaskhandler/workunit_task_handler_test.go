@@ -32,6 +32,7 @@ import (
 	"golang/prometheus/client/prometheus/testutil/testutil"
 	"golang/protobuf/v2/proto/proto"
 	"k8s.io/utils/ptr"
+	timestamppb "protobuf/timestamp_go_proto"
 	"tink/go/jwt/jwt"
 	"xmanager_cloud/cmd/actuator/pausescheduling"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -137,7 +138,10 @@ type mockPauseHandler struct {
 	lastPayload *actuatortaskpb.ActuatorPayload
 }
 
-func (m *mockPauseHandler) IsPaused() bool {
+func (m *mockPauseHandler) IsPaused(metadata *actuatortaskpb.Metadata) bool {
+	if metadata.GetResumptionTime() != nil {
+		m.isPaused = false
+	}
 	return m.isPaused
 }
 
@@ -1411,5 +1415,37 @@ func TestHandleActuatorPayload_PauseHandler_Error(t *testing.T) {
 
 	if err := handler.handleActuatorPayload(context.Background(), payload); err == nil {
 		t.Fatal("expected error from pauseHandler, got nil")
+	}
+}
+
+func TestHandleActuatorPayload_PauseHandler_ResumedOnResumptionTime(t *testing.T) {
+	k8sClient := &mockK8sClient{}
+	resumptionTime := time.Date(2026, 9, 24, 10, 5, 0, 0, time.UTC)
+	pauseHandler := &mockPauseHandler{
+		isPaused:    true,
+		shouldPause: true,
+	}
+	handler := newTestTaskHandler(t, withK8sClient(k8sClient), withPauseHandler(pauseHandler))
+
+	payload := &actuatortaskpb.ActuatorPayload{
+		Target: proto.String("experiments/100/workUnits/200/executions/1"),
+		Action: &actuatortaskpb.Action{
+			Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}},
+		},
+		WorkUnit: &essmsgpb.WorkUnit{Name: "experiments/100/workUnits/200"},
+		Metadata: &actuatortaskpb.Metadata{
+			ResumptionRunId: proto.String("run-1"),
+			ResumptionTime:  timestamppb.New(resumptionTime),
+		},
+	}
+
+	if err := handler.handleActuatorPayload(context.Background(), payload); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pauseHandler.handleCalls != 0 {
+		t.Errorf("pauseHandler.handleCalls = %d, want 0 (task should not be buffered)", pauseHandler.handleCalls)
+	}
+	if k8sClient.createCalls != 1 {
+		t.Errorf("k8sClient.CreateWorkUnit called %d times, want 1", k8sClient.createCalls)
 	}
 }

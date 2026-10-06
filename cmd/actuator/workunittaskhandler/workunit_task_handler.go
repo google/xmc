@@ -178,8 +178,8 @@ func (h *Handler) TokenValidator() TokenValidator {
 	return h.tokenValidator
 }
 
-func (h *Handler) isPaused() bool {
-	return h.pauseHandler != nil && h.pauseHandler.IsPaused()
+func (h *Handler) isPaused(metadata *actuatortaskpb.Metadata) bool {
+	return h.pauseHandler != nil && h.pauseHandler.IsPaused(metadata)
 }
 
 func (h *Handler) shouldPause(action *actuatortaskpb.Action) bool {
@@ -211,7 +211,7 @@ func (h *Handler) handleActuatorPayload(ctx context.Context, payload *actuatorta
 
 	action := payload.GetAction()
 
-	if h.isPaused() && h.shouldPause(action) {
+	if h.isPaused(payload.GetMetadata()) && h.shouldPause(action) {
 		return h.handlePause(ctx, payload, traceID)
 	}
 
