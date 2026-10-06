@@ -43,6 +43,14 @@ func TestComponentReleaseName(t *testing.T) {
 	}
 }
 
+// TestComponentNameFromRelease_UnprefixedRelease documents that a release name without the component prefix is
+// returned unchanged. It is one-way: ComponentReleaseName always adds the prefix, so no component maps back to it.
+func TestComponentNameFromRelease_UnprefixedRelease(t *testing.T) {
+	if got := componentNameFromRelease("custom-release"); got != "custom-release" {
+		t.Errorf("componentNameFromRelease(%q) = %q, want %q", "custom-release", got, "custom-release")
+	}
+}
+
 func TestK8sHelmManager_Lifecycle(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewClientset()
