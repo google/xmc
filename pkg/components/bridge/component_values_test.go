@@ -18,9 +18,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 // TestK8sHelmManager_ComponentValuesMutations walks one component's values through persist, disable, and remove,
@@ -142,5 +146,82 @@ func TestK8sHelmManager_ConfigMapDeclarativeSourceOfTruth(t *testing.T) {
 	_, hasIngestion := runner.lastValues["ingestionGatewayDeployment"]
 	if !hasIngestion {
 		t.Errorf("expected ingestionGatewayDeployment in upgrade values, got keys: %+v", runner.lastValues)
+	}
+}
+
+// TestK8sHelmManager_ComponentValues_CreateAlreadyExistsRetriesAsUpdate verifies that when ConfigMap creation loses a
+// race with another writer, AlreadyExists is translated to Conflict so RetryOnConflict re-reads the existing ConfigMap,
+// preserves other components' keys, and re-applies the mutation on top of the concurrently written entry.
+func TestK8sHelmManager_ComponentValues_CreateAlreadyExistsRetriesAsUpdate(t *testing.T) {
+	const (
+		ns    = "xmc"
+		comp  = "metrics"
+		other = "rod-data-provider"
+	)
+	helmKey := ComponentNameToHelmKey(comp)
+	otherJSON := `{"rodDeployment":{"enabled":true}}`
+	tests := []struct {
+		name           string
+		concurrentData map[string]string
+		mutate         func(context.Context, *K8sHelmManager) (bool, error)
+		wantData       map[string]string
+	}{
+		{
+			name:           "persist merges with concurrently created ConfigMap",
+			concurrentData: map[string]string{componentValuesKey(other): otherJSON},
+			mutate: func(ctx context.Context, m *K8sHelmManager) (bool, error) {
+				return m.persistComponentValues(ctx, ns, comp, map[string]any{helmKey: map[string]any{"enabled": true}})
+			},
+			wantData: map[string]string{
+				componentValuesKey(other): otherJSON,
+				componentValuesKey(comp):  `{"` + helmKey + `":{"enabled":true}}`,
+			},
+		},
+		{
+			name: "disable re-applies mutation onto concurrently written component data",
+			concurrentData: map[string]string{
+				componentValuesKey(other): otherJSON,
+				componentValuesKey(comp):  `{"` + helmKey + `":{"enabled":true,"replicas":3}}`,
+			},
+			mutate: func(ctx context.Context, m *K8sHelmManager) (bool, error) {
+				return m.disableComponentValues(ctx, ns, comp)
+			},
+			wantData: map[string]string{
+				componentValuesKey(other): otherJSON,
+				componentValuesKey(comp):  `{"` + helmKey + `":{"enabled":false,"replicas":3}}`,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := fake.NewClientset()
+			raced := false
+			client.PrependReactor("create", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+				if raced {
+					return false, nil, nil
+				}
+				raced = true
+				_ = client.Tracker().Add(&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Name: ComponentValuesConfigMapName, Namespace: ns},
+					Data:       tt.concurrentData,
+				})
+				return true, nil, apierrors.NewAlreadyExists(corev1.Resource("configmaps"), ComponentValuesConfigMapName)
+			})
+			mgr := NewK8sHelmManager(client, ns, "xmanager-cloud", WithSyncExecution(true))
+			defer mgr.Close()
+
+			modified, err := tt.mutate(ctx, mgr)
+			if err != nil || !modified {
+				t.Fatalf("mutate() = (%v, %v), want (true, nil)", modified, err)
+			}
+			cm, err := client.CoreV1().ConfigMaps(ns).Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Get ConfigMap failed: %v", err)
+			}
+			if diff := cmp.Diff(tt.wantData, cm.Data); diff != "" {
+				t.Errorf("ConfigMap.Data mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
