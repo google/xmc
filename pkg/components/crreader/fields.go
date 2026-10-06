@@ -17,6 +17,7 @@ package crreader
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -31,10 +32,10 @@ const (
 	StateDeleted = "COMPONENT_STATE_DELETED"
 )
 
-// IsDisabled reports whether a Component CR is nil, has spec.enabled=false,
+// IsDisabled reports whether a Component CR is nil or empty, has spec.enabled=false,
 // has malformed spec.enabled or status.state fields, or is in a disabled, disabling, or deleted status state.
 func IsDisabled(comp *unstructured.Unstructured) bool {
-	if comp == nil || comp.Object == nil {
+	if comp == nil || len(comp.Object) == 0 {
 		return true
 	}
 	enabled, ok, err := SpecEnabled(comp)
@@ -70,16 +71,16 @@ func StatusState(comp *unstructured.Unstructured) (string, error) {
 
 // Parameters extracts spec.parameters as a string map from a Component CR.
 func Parameters(comp *unstructured.Unstructured) (map[string]string, error) {
-	return NestedStringMap(comp, "spec", "parameters")
+	return nestedStringMap(comp, "spec", "parameters")
 }
 
 // AccessEnvVars extracts status.access.envVars as a string map from a Component CR.
 func AccessEnvVars(comp *unstructured.Unstructured) (map[string]string, error) {
-	return NestedStringMap(comp, "status", "access", "envVars")
+	return nestedStringMap(comp, "status", "access", "envVars")
 }
 
-// NestedStringMap extracts a nested map at fields from a Component CR and coerces scalar values to strings.
-func NestedStringMap(comp *unstructured.Unstructured, fields ...string) (map[string]string, error) {
+// nestedStringMap extracts a nested map at fields from a Component CR and coerces scalar values to strings.
+func nestedStringMap(comp *unstructured.Unstructured, fields ...string) (map[string]string, error) {
 	if comp == nil || comp.Object == nil {
 		return nil, nil
 	}
@@ -132,7 +133,11 @@ func formatScalarValue(v any) string {
 		return val
 	case json.Number:
 		return val.String()
-	default:
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case int, int64, bool:
 		return fmt.Sprintf("%v", val)
+	default:
+		return ""
 	}
 }

@@ -40,6 +40,11 @@ func TestIsDisabled(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "empty object map is disabled",
+			comp: &unstructured.Unstructured{Object: map[string]any{}},
+			want: true,
+		},
+		{
 			name: "enabled component is not disabled",
 			comp: baselineComponent(),
 			want: false,
@@ -184,8 +189,8 @@ func TestParametersAndAccessEnvVars(t *testing.T) {
 	}
 
 	missingField := &unstructured.Unstructured{Object: map[string]any{}}
-	if got, err := NestedStringMap(missingField, "spec", "parameters"); err != nil || got != nil {
-		t.Errorf("NestedStringMap(missing) = (%v, %v), want (nil, nil)", got, err)
+	if got, err := nestedStringMap(missingField, "spec", "parameters"); err != nil || got != nil {
+		t.Errorf("nestedStringMap(missing) = (%v, %v), want (nil, nil)", got, err)
 	}
 }
 
@@ -228,14 +233,20 @@ func TestCoerceStringMap(t *testing.T) {
 				"str":    "hello",
 				"number": json.Number("42"),
 				"int":    123,
+				"int64":  int64(456),
+				"float":  float64(1000000),
 				"bool":   true,
+				"slice":  []any{"ignored"},
 				"nilVal": nil,
 			},
 			want: map[string]string{
 				"str":    "hello",
 				"number": "42",
 				"int":    "123",
+				"int64":  "456",
+				"float":  "1000000",
 				"bool":   "true",
+				"slice":  "",
 			},
 		},
 	}
