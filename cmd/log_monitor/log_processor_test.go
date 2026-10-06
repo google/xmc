@@ -34,7 +34,8 @@ var testTimestamp = time.Date(2025, time.December, 15, 0, 0, 0, 0, time.UTC)
 
 type mockStorage struct {
 	storage.MockStorage
-	mu sync.Mutex
+	mu                          sync.Mutex
+	updateWorkUnitExecutionsErr error
 	// Map of xid to updates of the UpdateWorkUnitExecutions call.
 	gotWorkUnitExecutionUpdates map[int64][]*storage.WorkUnitExecutionUpdate
 }
@@ -46,7 +47,7 @@ func (s *mockStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, u
 		s.gotWorkUnitExecutionUpdates = make(map[int64][]*storage.WorkUnitExecutionUpdate)
 	}
 	s.gotWorkUnitExecutionUpdates[xid] = append(s.gotWorkUnitExecutionUpdates[xid], updates...)
-	return nil, s.UpdateWorkUnitExecutionsErr
+	return nil, s.updateWorkUnitExecutionsErr
 }
 
 // mockMessage implements PubSubMessage for testing.
@@ -294,7 +295,7 @@ func TestProcessBatchHandlesUpdateErrors(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mockStorage := &mockStorage{}
-			mockStorage.UpdateWorkUnitExecutionsErr = tc.storageError
+			mockStorage.updateWorkUnitExecutionsErr = tc.storageError
 			lp := NewLogProcessor(mockStorage, "XMC LOG:", 10)
 			msg := &mockMessage{data: validData}
 			messages := []PubSubMessage{msg}

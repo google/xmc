@@ -27,6 +27,7 @@ import (
 
 	"golang/cloud_google_com/go/pubsub/v/v1/pubsub"
 	"xmanager_cloud/common/health"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/logging/logging"
 )
 
@@ -55,7 +56,7 @@ func main() {
 	}
 	defer pubsubClient.Close()
 
-	logProcessor := NewLogProcessor(stg, cfg.LogKeyword, cfg.MaxConcurrentUpdates)
+	logProcessor := NewLogProcessor(workunit.NewUpdater(stg), cfg.LogKeyword, cfg.MaxConcurrentUpdates)
 
 	listener := NewListener(cfg, logProcessor, pubsubClient)
 

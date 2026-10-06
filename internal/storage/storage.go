@@ -157,11 +157,6 @@ type WorkUnitStore interface {
 
 	// ListWorkUnitExecutions retrieves the historical work unit executions for a given work unit.
 	ListWorkUnitExecutions(ctx context.Context, xid int64, wid int64) ([]*essmsgpb.WorkUnitExecution, error)
-
-	// UpdateWorkUnitExecutions updates the status of a work unit. It returns the canonical
-	// executions, either the updated executions or the original executions if no update was
-	// done.
-	UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error)
 }
 
 // UpdatedWorkUnits contains the original and updated work unit protos.
@@ -297,13 +292,16 @@ type PauseSchedulingStore interface {
 type WorkUnitTxRepository interface {
 	// FetchWorkUnit retrieves a work unit by its unique ID within the transaction.
 	FetchWorkUnit(ctx context.Context, xid, wid int64) (*essmsgpb.WorkUnit, error)
+	// FetchUpdatingWorkUnits retrieves a batch of work units with their current execution and
+	// executable locked for update within the transaction.
+	FetchUpdatingWorkUnits(ctx context.Context, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnit, error)
+	// ListWorkUnitMessagesBySeverity retrieves work unit status messages matching a given severity
+	// level within the transaction.
+	ListWorkUnitMessagesBySeverity(ctx context.Context, xid int64, severity essmsgpb.StructuredMessage_Severity) ([]*essmsgpb.StructuredMessage, error)
 	// SaveWorkUnitExecution saves a work unit execution within the transaction.
 	SaveWorkUnitExecution(ctx context.Context, execution *essmsgpb.WorkUnitExecution) error
 	// UpdateCurrentWorkUnitExecution updates the current work unit execution within the transaction.
 	UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error
-	// UpdateWorkUnitExecutions applies execution updates within the transaction, including state
-	// transition guards, status history and experiment status denormalization.
-	UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error)
 }
 
 // ExperimentTxRepository defines experiment operations scoped to a read-write transaction.

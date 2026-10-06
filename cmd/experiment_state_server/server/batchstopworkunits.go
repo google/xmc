@@ -20,6 +20,7 @@ import (
 	"math"
 
 	"task/go/status"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/task_queue/client"
@@ -95,7 +96,7 @@ func (h *WorkUnitHandler) BatchStopWorkUnits(ctx context.Context, req *apipb.Bat
 	// 6. Update the work unit execution statuses to STOPPING for all work units that were
 	// successfully processed.
 	if len(execUpdates) > 0 {
-		if _, err := h.storage.UpdateWorkUnitExecutions(ctx, xid, execUpdates); err != nil {
+		if _, err := workunit.UpdateWorkUnitExecutions(ctx, h.storage, xid, execUpdates); err != nil {
 			logging.Error(ctx, "Failed to batch update work unit statuses", "error", err)
 			multiErr = errors.Join(multiErr, fmt.Errorf("failed to batch update work unit statuses: %w (%v)", status.ErrInternal, err))
 		}

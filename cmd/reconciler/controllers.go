@@ -21,6 +21,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
 	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
@@ -77,13 +78,17 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		return nil, fmt.Errorf("unable to setup clusterqueue controller: %w", err)
 	}
 
+	var batcherStorage shared.StorageUpdater
+	if p.storage != nil {
+		batcherStorage = workunit.NewUpdater(p.storage)
+	}
 	batcher := shared.NewUpdateBatcher(
 		ctx,
 		&shared.BatcherConfig{
 			TickDuration:           p.cfg.BatcherTickDuration,
 			MaxParallelExperiments: p.cfg.MaxParallelExperiments,
 		},
-		p.storage,
+		batcherStorage,
 	)
 
 	jobsetReconciler, err := jobset.NewReconciler(jobset.Params{

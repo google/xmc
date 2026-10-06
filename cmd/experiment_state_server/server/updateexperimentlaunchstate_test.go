@@ -27,6 +27,7 @@ import (
 	"xmanager_cloud/auth/auth"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
@@ -265,7 +266,7 @@ func TestUpdateExperimentLaunchState_ActiveState(t *testing.T) {
 				t.Errorf("Experiment should be active when work units are pending, got inactive")
 			}
 
-			_, err = s.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+			_, err = workunit.UpdateWorkUnitExecutions(ctx, s, xid, []*storage.WorkUnitExecutionUpdate{
 				{
 					WID: 1,
 					EID: 1,
@@ -396,7 +397,7 @@ func TestUpdateExperimentLaunchState_ActiveStateUpdatesPostLaunching(t *testing.
 				t.Fatalf("UpdateExperimentLaunchState() returned an unexpected error: %v", err)
 			}
 
-			_, err = s.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+			_, err = workunit.UpdateWorkUnitExecutions(ctx, s, xid, []*storage.WorkUnitExecutionUpdate{
 				{
 					WID: 1,
 					EID: 1,

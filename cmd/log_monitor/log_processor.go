@@ -84,15 +84,20 @@ type pendingUpdate struct {
 	update *storage.WorkUnitExecutionUpdate
 }
 
+// ExecutionUpdater updates work unit executions.
+type ExecutionUpdater interface {
+	UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error)
+}
+
 // LogProcessor processes logs from Pub/Sub.
 type LogProcessor struct {
-	storageClient        storage.Storage
+	storageClient        ExecutionUpdater
 	logKeyword           string
 	maxConcurrentUpdates int
 }
 
 // NewLogProcessor creates a new LogProcessor.
-func NewLogProcessor(storageClient storage.Storage, logKeyword string, maxConcurrentUpdates int) *LogProcessor {
+func NewLogProcessor(storageClient ExecutionUpdater, logKeyword string, maxConcurrentUpdates int) *LogProcessor {
 	return &LogProcessor{
 		storageClient:        storageClient,
 		logKeyword:           logKeyword,

@@ -21,6 +21,7 @@ import (
 	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
@@ -77,7 +78,7 @@ func (h *WorkUnitHandler) StopWorkUnit(ctx context.Context, req *apipb.StopWorkU
 	operation, execUpdate := res.Operation, res.ExecutionUpdate
 
 	// 6. Update the work unit execution status to STOPPING.
-	_, err = h.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate})
+	_, err = workunit.UpdateWorkUnitExecutions(ctx, h.storage, xid, []*storage.WorkUnitExecutionUpdate{execUpdate})
 	if err != nil {
 		logging.Error(ctx, "Failed to update work unit execution statuses", "error", err)
 		return nil, fmt.Errorf("failed to update work unit execution statuses: %w (%v)", status.ErrInternal, err)

@@ -596,6 +596,9 @@ func TestHandleEnqueueActionError(t *testing.T) {
 				Name: "experiments/123/workUnits/456",
 				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
 					Name: "experiments/123/workUnits/456/executions/1",
+					Status: &essmsgpb.WorkUnitStatus{
+						State: essmsgpb.WorkUnitStatus_RUNNING,
+					},
 				},
 			},
 			wantErr:    true,
@@ -607,6 +610,9 @@ func TestHandleEnqueueActionError(t *testing.T) {
 				Name: "experiments/123/workUnits/456",
 				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
 					Name: "experiments/123/workUnits/456/executions/1",
+					Status: &essmsgpb.WorkUnitStatus{
+						State: essmsgpb.WorkUnitStatus_RUNNING,
+					},
 				},
 			},
 			updateWorkUnitExecutionsErr: errors.New("db error"),
@@ -618,7 +624,9 @@ func TestHandleEnqueueActionError(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockStore := &storage.MockStorage{
-				UpdateWorkUnitExecutionsErr: tc.updateWorkUnitExecutionsErr,
+				WorkUnit:            tc.workUnit,
+				Experiment:          &essmsgpb.Experiment{Name: "experiments/123", Status: &essmsgpb.ExperimentStatus{}},
+				RunInTransactionErr: tc.updateWorkUnitExecutionsErr,
 			}
 			server := newTestServer(t, withStorage(mockStore))
 
@@ -634,6 +642,9 @@ func TestHandleEnqueueActionError(t *testing.T) {
 				if !errors.Is(err, status.ErrInternal) {
 					t.Errorf("handleEnqueueActionError() error = %v, want status.ErrInternal", err)
 				}
+			}
+			if !tc.wantValErr && tc.updateWorkUnitExecutionsErr == nil && mockStore.UpdatedWorkUnitExecution == nil {
+				t.Errorf("expected UpdatedWorkUnitExecution to be recorded on status update success")
 			}
 		})
 	}

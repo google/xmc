@@ -17,12 +17,13 @@ import (
 	"context"
 	"testing"
 	"time"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/workunit"
 
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	fieldmaskpb "protobuf/field_mask_go_proto"
-	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
@@ -34,7 +35,7 @@ func TestUpdateWorkUnitExecutions_EmptyUpdates(t *testing.T) {
 		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
-	got, err := storageClient.UpdateWorkUnitExecutions(ctx, 123, []*storage.WorkUnitExecutionUpdate{})
+	got, err := workunit.UpdateWorkUnitExecutions(ctx, storageClient, 123, []*storage.WorkUnitExecutionUpdate{})
 	if err != nil {
 		t.Errorf("UpdateWorkUnitExecutions with empty updates failed: %v", err)
 	}
@@ -88,7 +89,7 @@ func TestUpdateWorkUnitExecutions(t *testing.T) {
 		},
 	}
 
-	_, err = storageClient.UpdateWorkUnitExecutions(ctx, 123, updates)
+	_, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, 123, updates)
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions failed: %v", err)
 	}
@@ -229,7 +230,7 @@ func TestUpdateWorkUnitExecutions_StateTransitions(t *testing.T) {
 		},
 	}
 
-	_, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates)
+	_, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates)
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions failed: %v", err)
 	}
@@ -298,7 +299,7 @@ func TestUpdateWorkUnitExecutions_NoStateChange(t *testing.T) {
 		},
 	}
 
-	_, err = storageClient.UpdateWorkUnitExecutions(ctx, 234, updates)
+	_, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, 234, updates)
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions failed: %v", err)
 	}
@@ -355,7 +356,7 @@ func TestUpdateWorkUnitExecutions_InvalidStateTransitions(t *testing.T) {
 		})
 	}
 
-	_, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates)
+	_, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates)
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions failed: %v", err)
 	}
@@ -399,7 +400,7 @@ func TestUpdateWorkUnitExecutions_StaleUpdate(t *testing.T) {
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
 		},
 	}
-	_, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates1)
+	_, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates1)
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions to RUNNING failed: %v", err)
 	}
@@ -430,7 +431,7 @@ func TestUpdateWorkUnitExecutions_StaleUpdate(t *testing.T) {
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
 		},
 	}
-	_, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates2)
+	_, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates2)
 	if err != nil {
 		t.Fatalf("Stale UpdateWorkUnitExecutions failed: %v", err)
 	}
@@ -505,7 +506,7 @@ func TestUpdateWorkUnitExecutions_StructuredMessageUpdate(t *testing.T) {
 					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{tc.path}},
 				},
 			}
-			if _, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates1); err != nil {
+			if _, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates1); err != nil {
 				t.Fatalf("UpdateWorkUnitExecutions failed setting initial message: %v", err)
 			}
 
@@ -529,7 +530,7 @@ func TestUpdateWorkUnitExecutions_StructuredMessageUpdate(t *testing.T) {
 					ForceStatusMessageUpdate: false,
 				},
 			}
-			if _, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates2); err != nil {
+			if _, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates2); err != nil {
 				t.Fatalf("UpdateWorkUnitExecutions failed for non-forced update: %v", err)
 			}
 			wu, err := storageClient.FetchWorkUnit(ctx, xid, 1)
@@ -560,7 +561,7 @@ func TestUpdateWorkUnitExecutions_StructuredMessageUpdate(t *testing.T) {
 					ForceStatusMessageUpdate: true,
 				},
 			}
-			if _, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates3); err != nil {
+			if _, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates3); err != nil {
 				t.Fatalf("UpdateWorkUnitExecutions failed for forced update: %v", err)
 			}
 			wu, err = storageClient.FetchWorkUnit(ctx, xid, 1)
@@ -646,7 +647,7 @@ func TestUpdateWorkUnitExecutions_StatusMessageUpdate_DeferToExistingMessage(t *
 					ForceStatusMessageUpdate: true,
 				},
 			}
-			if _, err = storageClient.UpdateWorkUnitExecutions(ctx, tc.xid, updates1); err != nil {
+			if _, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, tc.xid, updates1); err != nil {
 				t.Fatalf("UpdateWorkUnitExecutions failed setting initial message: %v", err)
 			}
 
@@ -667,7 +668,7 @@ func TestUpdateWorkUnitExecutions_StatusMessageUpdate_DeferToExistingMessage(t *
 					DeferToExistingMessage: tc.deferToExisting,
 				},
 			}
-			if _, err = storageClient.UpdateWorkUnitExecutions(ctx, tc.xid, updates2); err != nil {
+			if _, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, tc.xid, updates2); err != nil {
 				t.Fatalf("UpdateWorkUnitExecutions failed for test update: %v", err)
 			}
 
@@ -704,7 +705,7 @@ func TestUpdateWorkUnitExecutions_NonExistentWorkUnit(t *testing.T) {
 		},
 	}
 
-	_, err = storageClient.UpdateWorkUnitExecutions(ctx, 345, updates)
+	_, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, 345, updates)
 	if err == nil {
 		t.Errorf("UpdateWorkUnitExecutions for non-existent work unit succeeded, want error")
 	}
@@ -755,7 +756,7 @@ func TestUpdateWorkUnitExecutions_ExperimentStatusMessageUpdate(t *testing.T) {
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.system_message"}},
 		},
 	}
-	if _, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates1); err != nil {
+	if _, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates1); err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions failed for updates1: %v", err)
 	}
 
@@ -789,7 +790,7 @@ func TestUpdateWorkUnitExecutions_ExperimentStatusMessageUpdate(t *testing.T) {
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.system_message"}},
 		},
 	}
-	if _, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates2); err != nil {
+	if _, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates2); err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions failed for updates2: %v", err)
 	}
 
@@ -864,7 +865,7 @@ func TestUpdateWorkUnitExecutions_CompletionTime(t *testing.T) {
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
 		},
 	}
-	_, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates1)
+	_, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates1)
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions failed for updates1: %v", err)
 	}
@@ -902,7 +903,7 @@ func TestUpdateWorkUnitExecutions_CompletionTime(t *testing.T) {
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
 		},
 	}
-	_, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates2)
+	_, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates2)
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions failed for updates2: %v", err)
 	}
@@ -968,7 +969,7 @@ func TestUpdateWorkUnitExecutions_ReturnValue(t *testing.T) {
 		},
 	}
 
-	updatedWUs, err := storageClient.UpdateWorkUnitExecutions(ctx, xid, updates)
+	updatedWUs, err := workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates)
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions failed: %v", err)
 	}
@@ -1021,7 +1022,7 @@ func TestUpdateWorkUnitExecutions_MultipleUpdatesPerWorkUnit(t *testing.T) {
 		},
 	}
 
-	updatedWUs, err := storageClient.UpdateWorkUnitExecutions(ctx, xid, updates)
+	updatedWUs, err := workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates)
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions failed: %v", err)
 	}
@@ -1132,7 +1133,7 @@ func TestUpdateWorkUnitExecutions_MultipleUpdatesSameField(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, tc.wid)
 
-			updatedWUs, err := storageClient.UpdateWorkUnitExecutions(ctx, xid, tc.updates)
+			updatedWUs, err := workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, tc.updates)
 			if err != nil {
 				t.Fatalf("UpdateWorkUnitExecutions failed: %v", err)
 			}
@@ -1184,7 +1185,7 @@ func TestUpdateWorkUnitExecutions_MismatchedEID(t *testing.T) {
 		},
 	}
 
-	_, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates)
+	_, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates)
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions failed: %v", err)
 	}
@@ -1331,7 +1332,7 @@ func TestUpdateWorkUnitExecutions_ExperimentStatusMessagePropagation(t *testing.
 			// Apply setup updates
 			for _, uSpec := range tc.setupUpdates {
 				u := makeUpdate(uSpec)
-				if _, err := storageClient.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{u}); err != nil {
+				if _, err := workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, []*storage.WorkUnitExecutionUpdate{u}); err != nil {
 					t.Fatalf("Setup UpdateWorkUnitExecutions failed: %v", err)
 				}
 			}
@@ -1341,7 +1342,7 @@ func TestUpdateWorkUnitExecutions_ExperimentStatusMessagePropagation(t *testing.
 				testUpdates = append(testUpdates, makeUpdate(uSpec))
 			}
 
-			if _, err := storageClient.UpdateWorkUnitExecutions(ctx, xid, testUpdates); err != nil {
+			if _, err := workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, testUpdates); err != nil {
 				t.Fatalf("UpdateWorkUnitExecutions failed: %v", err)
 			}
 			exp, err := storageClient.FetchExperiment(ctx, xid)
@@ -1475,7 +1476,7 @@ func TestUpdateWorkUnitExecutions_OptimizationLogic(t *testing.T) {
 			// Apply setup updates
 			for _, uSpec := range tc.setupUpdates {
 				u := makeUpdate(uSpec)
-				if _, err := storageClient.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{u}); err != nil {
+				if _, err := workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, []*storage.WorkUnitExecutionUpdate{u}); err != nil {
 					t.Fatalf("Setup UpdateWorkUnitExecutions failed: %v", err)
 				}
 			}
@@ -1485,7 +1486,7 @@ func TestUpdateWorkUnitExecutions_OptimizationLogic(t *testing.T) {
 				testUpdates = append(testUpdates, makeUpdate(uSpec))
 			}
 
-			if _, err := storageClient.UpdateWorkUnitExecutions(ctx, xid, testUpdates); err != nil {
+			if _, err := workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, testUpdates); err != nil {
 				t.Fatalf("UpdateWorkUnitExecutions failed: %v", err)
 			}
 			exp, err := storageClient.FetchExperiment(ctx, xid)
@@ -1555,7 +1556,7 @@ func TestUpdateWorkUnitExecutions_SavesLatestMessage(t *testing.T) {
 		},
 	}
 
-	_, err = storageClient.UpdateWorkUnitExecutions(ctx, xid, updates)
+	_, err = workunit.UpdateWorkUnitExecutions(ctx, storageClient, xid, updates)
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions failed: %v", err)
 	}
@@ -1575,7 +1576,7 @@ func TestUpdateWorkUnitExecutions_SavesLatestMessage(t *testing.T) {
 	}
 }
 
-func TestTxRepository_UpdateWorkUnitExecutions(t *testing.T) {
+func TestUpdateWorkUnitExecutionsInTx(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
 	storageClient, err := spanner.NewStorage(essClient)
@@ -1607,11 +1608,19 @@ func TestTxRepository_UpdateWorkUnitExecutions(t *testing.T) {
 	}
 
 	err = storageClient.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
-		_, err := tx.WorkUnits.UpdateWorkUnitExecutions(ctx, xid, updates)
+		if got, err := workunit.UpdateWorkUnitExecutionsInTx(ctx, tx, xid, nil); err != nil || got != nil {
+			t.Fatalf("UpdateWorkUnitExecutionsInTx(nil) = (%v, %v), want (nil, nil)", got, err)
+		}
+		_, err := workunit.UpdateWorkUnitExecutionsInTx(ctx, tx, xid, updates)
 		return err
 	})
 	if err != nil {
-		t.Fatalf("RunInTransaction(UpdateWorkUnitExecutions) failed: %v", err)
+		t.Fatalf("RunInTransaction(UpdateWorkUnitExecutionsInTx) failed: %v", err)
+	}
+
+	updater := workunit.NewUpdater(storageClient)
+	if got, err := updater.UpdateWorkUnitExecutions(ctx, xid, nil); err != nil || got != nil {
+		t.Fatalf("updater.UpdateWorkUnitExecutions(nil) = (%v, %v), want (nil, nil)", got, err)
 	}
 
 	for _, tc := range []struct {

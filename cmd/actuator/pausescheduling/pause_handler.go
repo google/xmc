@@ -25,6 +25,7 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/validator/validator"
@@ -136,7 +137,7 @@ func (h *TaskPauseHandler) HandlePause(ctx context.Context, payload *actuatortas
 		if !updateStatus {
 			return nil
 		}
-		return markExecutionSchedulingPaused(ctx, tx.WorkUnits, payload)
+		return markExecutionSchedulingPaused(ctx, tx, payload)
 	})
 	if err != nil {
 		return err
@@ -187,7 +188,7 @@ func resolveExecutionTarget(payload *actuatortaskpb.ActuatorPayload) string {
 
 // markExecutionSchedulingPaused sets the target execution's state to SCHEDULING_PAUSED within the
 // transaction.
-func markExecutionSchedulingPaused(ctx context.Context, workUnits storage.WorkUnitTxRepository, payload *actuatortaskpb.ActuatorPayload) error {
+func markExecutionSchedulingPaused(ctx context.Context, tx *storage.Transaction, payload *actuatortaskpb.ActuatorPayload) error {
 	targetToUpdate := resolveExecutionTarget(payload)
 	xid, wid, eid, err := validator.ValidateWorkUnitExecutionName(targetToUpdate)
 	if err != nil {
@@ -207,7 +208,7 @@ func markExecutionSchedulingPaused(ctx context.Context, workUnits storage.WorkUn
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state"}},
 	}
 
-	if _, err := workUnits.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate}); err != nil {
+	if _, err := workunit.UpdateWorkUnitExecutionsInTx(ctx, tx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate}); err != nil {
 		return fmt.Errorf("failed to update work unit execution status to SCHEDULING_PAUSED for %q: %w", targetToUpdate, err)
 	}
 	return nil

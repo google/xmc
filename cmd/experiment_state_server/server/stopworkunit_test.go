@@ -25,6 +25,7 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
 	"xmanager_cloud/validator/validator"
@@ -151,7 +152,7 @@ func TestStopWorkUnit_SchedulingPausedTransitionsDirectlyToStopped(t *testing.T)
 	}
 
 	// Transition the work unit to SCHEDULING_PAUSED first.
-	if _, err := server.WorkUnitHandler.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+	if _, err := workunit.UpdateWorkUnitExecutions(ctx, server.WorkUnitHandler.storage, xid, []*storage.WorkUnitExecutionUpdate{
 		{
 			WID: workUnitID,
 			EID: eid,
@@ -289,8 +290,8 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				WorkUnit:                    workUnit,
-				UpdateWorkUnitExecutionsErr: fmt.Errorf("Storage update work unit executions failed"),
+				WorkUnit:            workUnit,
+				RunInTransactionErr: fmt.Errorf("Storage update work unit executions failed"),
 			},
 			wantErr: status.ErrInternal,
 		},

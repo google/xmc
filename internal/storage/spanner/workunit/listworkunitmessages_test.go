@@ -22,12 +22,9 @@ import (
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
+	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/storage"
-
-	fieldmaskpb "protobuf/field_mask_go_proto"
-	timestamppb "protobuf/timestamp_go_proto"
 )
 
 func TestListWorkUnitMessagesBySeverity(t *testing.T) {
@@ -87,58 +84,31 @@ func TestListWorkUnitMessagesBySeverity(t *testing.T) {
 	sysInfoMsg5 := wu5.CurrentWorkUnitExecution.Status.SystemMessage
 
 	for _, msg := range messages {
-		spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, msg.wid)
-
+		wu := spanner.BlankWorkUnitProto(xid, msg.wid)
 		if msg.system != nil {
 			msg.system.Parent = fmt.Sprintf("experiments/%d/workUnits/%d", xid, msg.wid)
 			msg.system.CreateTime = timestamppb.New(time.Now())
+			wu.CurrentWorkUnitExecution.Status.SystemMessage = msg.system
 		}
 		if msg.user != nil {
 			msg.user.Parent = fmt.Sprintf("experiments/%d/workUnits/%d", xid, msg.wid)
 			msg.user.CreateTime = timestamppb.New(time.Now())
+			wu.CurrentWorkUnitExecution.Status.UserMessage = msg.user
 		}
-
-		status := &essmsgpb.WorkUnitStatus{
-			SystemMessage: msg.system,
-			UserMessage:   msg.user,
-		}
-		updates := []*storage.WorkUnitExecutionUpdate{
-			{
-				WID: msg.wid,
-				EID: 1,
-				WorkUnitExecution: &essmsgpb.WorkUnitExecution{
-					Status: status,
-				},
-				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.system_message", "status.user_message"}},
-			},
-		}
-		if _, err := storageClient.UpdateWorkUnitExecutions(ctx, xid, updates); err != nil {
-			t.Fatalf("UpdateWorkUnitExecutions for work unit %d failed: %v", msg.wid, err)
-		}
+		spanner.CreateAndStoreWorkUnit(ctx, t, storageClient, wu)
 	}
 
 	// Create another experiment with a work unit to ensure we only list messages for the requested xid.
 	xid2 := int64(2)
 	spanner.CreateBlankExperiment(ctx, t, storageClient, xid2)
-	spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid2, 1)
-	sysInfoMsgXID2 := &essmsgpb.StructuredMessage{
+	wuXID2 := spanner.BlankWorkUnitProto(xid2, 1)
+	wuXID2.CurrentWorkUnitExecution.Status.SystemMessage = &essmsgpb.StructuredMessage{
+		Parent:         fmt.Sprintf("experiments/%d/workUnits/1", xid2),
 		UserFacingText: "info xid2",
 		Severity:       essmsgpb.StructuredMessage_INFO,
 		CreateTime:     timestamppb.New(time.Now()),
 	}
-	updatesXID2 := []*storage.WorkUnitExecutionUpdate{
-		{
-			WID: 1,
-			EID: 1,
-			WorkUnitExecution: &essmsgpb.WorkUnitExecution{
-				Status: &essmsgpb.WorkUnitStatus{SystemMessage: sysInfoMsgXID2},
-			},
-			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.system_message"}},
-		},
-	}
-	if _, err := storageClient.UpdateWorkUnitExecutions(ctx, xid2, updatesXID2); err != nil {
-		t.Fatalf("UpdateWorkUnitExecutions for xid %d failed: %v", xid2, err)
-	}
+	spanner.CreateAndStoreWorkUnit(ctx, t, storageClient, wuXID2)
 
 	tests := []struct {
 		severity essmsgpb.StructuredMessage_Severity

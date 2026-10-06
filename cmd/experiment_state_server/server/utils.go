@@ -25,6 +25,7 @@ import (
 	rpcstatuspb "rpc/status_go_proto"
 	statusutils "task/go/status"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
 	ee "xmanager_cloud/toollibs/execution_environments/executionenvironments"
@@ -161,7 +162,7 @@ func (h *WorkUnitHandler) updateWorkUnitExecutionStatusMessage(ctx context.Conte
 	msg.Source = msgpb.StructuredMessage_XMANAGER_BACKEND
 	msg.CreateTime = timestamppb.Now()
 
-	_, err := h.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+	_, err := workunit.UpdateWorkUnitExecutions(ctx, h.storage, xid, []*storage.WorkUnitExecutionUpdate{
 		{
 			WID: wid,
 			EID: eid,
