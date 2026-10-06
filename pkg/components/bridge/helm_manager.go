@@ -88,8 +88,8 @@ type K8sHelmManager struct {
 	componentChartPaths map[string]string
 	chartCache          map[string]*chart.Chart
 	upgradeErrs         map[string]error
-	upgradeMu           sync.Mutex
-	upgradeSem          chan struct{}
+	// upgradeSem serializes every Helm release operation: sync and async upgrades and uninstalls.
+	upgradeSem chan struct{}
 	// pendingUpgrades maps component keys to the sequence number of their latest enqueued async upgrade.
 	pendingUpgrades map[string]uint64
 	upgradeSeq      uint64
@@ -372,6 +372,7 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 	if err := validateComponentRef(ref); err != nil {
 		return err
 	}
+	m.dropPendingUpgrade(ref)
 	m.setUpgradeErr(ref, nil)
 	m.mu.Lock()
 	m.forgetComponentLocked(componentKey(ref.Namespace, ref.Name), false)

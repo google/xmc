@@ -18,8 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
+
+	"helm.sh/helm/v3/pkg/storage/driver"
 
 	"xmanager_cloud/internal/logging"
 )
@@ -38,14 +39,6 @@ type upgradeRequest struct {
 	values    map[string]any
 	// seq identifies this enqueue in pendingUpgrades so only the latest request clears the in-flight marker.
 	seq uint64
-}
-
-func isReleaseNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "release: not found") || strings.Contains(msg, "not found")
 }
 
 // setUpgradeErr records (or clears) the last upgrade/uninstall error for ref. Every call marks a release
@@ -201,21 +194,24 @@ func (m *K8sHelmManager) upgradeRelease(ctx context.Context, releaseName, namesp
 	return err
 }
 
-// uninstallRelease uninstalls the component's Helm release under the upgrade lock and records the outcome as the
-// component's upgrade error. A release that is already gone counts as uninstalled.
+// uninstallRelease discards any queued async upgrade and uninstalls the component's Helm release under the upgrade
+// lock, recording the outcome as the component's upgrade error. A release that is already gone counts as uninstalled.
 func (m *K8sHelmManager) uninstallRelease(ctx context.Context, ref ComponentRef) error {
 	releaseName := ComponentReleaseName(ref.Name)
 	if m.runner == nil {
 		logging.Warn(ctx, "Skipping Helm release uninstall because HelmActionRunner is uninitialized", "release", releaseName, "namespace", ref.Namespace, "component", ref.Name)
 		return nil
 	}
+	// Discard any queued upgrade immediately so the worker cannot run it while we wait on (or time out acquiring) the lock.
+	m.dropPendingUpgrade(ref)
 	if err := m.acquireUpgradeLock(ctx); err != nil {
 		return m.failUpgrade(ref, err)
 	}
 	defer m.releaseUpgradeLock()
 
+	m.dropPendingUpgrade(ref)
 	_, err := m.runner.Uninstall(ctx, releaseName, ref.Namespace)
-	if err != nil && !isReleaseNotFound(err) {
+	if err != nil && !errors.Is(err, driver.ErrReleaseNotFound) {
 		m.setUpgradeErr(ref, err)
 		return fmt.Errorf("failed to uninstall Helm release %q: %w", releaseName, err)
 	}
@@ -225,6 +221,8 @@ func (m *K8sHelmManager) uninstallRelease(ctx context.Context, ref ComponentRef)
 
 func (m *K8sHelmManager) syncUpgradeWorker() {
 	defer m.wg.Done()
+	// TODO(vluk): Recover per request in executeComponentUpgrade and record the panic as the component's upgrade
+	// error; today a panicking upgrade records no outcome and stops this worker for good (pre-existing).
 	defer func() {
 		if r := recover(); r != nil {
 			logging.Error(context.Background(), "Recovered from panic in Helm upgrade worker", "panic", r)
@@ -304,23 +302,50 @@ func (m *K8sHelmManager) processUpgradeBatch(batch []upgradeRequest) {
 	}
 }
 
+// executeComponentUpgrade runs req under the upgrade lock unless a newer request or a teardown superseded it. The
+// outcome is recorded before the lock is released, so a teardown waiting on the lock never sees a stale result.
 func (m *K8sHelmManager) executeComponentUpgrade(req upgradeRequest) {
-	// Deferred so the marker is cleared only after setUpgradeErr records the outcome (and even on panic).
+	// Deferred first so it runs last: the marker is cleared only after the outcome is recorded (and even on panic).
 	defer m.clearUpgradePending(req.ref, req.seq)
 	execCtx, cancel := context.WithTimeout(m.ctx, asyncUpgradeTimeout)
 	defer cancel()
 
-	releaseName := ComponentReleaseName(req.ref.Name)
-	upgradeErr := func() error {
-		m.upgradeMu.Lock()
-		defer m.upgradeMu.Unlock()
-		return m.upgradeRelease(execCtx, releaseName, req.namespace, req.chartPath, req.values)
-	}()
-
-	m.setUpgradeErr(req.ref, upgradeErr)
-	if upgradeErr != nil {
-		logging.Error(execCtx, "Asynchronous Helm upgrade failed", "release", releaseName, "name", req.ref.Name, "namespace", req.namespace, "error", upgradeErr)
+	if err := m.acquireUpgradeLock(execCtx); err != nil {
+		m.recordAsyncUpgrade(execCtx, req, err)
 		return
 	}
-	logging.Info(execCtx, "Asynchronous Helm upgrade succeeded", "release", releaseName, "name", req.ref.Name, "namespace", req.namespace)
+	defer m.releaseUpgradeLock()
+	if m.isUpgradeSuperseded(req) {
+		logging.Info(execCtx, "Skipping superseded asynchronous Helm upgrade", "release", ComponentReleaseName(req.ref.Name), "name", req.ref.Name, "namespace", req.namespace)
+		return
+	}
+	m.recordAsyncUpgrade(execCtx, req, m.upgradeRelease(execCtx, ComponentReleaseName(req.ref.Name), req.namespace, req.chartPath, req.values))
+}
+
+// isUpgradeSuperseded reports whether req is no longer ref's latest enqueued upgrade, either because a newer request
+// replaced it or because a teardown discarded it.
+func (m *K8sHelmManager) isUpgradeSuperseded(req upgradeRequest) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	seq, pending := m.pendingUpgrades[req.ref.String()]
+	return !pending || seq != req.seq
+}
+
+// dropPendingUpgrade discards ref's queued async upgrade so the worker skips it as superseded. Teardowns call it
+// under the upgrade lock so a worker waiting on the lock observes the discard.
+func (m *K8sHelmManager) dropPendingUpgrade(ref ComponentRef) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.pendingUpgrades, ref.String())
+}
+
+// recordAsyncUpgrade records err as the outcome of req and logs it.
+func (m *K8sHelmManager) recordAsyncUpgrade(ctx context.Context, req upgradeRequest, err error) {
+	m.setUpgradeErr(req.ref, err)
+	releaseName := ComponentReleaseName(req.ref.Name)
+	if err != nil {
+		logging.Error(ctx, "Asynchronous Helm upgrade failed", "release", releaseName, "name", req.ref.Name, "namespace", req.namespace, "error", err)
+		return
+	}
+	logging.Info(ctx, "Asynchronous Helm upgrade succeeded", "release", releaseName, "name", req.ref.Name, "namespace", req.namespace)
 }

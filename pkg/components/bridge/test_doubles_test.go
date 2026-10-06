@@ -147,6 +147,10 @@ type mockHelmActionRunner struct {
 	statusCalls   int
 	// upgradeGate, when non-nil, blocks Upgrade until the channel is closed (waited on before taking mu so Status stays callable).
 	upgradeGate chan struct{}
+	// upgradeStarted, when non-nil, receives a value as each Upgrade call starts, before it waits on upgradeGate.
+	upgradeStarted chan struct{}
+	// ops records "upgrade" and "uninstall" in the order the release operations completed.
+	ops []string
 	// missing lists "Kind/name" objects reported absent by MissingResources until the next successful Upgrade.
 	missing      []string
 	missingErr   error
@@ -154,6 +158,9 @@ type mockHelmActionRunner struct {
 }
 
 func (m *mockHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespace string, chartObj *chart.Chart, values map[string]any) (*release.Release, error) {
+	if m.upgradeStarted != nil {
+		m.upgradeStarted <- struct{}{}
+	}
 	if m.upgradeGate != nil {
 		<-m.upgradeGate
 	}
@@ -163,6 +170,7 @@ func (m *mockHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespa
 		panic("simulated runner panic")
 	}
 	m.upgradeCalls++
+	m.ops = append(m.ops, "upgrade")
 	m.lastRelease = releaseName
 	m.lastNS = namespace
 	m.lastChart = chartObj
@@ -183,6 +191,7 @@ func (m *mockHelmActionRunner) Uninstall(ctx context.Context, releaseName, names
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.uninstallCalls++
+	m.ops = append(m.ops, "uninstall")
 	m.lastUninstall = releaseName
 	m.lastUninstallNS = namespace
 	if m.uninstallErr != nil {
@@ -219,6 +228,13 @@ func (m *mockHelmActionRunner) MissingResources(ctx context.Context, rel *releas
 		return nil, m.missingErr
 	}
 	return slices.Clone(m.missing), nil
+}
+
+// recordedOps returns a snapshot of the release operations completed so far.
+func (m *mockHelmActionRunner) recordedOps() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.ops)
 }
 
 type mockHelm struct {
