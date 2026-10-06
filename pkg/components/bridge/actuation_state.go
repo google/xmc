@@ -25,7 +25,7 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"
 
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 // IsComponentActuated returns true if the component is active and was actuated at the given generation without errors.
