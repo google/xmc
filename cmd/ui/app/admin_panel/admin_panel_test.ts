@@ -579,4 +579,37 @@ describe('AdminPanelPage Component', () => {
     expect(await pauseBtn!.isDisabled()).toBeFalse();
     expect(await healthSection!.isSchedulingPauseCardPaused()).toBeTrue();
   });
+
+  it('should disable toggle and show warning banner when schedulingPauseError is present', async () => {
+    const healthService = get(HealthService);
+    const pauseSpy = spyOn(healthService, 'pauseScheduling');
+    spyOn(healthService, 'getHealthStatus').and.returnValue(
+      of({
+        healthState: 'HEALTH_STATE_HEALTHY',
+        systemInfo: {
+          appVersion: 'mock-app-version-1.0.0',
+          essDbSchemaVersion: '6',
+          xidDbSchemaVersion: '1',
+          isSchedulingPaused: false,
+          schedulingPauseError: 'spanner read timeout',
+        },
+        healthCheckTime: { seconds: 1717804800, nanos: 0 },
+      } as any),
+    );
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const healthSection = await harness.getHealthStatusSection();
+    expect(await healthSection!.getErrorBannerText()).toContain(
+      'Unable to fetch current pause scheduling state. Please try again.',
+    );
+    expect(await healthSection!.isPauseToggleDisabled()).toBeTrue();
+
+    await healthSection!.togglePause();
+    await flush();
+    expect(await healthSection!.hasConfirmationModal()).toBeFalse();
+    expect(pauseSpy).not.toHaveBeenCalled();
+  });
 });

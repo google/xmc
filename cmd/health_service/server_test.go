@@ -1115,6 +1115,9 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 		if resp1.SystemInfo.IsSchedulingPaused {
 			t.Errorf("expected IsSchedulingPaused to be false initially, got true")
 		}
+		if resp1.SystemInfo.SchedulingPauseError != "" {
+			t.Errorf("expected SchedulingPauseError to be empty, got %q", resp1.SystemInfo.SchedulingPauseError)
+		}
 		if calls := atomic.LoadInt64(&checker.callCount); calls != 1 {
 			t.Fatalf("expected 1 health check call, got %d", calls)
 		}
@@ -1161,16 +1164,29 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 				PauseSchedulingEnabled: true,
 			},
 		}
+		checker := &mockHealthChecker{
+			result: RunChecksResult{
+				Components: []*spb.ComponentHealth{
+					{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+				},
+			},
+		}
 		failingRepo := &failingPauseStateRepo{err: errors.New("spanner read timeout")}
-		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(failingRepo))
+		s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(failingRepo))
 		defer s.Close()
 
 		resp, err := s.GetHealthStatus(ctx, &spb.GetHealthStatusRequest{})
 		if err != nil {
 			t.Fatalf("GetHealthStatus failed on repo error: %v", err)
 		}
+		if resp.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY || len(resp.Components) != 1 {
+			t.Errorf("expected component health to be preserved, got state=%v components=%d", resp.HealthState, len(resp.Components))
+		}
 		if resp.SystemInfo.IsSchedulingPaused {
 			t.Errorf("expected IsSchedulingPaused to default to false on repo error, got true")
+		}
+		if resp.SystemInfo.SchedulingPauseError != schedulingPauseUnavailableError {
+			t.Errorf("expected SchedulingPauseError to be %q, got %q", schedulingPauseUnavailableError, resp.SystemInfo.SchedulingPauseError)
 		}
 	})
 
