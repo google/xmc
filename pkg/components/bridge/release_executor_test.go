@@ -729,3 +729,54 @@ func TestK8sHelmManager_UninstallReleaseNotFound(t *testing.T) {
 		})
 	}
 }
+
+// TestK8sHelmManager_TeardownLockTimeoutStillDiscardsQueuedUpgrade verifies that if Delete1PComponent times out
+// waiting for upgradeSem while another release operation holds the lock, it still discards the target component's
+// queued upgrade so the worker does not install it after the ConfigMap entry was disabled.
+func TestK8sHelmManager_TeardownLockTimeoutStillDiscardsQueuedUpgrade(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		other := ComponentRef{Namespace: "xmc", Name: "redpanda"}
+		target := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+		gate := make(chan struct{})
+		runner := &mockHelmActionRunner{upgradeGate: gate, upgradeStarted: make(chan struct{}, 1)}
+		mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithDebounceDuration(10*time.Millisecond))
+		defer mgr.Close()
+
+		// Start an upgrade for `other` that holds upgradeSem on `gate`.
+		if err := mgr.Ensure1PComponent(ctx, other, HelmComponentOptions{Ref: other, Enabled: true}); err != nil {
+			t.Fatalf("Ensure1PComponent(other) failed: %v", err)
+		}
+		<-runner.upgradeStarted
+
+		// Enqueue an upgrade for `target` while `other` holds the lock.
+		if err := mgr.Ensure1PComponent(ctx, target, HelmComponentOptions{Ref: target, Enabled: true}); err != nil {
+			t.Fatalf("Ensure1PComponent(target) failed: %v", err)
+		}
+
+		// Delete `target` with a context that cancels while waiting on upgradeSem.
+		delCtx, cancel := context.WithCancel(ctx)
+		deleteErr := make(chan error, 1)
+		go func() { deleteErr <- mgr.Delete1PComponent(delCtx, target) }()
+		synctest.Wait()
+		cancel()
+		if err := <-deleteErr; !errors.Is(err, context.Canceled) {
+			t.Fatalf("Delete1PComponent error = %v, want context.Canceled", err)
+		}
+
+		// Release `other`'s upgrade and let the worker drain. `target`'s queued upgrade must be skipped.
+		close(gate)
+		time.Sleep(50 * time.Millisecond)
+		synctest.Wait()
+
+		if diff := cmp.Diff([]string{"upgrade"}, runner.recordedOps()); diff != "" {
+			t.Errorf("release operations mismatch (-want +got):\n%s", diff)
+		}
+		if mgr.isUpgradePending(target) {
+			t.Error("expected target upgrade to be discarded after Delete1PComponent lock timeout")
+		}
+		if err := mgr.GetUpgradeError(target); !errors.Is(err, context.Canceled) {
+			t.Errorf("GetUpgradeError(target) = %v, want context.Canceled preserved", err)
+		}
+	})
+}

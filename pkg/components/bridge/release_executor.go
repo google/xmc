@@ -202,6 +202,8 @@ func (m *K8sHelmManager) uninstallRelease(ctx context.Context, ref ComponentRef)
 		logging.Warn(ctx, "Skipping Helm release uninstall because HelmActionRunner is uninitialized", "release", releaseName, "namespace", ref.Namespace, "component", ref.Name)
 		return nil
 	}
+	// Discard any queued upgrade immediately so the worker cannot run it while we wait on (or time out acquiring) the lock.
+	m.dropPendingUpgrade(ref)
 	if err := m.acquireUpgradeLock(ctx); err != nil {
 		return m.failUpgrade(ref, err)
 	}
