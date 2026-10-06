@@ -39,6 +39,7 @@ import (
 	"google.golang.org/api/option"
 	healthgrpc "grpc_proto/health_go_grpc"
 	healthpb "grpc_proto/health_go_proto"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"xmanager_cloud/cmd/dashboard_service/server"
 	commonhealth "xmanager_cloud/common/health"
@@ -174,7 +175,11 @@ func connectClickHouseWithSource(src componentconfig.Source, initErr error) data
 // A failed first attempt is not fatal. The provider dials again on demand, and readiness holds the
 // pod out of the service endpoints until one of those attempts succeeds.
 func initDataEngine(ctx context.Context) *dataengine.Provider {
-	if !clickhouse.Configured() && !cfg.EnableComponents {
+	return initDataEngineWithGetter(ctx, nil)
+}
+
+func initDataEngineWithGetter(ctx context.Context, customGetter crreader.Getter) *dataengine.Provider {
+	if !isClickHouseExpected(ctx, customGetter) {
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
@@ -185,6 +190,29 @@ func initDataEngine(ctx context.Context) *dataengine.Provider {
 		logging.Warn(ctx, "ClickHouse connection not available at startup, the data engine is retried on demand", "error", err)
 	}
 	return provider
+}
+
+func isClickHouseExpected(ctx context.Context, customGetter crreader.Getter) bool {
+	if clickhouse.Configured() {
+		return true
+	}
+	if !cfg.EnableComponents {
+		return false
+	}
+	getter := customGetter
+	if getter == nil {
+		g, err := crreader.NewK8sGetter()
+		if err != nil {
+			return false
+		}
+		getter = g
+	}
+	ns := crreader.ResolveNamespace(cfg.ComponentsNamespace)
+	comp, err := getter.GetComponent(ctx, ns, componentconfig.ClickHouseComponentName)
+	if apierrors.IsNotFound(err) || (err == nil && (comp == nil || crreader.IsDisabled(comp))) {
+		return false
+	}
+	return true
 }
 
 // chartDataEngine converts the engine provider into the interface the server consumes.

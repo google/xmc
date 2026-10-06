@@ -19,6 +19,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,7 +42,7 @@ func baselineClickHouseCR() *unstructured.Unstructured {
 				"componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
 				"parameters": map[string]any{
 					"host":              "ch-spec.xmc-metrics.svc.cluster.local",
-					"clusterEndpoints":  "ch-spec-0.xmc-metrics.svc.cluster.local:9000,ch-spec-1.xmc-metrics.svc.cluster.local:9000",
+					"clusterEndpoints":  "ch-spec.xmc-metrics.svc.cluster.local:9000",
 					"nativePort":        "9000",
 					"defaultDatabase":   "analytics",
 					"user":              "ch_reader",
@@ -104,7 +105,7 @@ func TestResolveOptions(t *testing.T) {
 		DialTimeout: 5 * time.Second,
 	}
 	crSummary := func(addrs []string, db, user, pw string) optionsSummary {
-		return optionsSummary{Addr: addrs, Auth: clickhouse.Auth{Database: db, Username: user, Password: pw}, DialTimeout: 10 * time.Second, Compression: clickhouse.CompressionLZ4}
+		return optionsSummary{Addr: addrs, Auth: clickhouse.Auth{Database: db, Username: user, Password: pw}, DialTimeout: 5 * time.Second}
 	}
 	baseCRSummary := crSummary([]string{"ch-live.xmc-metrics.svc.cluster.local:9440"}, "analytics", "ch_reader", "live-secret-pw")
 
@@ -139,6 +140,40 @@ func TestResolveOptions(t *testing.T) {
 		},
 		{name: "resolves from status.access.envVars HOST, PORT, and SECRET_NAME", src: crSource(func(*unstructured.Unstructured) {}), want: baseCRSummary},
 		{
+			name: "preserves multi-replica clusterEndpoints when status.access.envVars only reflects single HOST",
+			src: crSource(func(u *unstructured.Unstructured) {
+				_ = unstructured.SetNestedField(u.Object, "ch-spec-0.xmc-metrics.svc.cluster.local:9000,ch-spec-1.xmc-metrics.svc.cluster.local:9000", "spec", "parameters", "clusterEndpoints")
+			}),
+			want: crSummary([]string{"ch-spec-0.xmc-metrics.svc.cluster.local:9000", "ch-spec-1.xmc-metrics.svc.cluster.local:9000"}, "analytics", "ch_reader", "live-secret-pw"),
+		},
+		{
+			name: "prefers status.access.envVars ENDPOINT over HOST for single endpoint",
+			src: crSource(func(u *unstructured.Unstructured) {
+				_ = unstructured.SetNestedField(u.Object, "ch-ep-single.local:9000", "status", "access", "envVars", "ENDPOINT")
+			}),
+			want: crSummary([]string{"ch-ep-single.local:9000"}, "analytics", "ch_reader", "live-secret-pw"),
+		},
+		{
+			name: "NotFound CR with unconfigured static env returns ErrNotConfigured",
+			setup: func(t *testing.T) {
+				t.Setenv("CLICKHOUSE_HOST", "")
+				t.Setenv("CLICKHOUSE_DSN", "")
+			},
+			src:     Source{Enabled: true, Getter: &crreader.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}},
+			wantErr: true,
+		},
+		{
+			name: "disabled CR with unconfigured static env returns ErrNotConfigured",
+			setup: func(t *testing.T) {
+				t.Setenv("CLICKHOUSE_HOST", "")
+				t.Setenv("CLICKHOUSE_DSN", "")
+			},
+			src: crSource(func(u *unstructured.Unstructured) {
+				_ = unstructured.SetNestedField(u.Object, false, "spec", "enabled")
+			}),
+			wantErr: true,
+		},
+		{
 			name: "resolves from status.access.envVars ENDPOINT when HOST is absent",
 			src: crSource(func(u *unstructured.Unstructured) {
 				_ = unstructured.SetNestedMap(u.Object, map[string]any{"ENDPOINT": "ch-ep-0.local, ch-ep-1.local:9009", "PORT": "9000"}, "status", "access", "envVars")
@@ -147,7 +182,10 @@ func TestResolveOptions(t *testing.T) {
 		},
 		{
 			name: "resolves from spec.parameters clusterEndpoints when status.access.envVars is absent",
-			src:  crSource(func(u *unstructured.Unstructured) { unstructured.RemoveNestedField(u.Object, "status", "access") }),
+			src: crSource(func(u *unstructured.Unstructured) {
+				unstructured.RemoveNestedField(u.Object, "status", "access")
+				_ = unstructured.SetNestedField(u.Object, "ch-spec-0.xmc-metrics.svc.cluster.local:9000,ch-spec-1.xmc-metrics.svc.cluster.local:9000", "spec", "parameters", "clusterEndpoints")
+			}),
 			want: crSummary([]string{"ch-spec-0.xmc-metrics.svc.cluster.local:9000", "ch-spec-1.xmc-metrics.svc.cluster.local:9000"}, "analytics", "ch_reader", "spec-secret-pw"),
 		},
 		{
@@ -240,6 +278,9 @@ func TestResolveOptions(t *testing.T) {
 			got, err := ResolveOptions(context.Background(), tt.src)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ResolveOptions() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && strings.Contains(tt.name, "ErrNotConfigured") && !errors.Is(err, ErrNotConfigured) {
+				t.Errorf("ResolveOptions() error = %v, want %v", err, ErrNotConfigured)
 			}
 			if !tt.wantErr {
 				if diff := cmp.Diff(tt.want, summarizeOptions(got)); diff != "" {
