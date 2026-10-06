@@ -1248,6 +1248,30 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 str(ctx.exception),
             )
 
+    def test_validate_node_selector_mappings(self) -> None:
+        head = SimpleNamespace(name="head", node_selector={"pool": "cpups"})
+        worker = SimpleNamespace(name="worker", node_selector={"pool": "gpu-pool"})
+        wu = SimpleNamespace(
+            executable=SimpleNamespace(
+                jobset=SimpleNamespace(jobs=[head, worker]),
+                HasField=lambda f: f == "jobset",
+            )
+        )
+        stub = mock.MagicMock()
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu])
+        res = xmc_entities_validator.validate_node_selector_mappings(
+            stub, "20", {"head": {"pool": "cpups"}, "worker": {"pool": "gpu-pool"}}
+        )
+        self.assertEqual(res, {"head": {"pool": "cpups"}, "worker": {"pool": "gpu-pool"}})
+        with self.assertRaisesRegex(AssertionError, "node_selector\\['pool'\\] mismatch"):
+            xmc_entities_validator.validate_node_selector_mappings(
+                stub, "20", {"head": {"pool": "wrong"}}
+            )
+        with self.assertRaisesRegex(AssertionError, "Job 'missing' missing from JobSet jobs"):
+            xmc_entities_validator.validate_node_selector_mappings(
+                stub, "20", {"missing": {"pool": "cpups"}}
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

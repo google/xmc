@@ -28,7 +28,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from types import SimpleNamespace
 from typing import Any
 
@@ -489,6 +489,46 @@ def validate_work_unit_jobsets(
     if not raw_work_units:
         raise AssertionError(f"No WorkUnits found for experiment {xid}.")
     return validate_jobsets(work_unit=raw_work_units[0], expected_jobs=expected_jobs)
+
+
+def _assert_job_node_selector(
+    jobs_by_name: Mapping[str, Any],
+    job_name: str,
+    expected_selector: Mapping[str, str],
+) -> dict[str, str]:
+    """Asserts that a single JobSet job contains all expected node_selector entries."""
+    job = jobs_by_name.get(job_name)
+    if job is None:
+        raise AssertionError(f"Job '{job_name}' missing from JobSet jobs.")
+
+    actual_selector = dict(getattr(job, "node_selector", {}) or {})
+    for label_key, expected_val in expected_selector.items():
+        actual_val = actual_selector.get(label_key)
+        if actual_val != expected_val:
+            raise AssertionError(
+                f"Job '{job_name}' node_selector['{label_key}'] mismatch: "
+                f"expected '{expected_val}', found '{actual_val}'."
+            )
+    print(f"  [✓] Verified node_selector for '{job_name}': {actual_selector}")
+    return actual_selector
+
+
+def validate_node_selector_mappings(
+    stub: Any,
+    xid: str,
+    expected_node_selectors: Mapping[str, Mapping[str, str]],
+) -> dict[str, dict[str, str]]:
+    """Validates nodeSelector key-value mappings on each expected JobSet job."""
+    raw_work_units = _fetch_raw_work_units(stub, f"experiments/{xid}")
+    if not raw_work_units:
+        raise AssertionError(f"No WorkUnits found for experiment {xid}.")
+    jobs_by_name = {
+        getattr(job, "name", ""): job for job in _extract_jobset_jobs(raw_work_units[0])
+    }
+    return {
+        job_name: _assert_job_node_selector(jobs_by_name, job_name, expected_selector)
+        for job_name, expected_selector in expected_node_selectors.items()
+    }
 
 
 def _evaluate_single_wu(stub: Any, wu: Any, expected_queue: str | None = None) -> dict[str, Any]:
