@@ -109,8 +109,8 @@ func assertClickHouseComponentResolver(ctx context.Context, t *testing.T, h *kin
 		Getter:  crreader.NewGetterFromDynamic(h.dynClient),
 		Secrets: crreader.NewSecretReaderFromClientset(h.clientset),
 	})
-	if err != nil {
-		t.Fatalf("componentconfig.ResolveOptions failed: %v", err)
+	if err != nil || opts == nil {
+		t.Fatalf("componentconfig.ResolveOptions failed (opts=%v): %v", opts, err)
 	}
 	if len(opts.Addr) != 1 || opts.Addr[0] != wantAddr || opts.Auth.Database != "default" || opts.Auth.Username != "default" || opts.Auth.Password != clickhouseTestPass {
 		t.Errorf("unexpected resolved ClickHouse options: Addr=%v Auth=%+v", opts.Addr, opts.Auth)

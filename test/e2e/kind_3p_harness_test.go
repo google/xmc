@@ -85,7 +85,7 @@ func acquireKindCluster(t *testing.T) (string, string) {
 		runCommand(t, "kind", "export", "kubeconfig", "--name", existing, "--kubeconfig", kubeconfig)
 		return existing, kubeconfig
 	}
-	clusterName := fmt.Sprintf("xmc-3p-e2e-%d", time.Now().UnixNano()%1000000)
+	clusterName := fmt.Sprintf("xmc-3p-e2e-%d", time.Now().UnixNano())
 	t.Cleanup(func() {
 		delCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
@@ -121,16 +121,13 @@ func resolveBinaryPath(name string) string {
 	if p, err := exec.LookPath(name); err == nil {
 		return p
 	}
-	patterns := []string{
-		filepath.Join(os.Getenv("HOME"), ".local", "bin", name), "/usr/local/bin/" + name,
-		"/usr/local/google/home/*/.local/bin/" + name, "/home/*/.local/bin/" + name,
+	candidates := []string{"/usr/local/bin/" + name}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		candidates = append(candidates, filepath.Join(home, ".local", "bin", name))
 	}
-	for _, pattern := range patterns {
-		matches, _ := filepath.Glob(pattern)
-		for _, m := range matches {
-			if info, err := os.Stat(m); err == nil && !info.IsDir() {
-				return m
-			}
+	for _, p := range candidates {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p
 		}
 	}
 	return name
@@ -288,11 +285,17 @@ func resolveObjectGVR(gvk schema.GroupVersionKind) schema.GroupVersionResource {
 
 func waitUntil(ctx context.Context, timeout, interval time.Duration, cond func() bool) bool {
 	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	for time.Now().Before(deadline) && ctx.Err() == nil {
 		if cond() {
 			return true
 		}
-		time.Sleep(interval)
+		select {
+		case <-ctx.Done():
+			return false
+		case <-ticker.C:
+		}
 	}
 	return false
 }
@@ -330,7 +333,7 @@ func isComponentReady(u *unstructured.Unstructured) bool {
 
 func createTestNamespace(ctx context.Context, t *testing.T, h *kindClusterHarness, prefix string) string {
 	t.Helper()
-	nsName := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano()%100000)
+	nsName := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 	if _, err := h.clientset.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("failed to create namespace %q: %v", nsName, err)
 	}
@@ -536,7 +539,7 @@ func fetchPodLogs(h *kindClusterHarness, namespace, podName string) string {
 	}
 	defer stream.Close()
 	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, stream)
+	_, _ = io.Copy(&buf, io.LimitReader(stream, 1024*1024))
 	return buf.String()
 }
 
