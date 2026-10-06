@@ -91,6 +91,21 @@ xmc-diag \
   --output=json
 ```
 
+### Inspecting Coordinates from the `clickhouse` `Component` CR
+
+`xmc-diag` runs out-of-cluster and takes explicit flags rather than reading Kubernetes CRs directly. On clusters with `enable_components: true`, inspect the [`clickhouse` `Component` CR](../../deploy/profiles/stable-2026a/components/clickhouse/README.md), port-forward the target service, and pass the resolved coordinates via `-clickhouse_*` flags:
+
+```bash
+kubectl get component clickhouse -n xmc -o yaml
+kubectl port-forward -n xmc-metrics svc/clickhouse 9000:9000 &
+xmc-diag \
+  --clickhouse_host=127.0.0.1 \
+  --clickhouse_port=9000 \
+  --clickhouse_database=default \
+  --clickhouse_user=default \
+  --clickhouse_password="$(kubectl get secret clickhouse-secret -n xmc -o jsonpath='{.data.clickhouse-password}' | base64 -d)"
+```
+
 ---
 
 ## 5. Verification & Unit Testing

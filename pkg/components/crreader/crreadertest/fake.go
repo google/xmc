@@ -17,6 +17,8 @@ package crreadertest
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -58,4 +60,45 @@ func (f *FakeGetter) GetComponent(_ context.Context, namespace, name string) (*u
 		return f.Component.DeepCopy(), nil
 	}
 	return nil, apierrors.NewNotFound(crreader.ComponentGVR().GroupResource(), name)
+}
+
+// FakeSecretReader is a concurrency-safe in-memory test double for crreader.SecretReader.
+type FakeSecretReader struct {
+	mu      sync.RWMutex
+	Secrets map[string]map[string]string
+	Err     error
+}
+
+var _ crreader.SecretReader = (*FakeSecretReader)(nil)
+
+// GetSecretValue returns the configured error or looks up key in Secrets["namespace/name"] or Secrets["name"].
+func (f *FakeSecretReader) GetSecretValue(_ context.Context, namespace, name, key string) (string, error) {
+	if f == nil {
+		return "", fmt.Errorf("secret reader is nil")
+	}
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.Err != nil {
+		return "", f.Err
+	}
+	data := f.lookupSecret(namespace, name)
+	if data == nil {
+		return "", fmt.Errorf("secret %s/%s not found", namespace, name)
+	}
+	val, ok := data[key]
+	if !ok {
+		return "", fmt.Errorf("secret %s/%s missing key %q", namespace, name, key)
+	}
+	return strings.TrimRight(val, "\r\n"), nil
+}
+
+func (f *FakeSecretReader) lookupSecret(namespace, name string) map[string]string {
+	if f.Secrets == nil {
+		return nil
+	}
+	if data, ok := f.Secrets[namespace+"/"+name]; ok {
+		return data
+	}
+	return f.Secrets[name]
 }

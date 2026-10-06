@@ -101,3 +101,51 @@ func TestFakeGetter(t *testing.T) {
 		t.Errorf("emptyFake.GetComponent() err = %v, want NotFound", err)
 	}
 }
+
+func TestFakeSecretReader(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var nilFake *FakeSecretReader
+	if _, err := nilFake.GetSecretValue(ctx, "xmc", "clickhouse-secret", "clickhouse-password"); err == nil {
+		t.Errorf("nilFake.GetSecretValue() succeeded, want error")
+	}
+
+	errFake := &FakeSecretReader{Err: errors.New("boom")}
+	if _, err := errFake.GetSecretValue(ctx, "xmc", "clickhouse-secret", "clickhouse-password"); err == nil {
+		t.Errorf("errFake.GetSecretValue() succeeded, want error")
+	}
+
+	fake := &FakeSecretReader{
+		Secrets: map[string]map[string]string{
+			"xmc/clickhouse-secret": {"clickhouse-password": " pw \r\n"},
+			"by-name-only":          {"password": "plain"},
+		},
+	}
+
+	got, err := fake.GetSecretValue(ctx, "xmc", "clickhouse-secret", "clickhouse-password")
+	if err != nil {
+		t.Fatalf("GetSecretValue(xmc/clickhouse-secret) error: %v", err)
+	}
+	if got != " pw " {
+		t.Errorf("GetSecretValue() = %q, want %q", got, " pw ")
+	}
+
+	gotByName, err := fake.GetSecretValue(ctx, "other", "by-name-only", "password")
+	if err != nil {
+		t.Fatalf("GetSecretValue(by-name-only) error: %v", err)
+	}
+	if gotByName != "plain" {
+		t.Errorf("GetSecretValue(by-name-only) = %q, want %q", gotByName, "plain")
+	}
+
+	if _, err := fake.GetSecretValue(ctx, "xmc", "clickhouse-secret", "missing-key"); err == nil {
+		t.Errorf("GetSecretValue(missing-key) succeeded, want error")
+	}
+	if _, err := fake.GetSecretValue(ctx, "xmc", "missing-secret", "clickhouse-password"); err == nil {
+		t.Errorf("GetSecretValue(missing-secret) succeeded, want error")
+	}
+	if _, err := (&FakeSecretReader{}).GetSecretValue(ctx, "xmc", "s", "k"); err == nil {
+		t.Errorf("empty FakeSecretReader.GetSecretValue() succeeded, want error")
+	}
+}

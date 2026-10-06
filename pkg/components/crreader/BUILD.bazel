@@ -28,6 +28,7 @@ go_library(
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/runtime/schema",
         "@io_k8s_client_go//dynamic",
+        "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//rest",
         "@io_k8s_client_go//tools/clientcmd",
     ],
@@ -42,9 +43,12 @@ go_test(
     embed = [":crreader"],
     deps = [
         "@com_github_google_go_cmp//cmp",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/runtime/schema",
         "@io_k8s_client_go//dynamic/fake",
+        "@io_k8s_client_go//kubernetes/fake",
     ],
 )

@@ -1,6 +1,6 @@
 # ClickHouse 3P Wrapper Component Blueprint (`stable-2026a`)
 
-This Helm sub-chart (`deploy/profiles/stable-2026a/components/clickhouse/`) renders the XMC `Component` Custom Resource (`apiVersion: xmc.dev/v1alpha1`, `kind: Component`) that provides XMC services (`pkg/clickhouse`, `dashboard-service`, `experiment-state-server`) with ClickHouse connection coordinates, credentials Secret references, and health probe endpoints.
+This Helm sub-chart (`deploy/profiles/stable-2026a/components/clickhouse/`) renders the XMC `Component` Custom Resource (`apiVersion: xmc.dev/v1alpha1`, `kind: Component`) that provides XMC services (`pkg/clickhouse`, `dashboard-service`) with ClickHouse connection coordinates, credentials Secret references, and health probe endpoints.
 
 Because ClickHouse is a network analytical database dependency (`analytical-db`), the component contract requires no Kubernetes operator or CRD reference (`wrapperRef`); `xmc-bridge` verifies readiness directly via active HTTP health probing (`parameters.healthCheckEndpoint`) and publishes connection and Secret coordinates to downstream XMC consumers.
 
@@ -128,3 +128,16 @@ spec:
     healthCheckEndpoint: "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping"
     storageSize: "10Gi"
 ```
+
+---
+
+## 4. Downstream Consumer Resolution (`dashboard-service` & `pkg/clickhouse/componentconfig`)
+
+When `enable_components` is `true`, `dashboard-service` resolves ClickHouse connection options from the `clickhouse` `Component` CR via [`pkg/clickhouse/componentconfig`](../../../../pkg/clickhouse/componentconfig/resolver.go):
+
+1. **Endpoint Precedence**: Reads `status.access.envVars` (`HOST` / `PORT` or `ENDPOINT`) published by `xmc-bridge` first, falling back to `spec.parameters` (`clusterEndpoints` or `host` + `nativePort`, default `9000`).
+2. **Database & User**: Reads `spec.parameters.defaultDatabase` (default `"default"`) and `spec.parameters.user` (default `"default"`).
+3. **Password Resolution**:
+   - **Secret Manager CSI Mode (`CLICKHOUSE_PASSWORD_FILE` set)**: Reads the password from the CSI-mounted file (`CLICKHOUSE_PASSWORD_FILE`), taking precedence over Kubernetes Secret lookups.
+   - **Kubernetes Secret Mode (CSI disabled)**: Reads the Secret named in `status.access.envVars.SECRET_NAME` (or `spec.parameters.secretName`, default `"clickhouse-secret"`) under key `spec.parameters.secretPasswordKey` (default `"clickhouse-password"`) in the component namespace.
+4. **Fallback & Failure Semantics**: Static `CLICKHOUSE_*` environment variables are used as a fallback **only** when the `clickhouse` `Component` CR is `NotFound` or disabled (`spec.enabled: false` or `COMPONENT_STATE_DISABLED` / `DISABLING` / `DELETED`). Any Kubernetes API error, malformed endpoint/port parameter, or missing/unreadable password Secret surfaces as a hard error so `/readyz` reports unready rather than connecting with stale credentials.

@@ -21,10 +21,13 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
 func baselineComponent() *unstructured.Unstructured {
@@ -119,7 +122,58 @@ func TestNewGetterFromDynamic(t *testing.T) {
 	}
 }
 
-func TestNewK8sGetter(t *testing.T) {
+func TestNewSecretReaderFromClientset(t *testing.T) {
+	t.Parallel()
+	sec := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "clickhouse-secret",
+			Namespace: "xmc",
+		},
+		Data: map[string][]byte{
+			"clickhouse-password": []byte(" pa ss \r\n"),
+		},
+		StringData: map[string]string{
+			"string-key": "from-string-data\n",
+		},
+	}
+	clientset := k8sfake.NewSimpleClientset(sec)
+	reader := NewSecretReaderFromClientset(clientset)
+
+	got, err := reader.GetSecretValue(context.Background(), "", "clickhouse-secret", "clickhouse-password")
+	if err != nil {
+		t.Fatalf("GetSecretValue() unexpected error: %v", err)
+	}
+	if got != " pa ss " {
+		t.Errorf("GetSecretValue() = %q, want %q", got, " pa ss ")
+	}
+
+	gotStr, err := reader.GetSecretValue(context.Background(), "xmc", "clickhouse-secret", "string-key")
+	if err != nil {
+		t.Fatalf("GetSecretValue(string-key) unexpected error: %v", err)
+	}
+	if gotStr != "from-string-data" {
+		t.Errorf("GetSecretValue(string-key) = %q, want %q", gotStr, "from-string-data")
+	}
+
+	if _, err := reader.GetSecretValue(context.Background(), "xmc", "clickhouse-secret", "missing-key"); err == nil {
+		t.Errorf("GetSecretValue(missing-key) succeeded, want error")
+	}
+	if _, err := reader.GetSecretValue(context.Background(), "xmc", "missing-secret", "clickhouse-password"); err == nil {
+		t.Errorf("GetSecretValue(missing-secret) succeeded, want error")
+	}
+
+	nilReader := NewSecretReaderFromClientset(nil)
+	if _, err := nilReader.GetSecretValue(context.Background(), "xmc", "clickhouse-secret", "clickhouse-password"); err == nil {
+		t.Errorf("GetSecretValue() with nil clientset succeeded, want error")
+	}
+
+	var rawNil *k8sSecretReader
+	if _, err := rawNil.GetSecretValue(context.Background(), "xmc", "clickhouse-secret", "clickhouse-password"); err == nil {
+		t.Errorf("GetSecretValue() on nil *k8sSecretReader succeeded, want error")
+	}
+}
+
+func TestNewK8sGetterAndSecretReader(t *testing.T) {
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "")
 
@@ -154,6 +208,13 @@ users:
 	if getter == nil {
 		t.Fatalf("NewK8sGetter() returned nil getter")
 	}
+	secReader, err := NewK8sSecretReader()
+	if err != nil {
+		t.Fatalf("NewK8sSecretReader() with valid kubeconfig failed: %v", err)
+	}
+	if secReader == nil {
+		t.Fatalf("NewK8sSecretReader() returned nil secret reader")
+	}
 
 	invalidKubeconfig := filepath.Join(tmpDir, "invalid-kubeconfig")
 	if err := os.WriteFile(invalidKubeconfig, []byte(":::not-valid-yaml:::"), 0600); err != nil {
@@ -162,5 +223,8 @@ users:
 	t.Setenv("KUBECONFIG", invalidKubeconfig)
 	if _, err := NewK8sGetter(); err == nil {
 		t.Errorf("NewK8sGetter() with invalid kubeconfig succeeded, want error")
+	}
+	if _, err := NewK8sSecretReader(); err == nil {
+		t.Errorf("NewK8sSecretReader() with invalid kubeconfig succeeded, want error")
 	}
 }
