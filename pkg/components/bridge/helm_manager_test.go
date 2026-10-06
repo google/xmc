@@ -25,6 +25,32 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
+func TestComponentReleaseName(t *testing.T) {
+	tests := []struct {
+		component string
+		release   string
+	}{
+		{component: "", release: ""},
+		{component: "ray-operator", release: "xmc-cmp-ray-operator"},
+	}
+	for _, tt := range tests {
+		if got := ComponentReleaseName(tt.component); got != tt.release {
+			t.Errorf("ComponentReleaseName(%q) = %q, want %q", tt.component, got, tt.release)
+		}
+		if got := componentNameFromRelease(tt.release); got != tt.component {
+			t.Errorf("componentNameFromRelease(%q) = %q, want %q", tt.release, got, tt.component)
+		}
+	}
+}
+
+// TestComponentNameFromRelease_UnprefixedRelease documents that a release name without the component prefix is
+// returned unchanged. It is one-way: ComponentReleaseName always adds the prefix, so no component maps back to it.
+func TestComponentNameFromRelease_UnprefixedRelease(t *testing.T) {
+	if got := componentNameFromRelease("custom-release"); got != "custom-release" {
+		t.Errorf("componentNameFromRelease(%q) = %q, want %q", "custom-release", got, "custom-release")
+	}
+}
+
 func TestK8sHelmManager_Lifecycle(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewClientset()

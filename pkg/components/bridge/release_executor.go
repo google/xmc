@@ -98,7 +98,7 @@ func (m *K8sHelmManager) GetUpgradeError(ref ComponentRef) error {
 	if m == nil {
 		return nil
 	}
-	if _, err := m.validateAndResolve(ref); err != nil {
+	if err := validateComponentRef(ref); err != nil {
 		return err
 	}
 	m.mu.RLock()
@@ -201,22 +201,25 @@ func (m *K8sHelmManager) upgradeRelease(ctx context.Context, releaseName, namesp
 	return err
 }
 
-func (m *K8sHelmManager) uninstallRelease(ctx context.Context, releaseName, targetNamespace string, resolved ComponentRef) error {
+// uninstallRelease uninstalls the component's Helm release under the upgrade lock and records the outcome as the
+// component's upgrade error. A release that is already gone counts as uninstalled.
+func (m *K8sHelmManager) uninstallRelease(ctx context.Context, ref ComponentRef) error {
+	releaseName := ComponentReleaseName(ref.Name)
 	if m.runner == nil {
-		logging.Warn(ctx, "Skipping Helm release uninstall because HelmActionRunner is uninitialized", "release", releaseName, "namespace", targetNamespace, "component", resolved.Name)
+		logging.Warn(ctx, "Skipping Helm release uninstall because HelmActionRunner is uninitialized", "release", releaseName, "namespace", ref.Namespace, "component", ref.Name)
 		return nil
 	}
 	if err := m.acquireUpgradeLock(ctx); err != nil {
-		return m.failUpgrade(resolved, err)
+		return m.failUpgrade(ref, err)
 	}
 	defer m.releaseUpgradeLock()
 
-	_, err := m.runner.Uninstall(ctx, releaseName, targetNamespace)
+	_, err := m.runner.Uninstall(ctx, releaseName, ref.Namespace)
 	if err != nil && !isReleaseNotFound(err) {
-		m.setUpgradeErr(resolved, err)
+		m.setUpgradeErr(ref, err)
 		return fmt.Errorf("failed to uninstall Helm release %q: %w", releaseName, err)
 	}
-	m.setUpgradeErr(resolved, nil)
+	m.setUpgradeErr(ref, nil)
 	return nil
 }
 

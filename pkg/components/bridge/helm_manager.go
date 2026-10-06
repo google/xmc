@@ -192,24 +192,30 @@ func NewK8sHelmManager(client kubernetes.Interface, namespace, releaseName strin
 		opt(mgr)
 	}
 	if mgr.runner == nil && (mgr.hasKubeconfig || mgr.hasRESTGetter) {
-		getter := mgr.restGetter
-		if getter == nil {
-			settings := cli.New()
-			settings.SetNamespace(mgr.namespace)
-			if mgr.kubeconfig != "" {
-				settings.KubeConfig = mgr.kubeconfig
-			}
-			getter = settings.RESTClientGetter()
-		}
-		mgr.runner = NewSDKHelmActionRunner(getter, WithRunnerChartPath(mgr.chartPath), WithRunnerChartPathResolver(func(releaseName string) string {
-			return mgr.resolveChartPathForComponent(ComponentRef{Namespace: mgr.namespace, Name: strings.TrimPrefix(releaseName, "xmc-cmp-")})
-		}))
+		mgr.runner = mgr.defaultActionRunner()
 	}
 	if !mgr.syncExecution {
 		mgr.wg.Add(1)
 		go mgr.syncUpgradeWorker()
 	}
 	return mgr
+}
+
+// defaultActionRunner builds an SDKHelmActionRunner from the configured REST client getter, or from Helm CLI settings
+// for the manager's namespace and kubeconfig, that resolves each release's chart through the manager.
+func (m *K8sHelmManager) defaultActionRunner() *SDKHelmActionRunner {
+	getter := m.restGetter
+	if getter == nil {
+		settings := cli.New()
+		settings.SetNamespace(m.namespace)
+		if m.kubeconfig != "" {
+			settings.KubeConfig = m.kubeconfig
+		}
+		getter = settings.RESTClientGetter()
+	}
+	return NewSDKHelmActionRunner(getter, WithRunnerChartPath(m.chartPath), WithRunnerChartPathResolver(func(releaseName string) string {
+		return m.resolveChartPathForComponent(ComponentRef{Namespace: m.namespace, Name: componentNameFromRelease(releaseName)})
+	}))
 }
 
 // Close stops the background upgrade worker and waits for in-flight upgrades to complete cleanly.
@@ -233,26 +239,35 @@ func (m *K8sHelmManager) Close() error {
 	return nil
 }
 
+// componentReleasePrefix prefixes the component name in every per-component Helm release name.
+const componentReleasePrefix = "xmc-cmp-"
+
 // ComponentReleaseName returns the Helm release name for an individual 1P component.
 func ComponentReleaseName(componentName string) string {
 	if componentName == "" {
 		return ""
 	}
-	return fmt.Sprintf("xmc-cmp-%s", componentName)
+	return componentReleasePrefix + componentName
+}
+
+// componentNameFromRelease is the inverse of ComponentReleaseName.
+func componentNameFromRelease(releaseName string) string {
+	return strings.TrimPrefix(releaseName, componentReleasePrefix)
 }
 
 func componentKey(namespace, componentName string) string {
 	return namespace + "/" + componentName
 }
 
-func (m *K8sHelmManager) validateAndResolve(ref ComponentRef) (string, error) {
+// validateComponentRef reports an error if the component reference is missing a name or namespace.
+func validateComponentRef(ref ComponentRef) error {
 	if ref.Name == "" {
-		return "", errors.New("component name must not be empty")
+		return errors.New("component name must not be empty")
 	}
 	if ref.Namespace == "" {
-		return "", errors.New("component namespace must not be empty")
+		return errors.New("component namespace must not be empty")
 	}
-	return ref.Namespace, nil
+	return nil
 }
 
 // Ensure1PComponent sets component values in the release ConfigMap and executes an independent Helm upgrade.
@@ -260,53 +275,47 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 	if m == nil {
 		return nil
 	}
-	targetNamespace, err := m.validateAndResolve(ref)
-	if err != nil {
+	if err := validateComponentRef(ref); err != nil {
 		return err
 	}
-	resolved := ComponentRef{Namespace: targetNamespace, Name: ref.Name}
 	values := BuildHelmValues(opts)
-
-	modified, err := m.persistComponentValues(ctx, targetNamespace, ref.Name, values)
+	modified, err := m.persistComponentValues(ctx, ref.Namespace, ref.Name, values)
 	if err != nil {
 		return fmt.Errorf("failed to persist Helm values for %q: %w", ref.Name, err)
 	}
-
-	key := componentKey(targetNamespace, ref.Name)
-	m.mu.Lock()
-	if m.componentChartPaths == nil {
-		m.componentChartPaths = make(map[string]string)
-	}
-	prevChartPath := m.componentChartPaths[key]
-	chartPathChanged := prevChartPath != opts.ChartPath
-	if opts.ChartPath != "" {
-		m.componentChartPaths[key] = opts.ChartPath
-	} else {
-		delete(m.componentChartPaths, key)
-	}
-	repair := m.repairNeeded[key]
-	m.mu.Unlock()
-
-	if !modified && !chartPathChanged && !repair && m.IsComponentActive(resolved) && m.GetUpgradeError(resolved) == nil {
+	// TODO(vluk): Read the chart override, repair mark, activity and upgrade error under one m.mu critical section so
+	// a concurrent teardown cannot land between these checks and the upgrade (pre-existing check-then-act gap).
+	chartPathChanged := m.recordChartPathOverride(ref, opts.ChartPath)
+	repair := m.isRepairMarked(ref)
+	if !modified && !chartPathChanged && !repair && m.IsComponentActive(ref) && m.GetUpgradeError(ref) == nil {
 		return nil
 	}
-
 	if repair {
-		m.recordRepairAttempt(ctx, resolved)
+		m.recordRepairAttempt(ctx, ref)
 	}
-	if err := m.triggerUpgrade(ctx, resolved, values); err != nil {
+	if err := m.triggerUpgrade(ctx, ref, values); err != nil {
 		return err
 	}
-
 	m.mu.Lock()
-	if m.activeState == nil {
-		m.activeState = make(map[string]bool)
-	}
-	m.activeState[key] = opts.Enabled
+	m.activeState[componentKey(ref.Namespace, ref.Name)] = opts.Enabled
 	m.mu.Unlock()
-
-	logging.Info(ctx, "Ensured 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", targetNamespace, "release", ComponentReleaseName(ref.Name), "enabled", opts.Enabled, "repair", repair)
+	logging.Info(ctx, "Ensured 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", ref.Namespace, "release", ComponentReleaseName(ref.Name), "enabled", opts.Enabled, "repair", repair)
 	return nil
+}
+
+// recordChartPathOverride stores the component's chart path override, clearing it when chartPath is empty, and reports
+// whether the override changed.
+func (m *K8sHelmManager) recordChartPathOverride(ref ComponentRef, chartPath string) bool {
+	key := componentKey(ref.Namespace, ref.Name)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	changed := m.componentChartPaths[key] != chartPath
+	if chartPath == "" {
+		delete(m.componentChartPaths, key)
+		return changed
+	}
+	m.componentChartPaths[key] = chartPath
+	return changed
 }
 
 // Delete1PComponent uninstalls the 1P component Helm release and records it as disabled in the ConfigMap.
@@ -335,26 +344,23 @@ func (m *K8sHelmManager) uninstallComponent(ctx context.Context, ref ComponentRe
 	if m == nil {
 		return nil
 	}
-	targetNamespace, err := m.validateAndResolve(ref)
-	if err != nil {
+	if err := validateComponentRef(ref); err != nil {
 		return err
 	}
-	resolved := ComponentRef{Namespace: targetNamespace, Name: ref.Name}
-	modified, err := td.updateValues(ctx, targetNamespace, ref.Name)
+	modified, err := td.updateValues(ctx, ref.Namespace, ref.Name)
 	if err != nil {
 		return fmt.Errorf("failed to %s Helm values for %q: %w", td.action, ref.Name, err)
 	}
-	if !modified && !m.IsComponentActive(resolved) && m.GetUpgradeError(resolved) == nil {
+	if !modified && !m.IsComponentActive(ref) && m.GetUpgradeError(ref) == nil {
 		return nil
 	}
-	releaseName := ComponentReleaseName(ref.Name)
-	if err := m.uninstallRelease(ctx, releaseName, targetNamespace, resolved); err != nil {
+	if err := m.uninstallRelease(ctx, ref); err != nil {
 		return err
 	}
 	m.mu.Lock()
-	m.forgetComponentLocked(componentKey(targetNamespace, ref.Name), td.keepInactive)
+	m.forgetComponentLocked(componentKey(ref.Namespace, ref.Name), td.keepInactive)
 	m.mu.Unlock()
-	logging.Info(ctx, "Uninstalled 1P component Helm release", "action", td.action, "name", ref.Name, "namespace", targetNamespace, "release", releaseName)
+	logging.Info(ctx, "Uninstalled 1P component Helm release", "action", td.action, "name", ref.Name, "namespace", ref.Namespace, "release", ComponentReleaseName(ref.Name))
 	return nil
 }
 
@@ -363,16 +369,13 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 	if m == nil {
 		return nil
 	}
-	targetNamespace, err := m.validateAndResolve(ref)
-	if err != nil {
+	if err := validateComponentRef(ref); err != nil {
 		return err
 	}
-	resolved := ComponentRef{Namespace: targetNamespace, Name: ref.Name}
-	m.setUpgradeErr(resolved, nil)
-	key := componentKey(targetNamespace, ref.Name)
+	m.setUpgradeErr(ref, nil)
 	m.mu.Lock()
-	m.forgetComponentLocked(key, false)
+	m.forgetComponentLocked(componentKey(ref.Namespace, ref.Name), false)
 	m.mu.Unlock()
-	logging.Info(ctx, "Orphaned 1P component Helm values", "name", ref.Name, "namespace", targetNamespace)
+	logging.Info(ctx, "Orphaned 1P component Helm values", "name", ref.Name, "namespace", ref.Namespace)
 	return nil
 }

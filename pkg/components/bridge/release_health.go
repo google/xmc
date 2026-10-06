@@ -36,7 +36,7 @@ func (m *K8sHelmManager) ComponentHealth(ctx context.Context, ref ComponentRef) 
 	if m == nil {
 		return false, ReasonHelmRunnerUninitialized, "Helm manager is uninitialized; cannot verify release status"
 	}
-	if _, err := m.validateAndResolve(ref); err != nil {
+	if err := validateComponentRef(ref); err != nil {
 		return false, ReasonInvalidComponentRef, err.Error()
 	}
 	if err := m.GetUpgradeError(ref); err != nil {
