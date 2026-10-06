@@ -29,6 +29,17 @@ import (
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/validator/validator"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var pausedTasksBufferedTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "xmc_actuator_paused_tasks_buffered_total",
+		Help: "Total count of task actions intercepted during pause and persisted to Spanner PausedTasks.",
+	},
+	[]string{"action"},
 )
 
 // PauseHandler defines the interface for handling actuation tasks when scheduling is paused.
@@ -132,6 +143,7 @@ func (h *TaskPauseHandler) HandlePause(ctx context.Context, payload *actuatortas
 		return err
 	}
 
+	pausedTasksBufferedTotal.WithLabelValues(actionLabel).Inc()
 	logging.Info(ctx, fmt.Sprintf("Buffered %s task during scheduling pause", actionLabel), "target", payload.GetTarget())
 	return nil
 }

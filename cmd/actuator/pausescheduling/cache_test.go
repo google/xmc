@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"golang/cmp/cmp"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestCache_InitialState(t *testing.T) {
@@ -31,6 +33,9 @@ func TestCache_InitialState(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, cache.State()); diff != "" {
 		t.Errorf("State() mismatch (-want +got):\n%s", diff)
+	}
+	if got := testutil.ToFloat64(schedulingPausedGauge); got != 0 {
+		t.Errorf("xmc_actuator_scheduling_paused = %v, want 0", got)
 	}
 }
 
@@ -46,10 +51,11 @@ func TestCache_UpdateAndAntiThrashing(t *testing.T) {
 		isPaused  bool
 		updatedAt time.Time
 		want      State
+		wantGauge float64
 	}{
-		{name: "pause_at_t1", isPaused: true, updatedAt: t1, want: State{IsPaused: true, UpdatedAt: t1}},
-		{name: "unpause_at_t2", isPaused: false, updatedAt: t2, want: State{IsPaused: false, UpdatedAt: t2}},
-		{name: "stale_pause_at_tOld_ignored", isPaused: true, updatedAt: tOld, want: State{IsPaused: false, UpdatedAt: t2}},
+		{name: "pause_at_t1", isPaused: true, updatedAt: t1, want: State{IsPaused: true, UpdatedAt: t1}, wantGauge: 1},
+		{name: "unpause_at_t2", isPaused: false, updatedAt: t2, want: State{IsPaused: false, UpdatedAt: t2}, wantGauge: 0},
+		{name: "stale_pause_at_tOld_ignored", isPaused: true, updatedAt: tOld, want: State{IsPaused: false, UpdatedAt: t2}, wantGauge: 0},
 	}
 
 	for _, tt := range tests {
@@ -58,6 +64,9 @@ func TestCache_UpdateAndAntiThrashing(t *testing.T) {
 
 			if diff := cmp.Diff(tt.want, cache.State()); diff != "" {
 				t.Errorf("State() mismatch (-want +got):\n%s", diff)
+			}
+			if got := testutil.ToFloat64(schedulingPausedGauge); got != tt.wantGauge {
+				t.Errorf("xmc_actuator_scheduling_paused = %v, want %v", got, tt.wantGauge)
 			}
 		})
 	}
