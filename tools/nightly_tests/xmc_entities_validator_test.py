@@ -746,6 +746,242 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 ],
             )
 
+    # =========================================================================
+    # Phase 2: validate_artifacts Tests
+    # =========================================================================
+
+    def test_normalize_artifact_type(self) -> None:
+        self.assertEqual(xmc_entities_validator._normalize_artifact_type("ChartArtifact"), "chart")
+        self.assertEqual(xmc_entities_validator._normalize_artifact_type("UrlArtifact"), "url")
+        self.assertEqual(
+            xmc_entities_validator._normalize_artifact_type("ManagedXprofArtifact"), "managed_xprof"
+        )
+        self.assertEqual(xmc_entities_validator._normalize_artifact_type("chart"), "chart")
+        self.assertEqual(
+            xmc_entities_validator._normalize_artifact_type("ArtifactPayload.chart"), "chart"
+        )
+
+    def test_validate_artifacts_success_with_chart_and_url(self) -> None:
+        stub = mock.MagicMock()
+        chart_obj = SimpleNamespace(
+            title="Loss and Accuracy Plots",
+            metric_names=["val/loss", "train/accuracy"],
+            chart=SimpleNamespace(name="charts/1"),
+            status=2,  # SUCCESS
+            error_message="",
+        )
+        url_obj = SimpleNamespace(
+            url="https://dashboard.example.com/view",
+            display_name="External Monitoring",
+        )
+        art_chart = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(
+                chart=chart_obj, WhichOneof=lambda f: "chart" if f == "type" else None
+            ),
+        )
+        art_url = SimpleNamespace(
+            name="artifacts/2",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(
+                url=url_obj, WhichOneof=lambda f: "url" if f == "type" else None
+            ),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art_chart, art_url])
+
+        results = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="10",
+            wid="1",
+            expected_artifact_types=["ChartArtifact", "UrlArtifact"],
+            expected_metric_names=["val/loss", "train/accuracy"],
+            timeout_sec=10,
+        )
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["type"], "chart")
+        self.assertEqual(results[0]["title"], "Loss and Accuracy Plots")
+        self.assertEqual(results[0]["metric_names"], ["val/loss", "train/accuracy"])
+        self.assertEqual(results[1]["type"], "url")
+        self.assertEqual(results[1]["title"], "External Monitoring")
+        self.assertEqual(results[1]["url"], "https://dashboard.example.com/view")
+
+    def test_validate_artifacts_waits_for_chart_provisioning(self) -> None:
+        stub = mock.MagicMock()
+        chart_provisioning = SimpleNamespace(
+            title="Loss Plot",
+            metric_names=["val/loss"],
+            status=1,  # PROVISIONING
+            error_message="",
+        )
+        chart_ready = SimpleNamespace(
+            title="Loss Plot",
+            metric_names=["val/loss"],
+            status=2,  # SUCCESS
+            error_message="",
+        )
+        art_provisioning = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(chart=chart_provisioning, WhichOneof=lambda f: "chart"),
+        )
+        art_ready = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(chart=chart_ready, WhichOneof=lambda f: "chart"),
+        )
+        stub.ListArtifacts.side_effect = [
+            SimpleNamespace(artifacts=[art_provisioning]),
+            SimpleNamespace(artifacts=[art_ready]),
+        ]
+
+        results = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="10",
+            wid="1",
+            expected_artifact_types=["chart"],
+            expected_metric_names=["val/loss"],
+            timeout_sec=5,
+            poll_interval_sec=0,
+        )
+        self.assertEqual(stub.ListArtifacts.call_count, 2)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["normalized_type"], "chart")
+        self.assertEqual(results[0]["metric_names"], ["val/loss"])
+
+    def test_validate_artifacts_experiment_level(self) -> None:
+        stub = mock.MagicMock()
+        url_obj = SimpleNamespace(url="https://experiment.example.com", display_name="Summary")
+        art = SimpleNamespace(
+            name="artifacts/100",
+            parent="experiments/42",
+            payload=SimpleNamespace(url=url_obj, WhichOneof=lambda f: "url"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        results = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="42",
+            expected_artifact_types=["url"],
+            timeout_sec=10,
+        )
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["parent"], "experiments/42")
+
+    def test_validate_artifacts_terminal_failure_on_chart_failed_status(self) -> None:
+        stub = mock.MagicMock()
+        chart_obj = SimpleNamespace(
+            title="Failed Chart",
+            metric_names=["loss"],
+            status=3,  # FAILED
+            error_message="ClickHouse connection timed out",
+        )
+        art = SimpleNamespace(
+            name="artifacts/5",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(chart=chart_obj, WhichOneof=lambda f: "chart"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        with self.assertRaises(xmc_entities_validator.TerminalFailureError) as ctx:
+            xmc_entities_validator.validate_artifacts(
+                stub=stub,
+                xid="10",
+                wid="1",
+                timeout_sec=5,
+            )
+        self.assertIn("failed provisioning: ClickHouse connection timed out", str(ctx.exception))
+
+    def test_validate_artifacts_missing_expected_types_fails(self) -> None:
+        stub = mock.MagicMock()
+        url_obj = SimpleNamespace(url="https://example.com", display_name="")
+        art = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10",
+            payload=SimpleNamespace(url=url_obj, WhichOneof=lambda f: "url"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_artifacts(
+                stub=stub,
+                xid="10",
+                expected_artifact_types=["chart"],
+                timeout_sec=0,
+                poll_interval_sec=0,
+            )
+        self.assertIn("Expected artifact types ['chart'] not found", str(ctx.exception))
+
+    def test_validate_artifacts_missing_expected_metrics_fails(self) -> None:
+        stub = mock.MagicMock()
+        chart_obj = SimpleNamespace(
+            title="Chart",
+            metric_names=["train/loss"],
+            status=2,
+            error_message="",
+        )
+        art = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(chart=chart_obj, WhichOneof=lambda f: "chart"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_artifacts(
+                stub=stub,
+                xid="10",
+                wid="1",
+                expected_metric_names=["val/accuracy"],
+                timeout_sec=0,
+                poll_interval_sec=0,
+            )
+        self.assertIn("Expected metric names ['val/accuracy'] not found", str(ctx.exception))
+
+    def test_validate_artifacts_transient_error_retry(self) -> None:
+        stub = mock.MagicMock()
+        url_obj = SimpleNamespace(url="https://example.com", display_name="")
+        art = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10",
+            payload=SimpleNamespace(url=url_obj, WhichOneof=lambda f: "url"),
+        )
+        stub.ListArtifacts.side_effect = [
+            RuntimeError("gRPC transient error"),
+            SimpleNamespace(artifacts=[art]),
+        ]
+
+        results = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="10",
+            expected_artifact_types=["url"],
+            timeout_sec=10,
+            poll_interval_sec=0,
+        )
+        self.assertEqual(len(results), 1)
+        self.assertEqual(stub.ListArtifacts.call_count, 2)
+
+    def test_validate_artifacts_empty_url_raises(self) -> None:
+        stub = mock.MagicMock()
+        url_obj = SimpleNamespace(url="   ", display_name="Broken Link")
+        art = SimpleNamespace(
+            name="artifacts/99",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(url=url_obj, WhichOneof=lambda f: "url"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_artifacts(
+                stub=stub,
+                xid="10",
+                wid="1",
+                expected_artifact_types=["url"],
+                timeout_sec=5,
+                poll_interval_sec=0,
+            )
+        self.assertIn("Found URL artifact 'artifacts/99' with empty URL field", str(ctx.exception))
+
     def test_validate_work_unit_jobsets(self) -> None:
         job = SimpleNamespace(
             name="demo-worker-1",

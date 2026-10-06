@@ -71,9 +71,20 @@ jobs:
         env:
           PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}'
         run: |
-          echo "Building clickhouse-metrics-job container image..."
-          docker build -t "us-docker.pkg.dev/${PROJECT_ID}/xmc/clickhouse-metrics-job:latest" -f examples/clickhouse_metrics_job/Dockerfile .
-          docker push "us-docker.pkg.dev/${PROJECT_ID}/xmc/clickhouse-metrics-job:latest"
+          set -euo pipefail
+          build_and_push() {
+            local image="us-docker.pkg.dev/${PROJECT_ID}/xmc/$1:latest"
+            echo "Building $1 container image..."
+            docker build -t "${image}" -f "examples/$2/Dockerfile" "${3:-examples/$2}"
+            docker push "${image}"
+          }
+          build_and_push clickhouse-metrics-job clickhouse_metrics_job .
+          build_and_push init-container-job     init_container_job
+          build_and_push sidecar-job            sidecar
+          build_and_push multipod-counter       multipod_job
+          build_and_push metrics-job            metrics_job            .
+          build_and_push chart-artifact-job     chart_artifact_job     .
+          build_and_push metrics-dashboard-job  metrics_dashboard_job  .
 
   run-and-verify-examples:
     name: 'Run & Verify: ${{ matrix.example.name }}'
@@ -98,12 +109,63 @@ jobs:
             verify_module: 'tools.nightly_tests.simple_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
+          - id: 'init_container_job'
+            name: 'Init Container Job'
+            example_path: 'examples/init_container_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.init_container_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            timeout_minutes: 15
+          - id: 'sidecar'
+            name: 'Sidecar Container Job'
+            example_path: 'examples/sidecar'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.sidecar_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            timeout_minutes: 15
+          - id: 'multipod_job'
+            name: 'Multi-Pod & Multi-Container Job'
+            example_path: 'examples/multipod_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.multipod_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            timeout_minutes: 15
+          - id: 'metrics_job'
+            name: 'Metrics Autologging Job'
+            example_path: 'examples/metrics_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.metrics_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            requires_clickhouse: true
+            timeout_minutes: 15
+          - id: 'chart_artifact_job'
+            name: 'Chart Artifact Job'
+            example_path: 'examples/chart_artifact_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.chart_artifact_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            requires_clickhouse: true
+            timeout_minutes: 15
           - id: 'clickhouse_metrics_job'
             name: 'ClickHouse Metrics Job'
             example_path: 'examples/clickhouse_metrics_job'
             entrypoint: 'launch.py'
             args: ''
             verify_module: 'tools.nightly_tests.clickhouse_metrics_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            requires_clickhouse: true
+            timeout_minutes: 15
+          - id: 'metrics_dashboard_job'
+            name: 'Metrics Dashboard Job'
+            example_path: 'examples/metrics_dashboard_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.metrics_dashboard_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: true
             timeout_minutes: 15
@@ -190,6 +252,33 @@ jobs:
             echo "XMC_AUTH_TOKEN=${TOKEN}" >> "${GITHUB_ENV}"
           fi
 
+      - name: 'Start Service Port-Forwards'
+        if: steps.filter-check.outputs.should_run == 'true' && matrix.example.requires_clickhouse == true
+        run: |
+          set -euo pipefail
+          # Bridge the external GitHub Actions runner to internal GKE ClusterIP services
+          # (Dashboard Service gRPC on 50051 and ClickHouse HTTP on 8123) via health-checked
+          # background port-forwards without exposing those services publicly.
+          start_port_forward() {
+            local name="$1" ns="$2" svc="$3" port="$4" log="/tmp/pf-${port}.log"
+            if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', ${port}), timeout=1).close()" >/dev/null 2>&1; then
+              echo "Starting ${name} port-forward on localhost:${port}..."
+              RUNNER_TRACKING_ID="" setsid kubectl port-forward "svc/${svc}" "${port}:${port}" -n "${ns}" >"${log}" 2>&1 </dev/null &
+              for _ in $(seq 1 15); do
+                if python3 -c "import socket; socket.create_connection(('127.0.0.1', ${port}), timeout=1).close()" >/dev/null 2>&1; then
+                  echo "${name} port-forward ready on localhost:${port}"
+                  return 0
+                fi
+                sleep 1
+              done
+              echo "::error::${name} port-forward failed to become ready on localhost:${port}"
+              cat "${log}" || true
+              exit 1
+            fi
+          }
+          start_port_forward "Dashboard Service gRPC" "xmc" "dashboard-service" 50051
+          start_port_forward "ClickHouse HTTP" "xmc-metrics" "clickhouse" 8123
+
       - name: 'Launch Example Workload'
         id: launch-example
         if: steps.filter-check.outputs.should_run == 'true'
@@ -262,31 +351,8 @@ jobs:
           fi
           export XMC_USER_EMAIL="${ACTOR}@google.com"
 
-          # Bridge the external GitHub Actions runner to the internal ClickHouse ClusterIP
-          # service in the GKE cluster via an ephemeral, health-checked port-forward with
-          # automated trap cleanup. This allows verification scripts to assert metrics ingestion
-          # without exposing ClickHouse publicly. Conditionally appends
-          # --require_clickhouse_metrics=true to the verification arguments for ClickHouse-enabled workloads.
           EXTRA_VERIFY_ARGS=()
           if [ "${REQUIRES_CLICKHOUSE:-}" = "true" ]; then
-            if ! curl -fsS http://127.0.0.1:8123/ping >/dev/null 2>&1; then
-              echo "Starting ClickHouse HTTP port-forward for verification..."
-              kubectl port-forward svc/clickhouse 8123:8123 -n xmc-metrics >/tmp/clickhouse-pf-verify.log 2>&1 &
-              VERIFY_PF_PID=$!
-              trap 'kill "${VERIFY_PF_PID}" 2>/dev/null || true' EXIT
-              for i in $(seq 1 15); do
-                if curl -fsS http://127.0.0.1:8123/ping >/dev/null 2>&1; then
-                  echo "ClickHouse port-forward ready on http://127.0.0.1:8123"
-                  break
-                fi
-                sleep 1
-              done
-              if ! curl -fsS http://127.0.0.1:8123/ping >/dev/null 2>&1; then
-                echo "::error::ClickHouse port-forward failed to become ready on http://127.0.0.1:8123"
-                cat /tmp/clickhouse-pf-verify.log || true
-                exit 1
-              fi
-            fi
             EXTRA_VERIFY_ARGS+=("--require_clickhouse_metrics=true")
           fi
 
@@ -319,6 +385,7 @@ jobs:
           LAUNCH_OUTCOME: '${{ steps.launch-example.outcome }}'
           VERIFY_OUTCOME: '${{ steps.verify-example.outcome }}'
         run: |
+          pkill -f "kubectl port-forward" 2>/dev/null || true
           mkdir -p "${GITHUB_WORKSPACE}/results"
           STATUS="FAILED"
           XID="${LAUNCH_XID}"

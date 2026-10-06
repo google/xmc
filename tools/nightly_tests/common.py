@@ -290,6 +290,33 @@ def assert_work_unit_jobsets(
     return job_results
 
 
+def assert_work_unit_artifacts(
+    stub: Any,
+    xid: str,
+    wid: str,
+    expected_artifact_types: Sequence[str],
+    expected_metric_names: Sequence[str] | None = None,
+    timeout_sec: int = 60,
+    step_label: str = "Step 4",
+) -> list[dict[str, Any]]:
+    """Asserts WorkUnit artifact payloads and metric names."""
+    print(f"\n[{step_label}] Validating WorkUnit Artifacts (WID: {wid})...")
+    artifact_results = xmc_entities_validator.validate_artifacts(
+        stub=stub,
+        xid=xid,
+        wid=wid,
+        expected_artifact_types=expected_artifact_types,
+        expected_metric_names=expected_metric_names,
+        timeout_sec=min(60, timeout_sec),
+    )
+    for art in artifact_results:
+        print(
+            f"  [✓] Artifact: Name='{art['name']}', Type='{art['type']}', "
+            f"Title='{art['title']}', Metrics={art['metric_names']}, URL='{art['url']}'"
+        )
+    return artifact_results
+
+
 def assert_clickhouse_metrics(
     xid: str,
     expected_metric_names: Sequence[str] | set[str],
@@ -373,22 +400,26 @@ def verify_standard_workload(
     expected_title_pattern: str,
     expected_jobs: Sequence[dict[str, Any]] | None = None,
     expected_worker_names: Sequence[str] | None = None,
+    expected_artifact_types: Sequence[str] | None = None,
+    expected_metric_names: Sequence[str] | None = None,
     extra_step: Callable[[Any, str], None] | None = None,
 ) -> None:
-    """Orchestrates standard Experiment, WorkUnit, and JobSet verification."""
+    """Orchestrates standard Experiment, WorkUnit, JobSet, and Artifact verification."""
     validate_argv(argv)
     xid = parse_xid(get_flag(FLAGS, "xid"))
     queue = get_flag(FLAGS, "expected_queue", "cpu-queue")
     workers = expected_worker_names or ([expected_jobs[0]["name"]] if expected_jobs else [])
     timeout = get_flag(FLAGS, "timeout_sec", 600)
     _print_workload_banner(banner_title, xid, expected_title_pattern, queue, workers, timeout)
-    with (
-        handle_verification_errors(),
-        ess_channel_context(get_flag(FLAGS, "endpoint")) as (stub, _),
-    ):
+    ep = get_flag(FLAGS, "endpoint")
+    with handle_verification_errors(), ess_channel_context(ep) as (stub, _):
         exp = assert_experiment(stub, xid, expected_title_pattern)
-        assert_work_units(stub, xid, len(workers), queue, workers, timeout)
+        wus = assert_work_units(stub, xid, len(workers), queue, workers, timeout)
         assert_work_unit_jobsets(stub, xid, expected_jobs)
+        if expected_artifact_types:
+            assert_work_unit_artifacts(
+                stub, xid, wus[0]["id"], expected_artifact_types, expected_metric_names, timeout
+            )
         if extra_step:
             extra_step(stub, xid)
         _print_workload_summary(summary_title, exp, xid, queue)

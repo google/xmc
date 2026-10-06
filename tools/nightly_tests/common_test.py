@@ -351,6 +351,34 @@ class CommonTest(unittest.TestCase):
             common.assert_work_unit_jobsets(mock_stub, "10", expected_jobs)
         self.assertEqual(common.assert_work_unit_jobsets(mock_stub, "10", None), [])
 
+    def test_assert_work_unit_artifacts(self) -> None:
+        mock_stub = mock.MagicMock()
+        art_results = [
+            {
+                "name": "artifacts/1",
+                "type": "chart",
+                "title": "Plot",
+                "metric_names": ["loss"],
+                "url": "",
+            }
+        ]
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.validate_artifacts",
+            return_value=art_results,
+        ) as mock_val:
+            res = common.assert_work_unit_artifacts(
+                mock_stub, "10", "1", ["chart"], ["loss"], timeout_sec=120
+            )
+            self.assertEqual(res, art_results)
+            mock_val.assert_called_once_with(
+                stub=mock_stub,
+                xid="10",
+                wid="1",
+                expected_artifact_types=["chart"],
+                expected_metric_names=["loss"],
+                timeout_sec=60,
+            )
+
     def test_verify_standard_workload_stub_boundary_and_num_work_units_isolation(self) -> None:
         mock_stub = mock.MagicMock()
         mock_channel = mock.MagicMock()
@@ -359,6 +387,18 @@ class CommonTest(unittest.TestCase):
         )
         mock_stub.ListWorkUnits.return_value = SimpleNamespace(
             work_units=[_make_fake_wu("10", 1, ["w1", "w2"])]
+        )
+        chart_obj = SimpleNamespace(
+            title="Loss Plot", metric_names=["loss"], status=2, error_message=""
+        )
+        mock_stub.ListArtifacts.return_value = SimpleNamespace(
+            artifacts=[
+                SimpleNamespace(
+                    name="artifacts/1",
+                    parent="experiments/10/workUnits/1",
+                    payload=SimpleNamespace(chart=chart_obj, WhichOneof=lambda f: "chart"),
+                )
+            ]
         )
         extra_step = mock.MagicMock()
         flag_values = {"xid": "10", "endpoint": "custom-ess:9090"}
@@ -381,6 +421,8 @@ class CommonTest(unittest.TestCase):
                 summary_title="Summary",
                 expected_title_pattern="Test",
                 expected_jobs=[{"name": "w1", "replicas": 1}, {"name": "w2", "replicas": 1}],
+                expected_artifact_types=["chart"],
+                expected_metric_names=["loss"],
                 extra_step=extra_step,
             )
             mock_create_stub.assert_called_once_with("custom-ess:9090")
@@ -391,6 +433,7 @@ class CommonTest(unittest.TestCase):
             self.assertIn("Workers                 : ['w1']", output)
             self.assertIn("Job 'w1': Replicas=1", output)
             self.assertIn("Job 'w2': Replicas=1", output)
+            self.assertIn("Artifact: Name='artifacts/1'", output)
             self.assertIn("Test Workload", output)
 
     def test_verify_standard_workload_worker_names_precedence_and_extra_step_none(self) -> None:

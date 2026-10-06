@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -713,6 +714,129 @@ def wait_for_experiment_state(
         poll_interval_sec=poll_interval_sec,
         wait_for_completion=True,
     )
+
+
+def _normalize_artifact_type(type_name: str) -> str:
+    """Normalizes artifact type string (e.g., 'ChartArtifact' -> 'chart')."""
+    base = type_name.strip().split(".")[-1]
+    snake = re.sub(r"(?<!^)(?=[A-Z])", "_", base).lower()
+    return snake.removeprefix("type_").removesuffix("artifact").strip("_")
+
+
+def _fetch_raw_artifacts(
+    stub: Any, parent_name: str, elapsed: float, timeout_sec: int
+) -> list[Any] | None:
+    """Fetches raw artifacts from ESS stub with transient error handling."""
+    try:
+        req = _make_req("ListArtifactsRequest", parent=parent_name)
+        response = stub.ListArtifacts(req)
+        return list(getattr(response, "artifacts", []))
+    except Exception as e:
+        if elapsed >= timeout_sec:
+            raise
+        logging.warning("Transient error fetching artifacts: %s. Retrying...", e)
+        return None
+
+
+def _extract_artifact_payload_info(art: Any) -> tuple[str, Any]:
+    """Extracts normalized payload type and active subtype object from an Artifact."""
+    payload = getattr(art, "payload", None)
+    which = payload.WhichOneof("type") if hasattr(payload, "WhichOneof") else None
+    if not which:
+        return "", None
+    return _normalize_artifact_type(which), getattr(payload, which, None)
+
+
+def _extract_chart_artifact_details(art_name: str, chart: Any) -> tuple[list[str], str]:
+    """Extracts metric names and title from ChartArtifact payload."""
+    status = getattr(chart, "status", None)
+    if status in (3, "FAILED"):
+        err = getattr(chart, "error_message", "")
+        raise TerminalFailureError(f"ChartArtifact '{art_name}' failed provisioning: {err}")
+    if status in (1, "PROVISIONING"):
+        return [], ""
+    return list(getattr(chart, "metric_names", [])), getattr(chart, "title", "")
+
+
+def _process_single_artifact(art: Any) -> dict[str, Any]:
+    """Processes a single artifact object into normalized metadata dictionary."""
+    art_name = getattr(art, "name", "")
+    norm_type, payload = _extract_artifact_payload_info(art)
+    satisfied_type = norm_type or "unknown"
+    metrics: list[str] = []
+    title, url_str = "", ""
+    if norm_type == "chart" and payload is not None:
+        if getattr(payload, "status", None) in (1, "PROVISIONING"):
+            satisfied_type = "provisioning_chart"
+        metrics, title = _extract_chart_artifact_details(art_name, payload)
+    elif norm_type == "url" and payload is not None:
+        url_str = getattr(payload, "url", "") or getattr(getattr(art, "url", None), "url", "")
+        if not url_str.strip():
+            raise AssertionError(f"Found URL artifact '{art_name}' with empty URL field.")
+        title = getattr(payload, "display_name", "")
+    return {
+        "name": art_name,
+        "parent": getattr(art, "parent", ""),
+        "type": norm_type or "unknown",
+        "normalized_type": satisfied_type,
+        "metric_names": metrics,
+        "title": title or getattr(art, "notes", ""),
+        "url": url_str,
+    }
+
+
+def _verify_artifacts_satisfied(
+    results: list[dict[str, Any]],
+    exp_types: set[str],
+    exp_metrics: set[str],
+    parent_name: str,
+    timed_out: bool,
+) -> bool:
+    """Verifies expected artifact types and metrics satisfaction or raises on timeout."""
+    found_types = {r["normalized_type"] for r in results if r["normalized_type"] != "unknown"}
+    found_metrics = {m for r in results for m in r["metric_names"]}
+    missing_types = sorted(exp_types - found_types)
+    missing_metrics = sorted(exp_metrics - found_metrics)
+    if not missing_types and not missing_metrics:
+        return True
+    if not timed_out:
+        return False
+    if missing_types:
+        raise AssertionError(
+            f"Expected artifact types {missing_types} not found in {parent_name}. "
+            f"Found types: {sorted(found_types)}."
+        )
+    raise AssertionError(
+        f"Expected metric names {missing_metrics} not found in ChartArtifacts for {parent_name}. "
+        f"Found metrics: {sorted(found_metrics)}."
+    )
+
+
+def validate_artifacts(
+    stub: Any,
+    xid: str | int,
+    wid: str | int | None = None,
+    expected_artifact_types: Sequence[str] | None = None,
+    expected_metric_names: Sequence[str] | None = None,
+    timeout_sec: int = 60,
+    poll_interval_sec: int = 2,
+) -> list[dict[str, Any]]:
+    """Fetches and validates artifacts associated with an Experiment or WorkUnit."""
+    parent = f"experiments/{xid}/workUnits/{wid}" if wid is not None else f"experiments/{xid}"
+    exp_types = {_normalize_artifact_type(t) for t in (expected_artifact_types or ())}
+    exp_metrics = set(expected_metric_names or ())
+    start_time = time.monotonic()
+
+    while True:
+        elapsed = time.monotonic() - start_time
+        raw = _fetch_raw_artifacts(stub, parent, elapsed, timeout_sec)
+        if raw is not None:
+            results = [_process_single_artifact(art) for art in raw]
+            if _verify_artifacts_satisfied(
+                results, exp_types, exp_metrics, parent, elapsed >= timeout_sec
+            ):
+                return results
+        time.sleep(poll_interval_sec)
 
 
 def resolve_ui_base_url() -> str:
