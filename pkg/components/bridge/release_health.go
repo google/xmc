@@ -24,7 +24,7 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"
 
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 // healthCacheTTL bounds how long a deployed-release verdict is reused before ComponentHealth re-queries Helm.
