@@ -3,7 +3,7 @@
   "custom_repo_rules": 2,
   "gazelle_resolve_directives": 84,
   "go_legacy_root_imports": 949,
-  "go_unresolved_module_imports": 1295,
+  "go_unresolved_module_imports": 1293,
   "helm_google3_flags": 20,
   "proto_third_party_paths": 39,
   "python_legacy_paths": 21,
