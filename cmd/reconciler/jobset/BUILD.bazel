@@ -19,7 +19,9 @@ compat_go_library(
     srcs = [
         "converter.go",
         "mlrun_metrics.go",
+        "predicates.go",
         "reconciler.go",
+        "startup_diagnostics.go",
     ],
     importpath = "xmanager_cloud/cmd/reconciler/jobset",
     visibility = ["//visibility:public"],
@@ -59,7 +61,9 @@ compat_go_test(
     srcs = [
         "converter_test.go",
         "mlrun_metrics_test.go",
+        "predicates_test.go",
         "reconciler_test.go",
+        "startup_diagnostics_test.go",
     ],
     embed = [":jobset"],
     deps = [
