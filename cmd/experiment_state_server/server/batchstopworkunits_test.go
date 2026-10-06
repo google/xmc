@@ -29,7 +29,7 @@ import (
 	tq "xmanager_cloud/task_queue/client"
 	"xmanager_cloud/validator/validator"
 
-	fmpb "protobuf/field_mask_go_proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
