@@ -20,57 +20,22 @@ import (
 	"net"
 	"strings"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/components/crreader"
 )
 
 const (
 	// redpandaComponentName is the canonical Component CR name for the Redpanda broker.
 	redpandaComponentName = "redpanda"
-	// defaultComponentsNamespace is the default Kubernetes namespace for XMC Component CRs.
-	defaultComponentsNamespace = "xmc"
 )
 
-var componentGVR = schema.GroupVersionResource{
-	Group:    "xmc.dev",
-	Version:  "v1alpha1",
-	Resource: "components",
-}
-
 // ComponentGetter retrieves a Kubernetes Component Custom Resource by namespace and name.
-type ComponentGetter interface {
-	GetComponent(ctx context.Context, namespace, name string) (*unstructured.Unstructured, error)
-}
-
-type k8sComponentGetter struct {
-	client dynamic.Interface
-}
+type ComponentGetter = crreader.Getter
 
 // NewK8sComponentGetter constructs a ComponentGetter backed by the in-cluster or default kubeconfig.
 func NewK8sComponentGetter() (ComponentGetter, error) {
-	restCfg, err := rest.InClusterConfig()
-	if err != nil {
-		rules := clientcmd.NewDefaultClientConfigLoadingRules()
-		restCfg, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{}).ClientConfig()
-		if err != nil {
-			return nil, fmt.Errorf("failed to build kubernetes client config: %w", err)
-		}
-	}
-	dynClient, err := dynamic.NewForConfig(restCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create dynamic kubernetes client: %w", err)
-	}
-	return &k8sComponentGetter{client: dynClient}, nil
-}
-
-// GetComponent fetches an unstructured Component resource from the Kubernetes API server.
-func (g *k8sComponentGetter) GetComponent(ctx context.Context, namespace, name string) (*unstructured.Unstructured, error) {
-	return g.client.Resource(componentGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	return crreader.NewK8sGetter()
 }
 
 // ResolveRedpandaComponentConfig updates cfg with broker endpoints and default topic from the
@@ -83,17 +48,14 @@ func ResolveRedpandaComponentConfig(ctx context.Context, cfg *Config, getter Com
 		return fmt.Errorf("component getter cannot be nil when enable_components is true")
 	}
 
-	ns := strings.TrimSpace(cfg.ComponentsNamespace)
-	if ns == "" {
-		ns = defaultComponentsNamespace
-	}
+	ns := crreader.ResolveNamespace(cfg.ComponentsNamespace)
 
 	logging.Info(ctx, "Resolving Redpanda configuration from Component CR", "namespace", ns, "component", redpandaComponentName)
 	comp, err := getter.GetComponent(ctx, ns, redpandaComponentName)
 	if err != nil {
 		return fmt.Errorf("failed to get component %s/%s: %w", ns, redpandaComponentName, err)
 	}
-	if isRedpandaComponentDisabled(comp) {
+	if crreader.IsDisabled(comp) {
 		logDisabledRedpandaComponent(ctx, cfg, ns, comp)
 		return nil
 	}
@@ -134,41 +96,24 @@ func shouldResolveRedpandaComponent(ctx context.Context, cfg *Config) bool {
 }
 
 func logDisabledRedpandaComponent(ctx context.Context, cfg *Config, ns string, comp *unstructured.Unstructured) {
-	var specEnabled bool
-	var statusState string
-	if comp != nil && comp.Object != nil {
-		specEnabled, _, _ = unstructured.NestedBool(comp.Object, "spec", "enabled")
-		statusState, _, _ = unstructured.NestedString(comp.Object, "status", "state")
-	}
+	specEnabled, _, _ := crreader.SpecEnabled(comp)
+	statusState, _ := crreader.StatusState(comp)
 	logging.Info(ctx, "Redpanda Component CR is disabled; preserving static ingestion-gateway configuration",
 		"namespace", ns, "component", redpandaComponentName,
 		"spec_enabled", specEnabled, "status_state", statusState,
 		"fallback_brokers", cfg.RedpandaBrokers, "fallback_topic", cfg.TopicName)
 }
 
-func isRedpandaComponentDisabled(comp *unstructured.Unstructured) bool {
-	if comp == nil || comp.Object == nil {
-		return true
-	}
-	if enabled, ok, err := unstructured.NestedBool(comp.Object, "spec", "enabled"); err == nil && ok && !enabled {
-		return true
-	}
-	if state, ok, err := unstructured.NestedString(comp.Object, "status", "state"); err == nil && ok {
-		return state == "COMPONENT_STATE_DISABLED" || state == "COMPONENT_STATE_DISABLING" || state == "COMPONENT_STATE_DELETED"
-	}
-	return false
-}
-
 func applyRedpandaComponentOverrides(ctx context.Context, cfg *Config, ns string, comp *unstructured.Unstructured) {
-	params, _, err := unstructured.NestedStringMap(comp.Object, "spec", "parameters")
+	params, err := crreader.Parameters(comp)
 	if err != nil {
 		logging.Warn(ctx, "Failed to parse spec.parameters from Component CR", "error", err)
 	}
-	envVars, _, err := unstructured.NestedStringMap(comp.Object, "status", "access", "envVars")
+	envVars, err := crreader.AccessEnvVars(comp)
 	if err != nil {
 		logging.Warn(ctx, "Failed to parse status.access.envVars from Component CR", "error", err)
 	}
-	statusState, _, err := unstructured.NestedString(comp.Object, "status", "state")
+	statusState, err := crreader.StatusState(comp)
 	if err != nil {
 		logging.Warn(ctx, "Failed to parse status.state from Component CR", "error", err)
 	}
