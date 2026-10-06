@@ -92,7 +92,7 @@ A set of compatibility packages is defined under `//internal/compat/...` to rout
 
 [`tools/check_proto_breaking.py`](../tools/check_proto_breaking.py) detects backward-incompatible changes to the first-party protobuf APIs:
 * Builds the aggregate descriptor set [`//api:all_protos_descriptor_set`](../api/BUILD.bazel) for the working tree (including uncommitted changes) and for the base revision, which is checked out in a temporary `git worktree` that is always removed afterwards.
-* Compares both with [`buf breaking`](https://buf.build/docs/breaking/) using the strict `FILE` rules from [`api/buf-breaking.yaml`](../api/buf-breaking.yaml). Bundled third-party `google/*` files are ignored; unstable packages such as `components/v1alpha1` are checked because their messages are persisted.
+* Compares both with [`buf breaking`](https://buf.build/docs/breaking/) using the strict `FILE` rules from [`api/buf-breaking.yaml`](../api/buf-breaking.yaml). The rules are read from the base revision so that a change cannot relax its own check: edits to them take effect once merged, and the working tree's copy is used, with a warning, only if the base revision has none. Bundled third-party `google/*` files are ignored; unstable packages such as `components/v1alpha1` are checked because their messages are persisted.
 * Fails, listing the uncovered files, if a `proto_library` under `//api` is missing from `//api:all_protos_descriptor_set`. `api/filter/filter_expression.proto` has no `proto_library` and is not covered.
 
 To run the check, [install buf](https://buf.build/docs/cli/installation/) on your `PATH` and run:
@@ -103,6 +103,8 @@ To run the check, [install buf](https://buf.build/docs/cli/installation/) on you
 ./tools/check_proto_breaking.py --base-ref HEAD~1 --bazel-flag=--disk_cache="${HOME}/.cache/bazel-disk"
 ```
 The base revision must already define `//api:all_protos_descriptor_set`. It is built in a fresh Bazel output base, so the first run can take a few minutes; a shared `--disk_cache` speeds up repeated runs.
+
+CI runs this check on pull requests; see [Protobuf Breaking Changes](#6-protobuf-breaking-changes-buf-breaking) for when it runs and how to override it.
 
 ---
 
@@ -266,6 +268,13 @@ Bazel build graphs (`BUILD`, `BUILD.bazel`, `WORKSPACE`, `MODULE.bazel`, and `.b
 Source files are checked for Google LLC Apache 2.0 license headers using **`addlicense`**:
 * Enforces copyright headers on all managed source code files (`.go`, `.py`, `.ts`, `.html`, `.css`, `.proto`, `.tf`, `.sh`, Bazel files).
 * Ignores data/schema files (`.json`), lockfiles (`go.mod`, `go.sum`, `*.lock`, `package.json`, `pyproject.toml`), and `third_party/` directories.
+
+### 6. Protobuf Breaking Changes (`buf breaking`)
+Pull requests are checked for backward-incompatible protobuf API changes with the [breaking-change check](#breaking-change-check-buf-breaking):
+* Runs only in CI, not in the pre-commit hook, and only for `pull_request` events that change a `.proto` file, an `api/**/BUILD.bazel` file, `api/buf-breaking.yaml`, `tools/check_proto_breaking.py`, `.github/scripts/proto-breaking-override.js`, or `.github/workflows/lint.yml`. It is skipped for `merge_group` and `workflow_dispatch` runs.
+* Compares the pull request merge commit against its first parent, the tip of the base branch, using the base branch's `api/buf-breaking.yaml`, and always lists the findings in the job summary.
+* **Override**: if a break is intentional, someone other than the pull request author (typically a maintainer) adds the `proto-breaking-change-approved` label and then re-runs the job. The check then runs with `--allow-breaking`: the job summary still lists the breaking changes and names who applied the label, but they no longer fail the job; build errors and uncovered `proto_library` targets still do. The approval also covers later pushes until the label is removed. Only the label's most recent application counts: it is ignored if that was by the pull request author or by a bot. If the label lookup fails, the check stays blocking. Maintainers create this label in the repository when the check is rolled out.
+* The override decision lives in [`.github/scripts/proto-breaking-override.js`](../.github/scripts/proto-breaking-override.js). CI does not run the `.github/scripts` unit tests yet; run them locally with `node --test .github/scripts/*.test.js`.
 
 ---
 

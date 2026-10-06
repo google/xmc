@@ -32,6 +32,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools import check_proto_breaking  # noqa: E402
+from tools.common import tool_utils  # noqa: E402
 from tools.common.tool_utils import HandledError  # noqa: E402
 
 BASE_COMMIT = "0123456789abcdef0123456789abcdef01234567"
@@ -48,6 +49,8 @@ FILE_FINDING = {
     "type": "FILE_NO_DELETE",
     "message": 'Previously present file "api/protos/metrics/metrics.proto" was deleted.',
 }
+BUF_CONFIG = "version: v2\nbreaking:\n  use: [FILE]\n"
+CONFIG_SOURCE = f"{BASE_COMMIT}:api/buf-breaking.yaml"
 
 Response = subprocess.CompletedProcess[str] | BaseException
 
@@ -126,6 +129,8 @@ class BuildParserTest(unittest.TestCase):
         args = check_proto_breaking.build_parser().parse_args([])
         self.assertIsNone(args.base_ref)
         self.assertEqual(args.bazel_flags, [])
+        self.assertIsNone(args.report_file)
+        self.assertFalse(args.allow_breaking)
 
     def test_repeatable_bazel_flags_and_base_ref(self):
         args = check_proto_breaking.build_parser().parse_args(
@@ -138,6 +143,14 @@ class BuildParserTest(unittest.TestCase):
         )
         self.assertEqual(args.base_ref, "HEAD^1")
         self.assertEqual(args.bazel_flags, ["--config=ci", "--repository_cache=/cache"])
+
+    def test_report_file_is_parsed_as_path(self):
+        args = check_proto_breaking.build_parser().parse_args(["--report-file=/tmp/summary.md"])
+        self.assertEqual(args.report_file, Path("/tmp/summary.md"))
+
+    def test_allow_breaking_flag(self):
+        args = check_proto_breaking.build_parser().parse_args(["--allow-breaking"])
+        self.assertTrue(args.allow_breaking)
 
 
 class ResolveBufBinaryTest(unittest.TestCase):
@@ -179,6 +192,49 @@ class ResolveBaseCommitTest(unittest.TestCase):
             with self.assertRaises(HandledError) as ctx:
                 check_proto_breaking.resolve_base_commit(REPO, "no-such-ref")
         self.assertIn("Needed a single revision", ctx.exception.message)
+
+
+class ResolveBufConfigTest(unittest.TestCase):
+    """Tests for reading the buf rules from the base revision."""
+
+    LS_TREE = ["git", "ls-tree", "--name-only", BASE_COMMIT, "--", "api/buf-breaking.yaml"]
+    LISTED = _completed(stdout="api/buf-breaking.yaml\n")
+
+    def test_uses_base_revision_config_inline_and_verbatim(self):
+        runner = FakeRunner(
+            {("git", "ls-tree"): self.LISTED, ("git", "show"): _completed(stdout=BUF_CONFIG)}
+        )
+        with fake_processes(runner) as stderr:
+            config = check_proto_breaking.resolve_buf_config(REPO, BASE_COMMIT)
+        self.assertEqual(config, (BUF_CONFIG, CONFIG_SOURCE))
+        self.assertEqual(runner.commands(), [self.LS_TREE, ["git", "show", CONFIG_SOURCE]])
+        self.assertTrue(all(cwd == REPO for _, cwd in runner.calls))
+        log_line = f"Using the buf rules of the base revision ({CONFIG_SOURCE}).\n"
+        self.assertEqual(stderr.getvalue(), log_line)
+
+    def test_falls_back_to_working_tree_config_only_if_base_lacks_it(self):
+        runner = FakeRunner({("git", "ls-tree"): _completed(stdout="")})
+        with fake_processes(runner) as stderr:
+            config, source = check_proto_breaking.resolve_buf_config(REPO, BASE_COMMIT)
+        self.assertEqual(config, str(REPO / "api" / "buf-breaking.yaml"))
+        self.assertEqual(source, "api/buf-breaking.yaml (working tree)")
+        self.assertEqual(runner.commands(), [self.LS_TREE])
+        self.assertIn(f"WARNING: {CONFIG_SOURCE} does not exist", stderr.getvalue())
+
+    def test_other_git_errors_raise_instead_of_falling_back(self):
+        failure = _completed(returncode=128, stderr="fatal: not a tree object")
+        cases: dict[str, dict[tuple[str, ...], Response]] = {
+            "ls-tree": {("git", "ls-tree"): failure},
+            "show": {("git", "ls-tree"): self.LISTED, ("git", "show"): failure},
+        }
+        for command, responses in cases.items():
+            with self.subTest(command=command):
+                with fake_processes(FakeRunner(responses)) as stderr:
+                    with self.assertRaises(HandledError) as ctx:
+                        check_proto_breaking.resolve_buf_config(REPO, BASE_COMMIT)
+                self.assertIn(f"'git {command} ", ctx.exception.message)
+                self.assertIn("not a tree object", ctx.exception.message)
+                self.assertNotIn("WARNING", stderr.getvalue())
 
 
 class BuildDescriptorSetTest(unittest.TestCase):
@@ -360,7 +416,7 @@ class RunBufBreakingTest(unittest.TestCase):
 
     HEAD = SCRATCH / "head.binpb"
     BASE = SCRATCH / "base.binpb"
-    CONFIG = REPO / "api" / "buf-breaking.yaml"
+    CONFIG = BUF_CONFIG
 
     def _run(self, response: Response) -> tuple[list[dict[str, Any]], FakeRunner, str]:
         runner = FakeRunner({("/opt/buf", "breaking"): response})
@@ -383,7 +439,7 @@ class RunBufBreakingTest(unittest.TestCase):
                 "--against",
                 str(self.BASE),
                 "--config",
-                str(self.CONFIG),
+                self.CONFIG,
                 "--error-format=json",
             ],
         )
@@ -426,7 +482,7 @@ class CompareAgainstBaseTest(unittest.TestCase):
         runner = FakeRunner()
         with fake_processes(runner):
             findings = check_proto_breaking.compare_against_base(
-                REPO, BASE_COMMIT, "/opt/buf", ["--config=ci"]
+                REPO, BASE_COMMIT, "/opt/buf", BUF_CONFIG, ["--config=ci"]
             )
         self.assertEqual(findings, [])
         scratch = mock_build.call_args_list[0].args[2].parent
@@ -439,10 +495,7 @@ class CompareAgainstBaseTest(unittest.TestCase):
             ],
         )
         mock_buf.assert_called_once_with(
-            "/opt/buf",
-            scratch / "head.binpb",
-            scratch / "base.binpb",
-            REPO / "api" / "buf-breaking.yaml",
+            "/opt/buf", scratch / "head.binpb", scratch / "base.binpb", BUF_CONFIG
         )
         self.assertIn(
             ["git", "worktree", "remove", "--force", str(scratch / "base")], runner.commands()
@@ -453,7 +506,9 @@ class CompareAgainstBaseTest(unittest.TestCase):
         runner = FakeRunner()
         with fake_processes(runner):
             with self.assertRaises(HandledError):
-                check_proto_breaking.compare_against_base(REPO, BASE_COMMIT, "/opt/buf", [])
+                check_proto_breaking.compare_against_base(
+                    REPO, BASE_COMMIT, "/opt/buf", BUF_CONFIG, []
+                )
         mock_build.assert_called_once()
         self.assertEqual(runner.calls, [])
         mock_buf.assert_not_called()
@@ -463,7 +518,9 @@ class CompareAgainstBaseTest(unittest.TestCase):
         runner = FakeRunner()
         with fake_processes(runner):
             with self.assertRaises(HandledError) as ctx:
-                check_proto_breaking.compare_against_base(REPO, BASE_COMMIT, "/opt/buf", [])
+                check_proto_breaking.compare_against_base(
+                    REPO, BASE_COMMIT, "/opt/buf", BUF_CONFIG, []
+                )
         self.assertEqual(ctx.exception.message, "base build failed")
         self.assertEqual(runner.commands()[-1][:4], ["git", "worktree", "remove", "--force"])
         mock_buf.assert_not_called()
@@ -472,7 +529,9 @@ class CompareAgainstBaseTest(unittest.TestCase):
 class CheckProtoBreakingTest(unittest.TestCase):
     """Tests for the top-level check outcome."""
 
-    ARGS = argparse.Namespace(base_ref="HEAD^1", bazel_flags=["--config=ci"])
+    ARGS = argparse.Namespace(
+        base_ref="HEAD^1", bazel_flags=["--config=ci"], report_file=None, allow_breaking=False
+    )
 
     def setUp(self):
         patches = {
@@ -482,24 +541,48 @@ class CheckProtoBreakingTest(unittest.TestCase):
             "resolve_base_commit": mock.patch.object(
                 check_proto_breaking, "resolve_base_commit", return_value=BASE_COMMIT
             ),
+            "resolve_buf_config": mock.patch.object(
+                check_proto_breaking, "resolve_buf_config", return_value=(BUF_CONFIG, CONFIG_SOURCE)
+            ),
             "compare": mock.patch.object(
                 check_proto_breaking, "compare_against_base", return_value=[]
             ),
         }
         self.mocks = {name: patcher.start() for name, patcher in patches.items()}
         self.addCleanup(mock.patch.stopall)
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.report_file = Path(temp_dir.name) / "summary.md"
 
-    def test_passes_without_findings(self):
+    def _args(self, **overrides: Any) -> argparse.Namespace:
+        return argparse.Namespace(**vars(self.ARGS) | overrides)
+
+    def _main(self, *argv: str) -> tuple[int | str | None, str]:
+        """Runs the tool's entrypoint and returns its exit code and stdout."""
+        stdout = io.StringIO()
+        with (
+            mock.patch.object(sys, "argv", ["check_proto_breaking.py", *argv]),
+            mock.patch.object(tool_utils, "ensure_venv"),
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(io.StringIO()),
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            check_proto_breaking.main()
+        return ctx.exception.code, stdout.getvalue()
+
+    def test_passes_with_base_revision_config(self):
         result = check_proto_breaking.check_proto_breaking(self.ARGS)
         self.assertEqual(
-            result,
-            {"status": "passed", "base_commit": BASE_COMMIT, "config": "api/buf-breaking.yaml"},
+            result, {"status": "passed", "base_commit": BASE_COMMIT, "config": CONFIG_SOURCE}
         )
         self.mocks["resolve_base_commit"].assert_called_once_with(
             check_proto_breaking._REPO_ROOT, "HEAD^1"
         )
+        self.mocks["resolve_buf_config"].assert_called_once_with(
+            check_proto_breaking._REPO_ROOT, BASE_COMMIT
+        )
         self.mocks["compare"].assert_called_once_with(
-            check_proto_breaking._REPO_ROOT, BASE_COMMIT, "/opt/buf", ["--config=ci"]
+            check_proto_breaking._REPO_ROOT, BASE_COMMIT, "/opt/buf", BUF_CONFIG, ["--config=ci"]
         )
 
     def test_breaking_findings_raise_with_details(self):
@@ -510,6 +593,67 @@ class CheckProtoBreakingTest(unittest.TestCase):
         self.assertIn(f"[FIELD_NO_DELETE] {FIELD_FINDING['path']}: ", ctx.exception.message)
         self.assertIn("[FILE_NO_DELETE] Previously present file", ctx.exception.message)
         self.assertIn("reserve the numbers and names", ctx.exception.instruction)
+        self.assertIn("'Protobuf Breaking Changes' in docs/developer.md", ctx.exception.instruction)
+
+    def test_breaking_findings_are_appended_to_report_file(self):
+        self.mocks["compare"].return_value = [FIELD_FINDING, FILE_FINDING]
+        self.report_file.write_text("previous step summary\n", encoding="utf-8")
+        with self.assertRaises(HandledError) as ctx:
+            check_proto_breaking.check_proto_breaking(self._args(report_file=self.report_file))
+        self.assertEqual(
+            self.report_file.read_text(encoding="utf-8"),
+            "previous step summary\n### Breaking protobuf API changes\n\n"
+            f"```text\n{ctx.exception.message}\n```\n\n{ctx.exception.instruction}\n",
+        )
+
+    def test_passing_run_does_not_write_report_file(self):
+        args = self._args(report_file=self.report_file)
+        self.assertEqual(check_proto_breaking.check_proto_breaking(args)["status"], "passed")
+        self.assertFalse(self.report_file.exists())
+
+    def test_unwritable_report_file_warns_without_masking_findings(self):
+        self.mocks["compare"].return_value = [FIELD_FINDING]
+        args = self._args(report_file=self.report_file.parent)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(HandledError) as ctx:
+            check_proto_breaking.check_proto_breaking(args)
+        self.assertIn("Found 1 breaking protobuf change(s)", ctx.exception.message)
+        self.assertIn("WARNING: Could not write the report", stderr.getvalue())
+
+    def test_allowed_breaking_changes_are_reported_as_overridden(self):
+        self.mocks["compare"].return_value = [FIELD_FINDING, FILE_FINDING]
+        args = self._args(report_file=self.report_file, allow_breaking=True)
+        result = check_proto_breaking.check_proto_breaking(args)
+        findings = [
+            f"[FIELD_NO_DELETE] {FIELD_FINDING['path']}: {FIELD_FINDING['message']}",
+            f"[FILE_NO_DELETE] {FILE_FINDING['message']}",
+        ]
+        self.assertEqual(
+            result,
+            {
+                "status": "overridden",
+                "base_commit": BASE_COMMIT,
+                "config": CONFIG_SOURCE,
+                "breaking_changes": findings,
+            },
+        )
+        report = self.report_file.read_text(encoding="utf-8")
+        self.assertIn(f"against base {BASE_COMMIT}:\n" + "\n".join(findings), report)
+        self.assertTrue(report.endswith(f"```\n\n{check_proto_breaking.ALLOW_BREAKING_NOTE}\n"))
+
+    def test_allow_breaking_exits_zero_with_overridden_status(self):
+        self.mocks["compare"].return_value = [FIELD_FINDING]
+        code, stdout = self._main("--allow-breaking")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(stdout)["result"]["status"], "overridden")
+
+    def test_allow_breaking_still_exits_one_on_build_and_coverage_failures(self):
+        for message in ("'bazel build' failed in /repo", "misses 1 proto file(s) of //api"):
+            with self.subTest(message=message):
+                self.mocks["compare"].side_effect = HandledError(message, "fix it")
+                code, stdout = self._main("--allow-breaking")
+                self.assertEqual(code, 1)
+                self.assertEqual(stdout, "")
 
     def test_missing_buf_fails_before_resolving_base(self):
         self.mocks["resolve_buf_binary"].side_effect = HandledError("buf missing", "install")

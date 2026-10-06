@@ -60,6 +60,13 @@ jobs:
               - 'deploy/**/*.yml'
               - 'deploy/helm/**'
               - '.github/workflows/lint.yml'
+            protos:
+              - '**/*.proto'
+              - 'api/**/BUILD.bazel'
+              - 'api/buf-breaking.yaml'
+              - 'tools/check_proto_breaking.py'
+              - '.github/scripts/proto-breaking-override.js'
+              - '.github/workflows/lint.yml'
 
       # 1. Python Linting (Ruff & Mypy)
       - name: 'Install Ruff'
@@ -249,3 +256,68 @@ jobs:
           severity: 'HIGH,CRITICAL'
           scan-ref: 'deploy/'
           trivyignores: '.trivyignore'
+
+      # 8. Protobuf Breaking Change Detection (buf breaking against the PR base branch).
+      # The check always runs; an honored override label only allows breaking changes
+      # (--allow-breaking). If the label lookup fails, its output stays unset and the check blocks.
+      - name: 'Check Proto Breaking-Change Override Label'
+        id: 'proto-override'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.changes.outputs.protos == 'true' }}
+        continue-on-error: true
+        uses: 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea' # v7.0.1
+        with:
+          script: |
+            const { run } = require('./.github/scripts/proto-breaking-override.js');
+            await run({ github, context, core });
+
+      - name: 'Set up Bazel'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.changes.outputs.protos == 'true' }}
+        uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
+
+      - name: 'Restore Bazel Repository Cache'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.changes.outputs.protos == 'true' }}
+        uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: ~/.cache/bazel-repo
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
+          restore-keys: |
+            bazel-repo-${{ runner.os }}-
+
+      - name: 'Install buf'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.changes.outputs.protos == 'true' }}
+        env:
+          BUF_VERSION: '1.73.0'
+          BUF_SHA256: '8f2986298ad08f0cc1bf999b9797b7c383adf32d7edf0f73d6f1e1a701baeac1'
+        run: |
+          mkdir -p "${RUNNER_TEMP}/buf"
+          curl -sSfL "https://github.com/bufbuild/buf/releases/download/v${BUF_VERSION}/buf-Linux-x86_64" \
+            -o "${RUNNER_TEMP}/buf/buf"
+          echo "${BUF_SHA256}  ${RUNNER_TEMP}/buf/buf" | sha256sum --check --strict
+          chmod +x "${RUNNER_TEMP}/buf/buf"
+          echo "${RUNNER_TEMP}/buf" >> "${GITHUB_PATH}"
+
+      - name: 'Check Protobuf Breaking Changes'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.changes.outputs.protos == 'true' }}
+        env:
+          # The tool only uses the standard library; skip the tools/ virtualenv bootstrap.
+          XMC_BYPASS_VENV: '1'
+          PROTO_OVERRIDE_HONORED: ${{ steps.proto-override.outputs.honored }}
+        run: |
+          # HEAD must be the pull request merge commit so that HEAD^1 is the base branch tip.
+          if ! git rev-parse -q --verify 'HEAD^2' > /dev/null; then
+            echo "::error::HEAD is not a pull request merge commit; refusing to use HEAD^1 as the base."
+            exit 1
+          fi
+          # An honored override only allows breaking changes; build and coverage errors still fail.
+          allow_breaking=()
+          if [[ "${PROTO_OVERRIDE_HONORED}" == 'true' ]]; then
+            allow_breaking=(--allow-breaking)
+          fi
+          # The shared disk cache lets the base build reuse actions of the head build.
+          python3 tools/check_proto_breaking.py \
+            --base-ref 'HEAD^1' \
+            --report-file "${GITHUB_STEP_SUMMARY}" \
+            --bazel-flag=--config=ci \
+            --bazel-flag="--repository_cache=${HOME}/.cache/bazel-repo" \
+            --bazel-flag="--disk_cache=${RUNNER_TEMP}/bazel-disk" \
+            "${allow_breaking[@]}"

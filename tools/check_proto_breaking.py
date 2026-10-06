@@ -44,6 +44,7 @@ DEFAULT_UPSTREAM_REF = "origin/main"
 BUF_INSTALL_URL = "https://buf.build/docs/cli/installation/"
 BUF_FINDINGS_EXIT_CODE = 100
 BAZEL_LOG_TAIL_LINES = 40
+ALLOW_BREAKING_NOTE = "These breaking changes do not fail the check: it ran with --allow-breaking."
 Finding = dict[str, Any]  # One JSON object of the `buf breaking --error-format=json` output.
 
 
@@ -59,20 +60,21 @@ def print_warning(message: str) -> None:
     print(f"WARNING: {message}", file=sys.stderr)
 
 
-def run_git(repo_root: Path, *git_args: str) -> str:
-    """Runs a git command in repo_root and returns its stripped stdout.
+def run_git(repo_root: Path, *git_args: str, strip: bool = True) -> str:
+    """Runs a git command in repo_root and returns its stdout, stripped unless strip is False.
 
     Raises:
         HandledError: If the git command fails.
     """
     try:
-        return run_captured(["git", *git_args], cwd=repo_root).stdout.strip()
+        stdout = run_captured(["git", *git_args], cwd=repo_root).stdout
     except subprocess.CalledProcessError as e:
         raise HandledError(
             f"'git {' '.join(git_args)}' failed: {e.stderr.strip()}",
             f"Check the base ref (run 'git fetch origin' to refresh {DEFAULT_UPSTREAM_REF}) "
             "and remove stale temporary worktrees with 'git worktree prune'.",
         ) from e
+    return stdout.strip() if strip else stdout
 
 
 def bazel_error(workspace: Path, bazel_args: list[str], log_tail: list[str]) -> HandledError:
@@ -135,6 +137,27 @@ def resolve_base_commit(repo_root: Path, base_ref: str | None) -> str:
     if base_ref:
         return run_git(repo_root, "rev-parse", "--verify", f"{base_ref}^{{commit}}")
     return run_git(repo_root, "merge-base", "HEAD", DEFAULT_UPSTREAM_REF)
+
+
+def resolve_buf_config(repo_root: Path, base_commit: str) -> tuple[str, str]:
+    """Reads the buf rules of the base revision so that a change cannot relax its own check.
+
+    Returns:
+        (config, source): the value for `buf --config` and a description of its origin. The
+        base's BUF_CONFIG_FILE content is passed inline; only if the base revision lacks that
+        file is the working tree's file used instead, with a warning.
+
+    Raises:
+        HandledError: If git fails to list or read the file in the base revision.
+    """
+    source = f"{base_commit}:{BUF_CONFIG_FILE}"
+    # Empty output means that the file is missing; `git cat-file -e` cannot tell that apart
+    # from other errors.
+    if not run_git(repo_root, "ls-tree", "--name-only", base_commit, "--", BUF_CONFIG_FILE):
+        print_warning(f"{source} does not exist; using the working tree's {BUF_CONFIG_FILE}.")
+        return str(repo_root / BUF_CONFIG_FILE), f"{BUF_CONFIG_FILE} (working tree)"
+    print(f"Using the buf rules of the base revision ({source}).", file=sys.stderr)
+    return run_git(repo_root, "show", source, strip=False), source
 
 
 def build_descriptor_set(workspace: Path, bazel_flags: list[str], destination: Path) -> None:
@@ -209,14 +232,14 @@ def base_worktree(repo_root: Path, base_commit: str, scratch_dir: Path) -> Itera
             remove_worktree(repo_root, worktree)
 
 
-def run_buf_breaking(buf: str, head_image: Path, base_image: Path, config: Path) -> list[Finding]:
+def run_buf_breaking(buf: str, head_image: Path, base_image: Path, config: str) -> list[Finding]:
     """Runs `buf breaking` and returns its findings; an empty list means compatible.
 
     Raises:
         HandledError: If buf fails or signals breaking changes without any finding.
     """
     images = [str(head_image), "--against", str(base_image)]
-    cmd = [buf, "breaking", *images, "--config", str(config), "--error-format=json"]
+    cmd = [buf, "breaking", *images, "--config", config, "--error-format=json"]
     result = run_captured(cmd, cwd=head_image.parent, check=False)
     if result.returncode == 0:
         return []
@@ -237,7 +260,7 @@ def run_buf_breaking(buf: str, head_image: Path, base_image: Path, config: Path)
 
 
 def compare_against_base(
-    repo_root: Path, base_commit: str, buf: str, bazel_flags: list[str]
+    repo_root: Path, base_commit: str, buf: str, config: str, bazel_flags: list[str]
 ) -> list[Finding]:
     """Builds the working tree and base descriptor sets and returns buf's findings.
 
@@ -252,7 +275,7 @@ def compare_against_base(
         ensure_full_coverage(repo_root)
         with base_worktree(repo_root, base_commit, scratch_dir) as worktree:
             build_descriptor_set(worktree, bazel_flags, base_image)
-        return run_buf_breaking(buf, head_image, base_image, repo_root / BUF_CONFIG_FILE)
+        return run_buf_breaking(buf, head_image, base_image, config)
 
 
 def format_finding(finding: Finding) -> str:
@@ -271,32 +294,73 @@ def breaking_changes_error(base_commit: str, findings: list[Finding]) -> Handled
         f"Found {len(findings)} breaking protobuf change(s) against base {base_commit}:\n{details}",
         "Keep the API backward compatible: add new fields, messages, or RPCs instead of "
         "removing, renaming, renumbering, or retyping existing ones, and reserve the numbers "
-        "and names of deleted fields.",
+        "and names of deleted fields. If the break is intentional, see 'Protobuf Breaking "
+        "Changes' in docs/developer.md for the pull request override.",
     )
 
 
-def check_proto_breaking(args: argparse.Namespace) -> dict[str, str]:
-    """Compares the working tree's protobuf APIs against the base revision.
+def append_markdown_report(report_file: Path, message: str, note: str) -> None:
+    """Appends breaking changes and a note as Markdown to report_file, e.g. the job summary.
 
-    Returns:
-        {"status": "passed", "base_commit": <base SHA>, "config": BUF_CONFIG_FILE}.
+    A write failure is only a warning so that it never masks the breaking changes.
+    """
+    report = f"### Breaking protobuf API changes\n\n```text\n{message}\n```\n\n{note}\n"
+    try:
+        with report_file.open("a", encoding="utf-8") as stream:
+            stream.write(report)
+    except OSError as e:
+        print_warning(f"Could not write the report to {report_file}: {e}")
+
+
+def report_breaking_changes(
+    args: argparse.Namespace, base_commit: str, findings: list[Finding]
+) -> list[str]:
+    """Appends findings to args.report_file when it is set and returns them formatted.
 
     Raises:
-        HandledError: If buf reports breaking changes or a prerequisite is missing.
+        HandledError: Listing the findings, unless args.allow_breaking is set.
+    """
+    error = breaking_changes_error(base_commit, findings)
+    if args.report_file:
+        note = ALLOW_BREAKING_NOTE if args.allow_breaking else error.instruction
+        append_markdown_report(args.report_file, error.message, note)
+    if not args.allow_breaking:
+        raise error
+    return [format_finding(finding) for finding in findings]
+
+
+def check_proto_breaking(args: argparse.Namespace) -> dict[str, Any]:
+    """Compares the working tree's protobuf APIs against the base revision.
+
+    Breaking changes are also appended to args.report_file as Markdown when it is set. With
+    args.allow_breaking, they are reported without failing; other errors still fail.
+
+    Returns:
+        {"status": "passed", "base_commit": <base SHA>, "config": <origin of the buf rules>}.
+        Allowed breaking changes turn "status" into "overridden" and are listed under
+        "breaking_changes".
+
+    Raises:
+        HandledError: If buf reports breaking changes without args.allow_breaking, or a
+            build, the coverage guard, or another prerequisite fails.
     """
     buf = resolve_buf_binary()
     base_commit = resolve_base_commit(_REPO_ROOT, args.base_ref)
-    findings = compare_against_base(_REPO_ROOT, base_commit, buf, args.bazel_flags)
+    config, config_source = resolve_buf_config(_REPO_ROOT, base_commit)
+    findings = compare_against_base(_REPO_ROOT, base_commit, buf, config, args.bazel_flags)
+    passed = {"status": "passed", "base_commit": base_commit, "config": config_source}
     if not findings:
-        return {"status": "passed", "base_commit": base_commit, "config": BUF_CONFIG_FILE}
-    raise breaking_changes_error(base_commit, findings)
+        return passed
+    allowed = report_breaking_changes(args, base_commit, findings)
+    return passed | {"status": "overridden", "breaking_changes": allowed}
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Builds the command-line parser of the tool."""
     parser = argparse.ArgumentParser(
         description=f"Compare {DESCRIPTOR_SET_TARGET} of the working tree against a base "
-        f"revision built in a temporary git worktree with 'buf breaking' ({BUF_CONFIG_FILE})."
+        "revision built in a temporary git worktree with 'buf breaking', using the base "
+        f"revision's {BUF_CONFIG_FILE}."
     )
     parser.add_argument(
         "--base-ref",
@@ -309,6 +373,17 @@ def build_parser() -> argparse.ArgumentParser:
         dest="bazel_flags",
         metavar="FLAG",
         help="Extra Bazel flag for both builds (repeatable), e.g. --bazel-flag=--config=ci.",
+    )
+    parser.add_argument(
+        "--report-file",
+        type=Path,
+        help="Markdown file to append breaking changes to, e.g. $GITHUB_STEP_SUMMARY.",
+    )
+    parser.add_argument(
+        "--allow-breaking",
+        action="store_true",
+        help="Report breaking changes without failing, e.g. for an approved override; build "
+        "and coverage errors still fail.",
     )
     return parser
 
