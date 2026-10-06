@@ -80,6 +80,7 @@ Tooling and automation for release metadata extraction, SemVer calculations, and
 ### 7. `tools/lint/` (Static Analyzers & Linters)
 Offline syntax walkers and static validation tooling:
 - [`check_go_determinism`](lint/check_go_determinism/): Ultra-fast (<50ms) Go AST analyzer checking Go test files for `os.Setenv` usage and arbitrary second-level `time.Sleep` calls.
+- [`check_legacy_imports.py`](lint/check_legacy_imports.py): Ratchet lint tracking remaining google3 migration leftovers (legacy Go import roots, unresolved `xmanager_cloud/...` paths, `compat_go_*` targets, `gazelle:resolve` overrides, `third_party/` proto paths, google3 Helm flags, legacy UI/Python paths) against [`legacy_imports_baseline.json`](lint/legacy_imports_baseline.json). Fails only when a count grows. When a count shrinks the check passes and reports it under `stale_baseline`; the pre-commit hook then runs `--update-baseline` (which never raises a count) and stages the lowered baseline in the same commit, so CI never fails because leftovers were removed elsewhere. Runs in pre-commit and the lint CI job. Tracking: [#1066](https://github.com/google/xmc/issues/1066).
 
 ---
 
