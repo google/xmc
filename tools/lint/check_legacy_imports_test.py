@@ -87,12 +87,16 @@ class ClassificationTest(unittest.TestCase):
                 self.assertEqual(cli.is_legacy_root_import(path), want)
 
     def test_is_unresolved_module_import(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "internal" / "real").mkdir(parents=True)
-            self.assertFalse(cli.is_unresolved_module_import("xmanager_cloud/internal/real", root))
-            self.assertTrue(cli.is_unresolved_module_import("xmanager_cloud/storage/storage", root))
-            self.assertFalse(cli.is_unresolved_module_import("github.com/x/y", root))
+        tracked = frozenset({"internal", "internal/real"})
+        self.assertFalse(cli.is_unresolved_module_import("xmanager_cloud/internal/real", tracked))
+        self.assertTrue(cli.is_unresolved_module_import("xmanager_cloud/storage/storage", tracked))
+        self.assertFalse(cli.is_unresolved_module_import("github.com/x/y", tracked))
+
+    def test_tracked_directories(self):
+        self.assertEqual(
+            cli.tracked_directories(["a/b/c.go", "a/d.go", "top.go"]),
+            frozenset({"a", "a/b"}),
+        )
 
 
 class CollectMetricsTest(unittest.TestCase):
@@ -151,6 +155,14 @@ class CollectMetricsTest(unittest.TestCase):
         metrics = cli.collect_metrics(self.root, ["deleted/x.go"])
         self.assertEqual(sum(metrics.values()), 0)
 
+    def test_untracked_directory_does_not_resolve_import(self):
+        # A leftover directory on disk (e.g. after `git rm`) must not hide an
+        # unresolved import; only tracked files define package directories.
+        (self.root / "removed_pkg").mkdir()
+        (self.root / "use.go").write_text('package a\n\nimport "xmanager_cloud/removed_pkg"\n')
+        metrics = cli.collect_metrics(self.root, ["use.go"])
+        self.assertEqual(metrics["go_unresolved_module_imports"], 1)
+
 
 class BaselineTest(unittest.TestCase):
     def test_compare_to_baseline(self):
@@ -201,15 +213,19 @@ class CheckLegacyImportsEndToEndTest(unittest.TestCase):
         (self.root / rel).write_text(content)
         subprocess.run(["git", "add", rel], cwd=self.root, check=True)
 
-    def _run(self, update=False):
+    def _run(self, update=False, baseline="default"):
         args = argparse.Namespace(
-            repo_root=str(self.root), baseline=str(self.baseline), update_baseline=update
+            repo_root=str(self.root),
+            baseline=str(self.baseline) if baseline == "default" else baseline,
+            update_baseline=update,
         )
         return cli.check_legacy_imports(args)
 
     def test_update_then_check_passes(self):
         self._run(update=True)
-        self.assertEqual(self._run()["metrics"]["go_legacy_root_imports"], 1)
+        result = self._run()
+        self.assertEqual(result["metrics"]["go_legacy_root_imports"], 1)
+        self.assertEqual(result["stale_baseline"], {})
 
     def test_regression_fails(self):
         self._run(update=True)
@@ -217,11 +233,19 @@ class CheckLegacyImportsEndToEndTest(unittest.TestCase):
         with self.assertRaisesRegex(HandledError, "increased"):
             self._run()
 
-    def test_stale_baseline_fails(self):
+    def test_stale_baseline_passes_and_is_reported(self):
         self._run(update=True)
         self._write_and_track("a.go", "package a\n")
-        with self.assertRaisesRegex(HandledError, "stale"):
-            self._run()
+        result = self._run()
+        self.assertEqual(
+            result["stale_baseline"],
+            {"go_legacy_root_imports": {"baseline": 1, "current": 0}},
+        )
+
+    def test_default_baseline_resolves_under_repo_root(self):
+        (self.root / cli.BASELINE_RELPATH).parent.mkdir(parents=True)
+        self._run(update=True, baseline=None)
+        self.assertTrue((self.root / cli.BASELINE_RELPATH).is_file())
 
 
 if __name__ == "__main__":
