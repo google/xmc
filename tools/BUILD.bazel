@@ -475,6 +475,23 @@ py_test(
     ],
 )
 
+py_library(
+    name = "check_proto_breaking_lib",
+    srcs = ["check_proto_breaking.py"],
+    imports = ["."],
+    deps = [":tool_utils"],
+)
+
+py_test(
+    name = "check_proto_breaking_test",
+    srcs = ["check_proto_breaking_test.py"],
+    imports = ["."],
+    deps = [
+        ":check_proto_breaking_lib",
+        ":tool_utils",
+    ],
+)
+
 alias(
     name = "extract_release_metadata_lib",
     actual = "//tools/release:extract_release_metadata_lib",

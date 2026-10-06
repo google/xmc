@@ -88,6 +88,22 @@ A set of compatibility packages is defined under `//internal/compat/...` to rout
 - `longrunning/operations_go_proto` -> `google.golang.org/genproto/googleapis/longrunning`
 - `grpc_proto/health_go_proto` -> `google.golang.org/grpc/health/grpc_health_v1`
 
+### Breaking-Change Check (`buf breaking`)
+
+[`tools/check_proto_breaking.py`](../tools/check_proto_breaking.py) detects backward-incompatible changes to the first-party protobuf APIs:
+* Builds the aggregate descriptor set [`//api:all_protos_descriptor_set`](../api/BUILD.bazel) for the working tree (including uncommitted changes) and for the base revision, which is checked out in a temporary `git worktree` that is always removed afterwards.
+* Compares both with [`buf breaking`](https://buf.build/docs/breaking/) using the strict `FILE` rules from [`api/buf-breaking.yaml`](../api/buf-breaking.yaml). Bundled third-party `google/*` files are ignored; unstable packages such as `components/v1alpha1` are checked because their messages are persisted.
+* Fails, listing the uncovered files, if a `proto_library` under `//api` is missing from `//api:all_protos_descriptor_set`. `api/filter/filter_expression.proto` has no `proto_library` and is not covered.
+
+To run the check, [install buf](https://buf.build/docs/cli/installation/) on your `PATH` and run:
+```bash
+# Compares against the merge-base of HEAD and origin/main.
+./tools/check_proto_breaking.py
+# Compares against another revision; extra Bazel flags apply to both builds.
+./tools/check_proto_breaking.py --base-ref HEAD~1 --bazel-flag=--disk_cache="${HOME}/.cache/bazel-disk"
+```
+The base revision must already define `//api:all_protos_descriptor_set`. It is built in a fresh Bazel output base, so the first run can take a few minutes; a shared `--disk_cache` speeds up repeated runs.
+
 ---
 
 ## Custom AIP-160 Filter & Parser Engine
