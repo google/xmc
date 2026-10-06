@@ -142,6 +142,14 @@ jobs:
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: true
             timeout_minutes: 15
+          - id: 'workunit_artifact_job'
+            name: 'WorkUnit Artifact Lifecycle Job'
+            example_path: 'examples/workunit_artifact_job'
+            entrypoint: 'launch.py'
+            args: '--queue=${QUEUE_NAME}'
+            verify_module: 'tools.nightly_tests.workunit_artifact_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            timeout_minutes: 15
           - id: 'chart_artifact_job'
             name: 'Chart Artifact Job'
             example_path: 'examples/chart_artifact_job'
@@ -260,7 +268,7 @@ jobs:
           # (Dashboard Service gRPC on 50051 and ClickHouse HTTP on 8123) via health-checked
           # background port-forwards without exposing those services publicly.
           start_port_forward() {
-            local name="$1" ns="$2" svc="$3" port="$4" log="/tmp/pf-${port}.log"
+            local name="$1" ns="$2" svc="$3" port="$4" log="/tmp/pf-$4.log"
             if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', ${port}), timeout=1).close()" >/dev/null 2>&1; then
               echo "Starting ${name} port-forward on localhost:${port}..."
               RUNNER_TRACKING_ID="" setsid kubectl port-forward "svc/${svc}" "${port}:${port}" -n "${ns}" >"${log}" 2>&1 </dev/null &
