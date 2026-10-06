@@ -24,6 +24,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from typing import Any
 
@@ -34,6 +35,7 @@ FLAGS = common.FLAGS
 DEFAULT_DASHBOARD_ID: str = "example_vcc_comparison"
 DEFAULT_TITLE_PATTERN: str = "VCC"
 DEFAULT_TIMEOUT_SEC: int = 120
+EXPECTED_MIN_CHARTS: int = 3
 
 
 def _assert_dashboard(
@@ -51,15 +53,19 @@ def _assert_dashboard(
     if not dash_results:
         raise AssertionError(f"Dashboard '{dashboard_id}' was not returned by endpoint.")
     dash_info = dash_results[0]
-    dash_id = dash_info.get("id") or dash_info.get("dashboard_id", "")
-    print(f"  [✓] Dashboard ID      : {dash_id}")
+    charts = dash_info.get("charts", [])
+    if not dash_info.get("chart_ids") or len(charts) < EXPECTED_MIN_CHARTS:
+        raise AssertionError(
+            f"Dashboard '{dashboard_id}' expected at least {EXPECTED_MIN_CHARTS} constituent "
+            f"charts, found {len(charts)} (chart_ids: {dash_info.get('chart_ids')})."
+        )
+    print(f"  [✓] Dashboard ID      : {dash_info.get('id') or dash_info.get('dashboard_id', '')}")
     print(f"  [✓] Dashboard Title   : {dash_info['title']}")
     print(f"  [✓] Referenced Charts : {len(dash_info['chart_ids'])}")
     print("\n[2/2] Validating Constituent Charts...")
-    for chart in dash_info.get("charts", []):
-        print(
-            f"  [✓] Chart '{chart.get('name', chart.get('id', 'unknown'))}': Title='{chart.get('title', '')}'"
-        )
+    for chart in charts:
+        cid = chart.get("name", chart.get("id", "unknown"))
+        print(f"  [✓] Chart '{cid}': Title='{chart.get('title', '')}'")
     return dash_info
 
 
@@ -98,8 +104,10 @@ def main(argv: Sequence[str]) -> None:
     dashboard_id = common.parse_xid(raw_id, required=False) or DEFAULT_DASHBOARD_ID
     expected_title_pattern = common.get_flag(FLAGS, "expected_title_pattern", DEFAULT_TITLE_PATTERN)
     timeout_sec = common.get_flag(FLAGS, "timeout_sec", DEFAULT_TIMEOUT_SEC)
-    raw_dash_ep = common.get_flag(FLAGS, "dashboard_endpoint", None) or common.get_flag(
-        FLAGS, "endpoint", None
+    raw_dash_ep = (
+        common.get_flag(FLAGS, "dashboard_endpoint", None)
+        or os.environ.get("XMC_DASHBOARD_REST_ENDPOINT")
+        or os.environ.get("DASHBOARD_ENDPOINT")
     )
     dashboard_endpoint = common.resolve_dashboard_endpoint(raw_dash_ep)
     ui_base_url = common.resolve_ui_base_url()
