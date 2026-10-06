@@ -230,13 +230,12 @@ func validateStatusPayload(root map[string]any) (map[string]any, error) {
 	if !ok {
 		return nil, contractBreachErrorf("malformed 3P status payload: expected object for .status, got %T", raw)
 	}
-	rawConds, hasConds := statusMap["conditions"]
-	if !hasConds || rawConds == nil {
-		return statusMap, nil
+	condSlice, found, err := unstructured.NestedSlice(root, "status", "conditions")
+	if err != nil {
+		return nil, contractBreachErrorf("malformed 3P status.conditions: expected array, got %T", statusMap["conditions"])
 	}
-	condSlice, ok := rawConds.([]any)
-	if !ok {
-		return nil, contractBreachErrorf("malformed 3P status.conditions: expected array, got %T", rawConds)
+	if !found {
+		return statusMap, nil
 	}
 	for i, elem := range condSlice {
 		if _, ok := elem.(map[string]any); !ok {

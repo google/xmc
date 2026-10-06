@@ -176,8 +176,10 @@ func waitForVAPActivation(ctx context.Context, t *testing.T, compClient dynamic.
 	err := wait.PollUntilContextTimeout(ctx, 15*time.Millisecond, 3*time.Second, true, func(ctx context.Context) (bool, error) {
 		delErr := compClient.Delete(ctx, canary.GetName(), metav1.DeleteOptions{})
 		if delErr == nil || strings.Contains(delErr.Error(), "not found") {
-			_, createErr := compClient.Create(ctx, canary, metav1.CreateOptions{})
-			return false, createErr
+			if _, createErr := compClient.Create(ctx, canary, metav1.CreateOptions{}); createErr != nil && !strings.Contains(createErr.Error(), "already exists") {
+				return false, createErr
+			}
+			return false, nil
 		}
 		return strings.Contains(delErr.Error(), "Deletion rejected: Component has deletionProtection enabled"), nil
 	})

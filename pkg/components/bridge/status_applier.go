@@ -143,7 +143,9 @@ func ApplyComponentStatusSSA(ctx context.Context, client dynamic.Interface, defa
 	if err != nil {
 		return err
 	}
-	item.Object = updated.Object
+	if updated != nil {
+		item.Object = updated.Object
+	}
 	slog.DebugContext(ctx, "Updated Component status via Server-Side Apply", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
 	return nil
 }
@@ -151,14 +153,11 @@ func ApplyComponentStatusSSA(ctx context.Context, client dynamic.Interface, defa
 // SyncComponentFinalizers attaches or detaches the deletion protection finalizer on item in Kubernetes,
 // retrying on optimistic concurrency conflicts so concurrent resource updates do not fail reconciliation.
 func SyncComponentFinalizers(ctx context.Context, client dynamic.Interface, defaultNamespace string, item *unstructured.Unstructured, res *ReconcileResult) (*unstructured.Unstructured, error) {
-	if res == nil || item == nil {
+	if res == nil || item == nil || (!res.AddFinalizer && !res.RemoveFinalizer) {
 		return item, nil
 	}
 	if client == nil {
 		return nil, errors.New("dynamic client must not be nil")
-	}
-	if !res.AddFinalizer && !res.RemoveFinalizer {
-		return item, nil
 	}
 	resClient := client.Resource(ComponentGVR).Namespace(resolveTargetNamespace(item, defaultNamespace))
 	current := item
