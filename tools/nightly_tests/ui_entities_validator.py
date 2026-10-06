@@ -32,11 +32,12 @@ class UIVerificationError(AssertionError):
 
 DEFAULT_SCREENSHOTS_DIR: str = "/tmp/xmc_screenshots"
 
-sync_playwright: Any = None
 try:
-    from playwright.sync_api import sync_playwright  # type: ignore[no-redef]
+    import playwright.sync_api as _playwright_sync_api
+
+    sync_playwright: Any = _playwright_sync_api.sync_playwright
 except ImportError:
-    pass
+    sync_playwright = None
 
 
 class XMCUIBrowserSession:

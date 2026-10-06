@@ -741,7 +741,11 @@ def _fetch_raw_artifacts(
 def _extract_artifact_payload_info(art: Any) -> tuple[str, Any]:
     """Extracts normalized payload type and active subtype object from an Artifact."""
     payload = getattr(art, "payload", None)
-    which = payload.WhichOneof("type") if hasattr(payload, "WhichOneof") else None
+    which = (
+        payload.WhichOneof("type")
+        if payload is not None and hasattr(payload, "WhichOneof")
+        else None
+    )
     if not which:
         return "", None
     return _normalize_artifact_type(which), getattr(payload, which, None)
@@ -944,8 +948,8 @@ def validate_clickhouse_metrics(
     xid: str,
     expected_metric_names: Sequence[str] | set[str] | None = None,
     expected_min_rows: int = 1,
-    timeout_sec: int = 60,
-    poll_interval_sec: int = 3,
+    timeout_sec: float = 60,
+    poll_interval_sec: float = 3,
     strict_required: bool = True,
 ) -> dict[str, Any]:
     """Polls and asserts metric row arrival and value validity directly via ClickHouse SQL."""
