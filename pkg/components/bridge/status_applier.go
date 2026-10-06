@@ -171,9 +171,11 @@ func SyncComponentFinalizers(ctx context.Context, client dynamic.Interface, defa
 		var updateErr error
 		updated, updateErr = resClient.Update(ctx, current, metav1.UpdateOptions{})
 		if apierrors.IsConflict(updateErr) {
-			if latest, getErr := resClient.Get(ctx, current.GetName(), metav1.GetOptions{}); getErr == nil {
-				current = latest
+			latest, getErr := resClient.Get(ctx, current.GetName(), metav1.GetOptions{})
+			if getErr != nil {
+				return getErr
 			}
+			current = latest
 		}
 		return updateErr
 	})

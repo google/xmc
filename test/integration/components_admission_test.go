@@ -17,8 +17,10 @@ package integration_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"text/template"
@@ -173,9 +175,9 @@ func waitForVAPActivation(ctx context.Context, t *testing.T, compClient dynamic.
 	}
 	err := wait.PollUntilContextTimeout(ctx, 15*time.Millisecond, 3*time.Second, true, func(ctx context.Context) (bool, error) {
 		delErr := compClient.Delete(ctx, canary.GetName(), metav1.DeleteOptions{})
-		if delErr == nil {
-			_, _ = compClient.Create(ctx, canary, metav1.CreateOptions{})
-			return false, nil
+		if delErr == nil || strings.Contains(delErr.Error(), "not found") {
+			_, createErr := compClient.Create(ctx, canary, metav1.CreateOptions{})
+			return false, createErr
 		}
 		return strings.Contains(delErr.Error(), "Deletion rejected: Component has deletionProtection enabled"), nil
 	})
@@ -326,7 +328,7 @@ func resolveEnvtestAssets(t *testing.T) string {
 			return found
 		}
 	}
-	fallback := filepath.Join(os.Getenv("HOME"), ".local", "share", "kubebuilder-envtest", "k8s", "1.30.3-linux-amd64")
+	fallback := filepath.Join(os.Getenv("HOME"), ".local", "share", "kubebuilder-envtest", "k8s", fmt.Sprintf("1.30.3-%s-%s", runtime.GOOS, runtime.GOARCH))
 	if _, err := os.Stat(filepath.Join(fallback, "kube-apiserver")); err == nil {
 		return fallback
 	}

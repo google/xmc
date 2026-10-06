@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -1661,7 +1662,7 @@ func locateEnvtestBinaries(t *testing.T) string {
 			return found
 		}
 	}
-	fallback := filepath.Join(os.Getenv("HOME"), ".local", "share", "kubebuilder-envtest", "k8s", "1.30.3-linux-amd64")
+	fallback := filepath.Join(os.Getenv("HOME"), ".local", "share", "kubebuilder-envtest", "k8s", fmt.Sprintf("1.30.3-%s-%s", runtime.GOOS, runtime.GOARCH))
 	if _, err := os.Stat(filepath.Join(fallback, "kube-apiserver")); err == nil {
 		return fallback
 	}
