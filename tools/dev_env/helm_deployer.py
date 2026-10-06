@@ -62,6 +62,8 @@ def service_to_deployment_key(service: str) -> str:
         return "essDeployment"
     if service in ("rod_data_provider", "rod"):
         return "rodDeployment"
+    if service in ("components", "xmc_bridge", "xmc-bridge"):
+        return "componentsDeployment"
 
     parts = service.split("_")
     camel = parts[0].lower() + "".join(p.capitalize() for p in parts[1:])
@@ -75,11 +77,14 @@ def service_to_image_key(service: str) -> str:
         'dashboard_service' -> 'dashboard_service_custom_image'
         'experiment_state_server' -> 'ess_custom_image'
         'rod_data_provider' -> 'rod_custom_image'
+        'components' -> 'xmc_bridge_custom_image'
     """
     if service in ("experiment_state_server", "ess"):
         return "ess_custom_image"
     if service in ("rod_data_provider", "rod"):
         return "rod_custom_image"
+    if service in ("components", "xmc_bridge", "xmc-bridge"):
+        return "xmc_bridge_custom_image"
     return f"{service.lower()}_custom_image"
 
 
@@ -165,8 +170,9 @@ class HelmDeployer:
         for s in cfg.enabled_services:
             dep_key = service_to_deployment_key(s)
             img_key = service_to_image_key(s)
+            img_service = "xmc_bridge" if s == "components" else s.lower()
             values[dep_key] = {"enabled": True}
-            values[img_key] = f"{s.lower()}_image:latest"
+            values[img_key] = f"{img_service}_image:latest"
 
         if cfg.remote_k8s_context:
             values["remoteK8s"] = {"enabled": True, "secretName": "remote-k8s-config"}

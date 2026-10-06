@@ -159,8 +159,10 @@ class ChangeDetector:
         """Matches a file path to its owning microservice under cmd/<service>."""
         if clean_f.startswith("cmd/"):
             parts = clean_f.split("/")
-            if len(parts) > 1 and parts[1] in self.enabled_services:
-                return parts[1]
+            if len(parts) > 1:
+                for svc in (parts[1], resolve_service_name(parts[1])):
+                    if svc in self.enabled_services:
+                        return svc
         return None
 
     def _is_shared_code(self, clean_f: str) -> bool:

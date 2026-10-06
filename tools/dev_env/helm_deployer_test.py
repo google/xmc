@@ -42,6 +42,7 @@ class TestHelmDeployer(unittest.TestCase):
             service_to_deployment_key("ingestion_gateway"), "ingestionGatewayDeployment"
         )
         self.assertEqual(service_to_deployment_key("components"), "componentsDeployment")
+        self.assertEqual(service_to_deployment_key("xmc_bridge"), "componentsDeployment")
         self.assertEqual(service_to_deployment_key("rod_data_provider"), "rodDeployment")
         self.assertEqual(service_to_deployment_key("rod"), "rodDeployment")
         self.assertEqual(service_to_deployment_key("experiment_state_server"), "essDeployment")
@@ -53,6 +54,8 @@ class TestHelmDeployer(unittest.TestCase):
         )
         self.assertEqual(service_to_image_key("experiment_state_server"), "ess_custom_image")
         self.assertEqual(service_to_image_key("rod_data_provider"), "rod_custom_image")
+        self.assertEqual(service_to_image_key("components"), "xmc_bridge_custom_image")
+        self.assertEqual(service_to_image_key("xmc_bridge"), "xmc_bridge_custom_image")
         self.assertEqual(service_to_image_key("custom_service"), "custom_service_custom_image")
 
     def setUp(self) -> None:

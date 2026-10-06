@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import time
+from dataclasses import replace
 from typing import NoReturn
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -37,6 +38,7 @@ from tools.common.tool_utils import (  # noqa: E402
     DeploymentConfig,
     build_and_push_images,
     configure_docker_auth,
+    deploy_component_profile,
     ensure_venv,
     load_and_validate_config as tool_load_config,
     log_error,
@@ -104,6 +106,7 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Start/resume deployment from this step onwards",
     )
     parser.add_argument("--only", choices=STEPS, help="Execute ONLY this specific step and exit")
+    parser.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
 
     parsed_args = parser.parse_args(args)
 
@@ -462,7 +465,9 @@ def step_compile(
         config_path: Path to the configuration file.
     """
     log_info("Compiling XMC blueprint using gcluster...")
-    compile_blueprint(config_path, config.deployment_name)
+    compile_blueprint(
+        config_path, config.deployment_name, enable_components=config.enable_components
+    )
     log_success("Blueprint compiled successfully under 'ctk-out/'.")
 
 
@@ -616,6 +621,7 @@ def step_app(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     log_info("Deploying xmc_app group (Helm release)...")
     run_gcluster_deploy(config.deployment_name, "xmc_app")
     log_success("XMC application Helm release deployed successfully.")
+    deploy_component_profile(config)
 
 
 def _wait_for_gateway_programmed() -> None:
@@ -722,6 +728,7 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
         "ENVIRONMENT": config.environment,
         "REGION": config.region,
         "PROJECT_ID": config.project_id,
+        "ENABLE_COMPONENTS": "true" if config.enable_components else "false",
     }
     try:
         run_command(
@@ -746,6 +753,8 @@ def run_deployment(args: argparse.Namespace) -> None:
           dns_zone, start_from, only.
     """
     config = load_and_validate_config(args.config)
+    if getattr(args, "enable_components", None) is not None:
+        config = replace(config, enable_components=args.enable_components)
 
     # Run validations (corresponds to run_checks in bash)
     run_checks(config, args.dns_project, args.dns_zone)

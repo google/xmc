@@ -424,7 +424,7 @@ check_security() {
       FAILED=1
     fi
   elif command -v docker >/dev/null 2>&1; then
-    if ! docker run --rm -v "$(pwd):/src" aquasec/trivy:latest config --skip-check-update --severity HIGH,CRITICAL /src/deploy; then
+    if ! docker run --rm -v "$(pwd):/src" -w /src aquasec/trivy:latest config --skip-check-update --severity HIGH,CRITICAL deploy/; then
       echo "❌ Trivy security check failed."
       FAILED=1
     fi

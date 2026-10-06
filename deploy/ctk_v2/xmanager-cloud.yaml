@@ -49,6 +49,7 @@ vars:
   rod_image: "$(vars.image_registry)/rod-data-provider-$(vars.environment):$(vars.image_tag)"
   ingestion_gateway_image: "$(vars.image_registry)/ingestion-gateway-$(vars.environment):$(vars.image_tag)"
   log_monitor_image: "$(vars.image_registry)/log-monitor-$(vars.environment):$(vars.image_tag)"
+  xmc_bridge_image: "$(vars.image_registry)/xmc-bridge-$(vars.environment):$(vars.image_tag)"
   
   task_signature_ttl_seconds: 86400
   use_redis_queue: true
@@ -555,6 +556,8 @@ deployment_groups:
       - name: componentsDeployment.enabled
         value: $(vars.enable_components)
         type: auto
+      - name: xmc_bridge_custom_image
+        value: $(vars.xmc_bridge_image)
 
   - id: xmc_sa_annotations
     source: modules/management/kubectl-apply
