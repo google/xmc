@@ -187,15 +187,61 @@ func TestRestartWorkUnitExecutions_RetryIsIdempotent(t *testing.T) {
 
 func TestRestartWorkUnitExecutions_PreservesAborted(t *testing.T) {
 	ctx := context.Background()
-	mockStorage := &storage.MockStorage{
-		FetchWorkUnitErr: status.ErrAborted,
+	validWorkUnit := &essmsgpb.WorkUnit{
+		Name: "experiments/1/workUnits/1",
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Name:   "experiments/1/workUnits/1/executions/1",
+			Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_FAILED},
+		},
 	}
 
-	_, err := restartWorkUnitExecutions(ctx, mockStorage, "test@example.com", 123, []int64{1})
-	if !errors.Is(err, status.ErrAborted) {
-		t.Errorf("restartWorkUnitExecutions error = %v, want errors.Is(err, status.ErrAborted)", err)
+	tests := []struct {
+		name        string
+		mockStorage *storage.MockStorage
+		wantErr     error
+		wantCode    status.Code
+	}{
+		{
+			name: "fetch_work_unit_aborted",
+			mockStorage: &storage.MockStorage{
+				FetchWorkUnitErr: status.ErrAborted,
+			},
+			wantErr:  status.ErrAborted,
+			wantCode: status.Aborted,
+		},
+		{
+			name: "fetch_experiment_aborted",
+			mockStorage: &storage.MockStorage{
+				WorkUnit:           validWorkUnit,
+				FetchExperimentErr: status.ErrAborted,
+			},
+			wantErr:  status.ErrAborted,
+			wantCode: status.Aborted,
+		},
+		{
+			name: "invalid_current_execution_name_wraps_internal",
+			mockStorage: &storage.MockStorage{
+				WorkUnit: &essmsgpb.WorkUnit{
+					Name: "experiments/1/workUnits/1",
+					CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+						Name: "invalid-execution-name",
+					},
+				},
+			},
+			wantErr:  status.ErrInternal,
+			wantCode: status.Internal,
+		},
 	}
-	if status.ExtractCanonicalCode(err) != status.Aborted {
-		t.Errorf("restartWorkUnitExecutions canonical code = %v, want Aborted", status.ExtractCanonicalCode(err))
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := restartWorkUnitExecutions(ctx, tc.mockStorage, "test@example.com", 1, []int64{1})
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("restartWorkUnitExecutions() error = %v, want errors.Is(err, %v)", err, tc.wantErr)
+			}
+			if status.ExtractCanonicalCode(err) != tc.wantCode {
+				t.Errorf("restartWorkUnitExecutions() canonical code = %v, want %v", status.ExtractCanonicalCode(err), tc.wantCode)
+			}
+		})
 	}
 }

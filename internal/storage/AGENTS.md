@@ -14,11 +14,11 @@ Follow these rules when adding or modifying code under `internal/storage/`:
       // Orchestrate reads and writes via tx.WorkUnits, tx.Experiments, etc.
   })
   ```
-- Expose composable, single-responsibility read and write primitives on the transaction-scoped repositories (`WorkUnitTxRepository`, `ExperimentTxRepository`, `StatusMessageTxRepository`, `StatusHistoryTxRepository`) instead of creating monolithic transaction methods inside storage backends.
+- Expose composable, single-responsibility read and write primitives on the transaction-scoped repositories (`WorkUnitTxRepository`, `ExperimentTxRepository`, `StatusMessageTxRepository`, `StatusHistoryTxRepository`, `PauseStateTxRepository`, `PausedTaskTxRepository`) instead of creating monolithic transaction methods inside storage backends (see [`README.md`](README.md)).
 - Inside `RunInTransaction` callbacks, propagate storage errors with `%w` so backend transaction runners can detect and retry transient contention errors (such as `status.Aborted`).
 
 ## 3. Keep Database-Specific Logic in Dedicated Subpackages
-- The root `internal/storage` package (`storage.go`, `test_utils.go`) must remain 100% database-agnostic. Never import database drivers or engine-specific types into `internal/storage`.
+- The root `internal/storage` package ([`storage.go`](storage.go), [`test_utils.go`](test_utils.go)) must remain 100% database-agnostic. Never import database drivers or engine-specific types into `internal/storage`.
 - Isolate all database-specific SQL dialects, mutations, schema mappings, and transaction mechanics inside dedicated engine subpackages:
-  - `internal/storage/spanner/` for Cloud Spanner
-  - `internal/storage/postgres/` for PostgreSQL
+  - [`internal/storage/spanner/`](spanner/) for Cloud Spanner
+  - `internal/storage/postgres/` (example future backend) for PostgreSQL

@@ -106,43 +106,12 @@ func restartSingleWorkUnitExecution(
 
 	// 4.1. Create a new execution with the given state.
 	newEID := eid + 1
-	newExecution := &essmsgpb.WorkUnitExecution{
-		Name: fmt.Sprintf("experiments/%v/workUnits/%v/executions/%v", xid, wid, newEID),
-		Status: &essmsgpb.WorkUnitStatus{
-			State: essmsgpb.WorkUnitStatus_RESTARTING,
-			SystemMessage: &essmsgpb.StructuredMessage{
-				UserFacingText: fmt.Sprintf("Work unit is being restarted by %s", requester),
-				Severity:       essmsgpb.StructuredMessage_INFO,
-				Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-				Parent:         fmt.Sprintf("experiments/%v/workUnits/%v", xid, wid),
-			},
-			UpdateTime:      timestamppb.New(now),
-			StateUpdateTime: timestamppb.New(now),
-		},
-		Metadata:   &essmsgpb.WorkUnitExecutionMetadata{},
-		State:      essmsgpb.WorkUnitExecution_ACTIVE,
-		CreateTime: timestamppb.New(now),
-		UpdateTime: timestamppb.New(now),
-	}
+	newExecution := newRestartingWorkUnitExecution(xid, wid, newEID, requester, now)
 	logging.Debug(ctx, "Archiving active execution and generating new execution", "wid", wid, "prevEID", eid, "newEID", newEID)
 
 	// 4.2. Record status message and history mutations.
-	if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage()); err != nil {
-		return nil, nil, fmt.Errorf("failed to save status message history: %w", err)
-	}
-
-	qName := wu.GetExecutable().GetSchedulingConstraints().GetQueueName()
-	acc := resourceaccumulator.New()
-	acc.AccumulateExecutable(wu.GetExecutable())
-	resMap := acc.IntTotals()
-	prevState := currentExecution.GetStatus().GetState().Enum()
-	newState := newExecution.GetStatus().GetState().Enum()
-	var stateTime time.Time
-	if newExecution.GetStatus().GetUpdateTime() != nil {
-		stateTime = newExecution.GetStatus().GetUpdateTime().AsTime()
-	}
-	if err := tx.StatusHistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, &newEID, qName, prevState, newState, resMap, stateTime); err != nil {
-		return nil, nil, fmt.Errorf("failed to save work unit status history: %w", err)
+	if err := recordRestartExecutionHistory(ctx, tx, xid, wid, newEID, wu.GetExecutable(), currentExecution, newExecution); err != nil {
+		return nil, nil, err
 	}
 
 	// 5. Write the new execution to storage.
@@ -158,6 +127,55 @@ func restartSingleWorkUnitExecution(
 	}
 
 	return newExecution, delta, nil
+}
+
+func newRestartingWorkUnitExecution(xid, wid, newEID int64, requester string, now time.Time) *essmsgpb.WorkUnitExecution {
+	nowProto := timestamppb.New(now)
+	return &essmsgpb.WorkUnitExecution{
+		Name: fmt.Sprintf("experiments/%v/workUnits/%v/executions/%v", xid, wid, newEID),
+		Status: &essmsgpb.WorkUnitStatus{
+			State: essmsgpb.WorkUnitStatus_RESTARTING,
+			SystemMessage: &essmsgpb.StructuredMessage{
+				UserFacingText: fmt.Sprintf("Work unit is being restarted by %s", requester),
+				Severity:       essmsgpb.StructuredMessage_INFO,
+				Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+				Parent:         fmt.Sprintf("experiments/%v/workUnits/%v", xid, wid),
+			},
+			UpdateTime:      nowProto,
+			StateUpdateTime: nowProto,
+		},
+		Metadata:   &essmsgpb.WorkUnitExecutionMetadata{},
+		State:      essmsgpb.WorkUnitExecution_ACTIVE,
+		CreateTime: nowProto,
+		UpdateTime: nowProto,
+	}
+}
+
+func recordRestartExecutionHistory(
+	ctx context.Context,
+	tx *storage.Transaction,
+	xid, wid, newEID int64,
+	executable *essmsgpb.Executable,
+	currentExecution, newExecution *essmsgpb.WorkUnitExecution,
+) error {
+	if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage()); err != nil {
+		return fmt.Errorf("failed to save status message history: %w", err)
+	}
+
+	qName := executable.GetSchedulingConstraints().GetQueueName()
+	acc := resourceaccumulator.New()
+	acc.AccumulateExecutable(executable)
+	resMap := acc.IntTotals()
+	prevState := currentExecution.GetStatus().GetState().Enum()
+	newState := newExecution.GetStatus().GetState().Enum()
+	var stateTime time.Time
+	if newExecution.GetStatus().GetUpdateTime() != nil {
+		stateTime = newExecution.GetStatus().GetUpdateTime().AsTime()
+	}
+	if err := tx.StatusHistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, &newEID, qName, prevState, newState, resMap, stateTime); err != nil {
+		return fmt.Errorf("failed to save work unit status history: %w", err)
+	}
+	return nil
 }
 
 // updateRestartExperimentStatus denormalizes execution state deltas and updates the experiment status in storage.
