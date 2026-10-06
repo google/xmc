@@ -150,7 +150,12 @@ func (h *WorkUnitHandler) enqueueWorkUnitStop(ctx context.Context, workUnit *msg
 		return WorkUnitStopEnqueueResult{}, h.handleEnqueueActionError(ctx, "stop", workUnit, xid, wid, msgpb.StructuredMessage_ERROR, err)
 	}
 
-	// 3. Update the work unit's status to STOPPING.
+	// 3. Update the work unit's status to STOPPING (or directly to STOPPED if transitioning from SCHEDULING_PAUSED,
+	// since no JobSet exists on GKE to emit a deletion watch event for the reconciler).
+	targetState := msgpb.WorkUnitStatus_STOPPING
+	if workUnit.GetCurrentWorkUnitExecution().GetStatus().GetState() == msgpb.WorkUnitStatus_SCHEDULING_PAUSED {
+		targetState = msgpb.WorkUnitStatus_STOPPED
+	}
 	execUpdate := &storage.WorkUnitExecutionUpdate{
 		WID: wid,
 		EID: eid,
@@ -162,7 +167,7 @@ func (h *WorkUnitHandler) enqueueWorkUnitStop(ctx context.Context, workUnit *msg
 					Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
 				},
 				StateUpdateTime: timestamppb.Now(),
-				State:           msgpb.WorkUnitStatus_STOPPING,
+				State:           targetState,
 			},
 		},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state"}},
