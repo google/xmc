@@ -122,7 +122,7 @@ func ApplyComponentStatusSSA(ctx context.Context, client dynamic.Interface, defa
 			"name":      item.GetName(),
 			"namespace": ns,
 		},
-		"status": BuildStatusMap(res),
+		"status": BuildStatus(res),
 	}
 	patchBytes, err := json.Marshal(statusPatch)
 	if err != nil {

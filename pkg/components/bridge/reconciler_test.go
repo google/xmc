@@ -1604,7 +1604,7 @@ func startReconcilerEnvtest(t *testing.T) dynamic.Interface {
 	}
 	testEnv := &envtest.Environment{
 		BinaryAssetsDirectory:   locateEnvtestBinaries(t),
-		ControlPlaneStopTimeout: 200 * time.Millisecond,
+		ControlPlaneStopTimeout: 10 * time.Second,
 		CRDInstallOptions:       envtest.CRDInstallOptions{Paths: []string{crdDir}, ErrorIfPathMissing: true, PollInterval: 10 * time.Millisecond, MaxTime: 5 * time.Second},
 	}
 	cfg, err := testEnv.Start()

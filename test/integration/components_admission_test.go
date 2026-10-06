@@ -75,7 +75,7 @@ func startAdmissionEnvtest(ctx context.Context, t *testing.T) admissionClients {
 	}
 	testEnv := &envtest.Environment{
 		BinaryAssetsDirectory:   resolveEnvtestAssets(t),
-		ControlPlaneStopTimeout: 200 * time.Millisecond,
+		ControlPlaneStopTimeout: 10 * time.Second,
 		CRDInstallOptions: envtest.CRDInstallOptions{
 			Paths:              []string{crdDir},
 			ErrorIfPathMissing: true,
