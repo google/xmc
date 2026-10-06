@@ -73,45 +73,18 @@ func FormatReport(report *DiagReport, format string) (string, error) {
 		sb.WriteString(fmt.Sprintf("  Error: %s\n", report.Redpanda.Error))
 	}
 
-	writeComponentsSection(&sb, report.Components)
 	return sb.String(), nil
 }
 
-func writeComponentsSection(sb *strings.Builder, comp ComponentsReport) {
-	if comp.Status == "" {
-		return
-	}
-	fmt.Fprintf(sb, "\n[Kubernetes Components Diagnostics] Status: %s\n  Healthy: %t\n", comp.Status, comp.Healthy)
-	if comp.Namespace != "" {
-		fmt.Fprintf(sb, "  Namespace: %s\n", comp.Namespace)
-	}
-	if comp.Skipped {
-		sb.WriteString("  Skipped: true\n")
-	}
-	for _, c := range comp.Components {
-		fmt.Fprintf(sb, "  Component %s: enabled=%t state=%s ready=%t healthy=%t\n", c.Name, c.Enabled, c.State, c.Ready, c.Healthy)
-	}
-	for _, kv := range [][2]string{{"Reason", comp.Reason}, {"Error", comp.Error}} {
-		if kv[1] != "" {
-			fmt.Fprintf(sb, "  %s: %s\n", kv[0], kv[1])
-		}
-	}
-}
-
-// RunDiagnostics executes checks for ClickHouse, Redpanda, and Component CRs and builds overall report.
-func RunDiagnostics(ctx context.Context, cfg *Config, chQuerier ClickHouseQuerier, chConnErr error, rpQuerier RedpandaQuerier, rpConnErr error, compCheckers ...*ComponentChecker) *DiagReport {
+// RunDiagnostics executes checks for ClickHouse and Redpanda and builds overall report.
+func RunDiagnostics(ctx context.Context, cfg *Config, chQuerier ClickHouseQuerier, chConnErr error, rpQuerier RedpandaQuerier, rpConnErr error) *DiagReport {
 	chRep := CheckClickHouse(ctx, chQuerier, chConnErr, cfg.SkipSmokeTests)
 	rpRep := CheckRedpanda(ctx, rpQuerier, rpConnErr, cfg.TopicName, cfg.ConsumerGroup, cfg.SkipSmokeTests)
-	var checker *ComponentChecker
-	if len(compCheckers) > 0 {
-		checker = compCheckers[0]
-	}
-	compRep := CheckComponents(ctx, checker, cfg)
 
 	overall := StatusHealthy
-	if chRep.Status == StatusFailed || rpRep.Status == StatusFailed || compRep.Status == StatusFailed {
+	if chRep.Status == StatusFailed || rpRep.Status == StatusFailed {
 		overall = StatusFailed
-	} else if chRep.Status == StatusDegraded || rpRep.Status == StatusDegraded || compRep.Status == StatusDegraded {
+	} else if chRep.Status == StatusDegraded || rpRep.Status == StatusDegraded {
 		overall = StatusDegraded
 	}
 
@@ -120,6 +93,5 @@ func RunDiagnostics(ctx context.Context, cfg *Config, chQuerier ClickHouseQuerie
 		Timestamp:     time.Now().UTC(),
 		ClickHouse:    chRep,
 		Redpanda:      rpRep,
-		Components:    compRep,
 	}
 }

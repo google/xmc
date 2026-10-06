@@ -115,13 +115,7 @@ func run() int {
 		defer kClient.Close()
 	}
 
-	var compChecker *ComponentChecker
-	if cfg.CheckComponents {
-		dynClient, dynErr := NewDynamicClient(cfg.Kubeconfig)
-		compChecker = &ComponentChecker{Client: dynClient, ConnErr: dynErr}
-	}
-
-	report := RunDiagnostics(ctx, cfg, chQuerier, chConnErr, rpQuerier, rpConnErr, compChecker)
+	report := RunDiagnostics(ctx, cfg, chQuerier, chConnErr, rpQuerier, rpConnErr)
 	out, err := FormatReport(report, cfg.OutputFormat)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error formatting report: %v\n", err)

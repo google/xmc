@@ -15,10 +15,8 @@
 package main
 
 import (
-	"cmp"
 	"flag"
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -42,23 +40,13 @@ type Config struct {
 	TLSInsecure      bool
 	DialWithSeedOnly bool
 
-	CheckComponents, CheckComponentsExplicit bool
-	Namespace, Kubeconfig                    string
-
 	OutputFormat   string
 	SkipSmokeTests bool
-}
-
-func parseComponentFlagDefaults() (bool, bool, string) {
-	raw := strings.TrimSpace(strings.ToLower(cmp.Or(os.Getenv("CHECK_COMPONENTS"), os.Getenv("ENABLE_COMPONENTS"))))
-	enabled := raw == "" || raw == "true" || raw == "1" || raw == "yes"
-	return enabled, raw != "" && enabled, cmp.Or(os.Getenv("XMC_NAMESPACE"), os.Getenv("NAMESPACE"), "xmc")
 }
 
 // ParseFlags parses command-line arguments into Config.
 func ParseFlags(args []string) (*Config, error) {
 	fs := flag.NewFlagSet("xmc-diag", flag.ContinueOnError)
-	checkComp, checkCompExplicit, defaultNS := parseComponentFlagDefaults()
 
 	var (
 		chHost      = fs.String("clickhouse_host", "", "ClickHouse host (overrides CLICKHOUSE_HOST env)")
@@ -79,19 +67,11 @@ func ParseFlags(args []string) (*Config, error) {
 		seedOnly    = fs.Bool("dial_with_seed_only", false, "Dial only seed brokers (useful for port-forwarding/tunneling)")
 		outFormat   = fs.String("output", "text", "Output format: text or json")
 		skipSmoke   = fs.Bool("skip_smoke_tests", false, "Skip database and topic smoke queries")
-		namespace   = fs.String("namespace", defaultNS, "Kubernetes namespace for Component CR checks")
-		kubeconfig  = fs.String("kubeconfig", os.Getenv("KUBECONFIG"), "Path to kubeconfig file for Component CR checks")
 	)
-	fs.BoolVar(&checkComp, "check_components", checkComp, "Check Component CR health in Kubernetes")
-	fs.BoolVar(&checkComp, "check-components", checkComp, "Check Component CR health in Kubernetes")
+
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
-	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "check_components" || f.Name == "check-components" {
-			checkCompExplicit = checkComp
-		}
-	})
 
 	if *saslEnable {
 		mech := strings.ToUpper(*saslMech)
@@ -115,7 +95,7 @@ func ParseFlags(args []string) (*Config, error) {
 		}
 	}
 
-	cfg := &Config{
+	return &Config{
 		ClickHouseHost:     *chHost,
 		ClickHousePort:     *chPort,
 		ClickHouseUser:     *chUser,
@@ -134,8 +114,5 @@ func ParseFlags(args []string) (*Config, error) {
 		DialWithSeedOnly:   *seedOnly,
 		OutputFormat:       out,
 		SkipSmokeTests:     *skipSmoke,
-	}
-	cfg.CheckComponents, cfg.CheckComponentsExplicit = checkComp, checkCompExplicit
-	cfg.Namespace, cfg.Kubeconfig = *namespace, *kubeconfig
-	return cfg, nil
+	}, nil
 }

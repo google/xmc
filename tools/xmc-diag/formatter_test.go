@@ -67,14 +67,6 @@ func TestFormatReport(t *testing.T) {
 				TotalLag:      50,
 			},
 		},
-		Components: ComponentsReport{
-			Status:    StatusHealthy,
-			Healthy:   true,
-			Namespace: "xmc",
-			Components: []ComponentStatus{
-				{Name: "metrics", Enabled: true, State: "STATE_READY", Ready: true, Healthy: true},
-			},
-		},
 	}
 
 	textOut, err := FormatReport(report, "text")
@@ -90,12 +82,6 @@ func TestFormatReport(t *testing.T) {
 	if !strings.Contains(textOut, "Broker Count: 3") {
 		t.Errorf("text output missing broker count: %s", textOut)
 	}
-	if !strings.Contains(textOut, "[Kubernetes Components Diagnostics] Status: HEALTHY") {
-		t.Errorf("text output missing components section: %s", textOut)
-	}
-	if !strings.Contains(textOut, "Component metrics: enabled=true state=STATE_READY ready=true healthy=true") {
-		t.Errorf("text output missing component status line: %s", textOut)
-	}
 
 	jsonOut, err := FormatReport(report, "json")
 	if err != nil {
@@ -103,8 +89,5 @@ func TestFormatReport(t *testing.T) {
 	}
 	if !strings.Contains(jsonOut, `"reason": "missing required schema tables: xmc_metrics_mv"`) {
 		t.Errorf("json output missing reason field: %s", jsonOut)
-	}
-	if !strings.Contains(jsonOut, `"state": "STATE_READY"`) {
-		t.Errorf("json output missing component state: %s", jsonOut)
 	}
 }

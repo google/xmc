@@ -38,7 +38,6 @@ flowchart TD
 
 - **ClickHouse Health & Schema Audit**: Pings the target database, retrieves server version, checks physical/queue/view table definitions (`xmc_metrics`, `xmc_metrics_queue`, `xmc_metrics_mv`), and evaluates query execution latency.
 - **Redpanda / Kafka Metadata & Lag Audit**: Queries topic partition watermarks, reads consumer group committed offsets (`kadm.FetchOffsets` & `kadm.ListEndOffsets`), and calculates partition-level and total aggregate consumer lag.
-- **Kubernetes `Component` CR Health Audit**: Queries `components.xmc.dev` custom resources in the target namespace (`xmc` by default) and verifies that all enabled components are reconciled (`STATE_READY`, `Ready=True`, matching `observedGeneration`, `Degraded!=True`) and all disabled components are `STATE_DISABLED`. Gracefully reports `Skipped: true` when the CRD or cluster is absent unless explicitly required via `--check-components=true`.
 - **BYO Infrastructure Support**: Supports standard flags and environment overrides for custom host/port, DSN strings (`CLICKHOUSE_DSN`), SASL authentication (`SCRAM-SHA-256`, `SCRAM-SHA-512`, `PLAIN`), and TLS/mTLS parameters.
 - **Flexible Output Formats**: Supports human-readable formatted text tables (default) or structured JSON (`--output=json`).
 
@@ -63,9 +62,6 @@ flowchart TD
 | `-sasl_password` | `string` | `""` | SASL authentication password. |
 | `-tls_enabled` | `bool` | `false` | Enable TLS/mTLS for Redpanda connections. |
 | `-tls_insecure_skip_verify` | `bool` | `false` | Skip TLS certificate verification (testing only). |
-| `-check-components` / `-check_components` | `bool` | `true` | Audit `components.xmc.dev` CR readiness in Kubernetes (overrides `CHECK_COMPONENTS` / `ENABLE_COMPONENTS` env). |
-| `-namespace` | `string` | `"xmc"` | Target Kubernetes namespace for `Component` CR checks (overrides `XMC_NAMESPACE` / `NAMESPACE` env). |
-| `-kubeconfig` | `string` | `""` | Path to kubeconfig file for `Component` CR checks (overrides `KUBECONFIG` env). |
 | `-output` | `string` | `"text"` | Output report format: `text` or `json`. |
 | `-skip_smoke_tests` | `bool` | `false` | Skip latency performance smoke tests. |
 

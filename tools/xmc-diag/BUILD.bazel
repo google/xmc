@@ -21,7 +21,6 @@ compat_go_library(
     name = "xmc_diag_lib",
     srcs = [
         "clickhouse.go",
-        "components.go",
         "config.go",
         "formatter.go",
         "main.go",
@@ -37,13 +36,6 @@ compat_go_library(
         "@com_github_twmb_franz_go//pkg/sasl/plain",
         "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
-        "@io_k8s_apimachinery//pkg/api/errors",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
-        "@io_k8s_apimachinery//pkg/runtime/schema",
-        "@io_k8s_client_go//dynamic",
-        "@io_k8s_client_go//rest",
-        "@io_k8s_client_go//tools/clientcmd",
     ],
 )
 
@@ -58,7 +50,6 @@ compat_go_test(
     name = "xmc_diag_test",
     srcs = [
         "clickhouse_test.go",
-        "components_test.go",
         "config_test.go",
         "formatter_test.go",
         "redpanda_test.go",
@@ -67,9 +58,5 @@ compat_go_test(
     embed = [":xmc_diag_lib"],
     deps = [
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
-        "@io_k8s_apimachinery//pkg/runtime",
-        "@io_k8s_apimachinery//pkg/runtime/schema",
-        "@io_k8s_client_go//dynamic/fake",
     ],
 )
