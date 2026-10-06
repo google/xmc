@@ -905,13 +905,10 @@ def _normalize_expected_dashboards(
 
 def _fetch_json_from_url(url: str, timeout: int = 10) -> dict[str, Any]:
     """Performs HTTP GET request with standard headers and parses JSON response."""
-    headers = {"Accept": "application/json", "User-Agent": "xmc-validator/1.0"}
-    token = (os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN") or "").strip()
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    res = query_dashboard_http(url, timeout_sec=timeout)
+    if not isinstance(res, dict):
+        raise ValueError(f"Expected JSON object from {url}, got {type(res).__name__}")
+    return res
 
 
 def _validate_dashboard_charts(base_endpoint: str, chart_ids: list[str]) -> list[dict[str, Any]]:
@@ -975,6 +972,8 @@ def _validate_single_dashboard(base_endpoint: str, exp_dash: dict[str, Any]) -> 
 def _normalize_dashboard_endpoint(endpoint: str) -> str:
     """Ensures dashboard endpoint has valid scheme and no trailing slash."""
     ep = endpoint.strip().rstrip("/")
+    if not ep:
+        raise ValueError("Endpoint cannot be empty or whitespace-only.")
     if not ep.startswith(("http://", "https://")):
         return f"http://{ep}" if ep.startswith(("localhost", "127.0.0.1")) else f"https://{ep}"
     return ep
@@ -990,11 +989,11 @@ def _poll_dashboard_iteration(
     try:
         return [_validate_single_dashboard(base_endpoint, d) for d in norm_dashboards]
     except AssertionError as e:
-        if elapsed >= timeout_sec:
+        if elapsed >= timeout_sec or "data engine is not configured" in str(e).lower():
             raise
         logging.warning("Dashboard assertions not yet satisfied: %s. Retrying...", e)
         return None
-    except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError) as e:
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError, RuntimeError) as e:
         if elapsed >= timeout_sec:
             raise TimeoutError(f"Dashboard verification failed after {int(elapsed)}s: {e}") from e
         logging.warning("Transient error fetching dashboard: %s. Retrying...", e)
@@ -1057,7 +1056,7 @@ def _http_get(
             except json.JSONDecodeError:
                 return content.strip()
     except urllib.error.HTTPError as err:
-        body = err.read().decode("utf-8", errors="replace")
+        body = err.read().decode("utf-8", errors="replace") if err.fp else ""
         if "data engine is not configured" in body.lower():
             raise AssertionError(
                 f"Dashboard Service returned 'data engine is not configured' for {url}: {body}"

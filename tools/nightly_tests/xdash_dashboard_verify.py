@@ -28,9 +28,14 @@ import os
 from collections.abc import Sequence
 from typing import Any
 
+from absl import flags
+
 from tools.nightly_tests import common, xmc_entities_validator
 
 FLAGS = common.FLAGS
+
+flags.DEFINE_string("dashboard_id", None, "Resource ID slug for the dashboard")
+flags.DEFINE_string("expected_title_pattern", None, "Expected title pattern for the dashboard")
 
 DEFAULT_DASHBOARD_ID: str = "example_vcc_comparison"
 DEFAULT_TITLE_PATTERN: str = "VCC"

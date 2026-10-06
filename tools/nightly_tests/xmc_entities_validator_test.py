@@ -1283,6 +1283,25 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
         xmc_entities_validator.stop_work_units(stub, "20")
         stub.BatchStopWorkUnits.assert_called_once()
 
+    def test_normalize_dashboard_endpoint_empty_raises(self) -> None:
+        for invalid in ("", "   ", "/", "  ///  "):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(ValueError, "cannot be empty or whitespace-only"):
+                    xmc_entities_validator._normalize_dashboard_endpoint(invalid)
+
+    def test_validate_dashboard_fatal_error_fails_fast(self) -> None:
+        err_fp = io.BytesIO(b"data engine is not configured")
+        http_err = urllib.error.HTTPError("http://localhost:8080", 500, "Error", {}, err_fp)  # type: ignore
+        with mock.patch("urllib.request.urlopen", side_effect=http_err) as mock_open:
+            with self.assertRaisesRegex(AssertionError, "data engine is not configured"):
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=["dash_1"],
+                    timeout_sec=60,
+                    poll_interval_sec=0,
+                )
+            self.assertEqual(mock_open.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

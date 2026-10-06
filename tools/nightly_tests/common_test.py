@@ -471,6 +471,26 @@ class CommonTest(unittest.TestCase):
             mock_stub.BatchStopWorkUnits.assert_called_once()
             mock_channel.close.assert_called_once()
 
+    def test_verify_standard_workload_stops_work_units_on_assertion_failure(self) -> None:
+        mock_stub, mock_channel = mock.MagicMock(), mock.MagicMock()
+        mock_stub.GetExperiment.side_effect = AssertionError("title mismatch")
+        with (
+            mock.patch.object(
+                common, "get_flag", side_effect=lambda _, k, d=None: "16" if k == "xid" else d
+            ),
+            mock.patch(
+                "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+                return_value=(mock_stub, mock_channel),
+            ),
+            mock.patch("sys.stderr", new_callable=io.StringIO),
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            common.verify_standard_workload(
+                ["script.py"], "Banner", "Summary", "Title", wait_for_completion=False
+            )
+        self.assertEqual(ctx.exception.code, 1)
+        mock_stub.BatchStopWorkUnits.assert_called_once()
+
     def test_verify_standard_workload_exit_codes(self) -> None:
         mock_stub = mock.MagicMock()
         mock_channel = mock.MagicMock()

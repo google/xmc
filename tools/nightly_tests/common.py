@@ -416,26 +416,28 @@ def verify_standard_workload(
     _print_workload_banner(banner_title, xid, expected_title_pattern, queue, workers, timeout)
     ep = get_flag(FLAGS, "endpoint")
     with handle_verification_errors(), ess_channel_context(ep) as (stub, _):
-        exp = assert_experiment(stub, xid, expected_title_pattern)
-        wus = assert_work_units(
-            stub,
-            xid,
-            len(workers),
-            queue,
-            workers,
-            timeout,
-            wait_for_completion=wait_for_completion,
-        )
-        assert_work_unit_jobsets(stub, xid, expected_jobs)
-        if expected_artifact_types:
-            assert_work_unit_artifacts(
-                stub, xid, wus[0]["id"], expected_artifact_types, expected_metric_names, timeout
+        try:
+            exp = assert_experiment(stub, xid, expected_title_pattern)
+            wus = assert_work_units(
+                stub,
+                xid,
+                len(workers),
+                queue,
+                workers,
+                timeout,
+                wait_for_completion=wait_for_completion,
             )
-        if extra_step:
-            extra_step(stub, xid)
-        if not wait_for_completion:
-            xmc_entities_validator.stop_work_units(stub, xid)
-        _print_workload_summary(summary_title, exp, xid, queue)
+            assert_work_unit_jobsets(stub, xid, expected_jobs)
+            if expected_artifact_types:
+                assert_work_unit_artifacts(
+                    stub, xid, wus[0]["id"], expected_artifact_types, expected_metric_names, timeout
+                )
+            if extra_step:
+                extra_step(stub, xid)
+            _print_workload_summary(summary_title, exp, xid, queue)
+        finally:
+            if not wait_for_completion:
+                xmc_entities_validator.stop_work_units(stub, xid)
 
 
 def run_main(main_fn: Any) -> None:

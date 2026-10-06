@@ -240,6 +240,7 @@ py_binary(
     deps = [
         ":common",
         ":xmc_entities_validator_lib",
+        "@absl_py//absl/flags",
     ],
 )
 
