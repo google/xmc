@@ -52,7 +52,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-//go:embed xmanager_cloud/experiment_state_server/static/*
+//go:embed static/*
 var embedFS embed.FS
 
 // main starts the gRPC server and handles graceful shutdown.
@@ -210,7 +210,7 @@ func setupHTTPMux(ctx context.Context, oauthAuth *oauth.Authenticator, authentic
 }
 
 func mountStaticFiles(ctx context.Context, httpMux *http.ServeMux) {
-	staticRootFS, err := fs.Sub(embedFS, "xmanager_cloud/experiment_state_server/static")
+	staticRootFS, err := fs.Sub(embedFS, "static")
 	if err != nil {
 		logging.Fatal(ctx, "failed to create static file system", "error", err)
 	}
