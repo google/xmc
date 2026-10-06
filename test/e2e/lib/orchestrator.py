@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""End-to-end lifecycle orchestration and signal handling."""
+"""End-to-end lifecycle orchestration and teardown."""
 
 from __future__ import annotations
 
@@ -22,12 +22,11 @@ import functools
 import logging
 import os
 import shutil
-import signal
-import sys
 import time
 from collections.abc import Callable, Generator, Sequence
 from typing import Any
 
+from test.e2e.lib import cancellation
 from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.helm_deployer import HelmDeployer
 from test.e2e.lib.image_builder import ImageBuilder
@@ -61,14 +60,19 @@ class E2EOrchestrator:
         self.helm = HelmDeployer(config)
         self.tester = PlaywrightTestExecutor(config)
         self.images_built = False
+        self._abandoned_executors: list[concurrent.futures.ThreadPoolExecutor] = []
 
     @contextlib.contextmanager
     def managed_lifecycle(self) -> Generator[None, None, None]:
-        """Guarantees cleanup on success, failure, or interrupt."""
+        """Runs a best-effort teardown after a success, a failure, or a stop."""
         os.makedirs(self.cfg.temp_dir, exist_ok=True)
         try:
             yield
         finally:
+            signum = cancellation.CONTROLLER.stop_signal
+            if signum is not None:
+                logger.warning("Stopped by signal %d; tearing down.", signum)
+            self._join_abandoned_executors()
             logger.info("=== Executing Teardown ===")
             try:
                 if not self.cfg.keep_cluster:
@@ -98,7 +102,7 @@ class E2EOrchestrator:
         Raises:
             PhaseError: If a lifecycle phase fails, with the original exception as its
                 ``__cause__``. Teardown has completed before this propagates.
-            SystemExit: With ``128 + signum`` on SIGINT or SIGTERM.
+            HarnessStoppedError: If the harness was stopped. Teardown has completed as well.
         """
         start_time = time.time()
         logger.info("================================================================")
@@ -110,13 +114,6 @@ class E2EOrchestrator:
         logger.info(" XID Database:  %s", self.cfg.xid_db)
         logger.info(" Screenshots:   %s", self.cfg.screenshots_dir)
         logger.info("================================================================")
-
-        def _signal_handler(signum: int, _frame: Any) -> None:
-            logger.warning("Received signal %d. Triggering cleanup and exiting...", signum)
-            sys.exit(128 + signum)
-
-        signal.signal(signal.SIGINT, _signal_handler)
-        signal.signal(signal.SIGTERM, _signal_handler)
 
         with self.managed_lifecycle():
             self._run_phases()
@@ -155,6 +152,9 @@ class E2EOrchestrator:
     def _run_concurrently(self, tasks: Sequence[tuple[Phase, Callable[[], Any]]]) -> list[Any]:
         """Runs phase-tagged tasks in parallel and returns their results in task order.
 
+        When a task fails or the harness is stopped, the remaining tasks are halted and
+        abandoned without waiting for them; ``managed_lifecycle`` joins them before teardown.
+
         Args:
             tasks: Pairs of the lifecycle phase and the zero-argument callable implementing it.
 
@@ -162,15 +162,24 @@ class E2EOrchestrator:
             The task results, in the order of ``tasks``.
 
         Raises:
-            PhaseError: For the first task that fails, once the other tasks have finished.
+            PhaseError: For the first task that fails.
+            HarnessStoppedError: If the harness was stopped.
         """
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as executor:
-            futures = [executor.submit(_run_in_phase, phase, task) for phase, task in tasks]
-            try:
-                for future in concurrent.futures.as_completed(futures):
-                    future.result()
-            except BaseException:
-                for future in futures:
-                    future.cancel()
-                raise
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks))
+        futures = [executor.submit(_run_in_phase, phase, task) for phase, task in tasks]
+        try:
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
+        except BaseException:
+            cancellation.CONTROLLER.abort_attempt()
+            executor.shutdown(wait=False, cancel_futures=True)
+            self._abandoned_executors.append(executor)
+            raise
+        executor.shutdown()
         return [future.result() for future in futures]
+
+    def _join_abandoned_executors(self) -> None:
+        """Waits for the halted tasks of a failed phase, so that none outlives the attempt."""
+        for executor in self._abandoned_executors:
+            executor.shutdown(wait=True)
+        self._abandoned_executors.clear()

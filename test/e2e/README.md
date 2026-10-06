@@ -27,7 +27,7 @@ graph TD
     end
 
     subgraph Teardown["Managed Lifecycle Teardown"]
-        T["Guaranteed Cleanup<br/>(Drop Spanner DBs, delete KinD cluster & temp dirs)"]
+        T["Best-Effort Cleanup<br/>(Drop Spanner DBs, delete KinD cluster & temp dirs)"]
     end
 
     Phase1 --> Phase2
@@ -47,7 +47,7 @@ graph TD
    - `HelmDeployer.deploy()` installs the XMC Helm chart into the cluster and waits for workload readiness.
    - `TestExecutor.run_tests()` invokes the Playwright scenario suite ([test_e2e_flow.py](test_e2e_flow.py)) in an isolated virtualenv.
 4. **Teardown (`managed_lifecycle`)**:
-   - Handled via a Python context manager to guarantee that ephemeral Spanner databases and KinD clusters are dropped even if errors or SIGINT occur during provisioning.
+   - Handled via a Python context manager that drops the ephemeral Spanner databases and deletes the KinD cluster after a success, a failure, or a stop. Teardown is best effort; see [Stopping & Teardown](#stopping--teardown).
 
 ---
 
@@ -70,20 +70,20 @@ The orchestrator tags every failure with the lifecycle phase that raised it ([`l
 | :--- | :--- | :--- |
 | `0` | Pass | Every phase passed. |
 | `1` | Product failure | The `image-build`, `helm-deploy`, or `tests` phase failed. |
-| `3` | Infra failure | An infra phase failed. |
+| `3` | Infra failure | An infra phase failed, or the [harness deadline](#harness-deadline) expired. |
 | `4` | Harness error | An unexpected error outside the lifecycle phases, for example when no `kind` binary can be found. |
 
 Two more exit codes are not outcomes:
 
 - `2`: invalid command-line arguments.
-- `128 + N`: stopped by signal `N`, for example `130` for `SIGINT` or `143` for `SIGTERM`.
+- `128 + N`: stopped by signal `N`, for example `130` for `SIGINT` or `143` for `SIGTERM`, after a best-effort teardown.
 
 > [!IMPORTANT]
-> Never retry the job externally, whatever its exit code. The harness already retries an infra failure once, and the other exit codes do not report transient failures.
+> Never retry the job externally, whatever its exit code. The harness already retries an infra failure once within the job timeout, and the other exit codes do not report transient failures.
 
 ### Infra Retry
 
-The harness retries an infra failure once ([`lib/infra_retry.py`](lib/infra_retry.py)), but only if the failed attempt, including its teardown, ended within 480 s of the harness start, so that a slow failure is not repeated:
+The harness retries an infra failure once ([`lib/infra_retry.py`](lib/infra_retry.py)), but only if the failed attempt, including its teardown, ended within 480 s of the harness start, so that a healthy retry still ends before the harness deadline:
 
 1. Teardown of the failed attempt completes first: its Spanner databases are dropped, and its KinD cluster and temporary directory are deleted.
 2. The harness prints a GitHub Actions warning annotation that names the failed phase, for example:
@@ -95,6 +95,16 @@ The harness retries an infra failure once ([`lib/infra_retry.py`](lib/infra_retr
 3. The retry runs every phase again with fresh Spanner database names and a fresh temporary directory. It skips the image build if the failed attempt finished it. It reuses the KinD cluster name, because `KindClusterManager.setup()` deletes any leftover cluster with that name first.
 
 Each attempt writes its screenshots and diagnostics to its own subdirectory of `--screenshots-dir`: `attempt-1/` and, after a retry, `attempt-2/`. Product failures are never retried. `--keep-cluster` disables the retry, because it skips the teardown that a retry depends on.
+
+### Harness Deadline
+
+900 s after it started, the harness stops itself as described in [Stopping & Teardown](#stopping--teardown) and exits with `3`. Together with the workflow steps before and after the harness, a stopped run still ends more than a minute before the job timeout of 20 minutes.
+
+### Stopping & Teardown
+
+The first `SIGINT` or `SIGTERM` stops the harness ([`lib/cancellation.py`](lib/cancellation.py)): running commands are killed within about 0.5 s, Spanner retry waits and readiness polls end within about 0.5 s, no further attempt starts, and teardown runs. Every command runs in its own session, so the kill reaches the whole process group of the command, for example the `docker` processes that `kind` starts. Processes outside that group, such as the Bazel server and the containers that the Docker daemon runs, are not killed; teardown deletes the KinD cluster and its containers. Further `SIGINT` and `SIGTERM` signals are ignored so that they do not interrupt teardown, and each teardown command is limited to 20 s.
+
+Teardown is best effort. When GitHub Actions cancels a job, or the job times out, the runner sends `SIGINT`, then `SIGTERM` about 7.5 s later, and then `SIGKILL` about 2.5 s after that, so teardown may not finish. The workflow starts `runner.py` with `exec`, so that these signals reach the harness rather than a shell. Spanner databases that a stopped run leaves behind are deleted by the stale-database cleanup of a later run once they are more than one hour old.
 
 ---
 

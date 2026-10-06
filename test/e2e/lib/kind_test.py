@@ -20,6 +20,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from test.e2e.lib.command import TEARDOWN_TIMEOUT_SECONDS
 from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.kind import KindClusterManager
 
@@ -228,6 +229,8 @@ class TestKindClusterManager(unittest.TestCase):
         mock_run.assert_called_once_with(
             ["kind", "delete", "cluster", "--name", "test-cluster"],
             check=False,
+            timeout=TEARDOWN_TIMEOUT_SECONDS,
+            stoppable=False,
         )
         self.assertFalse(os.path.exists(self.cfg.temp_dir))
 

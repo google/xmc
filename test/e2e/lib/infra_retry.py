@@ -22,6 +22,8 @@ import os
 import time
 from collections.abc import Callable
 
+from test.e2e.lib import cancellation
+from test.e2e.lib.cancellation import HarnessStoppedError
 from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.orchestrator import E2EOrchestrator
 from test.e2e.lib.outcome import AttemptResult, HarnessResult, Outcome
@@ -32,8 +34,11 @@ logger = logging.getLogger("xmc_e2e_runner")
 # Total harness attempts: the first run plus a single retry after an infra failure.
 MAX_ATTEMPTS = 2
 # A retry starts only if the failed attempt, including its teardown, ended within this many
-# seconds of the harness start, so that a slow failure is not repeated.
+# seconds of the harness start, so that a healthy retry still ends before the deadline.
 RETRY_START_LIMIT_SECONDS = 480
+# When the harness has run this long, it stops, tears down, and reports an infra failure, so
+# that a stopped run still ends at least a minute before the CI job timeout.
+HARNESS_DEADLINE_SECONDS = 900
 
 
 def run_attempt(cfg: E2EConfig) -> AttemptResult:
@@ -46,14 +51,24 @@ def run_attempt(cfg: E2EConfig) -> AttemptResult:
         cfg: Configuration for this attempt.
 
     Returns:
-        The classified result of the attempt.
+        The classified result of the attempt. A stop by the harness deadline is an infra
+        failure without a failed phase.
+
+    Raises:
+        SystemExit: With ``128 + signum`` if a signal stopped the harness.
     """
+    cancellation.CONTROLLER.begin_attempt()
     orchestrator = E2EOrchestrator(cfg)
     try:
         orchestrator.run()
     except PhaseError as error:
+        _exit_if_stopped_by_signal()
         logger.exception("E2E phase %s failed", error.phase.value)
         return AttemptResult.for_failed_phase(error.phase, orchestrator.images_built)
+    except HarnessStoppedError:
+        _exit_if_stopped_by_signal()
+        logger.error("E2E harness deadline of %d s expired", HARNESS_DEADLINE_SECONDS)
+        return AttemptResult(Outcome.INFRA_FAILURE, images_built=orchestrator.images_built)
     return AttemptResult(Outcome.PASSED, images_built=orchestrator.images_built)
 
 
@@ -71,8 +86,8 @@ def should_retry(
             teardown.
 
     Returns:
-        True only for an infra failure with attempts remaining that ended within the retry
-        window.
+        True only for an infra failure with attempts remaining that ended early enough for a
+        retry to fit the harness deadline.
     """
     return (
         result.outcome is Outcome.INFRA_FAILURE
@@ -113,7 +128,7 @@ def attempt_config(cfg: E2EConfig, attempt: int, reuse_images: bool) -> E2EConfi
 def run_with_infra_retry(
     cfg: E2EConfig, attempt_runner: Callable[[E2EConfig], AttemptResult]
 ) -> HarnessResult:
-    """Runs the harness, retrying once after an early infra failure.
+    """Runs the harness within its deadline, retrying once after an early infra failure.
 
     Args:
         cfg: Configuration of the run.
@@ -123,13 +138,28 @@ def run_with_infra_retry(
         The results of all attempts.
     """
     start = time.monotonic()
-    attempts = [attempt_runner(attempt_config(cfg, 1, reuse_images=False))]
-    while should_retry(cfg, attempts[-1], len(attempts), time.monotonic() - start):
-        failed = attempts[-1]
-        _announce_retry(failed, len(attempts))
-        retry_cfg = attempt_config(cfg, len(attempts) + 1, failed.images_built)
-        attempts.append(attempt_runner(retry_cfg))
+    deadline = cancellation.CONTROLLER.start_deadline(HARNESS_DEADLINE_SECONDS)
+    try:
+        attempts = [attempt_runner(attempt_config(cfg, 1, reuse_images=False))]
+        while should_retry(cfg, attempts[-1], len(attempts), time.monotonic() - start):
+            failed = attempts[-1]
+            _announce_retry(failed, len(attempts))
+            retry_cfg = attempt_config(cfg, len(attempts) + 1, failed.images_built)
+            attempts.append(attempt_runner(retry_cfg))
+    finally:
+        deadline.cancel()
     return HarnessResult(attempts=tuple(attempts))
+
+
+def _exit_if_stopped_by_signal() -> None:
+    """Exits with ``128 + signum`` if a signal stopped the harness.
+
+    A phase failure that races with the stop, for example of a concurrent task whose command
+    failed before the task observed the stop, is not classified either.
+    """
+    signum = cancellation.CONTROLLER.stop_signal
+    if signum is not None:
+        raise SystemExit(128 + signum)
 
 
 def _announce_retry(failed: AttemptResult, attempt: int) -> None:

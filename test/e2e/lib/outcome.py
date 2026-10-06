@@ -37,7 +37,8 @@ class AttemptResult:
 
     Attributes:
         outcome: Classified outcome of the attempt.
-        failed_phase: Lifecycle phase that failed, or None if the attempt passed.
+        failed_phase: Lifecycle phase that failed, or None if the attempt passed or was
+            stopped by the harness deadline.
         images_built: Whether the attempt finished building the container images, which a
             retry then reuses.
     """

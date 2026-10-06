@@ -16,6 +16,7 @@
 
 import unittest
 
+from test.e2e.lib.cancellation import HarnessStoppedError
 from test.e2e.lib.phases import Phase, PhaseError, phase_scope
 
 
@@ -58,9 +59,9 @@ class TestPhaseScope(unittest.TestCase):
 
         self.assertIs(ctx.exception.phase, Phase.TESTS)
 
-    def test_does_not_wrap_signal_exit(self):
-        with self.assertRaises(SystemExit), phase_scope(Phase.KIND_CREATE):
-            raise SystemExit(130)
+    def test_does_not_wrap_harness_stop(self):
+        with self.assertRaises(HarnessStoppedError), phase_scope(Phase.KIND_CREATE):
+            raise HarnessStoppedError()
 
 
 if __name__ == "__main__":

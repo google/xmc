@@ -62,8 +62,8 @@ def phase_scope(phase: Phase) -> Generator[None, None, None]:
     """Re-raises any ``Exception`` escaping the block as a ``PhaseError`` for ``phase``.
 
     A ``PhaseError`` from a nested scope propagates unchanged so the innermost phase wins.
-    ``BaseException``s such as the ``SystemExit`` raised by the signal handler are never
-    wrapped, so stopped runs are not classified by phase.
+    ``BaseException``s such as ``HarnessStoppedError``, raised when the harness is stopped,
+    are never wrapped, so stopped runs are not classified by phase.
 
     Args:
         phase: The lifecycle phase executed inside the block.

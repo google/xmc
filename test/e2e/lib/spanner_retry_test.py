@@ -18,7 +18,8 @@ import subprocess
 import unittest
 from unittest.mock import MagicMock, call, patch
 
-from test.e2e.lib import spanner_retry
+from test.e2e.lib import cancellation, spanner_retry
+from test.e2e.lib.cancellation import HarnessStoppedError
 from test.e2e.lib.spanner_retry import (
     ErrorClass,
     RetryBudget,
@@ -155,13 +156,25 @@ class TestRunWithTransientRetry(unittest.TestCase):
     def setUp(self):
         self.now = 0.0
         self.sleep = MagicMock(side_effect=self._advance)
-        for name, fake in (("monotonic", lambda: self.now), ("sleep", self.sleep)):
-            patcher = patch.object(spanner_retry.time, name, fake)
+        for target, name, fake in (
+            (spanner_retry.time, "monotonic", lambda: self.now),
+            (cancellation.CONTROLLER, "wait", self.sleep),
+        ):
+            patcher = patch.object(target, name, fake)
             patcher.start()
             self.addCleanup(patcher.stop)
 
     def _advance(self, seconds: float) -> None:
         self.now += seconds
+
+    def test_stops_retrying_when_harness_halts_during_backoff(self):
+        self.sleep.side_effect = HarnessStoppedError()
+        action = MagicMock(side_effect=_TRANSIENT)
+
+        with self.assertRaises(HarnessStoppedError):
+            run_with_transient_retry(action, "Creating db", _BUDGET)
+
+        action.assert_called_once()
 
     def test_retries_transient_failure_until_success(self):
         action = MagicMock(side_effect=[_TRANSIENT, None])
