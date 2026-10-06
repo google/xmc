@@ -314,10 +314,6 @@ func resolveEnvtestAssets(t *testing.T) string {
 		return envDir
 	}
 	if srcDir := os.Getenv("TEST_SRCDIR"); srcDir != "" {
-		direct := filepath.Join(srcDir, "+repo_import+kubebuilder_envtest")
-		if _, err := os.Stat(filepath.Join(direct, "kube-apiserver")); err == nil {
-			return direct
-		}
 		var found string
 		_ = filepath.WalkDir(srcDir, func(p string, d os.DirEntry, err error) error {
 			if err == nil && !d.IsDir() && d.Name() == "kube-apiserver" {

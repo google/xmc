@@ -22,12 +22,14 @@ import (
 	"log/slog"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/util/retry"
 )
 
 // FieldManagerBridge is the Server-Side Apply fieldManager owner identifier for xmc-bridge status updates.
@@ -146,24 +148,54 @@ func ApplyComponentStatusSSA(ctx context.Context, client dynamic.Interface, defa
 	return nil
 }
 
-// SyncComponentFinalizers attaches or detaches the deletion protection finalizer on item in Kubernetes.
+// SyncComponentFinalizers attaches or detaches the deletion protection finalizer on item in Kubernetes,
+// retrying on optimistic concurrency conflicts so concurrent resource updates do not fail reconciliation.
 func SyncComponentFinalizers(ctx context.Context, client dynamic.Interface, defaultNamespace string, item *unstructured.Unstructured, res *ReconcileResult) (*unstructured.Unstructured, error) {
 	if res == nil || item == nil {
 		return item, nil
 	}
+	if client == nil {
+		return nil, errors.New("dynamic client must not be nil")
+	}
+	if !res.AddFinalizer && !res.RemoveFinalizer {
+		return item, nil
+	}
+	resClient := client.Resource(ComponentGVR).Namespace(resolveTargetNamespace(item, defaultNamespace))
+	current := item
+	var updated *unstructured.Unstructured
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if !applyFinalizerMutation(ctx, current, res) {
+			updated = current
+			return nil
+		}
+		var updateErr error
+		updated, updateErr = resClient.Update(ctx, current, metav1.UpdateOptions{})
+		if apierrors.IsConflict(updateErr) {
+			if latest, getErr := resClient.Get(ctx, current.GetName(), metav1.GetOptions{}); getErr == nil {
+				current = latest
+			}
+		}
+		return updateErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
+func applyFinalizerMutation(ctx context.Context, item *unstructured.Unstructured, res *ReconcileResult) bool {
 	hasFin := hasDeletionProtectionFinalizer(item.GetFinalizers())
-	ns := resolveTargetNamespace(item, defaultNamespace)
 	if res.AddFinalizer && !hasFin {
 		item.SetFinalizers(append(item.GetFinalizers(), FinalizerDeletionProtection))
 		slog.InfoContext(ctx, "Attaching deletion protection finalizer", "name", item.GetName())
-		return client.Resource(ComponentGVR).Namespace(ns).Update(ctx, item, metav1.UpdateOptions{})
+		return true
 	}
 	if res.RemoveFinalizer && hasFin {
 		item.SetFinalizers(removeDeletionProtectionFinalizer(item.GetFinalizers()))
 		slog.InfoContext(ctx, "Removing deletion protection finalizer", "name", item.GetName())
-		return client.Resource(ComponentGVR).Namespace(ns).Update(ctx, item, metav1.UpdateOptions{})
+		return true
 	}
-	return item, nil
+	return false
 }
 
 func resolveTargetNamespace(item *unstructured.Unstructured, defaultNamespace string) string {

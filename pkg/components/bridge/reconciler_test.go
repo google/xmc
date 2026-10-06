@@ -1566,26 +1566,17 @@ func TestReconcileComponent_ErrorPassPreservesDependenciesReady(t *testing.T) {
 
 const rayClusterTestCRD = `apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
-metadata:
-  name: rayclusters.ray.io
+metadata: {name: rayclusters.ray.io}
 spec:
   group: ray.io
-  names:
-    kind: RayCluster
-    listKind: RayClusterList
-    plural: rayclusters
-    singular: raycluster
+  names: {kind: RayCluster, listKind: RayClusterList, plural: rayclusters, singular: raycluster}
   scope: Namespaced
   versions:
     - name: v1
       served: true
       storage: true
-      subresources:
-        status: {}
-      schema:
-        openAPIV3Schema:
-          type: object
-          x-kubernetes-preserve-unknown-fields: true
+      subresources: {status: {}}
+      schema: {openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}}
 `
 
 // TestReconciler_EnvtestIntegration verifies controller reconciliation, finalizer synchronization,
@@ -1606,20 +1597,14 @@ func TestReconciler_EnvtestIntegration(t *testing.T) {
 func startReconcilerEnvtest(t *testing.T) dynamic.Interface {
 	t.Helper()
 	crdDir := t.TempDir()
-	renderedCRD := renderComponentsCRDForEnvtest(t)
-	combined := append(renderedCRD, []byte("\n---\n"+rayClusterTestCRD)...)
+	combined := append(renderComponentsCRDForEnvtest(t), []byte("\n---\n"+rayClusterTestCRD)...)
 	if err := os.WriteFile(filepath.Join(crdDir, "crds.yaml"), combined, 0600); err != nil {
 		t.Fatalf("failed to write CRDs: %v", err)
 	}
 	testEnv := &envtest.Environment{
 		BinaryAssetsDirectory:   locateEnvtestBinaries(t),
 		ControlPlaneStopTimeout: 200 * time.Millisecond,
-		CRDInstallOptions: envtest.CRDInstallOptions{
-			Paths:              []string{crdDir},
-			ErrorIfPathMissing: true,
-			PollInterval:       10 * time.Millisecond,
-			MaxTime:            5 * time.Second,
-		},
+		CRDInstallOptions:       envtest.CRDInstallOptions{Paths: []string{crdDir}, ErrorIfPathMissing: true, PollInterval: 10 * time.Millisecond, MaxTime: 5 * time.Second},
 	}
 	cfg, err := testEnv.Start()
 	if err != nil {
@@ -1649,8 +1634,7 @@ func renderComponentsCRDForEnvtest(t *testing.T) []byte {
 			t.Fatalf("failed to parse crd.yaml template: %v", err)
 		}
 		var buf bytes.Buffer
-		vals := map[string]any{"Values": map[string]any{"componentsDeployment": map[string]any{"enabled": true}}}
-		if err := tmpl.Execute(&buf, vals); err != nil {
+		if err := tmpl.Execute(&buf, map[string]any{"Values": map[string]any{"componentsDeployment": map[string]any{"enabled": true}}}); err != nil {
 			t.Fatalf("failed to render crd.yaml template: %v", err)
 		}
 		return buf.Bytes()
@@ -1665,10 +1649,6 @@ func locateEnvtestBinaries(t *testing.T) string {
 		return envDir
 	}
 	if srcDir := os.Getenv("TEST_SRCDIR"); srcDir != "" {
-		direct := filepath.Join(srcDir, "+repo_import+kubebuilder_envtest")
-		if _, err := os.Stat(filepath.Join(direct, "kube-apiserver")); err == nil {
-			return direct
-		}
 		var found string
 		_ = filepath.WalkDir(srcDir, func(p string, d os.DirEntry, err error) error {
 			if err == nil && !d.IsDir() && d.Name() == "kube-apiserver" {
