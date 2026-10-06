@@ -23,8 +23,6 @@ import (
 	longrunningpb "longrunning/operations_go_proto"
 	fmpb "protobuf/field_mask_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
@@ -251,11 +249,38 @@ type XidEntryStore interface {
 	UpdateXidEntry(ctx context.Context, update *XidEntryUpdate) (*xidmsgpb.XidEntry, error)
 }
 
+// -----------------------
+// Pause Scheduling Methods
+// -----------------------
+
+// PauseStateRepository defines operations for persisting and retrieving the scheduling pause state.
+type PauseStateRepository interface {
+	// Get retrieves the current global scheduling pause state.
+	// If uninitialized, it returns a safe default with SchedulingPaused = false.
+	Get(ctx context.Context) (*PauseSchedulingState, error)
+
+	// Set updates or initializes the global scheduling pause state.
+	Set(ctx context.Context, state *PauseSchedulingState) error
+}
+
+// PausedTaskRepository defines operations for persisting and retrieving paused tasks.
+type PausedTaskRepository interface {
+	// Create persists a new paused task.
+	Create(ctx context.Context, task *PausedTask) error
+
+	// ListPending retrieves pending paused tasks ordered by Priority DESC, CreateTime ASC.
+	// A limit <= 0 returns all pending tasks.
+	ListPending(ctx context.Context, limit int) ([]*PausedTask, error)
+
+	// MarkProcessed records resolution details for a batch of paused tasks.
+	MarkProcessed(ctx context.Context, resolutions []PausedTaskResolution) error
+}
+
 // PauseSchedulingStore exposes repository accessors for global pause scheduling state
 // and pending paused actuation tasks.
 type PauseSchedulingStore interface {
-	PauseState() pausestate.Repository
-	PausedTasks() pausedtask.Repository
+	PauseState() PauseStateRepository
+	PausedTasks() PausedTaskRepository
 }
 
 // WorkUnitTxRepository defines work unit operations scoped to a read-write transaction.
@@ -294,17 +319,17 @@ type StatusHistoryTxRepository interface {
 // PauseStateTxRepository defines global pause scheduling state operations scoped to a read-write transaction.
 type PauseStateTxRepository interface {
 	// Get retrieves the current global scheduling pause state within the transaction.
-	Get(ctx context.Context) (*pausestate.PauseSchedulingState, error)
+	Get(ctx context.Context) (*PauseSchedulingState, error)
 	// Set updates or initializes the global scheduling pause state within the transaction.
-	Set(ctx context.Context, state *pausestate.PauseSchedulingState) error
+	Set(ctx context.Context, state *PauseSchedulingState) error
 }
 
 // PausedTaskTxRepository defines paused task operations scoped to a read-write transaction.
 type PausedTaskTxRepository interface {
 	// Create persists a new paused task within the transaction.
-	Create(ctx context.Context, task *pausedtask.PausedTask) error
+	Create(ctx context.Context, task *PausedTask) error
 	// MarkProcessed soft-deletes a batch of paused tasks within the transaction.
-	MarkProcessed(ctx context.Context, resolutions []pausedtask.TaskResolution) error
+	MarkProcessed(ctx context.Context, resolutions []PausedTaskResolution) error
 }
 
 // Transaction holds the domain repositories scoped to a single read-write transaction.

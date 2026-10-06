@@ -27,8 +27,7 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
+	storagetest "xmanager_cloud/internal/storage/testing"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -84,24 +83,24 @@ func newMockTaskQueue(publisher *mockPublisher, backlogCalc *mockBacklogCalculat
 }
 
 type errPausedTaskRepo struct {
-	*pausedtask.Fake
+	*storagetest.FakePausedTaskRepository
 	markProcessedErr error
 	listPendingErr   error
 	onMarkProcessed  func()
 }
 
-func (r *errPausedTaskRepo) ListPending(ctx context.Context, limit int) ([]*pausedtask.PausedTask, error) {
+func (r *errPausedTaskRepo) ListPending(ctx context.Context, limit int) ([]*storage.PausedTask, error) {
 	if r.listPendingErr != nil {
 		return nil, r.listPendingErr
 	}
-	return r.Fake.ListPending(ctx, limit)
+	return r.FakePausedTaskRepository.ListPending(ctx, limit)
 }
 
-func (r *errPausedTaskRepo) MarkProcessed(ctx context.Context, resolutions []pausedtask.TaskResolution) error {
+func (r *errPausedTaskRepo) MarkProcessed(ctx context.Context, resolutions []storage.PausedTaskResolution) error {
 	if r.markProcessedErr != nil {
 		return r.markProcessedErr
 	}
-	err := r.Fake.MarkProcessed(ctx, resolutions)
+	err := r.FakePausedTaskRepository.MarkProcessed(ctx, resolutions)
 	if r.onMarkProcessed != nil {
 		r.onMarkProcessed()
 	}
@@ -109,33 +108,33 @@ func (r *errPausedTaskRepo) MarkProcessed(ctx context.Context, resolutions []pau
 }
 
 type errPauseStateRepo struct {
-	*pausestate.Fake
+	*storagetest.FakePauseStateRepository
 	getErr error
 	setErr error
 }
 
-func (r *errPauseStateRepo) Get(ctx context.Context) (*pausestate.PauseSchedulingState, error) {
+func (r *errPauseStateRepo) Get(ctx context.Context) (*storage.PauseSchedulingState, error) {
 	if r.getErr != nil {
 		return nil, r.getErr
 	}
-	if r.Fake != nil {
-		return r.Fake.Get(ctx)
+	if r.FakePauseStateRepository != nil {
+		return r.FakePauseStateRepository.Get(ctx)
 	}
-	return pausestate.DefaultPauseSchedulingState(), nil
+	return storage.DefaultPauseSchedulingState(), nil
 }
 
-func (r *errPauseStateRepo) Set(ctx context.Context, state *pausestate.PauseSchedulingState) error {
+func (r *errPauseStateRepo) Set(ctx context.Context, state *storage.PauseSchedulingState) error {
 	if r.setErr != nil {
 		return r.setErr
 	}
-	if r.Fake != nil {
-		return r.Fake.Set(ctx, state)
+	if r.FakePauseStateRepository != nil {
+		return r.FakePauseStateRepository.Set(ctx, state)
 	}
 	return nil
 }
 
-func testValidTask(wid int64, taskID string, priority int64, createTime time.Time) *pausedtask.PausedTask {
-	return &pausedtask.PausedTask{
+func testValidTask(wid int64, taskID string, priority int64, createTime time.Time) *storage.PausedTask {
+	return &storage.PausedTask{
 		XID:        1,
 		WID:        wid,
 		TaskID:     taskID,
@@ -159,13 +158,13 @@ func testValidTask(wid int64, taskID string, priority int64, createTime time.Tim
 func TestResumptionWorker_Registration(t *testing.T) {
 	tests := []struct {
 		name           string
-		initialState   *pausestate.PauseSchedulingState
+		initialState   *storage.PauseSchedulingState
 		triggerRunID   string
 		wantRegistered bool
 	}{
 		{
 			name: "exits gracefully when scheduling is paused",
-			initialState: &pausestate.PauseSchedulingState{
+			initialState: &storage.PauseSchedulingState{
 				SchedulingPaused: true,
 				ResumptionRunID:  "run-1",
 			},
@@ -174,7 +173,7 @@ func TestResumptionWorker_Registration(t *testing.T) {
 		},
 		{
 			name: "exits gracefully when run ID does not match",
-			initialState: &pausestate.PauseSchedulingState{
+			initialState: &storage.PauseSchedulingState{
 				SchedulingPaused: false,
 				ResumptionRunID:  "run-current",
 			},
@@ -183,7 +182,7 @@ func TestResumptionWorker_Registration(t *testing.T) {
 		},
 		{
 			name: "overwrites previous worker ID when claiming run to fence out prior worker",
-			initialState: &pausestate.PauseSchedulingState{
+			initialState: &storage.PauseSchedulingState{
 				SchedulingPaused:   false,
 				ResumptionRunID:    "run-1",
 				ResumptionWorkerID: "worker-previous",
@@ -196,9 +195,9 @@ func TestResumptionWorker_Registration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			pauseRepo := pausestate.NewFake()
+			pauseRepo := storagetest.NewFakePauseStateRepository()
 			_ = pauseRepo.Set(ctx, tt.initialState)
-			taskRepo := pausedtask.NewFake()
+			taskRepo := storagetest.NewFakePausedTaskRepository()
 			publisher := &mockPublisher{}
 			worker := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
 
@@ -220,12 +219,12 @@ func TestResumptionWorker_Registration(t *testing.T) {
 
 func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 	ctx := context.Background()
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{
+	pauseRepo := storagetest.NewFakePauseStateRepository()
+	_ = pauseRepo.Set(ctx, &storage.PauseSchedulingState{
 		SchedulingPaused: false,
 		ResumptionRunID:  "run-1",
 	})
-	taskRepo := pausedtask.NewFake()
+	taskRepo := storagetest.NewFakePausedTaskRepository()
 	publisher := &mockPublisher{}
 
 	wu1 := &essmsgpb.WorkUnit{
@@ -249,7 +248,7 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 		},
 	}
 
-	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+	_ = taskRepo.Create(ctx, &storage.PausedTask{
 		XID:           1,
 		WID:           1,
 		TaskID:        "task-1",
@@ -260,7 +259,7 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 		OperationName: "op-create",
 		Priority:      100,
 	})
-	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+	_ = taskRepo.Create(ctx, &storage.PausedTask{
 		XID:           1,
 		WID:           2,
 		TaskID:        "task-2",
@@ -317,7 +316,7 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 
 	allTasks, _ := taskRepo.List(ctx)
 	for _, task := range allTasks {
-		if task.ProcessedTime == nil || task.ResolutionStatus != pausedtask.ResolutionStatusReplayed || task.ResumptionRunID != "run-1" {
+		if task.ProcessedTime == nil || task.ResolutionStatus != storage.ResolutionStatusReplayed || task.ResumptionRunID != "run-1" {
 			t.Errorf("unexpected processed task state: %+v", task)
 		}
 	}
@@ -325,12 +324,12 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 
 func TestResumptionWorker_Filtering(t *testing.T) {
 	ctx := context.Background()
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{
+	pauseRepo := storagetest.NewFakePauseStateRepository()
+	_ = pauseRepo.Set(ctx, &storage.PauseSchedulingState{
 		SchedulingPaused: false,
 		ResumptionRunID:  "run-filter",
 	})
-	taskRepo := pausedtask.NewFake()
+	taskRepo := storagetest.NewFakePausedTaskRepository()
 	publisher := &mockPublisher{}
 
 	wuValid := &essmsgpb.WorkUnit{
@@ -345,7 +344,7 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 	}
 
 	// Task 1: Rule 1 - Newer ExecutionId exists on WorkUnit.
-	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+	_ = taskRepo.Create(ctx, &storage.PausedTask{
 		XID:      1,
 		WID:      1,
 		TaskID:   "task-rule1-stale-exec",
@@ -365,7 +364,7 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 	})
 
 	// Task 2: Rule 2 - Stale UpdateAction while WorkUnit is in SCHEDULING_PAUSED state.
-	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+	_ = taskRepo.Create(ctx, &storage.PausedTask{
 		XID:      1,
 		WID:      2,
 		TaskID:   "task-rule2-update-paused",
@@ -385,7 +384,7 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 	})
 
 	// Task 3: Rule 3 - Stale UpdateAction where task priority does not match WorkUnit priority.
-	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+	_ = taskRepo.Create(ctx, &storage.PausedTask{
 		XID:      1,
 		WID:      3,
 		TaskID:   "task-rule3-priority-mismatch",
@@ -405,7 +404,7 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 	})
 
 	// Task 4: Rule 4 - Terminal WorkUnit execution state (STOPPED).
-	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+	_ = taskRepo.Create(ctx, &storage.PausedTask{
 		XID:      1,
 		WID:      4,
 		TaskID:   "task-rule4-terminal-stopped",
@@ -425,7 +424,7 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 	})
 
 	// Task 5: Valid task that should be replayed.
-	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+	_ = taskRepo.Create(ctx, &storage.PausedTask{
 		XID:           1,
 		WID:           5,
 		TaskID:        "task-valid-replay",
@@ -457,7 +456,7 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 	}
 
 	allTasks, _ := taskRepo.List(ctx)
-	statusByTaskID := make(map[string]pausedtask.ResolutionStatus, len(allTasks))
+	statusByTaskID := make(map[string]storage.ResolutionStatus, len(allTasks))
 	for _, task := range allTasks {
 		if task.ProcessedTime == nil || task.ResumptionRunID != "run-filter" {
 			t.Errorf("task %s not properly marked processed: %+v", task.TaskID, task)
@@ -465,12 +464,12 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 		statusByTaskID[task.TaskID] = task.ResolutionStatus
 	}
 
-	wantStatuses := map[string]pausedtask.ResolutionStatus{
-		"task-rule1-stale-exec":        pausedtask.ResolutionStatusSkipped,
-		"task-rule2-update-paused":     pausedtask.ResolutionStatusSkipped,
-		"task-rule3-priority-mismatch": pausedtask.ResolutionStatusSkipped,
-		"task-rule4-terminal-stopped":  pausedtask.ResolutionStatusSkipped,
-		"task-valid-replay":            pausedtask.ResolutionStatusReplayed,
+	wantStatuses := map[string]storage.ResolutionStatus{
+		"task-rule1-stale-exec":        storage.ResolutionStatusSkipped,
+		"task-rule2-update-paused":     storage.ResolutionStatusSkipped,
+		"task-rule3-priority-mismatch": storage.ResolutionStatusSkipped,
+		"task-rule4-terminal-stopped":  storage.ResolutionStatusSkipped,
+		"task-valid-replay":            storage.ResolutionStatusReplayed,
 	}
 
 	if diff := cmp.Diff(wantStatuses, statusByTaskID); diff != "" {
@@ -480,9 +479,9 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 
 func TestResumptionWorker_MultipleBatches(t *testing.T) {
 	ctx := context.Background()
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-multi"})
-	taskRepo := pausedtask.NewFake()
+	pauseRepo := storagetest.NewFakePauseStateRepository()
+	_ = pauseRepo.Set(ctx, &storage.PauseSchedulingState{ResumptionRunID: "run-multi"})
+	taskRepo := storagetest.NewFakePausedTaskRepository()
 	publisher := &mockPublisher{}
 
 	for i := 1; i <= 5; i++ {
@@ -519,9 +518,9 @@ func TestResumptionWorker_ExtendsClaimAfterEachBatch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			pauseRepo := pausestate.NewFake()
-			_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-1"})
-			taskRepo := pausedtask.NewFake()
+			pauseRepo := storagetest.NewFakePauseStateRepository()
+			_ = pauseRepo.Set(ctx, &storage.PauseSchedulingState{ResumptionRunID: "run-1"})
+			taskRepo := storagetest.NewFakePausedTaskRepository()
 			for i := 1; i <= 3; i++ {
 				_ = taskRepo.Create(ctx, testValidTask(int64(i), fmt.Sprintf("task-%d", i), 100, time.Now()))
 			}
@@ -575,13 +574,13 @@ func TestResumptionWorker_Errors(t *testing.T) {
 				cancel()
 			}
 
-			basePauseRepo := pausestate.NewFake()
-			_ = basePauseRepo.Set(context.Background(), &pausestate.PauseSchedulingState{ResumptionRunID: "run-1"})
-			pauseRepo := &errPauseStateRepo{Fake: basePauseRepo, getErr: tt.getErr, setErr: tt.setErr}
+			basePauseRepo := storagetest.NewFakePauseStateRepository()
+			_ = basePauseRepo.Set(context.Background(), &storage.PauseSchedulingState{ResumptionRunID: "run-1"})
+			pauseRepo := &errPauseStateRepo{FakePauseStateRepository: basePauseRepo, getErr: tt.getErr, setErr: tt.setErr}
 
-			baseTaskRepo := pausedtask.NewFake()
+			baseTaskRepo := storagetest.NewFakePausedTaskRepository()
 			_ = baseTaskRepo.Create(context.Background(), testValidTask(1, "task-1", 100, time.Now()))
-			taskRepo := &errPausedTaskRepo{Fake: baseTaskRepo, listPendingErr: tt.listErr, markProcessedErr: tt.markErr}
+			taskRepo := &errPausedTaskRepo{FakePausedTaskRepository: baseTaskRepo, listPendingErr: tt.listErr, markProcessedErr: tt.markErr}
 			publisher := &mockPublisher{err: tt.publishErr}
 
 			store := &storage.MockStorage{RunInTransactionErr: tt.txErr, PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}
@@ -596,10 +595,10 @@ func TestResumptionWorker_Errors(t *testing.T) {
 
 func TestResumptionWorker_PartialBatchPublishFailure(t *testing.T) {
 	ctx := context.Background()
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-1"})
+	pauseRepo := storagetest.NewFakePauseStateRepository()
+	_ = pauseRepo.Set(ctx, &storage.PauseSchedulingState{ResumptionRunID: "run-1"})
 
-	taskRepo := pausedtask.NewFake()
+	taskRepo := storagetest.NewFakePausedTaskRepository()
 	for i := 1; i <= 2; i++ {
 		_ = taskRepo.Create(ctx, testValidTask(int64(i), fmt.Sprintf("task-%d", i), 100, time.Now()))
 	}
@@ -625,23 +624,23 @@ func TestResumptionWorker_PartialBatchPublishFailure(t *testing.T) {
 func TestResumptionWorker_MidLoopTermination(t *testing.T) {
 	tests := []struct {
 		name   string
-		mutate func(state *pausestate.PauseSchedulingState)
+		mutate func(state *storage.PauseSchedulingState)
 	}{
 		{
 			name: "halts after batch when scheduling is re-paused",
-			mutate: func(state *pausestate.PauseSchedulingState) {
+			mutate: func(state *storage.PauseSchedulingState) {
 				state.SchedulingPaused = true
 			},
 		},
 		{
 			name: "halts after batch when resumption run ID changes",
-			mutate: func(state *pausestate.PauseSchedulingState) {
+			mutate: func(state *storage.PauseSchedulingState) {
 				state.ResumptionRunID = "run-newer"
 			},
 		},
 		{
 			name: "halts after batch when another worker claims ResumptionWorkerID",
-			mutate: func(state *pausestate.PauseSchedulingState) {
+			mutate: func(state *storage.PauseSchedulingState) {
 				state.ResumptionWorkerID = "worker-other"
 			},
 		},
@@ -650,16 +649,16 @@ func TestResumptionWorker_MidLoopTermination(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			pauseRepo := pausestate.NewFake()
-			_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-1"})
+			pauseRepo := storagetest.NewFakePauseStateRepository()
+			_ = pauseRepo.Set(ctx, &storage.PauseSchedulingState{ResumptionRunID: "run-1"})
 
-			baseTaskRepo := pausedtask.NewFake()
+			baseTaskRepo := storagetest.NewFakePausedTaskRepository()
 			for i := 1; i <= 4; i++ {
 				_ = baseTaskRepo.Create(ctx, testValidTask(int64(i), fmt.Sprintf("task-%d", i), 100, time.Now()))
 			}
 
 			taskRepo := &errPausedTaskRepo{
-				Fake: baseTaskRepo,
+				FakePausedTaskRepository: baseTaskRepo,
 				onMarkProcessed: func() {
 					state, _ := pauseRepo.Get(ctx)
 					tt.mutate(state)
@@ -685,14 +684,14 @@ func TestResumptionWorker_MidLoopTermination(t *testing.T) {
 
 func TestResumptionWorker_MissingWorkUnitFailure(t *testing.T) {
 	ctx := context.Background()
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-invalid"})
+	pauseRepo := storagetest.NewFakePauseStateRepository()
+	_ = pauseRepo.Set(ctx, &storage.PauseSchedulingState{ResumptionRunID: "run-invalid"})
 
-	taskRepo := pausedtask.NewFake()
+	taskRepo := storagetest.NewFakePausedTaskRepository()
 	// Task 1: Valid task
 	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
 	// Task 2: Corrupted task (missing WorkUnit)
-	_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+	_ = taskRepo.Create(ctx, &storage.PausedTask{
 		XID:      1,
 		WID:      2,
 		TaskID:   "task-corrupt",
@@ -763,14 +762,14 @@ func (m *mockBacklogCalculator) CalculateBacklogLength(ctx context.Context, grou
 const throttleTestRunID = "run-throttle"
 
 // newThrottleTestWorker returns a worker with a single pending task and a 1ms throttle pause.
-func newThrottleTestWorker(t *testing.T, backlogCalc *mockBacklogCalculator) (*ResumptionWorker, *mockPublisher, pausestate.Repository) {
+func newThrottleTestWorker(t *testing.T, backlogCalc *mockBacklogCalculator) (*ResumptionWorker, *mockPublisher, storage.PauseStateRepository) {
 	t.Helper()
 	ctx := context.Background()
 
-	pauseRepo := pausestate.NewFake()
-	_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: throttleTestRunID})
+	pauseRepo := storagetest.NewFakePauseStateRepository()
+	_ = pauseRepo.Set(ctx, &storage.PauseSchedulingState{ResumptionRunID: throttleTestRunID})
 
-	taskRepo := pausedtask.NewFake()
+	taskRepo := storagetest.NewFakePausedTaskRepository()
 	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
 
 	publisher := &mockPublisher{}
@@ -862,7 +861,7 @@ func TestResumptionWorker_BacklogThrottling_SchedulingRepaused(t *testing.T) {
 	backlogCalc := &mockBacklogCalculator{backlogValues: []int64{10}}
 	worker, publisher, pauseRepo := newThrottleTestWorker(t, backlogCalc)
 	backlogCalc.onCalculate = func() {
-		_ = pauseRepo.Set(context.Background(), &pausestate.PauseSchedulingState{
+		_ = pauseRepo.Set(context.Background(), &storage.PauseSchedulingState{
 			SchedulingPaused: true,
 			ResumptionRunID:  throttleTestRunID,
 		})
@@ -880,7 +879,7 @@ func TestResumptionWorker_BacklogThrottling_WorkerFenced(t *testing.T) {
 	backlogCalc := &mockBacklogCalculator{backlogValues: []int64{10}}
 	worker, publisher, pauseRepo := newThrottleTestWorker(t, backlogCalc)
 	backlogCalc.onCalculate = func() {
-		_ = pauseRepo.Set(context.Background(), &pausestate.PauseSchedulingState{
+		_ = pauseRepo.Set(context.Background(), &storage.PauseSchedulingState{
 			ResumptionRunID:    throttleTestRunID,
 			ResumptionWorkerID: "worker-fenced-other",
 		})
@@ -901,19 +900,19 @@ func TestResumptionWorker_Metrics(t *testing.T) {
 		resumptionTasksTotal.Reset()
 		resumptionErrorsTotal.Reset()
 
-		pauseRepo := pausestate.NewFake()
-		_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{
+		pauseRepo := storagetest.NewFakePauseStateRepository()
+		_ = pauseRepo.Set(ctx, &storage.PauseSchedulingState{
 			SchedulingPaused: false,
 			ResumptionRunID:  "run-metrics",
 		})
-		taskRepo := pausedtask.NewFake()
+		taskRepo := storagetest.NewFakePausedTaskRepository()
 		publisher := &mockPublisher{}
 
 		// 1. Create -> replayed
 		_ = taskRepo.Create(ctx, testValidTask(1, "task-create-replayed", int64(essmsgpb.Priority_NORMAL), time.Now()))
 
 		// 2. Restart -> skipped_stopped (terminal state)
-		_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+		_ = taskRepo.Create(ctx, &storage.PausedTask{
 			XID:      1,
 			WID:      2,
 			TaskID:   "task-restart-stopped",
@@ -933,7 +932,7 @@ func TestResumptionWorker_Metrics(t *testing.T) {
 		})
 
 		// 3. Update -> skipped_obsolete (priority mismatch)
-		_ = taskRepo.Create(ctx, &pausedtask.PausedTask{
+		_ = taskRepo.Create(ctx, &storage.PausedTask{
 			XID:      1,
 			WID:      3,
 			TaskID:   "task-update-obsolete",
@@ -987,9 +986,9 @@ func TestResumptionWorker_Metrics(t *testing.T) {
 		resumptionErrorsTotal.Reset()
 
 		// 1. Fetch error
-		pauseRepo := pausestate.NewFake()
-		_ = pauseRepo.Set(ctx, &pausestate.PauseSchedulingState{ResumptionRunID: "run-err"})
-		fetchErrRepo := &errPausedTaskRepo{Fake: pausedtask.NewFake(), listPendingErr: errors.New("fetch err")}
+		pauseRepo := storagetest.NewFakePauseStateRepository()
+		_ = pauseRepo.Set(ctx, &storage.PauseSchedulingState{ResumptionRunID: "run-err"})
+		fetchErrRepo := &errPausedTaskRepo{FakePausedTaskRepository: storagetest.NewFakePausedTaskRepository(), listPendingErr: errors.New("fetch err")}
 		workerFetch := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: fetchErrRepo}, newMockTaskQueue(&mockPublisher{}, nil), redisclient.NewFakeClient())
 		_ = workerFetch.StartResumption(ctx, Request{ResumptionRunID: "run-err", BatchSize: 10})
 		if got := testutil.ToFloat64(resumptionErrorsTotal.WithLabelValues("fetch")); got != 1 {
@@ -997,7 +996,7 @@ func TestResumptionWorker_Metrics(t *testing.T) {
 		}
 
 		// 2. Publish error
-		pubTaskRepo := pausedtask.NewFake()
+		pubTaskRepo := storagetest.NewFakePausedTaskRepository()
 		_ = pubTaskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
 		workerPublish := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: pubTaskRepo}, newMockTaskQueue(&mockPublisher{err: errors.New("publish err")}, nil), redisclient.NewFakeClient())
 		_ = workerPublish.StartResumption(ctx, Request{ResumptionRunID: "run-err", BatchSize: 10})
@@ -1006,7 +1005,7 @@ func TestResumptionWorker_Metrics(t *testing.T) {
 		}
 
 		// 3. Commit error
-		commitTaskRepo := &errPausedTaskRepo{Fake: pubTaskRepo, markProcessedErr: errors.New("commit err")}
+		commitTaskRepo := &errPausedTaskRepo{FakePausedTaskRepository: pubTaskRepo, markProcessedErr: errors.New("commit err")}
 		workerCommit := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: commitTaskRepo}, newMockTaskQueue(&mockPublisher{}, nil), redisclient.NewFakeClient())
 		_ = workerCommit.StartResumption(ctx, Request{ResumptionRunID: "run-err", BatchSize: 10})
 		if got := testutil.ToFloat64(resumptionErrorsTotal.WithLabelValues("commit")); got != 1 {

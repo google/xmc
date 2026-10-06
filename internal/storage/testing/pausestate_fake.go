@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pausestate
+// Package storagetest provides in-memory test doubles for storage repositories.
+package storagetest
 
 import (
 	"context"
@@ -21,22 +22,23 @@ import (
 	"time"
 
 	"task/go/status"
+	"xmanager_cloud/internal/storage"
 )
 
-var _ Repository = (*Fake)(nil)
+var _ storage.PauseStateRepository = (*FakePauseStateRepository)(nil)
 
-// Fake is an in-memory test double for Repository.
-type Fake struct {
+// FakePauseStateRepository is an in-memory test double for storage.PauseStateRepository.
+type FakePauseStateRepository struct {
 	mu    sync.RWMutex
-	state *PauseSchedulingState
+	state *storage.PauseSchedulingState
 }
 
-// NewFake creates a new in-memory Fake.
-func NewFake() *Fake {
-	return &Fake{}
+// NewFakePauseStateRepository creates a new in-memory FakePauseStateRepository.
+func NewFakePauseStateRepository() *FakePauseStateRepository {
+	return &FakePauseStateRepository{}
 }
 
-func clonePauseSchedulingState(s *PauseSchedulingState) *PauseSchedulingState {
+func clonePauseSchedulingState(s *storage.PauseSchedulingState) *storage.PauseSchedulingState {
 	if s == nil {
 		return nil
 	}
@@ -46,7 +48,7 @@ func clonePauseSchedulingState(s *PauseSchedulingState) *PauseSchedulingState {
 
 // Get retrieves the current global scheduling pause state from memory.
 // If uninitialized, it returns a safe default with SchedulingPaused = false.
-func (f *Fake) Get(ctx context.Context) (*PauseSchedulingState, error) {
+func (f *FakePauseStateRepository) Get(ctx context.Context) (*storage.PauseSchedulingState, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -55,13 +57,13 @@ func (f *Fake) Get(ctx context.Context) (*PauseSchedulingState, error) {
 	defer f.mu.RUnlock()
 
 	if f.state == nil {
-		return DefaultPauseSchedulingState(), nil
+		return storage.DefaultPauseSchedulingState(), nil
 	}
 	return clonePauseSchedulingState(f.state), nil
 }
 
 // Set updates or initializes the global scheduling pause state in memory.
-func (f *Fake) Set(ctx context.Context, state *PauseSchedulingState) error {
+func (f *FakePauseStateRepository) Set(ctx context.Context, state *storage.PauseSchedulingState) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -79,7 +81,7 @@ func (f *Fake) Set(ctx context.Context, state *PauseSchedulingState) error {
 }
 
 // Reset clears the stored state from memory (test helper).
-func (f *Fake) Reset() {
+func (f *FakePauseStateRepository) Reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.state = nil

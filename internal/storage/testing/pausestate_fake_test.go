@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pausestate
+package storagetest
 
 import (
 	"context"
@@ -24,11 +24,12 @@ import (
 
 	"golang/cmp/cmp"
 	"task/go/status"
+	"xmanager_cloud/internal/storage"
 )
 
-func TestFake_UninitializedDefault(t *testing.T) {
+func TestFakePauseState_UninitializedDefault(t *testing.T) {
 	ctx := context.Background()
-	fake := NewFake()
+	fake := NewFakePauseStateRepository()
 
 	state, err := fake.Get(ctx)
 	if err != nil {
@@ -37,17 +38,17 @@ func TestFake_UninitializedDefault(t *testing.T) {
 	if state == nil {
 		t.Fatal("Get() returned nil state")
 	}
-	want := DefaultPauseSchedulingState()
+	want := storage.DefaultPauseSchedulingState()
 	if diff := cmp.Diff(want, state); diff != "" {
 		t.Errorf("Get() uninitialized mismatch (-want +got):\n%s", diff)
 	}
 }
 
-func TestFake_SetAndGet(t *testing.T) {
+func TestFakePauseState_SetAndGet(t *testing.T) {
 	ctx := context.Background()
-	fake := NewFake()
+	fake := NewFakePauseStateRepository()
 
-	input := &PauseSchedulingState{
+	input := &storage.PauseSchedulingState{
 		SchedulingPaused:   true,
 		ResumptionRunID:    "run-123",
 		ResumptionWorkerID: "worker-456",
@@ -73,11 +74,11 @@ func TestFake_SetAndGet(t *testing.T) {
 	}
 }
 
-func TestFake_SetUpdatesTimestamp(t *testing.T) {
+func TestFakePauseState_SetUpdatesTimestamp(t *testing.T) {
 	ctx := context.Background()
-	fake := NewFake()
+	fake := NewFakePauseStateRepository()
 
-	if err := fake.Set(ctx, &PauseSchedulingState{SchedulingPaused: true}); err != nil {
+	if err := fake.Set(ctx, &storage.PauseSchedulingState{SchedulingPaused: true}); err != nil {
 		t.Fatalf("Set() error: %v", err)
 	}
 	firstState, err := fake.Get(ctx)
@@ -105,12 +106,12 @@ func TestFake_SetUpdatesTimestamp(t *testing.T) {
 	}
 }
 
-func TestFake_DefaultTimestamp(t *testing.T) {
+func TestFakePauseState_DefaultTimestamp(t *testing.T) {
 	ctx := context.Background()
-	fake := NewFake()
+	fake := NewFakePauseStateRepository()
 
 	before := time.Now().Add(-time.Second)
-	input := &PauseSchedulingState{
+	input := &storage.PauseSchedulingState{
 		SchedulingPaused: true,
 	}
 
@@ -129,9 +130,9 @@ func TestFake_DefaultTimestamp(t *testing.T) {
 	}
 }
 
-func TestFake_SetNil(t *testing.T) {
+func TestFakePauseState_SetNil(t *testing.T) {
 	ctx := context.Background()
-	fake := NewFake()
+	fake := NewFakePauseStateRepository()
 
 	err := fake.Set(ctx, nil)
 	if !errors.Is(err, status.ErrInvalidArgument) {
@@ -139,11 +140,11 @@ func TestFake_SetNil(t *testing.T) {
 	}
 }
 
-func TestFake_MutationIsolation(t *testing.T) {
+func TestFakePauseState_MutationIsolation(t *testing.T) {
 	ctx := context.Background()
-	fake := NewFake()
+	fake := NewFakePauseStateRepository()
 
-	input := &PauseSchedulingState{
+	input := &storage.PauseSchedulingState{
 		SchedulingPaused: true,
 		ResumptionRunID:  "initial-run",
 	}
@@ -176,11 +177,11 @@ func TestFake_MutationIsolation(t *testing.T) {
 	}
 }
 
-func TestFake_Reset(t *testing.T) {
+func TestFakePauseState_Reset(t *testing.T) {
 	ctx := context.Background()
-	fake := NewFake()
+	fake := NewFakePauseStateRepository()
 
-	_ = fake.Set(ctx, &PauseSchedulingState{SchedulingPaused: true, ResumptionRunID: "run-1"})
+	_ = fake.Set(ctx, &storage.PauseSchedulingState{SchedulingPaused: true, ResumptionRunID: "run-1"})
 	fake.Reset()
 
 	got, err := fake.Get(ctx)
@@ -192,25 +193,25 @@ func TestFake_Reset(t *testing.T) {
 	}
 }
 
-func TestFake_ContextCancellation(t *testing.T) {
+func TestFakePauseState_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	fake := NewFake()
+	fake := NewFakePauseStateRepository()
 
 	if _, err := fake.Get(ctx); !errors.Is(err, context.Canceled) {
 		t.Errorf("Get() with canceled context error = %v, want %v", err, context.Canceled)
 	}
 
-	state := &PauseSchedulingState{SchedulingPaused: true}
+	state := &storage.PauseSchedulingState{SchedulingPaused: true}
 	if err := fake.Set(ctx, state); !errors.Is(err, context.Canceled) {
 		t.Errorf("Set() with canceled context error = %v, want %v", err, context.Canceled)
 	}
 }
 
-func TestFake_Concurrency(t *testing.T) {
+func TestFakePauseState_Concurrency(t *testing.T) {
 	ctx := context.Background()
-	fake := NewFake()
+	fake := NewFakePauseStateRepository()
 
 	var wg sync.WaitGroup
 	for g := 0; g < 10; g++ {
@@ -218,7 +219,7 @@ func TestFake_Concurrency(t *testing.T) {
 		go func(gid int) {
 			defer wg.Done()
 			for i := 0; i < 20; i++ {
-				_ = fake.Set(ctx, &PauseSchedulingState{
+				_ = fake.Set(ctx, &storage.PauseSchedulingState{
 					SchedulingPaused: i%2 == 0,
 					ResumptionRunID:  fmt.Sprintf("run-%d-%d", gid, i),
 				})

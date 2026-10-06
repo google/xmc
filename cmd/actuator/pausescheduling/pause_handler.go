@@ -25,7 +25,6 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/validator/validator"
@@ -148,7 +147,7 @@ func (h *TaskPauseHandler) HandlePause(ctx context.Context, payload *actuatortas
 	return nil
 }
 
-func buildPausedTask(payload *actuatortaskpb.ActuatorPayload, traceID string) (*pausedtask.PausedTask, error) {
+func buildPausedTask(payload *actuatortaskpb.ActuatorPayload, traceID string) (*storage.PausedTask, error) {
 	target := payload.GetTarget()
 	xid, wid, _, err := validator.ValidateWorkUnitExecutionName(target)
 	if err != nil {
@@ -165,7 +164,7 @@ func buildPausedTask(payload *actuatortaskpb.ActuatorPayload, traceID string) (*
 		createTime = ct.AsTime()
 	}
 
-	return &pausedtask.PausedTask{
+	return &storage.PausedTask{
 		XID:           xid,
 		WID:           wid,
 		Target:        target,

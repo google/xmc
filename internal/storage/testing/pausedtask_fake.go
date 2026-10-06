@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pausedtask
+package storagetest
 
 import (
 	"context"
@@ -26,23 +26,24 @@ import (
 	"task/go/status"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
-var _ Repository = (*Fake)(nil)
+var _ storage.PausedTaskRepository = (*FakePausedTaskRepository)(nil)
 
-// Fake is an in-memory test double for Repository.
-type Fake struct {
+// FakePausedTaskRepository is an in-memory test double for storage.PausedTaskRepository.
+type FakePausedTaskRepository struct {
 	mu    sync.RWMutex
-	tasks []*PausedTask
+	tasks []*storage.PausedTask
 }
 
-// NewFake creates a new in-memory Fake.
-func NewFake() *Fake {
-	return &Fake{}
+// NewFakePausedTaskRepository creates a new in-memory FakePausedTaskRepository.
+func NewFakePausedTaskRepository() *FakePausedTaskRepository {
+	return &FakePausedTaskRepository{}
 }
 
-func cloneTask(task *PausedTask) *PausedTask {
+func cloneTask(task *storage.PausedTask) *storage.PausedTask {
 	cp := *task
 	if task.Action != nil {
 		cp.Action = proto.Clone(task.Action).(*actuatortaskpb.Action)
@@ -57,7 +58,7 @@ func cloneTask(task *PausedTask) *PausedTask {
 	return &cp
 }
 
-func (f *Fake) findTask(xid, wid int64, taskID string) *PausedTask {
+func (f *FakePausedTaskRepository) findTask(xid, wid int64, taskID string) *storage.PausedTask {
 	for _, task := range f.tasks {
 		if task.XID == xid && task.WID == wid && task.TaskID == taskID {
 			return task
@@ -67,7 +68,7 @@ func (f *Fake) findTask(xid, wid int64, taskID string) *PausedTask {
 }
 
 // Create stores a new paused task in memory.
-func (f *Fake) Create(ctx context.Context, task *PausedTask) error {
+func (f *FakePausedTaskRepository) Create(ctx context.Context, task *storage.PausedTask) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -83,7 +84,7 @@ func (f *Fake) Create(ctx context.Context, task *PausedTask) error {
 	}
 
 	if f.findTask(task.XID, task.WID, task.TaskID) != nil {
-		return fmt.Errorf("%w: (xid=%d, wid=%d, task_id=%s)", ErrTaskAlreadyExists, task.XID, task.WID, task.TaskID)
+		return fmt.Errorf("%w: (xid=%d, wid=%d, task_id=%s)", storage.ErrPausedTaskAlreadyExists, task.XID, task.WID, task.TaskID)
 	}
 
 	stored := cloneTask(task)
@@ -96,7 +97,7 @@ func (f *Fake) Create(ctx context.Context, task *PausedTask) error {
 }
 
 // List returns all paused tasks from memory in insertion order (test helper).
-func (f *Fake) List(ctx context.Context) ([]*PausedTask, error) {
+func (f *FakePausedTaskRepository) List(ctx context.Context) ([]*storage.PausedTask, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -108,7 +109,7 @@ func (f *Fake) List(ctx context.Context) ([]*PausedTask, error) {
 		return nil, nil
 	}
 
-	result := make([]*PausedTask, len(f.tasks))
+	result := make([]*storage.PausedTask, len(f.tasks))
 	for i, task := range f.tasks {
 		result[i] = cloneTask(task)
 	}
@@ -116,7 +117,7 @@ func (f *Fake) List(ctx context.Context) ([]*PausedTask, error) {
 }
 
 // ListPending returns pending paused tasks ordered by Priority DESC, CreateTime ASC.
-func (f *Fake) ListPending(ctx context.Context, limit int) ([]*PausedTask, error) {
+func (f *FakePausedTaskRepository) ListPending(ctx context.Context, limit int) ([]*storage.PausedTask, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -124,7 +125,7 @@ func (f *Fake) ListPending(ctx context.Context, limit int) ([]*PausedTask, error
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	var pending []*PausedTask
+	var pending []*storage.PausedTask
 	for _, task := range f.tasks {
 		if task.ProcessedTime == nil {
 			pending = append(pending, cloneTask(task))
@@ -148,7 +149,7 @@ func (f *Fake) ListPending(ctx context.Context, limit int) ([]*PausedTask, error
 }
 
 // MarkProcessed updates resolution fields for the specified tasks.
-func (f *Fake) MarkProcessed(ctx context.Context, resolutions []TaskResolution) error {
+func (f *FakePausedTaskRepository) MarkProcessed(ctx context.Context, resolutions []storage.PausedTaskResolution) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -156,11 +157,11 @@ func (f *Fake) MarkProcessed(ctx context.Context, resolutions []TaskResolution) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	matched := make([]*PausedTask, len(resolutions))
+	matched := make([]*storage.PausedTask, len(resolutions))
 	for i, res := range resolutions {
 		task := f.findTask(res.XID, res.WID, res.TaskID)
 		if task == nil {
-			return fmt.Errorf("%w: (xid=%d, wid=%d, task_id=%s)", ErrTaskNotFound, res.XID, res.WID, res.TaskID)
+			return fmt.Errorf("%w: (xid=%d, wid=%d, task_id=%s)", storage.ErrPausedTaskNotFound, res.XID, res.WID, res.TaskID)
 		}
 		matched[i] = task
 	}
@@ -180,7 +181,7 @@ func (f *Fake) MarkProcessed(ctx context.Context, resolutions []TaskResolution) 
 }
 
 // Reset clears all tasks from memory (test helper).
-func (f *Fake) Reset() {
+func (f *FakePausedTaskRepository) Reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.tasks = nil

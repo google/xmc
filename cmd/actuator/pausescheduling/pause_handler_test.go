@@ -26,20 +26,19 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-// mockPausedTaskRepo overrides Create; the embedded Repository is nil and must not be called.
+// mockPausedTaskRepo overrides Create; the embedded PausedTaskRepository is nil and must not be called.
 type mockPausedTaskRepo struct {
-	pausedtask.Repository
+	storage.PausedTaskRepository
 	err         error
-	storedTasks []*pausedtask.PausedTask
+	storedTasks []*storage.PausedTask
 }
 
-func (m *mockPausedTaskRepo) Create(ctx context.Context, task *pausedtask.PausedTask) error {
+func (m *mockPausedTaskRepo) Create(ctx context.Context, task *storage.PausedTask) error {
 	if m.err != nil {
 		return m.err
 	}
