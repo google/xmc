@@ -207,7 +207,7 @@ jobs:
             name: 'xDash Dashboard Builder'
             example_path: 'examples/xdash_dashboard'
             entrypoint: 'create_dashboard.py'
-            args: '--endpoint="localhost:50051"'
+            args: '--endpoint="localhost:50051" --create-experiments'
             verify_module: 'tools.nightly_tests.xdash_dashboard_verify'
             expected_queue: ''
             requires_clickhouse: true

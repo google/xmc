@@ -15,12 +15,12 @@
 
 Usage:
     python3 create_dashboard.py [--endpoint localhost:8080] [--dashboard-id example_vcc]
+        [--create-experiments]
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from collections.abc import Sequence
 
@@ -49,18 +49,19 @@ EXPERIMENT_RUNS = [
 DEFAULT_ENDPOINT = "localhost:8080"
 DEFAULT_DASHBOARD_ID = "example_vcc_comparison"
 DEFAULT_DASHBOARD_TITLE = "VCC Baseline vs Tuned Hyperparameters"
+DEFAULT_CREATE_EXPERIMENTS = False
 
 
-def _resolve_experiment_runs() -> list[tuple[int, str, str]]:
-    """Resolves experiment IDs, creating live experiments when XMANAGER_ENDPOINT is set."""
-    if not os.environ.get("XMANAGER_ENDPOINT"):
+def _resolve_experiment_runs(
+    create_experiments: bool = DEFAULT_CREATE_EXPERIMENTS,
+) -> list[tuple[int, str, str]]:
+    """Resolves experiment IDs, creating live experiments when create_experiments is True."""
+    if not create_experiments:
         return list(EXPERIMENT_RUNS)
-    try:
-        from xmanager import xm_cloud
-        from xmanager.xm_cloud import snapshot_code
-        from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
-    except ImportError:
-        return list(EXPERIMENT_RUNS)
+
+    from xmanager import xm_cloud
+    from xmanager.xm_cloud import snapshot_code
+    from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
     snapshot_code.push_repo_state = lambda *a, **kw: type("Dummy", (), {"commit_url": None})()
     acls = xid_messages_pb2.XidAcls(
@@ -112,6 +113,7 @@ def create_example_dashboard(
     client: DashboardClient,
     dashboard_id: str,
     title: str,
+    create_experiments: bool = DEFAULT_CREATE_EXPERIMENTS,
 ) -> None:
     """Creates and displays a comparative metrics dashboard across experiment runs.
 
@@ -119,8 +121,8 @@ def create_example_dashboard(
     this runs in two phases: create every chart, then create the dashboard pointing at
     the IDs the server assigned.
     """
-    runs = _resolve_experiment_runs()
-    if dashboard_id == DEFAULT_DASHBOARD_ID and runs and runs[0][0] != VCC_BASELINE_XID:
+    runs = _resolve_experiment_runs(create_experiments=create_experiments)
+    if create_experiments and dashboard_id == DEFAULT_DASHBOARD_ID and runs:
         dashboard_id = f"{dashboard_id}_{runs[0][0]}"
     sys.stdout.write(f"--> Building dashboard '{title}' (ID: {dashboard_id})...\n")
 
@@ -186,6 +188,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=DEFAULT_DASHBOARD_TITLE,
         help="Display title for the created dashboard",
     )
+    parser.add_argument(
+        "--create-experiments",
+        action="store_true",
+        default=DEFAULT_CREATE_EXPERIMENTS,
+        help="Create live experiments in XMC instead of using fixed golden dataset XIDs",
+    )
     args = parser.parse_args(argv)
 
     endpoint = args.endpoint
@@ -202,6 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 client=client,
                 dashboard_id=args.dashboard_id,
                 title=args.title,
+                create_experiments=args.create_experiments,
             )
     except XDashError as err:
         sys.stderr.write(f"⚠️  xdash connection notice: {err}\n")
