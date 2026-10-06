@@ -42,7 +42,7 @@ func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *apipb.Restar
 	xid, wid, err := validator.ValidateWorkUnitName(req.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate work unit name", "name", req.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("failed to validate work unit name: %w: %w", status.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithWorkUnitName(ctx, req.GetName())
 
@@ -60,7 +60,7 @@ func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *apipb.Restar
 	workUnit, err := h.storage.FetchWorkUnit(ctx, xid, wid)
 	if err != nil {
 		logging.Error(ctx, "Failed to get work unit", "error", err)
-		return nil, fmt.Errorf("failed to get work unit: %w (%v)", status.ErrNotFound, err)
+		return nil, fmt.Errorf("failed to get work unit: %w: %w", status.ErrNotFound, err)
 	}
 	oldExecutionName := workUnit.GetCurrentWorkUnitExecution().GetName()
 
@@ -68,7 +68,7 @@ func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *apipb.Restar
 	restartedExecutions, err := restartWorkUnitExecutions(ctx, h.storage, email, xid, []int64{wid})
 	if err != nil {
 		logging.Error(ctx, "Failed to restart work unit executions", "error", err)
-		return nil, fmt.Errorf("failed to restart work unit executions: %w (%v)", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to restart work unit executions: %w: %w", status.ErrInternal, err)
 	}
 
 	// 5.1. Extract the restarted work unit execution and patch the work unit with it.
@@ -83,7 +83,7 @@ func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *apipb.Restar
 	experiment, err := h.storage.FetchExperiment(ctx, xid)
 	if err != nil {
 		logging.Error(ctx, "Failed to get experiment priority", "error", err)
-		return nil, fmt.Errorf("failed to get experiment priority: %w (%v)", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to get experiment priority: %w: %w", status.ErrInternal, err)
 	}
 
 	// 7. Enqueue the restart request for the work unit.

@@ -42,5 +42,6 @@ compat_go_test(
         "@io_k8s_utils//ptr",
         "@org_golang_google_api//googleapi",
         "@org_golang_google_api//idtoken",
+        "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )

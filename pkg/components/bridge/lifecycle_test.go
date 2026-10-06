@@ -220,6 +220,7 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 	tornDown := []Condition{{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 2, Reason: ReasonDeactivationIncomplete}}
 	blockedErr := status.Error(codes.FailedPrecondition, "component redpanda has active dependents: [ingestion-gateway]")
 	blockedMsg := `Cannot disable "redpanda": component redpanda has active dependents: [ingestion-gateway]`
+	notRegisteredErr := status.Error(codes.FailedPrecondition, store.DependencyNotFoundMessagePrefix+` component "redpanda" depends on "zookeeper", which is not registered`)
 	blockedAt := func(gen int64, age time.Duration) []Condition {
 		return append(slices.Clone(wasReady), Condition{
 			Type: ConditionTypeDeactivationBlocked, Status: ConditionStatusTrue, ObservedGeneration: gen,
@@ -317,9 +318,9 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "retry after incomplete deactivation re-runs the handshake",
+			name: "retry after incomplete deactivation re-runs the handshake without another uninstall",
 			cms:  &mockCMS{}, helm: &mockHelm{}, spec: spec1P, existing: tornDown,
-			want: disabled(gateOutcome{PrepareCalls: 1, CompleteCalls: 1, HelmDeleted: true}),
+			want: disabled(gateOutcome{PrepareCalls: 1, CompleteCalls: 1}),
 		},
 		{
 			name: "block after teardown keeps reporting DeactivationIncomplete",
@@ -335,6 +336,27 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 			name: "prepare failure after teardown keeps reporting DeactivationIncomplete",
 			cms:  &mockCMS{prepareErr: status.Error(codes.Unavailable, "cms down")}, helm: &mockHelm{}, spec: spec1P, existing: tornDown,
 			want:    failed(ReasonDeactivationIncomplete, gateOutcome{PrepareCalls: 1}),
+			wantErr: true,
+		},
+		{
+			name: "unregistered dependency does not block deactivation",
+			cms: &mockCMS{
+				setErr:     notRegisteredErr,
+				prepareErr: status.Error(codes.NotFound, "component not found"),
+				obsErr:     status.Error(codes.NotFound, "component not found"),
+			},
+			helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
+			want: disabled(gateOutcome{PrepareCalls: 1, HelmDeleted: true}),
+		},
+		{
+			name: "unregistered dependency on a registered component deactivates against the existing record",
+			cms:  &mockCMS{setErr: notRegisteredErr}, helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
+			want: disabled(gateOutcome{PrepareCalls: 1, CompleteCalls: 1, HelmDeleted: true}),
+		},
+		{
+			name: "other intent failure still fails deactivation",
+			cms:  &mockCMS{setErr: status.Error(codes.Unavailable, "cms down")}, helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
+			want:    failed("IntentApplicationFailed", gateOutcome{}),
 			wantErr: true,
 		},
 	}
@@ -391,6 +413,50 @@ func TestReconcileComponent_DeactivationUnblocksAcrossPasses(t *testing.T) {
 	}
 }
 
+// TestReconcileComponent_BlockAfterTeardownSyncsCMS verifies that a block after teardown syncs the DeactivationIncomplete
+// outcome to CMS, throttled by the Ready condition's heartbeat like every other outcome.
+func TestReconcileComponent_BlockAfterTeardownSyncsCMS(t *testing.T) {
+	tests := []struct {
+		name               string
+		lastTransitionTime time.Time
+		wantSync           bool
+	}{
+		{name: "never synced", wantSync: true},
+		{name: "synced within the heartbeat interval", lastTransitionTime: time.Now(), wantSync: false},
+		{name: "synced before the heartbeat interval", lastTransitionTime: time.Now().Add(-defaultCMSHeartbeatInterval), wantSync: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cms := &mockCMS{prepareErr: status.Error(codes.FailedPrecondition, "component redpanda has active dependents: [ingestion-gateway]")}
+			r, _ := NewReconciler(cms, nil, &mockHelm{})
+			_, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
+				Namespace: "xmc", Name: "redpanda", Generation: 2, HasFinalizer: true, Enabled: false,
+				Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+				ExistingConditions: []Condition{{
+					Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 2,
+					Reason: ReasonDeactivationIncomplete, LastTransitionTime: tt.lastTransitionTime,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("ReconcileComponent() error = %v", err)
+			}
+			got := cms.lastObsReq
+			if !tt.wantSync {
+				if got != nil {
+					t.Errorf("UpdateObservedGeneration called with %v, want no call within the heartbeat interval", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("UpdateObservedGeneration was not called, want the DeactivationIncomplete outcome synced to CMS")
+			}
+			if got.GetObservedGeneration() != 2 || got.GetState() != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION || got.GetStatusMessage() != "Ready=False" {
+				t.Errorf("UpdateObservedGeneration request = %v, want generation 2, PENDING_RECONCILIATION, \"Ready=False\"", got)
+			}
+		})
+	}
+}
+
 func TestWasComponentPreviouslyActive(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -401,7 +467,9 @@ func TestWasComponentPreviouslyActive(t *testing.T) {
 		{name: "healthy", status: ConditionStatusTrue, reason: ReasonComponentHealthy, want: true},
 		{name: "unhealthy after actuation", status: ConditionStatusFalse, reason: ReasonHealthProbeFailed, want: true},
 		{name: "deactivation blocked keeps workload", status: ConditionStatusFalse, reason: ReasonDeactivationBlocked, want: true},
-		{name: "deactivation incomplete", status: ConditionStatusFalse, reason: ReasonDeactivationIncomplete, want: true},
+		{name: "deactivation incomplete was already torn down", status: ConditionStatusFalse, reason: ReasonDeactivationIncomplete, want: false},
+		{name: "intent failure may hide a running workload", status: ConditionStatusFalse, reason: "IntentApplicationFailed", want: true},
+		{name: "prepare failure may hide a running workload", status: ConditionStatusFalse, reason: "CMSDeactivationFailed", want: true},
 		{name: "gated on dependencies", status: ConditionStatusFalse, reason: ReasonDependenciesNotReady, want: false},
 		{name: "gated on a cycle", status: ConditionStatusFalse, reason: ReasonDependencyCycle, want: false},
 		{name: "disabled", status: ConditionStatusFalse, reason: reasonComponentDisabled, want: false},

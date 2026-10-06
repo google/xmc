@@ -36,11 +36,13 @@ import (
 )
 
 type enqueuedTaskCall struct {
-	Ctx           context.Context
-	Target        string
-	WorkUnit      *essmsgpb.WorkUnit
-	Action        *actuatortaskpb.Action
-	OperationName string
+	Ctx             context.Context
+	Target          string
+	WorkUnit        *essmsgpb.WorkUnit
+	Action          *actuatortaskpb.Action
+	OperationName   string
+	ResumptionRunID string
+	ResumptionTime  time.Time
 }
 
 type mockPublisher struct {
@@ -49,16 +51,18 @@ type mockPublisher struct {
 	failAfter int
 }
 
-func (m *mockPublisher) EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error {
+func (m *mockPublisher) EnqueueResumedWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string, runID string, resumptionTime time.Time) error {
 	if m.err != nil && len(m.calls) >= m.failAfter {
 		return m.err
 	}
 	m.calls = append(m.calls, enqueuedTaskCall{
-		Ctx:           ctx,
-		Target:        target,
-		WorkUnit:      workUnit,
-		Action:        action,
-		OperationName: operationName,
+		Ctx:             ctx,
+		Target:          target,
+		WorkUnit:        workUnit,
+		Action:          action,
+		OperationName:   operationName,
+		ResumptionRunID: runID,
+		ResumptionTime:  resumptionTime,
 	})
 	return nil
 }
@@ -291,6 +295,17 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 	}
 	if opID, ok := logging.OperationID(publisher.calls[1].Ctx); !ok || opID != "trace-op-2" {
 		t.Errorf("call 1 trace ID = %q (ok=%v), want trace-op-2", opID, ok)
+	}
+
+	state, _ := pauseRepo.Get(ctx)
+	wantResumptionTime := state.UpdatedAt
+	for i, call := range publisher.calls {
+		if call.ResumptionRunID != "run-1" {
+			t.Errorf("call %d ResumptionRunID = %q, want run-1", i, call.ResumptionRunID)
+		}
+		if !call.ResumptionTime.Equal(wantResumptionTime) {
+			t.Errorf("call %d ResumptionTime = %v, want %v", i, call.ResumptionTime, wantResumptionTime)
+		}
 	}
 
 	pending, _ := taskRepo.ListPending(ctx, 0)

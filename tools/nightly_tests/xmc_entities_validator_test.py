@@ -469,7 +469,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             self.assertIn("xmanager_cloud is required", str(ctx.exception))
 
     def test_validate_work_unit_priority_success(self) -> None:
-        cases = [
+        cases: list[tuple[int, int | str]] = [
             (3, "HIGH"),
             (3, "high"),
             (3, 3),
@@ -1098,7 +1098,13 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
 
     def test_validate_dashboard_non_200_status(self) -> None:
         def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> None:
-            raise urllib.error.HTTPError(req.full_url, 500, "Internal Server Error", {}, None)
+            raise urllib.error.HTTPError(
+                req.full_url,
+                500,
+                "Internal Server Error",
+                mock.MagicMock(),
+                None,
+            )
 
         with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
             with self.assertRaises(TimeoutError) as ctx:

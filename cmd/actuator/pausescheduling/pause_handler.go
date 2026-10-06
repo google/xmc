@@ -33,8 +33,9 @@ import (
 
 // PauseHandler defines the interface for handling actuation tasks when scheduling is paused.
 type PauseHandler interface {
-	// IsPaused returns whether scheduling is currently paused.
-	IsPaused() bool
+	// IsPaused returns whether scheduling is currently paused, advancing the local
+	// cache to unpaused if metadata carries a non-stale resumption timestamp.
+	IsPaused(metadata *actuatortaskpb.Metadata) bool
 	// ShouldPause returns whether the given action is subject to pause scheduling (Create, Restart, Update).
 	ShouldPause(action *actuatortaskpb.Action) bool
 	// HandlePause buffers the eligible task and updates execution status if required.
@@ -64,12 +65,20 @@ func NewPauseHandler(cache Cache, txRunner storage.TransactionRunner) (*TaskPaus
 	}, nil
 }
 
-// IsPaused returns whether scheduling is currently paused.
-func (h *TaskPauseHandler) IsPaused() bool {
+// IsPaused returns whether scheduling is currently paused, advancing the local
+// cache to unpaused if metadata carries a non-stale resumption timestamp.
+func (h *TaskPauseHandler) IsPaused(metadata *actuatortaskpb.Metadata) bool {
 	if h == nil || h.cache == nil {
 		return false
 	}
-	return h.cache.State().IsPaused
+	state := h.cache.State()
+	if state.IsPaused {
+		if ts := metadata.GetResumptionTime(); ts.IsValid() && !ts.AsTime().Before(state.UpdatedAt) && (ts.GetSeconds() != 0 || ts.GetNanos() != 0) {
+			h.cache.Update(State{IsPaused: false, UpdatedAt: ts.AsTime()})
+			return h.cache.State().IsPaused
+		}
+	}
+	return state.IsPaused
 }
 
 // ShouldPause returns whether the given action is subject to pause scheduling (Create, Restart, Update).

@@ -29,6 +29,7 @@ import (
 	tq "xmanager_cloud/task_queue/client"
 	"xmanager_cloud/validator/validator"
 
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
@@ -113,6 +114,74 @@ func TestStopWorkUnit_HappyPath(t *testing.T) {
 	}
 	if workUnitExecution.GetStatus().GetState() != msgpb.WorkUnitStatus_STOPPING {
 		t.Errorf("Work unit execution state got %v, want %v", workUnitExecution.GetStatus().GetState(), msgpb.WorkUnitStatus_STOPPING)
+	}
+}
+
+func TestStopWorkUnit_SchedulingPausedTransitionsDirectlyToStopped(t *testing.T) {
+	ctx := context.Background()
+	server, taskQueueClient := createExperimentStateServer(ctx, t)
+
+	exp := &msgpb.Experiment{
+		Title: "test experiment for stopworkunit from scheduling paused",
+		Acls: &xidmsgpb.XidAcls{
+			Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
+		},
+	}
+	createdExp := mustCreateExperiment(ctx, t, server, exp)
+
+	workUnit := &msgpb.WorkUnit{
+		WorkUnitType: msgpb.WorkUnit_STANDARD,
+		Executable:   testExecutable,
+	}
+	workUnitID := int64(1)
+	workUnitName := fmt.Sprintf("%s/workUnits/%d", createdExp.GetName(), workUnitID)
+	_ = mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), workUnitID, workUnit)
+
+	xid, _, err := validator.ValidateWorkUnitName(workUnitName)
+	if err != nil {
+		t.Fatalf("ValidateWorkUnitName() returned an unexpected error: %v", err)
+	}
+	initialExec, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
+	if err != nil {
+		t.Fatalf("FetchCurrentWorkUnitExecution() returned an unexpected error: %v", err)
+	}
+	_, _, eid, err := validator.ValidateWorkUnitExecutionName(initialExec.GetName())
+	if err != nil {
+		t.Fatalf("ValidateWorkUnitExecutionName() returned an unexpected error: %v", err)
+	}
+
+	// Transition the work unit to SCHEDULING_PAUSED first.
+	if _, err := server.WorkUnitHandler.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+		{
+			WID: workUnitID,
+			EID: eid,
+			WorkUnitExecution: &msgpb.WorkUnitExecution{
+				Status: &msgpb.WorkUnitStatus{
+					State:           msgpb.WorkUnitStatus_SCHEDULING_PAUSED,
+					StateUpdateTime: initialExec.GetStatus().GetStateUpdateTime(),
+				},
+			},
+			UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state"}},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateWorkUnitExecutions() to SCHEDULING_PAUSED failed: %v", err)
+	}
+	taskQueueClient.LastEnqueuedAction = nil
+
+	if _, err := server.StopWorkUnit(ctx, &apipb.StopWorkUnitRequest{Name: workUnitName}); err != nil {
+		t.Fatalf("StopWorkUnit() returned an unexpected error: %v", err)
+	}
+
+	if taskQueueClient.LastEnqueuedAction == nil || taskQueueClient.LastEnqueuedAction.GetDelete() == nil {
+		t.Fatalf("StopWorkUnit() did not enqueue a DeleteAction: %v", taskQueueClient.LastEnqueuedAction)
+	}
+
+	workUnitExecution, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
+	if err != nil {
+		t.Fatalf("FetchCurrentWorkUnitExecution() returned an unexpected error: %v", err)
+	}
+	if workUnitExecution.GetStatus().GetState() != msgpb.WorkUnitStatus_STOPPED {
+		t.Errorf("Work unit execution state got %v, want %v", workUnitExecution.GetStatus().GetState(), msgpb.WorkUnitStatus_STOPPED)
 	}
 }
 

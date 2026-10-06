@@ -46,7 +46,7 @@ func (h *WorkUnitHandler) BatchRestartWorkUnits(ctx context.Context, req *apipb.
 	xid, err := validator.ValidateExperimentName(req.GetParent())
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate experiment name", "name", req.GetParent(), "error", err)
-		return nil, fmt.Errorf("failed to validate experiment name: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("failed to validate experiment name: %w: %w", status.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithExperimentName(ctx, req.GetParent())
 
@@ -59,7 +59,7 @@ func (h *WorkUnitHandler) BatchRestartWorkUnits(ctx context.Context, req *apipb.
 	workUnits, _, err := h.storage.ListWorkUnits(ctx, req.GetParent(), math.MaxInt32, "", req.GetFilter(), "", 0)
 	if err != nil {
 		logging.Error(ctx, "Failed to list work units", "error", err, "filter", req.GetFilter())
-		return nil, fmt.Errorf("failed to list work units: %w (%v)", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to list work units: %w: %w", status.ErrInternal, err)
 	}
 
 	if len(workUnits) == 0 {
@@ -74,14 +74,14 @@ func (h *WorkUnitHandler) BatchRestartWorkUnits(ctx context.Context, req *apipb.
 	restartedExecutions, err := restartWorkUnitExecutions(ctx, h.storage, email, xid, wids)
 	if err != nil {
 		logging.Error(ctx, "Failed to restart work unit executions", "error", err)
-		multiErr = errors.Join(multiErr, fmt.Errorf("failed to restart work unit executions: %w (%v)", status.ErrInternal, err))
+		multiErr = errors.Join(multiErr, fmt.Errorf("failed to restart work unit executions: %w: %w", status.ErrInternal, err))
 	}
 
 	// 7. Get the experiment priority for this experiment.
 	experiment, err := h.storage.FetchExperiment(ctx, xid)
 	if err != nil {
 		logging.Error(ctx, "Failed to get experiment priority", "error", err)
-		multiErr = errors.Join(multiErr, fmt.Errorf("failed to get experiment priority: %w (%v)", status.ErrInternal, err))
+		multiErr = errors.Join(multiErr, fmt.Errorf("failed to get experiment priority: %w: %w", status.ErrInternal, err))
 	}
 
 	// 8. Enqueue a task and operation for each work unit.
@@ -114,7 +114,7 @@ func (h *WorkUnitHandler) processWorkUnitRestartItem(ctx context.Context, workUn
 	_, wid, err := validator.ValidateWorkUnitName(workUnit.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to parse work unit name", "work_unit_name", workUnit.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to parse work unit name: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("failed to parse work unit name: %w: %w", status.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithWorkUnitName(ctx, workUnit.GetName())
 
@@ -126,7 +126,7 @@ func (h *WorkUnitHandler) processWorkUnitRestartItem(ctx context.Context, workUn
 
 	if workUnit.GetCurrentWorkUnitExecution() == nil {
 		logging.Error(ctx, "Work unit has no current execution", "work_unit_name", workUnit.GetName())
-		return nil, fmt.Errorf("work unit %s has no current execution: %w", workUnit.GetName(), status.ErrInvalidArgument)
+		return nil, fmt.Errorf("work unit %s has no current execution: %w", workUnit.GetName(), status.ErrInternal)
 	}
 	oldExecutionName := workUnit.GetCurrentWorkUnitExecution().GetName()
 	workUnit.CurrentWorkUnitExecution = restartedExecutions[wid]
@@ -137,7 +137,7 @@ func (h *WorkUnitHandler) processWorkUnitRestartItem(ctx context.Context, workUn
 		_, _, eid, err := validator.ValidateWorkUnitExecutionName(workUnit.GetCurrentWorkUnitExecution().GetName())
 		if err != nil {
 			logging.Error(ctx, "Failed to validate work unit execution name", "error", err)
-			return nil, fmt.Errorf("failed to validate work unit execution name: %w (%v)", status.ErrInternal, err)
+			return nil, fmt.Errorf("failed to validate work unit execution name: %w: %w", status.ErrInternal, err)
 		}
 
 		if statusMsgErr := h.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
@@ -157,7 +157,7 @@ func (h *WorkUnitHandler) enqueueWorkUnitRestart(ctx context.Context, oldExecuti
 	xid, wid, err := validator.ValidateWorkUnitName(newWU.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate work unit name", "name", newWU.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("failed to validate work unit name: %w: %w", status.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithWorkUnitName(ctx, newWU.GetName())
 
@@ -170,7 +170,7 @@ func (h *WorkUnitHandler) enqueueWorkUnitRestart(ctx context.Context, oldExecuti
 	operation, err := h.storage.AddWorkUnitOperation(ctx, xid, wid, metadata)
 	if err != nil {
 		logging.Error(ctx, "Failed to add work unit operation", "error", err)
-		return nil, fmt.Errorf("failed to add work unit operation: %w (%v)", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to add work unit operation: %w: %w", status.ErrInternal, err)
 	}
 
 	// 1.1. Ensure that the operation is marked as done if an error is returned from now on.
@@ -183,7 +183,7 @@ func (h *WorkUnitHandler) enqueueWorkUnitRestart(ctx context.Context, oldExecuti
 	err = h.actuator.EnqueueWorkUnitTask(ctx, oldExecutionName, newWU, client.RestartAction(experimentPriority, email), operation.GetName())
 	if err != nil {
 		logging.Error(ctx, "Failed to enqueue restart request for work unit", "error", err)
-		return nil, fmt.Errorf("failed to enqueue restart request for work unit %s: %w (%v)", newWU.GetName(), status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to enqueue restart request for work unit %s: %w: %w", newWU.GetName(), status.ErrInternal, err)
 	}
 
 	// 3. Return the successful response.
@@ -198,7 +198,7 @@ func extractWorkUnitIDs(ctx context.Context, workUnits []*msgpb.WorkUnit) ([]int
 		_, wid, err := validator.ValidateWorkUnitName(workUnit.GetName())
 		if err != nil {
 			logging.Warn(ctx, "Failed to parse work unit name", "work_unit_name", workUnit.GetName(), "error", err)
-			multiErr = errors.Join(multiErr, fmt.Errorf("failed to parse work unit name: %w (%v)", status.ErrInvalidArgument, err))
+			multiErr = errors.Join(multiErr, fmt.Errorf("failed to parse work unit name: %w: %w", status.ErrInvalidArgument, err))
 			continue
 		}
 		wids = append(wids, wid)
