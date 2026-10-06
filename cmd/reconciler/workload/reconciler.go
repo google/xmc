@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/kubernetes/common/labels"
@@ -167,7 +168,7 @@ func shouldProcessWorkloadUpdate(ctx context.Context, oldWorkload, newWorkload *
 	}
 
 	ctx = logging.Strip(ctx)
-	return hasValidXMCLabels(ctx, oldWorkload) && hasValidXMCLabels(ctx, newWorkload)
+	return hasValidXMCLabels(ctx, newWorkload)
 }
 
 // Reconcile fetches the Workload and updates the WorkUnitExecution status.
@@ -182,7 +183,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		reconcileDuration.WithLabelValues().Observe(float64(duration.Nanoseconds()) / 1e6)
 		if recErr != nil {
 			reconcileErrorsTotal.WithLabelValues().Inc()
-			logging.Error(ctx, "Reconcile Workload returned an error", "workload", req.NamespacedName, "error", recErr)
 		} else {
 			logging.Info(ctx, "Reconciled Workload", "workload", req.NamespacedName)
 		}
@@ -196,15 +196,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 			logging.Warn(ctx, "Workload not found, no action needed", "workload", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
-		logging.Error(ctx, "Error fetching Workload", "workload", req.NamespacedName, "error", err)
-		recErr = err
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to fetch Workload %s: %w", req.NamespacedName, err)
 	}
 
 	parsedLabels, err := parseXMCLabelsFromPodSet(ctx, &workload)
 	if err != nil {
-		logging.Error(ctx, "Failed to parse labels for Workload", "workload", workload.GetName(), "error", err)
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, reconcile.TerminalError(fmt.Errorf("failed to parse XMC labels for Workload %s: %w", req.NamespacedName, err))
 	}
 	xid, wid, eid := parsedLabels.XID, parsedLabels.WID, parsedLabels.EID
 
@@ -212,8 +209,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 
 	update, err := ConvertWorkloadToWorkUnitExecutionUpdate(ctx, &workload, r.ManagementClusterInfo, r.Client)
 	if err != nil {
-		logging.Error(ctx, "Failed to convert Workload to WorkUnitExecutionUpdate", "namespace", workload.Namespace, "workload", workload.GetName(), "error", err)
-		recErr = err
+		recErr = fmt.Errorf("failed to convert Workload %s to WorkUnitExecutionUpdate: %w", req.NamespacedName, err)
 	}
 
 	isWorkloadStuck, condition := r.getStuckWorkloadCondition(ctx, &workload, xid, wid, eid)
@@ -229,7 +225,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.WorkloadSource)
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, recErr
 }
 
 func (r *Reconciler) getStuckWorkloadCondition(ctx context.Context, workload *v1beta1.Workload, experimentID, workUnitID, executionID int64) (bool, metav1.Condition) {

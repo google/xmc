@@ -24,15 +24,23 @@ When invoking helper tools under `tools/` (e.g., `extract_release_metadata.py`):
 
 ## 1. Release Range & Git Reference Discovery
 
-1. **Identify Base and Target References**:
-   - Determine target version (e.g., `0.6.0`, `HEAD`, or release branch).
-   - If not specified by the user, discover the latest previous tag:
-     ```bash
-     git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD
-     ```
-2. **Inspect Commit Range**:
+1. **Fetch Remote Tags & Canonical References**:
+   Ensure local repository state has the latest tags and canonical commit history without switching branches:
    ```bash
-   git log --oneline <base_tag>..<target_tag>
+   git fetch origin main --tags
+   ```
+
+2. **Identify Base and Target References**:
+   - Determine target version (e.g., `0.6.0`, `origin/main`, or a specific release commit SHA). Default to `origin/main` for standard releases.
+   - If not specified by the user, discover the latest previous tag on `origin/main`:
+     ```bash
+     git describe --tags --abbrev=0 origin/main^ 2>/dev/null || git rev-list --max-parents=0 origin/main
+     ```
+3. **Inspect Commit Range**:
+   ```bash
+   BASE_TAG="<base_tag>"
+   TARGET_REF="${TARGET_REF:-origin/main}"
+   git log --oneline "${BASE_TAG}".."${TARGET_REF}"
    ```
 
 ---
@@ -50,13 +58,17 @@ When invoking helper tools under `tools/` (e.g., `extract_release_metadata.py`):
    > When specifying `--approved-flags`, provide both the CTK variable (e.g. `enable_metrics`, `health_service_deployment_enabled`) and the Helm manifest path (e.g. `metrics.enabled`, `healthServiceDeployment.enabled`) to ensure commits across both deployment layers are recognized as approved preview features.
 
 3. **Execute Release Metadata Extraction Tool**:
-   Run the extraction helper tool with `--approved-flags`:
+   Run the extraction helper tool with `--approved-flags` and pin to the canonical `--target-ref` (`origin/main`):
    ```bash
+   BASE_TAG="<base_tag>"
+   TARGET_REF="${TARGET_REF:-origin/main}"
+   METADATA_FILE="${ARTIFACT_DIR:-/tmp}/release_metadata.json"
+
    python3 ./tools/release/extract_release_metadata.py \
-       --base-ref <base_tag> \
-       --target-ref <target_tag> \
+       --base-ref "${BASE_TAG}" \
+       --target-ref "${TARGET_REF}" \
        --approved-flags rod_deployment_enabled rodDeployment.enabled enable_metrics metrics.enabled \
-       --output /tmp/release_metadata.json
+       --output "${METADATA_FILE}"
    ```
 4. **Inspect Structured Output**:
    The output JSON provides:
@@ -162,28 +174,53 @@ Using the classified commits and the [Release Notes Taxonomy Reference](referenc
    * **Triggers**: List the concrete commits, migrations, promotions, or OOTB features justifying the bump.
 2. **Generate Draft Markdown File**:
    Write the structured release notes to a dedicated markdown file:
-   * Recommended path: `/tmp/release_notes_v<version>.md` (or `<appDataDir>/brain/<conversation-id>/release_notes_v<version>.md` when creating an artifact with `ArtifactMetadata`).
+   * Recommended path: `"${ARTIFACT_DIR:-/tmp}/release_notes_v<version>.md"`
    * Include the complete 4-section layout with flag instructions and narrative synthesis.
 3. **Interactive Review**:
    Present the draft file path to the user for review. If the user requests adjustments (e.g. changing version number, tuning descriptions, or regrouping entries), use `replace_file_content` to update the markdown file.
+4. **Preflight Validation (`--dry-run`)**:
+   Run non-mutating preflight validation with `--dry-run` to verify tag format, commit resolution, tag availability on remote, and notes file readability prior to requesting user approval:
+   ```bash
+   VERSION="<version>"
+   NOTES_FILE="${ARTIFACT_DIR:-/tmp}/release_notes_v${VERSION}.md"
+   PYTHONPATH=. python3 ./tools/release/publish_release.py \
+       --tag "${VERSION}" \
+       --target-commit origin/main \
+       --notes-file "${NOTES_FILE}" \
+       --dry-run
+   ```
 
 ---
 
 ## 6. Mandatory Confirmation Gate & Release Publishing
 
 > [!CAUTION]
-> **STRICT INVARIANT: NEVER CREATE A GIT TAG OR GITHUB RELEASE WITHOUT EXPLICIT CONFIRMATION FROM THE USER.**
->
-> The agent MUST NOT call `publish_release.py`, run `git tag`, `git push origin <tag>`, or `gh release create` proactively or autonomously. The agent MUST stop and wait after presenting the draft and recommended version. Only proceed to step 2 after the user provides an explicit affirmative instruction (e.g., "approve release", "create tag and release", "publish release").
+> **STRICT INVARIANTS**:
+> 1. **NEVER CREATE A GIT TAG OR GITHUB RELEASE WITHOUT EXPLICIT USER CONFIRMATION**: The agent MUST NOT call `publish_release.py` (without `--dry-run`), run `git tag`, `git push origin <tag>`, or `gh release create` proactively or autonomously. The agent MUST stop and wait after running the `--dry-run` preflight check and presenting the draft and recommended version. Only proceed to step 2 after the user provides an explicit affirmative instruction (e.g., "approve release", "create tag and release", "publish release").
+> 2. **NEVER USE `--force` TO OVERWRITE AN EXISTING TAG OR RELEASE AUTONOMOUSLY**: If a tag or release already exists locally or on the remote, abort immediately and consult the user.
 
 1. **Wait for Explicit User Approval**:
    Confirm that the user has explicitly approved both the **version number** and the **release notes content**.
 2. **Publish Release as GitHub Draft (Post-Approval Only)**:
-   Execute the release publishing tool with `--draft` to create the annotated git tag, push to origin, and create a draft release visible on GitHub Releases:
+   Execute the release publishing tool with `--draft` and explicitly pin `--target-commit origin/main` to ensure the release tag points to the canonical verified main commit:
    ```bash
-   python3 ./tools/release/publish_release.py --tag <version> --notes-file <path_to_markdown_file> --draft
+   VERSION="<version>"
+   NOTES_FILE="${ARTIFACT_DIR:-/tmp}/release_notes_v${VERSION}.md"
+   PYTHONPATH=. python3 ./tools/release/publish_release.py \
+       --tag "${VERSION}" \
+       --target-commit origin/main \
+       --notes-file "${NOTES_FILE}" \
+       --draft
    ```
    > [!NOTE]
    > Publishing as a draft gives the team a collaborative proofreading window (e.g. 1–2 hours) on GitHub Releases to review the changelog and propose adjustments before manually publishing it to the public. Omit `--draft` only if the user explicitly instructs to publish publicly immediately.
 3. **Confirm Publication**:
    Provide the user with the generated GitHub Release URL and confirm that the git tag was successfully pushed.
+4. **Draft to Public Promotion (Separate Post-Review Action)**:
+   Once the collaborative proofreading window is complete and the user explicitly requests making the release public, promote the draft release:
+   ```bash
+   TAG="<version>"
+   gh release edit "v${TAG#v}" --draft=false
+   ```
+   > [!CAUTION]
+   > Promoting a draft release to public is an irreversible public action and MUST NOT be performed autonomously. It requires an explicit user confirmation gate (e.g., "promote release to public").
