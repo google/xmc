@@ -9,6 +9,23 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# The stable-2026a profile meta-chart, including the component charts it reads via .Files.
+filegroup(
+    name = "chart",
+    srcs = [
+        ".helmignore",
+        "Chart.yaml",
+        "profile.yaml",
+        "values.schema.json",
+        "values.yaml",
+        ":rules",
+        "//deploy/profiles/stable-2026a/components/clickhouse:chart",
+        "//deploy/profiles/stable-2026a/components/ingestion-gateway:chart",
+        "//deploy/profiles/stable-2026a/components/redpanda:chart",
+    ] + glob(["templates/**"]),
+    visibility = ["//visibility:public"],
+)
+
 go_library(
     name = "stable2026a",
     srcs = ["charts.go"],

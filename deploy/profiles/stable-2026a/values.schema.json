@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "xmc-profile-stable-2026a values",
+  "description": "Values for the stable-2026a profile. Unknown components and per-component keys are rejected. global accepts additional keys so the profile can be nested under a wrapper chart that defines its own globals; only platformProfile and imageTag are constrained.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "platformProfile": { "const": "stable-2026a" },
+        "imageTag": { "type": "string" }
+      }
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "redpanda": {
+          "allOf": [{ "$ref": "#/definitions/componentOverrides" }],
+          "properties": {
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "brokerEndpoints": { "$ref": "#/definitions/parameterValue" },
+                "kafkaPort": { "$ref": "#/definitions/parameterValue" },
+                "defaultTopic": { "$ref": "#/definitions/parameterValue" },
+                "storageSize": { "$ref": "#/definitions/parameterValue" }
+              }
+            }
+          },
+          "propertyNames": { "$ref": "#/definitions/commonKeys" }
+        },
+        "clickhouse": {
+          "allOf": [{ "$ref": "#/definitions/componentOverrides" }],
+          "properties": {
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "host": { "$ref": "#/definitions/parameterValue" },
+                "clusterEndpoints": { "$ref": "#/definitions/parameterValue" },
+                "nativePort": { "$ref": "#/definitions/parameterValue" },
+                "httpPort": { "$ref": "#/definitions/parameterValue" },
+                "defaultDatabase": { "$ref": "#/definitions/parameterValue" },
+                "user": { "$ref": "#/definitions/parameterValue" },
+                "secretName": { "$ref": "#/definitions/parameterValue" },
+                "secretPasswordKey": { "$ref": "#/definitions/parameterValue" },
+                "healthCheckEndpoint": { "$ref": "#/definitions/parameterValue" },
+                "storageSize": { "$ref": "#/definitions/parameterValue" }
+              }
+            }
+          },
+          "propertyNames": { "$ref": "#/definitions/commonKeys" }
+        },
+        "ingestion-gateway": {
+          "allOf": [{ "$ref": "#/definitions/componentOverrides" }],
+          "properties": {
+            "imageTag": { "type": "string" },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/definitions/parameterValue" }
+            }
+          },
+          "propertyNames": {
+            "description": "commonKeys plus imageTag.",
+            "enum": ["enabled", "namespace", "deletionProtection", "deletionPolicy", "parameters", "dependencies", "imageTag"]
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "commonKeys": {
+      "description": "Per-component keys an admin may override. componentClass, chartVersion and workload keys are intentionally absent.",
+      "enum": ["enabled", "namespace", "deletionProtection", "deletionPolicy", "parameters", "dependencies"]
+    },
+    "componentOverrides": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "namespace": {
+          "description": "Kubernetes namespace (DNS-1123 label).",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        },
+        "deletionProtection": { "type": "boolean" },
+        "deletionPolicy": { "enum": ["Delete", "Orphan"] },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "parameterValue": {
+      "type": ["string", "integer", "number", "boolean"]
+    }
+  }
+}
