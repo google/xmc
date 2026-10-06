@@ -42,7 +42,7 @@
   @if (isPauseSchedulingEnabled()) {
     @if (hasSchedulingPauseError()) {
       <xmc-error-banner
-        message="Unable to determine current scheduling state"
+        message="Unable to fetch current pause scheduling state. Please try again."
         [showRetry]="false"
       />
     }

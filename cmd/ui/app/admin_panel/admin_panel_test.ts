@@ -603,7 +603,7 @@ describe('AdminPanelPage Component', () => {
     const harness = await getHarness(AdminPanelHarness);
     const healthSection = await harness.getHealthStatusSection();
     expect(await healthSection!.getErrorBannerText()).toContain(
-      'Unable to determine current scheduling state',
+      'Unable to fetch current pause scheduling state. Please try again.',
     );
     expect(await healthSection!.isPauseToggleDisabled()).toBeTrue();
 
