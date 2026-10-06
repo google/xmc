@@ -152,6 +152,14 @@ jobs:
             verify_module: 'tools.nightly_tests.managed_xprof_artifact_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
+          - id: 'workunit_artifact_job'
+            name: 'WorkUnit Artifact Lifecycle Job'
+            example_path: 'examples/workunit_artifact_job'
+            entrypoint: 'launch.py'
+            args: '--queue=${QUEUE_NAME}'
+            verify_module: 'tools.nightly_tests.workunit_artifact_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            timeout_minutes: 15
           - id: 'chart_artifact_job'
             name: 'Chart Artifact Job'
             example_path: 'examples/chart_artifact_job'

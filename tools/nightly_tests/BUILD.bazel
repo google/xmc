@@ -40,6 +40,7 @@ exports_files([
     "ui_entities_validator_test.py",
     "weekly_visual_snapshot.py",
     "weekly_visual_snapshot_test.py",
+    "workunit_artifact_job_verify.py",
     "xdash_dashboard_verify.py",
     "xmc_entities_validator.py",
     "xmc_entities_validator_test.py",
@@ -216,6 +217,16 @@ py_binary(
 py_binary(
     name = "managed_xprof_artifact_job_verify",
     srcs = ["managed_xprof_artifact_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":common",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_binary(
+    name = "workunit_artifact_job_verify",
+    srcs = ["workunit_artifact_job_verify.py"],
     imports = ["../.."],
     deps = [
         ":common",
