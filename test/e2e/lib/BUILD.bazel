@@ -28,6 +28,7 @@ py_library(
         "kind.py",
         "orchestrator.py",
         "spanner.py",
+        "spanner_retry.py",
         "test_executor.py",
         "ui_diagnostics.py",
     ],
@@ -55,6 +56,12 @@ py_test(
 py_test(
     name = "spanner_test",
     srcs = ["spanner_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "spanner_retry_test",
+    srcs = ["spanner_retry_test.py"],
     deps = [":orchestration_lib"],
 )
 

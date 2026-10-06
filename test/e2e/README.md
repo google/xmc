@@ -56,8 +56,21 @@ graph TD
 ### 1. Direct Migration Binary Execution (`lib/spanner.py`)
 Rather than invoking `bazel run //internal/storage/spanner/migrations:migrations` repeatedly during database setup, the orchestrator compiles the binary once during Phase 1 and invokes the compiled executable directly from `bazel-bin`. This eliminates Bazel startup and analysis overhead, reducing database schema provisioning time from ~100s to ~8s.
 
-### 2. Spanner Quota & Rate-Limit Backoff (`lib/spanner.py`)
-Concurrent database creation and schema migrations against Cloud Spanner can hit instance-level DDL queuing and rate limits (gRPC 429 / RESOURCE_EXHAUSTED). The Spanner manager employs exponential backoff retry loops (with jitter) on transient quota errors.
+### 2. Spanner Transient-Error Backoff (`lib/spanner.py`, `lib/spanner_retry.py`)
+Concurrent database creation and schema migrations against Cloud Spanner can hit instance-level DDL queuing, quota limits, and transient server errors. Both operations retry within a fixed budget, which bounds how long Spanner setup can take:
+
+| Operation | Attempts | Waits between attempts | Timeout per attempt | Total cap |
+| :--- | :--- | :--- | :--- | :--- |
+| Database creation | 4 | 15 s, 30 s, 60 s, each ±20% | 120 s | 240 s |
+| Migration version initialization | 3 | 5 s, 10 s | 45 s | 90 s |
+
+No retry starts unless at least 30 s of the total cap remain after its wait, which the timeouts per attempt leave even after a first attempt that timed out. Errors are classified on the command's captured output only, never on its command line:
+
+- Retried within the budget: a command timeout; `UNAVAILABLE`, `DEADLINE_EXCEEDED`, `ABORTED`, or `RESOURCE_EXHAUSTED` as a status name or gRPC code; the plain-text messages `Deadline exceeded`, `unavailable` as a whole word, `Quota exceeded`, `too many concurrent`, and `pending DDL operations`, which `gcloud` can print without a status code; and HTTP 429, 503, or 504 when preceded by an `http`, `status`, or `code` token.
+- Retried at most once: `INTERNAL` and `Internal error encountered`, which can be deterministic.
+- Never retried: any other error, including `ALREADY_EXISTS` from the first database creation attempt. A retried creation that fails with `ALREADY_EXISTS` may have been preceded by an attempt that timed out after creating the database, so it polls `gcloud spanner databases describe` every 5 s for the rest of the attempt and succeeds once the database is `READY`. A database that is not `READY` by then counts as a command timeout.
+
+Every failed attempt logs the retry decision and the last 2 KB of the command's error output. Because CI logs are public, `projects/<id>` resource paths and project numbers are masked in that output before it is truncated.
 
 ### 3. Artifact Registry KinD Node Image Mirror (`lib/kind.py`)
 In CI environments, KinD boots using an Artifact Registry mirror image (`us-docker.pkg.dev/.../kindest-node:v1.33.1`) pulled via high-speed GCP internal networks (~15s spin-up). If the mirror image is unreachable or fails to boot, `kind.py` automatically cleans up and falls back gracefully to the Docker Hub upstream image.
