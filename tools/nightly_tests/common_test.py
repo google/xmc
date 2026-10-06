@@ -401,15 +401,18 @@ class CommonTest(unittest.TestCase):
             ]
         )
         extra_step = mock.MagicMock()
+        flag_values = {"xid": "10", "endpoint": "custom-ess:9090"}
         with (
             mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "3"}, clear=True),
             mock.patch.object(
-                common, "get_flag", side_effect=lambda _, k, d=None: "10" if k == "xid" else d
+                common,
+                "get_flag",
+                side_effect=lambda _, k, d=None: flag_values.get(k, d),
             ),
             mock.patch(
                 "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
                 return_value=(mock_stub, mock_channel),
-            ),
+            ) as mock_create_stub,
             mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,
         ):
             common.verify_standard_workload(
@@ -422,6 +425,7 @@ class CommonTest(unittest.TestCase):
                 expected_metric_names=["loss"],
                 extra_step=extra_step,
             )
+            mock_create_stub.assert_called_once_with("custom-ess:9090")
             extra_step.assert_called_once_with(mock_stub, "10")
             mock_channel.close.assert_called_once()
             output = mock_stdout.getvalue()

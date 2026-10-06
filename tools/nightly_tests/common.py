@@ -170,7 +170,7 @@ def resolve_expected_work_units(default: int = 3) -> int:
 @contextlib.contextmanager
 def ess_channel_context(endpoint: str | None = None) -> Iterator[tuple[Any, Any]]:
     """Context manager for authenticated ESS gRPC channel and stub lifecycle."""
-    resolved_endpoint = resolve_endpoint(endpoint or get_flag(FLAGS, "endpoint"))
+    resolved_endpoint = resolve_endpoint(endpoint)
     print(f"Connecting to Experiment State Server at: {resolved_endpoint} ...")
     stub, channel = xmc_entities_validator.create_authenticated_stub(resolved_endpoint)
     try:
@@ -411,7 +411,8 @@ def verify_standard_workload(
     workers = expected_worker_names or ([expected_jobs[0]["name"]] if expected_jobs else [])
     timeout = get_flag(FLAGS, "timeout_sec", 600)
     _print_workload_banner(banner_title, xid, expected_title_pattern, queue, workers, timeout)
-    with handle_verification_errors(), ess_channel_context() as (stub, _):
+    ep = get_flag(FLAGS, "endpoint")
+    with handle_verification_errors(), ess_channel_context(ep) as (stub, _):
         exp = assert_experiment(stub, xid, expected_title_pattern)
         wus = assert_work_units(stub, xid, len(workers), queue, workers, timeout)
         assert_work_unit_jobsets(stub, xid, expected_jobs)
