@@ -172,20 +172,30 @@ func EvaluateJSONPath(data any, path string) (string, error) {
 	return strings.TrimSpace(buf.String()), nil
 }
 
+// ErrContractBreach marks an error caused by a malformed 3P status payload or JSONPath evaluation failure.
+var ErrContractBreach = errors.New("3p status contract breach")
+
+func contractBreachErrorf(format string, args ...any) error {
+	return fmt.Errorf("%w: "+format, append([]any{ErrContractBreach}, args...)...)
+}
+
 // ExtractResourceStatus inspects the unstructured Kubernetes object according to WrapperRef queries,
 // extracting observedGeneration, readiness status, endpoints, and connection secrets.
 func ExtractResourceStatus(obj *unstructured.Unstructured, ref WrapperRef) (*ResourceStatus, error) {
 	if obj == nil {
 		return &ResourceStatus{Found: false, Ready: false, Message: "object is nil"}, nil
 	}
-	rawStatus, _, _ := unstructured.NestedMap(obj.Object, "status")
+	rawStatus, err := validateStatusPayload(obj.Object)
+	if err != nil {
+		return nil, err
+	}
 	obsGen, err := extractObservedGeneration(obj, ref.ObservedGenerationPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract observedGeneration: %w", err)
+		return nil, contractBreachErrorf("failed to extract observedGeneration: %w", err)
 	}
 	ready, readyMsg, err := evaluateReadiness(obj, ref.ReadyConditionPath, ref.ExpectedReadyValue)
 	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate readiness: %w", err)
+		return nil, contractBreachErrorf("failed to evaluate readiness: %w", err)
 	}
 	if obsGen > 0 && obsGen < obj.GetGeneration() {
 		ready = false
@@ -193,11 +203,11 @@ func ExtractResourceStatus(obj *unstructured.Unstructured, ref WrapperRef) (*Res
 	}
 	endpoint, err := extractFirstMatch(obj, ref.EndpointJSONPath, defaultEndpointCandidates...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract endpoint: %w", err)
+		return nil, contractBreachErrorf("failed to extract endpoint: %w", err)
 	}
 	secret, err := extractFirstMatch(obj, ref.ConnectionSecretJSONPath, defaultSecretCandidates...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract connection secret: %w", err)
+		return nil, contractBreachErrorf("failed to extract connection secret: %w", err)
 	}
 	return &ResourceStatus{
 		Found:              true,
@@ -208,6 +218,32 @@ func ExtractResourceStatus(obj *unstructured.Unstructured, ref WrapperRef) (*Res
 		Message:            readyMsg,
 		RawStatus:          rawStatus,
 	}, nil
+}
+
+// validateStatusPayload ensures .status (when present) is a map and .status.conditions (when present) is a slice of maps.
+func validateStatusPayload(root map[string]any) (map[string]any, error) {
+	raw, exists := root["status"]
+	if !exists || raw == nil {
+		return nil, nil
+	}
+	statusMap, ok := raw.(map[string]any)
+	if !ok {
+		return nil, contractBreachErrorf("malformed 3P status payload: expected object for .status, got %T", raw)
+	}
+	rawConds, hasConds := statusMap["conditions"]
+	if !hasConds || rawConds == nil {
+		return statusMap, nil
+	}
+	condSlice, ok := rawConds.([]any)
+	if !ok {
+		return nil, contractBreachErrorf("malformed 3P status.conditions: expected array, got %T", rawConds)
+	}
+	for i, elem := range condSlice {
+		if _, ok := elem.(map[string]any); !ok {
+			return nil, contractBreachErrorf("malformed 3P status.conditions[%d]: expected object, got %T", i, elem)
+		}
+	}
+	return statusMap, nil
 }
 
 // toStringValue converts any unstructured scalar value to its canonical string representation.

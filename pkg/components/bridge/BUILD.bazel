@@ -36,6 +36,7 @@ go_library(
         "reconciler.go",
         "sdk_helm_action_runner.go",
         "spec_parser.go",
+        "status_applier.go",
         "status_detector.go",
         "wrapper_reconciler.go",
     ],
@@ -51,7 +52,9 @@ go_library(
         "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_apimachinery//pkg/types",
         "@io_k8s_cli_runtime//pkg/genericclioptions",
         "@io_k8s_cli_runtime//pkg/resource",
         "@io_k8s_client_go//dynamic",
@@ -72,6 +75,7 @@ go_library(
 
 go_test(
     name = "bridge_test",
+    size = "small",
     srcs = [
         "bridge_prober_test.go",
         "cms_client_test.go",
@@ -94,6 +98,7 @@ go_test(
     ],
     data = [
         "//deploy/helm:chart",
+        "@kubebuilder_envtest//:assets",
     ],
     embed = [":bridge"],
     deps = [
@@ -108,9 +113,13 @@ go_test(
         "@io_k8s_apimachinery//pkg/runtime/schema",
         "@io_k8s_cli_runtime//pkg/genericclioptions",
         "@io_k8s_cli_runtime//pkg/resource",
+        "@io_k8s_client_go//dynamic",
         "@io_k8s_client_go//dynamic/fake",
         "@io_k8s_client_go//kubernetes/fake",
+        "@io_k8s_client_go//rest",
         "@io_k8s_client_go//restmapper",
+        "@io_k8s_client_go//testing",
+        "@io_k8s_sigs_controller_runtime//pkg/envtest",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",

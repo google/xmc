@@ -65,18 +65,8 @@ func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileCompone
 	}
 
 	resStatus, err := r.prober.DetectStatus(ctx, ref)
-	if err != nil {
-		if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "StatusDetectionFailed", err.Error()); cmsErr != nil {
-			return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w (CMS update failed: %v)", ref.Namespace, ref.Name, err, cmsErr)
-		}
-		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w", ref.Namespace, ref.Name, err)
-	}
-	if resStatus == nil {
-		errmsg := "status detector returned nil status"
-		if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "StatusDetectionFailed", errmsg); cmsErr != nil {
-			return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s (CMS update failed: %v)", ref.Namespace, ref.Name, errmsg, cmsErr)
-		}
-		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s", ref.Namespace, ref.Name, errmsg)
+	if err != nil || resStatus == nil {
+		return r.handle3PStatusDetectionFailure(ctx, in, canonicalName, res, ref, err)
 	}
 	if !resStatus.Found {
 		reason := "ResourceNotFound"
@@ -94,6 +84,24 @@ func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileCompone
 	}
 
 	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
+}
+
+func (r *Reconciler) handle3PStatusDetectionFailure(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, ref WrapperRef, err error) (*ReconcileResult, error) {
+	if err == nil {
+		errmsg := "status detector returned nil status"
+		if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, ReasonStatusDetectionFailed, errmsg); cmsErr != nil {
+			return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s (CMS update failed: %v)", ref.Namespace, ref.Name, errmsg, cmsErr)
+		}
+		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s", ref.Namespace, ref.Name, errmsg)
+	}
+	reason := ReasonStatusDetectionFailed
+	if errors.Is(err, ErrContractBreach) {
+		reason = ReasonContractBroken
+	}
+	if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, err.Error()); cmsErr != nil {
+		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w (CMS update failed: %v)", ref.Namespace, ref.Name, err, cmsErr)
+	}
+	return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w", ref.Namespace, ref.Name, err)
 }
 
 // reconcileOperatorlessWrapper handles Profile 3 (Operator-less static or external SaaS components).
