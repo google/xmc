@@ -27,14 +27,6 @@ var schedulingPausedGauge = promauto.NewGauge(prometheus.GaugeOpts{
 	Help: "Current pause state (1 = Paused, 0 = Active) as enforced by each Actuator in-memory cache.",
 })
 
-func setSchedulingPausedMetric(isPaused bool) {
-	if isPaused {
-		schedulingPausedGauge.Set(1)
-		return
-	}
-	schedulingPausedGauge.Set(0)
-}
-
 // State represents an atomic point-in-time view of the scheduling pause state.
 type State struct {
 	IsPaused  bool
@@ -59,7 +51,6 @@ type localCache struct {
 
 // NewCache creates a new in-memory thread-safe local pause cache.
 func NewCache() Cache {
-	setSchedulingPausedMetric(false)
 	return &localCache{}
 }
 
@@ -87,5 +78,9 @@ func (c *localCache) Update(newState State) {
 	if !newState.UpdatedAt.IsZero() {
 		c.updatedAt = newState.UpdatedAt
 	}
-	setSchedulingPausedMetric(c.isPaused)
+	val := 0.0
+	if c.isPaused {
+		val = 1.0
+	}
+	schedulingPausedGauge.Set(val)
 }

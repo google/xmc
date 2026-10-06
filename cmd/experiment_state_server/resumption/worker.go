@@ -295,8 +295,9 @@ func shouldStopReplay(ctx context.Context, state *pausestate.PauseSchedulingStat
 
 func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resumptionTime time.Time, batch []*pausedtask.PausedTask) error {
 	resolutions := make([]pausedtask.TaskResolution, 0, len(batch))
-	// results[i] is the xmc_resumption_tasks_total result label for resolutions[i] (and batch[i]).
-	results := make([]string, 0, len(batch))
+	// metricRecord holds the xmc_resumption_tasks_total labels, recorded only after a successful commit.
+	type metricRecord struct{ action, result string }
+	records := make([]metricRecord, 0, len(batch))
 	now := time.Now().UTC()
 
 	var publishErr error
@@ -329,7 +330,7 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resump
 				ResumptionRunID:  runID,
 				ProcessedTime:    now,
 			})
-			results = append(results, skipReasonResultLabel(reason))
+			records = append(records, metricRecord{taskActionLabel(task.Action), skipReasonResultLabel(reason)})
 			continue
 		}
 
@@ -346,7 +347,7 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resump
 			ResumptionRunID:  runID,
 			ProcessedTime:    now,
 		})
-		results = append(results, "replayed")
+		records = append(records, metricRecord{taskActionLabel(task.Action), "replayed"})
 	}
 	if publishErr != nil {
 		resumptionErrorsTotal.WithLabelValues("publish").Inc()
@@ -359,8 +360,8 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resump
 			resumptionErrorsTotal.WithLabelValues("commit").Inc()
 			return errors.Join(publishErr, fmt.Errorf("failed to mark paused tasks as processed: %w", err))
 		}
-		for i, result := range results {
-			resumptionTasksTotal.WithLabelValues(taskActionLabel(batch[i].Action), result).Inc()
+		for _, r := range records {
+			resumptionTasksTotal.WithLabelValues(r.action, r.result).Inc()
 		}
 	}
 	return publishErr

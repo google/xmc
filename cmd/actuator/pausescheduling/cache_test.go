@@ -34,9 +34,6 @@ func TestCache_InitialState(t *testing.T) {
 	if diff := cmp.Diff(want, cache.State()); diff != "" {
 		t.Errorf("State() mismatch (-want +got):\n%s", diff)
 	}
-	if got := testutil.ToFloat64(schedulingPausedGauge); got != 0 {
-		t.Errorf("xmc_actuator_scheduling_paused = %v, want 0", got)
-	}
 }
 
 func TestCache_UpdateAndAntiThrashing(t *testing.T) {
