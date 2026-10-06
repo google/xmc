@@ -34,7 +34,7 @@ go_test(
     srcs = ["resolver_test.go"],
     embed = [":componentconfig"],
     deps = [
-        "//pkg/components/crreader",
+        "//pkg/components/crreader/crreadertest",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_google_go_cmp//cmp",
         "@io_k8s_apimachinery//pkg/api/errors",

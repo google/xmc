@@ -19,7 +19,6 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "crreader",
     srcs = [
-        "fake.go",
         "fields.go",
         "reader.go",
     ],
@@ -39,7 +38,6 @@ go_library(
 go_test(
     name = "crreader_test",
     srcs = [
-        "fake_test.go",
         "fields_test.go",
         "reader_test.go",
     ],
