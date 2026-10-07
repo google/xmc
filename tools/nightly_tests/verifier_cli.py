@@ -81,17 +81,27 @@ def validate_argv(argv: Sequence[str]) -> None:
 
 def parse_xid(raw_xid: str | None, required: bool = True) -> str:
     """Normalizes and extracts the numeric or slug XID string."""
-    if not raw_xid or not str(raw_xid).strip():
+    if not raw_xid:
         if required:
             raise ValueError("Experiment XID (--xid) is required.")
         return ""
-    xid = str(raw_xid).strip()
+    xid = str(raw_xid).strip().rstrip("/")
+    if not xid:
+        if required:
+            raise ValueError("Experiment XID (--xid) is required.")
+        return ""
     if xid.startswith("/"):
         xid = xid.lstrip("/")
-    if xid.startswith("experiments/"):
+    if xid in ("experiments", "dashboards"):
+        xid = ""
+    elif xid.startswith("experiments/"):
         xid = xid.split("/")[-1]
     elif xid.startswith("dashboards/"):
         xid = xid.split("dashboards/", 1)[1].strip()
+    if not xid:
+        if required:
+            raise ValueError("Experiment XID (--xid) is required.")
+        return ""
     return xid
 
 

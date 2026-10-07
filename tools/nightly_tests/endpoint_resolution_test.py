@@ -26,17 +26,22 @@ class EndpointResolutionTest(unittest.TestCase):
     """Test cases for endpoint_resolution.py utilities."""
 
     def test_resolve_endpoint(self) -> None:
-        # Provided endpoint takes precedence
+        # Provided endpoint takes precedence and strips surrounding whitespace
         self.assertEqual(endpoint_resolution.resolve_endpoint("custom-ess:9090"), "custom-ess:9090")
+        self.assertEqual(
+            endpoint_resolution.resolve_endpoint("  custom-ess:9090  "), "custom-ess:9090"
+        )
 
-        # Environment variable fallback
+        # Environment variable fallback (including empty or whitespace-only provided_endpoint)
         with mock.patch.dict("os.environ", {"XMANAGER_ENDPOINT": "env-ess:8443"}, clear=True):
             self.assertEqual(endpoint_resolution.resolve_endpoint(None), "env-ess:8443")
             self.assertEqual(endpoint_resolution.resolve_endpoint(""), "env-ess:8443")
+            self.assertEqual(endpoint_resolution.resolve_endpoint("   "), "env-ess:8443")
 
         # Default fallback when no env var is set
         with mock.patch.dict("os.environ", {}, clear=True):
             self.assertEqual(endpoint_resolution.resolve_endpoint(None), "localhost:8080")
+            self.assertEqual(endpoint_resolution.resolve_endpoint("   "), "localhost:8080")
 
     def test_resolve_dashboard_endpoint(self) -> None:
         # Provided endpoint takes highest precedence

@@ -317,7 +317,10 @@ def _print_dashboard_summary(
             ("Dashboard ID", dashboard_id),
             ("Dashboard Title", dash_info["title"]),
             ("Validated Charts", len(dash_info.get("charts", []))),
-            ("Web UI Link", f"{endpoint_resolution.resolve_ui_base_url()}/dashboards/{dashboard_id}"),
+            (
+                "Web UI Link",
+                f"{endpoint_resolution.resolve_ui_base_url()}/dashboards/{dashboard_id}",
+            ),
         ],
     )
 

@@ -56,6 +56,10 @@ class VerifierCliTest(unittest.TestCase):
         self.assertEqual(
             verifier_cli.parse_xid("/dashboards/test-dashboard-123"), "test-dashboard-123"
         )
+        self.assertEqual(verifier_cli.parse_xid("experiments/12345/"), "12345")
+        self.assertEqual(verifier_cli.parse_xid("/experiments/12345///"), "12345")
+        self.assertEqual(verifier_cli.parse_xid("dashboards/my_slug/"), "my_slug")
+        self.assertEqual(verifier_cli.parse_xid("/dashboards/my_slug/"), "my_slug")
 
         with self.assertRaises(ValueError):
             verifier_cli.parse_xid(None, required=True)
@@ -63,8 +67,17 @@ class VerifierCliTest(unittest.TestCase):
             verifier_cli.parse_xid("", required=True)
         with self.assertRaises(ValueError):
             verifier_cli.parse_xid("   ", required=True)
+        with self.assertRaises(ValueError):
+            verifier_cli.parse_xid("///", required=True)
+        with self.assertRaises(ValueError):
+            verifier_cli.parse_xid("experiments/", required=True)
+        with self.assertRaises(ValueError):
+            verifier_cli.parse_xid("dashboards/", required=True)
         self.assertEqual(verifier_cli.parse_xid(None, required=False), "")
         self.assertEqual(verifier_cli.parse_xid("   ", required=False), "")
+        self.assertEqual(verifier_cli.parse_xid("///", required=False), "")
+        self.assertEqual(verifier_cli.parse_xid("experiments/", required=False), "")
+        self.assertEqual(verifier_cli.parse_xid("dashboards/", required=False), "")
 
     def test_resolve_expected_work_units(self) -> None:
         # Flag takes highest precedence

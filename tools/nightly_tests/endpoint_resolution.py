@@ -23,7 +23,9 @@ from tools.nightly_tests import xmc_entities_validator
 
 def resolve_endpoint(provided_endpoint: str | None = None) -> str:
     """Resolves ESS gRPC endpoint from parameter, environment, or default."""
-    return provided_endpoint or os.environ.get("XMANAGER_ENDPOINT", "localhost:8080")
+    if provided_endpoint and str(provided_endpoint).strip():
+        return str(provided_endpoint).strip()
+    return os.environ.get("XMANAGER_ENDPOINT", "localhost:8080")
 
 
 def resolve_dashboard_endpoint(provided_endpoint: str | None = None) -> str:
