@@ -35,6 +35,7 @@ type mockCMS struct {
 	setErr, delErr, obsErr  error
 	prepareErr, completeErr error
 	state                   componentspb.ComponentState
+	lastSetReq              *componentspb.SetComponentIntentRequest
 	lastObsReq              *componentspb.UpdateObservedGenerationRequest
 	setCalls                int
 	prepareCalls            int
@@ -43,6 +44,7 @@ type mockCMS struct {
 
 func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error) {
 	m.setCalls++
+	m.lastSetReq = in
 	if m.setErr != nil {
 		return nil, m.setErr
 	}

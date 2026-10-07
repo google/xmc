@@ -60,8 +60,9 @@ func testBlockedDeactivation(ctx context.Context, t *testing.T, h *kindClusterHa
 	const dep, app = "lc-blocked-db", "lc-blocked-app"
 	applyLifecycleComponent(ctx, t, h, ns, dep, lifecycleComponentSpec{enabled: true})
 	applyLifecycleComponent(ctx, t, h, ns, app, lifecycleComponentSpec{enabled: true, dependencies: []string{dep}})
-	waitForComponent(ctx, t, h, ns, app, "Ready", isExistingComponentReady)
 	for _, name := range []string{dep, app} {
+		ready := waitForComponent(ctx, t, h, ns, name, "Ready", isExistingComponentReady)
+		assertCMSComponent(ctx, t, h, ready, componentspb.ComponentState_COMPONENT_STATE_ENABLED)
 		assertDeletionProtectionFinalizer(ctx, t, h, ns, name)
 	}
 
@@ -73,7 +74,8 @@ func testBlockedDeactivation(ctx context.Context, t *testing.T, h *kindClusterHa
 }
 
 // assertDeactivationBlocked waits for the bridge to report DeactivationBlocked on the disabled
-// dependency dep, naming its active dependent, while CMS keeps dep active and the finalizer stays.
+// dependency dep, naming its active dependent, while CMS keeps dep undeactivated and the finalizer
+// stays.
 func assertDeactivationBlocked(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, dep, dependent string) {
 	t.Helper()
 	blocked := waitForComponent(ctx, t, h, ns, dep, "DeactivationBlocked", func(u *unstructured.Unstructured) bool {
@@ -85,20 +87,13 @@ func assertDeactivationBlocked(ctx context.Context, t *testing.T, h *kindCluster
 	if reason := conditionField(blocked, bridge.ConditionTypeReady, "reason"); reason != bridge.ReasonDeactivationBlocked {
 		t.Errorf("blocked %s Ready reason = %q, want %q", dep, reason, bridge.ReasonDeactivationBlocked)
 	}
-	// Every bridge pass re-applies the intent, which resets an active component to
-	// PENDING_RECONCILIATION in CMS, so either active state is valid here.
-	activeStates := []componentspb.ComponentState{
-		componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-		componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-	}
-	if state := cmsComponentState(ctx, t, h, dep); !slices.Contains(activeStates, state) {
-		t.Errorf("blocked %s CMS state = %v, want one of %v", dep, state, activeStates)
-	}
+	// The bridge reports a blocked deactivation as gated, i.e. PENDING_RECONCILIATION.
+	assertCMSComponent(ctx, t, h, blocked, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION)
 	assertDeletionProtectionFinalizer(ctx, t, h, ns, dep)
 }
 
 // assertComponentsDisabled waits until every named Component reports COMPONENT_STATE_DISABLED with
-// DeactivationBlocked cleared, and verifies the CMS state and the retained finalizer.
+// DeactivationBlocked cleared, and verifies the CMS record and the retained finalizer.
 func assertComponentsDisabled(ctx context.Context, t *testing.T, h *kindClusterHarness, ns string, names ...string) {
 	t.Helper()
 	for _, name := range names {
@@ -106,10 +101,21 @@ func assertComponentsDisabled(ctx context.Context, t *testing.T, h *kindClusterH
 		if got := conditionField(disabled, bridge.ConditionTypeDeactivationBlocked, "status"); got != "" {
 			t.Errorf("disabled %s still reports DeactivationBlocked=%q, want condition cleared", name, got)
 		}
-		if state := cmsComponentState(ctx, t, h, name); state != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
-			t.Errorf("%s CMS state = %v, want COMPONENT_STATE_DISABLED", name, state)
-		}
+		assertCMSComponent(ctx, t, h, disabled, componentspb.ComponentState_COMPONENT_STATE_DISABLED)
 		assertDeletionProtectionFinalizer(ctx, t, h, ns, name)
+	}
+}
+
+// assertCMSComponent verifies that the CMS record of the Component u is in wantState at the CR
+// generation. Repeated bridge passes must not bump the CMS generation past the CR generation.
+func assertCMSComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, u *unstructured.Unstructured, wantState componentspb.ComponentState) {
+	t.Helper()
+	rec, err := h.cmsServer.Store().GetComponent(ctx, u.GetName())
+	if err != nil {
+		t.Fatalf("CMS GetComponent(%s) failed: %v", u.GetName(), err)
+	}
+	if rec.State != wantState || rec.Generation != u.GetGeneration() {
+		t.Errorf("%s CMS state = %v, generation = %d; want %v, CR generation %d", u.GetName(), rec.State, rec.Generation, wantState, u.GetGeneration())
 	}
 }
 

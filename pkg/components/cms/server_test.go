@@ -542,6 +542,56 @@ func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
 	}
 }
 
+func TestCMSServer_SetComponentIntent_UnchangedIntentIsNoop(t *testing.T) {
+	spec := func(version string, gen int64, deps ...string) *componentspb.ComponentSpec {
+		return &componentspb.ComponentSpec{
+			Type:         componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version:      version,
+			Generation:   gen,
+			Dependencies: deps,
+		}
+	}
+	tests := []struct {
+		name      string
+		reapply   *componentspb.ComponentSpec
+		wantGen   int64
+		wantState componentspb.ComponentState
+	}{
+		{name: "same spec and generation", reapply: spec("v1.0.0", 3, "redpanda"), wantGen: 3, wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED},
+		{name: "dependency names canonicalize to the stored spec", reapply: spec("v1.0.0", 3, "components/redpanda", "redpanda"), wantGen: 3, wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED},
+		{name: "changed spec", reapply: spec("v1.1.0", 3, "redpanda"), wantGen: 4, wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION},
+		{name: "newer generation", reapply: spec("v1.0.0", 4, "redpanda"), wantGen: 4, wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			server := NewServer(store.NewMemoryStore())
+			for _, req := range []*componentspb.SetComponentIntentRequest{
+				{Name: "redpanda", Spec: spec("v1.0.0", 1)},
+				{Name: "gateway", Spec: spec("v1.0.0", 3, "redpanda")},
+			} {
+				if _, err := server.SetComponentIntent(ctx, req); err != nil {
+					t.Fatalf("seed SetComponentIntent(%s) error = %v", req.GetName(), err)
+				}
+			}
+			if _, err := server.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
+				Name: "gateway", ObservedGeneration: 3, State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			}); err != nil {
+				t.Fatalf("UpdateObservedGeneration() error = %v", err)
+			}
+
+			resp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "gateway", Spec: tt.reapply})
+			if err != nil {
+				t.Fatalf("SetComponentIntent() error = %v", err)
+			}
+			got := resp.GetComponent()
+			if got.GetSpec().GetGeneration() != tt.wantGen || got.GetStatus().GetState() != tt.wantState {
+				t.Errorf("generation = %d, state = %v; want %d, %v", got.GetSpec().GetGeneration(), got.GetStatus().GetState(), tt.wantGen, tt.wantState)
+			}
+		})
+	}
+}
+
 func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 	ctx := context.Background()
 	specWithDeps := func(deps ...string) *componentspb.ComponentSpec {
