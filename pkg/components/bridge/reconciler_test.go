@@ -1622,7 +1622,7 @@ func startReconcilerEnvtest(t *testing.T) dynamic.Interface {
 func renderComponentsCRDForEnvtest(t *testing.T) []byte {
 	t.Helper()
 	candidates := []string{
-		filepath.Join("..", "..", "deploy", "helm", "templates", "components", "crd.yaml"),
+		filepath.Join("..", "..", "..", "deploy", "helm", "templates", "components", "crd.yaml"),
 		filepath.Join(os.Getenv("TEST_SRCDIR"), "_main", "deploy", "helm", "templates", "components", "crd.yaml"),
 	}
 	for _, p := range candidates {

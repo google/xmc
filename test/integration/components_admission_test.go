@@ -120,9 +120,9 @@ func buildAdmissionClients(t *testing.T, baseCfg *rest.Config) admissionClients 
 		t.Fatalf("kubernetes.NewForConfig failed: %v", err)
 	}
 	impersonateComp := func(user string, groups ...string) dynamic.ResourceInterface {
-		cfg := rest.CopyConfig(baseCfg)
+		cfg := *baseCfg
 		cfg.Impersonate = rest.ImpersonationConfig{UserName: user, Groups: groups}
-		dyn, err := dynamic.NewForConfig(cfg)
+		dyn, err := dynamic.NewForConfig(&cfg)
 		if err != nil {
 			t.Fatalf("impersonated dynamic.NewForConfig(%s) failed: %v", user, err)
 		}
