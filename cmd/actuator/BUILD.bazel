@@ -21,7 +21,6 @@ compat_go_library(
         "//cmd/actuator/workunittaskhandler",
         "//internal/broadcast",
         "//internal/common/health",
-        "//internal/compat/google",
         "//internal/compat/spanner",
         "//internal/configutil",
         "//internal/featureflags",
