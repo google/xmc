@@ -235,7 +235,9 @@ image_tag: latest
     ) -> None:
         """Runs one _require_binary_on_path case against a resolved install dir."""
         if installed_off_path:
-            (pathlib.Path(install_dir) / "terraform").touch(mode=0o755)
+            binary_path = pathlib.Path(install_dir) / "terraform"
+            binary_path.touch()
+            binary_path.chmod(0o755)
 
         if not want_error_substrings:
             deploy_dev_env._require_binary_on_path("terraform")
