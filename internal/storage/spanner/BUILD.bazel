@@ -30,6 +30,7 @@ compat_go_library(
         "//internal/storage/spanner/artifact",
         "//internal/storage/spanner/experiment",
         "//internal/storage/spanner/operation",
+        "//internal/storage/spanner/pausestate",
         "//internal/storage/spanner/statushistory",
         "//internal/storage/spanner/statusmessage",
         "//internal/storage/spanner/workunit",
