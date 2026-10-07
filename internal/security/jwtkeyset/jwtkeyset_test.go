@@ -287,6 +287,11 @@ func TestPrivateKeyToKeysetHandle_EdgeCases(t *testing.T) {
 			opts:    Options{RSAAlgorithm: "RS256"},
 		},
 		{
+			name:    "invalid precomputed values (non-coprime primes)",
+			privKey: &rsa.PrivateKey{PublicKey: rsa.PublicKey{N: big.NewInt(9), E: 3}, D: big.NewInt(3), Primes: []*big.Int{big.NewInt(3), big.NewInt(3)}},
+			opts:    Options{RSAAlgorithm: "RS256"},
+		},
+		{
 			name:    "unsupported algorithm",
 			privKey: validKey,
 			opts:    Options{RSAAlgorithm: "ES256"},
