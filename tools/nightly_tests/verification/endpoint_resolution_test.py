@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for tools.nightly_tests.endpoint_resolution module."""
+"""Unit tests for tools.nightly_tests.verification.endpoint_resolution module."""
 
 from __future__ import annotations
 
 import unittest
 from unittest import mock
 
-from tools.nightly_tests import endpoint_resolution
+from tools.nightly_tests.verification import endpoint_resolution
 
 
 class EndpointResolutionTest(unittest.TestCase):
@@ -68,7 +68,7 @@ class EndpointResolutionTest(unittest.TestCase):
 
         # Fallback to resolve_ui_base_url
         with mock.patch(
-            "tools.nightly_tests.endpoint_resolution.resolve_ui_base_url",
+            "tools.nightly_tests.verification.endpoint_resolution.resolve_ui_base_url",
             return_value="https://xmc-ui.example.com",
         ) as mock_ui:
             self.assertEqual(

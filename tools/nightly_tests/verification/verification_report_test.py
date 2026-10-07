@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for tools.nightly_tests.verification_report module."""
+"""Unit tests for tools.nightly_tests.verification.verification_report module."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ import io
 import unittest
 from unittest import mock
 
-from tools.nightly_tests import verification_report
+from tools.nightly_tests.verification import verification_report
 
 
 class VerificationReportTest(unittest.TestCase):

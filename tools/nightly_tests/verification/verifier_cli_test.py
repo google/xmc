@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for tools.nightly_tests.verifier_cli module."""
+"""Unit tests for tools.nightly_tests.verification.verifier_cli module."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.nightly_tests import verifier_cli
+from tools.nightly_tests.verification import verifier_cli
 
 
 class VerifierCliTest(unittest.TestCase):

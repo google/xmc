@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for tools.nightly_tests.workload_verification module."""
+"""Unit tests for tools.nightly_tests.verification.workload_verification module."""
 
 from __future__ import annotations
 
@@ -23,11 +23,11 @@ from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
-from tools.nightly_tests import (
+from tools.nightly_tests import xmc_entities_validator
+from tools.nightly_tests.verification import (
     endpoint_resolution,
     verifier_cli,
     workload_verification,
-    xmc_entities_validator,
 )
 
 

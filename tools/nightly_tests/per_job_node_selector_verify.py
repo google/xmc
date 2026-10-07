@@ -28,7 +28,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import verifier_cli, workload_verification, xmc_entities_validator
+from tools.nightly_tests import xmc_entities_validator
+from tools.nightly_tests.verification import verifier_cli, workload_verification
 
 EXPECTED_TITLE_PATTERN: str = "Per-Job nodeSelector Validation Experiment"
 EXPECTED_WORKER_NAMES: tuple[str, ...] = ("head",)

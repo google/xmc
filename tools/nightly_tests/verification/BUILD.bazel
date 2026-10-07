@@ -1,0 +1,132 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "endpoint_resolution.py",
+    "endpoint_resolution_test.py",
+    "ess_session.py",
+    "ess_session_test.py",
+    "verification_report.py",
+    "verification_report_test.py",
+    "verifier_cli.py",
+    "verifier_cli_test.py",
+    "workload_verification.py",
+    "workload_verification_test.py",
+])
+
+py_library(
+    name = "verifier_cli",
+    srcs = ["verifier_cli.py"],
+    imports = ["../../.."],
+    deps = [
+        "@absl_py//absl:app",
+        "@absl_py//absl/flags",
+    ],
+)
+
+py_library(
+    name = "endpoint_resolution",
+    srcs = ["endpoint_resolution.py"],
+    imports = ["../../.."],
+    deps = [
+        "//tools/nightly_tests:xmc_entities_validator_lib",
+    ],
+)
+
+py_library(
+    name = "ess_session",
+    srcs = ["ess_session.py"],
+    imports = ["../../.."],
+    deps = [
+        ":endpoint_resolution",
+        "//tools/nightly_tests:xmc_entities_validator_lib",
+    ],
+)
+
+py_library(
+    name = "verification_report",
+    srcs = ["verification_report.py"],
+    imports = ["../../.."],
+)
+
+py_library(
+    name = "workload_verification",
+    srcs = ["workload_verification.py"],
+    imports = ["../../.."],
+    deps = [
+        ":endpoint_resolution",
+        ":ess_session",
+        ":verification_report",
+        ":verifier_cli",
+        "//tools/nightly_tests:xmc_entities_validator_lib",
+    ],
+)
+
+py_test(
+    name = "verifier_cli_test",
+    size = "small",
+    srcs = ["verifier_cli_test.py"],
+    imports = ["../../.."],
+    deps = [
+        ":verifier_cli",
+    ],
+)
+
+py_test(
+    name = "endpoint_resolution_test",
+    size = "small",
+    srcs = ["endpoint_resolution_test.py"],
+    imports = ["../../.."],
+    deps = [
+        ":endpoint_resolution",
+    ],
+)
+
+py_test(
+    name = "ess_session_test",
+    size = "small",
+    srcs = ["ess_session_test.py"],
+    imports = ["../../.."],
+    deps = [
+        ":ess_session",
+    ],
+)
+
+py_test(
+    name = "verification_report_test",
+    size = "small",
+    srcs = ["verification_report_test.py"],
+    imports = ["../../.."],
+    deps = [
+        ":verification_report",
+    ],
+)
+
+py_test(
+    name = "workload_verification_test",
+    size = "small",
+    srcs = ["workload_verification_test.py"],
+    imports = ["../../.."],
+    deps = [
+        ":endpoint_resolution",
+        ":verifier_cli",
+        ":workload_verification",
+        "//tools/nightly_tests:xmc_entities_validator_lib",
+    ],
+)

@@ -27,7 +27,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import verifier_cli, workload_verification
+from tools.nightly_tests.verification import verifier_cli, workload_verification
 
 EXPECTED_TITLE_PATTERN: str = "Init Container Validation Experiment"
 EXPECTED_JOB_NAME: str = "init-worker"

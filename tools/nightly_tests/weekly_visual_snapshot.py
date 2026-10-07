@@ -26,10 +26,10 @@ from typing import Any
 
 from absl import flags
 
-from tools.nightly_tests import (
+from tools.nightly_tests import ui_entities_validator
+from tools.nightly_tests.verification import (
     endpoint_resolution,
     ess_session,
-    ui_entities_validator,
     verifier_cli,
 )
 

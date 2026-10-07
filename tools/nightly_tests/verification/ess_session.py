@@ -21,7 +21,8 @@ import sys
 from collections.abc import Iterator
 from typing import Any
 
-from tools.nightly_tests import endpoint_resolution, xmc_entities_validator
+from tools.nightly_tests import xmc_entities_validator
+from tools.nightly_tests.verification import endpoint_resolution
 
 
 @contextlib.contextmanager

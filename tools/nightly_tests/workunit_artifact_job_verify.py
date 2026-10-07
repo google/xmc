@@ -29,7 +29,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import verifier_cli, workload_verification
+from tools.nightly_tests.verification import verifier_cli, workload_verification
 
 EXPECTED_TITLE_PATTERN: str = "WorkUnit Artifact Lifecycle Example"
 EXPECTED_WORKER_NAMES: tuple[str, ...] = ("artifact-demo-worker",)

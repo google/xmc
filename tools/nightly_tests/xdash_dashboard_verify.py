@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from tools.nightly_tests import verifier_cli, workload_verification
+from tools.nightly_tests.verification import verifier_cli, workload_verification
 
 DEFAULT_DASHBOARD_ID: str = "example_vcc_comparison"
 DEFAULT_TITLE_PATTERN: str = "VCC"

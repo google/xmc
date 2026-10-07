@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for tools.nightly_tests.ess_session module."""
+"""Unit tests for tools.nightly_tests.verification.ess_session module."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ import io
 import unittest
 from unittest import mock
 
-from tools.nightly_tests import ess_session
+from tools.nightly_tests.verification import ess_session
 
 
 class EssSessionTest(unittest.TestCase):
