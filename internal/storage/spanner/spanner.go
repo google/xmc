@@ -63,14 +63,16 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 		return fmt.Errorf("spanner client must not be nil: %w", status.ErrFailedPrecondition)
 	}
 	_, err := s.client.ReadWriteTransaction(ctx, func(txCtx context.Context, spannerTx *spanner.ReadWriteTransaction) error {
+		pauseStateTx, _ := s.pauseStateRepository.(storage.PauseStateTxRepository)
+		pausedTaskTx, _ := s.pausedTaskRepository.(storage.PausedTaskTxRepository)
 		tx := &storage.Transaction{
 			WorkUnits:      s.WorkUnitRepository.WithTx(spannerTx),
 			Experiments:    s.ExperimentRepository.WithTx(spannerTx),
 			StatusMessages: s.StatusMessageRepository.WithTx(spannerTx),
 			StatusHistory:  s.StatusHistoryRepository.WithTx(spannerTx),
-			// TODO(pausescheduling): Bind to spannerTx once the Spanner-backed repositories replace the fakes.
-			PauseState:  s.pauseStateRepository,
-			PausedTasks: s.pausedTaskRepository,
+			// TODO(pausescheduling): Replace with WithTx(spannerTx) once Spanner repositories land.
+			PauseState:  pauseStateTx,
+			PausedTasks: pausedTaskTx,
 		}
 		return fn(txCtx, tx)
 	})
@@ -138,6 +140,8 @@ func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, 
 	statusHistoryRepo := statushistory.NewRepository(client)
 
 	// TODO(pausescheduling): Replace with concrete Spanner repository once available.
+	// NOTE: storagetest is intentionally used as a production stub until then; it must
+	// not take test-only dependencies and cannot be marked testonly.
 	pauseStateRepo := storagetest.NewFakePauseStateRepository()
 	pausedTaskRepo := storagetest.NewFakePausedTaskRepository()
 

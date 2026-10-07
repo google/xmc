@@ -232,3 +232,33 @@ func TestFakePauseState_Concurrency(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestFakePauseState_WithStateAndInjectedErrors(t *testing.T) {
+	ctx := context.Background()
+	seed := &storage.PauseSchedulingState{
+		SchedulingPaused: true,
+		ResumptionRunID:  "seeded-run",
+	}
+	fake := NewFakePauseStateRepositoryWithState(seed)
+	seed.ResumptionRunID = "mutated"
+
+	got, err := fake.Get(ctx)
+	if err != nil {
+		t.Fatalf("Get() unexpected error: %v", err)
+	}
+	if !got.SchedulingPaused || got.ResumptionRunID != "seeded-run" || got.UpdatedAt.IsZero() {
+		t.Errorf("Get() = %+v, want seeded state with non-zero UpdatedAt", got)
+	}
+
+	wantGetErr := errors.New("get error")
+	fake.GetErr = wantGetErr
+	if _, err := fake.Get(ctx); !errors.Is(err, wantGetErr) {
+		t.Errorf("Get() error = %v, want %v", err, wantGetErr)
+	}
+
+	wantSetErr := errors.New("set error")
+	fake.SetErr = wantSetErr
+	if err := fake.Set(ctx, &storage.PauseSchedulingState{}); !errors.Is(err, wantSetErr) {
+		t.Errorf("Set() error = %v, want %v", err, wantSetErr)
+	}
+}

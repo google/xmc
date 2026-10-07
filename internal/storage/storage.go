@@ -253,26 +253,36 @@ type XidEntryStore interface {
 // Pause Scheduling Methods
 // -----------------------
 
-// PauseStateRepository defines operations for persisting and retrieving the scheduling pause state.
+// PauseStateRepository defines read operations for retrieving the scheduling pause state on the facade.
 type PauseStateRepository interface {
 	// Get retrieves the current global scheduling pause state.
 	// If uninitialized, it returns a safe default with SchedulingPaused = false.
 	Get(ctx context.Context) (*PauseSchedulingState, error)
+}
 
+// PauseStateTxRepository defines global pause scheduling state operations scoped to a read-write transaction.
+type PauseStateTxRepository interface {
+	// Get retrieves the current global scheduling pause state.
+	// If uninitialized, it returns a safe default with SchedulingPaused = false.
+	Get(ctx context.Context) (*PauseSchedulingState, error)
 	// Set updates or initializes the global scheduling pause state.
 	Set(ctx context.Context, state *PauseSchedulingState) error
 }
 
-// PausedTaskRepository defines operations for persisting and retrieving paused tasks.
+// PausedTaskRepository defines operations for retrieving paused tasks on the storage facade.
 type PausedTaskRepository interface {
-	// Create persists a new paused task.
-	Create(ctx context.Context, task *PausedTask) error
-
 	// ListPending retrieves pending paused tasks ordered by Priority DESC, CreateTime ASC.
 	// A limit <= 0 returns all pending tasks.
 	ListPending(ctx context.Context, limit int) ([]*PausedTask, error)
+}
 
+// PausedTaskTxRepository defines paused task operations scoped to a read-write transaction.
+type PausedTaskTxRepository interface {
+	// Create persists a new paused task.
+	// Returns an error wrapping ErrPausedTaskAlreadyExists if (XID, WID, TaskID) already exists.
+	Create(ctx context.Context, task *PausedTask) error
 	// MarkProcessed records resolution details for a batch of paused tasks.
+	// Returns an error wrapping ErrPausedTaskNotFound if any task is missing, and applies nothing.
 	MarkProcessed(ctx context.Context, resolutions []PausedTaskResolution) error
 }
 
@@ -314,22 +324,6 @@ type StatusMessageTxRepository interface {
 type StatusHistoryTxRepository interface {
 	// SaveWorkUnitStatusHistoryIfChanged records a work unit status history within the transaction if the state changed.
 	SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error
-}
-
-// PauseStateTxRepository defines global pause scheduling state operations scoped to a read-write transaction.
-type PauseStateTxRepository interface {
-	// Get retrieves the current global scheduling pause state within the transaction.
-	Get(ctx context.Context) (*PauseSchedulingState, error)
-	// Set updates or initializes the global scheduling pause state within the transaction.
-	Set(ctx context.Context, state *PauseSchedulingState) error
-}
-
-// PausedTaskTxRepository defines paused task operations scoped to a read-write transaction.
-type PausedTaskTxRepository interface {
-	// Create persists a new paused task within the transaction.
-	Create(ctx context.Context, task *PausedTask) error
-	// MarkProcessed soft-deletes a batch of paused tasks within the transaction.
-	MarkProcessed(ctx context.Context, resolutions []PausedTaskResolution) error
 }
 
 // Transaction holds the domain repositories scoped to a single read-write transaction.

@@ -83,6 +83,9 @@ type MockStorage struct {
 
 	PauseStateRepository PauseStateRepository
 	PausedTaskRepository PausedTaskRepository
+	// Transaction optionally overrides repository fields on the Transaction passed to
+	// RunInTransaction callbacks. Any nil fields fall back to MockStorage defaults.
+	Transaction *Transaction
 	// GotWorkUnitExecutionsXID and GotWorkUnitExecutionUpdates record the arguments of every
 	// UpdateWorkUnitExecutions call.
 	GotWorkUnitExecutionsXID    int64
@@ -204,13 +207,23 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 	if s.RunInTransactionErr != nil {
 		return s.RunInTransactionErr
 	}
+	pauseStateTx, _ := s.PauseStateRepository.(PauseStateTxRepository)
+	pausedTaskTx, _ := s.PausedTaskRepository.(PausedTaskTxRepository)
 	tx := &Transaction{
 		WorkUnits:      s,
 		Experiments:    s,
 		StatusMessages: s,
 		StatusHistory:  s,
-		PauseState:     s.PauseState(),
-		PausedTasks:    s.PausedTasks(),
+		PauseState:     pauseStateTx,
+		PausedTasks:    pausedTaskTx,
+	}
+	if s.Transaction != nil {
+		if s.Transaction.PauseState != nil {
+			tx.PauseState = s.Transaction.PauseState
+		}
+		if s.Transaction.PausedTasks != nil {
+			tx.PausedTasks = s.Transaction.PausedTasks
+		}
 	}
 	for attempt := 1; attempt < s.RunInTransactionAttempts; attempt++ {
 		if err := fn(ctx, tx); err != nil {

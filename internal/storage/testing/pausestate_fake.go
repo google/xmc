@@ -26,16 +26,28 @@ import (
 )
 
 var _ storage.PauseStateRepository = (*FakePauseStateRepository)(nil)
+var _ storage.PauseStateTxRepository = (*FakePauseStateRepository)(nil)
 
 // FakePauseStateRepository is an in-memory test double for storage.PauseStateRepository.
 type FakePauseStateRepository struct {
-	mu    sync.RWMutex
-	state *storage.PauseSchedulingState
+	mu     sync.RWMutex
+	state  *storage.PauseSchedulingState
+	GetErr error
+	SetErr error
 }
 
 // NewFakePauseStateRepository creates a new in-memory FakePauseStateRepository.
 func NewFakePauseStateRepository() *FakePauseStateRepository {
 	return &FakePauseStateRepository{}
+}
+
+// NewFakePauseStateRepositoryWithState returns a fake pre-seeded with a copy of state.
+func NewFakePauseStateRepositoryWithState(state *storage.PauseSchedulingState) *FakePauseStateRepository {
+	stored := clonePauseSchedulingState(state)
+	if stored != nil && stored.UpdatedAt.IsZero() {
+		stored.UpdatedAt = time.Now().UTC()
+	}
+	return &FakePauseStateRepository{state: stored}
 }
 
 func clonePauseSchedulingState(s *storage.PauseSchedulingState) *storage.PauseSchedulingState {
@@ -56,6 +68,9 @@ func (f *FakePauseStateRepository) Get(ctx context.Context) (*storage.PauseSched
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
+	if f.GetErr != nil {
+		return nil, f.GetErr
+	}
 	if f.state == nil {
 		return storage.DefaultPauseSchedulingState(), nil
 	}
@@ -74,6 +89,9 @@ func (f *FakePauseStateRepository) Set(ctx context.Context, state *storage.Pause
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	if f.SetErr != nil {
+		return f.SetErr
+	}
 	stored := clonePauseSchedulingState(state)
 	stored.UpdatedAt = time.Now().UTC()
 	f.state = stored

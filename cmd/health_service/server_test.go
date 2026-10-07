@@ -842,7 +842,7 @@ func TestPauseScheduling(t *testing.T) {
 				},
 			},
 			guard:       &mockAdminRoleGuard{hasRole: true},
-			repo:        &failingPauseStateRepo{err: errors.New("spanner write failure")},
+			repo:        &storagetest.FakePauseStateRepository{SetErr: errors.New("spanner write failure")},
 			wantErrCode: codes.Internal,
 			wantErrMsg:  "failed to pause scheduling",
 		},
@@ -987,8 +987,12 @@ func TestResumeScheduling(t *testing.T) {
 					PauseSchedulingEnabled: true,
 				},
 			},
-			guard:       &mockAdminRoleGuard{hasRole: true},
-			repo:        &failingPauseStateRepo{err: errors.New("spanner write failure")},
+			guard: &mockAdminRoleGuard{hasRole: true},
+			repo: func() storage.PauseStateRepository {
+				r := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
+				r.SetErr = errors.New("spanner write failure")
+				return r
+			}(),
 			wantErrCode: codes.Internal,
 			wantErrMsg:  "failed to resume scheduling",
 		},
@@ -1031,8 +1035,7 @@ func TestResumeScheduling(t *testing.T) {
 			repo := tt.repo
 			var fakeRepo *storagetest.FakePauseStateRepository
 			if repo == nil {
-				fakeRepo = storagetest.NewFakePauseStateRepository()
-				_ = fakeRepo.Set(context.Background(), &storage.PauseSchedulingState{
+				fakeRepo = storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{
 					SchedulingPaused:   true,
 					ResumptionRunID:    "",
 					ResumptionWorkerID: "old-worker-id",
@@ -1172,7 +1175,7 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 				},
 			},
 		}
-		failingRepo := &failingPauseStateRepo{err: errors.New("spanner read timeout")}
+		failingRepo := &storagetest.FakePauseStateRepository{GetErr: errors.New("spanner read timeout")}
 		s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(failingRepo))
 		defer s.Close()
 
@@ -1198,10 +1201,7 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 				PauseSchedulingEnabled: false,
 			},
 		}
-		repo := storagetest.NewFakePauseStateRepository()
-		if err := repo.Set(ctx, &storage.PauseSchedulingState{SchedulingPaused: true}); err != nil {
-			t.Fatalf("failed to set paused state: %v", err)
-		}
+		repo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
 		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(repo))
 		defer s.Close()
 

@@ -31,6 +31,7 @@ import (
 )
 
 var _ storage.PausedTaskRepository = (*FakePausedTaskRepository)(nil)
+var _ storage.PausedTaskTxRepository = (*FakePausedTaskRepository)(nil)
 
 // FakePausedTaskRepository is an in-memory test double for storage.PausedTaskRepository.
 type FakePausedTaskRepository struct {

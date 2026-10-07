@@ -146,8 +146,7 @@ func TestListener_Init_ColdStart(t *testing.T) {
 	t.Run("cold_start_seeds_cache_and_offset", func(t *testing.T) {
 		sub := newMockSubscriber()
 		sub.latestOffset = "100-0"
-		repo := storagetest.NewFakePauseStateRepository()
-		_ = repo.Set(ctx, &storage.PauseSchedulingState{SchedulingPaused: true})
+		repo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
 
 		listener, cache := newTestListener(t, sub, repo)
 		if err := listener.Init(ctx); err != nil {

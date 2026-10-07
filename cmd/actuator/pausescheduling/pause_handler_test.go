@@ -31,9 +31,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-// mockPausedTaskRepo overrides Create; the embedded PausedTaskRepository is nil and must not be called.
+// mockPausedTaskRepo overrides Create; the embedded PausedTaskTxRepository is nil and must not be called.
 type mockPausedTaskRepo struct {
-	storage.PausedTaskRepository
+	storage.PausedTaskTxRepository
 	err         error
 	storedTasks []*storage.PausedTask
 }
@@ -275,7 +275,7 @@ func TestHandlePause(t *testing.T) {
 			repo := &mockPausedTaskRepo{err: tc.repoErr}
 			txRunner := &storage.MockStorage{
 				UpdateWorkUnitExecutionsErr: tc.updateStatusErr,
-				PausedTaskRepository:        repo,
+				Transaction:                 &storage.Transaction{PausedTasks: repo},
 			}
 
 			h, err := NewPauseHandler(cache, txRunner)
@@ -440,7 +440,7 @@ func TestHandlePause_BufferedTasksMetrics(t *testing.T) {
 	cache.Update(State{IsPaused: true, UpdatedAt: time.Now()})
 	repo := &mockPausedTaskRepo{}
 	txRunner := &storage.MockStorage{
-		PausedTaskRepository: repo,
+		Transaction: &storage.Transaction{PausedTasks: repo},
 	}
 	h, err := NewPauseHandler(cache, txRunner)
 	if err != nil {
