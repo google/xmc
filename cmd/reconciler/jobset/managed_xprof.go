@@ -166,8 +166,8 @@ func mlRunHasLabel(mlRun map[string]any, key, value string) bool {
 	if !ok {
 		return false
 	}
-	v, _ := labels[key].(string)
-	return v == value
+	v, ok := labels[key].(string)
+	return ok && v == value
 }
 
 // mlRunOwnedByXManager reports whether an MLRun resource carries our
@@ -273,6 +273,9 @@ type ManagedXprofEnvs struct {
 }
 
 func getManagedXprofEnvs(jobSet *v1alpha2.JobSet) ManagedXprofEnvs {
+	if jobSet == nil {
+		return ManagedXprofEnvs{}
+	}
 	for _, rj := range jobSet.Spec.ReplicatedJobs {
 		for _, c := range rj.Template.Spec.Template.Spec.Containers {
 			envs := extractContainerManagedXprofEnvs(c)
@@ -316,6 +319,9 @@ func managedXprofMisconfigured(displayName, runGroup, gcsPath string) bool {
 // on their WorkUnit artifact are intentionally silent to avoid flooding the
 // reconcile loop's logs.
 func warnOnMissingManagedXprofEnvs(ctx context.Context, jobSet *v1alpha2.JobSet, displayName, runGroup, gcsPath string, xid, wid int64) {
+	if jobSet == nil {
+		return
+	}
 	if managedXprofMisconfigured(displayName, runGroup, gcsPath) {
 		logging.Warn(ctx, "No GCS path found for Managed Xprof, skipping MLRun URL creation.", "namespace", jobSet.Namespace, "xid", xid, "wid", wid)
 	}
