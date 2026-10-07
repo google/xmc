@@ -122,6 +122,12 @@ jobs:
         run: |
           python3 tools/lint/check_legacy_imports.py
 
+      - name: 'Check Nightly Examples Verification Coverage'
+        env:
+          XMC_BYPASS_VENV: '1'
+        run: |
+          python3 tools/nightly_tests/check_examples_coverage.py
+
       - name: 'Verify Go Dependencies (go mod tidy)'
         run: |
           go mod tidy -diff
