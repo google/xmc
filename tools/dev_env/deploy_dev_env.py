@@ -535,23 +535,19 @@ def step_primary(config: DeploymentConfig, dns_project: str, dns_zone: str) -> N
     apply_dns_records(gateway_ip, config, dns_project, dns_zone)
 
 
-def step_migrate(config: DeploymentConfig) -> bool:
+def step_migrate(config: DeploymentConfig) -> None:
     """Checks and applies pending Spanner database migrations.
 
     Args:
         config: The loaded DeploymentConfig instance.
-
-    Returns:
-        True if pending migrations were applied, False otherwise.
     """
     pending = check_pending_migrations(config)
     if not pending:
         log_success("No pending migrations found. Databases are up to date.")
-        return False
+        return
 
     log_info("Applying pending Spanner migrations...")
     apply_pending_migrations(config, pending)
-    return True
 
 
 def step_compute(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
@@ -672,8 +668,8 @@ def step_app(
     log_info("Deploying xmc_app group (Helm release)...")
     run_gcluster_deploy(config.deployment_name, "xmc_app")
     log_success("XMC application Helm release deployed successfully.")
-    deploy_component_profile(config)
     _fetch_cluster_credentials(config)
+    deploy_component_profile(config)
     step_restart(config)
 
 

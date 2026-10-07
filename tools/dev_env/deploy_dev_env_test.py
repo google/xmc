@@ -757,11 +757,22 @@ image_tag: latest
         from dataclasses import replace
 
         cfg = replace(self.valid_config, enable_components=True)
+        manager = MagicMock()
+        manager.attach_mock(mock_deploy, "deploy")
+        manager.attach_mock(mock_creds, "creds")
+        manager.attach_mock(mock_profile, "profile")
+        manager.attach_mock(mock_restart, "restart")
+
         deploy_dev_env.step_app(cfg, self.dns_project, self.dns_zone)
-        mock_deploy.assert_called_once_with(cfg.deployment_name, "xmc_app")
-        mock_profile.assert_called_once_with(cfg)
-        mock_creds.assert_called_once_with(cfg)
-        mock_restart.assert_called_once_with(cfg)
+        manager.assert_has_calls(
+            [
+                call.deploy(cfg.deployment_name, "xmc_app"),
+                call.creds(cfg),
+                call.profile(cfg),
+                call.restart(cfg),
+            ],
+            any_order=False,
+        )
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     @patch("tools.dev_env.deploy_dev_env.apply_dns_records")
@@ -809,8 +820,7 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.check_pending_migrations")
     def test_step_migrate_up_to_date(self, mock_check, mock_apply):
         mock_check.return_value = []
-        res = deploy_dev_env.step_migrate(self.valid_config)
-        self.assertFalse(res)
+        deploy_dev_env.step_migrate(self.valid_config)
         mock_check.assert_called_once_with(self.valid_config)
         mock_apply.assert_not_called()
 
@@ -822,8 +832,7 @@ image_tag: latest
             ("xid", "xmc-dev", "xids-db-dev"),
         ]
         mock_check.return_value = pending
-        res = deploy_dev_env.step_migrate(self.valid_config)
-        self.assertTrue(res)
+        deploy_dev_env.step_migrate(self.valid_config)
         mock_check.assert_called_once_with(self.valid_config)
         mock_apply.assert_called_once_with(self.valid_config, pending)
 
@@ -837,17 +846,30 @@ image_tag: latest
         mock_apply.assert_not_called()
 
     @patch("tools.dev_env.deploy_dev_env._fetch_cluster_credentials")
+    @patch("tools.dev_env.deploy_dev_env.deploy_component_profile")
     @patch("tools.dev_env.deploy_dev_env.run_gcluster_deploy")
     @patch("tools.dev_env.deploy_dev_env.step_restart")
-    def test_step_app_triggers_restart(self, mock_restart, mock_gcluster, mock_creds):
+    def test_step_app_triggers_restart(self, mock_restart, mock_gcluster, mock_profile, mock_creds):
+        manager = MagicMock()
+        manager.attach_mock(mock_gcluster, "gcluster")
+        manager.attach_mock(mock_creds, "creds")
+        manager.attach_mock(mock_profile, "profile")
+        manager.attach_mock(mock_restart, "restart")
+
         deploy_dev_env.step_app(
             self.valid_config,
             self.dns_project,
             self.dns_zone,
         )
-        mock_gcluster.assert_called_once_with(self.valid_config.deployment_name, "xmc_app")
-        mock_creds.assert_called_once_with(self.valid_config)
-        mock_restart.assert_called_once_with(self.valid_config)
+        manager.assert_has_calls(
+            [
+                call.gcluster(self.valid_config.deployment_name, "xmc_app"),
+                call.creds(self.valid_config),
+                call.profile(self.valid_config),
+                call.restart(self.valid_config),
+            ],
+            any_order=False,
+        )
 
     @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
     @patch("tools.dev_env.deploy_dev_env.run_checks")
