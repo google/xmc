@@ -81,27 +81,15 @@ def validate_argv(argv: Sequence[str]) -> None:
 
 def parse_xid(raw_xid: str | None, required: bool = True) -> str:
     """Normalizes and extracts the numeric or slug XID string."""
-    if not raw_xid:
-        if required:
-            raise ValueError("Experiment XID (--xid) is required.")
-        return ""
-    xid = str(raw_xid).strip().rstrip("/")
-    if not xid:
-        if required:
-            raise ValueError("Experiment XID (--xid) is required.")
-        return ""
-    if xid.startswith("/"):
-        xid = xid.lstrip("/")
+    xid = str(raw_xid or "").strip().strip("/")
     if xid in ("experiments", "dashboards"):
         xid = ""
     elif xid.startswith("experiments/"):
-        xid = xid.split("/")[-1]
+        xid = xid.split("/")[-1].strip()
     elif xid.startswith("dashboards/"):
-        xid = xid.split("dashboards/", 1)[1].strip()
-    if not xid:
-        if required:
-            raise ValueError("Experiment XID (--xid) is required.")
-        return ""
+        xid = xid.split("dashboards/", 1)[1].strip().strip("/")
+    if not xid and required:
+        raise ValueError("Experiment XID (--xid) is required.")
     return xid
 
 
@@ -114,22 +102,16 @@ def resolve_expected_work_units(default: int = 3) -> int:
     Returns:
         The resolved integer number of work units.
     """
-    flag_val = get_flag(FLAGS, "expected_work_units", None)
-    if flag_val is not None:
-        try:
-            val = int(flag_val)
-            if val > 0:
-                return val
-        except (ValueError, TypeError):
-            pass
-    env_val = os.environ.get("NUM_WORK_UNITS")
-    if env_val:
-        try:
-            val = int(env_val)
-            if val > 0:
-                return val
-        except (ValueError, TypeError):
-            pass
+    for candidate in (
+        get_flag(FLAGS, "expected_work_units", None),
+        os.environ.get("NUM_WORK_UNITS"),
+    ):
+        if candidate is not None:
+            try:
+                if (val := int(candidate)) > 0:
+                    return val
+            except (ValueError, TypeError):
+                pass
     return default
 
 

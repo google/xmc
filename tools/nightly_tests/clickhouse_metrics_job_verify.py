@@ -37,8 +37,6 @@ from typing import Any
 
 from tools.nightly_tests import verifier_cli, workload_verification
 
-FLAGS = verifier_cli.FLAGS
-
 EXPECTED_TITLE_PATTERN: str = "ClickHouse Metrics Ingestion Experiment"
 EXPECTED_WORKER_NAMES: tuple[str, ...] = ("clickhouse-metric-writer",)
 DEFAULT_TIMEOUT_SEC: int = 600
@@ -54,7 +52,7 @@ EXPECTED_JOBSET_SPECS: list[dict[str, Any]] = [
 
 def _verify_clickhouse_and_dashboard(_stub: Any, xid: str) -> None:
     """Runs ClickHouse SQL metric assertions and Dashboard hydration checks."""
-    timeout_sec = verifier_cli.get_flag(FLAGS, "timeout_sec", DEFAULT_TIMEOUT_SEC)
+    timeout_sec = verifier_cli.get_flag(verifier_cli.FLAGS, "timeout_sec", DEFAULT_TIMEOUT_SEC)
     workload_verification.assert_clickhouse_metrics(
         xid,
         expected_metric_names=EXPECTED_METRIC_SUBSET,

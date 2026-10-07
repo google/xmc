@@ -41,43 +41,30 @@ class VerifierCliTest(unittest.TestCase):
             verifier_cli.validate_argv(["script.py", "extra_arg"])
 
     def test_parse_xid(self) -> None:
-        self.assertEqual(verifier_cli.parse_xid("12345"), "12345")
-        self.assertEqual(verifier_cli.parse_xid("experiments/12345"), "12345")
-        self.assertEqual(verifier_cli.parse_xid("dashboards/my_dashboard"), "my_dashboard")
-        self.assertEqual(verifier_cli.parse_xid("experiments/42"), "42")
-        self.assertEqual(verifier_cli.parse_xid("/experiments/42"), "42")
-        self.assertEqual(verifier_cli.parse_xid("experiments/test-exp-99"), "test-exp-99")
-        self.assertEqual(verifier_cli.parse_xid("/experiments/test-exp-99"), "test-exp-99")
-        self.assertEqual(verifier_cli.parse_xid("dashboards/my_slug"), "my_slug")
-        self.assertEqual(verifier_cli.parse_xid("/dashboards/my_slug"), "my_slug")
-        self.assertEqual(
-            verifier_cli.parse_xid("dashboards/test-dashboard-123"), "test-dashboard-123"
+        valid_cases = (
+            ("12345", "12345"),
+            ("experiments/12345", "12345"),
+            ("/experiments/42", "42"),
+            ("experiments/test-exp-99", "test-exp-99"),
+            ("/experiments/test-exp-99", "test-exp-99"),
+            ("experiments/12345/", "12345"),
+            ("/experiments/12345///", "12345"),
+            ("dashboards/my_slug", "my_slug"),
+            ("/dashboards/my_slug", "my_slug"),
+            ("dashboards/test-dashboard-123", "test-dashboard-123"),
+            ("/dashboards/test-dashboard-123", "test-dashboard-123"),
+            ("dashboards/my_slug/", "my_slug"),
+            ("/dashboards/my_slug/", "my_slug"),
         )
-        self.assertEqual(
-            verifier_cli.parse_xid("/dashboards/test-dashboard-123"), "test-dashboard-123"
-        )
-        self.assertEqual(verifier_cli.parse_xid("experiments/12345/"), "12345")
-        self.assertEqual(verifier_cli.parse_xid("/experiments/12345///"), "12345")
-        self.assertEqual(verifier_cli.parse_xid("dashboards/my_slug/"), "my_slug")
-        self.assertEqual(verifier_cli.parse_xid("/dashboards/my_slug/"), "my_slug")
+        for raw, expected in valid_cases:
+            with self.subTest(raw=raw):
+                self.assertEqual(verifier_cli.parse_xid(raw), expected)
 
-        with self.assertRaises(ValueError):
-            verifier_cli.parse_xid(None, required=True)
-        with self.assertRaises(ValueError):
-            verifier_cli.parse_xid("", required=True)
-        with self.assertRaises(ValueError):
-            verifier_cli.parse_xid("   ", required=True)
-        with self.assertRaises(ValueError):
-            verifier_cli.parse_xid("///", required=True)
-        with self.assertRaises(ValueError):
-            verifier_cli.parse_xid("experiments/", required=True)
-        with self.assertRaises(ValueError):
-            verifier_cli.parse_xid("dashboards/", required=True)
-        self.assertEqual(verifier_cli.parse_xid(None, required=False), "")
-        self.assertEqual(verifier_cli.parse_xid("   ", required=False), "")
-        self.assertEqual(verifier_cli.parse_xid("///", required=False), "")
-        self.assertEqual(verifier_cli.parse_xid("experiments/", required=False), "")
-        self.assertEqual(verifier_cli.parse_xid("dashboards/", required=False), "")
+        for empty_raw in (None, "", "   ", "///", "experiments/", "dashboards/"):
+            with self.subTest(empty_raw=empty_raw):
+                with self.assertRaises(ValueError):
+                    verifier_cli.parse_xid(empty_raw, required=True)
+                self.assertEqual(verifier_cli.parse_xid(empty_raw, required=False), "")
 
     def test_resolve_expected_work_units(self) -> None:
         # Flag takes highest precedence

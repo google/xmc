@@ -153,7 +153,6 @@ py_binary(
     deps = [
         ":verifier_cli",
         ":workload_verification",
-        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -177,12 +176,7 @@ py_binary(
     data = [":gallery_template"],
     imports = ["../.."],
     deps = [
-        ":endpoint_resolution",
-        ":ess_session",
-        ":ui_entities_validator_lib",
-        ":verifier_cli",
         ":weekly_visual_snapshot_lib",
-        "@absl_py//absl/flags",
     ],
 )
 
@@ -193,7 +187,6 @@ py_binary(
     deps = [
         ":verifier_cli",
         ":workload_verification",
-        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -204,7 +197,6 @@ py_binary(
     deps = [
         ":verifier_cli",
         ":workload_verification",
-        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -215,7 +207,6 @@ py_binary(
     deps = [
         ":verifier_cli",
         ":workload_verification",
-        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -226,7 +217,6 @@ py_binary(
     deps = [
         ":verifier_cli",
         ":workload_verification",
-        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -237,7 +227,6 @@ py_binary(
     deps = [
         ":verifier_cli",
         ":workload_verification",
-        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -248,7 +237,6 @@ py_binary(
     deps = [
         ":verifier_cli",
         ":workload_verification",
-        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -270,7 +258,6 @@ py_binary(
     deps = [
         ":verifier_cli",
         ":workload_verification",
-        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -281,7 +268,6 @@ py_binary(
     deps = [
         ":verifier_cli",
         ":workload_verification",
-        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -322,7 +308,6 @@ py_test(
     imports = ["../.."],
     deps = [
         ":endpoint_resolution",
-        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -333,7 +318,6 @@ py_test(
     imports = ["../.."],
     deps = [
         ":ess_session",
-        ":xmc_entities_validator_lib",
     ],
 )
 

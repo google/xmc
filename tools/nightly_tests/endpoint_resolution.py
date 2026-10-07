@@ -23,35 +23,33 @@ from tools.nightly_tests import xmc_entities_validator
 
 def resolve_endpoint(provided_endpoint: str | None = None) -> str:
     """Resolves ESS gRPC endpoint from parameter, environment, or default."""
-    if provided_endpoint and str(provided_endpoint).strip():
-        return str(provided_endpoint).strip()
+    if ep := str(provided_endpoint or "").strip():
+        return ep
     return os.environ.get("XMANAGER_ENDPOINT", "localhost:8080")
 
 
 def resolve_dashboard_endpoint(provided_endpoint: str | None = None) -> str:
     """Derives HTTP REST base endpoint for dashboard validation."""
-    if provided_endpoint and str(provided_endpoint).strip():
-        ep = str(provided_endpoint).strip()
-        if ep.startswith(("http://", "https://")):
-            return ep
-        return f"http://{ep}" if ep.startswith(("localhost", "127.0.0.1")) else f"https://{ep}"
-    return resolve_ui_base_url()
+    if not (ep := str(provided_endpoint or "").strip()):
+        return resolve_ui_base_url()
+    if ep.startswith(("http://", "https://")):
+        return ep
+    return f"http://{ep}" if ep.startswith(("localhost", "127.0.0.1")) else f"https://{ep}"
 
 
 def resolve_clickhouse_endpoint(provided_endpoint: str | None = None) -> str:
     """Resolves ClickHouse HTTP endpoint from parameter, environment, or default."""
-    if provided_endpoint and str(provided_endpoint).strip():
-        ep = str(provided_endpoint).strip()
-    elif os.environ.get("CLICKHOUSE_ENDPOINT"):
-        ep = os.environ["CLICKHOUSE_ENDPOINT"].strip()
-    elif os.environ.get("CLICKHOUSE_HOST"):
-        host = os.environ["CLICKHOUSE_HOST"].strip()
-        port = os.environ.get(
-            "CLICKHOUSE_HTTP_PORT", os.environ.get("CLICKHOUSE_PORT", "8123")
-        ).strip()
-        ep = f"{host}:{port}"
-    else:
-        ep = "http://127.0.0.1:8123"
+    if not (
+        ep := str(provided_endpoint or "").strip()
+        or os.environ.get("CLICKHOUSE_ENDPOINT", "").strip()
+    ):
+        if host := os.environ.get("CLICKHOUSE_HOST", "").strip():
+            port = os.environ.get(
+                "CLICKHOUSE_HTTP_PORT", os.environ.get("CLICKHOUSE_PORT", "8123")
+            ).strip()
+            ep = f"{host}:{port}"
+        else:
+            ep = "http://127.0.0.1:8123"
 
     if not ep.startswith(("http://", "https://")):
         ep = f"http://{ep}"

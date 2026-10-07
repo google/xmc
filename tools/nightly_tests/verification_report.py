@@ -20,15 +20,23 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 
+def _print_details(
+    details: Mapping[str, Any] | Sequence[tuple[str, Any]],
+    prefix: str = "",
+) -> None:
+    """Prints formatted key-value detail rows."""
+    items = details.items() if isinstance(details, Mapping) else details
+    for label, val in items:
+        val_str = str(list(val)) if isinstance(val, (list, tuple)) else str(val)
+        print(f"{prefix}{label:<24}: {val_str}")
+
+
 def print_banner(title: str, details: Mapping[str, Any] | Sequence[tuple[str, Any]]) -> None:
     """Prints a formatted verification header banner."""
     print("=================================================================")
     print(f"       {title.strip()}       ".center(65))
     print("=================================================================")
-    items = details.items() if isinstance(details, Mapping) else details
-    for label, val in items:
-        val_str = str(list(val)) if isinstance(val, (list, tuple)) else str(val)
-        print(f"{label:<24}: {val_str}")
+    _print_details(details)
     print("-----------------------------------------------------------------")
 
 
@@ -40,8 +48,5 @@ def print_success_summary(
     print("\n=================================================================")
     print(f"🎉 {title.strip()}")
     print("=================================================================")
-    items = details.items() if isinstance(details, Mapping) else details
-    for label, val in items:
-        val_str = str(list(val)) if isinstance(val, (list, tuple)) else str(val)
-        print(f"  • {label:<24}: {val_str}")
+    _print_details(details, prefix="  • ")
     print("=================================================================\n")
