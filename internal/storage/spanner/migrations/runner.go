@@ -26,9 +26,9 @@ import (
 	"strconv"
 	"strings"
 
+	"cloud.google.com/go/spanner"
 	"go/google"
 	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
 	"golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs"
 	"golang/github_com/golang_migrate/migrate/v/v4/source/source"

@@ -36,7 +36,7 @@ compat_go_test(
     srcs = ["reconciler_test.go"],
     embed = [":clusterqueue"],
     deps = [
-        "//internal/compat/cmp",
+        "@com_github_google_go_cmp//cmp",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/types",

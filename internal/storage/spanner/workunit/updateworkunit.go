@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	"golang/godebug/diff/diff"
 	"golang/protobuf/v2/encoding/prototext/prototext"
 	"golang/protobuf/v2/proto/proto"

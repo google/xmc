@@ -46,7 +46,6 @@ content = content.replace("protobuf/timestamp_go_proto", "google.golang.org/prot
 content = content.replace("protobuf/any_go_proto", "google.golang.org/protobuf/types/known/anypb")
 content = content.replace("rpc/status_go_proto", "google.golang.org/genproto/googleapis/rpc/status")
 content = content.replace("golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database", "cloud.google.com/go/spanner/admin/database/apiv1")
-content = content.replace("golang/cloud_google_com/go/spanner/v/v1/spanner", "cloud.google.com/go/spanner")
 content = content.replace("golang/github_com/golang_migrate/migrate/v/v4/migrate", "github.com/golang-migrate/migrate/v4")
 content = content.replace("golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs", "github.com/golang-migrate/migrate/v4/source/iofs")
 content = content.replace("golang/github_com/golang_migrate/migrate/v/v4/source/source", "github.com/golang-migrate/migrate/v4/source")

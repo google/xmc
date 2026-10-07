@@ -16,7 +16,7 @@ package spannerutils
 import (
 	"testing"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestParseDDL(t *testing.T) {

@@ -23,7 +23,7 @@ import (
 
 	"api/filter/go/filtervisitor"
 	"api/filter/go/queryfilterbase"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	"googlesql/safesql/go/safesql"
 
 	fpb "api/filter/filter_expression_go_proto"

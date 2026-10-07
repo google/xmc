@@ -17,7 +17,7 @@ package resumption
 import (
 	"testing"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestParseTriggerPayload(t *testing.T) {

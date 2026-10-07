@@ -58,12 +58,11 @@ compat_go_test(
     embed = [":workload"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/cmp",
         "//internal/compat/field_mask",
-        "//internal/compat/protocmp",
         "//internal/kubernetes/common/constants",
         "//internal/logging",
         "//internal/storage",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_prometheus_client_golang//prometheus/testutil",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -78,5 +77,6 @@ compat_go_test(
         "@io_k8s_sigs_controller_runtime//pkg/reconcile",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
         "@io_k8s_utils//ptr",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

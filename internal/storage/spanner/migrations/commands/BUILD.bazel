@@ -25,7 +25,6 @@ compat_go_library(
     importpath = "xmanager_cloud/internal/storage/spanner/migrations/commands",
     visibility = ["//:__subpackages__"],
     deps = [
-        "//internal/compat/spanner",
         "@com_github_golang_migrate_migrate_v4//:go_default_library",
         "@com_github_golang_migrate_migrate_v4//source",
         "@com_github_golang_migrate_migrate_v4//source/iofs",
@@ -44,13 +43,12 @@ compat_go_test(
     ],
     embed = [":commands"],
     deps = [
-        "//internal/compat/cmp",
-        "//internal/compat/spanner",
         "//internal/storage/spanner/emulator",
         "@com_github_golang_migrate_migrate_v4//database",
         "@com_github_golang_migrate_migrate_v4//database/stub",
         "@com_github_golang_migrate_migrate_v4//source",
         "@com_github_golang_migrate_migrate_v4//source/stub",
+        "@com_github_google_go_cmp//cmp",
         "@com_google_cloud_go_spanner//:spanner",
         "@com_google_cloud_go_spanner//admin/database/apiv1",
         "@io_k8s_utils//ptr",

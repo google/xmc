@@ -20,7 +20,6 @@ compat_go_library(
     importpath = "xmanager_cloud/internal/storage/spanner/migrations/driver",
     visibility = ["//:__subpackages__"],
     deps = [
-        "//internal/compat/spanner",
         "//internal/logging",
         "//internal/storage/spanner/utils:spannerutils",
         "@com_github_golang_migrate_migrate_v4//database",
@@ -37,8 +36,8 @@ compat_go_test(
     embed = [":driver"],
     deps = [
         "//internal/compat/proto",
-        "//internal/compat/spanner",
         "//internal/storage/spanner/emulator",
+        "@com_google_cloud_go_spanner//:spanner",
         "@com_google_cloud_go_spanner//admin/database/apiv1",
         "@com_google_cloud_go_spanner//admin/instance/apiv1",
         "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",

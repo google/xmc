@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	lropb "longrunning/operations_go_proto"
 	"task/go/status"
 	"xmanager_cloud/logging/logging"
