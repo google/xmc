@@ -23,7 +23,8 @@ import (
 	"time"
 
 	"xmanager_cloud/internal/broadcast"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
+	"xmanager_cloud/internal/storage"
+	storagetest "xmanager_cloud/internal/storage/testing"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -89,7 +90,7 @@ func (m *mockStreamSubscriber) emit(msg string) {
 	}
 }
 
-func newTestListener(t *testing.T, sub StreamSubscriber, repo pausestate.Repository) (*Listener, Cache) {
+func newTestListener(t *testing.T, sub StreamSubscriber, repo storage.PauseStateRepository) (*Listener, Cache) {
 	t.Helper()
 	c := NewCache()
 	l, err := New(Params{
@@ -107,7 +108,7 @@ func newTestListener(t *testing.T, sub StreamSubscriber, repo pausestate.Reposit
 func TestNewListener_Validation(t *testing.T) {
 	cache := NewCache()
 	sub := newMockSubscriber()
-	repo := pausestate.NewFake()
+	repo := storagetest.NewFakePauseStateRepository()
 
 	tests := []struct {
 		name    string
@@ -145,8 +146,7 @@ func TestListener_Init_ColdStart(t *testing.T) {
 	t.Run("cold_start_seeds_cache_and_offset", func(t *testing.T) {
 		sub := newMockSubscriber()
 		sub.latestOffset = "100-0"
-		repo := pausestate.NewFake()
-		_ = repo.Set(ctx, &pausestate.PauseSchedulingState{SchedulingPaused: true})
+		repo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
 
 		listener, cache := newTestListener(t, sub, repo)
 		if err := listener.Init(ctx); err != nil {
@@ -166,7 +166,7 @@ func TestListener_Init_ColdStart(t *testing.T) {
 
 	t.Run("cold_start_uninitialized_table_defaults_to_active", func(t *testing.T) {
 		sub := newMockSubscriber()
-		repo := pausestate.NewFake()
+		repo := storagetest.NewFakePauseStateRepository()
 		listener, cache := newTestListener(t, sub, repo)
 
 		if err := listener.Init(ctx); err != nil {
@@ -186,7 +186,7 @@ func TestListener_Init_ColdStart(t *testing.T) {
 	t.Run("cold_start_empty_stream_offset_defaults_to_zero_id", func(t *testing.T) {
 		sub := newMockSubscriber()
 		sub.latestOffset = ""
-		repo := pausestate.NewFake()
+		repo := storagetest.NewFakePauseStateRepository()
 		listener, _ := newTestListener(t, sub, repo)
 
 		if err := listener.Init(ctx); err != nil {
@@ -200,7 +200,7 @@ func TestListener_Init_ColdStart(t *testing.T) {
 	t.Run("stream_offset_error_fails_init", func(t *testing.T) {
 		sub := newMockSubscriber()
 		sub.offsetErr = errors.New("redis connection refused")
-		repo := pausestate.NewFake()
+		repo := storagetest.NewFakePauseStateRepository()
 		listener, _ := newTestListener(t, sub, repo)
 
 		err := listener.Init(ctx)
@@ -212,7 +212,7 @@ func TestListener_Init_ColdStart(t *testing.T) {
 	t.Run("repo_error_fails_init", func(t *testing.T) {
 		canceledCtx, cancel := context.WithCancel(ctx)
 		cancel()
-		listener, _ := newTestListener(t, newMockSubscriber(), pausestate.NewFake())
+		listener, _ := newTestListener(t, newMockSubscriber(), storagetest.NewFakePauseStateRepository())
 
 		err := listener.Init(canceledCtx)
 		if err == nil || !strings.Contains(err.Error(), "failed cold-start read") {
@@ -226,7 +226,7 @@ func TestListener_BroadcastUpdate(t *testing.T) {
 	defer cancel()
 
 	sub := newMockSubscriber()
-	repo := pausestate.NewFake()
+	repo := storagetest.NewFakePauseStateRepository()
 	listener, cache := newTestListener(t, sub, repo)
 
 	if err := listener.Init(ctx); err != nil {
@@ -244,7 +244,7 @@ func TestListener_BroadcastUpdate(t *testing.T) {
 
 	// Update state in repository
 	t1 := time.Date(2026, 3, 1, 14, 0, 0, 0, time.UTC)
-	_ = repo.Set(ctx, &pausestate.PauseSchedulingState{
+	_ = repo.Set(ctx, &storage.PauseSchedulingState{
 		SchedulingPaused: true,
 		UpdatedAt:        t1,
 	})
@@ -270,7 +270,7 @@ func TestListener_ReconnectAndResync(t *testing.T) {
 	sub.mu.Lock()
 	sub.subscribeErr = errors.New("temporary redis disconnection")
 	sub.mu.Unlock()
-	repo := pausestate.NewFake()
+	repo := storagetest.NewFakePauseStateRepository()
 
 	listener, cache := newTestListener(t, sub, repo)
 	if err := listener.Init(ctx); err != nil {
@@ -283,7 +283,7 @@ func TestListener_ReconnectAndResync(t *testing.T) {
 	}
 
 	// State changed while disconnected
-	_ = repo.Set(ctx, &pausestate.PauseSchedulingState{
+	_ = repo.Set(ctx, &storage.PauseSchedulingState{
 		SchedulingPaused: true,
 	})
 
@@ -325,7 +325,7 @@ func TestListener_ReconnectAndResync(t *testing.T) {
 		sub2.mu.Lock()
 		sub2.subscribeErr = errors.New("disconnect")
 		sub2.mu.Unlock()
-		repo2 := pausestate.NewFake()
+		repo2 := storagetest.NewFakePauseStateRepository()
 
 		listener2, cache2 := newTestListener(t, sub2, repo2)
 		if err := listener2.Init(ctx2); err != nil {
@@ -359,7 +359,7 @@ func TestListener_ReconnectAndResync(t *testing.T) {
 		}
 
 		// Now allow resyncOnReconnect to succeed and update database state
-		_ = repo2.Set(ctx2, &pausestate.PauseSchedulingState{
+		_ = repo2.Set(ctx2, &storage.PauseSchedulingState{
 			SchedulingPaused: true,
 		})
 		sub2.mu.Lock()
@@ -386,7 +386,7 @@ func TestListener_ReconnectAndResync(t *testing.T) {
 func TestListener_StartListening_GracefulShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	sub := newMockSubscriber()
-	listener, _ := newTestListener(t, sub, pausestate.NewFake())
+	listener, _ := newTestListener(t, sub, storagetest.NewFakePauseStateRepository())
 
 	_ = listener.Init(ctx)
 
@@ -424,7 +424,7 @@ func (m *mockCloserSubscriber) Close() error {
 func TestListener_Close(t *testing.T) {
 	t.Run("non_closer_subscriber", func(t *testing.T) {
 		sub := newMockSubscriber()
-		listener, _ := newTestListener(t, sub, pausestate.NewFake())
+		listener, _ := newTestListener(t, sub, storagetest.NewFakePauseStateRepository())
 		if err := listener.Close(); err != nil {
 			t.Errorf("Close() error = %v, want nil", err)
 		}
@@ -432,7 +432,7 @@ func TestListener_Close(t *testing.T) {
 
 	t.Run("closer_subscriber_success", func(t *testing.T) {
 		sub := &mockCloserSubscriber{}
-		listener, _ := newTestListener(t, sub, pausestate.NewFake())
+		listener, _ := newTestListener(t, sub, storagetest.NewFakePauseStateRepository())
 		if err := listener.Close(); err != nil {
 			t.Errorf("Close() error = %v, want nil", err)
 		}
@@ -444,7 +444,7 @@ func TestListener_Close(t *testing.T) {
 	t.Run("closer_subscriber_error", func(t *testing.T) {
 		wantErr := errors.New("close failure")
 		sub := &mockCloserSubscriber{closeErr: wantErr}
-		listener, _ := newTestListener(t, sub, pausestate.NewFake())
+		listener, _ := newTestListener(t, sub, storagetest.NewFakePauseStateRepository())
 		if err := listener.Close(); !errors.Is(err, wantErr) {
 			t.Errorf("Close() error = %v, want %v", err, wantErr)
 		}

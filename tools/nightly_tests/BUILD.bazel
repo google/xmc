@@ -19,7 +19,10 @@ load("@rules_python//python:py_test.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "README.md",
     "chart_artifact_job_verify.py",
+    "check_examples_coverage.py",
+    "check_examples_coverage_test.py",
     "clickhouse_metrics_job_verify.py",
     "format_visual_audit_summary.js",
     "format_visual_audit_summary_test.js",
@@ -257,4 +260,24 @@ py_test(
     data = [":gallery_template"],
     imports = ["../.."],
     deps = [":weekly_visual_snapshot_lib"],
+)
+
+py_library(
+    name = "check_examples_coverage_lib",
+    srcs = ["check_examples_coverage.py"],
+    imports = ["../.."],
+)
+
+py_binary(
+    name = "check_examples_coverage",
+    srcs = ["check_examples_coverage.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "check_examples_coverage_test",
+    size = "small",
+    srcs = ["check_examples_coverage_test.py"],
+    imports = ["../.."],
+    deps = [":check_examples_coverage_lib"],
 )

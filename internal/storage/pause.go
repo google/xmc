@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,15 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package pausedtask defines the entity, repository interface, and stub for paused tasks.
-package pausedtask
+package storage
 
 import (
+	"fmt"
 	"time"
 
+	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
+
+var (
+	// ErrPausedTaskNotFound indicates the requested paused task does not exist.
+	ErrPausedTaskNotFound = fmt.Errorf("paused task not found: %w", status.ErrNotFound)
+	// ErrPausedTaskAlreadyExists indicates a task with the given key already exists.
+	ErrPausedTaskAlreadyExists = fmt.Errorf("paused task already exists: %w", status.ErrAlreadyExists)
+)
+
+// PauseSchedulingState represents the global scheduling pause state and resumption metadata.
+type PauseSchedulingState struct {
+	SchedulingPaused   bool
+	UpdatedAt          time.Time
+	ResumptionRunID    string
+	ResumptionWorkerID string
+}
+
+// DefaultPauseSchedulingState returns a new PauseSchedulingState with default uninitialized values.
+func DefaultPauseSchedulingState() *PauseSchedulingState {
+	return &PauseSchedulingState{
+		SchedulingPaused: false,
+	}
+}
 
 // ResolutionStatus represents the outcome of a paused task resolution during unpause resumption.
 type ResolutionStatus string
@@ -30,8 +53,8 @@ const (
 	ResolutionStatusSkipped  ResolutionStatus = "skipped"
 )
 
-// TaskResolution contains the resolution details applied to a processed paused task.
-type TaskResolution struct {
+// PausedTaskResolution contains the resolution details applied to a processed paused task.
+type PausedTaskResolution struct {
 	XID              int64
 	WID              int64
 	TaskID           string

@@ -23,7 +23,6 @@ import (
 
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/task_queue_redis/redisclient"
 
 	"github.com/google/uuid"
@@ -159,7 +158,7 @@ func (p *pauseScheduler) Pause(ctx context.Context) (err error) {
 	}
 
 	err = st.RunInTransaction(ctx, func(txCtx context.Context, tx *storage.Transaction) error {
-		state := &pausestate.PauseSchedulingState{
+		state := &storage.PauseSchedulingState{
 			SchedulingPaused:   true,
 			ResumptionRunID:    "",
 			ResumptionWorkerID: "",
@@ -229,7 +228,7 @@ func persistResumeState(ctx context.Context, st PauseSchedulingStorage) (string,
 
 		resumptionRunID = uuid.NewString()
 		newlyResumed = true
-		state := &pausestate.PauseSchedulingState{
+		state := &storage.PauseSchedulingState{
 			SchedulingPaused:   false,
 			ResumptionRunID:    resumptionRunID,
 			ResumptionWorkerID: "",

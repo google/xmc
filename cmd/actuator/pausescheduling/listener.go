@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"xmanager_cloud/internal/storage/spanner/pausestate"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/logging/logging"
 )
 
@@ -43,7 +43,7 @@ type StreamSubscriber interface {
 type Params struct {
 	Cache                Cache
 	Subscriber           StreamSubscriber
-	PauseStateRepository pausestate.Repository
+	PauseStateRepository storage.PauseStateRepository
 	ReconnectBackoff     time.Duration
 }
 
@@ -51,7 +51,7 @@ type Params struct {
 type Listener struct {
 	cache            Cache
 	subscriber       StreamSubscriber
-	pauseStateRepo   pausestate.Repository
+	pauseStateRepo   storage.PauseStateRepository
 	reconnectBackoff time.Duration
 	mu               sync.RWMutex
 	startID          string
