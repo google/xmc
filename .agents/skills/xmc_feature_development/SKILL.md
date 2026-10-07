@@ -52,10 +52,11 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
 ## 3. Test Execution via Affected Tests Tool
 
 1. **Run Affected Tests Script**:
-   Execute the automated affected tests runner to run all unit tests associated with changed packages and their reverse dependencies:
+   Execute the automated affected tests runner to run the Bazel unit tests associated with changed packages and their reverse dependencies:
    ```bash
    python3 ./tools/run_affected_tests.py
    ```
+   Use `--dry-run` to preview the resolved scope without running tests. The runner does not run the Angular UI or Helm chart suites: when its JSON result lists `other_suites`, run each suite's `commands` from its `working_directory`, as CI does.
 2. **Run Package Unit Tests Directly**:
    ```bash
    # Go package tests

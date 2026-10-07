@@ -124,6 +124,18 @@ nogo(
 
 gazelle(name = "gazelle")
 
+# The CI files that //tools:run_affected_tests_ci_parity_test checks the tool against.
+exports_files(
+    [
+        ".bazelrc",
+        ".github/actions/run-backend-tests/action.yml",
+        ".github/actions/run-chart-tests/action.yml",
+        ".github/actions/run-ui-tests/action.yml",
+        ".github/workflows/unit-tests.yml",
+    ],
+    visibility = ["//tools:__pkg__"],
+)
+
 filegroup(
     name = "internal_libs",
     srcs = [

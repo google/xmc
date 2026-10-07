@@ -41,6 +41,9 @@ from tools.common.tool_utils import HandledError  # noqa: E402
 ResolvedScope = run_affected_tests.ResolvedScope
 FailedTarget = run_affected_tests.FailedTarget
 BazelTestOutcome = run_affected_tests.BazelTestOutcome
+OtherSuite = run_affected_tests.OtherSuite
+UI_SUITE = run_affected_tests.UI_SUITE
+HELM_SUITE = run_affected_tests.HELM_SUITE
 
 CHANGED_FILES = ("cmd/x.go", "docs/a.md")
 FULL_SUITE = ("//...", "-//cmd/ui/...")
@@ -48,10 +51,29 @@ RDEPS_SCOPE = ResolvedScope(
     "rdeps", "discovered 2 affected bazel test targets", ("//tools:a_test", "//internal/x:x_test")
 )
 NONE_SCOPE = ResolvedScope("none", "only non-code or documentation files modified", ())
+UI_ONLY_SCOPE = ResolvedScope("none", "isolated frontend UI modifications", (), run_ui=True)
 FALLBACK_SCOPE = ResolvedScope("all", resolve_test_scope.RDEPS_QUERY_FAILED_REASON, FULL_SUITE)
 NO_TARGETS_SCOPE = ResolvedScope("all", resolve_test_scope.NO_RDEPS_TARGETS_REASON, FULL_SUITE)
 CORE_INFRA_SCOPE = ResolvedScope("all", "core infra modified or rdeps disabled", FULL_SUITE)
 EMULATOR_DEPENDENTS = ("//internal/x:x_test",)
+HELM_TRIGGER_FILES = (
+    "deploy/helm/values.yaml",
+    "deploy/helm/templates/server/deployment.yaml",
+    "deploy/ctk_v2/xmanager-cloud.yaml",
+    "test/helm/chart_test_lib.py",
+    ".github/workflows/unit-tests.yml",
+    ".github/actions/run-chart-tests/action.yml",
+)
+NON_HELM_FILES = (
+    "deploy/helmfile.yaml",
+    "deploy/ctk_v2/other.yaml",
+    "test/helmet/a.py",
+    "cmd/x.go",
+)
+SUITE_WARNING = (
+    "[run_affected_tests] Warning: CI also runs the {} suite for these changes; "
+    "run its commands from other_suites in the JSON result."
+)
 PASSING_OUTCOME = BazelTestOutcome(
     exit_code=0,
     exit_name="SUCCESS",
@@ -106,7 +128,7 @@ def completed(
 def resolver_json(scope: ResolvedScope) -> str:
     """Renders a scope the way resolve_test_scope.py prints it."""
     targets = " ".join(scope.bazel_targets)
-    fields = {"run_backend": bool(targets), "run_ui": False, "bazel_targets": targets}
+    fields = {"run_backend": bool(targets), "run_ui": scope.run_ui, "bazel_targets": targets}
     return json.dumps(fields | {"backend_mode": scope.backend_mode, "reason": scope.reason})
 
 
@@ -323,16 +345,26 @@ class ResolverContractTest(unittest.TestCase):
         targets = tuple(str(result["bazel_targets"]).split())
         self.assertEqual(targets, run_affected_tests.ALL_SCOPE.bazel_targets)
 
+    def test_ui_flag_does_not_depend_on_rdeps(self) -> None:
+        files = ["cmd/ui/src/main.ts", "internal/x/x.go"]
+        rdeps_targets = ["//internal/x:x_test"]
+        with mock.patch.object(
+            resolve_test_scope, "discover_bazel_rdeps_targets", return_value=rdeps_targets
+        ):
+            narrowed = resolve_test_scope.resolve_test_scope(files)
+        unnarrowed = resolve_test_scope.resolve_test_scope(files, use_rdeps=False)
+        self.assertEqual((narrowed["run_ui"], unnarrowed["run_ui"]), (True, True))
+
 
 class ResolveScopeTest(unittest.TestCase):
     """Tests for scoping changed files with resolve_test_scope.py."""
 
     def resolve_with(
-        self, proc: subprocess.CompletedProcess[str], stream: bool = False
+        self, proc: subprocess.CompletedProcess[str], stream: bool = False, use_rdeps: bool = True
     ) -> tuple[ResolvedScope, Any]:
         """Resolves a change set with run_captured returning proc; returns the scope and mock."""
         with mock.patch.object(run_affected_tests, "run_captured", return_value=proc) as run:
-            return run_affected_tests.resolve_scope(["tools/a.py"], stream), run
+            return run_affected_tests.resolve_scope(["tools/a.py"], stream, use_rdeps), run
 
     def stderr_of_resolution(self, stream: bool) -> str:
         """Returns what resolving writes to stderr when the resolver prints a DEBUG line."""
@@ -346,9 +378,17 @@ class ResolveScopeTest(unittest.TestCase):
         resolver_args = ["--event", "pull_request", "--github-output", "", "--files", "tools/a.py"]
         self.assertEqual(run.call_args.args[0], [*resolver, *resolver_args])
 
+    def test_without_rdeps_passes_no_rdeps_before_the_files(self) -> None:
+        _, run = self.resolve_with(completed(resolver_json(RDEPS_SCOPE)), use_rdeps=False)
+        self.assertEqual(run.call_args.args[0][-3:], ["--no-rdeps", "--files", "tools/a.py"])
+
     def test_parses_the_resolved_scope(self) -> None:
         scope, _ = self.resolve_with(completed(resolver_json(RDEPS_SCOPE)))
         self.assertEqual(scope, RDEPS_SCOPE)
+
+    def test_parses_the_ui_flag(self) -> None:
+        scope, _ = self.resolve_with(completed(resolver_json(UI_ONLY_SCOPE)))
+        self.assertEqual(scope, UI_ONLY_SCOPE)
 
     def test_streaming_copies_resolver_stderr_to_stderr(self) -> None:
         self.assertEqual(self.stderr_of_resolution(stream=True), "DEBUG x\n")
@@ -394,11 +434,16 @@ class SelectScopeTest(TempLogTestCase):
         return run_affected_tests.select_scope(CHANGED_FILES, self.log, run_all, warmup)
 
     def test_all_selects_the_full_suite(self) -> None:
-        self.assertEqual(self.select(run_all=True), (run_affected_tests.ALL_SCOPE, False))
+        selected = self.select(NONE_SCOPE, run_all=True)
+        self.assertEqual(selected, (run_affected_tests.ALL_SCOPE, False))
 
-    def test_all_skips_the_resolver(self) -> None:
-        self.select(run_all=True)
-        self.resolve.assert_not_called()
+    def test_all_resolves_without_rdeps(self) -> None:
+        self.select(NONE_SCOPE, run_all=True)
+        self.resolve.assert_called_once_with(CHANGED_FILES, self.log.stream, use_rdeps=False)
+
+    def test_all_keeps_the_ui_flag_of_the_resolver(self) -> None:
+        scope, _ = self.select(UI_ONLY_SCOPE, run_all=True)
+        self.assertEqual(scope, dataclasses.replace(run_affected_tests.ALL_SCOPE, run_ui=True))
 
     def test_narrowed_scope_needs_no_warmup(self) -> None:
         self.assertEqual(self.select(RDEPS_SCOPE), (RDEPS_SCOPE, False))
@@ -426,6 +471,50 @@ class SelectScopeTest(TempLogTestCase):
     def test_no_warmup_skips_the_warmup(self) -> None:
         self.select(FALLBACK_SCOPE, warmup=False)
         self.warmup.assert_not_called()
+
+
+class AffectedOtherSuitesTest(unittest.TestCase):
+    """Tests for finding the CI suites outside Bazel that changed files trigger."""
+
+    def test_ui_flag_selects_the_ui_suite(self) -> None:
+        suites = run_affected_tests.affected_other_suites(["cmd/ui/src/main.ts"], run_ui=True)
+        self.assertEqual(suites, (UI_SUITE,))
+
+    def test_chart_paths_select_the_helm_suite(self) -> None:
+        for path in HELM_TRIGGER_FILES:
+            with self.subTest(path=path):
+                suites = run_affected_tests.affected_other_suites([path], run_ui=False)
+                self.assertEqual(suites, (HELM_SUITE,))
+
+    def test_other_paths_select_no_suite(self) -> None:
+        self.assertEqual(run_affected_tests.affected_other_suites(NON_HELM_FILES, run_ui=False), ())
+
+    def test_ui_suite_comes_before_the_helm_suite(self) -> None:
+        suites = run_affected_tests.affected_other_suites(HELM_TRIGGER_FILES, run_ui=True)
+        self.assertEqual(suites, (UI_SUITE, HELM_SUITE))
+
+
+class LogScopeTest(unittest.TestCase):
+    """Tests for the scope summary and warnings written to stderr."""
+
+    def log_lines(self, scope: ResolvedScope, *other_suites: OtherSuite) -> list[str]:
+        """Returns the stderr lines that log_scope writes for scope and other_suites."""
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            run_affected_tests.log_scope(CHANGED_FILES, scope, other_suites)
+        return stderr.getvalue().splitlines()
+
+    def test_summarizes_the_scope_without_warnings(self) -> None:
+        summary = "2 changed files; rdeps: discovered 2 affected bazel test targets."
+        self.assertEqual(self.log_lines(RDEPS_SCOPE), [f"[run_affected_tests] {summary}"])
+
+    def test_warns_about_a_resolver_fallback(self) -> None:
+        warning = f"[run_affected_tests] Warning: {run_affected_tests.FALLBACK_EXPLANATION}"
+        self.assertEqual(self.log_lines(FALLBACK_SCOPE)[1:], [warning])
+
+    def test_warns_about_each_affected_other_suite(self) -> None:
+        warnings = self.log_lines(RDEPS_SCOPE, UI_SUITE, HELM_SUITE)[1:]
+        self.assertEqual(warnings, [SUITE_WARNING.format("ui"), SUITE_WARNING.format("helm")])
 
 
 class QueryEmulatorDependentsTest(unittest.TestCase):
@@ -804,6 +893,18 @@ class RunAffectedTestsTest(TempLogTestCase):
     def test_reports_emulator_required_for_dependent_targets(self) -> None:
         self.dependents.return_value = EMULATOR_DEPENDENTS
         self.assertTrue(self.run_affected(RDEPS_SCOPE, dry_run=True)["emulator_required"])
+
+    def test_reports_affected_other_suites_with_their_ci_commands(self) -> None:
+        result = self.run_affected(UI_ONLY_SCOPE, dry_run=True)
+        ui_suite = {
+            "name": "ui",
+            "working_directory": "cmd/ui",
+            "commands": list(UI_SUITE.commands),
+        }
+        self.assertEqual(json.loads(json.dumps(result["other_suites"])), [ui_suite])
+
+    def test_reports_no_other_suites_for_backend_changes(self) -> None:
+        self.assertEqual(self.run_affected(RDEPS_SCOPE, dry_run=True)["other_suites"], [])
 
     def test_dry_run_never_dials_a_required_unreachable_emulator(self) -> None:
         self.dependents.return_value = EMULATOR_DEPENDENTS

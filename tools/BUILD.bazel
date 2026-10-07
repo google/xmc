@@ -497,6 +497,37 @@ py_test(
     ],
 )
 
+py_library(
+    name = "ci_config_reader_lib",
+    testonly = True,
+    srcs = ["ci_config_reader.py"],
+    imports = ["."],
+)
+
+py_test(
+    name = "ci_config_reader_test",
+    srcs = ["ci_config_reader_test.py"],
+    imports = ["."],
+    deps = [":ci_config_reader_lib"],
+)
+
+py_test(
+    name = "run_affected_tests_ci_parity_test",
+    srcs = ["run_affected_tests_ci_parity_test.py"],
+    data = [
+        "//:.bazelrc",
+        "//:.github/actions/run-backend-tests/action.yml",
+        "//:.github/actions/run-chart-tests/action.yml",
+        "//:.github/actions/run-ui-tests/action.yml",
+        "//:.github/workflows/unit-tests.yml",
+    ],
+    imports = ["."],
+    deps = [
+        ":ci_config_reader_lib",
+        ":run_affected_tests_lib",
+    ],
+)
+
 alias(
     name = "extract_release_metadata_lib",
     actual = "//tools/release:extract_release_metadata_lib",

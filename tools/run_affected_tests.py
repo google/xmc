@@ -23,7 +23,9 @@ failed, external repositories are fetched once and the files are resolved again.
 Tests that need the Spanner emulator fail fast when it is unreachable. Bazel output
 goes to a log file (also streamed to stderr with --verbose or when stderr is a
 terminal), per-target results come from the Build Event Protocol, and stdout carries
-only the JSON result.
+only the JSON result. The UI and Helm chart suites run outside Bazel, so when CI would
+run them for the changes, the result lists them under other_suites with their CI
+commands instead of running them.
 
 Exit codes: 0 = tests passed, dry run, or nothing to run; 1 = handled error (test
 failures, unreachable Spanner emulator, git or Bazel problems); 2 = unhandled error.
@@ -31,6 +33,7 @@ failures, unreachable Spanner emulator, git or Bazel problems); 2 = unhandled er
 
 import argparse
 import dataclasses
+import fnmatch
 import functools
 import json
 import os
@@ -85,6 +88,32 @@ EMULATOR_PACKAGE = "//internal/storage/spanner/emulator"
 EMULATOR_IMAGE = "gcr.io/cloud-spanner-emulator/emulator:1.5.56"
 EMULATOR_CONNECT_TIMEOUT_SECONDS = 1.0
 
+# Commands of the .github/actions/run-ui-tests/action.yml steps, which CI runs in cmd/ui
+# when the resolver reports run_ui.
+UI_SUITE_COMMANDS = (
+    "npm ci --legacy-peer-deps --prefer-offline --no-audit",
+    "npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox",
+    "npx playwright install --with-deps chromium",
+    "npm run build",
+    "npm run test:screenshot",
+)
+# Paths filter of .github/actions/run-chart-tests/action.yml; its patterns are exact
+# paths or end in /**, which fnmatch matches like the action's glob filter.
+HELM_SUITE_PATH_PATTERNS = (
+    "deploy/helm/**",
+    "deploy/ctk_v2/xmanager-cloud.yaml",
+    "test/helm/**",
+    ".github/workflows/unit-tests.yml",
+    ".github/actions/run-chart-tests/**",
+)
+# Test commands of that action, with its step env inlined and without the CI-only Helm
+# install and `helm version` diagnostic.
+HELM_SUITE_COMMANDS = (
+    "helm lint deploy/helm",
+    "XMC_REQUIRE_HELM=1 python3 -m unittest discover --start-directory test/helm "
+    "--pattern '*_test.py' --verbose",
+)
+
 # Boolean command-line flags and their help texts.
 SWITCHES: tuple[tuple[str, str], ...] = (
     ("--all", "Run the full backend suite (//... -//cmd/ui/...) instead of the affected targets."),
@@ -97,11 +126,12 @@ SWITCHES: tuple[tuple[str, str], ...] = (
 
 @dataclasses.dataclass(frozen=True)
 class ResolvedScope:
-    """Backend test scope as reported by resolve_test_scope.py."""
+    """Test scope as reported by resolve_test_scope.py: backend targets and the UI flag."""
 
     backend_mode: str
     reason: str
     bazel_targets: tuple[str, ...]
+    run_ui: bool = False
 
     @property
     def fallback(self) -> bool:
@@ -111,6 +141,19 @@ class ResolvedScope:
 
 NO_CHANGES_SCOPE = ResolvedScope("none", "no files changed since the merge base", ())
 ALL_SCOPE = ResolvedScope("all", "--all selects the full backend suite", FULL_SUITE)
+
+
+@dataclasses.dataclass(frozen=True)
+class OtherSuite:
+    """A CI test suite that runs outside Bazel, with the commands CI runs for it."""
+
+    name: str
+    working_directory: str
+    commands: tuple[str, ...]
+
+
+UI_SUITE = OtherSuite("ui", "cmd/ui", UI_SUITE_COMMANDS)
+HELM_SUITE = OtherSuite("helm", ".", HELM_SUITE_COMMANDS)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -138,8 +181,8 @@ class BazelTestOutcome:
 class BazelLog:
     """Log file for Bazel output, also copied to stderr if stream is set.
 
-    path stays None until the first Bazel command creates the file in a new temporary
-    directory, so runs that start no Bazel command leave no files behind.
+    path stays None until the first warm-up or test run creates the file in a new temporary
+    directory, so runs without either leave no files behind.
     """
 
     def __init__(self, stream: bool) -> None:
@@ -237,13 +280,15 @@ def parse_scope(resolver_stdout: str) -> ResolvedScope:
         backend_mode=payload["backend_mode"],
         reason=payload["reason"],
         bazel_targets=tuple(payload["bazel_targets"].split()),
+        run_ui=bool(payload["run_ui"]),
     )
 
 
-def run_resolver(changed_files: Sequence[str], stream: bool) -> ResolvedScope:
+def run_resolver(changed_files: Sequence[str], stream: bool, use_rdeps: bool) -> ResolvedScope:
     """Scopes changed_files with resolve_test_scope.py using pull request semantics.
 
-    The resolver's stderr is copied to stderr if stream is set.
+    The resolver's stderr is copied to stderr if stream is set. Without use_rdeps, the
+    resolver runs with --no-rdeps and skips its Bazel query.
 
     Raises:
         HandledError: If the resolver exits non-zero.
@@ -251,7 +296,8 @@ def run_resolver(changed_files: Sequence[str], stream: bool) -> ResolvedScope:
     # Push, dispatch, and schedule events on main force the full suite, so pass the PR
     # event explicitly; an empty --github-output never appends to $GITHUB_OUTPUT.
     cmd = [sys.executable, str(RESOLVER_PATH), "--event", "pull_request", "--github-output", ""]
-    proc = run_captured([*cmd, "--files", *changed_files])
+    rdeps_flags = [] if use_rdeps else ["--no-rdeps"]
+    proc = run_captured([*cmd, *rdeps_flags, "--files", *changed_files])
     if stream:
         sys.stderr.write(proc.stderr)
     if proc.returncode == 0:
@@ -262,28 +308,32 @@ def run_resolver(changed_files: Sequence[str], stream: bool) -> ResolvedScope:
     )
 
 
-def resolve_scope(changed_files: Sequence[str], stream: bool) -> ResolvedScope:
-    """Returns the backend test scope of changed_files.
+def resolve_scope(
+    changed_files: Sequence[str], stream: bool, use_rdeps: bool = True
+) -> ResolvedScope:
+    """Returns the test scope of changed_files, narrowed by the rdeps query if use_rdeps.
 
     An empty change set means nothing to run: the resolver would read it as a broken
     CI checkout and pick the full suite, but git failures here raise HandledError.
     """
     if not changed_files:
         return NO_CHANGES_SCOPE
-    return run_resolver(changed_files, stream)
+    return run_resolver(changed_files, stream, use_rdeps)
 
 
 def select_scope(
     changed_files: Sequence[str], log: BazelLog, run_all: bool, warmup: bool
 ) -> tuple[ResolvedScope, bool]:
-    """Returns the backend test scope to run and whether the warm-up ran.
+    """Returns the test scope to run and whether the warm-up ran.
 
-    run_all selects the full suite without the resolver. If warmup is set and the
-    resolver's offline rdeps query failed, WARMUP_COMMAND fetches the external
-    repositories that the query needs and the files are resolved again.
+    run_all selects the full backend suite and runs the resolver without its rdeps query
+    only to learn whether CI runs the UI suite. If warmup is set and the resolver's
+    offline rdeps query failed, WARMUP_COMMAND fetches the external repositories that
+    the query needs and the files are resolved again.
     """
     if run_all:
-        return ALL_SCOPE, False
+        run_ui = resolve_scope(changed_files, log.stream, use_rdeps=False).run_ui
+        return dataclasses.replace(ALL_SCOPE, run_ui=run_ui), False
     scope = resolve_scope(changed_files, log.stream)
     if not scope.fallback or not warmup:
         return scope, False
@@ -291,6 +341,20 @@ def select_scope(
     if (code := run_logged(WARMUP_COMMAND, log, keep_stdout=False)) != 0:
         log_progress(f"Warning: the warm-up exited with code {code}; see {log.path}.")
     return resolve_scope(changed_files, log.stream), True
+
+
+def affected_other_suites(changed_files: Sequence[str], run_ui: bool) -> tuple[OtherSuite, ...]:
+    """Returns the suites outside Bazel that CI runs for changed_files, UI suite first.
+
+    CI runs the UI suite when the resolver reports run_ui and the Helm suite when a
+    changed file matches the paths filter of the run-chart-tests action.
+    """
+    run_helm = any(
+        fnmatch.fnmatchcase(path, pattern)
+        for path in changed_files
+        for pattern in HELM_SUITE_PATH_PATTERNS
+    )
+    return tuple(suite for suite, run in ((UI_SUITE, run_ui), (HELM_SUITE, run_helm)) if run)
 
 
 def query_emulator_dependents(targets: Sequence[str], stream: bool) -> tuple[str, ...] | None:
@@ -454,6 +518,20 @@ def raise_for_test_failure(outcome: BazelTestOutcome, report: Mapping[str, Any])
     )
 
 
+def log_scope(
+    changed_files: Sequence[str], scope: ResolvedScope, other_suites: Sequence[OtherSuite]
+) -> None:
+    """Logs the selected scope, warning about a resolver fallback and unrun other suites."""
+    log_progress(f"{len(changed_files)} changed files; {scope.backend_mode}: {scope.reason}.")
+    if scope.fallback:
+        log_progress(f"Warning: {FALLBACK_EXPLANATION}")
+    for suite in other_suites:
+        log_progress(
+            f"Warning: CI also runs the {suite.name} suite for these changes; run its "
+            "commands from other_suites in the JSON result."
+        )
+
+
 def describe_scope(
     base_ref: str, merge_base: str, changed_files: Sequence[str], scope: ResolvedScope
 ) -> dict[str, Any]:
@@ -477,14 +555,14 @@ def run_affected_tests(args: argparse.Namespace, env: Mapping[str, str]) -> dict
     scope, warmup_ran = select_scope(
         changed_files, log, run_all=args.all, warmup=not args.no_warmup
     )
-    log_progress(f"{len(changed_files)} changed files; {scope.backend_mode}: {scope.reason}.")
-    if scope.fallback:
-        log_progress(f"Warning: {FALLBACK_EXPLANATION}")
+    other_suites = affected_other_suites(changed_files, scope.run_ui)
+    log_scope(changed_files, scope, other_suites)
     emulator_required = targets_need_emulator(scope, log.stream)
     report = describe_scope(args.base_ref, merge_base, changed_files, scope) | {
         "dry_run": args.dry_run,
         "warmup_ran": warmup_ran,
         "emulator_required": emulator_required,
+        "other_suites": [dataclasses.asdict(suite) for suite in other_suites],
     }
     if args.dry_run or not scope.bazel_targets:
         # Only the warm-up can have created the log by now.

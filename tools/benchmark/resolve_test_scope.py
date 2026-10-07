@@ -116,9 +116,10 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
         if clean_f in CORE_INFRA_FILES:
             has_core_infra = True
 
+        # The UI action also gets backend scoping: a Bazel test checks the CI parity of
+        # tools/run_affected_tests.py against it.
         if clean_f.startswith(".github/actions/run-ui-tests/"):
             has_ui = True
-            continue
 
         if is_non_code_file(clean_f):
             continue

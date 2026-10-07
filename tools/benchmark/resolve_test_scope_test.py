@@ -256,6 +256,14 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertEqual(scope["reason"], NO_RDEPS_TARGETS_REASON)
 
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_resolve_test_scope_ui_action_runs_ui_and_full_backend_suites(self, _mock_run):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "BUILD.bazel").touch()
+            scope = resolve_test_scope([".github/actions/run-ui-tests/action.yml"], cwd=base)
+        self.assertEqual((scope["run_ui"], scope["backend_mode"]), (True, "all"))
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_get_git_modified_files_strips_quotes(self, mock_run):
         mock_diff = unittest.mock.Mock(
             returncode=0,
@@ -857,7 +865,7 @@ class TestResolveTestScope(unittest.TestCase):
         ui_action = classify_modified_files([".github/actions/run-ui-tests/action.yml"])
         self.assertFalse(ui_action["has_core_infra"])
         self.assertTrue(ui_action["has_ui"])
-        self.assertFalse(ui_action["has_backend"])
+        self.assertTrue(ui_action["has_backend"])
 
         unit_wf = classify_modified_files([".github/workflows/unit-tests.yml"])
         self.assertTrue(unit_wf["has_core_infra"])
