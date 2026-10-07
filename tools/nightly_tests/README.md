@@ -209,7 +209,7 @@ gh workflow run nightly-examples-e2e.yml --ref "${BRANCH_NAME}" -f examples_filt
 
 ## 3. Automated Example Coverage Gate & Explicit Opt-Out Policy
 
-To ensure new examples do not silently lack E2E verification, [`check_examples_coverage.py`](check_examples_coverage.py) enforces a repository gate in both [`.githooks/pre-commit`](../../.githooks/pre-commit) and [`.github/workflows/lint.yml`](../../.github/workflows/lint.yml) (as well as `bazel test //tools/nightly_tests:check_examples_coverage_test`).
+To ensure new examples do not silently lack E2E verification, [`check_examples_coverage.py`](check_examples_coverage.py) enforces a repository gate in both [`.githooks/pre-commit`](../../.githooks/pre-commit) and [`.github/workflows/lint.yml`](../../.github/workflows/lint.yml) whenever changes touch `examples/**`, `tools/nightly_tests/**`, or `.github/workflows/nightly-examples-e2e.yml` (as well as via `bazel test //tools/nightly_tests:check_examples_coverage_test`).
 
 ### What the Gate Checks
 

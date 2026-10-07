@@ -137,6 +137,14 @@ check_legacy_imports() {
 }
 
 check_examples_coverage() {
+  if [ "$MODE" != "check" ]; then
+    local relevant_files
+    relevant_files=$(git status --porcelain | awk '{print $NF}' | grep -E '^(examples/|tools/nightly_tests/|\.github/workflows/nightly-examples-e2e\.yml$)' || true)
+    if [ -z "$relevant_files" ]; then
+      return
+    fi
+  fi
+
   echo "--> Checking Nightly E2E Verification Coverage for examples/..."
   if ! XMC_BYPASS_VENV=1 python3 tools/nightly_tests/check_examples_coverage.py >/dev/null; then
     echo "❌ Nightly examples verification coverage check failed."

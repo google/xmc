@@ -60,6 +60,11 @@ jobs:
               - 'deploy/**/*.yml'
               - 'deploy/helm/**'
               - '.github/workflows/lint.yml'
+            examples_coverage:
+              - 'examples/**'
+              - 'tools/nightly_tests/**'
+              - '.github/workflows/nightly-examples-e2e.yml'
+              - '.github/workflows/lint.yml'
 
       # 1. Python Linting (Ruff & Mypy)
       - name: 'Install Ruff'
@@ -123,6 +128,7 @@ jobs:
           python3 tools/lint/check_legacy_imports.py
 
       - name: 'Check Nightly Examples Verification Coverage'
+        if: steps.changes.outputs.examples_coverage == 'true'
         env:
           XMC_BYPASS_VENV: '1'
         run: |
