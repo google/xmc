@@ -93,21 +93,11 @@ def collect_missing_artifacts(
     build_text: str,
     workflow_text: str,
 ) -> list[str]:
-    """Returns which of the 3 nightly verification artifacts are missing for `name`.
-
-    Args:
-        name: Example subdirectory name under `examples/`.
-        tests_dir: Path to `tools/nightly_tests`.
-        build_text: Contents of `tools/nightly_tests/BUILD.bazel`.
-        workflow_text: Contents of `.github/workflows/nightly-examples-e2e.yml`.
-
-    Returns:
-        List of human-readable descriptions for any missing verification artifacts.
-    """
+    """Returns which of the 3 nightly verification artifacts are missing for `name`."""
     missing: list[str] = []
     if not (tests_dir / f"{name}_verify.py").is_file():
         missing.append(f"tools/nightly_tests/{name}_verify.py")
-    if not re.search(rf'name\s*=\s*"{re.escape(name)}_verify"', build_text):
+    if not re.search(rf'name\s*=\s*["\']{re.escape(name)}_verify["\']', build_text):
         missing.append(f"py_binary '{name}_verify' in tools/nightly_tests/BUILD.bazel")
     if (
         f"examples/{name}" not in workflow_text
@@ -120,21 +110,32 @@ def collect_missing_artifacts(
     return missing
 
 
-def validate_exempt_registry(exempt_examples: Mapping[str, str]) -> list[str]:
-    """Validates that every entry in `exempt_examples` has a non-empty justification.
+def validate_exempt_registry(
+    exempt_examples: Mapping[str, str],
+    existing_names: set[str] | None = None,
+) -> list[str]:
+    """Validates that every entry in `exempt_examples` exists and has a justification.
 
     Args:
         exempt_examples: Mapping from example name to exemption justification.
+        existing_names: Optional set of existing example directory names under `examples/`.
 
     Returns:
-        List of violation messages for invalid registry entries.
+        List of violation messages for invalid or stale registry entries.
     """
-    return [
+    violations = [
         f"EXEMPT_EXAMPLES['{name}'] must provide a justification of at least "
         f"{MIN_JUSTIFICATION_LENGTH} characters."
         for name, reason in sorted(exempt_examples.items())
         if len(reason.strip()) < MIN_JUSTIFICATION_LENGTH
     ]
+    if existing_names is not None:
+        violations.extend(
+            f"EXEMPT_EXAMPLES contains stale exemption for non-existent example '{name}'."
+            for name in sorted(exempt_examples)
+            if name not in existing_names
+        )
+    return violations
 
 
 def _classify_artifact_state(
@@ -175,18 +176,7 @@ def evaluate_single_example(
     workflow_text: str,
     exempt_examples: Mapping[str, str],
 ) -> tuple[str, str | None]:
-    """Evaluates nightly verification coverage for a single `examples/<name>` directory.
-
-    Args:
-        example_dir: Path to `examples/<name>`.
-        tests_dir: Path to `tools/nightly_tests`.
-        build_text: Contents of `tools/nightly_tests/BUILD.bazel`.
-        workflow_text: Contents of `.github/workflows/nightly-examples-e2e.yml`.
-        exempt_examples: Mapping of centrally exempted example names to reasons.
-
-    Returns:
-        Tuple `(category, violation)` where category is `'covered'`, `'exempt'`, or `'violation'`.
-    """
+    """Evaluates nightly verification coverage for a single `examples/<name>` directory."""
     name = example_dir.name
     has_marker, marker_reason = read_opt_out_reason(example_dir)
     if has_marker and len(marker_reason) < MIN_JUSTIFICATION_LENGTH:
@@ -210,28 +200,31 @@ def _list_example_dirs(examples_dir: pathlib.Path) -> list[pathlib.Path]:
     )
 
 
-def audit_examples_coverage(
-    repo_root: pathlib.Path,
-    exempt_examples: Mapping[str, str] | None = None,
-) -> CoverageReport:
-    """Audits all `examples/` subdirectories for nightly E2E verification coverage.
-
-    Args:
-        repo_root: Root directory of the XMC repository.
-        exempt_examples: Optional override mapping for exempted examples.
-
-    Returns:
-        A `CoverageReport` containing covered, exempt, and violating examples.
-    """
-    registry = EXEMPT_EXAMPLES if exempt_examples is None else exempt_examples
-    violations = validate_exempt_registry(registry)
+def _read_repo_texts(repo_root: pathlib.Path) -> tuple[pathlib.Path, str, str]:
+    """Loads `BUILD.bazel` and `nightly-examples-e2e.yml` text from `repo_root`."""
     tests_dir = repo_root / "tools" / "nightly_tests"
     build_path = tests_dir / "BUILD.bazel"
     workflow_path = repo_root / ".github" / "workflows" / "nightly-examples-e2e.yml"
     build_text = build_path.read_text(encoding="utf-8") if build_path.is_file() else ""
     workflow_text = workflow_path.read_text(encoding="utf-8") if workflow_path.is_file() else ""
+    return tests_dir, build_text, workflow_text
+
+
+def audit_examples_coverage(
+    repo_root: pathlib.Path,
+    exempt_examples: Mapping[str, str] | None = None,
+) -> CoverageReport:
+    """Audits all `examples/` subdirectories for nightly E2E verification coverage."""
+    examples_dir = repo_root / "examples"
+    if not examples_dir.is_dir():
+        msg = f"Invalid repository root: '{repo_root}' (examples/ directory not found)."
+        return CoverageReport(covered=[], exempt=[], violations=[msg])
+    registry = EXEMPT_EXAMPLES if exempt_examples is None else exempt_examples
+    example_dirs = _list_example_dirs(examples_dir)
+    violations = validate_exempt_registry(registry, {d.name for d in example_dirs})
+    tests_dir, build_text, workflow_text = _read_repo_texts(repo_root)
     covered, exempt = [], []
-    for example_dir in _list_example_dirs(repo_root / "examples"):
+    for example_dir in example_dirs:
         category, violation = evaluate_single_example(
             example_dir, tests_dir, build_text, workflow_text, registry
         )
@@ -287,7 +280,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             "violations": report.violations,
         }
-        print(json.dumps(payload, indent=2))
+        print(json.dumps(payload, indent=2), file=sys.stderr)
         for violation in report.violations:
             print(f"❌ {violation}", file=sys.stderr)
         return 1

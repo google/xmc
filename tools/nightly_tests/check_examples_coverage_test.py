@@ -158,26 +158,69 @@ class CheckExamplesCoverageTest(unittest.TestCase):
         """Short or empty EXEMPT_EXAMPLES reasons are flagged as violations."""
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
-            _seed_repo(root)
+            examples_dir, _, _ = _seed_repo(root)
+            (examples_dir / "bad_entry").mkdir()
             report = check_examples_coverage.audit_examples_coverage(
                 root, exempt_examples={"bad_entry": "too short"}
             )
             self.assertEqual(len(report.violations), 1)
             self.assertIn("EXEMPT_EXAMPLES['bad_entry']", report.violations[0])
 
+    def test_stale_exempt_registry_entry_fails(self) -> None:
+        """An EXEMPT_EXAMPLES entry for a non-existent directory under examples/ fails."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            _seed_repo(root)
+            report = check_examples_coverage.audit_examples_coverage(
+                root,
+                exempt_examples={"deleted_job": "Valid justification for a deleted directory."},
+            )
+            self.assertEqual(len(report.violations), 1)
+            self.assertIn(
+                "stale exemption for non-existent example 'deleted_job'", report.violations[0]
+            )
+
+    def test_missing_examples_dir_fails(self) -> None:
+        """Passing a repository root without an examples/ directory produces a violation."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples={})
+            self.assertEqual(len(report.violations), 1)
+            self.assertIn("examples/ directory not found", report.violations[0])
+
+    def test_single_quoted_build_target_passes(self) -> None:
+        """Single-quoted py_binary name in BUILD.bazel is accepted."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            _wire_example(root, "single_quote_job")
+            build_path = root / "tools" / "nightly_tests" / "BUILD.bazel"
+            build_path.write_text(
+                "py_binary(name = 'single_quote_job_verify', srcs = ['single_quote_job_verify.py'])\n",
+                encoding="utf-8",
+            )
+            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples={})
+            self.assertEqual(report.covered, ["single_quote_job"])
+            self.assertEqual(report.violations, [])
+
     def test_cli_main_exit_codes(self) -> None:
-        """main() returns 0 when compliant and 1 when violations exist."""
+        """main() returns 0 when compliant and writes error JSON to stderr when violations exist."""
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             _wire_example(root, "valid_job")
-            with mock.patch("sys.stdout", new_callable=io.StringIO):
+            with (
+                mock.patch.dict(check_examples_coverage.EXEMPT_EXAMPLES, {}, clear=True),
+                mock.patch("sys.stdout", new_callable=io.StringIO),
+            ):
                 self.assertEqual(check_examples_coverage.main(["--repo-root", str(root)]), 0)
             (root / "examples" / "missing_job").mkdir()
             with (
-                mock.patch("sys.stdout", new_callable=io.StringIO),
-                mock.patch("sys.stderr", new_callable=io.StringIO),
+                mock.patch.dict(check_examples_coverage.EXEMPT_EXAMPLES, {}, clear=True),
+                mock.patch("sys.stdout", new_callable=io.StringIO) as mock_out,
+                mock.patch("sys.stderr", new_callable=io.StringIO) as mock_err,
             ):
                 self.assertEqual(check_examples_coverage.main(["--repo-root", str(root)]), 1)
+                self.assertEqual(mock_out.getvalue(), "")
+                self.assertIn('"status": "error"', mock_err.getvalue())
 
 
 if __name__ == "__main__":
