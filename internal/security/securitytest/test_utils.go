@@ -22,8 +22,7 @@ import (
 	"testing"
 
 	"github.com/tink-crypto/tink-go/v2/jwt"
-	"tink/go/insecuresecretdataaccess/insecuresecretdataaccess"
-	"tink/integration/go/jwt/jwtkeyconverter"
+	"xmanager_cloud/internal/security/jwtkeyset"
 )
 
 var (
@@ -44,15 +43,14 @@ func init() {
 func MustCreateTestSigner(t *testing.T) func() (jwt.Signer, error) {
 	t.Helper()
 
-	options := jwtkeyconverter.Options{
+	options := jwtkeyset.Options{
 		RSAAlgorithm: "RS256",
 	}
 
-	keysetHandle, err := jwtkeyconverter.PrivateKeyToKeysetHandle(
+	keysetHandle, err := jwtkeyset.PrivateKeyToKeysetHandle(
 		testPrivKey,
 		nil,
 		options,
-		insecuresecretdataaccess.Token{},
 	)
 	if err != nil {
 		t.Fatalf("failed to convert private key to keyset handle: %v", err)
@@ -71,8 +69,8 @@ func MustCreateTestSigner(t *testing.T) func() (jwt.Signer, error) {
 // MustCreateTestVerifier creates a test verifier.
 func MustCreateTestVerifier(t *testing.T) func() (jwt.Verifier, error) {
 	t.Helper()
-	publicKeysetHandle, err := jwtkeyconverter.PublicKeysToJwtPublicKeyset(
-		[]crypto.PublicKey{testPubKey}, &jwtkeyconverter.Options{RSAAlgorithm: "RS256"})
+	publicKeysetHandle, err := jwtkeyset.PublicKeysToJwtPublicKeyset(
+		[]crypto.PublicKey{testPubKey}, &jwtkeyset.Options{RSAAlgorithm: "RS256"})
 	if err != nil {
 		t.Fatalf("Failed to convert public key to JWT public keyset: %v", err)
 	}

@@ -31,8 +31,7 @@ import (
 	"time"
 
 	"github.com/tink-crypto/tink-go/v2/jwt"
-	"tink/go/insecuresecretdataaccess/insecuresecretdataaccess"
-	"tink/integration/go/jwt/jwtkeyconverter"
+	"xmanager_cloud/internal/security/jwtkeyset"
 	"xmanager_cloud/logging/logging"
 )
 
@@ -263,15 +262,14 @@ func convertToSigner(block *pem.Block, _ []any, _ int) (jwt.Signer, []any, error
 		return nil, nil, errors.New("signing key is not an RSA private key")
 	}
 
-	options := jwtkeyconverter.Options{
+	options := jwtkeyset.Options{
 		RSAAlgorithm: "RS256",
 	}
 
-	keysetHandle, err := jwtkeyconverter.PrivateKeyToKeysetHandle(
+	keysetHandle, err := jwtkeyset.PrivateKeyToKeysetHandle(
 		rsaPrivateKey,
 		nil,
 		options,
-		insecuresecretdataaccess.Token{},
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to convert private key to keyset handle: %w", err)
@@ -299,8 +297,8 @@ func convertToVerifier(block *pem.Block, recentCerts []x509.Certificate, maxRece
 		newRecentCerts = newRecentCerts[len(newRecentCerts)-maxRecentKeys:]
 	}
 
-	publicKeysetHandle, err := jwtkeyconverter.PublicKeysToJwtPublicKeyset(
-		publicKeys(newRecentCerts), &jwtkeyconverter.Options{RSAAlgorithm: "RS256"})
+	publicKeysetHandle, err := jwtkeyset.PublicKeysToJwtPublicKeyset(
+		publicKeys(newRecentCerts), &jwtkeyset.Options{RSAAlgorithm: "RS256"})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to convert public key to JWT public keyset: %w", err)
 	}

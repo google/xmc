@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package jwtkeyconverter
+// Package jwtkeyset converts standard RSA keys and PEM blocks into Tink JWT keyset handles.
+package jwtkeyset
 
 import (
 	"bytes"
 	"crypto"
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"math/big"
@@ -28,14 +31,15 @@ import (
 	jwt_rsa_ssa_pkcs1_go_proto "github.com/tink-crypto/tink-go/v2/proto/jwt_rsa_ssa_pkcs1_go_proto"
 	tink_go_proto "github.com/tink-crypto/tink-go/v2/proto/tink_go_proto"
 	"google.golang.org/protobuf/proto"
-	"tink/go/insecuresecretdataaccess/insecuresecretdataaccess"
 )
 
+// Options configures JWT key conversion parameters.
 type Options struct {
 	RSAAlgorithm string
 }
 
-func PrivateKeyToKeysetHandle(privKey *rsa.PrivateKey, keyID *uint32, options Options, token insecuresecretdataaccess.Token) (*keyset.Handle, error) {
+// PrivateKeyToKeysetHandle converts an *rsa.PrivateKey into a Tink JWT signing keyset handle.
+func PrivateKeyToKeysetHandle(privKey *rsa.PrivateKey, keyID *uint32, options Options) (*keyset.Handle, error) {
 	if privKey == nil {
 		return nil, errors.New("nil private key")
 	}
@@ -118,6 +122,7 @@ func PrivateKeyToKeysetHandle(privKey *rsa.PrivateKey, keyID *uint32, options Op
 	return handle, nil
 }
 
+// PublicKeysToJwtPublicKeyset converts a slice of RSA public keys into a Tink JWT verification keyset handle.
 func PublicKeysToJwtPublicKeyset(keys []crypto.PublicKey, options *Options) (*keyset.Handle, error) {
 	if len(keys) == 0 {
 		return nil, errors.New("empty keys list")
@@ -142,7 +147,7 @@ func PublicKeysToJwtPublicKeyset(keys []crypto.PublicKey, options *Options) (*ke
 	var keysetKeys []*tink_go_proto.Keyset_Key
 	for idx, key := range keys {
 		rsaPubKey, ok := key.(*rsa.PublicKey)
-		if !ok {
+		if !ok || rsaPubKey == nil {
 			return nil, fmt.Errorf("key %d is not *rsa.PublicKey", idx)
 		}
 
@@ -191,4 +196,54 @@ func PublicKeysToJwtPublicKeyset(keys []crypto.PublicKey, options *Options) (*ke
 	}
 
 	return handle, nil
+}
+
+// FromPrivatePEM parses a PEM-encoded PKCS#8 or PKCS#1 RSA private key into a Tink keyset handle.
+func FromPrivatePEM(pemData []byte, options Options) (*keyset.Handle, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return nil, errors.New("failed to decode PEM block")
+	}
+
+	var parsedKey any
+	var err error
+	if block.Type == "RSA PRIVATE KEY" {
+		parsedKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	} else {
+		parsedKey, err = x509.ParsePKCS8PrivateKey(block.Bytes)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	rsaPrivKey, ok := parsedKey.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("key is not an RSA private key")
+	}
+	return PrivateKeyToKeysetHandle(rsaPrivKey, nil, options)
+}
+
+// FromPublicPEM parses a PEM-encoded X.509 certificate or PKIX RSA public key into a Tink keyset handle.
+func FromPublicPEM(pemData []byte, options *Options) (*keyset.Handle, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return nil, errors.New("failed to decode PEM block")
+	}
+
+	var pubKey any
+	if block.Type == "CERTIFICATE" {
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse certificate: %w", err)
+		}
+		pubKey = cert.PublicKey
+	} else {
+		parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse public key: %w", err)
+		}
+		pubKey = parsed
+	}
+
+	return PublicKeysToJwtPublicKeyset([]crypto.PublicKey{pubKey}, options)
 }

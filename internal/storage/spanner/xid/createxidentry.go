@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"googlesql/safesql/go/safesql"
 	timestamppb "protobuf/timestamp_go_proto"
+	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/logging/logging"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/validator/validator"

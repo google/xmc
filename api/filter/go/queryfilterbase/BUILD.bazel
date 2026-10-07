@@ -24,6 +24,6 @@ go_library(
         # keep
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filtervisitor",
-        "//internal/compat/safesql",
+        "//internal/safesql",
     ],
 )

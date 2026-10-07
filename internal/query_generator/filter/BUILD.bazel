@@ -25,7 +25,7 @@ go_library(
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filtervisitor",
         "//api/filter/go/queryfilterbase",
-        "//internal/compat/safesql",
+        "//internal/safesql",
         "//internal/compat/spanner",
     ],
 )
@@ -42,7 +42,7 @@ go_test(
         "//api/filter/go/queryfilterbase",
         "//internal/compat/cmp",
         "//internal/compat/proto",
-        "//internal/compat/safesql",
+        "//internal/safesql",
         "//internal/compat/spanner",
         "//internal/compat/status",
     ],

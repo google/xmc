@@ -23,7 +23,7 @@ import (
 
 	fpb "api/filter/filter_expression_go_proto"
 	"api/filter/go/filtervisitor"
-	"googlesql/safesql/go/safesql"
+	"xmanager_cloud/internal/safesql"
 )
 
 var IntConst = filtervisitor.CustomType("INT_CONST")
@@ -44,8 +44,7 @@ type QueryFilterVisitor interface {
 	GetIsRHS() bool
 	SetIsHAS(isHAS bool)
 	GetIsHAS() bool
-	GetSQL() string
-	SetSQL(s string)
+	CaptureSQL(fn func() error) (safesql.TrustedSQLString, error)
 	HandleMember(path []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error)
 	HandleFunction(functionName string, args []*fpb.Expression) (bool, filtervisitor.PrimType, error)
 	TranslateRestriction(r *fpb.Restriction) (bool, *fpb.Restriction)
@@ -200,16 +199,18 @@ func VisitDisjunction(qfv QueryFilterVisitor, exprs []*fpb.Expression) (filtervi
 			processedGroups[key] = true
 			g := groups[key]
 			_, colSQL, _ := qfv.HandleDisjunction(g.path)
-			oldSQL := qfv.GetSQL()
-			qfv.SetSQL("")
-			qfv.AppendBindingStringArray(g.values)
-			paramSQL := qfv.GetSQL()
-			qfv.SetSQL(oldSQL)
+			paramSQL, err := qfv.CaptureSQL(func() error {
+				qfv.AppendBindingStringArray(g.values)
+				return nil
+			})
+			if err != nil {
+				return filtervisitor.Invalid, err
+			}
 
 			if hasFirst {
 				qfv.AppendTrustedSQL(safesql.New(" OR "))
 			}
-			qfv.AppendTrustedSQL(safesql.New("(" + colSQL.String() + " IN UNNEST (" + paramSQL + "))"))
+			qfv.AppendTrustedSQL(safesql.Concat(safesql.New("("), colSQL, safesql.New(" IN UNNEST ("), paramSQL, safesql.New("))")))
 			hasFirst = true
 		}
 	}
@@ -218,17 +219,17 @@ func VisitDisjunction(qfv QueryFilterVisitor, exprs []*fpb.Expression) (filtervi
 }
 
 func NegationExp(qfv QueryFilterVisitor, e *fpb.Expression) (filtervisitor.PrimType, error) {
-	oldSQL := qfv.GetSQL()
-	qfv.SetSQL("")
-	t, err := filtervisitor.Visit(qfv, e)
+	var t filtervisitor.PrimType
+	childSQL, err := qfv.CaptureSQL(func() error {
+		var visitErr error
+		t, visitErr = filtervisitor.Visit(qfv, e)
+		return visitErr
+	})
 	if err != nil {
-		qfv.SetSQL(oldSQL)
 		return filtervisitor.Invalid, err
 	}
-	childSQL := qfv.GetSQL()
-	qfv.SetSQL(oldSQL)
 
-	qfv.AppendTrustedSQL(safesql.New("NOT " + childSQL))
+	qfv.AppendTrustedSQL(safesql.Concat(safesql.New("NOT "), childSQL))
 	return t, nil
 }
 
@@ -258,7 +259,7 @@ func checkArrayHasCompatibility(lhsElem, rhsType filtervisitor.PrimType) bool {
 	return isNumericOrBool(lhsElem.Name) && isStringy(rhsType.Name)
 }
 
-func handleHasRestriction(qfv QueryFilterVisitor, lhs, rhs *fpb.Expression, lhsType, rhsType filtervisitor.PrimType, lhsSQL, rhsSQL string) (filtervisitor.PrimType, error) {
+func handleHasRestriction(qfv QueryFilterVisitor, lhs, rhs *fpb.Expression, lhsType, rhsType filtervisitor.PrimType, lhsSQL, rhsSQL safesql.TrustedSQLString) (filtervisitor.PrimType, error) {
 	isLhsArray := false
 	var lhsArrayElemType filtervisitor.PrimType
 	var path []string
@@ -285,7 +286,7 @@ func handleHasRestriction(qfv QueryFilterVisitor, lhs, rhs *fpb.Expression, lhsT
 		if !checkArrayHasCompatibility(lhsArrayElemType, rhsType) {
 			return filtervisitor.Invalid, fmt.Errorf("type mismatch in array HAS: array element is %v, RHS is %v", lhsArrayElemType.Name, rhsType.Name)
 		}
-		qfv.AppendTrustedSQL(safesql.New("(" + rhsSQL + " IN " + lhsSQL + ")"))
+		qfv.AppendTrustedSQL(safesql.Concat(safesql.New("("), rhsSQL, safesql.New(" IN "), lhsSQL, safesql.New(")")))
 		return filtervisitor.Invalid, nil
 	}
 
@@ -300,15 +301,15 @@ func handleHasRestriction(qfv QueryFilterVisitor, lhs, rhs *fpb.Expression, lhsT
 	}
 
 	if qfv.GetExpOptions().UseHasOperatorAsContains {
-		qfv.AppendTrustedSQL(safesql.New("(STRPOS(" + lhsSQL + " , " + rhsSQL + ") > 0)"))
+		qfv.AppendTrustedSQL(safesql.Concat(safesql.New("(STRPOS("), lhsSQL, safesql.New(" , "), rhsSQL, safesql.New(") > 0)")))
 		return filtervisitor.Invalid, nil
 	}
 
-	qfv.AppendTrustedSQL(safesql.New("(REGEXP_CONTAINS(" + lhsSQL + " , " + rhsSQL + "))"))
+	qfv.AppendTrustedSQL(safesql.Concat(safesql.New("(REGEXP_CONTAINS("), lhsSQL, safesql.New(" , "), rhsSQL, safesql.New("))")))
 	return filtervisitor.Invalid, nil
 }
 
-func handleRegexpRestriction(qfv QueryFilterVisitor, op fpb.Restriction_Comparator, lhsType, rhsType filtervisitor.PrimType, lhsSQL, rhsSQL string) (filtervisitor.PrimType, error) {
+func handleRegexpRestriction(qfv QueryFilterVisitor, op fpb.Restriction_Comparator, lhsType, rhsType filtervisitor.PrimType, lhsSQL, rhsSQL safesql.TrustedSQLString) (filtervisitor.PrimType, error) {
 	if !lhsType.Equals(filtervisitor.String) && !lhsType.Equals(filtervisitor.Bytes) {
 		return filtervisitor.Invalid, fmt.Errorf("regexp matching operator is not supported for type %v", lhsType.Name)
 	}
@@ -317,9 +318,9 @@ func handleRegexpRestriction(qfv QueryFilterVisitor, op fpb.Restriction_Comparat
 	}
 
 	if op == fpb.Restriction_REGEXP_MATCH {
-		qfv.AppendTrustedSQL(safesql.New("(REGEXP_CONTAINS(" + lhsSQL + " , " + rhsSQL + "))"))
+		qfv.AppendTrustedSQL(safesql.Concat(safesql.New("(REGEXP_CONTAINS("), lhsSQL, safesql.New(" , "), rhsSQL, safesql.New("))")))
 	} else {
-		qfv.AppendTrustedSQL(safesql.New("(NOT (REGEXP_CONTAINS(" + lhsSQL + " , " + rhsSQL + ")))"))
+		qfv.AppendTrustedSQL(safesql.Concat(safesql.New("(NOT (REGEXP_CONTAINS("), lhsSQL, safesql.New(" , "), rhsSQL, safesql.New(")))")))
 	}
 	return filtervisitor.Invalid, nil
 }
@@ -363,28 +364,29 @@ func RestrictionExp(qfv QueryFilterVisitor, r *fpb.Restriction) (filtervisitor.P
 	}()
 
 	// Capture LHS!
-	oldSQL := qfv.GetSQL()
-	qfv.SetSQL("")
-	lhsType, err := filtervisitor.Visit(qfv, lhs)
+	var lhsType filtervisitor.PrimType
+	lhsSQL, err := qfv.CaptureSQL(func() error {
+		var visitErr error
+		lhsType, visitErr = filtervisitor.Visit(qfv, lhs)
+		return visitErr
+	})
 	if err != nil {
-		qfv.SetSQL(oldSQL)
 		return filtervisitor.Invalid, err
 	}
-	lhsSQL := qfv.GetSQL()
-	qfv.SetSQL(oldSQL)
 
 	// Propagate lastType and capture RHS!
 	qfv.SetLastType(lhsType)
 	qfv.SetIsRHS(true)
-	qfv.SetSQL("")
-	rhsType, err := filtervisitor.Visit(qfv, rhs)
+	var rhsType filtervisitor.PrimType
+	rhsSQL, err := qfv.CaptureSQL(func() error {
+		var visitErr error
+		rhsType, visitErr = filtervisitor.Visit(qfv, rhs)
+		return visitErr
+	})
+	qfv.SetIsRHS(false)
 	if err != nil {
-		qfv.SetSQL(oldSQL)
 		return filtervisitor.Invalid, err
 	}
-	rhsSQL := qfv.GetSQL()
-	qfv.SetSQL(oldSQL)
-	qfv.SetIsRHS(false)
 
 	// Enforce strict/legacy-fallback type compatibility!
 	isCompatible := lhsType.Compatible(rhsType)
@@ -412,25 +414,25 @@ func RestrictionExp(qfv QueryFilterVisitor, r *fpb.Restriction) (filtervisitor.P
 	}
 
 	// Format comparison operators
-	opSQL := ""
+	var opSQL safesql.TrustedSQLString
 	switch op {
 	case fpb.Restriction_EQUALS:
-		opSQL = " = "
+		opSQL = safesql.New(" = ")
 	case fpb.Restriction_NOT_EQUALS:
-		opSQL = " != "
+		opSQL = safesql.New(" != ")
 	case fpb.Restriction_LESS_THAN:
-		opSQL = " < "
+		opSQL = safesql.New(" < ")
 	case fpb.Restriction_LESS_EQUALS:
-		opSQL = " <= "
+		opSQL = safesql.New(" <= ")
 	case fpb.Restriction_GREATER_THAN:
-		opSQL = " > "
+		opSQL = safesql.New(" > ")
 	case fpb.Restriction_GREATER_EQUALS:
-		opSQL = " >= "
+		opSQL = safesql.New(" >= ")
 	default:
-		opSQL = " = "
+		opSQL = safesql.New(" = ")
 	}
 
-	qfv.AppendTrustedSQL(safesql.New("(" + lhsSQL + opSQL + rhsSQL + ")"))
+	qfv.AppendTrustedSQL(safesql.Concat(safesql.New("("), lhsSQL, opSQL, rhsSQL, safesql.New(")")))
 	return filtervisitor.Invalid, nil
 }
 

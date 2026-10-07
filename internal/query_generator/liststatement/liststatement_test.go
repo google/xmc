@@ -21,7 +21,7 @@ import (
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/cmp/cmp"
 	"golang/cmp/cmpopts/cmpopts"
-	"googlesql/safesql/go/safesql"
+	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/query_generator/querytools"
 )
 

@@ -10,11 +10,11 @@ go_library(
     deps = [
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filter",
-        "//internal/compat/safesql",
         "//internal/compat/spanner",
         "//internal/compat/status",
         "//internal/logging",
         "//internal/query_generator/querytools",
+        "//internal/safesql",
         "@com_google_cloud_go_spanner//:spanner",
     ],
 )
@@ -27,10 +27,10 @@ go_test(
         "//api/filter:filter_expression_go_proto",
         "//internal/compat/cmp",
         "//internal/compat/cmpopts",
-        "//internal/compat/safesql",
         "//internal/compat/spanner",
         "//internal/compat/status",
         "//internal/query_generator/querytools",
+        "//internal/safesql",
         "@com_google_cloud_go_spanner//:spanner",
     ],
 )

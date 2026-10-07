@@ -22,8 +22,8 @@ import (
 
 	fepb "api/filter/filter_expression_go_proto"
 	aipfilter "api/filter/go/filter"
-	"googlesql/safesql/go/safesql"
 	"task/go/status"
+	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/query_generator/querytools"
 

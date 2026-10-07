@@ -15,12 +15,12 @@ go_library(
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filtervisitor",
         "//internal/compat/proto",
-        "//internal/compat/safesql",
         "//internal/compat/spanner",
         "//internal/compat/status",
         "//internal/logging",
         "//internal/query_generator/equalityvisitor",
         "//internal/query_generator/filter",
+        "//internal/safesql",
     ],
 )
 
@@ -35,9 +35,9 @@ go_test(
         "//internal/compat/cmp",
         "//internal/compat/cmpopts",
         "//internal/compat/protocmp",
-        "//internal/compat/safesql",
         "//internal/compat/spanner",
         "//internal/compat/status",
         "//internal/query_generator/predicate",
+        "//internal/safesql",
     ],
 )
