@@ -330,6 +330,7 @@ class CommonTest(unittest.TestCase):
                 expected_queue="cpu-queue",
                 expected_worker_names=["w1"],
                 timeout_sec=60,
+                wait_for_completion=True,
             )
 
     def test_assert_work_unit_jobsets(self) -> None:
@@ -465,8 +466,30 @@ class CommonTest(unittest.TestCase):
                 expected_jobs=[{"name": "demo-worker-1", "replicas": 1}],
                 expected_worker_names=["demo-worker-1", "demo-worker-2"],
                 extra_step=None,
+                wait_for_completion=False,
             )
+            mock_stub.BatchStopWorkUnits.assert_called_once()
             mock_channel.close.assert_called_once()
+
+    def test_verify_standard_workload_stops_work_units_on_assertion_failure(self) -> None:
+        mock_stub, mock_channel = mock.MagicMock(), mock.MagicMock()
+        mock_stub.GetExperiment.side_effect = AssertionError("title mismatch")
+        with (
+            mock.patch.object(
+                common, "get_flag", side_effect=lambda _, k, d=None: "16" if k == "xid" else d
+            ),
+            mock.patch(
+                "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+                return_value=(mock_stub, mock_channel),
+            ),
+            mock.patch("sys.stderr", new_callable=io.StringIO),
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            common.verify_standard_workload(
+                ["script.py"], "Banner", "Summary", "Title", wait_for_completion=False
+            )
+        self.assertEqual(ctx.exception.code, 1)
+        mock_stub.BatchStopWorkUnits.assert_called_once()
 
     def test_verify_standard_workload_exit_codes(self) -> None:
         mock_stub = mock.MagicMock()
@@ -579,6 +602,65 @@ class CommonTest(unittest.TestCase):
                         timeout_sec=20,
                         strict_required=expected_strict,
                     )
+
+    def test_assert_dashboard(self) -> None:
+        dash_payload = {
+            "id": "dash_1",
+            "title": "VCC Dashboard",
+            "chart_ids": ["c1", "c2", "c3"],
+            "charts": [{"name": "c1", "title": "Loss"}, {"id": "c2", "title": "Acc"}],
+        }
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.validate_dashboard",
+            return_value=[dash_payload],
+        ) as mock_val:
+            res = common.assert_dashboard("http://localhost:8080", "dash_1", "VCC", min_charts=3)
+            self.assertEqual(res, dash_payload)
+            mock_val.assert_called_once_with(
+                endpoint="http://localhost:8080",
+                expected_dashboards=[
+                    {"dashboard_id": "dash_1", "expected_title": "VCC", "min_charts": 3}
+                ],
+                timeout_sec=120,
+            )
+        with (
+            mock.patch(
+                "tools.nightly_tests.xmc_entities_validator.validate_dashboard", return_value=[]
+            ),
+            self.assertRaisesRegex(AssertionError, "was not returned by endpoint"),
+        ):
+            common.assert_dashboard("http://localhost:8080", "dash_1", "VCC")
+
+    def test_verify_dashboard_workload(self) -> None:
+        dash_payload = {
+            "id": "example_vcc_comparison_42",
+            "title": "VCC Comparative",
+            "chart_ids": ["c1", "c2", "c3"],
+            "charts": [{"name": "c1", "title": "Loss"}],
+        }
+        flags_map = {"xid": "42", "dashboard_endpoint": "localhost:9090"}
+        with (
+            mock.patch.object(
+                common, "get_flag", side_effect=lambda _, k, d=None: flags_map.get(k, d)
+            ),
+            mock.patch(
+                "tools.nightly_tests.xmc_entities_validator.validate_dashboard",
+                return_value=[dash_payload],
+            ) as mock_val,
+            mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,
+        ):
+            common.verify_dashboard_workload(
+                ["script.py"],
+                banner_title="Dashboard Banner",
+                summary_title="DASHBOARD PASSED",
+                default_dashboard_id="example_vcc_comparison",
+                expected_title_pattern="VCC",
+                expected_min_charts=3,
+            )
+            mock_val.assert_called_once()
+            out = mock_stdout.getvalue()
+            self.assertIn("example_vcc_comparison_42", out)
+            self.assertIn("DASHBOARD PASSED", out)
 
 
 if __name__ == "__main__":

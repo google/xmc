@@ -33,6 +33,7 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/ingestion_gateway/ingestiongateway",
     visibility = [
         "//cmd/ingestion_gateway:__subpackages__",
+        "//test/e2e:__pkg__",
         "//test/metrics:__pkg__",
     ],
     deps = [

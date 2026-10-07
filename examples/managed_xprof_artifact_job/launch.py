@@ -39,6 +39,7 @@ def _build_work_unit(
     image_path: str,
     queue_name: str,
     programmatic_steps: int = 10,
+    total_steps: int = 10000,
     matrix_size: int = 2000,
 ) -> work_unit_pb2.WorkUnit:
     """Builds a single-job WorkUnit running the JAX profiler workload."""
@@ -68,6 +69,7 @@ def _build_work_unit(
                                 "-u",
                                 "/app/worker.py",
                                 f"--programmatic_steps={programmatic_steps}",
+                                f"--total_steps={total_steps}",
                                 f"--matrix_size={matrix_size}",
                             ],
                             resources=resources,
@@ -128,6 +130,12 @@ def main() -> None:
         help="Initial steps traced programmatically (default: 10)",
     )
     parser.add_argument(
+        "--total_steps",
+        type=int,
+        default=10000,
+        help="Total steps to run (default: 10000)",
+    )
+    parser.add_argument(
         "--matrix_size",
         type=int,
         default=2000,
@@ -168,6 +176,7 @@ def main() -> None:
                 args.image_path,
                 args.queue_name,
                 programmatic_steps=args.programmatic_steps,
+                total_steps=args.total_steps,
                 matrix_size=args.matrix_size,
             )
             created_wu = stub.create_work_unit(
