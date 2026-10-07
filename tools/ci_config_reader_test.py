@@ -159,18 +159,21 @@ class ActionReaderTest(unittest.TestCase):
     def test_action_input_defaults_unquote_defaults_and_skip_other_keys(self) -> None:
         self.assertEqual(ci_config_reader.action_input_defaults(ACTION), INPUTS)
 
-    def test_action_input_defaults_name_an_input_without_a_quoted_default(self) -> None:
-        for definition in ("    required: true\n", "    default: 2\n"):
-            action = f"name: 'Fixture'\ninputs:\n  level:\n{definition}\nruns:\n"
-            with self.subTest(definition=definition), self.assertRaisesRegex(ValueError, "'level'"):
-                ci_config_reader.action_input_defaults(action)
+    def test_action_input_defaults_reject_an_unquoted_default(self) -> None:
+        action = "name: 'Fixture'\ninputs:\n  level:\n    default: 2\nruns:\n"
+        with self.assertRaisesRegex(ValueError, "'level' needs a quoted default"):
+            ci_config_reader.action_input_defaults(action)
+
+    def test_action_input_defaults_skip_an_input_without_a_default(self) -> None:
+        action = ACTION.replace("inputs:\n", "inputs:\n  token:\n    required: true\n")
+        self.assertEqual(ci_config_reader.action_input_defaults(action), INPUTS)
 
     def test_substitute_inputs_keeps_other_expressions(self) -> None:
         text = ci_config_reader.substitute_inputs("${{ inputs.level }} ${{ github.ref }}", INPUTS)
         self.assertEqual(text, "2 ${{ github.ref }}")
 
-    def test_substitute_inputs_rejects_an_undefined_input(self) -> None:
-        with self.assertRaisesRegex(ValueError, "'missing'"):
+    def test_substitute_inputs_rejects_an_input_without_a_value(self) -> None:
+        with self.assertRaisesRegex(ValueError, "'missing' has no value"):
             ci_config_reader.substitute_inputs("${{ inputs.missing }}", INPUTS)
 
     def test_step_env_substitutes_inputs(self) -> None:

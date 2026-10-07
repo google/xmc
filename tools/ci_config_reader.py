@@ -70,16 +70,19 @@ def action_steps(action_text: str) -> dict[str, str]:
 
 
 def action_input_defaults(action_text: str) -> dict[str, str]:
-    """Maps the inputs of an action.yml to their defaults.
+    """Maps the inputs of an action.yml that have a default to that default.
 
-    Raises ValueError naming the input if a default is missing or unquoted, since an
+    Inputs without a default are left out, so substitute_inputs reports one only where a
+    step uses it. Raises ValueError naming the input if a default is unquoted, since an
     unquoted scalar such as 1.10 may not read as the string that CI passes.
     """
     inputs_text = action_text.partition("\ninputs:\n")[2].partition("\nruns:\n")[0] + "\n"
     defaults: dict[str, str] = {}
     for name, definition in INPUT_PATTERN.findall(inputs_text):
         default = re.search(r"^    default:(.*)$", definition, re.MULTILINE)
-        if not default or not default[1].strip().startswith(("'", '"')):
+        if not default:
+            continue
+        if not default[1].strip().startswith(("'", '"')):
             raise ValueError(f"Input {name!r} needs a quoted default.")
         defaults[name] = yaml_scalar(default[1])
     return defaults
@@ -88,12 +91,12 @@ def action_input_defaults(action_text: str) -> dict[str, str]:
 def substitute_inputs(text: str, inputs: Mapping[str, str]) -> str:
     """Replaces the ${{ inputs.NAME }} expressions in text with their values in inputs.
 
-    Raises ValueError naming an input that inputs does not define.
+    Raises ValueError naming an input that has no value in inputs.
     """
 
     def input_value(match: re.Match[str]) -> str:
         if match[1] not in inputs:
-            raise ValueError(f"Input {match[1]!r} is not defined.")
+            raise ValueError(f"Input {match[1]!r} has no value.")
         return inputs[match[1]]
 
     return re.sub(r"\$\{\{\s*inputs\.([\w-]+)\s*\}\}", input_value, text)
