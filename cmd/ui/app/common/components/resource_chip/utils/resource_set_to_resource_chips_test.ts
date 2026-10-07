@@ -68,6 +68,36 @@ describe('resourceSetsToResourceChipsData', () => {
     expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
   });
 
+  it('should handle CPU resources with missing or negative memoryBytes', () => {
+    const resources: ResourceSet[] = [
+      { cpuResources: { cpuMillicores: '1000' } },
+      { cpuResources: { cpuMillicores: '1000', memoryBytes: '-1024' } },
+    ];
+    const expected: ResourceChipData[] = [
+      { resourceType: ResourceType.CPU, text: '1 core' },
+      { resourceType: ResourceType.MEMORY, text: '0 B' },
+      { resourceType: ResourceType.CPU, text: '1 core' },
+      { resourceType: ResourceType.MEMORY, text: '0 B' },
+    ];
+    expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
+  });
+
+  it('should cap memory unit at YB for extremely large memoryBytes', () => {
+    const resources: ResourceSet[] = [
+      {
+        cpuResources: {
+          cpuMillicores: '1000',
+          memoryBytes: String(Math.pow(1024, 9)),
+        },
+      },
+    ];
+    const expected: ResourceChipData[] = [
+      { resourceType: ResourceType.CPU, text: '1 core' },
+      { resourceType: ResourceType.MEMORY, text: '1024 YB' },
+    ];
+    expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
+  });
+
   it('should convert GPU resources correctly', () => {
     const resources: ResourceSet[] = [
       {

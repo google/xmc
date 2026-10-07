@@ -33,12 +33,12 @@ function formatCoreCount(cores: number): string {
 }
 
 function formatBytes(bytes: number, decimals = 2): string {
-  if (bytes === 0) {
+  if (isNaN(bytes) || bytes <= 0) {
     return '0 B';
   }
   const k = 1024;
   const dm = Math.max(0, decimals);
-  const unitIndex = Math.floor(Math.log(bytes) / Math.log(k));
+  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), BYTE_UNITS.length - 1);
   return `${parseFloat((bytes / Math.pow(k, unitIndex)).toFixed(dm))} ${BYTE_UNITS[unitIndex]}`;
 }
 
