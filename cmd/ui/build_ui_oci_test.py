@@ -53,40 +53,16 @@ class BuildUiOciTest(unittest.TestCase):
         actual_hash = build_ui_oci.get_sha256(test_file)
         self.assertEqual(actual_hash, expected_hash)
 
-    def test_translate_imports_rewrites_legacy_paths(self):
-        """Verifies translate_imports replaces Google-internal paths with npm packages."""
-        sample_code = """
-import { MatButtonModule } from 'third_party/javascript/angular_components/material';
-import { MatDialog } from "third_party/javascript/angular_components/material";
-import { APP_CONSTS } from 'third_party/xmanager_cloud/ui/consts';
-import { THEME } from "third_party/xmanager_cloud/ui/consts";
-import { COLORS } from 'third_party/xmanager_cloud/ui/custom_colors';
-import { PALETTE } from "third_party/xmanager_cloud/ui/custom_colors";
-"""
-        translated = build_ui_oci.translate_imports(sample_code)
-
-        self.assertNotIn("third_party/javascript/angular_components/material", translated)
-        self.assertIn("'@angular/material'", translated)
-        self.assertIn('"@angular/material"', translated)
-        self.assertNotIn("third_party/xmanager_cloud/ui/consts", translated)
-        self.assertIn("'consts'", translated)
-        self.assertIn('"consts"', translated)
-        self.assertNotIn("third_party/xmanager_cloud/ui/custom_colors", translated)
-        self.assertIn("'custom_colors'", translated)
-        self.assertIn('"custom_colors"', translated)
-
-    def test_copy_flat_copies_and_translates_sources(self):
-        """Verifies copy_flat copies sources, rewrites imports, and preserves binaries."""
+    def test_copy_flat_copies_sources(self):
+        """Verifies copy_flat copies sources and static assets."""
         src_dir = os.path.join(self.test_dir, "src")
         dest_dir = os.path.join(self.test_dir, "dest")
         os.makedirs(os.path.join(src_dir, "app"), exist_ok=True)
 
-        # Create a TypeScript file requiring translation
         ts_path = os.path.join(src_dir, "app", "main.ts")
         with open(ts_path, "w", encoding="utf-8") as f:
-            f.write("import 'third_party/javascript/angular_components/material';")
+            f.write("import '@angular/material';")
 
-        # Create a static asset
         static_path = os.path.join(src_dir, "app", "logo.svg")
         with open(static_path, "w", encoding="utf-8") as f:
             f.write("<svg></svg>")

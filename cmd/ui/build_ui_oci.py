@@ -51,30 +51,13 @@ def get_sha256(filepath: str) -> str:
     return h.hexdigest()
 
 
-def translate_imports(content: str) -> str:
-    """Translates legacy Angular import strings to npm package name."""
-    content = content.replace(
-        "'third_party/javascript/angular_components/material'",
-        "'@angular/material'",
-    )
-    content = content.replace(
-        '"third_party/javascript/angular_components/material"',
-        '"@angular/material"',
-    )
-    content = content.replace("'third_party/xmanager_cloud/ui/consts'", "'consts'")
-    content = content.replace('"third_party/xmanager_cloud/ui/consts"', '"consts"')
-    content = content.replace("'third_party/xmanager_cloud/ui/custom_colors'", "'custom_colors'")
-    return content.replace('"third_party/xmanager_cloud/ui/custom_colors"', '"custom_colors"')
-
-
 def copy_flat(src_dir: str, dest_dir: str):
-    """Copies UI source files resolving symlinks and translating legacy imports.
+    """Copies UI source files resolving symlinks into flat physical files.
 
     Bazel sandboxes and monorepos often rely heavily on symlinks. When building
     in Docker, symlinks pointing outside the build context fail. This function
-    recursively traverses `src_dir`, dereferences symlinks into flat physical files
-    in `dest_dir`, and rewrites Google-internal/monorepo import paths into standard
-    npm package names required by Angular CLI.
+    recursively traverses `src_dir` and dereferences symlinks into flat physical
+    files in `dest_dir`.
 
     Defensive safeguards:
       - Symlink cycles: Tracks canonical real paths (`os.path.realpath`) in `visited`
@@ -117,16 +100,7 @@ def copy_flat(src_dir: str, dest_dir: str):
             dest_path = os.path.join(dest_dir, rel_path)
             try:
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                if file.endswith((".scss", ".ts", ".html")):
-                    with open(full_path, encoding="utf-8", errors="ignore") as f:
-                        content = f.read()
-
-                    translated = translate_imports(content)
-
-                    with open(dest_path, "w", encoding="utf-8") as f:
-                        f.write(translated)
-                else:
-                    shutil.copy2(full_path, dest_path)
+                shutil.copy2(full_path, dest_path)
             except OSError as e:
                 print(f"ERROR: Failed to copy {full_path} to {dest_path}: {e}", file=sys.stderr)
                 raise
