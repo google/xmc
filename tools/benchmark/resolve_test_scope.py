@@ -81,6 +81,10 @@ BUILD_FILE_NAMES: set[str] = {
     "BUILD",
 }
 
+# Full-suite reasons after rdeps scoping; tools/run_affected_tests.py imports the first one.
+RDEPS_QUERY_FAILED_REASON = "fallback to full backend suite: bazel rdeps query failed"
+NO_RDEPS_TARGETS_REASON = "fallback to full backend suite for modified files"
+
 
 def is_non_code_file(path_str: str) -> bool:
     """Returns True if the file path is a pure documentation, legal, or deployment artifact."""
@@ -500,10 +504,11 @@ def find_enclosing_bazel_package(file_path: str, cwd: Path | None = None) -> str
     return f"//{parent_posix}"
 
 
-def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> list[str]:
+def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> list[str] | None:
     """Runs Bazel query to discover unit test targets that transitively depend on changed packages.
 
-    Returns empty list if Bazel is unavailable or query fails.
+    Returns an empty list if the files cannot be scoped to packages or the query matches no
+    test targets, and None if Bazel is unavailable or the query fails or times out.
     """
     changed_pkgs: set[str] = set()
     for f in files:
@@ -553,19 +558,19 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
             timeout=30,
             cwd=cwd,
         )
-        if res.returncode == 0 and res.stdout.strip():
+        if res.returncode == 0:
             targets = [t.strip() for t in res.stdout.splitlines() if t.strip().startswith("//")]
             return [t for t in targets if t not in EXCLUDED_TEST_TARGETS]
-        if res.returncode != 0:
-            print(
-                f"Warning: bazel query failed with exit code {res.returncode}: {res.stderr.strip()}",
-                file=sys.stderr,
-            )
+        print(
+            f"Warning: bazel query failed with exit code {res.returncode}: {res.stderr.strip()}",
+            file=sys.stderr,
+        )
     except Exception as e:
         print(f"Warning: bazel query encountered exception: {e}", file=sys.stderr)
 
-    # Return empty list on failure so resolve_test_scope safely falls back to the full test suite
-    return []
+    # Return None on failure so resolve_test_scope falls back to the full test suite with
+    # RDEPS_QUERY_FAILED_REASON.
+    return None
 
 
 def resolve_test_scope(
@@ -651,7 +656,7 @@ def resolve_test_scope(
         "run_ui": run_ui,
         "backend_mode": "all",
         "bazel_targets": "//... -//cmd/ui/...",
-        "reason": "fallback to full backend suite for modified files",
+        "reason": RDEPS_QUERY_FAILED_REASON if rdeps_targets is None else NO_RDEPS_TARGETS_REASON,
     }
 
 

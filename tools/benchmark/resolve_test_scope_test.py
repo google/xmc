@@ -25,6 +25,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tools.benchmark.resolve_test_scope import (
+    NO_RDEPS_TARGETS_REASON,
+    RDEPS_QUERY_FAILED_REASON,
     _correlate_rebased_parent_tip,
     _get_merge_base,
     _normalize_subject,
@@ -188,6 +190,7 @@ class TestResolveTestScope(unittest.TestCase):
             ),
         )
         targets = discover_bazel_rdeps_targets(["cmd/ui/server.py", "pkg/auth/oauth2/handlers.go"])
+        assert targets is not None
         self.assertIn("//pkg/auth/oauth2:oauth2_test", targets)
         self.assertIn("//cmd/xid_service/server:server_test", targets)
         self.assertIn("//cmd/ui:server_test", targets)
@@ -198,7 +201,7 @@ class TestResolveTestScope(unittest.TestCase):
     def test_discover_bazel_rdeps_targets_exception_safety(self, mock_run):
         mock_run.side_effect = Exception("Bazel timeout")
         targets = discover_bazel_rdeps_targets(["pkg/auth/oauth2/handlers.go"])
-        self.assertEqual(targets, [])
+        self.assertIsNone(targets)
 
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_discover_bazel_rdeps_targets_nonzero_exit_code(self, mock_run):
@@ -208,7 +211,12 @@ class TestResolveTestScope(unittest.TestCase):
             stderr="ERROR: Failed to run bazel query",
         )
         targets = discover_bazel_rdeps_targets(["pkg/auth/oauth2/handlers.go"])
-        self.assertEqual(targets, [])
+        self.assertIsNone(targets)
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_discover_bazel_rdeps_targets_empty_result(self, mock_run):
+        mock_run.return_value = unittest.mock.Mock(returncode=0, stdout="", stderr="")
+        self.assertEqual(discover_bazel_rdeps_targets(["pkg/auth/oauth2/handlers.go"]), [])
 
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_resolve_test_scope_rdeps_failure_falls_back_to_all(self, mock_run):
@@ -221,7 +229,7 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertTrue(scope["run_backend"])
         self.assertEqual(scope["backend_mode"], "all")
         self.assertEqual(scope["bazel_targets"], "//... -//cmd/ui/...")
-        self.assertEqual(scope["reason"], "fallback to full backend suite for modified files")
+        self.assertEqual(scope["reason"], RDEPS_QUERY_FAILED_REASON)
 
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_resolve_test_scope_rdeps_exception_falls_back_to_all(self, mock_run):
@@ -230,7 +238,22 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertTrue(scope["run_backend"])
         self.assertEqual(scope["backend_mode"], "all")
         self.assertEqual(scope["bazel_targets"], "//... -//cmd/ui/...")
-        self.assertEqual(scope["reason"], "fallback to full backend suite for modified files")
+        self.assertEqual(scope["reason"], RDEPS_QUERY_FAILED_REASON)
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_resolve_test_scope_rdeps_without_targets_falls_back_to_all(self, mock_run):
+        mock_run.return_value = unittest.mock.Mock(returncode=0, stdout="", stderr="")
+        scope = resolve_test_scope(["pkg/auth/oauth2/handlers.go"], use_rdeps=True)
+        self.assertEqual(scope["reason"], NO_RDEPS_TARGETS_REASON)
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_resolve_test_scope_unscoped_root_file_skips_the_query(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "BUILD.bazel").touch()
+            scope = resolve_test_scope([".github/workflows/lint.yml"], cwd=base)
+        mock_run.assert_not_called()
+        self.assertEqual(scope["reason"], NO_RDEPS_TARGETS_REASON)
 
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_get_git_modified_files_strips_quotes(self, mock_run):
@@ -341,6 +364,7 @@ class TestResolveTestScope(unittest.TestCase):
                 ["internal/storage/spanner/migrations/ess/001_baseline.up.sql"],
                 cwd=base,
             )
+            assert targets is not None
             self.assertIn("//internal/storage/spanner/migrations:migrations_test", targets)
             self.assertIn("//cmd/xid_service/server:server_test", targets)
             # Verify the query argument used the enclosing package

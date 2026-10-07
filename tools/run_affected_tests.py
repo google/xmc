@@ -18,18 +18,24 @@
 Files changed since the merge base of --base-ref and HEAD (committed, staged,
 unstaged, or untracked) are scoped by tools/benchmark/resolve_test_scope.py with pull
 request semantics, and the resolved targets run under `bazel test` with the CI test
-flags. Bazel output goes to a log file (also streamed to stderr with --verbose or when
-stderr is a terminal), per-target results come from the Build Event Protocol, and
-stdout carries only the JSON result.
+flags. If the resolver falls back to the full suite because its offline rdeps query
+failed, external repositories are fetched once and the files are resolved again.
+Tests that need the Spanner emulator fail fast when it is unreachable. Bazel output
+goes to a log file (also streamed to stderr with --verbose or when stderr is a
+terminal), per-target results come from the Build Event Protocol, and stdout carries
+only the JSON result.
 
 Exit codes: 0 = tests passed, dry run, or nothing to run; 1 = handled error (test
-failures, git or Bazel problems); 2 = unhandled error.
+failures, unreachable Spanner emulator, git or Bazel problems); 2 = unhandled error.
 """
 
 import argparse
 import dataclasses
+import functools
 import json
+import os
 import shlex
+import socket
 import subprocess
 import sys
 import tempfile
@@ -42,6 +48,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from tools.benchmark.resolve_test_scope import RDEPS_QUERY_FAILED_REASON  # noqa: E402
 from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 
 RESOLVER_PATH = _REPO_ROOT / "tools" / "benchmark" / "resolve_test_scope.py"
@@ -57,10 +64,33 @@ BAZEL_TEST_FLAGS: tuple[str, ...] = (
 PASSED_STATUSES = frozenset({"PASSED", "FLAKY"})
 # Test statuses of targets that never ran, e.g. because the build failed before testing.
 NOT_RUN_STATUSES = frozenset({"NO_STATUS", "TOOL_HALTED_BEFORE_TESTING"})
+# Default targets of the CI `bazel test` step, which the resolver also uses as its full suite.
+FULL_SUITE = ("//...", "-//cmd/ui/...")
+
+# Why the full suite runs when the resolver reports RDEPS_QUERY_FAILED_REASON.
+FALLBACK_EXPLANATION = (
+    "resolve_test_scope.py could not narrow the scope because its offline (--fetch=false) "
+    "rdeps query failed or timed out; run with --verbose to see its warning."
+)
+# Fetches the external repositories that the offline rdeps query needs; unlike
+# `bazel fetch //...`, it also reaches repositories behind platform select() branches.
+WARMUP_QUERY = "deps(//... except //cmd/ui/...)"
+WARMUP_COMMAND = ("bazel", "query", "--keep_going", "--noimplicit_deps", WARMUP_QUERY)
+
+# The override variable and default mirror internal/storage/spanner/emulator/emulator.go.
+EMULATOR_HOST_ENV = "SPANNER_EMULATOR_HOST"
+DEFAULT_EMULATOR_HOST = "localhost:9010"
+EMULATOR_PACKAGE = "//internal/storage/spanner/emulator"
+# The emulator image that .github/workflows/unit-tests.yml runs.
+EMULATOR_IMAGE = "gcr.io/cloud-spanner-emulator/emulator:1.5.56"
+EMULATOR_CONNECT_TIMEOUT_SECONDS = 1.0
 
 # Boolean command-line flags and their help texts.
 SWITCHES: tuple[tuple[str, str], ...] = (
+    ("--all", "Run the full backend suite (//... -//cmd/ui/...) instead of the affected targets."),
     ("--dry-run", "Print the resolved scope without running tests."),
+    ("--no-warmup", "Skip the repository fetch and re-resolve after a failed rdeps query."),
+    ("--skip-emulator-check", "Run tests even if the Spanner emulator they need is unreachable."),
     ("--verbose", "Stream Bazel and resolver output to stderr even if it is not a terminal."),
 )
 
@@ -73,8 +103,14 @@ class ResolvedScope:
     reason: str
     bazel_targets: tuple[str, ...]
 
+    @property
+    def fallback(self) -> bool:
+        """Whether the resolver ran the full suite because its rdeps query failed."""
+        return self.reason == RDEPS_QUERY_FAILED_REASON
+
 
 NO_CHANGES_SCOPE = ResolvedScope("none", "no files changed since the merge base", ())
+ALL_SCOPE = ResolvedScope("all", "--all selects the full backend suite", FULL_SUITE)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -142,6 +178,11 @@ def run_captured(cmd: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return run_at_repo_root(cmd, capture_output=True, text=True)
 
 
+def last_stderr_line(proc: subprocess.CompletedProcess[str]) -> str:
+    """Returns the last stderr line of a captured process, which usually names its error."""
+    return (proc.stderr.strip().splitlines() or ["no output"])[-1]
+
+
 def run_git(git_args: Sequence[str]) -> str:
     """Returns the stdout of git run with git_args at the repository root.
 
@@ -171,19 +212,22 @@ def collect_changed_files(base_ref: str) -> tuple[str, tuple[str, ...]]:
     return merge_base, tuple(sorted({path for path in (*tracked, *untracked) if path}))
 
 
-def run_logged(cmd: Sequence[str], log: BazelLog) -> int:
-    """Runs cmd with its combined output appended to the log file; returns the exit code.
+def run_logged(cmd: Sequence[str], log: BazelLog, keep_stdout: bool = True) -> int:
+    """Runs cmd with its output appended to the log file; returns the exit code.
 
-    When streaming, `tee` also copies the output to stderr.
+    When streaming, `tee` also copies the output to stderr. With keep_stdout=False only
+    stderr is kept, e.g. to drop the label list that the warm-up query prints.
     """
     log_progress(f"Running: {shlex.join(cmd)}")
     log_path = log.ensure_path()
     if not log.stream:
         with log_path.open("ab") as sink:
-            return run_at_repo_root(cmd, stdout=sink, stderr=subprocess.STDOUT).returncode
+            log_stdout = sink if keep_stdout else subprocess.DEVNULL
+            return run_at_repo_root(cmd, stdout=log_stdout, stderr=sink).returncode
     tee_cmd = ["tee", "-a", str(log_path)]
     with subprocess.Popen(tee_cmd, stdin=subprocess.PIPE, stdout=sys.stderr) as tee:
-        return run_at_repo_root(cmd, stdout=tee.stdin, stderr=subprocess.STDOUT).returncode
+        tee_stdout = tee.stdin if keep_stdout else subprocess.DEVNULL
+        return run_at_repo_root(cmd, stdout=tee_stdout, stderr=tee.stdin).returncode
 
 
 def parse_scope(resolver_stdout: str) -> ResolvedScope:
@@ -212,9 +256,8 @@ def run_resolver(changed_files: Sequence[str], stream: bool) -> ResolvedScope:
         sys.stderr.write(proc.stderr)
     if proc.returncode == 0:
         return parse_scope(proc.stdout)
-    last_line = (proc.stderr.strip().splitlines() or ["no output"])[-1]
     raise HandledError(
-        f"{RESOLVER_PATH.name} exited with code {proc.returncode}: {last_line}",
+        f"{RESOLVER_PATH.name} exited with code {proc.returncode}: {last_stderr_line(proc)}",
         "Re-run with --verbose to see its full output, then fix the error.",
     )
 
@@ -230,10 +273,111 @@ def resolve_scope(changed_files: Sequence[str], stream: bool) -> ResolvedScope:
     return run_resolver(changed_files, stream)
 
 
-def build_bazel_test_command(targets: Sequence[str], bep_path: Path) -> list[str]:
-    """Builds the `bazel test` command line with the CI test flags and a BEP JSON file."""
+def select_scope(
+    changed_files: Sequence[str], log: BazelLog, run_all: bool, warmup: bool
+) -> tuple[ResolvedScope, bool]:
+    """Returns the backend test scope to run and whether the warm-up ran.
+
+    run_all selects the full suite without the resolver. If warmup is set and the
+    resolver's offline rdeps query failed, WARMUP_COMMAND fetches the external
+    repositories that the query needs and the files are resolved again.
+    """
+    if run_all:
+        return ALL_SCOPE, False
+    scope = resolve_scope(changed_files, log.stream)
+    if not scope.fallback or not warmup:
+        return scope, False
+    log_progress("The resolver's rdeps query failed; fetching repositories once.")
+    if (code := run_logged(WARMUP_COMMAND, log, keep_stdout=False)) != 0:
+        log_progress(f"Warning: the warm-up exited with code {code}; see {log.path}.")
+    return resolve_scope(changed_files, log.stream), True
+
+
+def query_emulator_dependents(targets: Sequence[str], stream: bool) -> tuple[str, ...] | None:
+    """Returns the targets that transitively depend on EMULATOR_PACKAGE, or None on error.
+
+    The query's stderr is copied to stderr if stream is set; a failure logs its last line.
+    """
+    expr = f"let t = set({' '.join(targets)}) in $t intersect rdeps($t, {EMULATOR_PACKAGE}:all)"
+    proc = run_captured(["bazel", "query", "--fetch=false", "--noimplicit_deps", expr])
+    if stream:
+        sys.stderr.write(proc.stderr)
+    if proc.returncode == 0:
+        return tuple(line for line in proc.stdout.splitlines() if line.startswith("//"))
+    log_progress(f"The emulator dependency query failed: {last_stderr_line(proc)}")
+    return None
+
+
+def targets_need_emulator(scope: ResolvedScope, stream: bool) -> bool:
+    """Returns whether any target of scope may need the Spanner emulator.
+
+    The full backend suite always does, and a failed dependency query counts as a
+    dependency so that the pre-flight stays conservative.
+    """
+    if scope.backend_mode == "all":
+        return True
+    if not scope.bazel_targets:
+        return False
+    dependents = query_emulator_dependents(scope.bazel_targets, stream)
+    if dependents is None:
+        log_progress("Assuming the affected tests need the Spanner emulator.")
+    return dependents is None or bool(dependents)
+
+
+def parse_emulator_address(address: str) -> tuple[str, int]:
+    """Splits an emulator address such as localhost:9010 or [::1]:9010 into host and port.
+
+    Raises:
+        HandledError: If address is not HOST:PORT with a port from 1 to 65535.
+    """
+    host, _, port = address.rpartition(":")
+    host = host.removeprefix("[").removesuffix("]")
+    if host and port.isdecimal() and 0 < int(port) < 65536:
+        return host, int(port)
+    raise HandledError(
+        f"{EMULATOR_HOST_ENV}={address!r} is not a HOST:PORT address.",
+        f"Set {EMULATOR_HOST_ENV} to the emulator address, e.g. {DEFAULT_EMULATOR_HOST}.",
+    )
+
+
+def is_port_open(host: str, port: int) -> bool:
+    """Returns whether a TCP connection to host:port succeeds."""
+    try:
+        with socket.create_connection((host, port), timeout=EMULATOR_CONNECT_TIMEOUT_SECONDS):
+            return True
+    except OSError:
+        return False
+
+
+def ensure_emulator_reachable(env: Mapping[str, str]) -> None:
+    """Fails fast unless the Spanner emulator at SPANNER_EMULATOR_HOST accepts connections.
+
+    Raises:
+        HandledError: If the address is malformed or nothing listens on it.
+    """
+    address = env.get(EMULATOR_HOST_ENV) or DEFAULT_EMULATOR_HOST
+    if is_port_open(*parse_emulator_address(address)):
+        return
+    raise HandledError(
+        f"The affected tests need the Spanner emulator, but nothing listens on {address}.",
+        f"Start it with `docker run -d -p 9010:9010 -p 9020:9020 {EMULATOR_IMAGE}` (see "
+        "'Running Spanner Database Health Unit Tests' in docs/developer.md), set "
+        f"{EMULATOR_HOST_ENV} if it listens elsewhere, or re-run with --skip-emulator-check.",
+    )
+
+
+def build_bazel_test_command(
+    targets: Sequence[str], env: Mapping[str, str], bep_path: Path
+) -> list[str]:
+    """Builds the `bazel test` command line with the CI test flags and a BEP JSON file.
+
+    Bazel runs tests without the client environment, so a set SPANNER_EMULATOR_HOST is
+    passed with --test_env; otherwise the tests dial the default address.
+    """
+    emulator_host = env.get(EMULATOR_HOST_ENV)
+    test_env = [f"--test_env={EMULATOR_HOST_ENV}={emulator_host}"] if emulator_host else []
     bep_flag = f"--build_event_json_file={bep_path}"
-    return ["bazel", "test", *BAZEL_TEST_FLAGS, bep_flag, "--", *targets]
+    return ["bazel", "test", *BAZEL_TEST_FLAGS, *test_env, bep_flag, "--", *targets]
 
 
 def file_uri_to_path(uri: str) -> str:
@@ -285,11 +429,13 @@ def read_test_outcome(bep_path: Path, exit_code: int, log_path: Path) -> BazelTe
     )
 
 
-def run_bazel_tests(targets: Sequence[str], log: BazelLog) -> BazelTestOutcome:
+def run_bazel_tests(
+    targets: Sequence[str], env: Mapping[str, str], log: BazelLog
+) -> BazelTestOutcome:
     """Runs `bazel test` on targets with its output in the log and reads the results."""
     log_path = log.ensure_path()
     bep_path = log_path.with_name("build_events.json")
-    exit_code = run_logged(build_bazel_test_command(targets, bep_path), log)
+    exit_code = run_logged(build_bazel_test_command(targets, env, bep_path), log)
     return read_test_outcome(bep_path, exit_code, log_path)
 
 
@@ -318,22 +464,34 @@ def describe_scope(
         "changed_files": list(changed_files),
         "backend_mode": scope.backend_mode,
         "reason": scope.reason,
+        "fallback": scope.fallback,
+        "fallback_reason": FALLBACK_EXPLANATION if scope.fallback else None,
         "bazel_targets": list(scope.bazel_targets),
     }
 
 
-def run_affected_tests(args: argparse.Namespace) -> dict[str, Any]:
+def run_affected_tests(args: argparse.Namespace, env: Mapping[str, str]) -> dict[str, Any]:
     """Resolves the affected test scope and, unless --dry-run, runs it with Bazel."""
     log = BazelLog(stream=args.verbose or sys.stderr.isatty())
     merge_base, changed_files = collect_changed_files(args.base_ref)
-    scope = resolve_scope(changed_files, log.stream)
+    scope, warmup_ran = select_scope(
+        changed_files, log, run_all=args.all, warmup=not args.no_warmup
+    )
     log_progress(f"{len(changed_files)} changed files; {scope.backend_mode}: {scope.reason}.")
+    if scope.fallback:
+        log_progress(f"Warning: {FALLBACK_EXPLANATION}")
+    emulator_required = targets_need_emulator(scope, log.stream)
     report = describe_scope(args.base_ref, merge_base, changed_files, scope) | {
-        "dry_run": args.dry_run
+        "dry_run": args.dry_run,
+        "warmup_ran": warmup_ran,
+        "emulator_required": emulator_required,
     }
     if args.dry_run or not scope.bazel_targets:
-        return report | {"passed_targets": [], "log_path": None}
-    outcome = run_bazel_tests(scope.bazel_targets, log)
+        # Only the warm-up can have created the log by now.
+        return report | {"passed_targets": [], "log_path": str(log.path) if log.path else None}
+    if emulator_required and not args.skip_emulator_check:
+        ensure_emulator_reachable(env)
+    outcome = run_bazel_tests(scope.bazel_targets, env, log)
     raise_for_test_failure(outcome, report)
     return report | {"passed_targets": list(outcome.passed_targets), "log_path": outcome.log_path}
 
@@ -355,7 +513,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     """Entry point for the run_affected_tests tool."""
-    run_tool(build_parser(), run_affected_tests)
+    run_tool(build_parser(), functools.partial(run_affected_tests, env=os.environ))
 
 
 if __name__ == "__main__":

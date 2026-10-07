@@ -480,7 +480,10 @@ py_library(
     srcs = ["run_affected_tests.py"],
     imports = ["."],
     visibility = ["//visibility:public"],
-    deps = [":tool_utils"],
+    deps = [
+        ":tool_utils",
+        "//tools/benchmark:resolve_test_scope_lib",
+    ],
 )
 
 py_test(
@@ -490,6 +493,7 @@ py_test(
     deps = [
         ":run_affected_tests_lib",
         ":tool_utils",
+        "//tools/benchmark:resolve_test_scope_lib",
     ],
 )
 

@@ -143,7 +143,7 @@ Unit tests under `//internal/common/health:health_test` verify database query la
 
 1. **Start the Spanner Emulator Docker container**:
    ```bash
-   docker run -d -p 9010:9010 -p 9020:9020 gcr.io/cloud-spanner-emulator/emulator
+   docker run -d -p 9010:9010 -p 9020:9020 gcr.io/cloud-spanner-emulator/emulator:1.5.56
    ```
 
 2. **Configure the connection environment variable**:
@@ -218,20 +218,21 @@ Before opening a pull request, run the Bazel unit tests affected by your change,
 ```bash
 python3 ./tools/run_affected_tests.py            # Resolve the scope and run the affected Bazel tests
 python3 ./tools/run_affected_tests.py --dry-run  # Print the resolved scope without running tests
+python3 ./tools/run_affected_tests.py --all      # Skip the resolver and run the full backend suite
 ```
 
 The tool collects every file changed since the merge base of `--base-ref` (default `origin/main`) and `HEAD`, including staged, unstaged, and untracked (non-ignored) files; a renamed file counts as both its old and new path. It scopes them with [`resolve_test_scope.py`](../tools/benchmark/resolve_test_scope.py) using pull request semantics and runs `bazel test` on the resolved targets with the flags of the CI `bazel test` step, except the CI-only `--config=ci`, `--remote_upload_local_results`, `--repository_cache`, and `--experimental_repository_cache_hardlinks` flags.
 
-- **Output**: stdout carries only the JSON result, which lists the changed files, the resolved scope, the passed targets, and `log_path`. Bazel output goes to the `log_path` file, which the first Bazel command creates in a new temporary directory; `log_path` is `null` when no Bazel command ran. Bazel output and the resolver's diagnostics are also streamed to stderr when stderr is a terminal or `--verbose` is passed. Per-target results come from the Bazel Build Event Protocol file written next to the log.
+- **Output**: stdout carries only the JSON result, which lists the changed files, the resolved scope, `fallback`, `warmup_ran`, `emulator_required`, the passed targets, and `log_path`. Bazel output goes to the `log_path` file, which the first Bazel command creates in a new temporary directory; `log_path` is `null` when no Bazel command ran. Bazel output and the resolver's diagnostics are also streamed to stderr when stderr is a terminal or `--verbose` is passed. Per-target results come from the Bazel Build Event Protocol file written next to the log.
 - **Exit codes**: `0` when tests pass, for a dry run, or when nothing needs to run; `1` for test failures and other handled errors; `2` for unexpected errors. When tests fail or do not build, the error JSON on stderr has a `details` object with the failed targets and their status and test logs, the targets that did not run (for example because the build failed first), any build errors, and the log path.
-- **Spanner emulator**: Tests that depend on `//internal/storage/spanner/emulator` need a running emulator. Start one as described in [Running Spanner Database Health Unit Tests](#running-spanner-database-health-unit-tests).
-- **Full-suite fallback**: The resolver selects the full backend suite (`//... -//cmd/ui/...`) when a core infrastructure file changes (such as `MODULE.bazel`, `go.mod`, the root `BUILD.bazel`, or `.bazelrc`), when a changed non-code file belongs to no Bazel package below the repository root (such as files under `.github/` or untracked scratch files at the root), when its Bazel dependency query finds no affected test targets, and when that offline (`--fetch=false`) query fails or times out, typically because external repositories are not fetched yet. `bazel fetch //...` is not enough, because it skips repositories that only other platforms need, so in a fresh clone or worktree run this once first:
+- **Spanner emulator**: When an affected target depends on `//internal/storage/spanner/emulator`, or the full backend suite is selected, the tool fails fast unless an emulator listens on `SPANNER_EMULATOR_HOST` (default `localhost:9010`); dry runs never connect. Start one as described in [Running Spanner Database Health Unit Tests](#running-spanner-database-health-unit-tests), or pass `--skip-emulator-check`. When `SPANNER_EMULATOR_HOST` is set, the tool passes it to the tests with `--test_env`.
+- **Full-suite fallback**: The resolver selects the full backend suite (`//... -//cmd/ui/...`) when a core infrastructure file changes (such as `MODULE.bazel`, `go.mod`, the root `BUILD.bazel`, or `.bazelrc`), when a changed non-code file belongs to no Bazel package below the repository root (such as files under `.github/` or untracked scratch files at the root), when its Bazel dependency query finds no affected test targets, and when that offline (`--fetch=false`) query fails or times out, typically because external repositories are not fetched yet. Only the last case is a fallback that fetching can fix, and `bazel fetch //...` is not enough, because it skips repositories that only other platforms need. When the query fails, the tool runs the following warm-up once, logs a warning if the warm-up exits non-zero, and resolves the files again (`warmup_ran` in the JSON result); pass `--no-warmup` to skip it:
 
   ```bash
   bazel query --keep_going --noimplicit_deps 'deps(//... except //cmd/ui/...)' > /dev/null
   ```
 
-  CI runners start without fetched repositories, so CI currently runs the full backend suite for every pull request that needs backend tests. Run with `--dry-run` to check the scope before running tests.
+  If the query still fails, the JSON result reports `"fallback": true` with a `fallback_reason`; the other full-suite cases report `"fallback": false` and name their cause in `reason`. The warm-up writes to the Bazel log, so a dry run that warms up also reports `log_path`. CI runners start without fetched repositories and run no warm-up, so CI currently runs the full backend suite for every pull request that needs backend tests. Run with `--dry-run` to check the scope before running tests.
 
 ---
 
