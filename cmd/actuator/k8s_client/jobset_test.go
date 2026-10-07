@@ -871,6 +871,44 @@ func TestConstructJobSet_GPU_GKE(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_GPU_H100Mega(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	for _, gpuType := range []string{"nvidia-h100-mega-80gb", "H100_MEGA"} {
+		t.Run(gpuType, func(t *testing.T) {
+			workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+				job := wu.Executable.GetJobset().Jobs[0]
+				job.Spec.Resources = &esspb.ResourceSet{
+					Resources: &esspb.ResourceSet_GpuResources{
+						GpuResources: &esspb.GpuResources{
+							Type:  gpuType,
+							Count: 8,
+						},
+					},
+				}
+			})
+
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet() for %q returned unexpected error: %v", gpuType, err)
+			}
+
+			podSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+			container := podSpec.Containers[0]
+
+			gpuRes := container.Resources.Limits["nvidia.com/gpu"]
+			wantGPURes := resource.MustParse("8")
+			if gpuRes.Cmp(wantGPURes) != 0 {
+				t.Errorf("Expected nvidia.com/gpu resource limit to be %v, got %v", wantGPURes, gpuRes)
+			}
+
+			wantNodeSelector := "nvidia-h100-mega-80gb"
+			if podSpec.NodeSelector["cloud.google.com/gke-accelerator"] != wantNodeSelector {
+				t.Errorf("Expected NodeSelector cloud.google.com/gke-accelerator to be %q, got %q", wantNodeSelector, podSpec.NodeSelector["cloud.google.com/gke-accelerator"])
+			}
+		})
+	}
+}
+
 func TestConstructJobSet_ContainerDefaults(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := baseCPUWorkUnit

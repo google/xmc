@@ -26,6 +26,7 @@ func TestIsSpecificAcceleratorName_Classifier(t *testing.T) {
 	}{
 		// Valid GPU accelerators
 		{name: "nvidia-tesla-h100", flavorName: "nvidia-tesla-h100", want: true},
+		{name: "nvidia-h100-mega-80gb", flavorName: "nvidia-h100-mega-80gb", want: true},
 		{name: "nvidia-l4", flavorName: "nvidia-l4", want: true},
 		{name: "nvidia-t4", flavorName: "nvidia-t4", want: true},
 		{name: "nvidia-a100", flavorName: "nvidia-a100", want: true},
