@@ -1,6 +1,6 @@
 # ClickHouse 3P Wrapper Component Blueprint (`stable-2026a`)
 
-This Helm sub-chart (`deploy/profiles/stable-2026a/components/clickhouse/`) renders the XMC `Component` Custom Resource (`apiVersion: xmc.dev/v1alpha1`, `kind: Component`) that provides XMC services (`pkg/clickhouse`, `dashboard-service`, `experiment-state-server`) with ClickHouse connection coordinates, credentials Secret references, and health probe endpoints.
+This Helm sub-chart (`deploy/profiles/stable-2026a/components/clickhouse/`) renders the XMC `Component` Custom Resource (`apiVersion: xmc.dev/v1alpha1`, `kind: Component`) that provides XMC services (`pkg/clickhouse`, `dashboard-service`) with ClickHouse connection coordinates, credentials Secret references, and health probe endpoints.
 
 Because ClickHouse is a network analytical database dependency (`analytical-db`), the component contract requires no Kubernetes operator or CRD reference (`wrapperRef`); `xmc-bridge` verifies readiness directly via active HTTP health probing (`parameters.healthCheckEndpoint`) and publishes connection and Secret coordinates to downstream XMC consumers.
 
@@ -128,3 +128,26 @@ spec:
     healthCheckEndpoint: "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping"
     storageSize: "10Gi"
 ```
+
+---
+
+## 4. Downstream Consumer Resolution (`dashboard-service` & `pkg/clickhouse/componentconfig`)
+
+When `enable_components` is `true`, `dashboard-service` resolves ClickHouse connection options from the `clickhouse` `Component` CR via [`pkg/clickhouse/componentconfig`](../../../../pkg/clickhouse/componentconfig/resolver.go):
+
+1. **Endpoint Precedence**: Reads `status.access.envVars` (`HOST` / `PORT` or `ENDPOINT`) published by `xmc-bridge` first, falling back to `spec.parameters` (`clusterEndpoints` or `host` + `nativePort`, default `9000`).
+2. **Database & User**: Reads `spec.parameters.defaultDatabase` (default `"default"`) and `spec.parameters.user` (default `"default"`).
+3. **Password Resolution**:
+   - **Secret Manager CSI Mode (`CLICKHOUSE_PASSWORD_FILE` set)**: Reads the password from the CSI-mounted file (`CLICKHOUSE_PASSWORD_FILE`), taking precedence over Kubernetes Secret lookups.
+   - **Kubernetes Secret Mode (CSI disabled)**: Reads the Secret named in `status.access.envVars.SECRET_NAME` (or `spec.parameters.secretName`, default `"clickhouse-secret"`) under key `spec.parameters.secretPasswordKey` (default `"clickhouse-password"`) in the component namespace.
+4. **Fallback & Failure Semantics**: Static `CLICKHOUSE_*` environment variables are used as a fallback **only** when the `clickhouse` `Component` CR is `NotFound` or disabled (`spec.enabled: false` or `COMPONENT_STATE_DISABLED` / `DISABLING` / `DELETED`). Any Kubernetes API error, malformed endpoint/port parameter, or missing/unreadable password Secret surfaces as a hard error so `/readyz` reports unready rather than connecting with stale credentials.
+
+### 4.1 Dynamic Reconfiguration & Hot-Swapping (Zero Pod Restarts)
+
+When ClickHouse parameters or credentials change in Kubernetes, `dashboard-service` dynamically detects the changes and reconfigures its data engine without requiring pod restarts or manual rollouts:
+
+1. **Deterministic Fingerprinting**: `dashboard-service` computes a deterministic SHA-256 fingerprint over the resolved options (`OptionsFingerprint(opts)`), hashing endpoints, database, username, and password.
+2. **Readiness Probe Detection (`/readyz`)**: During every periodic readiness health probe (every 10 seconds), the dynamic provider resolves the latest `Component` CR and Secret values, compares the newly computed fingerprint with the active connection's fingerprint, and triggers a live swap if a difference is detected.
+3. **Zero-Downtime Atomic Swap**: The new connection is dialed and verified (`conn.Ping(ctx)`) before replacing the active engine. If successful, the engine and connection are atomically updated under write lock, and the previous connection is closed gracefully.
+4. **Lock-Free Query Fast-Path**: Chart queries (`GetExperimentSummary`, `QueryTimeSeries`) acquire a shared read lock and access the cached data engine directly. The query hot path never makes Kubernetes API calls, ensuring zero added latency or load on the API server.
+5. **Fail-Safe Fallback**: If an updated `Component` CR or rotated Secret contains invalid credentials or unreachable endpoints, the rebuild attempt logs a warning and fails safely: `dashboard-service` continues serving queries and remains ready on `/readyz` as long as the existing established connection is healthy.

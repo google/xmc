@@ -29,6 +29,7 @@ compat_go_library(
     deps = [
         "//api/protos/dashboard:api_go_proto",
         "//api/protos/dashboard:service_go_proto",
+        "//internal/logging",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
         "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_sync//singleflight",

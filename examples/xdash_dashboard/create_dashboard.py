@@ -15,6 +15,7 @@
 
 Usage:
     python3 create_dashboard.py [--endpoint localhost:8080] [--dashboard-id example_vcc]
+        [--create-experiments]
 """
 
 from __future__ import annotations
@@ -48,6 +49,34 @@ EXPERIMENT_RUNS = [
 DEFAULT_ENDPOINT = "localhost:8080"
 DEFAULT_DASHBOARD_ID = "example_vcc_comparison"
 DEFAULT_DASHBOARD_TITLE = "VCC Baseline vs Tuned Hyperparameters"
+DEFAULT_CREATE_EXPERIMENTS = False
+
+
+def _resolve_experiment_runs(
+    create_experiments: bool = DEFAULT_CREATE_EXPERIMENTS,
+) -> list[tuple[int, str, str]]:
+    """Resolves experiment IDs, creating live experiments when create_experiments is True."""
+    if not create_experiments:
+        return list(EXPERIMENT_RUNS)
+
+    from xmanager_cloud.experiment_state_server import experiment_state_api
+    from xmanager_cloud.experiment_state_server.proto import api_pb2, experiment_pb2
+    from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
+
+    api = experiment_state_api.get_experiment_state_api()
+    acls = xid_messages_pb2.XidAcls(
+        owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
+    )
+    resolved: list[tuple[int, str, str]] = []
+    for _, slug, run_title in EXPERIMENT_RUNS:
+        exp = api.create_experiment(
+            api_pb2.CreateExperimentRequest(
+                experiment=experiment_pb2.Experiment(title=run_title, acls=acls)
+            )
+        )
+        xid = int(exp.name.split("/")[-1])
+        resolved.append((xid, f"{slug}_{xid}", run_title))
+    return resolved
 
 
 def build_experiment_chart(xid: int, chart_slug: str, title: str) -> messages_pb2.Chart:
@@ -88,6 +117,7 @@ def create_example_dashboard(
     client: DashboardClient,
     dashboard_id: str,
     title: str,
+    create_experiments: bool = DEFAULT_CREATE_EXPERIMENTS,
 ) -> None:
     """Creates and displays a comparative metrics dashboard across experiment runs.
 
@@ -95,10 +125,13 @@ def create_example_dashboard(
     this runs in two phases: create every chart, then create the dashboard pointing at
     the IDs the server assigned.
     """
+    runs = _resolve_experiment_runs(create_experiments=create_experiments)
+    if create_experiments and dashboard_id == DEFAULT_DASHBOARD_ID and runs:
+        dashboard_id = f"{dashboard_id}_{runs[0][0]}"
     sys.stdout.write(f"--> Building dashboard '{title}' (ID: {dashboard_id})...\n")
 
     charts = []
-    for xid, slug, run_title in EXPERIMENT_RUNS:
+    for xid, slug, run_title in runs:
         sys.stdout.write(f"    - Building chart for Experiment {xid} ({run_title})...\n")
         charts.append(build_experiment_chart(xid, slug, run_title))
 
@@ -159,6 +192,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=DEFAULT_DASHBOARD_TITLE,
         help="Display title for the created dashboard",
     )
+    parser.add_argument(
+        "--create-experiments",
+        action="store_true",
+        default=DEFAULT_CREATE_EXPERIMENTS,
+        help="Create live experiments in XMC instead of using fixed golden dataset XIDs",
+    )
     args = parser.parse_args(argv)
 
     endpoint = args.endpoint
@@ -175,6 +214,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 client=client,
                 dashboard_id=args.dashboard_id,
                 title=args.title,
+                create_experiments=args.create_experiments,
             )
     except XDashError as err:
         sys.stderr.write(f"⚠️  xdash connection notice: {err}\n")

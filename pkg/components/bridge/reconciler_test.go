@@ -579,7 +579,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper status detector returns nil status without error",
 			cms:    &mockCMS{},
-			prober: &mockProber{hasStatus: true, status: nil},
+			prober: &mockProber{nilStatus: true},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
 			},

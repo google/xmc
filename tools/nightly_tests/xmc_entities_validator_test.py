@@ -16,7 +16,11 @@
 
 from __future__ import annotations
 
+import io
+import json
 import unittest
+import urllib.error
+import urllib.request
 from types import SimpleNamespace
 from typing import Any
 from unittest import mock
@@ -465,7 +469,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             self.assertIn("xmanager_cloud is required", str(ctx.exception))
 
     def test_validate_work_unit_priority_success(self) -> None:
-        cases = [
+        cases: list[tuple[int, int | str]] = [
             (3, "HIGH"),
             (3, "high"),
             (3, 3),
@@ -686,7 +690,12 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             self.assertEqual(res["total_rows"], 0)
 
     def test_validate_dashboard_chart_data_success(self) -> None:
-        dash_response = {"chartIds": ["dashboards/exp_22_training_overview/charts/loss_chart"]}
+        dash_response = {
+            "chartIds": [
+                "dashboards/exp_22_training_overview/charts/loss_chart",
+                "dashboards/exp_22_training_overview/charts/throughput_chart",
+            ]
+        }
         chart_response = {
             "plotsData": [
                 {
@@ -696,8 +705,10 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 }
             ]
         }
+        queried_urls: list[str] = []
 
         def mock_query(url: str, **kwargs: Any) -> Any:
+            queried_urls.append(url)
             if url.endswith(":getData"):
                 return chart_response
             return dash_response
@@ -713,7 +724,597 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             )
             self.assertEqual(res["dashboard_id"], "exp_22_training_overview")
             self.assertEqual(res["chart_id"], "loss_chart")
-            self.assertEqual(res["total_points"], 2)
+            self.assertEqual(res["total_points"], 4)
+            self.assertEqual(
+                queried_urls,
+                [
+                    "http://localhost:8080/v1/dashboards/exp_22_training_overview",
+                    "http://localhost:8080/v1/dashboards/exp_22_training_overview/charts/loss_chart:getData",
+                    "http://localhost:8080/v1/dashboards/exp_22_training_overview/charts/throughput_chart:getData",
+                ],
+            )
+            queried_urls.clear()
+            single_res = xmc_entities_validator.validate_dashboard_chart_data(
+                base_endpoint="http://localhost:8080",
+                dashboard_id="exp_22_training_overview",
+                expected_chart_id="dashboards/exp_22_training_overview/charts/throughput_chart",
+                timeout_sec=5,
+            )
+            self.assertEqual(single_res["chart_id"], "throughput_chart")
+            self.assertEqual(single_res["total_points"], 2)
+            self.assertEqual(
+                queried_urls,
+                [
+                    "http://localhost:8080/v1/dashboards/exp_22_training_overview",
+                    "http://localhost:8080/v1/dashboards/exp_22_training_overview/charts/throughput_chart:getData",
+                ],
+            )
+
+    # =========================================================================
+    # Phase 2: validate_artifacts Tests
+    # =========================================================================
+
+    def test_normalize_artifact_type(self) -> None:
+        self.assertEqual(xmc_entities_validator._normalize_artifact_type("ChartArtifact"), "chart")
+        self.assertEqual(xmc_entities_validator._normalize_artifact_type("UrlArtifact"), "url")
+        self.assertEqual(
+            xmc_entities_validator._normalize_artifact_type("ManagedXprofArtifact"), "managed_xprof"
+        )
+        self.assertEqual(xmc_entities_validator._normalize_artifact_type("chart"), "chart")
+        self.assertEqual(
+            xmc_entities_validator._normalize_artifact_type("ArtifactPayload.chart"), "chart"
+        )
+
+    def test_validate_artifacts_success_with_chart_and_url(self) -> None:
+        stub = mock.MagicMock()
+        chart_obj = SimpleNamespace(
+            title="Loss and Accuracy Plots",
+            metric_names=["val/loss", "train/accuracy"],
+            chart=SimpleNamespace(name="charts/1"),
+            status=2,  # SUCCESS
+            error_message="",
+        )
+        url_obj = SimpleNamespace(
+            url="https://dashboard.example.com/view",
+            display_name="External Monitoring",
+        )
+        art_chart = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(
+                chart=chart_obj, WhichOneof=lambda f: "chart" if f == "type" else None
+            ),
+        )
+        art_url = SimpleNamespace(
+            name="artifacts/2",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(
+                url=url_obj, WhichOneof=lambda f: "url" if f == "type" else None
+            ),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art_chart, art_url])
+
+        results = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="10",
+            wid="1",
+            expected_artifact_types=["ChartArtifact", "UrlArtifact"],
+            expected_metric_names=["val/loss", "train/accuracy"],
+            timeout_sec=10,
+        )
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["type"], "chart")
+        self.assertEqual(results[0]["title"], "Loss and Accuracy Plots")
+        self.assertEqual(results[0]["metric_names"], ["val/loss", "train/accuracy"])
+        self.assertEqual(results[1]["type"], "url")
+        self.assertEqual(results[1]["title"], "External Monitoring")
+        self.assertEqual(results[1]["url"], "https://dashboard.example.com/view")
+
+    def test_validate_artifacts_waits_for_chart_provisioning(self) -> None:
+        stub = mock.MagicMock()
+        chart_provisioning = SimpleNamespace(
+            title="Loss Plot",
+            metric_names=["val/loss"],
+            status=1,  # PROVISIONING
+            error_message="",
+        )
+        chart_ready = SimpleNamespace(
+            title="Loss Plot",
+            metric_names=["val/loss"],
+            status=2,  # SUCCESS
+            error_message="",
+        )
+        art_provisioning = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(chart=chart_provisioning, WhichOneof=lambda f: "chart"),
+        )
+        art_ready = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(chart=chart_ready, WhichOneof=lambda f: "chart"),
+        )
+        stub.ListArtifacts.side_effect = [
+            SimpleNamespace(artifacts=[art_provisioning]),
+            SimpleNamespace(artifacts=[art_ready]),
+        ]
+
+        results = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="10",
+            wid="1",
+            expected_artifact_types=["chart"],
+            expected_metric_names=["val/loss"],
+            timeout_sec=5,
+            poll_interval_sec=0,
+        )
+        self.assertEqual(stub.ListArtifacts.call_count, 2)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["normalized_type"], "chart")
+        self.assertEqual(results[0]["metric_names"], ["val/loss"])
+
+    def test_validate_artifacts_experiment_level(self) -> None:
+        stub = mock.MagicMock()
+        url_obj = SimpleNamespace(url="https://experiment.example.com", display_name="Summary")
+        art = SimpleNamespace(
+            name="artifacts/100",
+            parent="experiments/42",
+            payload=SimpleNamespace(url=url_obj, WhichOneof=lambda f: "url"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        results = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="42",
+            expected_artifact_types=["url"],
+            timeout_sec=10,
+        )
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["parent"], "experiments/42")
+
+    def test_validate_artifacts_terminal_failure_on_chart_failed_status(self) -> None:
+        stub = mock.MagicMock()
+        chart_obj = SimpleNamespace(
+            title="Failed Chart",
+            metric_names=["loss"],
+            status=3,  # FAILED
+            error_message="ClickHouse connection timed out",
+        )
+        art = SimpleNamespace(
+            name="artifacts/5",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(chart=chart_obj, WhichOneof=lambda f: "chart"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        with self.assertRaises(xmc_entities_validator.TerminalFailureError) as ctx:
+            xmc_entities_validator.validate_artifacts(
+                stub=stub,
+                xid="10",
+                wid="1",
+                timeout_sec=5,
+            )
+        self.assertIn("failed provisioning: ClickHouse connection timed out", str(ctx.exception))
+
+    def test_validate_artifacts_missing_expected_types_fails(self) -> None:
+        stub = mock.MagicMock()
+        url_obj = SimpleNamespace(url="https://example.com", display_name="")
+        art = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10",
+            payload=SimpleNamespace(url=url_obj, WhichOneof=lambda f: "url"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_artifacts(
+                stub=stub,
+                xid="10",
+                expected_artifact_types=["chart"],
+                timeout_sec=0,
+                poll_interval_sec=0,
+            )
+        self.assertIn("Expected artifact types ['chart'] not found", str(ctx.exception))
+
+    def test_validate_artifacts_missing_expected_metrics_fails(self) -> None:
+        stub = mock.MagicMock()
+        chart_obj = SimpleNamespace(
+            title="Chart",
+            metric_names=["train/loss"],
+            status=2,
+            error_message="",
+        )
+        art = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(chart=chart_obj, WhichOneof=lambda f: "chart"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_artifacts(
+                stub=stub,
+                xid="10",
+                wid="1",
+                expected_metric_names=["val/accuracy"],
+                timeout_sec=0,
+                poll_interval_sec=0,
+            )
+        self.assertIn("Expected metric names ['val/accuracy'] not found", str(ctx.exception))
+
+    def test_validate_artifacts_transient_error_retry(self) -> None:
+        stub = mock.MagicMock()
+        url_obj = SimpleNamespace(url="https://example.com", display_name="")
+        art = SimpleNamespace(
+            name="artifacts/1",
+            parent="experiments/10",
+            payload=SimpleNamespace(url=url_obj, WhichOneof=lambda f: "url"),
+        )
+        stub.ListArtifacts.side_effect = [
+            RuntimeError("gRPC transient error"),
+            SimpleNamespace(artifacts=[art]),
+        ]
+
+        results = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="10",
+            expected_artifact_types=["url"],
+            timeout_sec=10,
+            poll_interval_sec=0,
+        )
+        self.assertEqual(len(results), 1)
+        self.assertEqual(stub.ListArtifacts.call_count, 2)
+
+    def test_validate_artifacts_empty_url_raises(self) -> None:
+        stub = mock.MagicMock()
+        url_obj = SimpleNamespace(url="   ", display_name="Broken Link")
+        art = SimpleNamespace(
+            name="artifacts/99",
+            parent="experiments/10/workUnits/1",
+            payload=SimpleNamespace(url=url_obj, WhichOneof=lambda f: "url"),
+        )
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[art])
+
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_artifacts(
+                stub=stub,
+                xid="10",
+                wid="1",
+                expected_artifact_types=["url"],
+                timeout_sec=5,
+                poll_interval_sec=0,
+            )
+        self.assertIn("Found URL artifact 'artifacts/99' with empty URL field", str(ctx.exception))
+
+    # =========================================================================
+    # Phase 2: validate_dashboard Tests
+    # =========================================================================
+
+    def test_validate_dashboard_success_with_charts(self) -> None:
+        routes = {
+            "/v1/dashboards/example_vcc": {
+                "name": "dashboards/example_vcc",
+                "title": "VCC Comparative Dashboard",
+                "chart_ids": ["chart_1", "chart_2"],
+            },
+            "/v1/charts/chart_1": {"name": "charts/chart_1", "title": "Loss vs Steps"},
+            "/v1/charts/chart_2": {"name": "charts/chart_2", "title": "Accuracy vs Steps"},
+        }
+        expected = {
+            "dashboard_id": "example_vcc",
+            "expected_title": "VCC Comparative",
+            "expected_chart_ids": ["chart_1", "chart_2"],
+        }
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            for path, payload in routes.items():
+                if path in req.full_url:
+                    return io.BytesIO(json.dumps(payload).encode("utf-8"))
+            raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)  # type: ignore
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            results = xmc_entities_validator.validate_dashboard(
+                "localhost:8080", [expected], timeout_sec=5
+            )
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["dashboard_id"], "example_vcc")
+            self.assertEqual(results[0]["title"], "VCC Comparative Dashboard")
+            self.assertEqual(len(results[0]["charts"]), 2)
+
+    def test_validate_dashboard_string_identifier(self) -> None:
+        mock_dashboard_data = {
+            "name": "dashboards/simple_dash",
+            "title": "Simple Dashboard",
+            "chart_ids": [],
+        }
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            results = xmc_entities_validator.validate_dashboard(
+                dashboard_endpoint="http://dashboard-service:8080",
+                expected_dashboards=["simple_dash"],
+                timeout_sec=5,
+            )
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["dashboard_id"], "simple_dash")
+
+    def test_validate_dashboard_title_mismatch_fails(self) -> None:
+        mock_dashboard_data = {
+            "name": "dashboards/dash_1",
+            "title": "Production Overview",
+            "chart_ids": [],
+        }
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(AssertionError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=[
+                        {"dashboard_id": "dash_1", "expected_title": "Experimental"}
+                    ],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn(
+                "title mismatch: expected 'Experimental', found 'Production Overview'",
+                str(ctx.exception),
+            )
+
+    def test_validate_dashboard_missing_expected_chart_ids(self) -> None:
+        mock_dashboard_data = {
+            "name": "dashboards/dash_1",
+            "title": "Dashboard",
+            "chart_ids": ["chart_a"],
+        }
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(AssertionError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=[
+                        {
+                            "dashboard_id": "dash_1",
+                            "expected_chart_ids": ["chart_a", "chart_b"],
+                        }
+                    ],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn("missing expected chart IDs: ['chart_b']", str(ctx.exception))
+
+    def test_validate_dashboard_non_200_status(self) -> None:
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> None:
+            raise urllib.error.HTTPError(
+                req.full_url,
+                500,
+                "Internal Server Error",
+                mock.MagicMock(),
+                None,
+            )
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(TimeoutError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=["dash_1"],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn("verification failed after 0s", str(ctx.exception))
+
+    def test_validate_dashboard_network_error_timeout(self) -> None:
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> None:
+            raise urllib.error.URLError("Connection refused")
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(TimeoutError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=["dash_1"],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn("verification failed after 0s", str(ctx.exception))
+
+    def test_validate_dashboard_retry_on_assertion_error_success(self) -> None:
+        attempts = 0
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                # First attempt: incomplete title
+                data = {"name": "dashboards/dash_1", "title": "Pending...", "chart_ids": []}
+            else:
+                # Second attempt: ready title
+                data = {"name": "dashboards/dash_1", "title": "Ready Title", "chart_ids": []}
+            resp = io.BytesIO(json.dumps(data).encode("utf-8"))
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            results = xmc_entities_validator.validate_dashboard(
+                dashboard_endpoint="localhost:8080",
+                expected_dashboards=[{"dashboard_id": "dash_1", "expected_title": "Ready Title"}],
+                timeout_sec=5,
+                poll_interval_sec=0,
+            )
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["title"], "Ready Title")
+            self.assertEqual(attempts, 2)
+
+    def test_validate_dashboard_retry_on_json_decode_error_success(self) -> None:
+        attempts = 0
+
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                # First attempt: transient HTML 502/error text
+                resp = io.BytesIO(b"<html>502 Bad Gateway</html>")
+            else:
+                # Second attempt: valid JSON response
+                resp = io.BytesIO(
+                    json.dumps(
+                        {"name": "dashboards/dash_1", "title": "Ready", "chart_ids": []}
+                    ).encode("utf-8")
+                )
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            results = xmc_entities_validator.validate_dashboard(
+                dashboard_endpoint="localhost:8080",
+                expected_dashboards=["dash_1"],
+                timeout_sec=5,
+                poll_interval_sec=0,
+            )
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["title"], "Ready")
+            self.assertEqual(attempts, 2)
+
+    def test_validate_dashboard_json_decode_error_timeout(self) -> None:
+        def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
+            resp = io.BytesIO(b"Invalid Non-JSON response")
+            resp.status = 200  # type: ignore
+            return resp
+
+        with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
+            with self.assertRaises(TimeoutError) as ctx:
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=["dash_1"],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
+            self.assertIn("verification failed after 0s", str(ctx.exception))
+
+    def test_validate_work_unit_jobsets(self) -> None:
+        job = SimpleNamespace(
+            name="demo-worker-1",
+            replicas=1,
+            init_containers=[],
+            sidecars=[],
+            spec=SimpleNamespace(name="primary-worker"),
+        )
+        wu = SimpleNamespace(
+            name="experiments/10/workUnits/1",
+            executable=SimpleNamespace(
+                jobset=SimpleNamespace(jobs=[job]),
+                HasField=lambda f: f == "jobset",
+            ),
+        )
+        stub = mock.MagicMock()
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu])
+        summaries = xmc_entities_validator.validate_work_unit_jobsets(
+            stub=stub,
+            xid="10",
+            expected_jobs=[{"name": "demo-worker-1", "replicas": 1}],
+        )
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(summaries[0]["name"], "demo-worker-1")
+
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[])
+        with self.assertRaisesRegex(AssertionError, "No WorkUnits found for experiment 10"):
+            xmc_entities_validator.validate_work_unit_jobsets(
+                stub=stub,
+                xid="10",
+                expected_jobs=[{"name": "demo-worker-1", "replicas": 1}],
+            )
+
+    def test_validate_dashboard_chart_data_timeout_includes_duration(self) -> None:
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.query_dashboard_http",
+            return_value={"chartIds": []},
+        ):
+            with self.assertRaises(AssertionError) as ctx:
+                xmc_entities_validator.validate_dashboard_chart_data(
+                    base_endpoint="http://localhost:8080",
+                    dashboard_id="exp_22_training_overview",
+                    timeout_sec=0.05,  # type: ignore[arg-type]
+                    poll_interval_sec=0.01,  # type: ignore[arg-type]
+                    strict_required=True,
+                )
+            self.assertIn(
+                "Dashboard GetChartData failed after 0.05s (exp_22_training_overview):",
+                str(ctx.exception),
+            )
+
+    def test_validate_node_selector_mappings(self) -> None:
+        head = SimpleNamespace(name="head", node_selector={"pool": "cpups"})
+        worker = SimpleNamespace(name="worker", node_selector={"pool": "gpu-pool"})
+        wu = SimpleNamespace(
+            executable=SimpleNamespace(
+                jobset=SimpleNamespace(jobs=[head, worker]),
+                HasField=lambda f: f == "jobset",
+            )
+        )
+        stub = mock.MagicMock()
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu])
+        res = xmc_entities_validator.validate_node_selector_mappings(
+            stub, "20", {"head": {"pool": "cpups"}, "worker": {"pool": "gpu-pool"}}
+        )
+        self.assertEqual(res, {"head": {"pool": "cpups"}, "worker": {"pool": "gpu-pool"}})
+        with self.assertRaisesRegex(AssertionError, "node_selector\\['pool'\\] mismatch"):
+            xmc_entities_validator.validate_node_selector_mappings(
+                stub, "20", {"head": {"pool": "wrong"}}
+            )
+        with self.assertRaisesRegex(AssertionError, "Job 'missing' missing from JobSet jobs"):
+            xmc_entities_validator.validate_node_selector_mappings(
+                stub, "20", {"missing": {"pool": "cpups"}}
+            )
+
+    def test_stop_work_units(self) -> None:
+        stub = mock.MagicMock()
+        xmc_entities_validator.stop_work_units(stub, "20")
+        stub.BatchStopWorkUnits.assert_called_once()
+
+    def test_normalize_dashboard_endpoint_empty_raises(self) -> None:
+        for invalid in ("", "   ", "/", "  ///  "):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(ValueError, "cannot be empty or whitespace-only"):
+                    xmc_entities_validator._normalize_dashboard_endpoint(invalid)
+
+    def test_validate_dashboard_fatal_error_fails_fast(self) -> None:
+        err_fp = io.BytesIO(b"data engine is not configured")
+        http_err = urllib.error.HTTPError("http://localhost:8080", 500, "Error", {}, err_fp)  # type: ignore
+        with mock.patch("urllib.request.urlopen", side_effect=http_err) as mock_open:
+            with self.assertRaisesRegex(AssertionError, "data engine is not configured"):
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=["dash_1"],
+                    timeout_sec=60,
+                    poll_interval_sec=0,
+                )
+            self.assertEqual(mock_open.call_count, 1)
+
+    def test_validate_dashboard_min_charts_assertion(self) -> None:
+        mock_data = {"name": "dashboards/dash_1", "title": "VCC", "chart_ids": ["c1"]}
+        with mock.patch(
+            "tools.nightly_tests.xmc_entities_validator.query_dashboard_http",
+            return_value=mock_data,
+        ):
+            with self.assertRaisesRegex(AssertionError, "expected at least 3 constituent charts"):
+                xmc_entities_validator.validate_dashboard(
+                    dashboard_endpoint="localhost:8080",
+                    expected_dashboards=[{"dashboard_id": "dash_1", "min_charts": 3}],
+                    timeout_sec=0,
+                    poll_interval_sec=0,
+                )
 
 
 if __name__ == "__main__":

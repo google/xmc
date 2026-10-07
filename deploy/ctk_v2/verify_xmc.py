@@ -15,6 +15,7 @@
 
 """Verification script for XManager on Cloud (XMC) v2 topology."""
 
+import json
 import os
 import pathlib
 import re
@@ -95,14 +96,10 @@ def _resolve_config(
     env_val = env_val or _extract_yaml_val(content, "environment")
     region_val = region_val or _extract_yaml_val(content, "region")
     project_val = project_val or _extract_yaml_val(content, "project_id")
-
-    if enable_components_env is not None:
-        enable_components = _parse_bool(enable_components_env)
-    else:
-        yaml_comp = _extract_yaml_val(content, "enable_components")
-        enable_components = _parse_bool(yaml_comp)
-
-    return env_val, region_val, project_val, enable_components
+    comp_raw = enable_components_env
+    if comp_raw is None:
+        comp_raw = _extract_yaml_val(content, "enable_components")
+    return env_val, region_val, project_val, _parse_bool(comp_raw)
 
 
 def _run_command(cmd: list[str]) -> str:
@@ -200,21 +197,10 @@ def _check_connectivity() -> bool:
         "jsonpath={.status.addresses[0].value}",
     ]
     gw_ip = _run_command(gw_ip_cmd).strip()
-    print(f"Gateway IP Address: {gw_ip}")
-    print(f"Make sure your domains resolve to {gw_ip}.")
-
+    print(f"Gateway IP Address: {gw_ip}\nMake sure your domains resolve to {gw_ip}.")
     print("\nTo test local endpoint routing internally (Port-Forwarding Actuator):")
-    actuator_pod_cmd = [
-        "kubectl",
-        "get",
-        "pods",
-        "-n",
-        "xmc",
-        "-l",
-        "app=actuator",
-        "-o",
-        "jsonpath={.items[0].metadata.name}",
-    ]
+    pod_jp = "jsonpath={.items[0].metadata.name}"
+    actuator_pod_cmd = ["kubectl", "get", "pods", "-n", "xmc", "-l", "app=actuator", "-o", pod_jp]
     actuator_pod = _run_command(actuator_pod_cmd).strip()
     print(f"Run: kubectl port-forward -n xmc {actuator_pod} 8080:8080")
     print("In another terminal run: curl http://localhost:8080/actuate/health")
@@ -312,6 +298,52 @@ def _check_log_monitor(
     return True
 
 
+def _parse_k8s_items(json_str: str) -> list[dict]:
+    """Parses items list from kubectl JSON output."""
+    try:
+        data = json.loads(json_str) if json_str else {}
+        items = data.get("items") if isinstance(data, dict) else None
+        return [i for i in (items or []) if isinstance(i, dict)]
+    except json.JSONDecodeError:
+        return []
+
+
+def _is_pod_ready(pod_json_str: str) -> bool:
+    """Returns True if at least one pod in the kubectl JSON list is Running and Ready."""
+    return any(
+        (pod.get("status") or {}).get("phase") == "Running"
+        and any(
+            isinstance(c, dict) and c.get("type") == "Ready" and c.get("status") == "True"
+            for c in ((pod.get("status") or {}).get("conditions") or [])
+        )
+        for pod in _parse_k8s_items(pod_json_str)
+    )
+
+
+def _are_component_crs_ready(crs_json_str: str) -> tuple[bool, int]:
+    """Returns (all_ready, count) for Component CRs in the kubectl JSON list."""
+    items = _parse_k8s_items(crs_json_str)
+    for item in items:
+        enabled = (item.get("spec") or {}).get("enabled", True)
+        status = item.get("status") or {}
+        cs = status.get("conditions") or []
+        conds = {c.get("type"): c.get("status") for c in cs if isinstance(c, dict)}
+        st, suffix = (
+            status.get("state"),
+            ("ENABLED", "READY") if enabled else ("DISABLED", "DISABLED"),
+        )
+        exp = (f"COMPONENT_STATE_{suffix[0]}", f"STATE_{suffix[1]}")
+        if (
+            conds.get("Degraded") == "True"
+            or conds.get("Ready") != str(enabled)
+            or (st and st not in exp)
+        ):
+            name = (item.get("metadata") or {}).get("name", "unknown")
+            print(f"❌ Component CR '{name}' not Ready.")
+            return False, len(items)
+    return bool(items), len(items)
+
+
 def _check_components(enable_components: bool) -> bool:
     """Checks status of foundational component controllers if enabled.
 
@@ -319,16 +351,28 @@ def _check_components(enable_components: bool) -> bool:
       enable_components: Whether foundational component controllers are enabled.
 
     Returns:
-      True if component controller check succeeds or is skipped.
+      bool: True if components are healthy or disabled, False otherwise.
     """
     print("\n--- 8. Component Controllers Status ---")
     if not enable_components:
         print("ℹ️ Skipping Component Controllers check: enable_components is false.")
         return True
-
-    print(
-        "ℹ️ Foundational Component Controllers enabled. Controller verification will be active once controller manifests land."
-    )
+    crd_out = _run_command(["kubectl", "get", "crd", "components.xmc.dev", "-o", "name"]).strip()
+    if not crd_out:
+        print("❌ Component CRD (components.xmc.dev) not found in cluster.")
+        return False
+    print(f"✅ Component CRD found: {crd_out}")
+    pods_cmd = ["kubectl", "get", "pods", "-n", "xmc", "-l", "app=xmc-bridge", "-o", "json"]
+    if not _is_pod_ready(_run_command(pods_cmd)):
+        print("❌ xmc-bridge pod is not Running and Ready in namespace xmc.")
+        return False
+    print("✅ xmc-bridge pod is Running and Ready.")
+    crs_cmd = ["kubectl", "get", "components.xmc.dev", "-n", "xmc", "-o", "json"]
+    ready, count = _are_component_crs_ready(_run_command(crs_cmd))
+    if not ready:
+        print("❌ Component CRs verification failed or no Component CRs found.")
+        return False
+    print(f"✅ All {count} Component CRs verified in expected state.")
     return True
 
 

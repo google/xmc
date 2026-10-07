@@ -1,0 +1,12 @@
+{
+  "compat_go_targets": 127,
+  "custom_repo_rules": 0,
+  "gazelle_resolve_directives": 84,
+  "go_legacy_root_imports": 941,
+  "go_unresolved_module_imports": 1293,
+  "helm_google3_flags": 0,
+  "proto_third_party_paths": 39,
+  "python_legacy_paths": 21,
+  "third_party_files": 0,
+  "ts_legacy_module_paths": 390
+}

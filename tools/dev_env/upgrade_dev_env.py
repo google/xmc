@@ -24,7 +24,7 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -37,6 +37,7 @@ from tools.common.tool_utils import (  # noqa: E402
     DeploymentConfig,
     build_and_push_images,
     configure_docker_auth,
+    deploy_component_profile,
     ensure_venv,
     load_and_validate_config as tool_load_config,
     log_error,
@@ -101,6 +102,7 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Automatically run pending migrations if detected.",
     )
+    parser.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
 
     parsed = parser.parse_args(args)
 
@@ -352,7 +354,9 @@ def step_app(config: UpgradeConfig) -> None:
         )
 
     log_info("Re-compiling XMC blueprint with latest variables and templates...")
-    compile_blueprint(config.config_path, config.deployment_name)
+    compile_blueprint(
+        config.config_path, config.deployment_name, enable_components=config.enable_components
+    )
 
     log_info("Exporting and importing Cluster Toolkit deployment group outputs...")
     if (ctk_dir / "primary").is_dir():
@@ -381,6 +385,7 @@ def step_app(config: UpgradeConfig) -> None:
     )
 
     log_success("Application upgrade initiated.")
+    deploy_component_profile(config)
 
 
 def resolve_deployment_name(service: str, namespace: str) -> str | None:
@@ -404,52 +409,63 @@ def resolve_deployment_name(service: str, namespace: str) -> str | None:
     return None
 
 
-def step_restart(config: UpgradeConfig) -> None:
+# Optional deployments (e.g. xmc-bridge, ingestion-gateway) are skipped by
+# resolve_deployment_name when their feature flag leaves them undeployed.
+# xmc-bridge is triggered first because it may own component releases (e.g.
+# the ingestion-gateway workload). `rollout restart` is asynchronous, so the
+# rollouts overlap; the bridge re-reconciles its releases once its new pod
+# is up, so no rollout ordering is required.
+_RESTART_SERVICES: tuple[str, ...] = (
+    "xmc-bridge",
+    "actuator",
+    "dashboard-service",
+    "experiment-state-server",
+    "health-service",
+    "ingestion-gateway",
+    "log-monitor",
+    "reconciler",
+    "rod-data-provider",
+    "ui",
+    "xid-service",
+)
+
+
+def _restart_service(service: str, namespace: str) -> bool:
+    """Restarts a single microservice deployment if present in the namespace."""
+    resolved_name = resolve_deployment_name(service, namespace)
+    if not resolved_name:
+        log_info(
+            f"Deployment '{service}' (or '{service}-deployment') not found in"
+            f" namespace '{namespace}'. Skipping."
+        )
+        return False
+
+    log_info(f"Restarting deployment/{resolved_name}...")
+    run_command(
+        [
+            "kubectl",
+            "rollout",
+            "restart",
+            f"deployment/{resolved_name}",
+            "-n",
+            namespace,
+        ]
+    )
+    return True
+
+
+def step_restart(config: DeploymentConfig) -> None:
     """Triggers rolling restarts for all microservices in Kubernetes."""
     log_info(
         "Triggering rolling restart across XMC service deployments to run newly"
         " pushed container images..."
     )
-    # Optional deployments (e.g. xmc-bridge, ingestion-gateway) are skipped by
-    # resolve_deployment_name when their feature flag leaves them undeployed.
-    # xmc-bridge is triggered first because it may own component releases (e.g.
-    # the ingestion-gateway workload). `rollout restart` is asynchronous, so the
-    # rollouts overlap; the bridge re-reconciles its releases once its new pod
-    # is up, so no rollout ordering is required.
-    services = [
-        "xmc-bridge",
-        "actuator",
-        "dashboard-service",
-        "experiment-state-server",
-        "health-service",
-        "ingestion-gateway",
-        "log-monitor",
-        "reconciler",
-        "rod-data-provider",
-        "ui",
-        "xid-service",
-    ]
-
-    for service in services:
-        resolved_name = resolve_deployment_name(service, config.namespace)
-        if resolved_name:
-            log_info(f"Restarting deployment/{resolved_name}...")
-            run_command(
-                [
-                    "kubectl",
-                    "rollout",
-                    "restart",
-                    f"deployment/{resolved_name}",
-                    "-n",
-                    config.namespace,
-                ]
-            )
-        else:
-            log_info(
-                f"Deployment '{service}' (or '{service}-deployment') not found in"
-                f" namespace '{config.namespace}'. Skipping."
-            )
-
+    restarted = sum(_restart_service(svc, config.namespace) for svc in _RESTART_SERVICES)
+    if restarted == 0:
+        error_exit(
+            f"No XMC deployments resolved in namespace '{config.namespace}'."
+            " Verify cluster credentials and workload deployment state."
+        )
     log_success("Rolling deployment restarts initiated.")
 
 
@@ -464,6 +480,7 @@ def step_verify(config: UpgradeConfig) -> None:
         "ENVIRONMENT": config.environment,
         "REGION": config.region,
         "PROJECT_ID": config.project_id,
+        "ENABLE_COMPONENTS": "true" if config.enable_components else "false",
     }
 
     py_script = Path("./deploy/ctk_v2/verify_xmc.py")
@@ -543,6 +560,8 @@ def run_upgrade(args: argparse.Namespace) -> None:
         args: Parsed command-line arguments.
     """
     config = load_config(args.config, run_migrations=args.run_migrations)
+    if getattr(args, "enable_components", None) is not None:
+        config = replace(config, enable_components=args.enable_components)
     run_pipeline(args, config, STEPS)
 
 

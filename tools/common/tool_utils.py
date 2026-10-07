@@ -40,6 +40,7 @@ class DeploymentConfig:
     namespace: str = "xmc"
     domain_name: str | None = None
     enable_metrics: bool = False
+    enable_components: bool = False
 
     @property
     def gke_cluster(self) -> str:
@@ -190,7 +191,14 @@ ENV_VAR_MAPPING = {
     "IMAGE_REGISTRY": "image_registry",  # Primary, processed second (wins)
     "BUILD_TAG": "image_tag",
     "XMC_BASE_DOMAIN": "domain_name",
+    "ENABLE_METRICS": "enable_metrics",
+    "ENABLE_COMPONENTS": "enable_components",
 }
+
+
+def parse_bool_flag(val: Any) -> bool:
+    """Parses a boolean configuration flag from a boolean or string."""
+    return val.strip().lower() in ("true", "1", "yes") if isinstance(val, str) else bool(val)
 
 
 def _parse_yaml_vars_line_fallback(content: str) -> dict[str, Any]:
@@ -246,44 +254,18 @@ def load_and_validate_config(
     config_file: str,
     defaults: dict[str, str] | None = None,
 ) -> DeploymentConfig:
-    """Loads YAML config file, merges with env overrides, and validates.
-
-    Args:
-        config_file: Path to the YAML configuration file.
-        defaults: Default values for keys if they are missing.
-
-    Returns:
-        DeploymentConfig of validated configuration.
-
-    Raises:
-        ValueError: If a required key is missing or invalid.
-        FileNotFoundError: If the config file does not exist.
-    """
-    path = Path(config_file)
-    yaml_vars = parse_yaml_vars(path)
-
-    config: dict[str, Any] = (defaults or {}) | yaml_vars
-
+    """Loads YAML config file, merges with env overrides, and validates."""
+    config: dict[str, Any] = (defaults or {}) | parse_yaml_vars(Path(config_file))
     for env_var, config_key in ENV_VAR_MAPPING.items():
-        val = os.getenv(env_var)
-        if val:
+        if val := os.getenv(env_var):
             config[config_key] = val
 
-    for key in CONFIG_VALIDATION_SCHEMAS:
+    for key, pattern in CONFIG_VALIDATION_SCHEMAS.items():
         val = config.get(key)
         if val is None:
             raise ValueError(f"Required configuration field '{key}' is missing.")
-
-        pattern = CONFIG_VALIDATION_SCHEMAS.get(key)
         if pattern and not re.match(pattern, str(val)):
             raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
-
-    raw_metrics = config.get("enable_metrics", False)
-    enable_metrics = (
-        raw_metrics
-        if isinstance(raw_metrics, bool)
-        else str(raw_metrics).strip().lower() in ("true", "1", "yes")
-    )
 
     return DeploymentConfig(
         project_id=config["project_id"],
@@ -294,7 +276,8 @@ def load_and_validate_config(
         image_tag=config["image_tag"],
         domain_name=config.get("domain_name"),
         namespace=config.get("namespace", "xmc"),
-        enable_metrics=enable_metrics,
+        enable_metrics=parse_bool_flag(config.get("enable_metrics", False)),
+        enable_components=parse_bool_flag(config.get("enable_components", False)),
     )
 
 
@@ -330,27 +313,9 @@ def run_command(
     cwd: Path | str | None = None,
     input_data: str | None = None,
 ) -> subprocess.CompletedProcess:
-    """Helper to run shell commands with unified logging and error handling.
-
-    Args:
-        cmd: The command to run as a list of strings.
-        env: Optional environment variables to merge with current env.
-        check: Whether to raise CalledProcessError on non-zero exit code.
-        capture_output: Whether to capture stdout/stderr.
-        log_on_error: Whether to log errors on failure.
-        log_cmd: Whether to log the command being executed.
-        cwd: Optional working directory for subprocess execution.
-        input_data: Optional stdin string to pass to the subprocess.
-
-    Returns:
-        A subprocess.CompletedProcess object.
-
-    Raises:
-        subprocess.CalledProcessError: If the command fails and check=True.
-    """
+    """Runs shell commands with unified logging and error handling."""
     if log_cmd:
         log_info(f"Running: {' '.join(cmd)}")
-
     proc_env = os.environ.copy() | {str(k): str(v) for k, v in (env or {}).items()}
     run_kwargs: dict[str, Any] = {
         "env": proc_env,
@@ -360,7 +325,6 @@ def run_command(
     }
     if input_data is not None:
         run_kwargs["input"] = input_data
-
     try:
         return subprocess.run(cmd, check=check, **run_kwargs)
     except subprocess.CalledProcessError:
@@ -434,3 +398,14 @@ def build_and_push_images(config: DeploymentConfig) -> None:
         run_command(["bazel", "run", target], env=env)
 
     log_success("All XMC service container images compiled and pushed from current branch state.")
+
+
+def deploy_component_profile(config: DeploymentConfig) -> None:
+    """Deploys default XMC component profile (stable-2026a) when components are enabled."""
+    if not config.enable_components:
+        return
+    ns = config.namespace or "xmc"
+    chart = str(Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a")
+    log_info(f"Deploying default component profile (stable-2026a) into namespace '{ns}'...")
+    run_command(["helm", "upgrade", "--install", "xmc-profile", chart, "-n", ns, "--wait"])
+    log_success("Default component profile (stable-2026a) deployed.")

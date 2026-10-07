@@ -83,6 +83,11 @@ message Metadata {
   // Kubernetes, so that the logs from the ESS and Actuator are linked. If no
   // trace ID is provided, one will be generated on the actuator.
   string trace_id = 3 [(google.api.field_behavior) = OPTIONAL];
+  // The unique identifier of the resumption run replaying this task.
+  string resumption_run_id = 4 [(google.api.field_behavior) = OPTIONAL];
+  // The timestamp when the pause state was updated/resumed.
+  google.protobuf.Timestamp resumption_time = 5
+      [(google.api.field_behavior) = OPTIONAL];
 }
 
 message CreateAction {

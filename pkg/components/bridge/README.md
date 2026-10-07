@@ -128,9 +128,19 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 
 ---
 
-## Kubernetes Helm Manager (`helm_manager.go`)
+## Kubernetes Helm Manager (`helm_manager.go` and related files)
 
-`K8sHelmManager` implements `HelmManager` by synchronizing synthesized values into Kubernetes ConfigMaps, resolving per-component chart paths, executing independent per-component Helm releases, and tracking active 1P component states:
+`K8sHelmManager` implements `HelmManager` by synchronizing synthesized values into Kubernetes ConfigMaps, resolving per-component chart paths, executing independent per-component Helm releases, and tracking active 1P component states. Its implementation is split by responsibility:
+
+| File | Responsibility |
+| :--- | :--- |
+| `helm_manager.go` | `HelmManager` interface, construction options, and the `Ensure`/`Delete`/`Purge`/`Orphan` lifecycle entry points. |
+| `chart_resolver.go` | Per-component chart path resolution and validation. |
+| `component_values.go` | Read-modify-write of the `xmc-component-values` ConfigMap. |
+| `release_executor.go` | Sync and async Helm upgrade/uninstall execution, the upgrade lock, and the debounced worker queue. |
+| `release_health.go` | `ComponentHealth`, the deployed-verdict cache, and drift detection. |
+| `release_repair.go` | Repair marking (`NeedsRepair`) and repair backoff. |
+| `actuation_state.go` | Active/actuated generation tracking and cold-start hydration. |
 
 - **Per-Component Independent Release Scoping (`ComponentReleaseName`)**:
   - Each 1P component is actuated into a dedicated, decoupled Helm release formatted as `xmc-cmp-<name>` (e.g., `xmc-cmp-ray-operator`), preserving architectural blast-radius isolation from other components and the core platform release.
@@ -172,7 +182,7 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
   - **Repair backoff**: repairs are rate-limited per component so an actor that keeps deleting a rendered object (another Helm release, GitOps, a controller, or owner-reference garbage collection) cannot make the bridge re-upgrade on every sweep. The first repair runs immediately; after the *n*-th repair the next one waits `30s × 2^(n-1)`, capped at `10m`, plus up to 10% random jitter. While backed off, the component keeps reporting its `HelmReleaseDrifted` or `HelmReleaseNotReady` verdict. The backoff resets when a new generation is actuated, when the component is uninstalled, purged, or orphaned, or when the release is observed healthy at least `10m` after the last repair (any healthy verdict would not do, because a repaired release is briefly healthy before the actor deletes the object again). This policy is separate from, and deliberately longer than, transient-error retry backoff: each repair writes a Helm revision, so it should not churn against a persistent conflict. Component upgrades also set Helm `MaxHistory` to `10` (`componentReleaseMaxHistory`), so revisions never accumulate unbounded release Secrets.
 - **Spec Generation Gating & Change Detection**:
   - `reconcile1PWorkload` consults `IsComponentActuated(ref, in.Generation)` and `NeedsRepair(ref, in.Generation)`: steady-state reconciliation passes skip Helm upgrades when the current spec generation is already actuated, no errors are pending, and the release is not marked for repair.
-  - `persistComponentValues`, `disableComponentValues`, and `removeComponentValues` return `(bool, error)` to detect whether ConfigMap contents actually changed, short-circuiting no-op upgrades.
+  - `persistComponentValues`, `disableComponentValues`, and `removeComponentValues` (`component_values.go`) are value mutations applied through a shared `mutateComponentValues` read-modify-write loop (`RetryOnConflict`, creating the ConfigMap on first write). They return `(bool, error)` to detect whether ConfigMap contents actually changed, short-circuiting no-op upgrades.
 - **ConfigMap Synchronization (`ComponentValuesConfigMapName = "xmc-component-values"`)**: Serializes component values into JSON payloads (`<componentName>.json`) inside the release ConfigMap.
 - **Namespace Isolation**: Scopes component overrides and active state tracking by namespace (`targetNamespace/componentName`), with default fallback to `"xmc"`.
 - **Clean Lifecycle Operations**:
@@ -184,7 +194,8 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
   - `HelmActionRunner` Interface: Declarative abstraction over Helm v3 SDK actions (`Upgrade`, `Uninstall`, `Status`, `MissingResources`), allowing in-process Helm release upgrades, uninstalls, read-only release status queries, and manifest drift checks without CLI child processes. `Status` reports missing releases as errors matching `driver.ErrReleaseNotFound`. `MissingResources` returns the `Kind/name` of every object in a release manifest that the cluster reports as `NotFound`.
   - `SDKHelmActionRunner`: Uses `action.NewUpgrade` and dynamic Kubernetes REST client configurations to apply values directly to the component release. Resolves per-component chart paths via `WithRunnerChartPathResolver` and caches loaded `*chart.Chart` instances by path (`chartCache`) to avoid repeated disk I/O. Inspects release history with `action.NewHistory`; when `driver.ErrReleaseNotFound` occurs, falls back cleanly to `action.NewInstall` for initial release provisioning. Automatically falls back to an embedded in-memory default chart if no external chart directory is supplied.
 - **Context-Aware Upgrade Lock**:
-  - Serializes concurrent component updates using a channel-based semaphore (`upgradeSem`) to prevent release state conflicts while immediately unblocking upon context cancellation.
+  - Serializes every Helm release operation (synchronous upgrades, asynchronous worker upgrades, and uninstalls) through one channel-based semaphore (`upgradeSem`) to prevent release state conflicts while immediately unblocking upon context cancellation. The worker records each upgrade's outcome before releasing the semaphore.
+  - Teardowns (`Delete1PComponent`, `Purge1PComponent`, `Orphan1PComponent`) discard the component's queued asynchronous upgrade (`pendingUpgrades`), and an uninstall waits for any in-flight upgrade to finish, so a stale upgrade can never recreate a release after teardown. The worker likewise skips a request superseded by a newer enqueue.
 - **Asynchronous Upgrade Worker Queue & Per-Component Coalescing**:
   - Serializes and debounces rapid successive component modifications through a buffered channel (`upgradeChan`) and worker goroutine (`syncUpgradeWorker`) within a configurable window (default 25ms).
   - Coalesces requests per component (`req.ref.Name`), retaining the latest requested spec values and executing independent component release upgrades (`executeComponentUpgrade`), eliminating cross-tenant lock contention and API stampedes.

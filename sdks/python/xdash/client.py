@@ -217,6 +217,9 @@ class DashboardClient:
     def _execute_rpc(self, call: Any, request: Any, rpc_name: str) -> Any:
         """Executes a gRPC call and converts grpc.RpcError to XDashRPCError."""
         try:
+            token = (os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN") or "").strip()
+            if token:
+                return call(request, metadata=(("authorization", f"Bearer {token}"),))
             return call(request)
         except Exception as err:
             if grpc is not None and isinstance(err, grpc.RpcError):

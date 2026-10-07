@@ -107,7 +107,6 @@ resource "google_cloud_run_v2_service" "log_monitor" {
         value = var.project_id
       }
       args = [
-        "-alsologtostderr",
         "-spanner_database_name=projects/${var.project_id}/instances/xmc-${var.environment}/databases/experiment-db-${var.environment}",
         "-quota_project_id=${var.project_id}",
         "-log_keyword=${var.logging_sink_custom_keyword}",

@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -38,6 +39,7 @@ import (
 	"google.golang.org/api/option"
 	healthgrpc "grpc_proto/health_go_grpc"
 	healthpb "grpc_proto/health_go_proto"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"xmanager_cloud/cmd/dashboard_service/server"
 	commonhealth "xmanager_cloud/common/health"
@@ -48,6 +50,8 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/clickhouse"
+	"xmanager_cloud/pkg/clickhouse/componentconfig"
+	"xmanager_cloud/pkg/components/crreader"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
@@ -113,27 +117,124 @@ func initAuthenticator(ctx context.Context, projectID string) (*oauth2.Authentic
 	return oauth2.NewAuthenticator(oauthCfg), oauthCfg, nil
 }
 
-// connectClickHouse adapts the shared ClickHouse client to the connector the provider expects.
-func connectClickHouse(ctx context.Context) (dataengine.ClickHouseConn, error) {
-	return clickhouse.Connect(ctx)
+type lazySecretReader struct {
+	mu     sync.Mutex
+	reader crreader.SecretReader
+}
+
+func (l *lazySecretReader) GetSecretValue(ctx context.Context, namespace, name, key string) (string, error) {
+	l.mu.Lock()
+	if l.reader == nil {
+		r, err := crreader.NewK8sSecretReader()
+		if err != nil {
+			l.mu.Unlock()
+			return "", fmt.Errorf("failed to initialize kubernetes secret reader: %w", err)
+		}
+		l.reader = r
+	}
+	reader := l.reader
+	l.mu.Unlock()
+	return reader.GetSecretValue(ctx, namespace, name, key)
+}
+
+// buildClickHouseResolver constructs the dynamic resolver the dataengine Provider uses on dial and readiness checks.
+func buildClickHouseResolver(enableComponents bool, namespace string, customGetter crreader.Getter) dataengine.Resolver {
+	if !enableComponents {
+		return resolveClickHouseWithSource(componentconfig.Source{Enabled: false}, nil)
+	}
+	var (
+		mu      sync.Mutex
+		getter  = customGetter
+		secrets = &lazySecretReader{}
+	)
+	return func(ctx context.Context) (string, dataengine.Connector, error) {
+		mu.Lock()
+		if getter == nil {
+			g, err := crreader.NewK8sGetter()
+			if err != nil {
+				mu.Unlock()
+				return "", nil, fmt.Errorf("failed to initialize component CR getter: %w", err)
+			}
+			getter = g
+		}
+		g := getter
+		mu.Unlock()
+
+		src := componentconfig.Source{Enabled: true, Namespace: namespace, Getter: g, Secrets: secrets}
+		return resolveClickHouseWithSource(src, nil)(ctx)
+	}
+}
+
+func resolveClickHouseWithSource(src componentconfig.Source, initErr error) dataengine.Resolver {
+	return resolveClickHouseWithDialer(src, initErr, func(ctx context.Context, opts *clickhouse.Options) (dataengine.ClickHouseConn, error) {
+		return clickhouse.ConnectWithOptions(ctx, opts)
+	})
+}
+
+func resolveClickHouseWithDialer(src componentconfig.Source, initErr error, dial func(context.Context, *clickhouse.Options) (dataengine.ClickHouseConn, error)) dataengine.Resolver {
+	return func(ctx context.Context) (string, dataengine.Connector, error) {
+		if initErr != nil {
+			return "", nil, initErr
+		}
+		opts, err := componentconfig.ResolveOptions(ctx, src)
+		if err != nil {
+			return "", nil, err
+		}
+		return componentconfig.OptionsFingerprint(opts), func(dialCtx context.Context) (dataengine.ClickHouseConn, error) {
+			return dial(dialCtx, opts)
+		}, nil
+	}
 }
 
 // initDataEngine prepares the chart data engine, for deployments that configure ClickHouse.
 //
 // A failed first attempt is not fatal. The provider dials again on demand, and readiness holds the
 // pod out of the service endpoints until one of those attempts succeeds.
-func initDataEngine(ctx context.Context) *dataengine.Provider {
-	if !clickhouse.Configured() {
+func initDataEngine(ctx context.Context, cfg *server.Config) *dataengine.Provider {
+	return initDataEngineWithGetter(ctx, cfg, nil)
+}
+
+func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGetter crreader.Getter) *dataengine.Provider {
+	enableComponents := false
+	componentsNamespace := "xmc"
+	if cfg != nil {
+		enableComponents = cfg.EnableComponents
+		componentsNamespace = cfg.ComponentsNamespace
+	}
+	if !isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter) {
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
-	provider := dataengine.NewProvider(connectClickHouse)
+	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(enableComponents, componentsNamespace, customGetter))
 	dialCtx, cancel := context.WithTimeout(ctx, dataEngineStartupTimeout)
 	defer cancel()
 	if _, err := provider.Engine(dialCtx); err != nil {
 		logging.Warn(ctx, "ClickHouse connection not available at startup, the data engine is retried on demand", "error", err)
 	}
 	return provider
+}
+
+func isClickHouseExpected(ctx context.Context, enableComponents bool, namespace string, customGetter crreader.Getter) bool {
+	if clickhouse.Configured() {
+		return true
+	}
+	if !enableComponents {
+		return false
+	}
+	getter := customGetter
+	if getter == nil {
+		g, err := crreader.NewK8sGetter()
+		if err != nil {
+			return false
+		}
+		getter = g
+	}
+	ns := crreader.ResolveNamespace(namespace)
+	comp, err := getter.GetComponent(ctx, ns, componentconfig.ClickHouseComponentName)
+	if apierrors.IsNotFound(err) || (err == nil && (comp == nil || crreader.IsDisabled(comp))) {
+		return false
+	}
+	return true
 }
 
 // chartDataEngine converts the engine provider into the interface the server consumes.
@@ -341,7 +442,7 @@ func run() int {
 		logging.Error(ctx, "Failed to initialize authenticator", "error", err)
 		return 1
 	}
-	de := initDataEngine(ctx)
+	de := initDataEngine(ctx, cfg)
 
 	spannerDB := getSpannerDatabaseName()
 	sc, err := initSpannerClient(ctx, spannerDB, cfg.ProjectID)

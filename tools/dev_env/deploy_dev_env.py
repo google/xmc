@@ -24,6 +24,8 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
+from dataclasses import replace
 from typing import NoReturn
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -37,6 +39,7 @@ from tools.common.tool_utils import (  # noqa: E402
     DeploymentConfig,
     build_and_push_images,
     configure_docker_auth,
+    deploy_component_profile,
     ensure_venv,
     load_and_validate_config as tool_load_config,
     log_error,
@@ -83,50 +86,20 @@ STEPS = [
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
-    """Parses command line arguments.
-
-    Args:
-        args: A list of command line arguments to parse.
-
-    Returns:
-        An argparse.Namespace object containing the parsed arguments.
-    """
-    parser = argparse.ArgumentParser(description="XMC v2 Dev Environment Deployment Script")
-    parser.add_argument(
-        "--config",
-        "-c",
-        required=True,
-        help="Path to XMC deployment YAML configuration file (Required)",
-    )
-    parser.add_argument(
-        "--dns-project",
-        required=True,
-        help="GCP Project ID hosting the DNS zone (Required)",
-    )
-    parser.add_argument("--dns-zone", required=True, help="Cloud DNS Managed Zone name (Required)")
-    parser.add_argument(
-        "--start-from",
-        "-s",
-        choices=STEPS,
-        help="Start/resume deployment from this step onwards",
-    )
-    parser.add_argument("--only", choices=STEPS, help="Execute ONLY this specific step and exit")
-    parser.add_argument(
-        "--skip-migrations",
-        action="store_true",
-        help="Skip automatic Cloud Spanner database schema migrations",
-    )
-    parser.add_argument(
-        "--skip-verification",
-        action="store_true",
-        help="Skip environment health verification step",
-    )
-
-    parsed_args = parser.parse_args(args)
-
+    """Parses command line arguments."""
+    p = argparse.ArgumentParser(description="XMC v2 Dev Environment Deployment Script")
+    p.add_argument("-c", "--config", required=True, help="Path to deployment YAML config.")
+    p.add_argument("--dns-project", required=True, help="GCP Project ID hosting DNS zone.")
+    p.add_argument("--dns-zone", required=True, help="Cloud DNS Managed Zone name.")
+    p.add_argument("-s", "--start-from", choices=STEPS, help="Start/resume from step.")
+    p.add_argument("--only", choices=STEPS, help="Execute ONLY this step and exit.")
+    p.add_argument("--skip-migrations", action="store_true", help="Skip Spanner migrations.")
+    p.add_argument("--skip-verification", action="store_true", help="Skip health verification.")
+    p.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
+    p.add_argument("--enable-metrics", action=argparse.BooleanOptionalAction, default=None)
+    parsed_args = p.parse_args(args)
     if parsed_args.start_from and parsed_args.only:
-        parser.error("Cannot specify both --start-from and --only.")
-
+        p.error("Cannot specify both --start-from and --only.")
     return parsed_args
 
 
@@ -479,7 +452,9 @@ def step_compile(
         config_path: Path to the configuration file.
     """
     log_info("Compiling XMC blueprint using gcluster...")
-    compile_blueprint(config_path, config.deployment_name)
+    compile_blueprint(
+        config_path, config.deployment_name, enable_components=config.enable_components
+    )
     log_success("Blueprint compiled successfully under 'ctk-out/'.")
 
 
@@ -536,23 +511,19 @@ def step_primary(config: DeploymentConfig, dns_project: str, dns_zone: str) -> N
     apply_dns_records(gateway_ip, config, dns_project, dns_zone)
 
 
-def step_migrate(config: DeploymentConfig) -> bool:
+def step_migrate(config: DeploymentConfig) -> None:
     """Checks and applies pending Spanner database migrations.
 
     Args:
         config: The loaded DeploymentConfig instance.
-
-    Returns:
-        True if pending migrations were applied, False otherwise.
     """
     pending = check_pending_migrations(config)
     if not pending:
         log_success("No pending migrations found. Databases are up to date.")
-        return False
+        return
 
     log_info("Applying pending Spanner migrations...")
     apply_pending_migrations(config, pending)
-    return True
 
 
 def step_compute(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
@@ -641,16 +612,28 @@ def step_images(config: DeploymentConfig) -> None:
     build_and_push_images(config)
 
 
+def _fetch_cluster_credentials(config: DeploymentConfig) -> None:
+    """Fetches kubectl credentials for the target GKE cluster."""
+    cluster_name = config.gke_cluster
+    log_info(f"Fetching kubectl credentials for GKE cluster '{cluster_name}'...")
+    run_command(
+        [
+            "gcloud",
+            "container",
+            "clusters",
+            "get-credentials",
+            cluster_name,
+            f"--region={config.region}",
+            f"--project={config.project_id}",
+        ]
+    )
+
+
 def _ensure_metrics_namespaces_and_configmap() -> None:
     """Creates namespaces and format schema ConfigMap for metrics addons."""
-    for ns in ("xmc", "xmc-metrics"):
-        ns_yaml = run_command(
-            ["kubectl", "create", "namespace", ns, "--dry-run=client", "-o", "yaml"],
-            capture_output=True,
-        ).stdout
-        run_command(["kubectl", "apply", "-f", "-"], input_data=ns_yaml)
-
-    cm_yaml = run_command(
+    create_cmds = [
+        ["kubectl", "create", "namespace", "xmc"],
+        ["kubectl", "create", "namespace", "xmc-metrics"],
         [
             "kubectl",
             "create",
@@ -658,45 +641,21 @@ def _ensure_metrics_namespaces_and_configmap() -> None:
             "clickhouse-format-schemas",
             "--namespace=xmc-metrics",
             "--from-file=metrics.proto=api/protos/metrics/metrics.proto",
-            "--dry-run=client",
-            "-o",
-            "yaml",
         ],
-        capture_output=True,
-    ).stdout
-    run_command(["kubectl", "apply", "-f", "-"], input_data=cm_yaml)
+    ]
+    for cmd in create_cmds:
+        manifest = run_command([*cmd, "--dry-run=client", "-o", "yaml"], capture_output=True).stdout
+        run_command(["kubectl", "apply", "-f", "-"], input_data=manifest)
 
 
 def _deploy_redpanda_addon() -> None:
     """Waits for Redpanda rollout and initializes the xmc-metrics Kafka topic."""
     run_command(
-        [
-            "kubectl",
-            "rollout",
-            "status",
-            "statefulset/redpanda",
-            "-n",
-            "xmc",
-            "--timeout=180s",
-        ]
+        ["kubectl", "rollout", "status", "statefulset/redpanda", "-n", "xmc", "--timeout=180s"]
     )
+    topic_cmd = ["rpk", "topic", "create", "xmc-metrics", "--partitions", "128", "--replicas", "1"]
     run_command(
-        [
-            "kubectl",
-            "exec",
-            "-n",
-            "xmc",
-            "redpanda-0",
-            "--",
-            "rpk",
-            "topic",
-            "create",
-            "xmc-metrics",
-            "--partitions",
-            "128",
-            "--replicas",
-            "1",
-        ],
+        ["kubectl", "exec", "-n", "xmc", "redpanda-0", "--", *topic_cmd],
         check=False,
         log_on_error=False,
     )
@@ -716,20 +675,8 @@ def _deploy_clickhouse_addon() -> None:
         ]
     )
     schema_sql = (_REPO_ROOT / "deploy/clickhouse/schema.sql").read_text(encoding="utf-8")
-    run_command(
-        [
-            "kubectl",
-            "exec",
-            "-i",
-            "-n",
-            "xmc-metrics",
-            "clickhouse-0",
-            "--",
-            "clickhouse-client",
-            "--multiquery",
-        ],
-        input_data=schema_sql,
-    )
+    ch_cmd = ["kubectl", "exec", "-i", "-n", "xmc-metrics", "clickhouse-0", "--"]
+    run_command([*ch_cmd, "clickhouse-client", "--multiquery"], input_data=schema_sql)
 
 
 def step_addons(config: DeploymentConfig) -> None:
@@ -743,17 +690,7 @@ def step_addons(config: DeploymentConfig) -> None:
         return
 
     log_info("Deploying metrics addons (ClickHouse & Redpanda)...")
-    run_command(
-        [
-            "gcloud",
-            "container",
-            "clusters",
-            "get-credentials",
-            config.gke_cluster,
-            f"--region={config.region}",
-            f"--project={config.project_id}",
-        ]
-    )
+    _fetch_cluster_credentials(config)
     _ensure_metrics_namespaces_and_configmap()
     run_command(["kubectl", "apply", "-f", "deploy/addons/metrics/manifests/metrics-addons.yaml"])
     _deploy_redpanda_addon()
@@ -765,24 +702,20 @@ def step_app(
     config: DeploymentConfig,
     dns_project: str,
     dns_zone: str,
-    *,
-    restart_deployments: bool = False,
 ) -> None:
-    """Deploys xmc_app group (Helm release).
+    """Deploys xmc_app group (Helm release) and triggers rolling restarts.
 
     Args:
         config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
-        restart_deployments: If True, triggers rolling restarts across microservice
-          deployments to ensure pods run with updated schema versions.
     """
     log_info("Deploying xmc_app group (Helm release)...")
     run_gcluster_deploy(config.deployment_name, "xmc_app")
     log_success("XMC application Helm release deployed successfully.")
-    if restart_deployments:
-        log_info("Spanner migrations were applied; rolling service deployments...")
-        step_restart(config)
+    _fetch_cluster_credentials(config)
+    deploy_component_profile(config)
+    step_restart(config)
 
 
 def _wait_for_gateway_programmed() -> None:
@@ -870,19 +803,7 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
         dns_project: GCP Project ID hosting the DNS zone (unused).
         dns_zone: Cloud DNS Managed Zone name (unused).
     """
-    cluster_name = config.gke_cluster
-    log_info(f"Fetching kubectl credentials for GKE cluster '{cluster_name}'...")
-    run_command(
-        [
-            "gcloud",
-            "container",
-            "clusters",
-            "get-credentials",
-            cluster_name,
-            f"--region={config.region}",
-            f"--project={config.project_id}",
-        ]
-    )
+    _fetch_cluster_credentials(config)
 
     _wait_for_gateway_programmed()
 
@@ -891,6 +812,7 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
         "ENVIRONMENT": config.environment,
         "REGION": config.region,
         "PROJECT_ID": config.project_id,
+        "ENABLE_COMPONENTS": "true" if config.enable_components else "false",
     }
     run_command(
         [sys.executable, "./deploy/ctk_v2/verify_xmc.py"],
@@ -903,30 +825,17 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
     log_success("XMC environment deployed and verified.")
 
 
-def _build_step_map(
-    args: argparse.Namespace,
-    config: DeploymentConfig,
-) -> dict[str, object]:
-    """Constructs the step execution map for GKE deployment."""
-    migrations_applied = False
-    skip_migrations = (
+def _is_skip_migrations(args: argparse.Namespace) -> bool:
+    """Returns True if database migrations should be skipped."""
+    return bool(
         getattr(args, "skip_migrations", False) or getattr(args, "auto_migrate", None) is False
     )
-    skip_verification = getattr(args, "skip_verification", False)
 
-    def _execute_migrate() -> None:
-        nonlocal migrations_applied
-        if skip_migrations:
-            log_info("Skipping database migrations as requested (--skip-migrations).")
-            return
-        migrations_applied = step_migrate(config)
 
-    def _execute_verify() -> None:
-        if skip_verification:
-            log_info("Skipping environment health verification (--skip-verification).")
-            return
-        step_verify(config, args.dns_project, args.dns_zone)
-
+def _build_step_map(
+    args: argparse.Namespace, config: DeploymentConfig
+) -> dict[str, Callable[[], None]]:
+    """Constructs the step execution map for GKE deployment."""
     return {
         "check": lambda: step_check(config, args.dns_project, args.dns_zone),
         "compile": lambda: step_compile(config, args.dns_project, args.dns_zone, args.config),
@@ -936,16 +845,34 @@ def _build_step_map(
         "compute": lambda: step_compute(config, args.dns_project, args.dns_zone),
         "gateway-api": lambda: step_gateway_api(config, args.dns_project, args.dns_zone),
         "prereqs": lambda: step_prereqs(config, args.dns_project, args.dns_zone),
-        "migrate": _execute_migrate,
-        "addons": lambda: step_addons(config),
-        "app": lambda: step_app(
-            config,
-            args.dns_project,
-            args.dns_zone,
-            restart_deployments=migrations_applied,
+        "migrate": lambda: (
+            log_info("Skipping database migrations as requested (--skip-migrations).")
+            if _is_skip_migrations(args)
+            else step_migrate(config)
         ),
-        "verify": _execute_verify,
+        "addons": lambda: step_addons(config),
+        "app": lambda: step_app(config, args.dns_project, args.dns_zone),
+        "verify": lambda: (
+            log_info("Skipping environment health verification (--skip-verification).")
+            if getattr(args, "skip_verification", False)
+            else step_verify(config, args.dns_project, args.dns_zone)
+        ),
     }
+
+
+def _build_resume_cmd(args: argparse.Namespace, current_step: str) -> str:
+    """Constructs the suggested command to resume a failed deployment."""
+    dns_args = f"--dns-project {args.dns_project} --dns-zone {args.dns_zone} "
+    resume_cmd = f"python3 tools/dev_env/deploy_dev_env.py --config {args.config} {dns_args}"
+    if _is_skip_migrations(args):
+        resume_cmd += "--skip-migrations "
+    if getattr(args, "skip_verification", False):
+        resume_cmd += "--skip-verification "
+    if args.only:
+        resume_cmd += f"--only {current_step}"
+    else:
+        resume_cmd += f"--start-from {current_step}"
+    return resume_cmd
 
 
 def _print_deployment_summary(config: DeploymentConfig) -> None:
@@ -964,36 +891,29 @@ def _print_deployment_summary(config: DeploymentConfig) -> None:
 
 
 def run_deployment(args: argparse.Namespace) -> None:
-    """Executes the GKE deployment pipeline.
-
-    Args:
-        args: Parsed command line arguments containing config, dns_project,
-          dns_zone, start_from, only.
-    """
+    """Executes the GKE deployment pipeline."""
     config = load_and_validate_config(args.config)
+    if getattr(args, "enable_components", None) is not None:
+        config = replace(config, enable_components=bool(args.enable_components))
     if getattr(args, "enable_metrics", None) is not None:
-        config.enable_metrics = bool(args.enable_metrics)
+        config = replace(config, enable_metrics=bool(args.enable_metrics))
 
     run_checks(config, args.dns_project, args.dns_zone)
     step_map = _build_step_map(args, config)
-
-    if args.only:
-        execution_steps = [args.only]
-    elif args.start_from:
-        execution_steps = STEPS[STEPS.index(args.start_from) :]
-    else:
-        execution_steps = STEPS
+    execution_steps = (
+        [args.only]
+        if args.only
+        else (STEPS[STEPS.index(args.start_from) :] if args.start_from else STEPS)
+    )
 
     current_step = ""
     try:
         for step in execution_steps:
             current_step = step
-            step_map[step]()  # type: ignore[operator]
+            step_map[step]()
     except Exception as e:
         log_error(f"Command failed during step '{current_step}': {e}")
-        dns_args = f"--dns-project {args.dns_project} --dns-zone {args.dns_zone} "
-        resume_cmd = f"python3 tools/dev_env/deploy_dev_env.py --config {args.config} {dns_args}"
-        resume_cmd += f"--only {current_step}" if args.only else f"--start-from {current_step}"
+        resume_cmd = _build_resume_cmd(args, current_step)
         print(f"\n{RED}You can resume from this step using:{NC}")
         print(f"  {BOLD}{resume_cmd}{NC}\n")
         sys.exit(1)

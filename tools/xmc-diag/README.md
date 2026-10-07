@@ -38,6 +38,7 @@ flowchart TD
 
 - **ClickHouse Health & Schema Audit**: Pings the target database, retrieves server version, checks physical/queue/view table definitions (`xmc_metrics`, `xmc_metrics_queue`, `xmc_metrics_mv`), and evaluates query execution latency.
 - **Redpanda / Kafka Metadata & Lag Audit**: Queries topic partition watermarks, reads consumer group committed offsets (`kadm.FetchOffsets` & `kadm.ListEndOffsets`), and calculates partition-level and total aggregate consumer lag.
+- **Kubernetes `Component` CR Health Audit**: Queries `components.xmc.dev` custom resources in the target namespace (`xmc` by default) and verifies that all enabled components are reconciled (`STATE_READY`, `Ready=True`, matching `observedGeneration`, `Degraded!=True`) and all disabled components are `STATE_DISABLED`. Gracefully reports `Skipped: true` when the CRD or cluster is absent unless explicitly required via `--check-components=true`.
 - **BYO Infrastructure Support**: Supports standard flags and environment overrides for custom host/port, DSN strings (`CLICKHOUSE_DSN`), SASL authentication (`SCRAM-SHA-256`, `SCRAM-SHA-512`, `PLAIN`), and TLS/mTLS parameters.
 - **Flexible Output Formats**: Supports human-readable formatted text tables (default) or structured JSON (`--output=json`).
 
@@ -62,6 +63,9 @@ flowchart TD
 | `-sasl_password` | `string` | `""` | SASL authentication password. |
 | `-tls_enabled` | `bool` | `false` | Enable TLS/mTLS for Redpanda connections. |
 | `-tls_insecure_skip_verify` | `bool` | `false` | Skip TLS certificate verification (testing only). |
+| `-check-components` / `-check_components` | `bool` | `true` | Audit `components.xmc.dev` CR readiness in Kubernetes (overrides `CHECK_COMPONENTS` / `ENABLE_COMPONENTS` env). |
+| `-namespace` | `string` | `"xmc"` | Target Kubernetes namespace for `Component` CR checks (overrides `XMC_NAMESPACE` / `NAMESPACE` env). |
+| `-kubeconfig` | `string` | `""` | Path to kubeconfig file for `Component` CR checks (overrides `KUBECONFIG` env). |
 | `-output` | `string` | `"text"` | Output report format: `text` or `json`. |
 | `-skip_smoke_tests` | `bool` | `false` | Skip latency performance smoke tests. |
 
@@ -89,6 +93,21 @@ xmc-diag \
   --sasl_user="redpanda_user" \
   --sasl_password="redpanda_password" \
   --output=json
+```
+
+### Inspecting Coordinates from the `clickhouse` `Component` CR
+
+`xmc-diag` runs out-of-cluster and takes explicit flags rather than reading Kubernetes CRs directly. On clusters with `enable_components: true`, inspect the [`clickhouse` `Component` CR](../../deploy/profiles/stable-2026a/components/clickhouse/README.md), port-forward the target service, and pass the resolved coordinates via `-clickhouse_*` flags:
+
+```bash
+kubectl get component clickhouse -n xmc -o yaml
+kubectl port-forward -n xmc-metrics svc/clickhouse 9000:9000 &
+xmc-diag \
+  --clickhouse_host=127.0.0.1 \
+  --clickhouse_port=9000 \
+  --clickhouse_database=default \
+  --clickhouse_user=default \
+  --clickhouse_password="$(kubectl get secret clickhouse-secret -n xmc -o jsonpath='{.data.clickhouse-password}' | base64 -d)"
 ```
 
 ---

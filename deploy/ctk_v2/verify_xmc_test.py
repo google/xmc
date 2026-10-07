@@ -325,16 +325,62 @@ vars:
         self.assertIn("Skipping Component Controllers check: enable_components is false.", output)
 
     @mock.patch.object(verify_xmc, "_run_command")
-    def test_check_components_enabled(self, mock_run):
+    def test_check_components_enabled_success(self, mock_run):
+        mock_run.side_effect = [
+            "customresourcedefinition.apiextensions.k8s.io/components.xmc.dev\n",
+            '{"items": [{"status": {"phase": "Running", "conditions": [{"type": "Ready", "status": "True"}]}}]}',
+            (
+                '{"items": ['
+                '{"metadata": {"name": "comp-a"}, "spec": {"enabled": true}, '
+                '"status": {"conditions": [{"type": "Ready", "status": "True"}]}},'
+                '{"metadata": {"name": "comp-b"}, "spec": {"enabled": false}, '
+                '"status": {"conditions": [{"type": "Ready", "status": "False", "reason": "Disabled"}]}}'
+                "]}"
+            ),
+        ]
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
             res = verify_xmc._check_components(enable_components=True)
 
         self.assertTrue(res)
-        mock_run.assert_not_called()
+        self.assertEqual(mock_run.call_count, 3)
         output = captured.getvalue()
-        self.assertIn("--- 8. Component Controllers Status ---", output)
-        self.assertIn("Foundational Component Controllers enabled.", output)
+        self.assertIn("Component CRD found", output)
+        self.assertIn("xmc-bridge pod is Running and Ready", output)
+        self.assertIn("All 2 Component CRs verified in expected state", output)
+
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_components_failure_cases(self, mock_run):
+        # 1. Missing CRD
+        mock_run.return_value = ""
+        with mock.patch.object(sys, "stdout", io.StringIO()):
+            self.assertFalse(verify_xmc._check_components(enable_components=True))
+
+        # 2. Pod not ready
+        mock_run.side_effect = [
+            "customresourcedefinition.apiextensions.k8s.io/components.xmc.dev\n",
+            '{"items": [{"status": {"phase": "Pending"}}]}',
+        ]
+        with mock.patch.object(sys, "stdout", io.StringIO()):
+            self.assertFalse(verify_xmc._check_components(enable_components=True))
+
+        # 3. Enabled CR not ready
+        mock_run.side_effect = [
+            "customresourcedefinition.apiextensions.k8s.io/components.xmc.dev\n",
+            '{"items": [{"status": {"phase": "Running", "conditions": [{"type": "Ready", "status": "True"}]}}]}',
+            '{"items": [{"metadata": {"name": "comp-a"}, "spec": {"enabled": true}, "status": {"conditions": [{"type": "Ready", "status": "False"}]}}]}',
+        ]
+        with mock.patch.object(sys, "stdout", io.StringIO()):
+            self.assertFalse(verify_xmc._check_components(enable_components=True))
+
+        # 4. Unreconciled disabled CR (empty status: {}) fails
+        mock_run.side_effect = [
+            "customresourcedefinition.apiextensions.k8s.io/components.xmc.dev\n",
+            '{"items": [{"status": {"phase": "Running", "conditions": [{"type": "Ready", "status": "True"}]}}]}',
+            '{"items": [{"metadata": {"name": "comp-b"}, "spec": {"enabled": false}, "status": {}}]}',
+        ]
+        with mock.patch.object(sys, "stdout", io.StringIO()):
+            self.assertFalse(verify_xmc._check_components(enable_components=True))
 
     @mock.patch.object(verify_xmc, "_check_components", return_value=True)
     @mock.patch.object(verify_xmc, "_check_log_monitor", return_value=True)

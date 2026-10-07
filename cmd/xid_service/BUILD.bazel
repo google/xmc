@@ -29,7 +29,6 @@ compat_go_library(
         "//cmd/xid_service/config",
         "//cmd/xid_service/server",
         "//internal/common/health",
-        "//internal/compat/google",
         "//internal/logging",
         "//pkg/auth/oauth2",
         "@org_golang_google_grpc//:go_default_library",

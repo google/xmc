@@ -60,8 +60,11 @@ jobs:
               - 'deploy/**/*.yml'
               - 'deploy/helm/**'
               - '.github/workflows/lint.yml'
+            github_scripts:
+              - '.github/scripts/**'
+              - '.github/workflows/lint.yml'
 
-      # 1. Python Linting (Ruff)
+      # 1. Python Linting (Ruff & Mypy)
       - name: 'Install Ruff'
         run: |
           if ! command -v ruff &>/dev/null; then
@@ -73,6 +76,17 @@ jobs:
 
       - name: 'Verify Code Formatting (Ruff)'
         run: ruff format --check .
+
+      - name: 'Install Mypy'
+        run: |
+          if ! command -v mypy &>/dev/null; then
+            pip install --no-cache-dir mypy
+          fi
+
+      - name: 'Run Mypy Static Type Check'
+        run: |
+          PY_FILES=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" -not -name "dev_env.py")
+          mypy $PY_FILES
 
       # 2. Go Linting & Formatting (gofmt, golangci-lint, buildifier, addlicense)
       - name: 'Set up Go'
@@ -105,6 +119,12 @@ jobs:
         run: |
           go run ./tools/lint/check_go_determinism
 
+      - name: 'Check google3 Legacy Import Ratchet'
+        env:
+          XMC_BYPASS_VENV: '1'
+        run: |
+          python3 tools/lint/check_legacy_imports.py
+
       - name: 'Verify Go Dependencies (go mod tidy)'
         run: |
           go mod tidy -diff
@@ -133,8 +153,6 @@ jobs:
             chmod +x "$GOPATH_BIN/addlicense"
           fi
           addlicense -check -c "Google LLC" -l apache \
-            -ignore "third_party/**" \
-            -ignore "**/third_party/**" \
             -ignore "**/node_modules/**" \
             -ignore "**/.angular/**" \
             -ignore "**.json" \
@@ -168,6 +186,17 @@ jobs:
         if: steps.changes.outputs.ui == 'true'
         run: npm run lint
         working-directory: 'cmd/ui'
+
+      # 3a. GitHub Actions Script Tests (node:test, no dependencies)
+      - name: 'Set up Node.js for GitHub Actions scripts'
+        if: steps.changes.outputs.github_scripts == 'true'
+        uses: 'actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a' # v4.2.0
+        with:
+          node-version: '22'
+
+      - name: 'Run GitHub Actions script tests'
+        if: steps.changes.outputs.github_scripts == 'true'
+        run: node --test .github/scripts/*.test.js
 
       # 4. Terraform Formatting, Linting & Security (conditional on Terraform file changes)
       - name: 'Set up Terraform'

@@ -35,10 +35,13 @@ class TestParseArgs(unittest.TestCase):
         self.assertFalse(args.run_migrations)
 
     def test_custom_flags(self):
-        args = upgrade_dev_env.parse_args(["-c", "custom.yaml", "-s", "images", "--run-migrations"])
+        args = upgrade_dev_env.parse_args(
+            ["-c", "custom.yaml", "-s", "images", "--run-migrations", "--enable-components"]
+        )
         self.assertEqual(args.config, "custom.yaml")
         self.assertEqual(args.start_from, "images")
         self.assertTrue(args.run_migrations)
+        self.assertTrue(args.enable_components)
 
     def test_mutually_exclusive_start_from_and_only(self):
         with self.assertRaises(SystemExit) as cm:
@@ -279,7 +282,7 @@ class TestStepSubprocesses(unittest.TestCase):
         )
         upgrade_dev_env.step_app(self.config)
         mock_compile.assert_called_once_with(
-            "deploy/ctk_v2/xmanager-cloud-deployment.yaml", "deploy-456"
+            "deploy/ctk_v2/xmanager-cloud-deployment.yaml", "deploy-456", enable_components=False
         )
         # Verify export-outputs, import-inputs, and deploy calls are present
         calls = [call_args[0][0] for call_args in mock_run.call_args_list]
@@ -358,6 +361,33 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertNotIn(self._restart_cmd("xmc-bridge-deployment"), cmds)
         self.assertNotIn(self._restart_cmd("ingestion-gateway-deployment"), cmds)
 
+    @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name", return_value=None)
+    @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
+    def test_step_restart_fails_when_zero_deployments_resolved(self, mock_run, mock_resolve):
+        with self.assertRaises(SystemExit) as cm:
+            upgrade_dev_env.step_restart(self.config)
+        self.assertEqual(cm.exception.code, 1)
+        mock_run.assert_not_called()
+
+    @mock.patch.object(Path, "is_dir", return_value=True)
+    @mock.patch("tools.dev_env.upgrade_dev_env.deploy_component_profile")
+    @mock.patch("tools.dev_env.upgrade_dev_env.compile_blueprint")
+    @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
+    def test_step_app_with_components(self, mock_run, mock_compile, mock_profile, _mock_dir):
+        from dataclasses import replace
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        cfg = replace(self.config, enable_components=True)
+        upgrade_dev_env.step_app(cfg)
+        mock_compile.assert_called_once_with(
+            "deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+            "deploy-456",
+            enable_components=True,
+        )
+        mock_profile.assert_called_once_with(cfg)
+
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
     def test_step_verify(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
@@ -368,7 +398,12 @@ class TestStepSubprocesses(unittest.TestCase):
         _cmd, kwargs = mock_run.call_args
         self.assertEqual(
             kwargs["env"],
-            {"ENVIRONMENT": "dev", "REGION": "us-central1", "PROJECT_ID": "proj-123"},
+            {
+                "ENVIRONMENT": "dev",
+                "REGION": "us-central1",
+                "PROJECT_ID": "proj-123",
+                "ENABLE_COMPONENTS": "false",
+            },
         )
 
 

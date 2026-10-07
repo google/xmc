@@ -17,7 +17,15 @@ package pausescheduling
 import (
 	"sync"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+var schedulingPausedGauge = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "xmc_actuator_scheduling_paused",
+	Help: "Current pause state (1 = Paused, 0 = Active) as enforced by each Actuator in-memory cache.",
+})
 
 // State represents an atomic point-in-time view of the scheduling pause state.
 type State struct {
@@ -70,4 +78,9 @@ func (c *localCache) Update(newState State) {
 	if !newState.UpdatedAt.IsZero() {
 		c.updatedAt = newState.UpdatedAt
 	}
+	val := 0.0
+	if c.isPaused {
+		val = 1.0
+	}
+	schedulingPausedGauge.Set(val)
 }

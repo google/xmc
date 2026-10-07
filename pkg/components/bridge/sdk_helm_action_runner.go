@@ -251,8 +251,7 @@ func (r *SDKHelmActionRunner) resolveTargetChartPath(releaseName string) string 
 	if r.chartPath == "" {
 		return ""
 	}
-	compName := strings.TrimPrefix(releaseName, "xmc-cmp-")
-	return ResolveComponentChartPath(r.chartPath, ComponentRef{Name: compName}, "")
+	return ResolveComponentChartPath(r.chartPath, ComponentRef{Name: componentNameFromRelease(releaseName)}, "")
 }
 
 func (r *SDKHelmActionRunner) resolveChart(releaseName string, chartObj *chart.Chart) (*chart.Chart, error) {
@@ -296,8 +295,7 @@ func (r *SDKHelmActionRunner) resolveChart(releaseName string, chartObj *chart.C
 }
 
 func defaultComponentChart(name string) *chart.Chart {
-	compName := strings.TrimPrefix(name, "xmc-cmp-")
-	root := "components/" + compName
+	root := "components/" + componentNameFromRelease(name)
 	var files []*loader.BufferedFile
 	_ = fs.WalkDir(stable2026a.EmbeddedCharts, root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {

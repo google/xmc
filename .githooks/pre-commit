@@ -117,6 +117,25 @@ check_go() {
   fi
 }
 
+check_legacy_imports() {
+  echo "--> Running google3 Legacy Import Ratchet..."
+  local baseline="tools/lint/legacy_imports_baseline.json"
+  if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_legacy_imports.py >/dev/null; then
+    echo "❌ google3 legacy import ratchet failed (see JSON error above)."
+    FAILED=1
+    return
+  fi
+  if [ "$MODE" = "fix" ]; then
+    # Lower the baseline when counts dropped (the tool never raises counts) and
+    # stage it so the reduction is recorded in this commit.
+    XMC_BYPASS_VENV=1 python3 tools/lint/check_legacy_imports.py --update-baseline >/dev/null
+    if ! git diff --quiet -- "${baseline}"; then
+      git add -- "${baseline}"
+      echo "--> Lowered and staged ${baseline}."
+    fi
+  fi
+}
+
 check_ui() {
   local ui_files
   if [ "$MODE" = "check" ]; then
@@ -181,8 +200,6 @@ check_license() {
 
   echo "--> Running License Header Check (addlicense)..."
   local ignores=(
-    -ignore "third_party/**"
-    -ignore "**/third_party/**"
     -ignore "**/node_modules/**"
     -ignore "**/.angular/**"
     -ignore "**/dist/**"
@@ -274,25 +291,37 @@ check_mypy() {
   fi
 
   local mypy_bin=""
-  if command -v mypy >/dev/null 2>&1; then
-    mypy_bin="mypy"
+  if [ -f "./tools/common/venv/bin/mypy" ]; then
+    mypy_bin="./tools/common/venv/bin/mypy"
   elif [ -f "./tools/venv/bin/mypy" ]; then
     mypy_bin="./tools/venv/bin/mypy"
-  elif [ -f "$HOME/.local/bin/mypy" ]; then
-    mypy_bin="$HOME/.local/bin/mypy"
+  elif command -v mypy >/dev/null 2>&1; then
+    mypy_bin="mypy"
+  elif [ -f "${HOME}/.local/bin/mypy" ]; then
+    mypy_bin="${HOME}/.local/bin/mypy"
   elif python3 -m mypy --version >/dev/null 2>&1; then
     mypy_bin="python3 -m mypy"
   fi
 
-  if [ -n "$mypy_bin" ]; then
+  if [ -z "${mypy_bin}" ]; then
+    echo "--> mypy not found; attempting automatic installation into ./tools/common/venv..."
+    if [ ! -x "./tools/common/venv/bin/pip" ]; then
+      python3 -m venv ./tools/common/venv >/dev/null 2>&1 || true
+    fi
+    if [ -x "./tools/common/venv/bin/pip" ] && ./tools/common/venv/bin/pip install --quiet mypy >/dev/null 2>&1; then
+      mypy_bin="./tools/common/venv/bin/mypy"
+    fi
+  fi
+
+  if [ -n "${mypy_bin}" ]; then
     echo "--> Running Mypy Static Type Checker..."
     if ! $mypy_bin $py_files; then
       echo "❌ Mypy type check failed."
       FAILED=1
     fi
   else
-    echo "--> WARNING: mypy not found. Python type checking skipped."
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
+    echo "❌ ERROR: mypy not found and automatic installation failed. Install mypy (e.g. 'pip install mypy') to proceed."
+    FAILED=1
   fi
 }
 
@@ -393,7 +422,7 @@ check_security() {
       FAILED=1
     fi
   elif command -v docker >/dev/null 2>&1; then
-    if ! docker run --rm -v "$(pwd):/src" aquasec/trivy:latest config --skip-check-update --severity HIGH,CRITICAL /src/deploy; then
+    if ! docker run --rm -v "$(pwd):/src" -w /src aquasec/trivy:latest config --skip-check-update --severity HIGH,CRITICAL deploy/; then
       echo "❌ Trivy security check failed."
       FAILED=1
     fi
@@ -406,6 +435,7 @@ check_security() {
 main() {
   check_bazel
   check_go
+  check_legacy_imports
   check_ui
   check_license
   check_python

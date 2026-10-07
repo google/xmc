@@ -34,4 +34,19 @@ func TestLoadConfig(t *testing.T) {
 			t.Error("Expected non-empty XidServiceAddr")
 		}
 	})
+
+	t.Run("loads component flags from environment", func(t *testing.T) {
+		t.Cleanup(loadEnvConfig)
+		t.Setenv("enable_components", "true")
+		t.Setenv("components_namespace", "custom-ns")
+
+		loadEnvConfig()
+
+		if !cfg.EnableComponents {
+			t.Errorf("cfg.EnableComponents = false, want true")
+		}
+		if cfg.ComponentsNamespace != "custom-ns" {
+			t.Errorf("cfg.ComponentsNamespace = %q, want %q", cfg.ComponentsNamespace, "custom-ns")
+		}
+	})
 }

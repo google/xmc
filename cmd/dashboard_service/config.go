@@ -29,14 +29,15 @@ type Config struct {
 	ProjectID           string
 	SpannerDatabaseName string
 	XidServiceAddr      string
+	EnableComponents    bool
+	ComponentsNamespace string
 }
 
 var cfg Config
 
 func init() {
 	// 1. Load configurations from ConfigMap (via environment variables)
-	configutil.StringEnv(&cfg.SpannerDatabaseName, "dashboard_spanner_database_name", "")
-	configutil.StringEnv(&cfg.XidServiceAddr, "dashboard_xid_service_addr", "xid-svc:50051")
+	loadEnvConfig()
 
 	defaultPort := os.Getenv("PORT")
 	if defaultPort == "" {
@@ -49,6 +50,13 @@ func init() {
 	flag.StringVar(&cfg.ProjectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
 }
 
+func loadEnvConfig() {
+	configutil.StringEnv(&cfg.SpannerDatabaseName, "dashboard_spanner_database_name", "")
+	configutil.StringEnv(&cfg.XidServiceAddr, "dashboard_xid_service_addr", "xid-svc:50051")
+	configutil.BoolEnv(&cfg.EnableComponents, "enable_components", false)
+	configutil.StringEnv(&cfg.ComponentsNamespace, "components_namespace", "xmc")
+}
+
 func getSpannerDatabaseName() string {
 	return cfg.SpannerDatabaseName
 }
@@ -56,9 +64,11 @@ func getSpannerDatabaseName() string {
 // LoadConfig loads and returns the configuration.
 func LoadConfig() *server.Config {
 	return &server.Config{
-		Port:           cfg.Port,
-		GRPCPort:       cfg.GRPCPort,
-		ProjectID:      cfg.ProjectID,
-		XidServiceAddr: cfg.XidServiceAddr,
+		Port:                cfg.Port,
+		GRPCPort:            cfg.GRPCPort,
+		ProjectID:           cfg.ProjectID,
+		XidServiceAddr:      cfg.XidServiceAddr,
+		EnableComponents:    cfg.EnableComponents,
+		ComponentsNamespace: cfg.ComponentsNamespace,
 	}
 }

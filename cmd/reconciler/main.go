@@ -16,17 +16,17 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 
 	"github.com/go-logr/logr"
-	"go/google"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"xmanager_cloud/logging/logging"
 )
 
 func main() {
-	google.Init()
+	flag.Parse()
 	ctx := ctrl.SetupSignalHandler()
 
 	cfg := Load()

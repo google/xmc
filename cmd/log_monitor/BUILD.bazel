@@ -32,7 +32,6 @@ compat_go_library(
         "//api/protos/experiment:messages_go_proto",
         "//internal/common/health",
         "//internal/compat/field_mask",
-        "//internal/compat/google",
         "//internal/compat/spanner",
         "//internal/compat/status",
         "//internal/kubernetes/common/constants",

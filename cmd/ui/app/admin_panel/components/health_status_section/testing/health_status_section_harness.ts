@@ -14,6 +14,8 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 
+import { ErrorBannerHarness } from 'app/common/components/error_banner/error_banner_harness';
+
 import { HealthStatusGroupCardHarness } from '../health_status_group_card/testing/health_status_group_card_harness';
 import { SchedulingPauseButtonHarness } from '../scheduling_pause_button/testing/scheduling_pause_button_harness';
 import { SchedulingPauseModalHarness } from '../scheduling_pause_modal/testing/scheduling_pause_modal_harness';
@@ -25,8 +27,14 @@ export class HealthStatusSectionHarness extends ComponentHarness {
   private readonly _title = this.locatorFor('.card-title');
   private readonly _refreshBtn = this.locatorFor('.refresh-button');
   private readonly _overallBadge = this.locatorFor('.status-badge');
+  private readonly _errorBanner = this.locatorForOptional(ErrorBannerHarness);
   private readonly _pauseButton = this.locatorForOptional(SchedulingPauseButtonHarness);
   private readonly _modal = this.locatorForOptional(SchedulingPauseModalHarness);
+
+  async getErrorBannerText(): Promise<string | null> {
+    const banner = await this._errorBanner();
+    return banner ? banner.getMessage() : null;
+  }
 
   async getTitleText(): Promise<string> {
     const el = await this._title();

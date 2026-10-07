@@ -48,7 +48,7 @@ runs:
       uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
       with:
         path: ~/.cache/bazel-repo
-        key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
+        key: bazel-repo-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'go.mod', 'go.sum') }}
         restore-keys: |
           bazel-repo-${{ runner.os }}-
 
@@ -111,7 +111,7 @@ runs:
       if: github.ref == 'refs/heads/main' && steps.classify.outputs.run_backend == 'true' && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
       with:
         path: ~/.cache/bazel-repo
-        key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
+        key: bazel-repo-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'go.mod', 'go.sum') }}
 
     - name: 'Log Backend Test Skip Summary'
       if: steps.classify.outputs.run_backend != 'true'
