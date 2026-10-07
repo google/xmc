@@ -32,14 +32,13 @@ function formatCoreCount(cores: number): string {
   return cores === 1 ? `${formatted} core` : `${formatted} cores`;
 }
 
-function formatBytes(bytes: number, decimals = 2): string {
+function formatBytes(bytes: number): string {
   if (isNaN(bytes) || bytes <= 0) {
     return '0 B';
   }
   const k = 1024;
-  const dm = Math.max(0, decimals);
   const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), BYTE_UNITS.length - 1);
-  return `${parseFloat((bytes / Math.pow(k, unitIndex)).toFixed(dm))} ${BYTE_UNITS[unitIndex]}`;
+  return `${parseFloat((bytes / Math.pow(k, unitIndex)).toFixed(2))} ${BYTE_UNITS[unitIndex]}`;
 }
 
 /** Converts a list of ResourceSet to a list of ResourceChipData. */
@@ -55,7 +54,7 @@ export function resourceSetsToResourceChipsData(resources: ResourceSet[]): Resou
         },
         {
           resourceType: ResourceType.MEMORY,
-          text: formatBytes(Number(res.cpuResources.memoryBytes), 2),
+          text: formatBytes(Number(res.cpuResources.memoryBytes)),
         },
       );
     }
