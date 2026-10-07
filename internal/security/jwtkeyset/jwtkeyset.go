@@ -43,8 +43,8 @@ func PrivateKeyToKeysetHandle(privKey *rsa.PrivateKey, keyID *uint32, options Op
 	if privKey == nil {
 		return nil, errors.New("nil private key")
 	}
-	if len(privKey.Primes) < 2 {
-		return nil, errors.New("private key must have at least 2 primes")
+	if privKey.D == nil || privKey.N == nil || len(privKey.Primes) < 2 || privKey.Primes[0] == nil || privKey.Primes[1] == nil {
+		return nil, errors.New("invalid or incomplete private key")
 	}
 
 	var algo jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm
@@ -147,8 +147,8 @@ func PublicKeysToJwtPublicKeyset(keys []crypto.PublicKey, options *Options) (*ke
 	var keysetKeys []*tink_go_proto.Keyset_Key
 	for idx, key := range keys {
 		rsaPubKey, ok := key.(*rsa.PublicKey)
-		if !ok || rsaPubKey == nil {
-			return nil, fmt.Errorf("key %d is not *rsa.PublicKey", idx)
+		if !ok || rsaPubKey == nil || rsaPubKey.N == nil {
+			return nil, fmt.Errorf("key %d is invalid or not *rsa.PublicKey", idx)
 		}
 
 		publicKeyMsg := &jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1PublicKey{

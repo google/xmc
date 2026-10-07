@@ -302,10 +302,12 @@ func (qf *Spanner) GetIsHAS() bool {
 // CaptureSQL captures TrustedSQLString fragments appended during fn execution.
 func (qf *Spanner) CaptureSQL(fn func() error) (safesql.TrustedSQLString, error) {
 	qf.captureStack = append(qf.captureStack, safesql.EmptyString())
-	err := fn()
 	top := len(qf.captureStack) - 1
+	defer func() {
+		qf.captureStack = qf.captureStack[:top]
+	}()
+	err := fn()
 	captured := qf.captureStack[top]
-	qf.captureStack = qf.captureStack[:top]
 	if err != nil {
 		return safesql.EmptyString(), err
 	}

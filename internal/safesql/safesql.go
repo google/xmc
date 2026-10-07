@@ -17,7 +17,7 @@
 package safesql
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -80,7 +80,7 @@ func StringJoin(sep stringConstant, parts ...TrustedSQLString) TrustedSQLString 
 // NewBindingParam constructs a TrustedSQLString for a numbered parameter placeholder
 // (e.g. "@fb0") from a compile-time constant prefix and an unsigned integer index.
 func NewBindingParam(prefix stringConstant, index uint64) TrustedSQLString {
-	return TrustedSQLString{s: fmt.Sprintf("%s%d", prefix, index)}
+	return TrustedSQLString{s: string(prefix) + strconv.FormatUint(index, 10)}
 }
 
 // String returns the underlying SQL string.

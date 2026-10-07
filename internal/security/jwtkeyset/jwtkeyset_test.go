@@ -278,7 +278,12 @@ func TestPrivateKeyToKeysetHandle_EdgeCases(t *testing.T) {
 		},
 		{
 			name:    "fewer than 2 primes",
-			privKey: &rsa.PrivateKey{Primes: []*big.Int{big.NewInt(3)}},
+			privKey: &rsa.PrivateKey{PublicKey: rsa.PublicKey{N: big.NewInt(15), E: 65537}, D: big.NewInt(3), Primes: []*big.Int{big.NewInt(3)}},
+			opts:    Options{RSAAlgorithm: "RS256"},
+		},
+		{
+			name:    "nil prime element",
+			privKey: &rsa.PrivateKey{PublicKey: rsa.PublicKey{N: big.NewInt(15), E: 65537}, D: big.NewInt(3), Primes: []*big.Int{big.NewInt(3), nil}},
 			opts:    Options{RSAAlgorithm: "RS256"},
 		},
 		{
@@ -323,6 +328,11 @@ func TestPublicKeysToJwtPublicKeyset_EdgeCases(t *testing.T) {
 		{
 			name: "non-RSA key in slice",
 			keys: []crypto.PublicKey{"not-an-rsa-key"},
+			opts: nil,
+		},
+		{
+			name: "RSA key with nil N",
+			keys: []crypto.PublicKey{&rsa.PublicKey{N: nil, E: 65537}},
 			opts: nil,
 		},
 	}
