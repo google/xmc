@@ -14,7 +14,11 @@ graph TD
     C --> D["Agent runs fetch_pr_comment.py for comment context"]
     D --> E["Agent extracts: body, file path, line"]
     E --> D2["Agent performs Comment Validity & Pushback Triage"]
-    D2 --> F["Agent performs Bazel Query to find affected binaries"]
+    D2 --> D3{"Any Adopt items?"}
+    D3 -->|Yes| F["Agent performs Bazel Query to find affected binaries"]
+    D3 -->|No| G2["Agent prepares Pushback Plan"]
+    G2 --> J2["Agent posts inline pushback replies"]
+    J2 --> M["1-to-1 Thread Resolution Verification (verify_pr_comment_resolution.py)"]
     F --> G["Agent prepares Implementation Plan"]
     G --> H["Agent runs Unit Tests & Coverage"]
     H --> I["Agent builds affected targets locally"]
@@ -152,7 +156,7 @@ Each `go_binary` mapped above is associated with an OCI image builder and GKE de
 
 Based on the parsed review comments, validity triage, and impacted targets, the agent creates a draft implementation plan (e.g., `pr_comment_resolution_plan.md`) for user review:
 
-- **Comment Validity & Pushback Triage Table**: A summary table (`Comment ID | Summary | Disposition (Adopt / Push Back) | Technical Rationale`) classifying every comment per [Section 2.5](#25-comment-validity--pushback-triage-mandatory-before-planning-edits).
+- **Comment Validity & Pushback Triage Table**: A summary table (`Comment ID | Summary | Disposition (Adopt / Push Back / Defer) | Technical Rationale`) classifying every comment per [Section 2.5](#25-comment-validity--pushback-triage-mandatory-before-planning-edits).
 - **Analysis**: Visual code excerpt and summary of the reviewer's concern.
 - **Proposed Resolution (Code Changes vs. Inline Pushback Reply)**: For `Adopt` items, specify target file path, exact lines to modify, and a git diff style code snippet. For `Push Back` items, state explicitly that no code change will be made and draft the exact technical rationale reply to be posted via `./tools/pr_review/reply_pr_comment.py`.
 - **Affected Components list**: Which binaries and deployments need to be verified (for `Adopt` items).
