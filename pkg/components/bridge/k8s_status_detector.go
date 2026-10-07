@@ -147,6 +147,25 @@ func NormalizeJSONPath(path string) string {
 	return fmt.Sprintf("{%s}", trimmed)
 }
 
+// ErrInvalidWrapperSpec marks an error caused by an invalid JSONPath expression configured in the Component wrapperRef spec.
+var ErrInvalidWrapperSpec = errors.New("invalid wrapper spec")
+
+// ErrContractBreach marks an error caused by a malformed 3P status payload or JSONPath execution failure against the 3P object.
+var ErrContractBreach = errors.New("3p status contract breach")
+
+// ValidateWrapperRefJSONPaths validates the syntax of all non-empty JSONPath queries configured on ref.
+func ValidateWrapperRefJSONPaths(ref WrapperRef) error {
+	for _, p := range []string{ref.ObservedGenerationPath, ref.ReadyConditionPath, ref.EndpointJSONPath, ref.ConnectionSecretJSONPath} {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		if err := jsonpath.New("validator").AllowMissingKeys(true).Parse(NormalizeJSONPath(p)); err != nil {
+			return fmt.Errorf("%w: invalid jsonpath expression %q: %w", ErrInvalidWrapperSpec, p, err)
+		}
+	}
+	return nil
+}
+
 // EvaluateJSONPath parses and executes a JSONPath expression against the provided data object.
 func EvaluateJSONPath(data any, path string) (string, error) {
 	if data == nil || strings.TrimSpace(path) == "" {
@@ -163,7 +182,7 @@ func EvaluateJSONPath(data any, path string) (string, error) {
 	normalized := NormalizeJSONPath(path)
 	jp := jsonpath.New("detector").AllowMissingKeys(true)
 	if err := jp.Parse(normalized); err != nil {
-		return "", fmt.Errorf("invalid jsonpath expression %q: %w", path, err)
+		return "", fmt.Errorf("%w: invalid jsonpath expression %q: %w", ErrInvalidWrapperSpec, path, err)
 	}
 	var buf bytes.Buffer
 	if err := jp.Execute(&buf, data); err != nil {
@@ -172,11 +191,15 @@ func EvaluateJSONPath(data any, path string) (string, error) {
 	return strings.TrimSpace(buf.String()), nil
 }
 
-// ErrContractBreach marks an error caused by a malformed 3P status payload or JSONPath evaluation failure.
-var ErrContractBreach = errors.New("3p status contract breach")
-
 func contractBreachErrorf(format string, args ...any) error {
 	return fmt.Errorf("%w: "+format, append([]any{ErrContractBreach}, args...)...)
+}
+
+func wrapStatusExtractionError(contextMsg string, err error) error {
+	if errors.Is(err, ErrInvalidWrapperSpec) {
+		return fmt.Errorf("%s: %w", contextMsg, err)
+	}
+	return contractBreachErrorf("%s: %w", contextMsg, err)
 }
 
 // ExtractResourceStatus inspects the unstructured Kubernetes object according to WrapperRef queries,
@@ -191,11 +214,11 @@ func ExtractResourceStatus(obj *unstructured.Unstructured, ref WrapperRef) (*Res
 	}
 	obsGen, err := extractObservedGeneration(obj, ref.ObservedGenerationPath)
 	if err != nil {
-		return nil, contractBreachErrorf("failed to extract observedGeneration: %w", err)
+		return nil, wrapStatusExtractionError("failed to extract observedGeneration", err)
 	}
 	ready, readyMsg, err := evaluateReadiness(obj, ref.ReadyConditionPath, ref.ExpectedReadyValue)
 	if err != nil {
-		return nil, contractBreachErrorf("failed to evaluate readiness: %w", err)
+		return nil, wrapStatusExtractionError("failed to evaluate readiness", err)
 	}
 	if obsGen > 0 && obsGen < obj.GetGeneration() {
 		ready = false
@@ -203,11 +226,11 @@ func ExtractResourceStatus(obj *unstructured.Unstructured, ref WrapperRef) (*Res
 	}
 	endpoint, err := extractFirstMatch(obj, ref.EndpointJSONPath, defaultEndpointCandidates...)
 	if err != nil {
-		return nil, contractBreachErrorf("failed to extract endpoint: %w", err)
+		return nil, wrapStatusExtractionError("failed to extract endpoint", err)
 	}
 	secret, err := extractFirstMatch(obj, ref.ConnectionSecretJSONPath, defaultSecretCandidates...)
 	if err != nil {
-		return nil, contractBreachErrorf("failed to extract connection secret: %w", err)
+		return nil, wrapStatusExtractionError("failed to extract connection secret", err)
 	}
 	return &ResourceStatus{
 		Found:              true,
@@ -220,7 +243,7 @@ func ExtractResourceStatus(obj *unstructured.Unstructured, ref WrapperRef) (*Res
 	}, nil
 }
 
-// validateStatusPayload ensures .status (when present) is a map and .status.conditions (when present) is a slice of maps.
+// validateStatusPayload ensures .status (when present) is a map and .status.conditions (when present) is a slice of maps with non-empty string types.
 func validateStatusPayload(root map[string]any) (map[string]any, error) {
 	raw, exists := root["status"]
 	if !exists || raw == nil {
@@ -238,8 +261,12 @@ func validateStatusPayload(root map[string]any) (map[string]any, error) {
 		return statusMap, nil
 	}
 	for i, elem := range condSlice {
-		if _, ok := elem.(map[string]any); !ok {
+		condMap, ok := elem.(map[string]any)
+		if !ok {
 			return nil, contractBreachErrorf("malformed 3P status.conditions[%d]: expected object, got %T", i, elem)
+		}
+		if typ, ok := condMap["type"].(string); !ok || strings.TrimSpace(typ) == "" {
+			return nil, contractBreachErrorf("malformed 3P status.conditions[%d]: condition type must be a non-empty string", i)
 		}
 	}
 	return statusMap, nil

@@ -103,7 +103,7 @@ Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference serv
   - `FakeStatusDetector`: In-memory test double supporting synthetic status mapping and error injection for unit testing.
   - `K8sStatusDetector`: Production implementation (`k8s_status_detector.go`) using client-go `dynamic.Interface` and `meta.RESTMapper` with automatic GVR discovery, resilient missing-CRD handling (`meta.IsNoMatchError`), structural contract validation (`validateStatusPayload` returning `ErrContractBreach` when `.status` is not an object map, `.status.conditions` is not a list of maps, or a condition lacks a non-empty string `type`), and normalized JSONPath evaluation. Companion tests in `k8s_status_detector_test.go`.
 - **Dynamic JSONPath Engine (`EvaluateJSONPath`)**: Evaluates arbitrary JSONPath queries against unstructured objects with automatic syntax normalization (`{.field}`, `field`, `$[0]`) and sibling condition failure message discovery.
-- **Reconciler Lifecycle Integration**: Integrates 3P wrapper reconciliation into `wrapper_reconciler.go` (`reconcile3PWrapper`), setting `Ready=False` and `Degraded=True` with explicit reason codes (`ResourceNotFound`, `CRDNotFound`, `ContractBroken`, `StatusDetectionPending`) when unready, and propagating state to CMS.
+- **Reconciler Lifecycle Integration**: Integrates 3P wrapper reconciliation into `wrapper_reconciler.go` (`reconcile3PWrapper`), setting `Ready=False` and `Degraded=True` with explicit reason codes (`ResourceNotFound`, `CRDNotFound`, `InvalidWrapperSpec`, `ContractBroken`, `StatusDetectionPending`) when unready, and propagating state to CMS.
 
 ---
 
@@ -243,7 +243,7 @@ The reconciler unifies third-party CRD inspection and active health probing in `
 - **End-to-End Health Verification**: Combines CR status conditions from `StatusDetector` with runtime probe results from `HealthProber`.
 - **Condition Transitions**:
   - `Ready = True`: Emitted only when the underlying CR status is ready and active health probes succeed.
-  - `Degraded = True`: Emitted when active probes fail, CR condition reports an error, or the target CR's `.status` payload violates the structural contract (`ErrContractBreach` -> `Reason = ContractBroken`), with root-cause message propagation.
+  - `Degraded = True`: Emitted when active probes fail, CR condition reports an error, the `wrapperRef` contains an invalid JSONPath expression (`ErrInvalidWrapperSpec` -> `Reason = InvalidWrapperSpec`), or the target CR's `.status` payload violates the structural contract (`ErrContractBreach` -> `Reason = ContractBroken`), with root-cause message propagation.
 - **Access Coordinate Publishing**: Parses endpoint locations and publishes standard connection environment variables to CMS `AccessStatus.EnvVars`:
   - `ENDPOINT`: Full URL or base address.
   - `HOST`: Target host name or ClusterIP.
@@ -260,9 +260,9 @@ The reconciler unifies third-party CRD inspection and active health probing in `
 Production-grade controller reliability, conflict elimination, and Cloud Spanner write throttling:
 
 - **Server-Side Apply (SSA) Status & Finalizer Helpers (`status_applier.go`)**:
-  - `ApplyComponentStatusSSA`: Persists status updates via Kubernetes Server-Side Apply (`types.ApplyPatchType`) against the `/status` subresource using `ComponentFieldManager = "xmc-bridge"`.
+  - `ApplyComponentStatusSSA`: Persists status updates via Kubernetes Server-Side Apply (`types.ApplyPatchType`) against the `/status` subresource using `FieldManagerBridge = "xmc-bridge"`.
   - `SyncComponentFinalizers`: Synchronizes `metadata.finalizers` on `Component` CRs via optimistic concurrency update.
-  - `BuildStatus`, `BuildStatusMap`, and `ExtractPriorConditions`: Construct RFC3339-formatted unstructured status maps and extract prior condition snapshots for transition-time preservation. Companion unit tests in `status_applier_test.go`.
+  - `BuildStatus` and `BuildStatusMap`: Construct RFC3339-formatted typed and unstructured status payloads. Companion unit tests in `status_applier_test.go`.
   - Atomic field ownership eliminates optimistic concurrency update conflicts with other controllers (e.g. `xmc-syncer`) and prevents stale object overwrites.
 - **Control-Plane `envtest` Integration Suite (`components_admission_test.go`, `reconciler_test.go`)**:
   - Boots an in-process `kube-apiserver` and `etcd` via `controller-runtime/pkg/envtest` to verify `Component` CRD OpenAPI v3 structural schema defaults, `x-kubernetes-validations` CEL rules, `ValidatingAdmissionPolicy` deletion protection with `xmc-platform-admins` RBAC breakglass impersonation, multi-manager SSA `.status.conditions` merge semantics, and 3P `ContractBroken` condition persistence.
