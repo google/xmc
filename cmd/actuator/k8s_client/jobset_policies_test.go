@@ -16,7 +16,6 @@ package k8sclient
 
 import (
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
@@ -527,7 +526,7 @@ func TestConstructJobSet_SuccessPolicy(t *testing.T) {
 	workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		wu.Executable.GetJobset().Jobs[0].Name = constants.PathwaysHeadJobName
 	})
-	jobSet, err := client.constructJobSet(ctx, workUnit, "experiments/1/workUnits/1/executions/1", "user", "test-queue", time.Now(), Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, "experiments/1/workUnits/1/executions/1", "user", "test-queue", testTime, Priorities{})
 	if err != nil {
 		t.Fatalf("constructJobSet() unexpected error: %v", err)
 	}
