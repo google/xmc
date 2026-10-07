@@ -172,6 +172,13 @@ func TestResolveResourceType(t *testing.T) {
 			want:         "nvidia.com/gpu: nvidia-tesla-h100",
 		},
 		{
+			name:         "Multi-label cloud.google.com/gke-accelerator nvidia-h100-mega-80gb",
+			resourceName: "nvidia.com/gpu",
+			flavorName:   "flavor-a3-mega",
+			rfMap:        testFlavorMap("flavor-a3-mega", "cloud.google.com/gke-accelerator", "nvidia-h100-mega-80gb"),
+			want:         "nvidia.com/gpu: nvidia-h100-mega-80gb",
+		},
+		{
 			name:         "Multi-label cloud.google.com/gke-gpu-type",
 			resourceName: "nvidia.com/gpu",
 			flavorName:   "flavor-2",
