@@ -198,7 +198,10 @@ func VisitDisjunction(qfv QueryFilterVisitor, exprs []*fpb.Expression) (filtervi
 		if !processedGroups[key] {
 			processedGroups[key] = true
 			g := groups[key]
-			_, colSQL, _ := qfv.HandleDisjunction(g.path)
+			_, colSQL, err := qfv.HandleDisjunction(g.path)
+			if err != nil {
+				return filtervisitor.Invalid, err
+			}
 			paramSQL, err := qfv.CaptureSQL(func() error {
 				qfv.AppendBindingStringArray(g.values)
 				return nil

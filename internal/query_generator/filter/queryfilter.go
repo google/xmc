@@ -213,6 +213,9 @@ func (qf *Spanner) GetExpOptions() *queryfilterbase.ExpOptions {
 }
 
 func (qf *Spanner) appendBinding(v any) {
+	if qf.Q == nil {
+		return
+	}
 	index := atomic.AddUint64(&qf.count, 1) - 1
 
 	// Append the binding name to the query.

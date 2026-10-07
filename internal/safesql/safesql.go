@@ -44,6 +44,9 @@ func EmptyString() TrustedSQLString {
 
 // Concat concatenates multiple TrustedSQLString fragments into a single TrustedSQLString.
 func Concat(parts ...TrustedSQLString) TrustedSQLString {
+	if len(parts) == 0 {
+		return EmptyString()
+	}
 	var totalLen int
 	for _, p := range parts {
 		totalLen += len(p.s)
