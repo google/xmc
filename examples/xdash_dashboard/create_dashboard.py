@@ -59,19 +59,23 @@ def _resolve_experiment_runs(
     if not create_experiments:
         return list(EXPERIMENT_RUNS)
 
-    from xmanager import xm_cloud
-    from xmanager.xm_cloud import snapshot_code
+    from xmanager_cloud.experiment_state_server import experiment_state_api
+    from xmanager_cloud.experiment_state_server.proto import api_pb2, experiment_pb2
     from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
-    snapshot_code.push_repo_state = lambda *a, **kw: type("Dummy", (), {"commit_url": None})()
+    api = experiment_state_api.get_experiment_state_api()
     acls = xid_messages_pb2.XidAcls(
         owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
     )
     resolved: list[tuple[int, str, str]] = []
     for _, slug, run_title in EXPERIMENT_RUNS:
-        with xm_cloud.create_experiment(experiment_title=run_title, acls=acls) as exp:
-            xid = int(exp.resource_name.split("/")[-1])
-            resolved.append((xid, f"{slug}_{xid}", run_title))
+        exp = api.create_experiment(
+            api_pb2.CreateExperimentRequest(
+                experiment=experiment_pb2.Experiment(title=run_title, acls=acls)
+            )
+        )
+        xid = int(exp.name.split("/")[-1])
+        resolved.append((xid, f"{slug}_{xid}", run_title))
     return resolved
 
 
