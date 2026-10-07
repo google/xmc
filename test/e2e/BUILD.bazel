@@ -48,6 +48,7 @@ _KIND_3P_DEPS = [
     "@io_k8s_apimachinery//pkg/runtime/schema",
     "@io_k8s_apimachinery//pkg/types",
     "@io_k8s_apimachinery//pkg/util/intstr",
+    "@io_k8s_apimachinery//pkg/util/wait",
     "@io_k8s_apimachinery//pkg/util/yaml",
     "@io_k8s_client_go//discovery/cached/memory",
     "@io_k8s_client_go//dynamic",

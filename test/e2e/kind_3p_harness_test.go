@@ -33,11 +33,13 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -125,6 +127,11 @@ func resolveBinaryPath(name string) string {
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
 		candidates = append(candidates, filepath.Join(home, ".local", "bin", name))
 	}
+	if wd, err := os.Getwd(); err == nil {
+		if idx := strings.Index(wd, "/.cache/bazel/"); idx > 0 {
+			candidates = append(candidates, filepath.Join(wd[:idx], ".local", "bin", name))
+		}
+	}
 	for _, p := range candidates {
 		if info, err := os.Stat(p); err == nil && !info.IsDir() {
 			return p
@@ -159,23 +166,14 @@ func buildClusterClients(t *testing.T, clusterName, kubeconfig string) *kindClus
 
 func installComponentCRD(ctx context.Context, t *testing.T, h *kindClusterHarness) {
 	t.Helper()
-	rawBytes, err := os.ReadFile(locateHelmComponentCRDPath(t))
-	if err != nil {
-		t.Fatalf("failed to read component CRD: %v", err)
-	}
-	var filtered []string
-	for _, line := range strings.Split(string(rawBytes), "\n") {
-		if !strings.HasPrefix(strings.TrimSpace(line), "{{-") {
-			filtered = append(filtered, line)
-		}
-	}
-	jsonBytes, err := k8syaml.ToJSON([]byte(strings.Join(filtered, "\n")))
-	if err != nil {
-		t.Fatalf("failed to convert CRD YAML to JSON: %v", err)
+	chartRoot := filepath.Dir(filepath.Dir(filepath.Dir(locateHelmComponentCRDPath(t))))
+	renderedYAML := runCommand(t, "helm", "template", "xmc-e2e", chartRoot, "--set", "componentsDeployment.enabled=true", "--show-only", "templates/components/crd.yaml")
+	if idx := strings.Index(renderedYAML, "\napiVersion:"); idx >= 0 {
+		renderedYAML = renderedYAML[idx+1:]
 	}
 	var obj map[string]any
-	if err := json.Unmarshal(jsonBytes, &obj); err != nil {
-		t.Fatalf("failed to unmarshal CRD JSON: %v", err)
+	if err := k8syaml.Unmarshal([]byte(renderedYAML), &obj); err != nil {
+		t.Fatalf("failed to unmarshal CRD YAML: %v", err)
 	}
 	applyUnstructuredObject(ctx, t, h, obj)
 	waitForCRDEstablished(ctx, t, h, "components.xmc.dev")
@@ -213,7 +211,18 @@ func buildStandardWrapperRef(group, version, kind, name string) map[string]any {
 
 func applyThirdPartyComponentCR(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, name, compClass, version string, wrapperRef, params map[string]any) {
 	t.Helper()
-	_ = h.dynClient.Resource(componentGVR).Namespace(ns).Delete(ctx, name, metav1.DeleteOptions{})
+	compRes := h.dynClient.Resource(componentGVR).Namespace(ns)
+	if existing, err := compRes.Get(ctx, name, metav1.GetOptions{}); err == nil {
+		existing.SetFinalizers(nil)
+		_, _ = compRes.Update(ctx, existing, metav1.UpdateOptions{})
+		_ = compRes.Delete(ctx, name, metav1.DeleteOptions{})
+		if !waitUntil(ctx, 15*time.Second, 100*time.Millisecond, func() bool {
+			_, getErr := compRes.Get(ctx, name, metav1.GetOptions{})
+			return apierrors.IsNotFound(getErr)
+		}) {
+			t.Fatalf("timed out waiting for previous Component %s/%s deletion", ns, name)
+		}
+	}
 	spec := map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "componentClass": compClass, "deletionProtection": false, "enabled": true, "version": version}
 	if len(wrapperRef) > 0 {
 		spec["wrapperRef"] = wrapperRef
@@ -284,20 +293,9 @@ func resolveObjectGVR(gvk schema.GroupVersionKind) schema.GroupVersionResource {
 }
 
 func waitUntil(ctx context.Context, timeout, interval time.Duration, cond func() bool) bool {
-	deadline := time.Now().Add(timeout)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for time.Now().Before(deadline) && ctx.Err() == nil {
-		if cond() {
-			return true
-		}
-		select {
-		case <-ctx.Done():
-			return false
-		case <-ticker.C:
-		}
-	}
-	return false
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(context.Context) (bool, error) {
+		return cond(), nil
+	}) == nil
 }
 
 func waitForCRDEstablished(ctx context.Context, t *testing.T, h *kindClusterHarness, crdName string) {
@@ -502,7 +500,6 @@ func runMockMLWorkloadPod(ctx context.Context, t *testing.T, h *kindClusterHarne
 			Containers:    []corev1.Container{{Name: "workload", Image: spec.Image, ImagePullPolicy: corev1.PullIfNotPresent, Command: spec.Command, Env: envList}},
 		},
 	}
-	_ = h.clientset.CoreV1().Pods(spec.Namespace).Delete(ctx, spec.Name, metav1.DeleteOptions{})
 	if _, err := h.clientset.CoreV1().Pods(spec.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("failed to create mock ML workload pod %s/%s: %v", spec.Namespace, spec.Name, err)
 	}
