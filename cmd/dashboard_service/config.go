@@ -64,9 +64,11 @@ func getSpannerDatabaseName() string {
 // LoadConfig loads and returns the configuration.
 func LoadConfig() *server.Config {
 	return &server.Config{
-		Port:           cfg.Port,
-		GRPCPort:       cfg.GRPCPort,
-		ProjectID:      cfg.ProjectID,
-		XidServiceAddr: cfg.XidServiceAddr,
+		Port:                cfg.Port,
+		GRPCPort:            cfg.GRPCPort,
+		ProjectID:           cfg.ProjectID,
+		XidServiceAddr:      cfg.XidServiceAddr,
+		EnableComponents:    cfg.EnableComponents,
+		ComponentsNamespace: cfg.ComponentsNamespace,
 	}
 }

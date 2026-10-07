@@ -28,6 +28,9 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 )
 
+// Options aliases the underlying ClickHouse driver options type.
+type Options = clickhouse.Options
+
 // Configured reports whether the environment points at a ClickHouse instance.
 //
 // GetOptions falls back to a localhost address so that local development needs no configuration,
