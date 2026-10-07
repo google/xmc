@@ -19,13 +19,13 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 
-	"go/flag"
 	"go/google"
 	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
@@ -38,10 +38,10 @@ import (
 	"xmanager_cloud/storage/spanner/migrations/driver/spannerdriver"
 )
 
-//go:embed xmanager_cloud/experiment_state_server/proto/ess_messages.pb
+//go:embed ess_messages.pb
 var essMessagesDescriptor []byte
 
-//go:embed xmanager_cloud/xid_service/proto/xid_messages.pb
+//go:embed xid_messages.pb
 var xidMessagesDescriptor []byte
 
 //go:embed ess/*.sql xid/*.sql

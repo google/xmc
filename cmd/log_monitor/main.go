@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -24,14 +25,13 @@ import (
 	"sync"
 	"syscall"
 
-	"go/google"
 	"golang/cloud_google_com/go/pubsub/v/v1/pubsub"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/logging/logging"
 )
 
 func main() {
-	google.Init()
+	flag.Parse()
 
 	cfg, err := LoadConfig()
 	if err != nil {

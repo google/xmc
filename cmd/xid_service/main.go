@@ -17,13 +17,13 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"go/google"
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
@@ -35,7 +35,7 @@ import (
 )
 
 func main() {
-	google.Init()
+	flag.Parse()
 
 	// 1. Load configuration
 	cfg := config.Load()

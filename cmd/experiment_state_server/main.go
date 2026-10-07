@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"embed"
+	"flag"
 	"io/fs"
 	"log/slog"
 	"mime"
@@ -30,7 +31,6 @@ import (
 	"strings"
 	"syscall"
 
-	"go/google"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/grpc"
@@ -52,12 +52,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-//go:embed xmanager_cloud/experiment_state_server/static/*
+//go:embed static/*
 var embedFS embed.FS
 
 // main starts the gRPC server and handles graceful shutdown.
 func main() {
-	google.Init()
+	flag.Parse()
 
 	// 1. Load configuration
 	cfg := config.Load()
@@ -210,7 +210,7 @@ func setupHTTPMux(ctx context.Context, oauthAuth *oauth.Authenticator, authentic
 }
 
 func mountStaticFiles(ctx context.Context, httpMux *http.ServeMux) {
-	staticRootFS, err := fs.Sub(embedFS, "xmanager_cloud/experiment_state_server/static")
+	staticRootFS, err := fs.Sub(embedFS, "static")
 	if err != nil {
 		logging.Fatal(ctx, "failed to create static file system", "error", err)
 	}

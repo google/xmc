@@ -30,9 +30,6 @@ bazel_dep(name = "rules_license", version = "1.0.0")
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.26.0")
 
-repo_import = use_extension("//:import.bzl", "repo_import")
-use_repo(repo_import, "com_github_grpc_ecosystem_grpc_gateway_v2_custom")
-
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
 go_deps.module(
@@ -51,6 +48,17 @@ go_deps.gazelle_override(
         "gazelle:default_visibility //visibility:public",
     ],
     path = "cloud.google.com/go",
+)
+
+# grpc-gateway ships its own Bazel BUILD files (referencing @googleapis and
+# repo-local proto toolchains) alongside pre-generated *.pb.go files.
+# Regenerate BUILD files from Go sources only, without proto rules.
+go_deps.gazelle_override(
+    build_file_generation = "clean",
+    directives = [
+        "gazelle:proto disable",
+    ],
+    path = "github.com/grpc-ecosystem/grpc-gateway/v2",
 )
 use_repo(
     go_deps,

@@ -113,7 +113,12 @@ class CollectMetricsTest(unittest.TestCase):
             "compat.bzl": "def compat_go_library(name):\n    pass\n",
             "import.bzl": "_r = repository_rule(implementation = _impl)\n",
             "api/x.proto": 'import "third_party/xmanager_cloud/x.proto";\n',
-            "deploy/helm/templates/d.yaml": '- "--logtostderr"\n- "--streamz_servers="\n- "--port"\n',
+            "deploy/helm/templates/d.yaml": (
+                '- "--logtostderr"\n- "--streamz_servers="\n- "--port"\n'
+                '- "-envelope_enabled=false"\n- "-ess_tls_cert_file="\n'
+            ),
+            "deploy/ctk_v2/m/main.tf": '"-alsologtostderr",\n"-log_keyword=x",\n',
+            "deploy/helm/templates/e.yaml": "args: ['--notracelog']\ncommand: run -vmodule=x\n",
             "cmd/ui/app/a.ts": "import { X } from 'javascript/closure/format/format';\n",
             "sdks/p.py": "from third_party.xmanager_cloud.x import y\n",
             "third_party/grpc_gateway.BUILD": "",
@@ -138,7 +143,7 @@ class CollectMetricsTest(unittest.TestCase):
                 "gazelle_resolve_directives": 1,
                 "go_legacy_root_imports": 3,
                 "go_unresolved_module_imports": 1,
-                "helm_google3_flags": 2,
+                "helm_google3_flags": 6,
                 "proto_third_party_paths": 2,
                 "python_legacy_paths": 1,
                 "third_party_files": 1,
