@@ -13,7 +13,12 @@ graph TD
     B --> C["Agent populates pr_review_checklist.md"]
     C --> D["Agent runs fetch_pr_comment.py for comment context"]
     D --> E["Agent extracts: body, file path, line"]
-    E --> F["Agent performs Bazel Query to find affected binaries"]
+    E --> D2["Agent performs Comment Validity & Pushback Triage"]
+    D2 --> J2["Agent prepares & posts inline pushback replies (for Push Back items)"]
+    J2 --> M["1-to-1 Thread Resolution Verification (verify_pr_comment_resolution.py)"]
+    D2 --> D3{"Any Adopt items?"}
+    D3 -->|Yes| F["Agent performs Bazel Query to find affected binaries"]
+    D3 -->|No| M
     F --> G["Agent prepares Implementation Plan"]
     G --> H["Agent runs Unit Tests & Coverage"]
     H --> I["Agent builds affected targets locally"]
@@ -101,6 +106,17 @@ The agent accepts a comment link or PR number. The helper script `tools/pr_revie
 
 ---
 
+## 2.5. Comment Validity & Pushback Triage (Mandatory Before Planning Edits)
+
+Before planning code changes for any review comment (human or automated review bot), the agent MUST critically verify each comment against the actual source tree, `.agents/rules/` (especially language guidelines matching the modified file extension, such as [Go Guidelines](../../rules/languages/golang.md)), and PR scope / diff-size limits (`./tools/analyze_diff_size.py`). Never blindly assume a review suggestion is valid.
+
+Classify every unresolved comment into one of three dispositions:
+1. **`Adopt (Valid Fix)`**: The comment identifies a genuine bug, race condition, rule violation, or clean improvement within PR scope. Plan the code edit and unit test verification.
+2. **`Push Back (Rule / Technical Conflict)`**: Adopting the suggestion would violate an existing repository rule (for example, [Go Guidelines §9](../../rules/languages/golang.md#9-context-safety-in-defer-cleanups--error-branches) requiring `context.Background()` with a bounded timeout for post-failure diagnostics, `defer`, or `t.Cleanup` paths when the parent `ctx` is already expired/canceled) or break runtime behavior/existing architecture. Do **not** modify the code; instead, prepare a concise, respectful inline technical pushback reply citing the governing rule or execution trace.
+3. **`Push Back / Defer (Scope Creep or Diff-Size Breach)`**: Adopting the suggestion requires out-of-scope production refactoring in a focused/test PR or pushes the diff past `./tools/analyze_diff_size.py` thresholds. Propose an inline reply explaining why the change is deferred to a dedicated follow-up PR.
+
+---
+
 ## 3. Dependency Mapping & Impact Analysis
 
 To make the workflow precise, the agent must figure out which Bazel binaries and Kubernetes deployments are impacted by the changed file.
@@ -138,12 +154,13 @@ Each `go_binary` mapped above is associated with an OCI image builder and GKE de
 
 ## 4. Implementation Plan Preparation
 
-Based on the parsed review comments and impacted targets, the agent creates a draft implementation plan for user review. It will format the plan as a Markdown artifact in the brain folder:
+Based on the parsed review comments, validity triage, and impacted targets, the agent creates a draft implementation plan (e.g., `pr_comment_resolution_plan.md`) for user review:
 
+- **Comment Validity & Pushback Triage Table**: A summary table (`Comment ID | Summary | Disposition (Adopt / Push Back / Defer) | Technical Rationale`) classifying every comment per [Section 2.5](#25-comment-validity--pushback-triage-mandatory-before-planning-edits).
 - **Analysis**: Visual code excerpt and summary of the reviewer's concern.
-- **Proposed Code Changes**: Target file path, exact lines to modify, and a git diff style code snippet.
-- **Affected Components list**: Which binaries and deployments need to be verified.
-- **Execution steps**: A sequence of commands to verify and deploy.
+- **Proposed Resolution (Code Changes vs. Inline Pushback Reply)**: For `Adopt` items, specify target file path, exact lines to modify, and a git diff style code snippet. For `Push Back` items, state explicitly that no code change will be made and draft the exact technical rationale reply to be posted via `./tools/pr_review/reply_pr_comment.py`.
+- **Affected Components list**: Which binaries and deployments need to be verified (for `Adopt` items).
+- **Execution steps**: A sequence of commands to verify, commit, reply, and deploy.
 
 ---
 
@@ -169,15 +186,18 @@ The agent will parse this file (or generate a summary) to report the package tes
 
 ## 6. Local Commit & GitHub Notification (On Success)
 
-Once local unit tests pass and building the affected binary targets succeeds, the agent commits the code to the current branch and replies to the reviewer's comment on GitHub.
+Execution in this phase branches based on each comment's disposition from [Section 2.5](#25-comment-validity--pushback-triage-mandatory-before-planning-edits):
 
-### Build Targets Locally
+- **For `Adopt (Valid Fix)` items**: Once local unit tests pass, build the affected binary targets locally, commit the changes as a distinct follow-up commit, and post an inline reply summarizing the fix and commit SHA.
+- **For `Push Back` / `Defer` items**: Bypass local builds and `git commit` (if a batch contains zero `Adopt` items, no commit is created) and proceed directly to [Post GitHub Comment Notification](#post-github-comment-notification) to post the technical rationale drafted in Section 4.
+
+### Build Targets Locally (`Adopt` Items Only)
 Before committing or deploying, verify that the affected binaries build successfully:
 ```bash
 bazel build //cmd/xid_service:xid_service
 ```
 
-### Git Commit to Current Branch
+### Git Commit to Current Branch (`Adopt` Items Only)
 The agent stages all changes and commits them as a new, distinct follow-up commit with a message that includes a description of the changes and the URL of the original comment:
 ```bash
 git add .
@@ -193,16 +213,16 @@ git push origin HEAD
 > Always append distinct follow-up commits so reviewers can inspect incremental diffs via GitHub's **"Changes since last review"** view. Squashing happens automatically at merge time via GitHub's "Squash and merge" feature, NEVER during active review rounds.
 
 ### Post GitHub Comment Notification
-The agent runs the helper script `tools/pr_review/reply_pr_comment.py` to notify the reviewer that the changes have been made:
+The agent runs the helper script `tools/pr_review/reply_pr_comment.py` to reply to each comment according to its disposition (a code fix summary and commit SHA for `Adopt` items, or the technical pushback / deferral rationale drafted in Section 4 for `Push Back` / `Defer` items):
 ```bash
 export GITHUB_TOKEN="your_github_token"
 ./tools/pr_review/reply_pr_comment.py "<github_comment_url>" "code changed"
 ```
 
-Or pass a file containing the message via `--message-file` (or `-f`):
+When the reply contains backticks or multi-line rationale (such as a `Push Back` / `Defer` technical explanation or a detailed fix summary), pass a file containing the message via `--message-file` (or `-f`):
 ```bash
 cat << 'EOF' > reply_message.txt
-Addressed review comment for `handlers.go`.
+Addressed review comment for `handlers.go` (or technical pushback rationale from Section 4).
 EOF
 ./tools/pr_review/reply_pr_comment.py "<github_comment_url>" --message-file reply_message.txt
 ```
