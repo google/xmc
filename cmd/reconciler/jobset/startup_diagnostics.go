@@ -188,6 +188,7 @@ func (r *Reconciler) listAvailableTPUTopologies(ctx context.Context) ([]string, 
 	return topologies, nil
 }
 
+// TODO(vluk): Check InitContainerStatuses and EphemeralContainerStatuses for image pull errors in addition to ContainerStatuses.
 func checkPodsForStartupErrors(ctx context.Context, pods []corev1.Pod) string {
 	for _, pod := range pods {
 		for _, containerStatus := range pod.Status.ContainerStatuses {

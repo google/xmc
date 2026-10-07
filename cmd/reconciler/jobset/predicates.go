@@ -117,6 +117,7 @@ func isJobSetStatusEqual(old, new *v1alpha2.JobSetStatus) bool {
 	return isReplicatedJobsStatusEqual(old.ReplicatedJobsStatus, new.ReplicatedJobsStatus)
 }
 
+// TODO(vluk): Compare conditions order-independently by Type rather than index-by-index.
 func isJobSetConditionsEqual(old, new []metav1.Condition) bool {
 	if len(old) != len(new) {
 		return false
