@@ -1,5 +1,5 @@
 {
-  "compat_go_targets": 127,
+  "compat_go_targets": 123,
   "custom_repo_rules": 0,
   "gazelle_resolve_directives": 84,
   "go_legacy_root_imports": 941,
