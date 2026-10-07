@@ -411,7 +411,12 @@ def read_test_outcome(bep_path: Path, exit_code: int, log_path: Path) -> BazelTe
     build_errors: list[str] = []
     exit_name = "UNKNOWN"
     lines = bep_path.read_text(encoding="utf-8").splitlines() if bep_path.exists() else []
-    for event in (json.loads(line) for line in lines if line.strip()):
+    for line in filter(str.strip, lines):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:  # e.g. the last line of an interrupted Bazel run
+            log_progress(f"Skipped a malformed line in {bep_path}; results may be incomplete.")
+            continue
         event_id = event.get("id", {})
         if "testSummary" in event:
             label, summary = event_id["testSummary"]["label"], event["testSummary"]

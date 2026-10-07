@@ -145,10 +145,10 @@ class TempLogTestCase(unittest.TestCase):
         self.log = run_affected_tests.BazelLog(stream=False)
         self.progress = self.enterContext(mock.patch.object(run_affected_tests, "log_progress"))
 
-    def write_events(self, *events: dict[str, Any]) -> Path:
-        """Writes Build Event Protocol JSON events, one per line, and returns the file."""
+    def write_events(self, *events: dict[str, Any], tail: str = "") -> Path:
+        """Writes Build Event Protocol JSON events, one per line, then tail; returns the file."""
         bep_path = self.temp_dir / "build_events.json"
-        bep_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+        bep_path.write_text("".join(json.dumps(e) + "\n" for e in events) + tail, encoding="utf-8")
         return bep_path
 
 
@@ -160,20 +160,12 @@ class CollectChangedFilesTest(unittest.TestCase):
         patcher = mock.patch.object(run_affected_tests, "run_captured", side_effect=outputs)
         return self.enterContext(patcher)
 
-    def collect_from_git(self) -> tuple[str, tuple[str, ...]]:
-        """Collects changed files with merge-base, diff, and ls-files outputs patched."""
+    def test_returns_merge_base_and_sorted_unique_tracked_and_untracked_files(self) -> None:
         self.patch_git_outputs(
             completed("abc123\n"), completed("b.go\0a.py\0"), completed("c.md\0a.py\0")
         )
-        return run_affected_tests.collect_changed_files("origin/main")
-
-    def test_returns_the_merge_base(self) -> None:
-        merge_base, _ = self.collect_from_git()
-        self.assertEqual(merge_base, "abc123")
-
-    def test_returns_sorted_unique_tracked_and_untracked_files(self) -> None:
-        _, files = self.collect_from_git()
-        self.assertEqual(files, ("a.py", "b.go", "c.md"))
+        result = run_affected_tests.collect_changed_files("origin/main")
+        self.assertEqual(result, ("abc123", ("a.py", "b.go", "c.md")))
 
     def test_diff_counts_renames_as_old_and_new_path(self) -> None:
         run = self.patch_git_outputs(completed("abc123\n"), completed(""), completed(""))
@@ -609,9 +601,9 @@ class BuildBazelTestCommandTest(unittest.TestCase):
 class ReadTestOutcomeTest(TempLogTestCase):
     """Tests for reading per-target results from Build Event Protocol files."""
 
-    def read(self, *events: dict[str, Any], exit_code: int = 0) -> BazelTestOutcome:
-        """Reads the outcome of a BEP file holding events."""
-        bep_path = self.write_events(*events)
+    def read(self, *events: dict[str, Any], exit_code: int = 0, tail: str = "") -> BazelTestOutcome:
+        """Reads the outcome of a BEP file holding events followed by tail."""
+        bep_path = self.write_events(*events, tail=tail)
         return run_affected_tests.read_test_outcome(bep_path, exit_code, self.log_path)
 
     def test_passed_and_flaky_targets_pass(self) -> None:
@@ -643,6 +635,11 @@ class ReadTestOutcomeTest(TempLogTestCase):
         aborted = {"reason": "LOADING_FAILURE", "description": "no such target"}
         outcome = self.read({"id": {"pattern": {}}, "aborted": aborted}, exit_code=1)
         self.assertEqual(outcome.build_errors, ("no such target",))
+
+    def test_malformed_last_line_is_skipped_with_a_warning(self) -> None:
+        outcome = self.read(summary_event("//a:a_test", "PASSED"), tail='{"id": {"testSumm')
+        self.assertEqual(outcome.passed_targets, ("//a:a_test",))
+        self.assertIn("Skipped a malformed line", self.progress.call_args.args[0])
 
     def test_missing_event_file_yields_no_results(self) -> None:
         missing = self.temp_dir / "missing.json"
