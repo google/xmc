@@ -1300,9 +1300,11 @@ func TestSpannerStore_ConcurrentIntentUpdatesOnSameComponent(t *testing.T) {
 
 	s, _ := setupTestStore(ctx, t)
 
+	// The seed version must differ from every writer's version below; an unchanged intent is a
+	// no-op and would not bump the generation.
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
-		Version: "v1.0.0",
+		Version: "v100.0.0",
 	}
 	if _, err := s.SetComponentIntent(ctx, "contended-comp", spec, nil, 1); err != nil {
 		t.Fatalf("SetComponentIntent failed: %v", err)

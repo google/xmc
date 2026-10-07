@@ -73,6 +73,9 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 
 	rec, exists := m.componentsByName[canonicalName]
 	if exists && !isDeletedRecord(rec) {
+		if isUnchangedIntent(rec, spec, labels, deps, desiredGen) {
+			return cloneRecord(rec), nil
+		}
 		updateExistingIntent(rec, spec, labels, deps, desiredGen, now)
 		m.recordSnapshotLocked(rec)
 		return cloneRecord(rec), nil

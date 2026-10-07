@@ -99,6 +99,7 @@ go_test(
         "health_prober_test.go",
         "helm_builder_test.go",
         "helm_manager_test.go",
+        "intent_generation_test.go",
         "k8s_status_detector_test.go",
         "lifecycle_test.go",
         "reconciler_test.go",
