@@ -136,6 +136,15 @@ check_legacy_imports() {
   fi
 }
 
+check_examples_coverage() {
+  echo "--> Checking Nightly E2E Verification Coverage for examples/..."
+  if ! XMC_BYPASS_VENV=1 python3 tools/nightly_tests/check_examples_coverage.py >/dev/null; then
+    echo "❌ Nightly examples verification coverage check failed."
+    FAILED=1
+  fi
+}
+
+
 check_ui() {
   local ui_files
   if [ "$MODE" = "check" ]; then
@@ -436,6 +445,7 @@ main() {
   check_bazel
   check_go
   check_legacy_imports
+  check_examples_coverage
   check_ui
   check_license
   check_python
