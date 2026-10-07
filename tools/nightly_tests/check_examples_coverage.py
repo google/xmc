@@ -34,12 +34,12 @@ import re
 import sys
 from collections.abc import Collection, Sequence
 
-TOTAL_ARTIFACTS_PER_EXAMPLE: int = 3
+REQUIRED_WIRING_COUNT: int = 3
 
 # Single source of truth for `examples/<name>` directories intentionally
 # excluded from the Nightly Examples E2E pipeline (`.github/workflows/nightly-examples-e2e.yml`).
 # During pre-commit and CI linting (`lint.yml`), every subdirectory under `examples/`
-# must either provide all 3 nightly verification artifacts (`<name>_verify.py`,
+# must either provide all 3 nightly verification targets (`<name>_verify.py`,
 # `BUILD.bazel` py_binary target, and workflow matrix entry) or be listed in
 # `EXEMPT_EXAMPLES`. When adding an entry, please include a code comment
 # explaining why nightly E2E verification does not apply.
@@ -62,13 +62,13 @@ class CoverageReport:
     violations: list[str]
 
 
-def collect_missing_artifacts(
+def collect_missing_wiring(
     name: str,
     tests_dir: pathlib.Path,
     build_text: str,
     workflow_text: str,
 ) -> list[str]:
-    """Returns which of the 3 nightly verification artifacts are missing for `name`."""
+    """Returns which of the 3 nightly verification wiring entries are missing for `name`."""
     missing: list[str] = []
     if not (tests_dir / f"{name}_verify.py").is_file():
         missing.append(f"tools/nightly_tests/{name}_verify.py")
@@ -85,63 +85,39 @@ def collect_missing_artifacts(
     return missing
 
 
-def validate_exempt_registry(
-    exempt_examples: Collection[str],
-    existing_names: set[str] | None = None,
-) -> list[str]:
-    """Validates that every entry in `exempt_examples` corresponds to an existing `examples/` directory.
-
-    Args:
-        exempt_examples: Collection of exempted example directory names.
-        existing_names: Optional set of existing example directory names under `examples/`.
-
-    Returns:
-        List of violation messages for stale registry entries.
-    """
-    if existing_names is None:
-        return []
-    return [
-        f"EXEMPT_EXAMPLES contains stale exemption for non-existent example '{name}'."
-        for name in sorted(set(exempt_examples))
-        if name not in existing_names
-    ]
-
-
 def evaluate_single_example(
-    example_dir: pathlib.Path,
+    name: str,
     tests_dir: pathlib.Path,
     build_text: str,
     workflow_text: str,
     exempt_examples: Collection[str],
-) -> tuple[str, str | None]:
-    """Evaluates nightly verification coverage for a single `examples/<name>` directory."""
-    name = example_dir.name
-    missing = collect_missing_artifacts(name, tests_dir, build_text, workflow_text)
+) -> str | None:
+    """Returns a violation message for `examples/<name>`, or `None` if compliant."""
+    missing = collect_missing_wiring(name, tests_dir, build_text, workflow_text)
     if not missing:
         if name in exempt_examples:
-            msg = f"examples/{name} has a complete nightly verification suite; remove redundant '{name}' from EXEMPT_EXAMPLES."
-            return "violation", msg
-        return "covered", None
-    if len(missing) < TOTAL_ARTIFACTS_PER_EXAMPLE:
+            return (
+                f"examples/{name} has a complete nightly verification suite; "
+                f"remove redundant '{name}' from EXEMPT_EXAMPLES."
+            )
+        return None
+    if len(missing) < REQUIRED_WIRING_COUNT:
         return (
-            "violation",
-            f"examples/{name} has partial nightly verification wiring (missing: {', '.join(missing)}).",
+            f"examples/{name} has partial nightly verification wiring "
+            f"(missing: {', '.join(missing)})."
         )
     if name in exempt_examples:
-        return "exempt", None
+        return None
     return (
-        "violation",
         f"examples/{name} is missing a nightly E2E verification suite (missing: "
         f"{', '.join(missing)}). Either add a verification suite (see "
         f"tools/nightly_tests/README.md) or add '{name}' to EXEMPT_EXAMPLES "
-        "in tools/nightly_tests/check_examples_coverage.py with an explanatory comment.",
+        "in tools/nightly_tests/check_examples_coverage.py with an explanatory comment."
     )
 
 
 def _list_example_dirs(examples_dir: pathlib.Path) -> list[pathlib.Path]:
-    """Lists all non-hidden example subdirectories under `examples_dir`."""
-    if not examples_dir.is_dir():
-        return []
+    """Lists all non-hidden example subdirectories under an existing `examples_dir`."""
     return sorted(
         path
         for path in examples_dir.iterdir()
@@ -168,56 +144,45 @@ def audit_examples_coverage(
     if not examples_dir.is_dir():
         msg = f"Invalid repository root: '{repo_root}' (examples/ directory not found)."
         return CoverageReport(covered=[], exempt=[], violations=[msg])
-    registry = EXEMPT_EXAMPLES if exempt_examples is None else exempt_examples
+    registry = set(EXEMPT_EXAMPLES if exempt_examples is None else exempt_examples)
     example_dirs = _list_example_dirs(examples_dir)
-    violations = validate_exempt_registry(registry, {d.name for d in example_dirs})
+    existing_names = {d.name for d in example_dirs}
+    violations = [
+        f"EXEMPT_EXAMPLES contains stale exemption for non-existent example '{name}'."
+        for name in sorted(registry - existing_names)
+    ]
     tests_dir, build_text, workflow_text = _read_repo_texts(repo_root)
     covered, exempt = [], []
     for example_dir in example_dirs:
-        category, violation = evaluate_single_example(
-            example_dir, tests_dir, build_text, workflow_text, registry
-        )
-        if category == "covered":
-            covered.append(example_dir.name)
-        elif category == "exempt":
-            exempt.append(example_dir.name)
-        elif violation:
+        name = example_dir.name
+        if violation := evaluate_single_example(
+            name, tests_dir, build_text, workflow_text, registry
+        ):
             violations.append(violation)
+        elif name in registry:
+            exempt.append(name)
+        else:
+            covered.append(name)
     return CoverageReport(covered=covered, exempt=exempt, violations=violations)
 
 
-def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """Parses command-line arguments for the examples coverage gate CLI.
-
-    Args:
-        argv: Optional list of CLI arguments (excluding program name).
-
-    Returns:
-        Parsed `argparse.Namespace`.
-    """
-    default_root = pathlib.Path(__file__).resolve().parents[2]
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parses command-line arguments for the examples coverage gate CLI."""
     parser = argparse.ArgumentParser(
         description="Verify that every example under examples/ has a nightly E2E verification suite or explicit opt-out."
     )
     parser.add_argument(
         "--repo-root",
         type=pathlib.Path,
-        default=default_root,
+        default=pathlib.Path(__file__).resolve().parents[2],
         help="Path to the repository root directory.",
     )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """CLI entrypoint for checking `examples/` nightly E2E verification coverage.
-
-    Args:
-        argv: Optional sequence of command-line arguments.
-
-    Returns:
-        Exit code `0` if all examples are covered or explicitly opted out, `1` otherwise.
-    """
-    args = parse_args(argv)
+    """CLI entrypoint for checking `examples/` nightly E2E verification coverage."""
+    args = _parse_args(argv)
     report = audit_examples_coverage(args.repo_root.resolve())
     if report.violations:
         payload = {

@@ -38,21 +38,16 @@ def _seed_repo(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.
 
 
 def _wire_example(root: pathlib.Path, name: str) -> None:
-    """Writes all 3 verification artifacts (script, BUILD.bazel, workflow) for `name`."""
+    """Writes all 3 verification wiring entries (script, BUILD.bazel, workflow) for `name`."""
     examples_dir, tests_dir, workflows_dir = _seed_repo(root)
     (examples_dir / name).mkdir(parents=True, exist_ok=True)
     (tests_dir / f"{name}_verify.py").write_text("# verifier\n", encoding="utf-8")
-    build_path = tests_dir / "BUILD.bazel"
-    existing_build = build_path.read_text(encoding="utf-8") if build_path.is_file() else ""
-    build_path.write_text(
-        existing_build + f'\npy_binary(name = "{name}_verify", srcs = ["{name}_verify.py"])\n',
+    (tests_dir / "BUILD.bazel").write_text(
+        f'py_binary(name = "{name}_verify", srcs = ["{name}_verify.py"])\n',
         encoding="utf-8",
     )
-    wf_path = workflows_dir / "nightly-examples-e2e.yml"
-    existing_wf = wf_path.read_text(encoding="utf-8") if wf_path.is_file() else ""
-    wf_path.write_text(
-        existing_wf
-        + f"\nexample_path: 'examples/{name}'\nverify_module: 'tools.nightly_tests.{name}_verify'\n",
+    (workflows_dir / "nightly-examples-e2e.yml").write_text(
+        f"example_path: 'examples/{name}'\nverify_module: 'tools.nightly_tests.{name}_verify'\n",
         encoding="utf-8",
     )
 
@@ -65,12 +60,6 @@ class CheckExamplesCoverageTest(unittest.TestCase):
         self.assertEqual(
             check_examples_coverage.EXEMPT_EXAMPLES,
             ("components", "xmc_lite_job"),
-        )
-        self.assertEqual(
-            check_examples_coverage.validate_exempt_registry(
-                check_examples_coverage.EXEMPT_EXAMPLES
-            ),
-            [],
         )
 
     def test_covered_example_passes(self) -> None:
