@@ -80,6 +80,10 @@ func TestFromPrivatePEM_And_FromPublicPEM_RoundTrip(t *testing.T) {
 		Bytes: x509.MarshalPKCS1PrivateKey(rsaKey),
 	})
 	pubPEM := mustEncodePKIXPublicPEM(t, &rsaKey.PublicKey)
+	pkcs1PubPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PUBLIC KEY",
+		Bytes: x509.MarshalPKCS1PublicKey(&rsaKey.PublicKey),
+	})
 	certPEM := mustEncodeCertPEM(t, rsaKey)
 
 	tests := []struct {
@@ -92,6 +96,12 @@ func TestFromPrivatePEM_And_FromPublicPEM_RoundTrip(t *testing.T) {
 			name:    "PKCS8 and PKIX RS256",
 			privPEM: pkcs8PEM,
 			pubPEM:  pubPEM,
+			alg:     "RS256",
+		},
+		{
+			name:    "PKCS1 and PKCS1 Public RS256",
+			privPEM: pkcs1PEM,
+			pubPEM:  pkcs1PubPEM,
 			alg:     "RS256",
 		},
 		{
@@ -220,6 +230,11 @@ func TestFromPublicPEM_Errors(t *testing.T) {
 		{
 			name:    "corrupted certificate bytes",
 			pemData: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("bad")}),
+			opts:    nil,
+		},
+		{
+			name:    "corrupted RSA public key bytes",
+			pemData: pem.EncodeToMemory(&pem.Block{Type: "RSA PUBLIC KEY", Bytes: []byte("bad")}),
 			opts:    nil,
 		},
 		{

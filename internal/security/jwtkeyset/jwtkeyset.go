@@ -223,7 +223,7 @@ func FromPrivatePEM(pemData []byte, options Options) (*keyset.Handle, error) {
 	return PrivateKeyToKeysetHandle(rsaPrivKey, nil, options)
 }
 
-// FromPublicPEM parses a PEM-encoded X.509 certificate or PKIX RSA public key into a Tink keyset handle.
+// FromPublicPEM parses a PEM-encoded X.509 certificate, PKCS#1 RSA public key, or PKIX RSA public key into a Tink keyset handle.
 func FromPublicPEM(pemData []byte, options *Options) (*keyset.Handle, error) {
 	block, _ := pem.Decode(pemData)
 	if block == nil {
@@ -231,13 +231,20 @@ func FromPublicPEM(pemData []byte, options *Options) (*keyset.Handle, error) {
 	}
 
 	var pubKey any
-	if block.Type == "CERTIFICATE" {
+	switch block.Type {
+	case "CERTIFICATE":
 		cert, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse certificate: %w", err)
 		}
 		pubKey = cert.PublicKey
-	} else {
+	case "RSA PUBLIC KEY":
+		parsed, err := x509.ParsePKCS1PublicKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse RSA public key: %w", err)
+		}
+		pubKey = parsed
+	default:
 		parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse public key: %w", err)

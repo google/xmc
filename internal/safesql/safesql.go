@@ -44,7 +44,12 @@ func EmptyString() TrustedSQLString {
 
 // Concat concatenates multiple TrustedSQLString fragments into a single TrustedSQLString.
 func Concat(parts ...TrustedSQLString) TrustedSQLString {
+	var totalLen int
+	for _, p := range parts {
+		totalLen += len(p.s)
+	}
 	var b strings.Builder
+	b.Grow(totalLen)
 	for _, p := range parts {
 		b.WriteString(p.s)
 	}
@@ -56,11 +61,20 @@ func StringJoin(sep stringConstant, parts ...TrustedSQLString) TrustedSQLString 
 	if len(parts) == 0 {
 		return EmptyString()
 	}
-	strs := make([]string, len(parts))
-	for i, p := range parts {
-		strs[i] = p.s
+	var totalLen int
+	for _, p := range parts {
+		totalLen += len(p.s)
 	}
-	return TrustedSQLString{s: strings.Join(strs, string(sep))}
+	totalLen += len(sep) * (len(parts) - 1)
+
+	var b strings.Builder
+	b.Grow(totalLen)
+	b.WriteString(parts[0].s)
+	for _, p := range parts[1:] {
+		b.WriteString(string(sep))
+		b.WriteString(p.s)
+	}
+	return TrustedSQLString{s: b.String()}
 }
 
 // NewBindingParam constructs a TrustedSQLString for a numbered parameter placeholder
