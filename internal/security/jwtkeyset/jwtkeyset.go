@@ -12,15 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package jwtkeyset converts standard RSA keys and PEM blocks into Tink JWT keyset handles.
+// Package jwtkeyset converts standard RSA keys into Tink JWT keyset handles.
 package jwtkeyset
 
 import (
 	"bytes"
 	"crypto"
 	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"math/big"
@@ -203,61 +201,4 @@ func PublicKeysToJwtPublicKeyset(keys []crypto.PublicKey, options *Options) (*ke
 	}
 
 	return handle, nil
-}
-
-// FromPrivatePEM parses a PEM-encoded PKCS#8 or PKCS#1 RSA private key into a Tink keyset handle.
-func FromPrivatePEM(pemData []byte, options Options) (*keyset.Handle, error) {
-	block, _ := pem.Decode(pemData)
-	if block == nil {
-		return nil, errors.New("failed to decode PEM block")
-	}
-
-	var parsedKey any
-	var err error
-	if block.Type == "RSA PRIVATE KEY" {
-		parsedKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
-	} else {
-		parsedKey, err = x509.ParsePKCS8PrivateKey(block.Bytes)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
-	}
-
-	rsaPrivKey, ok := parsedKey.(*rsa.PrivateKey)
-	if !ok {
-		return nil, errors.New("key is not an RSA private key")
-	}
-	return PrivateKeyToKeysetHandle(rsaPrivKey, nil, options)
-}
-
-// FromPublicPEM parses a PEM-encoded X.509 certificate, PKCS#1 RSA public key, or PKIX RSA public key into a Tink keyset handle.
-func FromPublicPEM(pemData []byte, options *Options) (*keyset.Handle, error) {
-	block, _ := pem.Decode(pemData)
-	if block == nil {
-		return nil, errors.New("failed to decode PEM block")
-	}
-
-	var pubKey any
-	switch block.Type {
-	case "CERTIFICATE":
-		cert, err := x509.ParseCertificate(block.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse certificate: %w", err)
-		}
-		pubKey = cert.PublicKey
-	case "RSA PUBLIC KEY":
-		parsed, err := x509.ParsePKCS1PublicKey(block.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse RSA public key: %w", err)
-		}
-		pubKey = parsed
-	default:
-		parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse public key: %w", err)
-		}
-		pubKey = parsed
-	}
-
-	return PublicKeysToJwtPublicKeyset([]crypto.PublicKey{pubKey}, options)
 }

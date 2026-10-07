@@ -16,16 +16,10 @@ package jwtkeyset
 
 import (
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/tink-crypto/tink-go/v2/jwt"
 )
@@ -39,94 +33,18 @@ func mustGenerateRSAKey(t *testing.T) *rsa.PrivateKey {
 	return priv
 }
 
-func mustEncodePKCS8PrivatePEM(t *testing.T, key any) []byte {
-	t.Helper()
-	der, err := x509.MarshalPKCS8PrivateKey(key)
-	if err != nil {
-		t.Fatalf("x509.MarshalPKCS8PrivateKey() failed: %v", err)
-	}
-	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
-}
-
-func mustEncodePKIXPublicPEM(t *testing.T, pub any) []byte {
-	t.Helper()
-	der, err := x509.MarshalPKIXPublicKey(pub)
-	if err != nil {
-		t.Fatalf("x509.MarshalPKIXPublicKey() failed: %v", err)
-	}
-	return pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
-}
-
-func mustEncodeCertPEM(t *testing.T, priv *rsa.PrivateKey) []byte {
-	t.Helper()
-	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "test"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
-	if err != nil {
-		t.Fatalf("x509.CreateCertificate() failed: %v", err)
-	}
-	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-}
-
-func TestFromPrivatePEM_And_FromPublicPEM_RoundTrip(t *testing.T) {
+func TestPrivateKeyAndPublicKeys_RoundTrip(t *testing.T) {
 	rsaKey := mustGenerateRSAKey(t)
-	pkcs8PEM := mustEncodePKCS8PrivatePEM(t, rsaKey)
-	pkcs1PEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(rsaKey),
-	})
-	pubPEM := mustEncodePKIXPublicPEM(t, &rsaKey.PublicKey)
-	pkcs1PubPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PUBLIC KEY",
-		Bytes: x509.MarshalPKCS1PublicKey(&rsaKey.PublicKey),
-	})
-	certPEM := mustEncodeCertPEM(t, rsaKey)
 
-	tests := []struct {
-		name    string
-		privPEM []byte
-		pubPEM  []byte
-		alg     string
-	}{
-		{
-			name:    "PKCS8 and PKIX RS256",
-			privPEM: pkcs8PEM,
-			pubPEM:  pubPEM,
-			alg:     "RS256",
-		},
-		{
-			name:    "PKCS1 and PKCS1 Public RS256",
-			privPEM: pkcs1PEM,
-			pubPEM:  pkcs1PubPEM,
-			alg:     "RS256",
-		},
-		{
-			name:    "PKCS1 and Certificate RS384",
-			privPEM: pkcs1PEM,
-			pubPEM:  certPEM,
-			alg:     "RS384",
-		},
-		{
-			name:    "PKCS8 and Certificate RS512",
-			privPEM: pkcs8PEM,
-			pubPEM:  certPEM,
-			alg:     "RS512",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			privHandle, err := FromPrivatePEM(tt.privPEM, Options{RSAAlgorithm: tt.alg})
+	for _, alg := range []string{"RS256", "RS384", "RS512"} {
+		t.Run(alg, func(t *testing.T) {
+			privHandle, err := PrivateKeyToKeysetHandle(rsaKey, nil, Options{RSAAlgorithm: alg})
 			if err != nil {
-				t.Fatalf("FromPrivatePEM() error = %v", err)
+				t.Fatalf("PrivateKeyToKeysetHandle() error = %v", err)
 			}
-			pubHandle, err := FromPublicPEM(tt.pubPEM, &Options{RSAAlgorithm: tt.alg})
+			pubHandle, err := PublicKeysToJwtPublicKeyset([]crypto.PublicKey{&rsaKey.PublicKey}, &Options{RSAAlgorithm: alg})
 			if err != nil {
-				t.Fatalf("FromPublicPEM() error = %v", err)
+				t.Fatalf("PublicKeysToJwtPublicKeyset() error = %v", err)
 			}
 
 			signer, err := jwt.NewSigner(privHandle)
@@ -167,92 +85,6 @@ func TestFromPrivatePEM_And_FromPublicPEM_RoundTrip(t *testing.T) {
 			gotSub, err := verifiedJWT.Subject()
 			if err != nil || gotSub != subject {
 				t.Errorf("verifiedJWT.Subject() = %q, %v; want %q, nil", gotSub, err, subject)
-			}
-		})
-	}
-}
-
-func TestFromPrivatePEM_Errors(t *testing.T) {
-	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("ecdsa.GenerateKey() failed: %v", err)
-	}
-	ecPEM := mustEncodePKCS8PrivatePEM(t, ecKey)
-
-	tests := []struct {
-		name    string
-		pemData []byte
-		opts    Options
-	}{
-		{
-			name:    "invalid PEM",
-			pemData: []byte("not-a-pem"),
-			opts:    Options{RSAAlgorithm: "RS256"},
-		},
-		{
-			name:    "corrupted PKCS8 bytes",
-			pemData: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("bad")}),
-			opts:    Options{RSAAlgorithm: "RS256"},
-		},
-		{
-			name:    "non-RSA private key",
-			pemData: ecPEM,
-			opts:    Options{RSAAlgorithm: "RS256"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if _, err := FromPrivatePEM(tt.pemData, tt.opts); err == nil {
-				t.Errorf("FromPrivatePEM() succeeded, want error")
-			}
-		})
-	}
-}
-
-func TestFromPublicPEM_Errors(t *testing.T) {
-	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("ecdsa.GenerateKey() failed: %v", err)
-	}
-	ecPubPEM := mustEncodePKIXPublicPEM(t, &ecKey.PublicKey)
-
-	tests := []struct {
-		name    string
-		pemData []byte
-		opts    *Options
-	}{
-		{
-			name:    "invalid PEM",
-			pemData: []byte("not-a-pem"),
-			opts:    nil,
-		},
-		{
-			name:    "corrupted certificate bytes",
-			pemData: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("bad")}),
-			opts:    nil,
-		},
-		{
-			name:    "corrupted RSA public key bytes",
-			pemData: pem.EncodeToMemory(&pem.Block{Type: "RSA PUBLIC KEY", Bytes: []byte("bad")}),
-			opts:    nil,
-		},
-		{
-			name:    "corrupted public key bytes",
-			pemData: pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: []byte("bad")}),
-			opts:    nil,
-		},
-		{
-			name:    "non-RSA public key",
-			pemData: ecPubPEM,
-			opts:    nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if _, err := FromPublicPEM(tt.pemData, tt.opts); err == nil {
-				t.Errorf("FromPublicPEM() succeeded, want error")
 			}
 		})
 	}
