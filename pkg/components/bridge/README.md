@@ -101,9 +101,9 @@ Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference serv
   - `DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error)`
   - `UnimplementedStatusDetector`: A truthful baseline implementation reporting that dynamic status detection is pending implementation.
   - `FakeStatusDetector`: In-memory test double supporting synthetic status mapping and error injection for unit testing.
-  - `K8sStatusDetector`: Production implementation (`k8s_status_detector.go`) using client-go `dynamic.Interface` and `meta.RESTMapper` with automatic GVR discovery, resilient missing-CRD handling (`meta.IsNoMatchError`), and normalized JSONPath evaluation. Companion tests in `k8s_status_detector_test.go`.
+  - `K8sStatusDetector`: Production implementation (`k8s_status_detector.go`) using client-go `dynamic.Interface` and `meta.RESTMapper` with automatic GVR discovery, resilient missing-CRD handling (`meta.IsNoMatchError`), structural contract validation (`validateStatusPayload` returning `ErrContractBreach` when `.status` is not an object map, `.status.conditions` is not a list of maps, or a condition lacks a non-empty string `type`), and normalized JSONPath evaluation. Companion tests in `k8s_status_detector_test.go`.
 - **Dynamic JSONPath Engine (`EvaluateJSONPath`)**: Evaluates arbitrary JSONPath queries against unstructured objects with automatic syntax normalization (`{.field}`, `field`, `$[0]`) and sibling condition failure message discovery.
-- **Reconciler Lifecycle Integration**: Integrates 3P wrapper reconciliation into `reconciler.go` (`reconcile3PWrapper`), setting `Ready=False` and `Degraded=True` with explicit reason codes (`ResourceNotFound`, `CRDNotFound`, `StatusDetectionPending`) when unready, and propagating state to CMS.
+- **Reconciler Lifecycle Integration**: Integrates 3P wrapper reconciliation into `wrapper_reconciler.go` (`reconcile3PWrapper`), setting `Ready=False` and `Degraded=True` with explicit reason codes (`ResourceNotFound`, `CRDNotFound`, `ContractBroken`, `StatusDetectionPending`) when unready, and propagating state to CMS.
 
 ---
 
@@ -236,14 +236,14 @@ To supplement Kubernetes CR condition checks with real data plane health verific
 
 ---
 
-## 3P Custom Wrapper Reconciliation & Access Publishing (`reconciler.go`)
+## 3P Custom Wrapper Reconciliation & Access Publishing (`wrapper_reconciler.go`, `reconciler.go`)
 
 The reconciler unifies third-party CRD inspection and active health probing in `reconcile3PWrapper`:
 
 - **End-to-End Health Verification**: Combines CR status conditions from `StatusDetector` with runtime probe results from `HealthProber`.
 - **Condition Transitions**:
   - `Ready = True`: Emitted only when the underlying CR status is ready and active health probes succeed.
-  - `Degraded = True`: Emitted when active probes fail or CR condition reports an error, with root-cause message propagation.
+  - `Degraded = True`: Emitted when active probes fail, CR condition reports an error, or the target CR's `.status` payload violates the structural contract (`ErrContractBreach` -> `Reason = ContractBroken`), with root-cause message propagation.
 - **Access Coordinate Publishing**: Parses endpoint locations and publishes standard connection environment variables to CMS `AccessStatus.EnvVars`:
   - `ENDPOINT`: Full URL or base address.
   - `HOST`: Target host name or ClusterIP.
@@ -255,12 +255,14 @@ The reconciler unifies third-party CRD inspection and active health probing in `
 
 ---
 
-## Controller Hardening & Status Mutation (`cmd/xmc_bridge/main.go`, `reconciler.go`)
+## Controller Hardening & Status Mutation (`cmd/xmc_bridge/main.go`, `status_applier.go`, `reconciler.go`)
 
 Production-grade controller reliability, conflict elimination, and Cloud Spanner write throttling:
 
-- **Server-Side Apply (SSA) Status Mutation**:
-  - The controller persists status updates via Kubernetes Server-Side Apply (`types.ApplyPatchType`) against the `/status` subresource using a dedicated `fieldManager = "xmc-bridge"`.
+- **Server-Side Apply (SSA) Status & Finalizer Helpers (`status_applier.go`)**:
+  - `ApplyComponentStatusSSA`: Persists status updates via Kubernetes Server-Side Apply (`types.ApplyPatchType`) against the `/status` subresource using `ComponentFieldManager = "xmc-bridge"`.
+  - `SyncComponentFinalizers`: Synchronizes `metadata.finalizers` on `Component` CRs via optimistic concurrency update.
+  - `BuildStatus`, `BuildStatusMap`, and `ExtractPriorConditions`: Construct RFC3339-formatted unstructured status maps and extract prior condition snapshots for transition-time preservation. Companion unit tests in `status_applier_test.go`.
   - Atomic field ownership eliminates optimistic concurrency update conflicts with other controllers (e.g. `xmc-syncer`) and prevents stale object overwrites.
 - **Hybrid CMS Heartbeat Throttling (`shouldSyncToCMS`)**:
   - To eliminate Cloud Spanner write amplification caused by periodic steady-state health probe ticks, the bridge decouples Kubernetes data-plane polling from Spanner persistence.
