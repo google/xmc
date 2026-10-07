@@ -335,8 +335,7 @@ func TestListConfigEntries(t *testing.T) {
 	}
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config:          cfg,
-		EssHealthClient: nil,
-		XidHealthClient: nil,
+		LazySpanner:     nil,
 		RedisClient:     nil,
 		CloudRunService: nil,
 	})
@@ -395,11 +394,12 @@ func TestListConfigEntries_WithCustomComponents(t *testing.T) {
 	}
 
 	cfg := &Config{
-		Port:      "8080",
-		GRPCPort:  "50051",
-		ProjectID: "test-project",
-		XidAddr:   "localhost:50051",
-		ConfigDir: tempDir,
+		Port:             "8080",
+		GRPCPort:         "50051",
+		ProjectID:        "test-project",
+		XidAddr:          "localhost:50051",
+		ConfigDir:        tempDir,
+		EnableComponents: true,
 	}
 	checker := &mockHealthChecker{}
 	mockProvider := &mockComponentsInfoProvider{
@@ -413,7 +413,7 @@ func TestListConfigEntries_WithCustomComponents(t *testing.T) {
 			},
 		},
 	}
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, mockProvider, newFakePauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsProvider: mockProvider}, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -448,16 +448,17 @@ func TestListConfigEntries_CustomComponentsError(t *testing.T) {
 	}
 
 	cfg := &Config{
-		Port:      "8080",
-		GRPCPort:  "50051",
-		ProjectID: "test-project",
-		XidAddr:   "localhost:50051",
-		ConfigDir: tempDir,
+		Port:             "8080",
+		GRPCPort:         "50051",
+		ProjectID:        "test-project",
+		XidAddr:          "localhost:50051",
+		ConfigDir:        tempDir,
+		EnableComponents: true,
 	}
 	mockProvider := &mockComponentsInfoProvider{
 		configErr: errors.New("spanner failure"),
 	}
-	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, mockProvider, newFakePauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsProvider: mockProvider}, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -470,14 +471,48 @@ func TestListConfigEntries_CustomComponentsError(t *testing.T) {
 		t.Fatalf("Expected 1 config group on custom components error, got %d", len(resp.ConfigGroups))
 	}
 }
+
+func TestListConfigEntries_CustomComponentsLazyInitError(t *testing.T) {
+	tempDir := t.TempDir()
+	essDir := filepath.Join(tempDir, "ess")
+	if err := os.Mkdir(essDir, 0755); err != nil {
+		t.Fatalf("failed to create ess dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(essDir, "key"), []byte("val"), 0644); err != nil {
+		t.Fatalf("failed to write ess config: %v", err)
+	}
+
+	cfg := &Config{
+		Port:             "8080",
+		GRPCPort:         "50051",
+		ProjectID:        "test-project",
+		XidAddr:          "localhost:50051",
+		ConfigDir:        tempDir,
+		EnableComponents: true,
+	}
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsErr: errors.New("lazy init failed")}, newFakePauseScheduler(pausestate.NewFake()))
+	defer s.Close()
+
+	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
+	if err != nil {
+		t.Fatalf("ListConfigEntries failed: %v", err)
+	}
+
+	// Should still return core config group without failing the RPC
+	if len(resp.ConfigGroups) != 1 {
+		t.Fatalf("Expected 1 config group on lazy init error, got %d", len(resp.ConfigGroups))
+	}
+}
+
 func TestListConfigEntries_CustomComponentsContextCancelled(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := &Config{
-		Port:      "8080",
-		GRPCPort:  "50051",
-		ProjectID: "test-project",
-		XidAddr:   "localhost:50051",
-		ConfigDir: tempDir,
+		Port:             "8080",
+		GRPCPort:         "50051",
+		ProjectID:        "test-project",
+		XidAddr:          "localhost:50051",
+		ConfigDir:        tempDir,
+		EnableComponents: true,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel context immediately
@@ -485,7 +520,7 @@ func TestListConfigEntries_CustomComponentsContextCancelled(t *testing.T) {
 	mockProvider := &mockComponentsInfoProvider{
 		configErr: context.Canceled,
 	}
-	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, mockProvider, newFakePauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsProvider: mockProvider}, newFakePauseScheduler(pausestate.NewFake()))
 	defer s.Close()
 
 	_, err := s.ListConfigEntries(ctx, &spb.ListConfigEntriesRequest{})
@@ -843,8 +878,8 @@ func TestPauseScheduling(t *testing.T) {
 			}
 
 			pauseScheduler := NewPauseScheduler(PauseSchedulerParams{
-				PauseStateRepository: repo,
-				BroadcastPublisher:   publisher,
+				LazyStorage:        newFakeLazyStorage(repo),
+				BroadcastPublisher: publisher,
 			})
 			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, pauseScheduler)
 			resp, err := s.PauseScheduling(context.Background(), &spb.PauseSchedulingRequest{})
@@ -1015,9 +1050,9 @@ func TestResumeScheduling(t *testing.T) {
 			}
 
 			pauseScheduler := NewPauseScheduler(PauseSchedulerParams{
-				PauseStateRepository: repo,
-				BroadcastPublisher:   publisher,
-				TaskQueuePublisher:   taskPublisher,
+				LazyStorage:        newFakeLazyStorage(repo),
+				BroadcastPublisher: publisher,
+				TaskQueuePublisher: taskPublisher,
 			})
 			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, pauseScheduler)
 			resp, err := s.ResumeScheduling(context.Background(), &spb.ResumeSchedulingRequest{})
@@ -1080,6 +1115,9 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 		if resp1.SystemInfo.IsSchedulingPaused {
 			t.Errorf("expected IsSchedulingPaused to be false initially, got true")
 		}
+		if resp1.SystemInfo.SchedulingPauseError != "" {
+			t.Errorf("expected SchedulingPauseError to be empty, got %q", resp1.SystemInfo.SchedulingPauseError)
+		}
 		if calls := atomic.LoadInt64(&checker.callCount); calls != 1 {
 			t.Fatalf("expected 1 health check call, got %d", calls)
 		}
@@ -1120,17 +1158,96 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 	})
 
 	t.Run("handles repository read errors gracefully", func(t *testing.T) {
-		cfg := &Config{CacheTTL: 1 * time.Minute}
+		cfg := &Config{
+			CacheTTL: 1 * time.Minute,
+			FeatureFlags: featureflags.Flags{
+				PauseSchedulingEnabled: true,
+			},
+		}
+		checker := &mockHealthChecker{
+			result: RunChecksResult{
+				Components: []*spb.ComponentHealth{
+					{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+				},
+			},
+		}
 		failingRepo := &failingPauseStateRepo{err: errors.New("spanner read timeout")}
-		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(failingRepo))
+		s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(failingRepo))
 		defer s.Close()
 
 		resp, err := s.GetHealthStatus(ctx, &spb.GetHealthStatusRequest{})
 		if err != nil {
 			t.Fatalf("GetHealthStatus failed on repo error: %v", err)
 		}
+		if resp.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY || len(resp.Components) != 1 {
+			t.Errorf("expected component health to be preserved, got state=%v components=%d", resp.HealthState, len(resp.Components))
+		}
 		if resp.SystemInfo.IsSchedulingPaused {
 			t.Errorf("expected IsSchedulingPaused to default to false on repo error, got true")
+		}
+		if resp.SystemInfo.SchedulingPauseError != schedulingPauseUnavailableError {
+			t.Errorf("expected SchedulingPauseError to be %q, got %q", schedulingPauseUnavailableError, resp.SystemInfo.SchedulingPauseError)
+		}
+	})
+
+	t.Run("returns false when feature flag is disabled even if repo is paused", func(t *testing.T) {
+		cfg := &Config{
+			CacheTTL: 1 * time.Minute,
+			FeatureFlags: featureflags.Flags{
+				PauseSchedulingEnabled: false,
+			},
+		}
+		repo := pausestate.NewFake()
+		if err := repo.Set(ctx, &pausestate.PauseSchedulingState{SchedulingPaused: true}); err != nil {
+			t.Fatalf("failed to set paused state: %v", err)
+		}
+		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(repo))
+		defer s.Close()
+
+		resp, err := s.GetHealthStatus(ctx, &spb.GetHealthStatusRequest{})
+		if err != nil {
+			t.Fatalf("GetHealthStatus failed: %v", err)
+		}
+		if resp.SystemInfo.IsSchedulingPaused {
+			t.Errorf("expected IsSchedulingPaused to be false when feature flag is disabled, got true")
+		}
+	})
+
+	t.Run("handles nil pauseScheduler gracefully", func(t *testing.T) {
+		cfg := &Config{
+			CacheTTL: 1 * time.Minute,
+			FeatureFlags: featureflags.Flags{
+				PauseSchedulingEnabled: true,
+			},
+		}
+		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, nil)
+		defer s.Close()
+
+		resp, err := s.GetHealthStatus(ctx, &spb.GetHealthStatusRequest{})
+		if err != nil {
+			t.Fatalf("GetHealthStatus failed with nil pauseScheduler: %v", err)
+		}
+		if resp.SystemInfo.IsSchedulingPaused {
+			t.Errorf("expected IsSchedulingPaused to be false with nil pauseScheduler, got true")
+		}
+
+		if _, err := s.PauseScheduling(ctx, &spb.PauseSchedulingRequest{}); status.Code(err) != codes.Unavailable {
+			t.Errorf("expected PauseScheduling to return Unavailable with nil pauseScheduler, got %v", err)
+		}
+		if _, err := s.ResumeScheduling(ctx, &spb.ResumeSchedulingRequest{}); status.Code(err) != codes.Unavailable {
+			t.Errorf("expected ResumeScheduling to return Unavailable with nil pauseScheduler, got %v", err)
+		}
+	})
+
+	t.Run("handles nil cfg gracefully in mutating handlers", func(t *testing.T) {
+		s := newServer(nil, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, nil)
+		defer s.Close()
+
+		if _, err := s.PauseScheduling(ctx, &spb.PauseSchedulingRequest{}); status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("expected PauseScheduling to return FailedPrecondition with nil cfg, got %v", err)
+		}
+		if _, err := s.ResumeScheduling(ctx, &spb.ResumeSchedulingRequest{}); status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("expected ResumeScheduling to return FailedPrecondition with nil cfg, got %v", err)
 		}
 	})
 }

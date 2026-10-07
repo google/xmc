@@ -16,6 +16,7 @@ package bridge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -120,16 +121,14 @@ func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in Reconc
 }
 
 // verifyEndpointHealth performs an active probe against endpoint (if non-empty) to verify data-plane availability.
+// A zero timeout defers to the prober's configured default.
 func (r *Reconciler) verifyEndpointHealth(ctx context.Context, endpoint string) (bool, string, string) {
-	if endpoint == "" || r.prober == nil {
-		return true, "", ""
+	probeRes, err := probeEndpointHealth(ctx, r.prober, endpoint, 0)
+	if errors.Is(err, errNilProbeResult) {
+		return false, "ProbeFailed", fmt.Sprintf("Health probe returned nil result for %s", endpoint)
 	}
-	probeRes, err := r.prober.Probe(ctx, endpoint, 0)
 	if err != nil {
 		return false, "ProbeFailed", fmt.Sprintf("Health probe failed for %s: %v", endpoint, err)
-	}
-	if probeRes == nil {
-		return false, "ProbeFailed", fmt.Sprintf("Health probe returned nil result for %s", endpoint)
 	}
 	if !probeRes.Healthy {
 		msg := probeRes.Message

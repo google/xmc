@@ -34,8 +34,11 @@ compat_go_library(
         "//internal/logging",
         "//internal/storage",
         "//internal/storage/spanner/pausedtask",
+        "//internal/storage/spanner/pausestate",
         "//internal/task_queue_redis/redisclient",
         "//internal/validator",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_golang//prometheus/promauto",
     ],
 )
 
@@ -61,5 +64,6 @@ compat_go_test(
         "//internal/storage/spanner/pausedtask",
         "//internal/storage/spanner/pausestate",
         "//internal/task_queue_redis/redisclient",
+        "@com_github_prometheus_client_golang//prometheus/testutil",
     ],
 )

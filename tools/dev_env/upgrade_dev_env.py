@@ -24,7 +24,7 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -37,6 +37,7 @@ from tools.common.tool_utils import (  # noqa: E402
     DeploymentConfig,
     build_and_push_images,
     configure_docker_auth,
+    deploy_component_profile,
     ensure_venv,
     load_and_validate_config as tool_load_config,
     log_error,
@@ -101,6 +102,7 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Automatically run pending migrations if detected.",
     )
+    parser.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
 
     parsed = parser.parse_args(args)
 
@@ -352,7 +354,9 @@ def step_app(config: UpgradeConfig) -> None:
         )
 
     log_info("Re-compiling XMC blueprint with latest variables and templates...")
-    compile_blueprint(config.config_path, config.deployment_name)
+    compile_blueprint(
+        config.config_path, config.deployment_name, enable_components=config.enable_components
+    )
 
     log_info("Exporting and importing Cluster Toolkit deployment group outputs...")
     if (ctk_dir / "primary").is_dir():
@@ -381,6 +385,7 @@ def step_app(config: UpgradeConfig) -> None:
     )
 
     log_success("Application upgrade initiated.")
+    deploy_component_profile(config)
 
 
 def resolve_deployment_name(service: str, namespace: str) -> str | None:
@@ -469,6 +474,7 @@ def step_verify(config: UpgradeConfig) -> None:
         "ENVIRONMENT": config.environment,
         "REGION": config.region,
         "PROJECT_ID": config.project_id,
+        "ENABLE_COMPONENTS": "true" if config.enable_components else "false",
     }
 
     py_script = Path("./deploy/ctk_v2/verify_xmc.py")
@@ -548,6 +554,8 @@ def run_upgrade(args: argparse.Namespace) -> None:
         args: Parsed command-line arguments.
     """
     config = load_config(args.config, run_migrations=args.run_migrations)
+    if getattr(args, "enable_components", None) is not None:
+        config = replace(config, enable_components=args.enable_components)
     run_pipeline(args, config, STEPS)
 
 

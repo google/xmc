@@ -340,6 +340,15 @@ func New(ctx context.Context, projectID, invokerSA, actuatorURL, actuatorAudienc
 
 // EnqueueWorkUnitTask creates and enqueues a Cloud Task to actuate a WorkUnit.
 func (c *Client) EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error {
+	return c.enqueueTask(ctx, target, workUnit, action, operationName, "", time.Time{})
+}
+
+// EnqueueResumedWorkUnitTask creates and enqueues a replayed actuation task carrying resumption metadata.
+func (c *Client) EnqueueResumedWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string, resumptionRunID string, resumptionTime time.Time) error {
+	return c.enqueueTask(ctx, target, workUnit, action, operationName, resumptionRunID, resumptionTime)
+}
+
+func (c *Client) enqueueTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string, resumptionRunID string, resumptionTime time.Time) error {
 	now := timestamppb.Now()
 
 	traceID, ok := logging.OperationID(ctx)
@@ -351,6 +360,12 @@ func (c *Client) EnqueueWorkUnitTask(ctx context.Context, target string, workUni
 		IdempotencyKey: proto.String(generateIdempotencyKey(target, action, now.AsTime())),
 		OperationName:  proto.String(operationName),
 		TraceId:        proto.String(traceID),
+	}
+	if resumptionRunID != "" {
+		metadata.ResumptionRunId = proto.String(resumptionRunID)
+	}
+	if !resumptionTime.IsZero() {
+		metadata.ResumptionTime = timestamppb.New(resumptionTime)
 	}
 
 	payload := &actuatortaskpb.ActuatorPayload{

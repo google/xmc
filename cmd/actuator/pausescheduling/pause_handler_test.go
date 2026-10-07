@@ -28,6 +28,8 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // mockPausedTaskRepo overrides Create; the embedded Repository is nil and must not be called.
@@ -79,22 +81,22 @@ func TestTaskPauseHandler_IsPaused(t *testing.T) {
 		t.Fatalf("failed to create handler: %v", err)
 	}
 
-	if h.IsPaused() {
+	if h.IsPaused(nil) {
 		t.Errorf("expected IsPaused() = false initially, got true")
 	}
 
 	cache.Update(State{IsPaused: true, UpdatedAt: time.Now()})
-	if !h.IsPaused() {
+	if !h.IsPaused(nil) {
 		t.Errorf("expected IsPaused() = true after update, got false")
 	}
 
 	cache.Update(State{IsPaused: false, UpdatedAt: time.Now()})
-	if h.IsPaused() {
+	if h.IsPaused(nil) {
 		t.Errorf("expected IsPaused() = false after unpause, got true")
 	}
 
 	var nilHandler *TaskPauseHandler
-	if nilHandler.IsPaused() {
+	if nilHandler.IsPaused(nil) {
 		t.Errorf("expected nilHandler.IsPaused() = false, got true")
 	}
 }
@@ -354,5 +356,148 @@ func verifyStatusUpdate(t *testing.T, got *storage.MockStorage, wantTarget strin
 	expectedMask := []string{"status.state"}
 	if diff := cmp.Diff(expectedMask, up.UpdateMask.GetPaths()); diff != "" {
 		t.Errorf("update mask paths mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestTaskPauseHandler_IsPaused_ResumptionTime(t *testing.T) {
+	pauseTime := time.Date(2026, 9, 24, 14, 0, 0, 0, time.UTC)
+	staleTime := time.Date(2026, 9, 24, 13, 0, 0, 0, time.UTC)
+	newerTime := time.Date(2026, 9, 24, 14, 5, 0, 0, time.UTC)
+
+	tests := []struct {
+		name      string
+		initState State
+		meta      *actuatortaskpb.Metadata
+		wantState State
+	}{
+		{
+			name:      "nil_metadata_remains_paused",
+			initState: State{IsPaused: true, UpdatedAt: pauseTime},
+			meta:      nil,
+			wantState: State{IsPaused: true, UpdatedAt: pauseTime},
+		},
+		{
+			name:      "nil_resumption_time_remains_paused",
+			initState: State{IsPaused: true, UpdatedAt: pauseTime},
+			meta:      &actuatortaskpb.Metadata{OperationName: proto.String("op-1")},
+			wantState: State{IsPaused: true, UpdatedAt: pauseTime},
+		},
+		{
+			name:      "zero_resumption_time_remains_paused",
+			initState: State{IsPaused: true, UpdatedAt: pauseTime},
+			meta:      &actuatortaskpb.Metadata{ResumptionTime: &timestamppb.Timestamp{}},
+			wantState: State{IsPaused: true, UpdatedAt: pauseTime},
+		},
+		{
+			name:      "stale_resumption_time_remains_paused",
+			initState: State{IsPaused: true, UpdatedAt: pauseTime},
+			meta:      &actuatortaskpb.Metadata{ResumptionRunId: proto.String("run-stale"), ResumptionTime: timestamppb.New(staleTime)},
+			wantState: State{IsPaused: true, UpdatedAt: pauseTime},
+		},
+		{
+			name:      "newer_resumption_time_unpauses_and_advances",
+			initState: State{IsPaused: true, UpdatedAt: pauseTime},
+			meta:      &actuatortaskpb.Metadata{ResumptionRunId: proto.String("run-resumed"), ResumptionTime: timestamppb.New(newerTime)},
+			wantState: State{IsPaused: false, UpdatedAt: newerTime},
+		},
+		{
+			name:      "equal_resumption_time_unpauses",
+			initState: State{IsPaused: true, UpdatedAt: pauseTime},
+			meta:      &actuatortaskpb.Metadata{ResumptionRunId: proto.String("run-resumed"), ResumptionTime: timestamppb.New(pauseTime)},
+			wantState: State{IsPaused: false, UpdatedAt: pauseTime},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cache := NewCache()
+			cache.Update(tc.initState)
+			h, err := NewPauseHandler(cache, &storage.MockStorage{})
+			if err != nil {
+				t.Fatalf("NewPauseHandler() unexpected error: %v", err)
+			}
+			if got := h.IsPaused(tc.meta); got != tc.wantState.IsPaused {
+				t.Errorf("IsPaused() = %v, want %v", got, tc.wantState.IsPaused)
+			}
+			if diff := cmp.Diff(tc.wantState, cache.State()); diff != "" {
+				t.Errorf("State() mismatch (-want +got):\n%s", diff)
+			}
+			wantGauge := 0.0
+			if tc.wantState.IsPaused {
+				wantGauge = 1.0
+			}
+			if got := testutil.ToFloat64(schedulingPausedGauge); got != wantGauge {
+				t.Errorf("xmc_actuator_scheduling_paused = %v, want %v", got, wantGauge)
+			}
+		})
+	}
+}
+
+func TestHandlePause_BufferedTasksMetrics(t *testing.T) {
+	ctx := context.Background()
+	pausedTasksBufferedTotal.Reset()
+
+	cache := NewCache()
+	cache.Update(State{IsPaused: true, UpdatedAt: time.Now()})
+	repo := &mockPausedTaskRepo{}
+	txRunner := &storage.MockStorage{
+		PausedTaskRepository: repo,
+	}
+	h, err := NewPauseHandler(cache, txRunner)
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
+
+	actions := []struct {
+		label   string
+		payload *actuatortaskpb.ActuatorPayload
+	}{
+		{
+			label:   "create",
+			payload: newCreatePayload(),
+		},
+		{
+			label: "restart",
+			payload: &actuatortaskpb.ActuatorPayload{
+				Target: proto.String("experiments/100/workUnits/200/executions/1"),
+				Action: &actuatortaskpb.Action{
+					Action: &actuatortaskpb.Action_Restart{Restart: &actuatortaskpb.RestartAction{}},
+				},
+				WorkUnit: &essmsgpb.WorkUnit{
+					Name: "experiments/100/workUnits/200",
+					CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+						Name: "experiments/100/workUnits/200/executions/2",
+					},
+				},
+			},
+		},
+		{
+			label: "update",
+			payload: &actuatortaskpb.ActuatorPayload{
+				Target: proto.String("experiments/100/workUnits/200/executions/1"),
+				Action: &actuatortaskpb.Action{
+					Action: &actuatortaskpb.Action_Update{Update: &actuatortaskpb.UpdateAction{}},
+				},
+				WorkUnit: &essmsgpb.WorkUnit{Name: "experiments/100/workUnits/200"},
+			},
+		},
+	}
+
+	for _, a := range actions {
+		if err := h.HandlePause(ctx, a.payload, "trace-id"); err != nil {
+			t.Fatalf("HandlePause(%s) unexpected error: %v", a.label, err)
+		}
+		if got := testutil.ToFloat64(pausedTasksBufferedTotal.WithLabelValues(a.label)); got != 1 {
+			t.Errorf("xmc_actuator_paused_tasks_buffered_total{action=%s} = %v, want 1", a.label, got)
+		}
+	}
+
+	// Verify failed transaction does not increment buffered counter
+	txRunner.UpdateWorkUnitExecutionsErr = errors.New("tx failure")
+	if err := h.HandlePause(ctx, newCreatePayload(), "trace-id"); err == nil {
+		t.Fatalf("expected error from HandlePause(), got nil")
+	}
+	if got := testutil.ToFloat64(pausedTasksBufferedTotal.WithLabelValues("create")); got != 1 {
+		t.Errorf("xmc_actuator_paused_tasks_buffered_total{action=create} after failed tx = %v, want 1", got)
 	}
 }

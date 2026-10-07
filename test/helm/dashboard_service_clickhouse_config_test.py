@@ -43,6 +43,7 @@ PASSWORD_ENV_VAR_BY_BACKEND = {False: "CLICKHOUSE_PASSWORD", True: "CLICKHOUSE_P
 
 DASHBOARD_DEPLOYMENT = "templates/dashboard-service/deployment.yaml"
 DASHBOARD_CONFIGMAP = "templates/dashboard-service/configmap.yaml"
+DASHBOARD_SERVICEACCOUNT = "templates/dashboard-service/serviceaccount.yaml"
 CLICKHOUSE_SECRET = "templates/metrics/clickhouse-secret.yaml"
 SECRET_PROVIDER_CLASS = "templates/ess/secretproviderclass.yaml"
 
@@ -235,6 +236,84 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
 
         self.assertIn("dashboard_spanner_database_name:", manifest)
         self.assertIn("dashboard_xid_service_addr:", manifest)
+        self.assertIn('enable_components: "false"', manifest)
+        self.assertIn("components_namespace:", manifest)
+
+    def test_configmap_wires_enable_components_when_enabled(self) -> None:
+        """Enabling componentsDeployment propagates enable_components=true to dashboard-config."""
+        manifest = render_template(
+            DASHBOARD_CONFIGMAP,
+            {"dashboardServiceDeployment.enabled": "true", "componentsDeployment.enabled": "true"},
+        )
+        self.assertIn('enable_components: "true"', manifest)
+
+    def test_components_rbac_omitted_without_components(self) -> None:
+        """The reader Role is only rendered when dashboard and components are both on."""
+        for values in (
+            {"dashboardServiceDeployment.enabled": "true", "componentsDeployment.enabled": "false"},
+            {"dashboardServiceDeployment.enabled": "true"},
+        ):
+            self.assertNotIn(
+                "dashboard-service-components-reader",
+                render_template(DASHBOARD_SERVICEACCOUNT, values),
+            )
+
+    def test_components_rbac_rendered_when_components_enabled_even_without_metrics(self) -> None:
+        """The reader Role renders when components are on, even if metrics.enabled is false."""
+        manifest = render_template(
+            DASHBOARD_SERVICEACCOUNT,
+            {
+                "dashboardServiceDeployment.enabled": "true",
+                "componentsDeployment.enabled": "true",
+                "metrics.enabled": "false",
+            },
+        )
+        self.assertIn("name: dashboard-service-components-reader", manifest)
+        self.assertIn("name: dashboard-service-components-reader-binding", manifest)
+        self.assertIn('resourceNames: ["clickhouse"]', manifest)
+        self.assertIn('resourceNames: ["clickhouse-secret"]', manifest)
+
+    def test_components_rbac_grants_component_and_secret_get_when_csi_disabled(self) -> None:
+        """Without CSI, the Role grants get on the clickhouse Component CR and password Secret."""
+        manifest = render_template(
+            DASHBOARD_SERVICEACCOUNT,
+            {
+                "dashboardServiceDeployment.enabled": "true",
+                "componentsDeployment.enabled": "true",
+                "metrics.enabled": "true",
+            },
+        )
+        self.assertIn("name: dashboard-service-components-reader", manifest)
+        self.assertIn("name: dashboard-service-components-reader-binding", manifest)
+        self.assertIn('resourceNames: ["clickhouse"]', manifest)
+        self.assertIn('resourceNames: ["clickhouse-secret"]', manifest)
+        self.assertIn(
+            'resourceNames: ["custom-ch-secret"]',
+            render_template(
+                DASHBOARD_SERVICEACCOUNT,
+                {
+                    "dashboardServiceDeployment.enabled": "true",
+                    "componentsDeployment.enabled": "true",
+                    "metrics.enabled": "true",
+                    "metrics.clickhouse.secretName": "custom-ch-secret",
+                },
+            ),
+        )
+
+    def test_components_rbac_omits_secret_rule_when_csi_enabled(self) -> None:
+        """With CSI enabled, the password is mounted from Secret Manager so no Secret get is needed."""
+        manifest = render_template(
+            DASHBOARD_SERVICEACCOUNT,
+            {
+                "dashboardServiceDeployment.enabled": "true",
+                "componentsDeployment.enabled": "true",
+                "metrics.enabled": "true",
+                "secrets.csi.enabled": "true",
+            },
+        )
+        self.assertIn("name: dashboard-service-components-reader", manifest)
+        self.assertIn('resourceNames: ["clickhouse"]', manifest)
+        self.assertNotIn('resources: ["secrets"]', manifest)
 
 
 if __name__ == "__main__":

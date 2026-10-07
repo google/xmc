@@ -24,6 +24,8 @@ import (
 
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/storage/spanner/pausestate"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 var _ StreamSubscriber = (*mockStreamSubscriber)(nil)
@@ -154,6 +156,9 @@ func TestListener_Init_ColdStart(t *testing.T) {
 		if !cache.State().IsPaused {
 			t.Errorf("IsPaused = false, want true after cold-start init")
 		}
+		if got := testutil.ToFloat64(schedulingPausedGauge); got != 1 {
+			t.Errorf("xmc_actuator_scheduling_paused = %v, want 1", got)
+		}
 		if listener.getStartID() != "100-0" {
 			t.Errorf("getStartID() = %q, want %q", listener.getStartID(), "100-0")
 		}
@@ -169,6 +174,9 @@ func TestListener_Init_ColdStart(t *testing.T) {
 		}
 		if cache.State().IsPaused {
 			t.Errorf("IsPaused = true, want false for uninitialized table")
+		}
+		if got := testutil.ToFloat64(schedulingPausedGauge); got != 0 {
+			t.Errorf("xmc_actuator_scheduling_paused = %v, want 0", got)
 		}
 		if listener.getStartID() != "0" {
 			t.Errorf("getStartID() = %q, want %q", listener.getStartID(), "0")
@@ -244,10 +252,13 @@ func TestListener_BroadcastUpdate(t *testing.T) {
 	// Emit broadcast event
 	sub.emit(broadcast.EventSchedulingPaused)
 
-	// Verify cache was updated
+	// Verify cache and gauge were updated
 	time.Sleep(50 * time.Millisecond)
 	if !cache.State().IsPaused {
 		t.Errorf("IsPaused = false, want true after broadcast update")
+	}
+	if got := testutil.ToFloat64(schedulingPausedGauge); got != 1 {
+		t.Errorf("xmc_actuator_scheduling_paused = %v, want 1", got)
 	}
 }
 

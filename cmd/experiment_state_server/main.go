@@ -48,6 +48,8 @@ import (
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 //go:embed xmanager_cloud/experiment_state_server/static/*
@@ -193,6 +195,7 @@ func setupHTTPMux(ctx context.Context, oauthAuth *oauth.Authenticator, authentic
 
 	httpMux.Handle("/readyz", readyHandler)
 	httpMux.Handle("/healthz", livenessHandler)
+	httpMux.Handle("/metrics", promhttp.Handler())
 
 	httpMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {

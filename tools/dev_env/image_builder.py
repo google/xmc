@@ -122,13 +122,19 @@ class ImageBuilder:
 
         active_services = list(dict.fromkeys(active_services))
         specs: list[tuple[str, str, str]] = []
+        seen_pkgs: set[str] = set()
         for s in active_services:
             if not s or not all(c.isalnum() or c in "_-" for c in s):
                 raise ValueError(
                     f"Invalid service name '{s}'. Service names must only contain "
                     "alphanumeric characters, underscores, or dashes."
                 )
-            specs.append((f"cmd/{s}", f"{s}_image_tarball", f"{s.lower()}_image:latest"))
+            target_svc = "xmc_bridge" if s == "components" else s
+            pkg = f"cmd/{target_svc}"
+            if pkg in seen_pkgs:
+                continue
+            seen_pkgs.add(pkg)
+            specs.append((pkg, f"{target_svc}_image_tarball", f"{target_svc.lower()}_image:latest"))
         return specs
 
     def _resolve_tarball_path(self, bazel_bin: Path, pkg: str, target: str) -> Path:

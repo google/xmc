@@ -728,7 +728,40 @@ image_tag: latest
             self.dns_zone,
             "my-config.yaml",
         )
-        mock_compile.assert_called_once_with("my-config.yaml", self.valid_config.deployment_name)
+        mock_compile.assert_called_once_with(
+            "my-config.yaml", self.valid_config.deployment_name, enable_components=False
+        )
+
+    @patch("tools.dev_env.deploy_dev_env.compile_blueprint")
+    def test_step_compile_with_enable_components(self, mock_compile):
+        from dataclasses import replace
+
+        cfg = replace(self.valid_config, enable_components=True)
+        deploy_dev_env.step_compile(
+            cfg,
+            self.dns_project,
+            self.dns_zone,
+            "my-config.yaml",
+        )
+        mock_compile.assert_called_once_with(
+            "my-config.yaml", cfg.deployment_name, enable_components=True
+        )
+
+    @patch("tools.dev_env.deploy_dev_env._fetch_cluster_credentials")
+    @patch("tools.dev_env.deploy_dev_env.step_restart")
+    @patch("tools.dev_env.deploy_dev_env.deploy_component_profile")
+    @patch("tools.dev_env.deploy_dev_env.run_gcluster_deploy")
+    def test_step_app_deploys_component_profile(
+        self, mock_deploy, mock_profile, mock_restart, mock_creds
+    ):
+        from dataclasses import replace
+
+        cfg = replace(self.valid_config, enable_components=True)
+        deploy_dev_env.step_app(cfg, self.dns_project, self.dns_zone)
+        mock_deploy.assert_called_once_with(cfg.deployment_name, "xmc_app")
+        mock_profile.assert_called_once_with(cfg)
+        mock_creds.assert_called_once_with(cfg)
+        mock_restart.assert_called_once_with(cfg)
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     @patch("tools.dev_env.deploy_dev_env.apply_dns_records")

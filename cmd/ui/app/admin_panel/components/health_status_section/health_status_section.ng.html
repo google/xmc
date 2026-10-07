@@ -40,9 +40,15 @@
 
   <!-- Scheduling Pause Toggle -->
   @if (isPauseSchedulingEnabled()) {
+    @if (hasSchedulingPauseError()) {
+      <xmc-error-banner
+        message="Unable to fetch current pause scheduling state. Please try again."
+        [showRetry]="false"
+      />
+    }
     <xmc-scheduling-pause-button
       [isSchedulingPaused]="isSchedulingPaused()"
-      [disabled]="isUpdatingPauseState()"
+      [disabled]="isUpdatingPauseState() || hasSchedulingPauseError()"
       (toggleClick)="onTogglePause()"
     />
   }

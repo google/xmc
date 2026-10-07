@@ -39,6 +39,7 @@ class DeploymentConfig:
     image_tag: str
     namespace: str = "xmc"
     domain_name: str | None = None
+    enable_components: bool = False
 
     @property
     def gke_cluster(self) -> str:
@@ -189,7 +190,13 @@ ENV_VAR_MAPPING = {
     "IMAGE_REGISTRY": "image_registry",  # Primary, processed second (wins)
     "BUILD_TAG": "image_tag",
     "XMC_BASE_DOMAIN": "domain_name",
+    "ENABLE_COMPONENTS": "enable_components",
 }
+
+
+def parse_bool_flag(val: Any) -> bool:
+    """Parses a boolean configuration flag from a boolean or string."""
+    return val.strip().lower() in ("true", "1", "yes") if isinstance(val, str) else bool(val)
 
 
 def _parse_yaml_vars_line_fallback(content: str) -> dict[str, Any]:
@@ -286,6 +293,7 @@ def load_and_validate_config(
         image_tag=config["image_tag"],
         domain_name=config.get("domain_name"),
         namespace=config.get("namespace", "xmc"),
+        enable_components=parse_bool_flag(config.get("enable_components", False)),
     )
 
 
@@ -422,3 +430,14 @@ def build_and_push_images(config: DeploymentConfig) -> None:
         run_command(["bazel", "run", target], env=env)
 
     log_success("All XMC service container images compiled and pushed from current branch state.")
+
+
+def deploy_component_profile(config: DeploymentConfig) -> None:
+    """Deploys default XMC component profile (stable-2026a) when components are enabled."""
+    if not config.enable_components:
+        return
+    ns = config.namespace or "xmc"
+    chart = str(Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a")
+    log_info(f"Deploying default component profile (stable-2026a) into namespace '{ns}'...")
+    run_command(["helm", "upgrade", "--install", "xmc-profile", chart, "-n", ns, "--wait"])
+    log_success("Default component profile (stable-2026a) deployed.")

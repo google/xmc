@@ -16,6 +16,8 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 
+import { ErrorBannerComponent } from 'app/common/components/error_banner/error_banner';
+
 import { HealthStatusGroupCardComponent } from './health_status_group_card/health_status_group_card';
 import { SchedulingPauseButtonComponent } from './scheduling_pause_button/scheduling_pause_button';
 import { SchedulingPauseModalComponent } from './scheduling_pause_modal/scheduling_pause_modal';
@@ -50,6 +52,7 @@ export interface ComponentHealth {
   imports: [
     CommonModule,
     MatIconModule,
+    ErrorBannerComponent,
     HealthStatusGroupCardComponent,
     SchedulingPauseButtonComponent,
     SchedulingPauseModalComponent,
@@ -66,6 +69,7 @@ export class HealthStatusSectionComponent {
   isSchedulingPaused = input<boolean>(false);
   isPauseSchedulingEnabled = input<boolean>(true);
   isUpdatingPauseState = input<boolean>(false);
+  hasSchedulingPauseError = input<boolean>(false);
 
   refresh = output<void>();
   toggleSchedulingPause = output<boolean>();
