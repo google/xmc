@@ -139,6 +139,25 @@ class TestMigrationHelpers(unittest.TestCase):
             upgrade_dev_env.get_migration_status(config, "ess", "inst", "db")
         self.assertEqual(cm.exception.code, 1)
 
+    @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
+    def test_get_migration_status_nonzero_exit(self, mock_run):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="rpc error: code = Unavailable"
+        )
+        config = upgrade_dev_env.UpgradeConfig(
+            project_id="p",
+            deployment_name="d",
+            region="r",
+            environment="e",
+            namespace="n",
+            config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="latest",
+        )
+        with self.assertRaises(SystemExit) as cm:
+            upgrade_dev_env.get_migration_status(config, "ess", "inst", "db")
+        self.assertEqual(cm.exception.code, 1)
+
     @mock.patch("tools.dev_env.upgrade_dev_env.get_migration_status")
     def test_step_migrate_exits_code_10_when_pending(self, mock_status):
         mock_status.side_effect = [(1, 2), (1, 1)]
@@ -341,6 +360,14 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 9)
         self.assertNotIn(self._restart_cmd("xmc-bridge-deployment"), cmds)
         self.assertNotIn(self._restart_cmd("ingestion-gateway-deployment"), cmds)
+
+    @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name", return_value=None)
+    @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
+    def test_step_restart_fails_when_zero_deployments_resolved(self, mock_run, mock_resolve):
+        with self.assertRaises(SystemExit) as cm:
+            upgrade_dev_env.step_restart(self.config)
+        self.assertEqual(cm.exception.code, 1)
+        mock_run.assert_not_called()
 
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.dev_env.upgrade_dev_env.deploy_component_profile")

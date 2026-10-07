@@ -119,6 +119,32 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(called_args.start_from, "compile")
         self.assertIsNone(called_args.only)
 
+    @patch("tools.dev_env.deploy_dev_env.run_deployment")
+    def test_gke_deploy_skip_migrations(self, mock_run: MagicMock) -> None:
+        """Verifies gke-deploy parses --skip-migrations flag."""
+        args = [
+            "gke-deploy",
+            "--config",
+            "deploy/ctk_v2/test.yaml",
+            "--dns-project",
+            "test-dns-proj",
+            "--dns-zone",
+            "test-dns-zone",
+            "--skip-migrations",
+        ]
+        parsed = self.parser.parse_args(args)
+        parsed.func(parsed)
+        mock_run.assert_called_once()
+        called_args = mock_run.call_args[0][0]
+        self.assertTrue(called_args.skip_migrations)
+
+    def test_gke_upgrade_rejects_skip_migrations(self) -> None:
+        """Verifies gke-upgrade rejects the deploy-only --skip-migrations flag."""
+        with patch("sys.stderr", new_callable=io.StringIO):
+            with self.assertRaises(SystemExit) as cm:
+                self.parser.parse_args(["gke-upgrade", "--skip-migrations"])
+            self.assertEqual(cm.exception.code, 2)
+
     def test_gke_deploy_missing_required_args(self) -> None:
         """Verifies gke-deploy fails when required flags are omitted."""
         with patch("sys.stderr", new_callable=io.StringIO):
