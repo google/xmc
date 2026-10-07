@@ -46,18 +46,6 @@ EXEMPT_EXAMPLES: dict[str, str] = {
     "xmc_lite_job": (
         "Targets experimental xm_local Lite execution rather than the GKE control plane and Kueue ClusterQueue."
     ),
-    "managed_xprof_artifact_job": (
-        "Requires GCS Workload Identity Federation bucket provisioning in nightly E2E workflow (pending PR #1099)."
-    ),
-    "pathways_job": (
-        "Targets Pathways TPU ClusterQueue and coordinator topology (pending control-plane verification in PR #1099)."
-    ),
-    "per_job_node_selector": (
-        "Targets multi-pool CPU+GPU nodeSelector constraints on CPU-only nightly cluster (pending PR #1099)."
-    ),
-    "xdash_dashboard": (
-        "Standalone xDash REST/gRPC dashboard builder script without Experiment XID (pending PR #1099)."
-    ),
 }
 
 

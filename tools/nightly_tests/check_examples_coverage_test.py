@@ -66,6 +66,10 @@ class CheckExamplesCoverageTest(unittest.TestCase):
             check_examples_coverage.EXEMPT_EXAMPLES
         )
         self.assertEqual(violations, [])
+        self.assertEqual(
+            set(check_examples_coverage.EXEMPT_EXAMPLES),
+            {"components", "xmc_lite_job"},
+        )
 
     def test_covered_example_passes(self) -> None:
         """An example with verifier script, BUILD.bazel target, and workflow entry passes."""
