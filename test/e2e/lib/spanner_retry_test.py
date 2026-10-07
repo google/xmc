@@ -149,6 +149,20 @@ class TestRedactErrorOutput(unittest.TestCase):
             '{"project_number": "***", "project": ***}',
         )
 
+    def test_masks_project_numbers_in_every_key_spelling(self):
+        cases = [
+            ('{"projectNumber": "123456789012"}', '{"projectNumber": "***"}'),
+            ("projectNumber: '123456789012'", "projectNumber: '***'"),
+            ("project_number=987654321", "project_number=***"),
+            ("project-number: 55", "project-number: ***"),
+            ("consumer: projects/123456789012", "consumer: projects/***"),
+            ("containerInfo: '123456789012'", "containerInfo: '***'"),
+            ("overview?project=123456789012 then retry", "overview?project=*** then retry"),
+        ]
+        for text, expected in cases:
+            with self.subTest(text):
+                self.assertEqual(redact_error_output(text), expected)
+
 
 class TestRunWithTransientRetry(unittest.TestCase):
     """Tests for the bounded retry loop, on a fake clock that only advances when waited on."""

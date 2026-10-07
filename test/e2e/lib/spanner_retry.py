@@ -60,7 +60,11 @@ _ALREADY_EXISTS_PATTERN = re.compile(r"already[_ ]?exists", re.IGNORECASE)
 
 # Project IDs and numbers are masked in logged error output because CI logs are public.
 _PROJECT_PATH = re.compile(r"projects/[^/\s'\"]+")
-_PROJECT_NUMBER = re.compile(r"(project(?:_number)?['\"]?\s*[:/ =]\s*['\"]?)\d+", re.IGNORECASE)
+# A project number follows a project key in any spelling, such as projectNumber or
+# project_number, or the containerInfo key of the error details that gcloud prints.
+_PROJECT_NUMBER = re.compile(
+    r"((?:project(?:[-_]?number)?|containerInfo)['\"]?\s*[:/ =]\s*['\"]?)\d+", re.IGNORECASE
+)
 
 
 class ErrorClass(enum.Enum):

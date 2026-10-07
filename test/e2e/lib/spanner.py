@@ -24,6 +24,7 @@ import os
 import subprocess
 import threading
 import time
+from collections.abc import Iterator
 
 from test.e2e.lib import cancellation
 from test.e2e.lib.command import TEARDOWN_TIMEOUT_SECONDS, run_cmd
@@ -60,6 +61,36 @@ _SCHEMA_MIGRATIONS_DDL = (
     "  Dirty BOOL NOT NULL,\n"
     ") PRIMARY KEY(Version);\n"
 )
+
+
+@contextlib.contextmanager
+def _hold_lock_within(lock: threading.Lock, timeout: float, cmd: list[str]) -> Iterator[float]:
+    """Holds ``lock`` and yields the part of ``timeout`` left after waiting for it.
+
+    Waiting for the lock counts against the timeout of the command that needs it, so that a
+    command queued behind a concurrent one stays within its attempt and total time budgets.
+
+    Args:
+        lock: The lock to hold.
+        timeout: Seconds for waiting for ``lock`` and running ``cmd`` together.
+        cmd: The command that needs ``lock``, reported if the wait times out.
+
+    Yields:
+        The seconds left for running ``cmd``.
+
+    Raises:
+        subprocess.TimeoutExpired: If ``lock`` is not acquired within ``timeout``, which the
+            retry loop treats as transient.
+    """
+    deadline = time.monotonic() + timeout
+    if not lock.acquire(timeout=timeout):
+        raise subprocess.TimeoutExpired(
+            cmd, timeout, stderr="Timed out waiting for a lock held by a concurrent command."
+        )
+    try:
+        yield deadline - time.monotonic()
+    finally:
+        lock.release()
 
 
 class SpannerManager:
@@ -312,7 +343,7 @@ class SpannerManager:
             lock = self._bazel_run_lock
             mig_cmd = ["bazel", "run", "//internal/storage/spanner/migrations:migrations", "--"]
         else:
-            lock = contextlib.nullcontext()
+            lock = threading.Lock()  # Unshared, so that both databases initialize concurrently.
             mig_cmd = [mig_binary]
         init_cmd = [
             *mig_cmd,
@@ -324,8 +355,10 @@ class SpannerManager:
         ]
 
         def _init_once(_attempt: int, timeout: float) -> None:
-            with lock:
-                run_cmd(init_cmd, cwd=self.cfg.workspace_root, capture_output=True, timeout=timeout)
+            with _hold_lock_within(lock, timeout, init_cmd) as remaining:
+                run_cmd(
+                    init_cmd, cwd=self.cfg.workspace_root, capture_output=True, timeout=remaining
+                )
 
         run_with_transient_retry(
             _init_once, f"Initializing migration version for {db_name}", MIGRATION_INIT_RETRY
