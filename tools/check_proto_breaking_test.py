@@ -212,7 +212,7 @@ class BuildDescriptorSetTest(unittest.TestCase):
             [
                 ["bazel", "build", "--config=ci", target],
                 ["bazel", "cquery", "--config=ci", "--output=files", target],
-                ["bazel", "info", "--config=ci", "execution_root"],
+                ["bazel", "info", "execution_root"],
             ],
         )
         self.assertTrue(all(cwd == REPO for _, cwd in runner.calls))
@@ -243,7 +243,7 @@ class BuildDescriptorSetTest(unittest.TestCase):
         hints = {
             "build": f"bazel build --config=ci {target}",
             "cquery": f"bazel cquery --config=ci --output=files {target}",
-            "info": "bazel info --config=ci execution_root",
+            "info": "bazel info execution_root",
         }
         for command, hint in hints.items():
             with self.subTest(command=command):

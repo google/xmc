@@ -151,7 +151,8 @@ def build_descriptor_set(workspace: Path, bazel_flags: list[str], destination: P
             f"Expected exactly one output file for {DESCRIPTOR_SET_TARGET}, got {outputs}.",
             f"Ensure {DESCRIPTOR_SET_TARGET} is a proto_descriptor_set target.",
         )
-    info = capture_bazel_stdout(workspace, "info", *bazel_flags, "execution_root")
+    # The execution root is the same for every build configuration, so no flags are passed.
+    info = capture_bazel_stdout(workspace, "info", "execution_root")
     shutil.copyfile(Path(info.strip()) / outputs[0], destination)
 
 
