@@ -54,17 +54,19 @@ func (e *OperationError) Error() string {
 }
 
 // newOperationError builds an OperationError from an operation's raw error payload,
-// extracting the numeric google.rpc.Code and message when present. JSON numbers
-// decode as float64, so the code is converted accordingly.
+// extracting the numeric google.rpc.Code and message when present.
 func newOperationError(name string, errField any) *OperationError {
 	oe := &OperationError{Name: name, Raw: errField}
 	if m, ok := errField.(map[string]any); ok {
-		if code, ok := m["code"].(float64); ok {
-			oe.Code = int(code)
+		switch v := m["code"].(type) {
+		case float64:
+			oe.Code = int(v)
+		case int:
+			oe.Code = v
+		case int64:
+			oe.Code = int(v)
 		}
-		if msg, ok := m["message"].(string); ok {
-			oe.Message = msg
-		}
+		oe.Message, _ = m["message"].(string)
 	}
 	return oe
 }
@@ -177,6 +179,6 @@ func (c *ControlPlaneClient) resolveOperation(ctx context.Context, result map[st
 	if target == "" {
 		return nil, fmt.Errorf("no response or target in operation %v", operation["name"])
 	}
-	parts := strings.Split(target, "/")
+	parts := strings.Split(strings.TrimSuffix(target, "/"), "/")
 	return c.GetMLRun(ctx, parts[len(parts)-1])
 }

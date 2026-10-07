@@ -62,7 +62,7 @@ func (c *ControlPlaneClient) CreateMLRun(ctx context.Context, name, displayName,
 
 // GetMLRun retrieves an existing ML run by name.
 func (c *ControlPlaneClient) GetMLRun(ctx context.Context, name string) (map[string]any, error) {
-	runURL := fmt.Sprintf("%s/%s", c.mlRunsPath, name)
+	runURL := fmt.Sprintf("%s/%s", c.mlRunsPath, url.PathEscape(name))
 	logging.Debug(ctx, "GetMLRun request", "url", runURL)
 	result, err := c.do(ctx, http.MethodGet, runURL, nil, nil)
 	if err != nil {
@@ -151,12 +151,8 @@ func applyMLRunUpdateOptions(payload map[string]any, opts *UpdateMLRunOptions) b
 			needUpdate = true
 		}
 	}
-	if mergeStringMap(payload, "labels", opts.Labels) {
-		needUpdate = true
-	}
-	if mergeStringMap(payload, "artifacts", opts.Artifacts) {
-		needUpdate = true
-	}
+	needUpdate = mergeStringMap(payload, "labels", opts.Labels) || needUpdate
+	needUpdate = mergeStringMap(payload, "artifacts", opts.Artifacts) || needUpdate
 	if opts.Orchestrator != "" {
 		payload["orchestrator"] = opts.Orchestrator
 		if opts.Orchestrator == "GKE" && opts.WorkloadDetails != nil {
@@ -188,7 +184,7 @@ func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts 
 		delete(payload, field)
 	}
 	// The current backend only accepts update_mask=*|workload_details, so it uses * here. TODO: update to per field masks once backend supports it.
-	runURL := fmt.Sprintf("%s/%s", c.mlRunsPath, name)
+	runURL := fmt.Sprintf("%s/%s", c.mlRunsPath, url.PathEscape(name))
 	params := url.Values{"update_mask": {"*"}}
 	logging.Debug(ctx, "UpdateMLRun request", "url", runURL, "params", params, "payload", payload)
 	result, err := c.do(ctx, http.MethodPatch, runURL, params, payload)

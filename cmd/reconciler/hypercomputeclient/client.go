@@ -35,9 +35,7 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
-const (
-	defaultLocation = "us-central1"
-)
+const defaultLocation = "us-central1"
 
 // ControlPlaneClient communicates with the Google Cloud Hypercompute Cluster
 // ML Run service.
