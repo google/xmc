@@ -220,7 +220,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 	meta := buildJobSetLabelsAndAnnotations(workUnit, xid, wid, eid, author, namespace, operationTime, priorities)
 	xprofObjectPath := c.resolveManagedXprofObjectPath(ctx, xid, wid, operationTime)
 	replicatedJobs := c.buildReplicatedJobs(ctx, workUnit, meta.jobLabels, meta.defaultAnnotations, xprofObjectPath)
-	jobSet := buildBaseJobSet(workUnit, buildJobSetName(target), namespace, meta, replicatedJobs)
+	jobSet := buildBaseJobSet(workUnit, fmt.Sprintf("xmc-operation-%s-%s", xid, wid), namespace, meta, replicatedJobs)
 
 	return c.finalizeAndValidateJobSet(ctx, workUnit, namespace, jobSet)
 }
@@ -247,9 +247,11 @@ func (c *Client) buildReplicatedJobs(ctx context.Context, workUnit *esspb.WorkUn
 	}
 	var replicatedJobs []jobsetv1alpha2.ReplicatedJob
 	for _, job := range workUnit.GetExecutable().GetJobset().GetJobs() {
-		rj := c.k8sJobToReplicatedJob(ctx, job, jobLabels, defaultAnnotations)
-		injectManagedXprofGCSEnvVars(&rj, xprofObjectPath)
-		replicatedJobs = append(replicatedJobs, rj)
+		if job != nil {
+			rj := c.k8sJobToReplicatedJob(ctx, job, jobLabels, defaultAnnotations)
+			injectManagedXprofGCSEnvVars(&rj, xprofObjectPath)
+			replicatedJobs = append(replicatedJobs, rj)
+		}
 	}
 	return replicatedJobs
 }
