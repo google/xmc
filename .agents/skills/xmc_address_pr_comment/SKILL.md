@@ -13,7 +13,8 @@ graph TD
     B --> C["Agent populates pr_review_checklist.md"]
     C --> D["Agent runs fetch_pr_comment.py for comment context"]
     D --> E["Agent extracts: body, file path, line"]
-    E --> F["Agent performs Bazel Query to find affected binaries"]
+    E --> D2["Agent performs Comment Validity & Pushback Triage"]
+    D2 --> F["Agent performs Bazel Query to find affected binaries"]
     F --> G["Agent prepares Implementation Plan"]
     G --> H["Agent runs Unit Tests & Coverage"]
     H --> I["Agent builds affected targets locally"]
@@ -101,6 +102,17 @@ The agent accepts a comment link or PR number. The helper script `tools/pr_revie
 
 ---
 
+## 2.5. Comment Validity & Pushback Triage (Mandatory Before Planning Edits)
+
+Before planning code changes for any review comment (human or automated review bot), the agent MUST critically verify each comment against the actual source tree, `.agents/rules/` (especially language guidelines matching the modified file extension, such as [Go Guidelines](../../rules/languages/golang.md)), and PR scope / diff-size limits (`./tools/analyze_diff_size.py`). Never blindly assume a review suggestion is valid.
+
+Classify every unresolved comment into one of three dispositions:
+1. **`Adopt (Valid Fix)`**: The comment identifies a genuine bug, race condition, rule violation, or clean improvement within PR scope. Plan the code edit and unit test verification.
+2. **`Push Back (Rule / Technical Conflict)`**: Adopting the suggestion would violate an existing repository rule (for example, [Go Guidelines §9](../../rules/languages/golang.md#9-concurrency-safety--context-management) requiring `context.Background()` with a bounded timeout for post-failure diagnostics, `defer`, or `t.Cleanup` paths when the parent `ctx` is already expired/canceled) or break runtime behavior/existing architecture. Do **not** modify the code; instead, prepare a concise, respectful inline technical pushback reply citing the governing rule or execution trace.
+3. **`Push Back / Defer (Scope Creep or Diff-Size Breach)`**: Adopting the suggestion requires out-of-scope production refactoring in a focused/test PR or pushes the diff past `./tools/analyze_diff_size.py` thresholds. Propose an inline reply explaining why the change is deferred to a dedicated follow-up PR.
+
+---
+
 ## 3. Dependency Mapping & Impact Analysis
 
 To make the workflow precise, the agent must figure out which Bazel binaries and Kubernetes deployments are impacted by the changed file.
@@ -138,12 +150,13 @@ Each `go_binary` mapped above is associated with an OCI image builder and GKE de
 
 ## 4. Implementation Plan Preparation
 
-Based on the parsed review comments and impacted targets, the agent creates a draft implementation plan for user review. It will format the plan as a Markdown artifact in the brain folder:
+Based on the parsed review comments, validity triage, and impacted targets, the agent creates a draft implementation plan (e.g., `pr_comment_resolution_plan.md`) for user review:
 
+- **Comment Validity & Pushback Triage Table**: A summary table (`Comment ID | Summary | Disposition (Adopt / Push Back) | Technical Rationale`) classifying every comment per [Section 2.5](#25-comment-validity--pushback-triage-mandatory-before-planning-edits).
 - **Analysis**: Visual code excerpt and summary of the reviewer's concern.
-- **Proposed Code Changes**: Target file path, exact lines to modify, and a git diff style code snippet.
-- **Affected Components list**: Which binaries and deployments need to be verified.
-- **Execution steps**: A sequence of commands to verify and deploy.
+- **Proposed Resolution (Code Changes vs. Inline Pushback Reply)**: For `Adopt` items, specify target file path, exact lines to modify, and a git diff style code snippet. For `Push Back` items, state explicitly that no code change will be made and draft the exact technical rationale reply to be posted via `./tools/pr_review/reply_pr_comment.py`.
+- **Affected Components list**: Which binaries and deployments need to be verified (for `Adopt` items).
+- **Execution steps**: A sequence of commands to verify, commit, reply, and deploy.
 
 ---
 

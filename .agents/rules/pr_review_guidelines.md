@@ -24,6 +24,7 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
 ## 2. PR Review Comment Resolution Rules
 
 For detailed comment resolution workflows, including fetching comment context, generating checklist artifacts, running local unit tests, and verifying 1-to-1 thread resolution, follow the mandatory procedures defined in the [Address PR Comment Skill](../skills/xmc_address_pr_comment/SKILL.md).
+- **Mandatory Validity & Pushback Triage Before Editing**: Before planning or applying code changes for any review comment, audit the comment's technical validity against the source tree, `.agents/rules/` (including language guidelines such as [Go Guidelines](languages/golang.md)), and PR scope/diff-size limits per [Comment Validity & Pushback Triage](../skills/xmc_address_pr_comment/SKILL.md#25-comment-validity--pushback-triage-mandatory-before-planning-edits)—proposing technical pushback replies rather than blindly modifying code when a suggestion conflicts with repository rules, runtime behavior, or PR scope boundaries.
 
 Key tools for PR comment processing:
 - **Generate Review Checklist Artifact**: `./tools/pr_review/generate_review_checklist.py <owner> <repo> <pull_number> [-o pr_review_checklist.md]`
