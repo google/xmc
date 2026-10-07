@@ -146,13 +146,17 @@ func applyMLRunUpdateOptions(payload map[string]any, opts *UpdateMLRunOptions) b
 	}
 	needUpdate := opts.Force
 	for k, v := range map[string]string{"displayName": opts.DisplayName, "runPhase": opts.RunPhase, "runSet": opts.RunGroup} {
-		if v != "" && payload[k] != v {
+		if curr, _ := payload[k].(string); v != "" && curr != v {
 			payload[k] = v
 			needUpdate = true
 		}
 	}
-	needUpdate = mergeStringMap(payload, "labels", opts.Labels) || needUpdate
-	needUpdate = mergeStringMap(payload, "artifacts", opts.Artifacts) || needUpdate
+	if mergeStringMap(payload, "labels", opts.Labels) {
+		needUpdate = true
+	}
+	if mergeStringMap(payload, "artifacts", opts.Artifacts) {
+		needUpdate = true
+	}
 	if opts.Orchestrator != "" {
 		payload["orchestrator"] = opts.Orchestrator
 		if opts.Orchestrator == "GKE" && opts.WorkloadDetails != nil {

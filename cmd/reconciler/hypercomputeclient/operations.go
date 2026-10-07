@@ -104,9 +104,9 @@ func resolveWaitOptions(opts *WaitForOperationOptions) (time.Duration, time.Dura
 func waitPollBackoff(ctx context.Context, operationName string, delay float64) (float64, error) {
 	jitter := delay * (0.5 + rand.Float64()*0.5)
 	timer := time.NewTimer(time.Duration(jitter * float64(time.Second)))
+	defer timer.Stop()
 	select {
 	case <-ctx.Done():
-		timer.Stop()
 		if ctx.Err() == context.DeadlineExceeded {
 			return 0, fmt.Errorf("timed out waiting for operation %s to complete: %w", operationName, ctx.Err())
 		}
@@ -119,8 +119,7 @@ func waitPollBackoff(ctx context.Context, operationName string, delay float64) (
 // WaitForOperation polls until the operation completes or the deadline is reached.
 func (c *ControlPlaneClient) WaitForOperation(ctx context.Context, operationName string, opts *WaitForOperationOptions) (map[string]any, error) {
 	pollingInterval, timeout := resolveWaitOptions(opts)
-	// Derive a context with the timeout so downstream GetOperation calls
-	// inherit the deadline instead of relying on a manual wall-clock check.
+	// Derive a context with the timeout so downstream GetOperation calls inherit the deadline.
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	delay := pollingInterval.Seconds()
@@ -131,9 +130,7 @@ func (c *ControlPlaneClient) WaitForOperation(ctx context.Context, operationName
 			return nil, err
 		}
 		if op == nil {
-			// GetOperation returns a nil map for an empty body; fail fast with a
-			// clear error instead of treating it as "not done" and polling until
-			// the deadline.
+			// Fail fast on empty body instead of treating it as "not done" until the deadline.
 			return nil, fmt.Errorf("operation %q returned empty response", operationName)
 		}
 		if done, _ := op["done"].(bool); done {
