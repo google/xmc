@@ -217,7 +217,7 @@ func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid, 
 	}
 
 	mlRunURL := getMLRunURL(execution)
-	if mlRunURL != "" && execution != nil && isStaleExecutionForMLRun(execution.GetName(), eid) {
+	if execution != nil && mlRunURL != "" && isStaleExecutionForMLRun(execution.GetName(), eid) {
 		logging.Warn(ctx, "Reusing MLRun URL from a different current execution than the one being reconciled; possible re-execution race.", "reconciledEID", eid, "xid", xid, "wid", wid, "executionName", execution.GetName())
 	}
 
