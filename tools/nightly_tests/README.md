@@ -225,6 +225,6 @@ If an example is partially wired (for example, `<example_name>_verify.py` exists
 
 Adding a nightly verification suite is the default expectation for all examples. Remember that hardware-gated examples (GPU/TPU) **can and should** still be verified using `wait_for_completion=False` (Pattern B above) to validate control-plane Experiment/WorkUnit/JobSet creation.
 
-If an `examples/<example_name>/` directory genuinely cannot or should not be executed by the nightly GKE workflow (for example, static YAML/profile catalogs like `examples/components` or local-only `xm_local` scripts like `examples/xmc_lite_job`), register `<example_name>` in the central `EXEMPT_EXAMPLES` dictionary in [`tools/nightly_tests/check_examples_coverage.py`](check_examples_coverage.py) with a non-empty justification string (`>= 10` characters).
+If an `examples/<example_name>/` directory genuinely cannot or should not be executed by the nightly GKE workflow (for example, static YAML/profile catalogs like `examples/components` or local-only `xm_local` scripts like `examples/xmc_lite_job`), add `<example_name>` to `EXEMPT_EXAMPLES` in [`tools/nightly_tests/check_examples_coverage.py`](check_examples_coverage.py) along with an inline `#` comment explaining why nightly E2E verification does not apply.
 
 The gate cross-checks `EXEMPT_EXAMPLES` against existing `examples/` subdirectories to prevent stale entries and fails if an example listed in `EXEMPT_EXAMPLES` already has nightly verification artifacts.

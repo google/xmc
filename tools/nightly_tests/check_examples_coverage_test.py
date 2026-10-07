@@ -61,14 +61,16 @@ class CheckExamplesCoverageTest(unittest.TestCase):
     """Tests for example E2E verification coverage gate."""
 
     def test_default_exempt_registry_is_valid(self) -> None:
-        """All entries in EXEMPT_EXAMPLES must have a non-empty justification."""
-        violations = check_examples_coverage.validate_exempt_registry(
-            check_examples_coverage.EXEMPT_EXAMPLES
-        )
-        self.assertEqual(violations, [])
+        """EXEMPT_EXAMPLES contains only the expected non-GKE example directories."""
         self.assertEqual(
-            set(check_examples_coverage.EXEMPT_EXAMPLES),
-            {"components", "xmc_lite_job"},
+            check_examples_coverage.EXEMPT_EXAMPLES,
+            ("components", "xmc_lite_job"),
+        )
+        self.assertEqual(
+            check_examples_coverage.validate_exempt_registry(
+                check_examples_coverage.EXEMPT_EXAMPLES
+            ),
+            [],
         )
 
     def test_covered_example_passes(self) -> None:
@@ -76,7 +78,7 @@ class CheckExamplesCoverageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             _wire_example(root, "simple_job")
-            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples={})
+            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples=())
             self.assertEqual(report.covered, ["simple_job"])
             self.assertEqual(report.exempt, [])
             self.assertEqual(report.violations, [])
@@ -87,7 +89,7 @@ class CheckExamplesCoverageTest(unittest.TestCase):
             root = pathlib.Path(tmp)
             examples_dir, _, _ = _seed_repo(root)
             (examples_dir / "untested_job").mkdir()
-            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples={})
+            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples=())
             self.assertEqual(len(report.violations), 1)
             self.assertIn("examples/untested_job is missing a nightly E2E", report.violations[0])
 
@@ -98,19 +100,21 @@ class CheckExamplesCoverageTest(unittest.TestCase):
             examples_dir, tests_dir, _ = _seed_repo(root)
             (examples_dir / "partial_job").mkdir()
             (tests_dir / "partial_job_verify.py").write_text("# verifier\n", encoding="utf-8")
-            exempt = {"partial_job": "Temporarily exempt while under development."}
-            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples=exempt)
+            report = check_examples_coverage.audit_examples_coverage(
+                root, exempt_examples=("partial_job",)
+            )
             self.assertEqual(len(report.violations), 1)
             self.assertIn("partial nightly verification wiring", report.violations[0])
 
-    def test_exempt_registry_with_valid_justification_passes(self) -> None:
-        """An example registered in EXEMPT_EXAMPLES with a valid justification is marked exempt."""
+    def test_exempt_registry_entry_passes(self) -> None:
+        """An example listed in EXEMPT_EXAMPLES is marked exempt."""
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             examples_dir, _, _ = _seed_repo(root)
             (examples_dir / "local_only_job").mkdir()
-            exempt = {"local_only_job": "Runs only against local docker-compose sandbox."}
-            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples=exempt)
+            report = check_examples_coverage.audit_examples_coverage(
+                root, exempt_examples=("local_only_job",)
+            )
             self.assertEqual(report.exempt, ["local_only_job"])
             self.assertEqual(report.violations, [])
 
@@ -119,22 +123,13 @@ class CheckExamplesCoverageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             _wire_example(root, "covered_job")
-            exempt = {"covered_job": "Obsolete opt-out reason that should be removed."}
-            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples=exempt)
-            self.assertEqual(len(report.violations), 1)
-            self.assertIn("remove redundant EXEMPT_EXAMPLES['covered_job']", report.violations[0])
-
-    def test_invalid_exempt_registry_reason_fails(self) -> None:
-        """Short or empty EXEMPT_EXAMPLES reasons are flagged as violations."""
-        with tempfile.TemporaryDirectory() as tmp:
-            root = pathlib.Path(tmp)
-            examples_dir, _, _ = _seed_repo(root)
-            (examples_dir / "bad_entry").mkdir()
             report = check_examples_coverage.audit_examples_coverage(
-                root, exempt_examples={"bad_entry": "too short"}
+                root, exempt_examples=("covered_job",)
             )
             self.assertEqual(len(report.violations), 1)
-            self.assertIn("EXEMPT_EXAMPLES['bad_entry']", report.violations[0])
+            self.assertIn(
+                "remove redundant 'covered_job' from EXEMPT_EXAMPLES", report.violations[0]
+            )
 
     def test_stale_exempt_registry_entry_fails(self) -> None:
         """An EXEMPT_EXAMPLES entry for a non-existent directory under examples/ fails."""
@@ -142,8 +137,7 @@ class CheckExamplesCoverageTest(unittest.TestCase):
             root = pathlib.Path(tmp)
             _seed_repo(root)
             report = check_examples_coverage.audit_examples_coverage(
-                root,
-                exempt_examples={"deleted_job": "Valid justification for a deleted directory."},
+                root, exempt_examples=("deleted_job",)
             )
             self.assertEqual(len(report.violations), 1)
             self.assertIn(
@@ -154,7 +148,7 @@ class CheckExamplesCoverageTest(unittest.TestCase):
         """Passing a repository root without an examples/ directory produces a violation."""
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
-            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples={})
+            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples=())
             self.assertEqual(len(report.violations), 1)
             self.assertIn("examples/ directory not found", report.violations[0])
 
@@ -168,7 +162,7 @@ class CheckExamplesCoverageTest(unittest.TestCase):
                 "py_binary(name = 'single_quote_job_verify', srcs = ['single_quote_job_verify.py'])\n",
                 encoding="utf-8",
             )
-            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples={})
+            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples=())
             self.assertEqual(report.covered, ["single_quote_job"])
             self.assertEqual(report.violations, [])
 
@@ -178,13 +172,13 @@ class CheckExamplesCoverageTest(unittest.TestCase):
             root = pathlib.Path(tmp)
             _wire_example(root, "valid_job")
             with (
-                mock.patch.dict(check_examples_coverage.EXEMPT_EXAMPLES, {}, clear=True),
+                mock.patch.object(check_examples_coverage, "EXEMPT_EXAMPLES", ()),
                 mock.patch("sys.stdout", new_callable=io.StringIO),
             ):
                 self.assertEqual(check_examples_coverage.main(["--repo-root", str(root)]), 0)
             (root / "examples" / "missing_job").mkdir()
             with (
-                mock.patch.dict(check_examples_coverage.EXEMPT_EXAMPLES, {}, clear=True),
+                mock.patch.object(check_examples_coverage, "EXEMPT_EXAMPLES", ()),
                 mock.patch("sys.stdout", new_callable=io.StringIO) as mock_out,
                 mock.patch("sys.stderr", new_callable=io.StringIO) as mock_err,
             ):

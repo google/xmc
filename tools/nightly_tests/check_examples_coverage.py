@@ -21,7 +21,7 @@ Scans `examples/` subdirectories and verifies that every example is either:
    - `tools/nightly_tests/BUILD.bazel` defines `py_binary` `<name>_verify`,
    - `.github/workflows/nightly-examples-e2e.yml` includes `examples/<name>` and
      `tools.nightly_tests.<name>_verify`; OR
-2. Explicitly opted out with a non-empty justification in `EXEMPT_EXAMPLES`.
+2. Explicitly opted out in `EXEMPT_EXAMPLES`.
 """
 
 from __future__ import annotations
@@ -32,27 +32,25 @@ import json
 import pathlib
 import re
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Sequence
 
-MIN_JUSTIFICATION_LENGTH: int = 10
 TOTAL_ARTIFACTS_PER_EXAMPLE: int = 3
 
 # Single source of truth for `examples/<name>` directories intentionally
 # excluded from the Nightly Examples E2E pipeline (`.github/workflows/nightly-examples-e2e.yml`).
 # During pre-commit and CI linting (`lint.yml`), every subdirectory under `examples/`
 # must either provide all 3 nightly verification artifacts (`<name>_verify.py`,
-# `BUILD.bazel` py_binary target, and workflow matrix entry) or be registered in
-# `EXEMPT_EXAMPLES` with a non-empty justification (>= MIN_JUSTIFICATION_LENGTH chars).
-# The gate cross-checks keys against existing `examples/` subdirectories to catch
+# `BUILD.bazel` py_binary target, and workflow matrix entry) or be listed in
+# `EXEMPT_EXAMPLES`. When adding an entry, please include a code comment
+# explaining why nightly E2E verification does not apply.
+# The gate cross-checks entries against existing `examples/` subdirectories to catch
 # stale exemptions and fails if a covered or partially wired example remains listed here.
-EXEMPT_EXAMPLES: dict[str, str] = {
-    "components": (
-        "Contains declarative component profile YAML manifests rather than a runnable workload example."
-    ),
-    "xmc_lite_job": (
-        "Targets experimental xm_local Lite execution rather than the GKE control plane and Kueue ClusterQueue."
-    ),
-}
+EXEMPT_EXAMPLES: tuple[str, ...] = (
+    # Contains declarative component profile YAML manifests rather than a runnable workload example.
+    "components",
+    # Targets experimental xm_local Lite execution rather than the GKE control plane and Kueue ClusterQueue.
+    "xmc_lite_job",
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -88,31 +86,25 @@ def collect_missing_artifacts(
 
 
 def validate_exempt_registry(
-    exempt_examples: Mapping[str, str],
+    exempt_examples: Collection[str],
     existing_names: set[str] | None = None,
 ) -> list[str]:
-    """Validates that every entry in `exempt_examples` exists and has a justification.
+    """Validates that every entry in `exempt_examples` corresponds to an existing `examples/` directory.
 
     Args:
-        exempt_examples: Mapping from example name to exemption justification.
+        exempt_examples: Collection of exempted example directory names.
         existing_names: Optional set of existing example directory names under `examples/`.
 
     Returns:
-        List of violation messages for invalid or stale registry entries.
+        List of violation messages for stale registry entries.
     """
-    violations = [
-        f"EXEMPT_EXAMPLES['{name}'] must provide a justification of at least "
-        f"{MIN_JUSTIFICATION_LENGTH} characters."
-        for name, reason in sorted(exempt_examples.items())
-        if len(reason.strip()) < MIN_JUSTIFICATION_LENGTH
+    if existing_names is None:
+        return []
+    return [
+        f"EXEMPT_EXAMPLES contains stale exemption for non-existent example '{name}'."
+        for name in sorted(set(exempt_examples))
+        if name not in existing_names
     ]
-    if existing_names is not None:
-        violations.extend(
-            f"EXEMPT_EXAMPLES contains stale exemption for non-existent example '{name}'."
-            for name in sorted(exempt_examples)
-            if name not in existing_names
-        )
-    return violations
 
 
 def evaluate_single_example(
@@ -120,14 +112,14 @@ def evaluate_single_example(
     tests_dir: pathlib.Path,
     build_text: str,
     workflow_text: str,
-    exempt_examples: Mapping[str, str],
+    exempt_examples: Collection[str],
 ) -> tuple[str, str | None]:
     """Evaluates nightly verification coverage for a single `examples/<name>` directory."""
     name = example_dir.name
     missing = collect_missing_artifacts(name, tests_dir, build_text, workflow_text)
     if not missing:
         if name in exempt_examples:
-            msg = f"examples/{name} has a complete nightly verification suite; remove redundant EXEMPT_EXAMPLES['{name}'] entry."
+            msg = f"examples/{name} has a complete nightly verification suite; remove redundant '{name}' from EXEMPT_EXAMPLES."
             return "violation", msg
         return "covered", None
     if len(missing) < TOTAL_ARTIFACTS_PER_EXAMPLE:
@@ -141,8 +133,8 @@ def evaluate_single_example(
         "violation",
         f"examples/{name} is missing a nightly E2E verification suite (missing: "
         f"{', '.join(missing)}). Either add a verification suite (see "
-        f"tools/nightly_tests/README.md) or register '{name}' in EXEMPT_EXAMPLES "
-        "in tools/nightly_tests/check_examples_coverage.py with an explicit justification.",
+        f"tools/nightly_tests/README.md) or add '{name}' to EXEMPT_EXAMPLES "
+        "in tools/nightly_tests/check_examples_coverage.py with an explanatory comment.",
     )
 
 
@@ -169,7 +161,7 @@ def _read_repo_texts(repo_root: pathlib.Path) -> tuple[pathlib.Path, str, str]:
 
 def audit_examples_coverage(
     repo_root: pathlib.Path,
-    exempt_examples: Mapping[str, str] | None = None,
+    exempt_examples: Collection[str] | None = None,
 ) -> CoverageReport:
     """Audits all `examples/` subdirectories for nightly E2E verification coverage."""
     examples_dir = repo_root / "examples"
@@ -233,7 +225,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "message": "Nightly E2E example verification coverage check failed.",
             "instruction": (
                 "Follow tools/nightly_tests/README.md to add a verification suite "
-                "or register the example in EXEMPT_EXAMPLES with a justification."
+                "or add the example to EXEMPT_EXAMPLES with an explanatory comment."
             ),
             "violations": report.violations,
         }
