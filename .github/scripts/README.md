@@ -164,8 +164,6 @@ node --test .github/scripts/range-diff-parser.test.js
 node --test .github/scripts/incremental-approval.test.js
 ```
 
-CI runs the full suite in the [lint workflow](../workflows/lint.yml) whenever files under `.github/scripts/` change.
-
 ### Test Standards
 - **High-Fidelity Doubles**: Git subprocess and GitHub API mocks accurately emulate exit codes, stdio structures, and GraphQL schema responses.
 - **Adversarial Edge Cases**: Test suites cover malformed inputs, unreachable commits, shallow clones, root commits, empty diffs, and unicode/whitespace variations.

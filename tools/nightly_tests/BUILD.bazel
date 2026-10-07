@@ -21,8 +21,10 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "chart_artifact_job_verify.py",
     "clickhouse_metrics_job_verify.py",
-    "common.py",
-    "common_test.py",
+    "endpoint_resolution.py",
+    "endpoint_resolution_test.py",
+    "ess_session.py",
+    "ess_session_test.py",
     "format_visual_audit_summary.js",
     "format_visual_audit_summary_test.js",
     "gallery_template/index.html",
@@ -38,8 +40,14 @@ exports_files([
     "simple_job_verify.py",
     "ui_entities_validator.py",
     "ui_entities_validator_test.py",
+    "verification_report.py",
+    "verification_report_test.py",
+    "verifier_cli.py",
+    "verifier_cli_test.py",
     "weekly_visual_snapshot.py",
     "weekly_visual_snapshot_test.py",
+    "workload_verification.py",
+    "workload_verification_test.py",
     "workunit_artifact_job_verify.py",
     "xdash_dashboard_verify.py",
     "xmc_entities_validator.py",
@@ -66,15 +74,50 @@ py_library(
 )
 
 py_library(
-    name = "common",
-    srcs = [
-        "common.py",
+    name = "verifier_cli",
+    srcs = ["verifier_cli.py"],
+    imports = ["../.."],
+    deps = [
+        "@absl_py//absl:app",
+        "@absl_py//absl/flags",
     ],
+)
+
+py_library(
+    name = "endpoint_resolution",
+    srcs = ["endpoint_resolution.py"],
     imports = ["../.."],
     deps = [
         ":xmc_entities_validator_lib",
-        "@absl_py//absl:app",
-        "@absl_py//absl/flags",
+    ],
+)
+
+py_library(
+    name = "ess_session",
+    srcs = ["ess_session.py"],
+    imports = ["../.."],
+    deps = [
+        ":endpoint_resolution",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_library(
+    name = "verification_report",
+    srcs = ["verification_report.py"],
+    imports = ["../.."],
+)
+
+py_library(
+    name = "workload_verification",
+    srcs = ["workload_verification.py"],
+    imports = ["../.."],
+    deps = [
+        ":endpoint_resolution",
+        ":ess_session",
+        ":verification_report",
+        ":verifier_cli",
+        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -84,8 +127,10 @@ py_library(
     data = [":gallery_template"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":endpoint_resolution",
+        ":ess_session",
         ":ui_entities_validator_lib",
+        ":verifier_cli",
         "@absl_py//absl/flags",
     ],
 )
@@ -95,7 +140,8 @@ py_binary(
     srcs = ["simple_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
         ":xmc_entities_validator_lib",
     ],
 )
@@ -105,7 +151,8 @@ py_binary(
     srcs = ["clickhouse_metrics_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
         ":xmc_entities_validator_lib",
     ],
 )
@@ -115,8 +162,11 @@ py_binary(
     srcs = ["simple_job_ui_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":endpoint_resolution",
+        ":ess_session",
         ":ui_entities_validator_lib",
+        ":verification_report",
+        ":verifier_cli",
         "@absl_py//absl/flags",
     ],
 )
@@ -127,8 +177,10 @@ py_binary(
     data = [":gallery_template"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":endpoint_resolution",
+        ":ess_session",
         ":ui_entities_validator_lib",
+        ":verifier_cli",
         ":weekly_visual_snapshot_lib",
         "@absl_py//absl/flags",
     ],
@@ -139,7 +191,8 @@ py_binary(
     srcs = ["init_container_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
         ":xmc_entities_validator_lib",
     ],
 )
@@ -149,7 +202,8 @@ py_binary(
     srcs = ["sidecar_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
         ":xmc_entities_validator_lib",
     ],
 )
@@ -159,7 +213,8 @@ py_binary(
     srcs = ["multipod_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
         ":xmc_entities_validator_lib",
     ],
 )
@@ -169,7 +224,8 @@ py_binary(
     srcs = ["chart_artifact_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
         ":xmc_entities_validator_lib",
     ],
 )
@@ -179,7 +235,8 @@ py_binary(
     srcs = ["metrics_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
         ":xmc_entities_validator_lib",
     ],
 )
@@ -189,7 +246,8 @@ py_binary(
     srcs = ["metrics_dashboard_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
         ":xmc_entities_validator_lib",
     ],
 )
@@ -199,7 +257,8 @@ py_binary(
     srcs = ["per_job_node_selector_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
         ":xmc_entities_validator_lib",
     ],
 )
@@ -209,7 +268,8 @@ py_binary(
     srcs = ["pathways_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
         ":xmc_entities_validator_lib",
     ],
 )
@@ -219,7 +279,8 @@ py_binary(
     srcs = ["managed_xprof_artifact_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
         ":xmc_entities_validator_lib",
     ],
 )
@@ -229,7 +290,8 @@ py_binary(
     srcs = ["workunit_artifact_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
     ],
 )
 
@@ -238,16 +300,62 @@ py_binary(
     srcs = ["xdash_dashboard_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+        ":workload_verification",
     ],
 )
 
 py_test(
-    name = "common_test",
-    srcs = ["common_test.py"],
+    name = "verifier_cli_test",
+    size = "small",
+    srcs = ["verifier_cli_test.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        ":verifier_cli",
+    ],
+)
+
+py_test(
+    name = "endpoint_resolution_test",
+    size = "small",
+    srcs = ["endpoint_resolution_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":endpoint_resolution",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_test(
+    name = "ess_session_test",
+    size = "small",
+    srcs = ["ess_session_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":ess_session",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_test(
+    name = "verification_report_test",
+    size = "small",
+    srcs = ["verification_report_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":verification_report",
+    ],
+)
+
+py_test(
+    name = "workload_verification_test",
+    size = "small",
+    srcs = ["workload_verification_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":endpoint_resolution",
+        ":verifier_cli",
+        ":workload_verification",
         ":xmc_entities_validator_lib",
     ],
 )

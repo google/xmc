@@ -207,7 +207,7 @@ kubectl apply -f deploy/ci/bazel-remote-cache.yaml
 
 ## 4. Headless KinD & Playwright End-to-End (E2E) Pipeline
 
-The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml)) spins up an entire ephemeral XMC environment for every merge queue entry, for every post-submit run on `main` (called from [`.github/workflows/postsubmit-main.yml`](../.github/workflows/postsubmit-main.yml)), and on manual dispatch. It does not run on `pull_request` events.
+The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml)) spins up an entire ephemeral XMC environment on every PR and post-submit run on `main`.
 
 ### Architecture & Resource Isolation
 
@@ -222,7 +222,7 @@ The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/wor
 |  |    - Core Services (ESS, UI, XID)   |<-----+  2. Build 5 OCI Image Tarballs       |  |
 |  |    - Ephemeral Redis & Dex OIDC IdP |      |  3. Load Images into KinD & Helm     |  |
 |  |    - Gateway Reverse Proxy (:8080)  |      |  4. Execute Playwright Tests         |  |
-|  |    - Dex Ingress (:5556)            |      |  5. Best-Effort Resource Teardown    |  |
+|  |    - Dex Ingress (:5556)            |      |  5. Guaranteed Resource Teardown     |  |
 |  +-------------------------------------+      +--------------------------------------+  |
 |                                                                  |                      |
 |                                                                  v (WIF Authenticated)  |
@@ -237,16 +237,16 @@ The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/wor
 ### Multi-Run Concurrency & Collision Prevention
 
 1. **KinD Cluster Isolation**:
-   - Each runner pod contains its own isolated Docker daemon. Multiple concurrent E2E runs execute in independent runner pods, meaning local KinD clusters never collide across jobs.
+   - Each runner pod contains its own isolated Docker daemon. Multiple concurrent PR test runs execute in independent runner pods, meaning local KinD clusters never collide across jobs.
 2. **Ephemeral Spanner Database Names & Fast Single-Batch DDL Provisioning**:
    - Each test run generates unique database names using the pattern `e2e-ess-<epoch>-<hex>` and `e2e-xid-<epoch>-<hex>`.
    - Databases are dynamically created in parallel via `gcloud spanner databases create --ddl-file=...` using the source-of-truth schema files (`internal/storage/spanner/schema/ess-schema.sql` and `internal/storage/spanner/schema/xid-schema.sql`), ensuring rapid single-batch DDL compilation and exact parity with Cluster Toolkit deployments, and are cleanly dropped during orchestrator teardown.
 3. **Automated Stale Database Garbage Collection**:
-   - Before provisioning new databases, `SpannerManager` automatically scans for any leftover databases older than 1 hour and deletes them, preventing orphaned resource accumulation if a runner pod is killed abruptly.
+   - Before provisioning new databases, `SpannerManager` automatically scans for any leftover databases older than 2 hours and deletes them, preventing orphaned resource accumulation if a runner pod is killed abruptly.
 
 ### GitHub Repository Secrets & Environment Protection
 
-The E2E job references the `e2e-test` deployment environment (`environment: e2e-test`), which does not require manual approval. Access to the cloud credentials is limited by the workflow triggers instead: the workflow never runs on `pull_request` events, so pull request code, including code from forks, reaches the job only after the pull request enters the merge queue, and manual dispatch requires write access to the repository.
+The E2E pipeline runs under the protected environment `environment: e2e-test`. For external/fork PRs, maintainer approval is required before the runner pod is dispatched or cloud tokens are minted.
 
 Workload Identity Federation allows GitHub Actions to authenticate directly to GCP using encrypted GitHub Actions Secrets without hardcoded credentials:
 

@@ -12,222 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Common utilities and verification abstractions for XMC nightly tests.
-
-Provides standard command-line flags, gRPC channel lifecycle managers,
-endpoint resolution, argument validation, formatted logging helpers, and
-workload verification step runners (`assert_*`, `verify_standard_workload`)
-used across XMC verification CLI scripts.
-
-TODO(xmc): Split this module by responsibility (verifier_cli,
-endpoint_resolution, ess_session, verification_report, workload_verification)
-and delete it. Do not add new helpers here.
-"""
+"""Workload and dashboard verification step runners and orchestrators for XMC nightly tests."""
 
 from __future__ import annotations
 
-import contextlib
 import os
-import sys
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
-from absl import app, flags
-
-from tools.nightly_tests import xmc_entities_validator
-
-FLAGS = flags.FLAGS
-
-flags.DEFINE_string(
-    "xid",
-    None,
-    "Experiment XID to validate (required for experiment tests)",
+from tools.nightly_tests import (
+    endpoint_resolution,
+    ess_session,
+    verification_report,
+    verifier_cli,
+    xmc_entities_validator,
 )
-flags.DEFINE_string("endpoint", None, "ESS gRPC endpoint (host:port)")
-flags.DEFINE_string(
-    "expected_queue",
-    os.environ.get("QUEUE_NAME", "cpu-queue"),
-    "Expected ClusterQueue name",
-)
-flags.DEFINE_integer("timeout_sec", 600, "Timeout in seconds")
-flags.DEFINE_string(
-    "dashboard_endpoint",
-    None,
-    "Dashboard Service endpoint (host:port or URL)",
-)
-flags.DEFINE_integer(
-    "expected_work_units",
-    None,
-    "Expected number of WorkUnits",
-)
-flags.DEFINE_string(
-    "clickhouse_endpoint",
-    None,
-    "ClickHouse HTTP endpoint (host:port or URL)",
-)
-flags.DEFINE_bool(
-    "require_clickhouse_metrics",
-    False,
-    "Whether ClickHouse metric arrival assertion is strictly required",
-)
-flags.DEFINE_string(
-    "dashboard_id",
-    None,
-    "Resource ID slug for the dashboard",
-)
-flags.DEFINE_string(
-    "expected_title_pattern",
-    None,
-    "Expected title pattern for the experiment or dashboard",
-)
-
-
-def get_flag(flags_obj: Any, name: str, default: Any = None) -> Any:
-    """Safely retrieves a flag value from absl FLAGS or a mock SimpleNamespace."""
-    return default if (val := getattr(flags_obj, name, None)) is None else val
-
-
-def validate_argv(argv: Sequence[str]) -> None:
-    """Validates command-line arguments to ensure no extra positional arguments exist."""
-    if len(argv) > 1:
-        raise app.UsageError("Too many command-line arguments.")
-
-
-def parse_xid(raw_xid: str | None, required: bool = True) -> str:
-    """Normalizes and extracts the numeric or slug XID string."""
-    if not raw_xid or not str(raw_xid).strip():
-        if required:
-            raise ValueError("Experiment XID (--xid) is required.")
-        return ""
-    xid = str(raw_xid).strip()
-    if xid.startswith("/"):
-        xid = xid.lstrip("/")
-    if xid.startswith("experiments/"):
-        xid = xid.split("/")[-1]
-    elif xid.startswith("dashboards/"):
-        xid = xid.split("dashboards/", 1)[1].strip()
-    return xid
-
-
-def resolve_endpoint(provided_endpoint: str | None = None) -> str:
-    """Resolves ESS gRPC endpoint from parameter, environment, or default."""
-    return provided_endpoint or os.environ.get("XMANAGER_ENDPOINT", "localhost:8080")
-
-
-def resolve_dashboard_endpoint(provided_endpoint: str | None = None) -> str:
-    """Derives HTTP REST base endpoint for dashboard validation."""
-    if provided_endpoint and str(provided_endpoint).strip():
-        ep = str(provided_endpoint).strip()
-        if ep.startswith(("http://", "https://")):
-            return ep
-        return f"http://{ep}" if ep.startswith(("localhost", "127.0.0.1")) else f"https://{ep}"
-    return resolve_ui_base_url()
-
-
-def resolve_clickhouse_endpoint(provided_endpoint: str | None = None) -> str:
-    """Resolves ClickHouse HTTP endpoint from parameter, environment, or default."""
-    if provided_endpoint and str(provided_endpoint).strip():
-        ep = str(provided_endpoint).strip()
-    elif os.environ.get("CLICKHOUSE_ENDPOINT"):
-        ep = os.environ["CLICKHOUSE_ENDPOINT"].strip()
-    elif os.environ.get("CLICKHOUSE_HOST"):
-        host = os.environ["CLICKHOUSE_HOST"].strip()
-        port = os.environ.get(
-            "CLICKHOUSE_HTTP_PORT", os.environ.get("CLICKHOUSE_PORT", "8123")
-        ).strip()
-        ep = f"{host}:{port}"
-    else:
-        ep = "http://127.0.0.1:8123"
-
-    if not ep.startswith(("http://", "https://")):
-        ep = f"http://{ep}"
-    return ep.rstrip("/")
-
-
-def resolve_ui_base_url() -> str:
-    """Resolves Web UI base URL via xmc_entities_validator."""
-    return xmc_entities_validator.resolve_ui_base_url()
-
-
-def resolve_expected_work_units(default: int = 3) -> int:
-    """Resolves expected work units count from flag, NUM_WORK_UNITS env var, or default.
-
-    Args:
-        default: Fallback count if neither the flag nor the env var is set.
-
-    Returns:
-        The resolved integer number of work units.
-    """
-    flag_val = get_flag(FLAGS, "expected_work_units", None)
-    if flag_val is not None:
-        try:
-            val = int(flag_val)
-            if val > 0:
-                return val
-        except (ValueError, TypeError):
-            pass
-    env_val = os.environ.get("NUM_WORK_UNITS")
-    if env_val:
-        try:
-            val = int(env_val)
-            if val > 0:
-                return val
-        except (ValueError, TypeError):
-            pass
-    return default
-
-
-@contextlib.contextmanager
-def ess_channel_context(endpoint: str | None = None) -> Iterator[tuple[Any, Any]]:
-    """Context manager for authenticated ESS gRPC channel and stub lifecycle."""
-    resolved_endpoint = resolve_endpoint(endpoint)
-    print(f"Connecting to Experiment State Server at: {resolved_endpoint} ...")
-    stub, channel = xmc_entities_validator.create_authenticated_stub(resolved_endpoint)
-    try:
-        yield stub, channel
-    finally:
-        if channel is not None and hasattr(channel, "close"):
-            channel.close()
-
-
-@contextlib.contextmanager
-def handle_verification_errors() -> Iterator[None]:
-    """Context manager handling verification assertion errors and unexpected exceptions."""
-    try:
-        yield
-    except (AssertionError, TimeoutError) as e:
-        print(f"\n❌ ASSERTION FAILED: {e}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n💥 UNEXPECTED ERROR during verification: {e}", file=sys.stderr)
-        sys.exit(2)
-
-
-def print_banner(title: str, details: Mapping[str, Any] | Sequence[tuple[str, Any]]) -> None:
-    """Prints a formatted verification header banner."""
-    print("=================================================================")
-    print(f"       {title.strip()}       ".center(65))
-    print("=================================================================")
-    items = details.items() if isinstance(details, Mapping) else details
-    for label, val in items:
-        val_str = str(list(val)) if isinstance(val, (list, tuple)) else str(val)
-        print(f"{label:<24}: {val_str}")
-    print("-----------------------------------------------------------------")
-
-
-def print_success_summary(
-    title: str,
-    details: Mapping[str, Any] | Sequence[tuple[str, Any]],
-) -> None:
-    """Prints a formatted verification success summary."""
-    print("\n=================================================================")
-    print(f"🎉 {title.strip()}")
-    print("=================================================================")
-    items = details.items() if isinstance(details, Mapping) else details
-    for label, val in items:
-        val_str = str(list(val)) if isinstance(val, (list, tuple)) else str(val)
-        print(f"  • {label:<24}: {val_str}")
-    print("=================================================================\n")
 
 
 def assert_experiment(
@@ -337,8 +136,12 @@ def assert_clickhouse_metrics(
     step_label: str = "Step 4",
 ) -> dict[str, Any]:
     """Polls and asserts metric row arrival and value validity directly via ClickHouse SQL."""
-    endpoint = resolve_clickhouse_endpoint(get_flag(FLAGS, "clickhouse_endpoint"))
-    strict_required = bool(get_flag(FLAGS, "require_clickhouse_metrics", False))
+    endpoint = endpoint_resolution.resolve_clickhouse_endpoint(
+        verifier_cli.get_flag(verifier_cli.FLAGS, "clickhouse_endpoint")
+    )
+    strict_required = bool(
+        verifier_cli.get_flag(verifier_cli.FLAGS, "require_clickhouse_metrics", False)
+    )
     print(f"\n[{step_label}] Validating ClickHouse SQL metric rows for XID {xid} via {endpoint}...")
     return xmc_entities_validator.validate_clickhouse_metrics(
         endpoint=endpoint,
@@ -359,12 +162,14 @@ def assert_dashboard_chart_data(
 ) -> dict[str, Any]:
     """Verifies Dashboard metadata and GetChartData hydration via Dashboard Service."""
     raw = (
-        get_flag(FLAGS, "dashboard_endpoint")
+        verifier_cli.get_flag(verifier_cli.FLAGS, "dashboard_endpoint")
         or os.environ.get("XMC_DASHBOARD_ENDPOINT")
         or os.environ.get("DASHBOARD_ENDPOINT")
     )
-    dash_ep = resolve_dashboard_endpoint(raw)
-    strict_required = bool(get_flag(FLAGS, "require_clickhouse_metrics", False) or raw)
+    dash_ep = endpoint_resolution.resolve_dashboard_endpoint(raw)
+    strict_required = bool(
+        verifier_cli.get_flag(verifier_cli.FLAGS, "require_clickhouse_metrics", False) or raw
+    )
     print(f"\n[{step_label}] Verifying Dashboard '{dashboard_id}' & GetChartData via {dash_ep}...")
     return xmc_entities_validator.validate_dashboard_chart_data(
         base_endpoint=dash_ep,
@@ -385,7 +190,7 @@ def _print_workload_banner(
     timeout: int,
 ) -> None:
     """Prints the standard workload verification header banner."""
-    print_banner(
+    verification_report.print_banner(
         banner_title,
         {
             "XID": xid,
@@ -400,9 +205,9 @@ def _print_workload_banner(
 
 def _print_workload_summary(summary_title: str, exp: Any, xid: str, queue: str) -> None:
     """Prints the standard workload verification success summary."""
-    ui_url = f"{resolve_ui_base_url()}/experiments/{xid}"
+    ui_url = f"{endpoint_resolution.resolve_ui_base_url()}/experiments/{xid}"
     details = {"Experiment": exp.name, "Title": exp.title, "Queue": queue, "UI": ui_url}
-    print_success_summary(summary_title, details)
+    verification_report.print_success_summary(summary_title, details)
 
 
 def verify_standard_workload(
@@ -418,14 +223,17 @@ def verify_standard_workload(
     wait_for_completion: bool = True,
 ) -> None:
     """Orchestrates standard Experiment, WorkUnit, JobSet, and Artifact verification."""
-    validate_argv(argv)
-    xid = parse_xid(get_flag(FLAGS, "xid"))
-    queue = get_flag(FLAGS, "expected_queue", "cpu-queue")
+    verifier_cli.validate_argv(argv)
+    xid = verifier_cli.parse_xid(verifier_cli.get_flag(verifier_cli.FLAGS, "xid"))
+    queue = verifier_cli.get_flag(verifier_cli.FLAGS, "expected_queue", "cpu-queue")
     workers = expected_worker_names or ([expected_jobs[0]["name"]] if expected_jobs else [])
-    timeout = get_flag(FLAGS, "timeout_sec", 600)
+    timeout = verifier_cli.get_flag(verifier_cli.FLAGS, "timeout_sec", 600)
     _print_workload_banner(banner_title, xid, expected_title_pattern, queue, workers, timeout)
-    ep = get_flag(FLAGS, "endpoint")
-    with handle_verification_errors(), ess_channel_context(ep) as (stub, _):
+    ep = verifier_cli.get_flag(verifier_cli.FLAGS, "endpoint")
+    with (
+        ess_session.handle_verification_errors(),
+        ess_session.ess_channel_context(ep) as (stub, _),
+    ):
         try:
             exp = assert_experiment(stub, xid, expected_title_pattern)
             wus = assert_work_units(
@@ -488,7 +296,7 @@ def _print_dashboard_banner(
     timeout_sec: int,
 ) -> None:
     """Prints the standalone dashboard verification header banner."""
-    print_banner(
+    verification_report.print_banner(
         banner_title,
         [
             ("Dashboard ID", dashboard_id),
@@ -503,13 +311,13 @@ def _print_dashboard_summary(
     summary_title: str, dashboard_id: str, dash_info: dict[str, Any]
 ) -> None:
     """Prints the standalone dashboard verification success summary."""
-    print_success_summary(
+    verification_report.print_success_summary(
         summary_title,
         [
             ("Dashboard ID", dashboard_id),
             ("Dashboard Title", dash_info["title"]),
             ("Validated Charts", len(dash_info.get("charts", []))),
-            ("Web UI Link", f"{resolve_ui_base_url()}/dashboards/{dashboard_id}"),
+            ("Web UI Link", f"{endpoint_resolution.resolve_ui_base_url()}/dashboards/{dashboard_id}"),
         ],
     )
 
@@ -524,27 +332,26 @@ def verify_dashboard_workload(
     default_timeout_sec: int = 120,
 ) -> None:
     """Orchestrates standalone Dashboard and constituent Chart verification via REST API."""
-    validate_argv(argv)
-    raw_id = get_flag(FLAGS, "dashboard_id", None) or get_flag(FLAGS, "xid", None)
-    parsed_id = parse_xid(raw_id, required=False) or default_dashboard_id
+    verifier_cli.validate_argv(argv)
+    raw_id = verifier_cli.get_flag(verifier_cli.FLAGS, "dashboard_id", None) or (
+        verifier_cli.get_flag(verifier_cli.FLAGS, "xid", None)
+    )
+    parsed_id = verifier_cli.parse_xid(raw_id, required=False) or default_dashboard_id
     dashboard_id = f"{default_dashboard_id}_{parsed_id}" if parsed_id.isdigit() else parsed_id
-    title_pattern = get_flag(FLAGS, "expected_title_pattern", expected_title_pattern)
-    timeout_sec = get_flag(FLAGS, "timeout_sec", default_timeout_sec)
+    title_pattern = verifier_cli.get_flag(
+        verifier_cli.FLAGS, "expected_title_pattern", expected_title_pattern
+    )
+    timeout_sec = verifier_cli.get_flag(verifier_cli.FLAGS, "timeout_sec", default_timeout_sec)
     raw_ep = (
-        get_flag(FLAGS, "dashboard_endpoint", None)
+        verifier_cli.get_flag(verifier_cli.FLAGS, "dashboard_endpoint", None)
         or os.environ.get("XMC_DASHBOARD_REST_ENDPOINT")
         or os.environ.get("XMC_DASHBOARD_ENDPOINT")
         or os.environ.get("DASHBOARD_ENDPOINT")
     )
-    dash_ep = resolve_dashboard_endpoint(raw_ep)
+    dash_ep = endpoint_resolution.resolve_dashboard_endpoint(raw_ep)
     _print_dashboard_banner(banner_title, dashboard_id, title_pattern, dash_ep, timeout_sec)
-    with handle_verification_errors():
+    with ess_session.handle_verification_errors():
         dash_info = assert_dashboard(
             dash_ep, dashboard_id, title_pattern, expected_min_charts, timeout_sec
         )
         _print_dashboard_summary(summary_title, dashboard_id, dash_info)
-
-
-def run_main(main_fn: Any) -> None:
-    """Standard CLI entrypoint wrapper executing absl.app.run."""
-    app.run(main_fn)

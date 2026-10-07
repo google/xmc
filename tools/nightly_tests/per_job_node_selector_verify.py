@@ -28,7 +28,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import common, xmc_entities_validator
+from tools.nightly_tests import verifier_cli, workload_verification, xmc_entities_validator
 
 EXPECTED_TITLE_PATTERN: str = "Per-Job nodeSelector Validation Experiment"
 EXPECTED_WORKER_NAMES: tuple[str, ...] = ("head",)
@@ -58,7 +58,7 @@ def _verify_node_selectors(stub: Any, xid: str) -> None:
 
 def main(argv: Sequence[str]) -> None:
     """Main verification routine for per_job_node_selector workload."""
-    common.verify_standard_workload(
+    workload_verification.verify_standard_workload(
         argv,
         banner_title="XMC Per-Job Node Selector Verification & Assertions",
         summary_title="ALL PER-JOB NODE SELECTOR ASSERTIONS PASSED SUCCESSFULLY!",
@@ -71,4 +71,4 @@ def main(argv: Sequence[str]) -> None:
 
 
 if __name__ == "__main__":
-    common.run_main(main)
+    verifier_cli.run_main(main)

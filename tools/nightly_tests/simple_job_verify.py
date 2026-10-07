@@ -28,9 +28,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import common, xmc_entities_validator
+from tools.nightly_tests import verifier_cli, workload_verification, xmc_entities_validator
 
-FLAGS = common.FLAGS
+FLAGS = verifier_cli.FLAGS
 
 # Domain assertion constants for simple_job workload
 EXPECTED_TITLE_PATTERN: str = "Demo Workload"
@@ -70,8 +70,8 @@ def _assert_work_unit_spec(
 
 def _assert_all_work_unit_specs(stub: Any, xid: str) -> None:
     """Fetches raw work units and validates protobuf specifications for all units."""
-    expected_work_units = common.resolve_expected_work_units(DEFAULT_WORK_UNITS)
-    expected_queue = common.get_flag(FLAGS, "expected_queue", DEFAULT_QUEUE)
+    expected_work_units = verifier_cli.resolve_expected_work_units(DEFAULT_WORK_UNITS)
+    expected_queue = verifier_cli.get_flag(FLAGS, "expected_queue", DEFAULT_QUEUE)
     print("\n[Step 3] Validating 100% Protobuf specifications for each WorkUnit...", flush=True)
     req = xmc_entities_validator._make_req("ListWorkUnitsRequest", parent=f"experiments/{xid}")
     raw_work_units = list(getattr(stub.ListWorkUnits(req), "work_units", []))
@@ -86,13 +86,13 @@ def _assert_all_work_unit_specs(stub: Any, xid: str) -> None:
 
 def main(argv: Sequence[str]) -> None:
     """Main verification routine for simple_job workload."""
-    expected_work_units = common.resolve_expected_work_units(DEFAULT_WORK_UNITS)
+    expected_work_units = verifier_cli.resolve_expected_work_units(DEFAULT_WORK_UNITS)
     expected_workers = (
         [f"demo-worker-{i}" for i in range(1, expected_work_units + 1)]
         if expected_work_units > 1
         else ["demo-worker"]
     )
-    common.verify_standard_workload(
+    workload_verification.verify_standard_workload(
         argv,
         banner_title="XMC Simple Multi-Unit Job Verification & Assertions",
         summary_title="ALL SIMPLE JOB ASSERTIONS PASSED SUCCESSFULLY!",
@@ -103,4 +103,4 @@ def main(argv: Sequence[str]) -> None:
 
 
 if __name__ == "__main__":
-    common.run_main(main)
+    verifier_cli.run_main(main)

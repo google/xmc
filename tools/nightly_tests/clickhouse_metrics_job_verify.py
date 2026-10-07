@@ -35,9 +35,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import common
+from tools.nightly_tests import verifier_cli, workload_verification
 
-FLAGS = common.FLAGS
+FLAGS = verifier_cli.FLAGS
 
 EXPECTED_TITLE_PATTERN: str = "ClickHouse Metrics Ingestion Experiment"
 EXPECTED_WORKER_NAMES: tuple[str, ...] = ("clickhouse-metric-writer",)
@@ -54,19 +54,19 @@ EXPECTED_JOBSET_SPECS: list[dict[str, Any]] = [
 
 def _verify_clickhouse_and_dashboard(_stub: Any, xid: str) -> None:
     """Runs ClickHouse SQL metric assertions and Dashboard hydration checks."""
-    timeout_sec = common.get_flag(FLAGS, "timeout_sec", DEFAULT_TIMEOUT_SEC)
-    common.assert_clickhouse_metrics(
+    timeout_sec = verifier_cli.get_flag(FLAGS, "timeout_sec", DEFAULT_TIMEOUT_SEC)
+    workload_verification.assert_clickhouse_metrics(
         xid,
         expected_metric_names=EXPECTED_METRIC_SUBSET,
         expected_min_rows=1,
         timeout_sec=timeout_sec,
     )
-    common.assert_dashboard_chart_data(dashboard_id=f"exp_{xid}_training_overview")
+    workload_verification.assert_dashboard_chart_data(dashboard_id=f"exp_{xid}_training_overview")
 
 
 def main(argv: Sequence[str]) -> None:
     """Main verification routine for clickhouse_metrics_job workload."""
-    common.verify_standard_workload(
+    workload_verification.verify_standard_workload(
         argv,
         banner_title="XMC ClickHouse Metrics Job Verification & Assertions",
         summary_title="ALL CLICKHOUSE METRICS JOB ASSERTIONS PASSED SUCCESSFULLY!",
@@ -78,4 +78,4 @@ def main(argv: Sequence[str]) -> None:
 
 
 if __name__ == "__main__":
-    common.run_main(main)
+    verifier_cli.run_main(main)

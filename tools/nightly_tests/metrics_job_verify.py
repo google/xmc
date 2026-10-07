@@ -28,7 +28,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import common
+from tools.nightly_tests import verifier_cli, workload_verification
 
 EXPECTED_TITLE_PATTERN: str = "Metrics System Validation Experiment"
 EXPECTED_WORKER_NAMES: tuple[str, ...] = ("metrics-manual",)
@@ -43,17 +43,17 @@ EXPECTED_JOBSET_SPECS: list[dict[str, Any]] = [
 
 def _verify_metrics(_stub: Any, xid: str) -> None:
     """Verifies ClickHouse metric ingestion across all 4 autologging strategies."""
-    common.assert_clickhouse_metrics(
+    workload_verification.assert_clickhouse_metrics(
         xid,
         expected_metric_names=EXPECTED_METRICS,
         expected_min_rows=25,
-        timeout_sec=common.get_flag(common.FLAGS, "timeout_sec", 600),
+        timeout_sec=verifier_cli.get_flag(verifier_cli.FLAGS, "timeout_sec", 600),
     )
 
 
 def main(argv: Sequence[str]) -> None:
     """Main verification routine for metrics_job workload."""
-    common.verify_standard_workload(
+    workload_verification.verify_standard_workload(
         argv,
         banner_title="XMC Metrics Autologging Job Verification & Assertions",
         summary_title="ALL METRICS AUTOLOGGING JOB ASSERTIONS PASSED SUCCESSFULLY!",
@@ -65,4 +65,4 @@ def main(argv: Sequence[str]) -> None:
 
 
 if __name__ == "__main__":
-    common.run_main(main)
+    verifier_cli.run_main(main)

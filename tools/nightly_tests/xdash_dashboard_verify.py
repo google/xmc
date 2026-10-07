@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from tools.nightly_tests import common
+from tools.nightly_tests import verifier_cli, workload_verification
 
 DEFAULT_DASHBOARD_ID: str = "example_vcc_comparison"
 DEFAULT_TITLE_PATTERN: str = "VCC"
@@ -36,7 +36,7 @@ EXPECTED_MIN_CHARTS: int = 3
 
 def main(argv: Sequence[str]) -> None:
     """Main verification routine for xdash_dashboard."""
-    common.verify_dashboard_workload(
+    workload_verification.verify_dashboard_workload(
         argv,
         banner_title="XMC xDash Dashboard Verification & Assertions",
         summary_title="ALL XDASH DASHBOARD ASSERTIONS PASSED SUCCESSFULLY!",
@@ -48,4 +48,4 @@ def main(argv: Sequence[str]) -> None:
 
 
 if __name__ == "__main__":
-    common.run_main(main)
+    verifier_cli.run_main(main)
