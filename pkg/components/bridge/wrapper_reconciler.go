@@ -23,7 +23,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
 
-// resolveAndValidateWrapperRef resolves WrapperRef from input and validates namespace isolation.
+// resolveAndValidateWrapperRef resolves WrapperRef from input and validates namespace isolation and JSONPath syntax.
 func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, string, string) {
 	ref := in.WrapperOpts
 	if ref.Name == "" && in.Spec.GetWrapperRef() != nil {
@@ -34,6 +34,11 @@ func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, strin
 	}
 	if in.Namespace != "" && ref.Namespace != "" && ref.Namespace != in.Namespace {
 		return ref, "CrossNamespaceForbidden", fmt.Sprintf("cross-namespace wrapperRef is forbidden (component in %q cannot target %q)", in.Namespace, ref.Namespace)
+	}
+	if ref.Name != "" {
+		if err := ValidateWrapperRefJSONPaths(ref); err != nil {
+			return ref, ReasonInvalidWrapperSpec, err.Error()
+		}
 	}
 	return ref, "", ""
 }
@@ -95,7 +100,9 @@ func (r *Reconciler) handle3PStatusDetectionFailure(ctx context.Context, in Reco
 		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s", ref.Namespace, ref.Name, errmsg)
 	}
 	reason := ReasonStatusDetectionFailed
-	if errors.Is(err, ErrContractBreach) {
+	if errors.Is(err, ErrInvalidWrapperSpec) {
+		reason = ReasonInvalidWrapperSpec
+	} else if errors.Is(err, ErrContractBreach) {
 		reason = ReasonContractBroken
 	}
 	if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, err.Error()); cmsErr != nil {

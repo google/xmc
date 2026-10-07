@@ -180,6 +180,49 @@ func TestReconcile3PWrapper_CrossNamespaceForbidden(t *testing.T) {
 	}
 }
 
+func TestReconcile3PWrapper_InvalidWrapperSpec(t *testing.T) {
+	ctx := context.Background()
+	rec := &Reconciler{
+		cmsClient: &mockCMS{},
+		prober:    &mockProber{},
+	}
+	in := ReconcileComponentInput{
+		Name:      "my-3p-comp",
+		Namespace: "xmc",
+		Enabled:   true,
+		Spec: &componentspb.ComponentSpec{
+			Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+		},
+		WrapperOpts: WrapperRef{
+			Group:              "ray.io",
+			Version:            "v1",
+			Kind:               "RayCluster",
+			Name:               "ray-cluster",
+			Namespace:          "xmc",
+			ReadyConditionPath: `$.status.conditions[?(@.type=="Ready"`,
+		},
+	}
+	res, err := rec.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var readyCond, degradedCond *Condition
+	for i := range res.Conditions {
+		switch res.Conditions[i].Type {
+		case ConditionTypeReady:
+			readyCond = &res.Conditions[i]
+		case ConditionTypeDegraded:
+			degradedCond = &res.Conditions[i]
+		}
+	}
+	if readyCond == nil || readyCond.Status != ConditionStatusFalse || readyCond.Reason != ReasonInvalidWrapperSpec {
+		t.Errorf("expected Ready=False/InvalidWrapperSpec, got %+v", readyCond)
+	}
+	if degradedCond == nil || degradedCond.Status != ConditionStatusTrue || degradedCond.Reason != ReasonInvalidWrapperSpec {
+		t.Errorf("expected Degraded=True/InvalidWrapperSpec, got %+v", degradedCond)
+	}
+}
+
 func TestPopulateAccessEnvVars(t *testing.T) {
 	t.Run("nil result or nil status does not panic", func(t *testing.T) {
 		populateAccessEnvVars(nil, &ResourceStatus{})

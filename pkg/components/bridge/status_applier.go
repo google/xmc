@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,6 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/util/retry"
+
+	"xmanager_cloud/internal/logging"
 )
 
 // FieldManagerBridge is the Server-Side Apply fieldManager owner identifier for xmc-bridge status updates.
@@ -146,7 +147,7 @@ func ApplyComponentStatusSSA(ctx context.Context, client dynamic.Interface, defa
 	if updated != nil {
 		item.Object = updated.Object
 	}
-	slog.DebugContext(ctx, "Updated Component status via Server-Side Apply", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
+	logging.Debug(ctx, "Updated Component status via Server-Side Apply", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
 	return nil
 }
 
@@ -188,12 +189,12 @@ func applyFinalizerMutation(ctx context.Context, item *unstructured.Unstructured
 	hasFin := hasDeletionProtectionFinalizer(item.GetFinalizers())
 	if res.AddFinalizer && !hasFin {
 		item.SetFinalizers(append(item.GetFinalizers(), FinalizerDeletionProtection))
-		slog.InfoContext(ctx, "Attaching deletion protection finalizer", "name", item.GetName())
+		logging.Info(ctx, "Attaching deletion protection finalizer", "name", item.GetName())
 		return true
 	}
 	if res.RemoveFinalizer && hasFin {
 		item.SetFinalizers(removeDeletionProtectionFinalizer(item.GetFinalizers()))
-		slog.InfoContext(ctx, "Removing deletion protection finalizer", "name", item.GetName())
+		logging.Info(ctx, "Removing deletion protection finalizer", "name", item.GetName())
 		return true
 	}
 	return false
