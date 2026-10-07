@@ -21,10 +21,11 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
 	"xmanager_cloud/validator/validator"
@@ -163,15 +164,15 @@ func TestBatchStopWorkUnits_Filter(t *testing.T) {
 		Executable:   testExecutable,
 	}
 
-	workUnit1 := proto.Modify(baseStandardWorkUnit, func(wu *msgpb.WorkUnit) { wu.Tags = []string{"a"} })
+	workUnit1 := prototest.Modify(baseStandardWorkUnit, func(wu *msgpb.WorkUnit) { wu.Tags = []string{"a"} })
 	workUnitID1 := int64(1)
 	_ = mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), workUnitID1, workUnit1)
 
-	workUnit2 := proto.Modify(baseStandardWorkUnit, func(wu *msgpb.WorkUnit) { wu.Tags = []string{"a"} })
+	workUnit2 := prototest.Modify(baseStandardWorkUnit, func(wu *msgpb.WorkUnit) { wu.Tags = []string{"a"} })
 	workUnitID2 := int64(2)
 	_ = mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), workUnitID2, workUnit2)
 
-	workUnit3 := proto.Modify(baseStandardWorkUnit, func(wu *msgpb.WorkUnit) { wu.Tags = []string{"b"} })
+	workUnit3 := prototest.Modify(baseStandardWorkUnit, func(wu *msgpb.WorkUnit) { wu.Tags = []string{"b"} })
 	workUnitID3 := int64(3)
 	_ = mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), workUnitID3, workUnit3)
 	taskQueueClient.EnqueuedTasks = nil // Clear state from CreateWorkUnit

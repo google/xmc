@@ -26,13 +26,11 @@ import (
 	"syscall"
 	"time"
 
-	google "go/google"
 	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
 	"xmanager_cloud/logging/logging"
 )
 
 func main() {
-	google.Init()
 	flags := ingestiongateway.RegisterFlags(flag.CommandLine)
 	flag.Parse()
 

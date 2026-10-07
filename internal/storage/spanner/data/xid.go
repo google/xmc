@@ -17,7 +17,7 @@ package spannerdata
 import (
 	"fmt"
 
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 
 	"cloud.google.com/go/spanner"
 	timestamppb "protobuf/timestamp_go_proto"

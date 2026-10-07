@@ -24,13 +24,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"golang/google_api/googleapi/googleapi"
 	"golang/google_api/idtoken/idtoken"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/prometheus/client/prometheus/promauto/promauto"
 	"golang/prometheus/client/prometheus/prometheus"
 	"golang/protobuf/v2/encoding/protojson/protojson"
-	"golang/uuid/uuid"
 	"tink/go/jwt/jwt"
 	"xmanager_cloud/cmd/actuator/pausescheduling"
 	"xmanager_cloud/common/interfaces"
@@ -200,7 +200,7 @@ func (h *Handler) handleActuatorPayload(ctx context.Context, payload *actuatorta
 
 	traceID := payload.GetMetadata().GetTraceId()
 	if traceID == "" {
-		traceID = uuid.New()
+		traceID = uuid.NewString()
 	}
 	ctx = logging.InjectOperation(ctx, traceID)
 

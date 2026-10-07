@@ -41,7 +41,7 @@ import (
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 
-	fmpb "protobuf/field_mask_go_proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "protobuf/timestamp_go_proto"
 	actuatorpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )

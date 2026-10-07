@@ -19,8 +19,7 @@ import (
 
 	"golang/grpc/grpc"
 	"golang/grpc/health/health"
-	healthgrpc "grpc_proto/health_go_grpc"
-	healthpb "grpc_proto/health_go_proto"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	commonhealth "xmanager_cloud/common/health"
 	"xmanager_cloud/logging/logging"
 )
@@ -35,7 +34,7 @@ const (
 func RegisterHealthServer(s *grpc.Server) *health.Server {
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-	healthgrpc.RegisterHealthServer(s, healthServer)
+	healthpb.RegisterHealthServer(s, healthServer)
 	return healthServer
 }
 

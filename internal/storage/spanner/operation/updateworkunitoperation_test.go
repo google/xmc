@@ -18,11 +18,11 @@ import (
 	"testing"
 	"xmanager_cloud/internal/storage/spanner"
 
+	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	lropb "longrunning/operations_go_proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	anypb "protobuf/any_go_proto"
-	fmpb "protobuf/field_mask_go_proto"
 	statuspb "rpc/status_go_proto"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/spanner/emulator/emulator"

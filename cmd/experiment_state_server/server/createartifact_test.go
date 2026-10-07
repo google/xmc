@@ -23,7 +23,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang/grpc/credentials/insecure/insecure"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 
@@ -32,6 +32,7 @@ import (
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
@@ -169,28 +170,28 @@ func TestCreateArtifact_BadPaths(t *testing.T) {
 	}{
 		{
 			name: "missing_parent",
-			req: proto.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
 				r.Parent = ""
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent",
-			req: proto.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
 				r.Parent = "invalid-parent"
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_artifact",
-			req: proto.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
 				r.Artifact = nil
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_url",
-			req: proto.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
 				r.Artifact.Url = nil
 			}),
 			wantErr: status.ErrInvalidArgument,

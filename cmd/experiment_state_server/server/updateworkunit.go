@@ -17,7 +17,7 @@ import (
 	"context"
 	"fmt"
 
-	fmpb "protobuf/field_mask_go_proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"

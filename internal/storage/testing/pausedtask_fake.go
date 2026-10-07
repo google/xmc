@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"golang/protobuf/v2/proto/proto"
-	"golang/uuid/uuid"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 	"task/go/status"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -81,7 +81,7 @@ func (f *FakePausedTaskRepository) Create(ctx context.Context, task *storage.Pau
 	defer f.mu.Unlock()
 
 	if task.TaskID == "" {
-		task.TaskID = uuid.New()
+		task.TaskID = uuid.NewString()
 	}
 
 	if f.findTask(task.XID, task.WID, task.TaskID) != nil {

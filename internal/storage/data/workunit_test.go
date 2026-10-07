@@ -17,10 +17,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	fieldmaskpb "protobuf/field_mask_go_proto"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/prototest"
 )
 
 func TestMergeWorkUnits(t *testing.T) {
@@ -50,35 +50,35 @@ func TestMergeWorkUnits(t *testing.T) {
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"priority"}},
-			want:       proto.Modify(current, func(w *pb.WorkUnit) { w.Priority = 200 }),
+			want:       prototest.Modify(current, func(w *pb.WorkUnit) { w.Priority = 200 }),
 		},
 		{
 			name:       "update urls",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"urls"}},
-			want:       proto.Modify(current, func(w *pb.WorkUnit) { w.Urls = updated.Urls }),
+			want:       prototest.Modify(current, func(w *pb.WorkUnit) { w.Urls = updated.Urls }),
 		},
 		{
 			name:       "update tags",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"tags"}},
-			want:       proto.Modify(current, func(w *pb.WorkUnit) { w.Tags = updated.Tags }),
+			want:       prototest.Modify(current, func(w *pb.WorkUnit) { w.Tags = updated.Tags }),
 		},
 		{
 			name:       "update notes",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
-			want:       proto.Modify(current, func(w *pb.WorkUnit) { w.Notes = updated.Notes }),
+			want:       prototest.Modify(current, func(w *pb.WorkUnit) { w.Notes = updated.Notes }),
 		},
 		{
 			name:       "update multiple fields",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"priority", "notes"}},
-			want:       proto.Modify(current, func(w *pb.WorkUnit) { w.Priority = 200; w.Notes = updated.Notes }),
+			want:       prototest.Modify(current, func(w *pb.WorkUnit) { w.Priority = 200; w.Notes = updated.Notes }),
 		},
 		{
 			name:       "nil current",

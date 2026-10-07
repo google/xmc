@@ -21,20 +21,19 @@ import (
 	"testing"
 	"time"
 
+	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	googlespanner "cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/uuid"
 	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	"golang/grpc/health/health"
-	"golang/grpc/metadata/metadata"
 	"golang/grpc/reflection/reflection"
-	"golang/uuid/uuid"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
-	healthgrpc "grpc_proto/health_go_grpc"
-	healthpb "grpc_proto/health_go_proto"
-	lropb "longrunning/operations_go_proto"
-	fmpb "protobuf/field_mask_go_proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	"task/go/status"
 	authz "xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
@@ -217,7 +216,7 @@ func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner
 	reflection.Register(s)
 
 	healthServer := health.NewServer()
-	healthgrpc.RegisterHealthServer(s, healthServer)
+	healthpb.RegisterHealthServer(s, healthServer)
 
 	healthServer.SetServingStatus("xmc.XidService", healthpb.HealthCheckResponse_SERVING)
 
@@ -395,7 +394,7 @@ func TestNewWorkUnitExecution(t *testing.T) {
 
 func TestStopOperationOnError(t *testing.T) {
 	ctx := context.Background()
-	opName := fmt.Sprintf("experiments/%d/workUnits/%d/operations/%s", 123, 1, uuid.New())
+	opName := fmt.Sprintf("experiments/%d/workUnits/%d/operations/%s", 123, 1, uuid.NewString())
 
 	testCases := []struct {
 		name                        string

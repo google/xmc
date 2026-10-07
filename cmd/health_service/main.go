@@ -25,7 +25,6 @@ import (
 	"syscall"
 	"time"
 
-	"go/google"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
@@ -78,7 +77,6 @@ func (d *grpcServerDeps) Close(ctx context.Context) {
 }
 
 func main() {
-	google.Init()
 	flag.Parse()
 
 	cfg := LoadConfig()

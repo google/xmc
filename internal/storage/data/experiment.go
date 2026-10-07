@@ -16,8 +16,8 @@ package data
 import (
 	"fmt"
 
-	"golang/protobuf/v2/proto/proto"
-	fieldmaskpb "protobuf/field_mask_go_proto"
+	"google.golang.org/protobuf/proto"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	"task/go/status"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/validator/validator"

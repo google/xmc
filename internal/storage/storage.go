@@ -20,8 +20,8 @@ import (
 	"context"
 	"time"
 
-	longrunningpb "longrunning/operations_go_proto"
-	fmpb "protobuf/field_mask_go_proto"
+	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

@@ -23,11 +23,11 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
@@ -203,7 +203,7 @@ func TestFakePausedTask_MutationIsolation(t *testing.T) {
 		t.Fatalf("Create() error: %v", err)
 	}
 
-	task.Action = proto.Modify(task.Action, func(a *actuatortaskpb.Action) {
+	task.Action = prototest.Modify(task.Action, func(a *actuatortaskpb.Action) {
 		a.Action = &actuatortaskpb.Action_Delete{Delete: &actuatortaskpb.DeleteAction{}}
 	})
 
@@ -224,7 +224,7 @@ func TestFakePausedTask_MutationIsolation_WorkUnit(t *testing.T) {
 		t.Fatalf("Create() error: %v", err)
 	}
 
-	task.WorkUnit = proto.Modify(task.WorkUnit, func(wu *essmsgpb.WorkUnit) {
+	task.WorkUnit = prototest.Modify(task.WorkUnit, func(wu *essmsgpb.WorkUnit) {
 		wu.Priority = essmsgpb.Priority_HIGH
 	})
 
@@ -236,7 +236,7 @@ func TestFakePausedTask_MutationIsolation_WorkUnit(t *testing.T) {
 		t.Errorf("Stored task WorkUnit was mutated via input reference: got %v, want %v", tasks[0].WorkUnit.GetPriority(), essmsgpb.Priority_NORMAL)
 	}
 
-	tasks[0].WorkUnit = proto.Modify(tasks[0].WorkUnit, func(wu *essmsgpb.WorkUnit) {
+	tasks[0].WorkUnit = prototest.Modify(tasks[0].WorkUnit, func(wu *essmsgpb.WorkUnit) {
 		wu.Priority = essmsgpb.Priority_LOW
 	})
 	tasksSecond, err := fake.ListPending(ctx, 0)

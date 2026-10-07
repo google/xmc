@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"

@@ -21,7 +21,7 @@ import (
 	"time"
 
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	fmpb "protobuf/field_mask_go_proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"

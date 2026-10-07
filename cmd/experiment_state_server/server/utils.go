@@ -17,10 +17,10 @@ import (
 	"context"
 	"fmt"
 
-	"golang/grpc/metadata/metadata"
-	"golang/uuid/uuid"
-	lropb "longrunning/operations_go_proto"
-	fmpb "protobuf/field_mask_go_proto"
+	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/google/uuid"
+	"google.golang.org/grpc/metadata"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "protobuf/timestamp_go_proto"
 	rpcstatuspb "rpc/status_go_proto"
 	statusutils "task/go/status"
@@ -200,7 +200,7 @@ func newExperimentStatus(name string) *msgpb.ExperimentStatus {
 	return &msgpb.ExperimentStatus{
 		ActiveState:      msgpb.ExperimentStatus_ACTIVE,
 		LaunchState:      msgpb.ExperimentStatus_LAUNCHING,
-		LaunchId:         uuid.New(),
+		LaunchId:         uuid.NewString(),
 		ChildStateCounts: []*msgpb.ExperimentStatus_StateCount{},
 		StructuredStatusMessage: &msgpb.StructuredMessage{
 			Source:         msgpb.StructuredMessage_XMANAGER_CLIENT,

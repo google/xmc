@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"golang/protobuf/v2/proto/proto"
-	fieldmaskpb "protobuf/field_mask_go_proto"
+	"google.golang.org/protobuf/proto"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"

@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"golang/grpc/grpc"
-	healthpb "grpc_proto/health_go_proto"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"xmanager_cloud/storage/spanner/migrations/version"
 )
 

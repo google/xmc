@@ -27,7 +27,6 @@ go_binary(
     ],
     deps = [
         "//cmd/ingestion_gateway/ingestiongateway",
-        "//internal/compat/google",
         "//test/metrics/infra",
         "@com_github_twmb_franz_go//pkg/kgo",
     ],

@@ -22,7 +22,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner"
 
 	"github.com/google/go-cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
 	"xmanager_cloud/internal/storage/spanner/xid"

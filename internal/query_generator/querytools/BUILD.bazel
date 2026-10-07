@@ -14,13 +14,13 @@ go_library(
     deps = [
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filtervisitor",
-        "//internal/compat/proto",
         "//internal/compat/safesql",
         "//internal/compat/status",
         "//internal/logging",
         "//internal/query_generator/equalityvisitor",
         "//internal/query_generator/filter",
         "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

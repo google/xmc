@@ -22,11 +22,12 @@ import (
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"k8s.io/utils/ptr"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/prototest"
 )
 
 func TestGKEName(t *testing.T) {
@@ -210,7 +211,7 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 		},
 		{
 			name: "cpu_resources_with_limit",
-			workUnit: proto.Modify(baseCPUWorkUnit, func(wu *epb.WorkUnit) {
+			workUnit: prototest.Modify(baseCPUWorkUnit, func(wu *epb.WorkUnit) {
 				wu.Executable.GetJobset().Jobs[0].Spec.Resources.GetCpuResources().LimitCpuMillicores = 2000
 			}),
 			jobSet: &jobsetv1alpha2.JobSet{

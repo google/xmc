@@ -25,7 +25,6 @@ compat_go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/proto",
         "//internal/compat/status",
         "//internal/logging",
         "//internal/query_generator/liststatement",
@@ -37,6 +36,7 @@ compat_go_library(
         "//internal/storage/spanner/utils:spannerutils",
         "//internal/validator",
         "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

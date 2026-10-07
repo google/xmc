@@ -21,10 +21,10 @@ compat_go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/proto",
         "//internal/compat/status",
         "//internal/logging",
         "//internal/validator",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

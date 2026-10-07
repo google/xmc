@@ -19,7 +19,7 @@ package predicate
 import (
 	"fmt"
 
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 
 	fpb "api/filter/filter_expression_go_proto"
 )
