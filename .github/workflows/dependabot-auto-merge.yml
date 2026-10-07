@@ -26,8 +26,12 @@ jobs:
   auto-merge:
     name: 'Enable Auto-Merge for Dependabot'
     runs-on: 'ubuntu-latest'
-    if: github.actor == 'dependabot[bot]' || github.event.pull_request.user.login == 'dependabot[bot]'
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
     steps:
+      - name: 'Verify Dependabot metadata'
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
+        with:
+          github-token: '${{ secrets.GITHUB_TOKEN }}'
       - name: 'Enable auto-merge for Dependabot PR'
         run: gh pr merge --auto --squash "$PR_URL"
         env:
