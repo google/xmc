@@ -14,9 +14,9 @@
 package main
 
 import (
+	"flag"
 	"time"
 
-	"go/flag"
 	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 )

@@ -107,10 +107,11 @@ LINE_METRICS = (
     ),
     LineMetric(
         name="helm_google3_flags",
-        path_regex=r"^deploy/.*\.(ya?ml|tpl)$",
+        path_regex=r"^deploy/.*\.(ya?ml|tpl|tf)$",
         line_regex=(
-            r'"--(logtostderr|alsologtostderr|stderrthreshold|vmodule|'
-            r"enforce_kernel_\w+|enable_streamz_\w+|streamz_\w+|securewrapper_\w+)"
+            r"""(?:^|[\s'"\[,=])--?(logtostderr|alsologtostderr|stderrthreshold|vmodule|"""
+            r"notracelog|envelope_enabled|remote_coredump_enabled|"
+            r"enforce_kernel_\w+|enable_streamz_\w+|streamz_\w+|securewrapper_\w+)\b"
         ),
     ),
     LineMetric(

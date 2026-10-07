@@ -48,7 +48,7 @@ compat_go_library(
         "//internal/storage/spanner/workunit",
         "//internal/validator",
         "//pkg/auth/oauth2",
-        "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_google_cloud_go_spanner//:spanner",
         "@io_k8s_apimachinery//pkg/api/resource",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

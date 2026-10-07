@@ -54,7 +54,6 @@ spec:
         - name: PUBSUB_SUBSCRIPTION_ID
           value: {{ .Values.logMonitor.subscriptionId | quote }}
         args:
-        - "-alsologtostderr"
         - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"
         - "-quota_project_id={{ .Values.projectId }}"
         - "-log_keyword={{ .Values.logMonitor.logKeyword }}"

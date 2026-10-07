@@ -13,7 +13,6 @@
 # limitations under the License.
 
 load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
-load("@io_bazel_rules_go//proto:compiler.bzl", "go_proto_compiler")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@rules_proto//proto:defs.bzl", "proto_descriptor_set", "proto_library")
 
@@ -59,21 +58,6 @@ proto_library(
     ],
 )
 
-go_proto_compiler(
-    name = "go_grpc_gateway",
-    plugin = "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:protoc-gen-grpc-gateway",
-    suffix = ".pb.gw.go",
-    visibility = ["//visibility:public"],
-    deps = [
-        "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
-        "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:utilities",
-        "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//grpclog:go_default_library",
-        "@org_golang_google_grpc//metadata:go_default_library",
-        "@org_golang_google_protobuf//proto:go_default_library",
-    ],
-)
-
 go_proto_library(
     name = "messages_go_proto",
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
@@ -90,7 +74,7 @@ go_proto_library(
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
-        ":go_grpc_gateway",
+        "//api/protos/experiment:go_grpc_gateway",
     ],
     importpath = "xmanager_cloud/dashboard_service/proto/service_go_proto",
     proto = ":dashboard_service_proto",

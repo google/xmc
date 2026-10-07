@@ -71,16 +71,6 @@ spec:
           value: "/etc/remote-k8s/kubeconfig"
         {{- end }}
         {{- end }}
-        args:
-        - "-alsologtostderr"
-        - "--logtostderr"
-        - "--enforce_kernel_ipv6_support=false"
-        - "--enable_streamz_rpc_service=false"
-        - "--securewrapper_dummyimpl_auth_user=$(USER)"
-        - "--streamz_servers="
-        - "--envelope_enabled=false"
-        - "--notracelog"
-        - "--remote_coredump_enabled"
         resources:
           requests:
             cpu: 500m

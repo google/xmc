@@ -15,11 +15,11 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 
-	"go/google"
 	"xmanager_cloud/logging/logging"
 
 	"golang/prometheus/client/prometheus/promhttp/promhttp"
@@ -27,7 +27,7 @@ import (
 )
 
 func main() {
-	google.Init()
+	flag.Parse()
 	ctx := ctrl.SetupSignalHandler()
 
 	cfg := Load()
