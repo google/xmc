@@ -33,25 +33,6 @@ go_sdk.download(version = "1.26.0")
 repo_import = use_extension("//:import.bzl", "repo_import")
 use_repo(repo_import, "com_github_grpc_ecosystem_grpc_gateway_v2_custom")
 
-http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
-http_archive(
-    name = "kubebuilder_envtest",
-    build_file_content = """filegroup(
-    name = "assets",
-    srcs = [
-        "etcd",
-        "kube-apiserver",
-        "kubectl",
-    ],
-    visibility = ["//visibility:public"],
-)
-""",
-    sha256 = "0c3c11c82a3251f0446b0e563e661199fad51210e99ac702d4c22ba22960a3d2",
-    strip_prefix = "controller-tools/envtest",
-    urls = ["https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-v1.30.3/envtest-v1.30.3-linux-amd64.tar.gz"],
-)
-
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
 go_deps.module(

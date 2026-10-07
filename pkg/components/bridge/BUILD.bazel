@@ -106,12 +106,12 @@ go_test(
         "release_repair_test.go",
         "sdk_helm_action_runner_test.go",
         "spec_parser_test.go",
+        "status_applier_test.go",
         "test_doubles_test.go",
         "wrapper_reconciler_test.go",
     ],
     data = [
         "//deploy/helm:chart",
-        "@kubebuilder_envtest//:assets",
     ],
     embed = [":bridge"],
     deps = [
@@ -135,7 +135,6 @@ go_test(
         "@io_k8s_client_go//rest",
         "@io_k8s_client_go//restmapper",
         "@io_k8s_client_go//testing",
-        "@io_k8s_sigs_controller_runtime//pkg/envtest",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
