@@ -35,22 +35,28 @@ use_repo(repo_import, "com_github_grpc_ecosystem_grpc_gateway_v2_custom")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-http_archive(
-    name = "kubebuilder_envtest",
-    build_file_content = """filegroup(
+_ENVTEST_BUILD_FILE = """filegroup(
     name = "assets",
-    srcs = [
-        "etcd",
-        "kube-apiserver",
-        "kubectl",
-    ],
+    srcs = ["etcd", "kube-apiserver", "kubectl"],
     visibility = ["//visibility:public"],
 )
-""",
-    sha256 = "0c3c11c82a3251f0446b0e563e661199fad51210e99ac702d4c22ba22960a3d2",
-    strip_prefix = "controller-tools/envtest",
-    urls = ["https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-v1.30.3/envtest-v1.30.3-linux-amd64.tar.gz"],
-)
+"""
+
+[
+    http_archive(
+        name = "kubebuilder_envtest_" + plat.replace("-", "_"),
+        build_file_content = _ENVTEST_BUILD_FILE,
+        integrity = integrity,
+        strip_prefix = "controller-tools/envtest",
+        urls = ["https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-v1.30.3/envtest-v1.30.3-%s.tar.gz" % plat],
+    )
+    for plat, integrity in [
+        ("linux-amd64", "sha512-DllIUR41FW6KuiY/2HiYOxGq2C0PdLVQepgEudEBWD8cSEKBaQxv8aNnjtA4yHSRVZJ1k3QIS3i1et490SZsHQ=="),
+        ("linux-arm64", "sha512-slxF1HN5IuEjQzRLKCTSaBwAZvkiQtWbucovPRUlPxsOqoj1ZdmPxvyw3yTmeRae0OzcR3gqTiWH3edrGau7DQ=="),
+        ("darwin-amd64", "sha512-VjW+tuCKIoMYpD2d8nupKHnIzlU6OW4YMwYyuFtHJLPyxJy0HFUMFimQb1g7szJvl3x0FFcmuHJ8hG0UNj0zcw=="),
+        ("darwin-arm64", "sha512-h47tMBb7xQXKsxC0m+K62y24jqqgL6IcRIwP9ZbVz9KPlNspQyBQ6yfxp6/qcRV+3LT+YUjyjmO/RmirfV2LWw=="),
+    ]
+]
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")

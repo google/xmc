@@ -18,12 +18,16 @@ package(default_visibility = ["//visibility:public"])
 
 go_test(
     name = "integration_test",
-    size = "small",
+    size = "medium",
     srcs = ["components_admission_test.go"],
     data = [
         "//deploy/helm:chart",
-        "@kubebuilder_envtest//:assets",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:darwin_amd64": ["@kubebuilder_envtest_darwin_amd64//:assets"],
+        "@io_bazel_rules_go//go/platform:darwin_arm64": ["@kubebuilder_envtest_darwin_arm64//:assets"],
+        "@io_bazel_rules_go//go/platform:linux_arm64": ["@kubebuilder_envtest_linux_arm64//:assets"],
+        "//conditions:default": ["@kubebuilder_envtest_linux_amd64//:assets"],
+    }),
     deps = [
         "//pkg/components/bridge",
         "@io_k8s_api//admissionregistration/v1:admissionregistration",

@@ -165,6 +165,10 @@ func waitForVAPActivation(ctx context.Context, t *testing.T, compClient dynamic.
 	if _, err := compClient.Create(ctx, canary, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("failed to create VAP canary component: %v", err)
 	}
+	t.Cleanup(func() {
+		_, _ = compClient.Patch(ctx, canary.GetName(), types.MergePatchType, []byte(`{"spec":{"deletionProtection":false}}`), metav1.PatchOptions{})
+		_ = compClient.Delete(ctx, canary.GetName(), metav1.DeleteOptions{})
+	})
 	err := wait.PollUntilContextTimeout(ctx, 15*time.Millisecond, 3*time.Second, true, func(ctx context.Context) (bool, error) {
 		delErr := compClient.Delete(ctx, canary.GetName(), metav1.DeleteOptions{})
 		if delErr == nil || strings.Contains(delErr.Error(), "not found") {
@@ -309,22 +313,14 @@ func resolveEnvtestAssets(t *testing.T) string {
 	if envDir := os.Getenv("KUBEBUILDER_ASSETS"); envDir != "" {
 		return envDir
 	}
-	if srcDir := os.Getenv("TEST_SRCDIR"); srcDir != "" {
-		for _, sub := range []string{"+http_archive+kubebuilder_envtest", "+repo_import+kubebuilder_envtest", "kubebuilder_envtest"} {
-			if p := filepath.Join(srcDir, sub); func() bool { _, err := os.Stat(filepath.Join(p, "kube-apiserver")); return err == nil }() {
+	srcDir := os.Getenv("TEST_SRCDIR")
+	for _, d := range []string{srcDir, filepath.Join(srcDir, "_main", "external")} {
+		entries, _ := os.ReadDir(d)
+		for _, e := range entries {
+			p := filepath.Join(d, e.Name())
+			if _, err := os.Stat(filepath.Join(p, "kube-apiserver")); err == nil && strings.Contains(e.Name(), "kubebuilder_envtest") {
 				return p
 			}
-		}
-		var found string
-		_ = filepath.WalkDir(srcDir, func(p string, d os.DirEntry, err error) error {
-			if err == nil && !d.IsDir() && d.Name() == "kube-apiserver" {
-				found = filepath.Dir(p)
-				return filepath.SkipAll
-			}
-			return nil
-		})
-		if found != "" {
-			return found
 		}
 	}
 	fallback := filepath.Join(os.Getenv("HOME"), ".local", "share", "kubebuilder-envtest", "k8s", fmt.Sprintf("1.30.3-%s-%s", runtime.GOOS, runtime.GOARCH))

@@ -112,8 +112,12 @@ go_test(
     ],
     data = [
         "//deploy/helm:chart",
-        "@kubebuilder_envtest//:assets",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:darwin_amd64": ["@kubebuilder_envtest_darwin_amd64//:assets"],
+        "@io_bazel_rules_go//go/platform:darwin_arm64": ["@kubebuilder_envtest_darwin_arm64//:assets"],
+        "@io_bazel_rules_go//go/platform:linux_arm64": ["@kubebuilder_envtest_linux_arm64//:assets"],
+        "//conditions:default": ["@kubebuilder_envtest_linux_amd64//:assets"],
+    }),
     embed = [":bridge"],
     deps = [
         "//api/protos/components/v1alpha1",
