@@ -17,7 +17,7 @@
 import subprocess
 import time
 import unittest
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, call, patch
 
 from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.spanner import SpannerManager
@@ -91,11 +91,13 @@ class TestSpannerManager(unittest.TestCase):
             check=False,
         )
 
+    # A frozen clock keeps the attempt timeouts exact.
+    @patch("time.monotonic", return_value=0.0)
     @patch("os.path.isfile", return_value=False)
     @patch.object(SpannerManager, "_cleanup_stale_databases")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_setup_creates_dbs_with_ddl_and_proto_descriptors(
-        self, mock_run, mock_cleanup, mock_isfile
+        self, mock_run, mock_cleanup, mock_isfile, _
     ):
         self.mgr.setup()
 
@@ -401,6 +403,64 @@ class TestSpannerManager(unittest.TestCase):
         # than the 30 s a retry needs; attempt 2 then times out at the cap.
         self.assertEqual([c.kwargs["timeout"] for c in mock_run.call_args_list], [45, 40])
         mock_sleep.assert_called_once_with(5)
+        self.assertEqual(clock["now"], 90)
+
+    @patch("time.monotonic")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_init_migration_version_deducts_bazel_run_lock_wait_from_attempt_timeout(
+        self, mock_run, mock_monotonic
+    ):
+        clock = {"now": 0.0}
+        mock_monotonic.side_effect = lambda: clock["now"]
+        lock = MagicMock()
+
+        def _acquire_after_other_initialization(timeout):
+            clock["now"] += 30
+            return True
+
+        lock.acquire.side_effect = _acquire_after_other_initialization
+
+        with (
+            patch.object(self.mgr, "_resolve_migration_binary", return_value=None),
+            patch.object(self.mgr, "_bazel_run_lock", lock),
+        ):
+            self.mgr._init_migration_version("test-db", "ess")
+
+        # The other database's bazel run held the lock for 30 s of the 45 s attempt timeout.
+        lock.acquire.assert_called_once_with(timeout=45)
+        self.assertEqual(mock_run.call_args.kwargs["timeout"], 15)
+        lock.release.assert_called_once_with()
+
+    @patch("time.sleep")
+    @patch("time.monotonic")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_init_migration_version_gives_up_within_total_budget_while_bazel_run_lock_is_held(
+        self, mock_run, mock_monotonic, mock_sleep
+    ):
+        clock = {"now": 0.0}
+        mock_monotonic.side_effect = lambda: clock["now"]
+        mock_sleep.side_effect = lambda seconds: clock.update(now=clock["now"] + seconds)
+        lock = MagicMock()
+
+        def _wait_in_vain(timeout):
+            clock["now"] += timeout
+            return False
+
+        lock.acquire.side_effect = _wait_in_vain
+
+        with (
+            patch.object(self.mgr, "_resolve_migration_binary", return_value=None),
+            patch.object(self.mgr, "_bazel_run_lock", lock),
+            self.assertRaises(subprocess.TimeoutExpired) as ctx,
+        ):
+            self.mgr._init_migration_version("test-db", "ess")
+
+        # Waiting for the lock times out like a command would, at 45 s and, after the 5 s
+        # wait, at the 90 s cap, without ever running the initialization.
+        self.assertIn("lock held by a concurrent command", ctx.exception.stderr)
+        self.assertEqual([c.kwargs["timeout"] for c in lock.acquire.call_args_list], [45, 40])
+        mock_run.assert_not_called()
+        lock.release.assert_not_called()
         self.assertEqual(clock["now"], 90)
 
     @patch("os.path.getsize", return_value=1024)
