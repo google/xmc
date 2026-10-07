@@ -163,8 +163,8 @@ func waitForVAPActivation(ctx context.Context, t *testing.T, compClient dynamic.
 		t.Fatalf("failed to create VAP canary component: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = compClient.Patch(ctx, canary.GetName(), types.MergePatchType, []byte(`{"spec":{"deletionProtection":false}}`), metav1.PatchOptions{})
-		_ = compClient.Delete(ctx, canary.GetName(), metav1.DeleteOptions{})
+		_, _ = compClient.Patch(context.Background(), canary.GetName(), types.MergePatchType, []byte(`{"spec":{"deletionProtection":false}}`), metav1.PatchOptions{})
+		_ = compClient.Delete(context.Background(), canary.GetName(), metav1.DeleteOptions{})
 	})
 	err := wait.PollUntilContextTimeout(ctx, 15*time.Millisecond, 3*time.Second, true, func(ctx context.Context) (bool, error) {
 		delErr := compClient.Delete(ctx, canary.GetName(), metav1.DeleteOptions{})
@@ -250,6 +250,10 @@ func assertDefaultSchemaFields(t *testing.T, created *unstructured.Unstructured)
 
 func verifyDeletionProtectionVAP(ctx context.Context, t *testing.T, clients admissionClients) {
 	t.Helper()
+	t.Cleanup(func() {
+		_ = clients.breakglassComp.Delete(context.Background(), "protected-ingestion", metav1.DeleteOptions{})
+		_ = clients.breakglassComp.Delete(context.Background(), "breakglass-protected", metav1.DeleteOptions{})
+	})
 	protectedSpec := map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "deletionProtection": true}
 	comp := newComponentManifest("protected-ingestion", protectedSpec)
 	if _, err := clients.nonAdminComp.Create(ctx, comp, metav1.CreateOptions{}); err != nil {
