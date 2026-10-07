@@ -54,7 +54,7 @@ def render_step_summary(result: HarnessResult) -> str:
 def append_step_summary(result: HarnessResult) -> None:
     """Appends the summary to the job summary file; does nothing outside GitHub Actions.
 
-    Write errors are logged rather than raised, so that reporting never changes the exit code.
+    Any error is logged rather than raised, so that reporting never changes the exit code.
 
     Args:
         result: Aggregate result of all harness attempts.
@@ -65,7 +65,9 @@ def append_step_summary(result: HarnessResult) -> None:
     try:
         with open(path, "a", encoding="utf-8") as summary_file:
             summary_file.write(render_step_summary(result))
-    except OSError as exc:
+    except Exception as exc:
+        # Deliberately broad: the runner calls this outside any try block, and an unexpected
+        # rendering or I/O error must not fail a run whose tests passed.
         logger.warning("Could not append the E2E summary to %s: %s", path, exc)
 
 

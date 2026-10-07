@@ -17,7 +17,7 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
 from test.e2e.lib.outcome import AttemptResult, HarnessResult, Outcome
 from test.e2e.lib.phases import Phase
@@ -80,10 +80,10 @@ class TestAppendStepSummary(unittest.TestCase):
         self.assertEqual(content, "previous step\n" + render_step_summary(_PASS_AFTER_RETRY))
 
     def test_does_nothing_when_variable_unset(self):
-        with patch.dict(os.environ, clear=True), patch("builtins.open") as mock_open:
+        with patch.dict(os.environ, clear=True), patch("builtins.open") as open_mock:
             append_step_summary(_PASS_AFTER_RETRY)
 
-        mock_open.assert_not_called()
+        open_mock.assert_not_called()
 
     def test_logs_warning_instead_of_raising_on_write_error(self):
         missing_path = os.path.join(self.tmp_dir.name, "missing-dir", "summary.md")
@@ -95,6 +95,19 @@ class TestAppendStepSummary(unittest.TestCase):
             append_step_summary(_PASS_AFTER_RETRY)
 
         self.assertIn(missing_path, logs.output[0])
+
+    def test_logs_warning_instead_of_raising_on_unexpected_error(self):
+        broken_file = mock_open()
+        broken_file.return_value.write.side_effect = ValueError("I/O operation on closed file.")
+
+        with (
+            patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": self.summary_path}),
+            patch("builtins.open", broken_file),
+            self.assertLogs("xmc_e2e_runner", level="WARNING") as logs,
+        ):
+            append_step_summary(_PASS_AFTER_RETRY)
+
+        self.assertIn("I/O operation on closed file.", logs.output[0])
 
 
 if __name__ == "__main__":
