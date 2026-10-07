@@ -160,9 +160,12 @@ def _find_off_path_binary(binary: str) -> pathlib.Path | None:
         contains it.
     """
     for install_dir in USER_INSTALL_DIRS:
-        candidate = pathlib.Path(install_dir).expanduser() / binary
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return candidate.resolve()
+        try:
+            candidate = pathlib.Path(install_dir).expanduser().resolve() / binary
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return candidate
+        except OSError:
+            continue
     return None
 
 

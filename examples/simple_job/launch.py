@@ -15,7 +15,7 @@
 
 """Launch script for demonstration workload in XMC with multiple WorkUnits.
 
-Demonstrates submitting an experiment and multiple WorkUnits targeted at a specific ClusterQueue
+Demonstrates submitting an experiment and multiple WorkUnits targeted at a specific LocalQueue
 to showcase workload lifecycle.
 
 Usage:
@@ -115,7 +115,7 @@ def main(argv: Sequence[str]) -> None:
     print("       XMC Multi-WorkUnit Demo Workload Launching                ")
     print("=================================================================")
     print(f"Project ID         : {project_id}")
-    print(f"Target ClusterQueue: {queue_name}")
+    print(f"Target LocalQueue : {queue_name}")
     print(f"Number of WorkUnits: {num_work_units}")
     print(f"Workload Duration  : {duration_sec} seconds per unit")
     print(f"Priority           : {FLAGS.priority}")

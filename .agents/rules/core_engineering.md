@@ -105,7 +105,7 @@ function processUser(user: User | null) {
 - **Directory Separation of Concerns (SRP) for Tests & Tools**: All end-to-end (E2E), integration, and regression test suites must reside under `test/<type>/` (e.g., `test/e2e/`, `test/regression/`). The `tools/` directory is reserved strictly for standalone developer CLI utilities, automation scripts, and build tooling.
 - **Library First Policy**: Inspect third-party library documentation for built-in capabilities (e.g. `clickhouse.WithInitScripts()`) prior to implementing custom parsers or state machines.
 
-## 9. Diagnostic Protocol (Bazel CI & Agent Shell) & Zero Task Polling
+## 9. Diagnostic Protocol (Bazel CI and Agent Shell) and Zero Task Polling
 - **No Speculative Attribute Changes**: NEVER modify Bazel test parameters (`size`, `timeout`, `tags`) speculatively upon CI test failure. Always inspect complete test logs via `bazel test --test_output=errors //...` to identify exact failure root causes.
 - **PATH-First Diagnosis for Missing CLIs**: Agent shells are non-login and do not load the user's shell profile, so treat `command not found` or "required but not installed" as a PATH problem first: search common install locations (e.g. `~/.terraform/bin`, `~/go/bin`, `~/.local/bin`, `./cluster-toolkit`) and add the containing directory to `PATH` before declaring the dependency missing. NEVER propose installing a CLI before completing that search.
 - **Reactive Background Task Handling**: NEVER poll background tasks in a loop using `manage_task action=status`. Rely on system reactive notifications after launching background tasks.

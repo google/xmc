@@ -48,7 +48,7 @@ Before running any upgrade step, verify that the required CLI tools are installe
 
 > [!CAUTION]
 > **Check Action**: If any CLI check fails (command not found or returns error):
-> 1. **Rule out PATH first**: Apply [PATH-First Diagnosis for Missing CLIs](../../rules/core_engineering.md#9-diagnostic-protocol-bazel-ci-agent-shell-zero-task-polling); if the binary is found, add its directory to `PATH` and re-run the check.
+> 1. **Rule out PATH first**: Apply [PATH-First Diagnosis for Missing CLIs](../../rules/core_engineering.md#9-diagnostic-protocol-bazel-ci-and-agent-shell-and-zero-task-polling); if the binary is found, add its directory to `PATH` and re-run the check.
 > 2. If still failing, **stop execution immediately**.
 > 3. Alert the user about the missing/broken CLI dependency.
 > 4. Provide installation instructions and do not proceed.

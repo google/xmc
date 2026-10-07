@@ -58,7 +58,7 @@ Before running any compilation or deployment steps, verify that all necessary CL
 
 > [!CAUTION]
 > **Check Action**: If any check fails (command not found or returns error):
-> 1. **Rule out PATH first**: Apply [PATH-First Diagnosis for Missing CLIs](../../rules/core_engineering.md#9-diagnostic-protocol-bazel-ci-agent-shell-zero-task-polling); if the binary is found, add its directory to `PATH` and re-run the check.
+> 1. **Rule out PATH first**: Apply [PATH-First Diagnosis for Missing CLIs](../../rules/core_engineering.md#9-diagnostic-protocol-bazel-ci-and-agent-shell-and-zero-task-polling); if the binary is found, add its directory to `PATH` and re-run the check.
 > 2. If still failing, **stop execution immediately**.
 > 3. Alert the user about the missing/broken CLI dependency.
 > 4. Provide installation instructions and do not proceed.
