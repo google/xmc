@@ -17,6 +17,7 @@ package k8sclient
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -34,11 +35,7 @@ func copyNodeSelector(source map[string]string) map[string]string {
 	if len(source) == 0 {
 		return nil
 	}
-	copyMap := make(map[string]string, len(source))
-	for k, v := range source {
-		copyMap[k] = v
-	}
-	return copyMap
+	return maps.Clone(source)
 }
 
 func resolveDNSAndNetwork(c *Client, job *esspb.KubernetesJob) (hostNetwork bool, dnsPolicy corev1.DNSPolicy) {
