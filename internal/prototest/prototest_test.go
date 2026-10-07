@@ -36,4 +36,21 @@ func TestModify_ClonesAndMutatesWithoutAffectingBase(t *testing.T) {
 	if !proto.Equal(modified, want) {
 		t.Errorf("Modify() = %v, want %v", modified, want)
 	}
+
+	t.Run("nil base", func(t *testing.T) {
+		var nilBase *fieldmaskpb.FieldMask
+		res := prototest.Modify(nilBase, func(m *fieldmaskpb.FieldMask) {
+			m.Paths = []string{"test"}
+		})
+		if res != nil {
+			t.Errorf("Modify(nil) = %v, want nil", res)
+		}
+	})
+
+	t.Run("nil fn", func(t *testing.T) {
+		res := prototest.Modify(base, nil)
+		if !proto.Equal(res, base) {
+			t.Errorf("Modify(base, nil) = %v, want %v", res, base)
+		}
+	})
 }

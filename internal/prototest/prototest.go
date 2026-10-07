@@ -19,7 +19,12 @@ import "google.golang.org/protobuf/proto"
 
 // Modify clones a proto message, applies a mutation function fn, and returns the modified clone.
 func Modify[T proto.Message](base T, fn func(T)) T {
+	if !base.ProtoReflect().IsValid() {
+		return base
+	}
 	cloned := proto.Clone(base).(T)
-	fn(cloned)
+	if fn != nil {
+		fn(cloned)
+	}
 	return cloned
 }
