@@ -37,6 +37,8 @@ type Transaction struct {
     Experiments    ExperimentTxRepository
     StatusMessages StatusMessageTxRepository
     StatusHistory  StatusHistoryTxRepository
+    PauseState     PauseStateTxRepository
+    PausedTasks    PausedTaskTxRepository
 }
 ```
 

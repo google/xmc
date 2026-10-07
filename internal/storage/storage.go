@@ -23,8 +23,6 @@ import (
 	longrunningpb "longrunning/operations_go_proto"
 	fmpb "protobuf/field_mask_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
@@ -251,11 +249,48 @@ type XidEntryStore interface {
 	UpdateXidEntry(ctx context.Context, update *XidEntryUpdate) (*xidmsgpb.XidEntry, error)
 }
 
+// -----------------------
+// Pause Scheduling Methods
+// -----------------------
+
+// PauseStateRepository defines read operations for retrieving the scheduling pause state on the facade.
+type PauseStateRepository interface {
+	// Get retrieves the current global scheduling pause state.
+	// If uninitialized, it returns a safe default with SchedulingPaused = false.
+	Get(ctx context.Context) (*PauseSchedulingState, error)
+}
+
+// PauseStateTxRepository defines global pause scheduling state operations scoped to a read-write transaction.
+type PauseStateTxRepository interface {
+	// Get retrieves the current global scheduling pause state.
+	// If uninitialized, it returns a safe default with SchedulingPaused = false.
+	Get(ctx context.Context) (*PauseSchedulingState, error)
+	// Set updates or initializes the global scheduling pause state.
+	Set(ctx context.Context, state *PauseSchedulingState) error
+}
+
+// PausedTaskRepository defines operations for retrieving paused tasks on the storage facade.
+type PausedTaskRepository interface {
+	// ListPending retrieves pending paused tasks ordered by Priority DESC, CreateTime ASC.
+	// A limit <= 0 returns all pending tasks.
+	ListPending(ctx context.Context, limit int) ([]*PausedTask, error)
+}
+
+// PausedTaskTxRepository defines paused task operations scoped to a read-write transaction.
+type PausedTaskTxRepository interface {
+	// Create persists a new paused task.
+	// Returns an error wrapping ErrPausedTaskAlreadyExists if (XID, WID, TaskID) already exists.
+	Create(ctx context.Context, task *PausedTask) error
+	// MarkProcessed records resolution details for a batch of paused tasks.
+	// Returns an error wrapping ErrPausedTaskNotFound if any task is missing, and applies nothing.
+	MarkProcessed(ctx context.Context, resolutions []PausedTaskResolution) error
+}
+
 // PauseSchedulingStore exposes repository accessors for global pause scheduling state
 // and pending paused actuation tasks.
 type PauseSchedulingStore interface {
-	PauseState() pausestate.Repository
-	PausedTasks() pausedtask.Repository
+	PauseState() PauseStateRepository
+	PausedTasks() PausedTaskRepository
 }
 
 // WorkUnitTxRepository defines work unit operations scoped to a read-write transaction.
@@ -289,22 +324,6 @@ type StatusMessageTxRepository interface {
 type StatusHistoryTxRepository interface {
 	// SaveWorkUnitStatusHistoryIfChanged records a work unit status history within the transaction if the state changed.
 	SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error
-}
-
-// PauseStateTxRepository defines global pause scheduling state operations scoped to a read-write transaction.
-type PauseStateTxRepository interface {
-	// Get retrieves the current global scheduling pause state within the transaction.
-	Get(ctx context.Context) (*pausestate.PauseSchedulingState, error)
-	// Set updates or initializes the global scheduling pause state within the transaction.
-	Set(ctx context.Context, state *pausestate.PauseSchedulingState) error
-}
-
-// PausedTaskTxRepository defines paused task operations scoped to a read-write transaction.
-type PausedTaskTxRepository interface {
-	// Create persists a new paused task within the transaction.
-	Create(ctx context.Context, task *pausedtask.PausedTask) error
-	// MarkProcessed soft-deletes a batch of paused tasks within the transaction.
-	MarkProcessed(ctx context.Context, resolutions []pausedtask.TaskResolution) error
 }
 
 // Transaction holds the domain repositories scoped to a single read-write transaction.

@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
+	"xmanager_cloud/internal/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
@@ -53,13 +53,13 @@ func TestShouldSkipTask(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		task       *pausedtask.PausedTask
+		task       *storage.PausedTask
 		wantSkip   bool
 		wantReason TaskFilterReason
 	}{
 		{
 			name: "rule 1: skips when newer execution ID exists on work unit (CreateAction)",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   createAction,
@@ -71,7 +71,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 1: does not skip when execution ID matches work unit (CreateAction)",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE2,
 				Action:   createAction,
@@ -83,7 +83,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 1: does not skip RestartAction when WorkUnit is on expected next execution (EID+1)",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   restartAction,
@@ -95,7 +95,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 1: skips RestartAction when WorkUnit has superseded beyond next execution (> EID+1)",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   restartAction,
@@ -107,7 +107,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 2: skips UpdateAction when WorkUnit is in SCHEDULING_PAUSED state",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   updateAction,
@@ -119,7 +119,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 2: does not skip CreateAction when WorkUnit is in SCHEDULING_PAUSED state",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   createAction,
@@ -131,7 +131,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 2: does not skip RestartAction when WorkUnit is in SCHEDULING_PAUSED state",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   restartAction,
@@ -143,7 +143,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 3: skips UpdateAction when task priority does not match WorkUnit priority",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   updateAction,
@@ -155,7 +155,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 3: does not skip UpdateAction when task priority matches WorkUnit priority",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   updateAction,
@@ -167,7 +167,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 3: does not skip CreateAction when task priority differs from WorkUnit priority",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   createAction,
@@ -179,7 +179,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 4: skips when WorkUnit is COMPLETED",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   createAction,
@@ -191,7 +191,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 4: skips when WorkUnit is STOPPED",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   createAction,
@@ -203,7 +203,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 4: skips when WorkUnit is STOPPING",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   createAction,
@@ -215,7 +215,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 4: skips when WorkUnit is FAILED",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   createAction,
@@ -227,7 +227,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 4 takes precedence over rule 3: UpdateAction on STOPPED WorkUnit with priority mismatch",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   updateAction,
@@ -239,7 +239,7 @@ func TestShouldSkipTask(t *testing.T) {
 		},
 		{
 			name: "rule 4: does not skip when WorkUnit is in non-terminal states",
-			task: &pausedtask.PausedTask{
+			task: &storage.PausedTask{
 				TaskID:   "task-1",
 				Target:   targetE1,
 				Action:   createAction,

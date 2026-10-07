@@ -25,12 +25,11 @@ import (
 	"xmanager_cloud/internal/storage/spanner/artifact"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/internal/storage/spanner/operation"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/internal/storage/spanner/xid"
+	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
 type ExperimentRepository = experiment.Repository
@@ -53,8 +52,8 @@ type Storage struct {
 	*StatusMessageRepository
 	*OperationRepository
 	*StatusHistoryRepository
-	pauseStateRepository pausestate.Repository
-	pausedTaskRepository pausedtask.Repository
+	pauseStateRepository storage.PauseStateRepository
+	pausedTaskRepository storage.PausedTaskRepository
 }
 
 // RunInTransaction executes the given function in a Spanner read-write transaction,
@@ -64,14 +63,22 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 		return fmt.Errorf("spanner client must not be nil: %w", status.ErrFailedPrecondition)
 	}
 	_, err := s.client.ReadWriteTransaction(ctx, func(txCtx context.Context, spannerTx *spanner.ReadWriteTransaction) error {
+		pauseStateTx, ok := s.pauseStateRepository.(storage.PauseStateTxRepository)
+		if !ok {
+			return fmt.Errorf("pause state repository does not support transactions: %w", status.ErrFailedPrecondition)
+		}
+		pausedTaskTx, ok := s.pausedTaskRepository.(storage.PausedTaskTxRepository)
+		if !ok {
+			return fmt.Errorf("paused task repository does not support transactions: %w", status.ErrFailedPrecondition)
+		}
 		tx := &storage.Transaction{
 			WorkUnits:      s.WorkUnitRepository.WithTx(spannerTx),
 			Experiments:    s.ExperimentRepository.WithTx(spannerTx),
 			StatusMessages: s.StatusMessageRepository.WithTx(spannerTx),
 			StatusHistory:  s.StatusHistoryRepository.WithTx(spannerTx),
-			// TODO(pausescheduling): Bind to spannerTx once the Spanner-backed repositories replace the fakes.
-			PauseState:  s.pauseStateRepository,
-			PausedTasks: s.pausedTaskRepository,
+			// TODO(pausescheduling): Replace with WithTx(spannerTx) once Spanner repositories land.
+			PauseState:  pauseStateTx,
+			PausedTasks: pausedTaskTx,
 		}
 		return fn(txCtx, tx)
 	})
@@ -79,12 +86,12 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 }
 
 // PauseState returns the repository for global pause scheduling state.
-func (s *Storage) PauseState() pausestate.Repository {
+func (s *Storage) PauseState() storage.PauseStateRepository {
 	return s.pauseStateRepository
 }
 
 // PausedTasks returns the repository for pending paused actuation tasks.
-func (s *Storage) PausedTasks() pausedtask.Repository {
+func (s *Storage) PausedTasks() storage.PausedTaskRepository {
 	return s.pausedTaskRepository
 }
 
@@ -139,8 +146,10 @@ func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, 
 	statusHistoryRepo := statushistory.NewRepository(client)
 
 	// TODO(pausescheduling): Replace with concrete Spanner repository once available.
-	pauseStateRepo := pausestate.NewFake()
-	pausedTaskRepo := pausedtask.NewFake()
+	// NOTE: storagetest is intentionally used as a production stub until then; it must
+	// not take test-only dependencies and cannot be marked testonly.
+	pauseStateRepo := storagetest.NewFakePauseStateRepository()
+	pausedTaskRepo := storagetest.NewFakePausedTaskRepository()
 
 	return &Storage{
 		client:                  client,
