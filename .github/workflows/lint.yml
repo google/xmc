@@ -60,6 +60,9 @@ jobs:
               - 'deploy/**/*.yml'
               - 'deploy/helm/**'
               - '.github/workflows/lint.yml'
+            github_scripts:
+              - '.github/scripts/**'
+              - '.github/workflows/lint.yml'
 
       # 1. Python Linting (Ruff & Mypy)
       - name: 'Install Ruff'
@@ -183,6 +186,17 @@ jobs:
         if: steps.changes.outputs.ui == 'true'
         run: npm run lint
         working-directory: 'cmd/ui'
+
+      # 3a. GitHub Actions Script Tests (node:test, no dependencies)
+      - name: 'Set up Node.js for GitHub Actions scripts'
+        if: steps.changes.outputs.github_scripts == 'true'
+        uses: 'actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a' # v4.2.0
+        with:
+          node-version: '22'
+
+      - name: 'Run GitHub Actions script tests'
+        if: steps.changes.outputs.github_scripts == 'true'
+        run: node --test .github/scripts/*.test.js
 
       # 4. Terraform Formatting, Linting & Security (conditional on Terraform file changes)
       - name: 'Set up Terraform'
