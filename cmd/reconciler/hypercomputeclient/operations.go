@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 const (
