@@ -25,11 +25,11 @@ const OVERRIDE_LABEL = 'proto-breaking-change-approved';
  * Decides whether the override label is honored. Only the most recent `labeled` event of the
  * label counts, and it must come from a user account other than the pull request author, so
  * that neither the author nor a bot can approve a breaking change. Accounts are compared by
- * id because logins can be renamed and reused.
+ * id because logins can be renamed and reused; if either id is missing, the label is ignored.
  * @param {Object} params
  * @param {Array<{ name: string }>} params.labels - Current labels of the pull request.
  * @param {Array<Object>} params.events - Issue events of the pull request.
- * @param {{ login: string, id: number }} params.author - Pull request author.
+ * @param {?{ login: string, id: number }} params.author - Pull request author.
  * @param {string} [params.label] - Override label name (defaults to OVERRIDE_LABEL).
  * @returns {{ honored: boolean, actor: (string|null), reason: string }}
  */
@@ -37,10 +37,10 @@ function decideOverride({ labels, events, author, label = OVERRIDE_LABEL }) {
   if (!labels.some(l => l.name === label)) {
     return { honored: false, actor: null, reason: 'the label is not on the pull request' };
   }
+  // ISO 8601 UTC timestamps compare chronologically as strings; ties go to the later-listed event.
   const latest = events
     .filter(e => e.event === 'labeled' && e.label?.name === label)
-    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
-    .pop();
+    .reduce((newest, e) => (!newest || e.created_at >= newest.created_at ? e : newest), null);
   if (!latest) {
     return { honored: false, actor: null, reason: "no 'labeled' event was found for it" };
   }
@@ -48,6 +48,11 @@ function decideOverride({ labels, events, author, label = OVERRIDE_LABEL }) {
   const type = latest.actor?.type ?? 'unknown';
   if (type !== 'User') {
     const reason = `its latest application was by @${actor} (account type: ${type})`;
+    return { honored: false, actor, reason };
+  }
+  // Fail closed: a missing id must count neither as the author nor as another account.
+  if (latest.actor.id == null || author?.id == null) {
+    const reason = `the account id of @${actor} or of the pull request author is missing`;
     return { honored: false, actor, reason };
   }
   if (latest.actor.id === author.id) {

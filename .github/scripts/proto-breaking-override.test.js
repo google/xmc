@@ -136,6 +136,36 @@ test('decideOverride identifies the author by account id because logins can chan
   assert.strictEqual(decide({ login: AUTHOR.login, id: 4 }).honored, true);
 });
 
+test('decideOverride fails closed when the account id of the label actor is missing', () => {
+  const events = [issueEvent('labeled', { login: 'maintainer' }, '2026-01-01T00:00:00Z')];
+  assert.deepStrictEqual(decideOverride({ labels: LABELS, events, author: AUTHOR }), {
+    honored: false,
+    actor: 'maintainer',
+    reason: 'the account id of @maintainer or of the pull request author is missing',
+  });
+});
+
+test('decideOverride fails closed when the account id of the author is missing', () => {
+  const byMaintainer = [issueEvent('labeled', MAINTAINER, '2026-01-01T00:00:00Z')];
+  // With both ids missing, undefined === undefined must not make the actor the author.
+  const withoutIds = [issueEvent('labeled', { login: 'maintainer' }, '2026-01-01T00:00:00Z')];
+  for (const author of [{ login: 'octocat' }, null, undefined]) {
+    for (const events of [byMaintainer, withoutIds]) {
+      const decision = decideOverride({ labels: LABELS, events, author });
+      assert.strictEqual(decision.honored, false);
+      assert.strictEqual(decision.reason, 'the account id of @maintainer or of the pull request author is missing');
+    }
+  }
+});
+
+test('decideOverride lets the later-listed event win a timestamp tie', () => {
+  const events = [
+    issueEvent('labeled', MAINTAINER, '2026-01-01T00:00:00Z'),
+    issueEvent('labeled', AUTHOR, '2026-01-01T00:00:00Z'),
+  ];
+  assert.strictEqual(decideOverride({ labels: LABELS, events, author: AUTHOR }).actor, AUTHOR.login);
+});
+
 test('decideOverride ignores the label when the author re-applies it after a maintainer', () => {
   // Listed newest first: the decision must not depend on the API's ordering.
   const events = [

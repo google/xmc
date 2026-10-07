@@ -606,6 +606,13 @@ class CheckProtoBreakingTest(unittest.TestCase):
             f"```text\n{ctx.exception.message}\n```\n\n{ctx.exception.instruction}\n",
         )
 
+    def test_missing_report_directories_are_created(self):
+        self.mocks["compare"].return_value = [FIELD_FINDING]
+        report_file = self.report_file.parent / "missing" / "dir" / "summary.md"
+        with self.assertRaises(HandledError) as ctx:
+            check_proto_breaking.check_proto_breaking(self._args(report_file=report_file))
+        self.assertIn(ctx.exception.message, report_file.read_text(encoding="utf-8"))
+
     def test_passing_run_does_not_write_report_file(self):
         args = self._args(report_file=self.report_file)
         self.assertEqual(check_proto_breaking.check_proto_breaking(args)["status"], "passed")

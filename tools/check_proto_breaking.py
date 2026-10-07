@@ -303,10 +303,12 @@ def breaking_changes_error(base_commit: str, findings: list[Finding]) -> Handled
 def append_markdown_report(report_file: Path, message: str, note: str) -> None:
     """Appends breaking changes and a note as Markdown to report_file, e.g. the job summary.
 
-    A write failure is only a warning so that it never masks the breaking changes.
+    Missing parent directories are created. A write failure is only a warning so that it never
+    masks the breaking changes.
     """
     report = f"### Breaking protobuf API changes\n\n```text\n{message}\n```\n\n{note}\n"
     try:
+        report_file.parent.mkdir(parents=True, exist_ok=True)
         with report_file.open("a", encoding="utf-8") as stream:
             stream.write(report)
     except OSError as e:
