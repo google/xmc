@@ -21,8 +21,7 @@ Scans `examples/` subdirectories and verifies that every example is either:
    - `tools/nightly_tests/BUILD.bazel` defines `py_binary` `<name>_verify`,
    - `.github/workflows/nightly-examples-e2e.yml` includes `examples/<name>` and
      `tools.nightly_tests.<name>_verify`; OR
-2. Explicitly opted out with a non-empty justification via
-   `examples/<name>/.no_nightly_e2e` or `EXEMPT_EXAMPLES`.
+2. Explicitly opted out with a non-empty justification in `EXEMPT_EXAMPLES`.
 """
 
 from __future__ import annotations
@@ -35,10 +34,17 @@ import re
 import sys
 from collections.abc import Mapping, Sequence
 
-OPT_OUT_FILENAME: str = ".no_nightly_e2e"
 MIN_JUSTIFICATION_LENGTH: int = 10
 TOTAL_ARTIFACTS_PER_EXAMPLE: int = 3
 
+# Single source of truth for `examples/<name>` directories intentionally
+# excluded from the Nightly Examples E2E pipeline (`.github/workflows/nightly-examples-e2e.yml`).
+# During pre-commit and CI linting (`lint.yml`), every subdirectory under `examples/`
+# must either provide all 3 nightly verification artifacts (`<name>_verify.py`,
+# `BUILD.bazel` py_binary target, and workflow matrix entry) or be registered in
+# `EXEMPT_EXAMPLES` with a non-empty justification (>= MIN_JUSTIFICATION_LENGTH chars).
+# The gate cross-checks keys against existing `examples/` subdirectories to catch
+# stale exemptions and fails if a covered or partially wired example remains listed here.
 EXEMPT_EXAMPLES: dict[str, str] = {
     "components": (
         "Contains declarative component profile YAML manifests rather than a runnable workload example."
@@ -56,23 +62,6 @@ class CoverageReport:
     covered: list[str]
     exempt: list[str]
     violations: list[str]
-
-
-def read_opt_out_reason(example_dir: pathlib.Path) -> tuple[bool, str]:
-    """Reads and strips comments from an example's `.no_nightly_e2e` marker file.
-
-    Args:
-        example_dir: Path to the `examples/<name>` directory.
-
-    Returns:
-        Tuple `(exists, reason)` with marker presence and stripped content.
-    """
-    marker_path = example_dir / OPT_OUT_FILENAME
-    if not marker_path.is_file():
-        return False, ""
-    raw_lines = marker_path.read_text(encoding="utf-8").splitlines()
-    lines = [s for line in raw_lines if (s := line.strip()) and not s.startswith("#")]
-    return True, " ".join(lines).strip()
 
 
 def collect_missing_artifacts(
@@ -126,37 +115,6 @@ def validate_exempt_registry(
     return violations
 
 
-def _classify_artifact_state(
-    name: str,
-    missing: Sequence[str],
-    has_marker: bool,
-    exempt_examples: Mapping[str, str],
-) -> tuple[str, str | None]:
-    """Classifies coverage state once marker text validity is verified."""
-    if not missing:
-        if has_marker:
-            return (
-                "violation",
-                f"examples/{name} has a complete nightly verification suite; remove "
-                f"redundant examples/{name}/{OPT_OUT_FILENAME}.",
-            )
-        return "covered", None
-    if len(missing) < TOTAL_ARTIFACTS_PER_EXAMPLE:
-        return (
-            "violation",
-            f"examples/{name} has partial nightly verification wiring (missing: {', '.join(missing)}).",
-        )
-    if has_marker or name in exempt_examples:
-        return "exempt", None
-    return (
-        "violation",
-        f"examples/{name} is missing a nightly E2E verification suite (missing: "
-        f"{', '.join(missing)}). Either add a verification suite (see "
-        f"tools/nightly_tests/README.md) or create examples/{name}/{OPT_OUT_FILENAME} "
-        "with an explicit justification.",
-    )
-
-
 def evaluate_single_example(
     example_dir: pathlib.Path,
     tests_dir: pathlib.Path,
@@ -166,15 +124,26 @@ def evaluate_single_example(
 ) -> tuple[str, str | None]:
     """Evaluates nightly verification coverage for a single `examples/<name>` directory."""
     name = example_dir.name
-    has_marker, marker_reason = read_opt_out_reason(example_dir)
-    if has_marker and len(marker_reason) < MIN_JUSTIFICATION_LENGTH:
+    missing = collect_missing_artifacts(name, tests_dir, build_text, workflow_text)
+    if not missing:
+        if name in exempt_examples:
+            msg = f"examples/{name} has a complete nightly verification suite; remove redundant EXEMPT_EXAMPLES['{name}'] entry."
+            return "violation", msg
+        return "covered", None
+    if len(missing) < TOTAL_ARTIFACTS_PER_EXAMPLE:
         return (
             "violation",
-            f"examples/{name}/{OPT_OUT_FILENAME} exists but lacks a valid justification "
-            f"(>= {MIN_JUSTIFICATION_LENGTH} non-comment characters required).",
+            f"examples/{name} has partial nightly verification wiring (missing: {', '.join(missing)}).",
         )
-    missing = collect_missing_artifacts(name, tests_dir, build_text, workflow_text)
-    return _classify_artifact_state(name, missing, has_marker, exempt_examples)
+    if name in exempt_examples:
+        return "exempt", None
+    return (
+        "violation",
+        f"examples/{name} is missing a nightly E2E verification suite (missing: "
+        f"{', '.join(missing)}). Either add a verification suite (see "
+        f"tools/nightly_tests/README.md) or register '{name}' in EXEMPT_EXAMPLES "
+        "in tools/nightly_tests/check_examples_coverage.py with an explicit justification.",
+    )
 
 
 def _list_example_dirs(examples_dir: pathlib.Path) -> list[pathlib.Path]:
@@ -264,7 +233,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "message": "Nightly E2E example verification coverage check failed.",
             "instruction": (
                 "Follow tools/nightly_tests/README.md to add a verification suite "
-                f"or create examples/<name>/{OPT_OUT_FILENAME} with a justification."
+                "or register the example in EXEMPT_EXAMPLES with a justification."
             ),
             "violations": report.violations,
         }

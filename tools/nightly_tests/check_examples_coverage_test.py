@@ -103,60 +103,26 @@ class CheckExamplesCoverageTest(unittest.TestCase):
             self.assertEqual(len(report.violations), 1)
             self.assertIn("partial nightly verification wiring", report.violations[0])
 
-    def test_opt_out_marker_with_valid_justification_passes(self) -> None:
-        """An example with a non-empty .no_nightly_e2e justification is marked exempt."""
+    def test_exempt_registry_with_valid_justification_passes(self) -> None:
+        """An example registered in EXEMPT_EXAMPLES with a valid justification is marked exempt."""
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             examples_dir, _, _ = _seed_repo(root)
-            job_dir = examples_dir / "local_only_job"
-            job_dir.mkdir()
-            (job_dir / ".no_nightly_e2e").write_text(
-                "# Comment header\nRuns only against local docker-compose sandbox.\n",
-                encoding="utf-8",
-            )
-            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples={})
+            (examples_dir / "local_only_job").mkdir()
+            exempt = {"local_only_job": "Runs only against local docker-compose sandbox."}
+            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples=exempt)
             self.assertEqual(report.exempt, ["local_only_job"])
             self.assertEqual(report.violations, [])
 
-    def test_opt_out_marker_with_empty_or_short_reason_fails(self) -> None:
-        """An empty or comment-only .no_nightly_e2e file is rejected."""
-        with tempfile.TemporaryDirectory() as tmp:
-            root = pathlib.Path(tmp)
-            examples_dir, _, _ = _seed_repo(root)
-            job_dir = examples_dir / "empty_opt_out"
-            job_dir.mkdir()
-            (job_dir / ".no_nightly_e2e").write_text("# comment only\nshort\n", encoding="utf-8")
-            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples={})
-            self.assertEqual(len(report.violations), 1)
-            self.assertIn("lacks a valid justification", report.violations[0])
-
-    def test_redundant_opt_out_marker_on_covered_example_fails(self) -> None:
-        """A fully wired example must not retain a redundant .no_nightly_e2e file."""
+    def test_redundant_exempt_registry_entry_on_covered_example_fails(self) -> None:
+        """A fully wired example must not retain a redundant EXEMPT_EXAMPLES entry."""
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             _wire_example(root, "covered_job")
-            (root / "examples" / "covered_job" / ".no_nightly_e2e").write_text(
-                "Obsolete opt-out reason that should be removed.\n",
-                encoding="utf-8",
-            )
-            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples={})
+            exempt = {"covered_job": "Obsolete opt-out reason that should be removed."}
+            report = check_examples_coverage.audit_examples_coverage(root, exempt_examples=exempt)
             self.assertEqual(len(report.violations), 1)
-            self.assertIn("remove redundant", report.violations[0])
-
-    def test_exempt_registry_supports_before_and_after_coverage(self) -> None:
-        """An EXEMPT_EXAMPLES entry passes as exempt before wiring and covered after wiring."""
-        with tempfile.TemporaryDirectory() as tmp:
-            root = pathlib.Path(tmp)
-            examples_dir, _, _ = _seed_repo(root)
-            (examples_dir / "staged_job").mkdir()
-            exempt = {"staged_job": "Pending nightly verification suite in stacked PR."}
-            before = check_examples_coverage.audit_examples_coverage(root, exempt_examples=exempt)
-            self.assertEqual(before.exempt, ["staged_job"])
-            self.assertEqual(before.violations, [])
-            _wire_example(root, "staged_job")
-            after = check_examples_coverage.audit_examples_coverage(root, exempt_examples=exempt)
-            self.assertEqual(after.covered, ["staged_job"])
-            self.assertEqual(after.violations, [])
+            self.assertIn("remove redundant EXEMPT_EXAMPLES['covered_job']", report.violations[0])
 
     def test_invalid_exempt_registry_reason_fails(self) -> None:
         """Short or empty EXEMPT_EXAMPLES reasons are flagged as violations."""

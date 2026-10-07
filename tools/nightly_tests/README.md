@@ -225,9 +225,6 @@ If an example is partially wired (for example, `<example_name>_verify.py` exists
 
 Adding a nightly verification suite is the default expectation for all examples. Remember that hardware-gated examples (GPU/TPU) **can and should** still be verified using `wait_for_completion=False` (Pattern B above) to validate control-plane Experiment/WorkUnit/JobSet creation.
 
-If an `examples/<example_name>/` directory genuinely cannot or should not be executed by the nightly GKE workflow (for example, static YAML/profile catalogs like `examples/components` or local-only `xm_local` scripts like `examples/xmc_lite_job`), you must **explicitly opt out** with a written justification using one of two mechanisms:
+If an `examples/<example_name>/` directory genuinely cannot or should not be executed by the nightly GKE workflow (for example, static YAML/profile catalogs like `examples/components` or local-only `xm_local` scripts like `examples/xmc_lite_job`), register `<example_name>` in the central `EXEMPT_EXAMPLES` dictionary in [`tools/nightly_tests/check_examples_coverage.py`](check_examples_coverage.py) with a non-empty justification string (`>= 10` characters).
 
-1. **Marker File (`examples/<example_name>/.no_nightly_e2e`)**:
-   Create a `.no_nightly_e2e` file inside the example directory containing a clear, non-empty explanation (>= 10 characters, excluding `#` comments) of why nightly E2E verification is intentionally omitted. Empty marker files are rejected by the gate.
-2. **Central Registry (`EXEMPT_EXAMPLES` in `tools/nightly_tests/check_examples_coverage.py`)**:
-   Register `<example_name>` in `EXEMPT_EXAMPLES` with a non-empty justification string. Note that if an entry in `EXEMPT_EXAMPLES` later receives a verification suite, the gate automatically validates that all three verification artifacts are complete.
+The gate cross-checks `EXEMPT_EXAMPLES` against existing `examples/` subdirectories to prevent stale entries and fails if an example listed in `EXEMPT_EXAMPLES` already has nightly verification artifacts.
