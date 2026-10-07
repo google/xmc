@@ -1,0 +1,55 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package store
+
+import (
+	"maps"
+	"slices"
+
+	"google.golang.org/protobuf/proto"
+
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+)
+
+// isUnchangedIntent reports whether applying an intent to the existing record rec would change
+// nothing, in which case SetComponentIntent must be a no-op. An intent is unchanged when its
+// desired generation is not newer than rec.Generation (0 means unspecified) and its spec (ignoring
+// the generation field), labels and extracted dependencies equal those of rec. Both store
+// implementations use this single definition so their semantics stay identical.
+//
+// A stale desired generation with an equal spec is a no-op, so records whose generation was bumped
+// by earlier non-idempotent writes stop growing once callers pass their own generation. A changed
+// intent is not an unchanged one and is bumped to max(desiredGen, rec.Generation+1) by the stores.
+func isUnchangedIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) bool {
+	// TODO(b/548436300): reject a changed spec with 0 < desiredGen < rec.Generation (stale writer) once legacy-inflated generations are remediated.
+	if desiredGen > rec.Generation {
+		return false
+	}
+	if !maps.Equal(rec.Labels, labels) || !slices.Equal(rec.Dependencies, deps) {
+		return false
+	}
+	return proto.Equal(specWithoutGeneration(rec.Spec), specWithoutGeneration(spec))
+}
+
+// specWithoutGeneration returns a copy of spec with the generation field cleared, or nil for a nil
+// spec.
+func specWithoutGeneration(spec *componentspb.ComponentSpec) *componentspb.ComponentSpec {
+	if spec == nil {
+		return nil
+	}
+	cp := proto.Clone(spec).(*componentspb.ComponentSpec)
+	cp.Generation = 0
+	return cp
+}

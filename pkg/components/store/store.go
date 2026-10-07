@@ -86,6 +86,21 @@ type SnapshotRecord struct {
 // Store defines the storage interface for XMC Components System.
 type Store interface {
 	// SetComponentIntent applies or updates component intent within the store.
+	//
+	// A new component starts at max(desiredGen, 1). For an existing component, a changed intent
+	// sets the generation to desiredGen if it is newer, else to the current generation + 1, and
+	// resets the state to COMPONENT_STATE_PENDING_RECONCILIATION.
+	//
+	// An intent is unchanged when desiredGen is not newer than the current generation (0 means
+	// unspecified) and it has equal labels, dependencies, and spec (ignoring spec.generation). An
+	// unchanged intent is a no-op: the existing record is returned without a generation bump,
+	// snapshot, UpdateTime write, or re-queue, and its state and status are not reset (state is
+	// driven by UpdateObservedGeneration). Validation still runs first, so dependency cycles and
+	// (in SpannerStore) unregistered dependencies are reported even for an unchanged intent.
+	//
+	// Records whose generation already exceeds the caller's generation (inflated by writes made
+	// before intents were idempotent) keep the higher number, and later changes bump from it.
+	// Recreate such records to realign them.
 	SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error)
 
 	// GetComponent retrieves a component record by canonical or full resource name.
