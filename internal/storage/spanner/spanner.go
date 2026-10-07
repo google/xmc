@@ -63,8 +63,14 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 		return fmt.Errorf("spanner client must not be nil: %w", status.ErrFailedPrecondition)
 	}
 	_, err := s.client.ReadWriteTransaction(ctx, func(txCtx context.Context, spannerTx *spanner.ReadWriteTransaction) error {
-		pauseStateTx, _ := s.pauseStateRepository.(storage.PauseStateTxRepository)
-		pausedTaskTx, _ := s.pausedTaskRepository.(storage.PausedTaskTxRepository)
+		pauseStateTx, ok := s.pauseStateRepository.(storage.PauseStateTxRepository)
+		if !ok {
+			return fmt.Errorf("pause state repository does not support transactions: %w", status.ErrFailedPrecondition)
+		}
+		pausedTaskTx, ok := s.pausedTaskRepository.(storage.PausedTaskTxRepository)
+		if !ok {
+			return fmt.Errorf("paused task repository does not support transactions: %w", status.ErrFailedPrecondition)
+		}
 		tx := &storage.Transaction{
 			WorkUnits:      s.WorkUnitRepository.WithTx(spannerTx),
 			Experiments:    s.ExperimentRepository.WithTx(spannerTx),

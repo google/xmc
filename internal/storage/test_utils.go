@@ -83,8 +83,8 @@ type MockStorage struct {
 
 	PauseStateRepository PauseStateRepository
 	PausedTaskRepository PausedTaskRepository
-	// Transaction optionally overrides repository fields on the Transaction passed to
-	// RunInTransaction callbacks. Any nil fields fall back to MockStorage defaults.
+	// Transaction optionally overrides Transaction.PauseState and Transaction.PausedTasks
+	// passed to RunInTransaction callbacks; other fields are ignored.
 	Transaction *Transaction
 	// GotWorkUnitExecutionsXID and GotWorkUnitExecutionUpdates record the arguments of every
 	// UpdateWorkUnitExecutions call.
