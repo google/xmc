@@ -15,18 +15,15 @@
 package bridge
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
-	"text/template"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -1598,75 +1595,25 @@ func TestReconciler_EnvtestIntegration(t *testing.T) {
 func startReconcilerEnvtest(t *testing.T) dynamic.Interface {
 	t.Helper()
 	crdDir := t.TempDir()
-	combined := append(renderComponentsCRDForEnvtest(t), []byte("\n---\n"+rayClusterTestCRD)...)
+	combined := append(renderHelmManifestTemplate(t, "crd.yaml", true), []byte("\n---\n"+rayClusterTestCRD)...)
 	if err := os.WriteFile(filepath.Join(crdDir, "crds.yaml"), combined, 0600); err != nil {
 		t.Fatalf("failed to write CRDs: %v", err)
 	}
 	testEnv := &envtest.Environment{
-		BinaryAssetsDirectory:   locateEnvtestBinaries(t),
+		BinaryAssetsDirectory:   resolveEnvtestAssets(t),
 		ControlPlaneStopTimeout: 10 * time.Second,
 		CRDInstallOptions:       envtest.CRDInstallOptions{Paths: []string{crdDir}, ErrorIfPathMissing: true, PollInterval: 10 * time.Millisecond, MaxTime: 5 * time.Second},
 	}
-	t.Cleanup(func() { _ = testEnv.Stop() })
 	cfg, err := testEnv.Start()
 	if err != nil {
 		t.Fatalf("failed to start envtest environment: %v", err)
 	}
+	t.Cleanup(func() { _ = testEnv.Stop() })
 	dynClient, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		t.Fatalf("failed to create dynamic client: %v", err)
 	}
 	return dynClient
-}
-
-func renderComponentsCRDForEnvtest(t *testing.T) []byte {
-	t.Helper()
-	candidates := []string{
-		filepath.Join("..", "..", "..", "deploy", "helm", "templates", "components", "crd.yaml"),
-		filepath.Join(os.Getenv("TEST_SRCDIR"), "_main", "deploy", "helm", "templates", "components", "crd.yaml"),
-	}
-	for _, p := range candidates {
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		tmpl, err := template.New("crd").Parse(string(raw))
-		if err != nil {
-			t.Fatalf("failed to parse crd.yaml template: %v", err)
-		}
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, map[string]any{"Values": map[string]any{"componentsDeployment": map[string]any{"enabled": true}}}); err != nil {
-			t.Fatalf("failed to render crd.yaml template: %v", err)
-		}
-		return buf.Bytes()
-	}
-	t.Fatal("failed to locate deploy/helm/templates/components/crd.yaml")
-	return nil
-}
-
-func locateEnvtestBinaries(t *testing.T) string {
-	t.Helper()
-	if envDir := os.Getenv("KUBEBUILDER_ASSETS"); envDir != "" {
-		return envDir
-	}
-	srcDir := os.Getenv("TEST_SRCDIR")
-	for _, d := range []string{srcDir, filepath.Join(srcDir, "_main", "external")} {
-		entries, _ := os.ReadDir(d)
-		for _, e := range entries {
-			p := filepath.Join(d, e.Name())
-			if _, err := os.Stat(filepath.Join(p, "kube-apiserver")); err == nil && strings.Contains(e.Name(), "kubebuilder_envtest") {
-				return p
-			}
-		}
-	}
-	if home := os.Getenv("HOME"); home != "" {
-		fallback := filepath.Join(home, ".local", "share", "kubebuilder-envtest", "k8s", fmt.Sprintf("1.30.3-%s-%s", runtime.GOOS, runtime.GOARCH))
-		if _, err := os.Stat(filepath.Join(fallback, "kube-apiserver")); err == nil {
-			return fallback
-		}
-	}
-	t.Fatal("failed to locate kubebuilder envtest binaries (etcd, kube-apiserver)")
-	return ""
 }
 
 func verifyEnvtestSSAMergeAndFinalizers(ctx context.Context, t *testing.T, dynClient dynamic.Interface) {
@@ -1738,8 +1685,13 @@ func assertMergedConditionsAndFinalizer(ctx context.Context, t *testing.T, compC
 			seen[m["type"].(string)] = m["status"].(string)
 		}
 	}
-	if seen["ExternalSLA"] != "True" || seen[ConditionTypeReady] != ConditionStatusTrue || seen[ConditionTypeDegraded] != ConditionStatusFalse {
-		t.Errorf("expected merged conditions ExternalSLA=True, Ready=True, Degraded=False; got %v", seen)
+	want := map[string]string{
+		"ExternalSLA":         "True",
+		ConditionTypeReady:    ConditionStatusTrue,
+		ConditionTypeDegraded: ConditionStatusFalse,
+	}
+	if diff := cmp.Diff(want, seen); diff != "" {
+		t.Errorf("merged conditions mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1802,18 +1754,20 @@ func assertContractBrokenStatus(ctx context.Context, t *testing.T, compClient dy
 		t.Fatalf("Get updated Component failed: %v", err)
 	}
 	conds, _, _ := unstructured.NestedSlice(updated.Object, "status", "conditions")
-	var readyReason, readyStatus, degradedReason, degradedStatus string
+	seen := make(map[string]string)
 	for _, raw := range conds {
 		if m, ok := raw.(map[string]any); ok {
-			switch m["type"] {
-			case ConditionTypeReady:
-				readyStatus, readyReason = m["status"].(string), m["reason"].(string)
-			case ConditionTypeDegraded:
-				degradedStatus, degradedReason = m["status"].(string), m["reason"].(string)
+			typ, _ := m["type"].(string)
+			if typ == ConditionTypeReady || typ == ConditionTypeDegraded {
+				seen[typ] = fmt.Sprintf("%s/%s", m["status"], m["reason"])
 			}
 		}
 	}
-	if readyStatus != ConditionStatusFalse || readyReason != ReasonContractBroken || degradedStatus != ConditionStatusTrue || degradedReason != ReasonContractBroken {
-		t.Errorf("expected Ready=False/ContractBroken and Degraded=True/ContractBroken, got Ready=%s/%s Degraded=%s/%s", readyStatus, readyReason, degradedStatus, degradedReason)
+	want := map[string]string{
+		ConditionTypeReady:    fmt.Sprintf("%s/%s", ConditionStatusFalse, ReasonContractBroken),
+		ConditionTypeDegraded: fmt.Sprintf("%s/%s", ConditionStatusTrue, ReasonContractBroken),
+	}
+	if diff := cmp.Diff(want, seen); diff != "" {
+		t.Errorf("contract broken conditions mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package integration_test
+package bridge
 
 import (
 	"bytes"
@@ -37,8 +37,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-
-	"xmanager_cloud/pkg/components/bridge"
 )
 
 type admissionClients struct {
@@ -58,7 +56,7 @@ func TestComponentsAdmissionAndControllerSuite(t *testing.T) {
 		verifyEnableComponentsTemplateFlag(t)
 	})
 	t.Run("CRDOpenAPIAndCELSchemaValidations", func(t *testing.T) {
-		verifyCRDSchemaAndCELRules(ctx, t, clients.adminDynamic.Resource(bridge.ComponentGVR).Namespace("default"))
+		verifyCRDSchemaAndCELRules(ctx, t, clients.adminDynamic.Resource(ComponentGVR).Namespace("default"))
 	})
 	t.Run("ValidatingAdmissionPolicyDeletionProtection", func(t *testing.T) {
 		waitForVAPActivation(ctx, t, clients.nonAdminComp)
@@ -78,11 +76,11 @@ func startAdmissionEnvtest(ctx context.Context, t *testing.T) admissionClients {
 		ControlPlaneStopTimeout: 10 * time.Second,
 		CRDInstallOptions:       envtest.CRDInstallOptions{Paths: []string{crdDir}, ErrorIfPathMissing: true, PollInterval: 10 * time.Millisecond, MaxTime: 5 * time.Second},
 	}
-	t.Cleanup(func() { _ = testEnv.Stop() })
 	cfg, err := testEnv.Start()
 	if err != nil {
 		t.Fatalf("failed to start envtest: %v", err)
 	}
+	t.Cleanup(func() { _ = testEnv.Stop() })
 
 	clients := buildAdmissionClients(t, cfg)
 	grantComponentRBAC(ctx, t, clients.kubeClient)
@@ -120,13 +118,13 @@ func buildAdmissionClients(t *testing.T, baseCfg *rest.Config) admissionClients 
 		t.Fatalf("kubernetes.NewForConfig failed: %v", err)
 	}
 	impersonateComp := func(user string, groups ...string) dynamic.ResourceInterface {
-		cfg := *baseCfg
+		cfg := rest.CopyConfig(baseCfg)
 		cfg.Impersonate = rest.ImpersonationConfig{UserName: user, Groups: groups}
-		dyn, err := dynamic.NewForConfig(&cfg)
+		dyn, err := dynamic.NewForConfig(cfg)
 		if err != nil {
 			t.Fatalf("impersonated dynamic.NewForConfig(%s) failed: %v", user, err)
 		}
-		return dyn.Resource(bridge.ComponentGVR).Namespace("default")
+		return dyn.Resource(ComponentGVR).Namespace("default")
 	}
 	return admissionClients{
 		adminDynamic:   adminDyn,
@@ -163,15 +161,14 @@ func waitForVAPActivation(ctx context.Context, t *testing.T, compClient dynamic.
 		t.Fatalf("failed to create VAP canary component: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = compClient.Patch(context.Background(), canary.GetName(), types.MergePatchType, []byte(`{"spec":{"deletionProtection":false}}`), metav1.PatchOptions{})
-		_ = compClient.Delete(context.Background(), canary.GetName(), metav1.DeleteOptions{})
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = compClient.Patch(cleanupCtx, canary.GetName(), types.MergePatchType, []byte(`{"spec":{"deletionProtection":false}}`), metav1.PatchOptions{})
+		_ = compClient.Delete(cleanupCtx, canary.GetName(), metav1.DeleteOptions{})
 	})
-	err := wait.PollUntilContextTimeout(ctx, 15*time.Millisecond, 3*time.Second, true, func(ctx context.Context) (bool, error) {
-		delErr := compClient.Delete(ctx, canary.GetName(), metav1.DeleteOptions{})
-		if delErr == nil || strings.Contains(delErr.Error(), "not found") {
-			if _, createErr := compClient.Create(ctx, canary, metav1.CreateOptions{}); createErr != nil && !strings.Contains(createErr.Error(), "already exists") {
-				return false, createErr
-			}
+	err := wait.PollUntilContextTimeout(ctx, 50*time.Millisecond, 3*time.Second, true, func(ctx context.Context) (bool, error) {
+		delErr := compClient.Delete(ctx, canary.GetName(), metav1.DeleteOptions{DryRun: []string{metav1.DryRunAll}})
+		if delErr == nil {
 			return false, nil
 		}
 		return strings.Contains(delErr.Error(), "Deletion rejected: Component has deletionProtection enabled"), nil
@@ -251,8 +248,10 @@ func assertDefaultSchemaFields(t *testing.T, created *unstructured.Unstructured)
 func verifyDeletionProtectionVAP(ctx context.Context, t *testing.T, clients admissionClients) {
 	t.Helper()
 	t.Cleanup(func() {
-		_ = clients.breakglassComp.Delete(context.Background(), "protected-ingestion", metav1.DeleteOptions{})
-		_ = clients.breakglassComp.Delete(context.Background(), "breakglass-protected", metav1.DeleteOptions{})
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = clients.breakglassComp.Delete(cleanupCtx, "protected-ingestion", metav1.DeleteOptions{})
+		_ = clients.breakglassComp.Delete(cleanupCtx, "breakglass-protected", metav1.DeleteOptions{})
 	})
 	protectedSpec := map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "deletionProtection": true}
 	comp := newComponentManifest("protected-ingestion", protectedSpec)
@@ -286,7 +285,7 @@ func newComponentManifest(name string, spec map[string]any) *unstructured.Unstru
 func renderHelmManifestTemplate(t *testing.T, fileName string, enabled bool) []byte {
 	t.Helper()
 	candidates := []string{
-		filepath.Join("..", "..", "deploy", "helm", "templates", "components", fileName),
+		filepath.Join("..", "..", "..", "deploy", "helm", "templates", "components", fileName),
 		filepath.Join(os.Getenv("TEST_SRCDIR"), "_main", "deploy", "helm", "templates", "components", fileName),
 	}
 	for _, p := range candidates {
@@ -316,7 +315,10 @@ func resolveEnvtestAssets(t *testing.T) string {
 	}
 	srcDir := os.Getenv("TEST_SRCDIR")
 	for _, d := range []string{srcDir, filepath.Join(srcDir, "_main", "external")} {
-		entries, _ := os.ReadDir(d)
+		entries, err := os.ReadDir(d)
+		if err != nil {
+			continue
+		}
 		for _, e := range entries {
 			p := filepath.Join(d, e.Name())
 			if _, err := os.Stat(filepath.Join(p, "kube-apiserver")); err == nil && strings.Contains(e.Name(), "kubebuilder_envtest") {
