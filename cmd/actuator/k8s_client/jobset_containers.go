@@ -182,8 +182,16 @@ func parseEnvVarSource(src *esspb.EnvVarSource) *corev1.EnvVarSource {
 }
 
 func appendSpecEnvVars(envVars []corev1.EnvVar, spec *esspb.ExecutableSpec) []corev1.EnvVar {
-	for k, v := range spec.GetEnvVars() {
-		envVars = append(envVars, corev1.EnvVar{Name: k, Value: v})
+	specEnvVars := spec.GetEnvVars()
+	if len(specEnvVars) > 0 {
+		keys := make([]string, 0, len(specEnvVars))
+		for k := range specEnvVars {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			envVars = append(envVars, corev1.EnvVar{Name: k, Value: specEnvVars[k]})
+		}
 	}
 	for _, ev := range spec.GetEnv() {
 		if ev == nil || ev.Name == "" {
