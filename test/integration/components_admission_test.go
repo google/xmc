@@ -78,11 +78,11 @@ func startAdmissionEnvtest(ctx context.Context, t *testing.T) admissionClients {
 		ControlPlaneStopTimeout: 10 * time.Second,
 		CRDInstallOptions:       envtest.CRDInstallOptions{Paths: []string{crdDir}, ErrorIfPathMissing: true, PollInterval: 10 * time.Millisecond, MaxTime: 5 * time.Second},
 	}
+	t.Cleanup(func() { _ = testEnv.Stop() })
 	cfg, err := testEnv.Start()
 	if err != nil {
 		t.Fatalf("failed to start envtest: %v", err)
 	}
-	t.Cleanup(func() { _ = testEnv.Stop() })
 
 	clients := buildAdmissionClients(t, cfg)
 	grantComponentRBAC(ctx, t, clients.kubeClient)
@@ -138,17 +138,14 @@ func buildAdmissionClients(t *testing.T, baseCfg *rest.Config) admissionClients 
 
 func installDeletionProtectionVAP(ctx context.Context, t *testing.T, clients admissionClients) {
 	t.Helper()
-	docs := strings.Split(string(renderHelmManifestTemplate(t, "deletion-vap.yaml", true)), "\n---")
-	if len(docs) < 2 {
-		t.Fatalf("expected ValidatingAdmissionPolicy and Binding documents in deletion-vap.yaml, got %d", len(docs))
-	}
+	dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(renderHelmManifestTemplate(t, "deletion-vap.yaml", true)), 4096)
 	var policy admissionregistrationv1.ValidatingAdmissionPolicy
-	if err := yaml.Unmarshal([]byte(docs[0]), &policy); err != nil {
-		t.Fatalf("failed to unmarshal ValidatingAdmissionPolicy: %v", err)
+	if err := dec.Decode(&policy); err != nil {
+		t.Fatalf("failed to decode ValidatingAdmissionPolicy: %v", err)
 	}
 	var binding admissionregistrationv1.ValidatingAdmissionPolicyBinding
-	if err := yaml.Unmarshal([]byte(docs[1]), &binding); err != nil {
-		t.Fatalf("failed to unmarshal ValidatingAdmissionPolicyBinding: %v", err)
+	if err := dec.Decode(&binding); err != nil {
+		t.Fatalf("failed to decode ValidatingAdmissionPolicyBinding: %v", err)
 	}
 	admClient := clients.kubeClient.AdmissionregistrationV1()
 	if _, err := admClient.ValidatingAdmissionPolicies().Create(ctx, &policy, metav1.CreateOptions{}); err != nil {
@@ -226,7 +223,7 @@ func verifyCRDSchemaAndCELRules(ctx context.Context, t *testing.T, compClient dy
 	}
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			name := "cel-case-" + string(rune('a'+i))
+			name := fmt.Sprintf("cel-case-%d", i)
 			created, err := compClient.Create(ctx, newComponentManifest(name, tc.spec), metav1.CreateOptions{})
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("Create(%s) error = %v, wantErr %v", name, err, tc.wantErr)
@@ -323,9 +320,11 @@ func resolveEnvtestAssets(t *testing.T) string {
 			}
 		}
 	}
-	fallback := filepath.Join(os.Getenv("HOME"), ".local", "share", "kubebuilder-envtest", "k8s", fmt.Sprintf("1.30.3-%s-%s", runtime.GOOS, runtime.GOARCH))
-	if _, err := os.Stat(filepath.Join(fallback, "kube-apiserver")); err == nil {
-		return fallback
+	if home := os.Getenv("HOME"); home != "" {
+		fallback := filepath.Join(home, ".local", "share", "kubebuilder-envtest", "k8s", fmt.Sprintf("1.30.3-%s-%s", runtime.GOOS, runtime.GOARCH))
+		if _, err := os.Stat(filepath.Join(fallback, "kube-apiserver")); err == nil {
+			return fallback
+		}
 	}
 	t.Fatal("failed to locate kubebuilder envtest binaries (etcd, kube-apiserver)")
 	return ""

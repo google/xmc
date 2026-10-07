@@ -1607,11 +1607,11 @@ func startReconcilerEnvtest(t *testing.T) dynamic.Interface {
 		ControlPlaneStopTimeout: 10 * time.Second,
 		CRDInstallOptions:       envtest.CRDInstallOptions{Paths: []string{crdDir}, ErrorIfPathMissing: true, PollInterval: 10 * time.Millisecond, MaxTime: 5 * time.Second},
 	}
+	t.Cleanup(func() { _ = testEnv.Stop() })
 	cfg, err := testEnv.Start()
 	if err != nil {
 		t.Fatalf("failed to start envtest environment: %v", err)
 	}
-	t.Cleanup(func() { _ = testEnv.Stop() })
 	dynClient, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		t.Fatalf("failed to create dynamic client: %v", err)
@@ -1659,9 +1659,11 @@ func locateEnvtestBinaries(t *testing.T) string {
 			}
 		}
 	}
-	fallback := filepath.Join(os.Getenv("HOME"), ".local", "share", "kubebuilder-envtest", "k8s", fmt.Sprintf("1.30.3-%s-%s", runtime.GOOS, runtime.GOARCH))
-	if _, err := os.Stat(filepath.Join(fallback, "kube-apiserver")); err == nil {
-		return fallback
+	if home := os.Getenv("HOME"); home != "" {
+		fallback := filepath.Join(home, ".local", "share", "kubebuilder-envtest", "k8s", fmt.Sprintf("1.30.3-%s-%s", runtime.GOOS, runtime.GOARCH))
+		if _, err := os.Stat(filepath.Join(fallback, "kube-apiserver")); err == nil {
+			return fallback
+		}
 	}
 	t.Fatal("failed to locate kubebuilder envtest binaries (etcd, kube-apiserver)")
 	return ""
