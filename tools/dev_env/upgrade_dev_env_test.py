@@ -358,6 +358,14 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertNotIn(self._restart_cmd("xmc-bridge-deployment"), cmds)
         self.assertNotIn(self._restart_cmd("ingestion-gateway-deployment"), cmds)
 
+    @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name", return_value=None)
+    @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
+    def test_step_restart_fails_when_zero_deployments_resolved(self, mock_run, mock_resolve):
+        with self.assertRaises(SystemExit) as cm:
+            upgrade_dev_env.step_restart(self.config)
+        self.assertEqual(cm.exception.code, 1)
+        mock_run.assert_not_called()
+
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
     def test_step_verify(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(

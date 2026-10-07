@@ -681,6 +681,43 @@ image_tag: latest
             output,
         )
 
+    @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
+    @patch("tools.dev_env.deploy_dev_env.run_checks")
+    @patch("tools.dev_env.deploy_dev_env.step_check")
+    @patch("tools.dev_env.deploy_dev_env.step_compile")
+    @patch("sys.stdout", new_callable=io.StringIO)
+    def test_main_error_handling_resume_suggest_preserves_skip_migrations(
+        self,
+        mock_stdout,
+        mock_compile,
+        mock_check,
+        mock_run_checks,
+        mock_load_config,
+    ):
+        mock_load_config.return_value = self.valid_config
+        mock_compile.side_effect = Exception("Compile failed")
+
+        with self.assertRaises(SystemExit) as cm:
+            deploy_dev_env.main(
+                [
+                    "--config",
+                    "config.yaml",
+                    "--dns-project",
+                    "p",
+                    "--dns-zone",
+                    "z",
+                    "--skip-migrations",
+                ]
+            )
+
+        self.assertEqual(cm.exception.code, 1)
+        output = mock_stdout.getvalue()
+        self.assertIn(
+            "python3 tools/dev_env/deploy_dev_env.py --config config.yaml --dns-project p"
+            " --dns-zone z --skip-migrations --start-from compile",
+            output,
+        )
+
     # --- Individual Step Tests ---
 
     @patch("tools.dev_env.deploy_dev_env.compile_blueprint")
@@ -766,9 +803,10 @@ image_tag: latest
         self.assertEqual(cm.exception.code, 1)
         mock_apply.assert_not_called()
 
+    @patch("tools.dev_env.deploy_dev_env._fetch_cluster_credentials")
     @patch("tools.dev_env.deploy_dev_env.run_gcluster_deploy")
     @patch("tools.dev_env.deploy_dev_env.step_restart")
-    def test_step_app_without_restart(self, mock_restart, mock_gcluster):
+    def test_step_app_without_restart(self, mock_restart, mock_gcluster, mock_creds):
         deploy_dev_env.step_app(
             self.valid_config,
             self.dns_project,
@@ -776,11 +814,13 @@ image_tag: latest
             restart_deployments=False,
         )
         mock_gcluster.assert_called_once_with(self.valid_config.deployment_name, "xmc_app")
+        mock_creds.assert_not_called()
         mock_restart.assert_not_called()
 
+    @patch("tools.dev_env.deploy_dev_env._fetch_cluster_credentials")
     @patch("tools.dev_env.deploy_dev_env.run_gcluster_deploy")
     @patch("tools.dev_env.deploy_dev_env.step_restart")
-    def test_step_app_with_restart(self, mock_restart, mock_gcluster):
+    def test_step_app_with_restart(self, mock_restart, mock_gcluster, mock_creds):
         deploy_dev_env.step_app(
             self.valid_config,
             self.dns_project,
@@ -788,6 +828,7 @@ image_tag: latest
             restart_deployments=True,
         )
         mock_gcluster.assert_called_once_with(self.valid_config.deployment_name, "xmc_app")
+        mock_creds.assert_called_once_with(self.valid_config)
         mock_restart.assert_called_once_with(self.valid_config)
 
     @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")

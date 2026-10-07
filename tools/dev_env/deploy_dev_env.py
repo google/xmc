@@ -635,6 +635,23 @@ def step_images(config: DeploymentConfig) -> None:
     build_and_push_images(config)
 
 
+def _fetch_cluster_credentials(config: DeploymentConfig) -> None:
+    """Fetches kubectl credentials for the target GKE cluster."""
+    cluster_name = config.gke_cluster
+    log_info(f"Fetching kubectl credentials for GKE cluster '{cluster_name}'...")
+    run_command(
+        [
+            "gcloud",
+            "container",
+            "clusters",
+            "get-credentials",
+            cluster_name,
+            f"--region={config.region}",
+            f"--project={config.project_id}",
+        ]
+    )
+
+
 def step_app(
     config: DeploymentConfig,
     dns_project: str,
@@ -656,6 +673,7 @@ def step_app(
     log_success("XMC application Helm release deployed successfully.")
     if restart_deployments:
         log_info("Spanner migrations were applied; rolling service deployments...")
+        _fetch_cluster_credentials(config)
         step_restart(config)
 
 
@@ -744,19 +762,7 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
         dns_project: GCP Project ID hosting the DNS zone (unused).
         dns_zone: Cloud DNS Managed Zone name (unused).
     """
-    cluster_name = config.gke_cluster
-    log_info(f"Fetching kubectl credentials for GKE cluster '{cluster_name}'...")
-    run_command(
-        [
-            "gcloud",
-            "container",
-            "clusters",
-            "get-credentials",
-            cluster_name,
-            f"--region={config.region}",
-            f"--project={config.project_id}",
-        ]
-    )
+    _fetch_cluster_credentials(config)
 
     log_info("Running verification script...")
     env_vars = {
@@ -779,6 +785,39 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
     log_success("XMC environment deployed and verified.")
 
 
+def _build_resume_cmd(
+    args: argparse.Namespace,
+    current_step: str,
+    *,
+    skip_migrations: bool,
+) -> str:
+    """Constructs the suggested command to resume a failed deployment."""
+    dns_args = f"--dns-project {args.dns_project} --dns-zone {args.dns_zone} "
+    resume_cmd = f"python3 tools/dev_env/deploy_dev_env.py --config {args.config} {dns_args}"
+    if skip_migrations:
+        resume_cmd += "--skip-migrations "
+    if args.only:
+        resume_cmd += f"--only {current_step}"
+    else:
+        resume_cmd += f"--start-from {current_step}"
+    return resume_cmd
+
+
+def _print_deployment_summary(config: DeploymentConfig) -> None:
+    """Prints the post-deployment summary banner."""
+    print(f"\n{GREEN}" + "=" * 56 + f"{NC}")
+    print(f"{GREEN}Deployment Completed Successfully!{NC}")
+    print(f"{GREEN}" + "=" * 56 + f"{NC}")
+    env = config.environment
+    dom = config.domain_name
+    print(f"Final URL: {BOLD}https://{env}.{dom}{NC}")
+    print()
+    print(f"{BOLD}Post-Deployment Action Required (OAuth Setup):{NC}")
+    print("Add this redirect URI in your GCloud Console OAuth Client ID config:")
+    print(f"  - {BOLD}https://{env}.{dom}/api/callback{NC}")
+    print(f"{GREEN}" + "=" * 56 + f"{NC}")
+
+
 def run_deployment(args: argparse.Namespace) -> None:
     """Executes the GKE deployment pipeline.
 
@@ -787,8 +826,6 @@ def run_deployment(args: argparse.Namespace) -> None:
           dns_zone, start_from, only.
     """
     config = load_and_validate_config(args.config)
-
-    # Run validations (corresponds to run_checks in bash)
     run_checks(config, args.dns_project, args.dns_zone)
 
     migrations_applied = False
@@ -803,7 +840,6 @@ def run_deployment(args: argparse.Namespace) -> None:
             return
         migrations_applied = step_migrate(config)
 
-    # Define step mapping
     step_map = {
         "check": lambda: step_check(config, args.dns_project, args.dns_zone),
         "compile": lambda: step_compile(config, args.dns_project, args.dns_zone, args.config),
@@ -823,12 +859,10 @@ def run_deployment(args: argparse.Namespace) -> None:
         "verify": lambda: step_verify(config, args.dns_project, args.dns_zone),
     }
 
-    # Determine execution list
     if args.only:
         execution_steps = [args.only]
     elif args.start_from:
-        start_index = STEPS.index(args.start_from)
-        execution_steps = STEPS[start_index:]
+        execution_steps = STEPS[STEPS.index(args.start_from) :]
     else:
         execution_steps = STEPS
 
@@ -839,30 +873,12 @@ def run_deployment(args: argparse.Namespace) -> None:
             step_map[step]()
     except Exception as e:
         log_error(f"Command failed during step '{current_step}': {e}")
-        dns_args = f"--dns-project {args.dns_project} --dns-zone {args.dns_zone} "
-        # Suggest resume command
-        resume_cmd = f"python3 tools/dev_env/deploy_dev_env.py --config {args.config} {dns_args}"
-        if args.only:
-            resume_cmd += f"--only {current_step}"
-        else:
-            resume_cmd += f"--start-from {current_step}"
-
+        resume_cmd = _build_resume_cmd(args, current_step, skip_migrations=skip_migrations)
         print(f"\n{RED}You can resume from this step using:{NC}")
         print(f"  {BOLD}{resume_cmd}{NC}\n")
         sys.exit(1)
 
-    # Print success message if all steps executed succeeded
-    print(f"\n{GREEN}" + "=" * 56 + f"{NC}")
-    print(f"{GREEN}Deployment Completed Successfully!{NC}")
-    print(f"{GREEN}" + "=" * 56 + f"{NC}")
-    env = config.environment
-    dom = config.domain_name
-    print(f"Final URL: {BOLD}https://{env}.{dom}{NC}")
-    print()
-    print(f"{BOLD}Post-Deployment Action Required (OAuth Setup):{NC}")
-    print("Add this redirect URI in your GCloud Console OAuth Client ID config:")
-    print(f"  - {BOLD}https://{env}.{dom}/api/callback{NC}")
-    print(f"{GREEN}" + "=" * 56 + f"{NC}")
+    _print_deployment_summary(config)
 
 
 def main(argv: list[str] | None = None) -> None:
