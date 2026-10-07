@@ -806,26 +806,11 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env._fetch_cluster_credentials")
     @patch("tools.dev_env.deploy_dev_env.run_gcluster_deploy")
     @patch("tools.dev_env.deploy_dev_env.step_restart")
-    def test_step_app_without_restart(self, mock_restart, mock_gcluster, mock_creds):
+    def test_step_app_triggers_restart(self, mock_restart, mock_gcluster, mock_creds):
         deploy_dev_env.step_app(
             self.valid_config,
             self.dns_project,
             self.dns_zone,
-            restart_deployments=False,
-        )
-        mock_gcluster.assert_called_once_with(self.valid_config.deployment_name, "xmc_app")
-        mock_creds.assert_not_called()
-        mock_restart.assert_not_called()
-
-    @patch("tools.dev_env.deploy_dev_env._fetch_cluster_credentials")
-    @patch("tools.dev_env.deploy_dev_env.run_gcluster_deploy")
-    @patch("tools.dev_env.deploy_dev_env.step_restart")
-    def test_step_app_with_restart(self, mock_restart, mock_gcluster, mock_creds):
-        deploy_dev_env.step_app(
-            self.valid_config,
-            self.dns_project,
-            self.dns_zone,
-            restart_deployments=True,
         )
         mock_gcluster.assert_called_once_with(self.valid_config.deployment_name, "xmc_app")
         mock_creds.assert_called_once_with(self.valid_config)
@@ -861,7 +846,7 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_app")
     @patch("tools.dev_env.deploy_dev_env.step_verify")
-    def test_run_deployment_triggers_restart_on_migration(
+    def test_run_deployment_migrate_and_app(
         self,
         mock_verify,
         mock_app,
@@ -870,7 +855,6 @@ image_tag: latest
         mock_load_config,
     ):
         mock_load_config.return_value = self.valid_config
-        mock_migrate.return_value = True
         deploy_dev_env.main(
             [
                 "--config",
@@ -883,8 +867,8 @@ image_tag: latest
                 "migrate",
             ]
         )
-        mock_migrate.assert_called_once()
-        mock_app.assert_called_once_with(self.valid_config, "p", "z", restart_deployments=True)
+        mock_migrate.assert_called_once_with(self.valid_config)
+        mock_app.assert_called_once_with(self.valid_config, "p", "z")
         mock_verify.assert_called_once()
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
