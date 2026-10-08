@@ -58,9 +58,10 @@ PASSED_STATUSES = frozenset({"PASSED", "FLAKY"})
 # Test statuses of targets that never ran, e.g. because the build failed first.
 NOT_RUN_STATUSES = frozenset({"NO_STATUS", "TOOL_HALTED_BEFORE_TESTING"})
 
-# The variable and default address that internal/storage/spanner/emulator dials.
+# The variable and default addresses that internal/storage/spanner/emulator dials.
 EMULATOR_HOST_ENV = "SPANNER_EMULATOR_HOST"
 DEFAULT_EMULATOR_HOST = "localhost:9010"
+DEFAULT_EMULATOR_HOSTS = frozenset({DEFAULT_EMULATOR_HOST, "127.0.0.1:9010"})
 EMULATOR_CONNECT_TIMEOUT_SECONDS = 1.0
 
 # CI actions of the suites that run outside Bazel, keyed by the resolver output selecting them.
@@ -175,11 +176,13 @@ def build_bazel_test_command(
     """Builds the `bazel test` command line with the CI test flags and a BEP JSON file.
 
     extra_flags follow the defaults, so they win wherever Bazel keeps the last value. Bazel
-    runs tests without the client environment, so a set SPANNER_EMULATOR_HOST is passed on
-    with --test_env.
+    runs tests without the client environment, and internal/storage/spanner/emulator dials
+    localhost:9010 by default, so --test_env is passed only when SPANNER_EMULATOR_HOST points
+    to a non-default address (preserving remote cache hits and sandbox hermeticity).
     """
     emulator_host = env.get(EMULATOR_HOST_ENV)
-    test_env = [f"--test_env={EMULATOR_HOST_ENV}={emulator_host}"] if emulator_host else []
+    has_custom_host = bool(emulator_host and emulator_host not in DEFAULT_EMULATOR_HOSTS)
+    test_env = [f"--test_env={EMULATOR_HOST_ENV}={emulator_host}"] if has_custom_host else []
     bep_flag = f"--build_event_json_file={bep_path}"
     return ["bazel", "test", *BAZEL_TEST_FLAGS, *test_env, bep_flag, *extra_flags, "--", *targets]
 
@@ -204,42 +207,55 @@ def summarize_statuses(
     return passed, failed, not_run
 
 
+def _nested_dict(mapping: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    """Returns mapping[key] if it is a mapping, or an empty dict otherwise."""
+    value = mapping.get(key)
+    return value if isinstance(value, Mapping) else {}
+
+
 def read_build_events(bep_path: Path) -> list[dict[str, Any]]:
     """Returns the events of a Build Event Protocol JSON file, skipping malformed lines."""
     lines = bep_path.read_text(encoding="utf-8").splitlines() if bep_path.exists() else []
     events = []
     for line in filter(str.strip, lines):
         try:
-            events.append(json.loads(line))
+            parsed = json.loads(line)
         except json.JSONDecodeError:  # e.g. the last line of an interrupted Bazel run
             log_info(f"Skipped a malformed line of {bep_path}.", stream=sys.stderr)
+            continue
+        if isinstance(parsed, dict):
+            events.append(parsed)
     return events
 
 
 def read_test_outcome(bep_path: Path, exit_code: int) -> BazelTestOutcome:
-    """Reads the outcome of a `bazel test` run from its Build Event Protocol JSON file.
-
-    Targets that failed to build get no testSummary event, only an unsuccessful
-    targetCompleted event; loading and analysis errors arrive as aborted events.
-    """
+    """Reads the outcome of a `bazel test` run from its Build Event Protocol JSON file."""
     statuses: dict[str, str] = {}
     failed_logs: dict[str, list[str]] = {}
     build_errors: list[str] = []
     exit_name = "UNKNOWN"
     for event in read_build_events(bep_path):
-        event_id = event.get("id", {})
-        if "testSummary" in event:
-            label, summary = event_id["testSummary"]["label"], event["testSummary"]
-            statuses[label] = summary.get("overallStatus", "NO_STATUS")
-            failed_logs[label] = [file_uri_to_path(f["uri"]) for f in summary.get("failed", [])]
-        elif "completed" in event and not event["completed"].get("success"):
-            statuses.setdefault(event_id["targetCompleted"]["label"], "FAILED_TO_BUILD")
-        elif description := event.get("aborted", {}).get("description"):
+        event_id = _nested_dict(event, "id")
+        if summary := _nested_dict(event, "testSummary"):
+            if label := _nested_dict(event_id, "testSummary").get("label"):
+                statuses[label] = summary.get("overallStatus") or "NO_STATUS"
+                failed = summary.get("failed")
+                failed_logs[label] = [
+                    file_uri_to_path(f["uri"])
+                    for f in (failed if isinstance(failed, list) else ())
+                    if isinstance(f, Mapping) and isinstance(f.get("uri"), str)
+                ]
+        elif "completed" in event and not _nested_dict(event, "completed").get("success"):
+            if label := _nested_dict(event_id, "targetCompleted").get("label"):
+                statuses.setdefault(label, "FAILED_TO_BUILD")
+        elif description := _nested_dict(event, "aborted").get("description"):
             build_errors.append(description)
-        elif "finished" in event:
-            exit_name = event["finished"].get("exitCode", {}).get("name", exit_name)
-    passed, failed, not_run = summarize_statuses(statuses, failed_logs)
-    return BazelTestOutcome(exit_code, exit_name, passed, failed, not_run, tuple(build_errors))
+        elif finished := _nested_dict(event, "finished"):
+            exit_name = _nested_dict(finished, "exitCode").get("name") or exit_name
+    passed, failed_targets, not_run = summarize_statuses(statuses, failed_logs)
+    return BazelTestOutcome(
+        exit_code, exit_name, passed, failed_targets, not_run, tuple(build_errors)
+    )
 
 
 def run_bazel_tests(

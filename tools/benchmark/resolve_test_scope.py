@@ -565,12 +565,11 @@ def _changed_bazel_packages(files: list[str], cwd: Path | None) -> set[str] | No
             continue
 
         pkg = find_enclosing_bazel_package(clean_f, cwd=cwd)
-        if not is_code_or_build and pkg in {None, "//"}:
+        if pkg is None or (not is_code_or_build and pkg == "//"):
             warn_full_backend_fallback(f"{clean_f} is not inside a Bazel package")
             return None
-        if pkg:
-            pkg_target = f"{pkg}:all" if pkg != "//" else "//:all"
-            changed_pkgs.add(pkg_target)
+        pkg_target = f"{pkg}:all" if pkg != "//" else "//:all"
+        changed_pkgs.add(pkg_target)
     return changed_pkgs
 
 
