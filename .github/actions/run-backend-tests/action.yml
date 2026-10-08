@@ -56,7 +56,7 @@ runs:
       if: steps.classify.outputs.run_backend == 'true'
       id: 'scope'
       shell: bash
-      run: python3 tools/benchmark/resolve_test_scope.py
+      run: python3 tools/benchmark/resolve_test_scope.py --repository-cache "${HOME}/.cache/bazel-repo"
 
     - name: 'Verify Spanner Emulator Endpoint'
       if: steps.scope.outputs.run_backend == 'true'
