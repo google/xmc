@@ -37,7 +37,9 @@ type mockCMS struct {
 	state                   componentspb.ComponentState
 	// componentGen is the CMS generation returned by SetComponentIntent; 0 echoes the requested
 	// spec.generation (at least 1), as CMS does for unsourced intents.
-	componentGen  int64
+	componentGen int64
+	// componentID is the CMS ComponentId returned by SetComponentIntent; 0 returns none.
+	componentID   int64
 	lastSetReq    *componentspb.SetComponentIntentRequest
 	lastObsReq    *componentspb.UpdateObservedGenerationRequest
 	setCalls      int
@@ -60,7 +62,7 @@ func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetCo
 		gen = max(in.GetSpec().GetGeneration(), 1)
 	}
 	return &componentspb.SetComponentIntentResponse{
-		Component: &componentspb.Component{Name: in.GetName(), Spec: &componentspb.ComponentSpec{Generation: gen}, Status: &componentspb.ComponentAccessStatus{State: s}},
+		Component: &componentspb.Component{ComponentId: m.componentID, Name: in.GetName(), Spec: &componentspb.ComponentSpec{Generation: gen}, Status: &componentspb.ComponentAccessStatus{State: s}},
 	}, nil
 }
 

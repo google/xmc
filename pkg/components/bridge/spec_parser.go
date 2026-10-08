@@ -250,6 +250,16 @@ func ParseComponentGeneration(statusObj any) int64 {
 	return extractInt(statusMap, "componentGeneration")
 }
 
+// ParseComponentID returns status.componentId (the CMS ComponentId in decimal) from the .status
+// map, or "" when it is absent.
+func ParseComponentID(statusObj any) string {
+	statusMap, ok := statusObj.(map[string]any)
+	if !ok {
+		return ""
+	}
+	return extractStr(statusMap, "componentId")
+}
+
 // ParseWrapperRef extracts WrapperRef from unstructured custom resource spec map.
 // Target coordinates are resolved by parseWrapperRef so their key aliases are defined once.
 func ParseWrapperRef(specObj any, defaultNamespace string) WrapperRef {

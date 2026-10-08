@@ -16,11 +16,14 @@ package bridge
 
 import (
 	"context"
+	"errors"
+	"strconv"
 	"testing"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	cmsserver "xmanager_cloud/pkg/components/cms"
@@ -163,6 +166,7 @@ func TestReconcileComponent_RecreatedCustomResource(t *testing.T) {
 	}
 	original.Generation = 4
 	original.ComponentGeneration = first.Generation
+	original.ComponentID = strconv.FormatInt(first.ComponentID, 10)
 	original.Spec.Version = "1.2.3"
 	res, err := r.ReconcileComponent(ctx, original)
 	if err == nil {
@@ -171,8 +175,8 @@ func TestReconcileComponent_RecreatedCustomResource(t *testing.T) {
 	if got := findCondition(res.Conditions, ConditionTypeReady); got == nil || got.Reason != ReasonStaleIntent {
 		t.Errorf("Ready condition = %+v, want reason %q", got, ReasonStaleIntent)
 	}
-	if res.ComponentGeneration != first.Generation {
-		t.Errorf("ComponentGeneration after stale intent = %d, want unchanged %d", res.ComponentGeneration, first.Generation)
+	if res.ComponentGeneration != first.Generation || res.ComponentID != original.ComponentID {
+		t.Errorf("(ComponentGeneration, ComponentID) after stale intent = (%d, %q), want unchanged (%d, %q)", res.ComponentGeneration, res.ComponentID, first.Generation, original.ComponentID)
 	}
 }
 
@@ -184,6 +188,8 @@ func sourcedRedpandaInput(uid string, created time.Time, gen int64) ReconcileCom
 	}
 }
 
+// reconcileAndGetRecord runs one pass for in and returns the CMS record, checking that the result
+// reports its generation and ComponentId.
 func reconcileAndGetRecord(ctx context.Context, t *testing.T, r *Reconciler, ms *store.MemoryStore, in ReconcileComponentInput) *store.ComponentRecord {
 	t.Helper()
 	res, err := r.ReconcileComponent(ctx, in)
@@ -194,8 +200,60 @@ func reconcileAndGetRecord(ctx context.Context, t *testing.T, r *Reconciler, ms 
 	if err != nil {
 		t.Fatalf("GetComponent() error = %v", err)
 	}
-	if res.ComponentGeneration != rec.Generation {
-		t.Errorf("ComponentGeneration = %d, want CMS generation %d", res.ComponentGeneration, rec.Generation)
+	if want := strconv.FormatInt(rec.ComponentID, 10); res.ComponentGeneration != rec.Generation || res.ComponentID != want {
+		t.Errorf("(ComponentGeneration, ComponentID) = (%d, %q), want CMS (%d, %q)", res.ComponentGeneration, res.ComponentID, rec.Generation, want)
 	}
 	return rec
+}
+
+// TestReconcileComponent_ComponentIDPropagation checks that a pass reports the ComponentId CMS
+// returns for a committed intent, and otherwise carries over status.componentId unchanged.
+func TestReconcileComponent_ComponentIDPropagation(t *testing.T) {
+	spec := func(deps ...string) *componentspb.ComponentSpec {
+		return &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: deps}
+	}
+	cycle := NewDependencySnapshot([]unstructured.Unstructured{
+		readyComponent("ingestion", withDependencies("redpanda")),
+		readyComponent("redpanda", withDependencies("ingestion")),
+	})
+	tests := []struct {
+		name    string
+		cms     *mockCMS
+		mutate  func(in *ReconcileComponentInput)
+		wantErr bool
+		want    string
+	}{
+		{name: "replaced by the committed intent", cms: &mockCMS{componentID: 2}, want: "2"},
+		{name: "kept when the intent write fails", cms: &mockCMS{componentID: 2, setErr: errors.New("cms unavailable")}, wantErr: true, want: "1"},
+		{
+			name: "kept while gated on a dependency cycle", cms: &mockCMS{componentID: 2}, want: "1",
+			mutate: func(in *ReconcileComponentInput) { in.Spec, in.Dependencies = spec("redpanda"), cycle },
+		},
+		{
+			name: "kept on deletion", cms: &mockCMS{componentID: 2}, want: "1",
+			mutate: func(in *ReconcileComponentInput) { in.IsDeleting = true },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := NewReconciler(tt.cms, nil, &mockHelm{})
+			if err != nil {
+				t.Fatalf("NewReconciler() error = %v", err)
+			}
+			in := ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec(),
+				HasFinalizer: true, Enabled: true, ComponentID: "1",
+			}
+			if tt.mutate != nil {
+				tt.mutate(&in)
+			}
+			res, err := r.ReconcileComponent(context.Background(), in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ReconcileComponent() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if res.ComponentID != tt.want {
+				t.Errorf("ReconcileComponent() ComponentID = %q, want %q", res.ComponentID, tt.want)
+			}
+		})
+	}
 }

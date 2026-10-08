@@ -86,6 +86,7 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 		res := &ReconcileResult{
 			ObservedGeneration:  5,
 			ComponentGeneration: 2,
+			ComponentID:         "6200370836252645701",
 			State:               componentsv1alpha1.ComponentState_COMPONENT_STATE_ENABLED,
 			Access: &AccessStatus{
 				EnvVars: map[string]string{"DB_HOST": "clickhouse.xmc.svc"},
@@ -105,6 +106,7 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 		want := ComponentStatus{
 			ObservedGeneration:  5,
 			ComponentGeneration: 2,
+			ComponentID:         "6200370836252645701",
 			State:               "COMPONENT_STATE_ENABLED",
 			Access:              &ComponentAccess{EnvVars: map[string]string{"DB_HOST": "clickhouse.xmc.svc"}},
 			Conditions: []ComponentCondition{
@@ -123,7 +125,7 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 		}
 
 		gotMap := BuildStatusMap(res)
-		if gotMap["state"] != "COMPONENT_STATE_ENABLED" || gotMap["observedGeneration"] != int64(5) || gotMap["componentGeneration"] != int64(2) {
+		if gotMap["state"] != "COMPONENT_STATE_ENABLED" || gotMap["observedGeneration"] != int64(5) || gotMap["componentGeneration"] != int64(2) || gotMap["componentId"] != "6200370836252645701" {
 			t.Errorf("unexpected BuildStatusMap output: %v", gotMap)
 		}
 	})

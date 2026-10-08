@@ -52,13 +52,15 @@ graph TD
 When WorkUnits depend on reusable XMC components (such as storage drivers, monitoring agents, or sidecars), the Actuator inspects and resolves component configurations during JobSet construction:
 
 ### 1. Snapshot Discovery
-Actuator inspects the `xmc.dev/component-snapshots` annotation on the JobSet specification. This annotation contains a JSON map of component names to locked generations:
+Actuator inspects the `xmc.dev/component-snapshots` annotation on the JobSet specification. This annotation contains a JSON map of component names to snapshot entries. An entry is either a bare locked generation or an object that also locks the incarnation by CMS `ComponentId`:
 ```json
 {
   "metrics-collector": 2,
-  "storage-driver": 1
+  "storage-driver": {"generation": 1, "componentId": "6200370836252645701"}
 }
 ```
+`componentId` should be a decimal string: IDs exceed the 2^53 integer precision of most JSON tooling. A JSON integer is accepted too. An absent, `null` or empty `componentId` locks no incarnation; any other value that is not a positive 64-bit integer fails annotation parsing, as does an object with keys other than `generation` and `componentId` (so a misspelled key fails loudly instead of locking nothing). Producers should write the object form so that incarnation drift is detected (see below). No component in this repository writes the annotation yet; it is supplied by the client that submits the WorkUnit.
+
 If the annotation is absent or empty, component evaluation is bypassed and standard JobSet construction proceeds.
 
 ### 2. Controller-Runtime Component Lookup
@@ -73,15 +75,16 @@ For each required component, Actuator validates operational readiness:
 - **Disabled State**: If `spec.enabled == false` or `status.state` is `COMPONENT_STATE_DISABLED`, `COMPONENT_STATE_DISABLING`, or `COMPONENT_STATE_DELETED`, returns `apierrors.NewServiceUnavailable`.
 - **Unhealthy Conditions**: If conditions report `Ready != "True"` (including missing conditions or `Ready == "False"`), or `Degraded == "True"`, placement is blocked with `apierrors.NewServiceUnavailable`.
 
-### 4. Generation Drift Detection
-If the component is healthy and enabled, but its CMS component generation (`status.componentGeneration`, or `status.observedGeneration` for statuses written by a bridge that predates `componentGeneration`) differs from the `lockedGeneration` in the snapshot (CMS orders intents by Component object epoch, so the CMS generation is independent of `metadata.generation`):
+### 4. Drift Detection
+If the component is healthy and enabled, Actuator compares it with the snapshot entry:
+- **Incarnation**: when the entry locks a `componentId` and the Component reports `status.componentId`, differing IDs mean the component was deleted and re-registered after the snapshot was locked, even if the generation matches. Actuator logs `"Component incarnation drift detected"`. When either ID is unknown (a bare-generation entry, or a status written by a bridge that predates `componentId`), only the generation is compared.
+- **Generation**: when the CMS component generation (`status.componentGeneration`, or `status.observedGeneration` for statuses written by a bridge that predates `componentGeneration`) differs from the locked generation (CMS orders intents by Component object epoch, so the CMS generation is independent of `metadata.generation`), Actuator logs `"Component generation drift detected"`. A locked generation `<= 0` locks none.
+
+On drift:
 - Placement is **not blocked**.
-- Actuator logs a warning (`"Component generation drift detected"`).
-- Actuator attaches the `xmc.dev/component-drift-warning` annotation to the synthesized JobSet.
+- Actuator attaches the `xmc.dev/component-drift-warning` annotation to the synthesized JobSet, with one `; `-separated detail per mismatch.
 
-**Rollout**: roll out the Actuator with or before the bridge that writes `status.componentGeneration`. An older Actuator compares `status.observedGeneration` (the CR generation) with the CMS generation and attaches harmless but false drift-warning annotations until it is upgraded.
-
-**Limitation**: the check compares generations only. A snapshot locked on an earlier incarnation of a re-registered component at the same generation is not reported as drift; comparing the ComponentId needs the bridge to persist it in the Component status (follow-up).
+**Rollout**: roll out the Actuator with or before the bridge that writes `status.componentGeneration`. An older Actuator compares `status.observedGeneration` (the CR generation) with the CMS generation and attaches harmless but false drift-warning annotations until it is upgraded. An older Actuator rejects object-form snapshot entries as malformed, so roll out the Actuator before producers switch to the object form.
 
 ### 5. Environment Variable Injection
 Once components pass the placement gate, Actuator resolves runtime configurations from `status.access`:

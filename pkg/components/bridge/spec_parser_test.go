@@ -135,6 +135,19 @@ func TestParseHelpers(t *testing.T) {
 			t.Errorf("ParseComponentGeneration(%v) = %d, want %d", tc.status, got, tc.want)
 		}
 	}
+
+	for _, tc := range []struct {
+		status any
+		want   string
+	}{
+		{status: map[string]any{"componentId": "6200370836252645701"}, want: "6200370836252645701"},
+		{status: map[string]any{"componentGeneration": int64(3)}, want: ""},
+		{status: nil, want: ""},
+	} {
+		if got := ParseComponentID(tc.status); got != tc.want {
+			t.Errorf("ParseComponentID(%v) = %q, want %q", tc.status, got, tc.want)
+		}
+	}
 }
 
 func TestParseSpecFromUnstructured_Dependencies(t *testing.T) {

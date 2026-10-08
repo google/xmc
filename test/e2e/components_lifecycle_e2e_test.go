@@ -18,6 +18,7 @@ import (
 	"cmp"
 	"context"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -110,8 +111,8 @@ func assertComponentsDisabled(ctx context.Context, t *testing.T, h *kindClusterH
 }
 
 // assertCMSComponent verifies that the CMS record of the Component u is in wantState, records u at
-// its current generation as the intent source, and has the generation reported in
-// status.componentGeneration. It returns the record.
+// its current generation as the intent source, and has the generation and ComponentId reported in
+// status.componentGeneration and status.componentId. It returns the record.
 func assertCMSComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, u *unstructured.Unstructured, wantState componentspb.ComponentState) *store.ComponentRecord {
 	t.Helper()
 	rec, err := h.cmsServer.Store().GetComponent(ctx, u.GetName())
@@ -121,6 +122,9 @@ func assertCMSComponent(ctx context.Context, t *testing.T, h *kindClusterHarness
 	componentGen, _, _ := unstructured.NestedInt64(u.Object, "status", "componentGeneration")
 	if rec.State != wantState || rec.Generation != componentGen {
 		t.Errorf("%s CMS state = %v, generation = %d; want %v, status.componentGeneration %d", u.GetName(), rec.State, rec.Generation, wantState, componentGen)
+	}
+	if componentID, _, _ := unstructured.NestedString(u.Object, "status", "componentId"); componentID != strconv.FormatInt(rec.ComponentID, 10) {
+		t.Errorf("%s status.componentId = %q, want CMS ComponentId %d", u.GetName(), componentID, rec.ComponentID)
 	}
 	if src := rec.Source; src == nil || src.UID != string(u.GetUID()) || src.Generation != u.GetGeneration() {
 		t.Errorf("%s CMS source = %+v, want UID %q at generation %d", u.GetName(), rec.Source, u.GetUID(), u.GetGeneration())
