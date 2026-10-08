@@ -58,6 +58,18 @@ runs:
       shell: bash
       run: python3 tools/benchmark/resolve_test_scope.py
 
+    - name: 'Check Protobuf Breaking-Change Coverage'
+      if: steps.scope.outputs.run_backend == 'true'
+      shell: bash
+      # Every .proto of an //api proto_library must be checked by //api:protos_breaking_test.
+      run: |
+        uncovered="$(bazel query --noimplicit_deps --repository_cache="${HOME}/.cache/bazel-repo" \
+          'labels(srcs, kind(proto_library, //api/...)) except labels(srcs, deps(//api:protos_breaking_test, 1))')"
+        if [[ -n "${uncovered}" ]]; then
+          echo "::error::Add the proto_library of these files to _PROTOS in api/BUILD.bazel: ${uncovered//$'\n'/ }"
+          exit 1
+        fi
+
     - name: 'Verify Spanner Emulator Endpoint'
       if: steps.scope.outputs.run_backend == 'true'
       env:
