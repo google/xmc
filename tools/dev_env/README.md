@@ -438,7 +438,7 @@ If a deployment fails or times out during `dev_env up` or Helm upgrade:
 
 ## Smart Change Detection & Fast Reload Architecture
 
-The `ChangeDetector` module inspects the active git working tree and staged diffs (`git status --porcelain`, `git diff --name-only HEAD`) and maps modified paths to affected microservices:
+The `ChangeDetector` module lists modified files with the shared `tools/common/changed_files.py` module (committed, staged, and unstaged changes relative to the merge base of `--base-ref` and `HEAD`, or relative to `HEAD` when `--base-ref` is unset, plus untracked files that git does not ignore) and maps modified paths to affected microservices:
 
 ### Path Mapping Rules
 - `cmd/experiment_state_server/**`, `internal/storage/spanner/**`, `api/protos/experiment/**` $\rightarrow$ `experiment_state_server`

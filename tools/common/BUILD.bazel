@@ -45,6 +45,25 @@ py_test(
 )
 
 py_library(
+    name = "changed_files",
+    srcs = ["changed_files.py"],
+    imports = ["../.."],
+    deps = [
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "changed_files_test",
+    srcs = ["changed_files_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":changed_files",
+        ":tool_utils",
+    ],
+)
+
+py_library(
     name = "build_oci_lib",
     srcs = ["build_oci.py"],
     imports = ["../.."],
