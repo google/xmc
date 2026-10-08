@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import 'jasmine';
-
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import { StatusOption } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';

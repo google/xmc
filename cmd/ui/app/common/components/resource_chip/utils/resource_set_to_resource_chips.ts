@@ -11,11 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { numBytesToString } from 'javascript/closure/format/format';
-import { MessageFormat } from 'javascript/closure/i18n/messageformat';
-import { declareIcuTemplate } from 'javascript/closure/i18n/messages';
-import { NumberFormat } from 'javascript/closure/i18n/numberformat';
-
 import { ResourceSet } from 'xmanager_cloud/experiment_state_server/proto/resources.jsonpb_decls';
 
 import { ResourceType } from '../resource_chip';
@@ -26,21 +21,28 @@ export interface ResourceChipData {
   readonly text: string;
 }
 
-const MSG_CORE_COUNT_ICU = declareIcuTemplate(
-  `{NUM_CORES, plural,
-    =1 {{FORMATTED_CORES} core}
-    other {{FORMATTED_CORES} cores}}`,
-  {
-    description: 'Displays the count of cores, handling singular vs plural.',
-  },
-);
+const CORE_COUNT_FORMATTER = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 1,
+});
+
+const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'] as const;
+
+function formatCoreCount(cores: number): string {
+  const formatted = CORE_COUNT_FORMATTER.format(cores);
+  return cores === 1 ? `${formatted} core` : `${formatted} cores`;
+}
+
+function formatBytes(bytes: number): string {
+  if (isNaN(bytes) || bytes <= 0) {
+    return '0 B';
+  }
+  const k = 1024;
+  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), BYTE_UNITS.length - 1);
+  return `${parseFloat((bytes / Math.pow(k, unitIndex)).toFixed(2))} ${BYTE_UNITS[unitIndex]}`;
+}
 
 /** Converts a list of ResourceSet to a list of ResourceChipData. */
 export function resourceSetsToResourceChipsData(resources: ResourceSet[]): ResourceChipData[] {
-  const formatter = new NumberFormat(NumberFormat.Format.COMPACT_SHORT);
-  formatter.setMaximumFractionDigits(1);
-  const msg = new MessageFormat(MSG_CORE_COUNT_ICU);
-
   return resources.flatMap((res) => {
     const chips: ResourceChipData[] = [];
     if (res.cpuResources) {
@@ -48,11 +50,11 @@ export function resourceSetsToResourceChipsData(resources: ResourceSet[]): Resou
       chips.push(
         {
           resourceType: ResourceType.CPU,
-          text: msg.format({ NUM_CORES: cores, FORMATTED_CORES: formatter.format(cores) }),
+          text: formatCoreCount(cores),
         },
         {
           resourceType: ResourceType.MEMORY,
-          text: numBytesToString(Number(res.cpuResources.memoryBytes), 2),
+          text: formatBytes(Number(res.cpuResources.memoryBytes)),
         },
       );
     }

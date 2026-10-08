@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import 'jasmine';
-
 import { Url } from 'xmanager_cloud/experiment_state_server/proto/url.jsonpb_decls';
 
 import { EXPERIMENT_1, WORK_UNIT_1, WORK_UNIT_2 } from '../mock_data';

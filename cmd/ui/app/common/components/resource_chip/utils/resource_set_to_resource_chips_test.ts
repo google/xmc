@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import 'jasmine';
-
 import { ResourceSet } from 'xmanager_cloud/experiment_state_server/proto/resources.jsonpb_decls';
 
 import { ResourceType } from '../resource_chip';
@@ -66,6 +64,36 @@ describe('resourceSetsToResourceChipsData', () => {
     const expected: ResourceChipData[] = [
       { resourceType: ResourceType.CPU, text: '0 cores' },
       { resourceType: ResourceType.MEMORY, text: '256 B' },
+    ];
+    expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
+  });
+
+  it('should handle CPU resources with missing or negative memoryBytes', () => {
+    const resources: ResourceSet[] = [
+      { cpuResources: { cpuMillicores: '1000' } },
+      { cpuResources: { cpuMillicores: '1000', memoryBytes: '-1024' } },
+    ];
+    const expected: ResourceChipData[] = [
+      { resourceType: ResourceType.CPU, text: '1 core' },
+      { resourceType: ResourceType.MEMORY, text: '0 B' },
+      { resourceType: ResourceType.CPU, text: '1 core' },
+      { resourceType: ResourceType.MEMORY, text: '0 B' },
+    ];
+    expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
+  });
+
+  it('should cap memory unit at YB for extremely large memoryBytes', () => {
+    const resources: ResourceSet[] = [
+      {
+        cpuResources: {
+          cpuMillicores: '1000',
+          memoryBytes: String(Math.pow(1024, 9)),
+        },
+      },
+    ];
+    const expected: ResourceChipData[] = [
+      { resourceType: ResourceType.CPU, text: '1 core' },
+      { resourceType: ResourceType.MEMORY, text: '1024 YB' },
     ];
     expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
   });

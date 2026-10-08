@@ -1,7 +1,5 @@
 // Copyright 2026 Google LLC
 
-import 'jasmine';
-
 import { SafeHtml, unwrapHtml } from 'safevalues';
 
 import { HtmlSanitizerBuilder, trySanitizeUrl } from './safevalues_helper';
