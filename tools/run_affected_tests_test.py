@@ -249,10 +249,19 @@ class BazelTestCommandTest(unittest.TestCase):
             ],
         )
 
-    def test_passes_configured_emulator_address_to_tests(self):
-        env = {"SPANNER_EMULATOR_HOST": "127.0.0.1:9010"}
-        cmd = rat.build_bazel_test_command(["//a:a_test"], [], env, Path("/tmp/bep.json"))
-        self.assertIn("--test_env=SPANNER_EMULATOR_HOST=127.0.0.1:9010", cmd[: cmd.index("--")])
+    def test_passes_only_non_default_emulator_address_to_tests(self):
+        for default_host in ("localhost:9010", "127.0.0.1:9010"):
+            env = {"SPANNER_EMULATOR_HOST": default_host}
+            cmd = rat.build_bazel_test_command(["//a:a_test"], [], env, Path("/tmp/bep.json"))
+            self.assertFalse(any(a.startswith("--test_env=") for a in cmd), default_host)
+        custom_env = {"SPANNER_EMULATOR_HOST": "127.0.0.1:9020"}
+        custom_cmd = rat.build_bazel_test_command(
+            ["//a:a_test"], [], custom_env, Path("/tmp/bep.json")
+        )
+        self.assertIn(
+            "--test_env=SPANNER_EMULATOR_HOST=127.0.0.1:9020",
+            custom_cmd[: custom_cmd.index("--")],
+        )
 
 
 class ReadTestOutcomeTest(unittest.TestCase):
@@ -294,6 +303,22 @@ class ReadTestOutcomeTest(unittest.TestCase):
             ),
         )
         self.assertIn("Skipped a malformed line", stderr.getvalue())
+
+    def test_ignores_incomplete_or_non_dict_bep_event_shapes(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bep_path = Path(tmp_dir) / "bep.json"
+            write_build_events(
+                bep_path,
+                "[1, 2, 3]",
+                {"id": None, "testSummary": {"overallStatus": "PASSED"}},
+                {"id": {"testSummary": {}}, "testSummary": {"failed": ["not-a-dict", {}]}},
+                {"id": {"targetCompleted": None}, "completed": None},
+                {"id": {}, "aborted": None},
+                {"id": {}, "finished": {"exitCode": None}},
+                test_summary_event("//ok:ok_test", "PASSED"),
+            )
+            outcome = rat.read_test_outcome(bep_path, 0)
+        self.assertEqual(outcome.passed_targets, ("//ok:ok_test",))
 
     def test_missing_file_yields_unknown_outcome(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
