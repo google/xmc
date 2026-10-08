@@ -29,7 +29,6 @@ import (
 	"syscall"
 	"time"
 
-	google "go/google"
 	ingestiongateway "xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
 	"xmanager_cloud/test/metrics/infra"
 )
@@ -83,7 +82,6 @@ func locateSchemaFile() (string, error) {
 }
 
 func main() {
-	google.Init()
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)

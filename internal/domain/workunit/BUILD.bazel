@@ -22,7 +22,7 @@ compat_go_library(
     importpath = "xmanager_cloud/internal/domain/workunit",
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/proto",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -32,8 +32,8 @@ compat_go_test(
     embed = [":workunit"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/proto",
         "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

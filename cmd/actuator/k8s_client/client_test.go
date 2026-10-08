@@ -31,7 +31,7 @@ import (
 	dynamicfake "golang/k8s_io/client_go/v/v0_23/dynamic/fake/fake"
 	"golang/k8s_io/client_go/v/v0_23/rest/rest"
 	clientgotesting "golang/k8s_io/client_go/v/v0_23/testing/testing"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"

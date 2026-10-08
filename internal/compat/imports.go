@@ -46,8 +46,6 @@ import (
 	_ "golang.org/x/sync/errgroup"
 	_ "golang.org/x/text/runes"
 	_ "golang.org/x/text/transform"
-	_ "golang/grpc/metadata/metadata"
-	_ "golang/uuid/uuid"
 	_ "gomodules.xyz/jsonpatch/v2"
 	_ "google.golang.org/api/iamcredentials/v1"
 	_ "google.golang.org/api/iterator"

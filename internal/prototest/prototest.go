@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,24 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package uuid
+// Package prototest provides test utilities for working with Protocol Buffer messages.
+package prototest
 
-import "github.com/google/uuid"
+import "google.golang.org/protobuf/proto"
 
-type UUID = string
-
-func New() UUID {
-	return uuid.New().String()
-}
-
-func NewString() string {
-	return uuid.NewString()
-}
-
-func Parse(s string) (UUID, error) {
-	_, err := uuid.Parse(s)
-	if err != nil {
-		return "", err
+// Modify clones a proto message, applies a mutation function fn, and returns the modified clone.
+func Modify[T proto.Message](base T, fn func(T)) T {
+	if !base.ProtoReflect().IsValid() {
+		panic("prototest.Modify: base must not be nil")
 	}
-	return s, nil
+	cloned := proto.Clone(base).(T)
+	if fn != nil {
+		fn(cloned)
+	}
+	return cloned
 }

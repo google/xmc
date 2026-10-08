@@ -81,13 +81,6 @@ This will build the following targets:
   export XMC_ENV=dev # Optional, defaults to "dev"
   export BUILD_TAG=latest # Optional, defaults to "latest"
 
-### Compatibility Packages
-
-A set of compatibility packages is defined under `//internal/compat/...` to route legacy, Google-specific library imports back to standard public Go packages:
-- `protobuf/field_mask_go_proto` -> `google.golang.org/protobuf/types/known/fieldmaskpb`
-- `longrunning/operations_go_proto` -> `google.golang.org/genproto/googleapis/longrunning`
-- `grpc_proto/health_go_proto` -> `google.golang.org/grpc/health/grpc_health_v1`
-
 ---
 
 ## Custom AIP-160 Filter & Parser Engine

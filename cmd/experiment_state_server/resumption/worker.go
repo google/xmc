@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	"golang/uuid/uuid"
+	"github.com/google/uuid"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/kubernetes/common/constants"

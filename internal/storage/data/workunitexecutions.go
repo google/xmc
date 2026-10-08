@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"strings"
 
-	"golang/protobuf/v2/proto/proto"
-	fmpb "protobuf/field_mask_go_proto"
+	"google.golang.org/protobuf/proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	"task/go/status"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/state/state"

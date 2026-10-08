@@ -24,7 +24,7 @@ import (
 	"api/filter/go/queryfilterbase"
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	"googlesql/safesql/go/safesql"
 	"task/go/status"
 

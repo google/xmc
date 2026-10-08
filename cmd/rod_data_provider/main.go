@@ -28,7 +28,6 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/option"
 
-	"go/google"
 	gwruntime "golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/go_sync/errgroup/errgroup"
 	"golang/grpc/credentials/insecure/insecure"
@@ -50,7 +49,6 @@ import (
 )
 
 func main() {
-	google.Init()
 	flag.Parse()
 
 	cfg := LoadConfig()

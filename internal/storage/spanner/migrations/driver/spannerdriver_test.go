@@ -23,8 +23,8 @@ import (
 	"cloud_spanner_emulator/public/go/emulator"
 	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
 	"golang/cloud_google_com/go/spanner/v/v1/admin/instance/apiv1/instance"
-	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/reflect/protodesc/protodesc"
+	"google.golang.org/protobuf/proto"
 
 	emptypb "protobuf/empty_go_proto"
 	adminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"

@@ -26,7 +26,7 @@ import (
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/storage"
 
-	fieldmaskpb "protobuf/field_mask_go_proto"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "protobuf/timestamp_go_proto"
 )
 

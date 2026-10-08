@@ -35,7 +35,6 @@ compat_go_library(
         "//internal/auth",
         "//internal/broadcast",
         "//internal/common/health",
-        "//internal/compat/google",
         "//internal/configutil",
         "//internal/featureflags",
         "//internal/kubernetes/common/constants",

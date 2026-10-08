@@ -41,9 +41,9 @@ go_test(
         "//api/filter/go/filtervisitor",
         "//api/filter/go/queryfilterbase",
         "@com_github_google_go_cmp//cmp",
-        "//internal/compat/proto",
         "//internal/compat/safesql",
         "@com_google_cloud_go_spanner//:spanner",
         "//internal/compat/status",
+        "@org_golang_google_protobuf//proto",
     ],
 )

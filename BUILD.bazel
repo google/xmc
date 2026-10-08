@@ -32,11 +32,8 @@ nogo(
 # gazelle:resolve go rpc/status_go_proto @org_golang_google_genproto_googleapis_rpc//status
 # gazelle:resolve go spanner/admin/database/v1/spanner_database_admin_go_proto @org_golang_google_genproto//googleapis/spanner/admin/database/v1:database
 # gazelle:resolve go spanner/admin/instance/v1/spanner_instance_admin_go_proto @org_golang_google_genproto//googleapis/spanner/admin/instance/v1:instance
-# gazelle:resolve go golang/protobuf/v2/proto/proto //internal/compat/proto:proto
 # gazelle:resolve go golang/protobuf/v2/encoding/protojson/protojson @org_golang_google_protobuf//encoding/protojson
 # gazelle:resolve go golang/protobuf/v2/encoding/prototext/prototext @org_golang_google_protobuf//encoding/prototext
-# gazelle:resolve go golang/uuid/uuid //internal/compat/uuid:uuid
-# gazelle:resolve go golang/grpc/metadata/metadata //internal/compat/metadata:metadata
 # gazelle:resolve go golang/google_api/option/option @org_golang_google_api//option:option
 # gazelle:resolve go golang/google_api/iterator/iterator @org_golang_google_api//iterator:iterator
 # gazelle:resolve go golang/google_api/iamcredentials/v1/iamcredentials @org_golang_google_api//iamcredentials/v1:iamcredentials
@@ -55,9 +52,6 @@ nogo(
 # Compatibility wrapper package target mappings
 # gazelle:resolve go task/go/status //internal/compat/status:status
 # gazelle:resolve go googlesql/safesql/go/safesql //internal/compat/safesql:safesql
-# gazelle:resolve go protobuf/field_mask_go_proto //internal/compat/field_mask:field_mask
-# gazelle:resolve go longrunning/operations_go_proto //internal/compat/longrunning:longrunning
-# gazelle:resolve go grpc_proto/health_go_proto //internal/compat/health:health
 
 # Custom API Filter stack mappings
 # gazelle:resolve go api/filter/go/filtervisitor //api/filter/go/filtervisitor:filtervisitor
@@ -150,6 +144,7 @@ test_suite(
         "//internal/common/health:health_test",
         "//internal/kubernetes/common/labels:labels_test",
         "//internal/logging:logging_test",
+        "//internal/prototest:prototest_test",
         "//internal/query_generator/equalityvisitor:equalityvisitor_test",
         "//internal/query_generator/filter:filter_test",
         "//internal/query_generator/liststatement:liststatement_test",

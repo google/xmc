@@ -21,8 +21,6 @@ compat_go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/dashboard:messages_go_proto",
-        "//internal/compat/field_mask",
-        "//internal/compat/proto",
         "//internal/compat/status",
         "//internal/storage/spanner/schema/dashboardschema",
         "//internal/validator",
@@ -39,8 +37,6 @@ compat_go_test(
     embed = [":data"],
     deps = [
         "//api/protos/dashboard:messages_go_proto",
-        "//internal/compat/field_mask",
-        "//internal/compat/proto",
         "//internal/compat/status",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_protobuf//proto",

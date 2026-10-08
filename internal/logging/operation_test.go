@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang/grpc/metadata/metadata"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestInjectOperationIDProvided(t *testing.T) {

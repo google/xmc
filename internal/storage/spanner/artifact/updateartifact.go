@@ -22,7 +22,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"golang/godebug/diff/diff"
 	"golang/protobuf/v2/encoding/prototext/prototext"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"

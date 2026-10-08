@@ -26,8 +26,8 @@ import (
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 
-	"golang/protobuf/v2/proto/proto"
-	fmpb "protobuf/field_mask_go_proto"
+	"google.golang.org/protobuf/proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

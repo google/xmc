@@ -31,7 +31,6 @@ compat_go_library(
         "//api/protos/experiment:messages_go_proto",
         "//cmd/reconciler/hypercomputeclient",
         "//cmd/reconciler/shared",
-        "//internal/compat/field_mask",
         "//internal/kubernetes/common/constants",
         "//internal/kubernetes/common/jobsetutil",
         "//internal/kubernetes/common/labels",
@@ -54,6 +53,7 @@ compat_go_library(
         "@io_k8s_sigs_controller_runtime//pkg/reconcile",
         "@io_k8s_sigs_controller_runtime//pkg/source",
         "@io_k8s_sigs_jobset//api/jobset/v1alpha2",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
@@ -73,7 +73,6 @@ compat_go_test(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//cmd/reconciler/hypercomputeclient",
-        "//internal/compat/field_mask",
         "//internal/kubernetes/common/constants",
         "//internal/storage",
         "@com_github_google_go_cmp//cmp",
@@ -92,6 +91,7 @@ compat_go_test(
         "@io_k8s_sigs_jobset//api/jobset/v1alpha2",
         "@io_k8s_utils//ptr",
         "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

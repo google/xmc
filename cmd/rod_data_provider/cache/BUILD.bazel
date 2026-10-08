@@ -25,7 +25,6 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/rod_data_provider/cache",
     visibility = ["//visibility:public"],
     deps = [
-        "//internal/compat/google",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
     ],
 )

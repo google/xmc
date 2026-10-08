@@ -27,9 +27,9 @@ go_library(
     deps = [
         # keep
         "//internal/kubernetes/common/constants",
-        "//internal/compat/metadata",
-        "//internal/compat/uuid",
         "//internal/validator",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
@@ -42,8 +42,8 @@ go_test(
     ],
     embed = [":logging"],
     deps = [
-        "//internal/compat/metadata",
         "//internal/kubernetes/common/constants",
         "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_grpc//metadata",
     ],
 )

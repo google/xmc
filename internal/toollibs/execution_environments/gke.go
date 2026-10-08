@@ -22,7 +22,7 @@ import (
 	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
 	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"

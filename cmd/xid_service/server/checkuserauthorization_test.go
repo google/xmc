@@ -18,7 +18,7 @@ import (
 	"errors"
 	"testing"
 
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/storage/storage"

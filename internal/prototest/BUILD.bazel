@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,12 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//visibility:public"])
 
 go_library(
-    name = "flag",
-    srcs = ["flag.go"],
-    importpath = "xmanager_cloud/internal/compat/flag",
+    name = "prototest",
+    testonly = True,
+    srcs = ["prototest.go"],
+    importpath = "xmanager_cloud/internal/prototest",
+    deps = ["@org_golang_google_protobuf//proto"],
+)
+
+go_test(
+    name = "prototest_test",
+    srcs = ["prototest_test.go"],
+    deps = [
+        ":prototest",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb",
+    ],
 )

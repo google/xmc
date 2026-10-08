@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"strconv"
@@ -24,7 +25,6 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"go/google"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/task_queue_redis/redisclient"
 )
@@ -61,7 +61,7 @@ type testCase struct {
 }
 
 func main() {
-	google.Init()
+	flag.Parse()
 	ctx := context.Background()
 	os.Setenv("REDIS_PASSWORD", redisPassword)
 	redisConfig := redisclient.Config{

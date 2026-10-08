@@ -17,8 +17,8 @@ import (
 	"context"
 	"time"
 
-	"golang/protobuf/v2/proto/proto"
-	lropb "longrunning/operations_go_proto"
+	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"google.golang.org/protobuf/proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

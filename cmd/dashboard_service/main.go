@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	"go/google"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
@@ -37,8 +36,7 @@ import (
 	"golang/grpc/reflection/reflection"
 	"google.golang.org/api/cloudidentity/v1beta1"
 	"google.golang.org/api/option"
-	healthgrpc "grpc_proto/health_go_grpc"
-	healthpb "grpc_proto/health_go_proto"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"xmanager_cloud/cmd/dashboard_service/server"
@@ -349,7 +347,7 @@ func initGRPCServer(ctx context.Context, cfg *server.Config, repo server.Dashboa
 	reflection.Register(grpcServer)
 
 	healthServer := health.NewServer()
-	healthgrpc.RegisterHealthServer(grpcServer, healthServer)
+	healthpb.RegisterHealthServer(grpcServer, healthServer)
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("xmc.DashboardService", healthpb.HealthCheckResponse_SERVING)
 
@@ -429,7 +427,6 @@ func main() {
 }
 
 func run() int {
-	google.Init()
 	flag.Parse()
 
 	cfg := LoadConfig()

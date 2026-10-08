@@ -43,7 +43,7 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
    - Prefer default immutability (`const` in TypeScript, value receivers or immutable structs where applicable).
 2. **Decouple Mocks & Baseline Test Fixtures**:
    - Centralize shared helpers in global/shared packages.
-   - Define baseline test fixtures and express test cases as concise deltas (e.g., using `proto.Modify`).
+   - Define baseline test fixtures and express test cases as concise deltas (e.g., using `prototest.Modify`).
 3. **Open-Source Code TODOs**:
    - Ensure inline `TODO` comments in public packages use `TODO:` or public issue links `TODO(#123)`, avoiding internal bug IDs.
 

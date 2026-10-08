@@ -17,8 +17,8 @@ import (
 	"context"
 	"log/slog"
 
-	"golang/grpc/metadata/metadata"
-	"golang/uuid/uuid"
+	"github.com/google/uuid"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -50,7 +50,7 @@ func extractOperationID(ctx context.Context, id string) string {
 			return vals[0]
 		}
 	}
-	return uuid.New()
+	return uuid.NewString()
 }
 
 // OperationID returns the operation ID from the context if it exists.

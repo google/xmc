@@ -19,9 +19,9 @@ import (
 	"fmt"
 	"time"
 
+	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
-	"golang/uuid/uuid"
-	longrunningpb "longrunning/operations_go_proto"
+	"github.com/google/uuid"
 	anypb "protobuf/any_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -48,7 +48,7 @@ func (r *Repository) AddWorkUnitOperation(ctx context.Context, xid int64, wid in
 		}
 
 		operation = &longrunningpb.Operation{
-			Name:     validator.ConstructOperationName(xid, wid, uuid.New()),
+			Name:     validator.ConstructOperationName(xid, wid, uuid.NewString()),
 			Metadata: anyMetadata,
 			Done:     false,
 		}

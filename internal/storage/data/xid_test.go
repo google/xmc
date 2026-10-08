@@ -18,7 +18,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	fmpb "protobuf/field_mask_go_proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	pb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

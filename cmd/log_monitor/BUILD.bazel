@@ -31,7 +31,6 @@ compat_go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/common/health",
-        "//internal/compat/field_mask",
         "//internal/compat/status",
         "//internal/kubernetes/common/constants",
         "//internal/kubernetes/common/labels",
@@ -41,6 +40,7 @@ compat_go_library(
         "@com_google_cloud_go_pubsub//:pubsub",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//option",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
         "@org_golang_x_sync//errgroup:go_default_library",
     ],
@@ -69,7 +69,6 @@ compat_go_test(
     embed = [":log_monitor_lib"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/field_mask",
         "//internal/compat/status",
         "//internal/storage",
         "//internal/storage/spanner/migrations/version",
@@ -80,6 +79,7 @@ compat_go_test(
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",
         "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )

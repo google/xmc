@@ -23,7 +23,6 @@ go_library(
     importpath = "xmanager_cloud/cmd/ingestion_gateway",
     deps = [
         "//cmd/ingestion_gateway/ingestiongateway",
-        "//internal/compat/google",
         "//internal/logging",
     ],
 )
