@@ -14,8 +14,22 @@
 
 package store
 
+import "github.com/prometheus/client_golang/prometheus/testutil"
+
 // SetBeforeIntentWriteForTest installs hook to run each time SetComponentIntent misses the
 // read-only fast path and falls back to its read-write transaction.
 func (s *SpannerStore) SetBeforeIntentWriteForTest(hook func()) {
 	s.beforeIntentWrite = hook
+}
+
+// Values of the previous_source label of xmc_cms_component_epoch_changes_total.
+const (
+	PreviousSourcePresentForTest = previousSourcePresent
+	PreviousSourceAbsentForTest  = previousSourceAbsent
+)
+
+// IntentEpochChangesForTest returns xmc_cms_component_epoch_changes_total for the
+// previous_source label value (PreviousSourcePresentForTest or PreviousSourceAbsentForTest).
+func IntentEpochChangesForTest(previousSource string) float64 {
+	return testutil.ToFloat64(intentEpochChangesTotal.WithLabelValues(previousSource))
 }
