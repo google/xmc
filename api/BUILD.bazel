@@ -1,0 +1,57 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_buf//buf:defs.bzl", "buf_breaking_test")
+load("@rules_proto//proto:defs.bzl", "proto_descriptor_set")
+
+# Every //api proto_library. The `cloud_xmanager_v1_proto` targets duplicate
+# sources of the targets below and are left out;
+# api/filter/filter_expression.proto has no proto_library and is not covered.
+_PROTOS = [
+    "//api/protos/components/v1alpha1:components_proto",
+    "//api/protos/dashboard:dashboard_messages_proto",
+    "//api/protos/dashboard:dashboard_service_proto",
+    "//api/protos/experiment:experiment_api_proto",
+    "//api/protos/experiment:experiment_messages_proto",
+    "//api/protos/health:health_api_proto",
+    "//api/protos/metrics:metrics_proto",
+    "//api/protos/rod:rod_api_proto",
+    "//api/protos/task_queue:task_proto",
+    "//api/protos/xid:xid_api_proto",
+    "//api/protos/xid:xid_messages_proto",
+]
+
+# Builds the baseline image that protos_breaking_test compares against.
+proto_descriptor_set(
+    name = "all_protos_descriptor_set",
+    deps = _PROTOS,
+)
+
+# Fails on FILE-category breaking changes against the committed baseline.
+# To accept a breaking change, refresh the baseline in the same PR:
+#   bazel build //api:all_protos_descriptor_set && install -m 0644 \
+#     bazel-bin/api/all_protos_descriptor_set.pb api/testdata/protos_baseline.binpb
+# A refresh needs a fresh human approval (see .github/scripts/approval-policy.js).
+buf_breaking_test(
+    name = "protos_breaking_test",
+    against = "testdata/protos_baseline.binpb",
+    config = "buf.yaml",
+    # Names the rule: "path(line,col) : error FIELD_NO_DELETE : message".
+    error_format = "msvs",
+    # Inputs drop googleapis and well-known types; buf.yaml ignores them in the baseline.
+    exclude_imports = True,
+    # Checks every baseline file, so deleted or renamed files fail.
+    limit_to_input_files = False,
+    targets = _PROTOS,
+)
