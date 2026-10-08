@@ -76,6 +76,10 @@ func (s *stubStore) ResolveComponentSnapshot(ctx context.Context, name string, g
 	return nil, nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
+func (s *stubStore) ResolveComponentSnapshotByID(ctx context.Context, name string, componentID, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	return nil, nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
 func (s *stubStore) ValidateComponentRequirement(ctx context.Context, name string, reqType componentspb.ComponentType, minVersion string) (*store.RequirementValidationResult, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
@@ -1309,6 +1313,68 @@ func TestCMSServer_ResolveComponentSnapshot_MemoryStore(t *testing.T) {
 	})
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("ResolveComponentSnapshot(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+// TestCMSServer_ResolveComponentSnapshot_ComponentIDPin checks that after a name is reused the
+// component_id pin selects the soft-deleted incarnation at a generation shared with the live one,
+// and that the response reports the component_id of the resolved incarnation.
+func TestCMSServer_ResolveComponentSnapshot_ComponentIDPin(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms)
+	writeIntent := func(version string, gen int64) *store.ComponentRecord {
+		t.Helper()
+		spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: version}
+		rec, err := ms.SetComponentIntent(ctx, "cms-pinned", spec, nil, gen)
+		if err != nil {
+			t.Fatalf("SetComponentIntent(%s) error = %v", version, err)
+		}
+		return rec
+	}
+	writeIntent("v1.0.0", 1)
+	oldID := writeIntent("v1.1.0", 2).ComponentID
+	if err := ms.ExecuteDeletion(ctx, "cms-pinned", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+		t.Fatalf("ExecuteDeletion() error = %v", err)
+	}
+	liveID := writeIntent("v2.0.0", 1).ComponentID
+
+	// incarnation identifies the incarnation and payload of a resolved snapshot.
+	type incarnation struct {
+		ComponentID int64
+		Version     string
+	}
+	tests := []struct {
+		name     string
+		pin      *int64
+		want     incarnation
+		wantCode codes.Code
+	}{
+		{name: "unpinned resolves the live incarnation", want: incarnation{liveID, "v2.0.0"}},
+		{name: "pinned live incarnation", pin: proto.Int64(liveID), want: incarnation{liveID, "v2.0.0"}},
+		{name: "pinned soft-deleted incarnation", pin: proto.Int64(oldID), want: incarnation{oldID, "v1.0.0"}},
+		{name: "zero pin", pin: proto.Int64(0), wantCode: codes.InvalidArgument},
+		{name: "negative pin", pin: proto.Int64(-1), wantCode: codes.InvalidArgument},
+		{name: "unknown pin", pin: proto.Int64(oldID + liveID + 1), wantCode: codes.NotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := server.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{
+				Name:        "components/cms-pinned",
+				Generation:  proto.Int64(1),
+				ComponentId: tt.pin,
+			})
+			if got := status.Code(err); got != tt.wantCode {
+				t.Fatalf("ResolveComponentSnapshot() error = %v, want code %v", err, tt.wantCode)
+			}
+			if tt.wantCode != codes.OK {
+				return
+			}
+			got := incarnation{resp.GetComponent().GetComponentId(), resp.GetComponent().GetSpec().GetVersion()}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("resolved (component_id, version) mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

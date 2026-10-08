@@ -151,7 +151,11 @@ func TestMemoryStore_UnchangedIntentRecordsNoSnapshot(t *testing.T) {
 			t.Fatalf("SetComponentIntent() error = %v", err)
 		}
 	}
-	if got := len(ms.snapshots["redpanda"]); got != 1 {
+	rec, err := ms.GetComponent(ctx, "redpanda")
+	if err != nil {
+		t.Fatalf("GetComponent() error = %v", err)
+	}
+	if got := len(ms.snapshots[rec.ComponentID]); got != 1 {
 		t.Errorf("snapshots after repeated unchanged intent = %d, want 1", got)
 	}
 }

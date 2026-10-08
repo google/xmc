@@ -175,6 +175,12 @@ type Store interface {
 	// ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
 	ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error)
 
+	// ResolveComponentSnapshotByID resolves the snapshot of the incarnation componentID of a
+	// component at generation: the active incarnation resolves its own generations, a soft-deleted
+	// one only its stored snapshots, and an incarnation of another name is NotFound. Unlike
+	// ResolveComponentSnapshot, it never resolves another incarnation of a re-registered name.
+	ResolveComponentSnapshotByID(ctx context.Context, name string, componentID, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error)
+
 	// ValidateComponentRequirement checks if a required component type and version exists and is active.
 	ValidateComponentRequirement(ctx context.Context, name string, reqType componentspb.ComponentType, minVersion string) (*RequirementValidationResult, error)
 
@@ -189,8 +195,9 @@ func ToProtoComponent(r *ComponentRecord) *componentspb.Component {
 		return nil
 	}
 	comp := &componentspb.Component{
-		Name: naming.FullComponentName(r.Name),
-		Etag: r.Etag,
+		Name:        naming.FullComponentName(r.Name),
+		Etag:        r.Etag,
+		ComponentId: r.ComponentID,
 	}
 	if r.Spec != nil {
 		comp.Spec = proto.Clone(r.Spec).(*componentspb.ComponentSpec)

@@ -328,6 +328,14 @@ message Component {
     (google.api.field_behavior) = OPTIONAL,
     json_name = "labels"
   ];
+
+  // Identifier of this incarnation of the component. A component re-registered under the same
+  // name after deletion gets a new identifier and restarts its generations, so (component_id,
+  // generation) identifies a snapshot unambiguously where (name, generation) may not.
+  int64 component_id = 9 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    json_name = "componentId"
+  ];
 }
 
 // Request message for SetComponentIntent.
@@ -588,6 +596,15 @@ message ResolveComponentSnapshotRequest {
   optional int64 generation = 2 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "generation"
+  ];
+
+  // Pins resolution to one incarnation (Component.component_id) of the named component. When set,
+  // the snapshot is resolved strictly by (component_id, generation), including for a soft-deleted
+  // incarnation, and is NotFound otherwise. When unset, the generation is resolved against the
+  // active incarnation, falling back to earlier incarnations of the name.
+  optional int64 component_id = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "componentId"
   ];
 }
 

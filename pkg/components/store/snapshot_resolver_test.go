@@ -73,17 +73,18 @@ func TestResolveComponentSnapshotFromMap(t *testing.T) {
 		CreatedAt:   now,
 	}
 
-	components := map[string]*ComponentRecord{
-		"comp-a": compRecGen2,
-		"comp-del": {
-			Name:       "comp-del",
-			DeleteTime: &now,
-			State:      componentspb.ComponentState_COMPONENT_STATE_DELETED,
+	components := map[int64]*ComponentRecord{
+		1: compRecGen2,
+		2: {
+			ComponentID: 2,
+			Name:        "comp-del",
+			DeleteTime:  &now,
+			State:       componentspb.ComponentState_COMPONENT_STATE_DELETED,
 		},
 	}
 
-	snapshots := map[string]map[int64]*SnapshotRecord{
-		"comp-a": {
+	snapshots := map[int64]map[int64]*SnapshotRecord{
+		1: {
 			1: compRecGen1Snapshot,
 		},
 	}
@@ -194,10 +195,10 @@ func TestResolveComponentSnapshotFromMap_HistoricalMissing(t *testing.T) {
 			Generation: 3,
 		},
 	}
-	components := map[string]*ComponentRecord{
-		"comp-b": compRecGen3,
+	components := map[int64]*ComponentRecord{
+		compRecGen3.ComponentID: compRecGen3,
 	}
-	snapshots := map[string]map[int64]*SnapshotRecord{}
+	snapshots := map[int64]map[int64]*SnapshotRecord{}
 
 	_, _, err := ResolveComponentSnapshotFromMap(components, snapshots, "comp-b", 1)
 	if status.Code(err) != codes.NotFound {
@@ -227,8 +228,8 @@ func TestResolveComponentSnapshotFromMap_Immutability(t *testing.T) {
 		UpdateTime: now,
 	}
 
-	components := map[string]*ComponentRecord{"comp-imm": rec}
-	snapshots := map[string]map[int64]*SnapshotRecord{}
+	components := map[int64]*ComponentRecord{rec.ComponentID: rec}
+	snapshots := map[int64]map[int64]*SnapshotRecord{}
 
 	snapRec, snapCoords, err := ResolveComponentSnapshotFromMap(components, snapshots, "comp-imm", 1)
 	if err != nil {
@@ -254,7 +255,7 @@ func TestResolveComponentSnapshotFromMap_Immutability(t *testing.T) {
 	}
 
 	// Verify cached snapshot in map was not mutated
-	cachedSnap := snapshots["comp-imm"][1]
+	cachedSnap := snapshots[rec.ComponentID][1]
 	if cachedSnap.Record.Spec.GetDescription() != "Original description" {
 		t.Errorf("Cached snapshot was modified: got %q, want 'Original description'", cachedSnap.Record.Spec.GetDescription())
 	}
@@ -476,18 +477,19 @@ func TestSnapshotResolver_NilCoordinates(t *testing.T) {
 		t.Errorf("cloneCoordinates(nil) = %v, want nil", coords)
 	}
 
-	components := map[string]*ComponentRecord{
-		"comp-no-coords": {
-			Name:       "comp-no-coords",
-			Generation: 1,
-			State:      componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+	components := map[int64]*ComponentRecord{
+		1: {
+			ComponentID: 1,
+			Name:        "comp-no-coords",
+			Generation:  1,
+			State:       componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 			Spec: &componentspb.ComponentSpec{
 				Version: "v1.0.0",
 			},
 			Status: nil,
 		},
 	}
-	snapshots := map[string]map[int64]*SnapshotRecord{}
+	snapshots := map[int64]map[int64]*SnapshotRecord{}
 
 	rec, coords, err := ResolveComponentSnapshotFromMap(components, snapshots, "comp-no-coords", 1)
 	if err != nil {
