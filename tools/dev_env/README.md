@@ -275,8 +275,8 @@ python3 tools/dev_env/dev_env.py gke-deploy \
 - `--environment`, `-e`: Deployment environment name (required, or via `XMANAGER_ENV` env var).
 - `--dns-project`: Google Cloud project hosting Cloud DNS (required).
 - `--dns-zone`: Cloud DNS managed zone name (required).
-- `--start-from`: Start execution from a specific step (`infra`, `migrate`, `app`, `verify`).
-- `--only`: Execute only a single step (`infra`, `migrate`, `app`, `verify`).
+- `--start-from`: Start execution from a specific step (`check`, `compile`, `images`, `apis`, `primary`, `compute`, `gateway-api`, `prereqs`, `migrate`, `app`, `verify`).
+- `--only`: Execute only a single step (`check`, `compile`, `images`, `apis`, `primary`, `compute`, `gateway-api`, `prereqs`, `migrate`, `app`, `verify`).
 - `--auto-approve`, `-y`: Automatically approve Terraform and Cluster Toolkit prompts.
 - `--skip-terraform-init`: Skip `terraform init` during deployment.
 - `--skip-migrations`: Skip automatic Cloud Spanner database schema migrations.

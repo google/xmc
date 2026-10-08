@@ -86,6 +86,20 @@ image_tag: latest
         with self.assertRaises(SystemExit):
             deploy_dev_env.parse_args(args)
 
+    def test_parse_args_invalid_choice_rejected(self):
+        args = [
+            "--config",
+            "config.yaml",
+            "--dns-project",
+            "p",
+            "--dns-zone",
+            "z",
+            "--start-from",
+            "infra",
+        ]
+        with self.assertRaises(SystemExit):
+            deploy_dev_env.parse_args(args)
+
     @patch("tools.dev_env.deploy_dev_env.tool_load_config")
     def test_load_and_validate_config_success(self, mock_tool_load):
         mock_tool_load.return_value = self.valid_config
