@@ -106,6 +106,10 @@ The first `SIGINT` or `SIGTERM` stops the harness ([`lib/cancellation.py`](lib/c
 
 Teardown is best effort. When GitHub Actions cancels a job, or the job times out, the runner sends `SIGINT`, then `SIGTERM` about 7.5 s later, and then `SIGKILL` about 2.5 s after that, so teardown may not finish. The workflow starts `runner.py` with `exec`, so that these signals reach the harness rather than a shell. Spanner databases that a stopped run leaves behind are deleted by the stale-database cleanup of a later run once they are more than one hour old.
 
+### Job Summary
+
+When `GITHUB_STEP_SUMMARY` is set, as it is in GitHub Actions, `runner.py` appends a table to the job summary after the last attempt ([`lib/step_summary.py`](lib/step_summary.py)). The table shows the outcome, the number of attempts, what ended each failed attempt (its failed phase, or `harness deadline`), and the total harness duration. Runs that end with exit code `2` or `4`, or that a signal stops, write no summary.
+
 ---
 
 ## Key Performance & Resiliency Optimizations

@@ -68,9 +68,11 @@ class HarnessResult:
 
     Attributes:
         attempts: Attempt results in execution order; never empty.
+        duration_seconds: Duration of all attempts, including their teardown.
     """
 
     attempts: tuple[AttemptResult, ...]
+    duration_seconds: float
 
     def __post_init__(self) -> None:
         if not self.attempts:
