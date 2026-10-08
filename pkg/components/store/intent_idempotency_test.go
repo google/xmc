@@ -36,6 +36,24 @@ const (
 	idempotencyDependencyB = "intent-idempotency-dep-b"
 )
 
+// intentStoreBackend constructs a fresh Store for cross-backend parity tests.
+type intentStoreBackend struct {
+	name     string
+	newStore func(t *testing.T) store.Store
+}
+
+// intentStoreBackends returns MemoryStore and SpannerStore factories so parity tests run the same
+// rows against both implementations.
+func intentStoreBackends() []intentStoreBackend {
+	return []intentStoreBackend{
+		{name: "memory", newStore: func(*testing.T) store.Store { return store.NewMemoryStore() }},
+		{name: "spanner", newStore: func(t *testing.T) store.Store {
+			s, _ := setupTestStore(context.Background(), t)
+			return s
+		}},
+	}
+}
+
 func intentSpec(version string, deps ...string) *componentspb.ComponentSpec {
 	return &componentspb.ComponentSpec{
 		Type:         componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -78,17 +96,7 @@ func TestSetComponentIntent_Idempotency(t *testing.T) {
 		{name: "dependency order change is a spec change", seedGen: 3, seedDeps: []string{idempotencyDependency, idempotencyDependencyB}, seedState: enabled, spec: intentSpec("v1.0.0", idempotencyDependencyB, idempotencyDependency), labels: baseLabels, desiredGen: 3, wantGen: 4},
 		{name: "dependency prefix change is a spec change", seedGen: 3, seedDeps: []string{idempotencyDependency}, seedState: enabled, spec: intentSpec("v1.0.0", "components/"+idempotencyDependency), labels: baseLabels, desiredGen: 3, wantGen: 4},
 	}
-	backends := []struct {
-		name     string
-		newStore func(t *testing.T) store.Store
-	}{
-		{name: "memory", newStore: func(*testing.T) store.Store { return store.NewMemoryStore() }},
-		{name: "spanner", newStore: func(t *testing.T) store.Store {
-			s, _ := setupTestStore(context.Background(), t)
-			return s
-		}},
-	}
-	for _, backend := range backends {
+	for _, backend := range intentStoreBackends() {
 		t.Run(backend.name, func(t *testing.T) {
 			ctx := context.Background()
 			s := backend.newStore(t)

@@ -31,6 +31,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/naming"
 	"xmanager_cloud/pkg/components/semver"
 )
@@ -42,6 +43,18 @@ const (
 	selectComponentByActiveNameSQL = `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
 FROM Components
 WHERE ActiveName = @name
+LIMIT 1`
+
+	selectComponentWithActiveDependenciesSQL = `SELECT c.ComponentId, c.Name, c.ComponentClass, c.ConfigProto, c.AccessPayload, c.State, c.Generation, c.ObservedGeneration, c.CreateTime, c.UpdateTime,
+  ARRAY(
+    SELECT dep.Name
+    FROM ComponentDependencies cd
+    JOIN Components dep ON cd.DependencyComponentId = dep.ComponentId
+    WHERE cd.ComponentId = c.ComponentId AND dep.ActiveName IS NOT NULL
+    ORDER BY dep.Name ASC
+  ) AS ActiveDependencies
+FROM Components c
+WHERE c.ActiveName = @name
 LIMIT 1`
 
 	selectComponentByIDSQL = `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
@@ -130,6 +143,9 @@ func queryComponentWithDeps(ctx context.Context, queryable spannerQueryable, can
 // SpannerStore provides a Cloud Spanner backed production implementation of Store.
 type SpannerStore struct {
 	client *spanner.Client
+	// beforeIntentWrite, when non-nil, runs before SetComponentIntent falls back to its read-write
+	// transaction. Tests use it to count fallbacks and to inject concurrent writes.
+	beforeIntentWrite func()
 }
 
 // NewSpannerStore creates a new Spanner-backed component store.
@@ -139,7 +155,10 @@ func NewSpannerStore(client *spanner.Client) *SpannerStore {
 	}
 }
 
-// SetComponentIntent applies or updates component intent within Spanner.
+// SetComponentIntent applies or updates component intent within Spanner. An unchanged intent whose
+// dependencies are all registered and active is answered from a strong read-only read without a
+// read-write transaction; anything else, including every changed or new intent (which therefore
+// pays the extra read), is decided by the read-write transaction.
 func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error) {
 	canonicalName, err := validateIntentArgs(name, spec)
 	if err != nil {
@@ -147,6 +166,77 @@ func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, spec
 	}
 
 	deps := ExtractDependencies(spec, labels)
+	if rec, ok := s.readUnchangedIntent(ctx, canonicalName, spec, labels, deps, desiredGen); ok {
+		return rec, nil
+	}
+	if s.beforeIntentWrite != nil {
+		s.beforeIntentWrite()
+	}
+	return s.writeIntent(ctx, canonicalName, spec, labels, deps, desiredGen)
+}
+
+// readUnchangedIntent reads the active record of canonicalName and its active dependencies with a
+// single strong read. It returns the record and true only when the intent is unchanged at that
+// read; on any other outcome, including read errors, it returns false so that the read-write
+// transaction decides authoritatively.
+func (s *SpannerStore) readUnchangedIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) (*ComponentRecord, bool) {
+	rec, err := queryComponentWithActiveDependencies(ctx, s.client.Single(), canonicalName)
+	if err != nil {
+		logFastPathReadError(ctx, canonicalName, err)
+		return nil, false
+	}
+	// The read returns only registered, non-deleted dependencies, so a deregistered dependency
+	// makes the intent's dependencies differ and isUnchangedIntent false; the read-write fallback
+	// then rejects it authoritatively.
+	if !isUnchangedIntent(rec, spec, labels, deps, desiredGen) {
+		return nil, false
+	}
+	return cloneRecord(rec), true
+}
+
+// logFastPathReadError logs a failed fast-path read before the read-write fallback. A missing
+// component is expected for new intents and is not logged; cancellation is logged at Debug.
+func logFastPathReadError(ctx context.Context, canonicalName string, err error) {
+	switch {
+	case errors.Is(err, ErrComponentNotFound):
+	case ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
+		logging.Debug(ctx, "Intent fast-path read canceled; falling back to read-write transaction", "name", canonicalName, "error", err)
+	default:
+		logging.Warn(ctx, "Intent fast-path read failed; falling back to read-write transaction", "name", canonicalName, "error", err)
+	}
+}
+
+// queryComponentWithActiveDependencies runs one query, so it can use a single-use read-only
+// transaction, and returns the active record of canonicalName with Dependencies set to its
+// registered, non-deleted dependencies (nil when there are none, as on the read-write path).
+func queryComponentWithActiveDependencies(ctx context.Context, queryable spannerQueryable, canonicalName string) (*ComponentRecord, error) {
+	iter := queryable.Query(ctx, spanner.Statement{SQL: selectComponentWithActiveDependenciesSQL, Params: map[string]any{"name": canonicalName}})
+	defer iter.Stop()
+
+	row, err := iter.Next()
+	if errors.Is(err, iterator.Done) {
+		return nil, ErrComponentNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query component %q: %w", canonicalName, err)
+	}
+	rec, err := rowToComponentRecord(row)
+	if err != nil {
+		return nil, err
+	}
+	if err := row.ColumnByName("ActiveDependencies", &rec.Dependencies); err != nil {
+		return nil, fmt.Errorf("failed to read dependencies of component %q: %w", canonicalName, err)
+	}
+	if len(rec.Dependencies) == 0 {
+		rec.Dependencies = nil
+	}
+	rec.Etag = generateEtag(rec)
+	return rec, nil
+}
+
+// writeIntent applies the intent in a read-write transaction. It is a no-op that returns the
+// existing record when applyIntentTx finds the intent unchanged.
+func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) (*ComponentRecord, error) {
 	var finalRec *ComponentRecord
 	var unchanged bool
 
@@ -187,10 +277,7 @@ func (s *SpannerStore) applyIntentTx(
 	if err != nil {
 		return nil, false, err
 	}
-	if err := ValidateProspectiveDependenciesFromMap(catalog, canonicalName, deps); err != nil {
-		return nil, false, err
-	}
-	depIDs, err := resolveDependencyIDs(catalog, canonicalName, deps)
+	depIDs, err := validateIntentDependencies(catalog, canonicalName, deps)
 	if err != nil {
 		return nil, false, err
 	}
