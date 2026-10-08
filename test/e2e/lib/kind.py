@@ -32,13 +32,11 @@ class KindClusterManager:
         self.cfg = config
 
     def exists(self) -> bool:
-        """Checks if the configured KinD cluster exists; also runs during teardown."""
+        """Checks if the configured KinD cluster exists."""
         res = run_cmd(
             [self.cfg.kind_bin, "get", "clusters"],
             capture_output=True,
             check=False,
-            timeout=TEARDOWN_TIMEOUT_SECONDS,
-            stoppable=False,
         )
         return self.cfg.cluster_name in res.stdout.splitlines()
 
@@ -245,27 +243,31 @@ class KindClusterManager:
         )
 
     def teardown(self) -> None:
-        """Destroys the KinD cluster."""
+        """Deletes the KinD cluster and the temporary directory, best effort.
+
+        The delete runs without first checking whether the cluster exists: ``kind delete
+        cluster`` succeeds for a missing cluster, whereas a check that flakes or times out
+        would skip the cleanup.
+        """
         if self.cfg.keep_cluster:
             return
         try:
-            if self.exists():
-                logger.info(
-                    "=== [KinD] Deleting cluster %s ===",
+            logger.info(
+                "=== [KinD] Deleting cluster %s ===",
+                self.cfg.cluster_name,
+            )
+            run_cmd(
+                [
+                    self.cfg.kind_bin,
+                    "delete",
+                    "cluster",
+                    "--name",
                     self.cfg.cluster_name,
-                )
-                run_cmd(
-                    [
-                        self.cfg.kind_bin,
-                        "delete",
-                        "cluster",
-                        "--name",
-                        self.cfg.cluster_name,
-                    ],
-                    check=False,
-                    timeout=TEARDOWN_TIMEOUT_SECONDS,
-                    stoppable=False,
-                )
+                ],
+                check=False,
+                timeout=TEARDOWN_TIMEOUT_SECONDS,
+                stoppable=False,
+            )
         except Exception as e:
             logger.warning("Failed to safely teardown KinD cluster: %s", e)
         finally:
