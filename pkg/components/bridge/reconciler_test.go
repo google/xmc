@@ -16,8 +16,12 @@ package bridge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -25,8 +29,14 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes/fake"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -1549,5 +1559,215 @@ func TestReconcileComponent_ErrorPassPreservesDependenciesReady(t *testing.T) {
 	}
 	if diff := cmp.Diff(&prev, findCondition(res.Conditions, ConditionTypeDependenciesReady)); diff != "" {
 		t.Errorf("ReconcileComponent() DependenciesReady mismatch (-want +got):\n%s", diff)
+	}
+}
+
+const rayClusterTestCRD = `apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: {name: rayclusters.ray.io}
+spec:
+  group: ray.io
+  names: {kind: RayCluster, listKind: RayClusterList, plural: rayclusters, singular: raycluster}
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources: {status: {}}
+      schema: {openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}}
+`
+
+// TestReconciler_EnvtestIntegration verifies controller reconciliation, finalizer synchronization,
+// Server-Side Apply condition merging (fieldManager: "xmc-bridge"), and malformed 3P status
+// contract breach handling (ReasonContractBroken) against a local Kubebuilder envtest API server.
+func TestReconciler_EnvtestIntegration(t *testing.T) {
+	dynClient := startReconcilerEnvtest(t)
+	ctx := context.Background()
+
+	t.Run("ServerSideApplyMergesExternalConditionsAndSyncsFinalizers", func(t *testing.T) {
+		verifyEnvtestSSAMergeAndFinalizers(ctx, t, dynClient)
+	})
+	t.Run("ContractBrokenDegradedStatusOnMalformed3PPayload", func(t *testing.T) {
+		verifyEnvtestContractBreach(ctx, t, dynClient)
+	})
+}
+
+func startReconcilerEnvtest(t *testing.T) dynamic.Interface {
+	t.Helper()
+	crdDir := t.TempDir()
+	combined := append(renderHelmManifestTemplate(t, "crd.yaml", true), []byte("\n---\n"+rayClusterTestCRD)...)
+	if err := os.WriteFile(filepath.Join(crdDir, "crds.yaml"), combined, 0600); err != nil {
+		t.Fatalf("failed to write CRDs: %v", err)
+	}
+	testEnv := &envtest.Environment{
+		BinaryAssetsDirectory:   resolveEnvtestAssets(t),
+		ControlPlaneStopTimeout: 10 * time.Second,
+		CRDInstallOptions:       envtest.CRDInstallOptions{Paths: []string{crdDir}, ErrorIfPathMissing: true, PollInterval: 10 * time.Millisecond, MaxTime: 5 * time.Second},
+	}
+	cfg, err := testEnv.Start()
+	if err != nil {
+		t.Fatalf("failed to start envtest environment: %v", err)
+	}
+	t.Cleanup(func() { _ = testEnv.Stop() })
+	dynClient, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		t.Fatalf("failed to create dynamic client: %v", err)
+	}
+	return dynClient
+}
+
+func verifyEnvtestSSAMergeAndFinalizers(ctx context.Context, t *testing.T, dynClient dynamic.Interface) {
+	t.Helper()
+	compClient := dynClient.Resource(ComponentGVR).Namespace("default")
+	cr := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "xmc.dev/v1alpha1", "kind": "Component",
+		"metadata": map[string]any{"name": "ssa-merge-comp", "namespace": "default"},
+		"spec":     map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "deletionProtection": true},
+	}}
+	created, err := compClient.Create(ctx, cr, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create Component failed: %v", err)
+	}
+	applyExternalStatusCondition(ctx, t, compClient, created.GetName())
+	reconcileAndApplyBridgeStatus(ctx, t, dynClient, compClient, created.GetName())
+	assertMergedConditionsAndFinalizer(ctx, t, compClient, created.GetName())
+}
+
+func applyExternalStatusCondition(ctx context.Context, t *testing.T, compClient dynamic.ResourceInterface, name string) {
+	t.Helper()
+	cond := map[string]any{"type": "ExternalSLA", "status": "True", "lastTransitionTime": time.Now().UTC().Format(time.RFC3339), "reason": "SLAVerified", "message": "External controller verified SLA"}
+	patchObj := map[string]any{"apiVersion": "xmc.dev/v1alpha1", "kind": "Component", "metadata": map[string]any{"name": name, "namespace": "default"}, "status": map[string]any{"conditions": []map[string]any{cond}}}
+	raw, err := json.Marshal(patchObj)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	force := true
+	if _, err := compClient.Patch(ctx, name, types.ApplyPatchType, raw, metav1.PatchOptions{FieldManager: "external-sla-controller", Force: &force}, "status"); err != nil {
+		t.Fatalf("external SSA status patch failed: %v", err)
+	}
+}
+
+func reconcileAndApplyBridgeStatus(ctx context.Context, t *testing.T, dynClient dynamic.Interface, compClient dynamic.ResourceInterface, name string) {
+	t.Helper()
+	live, err := compClient.Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get Component failed: %v", err)
+	}
+	rec, err := NewReconciler(&mockCMS{}, nil, &mockHelm{})
+	if err != nil {
+		t.Fatalf("NewReconciler failed: %v", err)
+	}
+	res, err := rec.ReconcileWithDependencies(ctx, live, nil)
+	if err != nil {
+		t.Fatalf("ReconcileWithDependencies failed: %v", err)
+	}
+	if live, err = SyncComponentFinalizers(ctx, dynClient, "default", live, res); err != nil {
+		t.Fatalf("SyncComponentFinalizers failed: %v", err)
+	}
+	if err := ApplyComponentStatusSSA(ctx, dynClient, "default", live, res); err != nil {
+		t.Fatalf("ApplyComponentStatusSSA failed: %v", err)
+	}
+}
+
+func assertMergedConditionsAndFinalizer(ctx context.Context, t *testing.T, compClient dynamic.ResourceInterface, name string) {
+	t.Helper()
+	updated, err := compClient.Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get updated Component failed: %v", err)
+	}
+	if !slices.Contains(updated.GetFinalizers(), FinalizerDeletionProtection) {
+		t.Errorf("expected finalizer %q on Component, got %v", FinalizerDeletionProtection, updated.GetFinalizers())
+	}
+	conds, _, _ := unstructured.NestedSlice(updated.Object, "status", "conditions")
+	seen := make(map[string]string)
+	for _, raw := range conds {
+		if m, ok := raw.(map[string]any); ok {
+			seen[m["type"].(string)] = m["status"].(string)
+		}
+	}
+	want := map[string]string{
+		"ExternalSLA":         "True",
+		ConditionTypeReady:    ConditionStatusTrue,
+		ConditionTypeDegraded: ConditionStatusFalse,
+	}
+	if diff := cmp.Diff(want, seen); diff != "" {
+		t.Errorf("merged conditions mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func verifyEnvtestContractBreach(ctx context.Context, t *testing.T, dynClient dynamic.Interface) {
+	t.Helper()
+	rayGVR := schema.GroupVersionResource{Group: "ray.io", Version: "v1", Resource: "rayclusters"}
+	createMalformedRayCluster(ctx, t, dynClient.Resource(rayGVR).Namespace("default"))
+	compClient := dynClient.Resource(ComponentGVR).Namespace("default")
+	cr := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "xmc.dev/v1alpha1", "kind": "Component",
+		"metadata": map[string]any{"name": "ray-broken-wrapper", "namespace": "default"},
+		"spec": map[string]any{
+			"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
+			"wrapperRef": map[string]any{"group": "ray.io", "version": "v1", "kind": "RayCluster", "name": "ray-malformed"},
+		},
+	}}
+	created, err := compClient.Create(ctx, cr, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create 3P wrapper Component failed: %v", err)
+	}
+	reconcileMalformedWrapper(ctx, t, dynClient, created)
+	assertContractBrokenStatus(ctx, t, compClient, created.GetName())
+}
+
+func createMalformedRayCluster(ctx context.Context, t *testing.T, rayClient dynamic.ResourceInterface) {
+	t.Helper()
+	rc := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "ray.io/v1", "kind": "RayCluster", "metadata": map[string]any{"name": "ray-malformed", "namespace": "default"}}}
+	created, err := rayClient.Create(ctx, rc, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create RayCluster failed: %v", err)
+	}
+	created.Object["status"] = map[string]any{"conditions": "malformed-non-slice-conditions"}
+	if _, err := rayClient.UpdateStatus(ctx, created, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("UpdateStatus RayCluster failed: %v", err)
+	}
+}
+
+func reconcileMalformedWrapper(ctx context.Context, t *testing.T, dynClient dynamic.Interface, live *unstructured.Unstructured) {
+	t.Helper()
+	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "ray.io", Version: "v1"}})
+	mapper.Add(schema.GroupVersionKind{Group: "ray.io", Version: "v1", Kind: "RayCluster"}, meta.RESTScopeNamespace)
+	prober := NewBridgeProber(NewK8sStatusDetector(dynClient, mapper), nil, time.Second)
+	rec, err := NewReconciler(&mockCMS{}, prober, nil)
+	if err != nil {
+		t.Fatalf("NewReconciler failed: %v", err)
+	}
+	res, err := rec.ReconcileWithDependencies(ctx, live, nil)
+	if !errors.Is(err, ErrContractBreach) {
+		t.Fatalf("expected ErrContractBreach from ReconcileWithDependencies, got %v", err)
+	}
+	if err := ApplyComponentStatusSSA(ctx, dynClient, "default", live, res); err != nil {
+		t.Fatalf("ApplyComponentStatusSSA failed: %v", err)
+	}
+}
+
+func assertContractBrokenStatus(ctx context.Context, t *testing.T, compClient dynamic.ResourceInterface, name string) {
+	t.Helper()
+	updated, err := compClient.Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get updated Component failed: %v", err)
+	}
+	conds, _, _ := unstructured.NestedSlice(updated.Object, "status", "conditions")
+	seen := make(map[string]string)
+	for _, raw := range conds {
+		if m, ok := raw.(map[string]any); ok {
+			typ, _ := m["type"].(string)
+			if typ == ConditionTypeReady || typ == ConditionTypeDegraded {
+				seen[typ] = fmt.Sprintf("%s/%s", m["status"], m["reason"])
+			}
+		}
+	}
+	want := map[string]string{
+		ConditionTypeReady:    fmt.Sprintf("%s/%s", ConditionStatusFalse, ReasonContractBroken),
+		ConditionTypeDegraded: fmt.Sprintf("%s/%s", ConditionStatusTrue, ReasonContractBroken),
+	}
+	if diff := cmp.Diff(want, seen); diff != "" {
+		t.Errorf("contract broken conditions mismatch (-want +got):\n%s", diff)
 	}
 }
