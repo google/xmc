@@ -798,7 +798,10 @@ def apply_github_env_defaults(args: argparse.Namespace, env: dict[str, str]) -> 
 
 
 def resolve_local_scope(
-    base_ref: str, repo_root: Path, use_rdeps: bool = True
+    base_ref: str,
+    repo_root: Path,
+    use_rdeps: bool = True,
+    repository_cache: str | None = None,
 ) -> dict[str, object]:
     """Scopes the local checkout the way a pull request against base_ref is scoped.
 
@@ -810,6 +813,7 @@ def resolve_local_scope(
         base_ref: Ref whose merge base with HEAD is the comparison point.
         repo_root: Top-level directory of the git checkout and Bazel workspace.
         use_rdeps: Whether to narrow backend tests with the Bazel rdeps query.
+        repository_cache: Optional Bazel repository cache directory for the rdeps query.
 
     Raises:
         ChangedFilesError: If git cannot list the changed files.
@@ -825,7 +829,9 @@ def resolve_local_scope(
             "run_helm": False,
             "changed_files": [],
         }
-    scope = resolve_test_scope(files, use_rdeps=use_rdeps, cwd=repo_root)
+    scope = resolve_test_scope(
+        files, use_rdeps=use_rdeps, cwd=repo_root, repository_cache=repository_cache
+    )
     return scope | {"changed_files": files}
 
 
@@ -910,7 +916,10 @@ def main() -> None:
     try:
         result = (
             resolve_local_scope(
-                args.base or DEFAULT_LOCAL_BASE_REF, _REPO_ROOT, use_rdeps=not args.disable_rdeps
+                args.base or DEFAULT_LOCAL_BASE_REF,
+                _REPO_ROOT,
+                use_rdeps=not args.disable_rdeps,
+                repository_cache=args.repository_cache,
             )
             if args.local
             else resolve_ci_scope(args, os.environ)

@@ -1202,6 +1202,16 @@ class TestLocalScope(unittest.TestCase):
             ["pkg/auth/auth.go"], cwd=Path("/repo"), repository_cache=None
         )
 
+    @patch("tools.benchmark.resolve_test_scope.discover_bazel_rdeps_targets")
+    def test_main_local_passes_repository_cache_to_rdeps_query(self, mock_rdeps, mock_list):
+        mock_list.return_value = ["pkg/auth/auth.go"]
+        mock_rdeps.return_value = ["//pkg/auth:auth_test"]
+        result = self._run_main(["--local", "--repository-cache", "/cache/bazel-repo"])
+        mock_rdeps.assert_called_once_with(
+            ["pkg/auth/auth.go"], cwd=_REPO_ROOT, repository_cache="/cache/bazel-repo"
+        )
+        self.assertEqual(result["backend_mode"], "rdeps")
+
     def test_main_local_ignores_github_event_and_output_env(self, mock_list):
         mock_list.return_value = ["README.md"]
         with tempfile.TemporaryDirectory() as tmp:
