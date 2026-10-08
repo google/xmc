@@ -101,6 +101,7 @@ go_test(
         "helm_builder_test.go",
         "helm_manager_test.go",
         "intent_generation_test.go",
+        "intent_log_level_test.go",
         "k8s_status_detector_test.go",
         "lifecycle_test.go",
         "reconciler_test.go",
@@ -124,6 +125,7 @@ go_test(
     embed = [":bridge"],
     deps = [
         "//api/protos/components/v1alpha1",
+        "//internal/logging",
         "//pkg/components/cms",
         "//pkg/components/store",
         "@com_github_google_go_cmp//cmp",
