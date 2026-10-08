@@ -473,9 +473,8 @@ func (s *SpannerStore) createNewIntentTx(
 	insertCols := []string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "AccessPayload", "State", "Generation", "CreateTime", "UpdateTime"}
 	insertVals := []any{id, canonicalName, spanner.NullString{StringVal: compClass, Valid: compClass != ""}, configBytes, accessBytes, int64(componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION), gen, spanner.CommitTimestamp, spanner.CommitTimestamp}
 	if src != nil {
-		for col, val := range intentSourceColumns(src) {
-			insertCols, insertVals = append(insertCols, col), append(insertVals, val)
-		}
+		insertCols = append(insertCols, "SourceUid", "SourceGeneration", "SourceCreateTime")
+		insertVals = append(insertVals, src.UID, src.Generation, src.CreateTime)
 	}
 
 	mutations := []*spanner.Mutation{spanner.Insert("Components", insertCols, insertVals)}
