@@ -516,7 +516,7 @@ func TestController_RunReconcilePass_ErrorSyncsStatus(t *testing.T) {
 		t.Fatalf("expected conditions on updated resource, got %v", status["conditions"])
 	}
 }
-func TestController_SyncFinalizers_NilResult(t *testing.T) {
+func TestController_PersistResult_NilResult(t *testing.T) {
 	ctx := context.Background()
 	scheme := runtime.NewScheme()
 	fakeDynamic := dynamicfake.NewSimpleDynamicClient(scheme)
@@ -531,12 +531,11 @@ func TestController_SyncFinalizers_NilResult(t *testing.T) {
 		},
 	}
 
-	got, err := ctrl.syncFinalizers(ctx, item, nil)
-	if err != nil {
-		t.Fatalf("syncFinalizers returned unexpected error: %v", err)
+	if err := ctrl.persistResult(ctx, item, nil); err != nil {
+		t.Fatalf("persistResult returned unexpected error: %v", err)
 	}
-	if got != item {
-		t.Errorf("expected original item returned on nil res, got %v", got)
+	if got := len(fakeDynamic.Actions()); got != 0 {
+		t.Errorf("persistResult(nil) issued %d API actions, want 0", got)
 	}
 }
 
