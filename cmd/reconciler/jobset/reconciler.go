@@ -25,32 +25,27 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
 	"golang/prometheus/client/prometheus/prometheus"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8slabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
+	"xmanager_cloud/cmd/reconciler/shared"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/kubernetes/common/labels"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/kubernetes/common/labels"
-	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
-	"xmanager_cloud/kubernetes/reconciler/shared/shared"
-	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -163,86 +158,6 @@ type MLRunCreator interface {
 	CreateMLRun(ctx context.Context, name, displayName, runPhase string, opts *hypercomputeclient.CreateMLRunOptions) (map[string]any, error)
 	GetMLRun(ctx context.Context, name string) (map[string]any, error)
 	UpdateMLRun(ctx context.Context, name string, opts *hypercomputeclient.UpdateMLRunOptions) (map[string]any, error)
-}
-
-func hasValidXMCLabels(ctx context.Context, jobSet *v1alpha2.JobSet) bool {
-	if jobSet == nil {
-		return false
-	}
-	ctx = logging.WithJobSetName(ctx, jobSet.Name, nil)
-
-	_, err := labels.ParseXMCLabels(jobSet.Labels)
-	if err != nil {
-		if errors.Is(err, labels.ErrMissingXMCLabels) {
-			logging.Warn(ctx, "JobSet is missing XMC labels and will be skipped", "error", err)
-		} else {
-			logging.Error(ctx, "JobSet has invalid XMC labels and will be skipped", "error", err)
-		}
-		return false
-	}
-	return true
-}
-
-func jobSetPredicate(ctx context.Context) predicate.TypedPredicate[*v1alpha2.JobSet] {
-	return predicate.TypedFuncs[*v1alpha2.JobSet]{
-		CreateFunc: func(e event.TypedCreateEvent[*v1alpha2.JobSet]) bool {
-			return hasValidXMCLabels(logging.Strip(ctx), e.Object)
-		},
-
-		DeleteFunc: func(event.TypedDeleteEvent[*v1alpha2.JobSet]) bool {
-			return false
-		},
-
-		UpdateFunc: func(e event.TypedUpdateEvent[*v1alpha2.JobSet]) bool {
-			return shouldProcessJobSetUpdate(ctx, e.ObjectOld, e.ObjectNew)
-		},
-
-		// Reconcile existing resources on controller startup.
-		GenericFunc: func(e event.TypedGenericEvent[*v1alpha2.JobSet]) bool {
-			return hasValidXMCLabels(logging.Strip(ctx), e.Object)
-		},
-	}
-}
-
-func shouldProcessJobSetUpdate(ctx context.Context, oldJobSet, newJobSet *v1alpha2.JobSet) bool {
-	if oldJobSet == nil || newJobSet == nil {
-		return false
-	}
-	if oldJobSet.GetResourceVersion() == newJobSet.GetResourceVersion() {
-		return false
-	}
-	if !jobSetChanged(oldJobSet, newJobSet) {
-		return false
-	}
-
-	ctx = logging.Strip(ctx)
-	if !hasValidXMCLabels(ctx, newJobSet) {
-		return false
-	}
-
-	if oldJobSet.GetDeletionTimestamp() == nil && newJobSet.GetDeletionTimestamp() != nil {
-		return true
-	}
-
-	return newJobSet.GetDeletionTimestamp() == nil
-}
-
-// jobSetChanged reports whether any field the reconciler acts on differs
-// between oldJobSet and newJobSet: spec (generation, suspension, replica
-// count), XMC identity labels, status, or deletion state.
-func jobSetChanged(oldJobSet, newJobSet *v1alpha2.JobSet) bool {
-	generationSame := oldJobSet.Generation == newJobSet.Generation
-	labelsSame := oldJobSet.Labels[constants.WorkUnitIDLabel] == newJobSet.Labels[constants.WorkUnitIDLabel] &&
-		oldJobSet.Labels[constants.ExperimentIDLabel] == newJobSet.Labels[constants.ExperimentIDLabel] &&
-		oldJobSet.Labels[constants.ExecutionIDLabel] == newJobSet.Labels[constants.ExecutionIDLabel]
-	statusSame := isJobSetStatusEqual(&oldJobSet.Status, &newJobSet.Status)
-	deletionSame := (oldJobSet.GetDeletionTimestamp() == nil) == (newJobSet.GetDeletionTimestamp() == nil)
-
-	oldSus := oldJobSet.Spec.Suspend != nil && *oldJobSet.Spec.Suspend
-	newSus := newJobSet.Spec.Suspend != nil && *newJobSet.Spec.Suspend
-	specSame := generationSame && oldSus == newSus && calculateTotalReplicas(oldJobSet) == calculateTotalReplicas(newJobSet)
-
-	return !(specSame && labelsSame && statusSame && deletionSame)
 }
 
 // Reconcile fetches the JobSet and logs its name and a summary of its ReplicatedJobsStatus.
@@ -419,175 +334,6 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	return result, nil
 }
 
-// unschedulablePodsCheckTime bounds how long handleStartupPodChecks keeps
-// re-queuing a STARTING JobSet to re-check for an unschedulable verdict, so a
-// pod stuck Pending does not trigger the reconcile loop indefinitely.
-const unschedulablePodsCheckTime = 5 * time.Minute
-
-// StartupPodCheckResult contains the status result and error/warning messages for startup pod checks.
-type StartupPodCheckResult struct {
-	Result            ctrl.Result
-	PodErrorMsg       string
-	StartupWarningMsg string
-}
-
-func (r *Reconciler) handleStartupPodChecks(ctx context.Context, jobSet *v1alpha2.JobSet) StartupPodCheckResult {
-	age := calculateJobsetStartAge(jobSet)
-	if age < r.StartupPodErrorCheckTime {
-		logging.Debug(ctx, "Skipping startup pod error check for JobSet, age is less than StartupPodErrorCheckTime", "age", age)
-		return StartupPodCheckResult{Result: ctrl.Result{RequeueAfter: r.StartupPodErrorCheckTime - age}}
-	}
-
-	// Fetch the JobSet's pods once and share the list between both checks (avoids
-	// a redundant API List call).
-	pods, err := r.listJobSetPods(ctx, jobSet)
-	if err != nil {
-		logging.Error(ctx, "Failed to list pods for startup checks", "namespace", jobSet.Namespace, "error", err)
-		return StartupPodCheckResult{}
-	}
-
-	// A hard error (e.g. ImagePullBackOff) fails the work unit immediately.
-	if podErrorMsg := checkPodsForStartupErrors(ctx, pods); podErrorMsg != "" {
-		return StartupPodCheckResult{PodErrorMsg: podErrorMsg}
-	}
-
-	// No hard error: the pods may simply be unschedulable (exhausted quota, no
-	// matching nodes). Surface the scheduler's verdict as a warning while keeping
-	// the work unit in STARTING. Bound the extra re-checks with
-	// unschedulablePodsCheckTime so we don't requeue indefinitely; after that we
-	// rely on event-driven reconciles (the warning still clears once pods schedule).
-	warningMsg := r.checkPodsForUnschedulable(ctx, pods)
-	result := ctrl.Result{}
-	if warningMsg != "" && age < unschedulablePodsCheckTime {
-		result.RequeueAfter = unschedulablePodsCheckTime - age
-	}
-	return StartupPodCheckResult{Result: result, StartupWarningMsg: warningMsg}
-}
-
-// listJobSetPods returns all pods belonging to the given JobSet. JobSet stamps
-// v1alpha2.JobSetNameKey as a label on every pod it creates.
-func (r *Reconciler) listJobSetPods(ctx context.Context, jobSet *v1alpha2.JobSet) ([]corev1.Pod, error) {
-	var podList corev1.PodList
-	if err := r.List(logging.Strip(ctx), &podList, client.InNamespace(jobSet.Namespace),
-		client.MatchingLabels{v1alpha2.JobSetNameKey: jobSet.Name}); err != nil {
-		return nil, fmt.Errorf("failed to list pods: %w", err)
-	}
-	return podList.Items, nil
-}
-
-// checkPodsForUnschedulable returns a human-readable warning if any pod of the
-// JobSet is Pending with a scheduler verdict of Unschedulable (PodScheduled=False).
-// It reads the scheduler's actual condition rather than guessing from elapsed
-// time, so a pod that is merely waiting for a node to be provisioned is not
-// misreported once it schedules.
-func (r *Reconciler) checkPodsForUnschedulable(ctx context.Context, pods []corev1.Pod) string {
-	for i := range pods {
-		pod := &pods[i]
-		if pod.Status.Phase != corev1.PodPending {
-			continue
-		}
-		for _, cond := range pod.Status.Conditions {
-			if !isPodUnschedulableCondition(cond) {
-				continue
-			}
-			if tpuWarning := r.checkTPUTopologyMismatch(ctx, pod, cond.Message); tpuWarning != "" {
-				return tpuWarning
-			}
-			return fmt.Sprintf(
-				"Work unit may be unschedulable: %s. Check cluster quota and node availability (e.g. kubectl describe pod / clusterqueue).",
-				cond.Message)
-		}
-	}
-	logging.Debug(ctx, "No unschedulable pods found")
-	return ""
-}
-
-func isPodUnschedulableCondition(cond corev1.PodCondition) bool {
-	return cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == corev1.PodReasonUnschedulable
-}
-
-// checkTPUTopologyMismatch checks if an unschedulable pod is waiting on an unsatisfiable TPU topology selector.
-func (r *Reconciler) checkTPUTopologyMismatch(ctx context.Context, pod *corev1.Pod, condMsg string) string {
-	if pod.Spec.NodeSelector == nil {
-		return ""
-	}
-	reqTopology, hasTopology := pod.Spec.NodeSelector[constants.TPUTopologySelectorKey]
-	if !hasTopology || !isNodeSelectorMismatchMessage(condMsg) {
-		return ""
-	}
-
-	availTopologies, err := r.listAvailableTPUTopologies(ctx)
-	if err != nil {
-		logging.Warn(ctx, "Failed to discover available TPU topologies in cluster", "error", err)
-		return ""
-	}
-	if len(availTopologies) == 0 {
-		return "" // Fall back to generic warning to avoid false positives during autoscaling from zero.
-	}
-
-	for _, avail := range availTopologies {
-		if avail == reqTopology {
-			return "" // Topology exists in cluster; pod is pending for quota or another reason.
-		}
-	}
-
-	reqType := pod.Spec.NodeSelector[constants.TPUAcceleratorSelectorKey]
-	return fmt.Sprintf(
-		"Work unit is unschedulable: requested TPU topology %q (type %q) does not match any node pool's advertised topology in the cluster. Available TPU topologies: %v. Please request a topology supported by the cluster's TPU node pools.",
-		reqTopology, reqType, availTopologies)
-}
-
-func isNodeSelectorMismatchMessage(msg string) bool {
-	lower := strings.ToLower(msg)
-	return strings.Contains(lower, "node affinity/selector") || strings.Contains(lower, "nodeselector") || strings.Contains(lower, "didn't match")
-}
-
-// tpuNodeListTimeout bounds the cached Node list call in listAvailableTPUTopologies
-// so an unsynced Node informer (e.g. on missing RBAC or API server latency) fails
-// fast and falls back to the generic unschedulable warning instead of blocking the
-// reconcile worker.
-const tpuNodeListTimeout = 5 * time.Second
-
-// listAvailableTPUTopologies returns a sorted list of unique TPU topologies advertised by nodes in the cluster.
-func (r *Reconciler) listAvailableTPUTopologies(ctx context.Context) ([]string, error) {
-	var nodeList corev1.NodeList
-	selector, err := k8slabels.Parse(constants.TPUTopologySelectorKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse TPU topology label selector: %w", err)
-	}
-	listCtx, cancel := context.WithTimeout(logging.Strip(ctx), tpuNodeListTimeout)
-	defer cancel()
-	if err := r.List(listCtx, &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
-		return nil, fmt.Errorf("failed to list nodes with TPU topology label: %w", err)
-	}
-
-	topologySet := make(map[string]struct{})
-	for i := range nodeList.Items {
-		if topVal, exists := nodeList.Items[i].Labels[constants.TPUTopologySelectorKey]; exists && topVal != "" {
-			topologySet[topVal] = struct{}{}
-		}
-	}
-
-	topologies := make([]string, 0, len(topologySet))
-	for top := range topologySet {
-		topologies = append(topologies, top)
-	}
-	sort.Strings(topologies)
-	return topologies, nil
-}
-
-func checkPodsForStartupErrors(ctx context.Context, pods []corev1.Pod) string {
-	for _, pod := range pods {
-		for _, containerStatus := range pod.Status.ContainerStatuses {
-			if containerStatus.State.Waiting != nil && (containerStatus.State.Waiting.Reason == "ImagePullBackOff" || containerStatus.State.Waiting.Reason == "ErrImagePull") {
-				return fmt.Sprintf("Failed to pull the container image (%s): %s", containerStatus.State.Waiting.Reason, containerStatus.State.Waiting.Message)
-			}
-		}
-	}
-	logging.Debug(ctx, "No startup errors found in pods")
-	return ""
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	if r == nil {
@@ -608,59 +354,6 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) err
 		return fmt.Errorf("failed to create jobset controller: %w", err)
 	}
 	return nil
-}
-
-func isJobSetStatusEqual(old, new *v1alpha2.JobSetStatus) bool {
-	if old.Restarts != new.Restarts {
-		return false
-	}
-	if !isJobSetConditionsEqual(old.Conditions, new.Conditions) {
-		return false
-	}
-	return isReplicatedJobsStatusEqual(old.ReplicatedJobsStatus, new.ReplicatedJobsStatus)
-}
-
-func isJobSetConditionsEqual(old, new []metav1.Condition) bool {
-	if len(old) != len(new) {
-		return false
-	}
-	for i := range old {
-		if old[i].Type != new[i].Type ||
-			old[i].Status != new[i].Status ||
-			old[i].Reason != new[i].Reason ||
-			old[i].Message != new[i].Message {
-			return false
-		}
-	}
-	return true
-}
-
-func isReplicatedJobsStatusEqual(old, new []v1alpha2.ReplicatedJobStatus) bool {
-	if len(old) != len(new) {
-		return false
-	}
-	for i := range old {
-		if old[i].Name != new[i].Name ||
-			old[i].Ready != new[i].Ready ||
-			old[i].Succeeded != new[i].Succeeded ||
-			old[i].Failed != new[i].Failed ||
-			old[i].Active != new[i].Active ||
-			old[i].Suspended != new[i].Suspended {
-			return false
-		}
-	}
-	return true
-}
-
-func calculateJobsetStartAge(jobSet *v1alpha2.JobSet) time.Duration {
-	// We are looking for the last transition time to determine how much time has passed since jobset was admitted to the kueue.
-	for _, condition := range jobSet.Status.Conditions {
-		if condition.Type == string(v1alpha2.JobSetSuspended) && condition.Status == metav1.ConditionFalse {
-			return time.Since(condition.LastTransitionTime.Time)
-		}
-	}
-	// if LastTransitionTime is not found, we fall back to the creation time
-	return time.Since(jobSet.CreationTimestamp.Time)
 }
 
 // createdByXManagerLabelValue marks an MLRun as owned by the XManager reconciler.
