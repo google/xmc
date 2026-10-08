@@ -16,7 +16,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -34,9 +33,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	memory "k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -46,13 +42,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-var (
-	componentGVR = schema.GroupVersionResource{
-		Group:    "xmc.dev",
-		Version:  "v1alpha1",
-		Resource: "components",
-	}
-)
+var componentGVR = bridge.ComponentGVR
 
 // Config holds runtime configuration options for the xmc-bridge controller.
 type Config struct {
@@ -74,27 +64,13 @@ type Config struct {
 }
 
 // ComponentStatus defines the structured representation of .status in the Component CRD.
-type ComponentStatus struct {
-	ObservedGeneration int64                `json:"observedGeneration"`
-	State              string               `json:"state"`
-	Access             *ComponentAccess     `json:"access,omitempty"`
-	Conditions         []ComponentCondition `json:"conditions,omitempty"`
-}
+type ComponentStatus = bridge.ComponentStatus
 
 // ComponentAccess defines the access configuration in .status.access.
-type ComponentAccess struct {
-	EnvVars map[string]string `json:"envVars,omitempty"`
-}
+type ComponentAccess = bridge.ComponentAccess
 
 // ComponentCondition defines a condition entry matching standard RFC3339 timestamps.
-type ComponentCondition struct {
-	Type               string `json:"type"`
-	Status             string `json:"status"`
-	ObservedGeneration int64  `json:"observedGeneration"`
-	Reason             string `json:"reason"`
-	Message            string `json:"message"`
-	LastTransitionTime string `json:"lastTransitionTime"`
-}
+type ComponentCondition = bridge.ComponentCondition
 
 // ParseConfig parses command line flags and environment variables into a validated Config object.
 // args typically receives os.Args[1:]. Default values fall back to corresponding environment
@@ -308,119 +284,24 @@ func (c *Controller) handleReconcileFailure(ctx context.Context, item *unstructu
 // If the Kubernetes API update fails, the error is returned so that the controller can retry
 // on the next pass while ensuring the finalizer remains in place to prevent premature deletion.
 func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) (*unstructured.Unstructured, error) {
-	if res == nil {
-		return item, nil
-	}
-	hasFin := false
-	for _, f := range item.GetFinalizers() {
-		if f == bridge.FinalizerDeletionProtection {
-			hasFin = true
-			break
-		}
-	}
-	ns := item.GetNamespace()
-	if ns == "" {
-		ns = c.namespace
-	}
-	if res.AddFinalizer && !hasFin {
-		item.SetFinalizers(append(item.GetFinalizers(), bridge.FinalizerDeletionProtection))
-		logging.Info(ctx, "Attaching deletion protection finalizer", "name", item.GetName())
-		return c.dynamicClient.Resource(componentGVR).Namespace(ns).Update(ctx, item, metav1.UpdateOptions{})
-	}
-	if res.RemoveFinalizer && hasFin {
-		var updated []string
-		for _, f := range item.GetFinalizers() {
-			if f != bridge.FinalizerDeletionProtection {
-				updated = append(updated, f)
-			}
-		}
-		item.SetFinalizers(updated)
-		logging.Info(ctx, "Removing deletion protection finalizer", "name", item.GetName())
-		return c.dynamicClient.Resource(componentGVR).Namespace(ns).Update(ctx, item, metav1.UpdateOptions{})
-	}
-	return item, nil
+	return bridge.SyncComponentFinalizers(ctx, c.dynamicClient, c.namespace, item, res)
 }
 
 // syncStatus serializes the ReconcileResult into the .status map of item and persists it
 // via Kubernetes Server-Side Apply (SSA) on the /status subresource with fieldManager "xmc-bridge".
 func (c *Controller) syncStatus(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
-	ns := item.GetNamespace()
-	if ns == "" {
-		ns = c.namespace
-	}
-	statusPatch := map[string]any{
-		"apiVersion": componentGVR.Group + "/" + componentGVR.Version,
-		"kind":       "Component",
-		"metadata": map[string]any{
-			"name":      item.GetName(),
-			"namespace": ns,
-		},
-		"status": BuildStatusMap(res),
-	}
-	patchBytes, err := json.Marshal(statusPatch)
-	if err != nil {
-		return fmt.Errorf("failed to marshal status SSA patch: %w", err)
-	}
-
-	force := true
-	updated, err := c.dynamicClient.Resource(componentGVR).Namespace(ns).Patch(
-		ctx,
-		item.GetName(),
-		types.ApplyPatchType,
-		patchBytes,
-		metav1.PatchOptions{
-			FieldManager: "xmc-bridge",
-			Force:        &force,
-		},
-		"status",
-	)
-	if err != nil {
-		return err
-	}
-	item.Object = updated.Object
-	logging.Debug(ctx, "Updated Component status via Server-Side Apply", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
-	return nil
+	return bridge.ApplyComponentStatusSSA(ctx, c.dynamicClient, c.namespace, item, res)
 }
 
 // BuildStatus converts a ReconcileResult into a typed ComponentStatus matching the Component CRD status schema,
 // including observedGeneration, state string, access envVars (if present), and standard RFC3339 condition list.
 func BuildStatus(res *bridge.ReconcileResult) ComponentStatus {
-	status := ComponentStatus{
-		ObservedGeneration: res.ObservedGeneration,
-		State:              res.State.String(),
-	}
-	if res.Access != nil && len(res.Access.EnvVars) > 0 {
-		status.Access = &ComponentAccess{EnvVars: res.Access.EnvVars}
-	}
-	if len(res.Conditions) > 0 {
-		status.Conditions = make([]ComponentCondition, 0, len(res.Conditions))
-		for _, c := range res.Conditions {
-			status.Conditions = append(status.Conditions, ComponentCondition{
-				Type:               c.Type,
-				Status:             string(c.Status),
-				ObservedGeneration: c.ObservedGeneration,
-				Reason:             c.Reason,
-				Message:            c.Message,
-				LastTransitionTime: c.LastTransitionTime.Format(time.RFC3339),
-			})
-		}
-	}
-	return status
+	return bridge.BuildStatus(res)
 }
 
 // BuildStatusMap converts a ReconcileResult into an unstructured map matching the Component CRD status schema.
 func BuildStatusMap(res *bridge.ReconcileResult) map[string]any {
-	status := BuildStatus(res)
-	m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&status)
-	if err != nil {
-		fallback := ComponentStatus{
-			ObservedGeneration: res.ObservedGeneration,
-			State:              res.State.String(),
-		}
-		fallbackMap, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(&fallback)
-		return fallbackMap
-	}
-	return m
+	return bridge.BuildStatusMap(res)
 }
 
 // RunBridge initializes all dependencies (CMS gRPC client, Kubernetes dynamic client,

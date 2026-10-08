@@ -23,7 +23,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
 
-// resolveAndValidateWrapperRef resolves WrapperRef from input and validates namespace isolation.
+// resolveAndValidateWrapperRef resolves WrapperRef from input and validates namespace isolation and JSONPath syntax.
 func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, string, string) {
 	ref := in.WrapperOpts
 	if ref.Name == "" && in.Spec.GetWrapperRef() != nil {
@@ -34,6 +34,11 @@ func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, strin
 	}
 	if in.Namespace != "" && ref.Namespace != "" && ref.Namespace != in.Namespace {
 		return ref, "CrossNamespaceForbidden", fmt.Sprintf("cross-namespace wrapperRef is forbidden (component in %q cannot target %q)", in.Namespace, ref.Namespace)
+	}
+	if ref.Name != "" {
+		if err := ValidateWrapperRefJSONPaths(ref); err != nil {
+			return ref, ReasonInvalidWrapperSpec, err.Error()
+		}
 	}
 	return ref, "", ""
 }
@@ -65,18 +70,8 @@ func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileCompone
 	}
 
 	resStatus, err := r.prober.DetectStatus(ctx, ref)
-	if err != nil {
-		if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "StatusDetectionFailed", err.Error()); cmsErr != nil {
-			return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w (CMS update failed: %v)", ref.Namespace, ref.Name, err, cmsErr)
-		}
-		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w", ref.Namespace, ref.Name, err)
-	}
-	if resStatus == nil {
-		errmsg := "status detector returned nil status"
-		if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, "StatusDetectionFailed", errmsg); cmsErr != nil {
-			return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s (CMS update failed: %v)", ref.Namespace, ref.Name, errmsg, cmsErr)
-		}
-		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s", ref.Namespace, ref.Name, errmsg)
+	if err != nil || resStatus == nil {
+		return r.handle3PStatusDetectionFailure(ctx, in, canonicalName, res, ref, err)
 	}
 	if !resStatus.Found {
 		reason := "ResourceNotFound"
@@ -94,6 +89,26 @@ func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileCompone
 	}
 
 	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
+}
+
+func (r *Reconciler) handle3PStatusDetectionFailure(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, ref WrapperRef, err error) (*ReconcileResult, error) {
+	if err == nil {
+		errmsg := "status detector returned nil status"
+		if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, ReasonStatusDetectionFailed, errmsg); cmsErr != nil {
+			return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s (CMS update failed: %v)", ref.Namespace, ref.Name, errmsg, cmsErr)
+		}
+		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s", ref.Namespace, ref.Name, errmsg)
+	}
+	reason := ReasonStatusDetectionFailed
+	if errors.Is(err, ErrInvalidWrapperSpec) {
+		reason = ReasonInvalidWrapperSpec
+	} else if errors.Is(err, ErrContractBreach) {
+		reason = ReasonContractBroken
+	}
+	if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, err.Error()); cmsErr != nil {
+		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w (CMS update failed: %v)", ref.Namespace, ref.Name, err, cmsErr)
+	}
+	return res, fmt.Errorf("failed to detect 3P status for %s/%s: %w", ref.Namespace, ref.Name, err)
 }
 
 // reconcileOperatorlessWrapper handles Profile 3 (Operator-less static or external SaaS components).
