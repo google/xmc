@@ -22,7 +22,7 @@ import (
 
 	fepb "api/filter/filter_expression_go_proto"
 	aipfilter "api/filter/go/filter"
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/query_generator/querytools"
@@ -77,7 +77,7 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 		EnforceValidStrings:            true,
 	}.Build(), params.Filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse filter %s, %w: %w", params.Filter, err, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("failed to parse filter %s, %w: %w", params.Filter, err, grpcerr.ErrInvalidArgument)
 	}
 
 	logging.Info(ctx, "Parsed filter", "filter", exp)
@@ -85,7 +85,7 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 	// 2. Convert the orderBy string to a list of ordered indices.
 	orderedIndices, err := generateOrderBy(ctx, params.OrderBy, params.ValidOrderByFields)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse orderBy %s, %w: %w", params.OrderBy, err, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("failed to parse orderBy %s, %w: %w", params.OrderBy, err, grpcerr.ErrInvalidArgument)
 	}
 
 	// 3. Generate the query.
@@ -238,16 +238,16 @@ func DecodeAfterCursorPageToken(pageToken string) (map[string]any, error) {
 	}
 	data, err := base64.RawURLEncoding.DecodeString(pageToken)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode pageToken %q, %w: %w", pageToken, err, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("failed to decode pageToken %q, %w: %w", pageToken, err, grpcerr.ErrInvalidArgument)
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	var afterCursor map[string]any
 	if err := dec.Decode(&afterCursor); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal pageToken %q, %w: %w", pageToken, err, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("failed to unmarshal pageToken %q, %w: %w", pageToken, err, grpcerr.ErrInvalidArgument)
 	}
 	if len(afterCursor) == 0 {
-		return nil, fmt.Errorf("decoded pageToken %q has empty cursor: %w", pageToken, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("decoded pageToken %q has empty cursor: %w", pageToken, grpcerr.ErrInvalidArgument)
 	}
 	normalizeCursorNumbers(afterCursor)
 	return afterCursor, nil
@@ -274,7 +274,7 @@ func EncodeAfterCursorPageToken(afterCursor map[string]any) (string, error) {
 	}
 	data, err := json.Marshal(afterCursor)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal afterCursor, %w: %w", err, status.ErrInternal)
+		return "", fmt.Errorf("failed to marshal afterCursor, %w: %w", err, grpcerr.ErrInternal)
 	}
 	return base64.RawURLEncoding.EncodeToString(data), nil
 }

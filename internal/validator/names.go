@@ -18,14 +18,14 @@ import (
 	"strconv"
 	"strings"
 
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 )
 
 // validateStringID checks if a given ID string is valid, and returns the ID if it is valid.
 func validateStringID(ID string) (int64, error) {
 	intID, err := strconv.ParseInt(ID, 10, 64)
 	if err != nil || intID <= 0 {
-		return 0, fmt.Errorf("id must be a positive integer: %w (%v)", status.ErrInvalidArgument, err)
+		return 0, fmt.Errorf("id must be a positive integer: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 
 	return intID, nil
@@ -47,7 +47,7 @@ func ValidateWorkUnitNameAllowZeroWID(name string) (xid int64, wid int64, err er
 func validateStringIDAllowZero(ID string) (int64, error) {
 	intID, err := strconv.ParseInt(ID, 10, 64)
 	if err != nil || intID < 0 {
-		return 0, fmt.Errorf("id must be a non-negative integer: %w (%v)", status.ErrInvalidArgument, err)
+		return 0, fmt.Errorf("id must be a non-negative integer: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 
 	return intID, nil
@@ -61,13 +61,13 @@ func validateStringIDAllowZero(ID string) (int64, error) {
 func validateResourceName(name string, resources []string, format string, allowZeroLastID bool) ([]int64, error) {
 	parts := strings.Split(name, "/")
 	if len(parts) != 2*len(resources) {
-		return nil, fmt.Errorf("resource name must be in the format '%s': %w", format, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("resource name must be in the format '%s': %w", format, grpcerr.ErrInvalidArgument)
 	}
 
 	var ids []int64
 	for i, resource := range resources {
 		if parts[2*i] != resource {
-			return nil, fmt.Errorf("resource name must be in the format '%s': %w", format, status.ErrInvalidArgument)
+			return nil, fmt.Errorf("resource name must be in the format '%s': %w", format, grpcerr.ErrInvalidArgument)
 		}
 
 		var id int64
@@ -155,7 +155,7 @@ func ValidateStatusMessageName(name string) (xid int64, wid int64, messageID int
 		return ids[0], 0, ids[1], nil
 	}
 
-	return 0, 0, 0, fmt.Errorf("status message name must be in the format 'experiments/{xid}/statusMessages/{message_id}' or 'experiments/{xid}/workUnits/{wid}/statusMessages/{message_id}': %w", status.ErrInvalidArgument)
+	return 0, 0, 0, fmt.Errorf("status message name must be in the format 'experiments/{xid}/statusMessages/{message_id}' or 'experiments/{xid}/workUnits/{wid}/statusMessages/{message_id}': %w", grpcerr.ErrInvalidArgument)
 }
 
 // ValidateArtifactName checks if a given artifact name is valid.
@@ -197,7 +197,7 @@ func ValidateOperationName(name string) (xid int64, wid int64, oidUUID string, e
 	const separator = "/operations/"
 	index := strings.LastIndex(name, separator)
 	if index == -1 {
-		return 0, 0, "", fmt.Errorf("resource name must be in the format '%s': %w", format, status.ErrInvalidArgument)
+		return 0, 0, "", fmt.Errorf("resource name must be in the format '%s': %w", format, grpcerr.ErrInvalidArgument)
 	}
 	workUnitName := name[:index]
 	uuid := name[index+len(separator):]
@@ -208,7 +208,7 @@ func ValidateOperationName(name string) (xid int64, wid int64, oidUUID string, e
 	}
 
 	if uuid == "" {
-		return 0, 0, "", fmt.Errorf("resource name must be in the format '%s', uuid cannot be empty: %w", format, status.ErrInvalidArgument)
+		return 0, 0, "", fmt.Errorf("resource name must be in the format '%s', uuid cannot be empty: %w", format, grpcerr.ErrInvalidArgument)
 	}
 
 	return xid, wid, uuid, nil
@@ -274,7 +274,7 @@ const (
 func ValidateDashboardName(name string) (string, error) {
 	parts := strings.Split(name, "/")
 	if len(parts) != 2 || parts[0] != "dashboards" || parts[1] == "" {
-		return "", fmt.Errorf("dashboard name must be in the format 'dashboards/{dashboard_id}': %w", status.ErrInvalidArgument)
+		return "", fmt.Errorf("dashboard name must be in the format 'dashboards/{dashboard_id}': %w", grpcerr.ErrInvalidArgument)
 	}
 	return parts[1], nil
 }
@@ -298,7 +298,7 @@ type ParsedChartName struct {
 func ValidateRootChartName(name string) (string, error) {
 	parts := strings.Split(name, "/")
 	if len(parts) != 2 || parts[0] != "charts" || strings.TrimSpace(parts[1]) == "" {
-		return "", fmt.Errorf("chart name must be in the format 'charts/{chart_id}': %w", status.ErrInvalidArgument)
+		return "", fmt.Errorf("chart name must be in the format 'charts/{chart_id}': %w", grpcerr.ErrInvalidArgument)
 	}
 	return parts[1], nil
 }
@@ -363,7 +363,7 @@ func ParseChartName(name string) (ParsedChartName, error) {
 			return res, err
 		}
 	}
-	return ParsedChartName{}, fmt.Errorf("chart name must be in the format 'experiments/{xid}/workUnits/{wid}/charts/{chart_id}', 'charts/{chart_id}', or 'dashboards/{dashboard_id}/charts/{chart_id}': %w", status.ErrInvalidArgument)
+	return ParsedChartName{}, fmt.Errorf("chart name must be in the format 'experiments/{xid}/workUnits/{wid}/charts/{chart_id}', 'charts/{chart_id}', or 'dashboards/{dashboard_id}/charts/{chart_id}': %w", grpcerr.ErrInvalidArgument)
 }
 
 // ValidateChartName checks if a given chart name is valid.
@@ -442,5 +442,5 @@ func validateExperimentOrWorkUnitParent(parent string) (int64, int64, error) {
 		}
 		return xid, wid, nil
 	}
-	return 0, 0, fmt.Errorf("parent must be in the format experiments/{xid} or experiments/{xid}/workUnits/{wid}: %w", status.ErrInvalidArgument)
+	return 0, 0, fmt.Errorf("parent must be in the format experiments/{xid} or experiments/{xid}/workUnits/{wid}: %w", grpcerr.ErrInvalidArgument)
 }

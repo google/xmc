@@ -25,7 +25,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/safesql"
 
 	fpb "api/filter/filter_expression_go_proto"
@@ -1041,7 +1041,7 @@ func TestRestrictionWithFullTextSearch(t *testing.T) {
 					}
 				}
 
-				if errors.Is(err, status.ErrInvalidArgument) {
+				if errors.Is(err, grpcerr.ErrInvalidArgument) {
 					t.Errorf("got: %v, want success", err)
 				}
 			}
@@ -1102,7 +1102,7 @@ func TestHasOperatorWithSubstringMatching(t *testing.T) {
 				}
 			}
 
-			if errors.Is(err, status.ErrInvalidArgument) {
+			if errors.Is(err, grpcerr.ErrInvalidArgument) {
 				t.Errorf("got: %v, want success", err)
 			}
 		})

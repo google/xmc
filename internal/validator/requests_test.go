@@ -25,9 +25,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	essapipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmessagespb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -53,61 +53,61 @@ func TestValidateCreateXidRequest(t *testing.T) {
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "nil_xid_entry",
 			req:     &xidapipb.CreateXidEntryRequest{},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "xid_entry_name_not_empty",
 			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
 				r.XidEntry.Name = proto.String("xids/123")
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_acls",
 			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
 				r.XidEntry.Acls = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_acls",
 			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
 				r.XidEntry.Acls = &xidmessagespb.XidAcls{}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_origin",
 			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
 				r.XidEntry.Origin = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_owner_role",
 			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
 				r.XidEntry.Acls.Owners = []*xidmessagespb.XidAcls_Role{{}}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_writer_role",
 			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
 				r.XidEntry.Acls.Writers = []*xidmessagespb.XidAcls_Role{{}}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_reader_role",
 			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
 				r.XidEntry.Acls.Readers = []*xidmessagespb.XidAcls_Role{{}}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "valid_request",
@@ -134,7 +134,7 @@ func TestValidateCreateXidRequest(t *testing.T) {
 			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
 				r.XidEntry.ParentXid = proto.String("invalid/123")
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -164,89 +164,89 @@ func TestValidateCreateExperimentRequest(t *testing.T) {
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "nil_experiment",
 			req:     &essapipb.CreateExperimentRequest{},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "name_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
 				r.Experiment.Name = "experiments/123"
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "creator_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
 				r.Experiment.Creator = "user"
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "title_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
 				r.Experiment.Title = ""
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "title_whitespace",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
 				r.Experiment.Title = " "
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "create_time_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
 				r.Experiment.CreateTime = timestamppb.New(time.Now())
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "update_time_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
 				r.Experiment.UpdateTime = timestamppb.New(time.Now())
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "status_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
 				r.Experiment.Status = &essmsgpb.ExperimentStatus{}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "too_many_tags",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
 				r.Experiment.Tags = make([]string, maxTags+1)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "tag_too_long",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
 				r.Experiment.Tags = []string{strings.Repeat("a", maxTagLen+1)}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "notes_too_long",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
 				r.Experiment.Notes = strings.Repeat("a", maxNotesLen+1)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "too_many_urls",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
 				r.Experiment.Urls = make([]*essmsgpb.Url, maxURLs+1)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "url_too_long",
@@ -257,14 +257,14 @@ func TestValidateCreateExperimentRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_acls",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
 				r.Experiment.Acls = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "valid_request",
@@ -301,14 +301,14 @@ func TestValidateUpdateExperimentRequest(t *testing.T) {
 			req: prototest.Modify(validReq, func(r *essapipb.UpdateExperimentRequest) {
 				r.Experiment.Title = ""
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "title_whitespace",
 			req: prototest.Modify(validReq, func(r *essapipb.UpdateExperimentRequest) {
 				r.Experiment.Title = " "
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "valid_request",
@@ -553,77 +553,77 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.Parent = "invalid/123"
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_work_unit",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "name_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Name = "experiments/123/workUnits/1"
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "create_time_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.CreateTime = timestamppb.New(time.Now())
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "update_time_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.UpdateTime = timestamppb.New(time.Now())
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "current_work_unit_execution_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.CurrentWorkUnitExecution = &essmsgpb.WorkUnitExecution{}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "too_many_tags",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Tags = make([]string, maxTags+1)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "tag_too_long",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Tags = []string{strings.Repeat("a", maxTagLen+1)}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "notes_too_long",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Notes = strings.Repeat("a", maxNotesLen+1)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "too_many_urls",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Urls = make([]*essmsgpb.Url, maxURLs+1)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "url_too_long",
@@ -634,112 +634,112 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_executable",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "work_unit_type_unspecified",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.WorkUnitType = essmsgpb.WorkUnit_WORK_UNIT_TYPE_UNSPECIFIED
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_scheduling_constraints",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.SchedulingConstraints = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_queue_name",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.SchedulingConstraints.QueueName = ""
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "queue_name_too_long",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.SchedulingConstraints.QueueName = strings.Repeat("a", maxQueueNameLen+1)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_jobset",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.Type = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "no_jobs",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs = []*essmsgpb.KubernetesJob{}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "too_many_jobs",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs = make([]*essmsgpb.KubernetesJob, 9)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "jobset_no_jobs",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs = []*essmsgpb.KubernetesJob{}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "job_replicas_too_low",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].Replicas = 0
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "job_spec_nil",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "job_name_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].Name = ""
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "job_spec_docker_image_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.DockerImage = ""
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "job_spec_resources_nil",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Resources = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "job_spec_resources_resources_nil",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Resources.Resources = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "cpu_millicores_too_low",
@@ -751,7 +751,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "memory_bytes_too_low",
@@ -763,7 +763,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "gpu_type_empty",
@@ -775,7 +775,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "gpu_count_too_low",
@@ -787,7 +787,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "tpu_type_empty",
@@ -799,7 +799,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "tpu_topology_empty",
@@ -811,7 +811,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "tpu_topology_invalid",
@@ -823,7 +823,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "valid_request",
@@ -835,14 +835,14 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].Name = strings.Repeat("a", 64)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "job_name_invalid_format",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].Name = "-job1"
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "job_name_duplicate",
@@ -850,7 +850,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 				jobs := r.WorkUnit.Executable.GetJobset().Jobs
 				r.WorkUnit.Executable.GetJobset().Jobs = append(jobs, proto.Clone(jobs[0]).(*essmsgpb.KubernetesJob))
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "job_dependency_name_empty",
@@ -859,7 +859,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					JobName: "",
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "job_dependency_self",
@@ -868,7 +868,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					JobName: "job1",
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "job_dependency_not_found",
@@ -877,7 +877,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					JobName: "job2",
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "job_dependency_state_unspecified",
@@ -891,7 +891,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 				}
 				r.WorkUnit.Executable.GetJobset().Jobs = append(jobs, job2)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "valid_request_with_dependency",
@@ -919,14 +919,14 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].ServiceAccount = "invalid_name"
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "service_account_too_long",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].ServiceAccount = strings.Repeat("a", 254)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "valid_priority_class_name",
@@ -947,21 +947,21 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = "INVALID_UPPERCASE"
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_priority_class_name_prefix",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = "-invalid-prefix"
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "priority_class_name_too_long",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = strings.Repeat("a", 254)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "valid_job_with_sidecars",
@@ -1018,7 +1018,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "valid_node_selector",
@@ -1090,7 +1090,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_node_selector_value_too_long",
@@ -1126,7 +1126,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_node_selector_key_too_long",
@@ -1162,7 +1162,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "valid_node_selector_no_slash_uppercase_dots",
@@ -1234,7 +1234,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_node_selector_multiple_slashes",
@@ -1270,7 +1270,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_node_selector_empty_prefix",
@@ -1306,7 +1306,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_node_selector_prefix_too_long",
@@ -1342,7 +1342,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_node_selector_invalid_prefix",
@@ -1378,7 +1378,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_node_selector_empty_name",
@@ -1414,7 +1414,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_node_selector_name_too_long",
@@ -1450,7 +1450,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_node_selector_invalid_name",
@@ -1486,7 +1486,7 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -1535,8 +1535,8 @@ func TestValidateCreateWorkUnitRequest_SuccessPolicy(t *testing.T) {
 		wantErr error
 	}{
 		{"valid_policy", &essmsgpb.JobSetExecutable_SuccessPolicy{Operator: essmsgpb.JobSetExecutable_SuccessPolicy_ALL, TargetReplicatedJobs: []string{"pathways-head"}}, nil},
-		{"empty_target", &essmsgpb.JobSetExecutable_SuccessPolicy{TargetReplicatedJobs: []string{""}}, status.ErrInvalidArgument},
-		{"unknown_job", &essmsgpb.JobSetExecutable_SuccessPolicy{TargetReplicatedJobs: []string{"non-existent"}}, status.ErrInvalidArgument},
+		{"empty_target", &essmsgpb.JobSetExecutable_SuccessPolicy{TargetReplicatedJobs: []string{""}}, grpcerr.ErrInvalidArgument},
+		{"unknown_job", &essmsgpb.JobSetExecutable_SuccessPolicy{TargetReplicatedJobs: []string{"non-existent"}}, grpcerr.ErrInvalidArgument},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1558,7 +1558,7 @@ func TestValidateCreateWorkUnitRequest_DNSPolicy(t *testing.T) {
 		{"valid_cluster_first_with_host_net", "ClusterFirstWithHostNet", nil},
 		{"valid_default", "Default", nil},
 		{"valid_none", "None", nil},
-		{"invalid_dns_policy", "InvalidPolicy", status.ErrInvalidArgument},
+		{"invalid_dns_policy", "InvalidPolicy", grpcerr.ErrInvalidArgument},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1599,63 +1599,63 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Parent = "invalid/123"
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_artifact",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "name_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.Name = "artifacts/1"
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "parent_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.Parent = "experiments/123"
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "create_time_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.CreateTime = timestamppb.New(time.Now())
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "update_time_not_empty",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.UpdateTime = timestamppb.New(time.Now())
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_url_non_managed_xprof",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.Url = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_url_non_managed_xprof",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.Url = &essmsgpb.Url{}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			// EXECUTION phase alone must NOT exempt the URL requirement; only a
@@ -1665,7 +1665,7 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 				r.Artifact.LifecyclePhase = essmsgpb.Artifact_EXECUTION
 				r.Artifact.Url = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "managed_xprof_no_url_ok",
@@ -1687,28 +1687,28 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 					Url: strings.Repeat("a", maxURLLen+1),
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "too_many_tags",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.Tags = make([]string, maxTags+1)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "tag_too_long",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.Tags = []string{strings.Repeat("a", maxTagLen+1)}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "notes_too_long",
 			req: prototest.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.Notes = strings.Repeat("a", maxNotesLen+1)
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "payload_missing",
@@ -1734,7 +1734,7 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 			req: prototest.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.Payload = &essmsgpb.ArtifactPayload{}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "payload_managed_xprof_missing_display_name_is_valid",
@@ -1767,7 +1767,7 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "payload_code_source_missing_code_block",
@@ -1778,7 +1778,7 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "payload_text_missing_title",
@@ -1789,7 +1789,7 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "payload_text_missing_text",
@@ -1800,7 +1800,7 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "valid_request_with_managed_xprof_payload",
@@ -1847,7 +1847,7 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "valid_request_with_url_payload",
@@ -1870,7 +1870,7 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 					},
 				}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "valid_request_with_chart_payload",

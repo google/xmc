@@ -40,7 +40,7 @@ go_test(
         "//api/filter/go/filter",
         "//api/filter/go/filtervisitor",
         "//api/filter/go/queryfilterbase",
-        "//internal/compat/status",
+        "//internal/grpcerr",
         "//internal/safesql",
         "@com_github_google_go_cmp//cmp",
         "@com_google_cloud_go_spanner//:spanner",

@@ -16,7 +16,7 @@ package validator
 import (
 	"fmt"
 
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 )
 
 const (
@@ -42,13 +42,13 @@ func ValidateAIPCompliantListWithMaxPageSize(pageSize int32, filter string, orde
 
 func validateAIPCompliantList(pageSize int32, filter string, orderBy string, pageToken string, maxPageSize int32) error {
 	if pageSize < 0 {
-		return fmt.Errorf("page_size cannot be negative %d: %w", pageSize, status.ErrInvalidArgument)
+		return fmt.Errorf("page_size cannot be negative %d: %w", pageSize, grpcerr.ErrInvalidArgument)
 	}
 	if pageSize > maxPageSize {
-		return fmt.Errorf("page_size cannot be greater than %d: %w", maxPageSize, status.ErrInvalidArgument)
+		return fmt.Errorf("page_size cannot be greater than %d: %w", maxPageSize, grpcerr.ErrInvalidArgument)
 	}
 	if len(pageToken) > maxPageTokenLen {
-		return fmt.Errorf("page_token is too long: got %d chars, max is %d: %w", len(pageToken), maxPageTokenLen, status.ErrInvalidArgument)
+		return fmt.Errorf("page_token is too long: got %d chars, max is %d: %w", len(pageToken), maxPageTokenLen, grpcerr.ErrInvalidArgument)
 	}
 	return nil
 }
