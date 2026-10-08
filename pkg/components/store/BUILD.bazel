@@ -67,6 +67,7 @@ go_test(
         "intent_epoch_test.go",
         "intent_idempotency_test.go",
         "memory_store_test.go",
+        "snapshot_lookup_test.go",
         "snapshot_resolver_test.go",
         "spanner_intent_fast_path_test.go",
         "spanner_store_test.go",

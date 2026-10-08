@@ -15,6 +15,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/binary"
@@ -91,6 +92,12 @@ FROM ExperimentComponentSnapshots s
 JOIN Components c ON s.ComponentId = c.ComponentId
 WHERE c.Name = @name AND s.LockedGeneration = @gen
 ORDER BY c.CreateTime DESC, c.ComponentId DESC
+LIMIT 1`
+
+	selectSnapshotByNameIDAndGenSQL = `SELECT s.ComponentId, s.LockedGeneration, s.ConfigProto, s.AccessPayload, c.CreateTime, c.UpdateTime
+FROM ExperimentComponentSnapshots s
+JOIN Components c ON s.ComponentId = c.ComponentId
+WHERE c.Name = @name AND s.ComponentId = @id AND s.LockedGeneration = @gen
 LIMIT 1`
 )
 
@@ -899,12 +906,9 @@ func buildDeletionMutations(toDelete []*ComponentRecord, policy componentspb.Del
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
 func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	canonicalName, err := validateResourceName(name)
+	canonicalName, err := validateSnapshotArgs(name, generation)
 	if err != nil {
 		return nil, nil, err
-	}
-	if generation < 0 {
-		return nil, nil, status.Error(codes.InvalidArgument, "generation cannot be negative")
 	}
 
 	txn := s.client.ReadOnlyTransaction()
@@ -917,35 +921,63 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 		}
 		return nil, nil, err
 	}
+	if generation <= rec.Generation {
+		return s.resolveActiveSnapshot(ctx, txn, rec, generation, canonicalName)
+	}
+	// The active component is at a lower generation than requested (e.g. name was reused after
+	// soft-deleting an older incarnation that reached a higher generation): attempt resolving
+	// historically by name before returning NotFound.
+	snapRec, coords, err := s.resolveHistoricalSnapshotByName(ctx, txn, canonicalName, generation)
+	if status.Code(err) == codes.NotFound {
+		return nil, nil, laterGenerationNotFound(canonicalName, generation, rec.Generation)
+	}
+	return snapRec, coords, err
+}
 
-	targetGen := generation
-	if targetGen == 0 {
-		targetGen = rec.Generation
+// ResolveComponentSnapshotByID resolves the snapshot of the incarnation componentID of a component
+// at generation: the active incarnation resolves its own generations, a soft-deleted incarnation
+// resolves only its experiment-pinned snapshots (its final Components row is never used as a
+// fallback, so generation 0 is NotFound), and an incarnation of another name is NotFound.
+func (s *SpannerStore) ResolveComponentSnapshotByID(ctx context.Context, name string, componentID, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	canonicalName, err := validatePinnedSnapshotArgs(name, componentID, generation)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if targetGen > rec.Generation {
-		// If the active component is at a lower generation than requested (e.g. name was reused
-		// after soft-deleting an older incarnation that reached a higher generation), attempt
-		// resolving historically by name before returning NotFound.
-		snapRec, coords, err := s.resolveHistoricalSnapshotByName(ctx, txn, canonicalName, targetGen)
-		if err == nil {
-			return snapRec, coords, nil
-		}
-		if status.Code(err) != codes.NotFound {
-			return nil, nil, err
-		}
-		return nil, nil, status.Errorf(codes.NotFound, "snapshot for generation %d of component %s not found (current generation is %d)", targetGen, canonicalName, rec.Generation)
-	}
+	txn := s.client.ReadOnlyTransaction()
+	defer txn.Close()
 
-	if targetGen == rec.Generation {
-		var coords *componentspb.ResolvedComponentCoordinates
-		if rec.Status != nil && rec.Status.Coordinates != nil {
-			coords = cloneCoordinates(rec.Status.Coordinates)
-		}
-		return cloneRecord(rec), coords, nil
+	rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
+	switch {
+	case err != nil && !errors.Is(err, ErrComponentNotFound):
+		return nil, nil, err
+	case err == nil && rec.ComponentID == componentID:
+		return s.resolveActiveSnapshot(ctx, txn, rec, generation, canonicalName)
+	case generation == 0:
+		return nil, nil, noActiveIncarnation(canonicalName, componentID)
 	}
+	snapRec, coords, err := s.resolveIncarnationSnapshot(ctx, txn, canonicalName, componentID, generation)
+	if status.Code(err) == codes.NotFound {
+		return nil, nil, incarnationSnapshotNotFound(canonicalName, componentID, generation)
+	}
+	return snapRec, coords, err
+}
 
-	return s.resolveHistoricalSnapshot(ctx, txn, rec, targetGen, canonicalName)
+// resolveActiveSnapshot resolves generation (0 means current) of the active incarnation rec: the
+// current generation from rec itself and an earlier one from its stored snapshot.
+func (s *SpannerStore) resolveActiveSnapshot(ctx context.Context, queryable spannerQueryable, rec *ComponentRecord, generation int64, canonicalName string) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	targetGen := cmp.Or(generation, rec.Generation)
+	switch {
+	case targetGen > rec.Generation:
+		return nil, nil, laterGenerationNotFound(canonicalName, targetGen, rec.Generation)
+	case targetGen < rec.Generation:
+		return s.resolveHistoricalSnapshot(ctx, queryable, rec, targetGen, canonicalName)
+	}
+	var coords *componentspb.ResolvedComponentCoordinates
+	if rec.Status != nil && rec.Status.Coordinates != nil {
+		coords = cloneCoordinates(rec.Status.Coordinates)
+	}
+	return cloneRecord(rec), coords, nil
 }
 
 // snapshotRowData holds the raw ExperimentComponentSnapshots column values read from a query row.
@@ -1054,6 +1086,26 @@ func (s *SpannerStore) resolveHistoricalSnapshotByName(ctx context.Context, quer
 			"gen":  targetGen,
 		},
 	}
+	return resolveJoinedSnapshot(ctx, queryable, stmt, canonicalName, targetGen)
+}
+
+// resolveIncarnationSnapshot resolves the snapshot of the incarnation componentID of canonicalName
+// at targetGen, typically a soft-deleted one. Timestamps come from its Components row.
+func (s *SpannerStore) resolveIncarnationSnapshot(ctx context.Context, queryable spannerQueryable, canonicalName string, componentID, targetGen int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	stmt := spanner.Statement{
+		SQL: selectSnapshotByNameIDAndGenSQL,
+		Params: map[string]any{
+			"name": canonicalName,
+			"id":   componentID,
+			"gen":  targetGen,
+		},
+	}
+	return resolveJoinedSnapshot(ctx, queryable, stmt, canonicalName, targetGen)
+}
+
+// resolveJoinedSnapshot hydrates the first snapshot row of stmt, which joins the owning Components
+// row for its CreateTime and UpdateTime.
+func resolveJoinedSnapshot(ctx context.Context, queryable spannerQueryable, stmt spanner.Statement, canonicalName string, targetGen int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
 	row, err := querySnapshotRow(ctx, queryable, stmt, canonicalName, targetGen)
 	if err != nil {
 		return nil, nil, err

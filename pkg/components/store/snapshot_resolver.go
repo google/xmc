@@ -15,7 +15,9 @@
 package store
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -26,47 +28,167 @@ import (
 	"xmanager_cloud/pkg/components/semver"
 )
 
-// ResolveComponentSnapshotFromMap resolves or caches an immutable snapshot of a component at the requested generation.
-func ResolveComponentSnapshotFromMap(components map[string]*ComponentRecord, snapshots map[string]map[int64]*SnapshotRecord, name string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	canonicalName, err := validateResourceName(name)
+// ResolveComponentSnapshotFromMap resolves or caches an immutable snapshot of the component name at
+// generation (0 means the current generation) in the same order as SpannerStore: the active
+// incarnation resolves its own generations by ComponentId, and a later generation, or a name
+// without an active incarnation, resolves the newest incarnation holding a snapshot at generation.
+// components and snapshots are keyed by ComponentId.
+func ResolveComponentSnapshotFromMap(components map[int64]*ComponentRecord, snapshots map[int64]map[int64]*SnapshotRecord, name string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	canonicalName, err := validateSnapshotArgs(name, generation)
 	if err != nil {
 		return nil, nil, err
 	}
-	if generation < 0 {
-		return nil, nil, status.Error(codes.InvalidArgument, "generation cannot be negative")
-	}
-
-	rec, exists := components[canonicalName]
-	if !exists || rec == nil || isDeletedRecord(rec) {
+	incarnations := incarnationsNewestFirst(components, canonicalName)
+	active := activeIncarnation(incarnations)
+	switch {
+	case active != nil && generation <= active.Generation:
+		return resolveActiveSnapshot(active, snapshots, canonicalName, generation)
+	case active != nil:
+		rec, coords, err := newestRecordedSnapshot(incarnations, snapshots, canonicalName, generation)
+		if status.Code(err) == codes.NotFound {
+			return nil, nil, laterGenerationNotFound(canonicalName, generation, active.Generation)
+		}
+		return rec, coords, err
+	case generation == 0:
 		return nil, nil, ErrComponentNotFound
+	default:
+		return newestRecordedSnapshot(incarnations, snapshots, canonicalName, generation)
 	}
+}
 
-	targetGen := generation
-	if targetGen == 0 {
-		targetGen = rec.Generation
+// ResolveComponentSnapshotByIDFromMap resolves the snapshot of the incarnation componentID of the
+// component name at generation, like SpannerStore.ResolveComponentSnapshotByID: an active
+// incarnation resolves its own generations as ResolveComponentSnapshotFromMap does, a soft-deleted
+// one resolves only recorded snapshots (its final record is never used as a fallback, so
+// generation 0 is NotFound), and an incarnation of another name is NotFound.
+func ResolveComponentSnapshotByIDFromMap(components map[int64]*ComponentRecord, snapshots map[int64]map[int64]*SnapshotRecord, name string, componentID, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	canonicalName, err := validatePinnedSnapshotArgs(name, componentID, generation)
+	if err != nil {
+		return nil, nil, err
 	}
+	rec := components[componentID]
+	if rec != nil && rec.Name == canonicalName && !isDeletedRecord(rec) {
+		return resolveActiveSnapshot(rec, snapshots, canonicalName, generation)
+	}
+	if generation == 0 {
+		return nil, nil, noActiveIncarnation(canonicalName, componentID)
+	}
+	snap := recordedSnapshotAt(snapshots, componentID, generation)
+	if rec == nil || rec.Name != canonicalName || snap == nil {
+		return nil, nil, incarnationSnapshotNotFound(canonicalName, componentID, generation)
+	}
+	return cloneRecord(snap.Record), cloneCoordinates(snap.Coordinates), nil
+}
+
+// noActiveIncarnation reports a pinned request for the current generation (0) of an incarnation
+// that is not the active one: a soft-deleted incarnation resolves only explicit generations.
+func noActiveIncarnation(canonicalName string, componentID int64) error {
+	return status.Errorf(codes.NotFound, "component %s has no active incarnation with component ID %d; a soft-deleted incarnation resolves only an explicit generation", canonicalName, componentID)
+}
+
+// incarnationSnapshotNotFound reports a pinned request that matches no stored snapshot, whether
+// the incarnation is unknown, belongs to another name, or has no snapshot at generation.
+func incarnationSnapshotNotFound(canonicalName string, componentID, generation int64) error {
+	return status.Errorf(codes.NotFound, "snapshot for generation %d of component %s with component ID %d not found", generation, canonicalName, componentID)
+}
+
+// validateSnapshotArgs returns the canonical name of a snapshot request.
+func validateSnapshotArgs(name string, generation int64) (string, error) {
+	canonicalName, err := validateResourceName(name)
+	if err != nil {
+		return "", err
+	}
+	if generation < 0 {
+		return "", status.Error(codes.InvalidArgument, "generation cannot be negative")
+	}
+	return canonicalName, nil
+}
+
+// validatePinnedSnapshotArgs returns the canonical name of a snapshot request pinned to an
+// incarnation.
+func validatePinnedSnapshotArgs(name string, componentID, generation int64) (string, error) {
+	if componentID <= 0 {
+		return "", status.Error(codes.InvalidArgument, "component ID must be positive")
+	}
+	return validateSnapshotArgs(name, generation)
+}
+
+// laterGenerationNotFound reports that no snapshot exists at a generation after the current one.
+func laterGenerationNotFound(canonicalName string, generation, current int64) error {
+	return status.Errorf(codes.NotFound, "snapshot for generation %d of component %s not found (current generation is %d)", generation, canonicalName, current)
+}
+
+// incarnationsNewestFirst returns the records named canonicalName, newest first, ordered like
+// SpannerStore by creation time and then ComponentId.
+func incarnationsNewestFirst(components map[int64]*ComponentRecord, canonicalName string) []*ComponentRecord {
+	var incarnations []*ComponentRecord
+	for _, rec := range components {
+		if rec != nil && rec.Name == canonicalName {
+			incarnations = append(incarnations, rec)
+		}
+	}
+	slices.SortFunc(incarnations, func(a, b *ComponentRecord) int {
+		return cmp.Or(b.CreateTime.Compare(a.CreateTime), cmp.Compare(b.ComponentID, a.ComponentID))
+	})
+	return incarnations
+}
+
+// activeIncarnation returns the incarnation that is not soft-deleted, or nil.
+func activeIncarnation(incarnations []*ComponentRecord) *ComponentRecord {
+	if i := slices.IndexFunc(incarnations, func(rec *ComponentRecord) bool { return !isDeletedRecord(rec) }); i >= 0 {
+		return incarnations[i]
+	}
+	return nil
+}
+
+// resolveActiveSnapshot resolves generation (0 means current) of the active incarnation rec.
+func resolveActiveSnapshot(rec *ComponentRecord, snapshots map[int64]map[int64]*SnapshotRecord, canonicalName string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	targetGen := cmp.Or(generation, rec.Generation)
 	if targetGen > rec.Generation {
-		return nil, nil, status.Errorf(codes.NotFound, "snapshot for generation %d of component %s not found (current generation is %d)", targetGen, canonicalName, rec.Generation)
+		return nil, nil, laterGenerationNotFound(canonicalName, targetGen, rec.Generation)
 	}
-
 	return getOrCacheSnapshot(rec, snapshots, canonicalName, targetGen)
 }
 
-func getOrCacheSnapshot(currentRec *ComponentRecord, snapshots map[string]map[int64]*SnapshotRecord, canonicalName string, targetGen int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	if snap, ok := snapshots[canonicalName][targetGen]; ok && snap != nil && snap.Record != nil {
+// newestRecordedSnapshot returns the snapshot at generation of the newest incarnation holding one.
+func newestRecordedSnapshot(incarnations []*ComponentRecord, snapshots map[int64]map[int64]*SnapshotRecord, canonicalName string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	for _, rec := range incarnations {
+		if snap := recordedSnapshotAt(snapshots, rec.ComponentID, generation); snap != nil {
+			return cloneRecord(snap.Record), cloneCoordinates(snap.Coordinates), nil
+		}
+	}
+	return nil, nil, historicalSnapshotNotFound(canonicalName, generation)
+}
+
+// recordedSnapshotAt returns the recorded snapshot of the incarnation componentID at generation,
+// or nil.
+func recordedSnapshotAt(snapshots map[int64]map[int64]*SnapshotRecord, componentID, generation int64) *SnapshotRecord {
+	if snap := snapshots[componentID][generation]; snap != nil && snap.Record != nil {
+		return snap
+	}
+	return nil
+}
+
+func historicalSnapshotNotFound(canonicalName string, generation int64) error {
+	return status.Errorf(codes.NotFound, "historical snapshot for generation %d of component %s not found", generation, canonicalName)
+}
+
+func getOrCacheSnapshot(currentRec *ComponentRecord, snapshots map[int64]map[int64]*SnapshotRecord, canonicalName string, targetGen int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	id := currentRec.ComponentID
+	if snap := recordedSnapshotAt(snapshots, id, targetGen); snap != nil {
 		return cloneRecord(snap.Record), cloneCoordinates(snap.Coordinates), nil
 	}
 
 	if targetGen < currentRec.Generation {
-		return nil, nil, status.Errorf(codes.NotFound, "historical snapshot for generation %d of component %s not found", targetGen, canonicalName)
+		return nil, nil, historicalSnapshotNotFound(canonicalName, targetGen)
 	}
 
 	snap := createSnapshotRecord(currentRec, targetGen)
 	if snapshots != nil {
-		if snapshots[canonicalName] == nil {
-			snapshots[canonicalName] = make(map[int64]*SnapshotRecord)
+		if snapshots[id] == nil {
+			snapshots[id] = make(map[int64]*SnapshotRecord)
 		}
-		snapshots[canonicalName][targetGen] = snap
+		snapshots[id][targetGen] = snap
 	}
 
 	return cloneRecord(snap.Record), cloneCoordinates(snap.Coordinates), nil

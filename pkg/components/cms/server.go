@@ -324,7 +324,7 @@ func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb
 		return nil, status.Error(codes.InvalidArgument, "generation cannot be negative")
 	}
 
-	rec, coords, err := s.store.ResolveComponentSnapshot(ctx, canonicalName, gen)
+	rec, coords, err := s.resolveSnapshot(ctx, req, canonicalName, gen)
 	if err != nil {
 		return nil, err
 	}
@@ -337,6 +337,18 @@ func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb
 		resp.Coordinates = proto.Clone(coords).(*componentspb.ResolvedComponentCoordinates)
 	}
 	return resp, nil
+}
+
+// resolveSnapshot resolves the snapshot strictly by (component_id, generation) when the request
+// pins an incarnation, and by name and generation otherwise.
+func (s *Server) resolveSnapshot(ctx context.Context, req *componentspb.ResolveComponentSnapshotRequest, canonicalName string, gen int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	if req.ComponentId == nil {
+		return s.store.ResolveComponentSnapshot(ctx, canonicalName, gen)
+	}
+	if req.GetComponentId() <= 0 {
+		return nil, nil, status.Error(codes.InvalidArgument, "component_id must be positive when set")
+	}
+	return s.store.ResolveComponentSnapshotByID(ctx, canonicalName, req.GetComponentId(), gen)
 }
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.

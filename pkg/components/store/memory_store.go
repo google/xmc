@@ -42,7 +42,10 @@ type MemoryStore struct {
 	componentsByName map[string]*ComponentRecord
 	componentsByID   map[int64]*ComponentRecord
 	nextID           int64
-	snapshots        map[string]map[int64]*SnapshotRecord
+	// snapshots holds the snapshot of every written generation of each incarnation, keyed by
+	// ComponentId and generation. Snapshots of soft-deleted incarnations are retained and never
+	// purged, so they stay resolvable after the name is reused.
+	snapshots map[int64]map[int64]*SnapshotRecord
 }
 
 // NewMemoryStore creates a new thread-safe in-memory component store.
@@ -50,7 +53,7 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		componentsByName: make(map[string]*ComponentRecord),
 		componentsByID:   make(map[int64]*ComponentRecord),
-		snapshots:        make(map[string]map[int64]*SnapshotRecord),
+		snapshots:        make(map[int64]map[int64]*SnapshotRecord),
 	}
 }
 
@@ -460,7 +463,15 @@ func transitionToDeleted(rec *ComponentRecord, now time.Time) {
 func (m *MemoryStore) ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return ResolveComponentSnapshotFromMap(m.componentsByName, m.snapshots, name, generation)
+	return ResolveComponentSnapshotFromMap(m.componentsByID, m.snapshots, name, generation)
+}
+
+// ResolveComponentSnapshotByID resolves the snapshot of the incarnation componentID of a component
+// at generation.
+func (m *MemoryStore) ResolveComponentSnapshotByID(ctx context.Context, name string, componentID, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return ResolveComponentSnapshotByIDFromMap(m.componentsByID, m.snapshots, name, componentID, generation)
 }
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
@@ -477,18 +488,20 @@ func (m *MemoryStore) GetPlatformHealth(ctx context.Context, filter string, page
 	return AggregatePlatformHealth(m.componentsByName, filter, pageSize, pageToken)
 }
 
+// recordSnapshotLocked records rec as the snapshot of its incarnation (ComponentId) at its
+// generation, so a re-registered name never resolves a snapshot of an earlier incarnation.
 func (m *MemoryStore) recordSnapshotLocked(rec *ComponentRecord) {
 	if rec == nil {
 		return
 	}
-	if m.snapshots[rec.Name] == nil {
-		m.snapshots[rec.Name] = make(map[int64]*SnapshotRecord)
+	if m.snapshots[rec.ComponentID] == nil {
+		m.snapshots[rec.ComponentID] = make(map[int64]*SnapshotRecord)
 	}
 	var coords *componentspb.ResolvedComponentCoordinates
 	if rec.Status != nil && rec.Status.Coordinates != nil {
 		coords = proto.Clone(rec.Status.Coordinates).(*componentspb.ResolvedComponentCoordinates)
 	}
-	m.snapshots[rec.Name][rec.Generation] = &SnapshotRecord{
+	m.snapshots[rec.ComponentID][rec.Generation] = &SnapshotRecord{
 		Name:        rec.Name,
 		Generation:  rec.Generation,
 		Record:      cloneRecord(rec),
