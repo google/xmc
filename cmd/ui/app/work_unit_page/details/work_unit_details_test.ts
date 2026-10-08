@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import 'jasmine';
-
 import { provideRouter } from '@angular/router';
 
 import { WORK_UNIT_1 } from 'xmanager_cloud/ui/app/common/mock_data';

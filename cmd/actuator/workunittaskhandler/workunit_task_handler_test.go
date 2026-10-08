@@ -30,7 +30,7 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/util/validation/field/field"
 	"golang/prometheus/client/prometheus/testutil/testutil"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/utils/ptr"
 	"tink/go/jwt/jwt"

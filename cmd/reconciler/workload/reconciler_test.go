@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 	"golang/prometheus/client/prometheus/testutil/testutil"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"

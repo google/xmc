@@ -19,15 +19,21 @@ py_library(
     name = "orchestration_lib",
     srcs = [
         "__init__.py",
+        "cancellation.py",
         "command.py",
         "config.py",
         "dev_token.py",
         "dex_authenticator.py",
         "helm_deployer.py",
         "image_builder.py",
+        "infra_retry.py",
         "kind.py",
         "orchestrator.py",
+        "outcome.py",
+        "phases.py",
         "spanner.py",
+        "spanner_retry.py",
+        "step_summary.py",
         "test_executor.py",
         "ui_diagnostics.py",
     ],
@@ -55,6 +61,12 @@ py_test(
 py_test(
     name = "spanner_test",
     srcs = ["spanner_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "spanner_retry_test",
+    srcs = ["spanner_retry_test.py"],
     deps = [":orchestration_lib"],
 )
 
@@ -97,5 +109,35 @@ py_test(
 py_test(
     name = "dex_authenticator_test",
     srcs = ["dex_authenticator_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "cancellation_test",
+    srcs = ["cancellation_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "phases_test",
+    srcs = ["phases_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "outcome_test",
+    srcs = ["outcome_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "infra_retry_test",
+    srcs = ["infra_retry_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "step_summary_test",
+    srcs = ["step_summary_test.py"],
     deps = [":orchestration_lib"],
 )

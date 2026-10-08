@@ -22,7 +22,7 @@ import (
 	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
 	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -113,9 +113,15 @@ var (
 		"A100":       "nvidia-a100-40gb",
 		"A100_80GIB": "nvidia-a100-80gb",
 		"H100":       "nvidia-h100-80gb",
-		"H200":       "nvidia-h200-141gb",
-		"B200":       "nvidia-b200",
-		"GB200":      "nvidia-gb200",
+		// The NVIDIA H100 80GB Mega GPU, which backs GCP's A3 Mega (a3-megagpu-8g)
+		// machine types. Because XManager's client enum only defines H100 (mapped
+		// to nvidia-h100-80gb for a3-highgpu-8g), callers targeting A3 Mega pass
+		// either the symbolic H100_MEGA key or the GKE accelerator label directly.
+		"H100_MEGA":             "nvidia-h100-mega-80gb",
+		"nvidia-h100-mega-80gb": "nvidia-h100-mega-80gb",
+		"H200":                  "nvidia-h200-141gb",
+		"B200":                  "nvidia-b200",
+		"GB200":                 "nvidia-gb200",
 		// The NVIDIA RTX PRO 6000 Blackwell Server Edition, which backs GCP's G4
 		// machine types. XManager's client enum already carries this card as
 		// B40_48TH and special-cases it in JobRequirements topology handling, but

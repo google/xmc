@@ -17,9 +17,9 @@ import (
 	"fmt"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/protobuf/v2/proto/proto"
-	lropb "longrunning/operations_go_proto"
+	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"cloud.google.com/go/spanner"
+	"google.golang.org/protobuf/proto"
 	anypb "protobuf/any_go_proto"
 	statuspb "rpc/status_go_proto"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"

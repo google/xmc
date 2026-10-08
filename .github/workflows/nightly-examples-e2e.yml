@@ -85,6 +85,8 @@ jobs:
           build_and_push metrics-job            metrics_job            .
           build_and_push chart-artifact-job     chart_artifact_job     .
           build_and_push metrics-dashboard-job  metrics_dashboard_job  .
+          build_and_push programmatic-xprof-job managed_xprof_artifact_job
+          build_and_push per-job-node-selector  per_job_node_selector
 
   run-and-verify-examples:
     name: 'Run & Verify: ${{ matrix.example.name }}'
@@ -142,6 +144,14 @@ jobs:
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: true
             timeout_minutes: 15
+          - id: 'managed_xprof_artifact_job'
+            name: 'Managed XProf Artifact Job'
+            example_path: 'examples/managed_xprof_artifact_job'
+            entrypoint: 'launch.py'
+            args: '--queue_name=${QUEUE_NAME} --total_steps=20'
+            verify_module: 'tools.nightly_tests.managed_xprof_artifact_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            timeout_minutes: 15
           - id: 'workunit_artifact_job'
             name: 'WorkUnit Artifact Lifecycle Job'
             example_path: 'examples/workunit_artifact_job'
@@ -175,6 +185,31 @@ jobs:
             args: ''
             verify_module: 'tools.nightly_tests.metrics_dashboard_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            requires_clickhouse: true
+            timeout_minutes: 15
+          - id: 'per_job_node_selector'
+            name: 'Per-Job Node Selector Job'
+            example_path: 'examples/per_job_node_selector'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.per_job_node_selector_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            timeout_minutes: 15
+          - id: 'pathways_job'
+            name: 'Pathways JobSet Job'
+            example_path: 'examples/pathways_job'
+            entrypoint: 'launch.py'
+            args: ''
+            verify_module: 'tools.nightly_tests.pathways_job_verify'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            timeout_minutes: 15
+          - id: 'xdash_dashboard'
+            name: 'xDash Dashboard Builder'
+            example_path: 'examples/xdash_dashboard'
+            entrypoint: 'create_dashboard.py'
+            args: '--endpoint="localhost:50051" --create-experiments'
+            verify_module: 'tools.nightly_tests.xdash_dashboard_verify'
+            expected_queue: ''
             requires_clickhouse: true
             timeout_minutes: 15
 
@@ -322,10 +357,13 @@ jobs:
 
           OUTPUT=$("${GITHUB_WORKSPACE}/.venv/bin/python3" "${ENTRYPOINT}" ${EVAL_ARGS} | tee /dev/stderr)
 
-          # Extract XID from output
+          # Extract XID or Dashboard ID from output
           XID=$(echo "${OUTPUT}" | grep -oP 'Experiment XID:\s*\K\d+' || echo "${OUTPUT}" | grep -oP 'XID:\s*\K\d+' || true)
           if [ -z "${XID}" ]; then
             XID=$(echo "${OUTPUT}" | grep -oP 'experiments/\K\d+' | head -n 1 || true)
+          fi
+          if [ -z "${XID}" ]; then
+            XID=$(echo "${OUTPUT}" | grep -oP 'dashboards/\K[A-Za-z0-9_-]+' | tail -n 1 || true)
           fi
 
           if [ -z "${XID}" ]; then
@@ -372,7 +410,7 @@ jobs:
 
           # Execute verification via Python module syntax (-m) using the virtual environment interpreter.
           # This sets sys.path[0] to the repository root (${GITHUB_WORKSPACE}), ensuring canonical
-          # package imports (e.g. `from tools.nightly_tests import common`) resolve cleanly without sys.path hacks.
+          # package imports (e.g. `from tools.nightly_tests.verification import verifier_cli`) resolve cleanly without sys.path hacks.
           "${GITHUB_WORKSPACE}/.venv/bin/python3" -m "${VERIFY_MODULE}" \
             --xid="${XID}" \
             --endpoint="${XMANAGER_ENDPOINT}" \

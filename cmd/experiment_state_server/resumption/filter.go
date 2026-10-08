@@ -16,7 +16,7 @@ package resumption
 
 import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -43,7 +43,7 @@ const (
 // 4. Stale UpdateAction where task priority does not match WorkUnit priority.
 //
 // Returns (true, reason) if the task should be skipped, or (false, ReasonNone) if it should be replayed.
-func ShouldSkipTask(task *pausedtask.PausedTask) (bool, TaskFilterReason) {
+func ShouldSkipTask(task *storage.PausedTask) (bool, TaskFilterReason) {
 	if hasNewerExecutionID(task) {
 		return true, ReasonNewerExecutionExists
 	}
@@ -66,7 +66,7 @@ func ShouldSkipTask(task *pausedtask.PausedTask) (bool, TaskFilterReason) {
 	return false, ReasonNone
 }
 
-func hasNewerExecutionID(task *pausedtask.PausedTask) bool {
+func hasNewerExecutionID(task *storage.PausedTask) bool {
 	taskEid, ok := parseExecutionID(task.Target)
 	if !ok {
 		return false

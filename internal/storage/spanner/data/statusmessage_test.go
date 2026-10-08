@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"cloud.google.com/go/spanner"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )

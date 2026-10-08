@@ -1,0 +1,646 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package e2e
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"maps"
+	"net"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/client-go/discovery/cached/memory"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/restmapper"
+	"k8s.io/client-go/tools/clientcmd"
+
+	"xmanager_cloud/pkg/components/bridge"
+	"xmanager_cloud/pkg/components/cms"
+	"xmanager_cloud/pkg/components/store"
+)
+
+var (
+	crdGVR                           = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
+	componentGVR                     = schema.GroupVersionResource{Group: "xmc.dev", Version: "v1alpha1", Resource: "components"}
+	_            bridge.HealthProber = (*kindNodePortProber)(nil)
+)
+
+type kindClusterHarness struct {
+	clusterName, kubeconfig string
+	clientset               kubernetes.Interface
+	dynClient               dynamic.Interface
+	restMapper              *restmapper.DeferredDiscoveryRESTMapper
+	reconciler              *bridge.Reconciler
+}
+
+func setupKindClusterHarness(t *testing.T, requiredImages ...string) *kindClusterHarness {
+	t.Helper()
+	clusterName, kubeconfig := acquireKindCluster(t)
+	for _, img := range requiredImages {
+		preloadImageIntoKind(t, clusterName, img)
+	}
+	harness := buildClusterClients(t, clusterName, kubeconfig)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	installComponentCRD(ctx, t, harness)
+	return harness
+}
+
+func acquireKindCluster(t *testing.T) (string, string) {
+	t.Helper()
+	kubeconfig := filepath.Join(t.TempDir(), "kubeconfig")
+	if existing := strings.TrimSpace(os.Getenv("KIND_CLUSTER_NAME")); existing != "" {
+		runCommand(t, "kind", "export", "kubeconfig", "--name", existing, "--kubeconfig", kubeconfig)
+		return existing, kubeconfig
+	}
+	clusterName := fmt.Sprintf("xmc-3p-e2e-%d", time.Now().UnixNano())
+	t.Cleanup(func() {
+		delCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		_ = exec.CommandContext(delCtx, resolveBinaryPath("kind"), "delete", "cluster", "--name", clusterName, "--kubeconfig", kubeconfig).Run()
+	})
+	runCommand(t, "kind", "create", "cluster", "--name", clusterName, "--kubeconfig", kubeconfig, "--wait", "90s")
+	return clusterName, kubeconfig
+}
+
+func preloadImageIntoKind(t *testing.T, clusterName, image string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(ctx, resolveBinaryPath("docker"), "image", "inspect", image).Run(); err != nil {
+		runCommand(t, "docker", "pull", image)
+	}
+	runCommand(t, "kind", "load", "docker-image", image, "--name", clusterName)
+}
+
+func runCommand(t *testing.T, name string, args ...string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	bin := resolveBinaryPath(name)
+	out, err := exec.CommandContext(ctx, bin, args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("command %s %v failed: %v\nOutput:\n%s", bin, args, err, string(out))
+	}
+	return string(out)
+}
+
+func resolveBinaryPath(name string) string {
+	if p, err := exec.LookPath(name); err == nil {
+		return p
+	}
+	candidates := []string{"/usr/local/bin/" + name}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		candidates = append(candidates, filepath.Join(home, ".local", "bin", name))
+	}
+	if wd, err := os.Getwd(); err == nil {
+		if idx := strings.Index(wd, "/.cache/bazel/"); idx > 0 {
+			candidates = append(candidates, filepath.Join(wd[:idx], ".local", "bin", name))
+		}
+	}
+	for _, p := range candidates {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p
+		}
+	}
+	return name
+}
+
+func buildClusterClients(t *testing.T, clusterName, kubeconfig string) *kindClusterHarness {
+	t.Helper()
+	restCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		t.Fatalf("failed to build rest config: %v", err)
+	}
+	clientset, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		t.Fatalf("failed to create kubernetes clientset: %v", err)
+	}
+	dynClient, err := dynamic.NewForConfig(restCfg)
+	if err != nil {
+		t.Fatalf("failed to create dynamic client: %v", err)
+	}
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(clientset.Discovery()))
+	cmsClient := bridge.NewCMSClientAdapter(cms.NewServer(store.NewMemoryStore()))
+	prober := &kindNodePortProber{clientset: clientset, delegate: bridge.NewNetworkHealthProber(bridge.WithHealthProbeTimeout(5 * time.Second))}
+	reconciler, err := bridge.NewReconciler(cmsClient, bridge.NewBridgeProber(bridge.NewK8sStatusDetector(dynClient, mapper), prober, 5*time.Second), nil)
+	if err != nil {
+		t.Fatalf("failed to create bridge reconciler: %v", err)
+	}
+	return &kindClusterHarness{clusterName: clusterName, kubeconfig: kubeconfig, clientset: clientset, dynClient: dynClient, restMapper: mapper, reconciler: reconciler}
+}
+
+func installComponentCRD(ctx context.Context, t *testing.T, h *kindClusterHarness) {
+	t.Helper()
+	chartRoot := filepath.Dir(filepath.Dir(filepath.Dir(locateHelmComponentCRDPath(t))))
+	renderedYAML := runCommand(t, "helm", "template", "xmc-e2e", chartRoot, "--set", "componentsDeployment.enabled=true", "--show-only", "templates/components/crd.yaml")
+	if idx := strings.Index(renderedYAML, "\napiVersion:"); idx >= 0 {
+		renderedYAML = renderedYAML[idx+1:]
+	}
+	var obj map[string]any
+	if err := k8syaml.Unmarshal([]byte(renderedYAML), &obj); err != nil {
+		t.Fatalf("failed to unmarshal CRD YAML: %v", err)
+	}
+	applyUnstructuredObject(ctx, t, h, obj)
+	waitForCRDEstablished(ctx, t, h, "components.xmc.dev")
+}
+
+func installThirdPartyCRD(ctx context.Context, t *testing.T, h *kindClusterHarness, group, version, kind, plural string) {
+	t.Helper()
+	crdName := fmt.Sprintf("%s.%s", plural, group)
+	schemaObj := map[string]any{"openAPIV3Schema": map[string]any{"type": "object", "x-kubernetes-preserve-unknown-fields": true}}
+	applyUnstructuredObject(ctx, t, h, map[string]any{
+		"apiVersion": "apiextensions.k8s.io/v1", "kind": "CustomResourceDefinition", "metadata": map[string]any{"name": crdName},
+		"spec": map[string]any{
+			"group": group, "scope": "Namespaced",
+			"names":    map[string]any{"kind": kind, "listKind": kind + "List", "plural": plural, "singular": strings.ToLower(kind)},
+			"versions": []any{map[string]any{"name": version, "served": true, "storage": true, "schema": schemaObj}},
+		},
+	})
+	waitForCRDEstablished(ctx, t, h, crdName)
+}
+
+func applyThirdPartyStatusCR(ctx context.Context, t *testing.T, h *kindClusterHarness, apiVersion, kind, ns, name, endpoint, secretName string) {
+	t.Helper()
+	applyUnstructuredObject(ctx, t, h, map[string]any{
+		"apiVersion": apiVersion, "kind": kind, "metadata": map[string]any{"name": name, "namespace": ns},
+		"status": map[string]any{"endpoint": endpoint, "connectionSecret": secretName, "conditions": []any{map[string]any{"type": "Ready", "status": "True"}}},
+	})
+}
+
+func buildStandardWrapperRef(group, version, kind, name string) map[string]any {
+	return map[string]any{
+		"group": group, "version": version, "kind": kind, "name": name,
+		"readyConditionPath": "$.status.conditions[?(@.type=='Ready')].status", "endpointJsonPath": "$.status.endpoint", "connectionSecretJsonPath": "$.status.connectionSecret",
+	}
+}
+
+func applyThirdPartyComponentCR(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, name, compClass, version string, wrapperRef, params map[string]any) {
+	t.Helper()
+	compRes := h.dynClient.Resource(componentGVR).Namespace(ns)
+	if existing, err := compRes.Get(ctx, name, metav1.GetOptions{}); err == nil {
+		existing.SetFinalizers(nil)
+		_, _ = compRes.Update(ctx, existing, metav1.UpdateOptions{})
+		_ = compRes.Delete(ctx, name, metav1.DeleteOptions{})
+		if !waitUntil(ctx, 15*time.Second, 100*time.Millisecond, func() bool {
+			_, getErr := compRes.Get(ctx, name, metav1.GetOptions{})
+			return apierrors.IsNotFound(getErr)
+		}) {
+			t.Fatalf("timed out waiting for previous Component %s/%s deletion", ns, name)
+		}
+	}
+	spec := map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "componentClass": compClass, "deletionProtection": false, "enabled": true, "version": version}
+	if len(wrapperRef) > 0 {
+		spec["wrapperRef"] = wrapperRef
+	}
+	if len(params) > 0 {
+		spec["parameters"] = params
+	}
+	applyUnstructuredObject(ctx, t, h, map[string]any{
+		"apiVersion": "xmc.dev/v1alpha1", "kind": "Component", "metadata": map[string]any{"name": name, "namespace": ns}, "spec": spec,
+	})
+}
+
+func assertComponentEnvVars(t *testing.T, envVars map[string]string, wantEndpoint, wantHost, wantPort, wantSecret string) {
+	t.Helper()
+	if envVars["ENDPOINT"] != wantEndpoint || envVars["HOST"] != wantHost || envVars["PORT"] != wantPort || envVars["SECRET_NAME"] != wantSecret {
+		t.Errorf("unexpected access envVars: got %v, want ENDPOINT=%q HOST=%q PORT=%q SECRET_NAME=%q", envVars, wantEndpoint, wantHost, wantPort, wantSecret)
+	}
+}
+
+func locateHelmComponentCRDPath(t *testing.T) string {
+	t.Helper()
+	candidates := []string{".", "../..", "../../.."}
+	if srcDir, ws := os.Getenv("TEST_SRCDIR"), os.Getenv("TEST_WORKSPACE"); srcDir != "" && ws != "" {
+		candidates = append([]string{filepath.Join(srcDir, ws)}, candidates...)
+	}
+	for _, root := range candidates {
+		p := filepath.Join(root, "deploy", "helm", "templates", "components", "crd.yaml")
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	t.Fatalf("could not locate deploy/helm/templates/components/crd.yaml in %v", candidates)
+	return ""
+}
+
+func applyUnstructuredObject(ctx context.Context, t *testing.T, h *kindClusterHarness, rawObj map[string]any, subresources ...string) {
+	t.Helper()
+	u := &unstructured.Unstructured{Object: rawObj}
+	jsonBytes, err := json.Marshal(rawObj)
+	if err != nil {
+		t.Fatalf("failed to marshal manifest: %v", err)
+	}
+	gvr := resolveObjectGVR(u.GroupVersionKind())
+	var res dynamic.ResourceInterface = h.dynClient.Resource(gvr)
+	if ns := u.GetNamespace(); ns != "" {
+		res = h.dynClient.Resource(gvr).Namespace(ns)
+	}
+	force := true
+	opts := metav1.PatchOptions{FieldManager: "e2e-harness", Force: &force}
+	if _, err := res.Patch(ctx, u.GetName(), types.ApplyPatchType, jsonBytes, opts, subresources...); err != nil {
+		t.Fatalf("failed to apply %s %s/%s: %v", u.GetKind(), u.GetNamespace(), u.GetName(), err)
+	}
+}
+
+func resolveObjectGVR(gvk schema.GroupVersionKind) schema.GroupVersionResource {
+	switch gvk.Kind {
+	case "CustomResourceDefinition":
+		return crdGVR
+	case "Component":
+		return componentGVR
+	case "ClickHouseInstallation":
+		return schema.GroupVersionResource{Group: "clickhouse.altinity.com", Version: "v1", Resource: "clickhouseinstallations"}
+	case "Cluster":
+		return schema.GroupVersionResource{Group: "cluster.redpanda.com", Version: "v1alpha2", Resource: "clusters"}
+	default:
+		return gvk.GroupVersion().WithResource(strings.ToLower(gvk.Kind) + "s")
+	}
+}
+
+func waitUntil(ctx context.Context, timeout, interval time.Duration, cond func() bool) bool {
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(context.Context) (bool, error) {
+		return cond(), nil
+	}) == nil
+}
+
+func waitForCRDEstablished(ctx context.Context, t *testing.T, h *kindClusterHarness, crdName string) {
+	t.Helper()
+	ok := waitUntil(ctx, 30*time.Second, 250*time.Millisecond, func() bool {
+		u, err := h.dynClient.Resource(crdGVR).Get(ctx, crdName, metav1.GetOptions{})
+		return err == nil && hasConditionTrue(u, "Established")
+	})
+	if !ok {
+		t.Fatalf("timed out waiting for CRD %q to become Established", crdName)
+	}
+	h.restMapper.Reset()
+}
+
+func hasConditionTrue(u *unstructured.Unstructured, condType string) bool {
+	conds, found, err := unstructured.NestedSlice(u.Object, "status", "conditions")
+	if err != nil || !found {
+		return false
+	}
+	for _, raw := range conds {
+		if m, ok := raw.(map[string]any); ok && m["type"] == condType && m["status"] == "True" {
+			return true
+		}
+	}
+	return false
+}
+
+func isComponentReady(u *unstructured.Unstructured) bool {
+	obsGen, _, _ := unstructured.NestedInt64(u.Object, "status", "observedGeneration")
+	state, _, _ := unstructured.NestedString(u.Object, "status", "state")
+	return obsGen == u.GetGeneration() && state == "COMPONENT_STATE_ENABLED" && hasConditionTrue(u, "Ready")
+}
+
+func createTestNamespace(ctx context.Context, t *testing.T, h *kindClusterHarness, prefix string) string {
+	t.Helper()
+	nsName := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	if _, err := h.clientset.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create namespace %q: %v", nsName, err)
+	}
+	t.Cleanup(func() {
+		delCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = h.clientset.CoreV1().Namespaces().Delete(delCtx, nsName, metav1.DeleteOptions{})
+	})
+	return nsName
+}
+
+type serviceInstanceSpec struct {
+	Namespace, AppName, SecretName string
+	SecretData                     map[string]string
+	Ports                          map[string]int32
+	Container                      corev1.Container
+}
+
+func deploySingleContainerService(ctx context.Context, t *testing.T, h *kindClusterHarness, spec serviceInstanceSpec) {
+	t.Helper()
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: spec.SecretName, Namespace: spec.Namespace}, StringData: spec.SecretData}
+	if _, err := h.clientset.CoreV1().Secrets(spec.Namespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create secret %s/%s: %v", spec.Namespace, spec.SecretName, err)
+	}
+	createNodePortService(ctx, t, h, spec.Namespace, spec.AppName, spec.Ports)
+	podName := spec.AppName + "-0"
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: podName, Namespace: spec.Namespace, Labels: map[string]string{"app": spec.AppName}},
+		Spec:       corev1.PodSpec{Containers: []corev1.Container{spec.Container}},
+	}
+	if _, err := h.clientset.CoreV1().Pods(spec.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create pod %s/%s: %v", spec.Namespace, podName, err)
+	}
+	waitForPodReady(ctx, t, h, spec.Namespace, podName)
+}
+
+func createNodePortService(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, name string, ports map[string]int32) {
+	t.Helper()
+	svcPorts := make([]corev1.ServicePort, 0, len(ports))
+	for _, portName := range slices.Sorted(maps.Keys(ports)) {
+		p := ports[portName]
+		svcPorts = append(svcPorts, corev1.ServicePort{Name: portName, Port: p, TargetPort: intstr.FromInt(int(p))})
+	}
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort, Selector: map[string]string{"app": name}, Ports: svcPorts},
+	}
+	if _, err := h.clientset.CoreV1().Services(ns).Create(ctx, svc, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create service %s/%s: %v", ns, name, err)
+	}
+}
+
+func (h *kindClusterHarness) reconcileNamespaceComponents(ctx context.Context, namespace string) error {
+	list, err := h.dynClient.Resource(componentGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to list components in %s: %w", namespace, err)
+	}
+	deps := bridge.NewDependencySnapshot(list.Items)
+	for i := range list.Items {
+		item := &list.Items[i]
+		res, err := h.reconciler.ReconcileWithDependencies(ctx, item, deps)
+		if err != nil {
+			return fmt.Errorf("reconcile failed for %s: %w", item.GetName(), err)
+		}
+		if err := h.patchComponentStatus(ctx, item, res); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *kindClusterHarness) patchComponentStatus(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
+	if res == nil || res.RemoveFinalizer {
+		return nil
+	}
+	condSlice := make([]any, 0, len(res.Conditions))
+	for _, c := range res.Conditions {
+		condSlice = append(condSlice, map[string]any{
+			"type": c.Type, "status": string(c.Status), "reason": c.Reason, "message": c.Message,
+			"lastTransitionTime": c.LastTransitionTime.UTC().Format(time.RFC3339), "observedGeneration": c.ObservedGeneration,
+		})
+	}
+	statusMap := map[string]any{"state": res.State.String(), "observedGeneration": res.ObservedGeneration, "conditions": condSlice}
+	if res.Access != nil && len(res.Access.EnvVars) > 0 {
+		envMap := make(map[string]any, len(res.Access.EnvVars))
+		for k, v := range res.Access.EnvVars {
+			envMap[k] = v
+		}
+		statusMap["access"] = map[string]any{"envVars": envMap}
+	}
+	raw, err := json.Marshal(map[string]any{
+		"apiVersion": "xmc.dev/v1alpha1", "kind": "Component",
+		"metadata": map[string]any{"name": item.GetName(), "namespace": item.GetNamespace()}, "status": statusMap,
+	})
+	if err != nil {
+		return err
+	}
+	force := true
+	_, err = h.dynClient.Resource(componentGVR).Namespace(item.GetNamespace()).Patch(
+		ctx, item.GetName(), types.ApplyPatchType, raw, metav1.PatchOptions{FieldManager: "xmc-bridge", Force: &force}, "status",
+	)
+	return err
+}
+
+func waitForComponentReady(ctx context.Context, t *testing.T, h *kindClusterHarness, namespace, name string) map[string]string {
+	t.Helper()
+	var envVars map[string]string
+	var lastErr error
+	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func() bool {
+		if lastErr = h.reconcileNamespaceComponents(ctx, namespace); lastErr != nil {
+			return false
+		}
+		u, err := h.dynClient.Resource(componentGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil || !isComponentReady(u) {
+			return false
+		}
+		envVars, _, _ = unstructured.NestedStringMap(u.Object, "status", "access", "envVars")
+		return true
+	})
+	if !ok {
+		t.Fatalf("timed out waiting for Component %s/%s Ready (last err: %v)", namespace, name, lastErr)
+	}
+	return envVars
+}
+
+func waitForPodReady(ctx context.Context, t *testing.T, h *kindClusterHarness, namespace, podName string) {
+	t.Helper()
+	ok := waitUntil(ctx, 90*time.Second, time.Second, func() bool {
+		pod, err := h.clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil {
+			return false
+		}
+		for _, cond := range pod.Status.Conditions {
+			if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+				return true
+			}
+		}
+		return false
+	})
+	if !ok {
+		t.Fatalf("timed out waiting for Pod %s/%s Ready; logs:\n%s", namespace, podName, fetchPodLogs(h, namespace, podName))
+	}
+}
+
+type workloadPodSpec struct {
+	Namespace, Name, Image string
+	Command                []string
+	AccessEnvVars          map[string]string
+	SecretEnvBinds         map[string]corev1.SecretKeySelector
+}
+
+func runMockMLWorkloadPod(ctx context.Context, t *testing.T, h *kindClusterHarness, spec workloadPodSpec) string {
+	t.Helper()
+	envList := make([]corev1.EnvVar, 0, len(spec.AccessEnvVars)+len(spec.SecretEnvBinds))
+	for _, k := range slices.Sorted(maps.Keys(spec.AccessEnvVars)) {
+		envList = append(envList, corev1.EnvVar{Name: k, Value: spec.AccessEnvVars[k]})
+	}
+	for _, envName := range slices.Sorted(maps.Keys(spec.SecretEnvBinds)) {
+		selCopy := spec.SecretEnvBinds[envName]
+		envList = append(envList, corev1.EnvVar{Name: envName, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &selCopy}})
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: spec.Name, Namespace: spec.Namespace},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers:    []corev1.Container{{Name: "workload", Image: spec.Image, ImagePullPolicy: corev1.PullIfNotPresent, Command: spec.Command, Env: envList}},
+		},
+	}
+	if _, err := h.clientset.CoreV1().Pods(spec.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create mock ML workload pod %s/%s: %v", spec.Namespace, spec.Name, err)
+	}
+	return waitForPodSucceededLogs(ctx, t, h, spec.Namespace, spec.Name)
+}
+
+func waitForPodSucceededLogs(ctx context.Context, t *testing.T, h *kindClusterHarness, namespace, podName string) string {
+	t.Helper()
+	var failed bool
+	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func() bool {
+		pod, err := h.clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil {
+			return false
+		}
+		if pod.Status.Phase == corev1.PodFailed {
+			failed = true
+			return true
+		}
+		return pod.Status.Phase == corev1.PodSucceeded
+	})
+	logs := fetchPodLogs(h, namespace, podName)
+	if !ok || failed {
+		t.Fatalf("mock ML workload pod %s/%s did not succeed (failed=%v); logs:\n%s", namespace, podName, failed, logs)
+	}
+	return logs
+}
+
+func fetchPodLogs(h *kindClusterHarness, namespace, podName string) string {
+	logCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stream, err := h.clientset.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{}).Stream(logCtx)
+	if err != nil {
+		return fmt.Sprintf("<unavailable: %v>", err)
+	}
+	defer stream.Close()
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, io.LimitReader(stream, 1024*1024))
+	return buf.String()
+}
+
+type kindNodePortProber struct {
+	clientset kubernetes.Interface
+	delegate  bridge.HealthProber
+}
+
+func (p *kindNodePortProber) Probe(ctx context.Context, target string, timeout time.Duration) (*bridge.HealthProbeResult, error) {
+	trimmed := strings.TrimSpace(target)
+	if lower := strings.ToLower(trimmed); strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return p.ProbeHTTP(ctx, trimmed, timeout)
+	}
+	return p.ProbeTCP(ctx, trimmed, timeout)
+}
+
+func (p *kindNodePortProber) ProbeHTTP(ctx context.Context, endpoint string, timeout time.Duration) (*bridge.HealthProbeResult, error) {
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || parsed.Host == "" {
+		return p.delegate.ProbeHTTP(ctx, endpoint, timeout)
+	}
+	rewrittenHost, err := p.translateHostPort(ctx, parsed.Host)
+	if err != nil {
+		return nil, err
+	}
+	parsed.Host = rewrittenHost
+	return p.delegate.ProbeHTTP(ctx, parsed.String(), timeout)
+}
+
+func (p *kindNodePortProber) ProbeTCP(ctx context.Context, endpoint string, timeout time.Duration) (*bridge.HealthProbeResult, error) {
+	rewritten, err := p.translateHostPort(ctx, strings.TrimSpace(endpoint))
+	if err != nil {
+		return nil, err
+	}
+	return p.delegate.ProbeTCP(ctx, rewritten, timeout)
+}
+
+func (p *kindNodePortProber) translateHostPort(ctx context.Context, hostPort string) (string, error) {
+	host, portStr, err := net.SplitHostPort(hostPort)
+	if err != nil || !strings.HasSuffix(host, ".svc.cluster.local") {
+		return hostPort, nil
+	}
+	parts := strings.Split(strings.TrimSuffix(host, ".svc.cluster.local"), ".")
+	if len(parts) < 2 {
+		return hostPort, nil
+	}
+	portNum, err := strconv.Atoi(portStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid port %q: %w", portStr, err)
+	}
+	nodeIP, err := p.lookupNodeInternalIP(ctx)
+	if err != nil {
+		return "", err
+	}
+	nodePort, err := p.lookupServiceNodePort(ctx, parts[len(parts)-1], parts[len(parts)-2], int32(portNum))
+	if err != nil {
+		return "", err
+	}
+	return net.JoinHostPort(nodeIP, strconv.Itoa(int(nodePort))), nil
+}
+
+func (p *kindNodePortProber) lookupNodeInternalIP(ctx context.Context) (string, error) {
+	nodes, err := p.clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed listing nodes: %w", err)
+	}
+	for _, n := range nodes.Items {
+		for _, addr := range n.Status.Addresses {
+			if addr.Type == corev1.NodeInternalIP && addr.Address != "" {
+				return addr.Address, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no node InternalIP found in cluster")
+}
+
+func (p *kindNodePortProber) lookupServiceNodePort(ctx context.Context, namespace, svcName string, port int32) (int32, error) {
+	svc, err := p.clientset.CoreV1().Services(namespace).Get(ctx, svcName, metav1.GetOptions{})
+	if err != nil {
+		return 0, fmt.Errorf("failed getting service %s/%s: %w", namespace, svcName, err)
+	}
+	for _, sp := range svc.Spec.Ports {
+		if sp.Port == port && sp.NodePort > 0 {
+			return sp.NodePort, nil
+		}
+	}
+	return 0, fmt.Errorf("service %s/%s has no NodePort mapped for port %d", namespace, svcName, port)
+}
+
+func TestKind3PHarnessUnit(t *testing.T) {
+	if got := resolveObjectGVR(schema.GroupVersionKind{Group: "xmc.dev", Version: "v1alpha1", Kind: "Component"}); got.Resource != "components" {
+		t.Errorf("resolveObjectGVR Component = %q, want components", got.Resource)
+	}
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "kind-control-plane"}, Status: corev1.NodeStatus{Addresses: []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "172.18.0.2"}}}}
+	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "clickhouse", Namespace: "xmc-test"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort, Ports: []corev1.ServicePort{{Name: "http", Port: 8123, NodePort: 31123}}}}
+	prober := &kindNodePortProber{clientset: fake.NewSimpleClientset(node, svc)}
+	if got, err := prober.translateHostPort(context.Background(), "clickhouse.xmc-test.svc.cluster.local:8123"); err != nil || got != "172.18.0.2:31123" {
+		t.Errorf("translateHostPort = (%q, %v), want (\"172.18.0.2:31123\", nil)", got, err)
+	}
+	comp := &unstructured.Unstructured{Object: map[string]any{
+		"metadata": map[string]any{"generation": int64(2)},
+		"status":   map[string]any{"observedGeneration": int64(2), "state": "COMPONENT_STATE_ENABLED", "conditions": []any{map[string]any{"type": "Ready", "status": "True"}}},
+	}}
+	if !isComponentReady(comp) || locateHelmComponentCRDPath(t) == "" {
+		t.Error("expected isComponentReady and locateHelmComponentCRDPath to succeed")
+	}
+}

@@ -14,16 +14,16 @@
 package data
 
 import (
-	"golang/protobuf/v2/proto/proto"
 	"testing"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
-	lropb "longrunning/operations_go_proto"
+	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	anypb "protobuf/any_go_proto"
-	fmpb "protobuf/field_mask_go_proto"
 	statuspb "rpc/status_go_proto"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/prototest"
 )
 
 func TestMergeOperations(t *testing.T) {
@@ -59,21 +59,21 @@ func TestMergeOperations(t *testing.T) {
 			current:    baseOp,
 			updated:    &lropb.Operation{Done: true},
 			updateMask: &fmpb.FieldMask{Paths: []string{"done"}},
-			want:       proto.Modify(baseOp, func(o *lropb.Operation) { o.Done = true }),
+			want:       prototest.Modify(baseOp, func(o *lropb.Operation) { o.Done = true }),
 		},
 		{
 			name:       "update_metadata",
 			current:    baseOp,
 			updated:    &lropb.Operation{Metadata: metadata2},
 			updateMask: &fmpb.FieldMask{Paths: []string{"metadata"}},
-			want:       proto.Modify(baseOp, func(o *lropb.Operation) { o.Metadata = metadata2 }),
+			want:       prototest.Modify(baseOp, func(o *lropb.Operation) { o.Metadata = metadata2 }),
 		},
 		{
 			name:       "update_error",
 			current:    baseOp,
 			updated:    &lropb.Operation{Result: &lropb.Operation_Error{Error: &statuspb.Status{Code: 1, Message: "error"}}},
 			updateMask: &fmpb.FieldMask{Paths: []string{"error"}},
-			want: proto.Modify(baseOp, func(o *lropb.Operation) {
+			want: prototest.Modify(baseOp, func(o *lropb.Operation) {
 				o.Result = &lropb.Operation_Error{Error: &statuspb.Status{Code: 1, Message: "error"}}
 			}),
 		},
@@ -82,7 +82,7 @@ func TestMergeOperations(t *testing.T) {
 			current:    baseOp,
 			updated:    &lropb.Operation{Result: &lropb.Operation_Response{Response: response}},
 			updateMask: &fmpb.FieldMask{Paths: []string{"response"}},
-			want:       proto.Modify(baseOp, func(o *lropb.Operation) { o.Result = &lropb.Operation_Response{Response: response} }),
+			want:       prototest.Modify(baseOp, func(o *lropb.Operation) { o.Result = &lropb.Operation_Response{Response: response} }),
 		},
 		{
 			name: "nil_current",

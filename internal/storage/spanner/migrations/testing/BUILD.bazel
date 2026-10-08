@@ -31,7 +31,7 @@ go_test(
     srcs = ["driverinterceptor_test.go"],
     embed = [":testing"],
     deps = [
-        "//internal/compat/cmp",
         "@com_github_golang_migrate_migrate_v4//source",
+        "@com_github_google_go_cmp//cmp",
     ],
 )

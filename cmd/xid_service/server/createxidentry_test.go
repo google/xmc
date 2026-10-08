@@ -18,11 +18,12 @@ import (
 	"errors"
 	"testing"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
@@ -113,28 +114,28 @@ func TestCreateXidEntry_BadPaths(t *testing.T) {
 	}{
 		{
 			name: "missing_xid_entry",
-			req: proto.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
 				r.XidEntry = nil
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_acls",
-			req: proto.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
 				r.XidEntry.Acls = nil
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_origin",
-			req: proto.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
 				r.XidEntry.Origin = nil
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent_xid",
-			req: proto.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
 				r.XidEntry.ParentXid = proto.String("xids/invalid")
 			}),
 			wantErr: status.ErrInvalidArgument,

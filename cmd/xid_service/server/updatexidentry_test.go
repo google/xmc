@@ -18,13 +18,14 @@ import (
 	"errors"
 	"testing"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 
-	fmpb "protobuf/field_mask_go_proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/storage/storage"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -113,21 +114,21 @@ func TestUpdateXidEntry_BadPaths(t *testing.T) {
 	}{
 		{
 			name: "invalid_name",
-			req: proto.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
 				r.XidEntry.Name = proto.String("xids/invalid")
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "not_found",
-			req: proto.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
 				r.XidEntry.Name = proto.String("xids/999999")
 			}),
 			wantErr: status.ErrNotFound,
 		},
 		{
 			name: "immutable_field",
-			req: proto.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
 				r.XidEntry.Creator = proto.String("new-creator")
 				r.UpdateMask.Paths = []string{"creator"}
 			}),
@@ -135,7 +136,7 @@ func TestUpdateXidEntry_BadPaths(t *testing.T) {
 		},
 		{
 			name: "no_acls",
-			req: proto.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
 				r.XidEntry.Acls = nil
 			}),
 			wantErr: status.ErrInvalidArgument,

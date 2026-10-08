@@ -16,10 +16,10 @@ package data
 import (
 	"fmt"
 
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	"task/go/status"
 
-	fieldmaskpb "protobuf/field_mask_go_proto"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	pb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

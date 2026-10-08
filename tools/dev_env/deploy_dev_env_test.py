@@ -15,8 +15,10 @@
 """Unit tests for deploy_dev_env.py."""
 
 import io
+import pathlib
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import ANY, MagicMock, call, patch
 
@@ -187,7 +189,9 @@ image_tag: latest
         deploy_dev_env._verify_binaries()
 
     @patch("shutil.which", side_effect=lambda bin: bin != "terraform")
-    def test_verify_binaries_missing_binary(self, mock_which):
+    @patch.object(deploy_dev_env, "USER_INSTALL_DIRS", ())
+    @patch.object(deploy_dev_env, "log_error")
+    def test_verify_binaries_missing_binary(self, mock_log_error, mock_which):
         with self.assertRaises(SystemExit):
             deploy_dev_env._verify_binaries()
 
@@ -196,6 +200,80 @@ image_tag: latest
     def test_verify_binaries_missing_gcluster(self, mock_is_file, mock_which):
         with self.assertRaises(SystemExit):
             deploy_dev_env._verify_binaries()
+
+    def test_require_binary_on_path(self):
+        # (name, shutil.which result, file_setup, expected error substrings)
+        # file_setup: None (not created), "exec" (0o755 file), "non_exec" (0o644 file), "symlink" (symlink to exec)
+        test_cases: tuple[tuple[str, str | None, str | None, tuple[str, ...]], ...] = (
+            ("on PATH", "/usr/bin/terraform", None, ()),
+            (
+                "found off PATH",
+                None,
+                "exec",
+                ("was found at", "is not on PATH", "add '{install_dir}'"),
+            ),
+            (
+                "found off PATH symlink",
+                None,
+                "symlink",
+                ("was found at", "is not on PATH", "add '{install_dir}'"),
+            ),
+            (
+                "found off PATH but non-executable",
+                None,
+                "non_exec",
+                ("was not found on PATH", "{install_dir}"),
+            ),
+            ("not found", None, None, ("was not found on PATH", "{install_dir}")),
+        )
+        for name, which_result, file_setup, want_error_substrings in test_cases:
+            with (
+                self.subTest(name),
+                tempfile.TemporaryDirectory() as raw_install_dir,
+                patch("shutil.which", return_value=which_result),
+            ):
+                install_dir = str(pathlib.Path(raw_install_dir).resolve())
+                with (
+                    patch.object(deploy_dev_env, "USER_INSTALL_DIRS", (install_dir,)),
+                    patch.object(deploy_dev_env, "log_error") as mock_log_error,
+                ):
+                    self._assert_require_binary_on_path(
+                        install_dir, file_setup, want_error_substrings, mock_log_error
+                    )
+
+    def _assert_require_binary_on_path(
+        self,
+        install_dir: str,
+        file_setup: str | None,
+        want_error_substrings: tuple[str, ...],
+        mock_log_error: MagicMock,
+    ) -> None:
+        """Runs one _require_binary_on_path case against a resolved install dir."""
+        binary_path = pathlib.Path(install_dir) / "terraform"
+        if file_setup == "exec":
+            binary_path.touch()
+            binary_path.chmod(0o755)
+        elif file_setup == "non_exec":
+            binary_path.touch()
+            binary_path.chmod(0o644)
+        elif file_setup == "symlink":
+            target_dir = pathlib.Path(install_dir) / "sub_target"
+            target_dir.mkdir()
+            target_file = target_dir / "real_terraform"
+            target_file.touch()
+            target_file.chmod(0o755)
+            binary_path.symlink_to(target_file)
+
+        if not want_error_substrings:
+            deploy_dev_env._require_binary_on_path("terraform")
+            mock_log_error.assert_not_called()
+            return
+
+        with self.assertRaises(SystemExit):
+            deploy_dev_env._require_binary_on_path("terraform")
+        logged_message = mock_log_error.call_args.args[0]
+        for substring in want_error_substrings:
+            self.assertIn(substring.format(install_dir=install_dir), logged_message)
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     def test_check_terraform_version_success(self, mock_run):
@@ -478,12 +556,14 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_compute")
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
     @patch("tools.dev_env.deploy_dev_env.step_prereqs")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_app")
     @patch("tools.dev_env.deploy_dev_env.step_verify")
     def test_main_flow_all_steps(
         self,
         mock_verify,
         mock_app,
+        mock_migrate,
         mock_prereqs,
         mock_gw_api,
         mock_compute,
@@ -518,6 +598,7 @@ image_tag: latest
         mock_compute.assert_called_once()
         mock_gw_api.assert_called_once()
         mock_prereqs.assert_called_once()
+        mock_migrate.assert_called_once()
         mock_app.assert_called_once()
         mock_verify.assert_called_once()
 
@@ -531,12 +612,14 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_compute")
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
     @patch("tools.dev_env.deploy_dev_env.step_prereqs")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_app")
     @patch("tools.dev_env.deploy_dev_env.step_verify")
     def test_main_flow_start_from(
         self,
         mock_verify,
         mock_app,
+        mock_migrate,
         mock_prereqs,
         mock_gw_api,
         mock_compute,
@@ -574,6 +657,7 @@ image_tag: latest
         mock_compute.assert_called_once()
         mock_gw_api.assert_called_once()
         mock_prereqs.assert_called_once()
+        mock_migrate.assert_called_once()
         mock_app.assert_called_once()
         mock_verify.assert_called_once()
 
@@ -587,12 +671,14 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.step_compute")
     @patch("tools.dev_env.deploy_dev_env.step_gateway_api")
     @patch("tools.dev_env.deploy_dev_env.step_prereqs")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_app")
     @patch("tools.dev_env.deploy_dev_env.step_verify")
     def test_main_flow_only(
         self,
         mock_verify,
         mock_app,
+        mock_migrate,
         mock_prereqs,
         mock_gw_api,
         mock_compute,
@@ -631,6 +717,7 @@ image_tag: latest
 
         mock_gw_api.assert_not_called()
         mock_prereqs.assert_not_called()
+        mock_migrate.assert_not_called()
         mock_app.assert_not_called()
         mock_verify.assert_not_called()
 
@@ -672,6 +759,43 @@ image_tag: latest
             output,
         )
 
+    @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
+    @patch("tools.dev_env.deploy_dev_env.run_checks")
+    @patch("tools.dev_env.deploy_dev_env.step_check")
+    @patch("tools.dev_env.deploy_dev_env.step_compile")
+    @patch("sys.stdout", new_callable=io.StringIO)
+    def test_main_error_handling_resume_suggest_preserves_skip_migrations(
+        self,
+        mock_stdout,
+        mock_compile,
+        mock_check,
+        mock_run_checks,
+        mock_load_config,
+    ):
+        mock_load_config.return_value = self.valid_config
+        mock_compile.side_effect = Exception("Compile failed")
+
+        with self.assertRaises(SystemExit) as cm:
+            deploy_dev_env.main(
+                [
+                    "--config",
+                    "config.yaml",
+                    "--dns-project",
+                    "p",
+                    "--dns-zone",
+                    "z",
+                    "--skip-migrations",
+                ]
+            )
+
+        self.assertEqual(cm.exception.code, 1)
+        output = mock_stdout.getvalue()
+        self.assertIn(
+            "python3 tools/dev_env/deploy_dev_env.py --config config.yaml --dns-project p"
+            " --dns-zone z --skip-migrations --start-from compile",
+            output,
+        )
+
     # --- Individual Step Tests ---
 
     @patch("tools.dev_env.deploy_dev_env.compile_blueprint")
@@ -701,15 +825,32 @@ image_tag: latest
             "my-config.yaml", cfg.deployment_name, enable_components=True
         )
 
+    @patch("tools.dev_env.deploy_dev_env._fetch_cluster_credentials")
+    @patch("tools.dev_env.deploy_dev_env.step_restart")
     @patch("tools.dev_env.deploy_dev_env.deploy_component_profile")
     @patch("tools.dev_env.deploy_dev_env.run_gcluster_deploy")
-    def test_step_app_deploys_component_profile(self, mock_deploy, mock_profile):
+    def test_step_app_deploys_component_profile(
+        self, mock_deploy, mock_profile, mock_restart, mock_creds
+    ):
         from dataclasses import replace
 
         cfg = replace(self.valid_config, enable_components=True)
+        manager = MagicMock()
+        manager.attach_mock(mock_deploy, "deploy")
+        manager.attach_mock(mock_creds, "creds")
+        manager.attach_mock(mock_profile, "profile")
+        manager.attach_mock(mock_restart, "restart")
+
         deploy_dev_env.step_app(cfg, self.dns_project, self.dns_zone)
-        mock_deploy.assert_called_once_with(cfg.deployment_name, "xmc_app")
-        mock_profile.assert_called_once_with(cfg)
+        manager.assert_has_calls(
+            [
+                call.deploy(cfg.deployment_name, "xmc_app"),
+                call.creds(cfg),
+                call.profile(cfg),
+                call.restart(cfg),
+            ],
+            any_order=False,
+        )
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     @patch("tools.dev_env.deploy_dev_env.apply_dns_records")
@@ -752,6 +893,116 @@ image_tag: latest
         mock_apply_dns.assert_called_once_with(
             "10.0.0.1", self.valid_config, self.dns_project, self.dns_zone
         )
+
+    @patch("tools.dev_env.deploy_dev_env.apply_pending_migrations")
+    @patch("tools.dev_env.deploy_dev_env.check_pending_migrations")
+    def test_step_migrate_up_to_date(self, mock_check, mock_apply):
+        mock_check.return_value = []
+        deploy_dev_env.step_migrate(self.valid_config)
+        mock_check.assert_called_once_with(self.valid_config)
+        mock_apply.assert_not_called()
+
+    @patch("tools.dev_env.deploy_dev_env.apply_pending_migrations")
+    @patch("tools.dev_env.deploy_dev_env.check_pending_migrations")
+    def test_step_migrate_pending_migrations(self, mock_check, mock_apply):
+        pending = [
+            ("ess", "xmc-dev", "experiment-db-dev"),
+            ("xid", "xmc-dev", "xids-db-dev"),
+        ]
+        mock_check.return_value = pending
+        deploy_dev_env.step_migrate(self.valid_config)
+        mock_check.assert_called_once_with(self.valid_config)
+        mock_apply.assert_called_once_with(self.valid_config, pending)
+
+    @patch("tools.dev_env.deploy_dev_env.apply_pending_migrations")
+    @patch("tools.dev_env.deploy_dev_env.check_pending_migrations")
+    def test_step_migrate_failure_or_dirty(self, mock_check, mock_apply):
+        mock_check.side_effect = SystemExit(1)
+        with self.assertRaises(SystemExit) as cm:
+            deploy_dev_env.step_migrate(self.valid_config)
+        self.assertEqual(cm.exception.code, 1)
+        mock_apply.assert_not_called()
+
+    @patch("tools.dev_env.deploy_dev_env._fetch_cluster_credentials")
+    @patch("tools.dev_env.deploy_dev_env.deploy_component_profile")
+    @patch("tools.dev_env.deploy_dev_env.run_gcluster_deploy")
+    @patch("tools.dev_env.deploy_dev_env.step_restart")
+    def test_step_app_triggers_restart(self, mock_restart, mock_gcluster, mock_profile, mock_creds):
+        manager = MagicMock()
+        manager.attach_mock(mock_gcluster, "gcluster")
+        manager.attach_mock(mock_creds, "creds")
+        manager.attach_mock(mock_profile, "profile")
+        manager.attach_mock(mock_restart, "restart")
+
+        deploy_dev_env.step_app(
+            self.valid_config,
+            self.dns_project,
+            self.dns_zone,
+        )
+        manager.assert_has_calls(
+            [
+                call.gcluster(self.valid_config.deployment_name, "xmc_app"),
+                call.creds(self.valid_config),
+                call.profile(self.valid_config),
+                call.restart(self.valid_config),
+            ],
+            any_order=False,
+        )
+
+    @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
+    @patch("tools.dev_env.deploy_dev_env.run_checks")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
+    def test_run_deployment_skip_migrations(
+        self,
+        mock_migrate,
+        mock_run_checks,
+        mock_load_config,
+    ):
+        mock_load_config.return_value = self.valid_config
+        deploy_dev_env.main(
+            [
+                "--config",
+                "config.yaml",
+                "--dns-project",
+                "p",
+                "--dns-zone",
+                "z",
+                "--only",
+                "migrate",
+                "--skip-migrations",
+            ]
+        )
+        mock_migrate.assert_not_called()
+
+    @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
+    @patch("tools.dev_env.deploy_dev_env.run_checks")
+    @patch("tools.dev_env.deploy_dev_env.step_migrate")
+    @patch("tools.dev_env.deploy_dev_env.step_app")
+    @patch("tools.dev_env.deploy_dev_env.step_verify")
+    def test_run_deployment_migrate_and_app(
+        self,
+        mock_verify,
+        mock_app,
+        mock_migrate,
+        mock_run_checks,
+        mock_load_config,
+    ):
+        mock_load_config.return_value = self.valid_config
+        deploy_dev_env.main(
+            [
+                "--config",
+                "config.yaml",
+                "--dns-project",
+                "p",
+                "--dns-zone",
+                "z",
+                "--start-from",
+                "migrate",
+            ]
+        )
+        mock_migrate.assert_called_once_with(self.valid_config)
+        mock_app.assert_called_once_with(self.valid_config, "p", "z")
+        mock_verify.assert_called_once()
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     def test_step_gateway_api_not_enabled(self, mock_run):

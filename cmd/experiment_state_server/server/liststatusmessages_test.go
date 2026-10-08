@@ -17,9 +17,9 @@ import (
 	"errors"
 	"testing"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"

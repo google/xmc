@@ -17,7 +17,7 @@ import (
 	"context"
 	"testing"
 
-	cloudspanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
+	cloudspanner "cloud.google.com/go/spanner"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 )

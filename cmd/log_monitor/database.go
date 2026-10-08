@@ -17,7 +17,7 @@ import (
 	"context"
 	"fmt"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	"golang/google_api/option/option"
 	ss "xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"

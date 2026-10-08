@@ -22,9 +22,9 @@ import (
 	"api/filter/go/filter"
 	"api/filter/go/filtervisitor"
 	"api/filter/go/queryfilterbase"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
+	"cloud.google.com/go/spanner"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
 	"task/go/status"
 	"xmanager_cloud/internal/safesql"
 

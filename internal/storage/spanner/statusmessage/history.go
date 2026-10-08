@@ -21,8 +21,8 @@ import (
 	"math"
 	"math/big"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/protobuf/v2/proto/proto"
+	"cloud.google.com/go/spanner"
+	"google.golang.org/protobuf/proto"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"

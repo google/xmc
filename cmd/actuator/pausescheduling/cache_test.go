@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )

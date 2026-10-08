@@ -21,8 +21,8 @@ import (
 	"io"
 	"strings"
 
+	"cloud.google.com/go/spanner"
 	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	migratedb "golang/github_com/golang_migrate/migrate/v/v4/database/database"
 	migratespanner "golang/github_com/golang_migrate/migrate/v/v4/database/spanner/spanner"
 	"xmanager_cloud/logging/logging"

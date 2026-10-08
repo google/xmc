@@ -327,6 +327,11 @@ def _add_deploy_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:
     _add_common_config_flags(p)
     p.add_argument("--dns-project", required=is_gke, help="GCP Project ID hosting DNS zone.")
     p.add_argument("--dns-zone", required=is_gke, help="Cloud DNS Managed Zone name.")
+    p.add_argument(
+        "--skip-migrations",
+        action="store_true",
+        help="Skip automatic Cloud Spanner database schema migrations.",
+    )
     group = p.add_mutually_exclusive_group()
     group.add_argument("-s", "--start-from", choices=deploy_dev_env.STEPS, help="Start from step.")
     group.add_argument("--only", choices=deploy_dev_env.STEPS, help="Execute only step.")

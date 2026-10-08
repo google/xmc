@@ -306,7 +306,7 @@ declarations fail the build rather than a deployment.
 | [`internal/validator`](../../internal/validator) | Request validation shared across API handlers. |
 | [`internal/security`](../../internal/security) | TLS material handling for in-cluster gRPC. |
 | [`internal/logging`](../../internal/logging) | Structured GCP logging with `xid`/`wid`/`eid` context propagation. |
-| [`internal/compat`](../../internal/compat) | Protobuf compatibility helpers, including the `proto.Modify` baseline-fixture mutator used across tests. |
+| [`internal/prototest`](../../internal/prototest) | Protobuf test helpers, including the `prototest.Modify` baseline-fixture mutator used across unit tests. |
 | [`pkg/clickhouse`](../../pkg/clickhouse) | ClickHouse client used by the Dashboard Service. |
 | [`pkg/apis`](../../pkg/apis) | Kubernetes API types for XMC custom resources. |
 

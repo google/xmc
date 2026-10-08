@@ -18,8 +18,8 @@ import (
 	"context"
 	"fmt"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	lropb "longrunning/operations_go_proto"
+	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"cloud.google.com/go/spanner"
 	"task/go/status"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"

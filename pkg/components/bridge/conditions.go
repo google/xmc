@@ -54,6 +54,13 @@ const (
 	// ReasonHelmReleaseDrifted indicates objects rendered by the deployed Helm release are missing from the cluster;
 	// the bridge re-applies the release at the current generation to recreate them.
 	ReasonHelmReleaseDrifted = "HelmReleaseDrifted"
+	// ReasonContractBroken indicates that a 3P wrapper target resource violated the status contract
+	// (e.g. malformed status payload, unparseable observedGeneration, or JSONPath execution failure against the target object).
+	ReasonContractBroken = "ContractBroken"
+	// ReasonInvalidWrapperSpec indicates that the Component spec's wrapperRef contains an invalid JSONPath expression.
+	ReasonInvalidWrapperSpec = "InvalidWrapperSpec"
+	// ReasonStatusDetectionFailed indicates a failure querying the 3P status detector or Kubernetes API.
+	ReasonStatusDetectionFailed = "StatusDetectionFailed"
 )
 
 // Condition represents a standardized Kubernetes custom resource condition.

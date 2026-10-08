@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/xidschema"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"

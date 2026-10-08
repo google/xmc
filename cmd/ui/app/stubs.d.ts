@@ -134,27 +134,6 @@ declare module 'longrunning/operations.jsonpb_decls' {
     [key: string]: any;
   }
 }
-declare module 'javascript/closure/format/format' {
-  export const format: any;
-  export function numBytesToString(bytes: number, decimals?: number): string;
-}
-declare module 'javascript/closure/i18n/messageformat' {
-  export class MessageFormat {
-    constructor(pattern: string);
-    format(args: any): string;
-  }
-}
-declare module 'javascript/closure/i18n/messages' {
-  export function declareIcuTemplate(pattern: string, options?: any): any;
-}
-declare module 'javascript/closure/i18n/numberformat' {
-  export class NumberFormat {
-    constructor(pattern: string | number);
-    format(num: number): string;
-    setMaximumFractionDigits(digits: number): void;
-    static Format: { COMPACT_SHORT: number; [key: string]: number };
-  }
-}
 
 declare module 'xmanager_cloud/health_service/proto/api.jsonpb_decls' {
   export interface SystemInfo {

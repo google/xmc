@@ -19,9 +19,9 @@ import (
 	"testing"
 	"xmanager_cloud/internal/storage/spanner"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"

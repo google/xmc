@@ -15,11 +15,11 @@
 
 """Launch script for demonstration workload in XMC with multiple WorkUnits.
 
-Demonstrates submitting an experiment and multiple WorkUnits targeted at a specific ClusterQueue
+Demonstrates submitting an experiment and multiple WorkUnits targeted at a specific LocalQueue
 to showcase workload lifecycle.
 
 Usage:
-    python3 launch.py --queue=cpu-cluster-queue --num_work_units=3 --duration=60 --gpus=0
+    python3 launch.py --queue=cpu-queue --num_work_units=3 --duration=60 --gpus=0
 """
 
 from __future__ import annotations
@@ -115,7 +115,7 @@ def main(argv: Sequence[str]) -> None:
     print("       XMC Multi-WorkUnit Demo Workload Launching                ")
     print("=================================================================")
     print(f"Project ID         : {project_id}")
-    print(f"Target ClusterQueue: {queue_name}")
+    print(f"Target LocalQueue  : {queue_name}")
     print(f"Number of WorkUnits: {num_work_units}")
     print(f"Workload Duration  : {duration_sec} seconds per unit")
     print(f"Priority           : {FLAGS.priority}")

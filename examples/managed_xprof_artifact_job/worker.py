@@ -34,10 +34,7 @@ _PROFILER_PORT = 9999
 
 
 def _resolve_profile_dir() -> str:
-    folder = os.environ.get("XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER")
-    if not folder:
-        raise RuntimeError("XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER environment variable is not set.")
-    return folder
+    return os.environ.get("XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER") or "/tmp/xprof"
 
 
 @jax.jit

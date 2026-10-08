@@ -37,8 +37,6 @@ compat_go_library(
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filter",
         "//api/protos/dashboard:messages_go_proto",
-        "//internal/compat/field_mask",
-        "//internal/compat/proto",
         "//internal/compat/status",
         "//internal/logging",
         "//internal/query_generator/liststatement",
@@ -78,7 +76,6 @@ compat_go_test(
     shard_count = 4,
     deps = [
         "//api/protos/dashboard:messages_go_proto",
-        "//internal/compat/field_mask",
         "//internal/compat/status",
         "//internal/storage/spanner/dashboard/data",
         "//internal/storage/spanner/emulator",

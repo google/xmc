@@ -27,24 +27,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
-	"math/rand"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
-	"xmanager_cloud/logging/logging"
 )
 
-const (
-	defaultLocation        = "us-central1"
-	defaultPollingInterval = time.Second
-	defaultTimeout         = 5 * time.Minute
-	maxPollingDelay        = 60 * time.Second
-)
+const defaultLocation = "us-central1"
 
 // ControlPlaneClient communicates with the Google Cloud Hypercompute Cluster
 // ML Run service.
@@ -139,45 +130,7 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("http %s %s: status %d: %s", e.Method, e.URL, e.StatusCode, e.Body)
 }
 
-// CodeAlreadyExists is the google.rpc.Code (mirrors gRPC codes.AlreadyExists = 6)
-// the control plane embeds in a long-running-operation error when the target
-// resource already exists.
-const CodeAlreadyExists = 6
-
-// OperationError is returned when a long-running operation completes with an error.
-// It carries the numeric google.rpc.Code so callers can branch on it (e.g.
-// CodeAlreadyExists) instead of matching on the error string.
-type OperationError struct {
-	Name    string
-	Code    int
-	Message string
-	// Raw is the operation's original error payload, retained so the error string
-	// stays identical to the pre-refactor format.
-	Raw any
-}
-
-// Error preserves the original human-readable format.
-func (e *OperationError) Error() string {
-	return fmt.Sprintf("operation %s failed: %v", e.Name, e.Raw)
-}
-
-// newOperationError builds an OperationError from an operation's raw error payload,
-// extracting the numeric google.rpc.Code and message when present. JSON numbers
-// decode as float64, so the code is converted accordingly.
-func newOperationError(name string, errField any) *OperationError {
-	oe := &OperationError{Name: name, Raw: errField}
-	if m, ok := errField.(map[string]any); ok {
-		if code, ok := m["code"].(float64); ok {
-			oe.Code = int(code)
-		}
-		if msg, ok := m["message"].(string); ok {
-			oe.Message = msg
-		}
-	}
-	return oe
-}
-
-func (c *ControlPlaneClient) do(ctx context.Context, method, rawURL string, params url.Values, body any) (map[string]any, error) {
+func (c *ControlPlaneClient) buildHTTPRequest(ctx context.Context, method, rawURL string, body any) (*http.Request, error) {
 	var reqBody io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -186,22 +139,27 @@ func (c *ControlPlaneClient) do(ctx context.Context, method, rawURL string, para
 		}
 		reqBody = bytes.NewReader(b)
 	}
-
-	if len(params) > 0 {
-		rawURL = rawURL + "?" + params.Encode()
-	}
-
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
-
 	auth, err := c.authHeader(ctx)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", auth)
+	return req, nil
+}
+
+func (c *ControlPlaneClient) do(ctx context.Context, method, rawURL string, params url.Values, body any) (map[string]any, error) {
+	if len(params) > 0 {
+		rawURL = rawURL + "?" + params.Encode()
+	}
+	req, err := c.buildHTTPRequest(ctx, method, rawURL, body)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -229,325 +187,4 @@ func (c *ControlPlaneClient) do(ctx context.Context, method, rawURL string, para
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 	return result, nil
-}
-
-// GetOperation retrieves a long-running operation by name.
-func (c *ControlPlaneClient) GetOperation(ctx context.Context, operationName string) (map[string]any, error) {
-	opURL := fmt.Sprintf("%s/%s", c.baseURL, operationName)
-	logging.Debug(ctx, "GetOperation", "url", opURL)
-
-	result, err := c.do(ctx, http.MethodGet, opURL, nil, nil)
-	if err != nil {
-		logging.Error(ctx, "GetOperation failed", "url", opURL, "error", err)
-		return nil, err
-	}
-	logging.Debug(ctx, "GetOperation response", "operation", result)
-	return result, nil
-}
-
-// WaitForOperationOptions configures WaitForOperation.
-type WaitForOperationOptions struct {
-	PollingInterval time.Duration // default: 1s
-	Timeout         time.Duration // default: 5m
-}
-
-// WaitForOperation polls until the operation completes or the deadline is reached.
-func (c *ControlPlaneClient) WaitForOperation(ctx context.Context, operationName string, opts *WaitForOperationOptions) (map[string]any, error) {
-	pollingInterval := defaultPollingInterval
-	timeout := defaultTimeout
-	if opts != nil {
-		if opts.PollingInterval > 0 {
-			pollingInterval = opts.PollingInterval
-		}
-		if opts.Timeout > 0 {
-			timeout = opts.Timeout
-		}
-	}
-
-	// Derive a context with the timeout so downstream GetOperation calls
-	// inherit the deadline instead of relying on a manual wall-clock check.
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	delay := pollingInterval.Seconds()
-
-	for {
-		op, err := c.GetOperation(ctx, operationName)
-		if err != nil {
-			// Re-raise any error to fail fast (matches Python HTTPError re-raise).
-			return nil, err
-		}
-		if op == nil {
-			// GetOperation returns a nil map for an empty body; fail fast with a
-			// clear error instead of treating it as "not done" and polling until
-			// the deadline.
-			return nil, fmt.Errorf("operation %q returned empty response", operationName)
-		}
-
-		if done, _ := op["done"].(bool); done {
-			if errField, ok := op["error"]; ok && errField != nil {
-				return nil, newOperationError(operationName, errField)
-			}
-			return op, nil
-		}
-
-		jitter := delay * (0.5 + rand.Float64()*0.5)
-		timer := time.NewTimer(time.Duration(jitter * float64(time.Second)))
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			if ctx.Err() == context.DeadlineExceeded {
-				return nil, fmt.Errorf("timed out waiting for operation %s to complete: %w", operationName, ctx.Err())
-			}
-			return nil, ctx.Err()
-		case <-timer.C:
-		}
-		delay = math.Min(delay*2, maxPollingDelay.Seconds())
-	}
-}
-
-// GKEWorkloadDetails holds GKE-specific workload information.
-type GKEWorkloadDetails struct {
-	ID             string            `json:"id"`
-	Kind           string            `json:"kind"`
-	Cluster        string            `json:"cluster"`
-	Namespace      string            `json:"namespace"`
-	ParentWorkload string            `json:"parentWorkload,omitempty"`
-	Labels         map[string]string `json:"labels,omitempty"`
-	CreateTime     string            `json:"createTime,omitempty"`
-}
-
-// CreateMLRunOptions holds optional parameters for CreateMLRun.
-type CreateMLRunOptions struct {
-	Configs         map[string]any
-	Tools           []map[string]any
-	Artifacts       map[string]string
-	RunGroup        string
-	Labels          map[string]string
-	Orchestrator    string
-	WorkloadDetails *GKEWorkloadDetails
-}
-
-// CreateMLRun creates a new ML run and waits for the operation to complete.
-func (c *ControlPlaneClient) CreateMLRun(
-	ctx context.Context,
-	name, displayName, runPhase string,
-	opts *CreateMLRunOptions,
-) (map[string]any, error) {
-	payload := map[string]any{
-		"name":        name,
-		"displayName": displayName,
-		"runPhase":    runPhase,
-	}
-
-	applyMLRunCreateOptions(payload, opts)
-
-	params := url.Values{"machine_learning_run_id": {SanitizeIdentifier(name)}}
-
-	logging.Debug(ctx, "CreateMLRun request", "url", c.mlRunsPath, "params", params, "payload", payload)
-
-	result, err := c.do(ctx, http.MethodPost, c.mlRunsPath, params, payload)
-	if err != nil {
-		logging.Error(ctx, "CreateMLRun failed", "error", err)
-		return nil, err
-	}
-	logging.Debug(ctx, "CreateMLRun response", "result", result)
-
-	return c.resolveOperation(ctx, result)
-}
-
-// GetMLRun retrieves an existing ML run by name.
-func (c *ControlPlaneClient) GetMLRun(ctx context.Context, name string) (map[string]any, error) {
-	runURL := fmt.Sprintf("%s/%s", c.mlRunsPath, name)
-	logging.Debug(ctx, "GetMLRun request", "url", runURL)
-
-	result, err := c.do(ctx, http.MethodGet, runURL, nil, nil)
-	if err != nil {
-		logging.Error(ctx, "GetMLRun failed", "name", name, "error", err)
-		return nil, err
-	}
-	logging.Debug(ctx, "GetMLRun response", "result", result)
-	return result, nil
-}
-
-// UpdateMLRunOptions holds optional parameters for UpdateMLRun.
-//
-// Unlike CreateMLRunOptions, it intentionally omits Configs and Tools: in the
-func applyMLRunCreateOptions(payload map[string]any, opts *CreateMLRunOptions) {
-	if opts == nil {
-		return
-	}
-	if len(opts.Configs) > 0 {
-		payload["configs"] = opts.Configs
-	}
-	if len(opts.Artifacts) > 0 {
-		payload["artifacts"] = opts.Artifacts
-	}
-	if opts.RunGroup != "" {
-		payload["runSet"] = opts.RunGroup
-	}
-	if len(opts.Labels) > 0 {
-		payload["labels"] = opts.Labels
-	}
-	if len(opts.Tools) > 0 {
-		payload["tools"] = opts.Tools
-	}
-	if opts.Orchestrator != "" {
-		payload["orchestrator"] = opts.Orchestrator
-		if opts.Orchestrator == "GKE" && opts.WorkloadDetails != nil {
-			payload["workloadDetails"] = map[string]any{"gke": opts.WorkloadDetails}
-		}
-	}
-}
-
-// XMC context these are set once at creation time and are never updated
-// afterwards, so they are excluded here to keep the update contract explicit
-// for callers.
-type UpdateMLRunOptions struct {
-	// Force triggers an update even when no fields have changed.
-	Force           bool
-	RunPhase        string
-	DisplayName     string
-	RunGroup        string
-	Labels          map[string]string
-	Artifacts       map[string]string
-	Orchestrator    string
-	WorkloadDetails *GKEWorkloadDetails
-}
-
-// mergeStringMap merges updates into a nested string map in payload under field.
-// It initializes the nested map if absent or of an unexpected type, and reports
-// whether any values were added or modified.
-func mergeStringMap(payload map[string]any, field string, updates map[string]string) bool {
-	if len(updates) == 0 {
-		return false
-	}
-	nested, ok := payload[field].(map[string]any)
-	if !ok || nested == nil {
-		nested = make(map[string]any, len(updates))
-		payload[field] = nested
-	}
-	var changed bool
-	for k, v := range updates {
-		if nested[k] != v {
-			nested[k] = v
-			changed = true
-		}
-	}
-	return changed
-}
-
-func applyMLRunUpdateOptions(payload map[string]any, opts *UpdateMLRunOptions) bool {
-	if opts == nil {
-		return false
-	}
-	needUpdate := opts.Force
-	if opts.DisplayName != "" && payload["displayName"] != opts.DisplayName {
-		payload["displayName"] = opts.DisplayName
-		needUpdate = true
-	}
-	if opts.RunPhase != "" && payload["runPhase"] != opts.RunPhase {
-		payload["runPhase"] = opts.RunPhase
-		needUpdate = true
-	}
-	if opts.RunGroup != "" && payload["runSet"] != opts.RunGroup {
-		payload["runSet"] = opts.RunGroup
-		needUpdate = true
-	}
-	if mergeStringMap(payload, "labels", opts.Labels) {
-		needUpdate = true
-	}
-	if mergeStringMap(payload, "artifacts", opts.Artifacts) {
-		needUpdate = true
-	}
-	if opts.Orchestrator != "" {
-		payload["orchestrator"] = opts.Orchestrator
-		if opts.Orchestrator == "GKE" && opts.WorkloadDetails != nil {
-			payload["workloadDetails"] = map[string]any{"gke": opts.WorkloadDetails}
-		}
-		needUpdate = true
-	}
-	return needUpdate
-}
-
-// UpdateMLRun updates an existing ML run via a read-modify-write against the full
-// resource: it fetches the current state, applies the requested changes, and
-// re-sends the whole resource with update_mask=* (the only mask the API accepts).
-func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts *UpdateMLRunOptions) (map[string]any, error) {
-	payload, err := c.GetMLRun(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	if payload == nil {
-		// A nil payload (e.g. an empty response body) would panic on the map
-		// writes below ("assignment to entry in nil map").
-		return nil, fmt.Errorf("update MLRun %q: GET returned empty payload", name)
-	}
-
-	needUpdate := applyMLRunUpdateOptions(payload, opts)
-
-	if !needUpdate {
-		return payload, nil
-	}
-
-	// Remove output-only fields.
-	for _, field := range []string{"createTime", "updateTime", "endTime"} {
-		delete(payload, field)
-	}
-
-	// The current backend only accepts update_mask=*|workload_details, so it uses * here. TODO: update to per field masks once backend supports it.
-	runURL := fmt.Sprintf("%s/%s", c.mlRunsPath, name)
-	params := url.Values{"update_mask": {"*"}}
-
-	logging.Debug(ctx, "UpdateMLRun request", "url", runURL, "params", params, "payload", payload)
-
-	result, err := c.do(ctx, http.MethodPatch, runURL, params, payload)
-	if err != nil {
-		logging.Error(ctx, "UpdateMLRun failed", "name", name, "error", err)
-		return nil, err
-	}
-	return c.resolveOperation(ctx, result)
-}
-
-// resolveOperation blocks until the long-running operation completes, then
-// returns the final MLRun resource or a formatted error if it failed.
-func (c *ControlPlaneClient) resolveOperation(ctx context.Context, result map[string]any) (map[string]any, error) {
-	if result == nil {
-		return nil, fmt.Errorf("operation result is nil")
-	}
-
-	var operation map[string]any
-	var err error
-	if done, _ := result["done"].(bool); !done {
-		opName, _ := result["name"].(string)
-		if opName == "" {
-			return nil, fmt.Errorf("operation name is empty in pending operation result")
-		}
-		operation, err = c.WaitForOperation(ctx, opName, nil)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		operation = result
-	}
-
-	logging.Info(ctx, "Operation complete", "operation", operation)
-
-	if errField, ok := operation["error"]; ok && errField != nil {
-		opName, _ := operation["name"].(string)
-		return nil, newOperationError(opName, errField)
-	}
-
-	if response, ok := operation["response"].(map[string]any); ok {
-		return response, nil
-	}
-
-	// Fall back: fetch the ML run using target from operation metadata.
-	metadata, _ := operation["metadata"].(map[string]any)
-	target, _ := metadata["target"].(string)
-	if target == "" {
-		return nil, fmt.Errorf("no response or target in operation %v", operation["name"])
-	}
-	parts := strings.Split(target, "/")
-	mlRunName := parts[len(parts)-1]
-	return c.GetMLRun(ctx, mlRunName)
 }

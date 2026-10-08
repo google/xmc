@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 	"golang/github_com/golang_migrate/migrate/v/v4/database/database"
 	"golang/github_com/golang_migrate/migrate/v/v4/database/stub/stub"
 	"golang/github_com/golang_migrate/migrate/v/v4/migrate"

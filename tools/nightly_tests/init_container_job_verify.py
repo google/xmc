@@ -27,7 +27,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import common
+from tools.nightly_tests.verification import verifier_cli, workload_verification
 
 EXPECTED_TITLE_PATTERN: str = "Init Container Validation Experiment"
 EXPECTED_JOB_NAME: str = "init-worker"
@@ -45,7 +45,7 @@ EXPECTED_JOBSET_SPECS: list[dict[str, Any]] = [
 
 def main(argv: Sequence[str]) -> None:
     """Main verification routine for init_container_job workload."""
-    common.verify_standard_workload(
+    workload_verification.verify_standard_workload(
         argv,
         banner_title="XMC Init Container Job Verification & Assertions",
         summary_title="ALL INIT CONTAINER JOB ASSERTIONS PASSED SUCCESSFULLY!",
@@ -55,4 +55,4 @@ def main(argv: Sequence[str]) -> None:
 
 
 if __name__ == "__main__":
-    common.run_main(main)
+    verifier_cli.run_main(main)

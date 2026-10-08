@@ -20,13 +20,13 @@ import (
 	"time"
 	"xmanager_cloud/internal/storage/spanner"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/storage"
 
-	fieldmaskpb "protobuf/field_mask_go_proto"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "protobuf/timestamp_go_proto"
 )
 

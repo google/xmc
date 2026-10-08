@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/protobuf/v2/proto/proto"
+	"cloud.google.com/go/spanner"
+	"google.golang.org/protobuf/proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"

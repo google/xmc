@@ -17,8 +17,10 @@
 import subprocess
 import time
 import unittest
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, call, patch
 
+from test.e2e.lib.cancellation import HarnessStoppedError
+from test.e2e.lib.command import TEARDOWN_TIMEOUT_SECONDS
 from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.spanner import SpannerManager
 
@@ -91,11 +93,13 @@ class TestSpannerManager(unittest.TestCase):
             check=False,
         )
 
+    # A frozen clock keeps the attempt timeouts exact.
+    @patch("time.monotonic", return_value=0.0)
     @patch("os.path.isfile", return_value=False)
     @patch.object(SpannerManager, "_cleanup_stale_databases")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_setup_creates_dbs_with_ddl_and_proto_descriptors(
-        self, mock_run, mock_cleanup, mock_isfile
+        self, mock_run, mock_cleanup, mock_isfile, _
     ):
         self.mgr.setup()
 
@@ -127,6 +131,7 @@ class TestSpannerManager(unittest.TestCase):
                 "--proto-descriptors-file=/workspace/bazel-bin/api/protos/experiment/experiment_messages_descriptor.pb",
             ],
             capture_output=True,
+            timeout=120,
         )
         mock_run.assert_any_call(
             [
@@ -141,6 +146,7 @@ class TestSpannerManager(unittest.TestCase):
                 "--proto-descriptors-file=/workspace/bazel-bin/api/protos/xid/xid_messages_descriptor.pb",
             ],
             capture_output=True,
+            timeout=120,
         )
 
         # Check migration version initialization calls (-command=init)
@@ -158,6 +164,7 @@ class TestSpannerManager(unittest.TestCase):
             ],
             cwd="/workspace",
             capture_output=True,
+            timeout=45,
         )
         mock_run.assert_any_call(
             [
@@ -173,11 +180,13 @@ class TestSpannerManager(unittest.TestCase):
             ],
             cwd="/workspace",
             capture_output=True,
+            timeout=45,
         )
 
-    @patch("time.sleep")
+    @patch("random.uniform", return_value=0.0)
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("test.e2e.lib.spanner.run_cmd")
-    def test_create_database_retries_on_resource_exhausted(self, mock_run, mock_sleep):
+    def test_create_database_retries_on_resource_exhausted(self, mock_run, mock_sleep, _):
         mock_run.side_effect = [
             subprocess.CalledProcessError(
                 returncode=1,
@@ -192,6 +201,163 @@ class TestSpannerManager(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 2)
         mock_sleep.assert_called_once_with(15)
 
+    @patch("random.uniform", return_value=0.0)
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_create_database_retries_failed_operation_message_until_attempts_run_out(
+        self, mock_run, mock_sleep, _
+    ):
+        # A failed long-running operation is reported by gcloud without a status code.
+        error = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["gcloud", "spanner", "databases", "create"],
+            stderr="ERROR: (gcloud.spanner.databases.create) Deadline exceeded",
+        )
+        mock_run.side_effect = error
+
+        with self.assertLogs("xmc_e2e_runner", level="WARNING") as logs:
+            with self.assertRaises(subprocess.CalledProcessError) as ctx:
+                self.mgr._create_database("test-db", "schema.sql", "desc.pb")
+
+        self.assertIs(ctx.exception, error)
+        self.assertEqual(mock_run.call_count, 4)
+        self.assertEqual(mock_sleep.call_args_list, [call(15), call(30), call(60)])
+        self.assertEqual(len(logs.records), 4)
+        self.assertIn("not retrying", logs.output[-1])
+        self.assertIn("Deadline exceeded", logs.output[-1])
+
+    @patch("random.uniform", return_value=0.0)
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_create_database_accepts_ready_database_after_timed_out_attempt(
+        self, mock_run, mock_sleep, _
+    ):
+        mock_run.side_effect = [
+            subprocess.TimeoutExpired(["gcloud"], 120),
+            subprocess.CalledProcessError(1, ["gcloud"], stderr="ALREADY_EXISTS: Database d"),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="READY\n"),
+        ]
+
+        self.mgr._create_database("test-db", "schema.sql", "desc.pb")
+
+        self.assertEqual(mock_run.call_args_list[0].kwargs["timeout"], 120)
+        self.assertEqual(
+            mock_run.call_args_list[2].args[0],
+            [
+                "gcloud",
+                "spanner",
+                "databases",
+                "describe",
+                "test-db",
+                "--instance=test-inst",
+                "--project=test-proj",
+                "--format=value(state)",
+            ],
+        )
+        mock_sleep.assert_called_once_with(15)
+
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_create_database_fails_on_already_exists_of_first_attempt(self, mock_run, mock_sleep):
+        exists = subprocess.CalledProcessError(1, ["gcloud"], stderr="ALREADY_EXISTS: Database d")
+        mock_run.side_effect = [exists]
+
+        with self.assertRaises(subprocess.CalledProcessError) as ctx:
+            self.mgr._create_database("test-db", "schema.sql", "desc.pb")
+
+        self.assertIs(ctx.exception, exists)
+        mock_sleep.assert_not_called()
+
+    @patch("random.uniform", return_value=0.0)
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_create_database_polls_creating_database_until_ready(self, mock_run, mock_sleep, _):
+        creating = subprocess.CompletedProcess(args=[], returncode=0, stdout="CREATING\n")
+        mock_run.side_effect = [
+            subprocess.TimeoutExpired(["gcloud"], 120),
+            subprocess.CalledProcessError(1, ["gcloud"], stderr="ALREADY_EXISTS: Database d"),
+            creating,
+            subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="UNAVAILABLE"),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="READY\n"),
+        ]
+
+        self.mgr._create_database("test-db", "schema.sql", "desc.pb")
+
+        self.assertEqual(mock_run.call_count, 5)
+        self.assertEqual(mock_sleep.call_args_list, [call(15), call(5), call(5)])
+
+    @patch("random.uniform", return_value=0.0)
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_create_database_stops_polling_when_harness_halts(self, mock_run, mock_sleep, _):
+        mock_run.side_effect = [
+            subprocess.TimeoutExpired(["gcloud"], 120),
+            subprocess.CalledProcessError(1, ["gcloud"], stderr="ALREADY_EXISTS: Database d"),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="CREATING\n"),
+        ]
+        mock_sleep.side_effect = [None, HarnessStoppedError()]
+
+        with self.assertRaises(HarnessStoppedError):
+            self.mgr._create_database("test-db", "schema.sql", "desc.pb")
+
+        self.assertEqual(mock_sleep.call_args_list, [call(15), call(5)])
+
+    @patch("random.uniform", return_value=0.0)
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
+    @patch("time.monotonic")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_create_database_retries_database_that_stays_creating_within_budget(
+        self, mock_run, mock_monotonic, mock_sleep, _
+    ):
+        clock = {"now": 0.0}
+        mock_monotonic.side_effect = lambda: clock["now"]
+        mock_sleep.side_effect = lambda seconds: clock.update(now=clock["now"] + seconds)
+
+        def _gcloud(cmd, **kwargs):
+            if "describe" in cmd:
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="CREATING\n")
+            if clock["now"] == 0:
+                clock["now"] += kwargs["timeout"]
+                raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+            raise subprocess.CalledProcessError(1, cmd, stderr="ALREADY_EXISTS: Database d")
+
+        mock_run.side_effect = _gcloud
+
+        with self.assertRaises(subprocess.TimeoutExpired) as ctx:
+            self.mgr._create_database("test-db", "schema.sql", "desc.pb")
+
+        # Attempt 1 times out at 120 s and waits 15 s; attempt 2 polls every 5 s for its
+        # remaining 105 s. A retry after that would not get 30 s of the 240 s budget.
+        self.assertIn("test-db is CREATING, not READY", ctx.exception.stderr)
+        self.assertEqual(clock["now"], 240)
+        self.assertEqual(mock_sleep.call_args_list, [call(15)] + [call(5)] * 21)
+
+    @patch("random.uniform", side_effect=lambda low, high: high)
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
+    @patch("time.monotonic")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_create_database_gives_up_within_total_budget_when_attempts_time_out(
+        self, mock_run, mock_monotonic, mock_sleep, _
+    ):
+        clock = {"now": 0.0}
+        mock_monotonic.side_effect = lambda: clock["now"]
+        mock_sleep.side_effect = lambda seconds: clock.update(now=clock["now"] + seconds)
+
+        def _time_out(cmd, **kwargs):
+            clock["now"] += kwargs["timeout"]
+            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+        mock_run.side_effect = _time_out
+
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.mgr._create_database("test-db", "schema.sql", "desc.pb")
+
+        # Attempt 1 times out at 120 s and waits the longest jittered 18 s; attempt 2 gets the
+        # remaining 102 s, after which no wait fits the 240 s cap.
+        self.assertEqual([c.kwargs["timeout"] for c in mock_run.call_args_list], [120, 102])
+        mock_sleep.assert_called_once_with(18)
+        self.assertEqual(clock["now"], 240)
+
     @patch("os.access", return_value=True)
     @patch("os.path.isfile", return_value=True)
     def test_resolve_migration_binary_finds_executable(self, mock_isfile, mock_access):
@@ -205,7 +371,7 @@ class TestSpannerManager(unittest.TestCase):
         binary = self.mgr._resolve_migration_binary()
         self.assertIsNone(binary)
 
-    @patch("time.sleep")
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_init_migration_version_retries_on_grpc_resource_exhausted(self, mock_run, mock_sleep):
         mock_run.side_effect = [
@@ -224,6 +390,96 @@ class TestSpannerManager(unittest.TestCase):
 
         self.assertEqual(mock_run.call_count, 2)
         mock_sleep.assert_called_once_with(5)
+
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
+    @patch("time.monotonic")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_init_migration_version_retries_timed_out_attempt_within_total_budget(
+        self, mock_run, mock_monotonic, mock_sleep
+    ):
+        clock = {"now": 0.0}
+        mock_monotonic.side_effect = lambda: clock["now"]
+        mock_sleep.side_effect = lambda seconds: clock.update(now=clock["now"] + seconds)
+
+        def _time_out(cmd, **kwargs):
+            clock["now"] += kwargs["timeout"]
+            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+        mock_run.side_effect = _time_out
+
+        with (
+            patch.object(
+                self.mgr,
+                "_resolve_migration_binary",
+                return_value="/workspace/bazel-bin/migrations",
+            ),
+            self.assertRaises(subprocess.TimeoutExpired),
+        ):
+            self.mgr._init_migration_version("test-db", "ess")
+
+        # Attempt 1 times out at 45 s and waits 5 s, which leaves 40 s of the 90 s cap, more
+        # than the 30 s a retry needs; attempt 2 then times out at the cap.
+        self.assertEqual([c.kwargs["timeout"] for c in mock_run.call_args_list], [45, 40])
+        mock_sleep.assert_called_once_with(5)
+        self.assertEqual(clock["now"], 90)
+
+    @patch("time.monotonic")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_init_migration_version_deducts_bazel_run_lock_wait_from_attempt_timeout(
+        self, mock_run, mock_monotonic
+    ):
+        clock = {"now": 0.0}
+        mock_monotonic.side_effect = lambda: clock["now"]
+        lock = MagicMock()
+
+        def _acquire_after_other_initialization(timeout):
+            clock["now"] += 30
+            return True
+
+        lock.acquire.side_effect = _acquire_after_other_initialization
+
+        with (
+            patch.object(self.mgr, "_resolve_migration_binary", return_value=None),
+            patch.object(self.mgr, "_bazel_run_lock", lock),
+        ):
+            self.mgr._init_migration_version("test-db", "ess")
+
+        # The other database's bazel run held the lock for 30 s of the 45 s attempt timeout.
+        lock.acquire.assert_called_once_with(timeout=45)
+        self.assertEqual(mock_run.call_args.kwargs["timeout"], 15)
+        lock.release.assert_called_once_with()
+
+    @patch("time.sleep")
+    @patch("time.monotonic")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_init_migration_version_gives_up_within_total_budget_while_bazel_run_lock_is_held(
+        self, mock_run, mock_monotonic, mock_sleep
+    ):
+        clock = {"now": 0.0}
+        mock_monotonic.side_effect = lambda: clock["now"]
+        mock_sleep.side_effect = lambda seconds: clock.update(now=clock["now"] + seconds)
+        lock = MagicMock()
+
+        def _wait_in_vain(timeout):
+            clock["now"] += timeout
+            return False
+
+        lock.acquire.side_effect = _wait_in_vain
+
+        with (
+            patch.object(self.mgr, "_resolve_migration_binary", return_value=None),
+            patch.object(self.mgr, "_bazel_run_lock", lock),
+            self.assertRaises(subprocess.TimeoutExpired) as ctx,
+        ):
+            self.mgr._init_migration_version("test-db", "ess")
+
+        # Waiting for the lock times out like a command would, at 45 s and, after the 5 s
+        # wait, at the 90 s cap, without ever running the initialization.
+        self.assertIn("lock held by a concurrent command", ctx.exception.stderr)
+        self.assertEqual([c.kwargs["timeout"] for c in lock.acquire.call_args_list], [45, 40])
+        mock_run.assert_not_called()
+        lock.release.assert_not_called()
+        self.assertEqual(clock["now"], 90)
 
     @patch("os.path.getsize", return_value=1024)
     @patch("os.path.isfile", return_value=True)
@@ -267,6 +523,8 @@ class TestSpannerManager(unittest.TestCase):
                     "--quiet",
                 ],
                 check=False,
+                timeout=TEARDOWN_TIMEOUT_SECONDS,
+                stoppable=False,
             ),
             call(
                 [
@@ -280,6 +538,8 @@ class TestSpannerManager(unittest.TestCase):
                     "--quiet",
                 ],
                 check=False,
+                timeout=TEARDOWN_TIMEOUT_SECONDS,
+                stoppable=False,
             ),
         ]
         mock_run.assert_has_calls(expected_calls, any_order=True)
@@ -305,7 +565,7 @@ class TestSpannerManager(unittest.TestCase):
                 self.mgr._prepare_e2e_ddl_file("e2e-ess-123", combined_path), combined_path
             )
 
-    @patch("time.sleep")
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_init_migration_version_fails_fast_on_duplicate_name_error(self, mock_run, mock_sleep):
         mock_run.side_effect = subprocess.CalledProcessError(

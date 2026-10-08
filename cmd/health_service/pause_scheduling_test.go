@@ -22,35 +22,12 @@ import (
 
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
+	storagetest "xmanager_cloud/internal/storage/testing"
 	"xmanager_cloud/task_queue_redis/redisclient"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
-
-type failingPauseStateRepo struct {
-	err    error
-	getErr error
-	setErr error
-}
-
-func (r *failingPauseStateRepo) Get(ctx context.Context) (*pausestate.PauseSchedulingState, error) {
-	if r.getErr != nil {
-		return nil, r.getErr
-	}
-	if r.err != nil {
-		return nil, r.err
-	}
-	return &pausestate.PauseSchedulingState{SchedulingPaused: true}, nil
-}
-
-func (r *failingPauseStateRepo) Set(ctx context.Context, state *pausestate.PauseSchedulingState) error {
-	if r.setErr != nil {
-		return r.setErr
-	}
-	return r.err
-}
 
 type fakeLazyStorage struct {
 	storage PauseSchedulingStorage
@@ -64,7 +41,7 @@ func (f *fakeLazyStorage) Storage(ctx context.Context) (PauseSchedulingStorage, 
 	return f.storage, nil
 }
 
-func newFakeLazyStorage(repo pausestate.Repository) LazyStorageProvider {
+func newFakeLazyStorage(repo storage.PauseStateRepository) LazyStorageProvider {
 	return &fakeLazyStorage{
 		storage: &storage.MockStorage{
 			PauseStateRepository: repo,
@@ -74,7 +51,7 @@ func newFakeLazyStorage(repo pausestate.Repository) LazyStorageProvider {
 
 // newFakePauseScheduler builds a PauseScheduler wired to in-memory publishers for tests
 // that only exercise state transitions.
-func newFakePauseScheduler(pauseStateRepository pausestate.Repository) PauseScheduler {
+func newFakePauseScheduler(pauseStateRepository storage.PauseStateRepository) PauseScheduler {
 	return NewPauseScheduler(PauseSchedulerParams{
 		LazyStorage:        newFakeLazyStorage(pauseStateRepository),
 		BroadcastPublisher: broadcast.NewFakeClient(""),
@@ -147,7 +124,7 @@ func TestPauseScheduler_Pause(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("successfully pauses from initial unpaused state", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
+		fakeRepo := storagetest.NewFakePauseStateRepository()
 		scheduler := newFakePauseScheduler(fakeRepo)
 
 		if err := scheduler.Pause(ctx); err != nil {
@@ -171,8 +148,7 @@ func TestPauseScheduler_Pause(t *testing.T) {
 	})
 
 	t.Run("successfully pauses when previous resumption metadata exists", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
-		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{
+		fakeRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{
 			SchedulingPaused:   false,
 			ResumptionRunID:    "previous-run-id",
 			ResumptionWorkerID: "previous-worker-id",
@@ -201,7 +177,7 @@ func TestPauseScheduler_Pause(t *testing.T) {
 
 	t.Run("returns error when repo fails", func(t *testing.T) {
 		repoErr := errors.New("spanner connection failure")
-		failingRepo := &failingPauseStateRepo{err: repoErr}
+		failingRepo := &storagetest.FakePauseStateRepository{SetErr: repoErr}
 		scheduler := newFakePauseScheduler(failingRepo)
 
 		err := scheduler.Pause(ctx)
@@ -238,7 +214,7 @@ func TestPauseScheduler_Pause(t *testing.T) {
 	})
 
 	t.Run("successfully broadcasts pause event when publisher provided", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
+		fakeRepo := storagetest.NewFakePauseStateRepository()
 		fakePublisher := broadcast.NewFakeClient("")
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
 			LazyStorage:        newFakeLazyStorage(fakeRepo),
@@ -253,7 +229,7 @@ func TestPauseScheduler_Pause(t *testing.T) {
 	})
 
 	t.Run("returns error when broadcast publisher fails", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
+		fakeRepo := storagetest.NewFakePauseStateRepository()
 		fakePublisher := broadcast.NewFakeClient("")
 		fakePublisher.SetPublishError(errors.New("broadcast stream failure"))
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
@@ -268,7 +244,7 @@ func TestPauseScheduler_Pause(t *testing.T) {
 	})
 
 	t.Run("fails when broadcast publisher is not configured", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
+		fakeRepo := storagetest.NewFakePauseStateRepository()
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
 			LazyStorage: newFakeLazyStorage(fakeRepo),
 		})
@@ -292,8 +268,7 @@ func TestPauseScheduler_Resume(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("successfully resumes and generates valid UUID run id", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
-		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{
+		fakeRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{
 			SchedulingPaused:   true,
 			ResumptionRunID:    "",
 			ResumptionWorkerID: "old-worker",
@@ -329,8 +304,7 @@ func TestPauseScheduler_Resume(t *testing.T) {
 	})
 
 	t.Run("consecutive resumes when already unpaused are idempotent and preserve worker lease", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
-		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{
+		fakeRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{
 			SchedulingPaused:   false,
 			ResumptionRunID:    "active-run-id",
 			ResumptionWorkerID: "active-worker-id",
@@ -358,7 +332,7 @@ func TestPauseScheduler_Resume(t *testing.T) {
 	})
 
 	t.Run("successive pause and resume cycles generate unique run ids", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
+		fakeRepo := storagetest.NewFakePauseStateRepository()
 		scheduler := newFakePauseScheduler(fakeRepo)
 
 		if err := scheduler.Pause(ctx); err != nil {
@@ -384,7 +358,7 @@ func TestPauseScheduler_Resume(t *testing.T) {
 
 	t.Run("returns error when repo Get fails", func(t *testing.T) {
 		repoErr := errors.New("spanner read failed")
-		failingRepo := &failingPauseStateRepo{getErr: repoErr}
+		failingRepo := &storagetest.FakePauseStateRepository{GetErr: repoErr}
 		scheduler := newFakePauseScheduler(failingRepo)
 
 		_, err := scheduler.Resume(ctx)
@@ -398,7 +372,8 @@ func TestPauseScheduler_Resume(t *testing.T) {
 
 	t.Run("returns error when repo Set fails", func(t *testing.T) {
 		repoErr := errors.New("spanner commit failed")
-		failingRepo := &failingPauseStateRepo{setErr: repoErr}
+		failingRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
+		failingRepo.SetErr = repoErr
 		scheduler := newFakePauseScheduler(failingRepo)
 
 		_, err := scheduler.Resume(ctx)
@@ -437,8 +412,7 @@ func TestPauseScheduler_Resume(t *testing.T) {
 	})
 
 	t.Run("successfully broadcasts resume event and publishes task queue trigger", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
-		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{
+		fakeRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{
 			SchedulingPaused: true,
 		})
 		fakePublisher := broadcast.NewFakeClient("")
@@ -461,8 +435,7 @@ func TestPauseScheduler_Resume(t *testing.T) {
 	})
 
 	t.Run("consecutive resumes when already unpaused do not broadcast or publish task trigger", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
-		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{
+		fakeRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{
 			SchedulingPaused:   false,
 			ResumptionRunID:    "active-run-id",
 			ResumptionWorkerID: "active-worker-id",
@@ -491,8 +464,7 @@ func TestPauseScheduler_Resume(t *testing.T) {
 	})
 
 	t.Run("returns wrapped error and skips task queue trigger when broadcast publisher fails", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
-		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{
+		fakeRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{
 			SchedulingPaused: true,
 		})
 		fakePublisher := broadcast.NewFakeClient("")
@@ -514,8 +486,7 @@ func TestPauseScheduler_Resume(t *testing.T) {
 	})
 
 	t.Run("fails when broadcast publisher is not configured", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
-		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{SchedulingPaused: true})
+		fakeRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
 			LazyStorage:        newFakeLazyStorage(fakeRepo),
 			TaskQueuePublisher: redisclient.NewFakeClient(),
@@ -529,8 +500,7 @@ func TestPauseScheduler_Resume(t *testing.T) {
 	})
 
 	t.Run("fails when task queue publisher is not configured", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
-		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{SchedulingPaused: true})
+		fakeRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
 		fakePublisher := broadcast.NewFakeClient("")
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
 			LazyStorage:        newFakeLazyStorage(fakeRepo),
@@ -548,7 +518,7 @@ func TestPauseScheduler_Resume(t *testing.T) {
 	})
 }
 
-func assertStillPaused(ctx context.Context, t *testing.T, repo pausestate.Repository) {
+func assertStillPaused(ctx context.Context, t *testing.T, repo storage.PauseStateRepository) {
 	t.Helper()
 	state, err := repo.Get(ctx)
 	if err != nil {
@@ -566,7 +536,7 @@ func TestPauseScheduler_IsPaused(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("defaults to false on uninitialized repo", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
+		fakeRepo := storagetest.NewFakePauseStateRepository()
 		scheduler := newFakePauseScheduler(fakeRepo)
 
 		paused, err := scheduler.IsPaused(ctx)
@@ -579,7 +549,7 @@ func TestPauseScheduler_IsPaused(t *testing.T) {
 	})
 
 	t.Run("reflects pause and resume transitions", func(t *testing.T) {
-		fakeRepo := pausestate.NewFake()
+		fakeRepo := storagetest.NewFakePauseStateRepository()
 		scheduler := newFakePauseScheduler(fakeRepo)
 
 		if err := scheduler.Pause(ctx); err != nil {
@@ -607,7 +577,7 @@ func TestPauseScheduler_IsPaused(t *testing.T) {
 
 	t.Run("returns error when repo fails", func(t *testing.T) {
 		repoErr := errors.New("spanner read failed")
-		failingRepo := &failingPauseStateRepo{err: repoErr}
+		failingRepo := &storagetest.FakePauseStateRepository{GetErr: repoErr}
 		scheduler := newFakePauseScheduler(failingRepo)
 
 		_, err := scheduler.IsPaused(ctx)
@@ -665,7 +635,7 @@ func TestPauseScheduler_Metrics(t *testing.T) {
 
 	t.Run("increments pause success and error counters", func(t *testing.T) {
 		schedulingPauseEventsTotal.Reset()
-		fakeRepo := pausestate.NewFake()
+		fakeRepo := storagetest.NewFakePauseStateRepository()
 		scheduler := newFakePauseScheduler(fakeRepo)
 
 		if err := scheduler.Pause(ctx); err != nil {
@@ -678,7 +648,7 @@ func TestPauseScheduler_Metrics(t *testing.T) {
 			t.Errorf("xmc_scheduling_pause_events_total{action=pause,status=error} = %v, want 0", got)
 		}
 
-		failingScheduler := newFakePauseScheduler(&failingPauseStateRepo{err: errors.New("db error")})
+		failingScheduler := newFakePauseScheduler(&storagetest.FakePauseStateRepository{SetErr: errors.New("db error")})
 		if err := failingScheduler.Pause(ctx); err == nil {
 			t.Fatalf("expected error from Pause(), got nil")
 		}
@@ -689,8 +659,7 @@ func TestPauseScheduler_Metrics(t *testing.T) {
 
 	t.Run("increments resume success and error counters", func(t *testing.T) {
 		schedulingPauseEventsTotal.Reset()
-		fakeRepo := pausestate.NewFake()
-		_ = fakeRepo.Set(ctx, &pausestate.PauseSchedulingState{SchedulingPaused: true})
+		fakeRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
 		scheduler := newFakePauseScheduler(fakeRepo)
 
 		if _, err := scheduler.Resume(ctx); err != nil {
@@ -703,7 +672,7 @@ func TestPauseScheduler_Metrics(t *testing.T) {
 			t.Errorf("xmc_scheduling_pause_events_total{action=resume,status=error} = %v, want 0", got)
 		}
 
-		failingScheduler := newFakePauseScheduler(&failingPauseStateRepo{err: errors.New("db error")})
+		failingScheduler := newFakePauseScheduler(&storagetest.FakePauseStateRepository{GetErr: errors.New("db error")})
 		if _, err := failingScheduler.Resume(ctx); err == nil {
 			t.Fatalf("expected error from Resume(), got nil")
 		}

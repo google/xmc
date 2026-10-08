@@ -19,13 +19,14 @@ import (
 	"fmt"
 	"testing"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/storage/storage"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -206,7 +207,7 @@ func TestEnrichManagedXprof(t *testing.T) {
 		},
 		{
 			name:         "malformed_parent",
-			artifact:     proto.Modify(baseManagedXprofArtifact, func(a *msgpb.Artifact) { a.Parent = "invalid-parent" }),
+			artifact:     prototest.Modify(baseManagedXprofArtifact, func(a *msgpb.Artifact) { a.Parent = "invalid-parent" }),
 			wantEnriched: false,
 		},
 		{
@@ -244,7 +245,7 @@ func TestEnrichManagedXprof(t *testing.T) {
 			// execution owns its own), so it must not be enriched even when storage
 			// has an MLRun URL.
 			name:     "no_enrichment_experiment_parent",
-			artifact: proto.Modify(baseManagedXprofArtifact, func(a *msgpb.Artifact) { a.Parent = "experiments/1" }),
+			artifact: prototest.Modify(baseManagedXprofArtifact, func(a *msgpb.Artifact) { a.Parent = "experiments/1" }),
 			mockStorage: &storage.MockStorage{
 				WorkUnitExecution: &msgpb.WorkUnitExecution{
 					Metadata: &msgpb.WorkUnitExecutionMetadata{

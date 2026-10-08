@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
 	"golang/google_api/iterator/iterator"
 )

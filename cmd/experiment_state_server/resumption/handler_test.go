@@ -19,7 +19,7 @@ import (
 	"errors"
 	"testing"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 )
 
 type mockWorker struct {

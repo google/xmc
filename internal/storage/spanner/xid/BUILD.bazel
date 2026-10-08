@@ -27,9 +27,6 @@ compat_go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/xid:messages_go_proto",
-        "//internal/compat/cmp",
-        "//internal/compat/proto",
-        "//internal/compat/protocmp",
         "//internal/compat/status",
         "//internal/logging",
         "//internal/query_generator/liststatement",
@@ -42,7 +39,10 @@ compat_go_library(
         "//internal/storage/spanner/schema/xidschema",
         "//internal/storage/spanner/utils:spannerutils",
         "//internal/validator",
+        "@com_github_google_go_cmp//cmp",
         "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )
@@ -57,10 +57,6 @@ compat_go_test(
     ],
     deps = [
         "//api/protos/xid:messages_go_proto",
-        "//internal/compat/cmp",
-        "//internal/compat/field_mask",
-        "//internal/compat/proto",
-        "//internal/compat/protocmp",
         "//internal/compat/status",
         "//internal/storage",
         "//internal/storage/spanner",
@@ -68,6 +64,10 @@ compat_go_test(
         "//internal/storage/spanner/utils:spannerutils",
         "//internal/storage/spanner/xid",
         "//internal/validator",
+        "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )

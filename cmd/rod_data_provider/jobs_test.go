@@ -22,7 +22,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/protobuf/v2/proto/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -31,6 +30,7 @@ import (
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 )
 
@@ -92,7 +92,7 @@ func newTestKueueCache() *cache.KueueCache {
 func newTestWorkUnits(now time.Time) []workunit.WorkUnitWithAuthor {
 	return []workunit.WorkUnitWithAuthor{
 		{
-			WorkUnit: proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
+			WorkUnit: prototest.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
 				wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
 			}),
 			Author: "alice@example.com",
@@ -153,7 +153,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			fetcher: &mockWorkUnitFetcher{
 				workUnits: []workunit.WorkUnitWithAuthor{
 					{
-						WorkUnit: proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
+						WorkUnit: prototest.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
 							wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
 						}),
 						Author: "alice@example.com",
@@ -246,7 +246,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 		{
 			name: "Missing Queue Name",
 			ctx:  context.Background(),
-			req: proto.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
+			req: prototest.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
 				r.QueueName = ""
 			}),
 			fetcher:   &mockWorkUnitFetcher{},
@@ -256,7 +256,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 		{
 			name: "Negative Page Size",
 			ctx:  context.Background(),
-			req: proto.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
+			req: prototest.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
 				r.PageSize = -1
 			}),
 			fetcher:   &mockWorkUnitFetcher{},
@@ -367,7 +367,7 @@ func TestGetRunningAndPendingJobs_ContextCancelled(t *testing.T) {
 
 func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 	now := time.Now()
-	wu := proto.Modify(baseWorkUnit, func(w *essmsgpb.WorkUnit) {
+	wu := prototest.Modify(baseWorkUnit, func(w *essmsgpb.WorkUnit) {
 		w.Executable = &essmsgpb.Executable{
 			Type: &essmsgpb.Executable_Jobset{
 				Jobset: &essmsgpb.JobSetExecutable{

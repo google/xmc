@@ -29,7 +29,8 @@ import (
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/featureflags"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
+	"xmanager_cloud/internal/storage"
+	storagetest "xmanager_cloud/internal/storage/testing"
 	"xmanager_cloud/pkg/components/summary"
 	"xmanager_cloud/task_queue_redis/redisclient"
 
@@ -84,7 +85,7 @@ func (m *mockAdminRoleGuard) HasAdminRole(ctx context.Context) (string, bool, er
 
 type testFixture struct {
 	checker   *mockHealthChecker
-	pauseRepo *pausestate.Fake
+	pauseRepo *storagetest.FakePauseStateRepository
 	server    *server
 	t         *testing.T
 }
@@ -103,7 +104,7 @@ func newTestFixture(t *testing.T, cacheTTL time.Duration, maxRequests int, windo
 		},
 	}
 	checker := &mockHealthChecker{result: mockResult}
-	pauseRepo := pausestate.NewFake()
+	pauseRepo := storagetest.NewFakePauseStateRepository()
 	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(pauseRepo))
 	return &testFixture{
 		checker:   checker,
@@ -252,7 +253,7 @@ func TestGetHealthStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			checker := &mockHealthChecker{result: tt.mockResult}
-			s := newServer(tt.cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(pausestate.NewFake()))
+			s := newServer(tt.cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 			defer s.Close()
 
 			resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
@@ -302,7 +303,7 @@ func TestGetHealthStatus_Unauthorized(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
 	checker := &mockHealthChecker{}
 	guard := &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden")}
-	s := newServer(cfg, checker, guard, nil, newFakePauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, checker, guard, nil, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
 
 	_, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
@@ -342,7 +343,7 @@ func TestListConfigEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create health checker: %v", err)
 	}
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -371,7 +372,7 @@ func TestListConfigEntries_Unauthorized(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
 	checker := &mockHealthChecker{}
 	guard := &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden")}
-	s := newServer(cfg, checker, guard, nil, newFakePauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, checker, guard, nil, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
 
 	_, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -413,7 +414,7 @@ func TestListConfigEntries_WithCustomComponents(t *testing.T) {
 			},
 		},
 	}
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsProvider: mockProvider}, newFakePauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsProvider: mockProvider}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -458,7 +459,7 @@ func TestListConfigEntries_CustomComponentsError(t *testing.T) {
 	mockProvider := &mockComponentsInfoProvider{
 		configErr: errors.New("spanner failure"),
 	}
-	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsProvider: mockProvider}, newFakePauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsProvider: mockProvider}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -490,7 +491,7 @@ func TestListConfigEntries_CustomComponentsLazyInitError(t *testing.T) {
 		ConfigDir:        tempDir,
 		EnableComponents: true,
 	}
-	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsErr: errors.New("lazy init failed")}, newFakePauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsErr: errors.New("lazy init failed")}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -520,7 +521,7 @@ func TestListConfigEntries_CustomComponentsContextCancelled(t *testing.T) {
 	mockProvider := &mockComponentsInfoProvider{
 		configErr: context.Canceled,
 	}
-	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsProvider: mockProvider}, newFakePauseScheduler(pausestate.NewFake()))
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsProvider: mockProvider}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
 
 	_, err := s.ListConfigEntries(ctx, &spb.ListConfigEntriesRequest{})
@@ -606,7 +607,7 @@ func TestCalculateHealthStatus_ComponentHealthEvaluation(t *testing.T) {
 					Components: tt.components,
 				},
 			}
-			s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(pausestate.NewFake()))
+			s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 			defer s.Close()
 
 			resp := s.calculateHealthStatus(context.Background())
@@ -656,7 +657,7 @@ func TestGetUserInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := newServer(&Config{}, &mockHealthChecker{}, tt.guard, nil, newFakePauseScheduler(pausestate.NewFake()))
+			s := newServer(&Config{}, &mockHealthChecker{}, tt.guard, nil, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 			resp, err := s.GetUserInfo(context.Background(), &spb.GetUserInfoRequest{})
 			if err != nil {
 				t.Fatalf("GetUserInfo failed: %v", err)
@@ -776,7 +777,7 @@ func TestPauseScheduling(t *testing.T) {
 		name        string
 		cfg         *Config
 		guard       AdminRoleGuard
-		repo        pausestate.Repository
+		repo        storage.PauseStateRepository
 		publisher   broadcast.Publisher
 		wantErrCode codes.Code
 		wantErrMsg  string
@@ -841,7 +842,7 @@ func TestPauseScheduling(t *testing.T) {
 				},
 			},
 			guard:       &mockAdminRoleGuard{hasRole: true},
-			repo:        &failingPauseStateRepo{err: errors.New("spanner write failure")},
+			repo:        &storagetest.FakePauseStateRepository{SetErr: errors.New("spanner write failure")},
 			wantErrCode: codes.Internal,
 			wantErrMsg:  "failed to pause scheduling",
 		},
@@ -866,9 +867,9 @@ func TestPauseScheduling(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.repo
-			var fakeRepo *pausestate.Fake
+			var fakeRepo *storagetest.FakePauseStateRepository
 			if repo == nil {
-				fakeRepo = pausestate.NewFake()
+				fakeRepo = storagetest.NewFakePauseStateRepository()
 				repo = fakeRepo
 			}
 
@@ -921,7 +922,7 @@ func TestResumeScheduling(t *testing.T) {
 		name          string
 		cfg           *Config
 		guard         AdminRoleGuard
-		repo          pausestate.Repository
+		repo          storage.PauseStateRepository
 		publisher     broadcast.Publisher
 		taskPublisher redisclient.Publisher
 		wantErrCode   codes.Code
@@ -986,8 +987,12 @@ func TestResumeScheduling(t *testing.T) {
 					PauseSchedulingEnabled: true,
 				},
 			},
-			guard:       &mockAdminRoleGuard{hasRole: true},
-			repo:        &failingPauseStateRepo{err: errors.New("spanner write failure")},
+			guard: &mockAdminRoleGuard{hasRole: true},
+			repo: func() storage.PauseStateRepository {
+				r := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
+				r.SetErr = errors.New("spanner write failure")
+				return r
+			}(),
 			wantErrCode: codes.Internal,
 			wantErrMsg:  "failed to resume scheduling",
 		},
@@ -1028,10 +1033,9 @@ func TestResumeScheduling(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := tt.repo
-			var fakeRepo *pausestate.Fake
+			var fakeRepo *storagetest.FakePauseStateRepository
 			if repo == nil {
-				fakeRepo = pausestate.NewFake()
-				_ = fakeRepo.Set(context.Background(), &pausestate.PauseSchedulingState{
+				fakeRepo = storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{
 					SchedulingPaused:   true,
 					ResumptionRunID:    "",
 					ResumptionWorkerID: "old-worker-id",
@@ -1103,7 +1107,7 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 			},
 		}
 		checker := &mockHealthChecker{result: RunChecksResult{}}
-		fakeRepo := pausestate.NewFake()
+		fakeRepo := storagetest.NewFakePauseStateRepository()
 		s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(fakeRepo))
 		defer s.Close()
 
@@ -1171,7 +1175,7 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 				},
 			},
 		}
-		failingRepo := &failingPauseStateRepo{err: errors.New("spanner read timeout")}
+		failingRepo := &storagetest.FakePauseStateRepository{GetErr: errors.New("spanner read timeout")}
 		s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(failingRepo))
 		defer s.Close()
 
@@ -1197,10 +1201,7 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 				PauseSchedulingEnabled: false,
 			},
 		}
-		repo := pausestate.NewFake()
-		if err := repo.Set(ctx, &pausestate.PauseSchedulingState{SchedulingPaused: true}); err != nil {
-			t.Fatalf("failed to set paused state: %v", err)
-		}
+		repo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
 		s := newServer(cfg, &mockHealthChecker{result: RunChecksResult{}}, &mockAdminRoleGuard{hasRole: true}, nil, newFakePauseScheduler(repo))
 		defer s.Close()
 

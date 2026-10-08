@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
@@ -31,8 +31,8 @@ import (
 	dynamicfake "golang/k8s_io/client_go/v/v0_23/dynamic/fake/fake"
 	"golang/k8s_io/client_go/v/v0_23/rest/rest"
 	clientgotesting "golang/k8s_io/client_go/v/v0_23/testing/testing"
-	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 

@@ -10,6 +10,6 @@ go_library(
     deps = [
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filtervisitor",
-        "//internal/compat/proto",
+        "@org_golang_google_protobuf//proto",
     ],
 )

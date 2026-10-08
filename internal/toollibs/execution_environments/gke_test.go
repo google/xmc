@@ -17,16 +17,17 @@ import (
 	"context"
 	"testing"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	"k8s.io/utils/ptr"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/prototest"
 )
 
 func TestGKEName(t *testing.T) {
@@ -210,7 +211,7 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 		},
 		{
 			name: "cpu_resources_with_limit",
-			workUnit: proto.Modify(baseCPUWorkUnit, func(wu *epb.WorkUnit) {
+			workUnit: prototest.Modify(baseCPUWorkUnit, func(wu *epb.WorkUnit) {
 				wu.Executable.GetJobset().Jobs[0].Spec.Resources.GetCpuResources().LimitCpuMillicores = 2000
 			}),
 			jobSet: &jobsetv1alpha2.JobSet{
@@ -1333,6 +1334,9 @@ func TestUpdateNodeSelectorGPU(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "T4", gpuType: "T4", want: "nvidia-tesla-t4"},
+		{name: "H100", gpuType: "H100", want: "nvidia-h100-80gb"},
+		{name: "H100 Mega (symbolic)", gpuType: "H100_MEGA", want: "nvidia-h100-mega-80gb"},
+		{name: "H100 Mega (GKE accelerator label)", gpuType: "nvidia-h100-mega-80gb", want: "nvidia-h100-mega-80gb"},
 		{name: "B200", gpuType: "B200", want: "nvidia-b200"},
 		// GCP's G4 machine types. XManager's client enum spells the RTX PRO 6000
 		// as B40_48TH, so that is the name that arrives here.

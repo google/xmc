@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import 'jasmine';
-
 import { adminPanelGuard } from './admin_panel.guard';
 import { AdminPanelPage } from './admin_panel/admin_panel';
 import { routes } from './app_routes';

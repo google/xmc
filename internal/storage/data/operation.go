@@ -16,9 +16,9 @@ package data
 import (
 	"fmt"
 
-	"golang/protobuf/v2/proto/proto"
-	lropb "longrunning/operations_go_proto"
-	fieldmaskpb "protobuf/field_mask_go_proto"
+	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"google.golang.org/protobuf/proto"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	"task/go/status"
 )
 

@@ -20,6 +20,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from test.e2e.lib.command import TEARDOWN_TIMEOUT_SECONDS
 from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.kind import KindClusterManager
 
@@ -220,16 +221,29 @@ class TestKindClusterManager(unittest.TestCase):
             ]
         )
 
-    @patch.object(KindClusterManager, "exists", return_value=True)
     @patch("test.e2e.lib.kind.run_cmd")
-    def test_teardown_deletes_cluster_when_not_kept(self, mock_run, mock_exists):
+    def test_teardown_deletes_cluster_when_not_kept(self, mock_run):
         os.makedirs(self.cfg.temp_dir, exist_ok=True)
         self.mgr.teardown()
         mock_run.assert_called_once_with(
             ["kind", "delete", "cluster", "--name", "test-cluster"],
             check=False,
+            timeout=TEARDOWN_TIMEOUT_SECONDS,
+            stoppable=False,
         )
         self.assertFalse(os.path.exists(self.cfg.temp_dir))
+
+    @patch("test.e2e.lib.kind.run_cmd")
+    def test_teardown_deletes_cluster_even_if_existence_probe_would_time_out(self, mock_run):
+        def time_out_existence_probe(cmd, *args, **kwargs):
+            if cmd[1:] == ["get", "clusters"]:
+                raise subprocess.TimeoutExpired(cmd, TEARDOWN_TIMEOUT_SECONDS)
+            return subprocess.CompletedProcess(args=cmd, returncode=0)
+
+        mock_run.side_effect = time_out_existence_probe
+        self.mgr.teardown()
+        commands = [args[0] for args, _ in mock_run.call_args_list]
+        self.assertEqual(commands, [["kind", "delete", "cluster", "--name", "test-cluster"]])
 
     @patch("test.e2e.lib.kind.run_cmd")
     def test_teardown_skips_deletion_when_keep_cluster_is_true(self, mock_run):

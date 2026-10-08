@@ -16,11 +16,12 @@ package data
 import (
 	"testing"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
-	fieldmaskpb "protobuf/field_mask_go_proto"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/prototest"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
@@ -67,63 +68,63 @@ func TestMergeArtifacts(t *testing.T) {
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"acls"}},
-			want:       proto.Modify(current, func(x *pb.Artifact) { x.Acls = updated.Acls }),
+			want:       prototest.Modify(current, func(x *pb.Artifact) { x.Acls = updated.Acls }),
 		},
 		{
 			name:       "update url",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"url"}},
-			want:       proto.Modify(current, func(x *pb.Artifact) { x.Url = updated.Url; x.Priority = 200 }),
+			want:       prototest.Modify(current, func(x *pb.Artifact) { x.Url = updated.Url; x.Priority = 200 }),
 		},
 		{
 			name:       "update priority",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"priority"}},
-			want:       proto.Modify(current, func(x *pb.Artifact) { x.Priority = 200; x.Url.Priority = 200 }),
+			want:       prototest.Modify(current, func(x *pb.Artifact) { x.Priority = 200; x.Url.Priority = 200 }),
 		},
 		{
 			name:       "update tags",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"tags"}},
-			want:       proto.Modify(current, func(x *pb.Artifact) { x.Tags = updated.Tags }),
+			want:       prototest.Modify(current, func(x *pb.Artifact) { x.Tags = updated.Tags }),
 		},
 		{
 			name:       "update notes",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
-			want:       proto.Modify(current, func(x *pb.Artifact) { x.Notes = updated.Notes }),
+			want:       prototest.Modify(current, func(x *pb.Artifact) { x.Notes = updated.Notes }),
 		},
 		{
 			name:       "update lifecycle_phase",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"lifecycle_phase"}},
-			want:       proto.Modify(current, func(x *pb.Artifact) { x.LifecyclePhase = updated.LifecyclePhase }),
+			want:       prototest.Modify(current, func(x *pb.Artifact) { x.LifecyclePhase = updated.LifecyclePhase }),
 		},
 		{
 			name:       "update data_type",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"data_type"}},
-			want:       proto.Modify(current, func(x *pb.Artifact) { x.DataType = updated.DataType }),
+			want:       prototest.Modify(current, func(x *pb.Artifact) { x.DataType = updated.DataType }),
 		},
 		{
 			name:       "update mime_type",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"mime_type"}},
-			want:       proto.Modify(current, func(x *pb.Artifact) { x.MimeType = updated.MimeType }),
+			want:       prototest.Modify(current, func(x *pb.Artifact) { x.MimeType = updated.MimeType }),
 		},
 		{
 			name:       "update multiple fields",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes", "tags"}},
-			want:       proto.Modify(current, func(x *pb.Artifact) { x.Tags = updated.Tags; x.Notes = updated.Notes }),
+			want:       prototest.Modify(current, func(x *pb.Artifact) { x.Tags = updated.Tags; x.Notes = updated.Notes }),
 		},
 		{
 			name: "update payload",

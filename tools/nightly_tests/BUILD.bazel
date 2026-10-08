@@ -19,17 +19,21 @@ load("@rules_python//python:py_test.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "README.md",
     "chart_artifact_job_verify.py",
+    "check_examples_coverage.py",
+    "check_examples_coverage_test.py",
     "clickhouse_metrics_job_verify.py",
-    "common.py",
-    "common_test.py",
     "format_visual_audit_summary.js",
     "format_visual_audit_summary_test.js",
     "gallery_template/index.html",
     "init_container_job_verify.py",
+    "managed_xprof_artifact_job_verify.py",
     "metrics_dashboard_job_verify.py",
     "metrics_job_verify.py",
     "multipod_job_verify.py",
+    "pathways_job_verify.py",
+    "per_job_node_selector_verify.py",
     "sidecar_verify.py",
     "simple_job_ui_verify.py",
     "simple_job_verify.py",
@@ -38,6 +42,7 @@ exports_files([
     "weekly_visual_snapshot.py",
     "weekly_visual_snapshot_test.py",
     "workunit_artifact_job_verify.py",
+    "xdash_dashboard_verify.py",
     "xmc_entities_validator.py",
     "xmc_entities_validator_test.py",
 ])
@@ -62,26 +67,15 @@ py_library(
 )
 
 py_library(
-    name = "common",
-    srcs = [
-        "common.py",
-    ],
-    imports = ["../.."],
-    deps = [
-        ":xmc_entities_validator_lib",
-        "@absl_py//absl:app",
-        "@absl_py//absl/flags",
-    ],
-)
-
-py_library(
     name = "weekly_visual_snapshot_lib",
     srcs = ["weekly_visual_snapshot.py"],
     data = [":gallery_template"],
     imports = ["../.."],
     deps = [
-        ":common",
         ":ui_entities_validator_lib",
+        "//tools/nightly_tests/verification:endpoint_resolution",
+        "//tools/nightly_tests/verification:ess_session",
+        "//tools/nightly_tests/verification:verifier_cli",
         "@absl_py//absl/flags",
     ],
 )
@@ -91,8 +85,9 @@ py_binary(
     srcs = ["simple_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
         ":xmc_entities_validator_lib",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
     ],
 )
 
@@ -101,8 +96,8 @@ py_binary(
     srcs = ["clickhouse_metrics_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
-        ":xmc_entities_validator_lib",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
     ],
 )
 
@@ -111,8 +106,11 @@ py_binary(
     srcs = ["simple_job_ui_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
         ":ui_entities_validator_lib",
+        "//tools/nightly_tests/verification:endpoint_resolution",
+        "//tools/nightly_tests/verification:ess_session",
+        "//tools/nightly_tests/verification:verification_report",
+        "//tools/nightly_tests/verification:verifier_cli",
         "@absl_py//absl/flags",
     ],
 )
@@ -123,10 +121,7 @@ py_binary(
     data = [":gallery_template"],
     imports = ["../.."],
     deps = [
-        ":common",
-        ":ui_entities_validator_lib",
         ":weekly_visual_snapshot_lib",
-        "@absl_py//absl/flags",
     ],
 )
 
@@ -135,8 +130,8 @@ py_binary(
     srcs = ["init_container_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
-        ":xmc_entities_validator_lib",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
     ],
 )
 
@@ -145,8 +140,8 @@ py_binary(
     srcs = ["sidecar_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
-        ":xmc_entities_validator_lib",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
     ],
 )
 
@@ -155,8 +150,8 @@ py_binary(
     srcs = ["multipod_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
-        ":xmc_entities_validator_lib",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
     ],
 )
 
@@ -165,8 +160,8 @@ py_binary(
     srcs = ["chart_artifact_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
-        ":xmc_entities_validator_lib",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
     ],
 )
 
@@ -175,8 +170,8 @@ py_binary(
     srcs = ["metrics_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
-        ":xmc_entities_validator_lib",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
     ],
 )
 
@@ -185,8 +180,39 @@ py_binary(
     srcs = ["metrics_dashboard_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
+    ],
+)
+
+py_binary(
+    name = "per_job_node_selector_verify",
+    srcs = ["per_job_node_selector_verify.py"],
+    imports = ["../.."],
+    deps = [
         ":xmc_entities_validator_lib",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
+    ],
+)
+
+py_binary(
+    name = "pathways_job_verify",
+    srcs = ["pathways_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
+    ],
+)
+
+py_binary(
+    name = "managed_xprof_artifact_job_verify",
+    srcs = ["managed_xprof_artifact_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
     ],
 )
 
@@ -195,17 +221,18 @@ py_binary(
     srcs = ["workunit_artifact_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
     ],
 )
 
-py_test(
-    name = "common_test",
-    srcs = ["common_test.py"],
+py_binary(
+    name = "xdash_dashboard_verify",
+    srcs = ["xdash_dashboard_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
-        ":xmc_entities_validator_lib",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
     ],
 )
 
@@ -233,4 +260,24 @@ py_test(
     data = [":gallery_template"],
     imports = ["../.."],
     deps = [":weekly_visual_snapshot_lib"],
+)
+
+py_library(
+    name = "check_examples_coverage_lib",
+    srcs = ["check_examples_coverage.py"],
+    imports = ["../.."],
+)
+
+py_binary(
+    name = "check_examples_coverage",
+    srcs = ["check_examples_coverage.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "check_examples_coverage_test",
+    size = "small",
+    srcs = ["check_examples_coverage_test.py"],
+    imports = ["../.."],
+    deps = [":check_examples_coverage_lib"],
 )

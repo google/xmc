@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/golang-migrate/migrate/v4/source"
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestInjectStoredColumnsReinitialization(t *testing.T) {

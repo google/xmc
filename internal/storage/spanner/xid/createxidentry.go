@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	timestamppb "protobuf/timestamp_go_proto"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/logging/logging"

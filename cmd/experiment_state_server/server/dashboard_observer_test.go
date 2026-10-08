@@ -30,8 +30,8 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
 
-	"golang/grpc/metadata/metadata"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 )
 
 func chartArtifactFixture() *essmsgpb.Artifact {

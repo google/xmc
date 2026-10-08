@@ -17,11 +17,9 @@ import (
 	"context"
 	"time"
 
-	"golang/protobuf/v2/proto/proto"
-	lropb "longrunning/operations_go_proto"
+	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"google.golang.org/protobuf/proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
@@ -83,8 +81,11 @@ type MockStorage struct {
 	// UpdatedExperiment records the last experiment passed to UpdateExperimentStatus.
 	UpdatedExperiment *essmsgpb.Experiment
 
-	PauseStateRepository pausestate.Repository
-	PausedTaskRepository pausedtask.Repository
+	PauseStateRepository PauseStateRepository
+	PausedTaskRepository PausedTaskRepository
+	// Transaction optionally overrides Transaction.PauseState and Transaction.PausedTasks
+	// passed to RunInTransaction callbacks; other fields are ignored.
+	Transaction *Transaction
 	// GotWorkUnitExecutionsXID and GotWorkUnitExecutionUpdates record the arguments of every
 	// UpdateWorkUnitExecutions call.
 	GotWorkUnitExecutionsXID    int64
@@ -206,13 +207,23 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 	if s.RunInTransactionErr != nil {
 		return s.RunInTransactionErr
 	}
+	pauseStateTx, _ := s.PauseStateRepository.(PauseStateTxRepository)
+	pausedTaskTx, _ := s.PausedTaskRepository.(PausedTaskTxRepository)
 	tx := &Transaction{
 		WorkUnits:      s,
 		Experiments:    s,
 		StatusMessages: s,
 		StatusHistory:  s,
-		PauseState:     s.PauseState(),
-		PausedTasks:    s.PausedTasks(),
+		PauseState:     pauseStateTx,
+		PausedTasks:    pausedTaskTx,
+	}
+	if s.Transaction != nil {
+		if s.Transaction.PauseState != nil {
+			tx.PauseState = s.Transaction.PauseState
+		}
+		if s.Transaction.PausedTasks != nil {
+			tx.PausedTasks = s.Transaction.PausedTasks
+		}
 	}
 	for attempt := 1; attempt < s.RunInTransactionAttempts; attempt++ {
 		if err := fn(ctx, tx); err != nil {
@@ -222,19 +233,13 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 	return fn(ctx, tx)
 }
 
-// PauseState returns the mock pause state repository, initializing a fake if nil.
-func (s *MockStorage) PauseState() pausestate.Repository {
-	if s.PauseStateRepository == nil {
-		s.PauseStateRepository = pausestate.NewFake()
-	}
+// PauseState returns the configured pause state repository (nil if unset).
+func (s *MockStorage) PauseState() PauseStateRepository {
 	return s.PauseStateRepository
 }
 
-// PausedTasks returns the mock paused task repository, initializing a fake if nil.
-func (s *MockStorage) PausedTasks() pausedtask.Repository {
-	if s.PausedTaskRepository == nil {
-		s.PausedTaskRepository = pausedtask.NewFake()
-	}
+// PausedTasks returns the configured paused task repository (nil if unset).
+func (s *MockStorage) PausedTasks() PausedTaskRepository {
 	return s.PausedTaskRepository
 }
 

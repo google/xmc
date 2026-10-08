@@ -31,7 +31,7 @@ go_test(
         "reversebits_test.go",
     ],
     embed = [":utils"],
-    deps = ["//internal/compat/cmp"],
+    deps = ["@com_github_google_go_cmp//cmp"],
 )
 
 go_library(

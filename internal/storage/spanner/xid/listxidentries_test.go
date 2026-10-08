@@ -21,9 +21,9 @@ import (
 	"time"
 	"xmanager_cloud/internal/storage/spanner"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
 	"xmanager_cloud/internal/storage/spanner/xid"
 	"xmanager_cloud/storage/spanner/emulator/emulator"

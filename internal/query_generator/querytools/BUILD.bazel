@@ -14,13 +14,13 @@ go_library(
     deps = [
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filtervisitor",
-        "//internal/compat/proto",
-        "//internal/compat/spanner",
         "//internal/compat/status",
         "//internal/logging",
         "//internal/query_generator/equalityvisitor",
         "//internal/query_generator/filter",
         "//internal/safesql",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -32,12 +32,12 @@ go_test(
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filter",
         "//api/filter/go/filtervisitor",
-        "//internal/compat/cmp",
-        "//internal/compat/cmpopts",
-        "//internal/compat/protocmp",
-        "//internal/compat/spanner",
         "//internal/compat/status",
         "//internal/query_generator/predicate",
         "//internal/safesql",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

@@ -206,12 +206,12 @@ def extract_migration_version(sql_files: list[Path]) -> int:
 
 
 def get_migration_status(
-    config: UpgradeConfig, migrations_dir: str, spanner_instance: str, db_name: str
+    config: DeploymentConfig, migrations_dir: str, spanner_instance: str, db_name: str
 ) -> tuple[int, int]:
     """Fetches local maximum SQL migration version and current database state.
 
     Args:
-      config: Loaded UpgradeConfig instance.
+      config: Loaded DeploymentConfig instance.
       migrations_dir: Relative migrations directory name ('ess' or 'xid').
       spanner_instance: Target Spanner instance name.
       db_name: Target Spanner database name.
@@ -247,6 +247,12 @@ def get_migration_status(
             " manually before proceeding."
         )
 
+    if res.returncode != 0:
+        error_exit(
+            f"Failed to query migration version for '{db_name}' (exit {res.returncode}):\n"
+            f"{output.strip()}"
+        )
+
     ver_match = re.search(r"Version:\s*([0-9]+)", output)
     current_version = int(ver_match.group(1)) if ver_match else 0
 
@@ -254,12 +260,12 @@ def get_migration_status(
 
 
 def run_migration(
-    config: UpgradeConfig, migrations_dir: str, spanner_instance: str, db_name: str
+    config: DeploymentConfig, migrations_dir: str, spanner_instance: str, db_name: str
 ) -> None:
     """Executes database schema migrations via Bazel command.
 
     Args:
-      config: Loaded UpgradeConfig instance.
+      config: Loaded DeploymentConfig instance.
       migrations_dir: Migration directory name ('ess' or 'xid').
       spanner_instance: Target Spanner instance ID.
       db_name: Target Spanner database ID.
@@ -279,39 +285,56 @@ def run_migration(
     run_command(cmd)
 
 
+def check_pending_migrations(config: DeploymentConfig) -> list[tuple[str, str, str]]:
+    """Checks ESS and XID databases for pending Spanner migrations.
+
+    Args:
+      config: Loaded DeploymentConfig instance.
+
+    Returns:
+      List of (migrations_dir, spanner_instance, db_name) tuples with pending migrations.
+    """
+    log_info("Checking for pending database migrations...")
+    spanner_instance = f"xmc-{config.environment}"
+    targets = [
+        ("ess", f"experiment-db-{config.environment}"),
+        ("xid", f"xids-db-{config.environment}"),
+    ]
+    pending: list[tuple[str, str, str]] = []
+    for mig_dir, db_name in targets:
+        current, available = get_migration_status(config, mig_dir, spanner_instance, db_name)
+        log_info(f"{mig_dir.upper()} database version: current={current}, available={available}")
+        if available > current:
+            pending.append((mig_dir, spanner_instance, db_name))
+    return pending
+
+
+def apply_pending_migrations(config: DeploymentConfig, pending: list[tuple[str, str, str]]) -> None:
+    """Applies pending Spanner database migrations.
+
+    Args:
+      config: Loaded DeploymentConfig instance.
+      pending: List of (migrations_dir, spanner_instance, db_name) tuples to migrate.
+    """
+    for mig_dir, spanner_instance, db_name in pending:
+        run_migration(config, mig_dir, spanner_instance, db_name)
+    log_success("Migrations applied successfully.")
+
+
 def step_migrate(config: UpgradeConfig) -> None:
     """Checks and applies pending Spanner database migrations."""
-    log_info("Checking for pending database migrations...")
-
-    spanner_instance = f"xmc-{config.environment}"
-    ess_db = f"experiment-db-{config.environment}"
-    xid_db = f"xids-db-{config.environment}"
-
-    current_ess, max_ess = get_migration_status(config, "ess", spanner_instance, ess_db)
-    current_xid, max_xid = get_migration_status(config, "xid", spanner_instance, xid_db)
-
-    log_info(f"ESS database version: current={current_ess}, available={max_ess}")
-    log_info(f"XID database version: current={current_xid}, available={max_xid}")
-
-    has_pending = (max_ess > current_ess) or (max_xid > current_xid)
-
-    if not has_pending:
+    pending = check_pending_migrations(config)
+    if not pending:
         log_success("No pending migrations found. Databases are up to date.")
         return
 
     log_info("Pending migrations detected!")
-    if config.run_migrations:
-        log_info("Running pending migrations as requested...")
-        if max_ess > current_ess:
-            run_migration(config, "ess", spanner_instance, ess_db)
-        if max_xid > current_xid:
-            run_migration(config, "xid", spanner_instance, xid_db)
-        log_success("Migrations applied successfully.")
-    else:
+    if not config.run_migrations:
         print("STATUS: PENDING_MIGRATIONS")
-        print(f"ESS: current={current_ess}, available={max_ess}")
-        print(f"XID: current={current_xid}, available={max_xid}")
         sys.exit(10)
+
+    log_info("Running pending migrations as requested...")
+    apply_pending_migrations(config, pending)
 
 
 def step_images(config: UpgradeConfig) -> None:
@@ -386,52 +409,63 @@ def resolve_deployment_name(service: str, namespace: str) -> str | None:
     return None
 
 
-def step_restart(config: UpgradeConfig) -> None:
+# Optional deployments (e.g. xmc-bridge, ingestion-gateway) are skipped by
+# resolve_deployment_name when their feature flag leaves them undeployed.
+# xmc-bridge is triggered first because it may own component releases (e.g.
+# the ingestion-gateway workload). `rollout restart` is asynchronous, so the
+# rollouts overlap; the bridge re-reconciles its releases once its new pod
+# is up, so no rollout ordering is required.
+_RESTART_SERVICES: tuple[str, ...] = (
+    "xmc-bridge",
+    "actuator",
+    "dashboard-service",
+    "experiment-state-server",
+    "health-service",
+    "ingestion-gateway",
+    "log-monitor",
+    "reconciler",
+    "rod-data-provider",
+    "ui",
+    "xid-service",
+)
+
+
+def _restart_service(service: str, namespace: str) -> bool:
+    """Restarts a single microservice deployment if present in the namespace."""
+    resolved_name = resolve_deployment_name(service, namespace)
+    if not resolved_name:
+        log_info(
+            f"Deployment '{service}' (or '{service}-deployment') not found in"
+            f" namespace '{namespace}'. Skipping."
+        )
+        return False
+
+    log_info(f"Restarting deployment/{resolved_name}...")
+    run_command(
+        [
+            "kubectl",
+            "rollout",
+            "restart",
+            f"deployment/{resolved_name}",
+            "-n",
+            namespace,
+        ]
+    )
+    return True
+
+
+def step_restart(config: DeploymentConfig) -> None:
     """Triggers rolling restarts for all microservices in Kubernetes."""
     log_info(
         "Triggering rolling restart across XMC service deployments to run newly"
         " pushed container images..."
     )
-    # Optional deployments (e.g. xmc-bridge, ingestion-gateway) are skipped by
-    # resolve_deployment_name when their feature flag leaves them undeployed.
-    # xmc-bridge is triggered first because it may own component releases (e.g.
-    # the ingestion-gateway workload). `rollout restart` is asynchronous, so the
-    # rollouts overlap; the bridge re-reconciles its releases once its new pod
-    # is up, so no rollout ordering is required.
-    services = [
-        "xmc-bridge",
-        "actuator",
-        "dashboard-service",
-        "experiment-state-server",
-        "health-service",
-        "ingestion-gateway",
-        "log-monitor",
-        "reconciler",
-        "rod-data-provider",
-        "ui",
-        "xid-service",
-    ]
-
-    for service in services:
-        resolved_name = resolve_deployment_name(service, config.namespace)
-        if resolved_name:
-            log_info(f"Restarting deployment/{resolved_name}...")
-            run_command(
-                [
-                    "kubectl",
-                    "rollout",
-                    "restart",
-                    f"deployment/{resolved_name}",
-                    "-n",
-                    config.namespace,
-                ]
-            )
-        else:
-            log_info(
-                f"Deployment '{service}' (or '{service}-deployment') not found in"
-                f" namespace '{config.namespace}'. Skipping."
-            )
-
+    restarted = sum(_restart_service(svc, config.namespace) for svc in _RESTART_SERVICES)
+    if restarted == 0:
+        error_exit(
+            f"No XMC deployments resolved in namespace '{config.namespace}'."
+            " Verify cluster credentials and workload deployment state."
+        )
     log_success("Rolling deployment restarts initiated.")
 
 

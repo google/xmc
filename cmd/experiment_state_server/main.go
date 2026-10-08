@@ -31,13 +31,12 @@ import (
 	"strings"
 	"syscall"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/grpc"
 	"golang/grpc/health/health"
 	"golang/grpc/reflection/reflection"
-	healthgrpc "grpc_proto/health_go_grpc"
-	healthpb "grpc_proto/health_go_proto"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/experiment_state_server/config"
 	gwpb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_gateway_proto"
@@ -101,7 +100,7 @@ func main() {
 	s := grpc.NewServer(opts...)
 
 	healthServer := health.NewServer()
-	healthgrpc.RegisterHealthServer(s, healthServer)
+	healthpb.RegisterHealthServer(s, healthServer)
 	healthServer.SetServingStatus("xmc.ExperimentStateService", healthpb.HealthCheckResponse_SERVING)
 
 	spb.RegisterExperimentStateServiceServer(s, prodServer)

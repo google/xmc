@@ -19,15 +19,15 @@ import (
 	"testing"
 	"xmanager_cloud/internal/storage/spanner"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 
-	"golang/protobuf/v2/proto/proto"
-	fmpb "protobuf/field_mask_go_proto"
+	"google.golang.org/protobuf/proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

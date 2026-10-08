@@ -26,9 +26,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go/google"
+	"cloud.google.com/go/spanner"
 	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
 	"golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs"
 	"golang/github_com/golang_migrate/migrate/v/v4/source/source"
@@ -99,7 +98,6 @@ func parseConfig() *config {
 	flag.StringVar(&cfg.migrationsDir, "migrations_dir", "", "Name of the migrations subdirectory (e.g., 'ess' or 'xid')")
 	flag.StringVar(&cfg.command, "command", "", fmt.Sprintf("Command to run: %s, %s, %s, %s, %s", upCmd, downCmd, forceCmd, versionCmd, initCmd))
 	flag.Parse()
-	google.Init()
 
 	if err := parseArg(cfg, flag.Args()); err != nil {
 		logging.Fatal(context.Background(), "failed to parse arguments", "error", err)

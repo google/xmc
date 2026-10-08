@@ -18,9 +18,9 @@ import (
 	"strings"
 	"testing"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/cmp/cmp"
-	"golang/cmp/cmpopts/cmpopts"
+	"cloud.google.com/go/spanner"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/query_generator/querytools"
 )

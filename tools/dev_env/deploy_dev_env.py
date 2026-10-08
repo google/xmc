@@ -47,9 +47,24 @@ from tools.common.tool_utils import (  # noqa: E402
     run_command,
 )
 from tools.dev_env.blueprint_compiler import compile_blueprint  # noqa: E402
+from tools.dev_env.upgrade_dev_env import (  # noqa: E402
+    apply_pending_migrations,
+    check_pending_migrations,
+    step_restart,
+)
 
 # ANSI Color Codes
 BOLD = "\033[1m"
+
+# Per-user install directories that login shell profiles commonly add to PATH.
+# Agent and other non-login shells skip those profiles, so binaries installed
+# here look missing even though they are present.
+USER_INSTALL_DIRS: tuple[str, ...] = (
+    "~/.terraform/bin",
+    "~/.local/bin",
+    "~/go/bin",
+    "~/bin",
+)
 
 
 def error_exit(msg: str) -> NoReturn:
@@ -72,6 +87,7 @@ STEPS = [
     "compute",
     "gateway-api",
     "prereqs",
+    "migrate",
     "app",
     "verify",
 ]
@@ -106,6 +122,11 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Start/resume deployment from this step onwards",
     )
     parser.add_argument("--only", choices=STEPS, help="Execute ONLY this specific step and exit")
+    parser.add_argument(
+        "--skip-migrations",
+        action="store_true",
+        help="Skip automatic Cloud Spanner database schema migrations",
+    )
     parser.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
 
     parsed_args = parser.parse_args(args)
@@ -143,6 +164,47 @@ def parse_version(v: str) -> tuple[int, ...]:
     return tuple(map(int, re.findall(r"\d+", v)[:3]))
 
 
+def _find_off_path_binary(binary: str) -> pathlib.Path | None:
+    """Searches well-known user install directories for an executable binary.
+
+    Args:
+        binary: Name of the executable to look for.
+
+    Returns:
+        Absolute path to the first executable match, or None if no directory
+        contains it.
+    """
+    for install_dir in USER_INSTALL_DIRS:
+        try:
+            candidate = pathlib.Path(install_dir).expanduser().resolve() / binary
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
+def _require_binary_on_path(binary: str) -> None:
+    """Exits with an actionable error if a required CLI binary is not on PATH.
+
+    Args:
+        binary: Name of the required executable.
+    """
+    if shutil.which(binary):
+        return
+    off_path_binary = _find_off_path_binary(binary)
+    if off_path_binary is None:
+        error_exit(
+            f"CLI dependency '{binary}' was not found on PATH or in any of: "
+            f"{', '.join(USER_INSTALL_DIRS)}."
+        )
+    error_exit(
+        f"CLI dependency '{binary}' was found at '{off_path_binary}' but is not on PATH "
+        "(agent/non-login shells do not load your shell profile); "
+        f"add '{off_path_binary.parent}' to PATH."
+    )
+
+
 def _verify_binaries() -> None:
     """Verifies required CLI binaries are installed and gcluster is executable."""
     required_binaries = [
@@ -154,8 +216,7 @@ def _verify_binaries() -> None:
         "bazel",
     ]
     for binary in required_binaries:
-        if not shutil.which(binary):
-            error_exit(f"CLI dependency '{binary}' is required but not installed.")
+        _require_binary_on_path(binary)
 
     local_gcluster = pathlib.Path("./cluster-toolkit/gcluster")
     if not local_gcluster.is_file() or not os.access(local_gcluster, os.X_OK):
@@ -524,6 +585,21 @@ def step_primary(config: DeploymentConfig, dns_project: str, dns_zone: str) -> N
     apply_dns_records(gateway_ip, config, dns_project, dns_zone)
 
 
+def step_migrate(config: DeploymentConfig) -> None:
+    """Checks and applies pending Spanner database migrations.
+
+    Args:
+        config: The loaded DeploymentConfig instance.
+    """
+    pending = check_pending_migrations(config)
+    if not pending:
+        log_success("No pending migrations found. Databases are up to date.")
+        return
+
+    log_info("Applying pending Spanner migrations...")
+    apply_pending_migrations(config, pending)
+
+
 def step_compute(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Deploys the compute group (GKE Cluster and Node pools).
 
@@ -610,8 +686,29 @@ def step_images(config: DeploymentConfig) -> None:
     build_and_push_images(config)
 
 
-def step_app(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
-    """Deploys xmc_app group (Helm release).
+def _fetch_cluster_credentials(config: DeploymentConfig) -> None:
+    """Fetches kubectl credentials for the target GKE cluster."""
+    cluster_name = config.gke_cluster
+    log_info(f"Fetching kubectl credentials for GKE cluster '{cluster_name}'...")
+    run_command(
+        [
+            "gcloud",
+            "container",
+            "clusters",
+            "get-credentials",
+            cluster_name,
+            f"--region={config.region}",
+            f"--project={config.project_id}",
+        ]
+    )
+
+
+def step_app(
+    config: DeploymentConfig,
+    dns_project: str,
+    dns_zone: str,
+) -> None:
+    """Deploys xmc_app group (Helm release) and triggers rolling restarts.
 
     Args:
         config: The loaded DeploymentConfig instance.
@@ -621,7 +718,9 @@ def step_app(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     log_info("Deploying xmc_app group (Helm release)...")
     run_gcluster_deploy(config.deployment_name, "xmc_app")
     log_success("XMC application Helm release deployed successfully.")
+    _fetch_cluster_credentials(config)
     deploy_component_profile(config)
+    step_restart(config)
 
 
 def _wait_for_gateway_programmed() -> None:
@@ -709,19 +808,7 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
         dns_project: GCP Project ID hosting the DNS zone (unused).
         dns_zone: Cloud DNS Managed Zone name (unused).
     """
-    cluster_name = config.gke_cluster
-    log_info(f"Fetching kubectl credentials for GKE cluster '{cluster_name}'...")
-    run_command(
-        [
-            "gcloud",
-            "container",
-            "clusters",
-            "get-credentials",
-            cluster_name,
-            f"--region={config.region}",
-            f"--project={config.project_id}",
-        ]
-    )
+    _fetch_cluster_credentials(config)
 
     log_info("Running verification script...")
     env_vars = {
@@ -745,63 +832,26 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
     log_success("XMC environment deployed and verified.")
 
 
-def run_deployment(args: argparse.Namespace) -> None:
-    """Executes the GKE deployment pipeline.
-
-    Args:
-        args: Parsed command line arguments containing config, dns_project,
-          dns_zone, start_from, only.
-    """
-    config = load_and_validate_config(args.config)
-    if getattr(args, "enable_components", None) is not None:
-        config = replace(config, enable_components=args.enable_components)
-
-    # Run validations (corresponds to run_checks in bash)
-    run_checks(config, args.dns_project, args.dns_zone)
-
-    # Define step mapping
-    step_map = {
-        "check": lambda: step_check(config, args.dns_project, args.dns_zone),
-        "compile": lambda: step_compile(config, args.dns_project, args.dns_zone, args.config),
-        "images": lambda: step_images(config),
-        "apis": lambda: step_apis(config, args.dns_project, args.dns_zone),
-        "primary": lambda: step_primary(config, args.dns_project, args.dns_zone),
-        "compute": lambda: step_compute(config, args.dns_project, args.dns_zone),
-        "gateway-api": lambda: step_gateway_api(config, args.dns_project, args.dns_zone),
-        "prereqs": lambda: step_prereqs(config, args.dns_project, args.dns_zone),
-        "app": lambda: step_app(config, args.dns_project, args.dns_zone),
-        "verify": lambda: step_verify(config, args.dns_project, args.dns_zone),
-    }
-
-    # Determine execution list
+def _build_resume_cmd(
+    args: argparse.Namespace,
+    current_step: str,
+    *,
+    skip_migrations: bool,
+) -> str:
+    """Constructs the suggested command to resume a failed deployment."""
+    dns_args = f"--dns-project {args.dns_project} --dns-zone {args.dns_zone} "
+    resume_cmd = f"python3 tools/dev_env/deploy_dev_env.py --config {args.config} {dns_args}"
+    if skip_migrations:
+        resume_cmd += "--skip-migrations "
     if args.only:
-        execution_steps = [args.only]
-    elif args.start_from:
-        start_index = STEPS.index(args.start_from)
-        execution_steps = STEPS[start_index:]
+        resume_cmd += f"--only {current_step}"
     else:
-        execution_steps = STEPS
+        resume_cmd += f"--start-from {current_step}"
+    return resume_cmd
 
-    current_step = ""
-    try:
-        for step in execution_steps:
-            current_step = step
-            step_map[step]()
-    except Exception as e:
-        log_error(f"Command failed during step '{current_step}': {e}")
-        dns_args = f"--dns-project {args.dns_project} --dns-zone {args.dns_zone} "
-        # Suggest resume command
-        resume_cmd = f"python3 tools/dev_env/deploy_dev_env.py --config {args.config} {dns_args}"
-        if args.only:
-            resume_cmd += f"--only {current_step}"
-        else:
-            resume_cmd += f"--start-from {current_step}"
 
-        print(f"\n{RED}You can resume from this step using:{NC}")
-        print(f"  {BOLD}{resume_cmd}{NC}\n")
-        sys.exit(1)
-
-    # Print success message if all steps executed succeeded
+def _print_deployment_summary(config: DeploymentConfig) -> None:
+    """Prints the post-deployment summary banner."""
     print(f"\n{GREEN}" + "=" * 56 + f"{NC}")
     print(f"{GREEN}Deployment Completed Successfully!{NC}")
     print(f"{GREEN}" + "=" * 56 + f"{NC}")
@@ -813,6 +863,65 @@ def run_deployment(args: argparse.Namespace) -> None:
     print("Add this redirect URI in your GCloud Console OAuth Client ID config:")
     print(f"  - {BOLD}https://{env}.{dom}/api/callback{NC}")
     print(f"{GREEN}" + "=" * 56 + f"{NC}")
+
+
+def run_deployment(args: argparse.Namespace) -> None:
+    """Executes the GKE deployment pipeline.
+
+    Args:
+        args: Parsed command line arguments containing config, dns_project,
+          dns_zone, start_from, only.
+    """
+    config = load_and_validate_config(args.config)
+    if getattr(args, "enable_components", None) is not None:
+        config = replace(config, enable_components=args.enable_components)
+
+    run_checks(config, args.dns_project, args.dns_zone)
+
+    skip_migrations = (
+        getattr(args, "skip_migrations", False) or getattr(args, "auto_migrate", None) is False
+    )
+
+    def _execute_migrate() -> None:
+        if skip_migrations:
+            log_info("Skipping database migrations as requested (--skip-migrations).")
+            return
+        step_migrate(config)
+
+    step_map = {
+        "check": lambda: step_check(config, args.dns_project, args.dns_zone),
+        "compile": lambda: step_compile(config, args.dns_project, args.dns_zone, args.config),
+        "images": lambda: step_images(config),
+        "apis": lambda: step_apis(config, args.dns_project, args.dns_zone),
+        "primary": lambda: step_primary(config, args.dns_project, args.dns_zone),
+        "compute": lambda: step_compute(config, args.dns_project, args.dns_zone),
+        "gateway-api": lambda: step_gateway_api(config, args.dns_project, args.dns_zone),
+        "prereqs": lambda: step_prereqs(config, args.dns_project, args.dns_zone),
+        "migrate": _execute_migrate,
+        "app": lambda: step_app(config, args.dns_project, args.dns_zone),
+        "verify": lambda: step_verify(config, args.dns_project, args.dns_zone),
+    }
+
+    if args.only:
+        execution_steps = [args.only]
+    elif args.start_from:
+        execution_steps = STEPS[STEPS.index(args.start_from) :]
+    else:
+        execution_steps = STEPS
+
+    current_step = ""
+    try:
+        for step in execution_steps:
+            current_step = step
+            step_map[step]()
+    except Exception as e:
+        log_error(f"Command failed during step '{current_step}': {e}")
+        resume_cmd = _build_resume_cmd(args, current_step, skip_migrations=skip_migrations)
+        print(f"\n{RED}You can resume from this step using:{NC}")
+        print(f"  {BOLD}{resume_cmd}{NC}\n")
+        sys.exit(1)
+
+    _print_deployment_summary(config)
 
 
 def main(argv: list[str] | None = None) -> None:

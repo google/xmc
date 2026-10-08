@@ -18,8 +18,8 @@ import (
 	"errors"
 	"testing"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/storage/spanner/emulator/emulator"

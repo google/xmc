@@ -369,9 +369,9 @@ func TestStatusDetector_DetectStatus_ExtractionDetails(t *testing.T) {
 		if err != nil || status7.Endpoint != "c7-head-svc" || status7.ConnectionSecret != "c7-sec-name" {
 			t.Errorf("unexpected head/secret extraction: status=%+v, err=%v", status7, err)
 		}
-		status8, err := detector.DetectStatus(ctx, newTestWrapperRef("c8"))
-		if err != nil || status8.Ready {
-			t.Errorf("unexpected status for non-map status: status=%+v, err=%v", status8, err)
+		_, err = detector.DetectStatus(ctx, newTestWrapperRef("c8"))
+		if !errors.Is(err, ErrContractBreach) {
+			t.Errorf("expected ErrContractBreach for non-map status: err=%v", err)
 		}
 		status5, _ := detector.DetectStatus(ctx, newTestWrapperRef("c5", func(r *WrapperRef) {
 			r.ReadyConditionPath = "status.state"
@@ -386,14 +386,16 @@ func TestStatusDetector_DetectStatus_ExtractionDetails(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid jsonpath query errors", func(t *testing.T) {
+	t.Run("invalid jsonpath query errors return ErrInvalidWrapperSpec", func(t *testing.T) {
 		for _, wRef := range []WrapperRef{
+			newTestWrapperRef("c1", func(r *WrapperRef) { r.ObservedGenerationPath = "{.status[" }),
 			newTestWrapperRef("c1", func(r *WrapperRef) { r.ReadyConditionPath = "{.status[" }),
 			newTestWrapperRef("c1", func(r *WrapperRef) { r.EndpointJSONPath = "{.status[" }),
 			newTestWrapperRef("c1", func(r *WrapperRef) { r.ConnectionSecretJSONPath = "{.status[" }),
 		} {
-			if _, err := detector.DetectStatus(ctx, wRef); err == nil {
-				t.Errorf("expected error for invalid query path in %+v", wRef)
+			_, err := detector.DetectStatus(ctx, wRef)
+			if !errors.Is(err, ErrInvalidWrapperSpec) || errors.Is(err, ErrContractBreach) {
+				t.Errorf("expected ErrInvalidWrapperSpec (and not ErrContractBreach) for invalid query path in %+v, got %v", wRef, err)
 			}
 		}
 	})
@@ -403,7 +405,6 @@ func TestStatusDetector_DetectStatus_ExtractionDetails(t *testing.T) {
 			"address":             map[string]any{"url": "http://knative-svc.xmc.svc.cluster.local"},
 			"connectionSecretRef": map[string]any{"name": "knative-secret"},
 			"conditions": []any{
-				"invalid-non-map-condition",
 				map[string]any{"type": "ready", "status": true, "message": "Service live"},
 			},
 		})
@@ -411,6 +412,24 @@ func TestStatusDetector_DetectStatus_ExtractionDetails(t *testing.T) {
 		res, err := duckDetector.DetectStatus(ctx, WrapperRef{Group: "knative.dev", Version: "v1", Kind: "Service", Name: "knative-svc", Namespace: "xmc"})
 		if err != nil || !res.Ready || res.Endpoint != "http://knative-svc.xmc.svc.cluster.local" || res.ConnectionSecret != "knative-secret" {
 			t.Errorf("unexpected duck typing resolution: res=%+v, err=%v", res, err)
+		}
+	})
+
+	t.Run("malformed conditions list or condition element returns ErrContractBreach", func(t *testing.T) {
+		badCondSliceObj := makeObj("knative.dev", "v1", "Service", "xmc", "bad-conds", 1, map[string]any{
+			"conditions": "not-a-slice",
+		})
+		badCondElemObj := makeObj("knative.dev", "v1", "Service", "xmc", "bad-cond-elem", 1, map[string]any{
+			"conditions": []any{"invalid-non-map-condition"},
+		})
+		badCondTypeObj := makeObj("knative.dev", "v1", "Service", "xmc", "bad-cond-type", 1, map[string]any{
+			"conditions": []any{map[string]any{"status": "True"}},
+		})
+		badDetector := NewK8sStatusDetector(dynamicfake.NewSimpleDynamicClient(newTestScheme(), badCondSliceObj, badCondElemObj, badCondTypeObj), nil)
+		for _, name := range []string{"bad-conds", "bad-cond-elem", "bad-cond-type"} {
+			if _, err := badDetector.DetectStatus(ctx, WrapperRef{Group: "knative.dev", Version: "v1", Kind: "Service", Name: name, Namespace: "xmc"}); !errors.Is(err, ErrContractBreach) {
+				t.Errorf("DetectStatus(%s) error = %v, want ErrContractBreach", name, err)
+			}
 		}
 	})
 

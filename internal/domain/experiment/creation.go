@@ -21,7 +21,7 @@ import (
 	"slices"
 	"time"
 
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/domain/workunit"

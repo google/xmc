@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
 
 py_library(
     name = "e2e_pkg",
@@ -33,5 +35,89 @@ py_binary(
     deps = [
         ":e2e_pkg",
         "//test/e2e/lib:orchestration_lib",
+    ],
+)
+
+py_test(
+    name = "runner_test",
+    srcs = [
+        "runner.py",
+        "runner_test.py",
+    ],
+    main = "runner_test.py",
+    deps = [
+        ":e2e_pkg",
+        "//test/e2e/lib:orchestration_lib",
+    ],
+)
+
+_KIND_3P_DEPS = [
+    "//pkg/components/bridge",
+    "//pkg/components/cms",
+    "//pkg/components/store",
+    "@io_k8s_api//core/v1:core",
+    "@io_k8s_apimachinery//pkg/api/errors",
+    "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+    "@io_k8s_apimachinery//pkg/runtime/schema",
+    "@io_k8s_apimachinery//pkg/types",
+    "@io_k8s_apimachinery//pkg/util/intstr",
+    "@io_k8s_apimachinery//pkg/util/wait",
+    "@io_k8s_apimachinery//pkg/util/yaml",
+    "@io_k8s_client_go//discovery/cached/memory",
+    "@io_k8s_client_go//dynamic",
+    "@io_k8s_client_go//kubernetes",
+    "@io_k8s_client_go//kubernetes/fake",
+    "@io_k8s_client_go//restmapper",
+    "@io_k8s_client_go//tools/clientcmd",
+]
+
+go_test(
+    name = "kind_3p_harness_unit_test",
+    size = "small",
+    srcs = ["kind_3p_harness_test.go"],
+    data = ["//deploy/helm:chart"],
+    deps = _KIND_3P_DEPS,
+)
+
+go_test(
+    name = "clickhouse_3p_test",
+    size = "medium",
+    srcs = [
+        "clickhouse_3p_test.go",
+        "kind_3p_harness_test.go",
+    ],
+    data = ["//deploy/helm:chart"],
+    tags = [
+        "e2e",
+        "exclusive",
+        "external",
+        "local",
+        "manual",
+    ],
+    deps = _KIND_3P_DEPS + [
+        "//pkg/clickhouse/componentconfig",
+        "//pkg/components/crreader",
+    ],
+)
+
+go_test(
+    name = "redpanda_3p_test",
+    size = "medium",
+    srcs = [
+        "kind_3p_harness_test.go",
+        "redpanda_3p_test.go",
+    ],
+    data = ["//deploy/helm:chart"],
+    tags = [
+        "e2e",
+        "exclusive",
+        "external",
+        "local",
+        "manual",
+    ],
+    deps = _KIND_3P_DEPS + [
+        "//cmd/ingestion_gateway/ingestiongateway",
+        "//pkg/components/crreader",
     ],
 )

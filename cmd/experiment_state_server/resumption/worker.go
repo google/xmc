@@ -20,11 +20,9 @@ import (
 	"fmt"
 	"time"
 
-	"golang/uuid/uuid"
+	"github.com/google/uuid"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -269,7 +267,7 @@ func (w *ResumptionWorker) waitOrCancel(ctx context.Context) error {
 	}
 }
 
-func shouldStopReplay(ctx context.Context, state *pausestate.PauseSchedulingState, runID, resumptionWorkerID string) bool {
+func shouldStopReplay(ctx context.Context, state *storage.PauseSchedulingState, runID, resumptionWorkerID string) bool {
 	if state.SchedulingPaused {
 		logging.Info(ctx, "Scheduling re-paused mid-resumption; halting replay loop",
 			"resumption_run_id", runID,
@@ -293,8 +291,8 @@ func shouldStopReplay(ctx context.Context, state *pausestate.PauseSchedulingStat
 	return false
 }
 
-func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resumptionTime time.Time, batch []*pausedtask.PausedTask) error {
-	resolutions := make([]pausedtask.TaskResolution, 0, len(batch))
+func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resumptionTime time.Time, batch []*storage.PausedTask) error {
+	resolutions := make([]storage.PausedTaskResolution, 0, len(batch))
 	// metricRecord holds the xmc_resumption_tasks_total labels, recorded only after a successful commit.
 	type metricRecord struct{ action, result string }
 	records := make([]metricRecord, 0, len(batch))
@@ -322,11 +320,11 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resump
 				"xid", task.XID,
 				"wid", task.WID,
 				"reason", string(reason))
-			resolutions = append(resolutions, pausedtask.TaskResolution{
+			resolutions = append(resolutions, storage.PausedTaskResolution{
 				XID:              task.XID,
 				WID:              task.WID,
 				TaskID:           task.TaskID,
-				ResolutionStatus: pausedtask.ResolutionStatusSkipped,
+				ResolutionStatus: storage.ResolutionStatusSkipped,
 				ResumptionRunID:  runID,
 				ProcessedTime:    now,
 			})
@@ -339,11 +337,11 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resump
 			break
 		}
 
-		resolutions = append(resolutions, pausedtask.TaskResolution{
+		resolutions = append(resolutions, storage.PausedTaskResolution{
 			XID:              task.XID,
 			WID:              task.WID,
 			TaskID:           task.TaskID,
-			ResolutionStatus: pausedtask.ResolutionStatusReplayed,
+			ResolutionStatus: storage.ResolutionStatusReplayed,
 			ResumptionRunID:  runID,
 			ProcessedTime:    now,
 		})

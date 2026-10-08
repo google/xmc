@@ -18,7 +18,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 	"xmanager_cloud/kubernetes/common/constants"
 )
 

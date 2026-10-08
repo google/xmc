@@ -20,26 +20,25 @@ import (
 	"testing"
 	"time"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	"golang/protobuf/v2/proto/proto"
+	"google.golang.org/protobuf/proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-// mockPausedTaskRepo overrides Create; the embedded Repository is nil and must not be called.
+// mockPausedTaskRepo overrides Create; the embedded PausedTaskTxRepository is nil and must not be called.
 type mockPausedTaskRepo struct {
-	pausedtask.Repository
+	storage.PausedTaskTxRepository
 	err         error
-	storedTasks []*pausedtask.PausedTask
+	storedTasks []*storage.PausedTask
 }
 
-func (m *mockPausedTaskRepo) Create(ctx context.Context, task *pausedtask.PausedTask) error {
+func (m *mockPausedTaskRepo) Create(ctx context.Context, task *storage.PausedTask) error {
 	if m.err != nil {
 		return m.err
 	}
@@ -276,7 +275,7 @@ func TestHandlePause(t *testing.T) {
 			repo := &mockPausedTaskRepo{err: tc.repoErr}
 			txRunner := &storage.MockStorage{
 				UpdateWorkUnitExecutionsErr: tc.updateStatusErr,
-				PausedTaskRepository:        repo,
+				Transaction:                 &storage.Transaction{PausedTasks: repo},
 			}
 
 			h, err := NewPauseHandler(cache, txRunner)
@@ -441,7 +440,7 @@ func TestHandlePause_BufferedTasksMetrics(t *testing.T) {
 	cache.Update(State{IsPaused: true, UpdatedAt: time.Now()})
 	repo := &mockPausedTaskRepo{}
 	txRunner := &storage.MockStorage{
-		PausedTaskRepository: repo,
+		Transaction: &storage.Transaction{PausedTasks: repo},
 	}
 	h, err := NewPauseHandler(cache, txRunner)
 	if err != nil {

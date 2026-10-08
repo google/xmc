@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import os
 
-from test.e2e.lib.command import run_cmd
+from test.e2e.lib.command import TEARDOWN_TIMEOUT_SECONDS, run_cmd
 from test.e2e.lib.config import E2EConfig
 
 logger = logging.getLogger("xmc_e2e_runner")
@@ -243,25 +243,31 @@ class KindClusterManager:
         )
 
     def teardown(self) -> None:
-        """Destroys the KinD cluster."""
+        """Deletes the KinD cluster and the temporary directory, best effort.
+
+        The delete runs without first checking whether the cluster exists: ``kind delete
+        cluster`` succeeds for a missing cluster, whereas a check that flakes or times out
+        would skip the cleanup.
+        """
         if self.cfg.keep_cluster:
             return
         try:
-            if self.exists():
-                logger.info(
-                    "=== [KinD] Deleting cluster %s ===",
+            logger.info(
+                "=== [KinD] Deleting cluster %s ===",
+                self.cfg.cluster_name,
+            )
+            run_cmd(
+                [
+                    self.cfg.kind_bin,
+                    "delete",
+                    "cluster",
+                    "--name",
                     self.cfg.cluster_name,
-                )
-                run_cmd(
-                    [
-                        self.cfg.kind_bin,
-                        "delete",
-                        "cluster",
-                        "--name",
-                        self.cfg.cluster_name,
-                    ],
-                    check=False,
-                )
+                ],
+                check=False,
+                timeout=TEARDOWN_TIMEOUT_SECONDS,
+                stoppable=False,
+            )
         except Exception as e:
             logger.warning("Failed to safely teardown KinD cluster: %s", e)
         finally:

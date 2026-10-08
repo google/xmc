@@ -41,12 +41,12 @@ compat_go_test(
     embed = [":shared"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/cmp",
-        "//internal/compat/cmpopts",
-        "//internal/compat/protocmp",
         "//internal/compat/status",
         "//internal/storage",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
         "@com_github_prometheus_client_golang//prometheus/testutil",
         "@com_github_prometheus_client_model//go",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

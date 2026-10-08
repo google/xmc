@@ -18,9 +18,9 @@ import (
 	"errors"
 	"testing"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
-	fmpb "protobuf/field_mask_go_proto"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner"

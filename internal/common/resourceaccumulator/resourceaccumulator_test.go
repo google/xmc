@@ -18,7 +18,7 @@ import (
 	"sync"
 	"testing"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 

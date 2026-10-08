@@ -18,7 +18,7 @@ package statusmessage
 import (
 	"fmt"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/query_generator/querytools"

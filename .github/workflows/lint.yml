@@ -60,6 +60,14 @@ jobs:
               - 'deploy/**/*.yml'
               - 'deploy/helm/**'
               - '.github/workflows/lint.yml'
+            github_scripts:
+              - '.github/scripts/**'
+              - '.github/workflows/lint.yml'
+            examples_coverage:
+              - 'examples/**'
+              - 'tools/nightly_tests/**'
+              - '.github/workflows/nightly-examples-e2e.yml'
+              - '.github/workflows/lint.yml'
 
       # 1. Python Linting (Ruff & Mypy)
       - name: 'Install Ruff'
@@ -122,6 +130,13 @@ jobs:
         run: |
           python3 tools/lint/check_legacy_imports.py
 
+      - name: 'Check Nightly Examples Verification Coverage'
+        if: steps.changes.outputs.examples_coverage == 'true'
+        env:
+          XMC_BYPASS_VENV: '1'
+        run: |
+          python3 tools/nightly_tests/check_examples_coverage.py
+
       - name: 'Verify Go Dependencies (go mod tidy)'
         run: |
           go mod tidy -diff
@@ -183,6 +198,17 @@ jobs:
         if: steps.changes.outputs.ui == 'true'
         run: npm run lint
         working-directory: 'cmd/ui'
+
+      # 3a. GitHub Actions Script Tests (node:test, no dependencies)
+      - name: 'Set up Node.js for GitHub Actions scripts'
+        if: steps.changes.outputs.github_scripts == 'true'
+        uses: 'actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a' # v4.2.0
+        with:
+          node-version: '22'
+
+      - name: 'Run GitHub Actions script tests'
+        if: steps.changes.outputs.github_scripts == 'true'
+        run: node --test .github/scripts/*.test.js
 
       # 4. Terraform Formatting, Linting & Security (conditional on Terraform file changes)
       - name: 'Set up Terraform'

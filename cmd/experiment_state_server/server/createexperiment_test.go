@@ -20,11 +20,12 @@ import (
 	"testing"
 	"time"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 
@@ -157,19 +158,19 @@ func TestCreateExperiment_BadPaths(t *testing.T) {
 	}{
 		{
 			name:    "missing_experiment",
-			req:     proto.Modify(baseReq, func(r *apipb.CreateExperimentRequest) { r.Experiment = nil }),
+			req:     prototest.Modify(baseReq, func(r *apipb.CreateExperimentRequest) { r.Experiment = nil }),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_acls",
-			req: proto.Modify(baseReq, func(r *apipb.CreateExperimentRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.CreateExperimentRequest) {
 				r.Experiment.Acls = nil
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "creator_not_in_writers",
-			req: proto.Modify(baseReq, func(r *apipb.CreateExperimentRequest) {
+			req: prototest.Modify(baseReq, func(r *apipb.CreateExperimentRequest) {
 				r.Experiment.Acls = &xidmsgpb.XidAcls{
 					Owners:  []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "not-me@example.com"}}},
 					Readers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
