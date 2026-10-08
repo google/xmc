@@ -37,6 +37,24 @@ test('isProtectedFile accurately identifies sensitive repository files', () => {
   assert.strictEqual(isProtectedFile(null), false);
 });
 
+test('isProtectedFile protects only the exact protobuf breaking-change baseline path', () => {
+  assert.strictEqual(isProtectedFile('api/testdata/protos_baseline.binpb'), true);
+  assert.strictEqual(isProtectedFile('api\\testdata\\protos_baseline.binpb'), true);
+  assert.strictEqual(isProtectedFile('api/testdata/other.binpb'), false);
+  assert.strictEqual(isProtectedFile('api/testdata/protos_baseline.binpb.orig'), false);
+  assert.strictEqual(isProtectedFile('third_party/api/testdata/protos_baseline.binpb'), false);
+});
+
+test('isProtectedFile protects the protobuf breaking-check configuration but not nested BUILD files', () => {
+  assert.strictEqual(isProtectedFile('api/buf.yaml'), true);
+  assert.strictEqual(isProtectedFile('api/BUILD.bazel'), true);
+  assert.strictEqual(isProtectedFile('api/BUILD'), true);
+  assert.strictEqual(isProtectedFile('api/protos/xid/BUILD.bazel'), false);
+  assert.strictEqual(isProtectedFile('api/filter/go/queryfilterbase/BUILD.bazel'), false);
+  assert.strictEqual(isProtectedFile('api/buf.lock'), false);
+  assert.strictEqual(isProtectedFile('api/buf.yaml.orig'), false);
+});
+
 test('hasProtectedFile checks arrays of paths and handles null/undefined inputs safely', () => {
   assert.strictEqual(hasProtectedFile(['pkg/main.go', '.github/workflows/test.yml']), true);
   assert.strictEqual(hasProtectedFile(['pkg/main.go', 'README.md']), false);
@@ -253,6 +271,7 @@ test('evaluateIncrementalApproval rejects when sensitive CI/ownership files are 
   });
   assert.strictEqual(result.shouldReapprove, false);
   assert.strictEqual(result.trigger, 'PROTECTED_FILES_MODIFIED');
+  assert.match(result.reason, /protobuf breaking-change baseline or its configuration \(.*api\/testdata\/protos_baseline\.binpb, api\/buf\.yaml, api\/BUILD\.bazel\)/);
 });
 
 test('evaluateIncrementalApproval auto-reapproves pure clean rebase with 0 delta', () => {
@@ -389,6 +408,9 @@ test('checkAddedCommitsForProtectedFiles detects protected file in added commits
       if (sha === 'sha-sensitive') {
         return '.github/workflows/ci.yml\n';
       }
+      if (sha === 'sha-baseline-refresh') {
+        return 'api/testdata/protos_baseline.binpb\n';
+      }
     }
     throw new Error(`Unexpected command: ${cmd}`);
   };
@@ -398,6 +420,7 @@ test('checkAddedCommitsForProtectedFiles detects protected file in added commits
     assert.strictEqual(checkAddedCommitsForProtectedFiles(null), false);
     assert.strictEqual(checkAddedCommitsForProtectedFiles(['sha-normal']), false);
     assert.strictEqual(checkAddedCommitsForProtectedFiles(['sha-normal', 'sha-sensitive']), true);
+    assert.strictEqual(checkAddedCommitsForProtectedFiles(['sha-normal', 'sha-baseline-refresh']), true);
   } finally {
     childProcess.execFileSync = originalExec;
   }
