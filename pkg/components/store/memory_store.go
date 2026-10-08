@@ -56,7 +56,7 @@ func NewMemoryStore() *MemoryStore {
 
 // SetComponentIntent applies or updates component intent within the in-memory store.
 func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error) {
-	return m.setIntent(name, spec, labels, desiredGen, nil)
+	return m.setIntent(ctx, name, spec, labels, desiredGen, nil)
 }
 
 // SetSourcedComponentIntent applies an intent produced by src within the in-memory store.
@@ -64,11 +64,11 @@ func (m *MemoryStore) SetSourcedComponentIntent(ctx context.Context, name string
 	if err := ValidateIntentSource(src); err != nil {
 		return nil, err
 	}
-	return m.setIntent(name, spec, labels, 0, cloneIntentSource(&src))
+	return m.setIntent(ctx, name, spec, labels, 0, cloneIntentSource(&src))
 }
 
 // setIntent applies an intent ordered by desiredGen when src is nil and by src otherwise.
-func (m *MemoryStore) setIntent(name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64, src *IntentSource) (*ComponentRecord, error) {
+func (m *MemoryStore) setIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64, src *IntentSource) (*ComponentRecord, error) {
 	canonicalName, err := validateIntentArgs(name, spec)
 	if err != nil {
 		return nil, err
@@ -91,6 +91,7 @@ func (m *MemoryStore) setIntent(name string, spec *componentspb.ComponentSpec, l
 			return nil, err
 		}
 		m.applyIntentPlanLocked(rec, plan, spec, labels, deps, src, now)
+		logIntentEpochChange(ctx, canonicalName, plan, src)
 		return cloneRecord(rec), nil
 	}
 
