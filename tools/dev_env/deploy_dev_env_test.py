@@ -15,8 +15,10 @@
 """Unit tests for deploy_dev_env.py."""
 
 import io
+import pathlib
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import ANY, MagicMock, call, patch
 
@@ -187,7 +189,9 @@ image_tag: latest
         deploy_dev_env._verify_binaries()
 
     @patch("shutil.which", side_effect=lambda bin: bin != "terraform")
-    def test_verify_binaries_missing_binary(self, mock_which):
+    @patch.object(deploy_dev_env, "USER_INSTALL_DIRS", ())
+    @patch.object(deploy_dev_env, "log_error")
+    def test_verify_binaries_missing_binary(self, mock_log_error, mock_which):
         with self.assertRaises(SystemExit):
             deploy_dev_env._verify_binaries()
 
@@ -196,6 +200,80 @@ image_tag: latest
     def test_verify_binaries_missing_gcluster(self, mock_is_file, mock_which):
         with self.assertRaises(SystemExit):
             deploy_dev_env._verify_binaries()
+
+    def test_require_binary_on_path(self):
+        # (name, shutil.which result, file_setup, expected error substrings)
+        # file_setup: None (not created), "exec" (0o755 file), "non_exec" (0o644 file), "symlink" (symlink to exec)
+        test_cases: tuple[tuple[str, str | None, str | None, tuple[str, ...]], ...] = (
+            ("on PATH", "/usr/bin/terraform", None, ()),
+            (
+                "found off PATH",
+                None,
+                "exec",
+                ("was found at", "is not on PATH", "add '{install_dir}'"),
+            ),
+            (
+                "found off PATH symlink",
+                None,
+                "symlink",
+                ("was found at", "is not on PATH", "add '{install_dir}'"),
+            ),
+            (
+                "found off PATH but non-executable",
+                None,
+                "non_exec",
+                ("was not found on PATH", "{install_dir}"),
+            ),
+            ("not found", None, None, ("was not found on PATH", "{install_dir}")),
+        )
+        for name, which_result, file_setup, want_error_substrings in test_cases:
+            with (
+                self.subTest(name),
+                tempfile.TemporaryDirectory() as raw_install_dir,
+                patch("shutil.which", return_value=which_result),
+            ):
+                install_dir = str(pathlib.Path(raw_install_dir).resolve())
+                with (
+                    patch.object(deploy_dev_env, "USER_INSTALL_DIRS", (install_dir,)),
+                    patch.object(deploy_dev_env, "log_error") as mock_log_error,
+                ):
+                    self._assert_require_binary_on_path(
+                        install_dir, file_setup, want_error_substrings, mock_log_error
+                    )
+
+    def _assert_require_binary_on_path(
+        self,
+        install_dir: str,
+        file_setup: str | None,
+        want_error_substrings: tuple[str, ...],
+        mock_log_error: MagicMock,
+    ) -> None:
+        """Runs one _require_binary_on_path case against a resolved install dir."""
+        binary_path = pathlib.Path(install_dir) / "terraform"
+        if file_setup == "exec":
+            binary_path.touch()
+            binary_path.chmod(0o755)
+        elif file_setup == "non_exec":
+            binary_path.touch()
+            binary_path.chmod(0o644)
+        elif file_setup == "symlink":
+            target_dir = pathlib.Path(install_dir) / "sub_target"
+            target_dir.mkdir()
+            target_file = target_dir / "real_terraform"
+            target_file.touch()
+            target_file.chmod(0o755)
+            binary_path.symlink_to(target_file)
+
+        if not want_error_substrings:
+            deploy_dev_env._require_binary_on_path("terraform")
+            mock_log_error.assert_not_called()
+            return
+
+        with self.assertRaises(SystemExit):
+            deploy_dev_env._require_binary_on_path("terraform")
+        logged_message = mock_log_error.call_args.args[0]
+        for substring in want_error_substrings:
+            self.assertIn(substring.format(install_dir=install_dir), logged_message)
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     def test_check_terraform_version_success(self, mock_run):
