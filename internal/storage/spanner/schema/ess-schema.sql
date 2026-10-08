@@ -467,6 +467,9 @@ CREATE TABLE Components (
   CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
   UpdateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
   ActiveName STRING(MAX) AS (IF(State != 5, Name, NULL)) STORED,
+  SourceUid STRING(64),
+  SourceGeneration INT64,
+  SourceCreateTime TIMESTAMP,
   CONSTRAINT CK_Components_State CHECK (State IN (1, 2, 3, 4, 5))
 ) PRIMARY KEY (ComponentId);
 

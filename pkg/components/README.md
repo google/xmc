@@ -56,7 +56,17 @@ All sources are merged into a single canonical, deduplicated, sorted set that is
 
 **Stale intents**: a changed intent whose desired generation is specified but older than the stored generation comes from a stale writer (for example a bridge replica acting on an old CR revision). Both stores reject it through one shared check (`rejectStaleIntent` in `pkg/components/store/intent_change.go`) with `FailedPrecondition` and a message starting with `store.StaleIntentMessagePrefix`, and leave the record unchanged; the bridge reports it as `Ready=False` reason `StaleIntent`. Replaying the stored spec with an older generation stays a no-op, and a changed intent with an equal or unspecified (`0`) generation is applied and bumped as above.
 
-**Legacy inflated generations**: records written before intents were idempotent may have a CMS generation above the CR generation. They keep the higher number: re-applying the unchanged CR is a no-op, but a CR edit is rejected as stale while the CR generation is below the CMS generation, so the bridge reports `StaleIntent`. This affects only pre-fix development data because Components have not launched; recreate affected records to realign CMS and CR generations.
+**Legacy inflated generations (unsourced intents)**: records written before intents were idempotent may have a CMS generation above the CR generation. For unsourced intents they keep the higher number: re-applying the unchanged CR is a no-op, but a CR edit is rejected as stale while the CR generation is below the CMS generation, so the bridge reports `StaleIntent`. This affects only pre-fix development data because Components have not launched; recreate affected records, or apply a sourced intent (below), to realign them.
+
+**Sourced intents**: a `SetComponentIntentRequest` with `source` (the uid, creation time and generation of the declarative object, such as the CR) is applied by `SetSourcedComponentIntent`, which orders intents by the source instead of by `spec.generation`, so the CMS generation is independent of the CR generation. Both stores share one planner (`planIntent` in `pkg/components/store/intent_change.go`) and record the adopted source in the `SourceUid`, `SourceGeneration` and `SourceCreateTime` columns:
+
+| Source of the intent vs recorded source | Changed intent | Unchanged intent |
+| :--- | :--- | :--- |
+| Same uid, generation not older | Applied, generation + 1 | Records a newer source generation, else no-op |
+| Same uid, older generation | Rejected as stale | No-op |
+| Different uid, or none recorded | Adopted, generation + 1 | Adopted: records the source only |
+
+Recording only the source writes no snapshot, generation, state or `UpdateTime`, so a recreated CR (new uid) that re-applies the same spec adopts the existing record under the same `ComponentId` and generation. A new component starts at generation 1, and an adopted record with a legacy inflated generation keeps it and then advances by 1 per change. Unsourced intents keep the generation-ordered behavior above and leave the recorded source unchanged.
 
 Key functions:
 - `ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string`: Extracts unique canonical dependency names from all sources above.

@@ -55,6 +55,19 @@ type ComponentRecord struct {
 	DeleteTime         *time.Time
 	Labels             map[string]string
 	Etag               string
+	// Source identifies the declarative object whose intent was last adopted, or is nil when no
+	// sourced intent has been applied.
+	Source *IntentSource
+}
+
+// IntentSource identifies the declarative object, such as a Kubernetes custom resource, that
+// produced an intent. UID and CreateTime identify its epoch: a recreated object has a new UID and a
+// later CreateTime. Generation is the object's own generation, which is independent of the
+// component generation.
+type IntentSource struct {
+	UID        string
+	CreateTime time.Time
+	Generation int64
 }
 
 // PrepareDeactivationResult contains safety check outcomes for component deactivation.
@@ -108,9 +121,28 @@ type Store interface {
 	//
 	// Records whose generation already exceeds the caller's generation (inflated by writes made
 	// before intents were idempotent) keep the higher number: replaying their stored spec is a
-	// no-op, but any change from that caller is rejected as stale. Recreate such records to realign
-	// them.
+	// no-op, but any change from that caller is rejected as stale. Callers that can identify their
+	// source should use SetSourcedComponentIntent, which does not compare against desiredGen.
+	// SetComponentIntent leaves the recorded Source unchanged.
 	SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error)
+
+	// SetSourcedComponentIntent applies an intent produced by src, ordering intents by src instead
+	// of by generation. Validation, the definition of an unchanged intent (ignoring generations),
+	// and the SpannerStore read-only fast path are as for SetComponentIntent.
+	//
+	// A new component starts at generation 1. For an existing component the intent is classified
+	// against the recorded Source:
+	//   - Same UID: the intent is current unless src.Generation is older than the recorded one,
+	//     in which case a changed intent is stale and an unchanged one is a no-op.
+	//   - Different UID, or no recorded Source: the intent is adopted.
+	//
+	// A current or adopted intent that changes the record bumps the generation by exactly 1,
+	// resets the state as for SetComponentIntent, and records src. An unchanged one records src,
+	// without a generation bump, snapshot, UpdateTime write, or state reset, when src differs from
+	// the recorded Source, and is a no-op otherwise. A stale intent fails with FailedPrecondition
+	// and a message starting with StaleIntentMessagePrefix, leaving the record unchanged. src must
+	// have a non-empty UID, a non-zero CreateTime, and a positive Generation, else InvalidArgument.
+	SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src IntentSource) (*ComponentRecord, error)
 
 	// GetComponent retrieves a component record by canonical or full resource name.
 	GetComponent(ctx context.Context, name string) (*ComponentRecord, error)
