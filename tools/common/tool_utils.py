@@ -39,7 +39,6 @@ class DeploymentConfig:
     image_tag: str
     namespace: str = "xmc"
     domain_name: str | None = None
-    enable_metrics: bool = False
     enable_components: bool = False
 
     @property
@@ -191,7 +190,6 @@ ENV_VAR_MAPPING = {
     "IMAGE_REGISTRY": "image_registry",  # Primary, processed second (wins)
     "BUILD_TAG": "image_tag",
     "XMC_BASE_DOMAIN": "domain_name",
-    "ENABLE_METRICS": "enable_metrics",
     "ENABLE_COMPONENTS": "enable_components",
 }
 
@@ -254,16 +252,35 @@ def load_and_validate_config(
     config_file: str,
     defaults: dict[str, str] | None = None,
 ) -> DeploymentConfig:
-    """Loads YAML config file, merges with env overrides, and validates."""
-    config: dict[str, Any] = (defaults or {}) | parse_yaml_vars(Path(config_file))
+    """Loads YAML config file, merges with env overrides, and validates.
+
+    Args:
+        config_file: Path to the YAML configuration file.
+        defaults: Default values for keys if they are missing.
+
+    Returns:
+        DeploymentConfig of validated configuration.
+
+    Raises:
+        ValueError: If a required key is missing or invalid.
+        FileNotFoundError: If the config file does not exist.
+    """
+    path = Path(config_file)
+    yaml_vars = parse_yaml_vars(path)
+
+    config: dict[str, Any] = (defaults or {}) | yaml_vars
+
     for env_var, config_key in ENV_VAR_MAPPING.items():
-        if val := os.getenv(env_var):
+        val = os.getenv(env_var)
+        if val:
             config[config_key] = val
 
-    for key, pattern in CONFIG_VALIDATION_SCHEMAS.items():
+    for key in CONFIG_VALIDATION_SCHEMAS:
         val = config.get(key)
         if val is None:
             raise ValueError(f"Required configuration field '{key}' is missing.")
+
+        pattern = CONFIG_VALIDATION_SCHEMAS.get(key)
         if pattern and not re.match(pattern, str(val)):
             raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
 
@@ -276,7 +293,6 @@ def load_and_validate_config(
         image_tag=config["image_tag"],
         domain_name=config.get("domain_name"),
         namespace=config.get("namespace", "xmc"),
-        enable_metrics=parse_bool_flag(config.get("enable_metrics", False)),
         enable_components=parse_bool_flag(config.get("enable_components", False)),
     )
 
@@ -311,22 +327,38 @@ def run_command(
     log_on_error: bool = True,
     log_cmd: bool = True,
     cwd: Path | str | None = None,
-    input_data: str | None = None,
 ) -> subprocess.CompletedProcess:
-    """Runs shell commands with unified logging and error handling."""
+    """Helper to run shell commands with unified logging and error handling.
+
+    Args:
+        cmd: The command to run as a list of strings.
+        env: Optional environment variables to merge with current env.
+        check: Whether to raise CalledProcessError on non-zero exit code.
+        capture_output: Whether to capture stdout/stderr.
+        log_on_error: Whether to log errors on failure.
+        log_cmd: Whether to log the command being executed.
+        cwd: Optional working directory for subprocess execution.
+
+    Returns:
+        A subprocess.CompletedProcess object.
+
+    Raises:
+        subprocess.CalledProcessError: If the command fails and check=True.
+    """
     if log_cmd:
         log_info(f"Running: {' '.join(cmd)}")
+
     proc_env = os.environ.copy() | {str(k): str(v) for k, v in (env or {}).items()}
-    run_kwargs: dict[str, Any] = {
-        "env": proc_env,
-        "text": True,
-        "capture_output": capture_output,
-        "cwd": str(cwd) if cwd else None,
-    }
-    if input_data is not None:
-        run_kwargs["input"] = input_data
+
     try:
-        return subprocess.run(cmd, check=check, **run_kwargs)
+        return subprocess.run(
+            cmd,
+            env=proc_env,
+            check=check,
+            text=True,
+            capture_output=capture_output,
+            cwd=str(cwd) if cwd else None,
+        )
     except subprocess.CalledProcessError:
         if log_on_error:
             log_error(f"Command failed: {' '.join(cmd)}")

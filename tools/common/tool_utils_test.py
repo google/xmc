@@ -478,7 +478,7 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         self.assertFalse(parse_bool_flag("0"))
         self.assertFalse(parse_bool_flag(None))
 
-    @patch.dict(os.environ, {"ENABLE_COMPONENTS": "true", "ENABLE_METRICS": "true"})
+    @patch.dict(os.environ, {"ENABLE_COMPONENTS": "true"})
     def test_load_config_enable_components_env_override(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             cfg_path = Path(tmp_dir) / "cfg.yaml"
@@ -495,7 +495,6 @@ class TestComponentProfileAndFlags(unittest.TestCase):
             )
             cfg = load_and_validate_config(str(cfg_path))
             self.assertTrue(cfg.enable_components)
-            self.assertTrue(cfg.enable_metrics)
 
     @patch("tools.common.tool_utils.run_command")
     def test_deploy_component_profile_disabled(self, mock_run):

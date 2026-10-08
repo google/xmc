@@ -79,7 +79,6 @@ STEPS = [
     "gateway-api",
     "prereqs",
     "migrate",
-    "addons",
     "app",
     "verify",
 ]
@@ -96,7 +95,6 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     p.add_argument("--skip-migrations", action="store_true", help="Skip Spanner migrations.")
     p.add_argument("--skip-verification", action="store_true", help="Skip health verification.")
     p.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
-    p.add_argument("--enable-metrics", action=argparse.BooleanOptionalAction, default=None)
     parsed_args = p.parse_args(args)
     if parsed_args.start_from and parsed_args.only:
         p.error("Cannot specify both --start-from and --only.")
@@ -629,75 +627,6 @@ def _fetch_cluster_credentials(config: DeploymentConfig) -> None:
     )
 
 
-def _ensure_metrics_namespaces_and_configmap() -> None:
-    """Creates namespaces and format schema ConfigMap for metrics addons."""
-    create_cmds = [
-        ["kubectl", "create", "namespace", "xmc"],
-        ["kubectl", "create", "namespace", "xmc-metrics"],
-        [
-            "kubectl",
-            "create",
-            "configmap",
-            "clickhouse-format-schemas",
-            "--namespace=xmc-metrics",
-            "--from-file=metrics.proto=api/protos/metrics/metrics.proto",
-        ],
-    ]
-    for cmd in create_cmds:
-        manifest = run_command([*cmd, "--dry-run=client", "-o", "yaml"], capture_output=True).stdout
-        run_command(["kubectl", "apply", "-f", "-"], input_data=manifest)
-
-
-def _deploy_redpanda_addon() -> None:
-    """Waits for Redpanda rollout and initializes the xmc-metrics Kafka topic."""
-    run_command(
-        ["kubectl", "rollout", "status", "statefulset/redpanda", "-n", "xmc", "--timeout=180s"]
-    )
-    topic_cmd = ["rpk", "topic", "create", "xmc-metrics", "--partitions", "128", "--replicas", "1"]
-    run_command(
-        ["kubectl", "exec", "-n", "xmc", "redpanda-0", "--", *topic_cmd],
-        check=False,
-        log_on_error=False,
-    )
-
-
-def _deploy_clickhouse_addon() -> None:
-    """Waits for ClickHouse rollout and applies schema.sql."""
-    run_command(
-        [
-            "kubectl",
-            "rollout",
-            "status",
-            "statefulset/clickhouse",
-            "-n",
-            "xmc-metrics",
-            "--timeout=180s",
-        ]
-    )
-    schema_sql = (_REPO_ROOT / "deploy/clickhouse/schema.sql").read_text(encoding="utf-8")
-    ch_cmd = ["kubectl", "exec", "-i", "-n", "xmc-metrics", "clickhouse-0", "--"]
-    run_command([*ch_cmd, "clickhouse-client", "--multiquery"], input_data=schema_sql)
-
-
-def step_addons(config: DeploymentConfig) -> None:
-    """Deploys optional cluster addons (ClickHouse & Redpanda) when metrics are enabled.
-
-    Args:
-        config: The loaded DeploymentConfig instance.
-    """
-    if not config.enable_metrics:
-        log_info("Metrics ingestion disabled (enable_metrics=false). Skipping metrics addons.")
-        return
-
-    log_info("Deploying metrics addons (ClickHouse & Redpanda)...")
-    _fetch_cluster_credentials(config)
-    _ensure_metrics_namespaces_and_configmap()
-    run_command(["kubectl", "apply", "-f", "deploy/addons/metrics/manifests/metrics-addons.yaml"])
-    _deploy_redpanda_addon()
-    _deploy_clickhouse_addon()
-    log_success("Metrics addons deployed and initialized successfully.")
-
-
 def step_app(
     config: DeploymentConfig,
     dns_project: str,
@@ -850,7 +779,6 @@ def _build_step_map(
             if _is_skip_migrations(args)
             else step_migrate(config)
         ),
-        "addons": lambda: step_addons(config),
         "app": lambda: step_app(config, args.dns_project, args.dns_zone),
         "verify": lambda: (
             log_info("Skipping environment health verification (--skip-verification).")
@@ -895,8 +823,6 @@ def run_deployment(args: argparse.Namespace) -> None:
     config = load_and_validate_config(args.config)
     if getattr(args, "enable_components", None) is not None:
         config = replace(config, enable_components=bool(args.enable_components))
-    if getattr(args, "enable_metrics", None) is not None:
-        config = replace(config, enable_metrics=bool(args.enable_metrics))
 
     run_checks(config, args.dns_project, args.dns_zone)
     step_map = _build_step_map(args, config)
