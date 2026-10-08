@@ -52,6 +52,7 @@ from tools.dev_env.upgrade_dev_env import (  # noqa: E402
     apply_pending_migrations,
     check_pending_migrations,
     step_restart,
+    wait_for_deployments_ready,
 )
 
 # ANSI Color Codes
@@ -724,23 +725,17 @@ def _wait_for_cert_active(project_id: str, cert_name: str) -> None:
     log_success("Managed Certificate is ACTIVE.")
 
 
-def _wait_for_deployments_ready(config: DeploymentConfig) -> None:
-    """Waits for all deployments in the target namespace to finish rolling out."""
-    log_info(
-        f"Waiting for deployments in namespace '{config.namespace}' to complete"
-        " rollout (3m timeout)..."
-    )
-    run_command(
-        [
-            "kubectl",
-            "rollout",
-            "status",
-            "deployment",
-            "-n",
-            config.namespace,
-            "--timeout=180s",
-        ]
-    )
+def _build_verify_env(config: DeploymentConfig) -> dict[str, str]:
+    """Constructs environment variables for verify_xmc.py execution."""
+    return {
+        "ENVIRONMENT": config.environment,
+        "REGION": config.region,
+        "PROJECT_ID": config.project_id,
+        "ENABLE_COMPONENTS": "true" if config.enable_components else "false",
+        "LOG_MONITOR_DEPLOYMENT_ENABLED": (
+            "true" if config.log_monitor_deployment_enabled else "false"
+        ),
+    }
 
 
 def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
@@ -752,20 +747,13 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
         dns_zone: Cloud DNS Managed Zone name (unused).
     """
     _fetch_cluster_credentials(config)
-
-    _wait_for_deployments_ready(config)
+    wait_for_deployments_ready(config)
     _wait_for_gateway_programmed()
 
     log_info("Running verification script...")
-    env_vars = {
-        "ENVIRONMENT": config.environment,
-        "REGION": config.region,
-        "PROJECT_ID": config.project_id,
-        "ENABLE_COMPONENTS": "true" if config.enable_components else "false",
-    }
     run_command(
         [sys.executable, "./deploy/ctk_v2/verify_xmc.py"],
-        env=env_vars,
+        env=_build_verify_env(config),
         log_on_error=False,
     )
 

@@ -18,6 +18,7 @@ import io
 import subprocess
 import sys
 import unittest
+from dataclasses import replace
 from unittest.mock import ANY, MagicMock, call, patch
 
 from tools.common.tool_utils import DeploymentConfig
@@ -718,6 +719,43 @@ image_tag: latest
             output,
         )
 
+    @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
+    @patch("tools.dev_env.deploy_dev_env.run_checks")
+    @patch("tools.dev_env.deploy_dev_env.step_check")
+    @patch("tools.dev_env.deploy_dev_env.step_compile")
+    @patch("sys.stdout", new_callable=io.StringIO)
+    def test_main_error_handling_resume_suggest_preserves_skip_verification(
+        self,
+        mock_stdout,
+        mock_compile,
+        mock_check,
+        mock_run_checks,
+        mock_load_config,
+    ):
+        mock_load_config.return_value = self.valid_config
+        mock_compile.side_effect = Exception("Compile failed")
+
+        with self.assertRaises(SystemExit) as cm:
+            deploy_dev_env.main(
+                [
+                    "--config",
+                    "config.yaml",
+                    "--dns-project",
+                    "p",
+                    "--dns-zone",
+                    "z",
+                    "--skip-verification",
+                ]
+            )
+
+        self.assertEqual(cm.exception.code, 1)
+        output = mock_stdout.getvalue()
+        self.assertIn(
+            "python3 tools/dev_env/deploy_dev_env.py --config config.yaml --dns-project p"
+            " --dns-zone z --skip-verification --start-from compile",
+            output,
+        )
+
     # --- Individual Step Tests ---
 
     @patch("tools.dev_env.deploy_dev_env.compile_blueprint")
@@ -923,6 +961,30 @@ image_tag: latest
 
     @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
     @patch("tools.dev_env.deploy_dev_env.run_checks")
+    @patch("tools.dev_env.deploy_dev_env.step_verify")
+    def test_run_deployment_only_verify(
+        self,
+        mock_verify,
+        mock_run_checks,
+        mock_load_config,
+    ):
+        mock_load_config.return_value = self.valid_config
+        deploy_dev_env.main(
+            [
+                "--config",
+                "config.yaml",
+                "--dns-project",
+                "p",
+                "--dns-zone",
+                "z",
+                "--only",
+                "verify",
+            ]
+        )
+        mock_verify.assert_called_once_with(self.valid_config, "p", "z")
+
+    @patch("tools.dev_env.deploy_dev_env.load_and_validate_config")
+    @patch("tools.dev_env.deploy_dev_env.run_checks")
     @patch("tools.dev_env.deploy_dev_env.step_migrate")
     @patch("tools.dev_env.deploy_dev_env.step_app")
     @patch("tools.dev_env.deploy_dev_env.step_verify")
@@ -1026,21 +1088,38 @@ image_tag: latest
             env=ANY,
         )
 
+    def test_build_verify_env(self):
+        env = deploy_dev_env._build_verify_env(self.valid_config)
+        self.assertEqual(
+            env,
+            {
+                "ENVIRONMENT": "dev",
+                "REGION": "us-central1",
+                "PROJECT_ID": "my-project",
+                "ENABLE_COMPONENTS": "false",
+                "LOG_MONITOR_DEPLOYMENT_ENABLED": "false",
+            },
+        )
+        cfg_with_lm = replace(self.valid_config, log_monitor_deployment_enabled=True)
+        env_lm = deploy_dev_env._build_verify_env(cfg_with_lm)
+        self.assertEqual(env_lm["LOG_MONITOR_DEPLOYMENT_ENABLED"], "true")
+
+    @patch("tools.dev_env.deploy_dev_env.wait_for_deployments_ready")
     @patch("tools.dev_env.deploy_dev_env.run_command")
     @patch("time.sleep")
-    def test_step_verify_success(self, mock_sleep, mock_run):
+    def test_step_verify_success(self, mock_sleep, mock_run, mock_wait_rollout):
         cred_res = MagicMock()
-        rollout_res = MagicMock()
         wait_res = MagicMock()
         verify_res = MagicMock()
         cert_res = MagicMock()
         cert_res.stdout = "ACTIVE\n"
 
-        mock_run.side_effect = [cred_res, rollout_res, wait_res, verify_res, cert_res]
+        mock_run.side_effect = [cred_res, wait_res, verify_res, cert_res]
 
         deploy_dev_env.step_verify(self.valid_config, self.dns_project, self.dns_zone)
 
-        self.assertEqual(mock_run.call_count, 5)
+        mock_wait_rollout.assert_called_once_with(self.valid_config)
+        self.assertEqual(mock_run.call_count, 4)
         mock_run.assert_has_calls(
             [
                 call(
@@ -1057,17 +1136,6 @@ image_tag: latest
                 call(
                     [
                         "kubectl",
-                        "rollout",
-                        "status",
-                        "deployment",
-                        "-n",
-                        "xmc",
-                        "--timeout=180s",
-                    ]
-                ),
-                call(
-                    [
-                        "kubectl",
                         "wait",
                         "--for=condition=Programmed",
                         "gateway/xmc-gateway",
@@ -1078,7 +1146,13 @@ image_tag: latest
                 ),
                 call(
                     [sys.executable, "./deploy/ctk_v2/verify_xmc.py"],
-                    env=ANY,
+                    env={
+                        "ENVIRONMENT": "dev",
+                        "REGION": "us-central1",
+                        "PROJECT_ID": "my-project",
+                        "ENABLE_COMPONENTS": "false",
+                        "LOG_MONITOR_DEPLOYMENT_ENABLED": "false",
+                    },
                     log_on_error=False,
                 ),
                 call(
@@ -1097,18 +1171,19 @@ image_tag: latest
             ]
         )
 
+    @patch("tools.dev_env.deploy_dev_env.wait_for_deployments_ready")
     @patch("tools.dev_env.deploy_dev_env.run_command")
-    def test_step_verify_propagates_failure(self, mock_run):
+    def test_step_verify_propagates_failure(self, mock_run, mock_wait_rollout):
         cred_res = MagicMock()
-        rollout_res = MagicMock()
         wait_res = MagicMock()
         verify_err = subprocess.CalledProcessError(
             1, [sys.executable, "./deploy/ctk_v2/verify_xmc.py"]
         )
-        mock_run.side_effect = [cred_res, rollout_res, wait_res, verify_err]
+        mock_run.side_effect = [cred_res, wait_res, verify_err]
 
         with self.assertRaises(subprocess.CalledProcessError):
             deploy_dev_env.step_verify(self.valid_config, self.dns_project, self.dns_zone)
+        mock_wait_rollout.assert_called_once_with(self.valid_config)
 
     @patch("tools.dev_env.deploy_dev_env.run_command")
     def test_wait_for_gateway_programmed_success(self, mock_run):
