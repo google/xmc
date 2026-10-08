@@ -18,7 +18,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import * as echarts from 'echarts';
 
-import { PlotData, PlotSpec, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { PlotData, PlotSpec, PlotType } from 'app/service/dashboard_models';
 
 import { PlotCardComponent } from './plot_card';
 import { PlotCardHarness } from './plot_card_harness';

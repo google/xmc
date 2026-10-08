@@ -25,31 +25,28 @@ import { ActivatedRoute } from '@angular/router';
 import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
 import { filter, finalize, map, shareReplay, switchMap, tap, withLatestFrom } from 'rxjs/operators';
 
-import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
-import { ArtifactsList } from 'xmanager_cloud/ui/app/common/components/artifacts_list/artifacts_list';
+import { ArtifactsList } from 'app/common/components/artifacts_list/artifacts_list';
 import {
   AutoReloadService,
   ReloaderControl,
-} from 'xmanager_cloud/ui/app/common/components/autoreloader/autoreloader_service';
-import { ConfirmDialogService } from 'xmanager_cloud/ui/app/common/components/confirmation_dialog/confirmation_dialog_service';
-import { LoadingBar } from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
-import { PriorityChip } from 'xmanager_cloud/ui/app/common/components/priority_chip/priority_chip';
-import {
-  StatusChip,
-  StatusOption,
-} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
-import { StatusMessage } from 'xmanager_cloud/ui/app/common/components/status_message/status_message';
-import { StatusMessagesList } from 'xmanager_cloud/ui/app/common/components/status_messages_list/status_messages_list';
-import { Tag } from 'xmanager_cloud/ui/app/common/components/tag/tag';
-import { UrlsWidget } from 'xmanager_cloud/ui/app/common/components/urls_widget/urls_widget';
-import { WorkUnitsStatusBar } from 'xmanager_cloud/ui/app/common/components/work_units_status_bar/work_units_status_bar';
-import { XidBadge } from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
-import { ProcessedUrl, processUrls } from 'xmanager_cloud/ui/app/common/url/url_processor';
-import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
-import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
-import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
-import { EditExperimentFormData } from 'xmanager_cloud/ui/app/side_panel/contents/edit_experiment_form/edit_experiment_form';
-import { SidePanelService } from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
+} from 'app/common/components/autoreloader/autoreloader_service';
+import { ConfirmDialogService } from 'app/common/components/confirmation_dialog/confirmation_dialog_service';
+import { LoadingBar } from 'app/common/components/loading_bar/loading_bar';
+import { PriorityChip } from 'app/common/components/priority_chip/priority_chip';
+import { StatusChip, StatusOption } from 'app/common/components/status_chip/status_chip';
+import { StatusMessage } from 'app/common/components/status_message/status_message';
+import { StatusMessagesList } from 'app/common/components/status_messages_list/status_messages_list';
+import { Tag } from 'app/common/components/tag/tag';
+import { UrlsWidget } from 'app/common/components/urls_widget/urls_widget';
+import { WorkUnitsStatusBar } from 'app/common/components/work_units_status_bar/work_units_status_bar';
+import { XidBadge } from 'app/common/components/xid_badge/xid_badge';
+import { ProcessedUrl, processUrls } from 'app/common/url/url_processor';
+import { ExperimentService } from 'app/service/experiment_service';
+import { SnackbarService } from 'app/service/snackbar_service';
+import { WorkUnitsService } from 'app/service/work_units_service';
+import { EditExperimentFormData } from 'app/side_panel/contents/edit_experiment_form/edit_experiment_form';
+import { SidePanelService } from 'app/side_panel/side_panel_service';
+import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 
 import { WorkUnitsTable } from './work_units_table/work_units_table';
 

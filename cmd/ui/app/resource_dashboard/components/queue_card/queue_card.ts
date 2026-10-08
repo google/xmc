@@ -27,11 +27,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { take } from 'rxjs';
 
-import {
-  ClusterQueueSecondaryMetrics,
-  QueueOverview,
-} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
-import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
+import { ROD_TERM_TOOLTIPS } from 'app/resource_dashboard/constants/rod_tooltips';
 import {
   COHORT_STATE_BORROWING,
   COHORT_STATE_SQUEEZED,
@@ -39,16 +35,20 @@ import {
   FreeTotalDisplayPipe,
   MaxSchedulableDisplayPipe,
   QueueStatusBadgePipe,
-} from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
-import { matchesResourceFilter } from 'xmanager_cloud/ui/app/resource_dashboard/utils/resource_filter';
+} from 'app/resource_dashboard/pipes/resource_dashboard_pipes';
+import { matchesResourceFilter } from 'app/resource_dashboard/utils/resource_filter';
 import {
   calculateJobVelocity,
   calculatePendingRequestsDisplay,
   calculateResourceVelocity,
   findQueuePredictability,
   getPendingJobsCount,
-} from 'xmanager_cloud/ui/app/resource_dashboard/utils/resource_velocity';
-import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
+} from 'app/resource_dashboard/utils/resource_velocity';
+import { ResourceService } from 'app/service/resource_service';
+import {
+  ClusterQueueSecondaryMetrics,
+  QueueOverview,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 export interface PredictabilityViewModel {
   readonly jobVelocityDisplay: string;

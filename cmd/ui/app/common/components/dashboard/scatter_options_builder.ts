@@ -21,7 +21,7 @@ import {
   PlotSpec,
   SeriesData,
   SeriesPoint,
-} from 'xmanager_cloud/ui/app/service/dashboard_models';
+} from 'app/service/dashboard_models';
 
 import {
   DEFAULT_XMC_THEME_CONFIG,

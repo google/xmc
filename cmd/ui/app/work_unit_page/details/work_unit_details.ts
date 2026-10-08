@@ -17,8 +17,8 @@ import { MatCardModule } from '@angular/material/card';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatDividerModule } from '@angular/material/divider';
 
+import { Tag } from 'app/common/components/tag/tag';
 import { type WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
-import { Tag } from 'xmanager_cloud/ui/app/common/components/tag/tag';
 
 /**
  * Work unit details component.

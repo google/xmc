@@ -15,9 +15,9 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 
-import { getArtifactDisplayProperties } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
-import { ArtifactListItem } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
-import { ArtifactCard } from 'xmanager_cloud/ui/app/common/components/artifact_card/artifact_card';
+import { getArtifactDisplayProperties } from 'app/common/artifacts/artifact_utils';
+import { ArtifactListItem } from 'app/common/artifacts/interfaces';
+import { ArtifactCard } from 'app/common/components/artifact_card/artifact_card';
 
 /**
  * Component for displaying a column of artifacts within the same lifecycle phase.

@@ -15,7 +15,7 @@ import { ComponentHarness } from '@angular/cdk/testing';
 import { MatButtonHarness } from '@angular/material/button/testing';
 import { MatTabGroupHarness } from '@angular/material/tabs/testing';
 
-import { LoadingBarHarness } from 'xmanager_cloud/ui/app/common/components/loading_bar/testing/loading_bar_harness';
+import { LoadingBarHarness } from 'app/common/components/loading_bar/testing/loading_bar_harness';
 
 /** Harness for interacting with <xmc-experiment-page> in tests. */
 export class ExperimentPageHarness extends ComponentHarness {

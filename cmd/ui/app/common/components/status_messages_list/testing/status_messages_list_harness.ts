@@ -13,7 +13,7 @@
 // limitations under the License.
 import { ComponentHarness } from '@angular/cdk/testing';
 
-import { StatusMessagesListFilterHarness } from 'xmanager_cloud/ui/app/common/components/status_messages_list/status_messages_list_filter/testing/status_messages_list_filter_harness';
+import { StatusMessagesListFilterHarness } from 'app/common/components/status_messages_list/status_messages_list_filter/testing/status_messages_list_filter_harness';
 
 /** Harness for interacting with <xmc-status-messages-list> in tests. */
 export class StatusMessagesListHarness extends ComponentHarness {

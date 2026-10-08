@@ -14,7 +14,7 @@
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { bootstrap, flush, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import { bootstrap, flush, setupModule } from 'app/testing/test';
 
 import { StatusMessagesListFilter } from './status_messages_list_filter';
 import { StatusMessagesListFilterHarness } from './testing/status_messages_list_filter_harness';

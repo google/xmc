@@ -23,10 +23,10 @@ import { RouterLink } from '@angular/router';
 import {
   getArtifactDisplayProperties,
   hasPayloadContent,
-} from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
-import { PayloadType, TypedArtifact } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
-import { SafeUrlPipe, SplitPipe } from 'xmanager_cloud/ui/app/common/pipes/pipes';
-import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
+} from 'app/common/artifacts/artifact_utils';
+import { PayloadType, TypedArtifact } from 'app/common/artifacts/interfaces';
+import { SafeUrlPipe, SplitPipe } from 'app/common/pipes/pipes';
+import { parseWorkUnitName } from 'app/common/resource_name_extractor';
 
 import { Tag } from '../tag/tag';
 

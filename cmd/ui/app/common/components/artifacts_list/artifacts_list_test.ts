@@ -16,10 +16,10 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { firstValueFrom, of } from 'rxjs';
 
+import { ArtifactService } from 'app/service/artifact_service';
+import { bootstrap, setupModule } from 'app/testing/test';
 import { ListArtifactsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
-import { ArtifactService } from 'xmanager_cloud/ui/app/service/artifact_service';
-import { bootstrap, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { ArtifactFilter, ArtifactsList } from './artifacts_list';
 

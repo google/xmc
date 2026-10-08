@@ -13,7 +13,7 @@
 // limitations under the License.
 import { provideRouter } from '@angular/router';
 
-import { bootstrap, cleanState, hasEl, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import { bootstrap, cleanState, hasEl, setupModule } from 'app/testing/test';
 
 import { Tag } from './tag';
 

@@ -15,9 +15,9 @@ import { getHarness } from '@angular/cdk/testing/catalyst/async';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 
+import { EmptyComponent } from 'app/common/testing_utils/empty_component';
+import { bootstrapTemplate, setupModule } from 'app/testing/test';
 import { ListExperimentsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { EmptyComponent } from 'xmanager_cloud/ui/app/common/testing_utils/empty_component';
-import { bootstrapTemplate, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { ExperimentsTable } from './experiments_table';
 import { ExperimentsTableHarness } from './testing/experiments_table_harness';

@@ -14,7 +14,7 @@
 
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { bootstrap, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import { bootstrap, setupModule } from 'app/testing/test';
 
 import { PriorityChip } from './priority_chip';
 

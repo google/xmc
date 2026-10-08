@@ -15,15 +15,15 @@ import { Injectable } from '@angular/core';
 import { Operation } from 'longrunning/operations.jsonpb_decls';
 import { Observable, of } from 'rxjs';
 
-import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 import {
   WORK_UNIT_1,
   WORK_UNIT_2,
   WORK_UNIT_3,
   WORK_UNIT_4,
   WORK_UNIT_LIST,
-} from 'xmanager_cloud/ui/app/common/mock_data';
+} from 'app/common/mock_data';
+import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 
 import { WorkUnitsService } from '../work_units_service';
 

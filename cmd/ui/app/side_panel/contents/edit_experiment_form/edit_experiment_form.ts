@@ -42,14 +42,11 @@ import { MatRadioModule } from '@angular/material/radio';
 import { MatSelectModule } from '@angular/material/select';
 import { Subscription } from 'rxjs';
 
+import { XidBadge } from 'app/common/components/xid_badge/xid_badge';
+import { BaseSidePanelContent, BaseSidePanelData } from 'app/side_panel/base_side_panel';
+import { SidePanelService } from 'app/side_panel/side_panel_service';
 import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
-import { XidBadge } from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
-import {
-  BaseSidePanelContent,
-  BaseSidePanelData,
-} from 'xmanager_cloud/ui/app/side_panel/base_side_panel';
-import { SidePanelService } from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
 
 import { EditExperimentFormStore } from './edit_experiment_form_store';
 

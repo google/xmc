@@ -19,8 +19,8 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
-import { Chart, LayoutType, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
-import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
+import { Chart, LayoutType, PlotType } from 'app/service/dashboard_models';
+import { DashboardService } from 'app/service/dashboard_service';
 
 import { DashboardGridComponent } from './dashboard_grid';
 import { DashboardGridHarness } from './dashboard_grid_harness';

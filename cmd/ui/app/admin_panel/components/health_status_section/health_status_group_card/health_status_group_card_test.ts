@@ -15,13 +15,7 @@
 import { Component, signal } from '@angular/core';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import {
-  bootstrap,
-  cleanState,
-  flush,
-  getHarness,
-  setupModule,
-} from 'xmanager_cloud/ui/app/testing/test';
+import { bootstrap, cleanState, flush, getHarness, setupModule } from 'app/testing/test';
 
 import { ComponentHealth, ComponentType, HealthState } from '../health_status_section';
 import { HealthStatusGroupCardComponent } from './health_status_group_card';

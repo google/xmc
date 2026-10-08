@@ -19,14 +19,8 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { of, Subject, throwError } from 'rxjs';
 
-import {
-  Chart,
-  ChartData,
-  LayoutType,
-  PlotData,
-  PlotType,
-} from 'xmanager_cloud/ui/app/service/dashboard_models';
-import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
+import { Chart, ChartData, LayoutType, PlotData, PlotType } from 'app/service/dashboard_models';
+import { DashboardService } from 'app/service/dashboard_service';
 
 import { ChartCardComponent, getChartKey, hasWorkUnit, PlotDataPipe } from './chart_card';
 import { ChartCardHarness } from './chart_card_harness';

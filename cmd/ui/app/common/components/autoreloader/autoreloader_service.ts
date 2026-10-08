@@ -16,7 +16,7 @@ import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject, combineLatest, EMPTY, fromEvent, Observable, timer } from 'rxjs';
 import { distinctUntilChanged, map, pairwise, startWith, switchMap } from 'rxjs/operators';
 
-import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
+import { AUTO_REFRESH_INTERVAL_MS } from 'app/service/constants';
 
 /**
  * Control interface for an auto-reloading process.

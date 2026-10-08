@@ -17,7 +17,7 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { MetricPolarity, SummaryBoxValue } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { MetricPolarity, SummaryBoxValue } from 'app/service/dashboard_models';
 
 import { SummaryBoxComponent } from './summary_box';
 import { SummaryBoxHarness } from './summary_box_harness';

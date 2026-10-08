@@ -14,9 +14,9 @@
 
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { StatusOption } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
-import { WORK_UNIT_1 } from 'xmanager_cloud/ui/app/common/mock_data';
-import { bootstrap, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import { StatusOption } from 'app/common/components/status_chip/status_chip';
+import { WORK_UNIT_1 } from 'app/common/mock_data';
+import { bootstrap, setupModule } from 'app/testing/test';
 
 import { JobsTable } from './jobs_table';
 
