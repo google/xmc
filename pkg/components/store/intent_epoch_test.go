@@ -65,9 +65,12 @@ func TestSetSourcedComponentIntent_EpochParity(t *testing.T) {
 		{name: "same object and generation with a changed spec bumps by one", seedSource: seeded, spec: changed, src: seeded, wantGen: 2, wantSource: seeded, wantReset: true},
 		{name: "same object at an older generation with an unchanged spec is a no-op", seedSource: seeded, spec: unchanged, src: epochSource("uid-b", 0, 2), wantGen: 1, wantSource: seeded},
 		{name: "same object at an older generation with a changed spec is stale", seedSource: seeded, spec: changed, src: epochSource("uid-b", 0, 2), wantStale: true},
+		{name: "older object with an unchanged spec is stale", seedSource: seeded, spec: unchanged, src: epochSource("uid-z", -time.Hour, 9), wantStale: true},
+		{name: "older object with a changed spec is stale", seedSource: seeded, spec: changed, src: epochSource("uid-z", -time.Hour, 9), wantStale: true},
 		{name: "recreated object with an unchanged spec records only the source", seedSource: seeded, spec: unchanged, src: epochSource("uid-a", time.Hour, 1), wantGen: 1, wantSource: epochSource("uid-a", time.Hour, 1)},
 		{name: "recreated object with a changed spec bumps by one", seedSource: seeded, spec: changed, src: epochSource("uid-a", time.Hour, 1), wantGen: 2, wantSource: epochSource("uid-a", time.Hour, 1), wantReset: true},
-		{name: "different object created earlier is adopted", seedSource: seeded, spec: unchanged, src: epochSource("uid-z", -time.Hour, 9), wantGen: 1, wantSource: epochSource("uid-z", -time.Hour, 9)},
+		{name: "equal creation time and greater uid is adopted", seedSource: seeded, spec: unchanged, src: epochSource("uid-c", 0, 1), wantGen: 1, wantSource: epochSource("uid-c", 0, 1)},
+		{name: "equal creation time and smaller uid is stale", seedSource: seeded, spec: unchanged, src: epochSource("uid-a", 0, 1), wantStale: true},
 	}
 	for _, backend := range intentStoreBackends() {
 		t.Run(backend.name, func(t *testing.T) {
@@ -100,22 +103,50 @@ func TestSetSourcedComponentIntent_EpochParity(t *testing.T) {
 	}
 }
 
-// TestSetComponentIntent_KeepsRecordedSource checks on both backends that an unsourced intent
-// leaves the recorded source in place.
+// TestSetComponentIntent_KeepsRecordedSource checks on both backends that an unsourced intent on a
+// sourced record is ordered by its desired generation against the recorded source generation (3,
+// while the CMS generation is 1) and leaves the recorded source in place.
 func TestSetComponentIntent_KeepsRecordedSource(t *testing.T) {
 	src := epochSource("uid-b", 0, 3)
+	unchanged, changed := intentSpec("v1.0.0"), intentSpec("v1.1.0")
+	tests := []struct {
+		name       string
+		spec       *componentspb.ComponentSpec
+		desiredGen int64
+		wantStale  bool
+		wantGen    int64
+		wantReset  bool
+	}{
+		{name: "older generation with an unchanged spec is a no-op", spec: unchanged, desiredGen: 2, wantGen: 1},
+		{name: "older generation with a changed spec is stale", spec: changed, desiredGen: 2, wantStale: true},
+		{name: "source generation with an unchanged spec is a no-op", spec: unchanged, desiredGen: 3, wantGen: 1},
+		{name: "source generation with a changed spec bumps by one", spec: changed, desiredGen: 3, wantGen: 2, wantReset: true},
+		{name: "newer generation with an unchanged spec is a no-op", spec: unchanged, desiredGen: 4, wantGen: 1},
+		{name: "newer generation with a changed spec bumps by one", spec: changed, desiredGen: 4, wantGen: 2, wantReset: true},
+		{name: "unspecified generation with a changed spec bumps by one", spec: changed, desiredGen: 0, wantGen: 2, wantReset: true},
+	}
 	for _, backend := range intentStoreBackends() {
 		t.Run(backend.name, func(t *testing.T) {
 			ctx := context.Background()
 			s := backend.newStore(t)
-			before := seedEpochComponent(ctx, t, s, "intent-epoch-unsourced", src, 0)
+			// Subtests are intentionally sequential (no t.Parallel) because they share one store.
+			for i, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					name := fmt.Sprintf("intent-epoch-unsourced-%d", i)
+					before := seedEpochComponent(ctx, t, s, name, src, 0)
 
-			got, err := s.SetComponentIntent(ctx, "intent-epoch-unsourced", intentSpec("v1.1.0"), nil, 0)
-			if err != nil {
-				t.Fatalf("SetComponentIntent() error = %v", err)
+					got, err := s.SetComponentIntent(ctx, name, tt.spec, nil, tt.desiredGen)
+					if tt.wantStale {
+						assertStaleIntentRejected(ctx, t, s, name, err, before)
+						return
+					}
+					if err != nil {
+						t.Fatalf("SetComponentIntent() error = %v", err)
+					}
+					assertEpochOutcome(t, before, got, tt.wantGen, src, tt.wantReset)
+					assertStoredSource(ctx, t, s, name, src)
+				})
 			}
-			assertEpochOutcome(t, before, got, 2, src, true)
-			assertStoredSource(ctx, t, s, "intent-epoch-unsourced", src)
 		})
 	}
 }
@@ -212,7 +243,7 @@ func TestSpannerStore_SetSourcedComponentIntent_ReadOnlyFastPath(t *testing.T) {
 		{name: "same source replay skips the read-write transaction", src: seeded, wantSource: seeded},
 		{name: "replay with a sub-microsecond creation time skips the read-write transaction", src: epochSource("uid-b", 300*time.Nanosecond, 3), wantSource: seeded},
 		{name: "newer source generation falls back to record the source", src: epochSource("uid-b", 0, 4), wantFallbacks: 1, wantSource: epochSource("uid-b", 0, 4)},
-		{name: "different object falls back to record the source", src: epochSource("uid-a", time.Hour, 1), wantFallbacks: 1, wantSource: epochSource("uid-a", time.Hour, 1)},
+		{name: "older object falls back and is rejected", src: epochSource("uid-z", -time.Hour, 1), wantFallbacks: 1, wantCode: codes.FailedPrecondition, wantSource: seeded},
 	}
 	ctx := context.Background()
 	s, _ := setupTestStore(ctx, t)

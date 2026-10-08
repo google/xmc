@@ -119,18 +119,26 @@ type Store interface {
 	// Records whose generation already exceeds the caller's generation (inflated by writes made
 	// before intents were idempotent) keep the higher number, and later changes bump from it.
 	// Callers that can identify their source should use SetSourcedComponentIntent, which does not
-	// compare against desiredGen. SetComponentIntent leaves the recorded Source unchanged.
+	// compare against desiredGen.
+	//
+	// SetComponentIntent leaves the recorded Source unchanged. On a record with a Source, the
+	// rules above compare desiredGen with Source.Generation instead of the record generation,
+	// because both come from the same object: a changed intent is stale when desiredGen is
+	// specified and older than Source.Generation, and otherwise bumps the generation by exactly 1.
 	SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error)
 
-	// SetSourcedComponentIntent applies an intent produced by src, ordering intents by src instead
-	// of by generation. Validation, the definition of an unchanged intent (ignoring generations),
-	// and the SpannerStore read-only fast path are as for SetComponentIntent.
+	// SetSourcedComponentIntent applies an intent produced by src, ordering intents by the epoch
+	// of src instead of by generation. Validation, the definition of an unchanged intent (ignoring
+	// generations), and the SpannerStore read-only fast path are as for SetComponentIntent.
 	//
 	// A new component starts at generation 1. For an existing component the intent is classified
 	// against the recorded Source:
 	//   - Same UID: the intent is current unless src.Generation is older than the recorded one,
 	//     in which case a changed intent is stale and an unchanged one is a no-op.
-	//   - Different UID, or no recorded Source: the intent is adopted.
+	//   - Different UID with an earlier CreateTime, or with an equal CreateTime and a smaller UID:
+	//     the intent comes from an older object and is stale even when unchanged.
+	//   - Different UID with a later CreateTime, an equal CreateTime and a greater UID, or no
+	//     recorded Source: the intent starts a newer epoch and is adopted.
 	//
 	// A current or adopted intent that changes the record bumps the generation by exactly 1,
 	// resets the state as for SetComponentIntent, and records src. An unchanged one records src,

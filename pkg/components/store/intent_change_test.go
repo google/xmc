@@ -17,6 +17,9 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -80,6 +83,32 @@ func TestSpecWithoutGeneration(t *testing.T) {
 	}
 }
 
+func TestClassifyIntentEpoch(t *testing.T) {
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	recorded := &IntentSource{UID: "uid-b", CreateTime: created, Generation: 3}
+	tests := []struct {
+		name     string
+		recorded *IntentSource
+		src      IntentSource
+		want     intentEpoch
+	}{
+		{name: "no recorded source is adopted", src: IntentSource{UID: "uid-a", CreateTime: created}, want: epochNewer},
+		{name: "same uid at an older generation is the same object", recorded: recorded, src: IntentSource{UID: "uid-b", CreateTime: created, Generation: 1}, want: epochSame},
+		{name: "later creation time is newer", recorded: recorded, src: IntentSource{UID: "uid-a", CreateTime: created.Add(time.Second)}, want: epochNewer},
+		{name: "earlier creation time is older", recorded: recorded, src: IntentSource{UID: "uid-z", CreateTime: created.Add(-time.Second)}, want: epochOlder},
+		{name: "equal creation time and greater uid is newer", recorded: recorded, src: IntentSource{UID: "uid-c", CreateTime: created}, want: epochNewer},
+		{name: "equal creation time and smaller uid is older", recorded: recorded, src: IntentSource{UID: "uid-a", CreateTime: created}, want: epochOlder},
+		{name: "equal instant in another location is compared by uid", recorded: recorded, src: IntentSource{UID: "uid-a", CreateTime: created.In(time.FixedZone("UTC+1", 3600))}, want: epochOlder},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classifyIntentEpoch(tt.recorded, tt.src); got != tt.want {
+				t.Errorf("classifyIntentEpoch() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMemoryStore_UnchangedIntentRecordsNoSnapshot(t *testing.T) {
 	ctx := context.Background()
 	ms := NewMemoryStore()
@@ -91,5 +120,46 @@ func TestMemoryStore_UnchangedIntentRecordsNoSnapshot(t *testing.T) {
 	}
 	if got := len(ms.snapshots["redpanda"]); got != 1 {
 		t.Errorf("snapshots after repeated unchanged intent = %d, want 1", got)
+	}
+}
+
+func TestPlanSourcedIntent_EpochChange(t *testing.T) {
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	recorded := &IntentSource{UID: "uid-b", CreateTime: created, Generation: 3}
+	tests := []struct {
+		name     string
+		recorded *IntentSource
+		src      IntentSource
+		want     intentPlan
+	}{
+		{
+			name: "no recorded source is an epoch change",
+			src:  *recorded,
+			want: intentPlan{write: writeSourceOnly, generation: 1, epochChange: true},
+		},
+		{
+			name:     "newer object is an epoch change from the recorded source",
+			recorded: recorded,
+			src:      IntentSource{UID: "uid-a", CreateTime: created.Add(time.Hour), Generation: 1},
+			want:     intentPlan{write: writeSourceOnly, generation: 1, epochChange: true, previousSource: recorded},
+		},
+		{
+			name:     "newer generation of the same object is not an epoch change",
+			recorded: recorded,
+			src:      IntentSource{UID: "uid-b", CreateTime: created, Generation: 4},
+			want:     intentPlan{write: writeSourceOnly, generation: 1, previousSource: recorded},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := &ComponentRecord{Generation: 1, Source: tt.recorded}
+			got, err := planSourcedIntent("redpanda", rec, false, tt.src)
+			if err != nil {
+				t.Fatalf("planSourcedIntent() error = %v", err)
+			}
+			if diff := cmp.Diff(tt.want, got, cmp.AllowUnexported(intentPlan{})); diff != "" {
+				t.Errorf("planSourcedIntent() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

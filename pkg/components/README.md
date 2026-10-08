@@ -56,15 +56,16 @@ All sources are merged into a single canonical, deduplicated, sorted set that is
 
 **Legacy inflated generations**: records written before intents were idempotent may have a CMS generation above the CR generation. They keep the higher number, and later CR edits bump from it. This affects only pre-fix development data because Components have not launched; recreate affected records to realign CMS and CR generations.
 
-**Sourced intents**: a `SetComponentIntentRequest` with `source` (the uid, creation time and generation of the declarative object, such as the CR) is applied by `SetSourcedComponentIntent`, which orders intents by the source instead of by `spec.generation`, so the CMS generation is independent of the CR generation. Both stores share one planner (`planIntent` in `pkg/components/store/intent_change.go`) and record the adopted source in the `SourceUid`, `SourceGeneration` and `SourceCreateTime` columns:
+**Epoch-ordered intents**: a `SetComponentIntentRequest` with `source` (the uid, creation time and generation of the declarative object, such as the CR) is applied by `SetSourcedComponentIntent`, which orders intents by the source instead of by `spec.generation`, so the CMS generation is independent of the CR generation. Both stores share one planner (`planIntent` in `pkg/components/store/intent_change.go`) and record the adopted source in the `SourceUid`, `SourceGeneration` and `SourceCreateTime` columns:
 
 | Source of the intent vs recorded source | Changed intent | Unchanged intent |
 | :--- | :--- | :--- |
 | Same uid, generation not older | Applied, generation + 1 | Records a newer source generation, else no-op |
 | Same uid, older generation | Rejected as stale | No-op |
-| Different uid, or none recorded | Adopted, generation + 1 | Adopted: records the source only |
+| Older object (earlier creation time, or equal time and smaller uid) | Rejected as stale | Rejected as stale |
+| Newer object (later creation time, or equal time and greater uid), or none recorded | Adopted, generation + 1 | Adopted: records the source only |
 
-Recording only the source writes no snapshot, generation, state or `UpdateTime`, so a recreated CR (new uid) that re-applies the same spec adopts the existing record under the same `ComponentId` and generation. A new component starts at generation 1, and an adopted record with a legacy inflated generation keeps it and then advances by 1 per change. Unsourced intents keep the generation-ordered behavior above and leave the recorded source unchanged.
+Recording only the source writes no snapshot, generation, state or `UpdateTime`, so a recreated CR (new uid, later creation time) that re-applies the same spec adopts the existing record under the same `ComponentId` and generation, while a lagging replica still acting on the old CR is rejected. Equal creation times (Kubernetes uses one-second granularity) are ordered by uid so every replica decides the same way. A new component starts at generation 1, and an adopted record with a legacy inflated generation keeps it and then advances by 1 per change. Unsourced intents leave the recorded source unchanged. On a record without a source they keep the generation-ordered behavior above; on a sourced record their desired generation comes from the same object as the source, so it is compared with the recorded source generation instead: a changed intent with a specified, older desired generation is rejected as stale, and any other changed intent advances the generation by 1.
 
 Key functions:
 - `ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string`: Extracts unique canonical dependency names from all sources above.

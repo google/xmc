@@ -15,6 +15,7 @@
 package store
 
 import (
+	"context"
 	"maps"
 	"slices"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/logging"
 )
 
 // StaleIntentMessagePrefix starts the FailedPrecondition message returned when a changed sourced
@@ -70,14 +72,24 @@ const (
 type intentPlan struct {
 	write      intentWrite
 	generation int64 // Generation of the record after the write.
+	// epochChange is true when a sourced intent adopts a newer object (or a record without a
+	// source), whose source previousSource then replaces.
+	epochChange    bool
+	previousSource *IntentSource
 }
 
-// planIntent decides how an intent applies to the existing active record rec: by src for a sourced
-// intent (SetSourcedComponentIntent) and by desiredGen otherwise (SetComponentIntent). Both stores
-// use it so their semantics stay identical.
+// planIntent decides how an intent applies to the existing active record rec. A sourced intent
+// (SetSourcedComponentIntent) is ordered by the epoch of src. An unsourced intent
+// (SetComponentIntent) is ordered by desiredGen: against rec.Generation for a record without a
+// source, and against the recorded source generation otherwise, because desiredGen then comes from
+// the same declarative object as that source while rec.Generation is independent of it. Both
+// stores use it so their semantics stay identical.
 func planIntent(canonicalName string, rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *IntentSource) (intentPlan, error) {
 	if src != nil {
 		return planSourcedIntent(canonicalName, rec, !isUnchangedIntent(rec, spec, labels, deps, 0), *src)
+	}
+	if rec.Source != nil {
+		return planUnsourcedIntentOnSourcedRecord(canonicalName, rec, !isUnchangedIntent(rec, spec, labels, deps, 0), desiredGen)
 	}
 	if isUnchangedIntent(rec, spec, labels, deps, desiredGen) {
 		return intentPlan{write: writeNothing, generation: rec.Generation}, nil
@@ -85,26 +97,96 @@ func planIntent(canonicalName string, rec *ComponentRecord, spec *componentspb.C
 	return intentPlan{write: writeSpec, generation: max(desiredGen, rec.Generation+1)}, nil
 }
 
+// planUnsourcedIntentOnSourcedRecord decides how an unsourced intent applies to rec, which has a
+// recorded source, given whether it changes the stored spec, labels or dependencies. A changed
+// intent is stale when desiredGen is specified and older than the recorded source generation, and
+// otherwise bumps the generation by 1. The recorded source is kept.
+func planUnsourcedIntentOnSourcedRecord(canonicalName string, rec *ComponentRecord, changed bool, desiredGen int64) (intentPlan, error) {
+	if !changed {
+		return intentPlan{write: writeNothing, generation: rec.Generation}, nil
+	}
+	if desiredGen > 0 && desiredGen < rec.Source.Generation {
+		return intentPlan{}, status.Errorf(codes.FailedPrecondition, StaleIntentMessagePrefix+" component %q was adopted from generation %d of source %q, newer than the desired generation %d of the changed intent", canonicalName, rec.Source.Generation, rec.Source.UID, desiredGen)
+	}
+	return intentPlan{write: writeSpec, generation: rec.Generation + 1}, nil
+}
+
 // planSourcedIntent decides how an intent from src applies to rec, given whether it changes the
-// stored spec, labels or dependencies. An intent from the recorded object (same UID) at an older
-// generation is stale when changed and a no-op otherwise. Any other intent, including one from a
-// different object, is current: a changed one bumps the generation by 1, and an unchanged one
-// records src when it differs from the recorded source.
+// stored spec, labels or dependencies.
 func planSourcedIntent(canonicalName string, rec *ComponentRecord, changed bool, src IntentSource) (intentPlan, error) {
-	plan := intentPlan{write: writeNothing, generation: rec.Generation}
-	sameObject := rec.Source != nil && rec.Source.UID == src.UID
-	olderGeneration := sameObject && src.Generation < rec.Source.Generation
+	epoch := classifyIntentEpoch(rec.Source, src)
+	if err := rejectStaleSource(canonicalName, rec, changed, src, epoch); err != nil {
+		return intentPlan{}, err
+	}
+	plan := intentPlan{write: writeNothing, generation: rec.Generation, epochChange: epoch == epochNewer, previousSource: rec.Source}
 	switch {
-	case olderGeneration && changed:
-		return intentPlan{}, status.Errorf(codes.FailedPrecondition, StaleIntentMessagePrefix+" component %q was adopted from generation %d of source %q, newer than the generation %d of the changed intent", canonicalName, rec.Source.Generation, src.UID, src.Generation)
-	case olderGeneration:
+	case epoch == epochSame && src.Generation < rec.Source.Generation:
 		// An unchanged replay of an older generation keeps the newer recorded source.
 	case changed:
 		plan.write, plan.generation = writeSpec, rec.Generation+1
-	case !sameObject || !sameIntentSource(*rec.Source, src):
+	case rec.Source == nil || !sameIntentSource(*rec.Source, src):
 		plan.write = writeSourceOnly
 	}
 	return plan, nil
+}
+
+// rejectStaleSource returns a FailedPrecondition error starting with StaleIntentMessagePrefix for
+// an intent from an older object than the recorded source, or for a changed intent from an older
+// generation of the same object, and nil otherwise.
+func rejectStaleSource(canonicalName string, rec *ComponentRecord, changed bool, src IntentSource, epoch intentEpoch) error {
+	switch {
+	case epoch == epochOlder:
+		return status.Errorf(codes.FailedPrecondition, StaleIntentMessagePrefix+" component %q was adopted from source %q created at %s, newer than source %q created at %s", canonicalName, rec.Source.UID, rec.Source.CreateTime.Format(time.RFC3339Nano), src.UID, src.CreateTime.Format(time.RFC3339Nano))
+	case epoch == epochSame && changed && src.Generation < rec.Source.Generation:
+		return status.Errorf(codes.FailedPrecondition, StaleIntentMessagePrefix+" component %q was adopted from generation %d of source %q, newer than the generation %d of the changed intent", canonicalName, rec.Source.Generation, src.UID, src.Generation)
+	}
+	return nil
+}
+
+// logIntentEpochChange logs, after a committed write, that a sourced intent adopted a newer object
+// (or a record without a source) for the component canonicalName.
+func logIntentEpochChange(ctx context.Context, canonicalName string, plan intentPlan, src *IntentSource) {
+	if !plan.epochChange || src == nil {
+		return
+	}
+	var prevUID, prevCreateTime string
+	if prev := plan.previousSource; prev != nil {
+		prevUID, prevCreateTime = prev.UID, prev.CreateTime.Format(time.RFC3339Nano)
+	}
+	logging.Info(ctx, "Component intent source epoch changed", "name", canonicalName, "previousUid", prevUID, "previousCreateTime", prevCreateTime, "uid", src.UID, "createTime", src.CreateTime.Format(time.RFC3339Nano), "generation", plan.generation)
+}
+
+// intentEpoch orders the source of an intent against the recorded source of a component.
+type intentEpoch int
+
+const (
+	// epochSame means both come from the same object.
+	epochSame intentEpoch = iota
+	// epochNewer means the intent comes from a newer object, or no source is recorded.
+	epochNewer
+	// epochOlder means the intent comes from an older object.
+	epochOlder
+)
+
+// classifyIntentEpoch orders src against the recorded source, which is nil for records never
+// written by a sourced intent. Objects are ordered by creation time; Kubernetes creation times
+// have one-second granularity, so equal times are ordered by UID to keep the outcome deterministic
+// and the same on every replica.
+func classifyIntentEpoch(recorded *IntentSource, src IntentSource) intentEpoch {
+	switch {
+	case recorded == nil:
+		return epochNewer
+	case recorded.UID == src.UID:
+		return epochSame
+	case src.CreateTime.After(recorded.CreateTime):
+		return epochNewer
+	case src.CreateTime.Before(recorded.CreateTime):
+		return epochOlder
+	case src.UID > recorded.UID:
+		return epochNewer
+	default:
+		return epochOlder
+	}
 }
 
 // sameIntentSource reports whether a and b identify the same object at the same generation.
