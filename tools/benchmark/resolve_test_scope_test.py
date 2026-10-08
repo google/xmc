@@ -1130,13 +1130,19 @@ class TestRdepsQuery(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             (Path(tmpdir) / "BUILD.bazel").touch()
             unpackaged, unpackaged_warnings = self._discover(["root_data.yaml"], cwd=Path(tmpdir))
+            outside_code, outside_warnings = self._discover(["../outside.go"], cwd=Path(tmpdir))
         ui_only, ui_only_warnings = self._discover(["cmd/ui/src/styles.css"])
         mock_run.assert_not_called()
-        self.assertEqual((unpackaged, ui_only), ([], []))
+        self.assertEqual((unpackaged, outside_code, ui_only), ([], [], []))
         self.assertIn(
             "::warning::Running the full backend suite: root_data.yaml is not inside a Bazel "
             "package",
             unpackaged_warnings,
+        )
+        self.assertIn(
+            "::warning::Running the full backend suite: ../outside.go is not inside a Bazel "
+            "package",
+            outside_warnings,
         )
         self.assertIn(
             "::warning::Running the full backend suite: no modified file maps to a Bazel package",
