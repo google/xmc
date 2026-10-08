@@ -76,6 +76,9 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 		if isUnchangedIntent(rec, spec, labels, deps, desiredGen) {
 			return cloneRecord(rec), nil
 		}
+		if err := rejectStaleIntent(canonicalName, rec, desiredGen); err != nil {
+			return nil, err
+		}
 		updateExistingIntent(rec, spec, labels, deps, desiredGen, now)
 		m.recordSnapshotLocked(rec)
 		return cloneRecord(rec), nil

@@ -290,6 +290,9 @@ func (s *SpannerStore) applyIntentTx(
 	if isUnchangedIntent(existingRec, spec, labels, deps, desiredGen) {
 		return existingRec, true, nil
 	}
+	if err := rejectStaleIntent(canonicalName, existingRec, desiredGen); err != nil {
+		return nil, false, err
+	}
 	rec, err = s.updateExistingIntentTx(txn, existingRec, canonicalName, spec, labels, deps, desiredGen, depIDs)
 	return rec, false, err
 }

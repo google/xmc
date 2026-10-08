@@ -17,7 +17,13 @@ package store_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -75,6 +81,9 @@ func TestSetComponentIntent_Idempotency(t *testing.T) {
 		desiredGen int64
 		wantGen    int64
 		wantNoop   bool
+		// wantStale expects a FailedPrecondition starting with store.StaleIntentMessagePrefix and an
+		// untouched record.
+		wantStale bool
 	}{
 		{name: "same generation and spec is a no-op", seedGen: 3, seedState: enabled, spec: intentSpec("v1.0.0"), labels: baseLabels, desiredGen: 3, wantGen: 3, wantNoop: true},
 		{name: "unspecified generation and equal spec is a no-op", seedGen: 3, seedState: enabled, spec: intentSpec("v1.0.0"), labels: baseLabels, desiredGen: 0, wantGen: 3, wantNoop: true},
@@ -82,7 +91,9 @@ func TestSetComponentIntent_Idempotency(t *testing.T) {
 		{name: "equal dependencies are a no-op", seedGen: 3, seedDeps: []string{idempotencyDependency}, seedState: enabled, spec: intentSpec("v1.0.0", idempotencyDependency), labels: baseLabels, desiredGen: 3, wantGen: 3, wantNoop: true},
 		{name: "disabled component stays disabled", seedGen: 3, seedState: disabled, spec: intentSpec("v1.0.0"), labels: baseLabels, desiredGen: 3, wantGen: 3, wantNoop: true},
 		{name: "newer generation and equal spec bumps to desired generation", seedGen: 3, seedState: enabled, spec: intentSpec("v1.0.0"), labels: baseLabels, desiredGen: 4, wantGen: 4},
-		{name: "changed spec and lower generation bumps by one", seedGen: 5000, seedState: enabled, spec: intentSpec("v1.1.0"), labels: baseLabels, desiredGen: 3, wantGen: 5001},
+		{name: "changed spec and lower generation is rejected as stale", seedGen: 5000, seedState: enabled, spec: intentSpec("v1.1.0"), labels: baseLabels, desiredGen: 3, wantStale: true},
+		{name: "changed labels and lower generation are rejected as stale", seedGen: 3, seedState: enabled, spec: intentSpec("v1.0.0"), labels: map[string]string{"tier": "frontend"}, desiredGen: 2, wantStale: true},
+		{name: "changed spec and unspecified generation bumps by one", seedGen: 3, seedState: enabled, spec: intentSpec("v1.1.0"), labels: baseLabels, desiredGen: 0, wantGen: 4},
 		{name: "changed spec and same generation bumps by one", seedGen: 3, seedState: enabled, spec: intentSpec("v1.1.0"), labels: baseLabels, desiredGen: 3, wantGen: 4},
 		{name: "changed labels bump by one", seedGen: 3, seedState: enabled, spec: intentSpec("v1.0.0"), labels: map[string]string{"tier": "frontend"}, desiredGen: 3, wantGen: 4},
 		{name: "added dependency bumps by one", seedGen: 3, seedState: enabled, spec: intentSpec("v1.0.0", idempotencyDependency), labels: baseLabels, desiredGen: 3, wantGen: 4},
@@ -103,6 +114,10 @@ func TestSetComponentIntent_Idempotency(t *testing.T) {
 					before := seedIntentComponent(ctx, t, s, name, intentSpec("v1.0.0", tt.seedDeps...), tt.seedGen, baseLabels, tt.seedState)
 
 					got, err := s.SetComponentIntent(ctx, name, tt.spec, tt.labels, tt.desiredGen)
+					if tt.wantStale {
+						assertStaleIntentRejected(ctx, t, s, name, err, before)
+						return
+					}
 					if err != nil {
 						t.Fatalf("SetComponentIntent() error = %v", err)
 					}
@@ -161,4 +176,20 @@ func seedIntentComponent(ctx context.Context, t *testing.T, s store.Store, name 
 		t.Fatalf("seed state of %s = %v, want %v", name, rec.State, state)
 	}
 	return rec
+}
+
+// assertStaleIntentRejected checks that err is the store's stale-intent FailedPrecondition and that
+// the stored record of name still equals before.
+func assertStaleIntentRejected(ctx context.Context, t *testing.T, s store.Store, name string, err error, before *store.ComponentRecord) {
+	t.Helper()
+	if status.Code(err) != codes.FailedPrecondition || !strings.HasPrefix(status.Convert(err).Message(), store.StaleIntentMessagePrefix) {
+		t.Fatalf("SetComponentIntent() error = %v, want FailedPrecondition starting with %q", err, store.StaleIntentMessagePrefix)
+	}
+	stored, err := s.GetComponent(ctx, name)
+	if err != nil {
+		t.Fatalf("GetComponent(%s) error = %v", name, err)
+	}
+	if diff := cmp.Diff(before, stored, protocmp.Transform()); diff != "" {
+		t.Errorf("stale intent changed the stored record (-before +stored):\n%s", diff)
+	}
 }

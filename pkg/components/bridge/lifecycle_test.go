@@ -221,6 +221,7 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 	blockedErr := status.Error(codes.FailedPrecondition, "component redpanda has active dependents: [ingestion-gateway]")
 	blockedMsg := `Cannot disable "redpanda": component redpanda has active dependents: [ingestion-gateway]`
 	notRegisteredErr := status.Error(codes.FailedPrecondition, store.DependencyNotFoundMessagePrefix+` component "redpanda" depends on "zookeeper", which is not registered`)
+	staleMsg := store.StaleIntentMessagePrefix + ` component "redpanda" has generation 7, newer than the desired generation 2 of the changed intent`
 	blockedAt := func(gen int64, age time.Duration) []Condition {
 		return append(slices.Clone(wasReady), Condition{
 			Type: ConditionTypeDeactivationBlocked, Status: ConditionStatusTrue, ObservedGeneration: gen,
@@ -357,6 +358,13 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 			name: "other intent failure still fails deactivation",
 			cms:  &mockCMS{setErr: status.Error(codes.Unavailable, "cms down")}, helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
 			want:    failed("IntentApplicationFailed", gateOutcome{}),
+			wantErr: true,
+		},
+		{
+			name: "stale intent stops deactivation with StaleIntent",
+			cms:  &mockCMS{setErr: status.Error(codes.FailedPrecondition, staleMsg)}, helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
+			want:    failed(ReasonStaleIntent, gateOutcome{}),
+			wantMsg: staleMsg,
 			wantErr: true,
 		},
 	}

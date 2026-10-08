@@ -16,7 +16,11 @@ package store
 
 import (
 	"context"
+	"strings"
 	"testing"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -77,6 +81,36 @@ func TestSpecWithoutGeneration(t *testing.T) {
 	}
 	if withGen.GetGeneration() != 3 {
 		t.Errorf("specWithoutGeneration mutated its input generation to %d, want 3", withGen.GetGeneration())
+	}
+}
+
+func TestRejectStaleIntent(t *testing.T) {
+	rec := &ComponentRecord{Generation: 5}
+	tests := []struct {
+		name       string
+		desiredGen int64
+		wantStale  bool
+	}{
+		{name: "unspecified generation is accepted", desiredGen: 0},
+		{name: "negative generation is treated as unspecified", desiredGen: -1},
+		{name: "older generation is rejected", desiredGen: 4, wantStale: true},
+		{name: "oldest generation is rejected", desiredGen: 1, wantStale: true},
+		{name: "same generation is accepted", desiredGen: 5},
+		{name: "newer generation is accepted", desiredGen: 6},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := rejectStaleIntent("redpanda", rec, tt.desiredGen)
+			if !tt.wantStale {
+				if err != nil {
+					t.Errorf("rejectStaleIntent(desiredGen %d) error = %v, want nil", tt.desiredGen, err)
+				}
+				return
+			}
+			if status.Code(err) != codes.FailedPrecondition || !strings.HasPrefix(status.Convert(err).Message(), StaleIntentMessagePrefix) {
+				t.Errorf("rejectStaleIntent(desiredGen %d) error = %v, want FailedPrecondition starting with %q", tt.desiredGen, err, StaleIntentMessagePrefix)
+			}
+		})
 	}
 }
 

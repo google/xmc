@@ -36,8 +36,15 @@ const (
 	ReasonDependenciesNotReady = "DependenciesNotReady"
 	// ReasonDependencyCycle marks an enabled component that is part of a spec.dependencies cycle.
 	ReasonDependencyCycle = "DependencyCycle"
+	// ReasonStaleIntent marks a component whose intent CMS rejected as stale: it comes from an
+	// older custom resource generation or an older incarnation of the custom resource.
+	ReasonStaleIntent = "StaleIntent"
+	// reasonIntentApplicationFailed marks any other rejected or failed intent write.
+	reasonIntentApplicationFailed = "IntentApplicationFailed"
 	// dependencyNotFoundMessagePrefix mirrors store.DependencyNotFoundMessagePrefix (pinned by a test).
 	dependencyNotFoundMessagePrefix = "dependency not found:"
+	// staleIntentMessagePrefix mirrors store.StaleIntentMessagePrefix (pinned by a test).
+	staleIntentMessagePrefix = "stale intent:"
 )
 
 // AccessStatus encapsulates network and access metadata (such as environment variables) for a component.
@@ -188,7 +195,7 @@ func preserveDependenciesReady(res *ReconcileResult, existing []Condition) {
 func (r *Reconciler) registerIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (string, error) {
 	waitMsg := unreadyDependenciesMessage(ctx, in)
 	err := r.applyIntent(ctx, in, canonicalName, res)
-	notRegistered := dependencyNotRegisteredMessage(err)
+	notRegistered := storeRejectionMessage(err, dependencyNotFoundMessagePrefix)
 	if notRegistered == "" {
 		return waitMsg, err
 	}
@@ -198,9 +205,9 @@ func (r *Reconciler) registerIntent(ctx context.Context, in ReconcileComponentIn
 	return waitMsg, nil
 }
 
-// dependencyNotRegisteredMessage returns the CMS status message if err (possibly wrapped) is the
-// store's FailedPrecondition for an unregistered dependency, or "" otherwise.
-func dependencyNotRegisteredMessage(err error) string {
+// storeRejectionMessage returns the CMS status message if err (possibly wrapped) is a store
+// FailedPrecondition whose message starts with prefix, or "" otherwise.
+func storeRejectionMessage(err error, prefix string) string {
 	// Not status.FromError: for wrapped errors it replaces the message with the full err.Error(),
 	// which would defeat the prefix match below.
 	var se interface{ GRPCStatus() *status.Status }
@@ -208,7 +215,7 @@ func dependencyNotRegisteredMessage(err error) string {
 		return ""
 	}
 	st := se.GRPCStatus()
-	if st.Code() != codes.FailedPrecondition || !strings.HasPrefix(st.Message(), dependencyNotFoundMessagePrefix) {
+	if st.Code() != codes.FailedPrecondition || !strings.HasPrefix(st.Message(), prefix) {
 		return ""
 	}
 	return st.Message()
@@ -243,11 +250,19 @@ func resolveComponentRef(in ReconcileComponentInput) ComponentRef {
 	return ref
 }
 
+// applyIntent writes the intent to CMS. On failure it reports Ready=False, Degraded=True with
+// reason StaleIntent when CMS rejected a changed intent as older than its record (operator action
+// is needed, see the components README), or IntentApplicationFailed otherwise, and returns the
+// error so the pass is retried with backoff. A failed write records nothing in CMS.
 func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
 	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec})
 	if err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "IntentApplicationFailed", err.Error())
+		reason, msg := reasonIntentApplicationFailed, err.Error()
+		if stale := storeRejectionMessage(err, staleIntentMessagePrefix); stale != "" {
+			reason, msg = ReasonStaleIntent, stale
+		}
+		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, reason, msg)
 		return fmt.Errorf("failed to apply component intent to CMS: %w", err)
 	}
 	if setResp != nil && setResp.GetComponent() != nil && setResp.GetComponent().GetStatus() != nil {

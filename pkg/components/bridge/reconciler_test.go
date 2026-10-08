@@ -1255,6 +1255,7 @@ func TestReconcileComponent_DependencyActivationGating(t *testing.T) {
 	spec3P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, Dependencies: []string{"redpanda"}}
 	snapshot := func(items ...unstructured.Unstructured) DependencyReadiness { return NewDependencySnapshot(items) }
 	notRegisteredErr := status.Error(codes.FailedPrecondition, store.DependencyNotFoundMessagePrefix+` component "ingestion" depends on "redpanda", which is not registered`)
+	staleErr := status.Error(codes.FailedPrecondition, store.StaleIntentMessagePrefix+` component "ingestion" has generation 7, newer than the desired generation 2 of the changed intent`)
 	// Intent is registered with CMS even while activation is gated.
 	gated := gateOutcome{
 		State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
@@ -1372,6 +1373,17 @@ func TestReconcileComponent_DependencyActivationGating(t *testing.T) {
 				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 				ReadyStatus: ConditionStatusFalse, ReadyReason: "IntentApplicationFailed", DegradedStatus: ConditionStatusTrue, SetCalls: 1,
 			},
+			wantErr: true,
+		},
+		{
+			name: "stale intent is reported as StaleIntent without actuation",
+			cms:  &mockCMS{setErr: staleErr},
+			spec: spec1P("redpanda"), deps: snapshot(readyComponent("redpanda", nil)),
+			want: gateOutcome{
+				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+				ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonStaleIntent, DegradedStatus: ConditionStatusTrue, SetCalls: 1,
+			},
+			wantMsg: status.Convert(staleErr).Message(),
 			wantErr: true,
 		},
 		{
@@ -1494,28 +1506,57 @@ func TestReconcileComponent_DependencyBlipHoldsUpgrade(t *testing.T) {
 	}
 }
 
-func TestDependencyNotRegisteredMessage(t *testing.T) {
+func TestStoreRejectionMessage(t *testing.T) {
 	if dependencyNotFoundMessagePrefix != store.DependencyNotFoundMessagePrefix {
 		t.Fatalf("dependencyNotFoundMessagePrefix = %q, want store.DependencyNotFoundMessagePrefix %q", dependencyNotFoundMessagePrefix, store.DependencyNotFoundMessagePrefix)
 	}
+	if staleIntentMessagePrefix != store.StaleIntentMessagePrefix {
+		t.Fatalf("staleIntentMessagePrefix = %q, want store.StaleIntentMessagePrefix %q", staleIntentMessagePrefix, store.StaleIntentMessagePrefix)
+	}
 	const msg = store.DependencyNotFoundMessagePrefix + ` component "a" depends on "b", which is not registered`
+	const staleMsg = store.StaleIntentMessagePrefix + ` component "a" has generation 5, newer than the desired generation 3 of the changed intent`
 	notRegistered := status.Error(codes.FailedPrecondition, msg)
 	tests := []struct {
-		name string
-		err  error
-		want string
+		name   string
+		err    error
+		prefix string
+		want   string
 	}{
-		{name: "nil", err: nil, want: ""},
-		{name: "unregistered dependency", err: notRegistered, want: msg},
-		{name: "wrapped unregistered dependency", err: fmt.Errorf("failed to apply component intent to CMS: %w", notRegistered), want: msg},
-		{name: "other FailedPrecondition", err: status.Error(codes.FailedPrecondition, "dependency cycle detected: a -> b -> a"), want: ""},
-		{name: "other code with the prefix", err: status.Error(codes.Unavailable, msg), want: ""},
-		{name: "non-status error", err: errors.New(msg), want: ""},
+		{name: "nil", err: nil, prefix: dependencyNotFoundMessagePrefix, want: ""},
+		{name: "unregistered dependency", err: notRegistered, prefix: dependencyNotFoundMessagePrefix, want: msg},
+		{name: "wrapped unregistered dependency", err: fmt.Errorf("failed to apply component intent to CMS: %w", notRegistered), prefix: dependencyNotFoundMessagePrefix, want: msg},
+		{name: "stale intent", err: status.Error(codes.FailedPrecondition, staleMsg), prefix: staleIntentMessagePrefix, want: staleMsg},
+		{name: "stale intent does not match the dependency prefix", err: status.Error(codes.FailedPrecondition, staleMsg), prefix: dependencyNotFoundMessagePrefix, want: ""},
+		{name: "other FailedPrecondition", err: status.Error(codes.FailedPrecondition, "dependency cycle detected: a -> b -> a"), prefix: dependencyNotFoundMessagePrefix, want: ""},
+		{name: "other code with the prefix", err: status.Error(codes.Unavailable, msg), prefix: dependencyNotFoundMessagePrefix, want: ""},
+		{name: "non-status error", err: errors.New(msg), prefix: dependencyNotFoundMessagePrefix, want: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := dependencyNotRegisteredMessage(tt.err); got != tt.want {
-				t.Errorf("dependencyNotRegisteredMessage() = %q, want %q", got, tt.want)
+			if got := storeRejectionMessage(tt.err, tt.prefix); got != tt.want {
+				t.Errorf("storeRejectionMessage(%v, %q) = %q, want %q", tt.err, tt.prefix, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestReconcileComponent_StaleIntentWritesNothingToCMS checks that a stale-intent rejection neither
+// records an observed generation in CMS nor proceeds to deactivation, on both lifecycle paths.
+func TestReconcileComponent_StaleIntentWritesNothingToCMS(t *testing.T) {
+	staleErr := status.Error(codes.FailedPrecondition, store.StaleIntentMessagePrefix+` component "redpanda" has generation 7, newer than the desired generation 2 of the changed intent`)
+	for _, enabled := range []bool{true, false} {
+		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
+			cms := &mockCMS{setErr: staleErr}
+			r, _ := NewReconciler(cms, nil, &mockHelm{})
+			_, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
+				Namespace: "xmc", Name: "redpanda", Generation: 2, HasFinalizer: true, Enabled: enabled,
+				Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+			})
+			if err == nil {
+				t.Fatal("ReconcileComponent() error = nil, want the stale-intent error")
+			}
+			if cms.lastObsReq != nil || cms.prepareCalls != 0 {
+				t.Errorf("ReconcileComponent() wrote to CMS after a stale intent: observed request %v, PrepareDeactivation calls %d", cms.lastObsReq, cms.prepareCalls)
 			}
 		})
 	}

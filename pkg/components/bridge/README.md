@@ -26,7 +26,8 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
    - If unprotected, prune child workloads, execute CMS deletion, and remove the `finalizers.xmc.dev/deletion-protection` finalizer.
 2. **Intent Registration** (enabled components):
    - Propagate desired spec (including `spec.dependencies`) to CMS via `SetComponentIntent` on every pass, with the CR generation as `ComponentSpec.generation`. CMS treats an unchanged intent as a no-op and moves a changed one to `COMPONENT_STATE_PENDING_RECONCILIATION` (see "Idempotent intent" in [../README.md](../README.md)). Registration happens **before** and independently of the activation gate, so CMS knows the dependency edges that make deactivation of a dependency unsafe even while the dependent is still waiting.
-   - A `FailedPrecondition` whose message starts with `store.DependencyNotFoundMessagePrefix` (either store: a dependency is not registered yet) is treated as "waiting on dependencies", not as an error; the intent is retried on the next pass. Any other intent failure reports `IntentApplicationFailed`.
+   - A `FailedPrecondition` whose message starts with `store.DependencyNotFoundMessagePrefix` (either store: a dependency is not registered yet) is treated as "waiting on dependencies", not as an error; the intent is retried on the next pass.
+   - A `FailedPrecondition` whose message starts with `store.StaleIntentMessagePrefix` (the CR changed but its generation is older than the CMS record's, see "Stale intents" in [../README.md](../README.md)) reports `Ready=False`/`Degraded=True` reason `StaleIntent` with the CMS message, writes nothing to CMS, and returns an error so the pass is retried with backoff. On the disabled path it also stops deactivation, so an outdated CR cannot disable the component. Any other intent failure reports `IntentApplicationFailed`.
 3. **Dependency Activation Gate** (`spec.enabled: true` with `spec.dependencies`, all component types):
    - `cmd/xmc_bridge` builds a `DependencySnapshot` (`dependency_readiness.go`) once per reconcile pass from the listed Component CRs and passes it to `ReconcileWithDependencies`. A dependency is ready only if its CR exists, has `spec.enabled: true`, is not being deleted, reports `Ready=True` with `observedGeneration == metadata.generation`, and is not `Degraded=True`.
    - A component on a multi-node `spec.dependencies` cycle (self-references are dropped) reports `Ready=False`/`Degraded=True` reason `DependencyCycle` with the cycle path (e.g. `dependency cycle detected: ingestion -> redpanda -> ingestion`); intent is not sent.
@@ -68,6 +69,7 @@ Gating reasons (set on `Ready=False`, state `COMPONENT_STATE_PENDING_RECONCILIAT
 | `HelmUpgradePending` | `False` | An actuated 1P component's Helm upgrade to the current generation is held until its dependencies are ready; the previous release keeps running. |
 | `DeactivationBlocked` | `False` | CMS `PrepareDeactivation` rejected disabling the component because it has active dependents. |
 | `DeactivationIncomplete` | `True` | The workload was deleted but the CMS deactivation handshake has not completed; retried every pass. |
+| `StaleIntent` | `True` | CMS rejected a changed intent because its CMS generation is newer than the CR generation (for example a legacy inflated record); nothing is written to CMS and the pass is retried with backoff until the generations are realigned. |
 
 ---
 
