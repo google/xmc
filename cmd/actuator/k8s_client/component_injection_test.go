@@ -301,6 +301,68 @@ func TestConstructJobSet_ComponentSnapshot_ZeroOrNegativeLockedGen(t *testing.T)
 	}
 }
 
+func TestConstructJobSet_ComponentSnapshot_IncarnationDrift(t *testing.T) {
+	const otherID = "7300000000000000001"
+	tests := []struct {
+		name         string
+		statusID     string
+		snapshotJSON string
+		wantWarning  string
+	}{
+		{
+			name:         "ids_differ",
+			statusID:     otherID,
+			snapshotJSON: `{"comp": {"generation": 1, "componentId": "6200370836252645701"}}`,
+			wantWarning:  `component "comp" incarnation mismatch: component ID 7300000000000000001, locked 6200370836252645701`,
+		},
+		{
+			name:         "ids_differ_and_generation_differs",
+			statusID:     otherID,
+			snapshotJSON: `{"comp": {"generation": 2, "componentId": "6200370836252645701"}}`,
+			wantWarning: `component "comp" incarnation mismatch: component ID 7300000000000000001, locked 6200370836252645701; ` +
+				`component "comp" generation mismatch: component generation 1, locked 2`,
+		},
+		{
+			name:         "ids_match",
+			statusID:     testComponentID,
+			snapshotJSON: `{"comp": {"generation": 1, "componentId": "6200370836252645701"}}`,
+		},
+		{
+			name:         "locked_id_absent_falls_back_to_generation",
+			statusID:     otherID,
+			snapshotJSON: `{"comp": {"generation": 2}}`,
+			wantWarning:  `component "comp" generation mismatch: component generation 1, locked 2`,
+		},
+		{
+			name:         "status_id_absent_falls_back_to_generation",
+			snapshotJSON: `{"comp": {"generation": 1, "componentId": "6200370836252645701"}}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, client := setupComponentTestClient()
+			targetNS := constants.XmcLabelValue
+			comp := createTestComponentCR("comp", targetNS, 1, true, "COMPONENT_STATE_ENABLED",
+				[]map[string]any{{"type": "Ready", "status": "True"}}, nil)
+			if tt.statusID != "" {
+				if err := unstructured.SetNestedField(comp.Object, tt.statusID, "status", "componentId"); err != nil {
+					t.Fatalf("SetNestedField(status.componentId) failed: %v", err)
+				}
+			}
+			client.SetManagerClient(createFakeManagerClient(comp))
+
+			workUnit := createWorkUnitWithSnapshots(targetNS, tt.snapshotJSON)
+			jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet failed: %v", err)
+			}
+			if got := jobSet.Annotations[constants.ComponentDriftWarningAnnotation]; got != tt.wantWarning {
+				t.Errorf("drift warning = %q, want %q", got, tt.wantWarning)
+			}
+		})
+	}
+}
+
 func TestConstructJobSet_ComponentSnapshot_MalformedAnnotationJSON(t *testing.T) {
 	ctx, client := setupComponentTestClient()
 	targetNS := constants.XmcLabelValue
@@ -325,8 +387,8 @@ func TestParseComponentSnapshotsAnnotation_Fallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseComponentSnapshotsAnnotation failed: %v", err)
 	}
-	if snapshots["fallback-comp"] != 1 {
-		t.Errorf("expected fallback-comp locked generation 1, got %v", snapshots["fallback-comp"])
+	if got := snapshots["fallback-comp"].Generation; got != 1 {
+		t.Errorf("expected fallback-comp locked generation 1, got %v", got)
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,6 +65,11 @@ type ReconcileResult struct {
 	// committed. CMS orders intents by the custom resource epoch, so it is independent of
 	// ObservedGeneration. 0 means unknown.
 	ComponentGeneration int64
+	// ComponentID is the CMS ComponentId of the record, in decimal, as returned by this pass's
+	// intent or carried over from ReconcileComponentInput.ComponentID when no intent was
+	// committed. It stays the same when a recreated custom resource adopts the record. "" means
+	// unknown.
+	ComponentID string
 	// State is the resulting lifecycle state in CMS.
 	State componentspb.ComponentState
 	// Conditions is the updated list of Kubernetes status conditions.
@@ -110,6 +116,9 @@ type ReconcileComponentInput struct {
 	// ComponentGeneration is the CMS component generation last reported in
 	// status.componentGeneration, or 0 if none was reported.
 	ComponentGeneration int64
+	// ComponentID is the CMS ComponentId last reported in status.componentId, or "" if none was
+	// reported.
+	ComponentID string
 	// Spec is the parsed protobuf ComponentSpec.
 	Spec *componentspb.ComponentSpec
 	// IsDeleting indicates whether the custom resource has a non-nil deletionTimestamp.
@@ -146,7 +155,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	in.Spec.Generation = in.Generation
 	canonicalName := naming.CanonicalComponentName(in.Name)
 	in.Spec.Dependencies = dropSelfDependency(ctx, in.Spec.GetDependencies(), canonicalName)
-	res := &ReconcileResult{ObservedGeneration: in.Generation, ComponentGeneration: in.ComponentGeneration, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
+	res := &ReconcileResult{ObservedGeneration: in.Generation, ComponentGeneration: in.ComponentGeneration, ComponentID: in.ComponentID, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
 
 	if in.IsDeleting {
 		return r.reconcileDeletion(ctx, in, canonicalName, res)
@@ -265,11 +274,11 @@ func resolveComponentRef(in ReconcileComponentInput) ComponentRef {
 }
 
 // applyIntent writes the intent to CMS, with the custom resource as its source, and records the
-// committed CMS generation in res.ComponentGeneration. On failure it reports Ready=False,
-// Degraded=True with reason StaleIntent when CMS rejected the intent as coming from an older
-// generation or an older object than its record (see the components README), or
-// IntentApplicationFailed otherwise, and returns the error so the pass is retried with backoff. A
-// failed write records nothing in CMS.
+// committed CMS generation and the ComponentId in res.ComponentGeneration and res.ComponentID. On
+// failure it reports Ready=False, Degraded=True with reason StaleIntent when CMS rejected the
+// intent as coming from an older generation or an older object than its record (see the
+// components README), or IntentApplicationFailed otherwise, and returns the error so the pass is
+// retried with backoff. A failed write records nothing in CMS.
 func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
 	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec, Source: intentSource(in)})
 	if err != nil {
@@ -287,20 +296,25 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	if gen := setResp.GetComponent().GetSpec().GetGeneration(); gen > 0 {
 		res.ComponentGeneration = gen
 	}
+	if id := setResp.GetComponent().GetComponentId(); id > 0 {
+		res.ComponentID = strconv.FormatInt(id, 10)
+	}
 	logIntentApplied(ctx, in, canonicalName, res)
 	return nil
 }
 
-// logIntentApplied logs an applied intent at Info when it committed a CMS generation other than
-// the one in status.componentGeneration, or when the custom resource reports none yet (a new or
-// recreated custom resource adopting a record), and at Debug for the idempotent re-apply that every
-// pass performs.
+// logIntentApplied logs an applied intent at Info when it committed a CMS generation or ComponentId
+// other than the one in status.componentGeneration or status.componentId, or when the custom
+// resource reports no generation yet (a new or recreated custom resource adopting a record), and at
+// Debug for the idempotent re-apply that every pass performs.
 func logIntentApplied(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) {
 	logAt := logging.Debug
-	if in.ComponentGeneration == 0 || res.ComponentGeneration != in.ComponentGeneration {
+	if in.ComponentGeneration == 0 || res.ComponentGeneration != in.ComponentGeneration || res.ComponentID != in.ComponentID {
 		logAt = logging.Info
 	}
-	logAt(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "previousComponentGeneration", in.ComponentGeneration, "componentGeneration", res.ComponentGeneration, "state", res.State.String())
+	logAt(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation,
+		"previousComponentGeneration", in.ComponentGeneration, "componentGeneration", res.ComponentGeneration,
+		"previousComponentId", in.ComponentID, "componentId", res.ComponentID, "state", res.State.String())
 }
 
 // intentSource returns the custom resource identity sent with intents, or nil when the input has
@@ -516,6 +530,7 @@ func (r *Reconciler) ReconcileWithDependencies(ctx context.Context, obj *unstruc
 		UID:                 string(obj.GetUID()),
 		CreationTimestamp:   obj.GetCreationTimestamp().Time,
 		ComponentGeneration: ParseComponentGeneration(obj.Object["status"]),
+		ComponentID:         ParseComponentID(obj.Object["status"]),
 		Spec:                spec,
 		IsDeleting:          obj.GetDeletionTimestamp() != nil,
 		HasFinalizer:        hasFinalizer,

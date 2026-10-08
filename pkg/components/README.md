@@ -275,8 +275,8 @@ To alert users when active experiments run against stale or deleted component co
 
 WorkUnits consume components at runtime through the Actuator daemon without querying Cloud Spanner directly during JobSet synthesis:
 
-1. **Snapshot Pinning**: During WorkUnit creation, the Experiment State Server locks component generations into the `xmc.dev/component-snapshots` annotation on the JobSet executable.
+1. **Snapshot Pinning**: The client that submits a WorkUnit locks component generations into the `xmc.dev/component-snapshots` annotation on the JobSet executable. An entry is a bare generation or `{"generation": N, "componentId": "<id>"}`, which also locks the incarnation (`componentId` as a decimal string). No component in this repository writes the annotation yet; see the [Actuator README](../../cmd/actuator/README.md#1-snapshot-discovery).
 2. **Controller-Runtime Lookup**: Actuator reads `Component` custom resources (`xmc.dev/v1alpha1`) via `controller-runtime` (target namespace with cluster-wide `"xmc"` fallback) without querying Cloud Spanner.
 3. **Placement Gating**: Actuator blocks placement and requeues the task if required components are missing (hydration lag), disabled, or unhealthy (`Ready=False`/`Unknown` or `Degraded=True`).
-4. **Drift Warning**: If a component's generation drifts past the snapshot lock, Actuator allows placement but logs a warning and annotates the JobSet with `xmc.dev/component-drift-warning`.
+4. **Drift Warning**: If a component's generation differs from the snapshot lock, or its `status.componentId` differs from the locked `componentId` (the component was re-registered as a new incarnation), Actuator allows placement but logs a warning and annotates the JobSet with `xmc.dev/component-drift-warning`. The bridge writes the CMS `ComponentId` to `status.componentId` as a decimal string.
 5. **Configuration Injection**: Actuator injects plain environment variables (`status.access.envVars`) into all primary and init containers across all replicated jobs.

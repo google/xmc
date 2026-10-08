@@ -182,6 +182,9 @@ spec:
                   type: integer
                   format: int64
                   description: "CMS component generation that the status describes; independent of metadata.generation because CMS orders intents by Component object epoch."
+                componentId:
+                  type: string
+                  description: "CMS ComponentId of the component record, in decimal (a string because it exceeds the integer precision of JSON tooling). Stays the same when a recreated Component adopts the record."
                 state:
                   type: string
                   description: "Current lifecycle state of the component."
