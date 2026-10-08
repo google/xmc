@@ -262,6 +262,7 @@ Production-grade controller reliability, conflict elimination, and Cloud Spanner
 - **Server-Side Apply (SSA) Status & Finalizer Helpers (`status_applier.go`)**:
   - `ApplyComponentStatusSSA`: Persists status updates via Kubernetes Server-Side Apply (`types.ApplyPatchType`) against the `/status` subresource using `FieldManagerBridge = "xmc-bridge"`.
   - `SyncComponentFinalizers`: Synchronizes `metadata.finalizers` on `Component` CRs via optimistic concurrency update.
+  - `PersistReconcileResult`: Writes a `ReconcileResult` back in a fixed order: finalizers first, then `.status` via SSA (skipped once the finalizer is released, and skipped on a finalizer error so the next pass retries both). `cmd/xmc_bridge` (success and failure paths) and the KinD E2E harness share this function.
   - `BuildStatus` and `BuildStatusMap`: Construct RFC3339-formatted typed and unstructured status payloads. Companion unit tests in `status_applier_test.go`.
   - Atomic field ownership eliminates optimistic concurrency update conflicts with other controllers (e.g. `xmc-syncer`) and prevents stale object overwrites.
 - **Control-Plane `envtest` Integration Suite (`components_admission_test.go`, `reconciler_test.go`)**:
