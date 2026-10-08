@@ -93,7 +93,7 @@ bazel build //api:all_protos_descriptor_set && install -m 0644 \
   bazel-bin/api/all_protos_descriptor_set.pb api/testdata/protos_baseline.binpb
 ```
 
-Refreshing the baseline needs a fresh human approval: the baseline is a protected file for [incremental PR approval](../.github/scripts/README.md), so a pull request that changes it is never auto-reapproved.
+Refreshing the baseline, or changing `api/buf.yaml` or `api/BUILD.bazel`, needs a fresh human approval: these are protected files for [incremental PR approval](../.github/scripts/README.md), so a pull request that changes them is never auto-reapproved.
 
 ---
 

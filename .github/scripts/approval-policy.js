@@ -41,11 +41,14 @@ const PROTECTED_FILE_PATTERNS = [
   /^OWNERS$/i,
   /^\.githooks\//i,
   // Refreshing the protobuf breaking-change baseline accepts breaking API changes.
-  /^api\/testdata\/protos_baseline\.binpb$/i
+  /^api\/testdata\/protos_baseline\.binpb$/i,
+  // The breaking-change check's rules (buf.yaml) and test definition must be protected like the baseline.
+  /^api\/buf\.yaml$/i,
+  /^api\/BUILD(\.bazel)?$/i
 ];
 
 /**
- * Pure function: Checks if a file path is a sensitive CI/security configuration file or the protobuf breaking-change baseline.
+ * Pure function: Checks if a file path is a sensitive CI/security configuration file or part of the protobuf breaking-change check.
  * @param {string} filePath - Path of modified file.
  * @returns {boolean}
  */
@@ -147,7 +150,7 @@ function evaluateIncrementalApproval({
   if (hasProtectedFileChanges) {
     return {
       shouldReapprove: false,
-      reason: 'PR modifies sensitive CI workflows, scripts, ownership files, or the protobuf breaking-change baseline (.github/, OWNERS, .githooks/, api/testdata/protos_baseline.binpb). Manual human review is required.',
+      reason: 'PR modifies sensitive CI workflows, scripts, ownership files, or the protobuf breaking-change baseline or its configuration (.github/, OWNERS, .githooks/, api/testdata/protos_baseline.binpb, api/buf.yaml, api/BUILD.bazel). Manual human review is required.',
       trigger: 'PROTECTED_FILES_MODIFIED'
     };
   }
