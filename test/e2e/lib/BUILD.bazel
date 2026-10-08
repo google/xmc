@@ -19,6 +19,7 @@ py_library(
     name = "orchestration_lib",
     srcs = [
         "__init__.py",
+        "cancellation.py",
         "command.py",
         "config.py",
         "dev_token.py",
@@ -107,6 +108,12 @@ py_test(
 py_test(
     name = "dex_authenticator_test",
     srcs = ["dex_authenticator_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "cancellation_test",
+    srcs = ["cancellation_test.py"],
     deps = [":orchestration_lib"],
 )
 

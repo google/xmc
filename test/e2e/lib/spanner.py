@@ -26,7 +26,8 @@ import threading
 import time
 from collections.abc import Iterator
 
-from test.e2e.lib.command import run_cmd
+from test.e2e.lib import cancellation
+from test.e2e.lib.command import TEARDOWN_TIMEOUT_SECONDS, run_cmd
 from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.spanner_retry import (
     RetryBudget,
@@ -316,6 +317,7 @@ class SpannerManager:
         Raises:
             subprocess.TimeoutExpired: If the database is not READY in time, which the retry
                 loop treats as transient.
+            HarnessStoppedError: If the harness halts while polling.
         """
         describe_cmd = self._databases_cmd("describe", db_name, "--format=value(state)")
         deadline = time.monotonic() + timeout
@@ -325,7 +327,8 @@ class SpannerManager:
             state = res.stdout.strip() if res.returncode == 0 else "unknown"
             if state == "READY":
                 return
-            time.sleep(min(_READY_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
+            poll_seconds = min(_READY_POLL_SECONDS, max(0.0, deadline - time.monotonic()))
+            cancellation.CONTROLLER.wait(poll_seconds)
         raise subprocess.TimeoutExpired(
             describe_cmd, timeout, stderr=f"Spanner database {db_name} is {state}, not READY."
         )
@@ -409,21 +412,14 @@ class SpannerManager:
                 raise
 
     def _drop_database(self, db_name: str) -> None:
-        """Drops a single Spanner database safely."""
+        """Drops a single Spanner database safely; also runs after a harness stop."""
         try:
             logger.info("Dropping Spanner database %s...", db_name)
             run_cmd(
-                [
-                    "gcloud",
-                    "spanner",
-                    "databases",
-                    "delete",
-                    db_name,
-                    f"--instance={self.cfg.spanner_instance}",
-                    f"--project={self.cfg.project_id}",
-                    "--quiet",
-                ],
+                self._databases_cmd("delete", db_name, "--quiet"),
                 check=False,
+                timeout=TEARDOWN_TIMEOUT_SECONDS,
+                stoppable=False,
             )
         except Exception as e:
             logger.warning("Failed to delete database %s: %s", db_name, e)

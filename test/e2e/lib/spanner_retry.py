@@ -25,6 +25,8 @@ import subprocess
 import time
 from collections.abc import Callable
 
+from test.e2e.lib import cancellation
+
 logger = logging.getLogger("xmc_e2e_runner")
 
 # Characters of a failed command's redacted error output logged for every failed attempt.
@@ -159,6 +161,7 @@ def run_with_transient_retry(
 
     Raises:
         Exception: The unchanged failure of the last attempt, when it is not retried.
+        HarnessStoppedError: If the harness halts while waiting before a retry.
     """
     deadline = time.monotonic() + budget.total_seconds
     internal_retried = False
@@ -173,7 +176,7 @@ def run_with_transient_retry(
             if delay is None:
                 raise
             internal_retried = internal_retried or error_class is ErrorClass.INTERNAL
-            time.sleep(delay)
+            cancellation.CONTROLLER.wait(delay)
 
 
 def _next_delay(

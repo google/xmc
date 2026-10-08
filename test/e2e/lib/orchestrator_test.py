@@ -16,12 +16,19 @@
 
 import signal
 import tempfile
+import threading
+import time
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from test.e2e.lib import cancellation
+from test.e2e.lib.cancellation import HarnessStoppedError
 from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.orchestrator import E2EOrchestrator
 from test.e2e.lib.phases import Phase, PhaseError
+
+# Upper bound for a run whose halted sibling task would otherwise block for a minute.
+_HALT_BOUND_SECONDS = 10
 
 
 class TestE2EOrchestrator(unittest.TestCase):
@@ -39,6 +46,10 @@ class TestE2EOrchestrator(unittest.TestCase):
             temp_dir=self.tmp_dir.name,
         )
         self.orch = E2EOrchestrator(self.cfg)
+        self.controller = cancellation.StopController()
+        patcher = patch.object(cancellation, "CONTROLLER", self.controller)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self):
         self.tmp_dir.cleanup()
@@ -118,6 +129,30 @@ class TestE2EOrchestrator(unittest.TestCase):
         self.orch.kind.teardown.assert_called_once()
         self.orch.spanner.teardown.assert_called_once()
 
+    def test_run_halts_running_sibling_task_when_phase_task_fails(self):
+        self._mock_components()
+        build_started = threading.Event()
+
+        def _build_until_halted():
+            build_started.set()
+            cancellation.CONTROLLER.wait(60)
+
+        def _fail_kind_setup():
+            build_started.wait(_HALT_BOUND_SECONDS)
+            raise RuntimeError("KinD setup failed")
+
+        self.orch.builder.build_all.side_effect = _build_until_halted
+        self.orch.kind.setup.side_effect = _fail_kind_setup
+        start = time.monotonic()
+
+        with self.assertRaises(PhaseError) as ctx:
+            self.orch.run()
+
+        self.assertLess(time.monotonic() - start, _HALT_BOUND_SECONDS)
+        self.assertIs(ctx.exception.phase, Phase.KIND_CREATE)
+        self.assertFalse(self.orch.images_built)
+        self.orch.kind.teardown.assert_called_once()
+
     def test_run_tags_helm_failure_after_images_were_built(self):
         self._mock_components()
         self.orch.helm.deploy.side_effect = RuntimeError("rollout timed out")
@@ -129,21 +164,26 @@ class TestE2EOrchestrator(unittest.TestCase):
         self.assertTrue(self.orch.images_built)
         self.orch.tester.execute.assert_not_called()
 
-    def test_run_tears_down_and_exits_with_signal_exit_code(self):
-        for signum in (signal.SIGINT, signal.SIGTERM):
-            self.addCleanup(signal.signal, signum, signal.getsignal(signum))
+    def test_run_tears_down_and_propagates_harness_stop(self):
         self._mock_components()
-        self.orch.tester.execute.side_effect = lambda: signal.raise_signal(signal.SIGTERM)
+        self.orch.tester.execute.side_effect = HarnessStoppedError()
 
-        with (
-            self.assertLogs("xmc_e2e_runner", level="WARNING"),
-            self.assertRaises(SystemExit) as ctx,
-        ):
+        with self.assertRaises(HarnessStoppedError):
             self.orch.run()
 
-        self.assertEqual(ctx.exception.code, 143)
         self.orch.kind.teardown.assert_called_once()
         self.orch.spanner.teardown.assert_called_once()
+
+    def test_managed_lifecycle_reports_stop_signal_before_teardown(self):
+        self._mock_components()
+        self.controller.request_stop(signal.SIGINT)
+
+        with self.assertLogs("xmc_e2e_runner", level="WARNING") as logs:
+            with self.orch.managed_lifecycle():
+                pass
+
+        self.assertEqual(logs.output, ["WARNING:xmc_e2e_runner:Stopped by signal 2; tearing down."])
+        self.orch.kind.teardown.assert_called_once()
 
 
 if __name__ == "__main__":

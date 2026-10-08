@@ -38,7 +38,7 @@ jobs:
     name: 'KinD & Playwright Headless E2E'
     runs-on: 'arc-runner-set'
     environment: e2e-test
-    timeout-minutes: 60
+    timeout-minutes: 20
 
     permissions:
       contents: read
@@ -152,7 +152,7 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: '/ms-playwright'
         run: |
           mkdir -p "${XMC_SCREENSHOTS_DIR}"
-          python3 test/e2e/runner.py --screenshots-dir "${XMC_SCREENSHOTS_DIR}"
+          exec python3 test/e2e/runner.py --screenshots-dir "${XMC_SCREENSHOTS_DIR}"
 
       - name: 'Upload E2E Screenshots & Diagnostic Logs'
         if: always()

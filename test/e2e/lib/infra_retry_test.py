@@ -12,22 +12,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for the run-level infra retry policy."""
+"""Unit tests for the run-level infra retry policy and the harness time budget."""
 
 import contextlib
 import dataclasses
 import io
+import signal
 import unittest
 from unittest.mock import MagicMock, patch
 
-from test.e2e.lib import infra_retry
+from test.e2e.lib import cancellation, infra_retry
+from test.e2e.lib.cancellation import HarnessStoppedError
+from test.e2e.lib.command import TEARDOWN_TIMEOUT_SECONDS
 from test.e2e.lib.config import E2EConfig
+from test.e2e.lib.infra_retry import HARNESS_DEADLINE_SECONDS, RETRY_START_LIMIT_SECONDS
 from test.e2e.lib.outcome import AttemptResult, Outcome
 from test.e2e.lib.phases import Phase, PhaseError
 
 _PASSED = AttemptResult(outcome=Outcome.PASSED, images_built=True)
 _PRODUCT_FAILURE = AttemptResult.for_failed_phase(Phase.TESTS, images_built=True)
 _INFRA_FAILURE = AttemptResult.for_failed_phase(Phase.SPANNER_SETUP, images_built=True)
+
+# Job timeout of the E2E workflow (timeout-minutes: 20).
+_JOB_TIMEOUT_SECONDS = 20 * 60
+# Smallest acceptable gap between a run stopped at the deadline and the job timeout. It
+# absorbs variance in the steps around the harness: once the job times out, the runner's
+# cancellation grace period of about 10 s is too short to drop the Spanner databases.
+_MIN_JOB_TIMEOUT_MARGIN_SECONDS = 60
+# Longest observed durations of the workflow steps before and after the harness step.
+_STEPS_BEFORE_HARNESS_SECONDS = 131
+_STEPS_AFTER_HARNESS_SECONDS = 36
+# Duration of a healthy attempt, including its teardown, in run 37300625846.
+_HEALTHY_ATTEMPT_SECONDS = 210
+# Teardown runs at most two commands in sequence, each bounded by the teardown timeout:
+# the KinD cluster deletion and the parallel database drops.
+_TEARDOWN_WORST_CASE_SECONDS = 2 * TEARDOWN_TIMEOUT_SECONDS
 
 
 def _make_config(keep_cluster: bool = False) -> E2EConfig:
@@ -43,6 +62,37 @@ def _make_config(keep_cluster: bool = False) -> E2EConfig:
         xid_db="e2e-xid-1000-abcdef",
         temp_dir="/tmp/e2e_test",
     )
+
+
+def _patch_controller(test: unittest.TestCase) -> cancellation.StopController:
+    controller = cancellation.StopController()
+    patcher = patch.object(cancellation, "CONTROLLER", controller)
+    patcher.start()
+    test.addCleanup(patcher.stop)
+    return controller
+
+
+class TestHarnessBudget(unittest.TestCase):
+    """Tests that the retry window and the harness deadline fit the CI job timeout."""
+
+    def test_run_stopped_at_deadline_ends_well_before_job_timeout(self):
+        worst_case = (
+            _STEPS_BEFORE_HARNESS_SECONDS
+            + HARNESS_DEADLINE_SECONDS
+            + _TEARDOWN_WORST_CASE_SECONDS
+            + _STEPS_AFTER_HARNESS_SECONDS
+        )
+
+        self.assertEqual(worst_case, 1107)
+        self.assertGreaterEqual(_JOB_TIMEOUT_SECONDS - worst_case, _MIN_JOB_TIMEOUT_MARGIN_SECONDS)
+
+    def test_healthy_retry_started_within_window_ends_before_deadline(self):
+        latest_retry_end = (
+            RETRY_START_LIMIT_SECONDS + _HEALTHY_ATTEMPT_SECONDS + _TEARDOWN_WORST_CASE_SECONDS
+        )
+
+        self.assertEqual(latest_retry_end, 730)
+        self.assertLessEqual(latest_retry_end, HARNESS_DEADLINE_SECONDS)
 
 
 class TestShouldRetry(unittest.TestCase):
@@ -89,6 +139,9 @@ class TestAttemptConfig(unittest.TestCase):
 class TestRunWithInfraRetry(unittest.TestCase):
     """Tests for the harness retry loop."""
 
+    def setUp(self):
+        self.controller = _patch_controller(self)
+
     def _run(self, cfg: E2EConfig, results: list[AttemptResult]):
         attempt_runner = MagicMock(side_effect=results)
         stdout = io.StringIO()
@@ -125,6 +178,13 @@ class TestRunWithInfraRetry(unittest.TestCase):
         self.assertEqual(result.attempts, (_INFRA_FAILURE,))
         self.assertEqual(stdout, "")
 
+    def test_arms_harness_deadline_for_the_run_only(self):
+        with patch.object(self.controller, "start_deadline") as start_deadline:
+            self._run(_make_config(), [_PASSED])
+
+        start_deadline.assert_called_once_with(HARNESS_DEADLINE_SECONDS)
+        start_deadline.return_value.cancel.assert_called_once()
+
 
 class TestRunAttempt(unittest.TestCase):
     """Tests for single-attempt classification."""
@@ -134,9 +194,16 @@ class TestRunAttempt(unittest.TestCase):
         self.orchestrator = patcher.start().return_value
         self.addCleanup(patcher.stop)
         self.orchestrator.images_built = True
+        self.controller = _patch_controller(self)
         self.cfg = _make_config()
 
     def test_returns_passed_when_run_succeeds(self):
+        self.assertEqual(infra_retry.run_attempt(self.cfg), _PASSED)
+
+    def test_clears_abort_of_previous_attempt(self):
+        self.controller.abort_attempt()
+        self.orchestrator.run.side_effect = self.controller.raise_if_halted
+
         self.assertEqual(infra_retry.run_attempt(self.cfg), _PASSED)
 
     def test_classifies_phase_error_and_logs_it(self):
@@ -147,6 +214,26 @@ class TestRunAttempt(unittest.TestCase):
 
         self.assertEqual(result, _INFRA_FAILURE)
         self.assertIn("spanner-setup", logs.output[0])
+
+    def test_classifies_stop_at_deadline_as_infra_failure(self):
+        self.controller.request_stop()
+        self.orchestrator.run.side_effect = HarnessStoppedError()
+
+        with self.assertLogs("xmc_e2e_runner", level="ERROR"):
+            result = infra_retry.run_attempt(self.cfg)
+
+        self.assertEqual(result, AttemptResult(Outcome.INFRA_FAILURE, images_built=True))
+
+    def test_exits_with_signal_exit_code_when_stopped_by_signal(self):
+        self.controller.request_stop(signal.SIGTERM)
+        for error in (HarnessStoppedError(), PhaseError(Phase.HELM_DEPLOY)):
+            with self.subTest(error=type(error).__name__):
+                self.orchestrator.run.side_effect = error
+
+                with self.assertRaises(SystemExit) as ctx:
+                    infra_retry.run_attempt(self.cfg)
+
+                self.assertEqual(ctx.exception.code, 143)
 
 
 if __name__ == "__main__":

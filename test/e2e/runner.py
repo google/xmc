@@ -20,9 +20,10 @@ Exit codes (see ``Outcome`` in ``lib/outcome.py``); none of them is retried exte
     1: Product failure: the image build, the Helm deployment, or the tests failed.
     2: Invalid command-line arguments.
     3: Infra failure: creating the KinD cluster, loading images, or setting up Spanner
-       failed. The harness already retries an infra failure once.
+       failed, or the harness deadline expired. The harness already retries an infra
+       failure once.
     4: Harness error: an unexpected error outside the lifecycle phases.
-    128 + N: Stopped by signal N.
+    128 + N: Stopped by signal N after a best-effort teardown.
 """
 
 from __future__ import annotations
@@ -40,10 +41,12 @@ if _E2E_DIR not in sys.path:
     sys.path.insert(0, _E2E_DIR)
 
 try:
+    from test.e2e.lib import cancellation  # noqa: E402
     from test.e2e.lib.config import parse_args  # noqa: E402
     from test.e2e.lib.infra_retry import run_attempt, run_with_infra_retry  # noqa: E402
     from test.e2e.lib.outcome import Outcome  # noqa: E402
 except ImportError:
+    from lib import cancellation  # noqa: E402
     from lib.config import parse_args  # noqa: E402
     from lib.infra_retry import run_attempt, run_with_infra_retry  # noqa: E402
     from lib.outcome import Outcome  # noqa: E402
@@ -63,6 +66,7 @@ def main() -> int:
     """
     try:
         cfg = parse_args()
+        cancellation.CONTROLLER.install_signal_handlers()
         result = run_with_infra_retry(cfg, run_attempt)
     except Exception:
         logger.exception("E2E harness error outside the lifecycle phases")

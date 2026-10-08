@@ -19,6 +19,8 @@ import time
 import unittest
 from unittest.mock import MagicMock, call, patch
 
+from test.e2e.lib.cancellation import HarnessStoppedError
+from test.e2e.lib.command import TEARDOWN_TIMEOUT_SECONDS
 from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.spanner import SpannerManager
 
@@ -182,7 +184,7 @@ class TestSpannerManager(unittest.TestCase):
         )
 
     @patch("random.uniform", return_value=0.0)
-    @patch("time.sleep")
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_create_database_retries_on_resource_exhausted(self, mock_run, mock_sleep, _):
         mock_run.side_effect = [
@@ -200,7 +202,7 @@ class TestSpannerManager(unittest.TestCase):
         mock_sleep.assert_called_once_with(15)
 
     @patch("random.uniform", return_value=0.0)
-    @patch("time.sleep")
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_create_database_retries_failed_operation_message_until_attempts_run_out(
         self, mock_run, mock_sleep, _
@@ -225,7 +227,7 @@ class TestSpannerManager(unittest.TestCase):
         self.assertIn("Deadline exceeded", logs.output[-1])
 
     @patch("random.uniform", return_value=0.0)
-    @patch("time.sleep")
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_create_database_accepts_ready_database_after_timed_out_attempt(
         self, mock_run, mock_sleep, _
@@ -254,7 +256,7 @@ class TestSpannerManager(unittest.TestCase):
         )
         mock_sleep.assert_called_once_with(15)
 
-    @patch("time.sleep")
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_create_database_fails_on_already_exists_of_first_attempt(self, mock_run, mock_sleep):
         exists = subprocess.CalledProcessError(1, ["gcloud"], stderr="ALREADY_EXISTS: Database d")
@@ -267,7 +269,7 @@ class TestSpannerManager(unittest.TestCase):
         mock_sleep.assert_not_called()
 
     @patch("random.uniform", return_value=0.0)
-    @patch("time.sleep")
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_create_database_polls_creating_database_until_ready(self, mock_run, mock_sleep, _):
         creating = subprocess.CompletedProcess(args=[], returncode=0, stdout="CREATING\n")
@@ -285,7 +287,23 @@ class TestSpannerManager(unittest.TestCase):
         self.assertEqual(mock_sleep.call_args_list, [call(15), call(5), call(5)])
 
     @patch("random.uniform", return_value=0.0)
-    @patch("time.sleep")
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
+    @patch("test.e2e.lib.spanner.run_cmd")
+    def test_create_database_stops_polling_when_harness_halts(self, mock_run, mock_sleep, _):
+        mock_run.side_effect = [
+            subprocess.TimeoutExpired(["gcloud"], 120),
+            subprocess.CalledProcessError(1, ["gcloud"], stderr="ALREADY_EXISTS: Database d"),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="CREATING\n"),
+        ]
+        mock_sleep.side_effect = [None, HarnessStoppedError()]
+
+        with self.assertRaises(HarnessStoppedError):
+            self.mgr._create_database("test-db", "schema.sql", "desc.pb")
+
+        self.assertEqual(mock_sleep.call_args_list, [call(15), call(5)])
+
+    @patch("random.uniform", return_value=0.0)
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("time.monotonic")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_create_database_retries_database_that_stays_creating_within_budget(
@@ -315,7 +333,7 @@ class TestSpannerManager(unittest.TestCase):
         self.assertEqual(mock_sleep.call_args_list, [call(15)] + [call(5)] * 21)
 
     @patch("random.uniform", side_effect=lambda low, high: high)
-    @patch("time.sleep")
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("time.monotonic")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_create_database_gives_up_within_total_budget_when_attempts_time_out(
@@ -353,7 +371,7 @@ class TestSpannerManager(unittest.TestCase):
         binary = self.mgr._resolve_migration_binary()
         self.assertIsNone(binary)
 
-    @patch("time.sleep")
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_init_migration_version_retries_on_grpc_resource_exhausted(self, mock_run, mock_sleep):
         mock_run.side_effect = [
@@ -373,7 +391,7 @@ class TestSpannerManager(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 2)
         mock_sleep.assert_called_once_with(5)
 
-    @patch("time.sleep")
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("time.monotonic")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_init_migration_version_retries_timed_out_attempt_within_total_budget(
@@ -505,6 +523,8 @@ class TestSpannerManager(unittest.TestCase):
                     "--quiet",
                 ],
                 check=False,
+                timeout=TEARDOWN_TIMEOUT_SECONDS,
+                stoppable=False,
             ),
             call(
                 [
@@ -518,6 +538,8 @@ class TestSpannerManager(unittest.TestCase):
                     "--quiet",
                 ],
                 check=False,
+                timeout=TEARDOWN_TIMEOUT_SECONDS,
+                stoppable=False,
             ),
         ]
         mock_run.assert_has_calls(expected_calls, any_order=True)
@@ -543,7 +565,7 @@ class TestSpannerManager(unittest.TestCase):
                 self.mgr._prepare_e2e_ddl_file("e2e-ess-123", combined_path), combined_path
             )
 
-    @patch("time.sleep")
+    @patch("test.e2e.lib.cancellation.CONTROLLER.wait")
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_init_migration_version_fails_fast_on_duplicate_name_error(self, mock_run, mock_sleep):
         mock_run.side_effect = subprocess.CalledProcessError(

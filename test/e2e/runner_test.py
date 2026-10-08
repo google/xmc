@@ -27,9 +27,14 @@ class TestMain(unittest.TestCase):
 
     def setUp(self):
         self.cfg = MagicMock()
-        patcher = patch.object(runner, "parse_args", return_value=self.cfg)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        self.controller = MagicMock()
+        for name, mock in (
+            ("parse_args", MagicMock(return_value=self.cfg)),
+            ("cancellation", MagicMock(CONTROLLER=self.controller)),
+        ):
+            patcher = patch.object(runner, name, mock)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def test_returns_exit_code_of_final_outcome(self):
         cases = [
@@ -45,6 +50,7 @@ class TestMain(unittest.TestCase):
 
                 self.assertEqual(exit_code, expected_exit_code)
                 retry.assert_called_once_with(self.cfg, runner.run_attempt)
+        self.controller.install_signal_handlers.assert_called()
 
     def test_returns_harness_error_for_unexpected_exception(self):
         with (
