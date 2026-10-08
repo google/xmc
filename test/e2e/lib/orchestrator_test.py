@@ -14,12 +14,14 @@
 
 """Unit tests for E2EOrchestrator."""
 
+import signal
 import tempfile
 import unittest
 from unittest.mock import MagicMock
 
 from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.orchestrator import E2EOrchestrator
+from test.e2e.lib.phases import Phase, PhaseError
 
 
 class TestE2EOrchestrator(unittest.TestCase):
@@ -40,6 +42,11 @@ class TestE2EOrchestrator(unittest.TestCase):
 
     def tearDown(self):
         self.tmp_dir.cleanup()
+
+    def _mock_components(self) -> None:
+        for name in ("spanner", "kind", "builder", "helm", "tester"):
+            setattr(self.orch, name, MagicMock())
+        self.orch.builder.build_all.return_value = ["img:latest"]
 
     def test_managed_lifecycle_guarantees_teardown_on_exit(self):
         self.orch.spanner = MagicMock()
@@ -90,9 +97,10 @@ class TestE2EOrchestrator(unittest.TestCase):
         self.orch.builder = MagicMock()
         self.orch.kind.setup.side_effect = RuntimeError("KinD setup failed")
 
-        with self.assertRaises(RuntimeError) as ctx:
+        with self.assertRaises(PhaseError) as ctx:
             self.orch.run()
-        self.assertIn("KinD setup failed", str(ctx.exception))
+        self.assertIs(ctx.exception.phase, Phase.KIND_CREATE)
+        self.assertIn("KinD setup failed", str(ctx.exception.__cause__))
         self.orch.kind.teardown.assert_called_once()
         self.orch.spanner.teardown.assert_called_once()
 
@@ -103,9 +111,37 @@ class TestE2EOrchestrator(unittest.TestCase):
         self.orch.builder.build_all.return_value = ["img:latest"]
         self.orch.spanner.setup.side_effect = RuntimeError("Spanner setup failed")
 
-        with self.assertRaises(RuntimeError) as ctx:
+        with self.assertRaises(PhaseError) as ctx:
             self.orch.run()
-        self.assertIn("Spanner setup failed", str(ctx.exception))
+        self.assertIs(ctx.exception.phase, Phase.SPANNER_SETUP)
+        self.assertIn("Spanner setup failed", str(ctx.exception.__cause__))
+        self.orch.kind.teardown.assert_called_once()
+        self.orch.spanner.teardown.assert_called_once()
+
+    def test_run_tags_helm_failure_after_images_were_built(self):
+        self._mock_components()
+        self.orch.helm.deploy.side_effect = RuntimeError("rollout timed out")
+
+        with self.assertRaises(PhaseError) as ctx:
+            self.orch.run()
+
+        self.assertIs(ctx.exception.phase, Phase.HELM_DEPLOY)
+        self.assertTrue(self.orch.images_built)
+        self.orch.tester.execute.assert_not_called()
+
+    def test_run_tears_down_and_exits_with_signal_exit_code(self):
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            self.addCleanup(signal.signal, signum, signal.getsignal(signum))
+        self._mock_components()
+        self.orch.tester.execute.side_effect = lambda: signal.raise_signal(signal.SIGTERM)
+
+        with (
+            self.assertLogs("xmc_e2e_runner", level="WARNING"),
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            self.orch.run()
+
+        self.assertEqual(ctx.exception.code, 143)
         self.orch.kind.teardown.assert_called_once()
         self.orch.spanner.teardown.assert_called_once()
 

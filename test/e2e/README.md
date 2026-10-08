@@ -51,6 +51,53 @@ graph TD
 
 ---
 
+## Exit Codes & Infra Retry
+
+The orchestrator tags every failure with the lifecycle phase that raised it ([`lib/phases.py`](lib/phases.py)). Only the phases that provision CI infrastructure are infra phases; the other phases exercise the code under test:
+
+| Phase id | Step | Failure class |
+| :--- | :--- | :--- |
+| `image-build` | `ImageBuilder.build_all()` | Product |
+| `kind-create` | `KindClusterManager.setup()` | Infra |
+| `image-load` | `KindClusterManager.load_images()` | Infra |
+| `spanner-setup` | `SpannerManager.setup()` | Infra |
+| `helm-deploy` | `HelmDeployer.deploy()`, including the wait for workload readiness | Product |
+| `tests` | `PlaywrightTestExecutor.execute()`: virtualenv setup, the Dex token fetch, and the Playwright scenarios | Product |
+
+`runner.py` exits with the outcome of its last attempt (`Outcome` in [`lib/outcome.py`](lib/outcome.py)):
+
+| Exit code | Outcome | Meaning |
+| :--- | :--- | :--- |
+| `0` | Pass | Every phase passed. |
+| `1` | Product failure | The `image-build`, `helm-deploy`, or `tests` phase failed. |
+| `3` | Infra failure | An infra phase failed. |
+| `4` | Harness error | An unexpected error outside the lifecycle phases, for example when no `kind` binary can be found. |
+
+Two more exit codes are not outcomes:
+
+- `2`: invalid command-line arguments.
+- `128 + N`: stopped by signal `N`, for example `130` for `SIGINT` or `143` for `SIGTERM`.
+
+> [!IMPORTANT]
+> Never retry the job externally, whatever its exit code. The harness already retries an infra failure once, and the other exit codes do not report transient failures.
+
+### Infra Retry
+
+The harness retries an infra failure once ([`lib/infra_retry.py`](lib/infra_retry.py)), but only if the failed attempt, including its teardown, ended within 480 s of the harness start, so that a slow failure is not repeated:
+
+1. Teardown of the failed attempt completes first: its Spanner databases are dropped, and its KinD cluster and temporary directory are deleted.
+2. The harness prints a GitHub Actions warning annotation that names the failed phase, for example:
+
+   ```text
+   ::warning::E2E infra failure in phase spanner-setup on attempt 1/2; retrying
+   ```
+
+3. The retry runs every phase again with fresh Spanner database names and a fresh temporary directory. It skips the image build if the failed attempt finished it. It reuses the KinD cluster name, because `KindClusterManager.setup()` deletes any leftover cluster with that name first.
+
+Each attempt writes its screenshots and diagnostics to its own subdirectory of `--screenshots-dir`: `attempt-1/` and, after a retry, `attempt-2/`. Product failures are never retried. `--keep-cluster` disables the retry, because it skips the teardown that a retry depends on.
+
+---
+
 ## Key Performance & Resiliency Optimizations
 
 ### 1. Direct Migration Binary Execution (`lib/spanner.py`)
@@ -101,7 +148,7 @@ python3 test/e2e/runner.py
 
 ### Useful CLI Flags
 
-- `--keep-cluster`: Prevents cluster teardown on exit for interactive debugging with `kubectl`.
+- `--keep-cluster`: Prevents cluster teardown on exit for interactive debugging with `kubectl`. Also disables the [infra retry](#infra-retry).
 - `--skip-build`: Skips Bazel compilation and reuses existing container images.
 - `--custom-kind-node-image <image>`: Overrides the KinD node image (e.g. to test custom Kubernetes versions).
 - `--spanner-instance <instance>`: Target specific Spanner instance for testing.

@@ -13,7 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Entrypoint for XMC Non-Agentic Headless KinD E2E Testing."""
+"""Entrypoint for XMC Non-Agentic Headless KinD E2E Testing.
+
+Exit codes (see ``Outcome`` in ``lib/outcome.py``); none of them is retried externally:
+    0: Every lifecycle phase passed.
+    1: Product failure: the image build, the Helm deployment, or the tests failed.
+    2: Invalid command-line arguments.
+    3: Infra failure: creating the KinD cluster, loading images, or setting up Spanner
+       failed. The harness already retries an infra failure once.
+    4: Harness error: an unexpected error outside the lifecycle phases.
+    128 + N: Stopped by signal N.
+"""
 
 from __future__ import annotations
 
@@ -31,23 +41,34 @@ if _E2E_DIR not in sys.path:
 
 try:
     from test.e2e.lib.config import parse_args  # noqa: E402
-    from test.e2e.lib.orchestrator import E2EOrchestrator  # noqa: E402
+    from test.e2e.lib.infra_retry import run_attempt, run_with_infra_retry  # noqa: E402
+    from test.e2e.lib.outcome import Outcome  # noqa: E402
 except ImportError:
     from lib.config import parse_args  # noqa: E402
-    from lib.orchestrator import E2EOrchestrator  # noqa: E402
+    from lib.infra_retry import run_attempt, run_with_infra_retry  # noqa: E402
+    from lib.outcome import Outcome  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
+logger = logging.getLogger("xmc_e2e_runner")
 
 
-def main() -> None:
-    """CLI entrypoint for running the E2E test suite."""
-    cfg = parse_args()
-    orchestrator = E2EOrchestrator(cfg)
-    orchestrator.run()
+def main() -> int:
+    """CLI entrypoint for running the E2E test suite.
+
+    Returns:
+        The process exit code documented in the module docstring.
+    """
+    try:
+        cfg = parse_args()
+        result = run_with_infra_retry(cfg, run_attempt)
+    except Exception:
+        logger.exception("E2E harness error outside the lifecycle phases")
+        return int(Outcome.HARNESS_ERROR)
+    return int(result.outcome)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
