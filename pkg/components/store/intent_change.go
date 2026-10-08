@@ -40,14 +40,19 @@ func isUnchangedIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, l
 	if !maps.Equal(rec.Labels, labels) || !slices.Equal(rec.Dependencies, deps) {
 		return false
 	}
+	// Steady-state intents repeat the stored spec including its generation; skip the clones.
+	if proto.Equal(rec.Spec, spec) {
+		return true
+	}
 	return proto.Equal(specWithoutGeneration(rec.Spec), specWithoutGeneration(spec))
 }
 
-// specWithoutGeneration returns a copy of spec with the generation field cleared, or nil for a nil
-// spec.
+// specWithoutGeneration returns spec with the generation field cleared, or nil for a nil spec. It
+// returns spec itself when its generation is already 0 and a copy otherwise, so callers must treat
+// the result as read-only.
 func specWithoutGeneration(spec *componentspb.ComponentSpec) *componentspb.ComponentSpec {
-	if spec == nil {
-		return nil
+	if spec == nil || spec.GetGeneration() == 0 {
+		return spec
 	}
 	cp := proto.Clone(spec).(*componentspb.ComponentSpec)
 	cp.Generation = 0

@@ -42,6 +42,7 @@ func TestIsUnchangedIntent(t *testing.T) {
 		want       bool
 	}{
 		{name: "same generation and inputs", rec: rec, spec: spec("v1.0.0", 3), labels: rec.Labels, deps: rec.Dependencies, desiredGen: 3, want: true},
+		{name: "identical spec including generation and unspecified desired generation", rec: rec, spec: spec("v1.0.0", 3), labels: rec.Labels, deps: rec.Dependencies, desiredGen: 0, want: true},
 		{name: "spec generation field is ignored", rec: rec, spec: spec("v1.0.0", 0), labels: rec.Labels, deps: rec.Dependencies, desiredGen: 3, want: true},
 		{name: "unspecified generation", rec: rec, spec: spec("v1.0.0", 0), labels: rec.Labels, deps: rec.Dependencies, desiredGen: 0, want: true},
 		{name: "stale generation", rec: rec, spec: spec("v1.0.0", 2), labels: rec.Labels, deps: rec.Dependencies, desiredGen: 2, want: true},
@@ -58,6 +59,24 @@ func TestIsUnchangedIntent(t *testing.T) {
 				t.Errorf("isUnchangedIntent() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSpecWithoutGeneration(t *testing.T) {
+	zeroGen := &componentspb.ComponentSpec{Version: "v1.0.0"}
+	if got := specWithoutGeneration(zeroGen); got != zeroGen {
+		t.Errorf("specWithoutGeneration(generation 0) = %p, want the input %p without a copy", got, zeroGen)
+	}
+	if got := specWithoutGeneration(nil); got != nil {
+		t.Errorf("specWithoutGeneration(nil) = %v, want nil", got)
+	}
+	withGen := &componentspb.ComponentSpec{Version: "v1.0.0", Generation: 3}
+	got := specWithoutGeneration(withGen)
+	if got == withGen || got.GetGeneration() != 0 || got.GetVersion() != "v1.0.0" {
+		t.Errorf("specWithoutGeneration(generation 3) = %v, want a separate copy with generation 0", got)
+	}
+	if withGen.GetGeneration() != 3 {
+		t.Errorf("specWithoutGeneration mutated its input generation to %d, want 3", withGen.GetGeneration())
 	}
 }
 
