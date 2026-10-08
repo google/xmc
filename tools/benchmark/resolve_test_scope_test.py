@@ -855,6 +855,7 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertTrue(unit_wf["has_backend"])
 
     def test_classify_backend_ci_entrypoint_as_core_infra(self):
+        """Verifies the backend CI entrypoint and its shared modules trigger full-suite runs."""
         for path in (
             ".github/actions/run-backend-tests/action.yml",
             "tools/run_affected_tests.py",
