@@ -81,6 +81,20 @@ This will build the following targets:
   export XMC_ENV=dev # Optional, defaults to "dev"
   export BUILD_TAG=latest # Optional, defaults to "latest"
 
+### Breaking-Change Check (`buf_breaking_test`)
+
+[`//api:protos_breaking_test`](../api/BUILD.bazel) runs with `bazel test` and fails on backward-incompatible changes to the first-party protobuf APIs:
+* It compares the `proto_library` targets listed in `_PROTOS` with the committed baseline [`api/testdata/protos_baseline.binpb`](../api/testdata/protos_baseline.binpb), using [rules_buf](https://buf.build/docs/cli/build-systems/bazel/) and the strict `FILE` rules from [`api/buf.yaml`](../api/buf.yaml). Bundled `google/*` files are ignored; unstable packages such as `components/v1alpha1` are checked because their messages are persisted.
+* A new `proto_library` under `//api` must be added to `_PROTOS`; CI fails, listing the uncovered files, until it is. `api/filter/filter_expression.proto` has no `proto_library` and is not covered.
+
+To accept an intentional breaking change, refresh the baseline in the same pull request:
+```bash
+bazel build //api:all_protos_descriptor_set && install -m 0644 \
+  bazel-bin/api/all_protos_descriptor_set.pb api/testdata/protos_baseline.binpb
+```
+
+Refreshing the baseline, or changing `api/buf.yaml` or `api/BUILD.bazel`, needs a fresh human approval: these are protected files for [incremental PR approval](../.github/scripts/README.md), so a pull request that changes them is never auto-reapproved.
+
 ---
 
 ## Custom AIP-160 Filter & Parser Engine

@@ -52,6 +52,18 @@ runs:
         restore-keys: |
           bazel-repo-${{ runner.os }}-
 
+    - name: 'Check Protobuf Breaking-Change Coverage'
+      if: steps.classify.outputs.run_backend == 'true'
+      shell: bash
+      # Every .proto of an //api proto_library must be checked by //api:protos_breaking_test.
+      run: |
+        uncovered="$(bazel query --noimplicit_deps --repository_cache="${HOME}/.cache/bazel-repo" \
+          'labels(srcs, kind(proto_library, //api/...)) except labels(srcs, deps(//api:protos_breaking_test, 1))')"
+        if [[ -n "${uncovered}" ]]; then
+          echo "::error::Add the proto_library of these files to _PROTOS in api/BUILD.bazel: ${uncovered//$'\n'/ }"
+          exit 1
+        fi
+
     - name: 'Run Backend Unit Tests'
       if: steps.classify.outputs.run_backend == 'true'
       env:
