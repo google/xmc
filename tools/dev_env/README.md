@@ -275,10 +275,12 @@ python3 tools/dev_env/dev_env.py gke-deploy \
 - `--environment`, `-e`: Deployment environment name (required, or via `XMANAGER_ENV` env var).
 - `--dns-project`: Google Cloud project hosting Cloud DNS (required).
 - `--dns-zone`: Cloud DNS managed zone name (required).
-- `--start-from`: Start execution from a specific step (`compile`, `apis`, `primary`, `dns`, `secondary`, `helm`, `finalize`).
-- `--only`: Execute only a single step (`compile`, `apis`, `primary`, `dns`, `secondary`, `helm`, `finalize`).
+- `--start-from`: Start execution from a specific step (`check`, `compile`, `images`, `apis`, `primary`, `compute`, `gateway-api`, `prereqs`, `migrate`, `app`, `verify`).
+- `--only`: Execute only a single step (`check`, `compile`, `images`, `apis`, `primary`, `compute`, `gateway-api`, `prereqs`, `migrate`, `app`, `verify`).
 - `--auto-approve`, `-y`: Automatically approve Terraform and Cluster Toolkit prompts.
 - `--skip-terraform-init`: Skip `terraform init` during deployment.
+- `--skip-migrations`: Skip automatic Cloud Spanner database schema migrations.
+- `--skip-verification`: Skip environment health verification step.
 
 > [!NOTE]
 > The `compile` step (and the `app` step of `gke-upgrade`) deletes `ctk-out/<deployment_name>/.ghpc/staged/` before running `gcluster create --force`, so Helm templates removed from the repository are not re-deployed from a stale staged copy. It also passes a SHA-256 of `deploy/helm` as the `helm_chart_content_hash` blueprint variable (recorded in the umbrella Helm release description), so template-only chart changes trigger a real Helm upgrade that prunes removed objects.

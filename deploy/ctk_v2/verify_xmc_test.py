@@ -161,16 +161,70 @@ vars:
 
     @mock.patch.object(verify_xmc, "_run_command")
     def test_check_k8s_resources(self, mock_run):
-        mock_run.return_value = "NAME   READY   STATUS\npod-1   1/1     Running\n"
+        mock_run.return_value = (
+            "NAME   READY   STATUS\npod-1   1/1     Running\npod-job 0/1     Completed\n"
+        )
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_k8s_resources()
+            res = verify_xmc._check_k8s_resources()
 
+        self.assertTrue(res)
         self.assertEqual(mock_run.call_count, 5)
         output = captured.getvalue()
         self.assertIn("--- 1. Pod Status ---", output)
         self.assertIn("--- 5. cert-manager Certificates ---", output)
         self.assertIn("pod-1   1/1     Running", output)
+
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_k8s_resources_unready_pod(self, mock_run):
+        mock_run.return_value = "NAME   READY   STATUS\npod-1   0/1     Running\n"
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            res = verify_xmc._check_k8s_resources()
+        self.assertFalse(res)
+
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_k8s_resources_crashloop_or_pending(self, mock_run):
+        for bad_line in (
+            "pod-1   0/1     CrashLoopBackOff",
+            "pod-1   0/1     Pending",
+        ):
+            mock_run.return_value = f"NAME   READY   STATUS\n{bad_line}\n"
+            captured = io.StringIO()
+            with mock.patch.object(sys, "stdout", captured):
+                self.assertFalse(verify_xmc._check_k8s_resources())
+
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_k8s_resources_empty_output(self, mock_run):
+        mock_run.return_value = ""
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            self.assertFalse(verify_xmc._check_k8s_resources())
+
+    def test_are_pods_healthy_ignores_terminating_evicted_and_warnings(self):
+        pods_out = (
+            "NAME      READY   STATUS        RESTARTS   AGE\n"
+            "Warning: some kubectl warning line\n"
+            "shortline\n"
+            "pod-1     1/1     Running       0          5m\n"
+            "pod-old   1/1     Terminating   0          10m\n"
+            "pod-ev    0/1     Evicted       0          12m\n"
+            "pod-job   0/1     Succeeded     0          2m\n"
+        )
+        self.assertTrue(verify_xmc._are_pods_healthy(pods_out))
+
+    def test_are_pods_healthy_only_non_pod_lines_returns_false(self):
+        pods_out = "NAME      READY   STATUS\nWarning: no real pods here\nshort\n"
+        self.assertFalse(verify_xmc._are_pods_healthy(pods_out))
+
+    def test_are_pods_healthy_only_inactive_pods_returns_false(self):
+        pods_out = (
+            "NAME      READY   STATUS        RESTARTS   AGE\n"
+            "pod-job   0/1     Completed     0          5m\n"
+            "pod-old   1/1     Terminating   0          10m\n"
+            "pod-ev    0/1     Evicted       0          12m\n"
+        )
+        self.assertFalse(verify_xmc._are_pods_healthy(pods_out))
 
     @mock.patch.object(verify_xmc, "_run_command")
     def test_check_connectivity(self, mock_run):
@@ -185,17 +239,26 @@ vars:
         mock_run.side_effect = run_cmd_side_effect
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_connectivity()
+            res = verify_xmc._check_connectivity()
 
+        self.assertTrue(res)
         output = captured.getvalue()
         self.assertIn("Gateway IP Address: 35.240.10.20", output)
         self.assertIn("Run: kubectl port-forward -n xmc actuator-pod-abc 8080:8080", output)
 
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_connectivity_missing_ip_or_pod(self, mock_run):
+        mock_run.return_value = ""
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            self.assertFalse(verify_xmc._check_connectivity())
+
     def test_check_log_monitor_missing_env(self):
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_log_monitor(None, "us-central1", "proj")
+            res = verify_xmc._check_log_monitor(None, "us-central1", "proj")
 
+        self.assertFalse(res)
         output = captured.getvalue()
         self.assertIn("Skipping Log Monitor check", output)
 
@@ -203,10 +266,11 @@ vars:
     def test_check_log_monitor_deployment_enabled_skips_cloud_run(self, mock_run):
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_log_monitor(
+            res = verify_xmc._check_log_monitor(
                 "dev", "us-central1", "proj", log_monitor_deployment_enabled=True
             )
 
+        self.assertTrue(res)
         mock_run.assert_not_called()
         output = captured.getvalue()
         self.assertIn(
@@ -219,8 +283,9 @@ vars:
         mock_run.return_value = "True\n"
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_log_monitor("dev", "us-central1", "proj")
+            res = verify_xmc._check_log_monitor("dev", "us-central1", "proj")
 
+        self.assertTrue(res)
         output = captured.getvalue()
         self.assertIn("Service Status (Ready): True", output)
         self.assertIn("Log Monitor Cloud Run service is running and Ready.", output)
@@ -230,8 +295,9 @@ vars:
         mock_run.return_value = "False\n"
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_log_monitor("dev", "us-central1", "proj")
+            res = verify_xmc._check_log_monitor("dev", "us-central1", "proj")
 
+        self.assertFalse(res)
         output = captured.getvalue()
         self.assertIn("Log Monitor Cloud Run service is NOT Ready.", output)
 
@@ -240,8 +306,9 @@ vars:
         mock_run.return_value = ""
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_log_monitor("dev", "us-central1", "proj")
+            res = verify_xmc._check_log_monitor("dev", "us-central1", "proj")
 
+        self.assertFalse(res)
         output = captured.getvalue()
         self.assertIn("not found or status is unavailable", output)
 
@@ -315,10 +382,10 @@ vars:
         with mock.patch.object(sys, "stdout", io.StringIO()):
             self.assertFalse(verify_xmc._check_components(enable_components=True))
 
-    @mock.patch.object(verify_xmc, "_check_components")
-    @mock.patch.object(verify_xmc, "_check_log_monitor")
-    @mock.patch.object(verify_xmc, "_check_connectivity")
-    @mock.patch.object(verify_xmc, "_check_k8s_resources")
+    @mock.patch.object(verify_xmc, "_check_components", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_log_monitor", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_connectivity", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_k8s_resources", return_value=True)
     @mock.patch.object(verify_xmc, "_resolve_log_monitor_deployment_enabled")
     @mock.patch.object(verify_xmc, "_resolve_config")
     @mock.patch.object(verify_xmc, "ensure_venv")
@@ -346,6 +413,30 @@ vars:
         mock_connectivity.assert_called_once()
         mock_log_monitor.assert_called_once_with("dev", "us-central1", "test-proj", False)
         mock_components.assert_called_once_with(True)
+
+    @mock.patch.object(verify_xmc, "_check_components", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_log_monitor", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_connectivity", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_k8s_resources", return_value=False)
+    @mock.patch.object(verify_xmc, "_resolve_log_monitor_deployment_enabled", return_value=False)
+    @mock.patch.object(
+        verify_xmc, "_resolve_config", return_value=("dev", "us-central1", "test-proj", False)
+    )
+    @mock.patch.object(verify_xmc, "ensure_venv")
+    def test_main_returns_1_on_check_failure(
+        self,
+        mock_ensure_venv,
+        mock_resolve_config,
+        mock_resolve_lm_enabled,
+        mock_k8s,
+        mock_connectivity,
+        mock_log_monitor,
+        mock_components,
+    ):
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            exit_code = verify_xmc.main()
+        self.assertEqual(exit_code, 1)
 
 
 if __name__ == "__main__":

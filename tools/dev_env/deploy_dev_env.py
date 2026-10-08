@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from typing import NoReturn
 
@@ -51,6 +52,7 @@ from tools.dev_env.upgrade_dev_env import (  # noqa: E402
     apply_pending_migrations,
     check_pending_migrations,
     step_restart,
+    wait_for_deployments_ready,
 )
 
 # ANSI Color Codes
@@ -94,46 +96,19 @@ STEPS = [
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
-    """Parses command line arguments.
-
-    Args:
-        args: A list of command line arguments to parse.
-
-    Returns:
-        An argparse.Namespace object containing the parsed arguments.
-    """
-    parser = argparse.ArgumentParser(description="XMC v2 Dev Environment Deployment Script")
-    parser.add_argument(
-        "--config",
-        "-c",
-        required=True,
-        help="Path to XMC deployment YAML configuration file (Required)",
-    )
-    parser.add_argument(
-        "--dns-project",
-        required=True,
-        help="GCP Project ID hosting the DNS zone (Required)",
-    )
-    parser.add_argument("--dns-zone", required=True, help="Cloud DNS Managed Zone name (Required)")
-    parser.add_argument(
-        "--start-from",
-        "-s",
-        choices=STEPS,
-        help="Start/resume deployment from this step onwards",
-    )
-    parser.add_argument("--only", choices=STEPS, help="Execute ONLY this specific step and exit")
-    parser.add_argument(
-        "--skip-migrations",
-        action="store_true",
-        help="Skip automatic Cloud Spanner database schema migrations",
-    )
-    parser.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
-
-    parsed_args = parser.parse_args(args)
-
+    """Parses command line arguments."""
+    p = argparse.ArgumentParser(description="XMC v2 Dev Environment Deployment Script")
+    p.add_argument("-c", "--config", required=True, help="Path to deployment YAML config.")
+    p.add_argument("--dns-project", required=True, help="GCP Project ID hosting DNS zone.")
+    p.add_argument("--dns-zone", required=True, help="Cloud DNS Managed Zone name.")
+    p.add_argument("-s", "--start-from", choices=STEPS, help="Start/resume from step.")
+    p.add_argument("--only", choices=STEPS, help="Execute ONLY this step and exit.")
+    p.add_argument("--skip-migrations", action="store_true", help="Skip Spanner migrations.")
+    p.add_argument("--skip-verification", action="store_true", help="Skip health verification.")
+    p.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
+    parsed_args = p.parse_args(args)
     if parsed_args.start_from and parsed_args.only:
-        parser.error("Cannot specify both --start-from and --only.")
-
+        p.error("Cannot specify both --start-from and --only.")
     return parsed_args
 
 
@@ -800,6 +775,19 @@ def _wait_for_cert_active(project_id: str, cert_name: str) -> None:
     log_success("Managed Certificate is ACTIVE.")
 
 
+def _build_verify_env(config: DeploymentConfig) -> dict[str, str]:
+    """Constructs environment variables for verify_xmc.py execution."""
+    return {
+        "ENVIRONMENT": config.environment,
+        "REGION": config.region,
+        "PROJECT_ID": config.project_id,
+        "ENABLE_COMPONENTS": "true" if config.enable_components else "false",
+        "LOG_MONITOR_DEPLOYMENT_ENABLED": (
+            "true" if config.log_monitor_deployment_enabled else "false"
+        ),
+    }
+
+
 def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Verifies the deployed XMC environment.
 
@@ -809,40 +797,63 @@ def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> No
         dns_zone: Cloud DNS Managed Zone name (unused).
     """
     _fetch_cluster_credentials(config)
+    wait_for_deployments_ready(config)
+    _wait_for_gateway_programmed()
 
     log_info("Running verification script...")
-    env_vars = {
-        "ENVIRONMENT": config.environment,
-        "REGION": config.region,
-        "PROJECT_ID": config.project_id,
-        "ENABLE_COMPONENTS": "true" if config.enable_components else "false",
-    }
-    try:
-        run_command(
-            [sys.executable, "./deploy/ctk_v2/verify_xmc.py"],
-            env=env_vars,
-            log_on_error=False,
-        )
-    except subprocess.CalledProcessError:
-        print("Diagnostic script reported warnings.")
+    run_command(
+        [sys.executable, "./deploy/ctk_v2/verify_xmc.py"],
+        env=_build_verify_env(config),
+        log_on_error=False,
+    )
 
-    _wait_for_gateway_programmed()
     cert_name = f"xmc-cert-{config.environment}"
     _wait_for_cert_active(config.project_id, cert_name)
     log_success("XMC environment deployed and verified.")
 
 
-def _build_resume_cmd(
-    args: argparse.Namespace,
-    current_step: str,
-    *,
-    skip_migrations: bool,
-) -> str:
+def _is_skip_migrations(args: argparse.Namespace) -> bool:
+    """Returns True if database migrations should be skipped."""
+    return bool(
+        getattr(args, "skip_migrations", False) or getattr(args, "auto_migrate", None) is False
+    )
+
+
+def _build_step_map(
+    args: argparse.Namespace, config: DeploymentConfig
+) -> dict[str, Callable[[], None]]:
+    """Constructs the step execution map for GKE deployment."""
+    return {
+        "check": lambda: step_check(config, args.dns_project, args.dns_zone),
+        "compile": lambda: step_compile(config, args.dns_project, args.dns_zone, args.config),
+        "images": lambda: step_images(config),
+        "apis": lambda: step_apis(config, args.dns_project, args.dns_zone),
+        "primary": lambda: step_primary(config, args.dns_project, args.dns_zone),
+        "compute": lambda: step_compute(config, args.dns_project, args.dns_zone),
+        "gateway-api": lambda: step_gateway_api(config, args.dns_project, args.dns_zone),
+        "prereqs": lambda: step_prereqs(config, args.dns_project, args.dns_zone),
+        "migrate": lambda: (
+            log_info("Skipping database migrations as requested (--skip-migrations).")
+            if _is_skip_migrations(args)
+            else step_migrate(config)
+        ),
+        "app": lambda: step_app(config, args.dns_project, args.dns_zone),
+        "verify": lambda: (
+            log_info("Skipping environment health verification (--skip-verification).")
+            if getattr(args, "skip_verification", False)
+            else step_verify(config, args.dns_project, args.dns_zone)
+        ),
+    }
+
+
+def _build_resume_cmd(args: argparse.Namespace, current_step: str) -> str:
     """Constructs the suggested command to resume a failed deployment."""
     dns_args = f"--dns-project {args.dns_project} --dns-zone {args.dns_zone} "
     resume_cmd = f"python3 tools/dev_env/deploy_dev_env.py --config {args.config} {dns_args}"
-    if skip_migrations:
+    if _is_skip_migrations(args):
         resume_cmd += "--skip-migrations "
+    if getattr(args, "skip_verification", False):
+        resume_cmd += "--skip-verification "
     if args.only:
         resume_cmd += f"--only {current_step}"
     else:
@@ -866,48 +877,18 @@ def _print_deployment_summary(config: DeploymentConfig) -> None:
 
 
 def run_deployment(args: argparse.Namespace) -> None:
-    """Executes the GKE deployment pipeline.
-
-    Args:
-        args: Parsed command line arguments containing config, dns_project,
-          dns_zone, start_from, only.
-    """
+    """Executes the GKE deployment pipeline."""
     config = load_and_validate_config(args.config)
     if getattr(args, "enable_components", None) is not None:
-        config = replace(config, enable_components=args.enable_components)
+        config = replace(config, enable_components=bool(args.enable_components))
 
     run_checks(config, args.dns_project, args.dns_zone)
-
-    skip_migrations = (
-        getattr(args, "skip_migrations", False) or getattr(args, "auto_migrate", None) is False
+    step_map = _build_step_map(args, config)
+    execution_steps = (
+        [args.only]
+        if args.only
+        else (STEPS[STEPS.index(args.start_from) :] if args.start_from else STEPS)
     )
-
-    def _execute_migrate() -> None:
-        if skip_migrations:
-            log_info("Skipping database migrations as requested (--skip-migrations).")
-            return
-        step_migrate(config)
-
-    step_map = {
-        "check": lambda: step_check(config, args.dns_project, args.dns_zone),
-        "compile": lambda: step_compile(config, args.dns_project, args.dns_zone, args.config),
-        "images": lambda: step_images(config),
-        "apis": lambda: step_apis(config, args.dns_project, args.dns_zone),
-        "primary": lambda: step_primary(config, args.dns_project, args.dns_zone),
-        "compute": lambda: step_compute(config, args.dns_project, args.dns_zone),
-        "gateway-api": lambda: step_gateway_api(config, args.dns_project, args.dns_zone),
-        "prereqs": lambda: step_prereqs(config, args.dns_project, args.dns_zone),
-        "migrate": _execute_migrate,
-        "app": lambda: step_app(config, args.dns_project, args.dns_zone),
-        "verify": lambda: step_verify(config, args.dns_project, args.dns_zone),
-    }
-
-    if args.only:
-        execution_steps = [args.only]
-    elif args.start_from:
-        execution_steps = STEPS[STEPS.index(args.start_from) :]
-    else:
-        execution_steps = STEPS
 
     current_step = ""
     try:
@@ -916,7 +897,7 @@ def run_deployment(args: argparse.Namespace) -> None:
             step_map[step]()
     except Exception as e:
         log_error(f"Command failed during step '{current_step}': {e}")
-        resume_cmd = _build_resume_cmd(args, current_step, skip_migrations=skip_migrations)
+        resume_cmd = _build_resume_cmd(args, current_step)
         print(f"\n{RED}You can resume from this step using:{NC}")
         print(f"  {BOLD}{resume_cmd}{NC}\n")
         sys.exit(1)

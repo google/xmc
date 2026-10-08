@@ -40,6 +40,7 @@ class DeploymentConfig:
     namespace: str = "xmc"
     domain_name: str | None = None
     enable_components: bool = False
+    log_monitor_deployment_enabled: bool = False
 
     @property
     def gke_cluster(self) -> str:
@@ -191,6 +192,7 @@ ENV_VAR_MAPPING = {
     "BUILD_TAG": "image_tag",
     "XMC_BASE_DOMAIN": "domain_name",
     "ENABLE_COMPONENTS": "enable_components",
+    "LOG_MONITOR_DEPLOYMENT_ENABLED": "log_monitor_deployment_enabled",
 }
 
 
@@ -294,6 +296,9 @@ def load_and_validate_config(
         domain_name=config.get("domain_name"),
         namespace=config.get("namespace", "xmc"),
         enable_components=parse_bool_flag(config.get("enable_components", False)),
+        log_monitor_deployment_enabled=parse_bool_flag(
+            config.get("log_monitor_deployment_enabled", False)
+        ),
     )
 
 

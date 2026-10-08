@@ -131,12 +131,14 @@ class DevEnvCliTest(unittest.TestCase):
             "--dns-zone",
             "test-dns-zone",
             "--skip-migrations",
+            "--skip-verification",
         ]
         parsed = self.parser.parse_args(args)
         parsed.func(parsed)
         mock_run.assert_called_once()
         called_args = mock_run.call_args[0][0]
         self.assertTrue(called_args.skip_migrations)
+        self.assertTrue(called_args.skip_verification)
 
     def test_gke_upgrade_rejects_skip_migrations(self) -> None:
         """Verifies gke-upgrade rejects the deploy-only --skip-migrations flag."""

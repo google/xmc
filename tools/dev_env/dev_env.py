@@ -332,6 +332,11 @@ def _add_deploy_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:
         action="store_true",
         help="Skip automatic Cloud Spanner database schema migrations.",
     )
+    p.add_argument(
+        "--skip-verification",
+        action="store_true",
+        help="Skip environment health verification step.",
+    )
     group = p.add_mutually_exclusive_group()
     group.add_argument("-s", "--start-from", choices=deploy_dev_env.STEPS, help="Start from step.")
     group.add_argument("--only", choices=deploy_dev_env.STEPS, help="Execute only step.")

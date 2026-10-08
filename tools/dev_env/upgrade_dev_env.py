@@ -469,11 +469,33 @@ def step_restart(config: DeploymentConfig) -> None:
     log_success("Rolling deployment restarts initiated.")
 
 
+def wait_for_deployments_ready(config: DeploymentConfig) -> None:
+    """Waits for active service deployments in the namespace to finish rolling out."""
+    log_info(
+        f"Waiting for deployments in namespace '{config.namespace}' to complete rollout (3m timeout)..."
+    )
+    for svc in _RESTART_SERVICES:
+        resolved = resolve_deployment_name(svc, config.namespace)
+        if resolved:
+            run_command(
+                [
+                    "kubectl",
+                    "rollout",
+                    "status",
+                    f"deployment/{resolved}",
+                    "-n",
+                    config.namespace,
+                    "--timeout=180s",
+                ]
+            )
+
+
 def step_verify(config: UpgradeConfig) -> None:
     """Runs the environment health verification script."""
     log_info(
         f"Verifying rollout completion and cluster health in namespace '{config.namespace}'..."
     )
+    wait_for_deployments_ready(config)
     log_info("Running verification script...")
 
     env = {
@@ -481,18 +503,12 @@ def step_verify(config: UpgradeConfig) -> None:
         "REGION": config.region,
         "PROJECT_ID": config.project_id,
         "ENABLE_COMPONENTS": "true" if config.enable_components else "false",
+        "LOG_MONITOR_DEPLOYMENT_ENABLED": (
+            "true" if config.log_monitor_deployment_enabled else "false"
+        ),
     }
 
-    py_script = Path("./deploy/ctk_v2/verify_xmc.py")
-    if py_script.is_file():
-        cmd = [sys.executable, str(py_script)]
-    else:
-        cmd = ["bash", "./deploy/ctk_v2/verify_xmc.sh"]
-
-    res = run_command(cmd, env=env, check=False)
-    if res.returncode != 0:
-        log_info("Diagnostic script reported warnings.")
-
+    run_command([sys.executable, "./deploy/ctk_v2/verify_xmc.py"], env=env)
     log_success("XMC environment upgrade to current repository branch state verified successfully.")
 
 

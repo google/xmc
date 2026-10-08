@@ -388,12 +388,14 @@ class TestStepSubprocesses(unittest.TestCase):
         )
         mock_profile.assert_called_once_with(cfg)
 
+    @mock.patch("tools.dev_env.upgrade_dev_env.wait_for_deployments_ready")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
-    def test_step_verify(self, mock_run):
+    def test_step_verify(self, mock_run, mock_wait_rollout):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_verify(self.config)
+        mock_wait_rollout.assert_called_once_with(self.config)
         mock_run.assert_called_once()
         _cmd, kwargs = mock_run.call_args
         self.assertEqual(
@@ -403,8 +405,35 @@ class TestStepSubprocesses(unittest.TestCase):
                 "REGION": "us-central1",
                 "PROJECT_ID": "proj-123",
                 "ENABLE_COMPONENTS": "false",
+                "LOG_MONITOR_DEPLOYMENT_ENABLED": "false",
             },
         )
+
+    @mock.patch("tools.dev_env.upgrade_dev_env.wait_for_deployments_ready")
+    @mock.patch(
+        "tools.dev_env.upgrade_dev_env.run_command",
+        side_effect=subprocess.CalledProcessError(1, ["python3", "verify_xmc.py"]),
+    )
+    def test_step_verify_propagates_failure(self, mock_run, mock_wait_rollout):
+        with self.assertRaises(subprocess.CalledProcessError):
+            upgrade_dev_env.step_verify(self.config)
+        mock_wait_rollout.assert_called_once_with(self.config)
+
+    @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name")
+    @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
+    def test_wait_for_deployments_ready(self, mock_run, mock_resolve):
+        absent = {"xmc-bridge", "ingestion-gateway"}
+        mock_resolve.side_effect = lambda service, _ns: (
+            None if service in absent else f"{service}-deployment"
+        )
+        upgrade_dev_env.wait_for_deployments_ready(self.config)
+        self.assertEqual(mock_run.call_count, 9)
+        for call_args in mock_run.call_args_list:
+            cmd = call_args[0][0]
+            self.assertEqual(cmd[:3], ["kubectl", "rollout", "status"])
+            self.assertIn("-n", cmd)
+            self.assertIn("xmc", cmd)
+            self.assertIn("--timeout=180s", cmd)
 
 
 if __name__ == "__main__":
