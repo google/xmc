@@ -47,7 +47,7 @@ if str(_REPO_ROOT) not in sys.path:
 from tools.benchmark import resolve_test_scope  # noqa: E402
 from tools.common.tool_utils import HandledError, log_info, run_command, run_tool  # noqa: E402
 
-# Test flags of the CI `bazel test` step; CI adds its cache and timeout flags with --bazel-flag.
+# Test flags of the CI `bazel test` step; add CI-only cache and timeout flags with --bazel-flag.
 BAZEL_TEST_FLAGS: tuple[str, ...] = (
     "--test_output=errors",
     "--experimental_ui_max_stdouterr_bytes=2097152",
