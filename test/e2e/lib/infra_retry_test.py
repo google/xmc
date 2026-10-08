@@ -44,9 +44,9 @@ _STEPS_BEFORE_HARNESS_SECONDS = 131
 _STEPS_AFTER_HARNESS_SECONDS = 36
 # Duration of a healthy attempt, including its teardown, in run 37300625846.
 _HEALTHY_ATTEMPT_SECONDS = 210
-# Teardown runs at most three commands in sequence, each bounded by the teardown timeout:
-# the KinD cluster lookup, the cluster deletion, and the parallel database drops.
-_TEARDOWN_WORST_CASE_SECONDS = 3 * TEARDOWN_TIMEOUT_SECONDS
+# Teardown runs at most two commands in sequence, each bounded by the teardown timeout:
+# the KinD cluster deletion and the parallel database drops.
+_TEARDOWN_WORST_CASE_SECONDS = 2 * TEARDOWN_TIMEOUT_SECONDS
 
 
 def _make_config(keep_cluster: bool = False) -> E2EConfig:
@@ -83,7 +83,7 @@ class TestHarnessBudget(unittest.TestCase):
             + _STEPS_AFTER_HARNESS_SECONDS
         )
 
-        self.assertEqual(worst_case, 1127)
+        self.assertEqual(worst_case, 1107)
         self.assertGreaterEqual(_JOB_TIMEOUT_SECONDS - worst_case, _MIN_JOB_TIMEOUT_MARGIN_SECONDS)
 
     def test_healthy_retry_started_within_window_ends_before_deadline(self):
@@ -91,7 +91,7 @@ class TestHarnessBudget(unittest.TestCase):
             RETRY_START_LIMIT_SECONDS + _HEALTHY_ATTEMPT_SECONDS + _TEARDOWN_WORST_CASE_SECONDS
         )
 
-        self.assertEqual(latest_retry_end, 750)
+        self.assertEqual(latest_retry_end, 730)
         self.assertLessEqual(latest_retry_end, HARNESS_DEADLINE_SECONDS)
 
 
