@@ -165,6 +165,11 @@ The `ComponentManagerService` exposes standard AIP-compliant gRPC RPCs for exter
    - Frequent controller synchronization loops (`UpdateObservedGeneration`) and deactivation status checks use targeted parameterized queries (`queryComponentWithDeps`, `queryActiveDependents`), preventing table-wide shared locks and transaction contention.
 4. **Historical Generation Snapshots**:
    - Resolves live generation coordinates from `Components` or historical pinned coordinates from `ExperimentComponentSnapshots`.
+   - Unpinned `ResolveComponentSnapshot` (name and generation): the active incarnation resolves its own generations (`0` means current); a later generation, or a name without an active incarnation, falls back to the newest incarnation of the name holding a snapshot at that generation. After a name is reused, a generation held by both incarnations is ambiguous and resolves to the active one.
+   - Pinned `ResolveComponentSnapshot` (`component_id` set): resolves strictly by (`component_id`, generation) within the named component. The active incarnation resolves its own generations; a soft-deleted one resolves only its stored snapshots, with no fallback to its final `Components` row (generation `0` is NotFound); an unknown ID, or the ID of another name, is NotFound; a non-positive ID is InvalidArgument.
+   - Stored snapshots differ by backend: `SpannerStore` stores only the snapshots pinned by experiments (`ExperimentComponentSnapshots`), so an earlier generation that no experiment pinned is NotFound, while `MemoryStore` records a snapshot of every written generation.
+   - `Component.component_id` is output-only and reports the incarnation of every returned component, so callers can pin later lookups to it.
+   - `MemoryStore` keys snapshots by `ComponentId`, retains them for soft-deleted incarnations, and resolves in the same order as `SpannerStore`.
 
 ---
 
