@@ -170,7 +170,7 @@ jobs:
 
           # Execute verification via Python module syntax (-m) using the virtual environment interpreter.
           # This sets sys.path[0] to the repository root (${GITHUB_WORKSPACE}), ensuring canonical
-          # package imports (e.g. `from tools.nightly_tests import common`) resolve cleanly without sys.path hacks.
+          # package imports (e.g. `from tools.nightly_tests.verification import verifier_cli`) resolve cleanly without sys.path hacks.
           "${GITHUB_WORKSPACE}/.venv/bin/python3" -m tools.nightly_tests.simple_job_verify \
             --xid="${XID}" \
             --expected_work_units="${NUM_WORK_UNITS}"

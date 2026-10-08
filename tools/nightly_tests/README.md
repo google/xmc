@@ -23,7 +23,12 @@ The Nightly Examples E2E workflow ([`.github/workflows/nightly-examples-e2e.yml`
 
 ### Shared Verification Modules
 
-- [`common.py`](common.py): Provides standard CLI flags (`--xid`, `--endpoint`, `--expected_queue`, `--timeout_sec`, `--dashboard_endpoint`, `--clickhouse_endpoint`, `--require_clickhouse_metrics`, `--dashboard_id`), authenticated ESS gRPC channel management (`ess_channel_context`), formatted banners, and high-level workload verification runners (`verify_standard_workload`, `verify_dashboard_workload`, `assert_*`).
+- [`verification/`](verification/) (`//tools/nightly_tests/verification:*`): Domain-focused verification modules (each paired with a 1-to-1 `*_test.py` unit test suite):
+  - [`verification/verifier_cli.py`](verification/verifier_cli.py) (`//tools/nightly_tests/verification:verifier_cli`, tested by [`verifier_cli_test.py`](verification/verifier_cli_test.py)): Defines standard CLI flags (`--xid`, `--endpoint`, `--expected_queue`, `--timeout_sec`, `--dashboard_endpoint`, `--expected_work_units`, `--clickhouse_endpoint`, `--require_clickhouse_metrics`, `--dashboard_id`, `--expected_title_pattern`), flag retrieval (`get_flag`), argument validation (`validate_argv`), XID normalization (`parse_xid`), work unit count resolution (`resolve_expected_work_units`), and the CLI entrypoint wrapper (`run_main`).
+  - [`verification/endpoint_resolution.py`](verification/endpoint_resolution.py) (`//tools/nightly_tests/verification:endpoint_resolution`, tested by [`endpoint_resolution_test.py`](verification/endpoint_resolution_test.py)): Resolves ESS gRPC (`resolve_endpoint`), Dashboard Service REST (`resolve_dashboard_endpoint`), ClickHouse HTTP (`resolve_clickhouse_endpoint`), and Web UI (`resolve_ui_base_url`) endpoints from flags, environment variables, or local defaults.
+  - [`verification/ess_session.py`](verification/ess_session.py) (`//tools/nightly_tests/verification:ess_session`, tested by [`ess_session_test.py`](verification/ess_session_test.py)): Provides context managers for authenticated ESS gRPC channel lifecycle (`ess_channel_context`) and standardized verification failure exit handling (`handle_verification_errors`).
+  - [`verification/verification_report.py`](verification/verification_report.py) (`//tools/nightly_tests/verification:verification_report`, tested by [`verification_report_test.py`](verification/verification_report_test.py)): Formats console verification header banners (`print_banner`) and completion summaries (`print_success_summary`).
+  - [`verification/workload_verification.py`](verification/workload_verification.py) (`//tools/nightly_tests/verification:workload_verification`, tested by [`workload_verification_test.py`](verification/workload_verification_test.py)): Implements high-level workload and dashboard verification orchestrators (`verify_standard_workload`, `verify_dashboard_workload`) and step assertion helpers (`assert_experiment`, `assert_work_units`, `assert_work_unit_jobsets`, `assert_work_unit_artifacts`, `assert_clickhouse_metrics`, `assert_dashboard_chart_data`, `assert_dashboard`).
 - [`xmc_entities_validator.py`](xmc_entities_validator.py): Implements the underlying ESS gRPC, ClickHouse HTTP SQL, and Dashboard Service REST/gRPC polling and validation assertions:
   - `validate_experiment`: Polls `GetExperiment` and asserts title substring match.
   - `validate_work_units`: Polls `ListWorkUnits` until all expected WorkUnits reach `COMPLETED` (or `RUNNING` / `PENDING` when `wait_for_completion=False`), failing fast on `FAILED` or `CANCELLED`.
@@ -46,7 +51,7 @@ Choose the verification pattern that matches your example's runtime behavior:
 
 #### Pattern A: Standard CPU Workload (Completes on CPU Queue)
 
-Use `common.verify_standard_workload` for workloads that schedule onto the default `cpu-queue` and run to completion. Provide an optional `extra_step` callback if the workload logs metrics to ClickHouse, provisions dashboards, or requires custom JobSet spec assertions:
+Use `workload_verification.verify_standard_workload` for workloads that schedule onto the default `cpu-queue` and run to completion. Provide an optional `extra_step` callback if the workload logs metrics to ClickHouse, provisions dashboards, or requires custom JobSet spec assertions:
 
 ```python
 #!/usr/bin/env python3
@@ -71,7 +76,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import common
+from tools.nightly_tests.verification import verifier_cli, workload_verification
 
 EXPECTED_TITLE_PATTERN: str = "My Example Experiment"
 EXPECTED_WORKER_NAMES: tuple[str, ...] = ("worker",)
@@ -86,7 +91,7 @@ EXPECTED_JOBSET_SPECS: list[dict[str, Any]] = [
 
 def main(argv: Sequence[str]) -> None:
     """Main verification routine for <example_name> workload."""
-    common.verify_standard_workload(
+    workload_verification.verify_standard_workload(
         argv,
         banner_title="XMC My Example Verification & Assertions",
         summary_title="ALL MY EXAMPLE ASSERTIONS PASSED SUCCESSFULLY!",
@@ -97,7 +102,7 @@ def main(argv: Sequence[str]) -> None:
 
 
 if __name__ == "__main__":
-    common.run_main(main)
+    verifier_cli.run_main(main)
 ```
 
 If your example also writes artifacts, ClickHouse metrics, or dashboards, pass `expected_artifact_types`, `expected_metric_names`, and an `extra_step` callback (see [`chart_artifact_job_verify.py`](chart_artifact_job_verify.py) or [`metrics_dashboard_job_verify.py`](metrics_dashboard_job_verify.py)).
@@ -106,7 +111,7 @@ If your example also writes artifacts, ClickHouse metrics, or dashboards, pass `
 
 The nightly E2E cluster runs a CPU-only node pool (`cpu-queue`). If an example requests GPU/TPU accelerators, specialized node selectors (`gpu-pool`), or TPU queues (`tpu-queue`), pods will remain `PENDING` (unschedulable) on the CPU cluster.
 
-Pass `wait_for_completion=False` to `common.verify_standard_workload`. This verifies that the Experiment, WorkUnit, Queue routing, JobSet topology, and custom node selectors/artifacts are persisted accurately by the control plane while `PENDING` or `RUNNING`, and automatically stops the WorkUnits in a `finally` block via `BatchStopWorkUnits` so pending jobs do not accumulate in Kueue:
+Pass `wait_for_completion=False` to `workload_verification.verify_standard_workload`. This verifies that the Experiment, WorkUnit, Queue routing, JobSet topology, and custom node selectors/artifacts are persisted accurately by the control plane while `PENDING` or `RUNNING`, and automatically stops the WorkUnits in a `finally` block via `BatchStopWorkUnits` so pending jobs do not accumulate in Kueue:
 
 ```python
 def _verify_node_selectors(stub: Any, xid: str) -> None:
@@ -120,7 +125,7 @@ def _verify_node_selectors(stub: Any, xid: str) -> None:
 
 def main(argv: Sequence[str]) -> None:
     """Main verification routine for hardware-gated workload."""
-    common.verify_standard_workload(
+    workload_verification.verify_standard_workload(
         argv,
         banner_title="XMC Hardware-Gated Example Verification",
         summary_title="ALL HARDWARE-GATED EXAMPLE ASSERTIONS PASSED!",
@@ -134,12 +139,12 @@ def main(argv: Sequence[str]) -> None:
 
 #### Pattern C: Standalone Dashboard or Control-Plane API Script
 
-For examples that provision standalone resources (such as `xdash` dashboards) rather than launching an Experiment XID, use `common.verify_dashboard_workload` (which accepts `--dashboard_id` or `--xid` from the workflow runner):
+For examples that provision standalone resources (such as `xdash` dashboards) rather than launching an Experiment XID, use `workload_verification.verify_dashboard_workload` (which accepts `--dashboard_id` or `--xid` from the workflow runner):
 
 ```python
 def main(argv: Sequence[str]) -> None:
     """Main verification routine for standalone dashboard example."""
-    common.verify_dashboard_workload(
+    workload_verification.verify_dashboard_workload(
         argv,
         banner_title="XMC Dashboard Example Verification",
         summary_title="ALL DASHBOARD EXAMPLE ASSERTIONS PASSED!",
@@ -152,7 +157,7 @@ def main(argv: Sequence[str]) -> None:
 ### Step 2: Register the Target in `tools/nightly_tests/BUILD.bazel`
 
 1. Add `"<example_name>_verify.py"` to `exports_files([...])` in [`tools/nightly_tests/BUILD.bazel`](BUILD.bazel).
-2. Add a `py_binary` target with `name = "<example_name>_verify"`:
+2. Add a `py_binary` target with `name = "<example_name>_verify"` (include `":xmc_entities_validator_lib"` in `deps` if your script invokes `xmc_entities_validator` directly):
 
 ```starlark
 py_binary(
@@ -160,8 +165,8 @@ py_binary(
     srcs = ["<example_name>_verify.py"],
     imports = ["../.."],
     deps = [
-        ":common",
-        ":xmc_entities_validator_lib",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
     ],
 )
 ```

@@ -20,7 +20,13 @@ from collections.abc import Sequence
 
 from absl import flags
 
-from tools.nightly_tests import common, ui_entities_validator
+from tools.nightly_tests import ui_entities_validator
+from tools.nightly_tests.verification import (
+    endpoint_resolution,
+    ess_session,
+    verification_report,
+    verifier_cli,
+)
 
 FLAGS = flags.FLAGS
 
@@ -66,7 +72,7 @@ def verify_simple_job_ui(
             expected_names=expected_names,
         )
         session.take_screenshot(f"ui_step3_work_units_xid_{xid}.png")
-        common.print_success_summary(
+        verification_report.print_success_summary(
             "SIMPLE DEMO WORKLOAD UI TRAVERSAL PASSED SUCCESSFULLY!",
             [
                 ("Experiment XID", str(xid)),
@@ -80,18 +86,19 @@ def verify_simple_job_ui(
 
 def main(argv: Sequence[str]) -> None:
     """CLI entrypoint."""
-    common.validate_argv(argv)
-    with common.handle_verification_errors():
-        expected_work_units = common.resolve_expected_work_units(EXPECTED_WORK_UNITS)
+    verifier_cli.validate_argv(argv)
+    with ess_session.handle_verification_errors():
+        expected_work_units = verifier_cli.resolve_expected_work_units(EXPECTED_WORK_UNITS)
         verify_simple_job_ui(
-            xid=common.parse_xid(common.get_flag(FLAGS, "xid")),
-            ui_base_url=common.get_flag(FLAGS, "ui_base_url") or common.resolve_ui_base_url(),
-            auth_token=common.get_flag(FLAGS, "auth_token"),
-            headless=common.get_flag(FLAGS, "headless", True),
-            screenshots_dir=common.get_flag(FLAGS, "screenshots_dir"),
+            xid=verifier_cli.parse_xid(verifier_cli.get_flag(FLAGS, "xid")),
+            ui_base_url=verifier_cli.get_flag(FLAGS, "ui_base_url")
+            or endpoint_resolution.resolve_ui_base_url(),
+            auth_token=verifier_cli.get_flag(FLAGS, "auth_token"),
+            headless=verifier_cli.get_flag(FLAGS, "headless", True),
+            screenshots_dir=verifier_cli.get_flag(FLAGS, "screenshots_dir"),
             expected_work_units=expected_work_units,
         )
 
 
 if __name__ == "__main__":
-    common.run_main(main)
+    verifier_cli.run_main(main)

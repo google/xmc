@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unit tests for tools.nightly_tests.common module."""
+"""Unit tests for tools.nightly_tests.verification.workload_verification module."""
 
 from __future__ import annotations
 
@@ -23,7 +23,12 @@ from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
-from tools.nightly_tests import common, xmc_entities_validator
+from tools.nightly_tests import xmc_entities_validator
+from tools.nightly_tests.verification import (
+    endpoint_resolution,
+    verifier_cli,
+    workload_verification,
+)
 
 
 def _make_fake_wu(
@@ -61,245 +66,8 @@ def _make_fake_wu(
     )
 
 
-class CommonTest(unittest.TestCase):
-    """Test cases for common.py utilities."""
-
-    def test_get_flag(self) -> None:
-        flags_mock = SimpleNamespace(xid="12345", endpoint=None)
-        self.assertEqual(common.get_flag(flags_mock, "xid"), "12345")
-        self.assertEqual(common.get_flag(flags_mock, "endpoint", "default:443"), "default:443")
-        self.assertEqual(common.get_flag(flags_mock, "nonexistent", "fallback"), "fallback")
-        self.assertEqual(common.get_flag(None, "xid", "fallback"), "fallback")
-
-    def test_validate_argv(self) -> None:
-        common.validate_argv(["script.py"])
-        with self.assertRaises(common.app.UsageError):
-            common.validate_argv(["script.py", "extra_arg"])
-
-    def test_parse_xid(self) -> None:
-        self.assertEqual(common.parse_xid("12345"), "12345")
-        self.assertEqual(common.parse_xid("experiments/12345"), "12345")
-        self.assertEqual(common.parse_xid("dashboards/my_dashboard"), "my_dashboard")
-        self.assertEqual(common.parse_xid("experiments/42"), "42")
-        self.assertEqual(common.parse_xid("/experiments/42"), "42")
-        self.assertEqual(common.parse_xid("experiments/test-exp-99"), "test-exp-99")
-        self.assertEqual(common.parse_xid("/experiments/test-exp-99"), "test-exp-99")
-        self.assertEqual(common.parse_xid("dashboards/my_slug"), "my_slug")
-        self.assertEqual(common.parse_xid("/dashboards/my_slug"), "my_slug")
-        self.assertEqual(common.parse_xid("dashboards/test-dashboard-123"), "test-dashboard-123")
-        self.assertEqual(common.parse_xid("/dashboards/test-dashboard-123"), "test-dashboard-123")
-
-        with self.assertRaises(ValueError):
-            common.parse_xid(None, required=True)
-        with self.assertRaises(ValueError):
-            common.parse_xid("", required=True)
-        self.assertEqual(common.parse_xid(None, required=False), "")
-
-    def test_resolve_endpoint(self) -> None:
-        # Provided endpoint takes precedence
-        self.assertEqual(common.resolve_endpoint("custom-ess:9090"), "custom-ess:9090")
-
-        # Environment variable fallback
-        with mock.patch.dict("os.environ", {"XMANAGER_ENDPOINT": "env-ess:8443"}, clear=True):
-            self.assertEqual(common.resolve_endpoint(None), "env-ess:8443")
-            self.assertEqual(common.resolve_endpoint(""), "env-ess:8443")
-
-        # Default fallback when no env var is set
-        with mock.patch.dict("os.environ", {}, clear=True):
-            self.assertEqual(common.resolve_endpoint(None), "localhost:8080")
-
-    def test_resolve_dashboard_endpoint(self) -> None:
-        # Provided endpoint takes highest precedence
-        self.assertEqual(
-            common.resolve_dashboard_endpoint("https://custom-dash.example.com"),
-            "https://custom-dash.example.com",
-        )
-        self.assertEqual(
-            common.resolve_dashboard_endpoint("http://custom-dash.example.com"),
-            "http://custom-dash.example.com",
-        )
-        self.assertEqual(
-            common.resolve_dashboard_endpoint("localhost:8080"),
-            "http://localhost:8080",
-        )
-        self.assertEqual(
-            common.resolve_dashboard_endpoint("127.0.0.1:9090"),
-            "http://127.0.0.1:9090",
-        )
-        self.assertEqual(
-            common.resolve_dashboard_endpoint("dashboard.example.com"),
-            "https://dashboard.example.com",
-        )
-
-        # Fallback to resolve_ui_base_url
-        with mock.patch(
-            "tools.nightly_tests.common.resolve_ui_base_url",
-            return_value="https://xmc-ui.example.com",
-        ) as mock_ui:
-            self.assertEqual(common.resolve_dashboard_endpoint(None), "https://xmc-ui.example.com")
-            self.assertEqual(common.resolve_dashboard_endpoint(""), "https://xmc-ui.example.com")
-            self.assertEqual(mock_ui.call_count, 2)
-
-    def test_resolve_clickhouse_endpoint(self) -> None:
-        # Explicit parameter takes highest precedence
-        self.assertEqual(
-            common.resolve_clickhouse_endpoint("http://clickhouse.internal:8123/"),
-            "http://clickhouse.internal:8123",
-        )
-        self.assertEqual(
-            common.resolve_clickhouse_endpoint("clickhouse.internal:8123"),
-            "http://clickhouse.internal:8123",
-        )
-        # Fallback to CLICKHOUSE_ENDPOINT
-        with mock.patch.dict("os.environ", {"CLICKHOUSE_ENDPOINT": "ch-host:9000"}, clear=True):
-            self.assertEqual(common.resolve_clickhouse_endpoint(None), "http://ch-host:9000")
-        # Fallback to CLICKHOUSE_HOST and CLICKHOUSE_HTTP_PORT
-        with mock.patch.dict(
-            "os.environ",
-            {"CLICKHOUSE_HOST": "10.0.0.5", "CLICKHOUSE_HTTP_PORT": "8124"},
-            clear=True,
-        ):
-            self.assertEqual(common.resolve_clickhouse_endpoint(None), "http://10.0.0.5:8124")
-        # Default fallback
-        with mock.patch.dict("os.environ", {}, clear=True):
-            self.assertEqual(common.resolve_clickhouse_endpoint(None), "http://127.0.0.1:8123")
-
-    def test_resolve_ui_base_url(self) -> None:
-        with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.resolve_ui_base_url",
-            return_value="https://xmc-ui.example.com",
-        ) as mock_resolve:
-            result = common.resolve_ui_base_url()
-            self.assertEqual(result, "https://xmc-ui.example.com")
-            mock_resolve.assert_called_once()
-
-    def test_resolve_expected_work_units(self) -> None:
-        # Flag takes highest precedence
-        with mock.patch.object(common, "get_flag", return_value=5):
-            self.assertEqual(common.resolve_expected_work_units(3), 5)
-
-        # Non-positive flag values fallback to env var or default
-        with mock.patch.object(common, "get_flag", return_value=0):
-            self.assertEqual(common.resolve_expected_work_units(3), 3)
-
-        with mock.patch.object(common, "get_flag", return_value=-5):
-            self.assertEqual(common.resolve_expected_work_units(3), 3)
-
-        # Fallback to NUM_WORK_UNITS env var when flag is None
-        with mock.patch.object(common, "get_flag", return_value=None):
-            with mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "2"}):
-                self.assertEqual(common.resolve_expected_work_units(3), 2)
-
-            # Non-positive env var values fallback to default
-            with mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "0"}):
-                self.assertEqual(common.resolve_expected_work_units(3), 3)
-
-            with mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "-5"}):
-                self.assertEqual(common.resolve_expected_work_units(3), 3)
-
-            # Fallback to default when env var is invalid or unset
-            with mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "invalid"}):
-                self.assertEqual(common.resolve_expected_work_units(3), 3)
-
-            with mock.patch.dict("os.environ", {}, clear=True):
-                self.assertEqual(common.resolve_expected_work_units(3), 3)
-
-    def test_ess_channel_context(self) -> None:
-        mock_stub = mock.MagicMock()
-        mock_channel = mock.MagicMock()
-
-        with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
-            return_value=(mock_stub, mock_channel),
-        ) as mock_create_stub:
-            with common.ess_channel_context("ess-server:8080") as (stub, channel):
-                mock_create_stub.assert_called_once_with("ess-server:8080")
-                self.assertEqual(stub, mock_stub)
-                self.assertEqual(channel, mock_channel)
-                mock_channel.close.assert_not_called()
-
-            # Verify channel was closed after context exit
-            mock_channel.close.assert_called_once()
-
-    def test_handle_verification_errors_success(self) -> None:
-        # Block executes without exception
-        with common.handle_verification_errors():
-            pass
-
-    def test_handle_verification_errors_assertion(self) -> None:
-        with mock.patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
-            with self.assertRaises(SystemExit) as ctx:
-                with common.handle_verification_errors():
-                    raise AssertionError("WorkUnit count mismatch")
-            self.assertEqual(ctx.exception.code, 1)
-            self.assertIn("ASSERTION FAILED: WorkUnit count mismatch", mock_stderr.getvalue())
-
-    def test_handle_verification_errors_timeout(self) -> None:
-        with mock.patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
-            with self.assertRaises(SystemExit) as ctx:
-                with common.handle_verification_errors():
-                    raise TimeoutError("Timed out waiting for completion")
-            self.assertEqual(ctx.exception.code, 1)
-            self.assertIn("ASSERTION FAILED: Timed out waiting", mock_stderr.getvalue())
-
-    def test_handle_verification_errors_generic_exception(self) -> None:
-        with mock.patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
-            with self.assertRaises(SystemExit) as ctx:
-                with common.handle_verification_errors():
-                    raise RuntimeError("gRPC connection broken")
-            self.assertEqual(ctx.exception.code, 2)
-            self.assertIn("UNEXPECTED ERROR during verification", mock_stderr.getvalue())
-
-    def test_print_banner_mapping(self) -> None:
-        with mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
-            common.print_banner(
-                "Test Banner",
-                {"XID": "123", "Workers": ["w1", "w2"]},
-            )
-            output = mock_stdout.getvalue()
-            self.assertIn("Test Banner", output)
-            self.assertIn("XID", output)
-            self.assertIn("123", output)
-            self.assertIn("['w1', 'w2']", output)
-
-    def test_print_banner_sequence(self) -> None:
-        with mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
-            common.print_banner(
-                "Test Banner Seq",
-                [("Queue", "cpu-queue"), ("Count", 3)],
-            )
-            output = mock_stdout.getvalue()
-            self.assertIn("Test Banner Seq", output)
-            self.assertIn("cpu-queue", output)
-            self.assertIn("Count", output)
-
-    def test_print_success_summary_mapping(self) -> None:
-        with mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
-            common.print_success_summary(
-                "VERIFICATION PASSED",
-                {"Status": "OK", "Total": 10},
-            )
-            output = mock_stdout.getvalue()
-            self.assertIn("VERIFICATION PASSED", output)
-            self.assertIn("Status", output)
-            self.assertIn("OK", output)
-
-    def test_print_success_summary_sequence(self) -> None:
-        with mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
-            common.print_success_summary(
-                "VERIFICATION PASSED SEQ",
-                [("Experiment", "experiments/42"), ("Units", ("u1", "u2"))],
-            )
-            output = mock_stdout.getvalue()
-            self.assertIn("VERIFICATION PASSED SEQ", output)
-            self.assertIn("experiments/42", output)
-            self.assertIn("['u1', 'u2']", output)
-
-    def test_run_main(self) -> None:
-        mock_fn = mock.MagicMock()
-        with mock.patch.object(common.app, "run") as mock_run:
-            common.run_main(mock_fn)
-            mock_run.assert_called_once_with(mock_fn)
+class WorkloadVerificationTest(unittest.TestCase):
+    """Test cases for workload_verification.py step runners and orchestrators."""
 
     def test_assert_experiment(self) -> None:
         mock_stub = mock.MagicMock()
@@ -308,7 +76,7 @@ class CommonTest(unittest.TestCase):
             "tools.nightly_tests.xmc_entities_validator.validate_experiment",
             return_value=mock_exp,
         ) as mock_val:
-            res = common.assert_experiment(mock_stub, "10", "Test")
+            res = workload_verification.assert_experiment(mock_stub, "10", "Test")
             self.assertEqual(res, mock_exp)
             mock_val.assert_called_once_with(
                 stub=mock_stub, xid="10", expected_title_pattern="Test"
@@ -321,7 +89,9 @@ class CommonTest(unittest.TestCase):
             "tools.nightly_tests.xmc_entities_validator.validate_work_units",
             return_value=wu_list,
         ) as mock_val:
-            res = common.assert_work_units(mock_stub, "10", 1, "cpu-queue", ["w1"], 60)
+            res = workload_verification.assert_work_units(
+                mock_stub, "10", 1, "cpu-queue", ["w1"], 60
+            )
             self.assertEqual(res, wu_list)
             mock_val.assert_called_once_with(
                 stub=mock_stub,
@@ -343,14 +113,14 @@ class CommonTest(unittest.TestCase):
             "tools.nightly_tests.xmc_entities_validator.validate_jobsets",
             return_value=job_results,
         ) as mock_val:
-            res = common.assert_work_unit_jobsets(mock_stub, "10", expected_jobs)
+            res = workload_verification.assert_work_unit_jobsets(mock_stub, "10", expected_jobs)
             self.assertEqual(res, job_results)
             mock_val.assert_called_once_with(work_unit=raw_wu, expected_jobs=expected_jobs)
 
         mock_stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[])
         with self.assertRaises(AssertionError):
-            common.assert_work_unit_jobsets(mock_stub, "10", expected_jobs)
-        self.assertEqual(common.assert_work_unit_jobsets(mock_stub, "10", None), [])
+            workload_verification.assert_work_unit_jobsets(mock_stub, "10", expected_jobs)
+        self.assertEqual(workload_verification.assert_work_unit_jobsets(mock_stub, "10", None), [])
 
     def test_assert_work_unit_artifacts(self) -> None:
         mock_stub = mock.MagicMock()
@@ -367,7 +137,7 @@ class CommonTest(unittest.TestCase):
             "tools.nightly_tests.xmc_entities_validator.validate_artifacts",
             return_value=art_results,
         ) as mock_val:
-            res = common.assert_work_unit_artifacts(
+            res = workload_verification.assert_work_unit_artifacts(
                 mock_stub, "10", "1", ["chart"], ["loss"], timeout_sec=120
             )
             self.assertEqual(res, art_results)
@@ -406,7 +176,7 @@ class CommonTest(unittest.TestCase):
         with (
             mock.patch.dict("os.environ", {"NUM_WORK_UNITS": "3"}, clear=True),
             mock.patch.object(
-                common,
+                verifier_cli,
                 "get_flag",
                 side_effect=lambda _, k, d=None: flag_values.get(k, d),
             ),
@@ -416,7 +186,7 @@ class CommonTest(unittest.TestCase):
             ) as mock_create_stub,
             mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,
         ):
-            common.verify_standard_workload(
+            workload_verification.verify_standard_workload(
                 ["script.py"],
                 banner_title="Banner",
                 summary_title="Summary",
@@ -451,14 +221,14 @@ class CommonTest(unittest.TestCase):
         )
         with (
             mock.patch.object(
-                common, "get_flag", side_effect=lambda _, k, d=None: "16" if k == "xid" else d
+                verifier_cli, "get_flag", side_effect=lambda _, k, d=None: "16" if k == "xid" else d
             ),
             mock.patch(
                 "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
                 return_value=(mock_stub, mock_channel),
             ),
         ):
-            common.verify_standard_workload(
+            workload_verification.verify_standard_workload(
                 ["script.py"],
                 banner_title="Banner",
                 summary_title="Summary",
@@ -476,7 +246,7 @@ class CommonTest(unittest.TestCase):
         mock_stub.GetExperiment.side_effect = AssertionError("title mismatch")
         with (
             mock.patch.object(
-                common, "get_flag", side_effect=lambda _, k, d=None: "16" if k == "xid" else d
+                verifier_cli, "get_flag", side_effect=lambda _, k, d=None: "16" if k == "xid" else d
             ),
             mock.patch(
                 "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
@@ -485,7 +255,7 @@ class CommonTest(unittest.TestCase):
             mock.patch("sys.stderr", new_callable=io.StringIO),
             self.assertRaises(SystemExit) as ctx,
         ):
-            common.verify_standard_workload(
+            workload_verification.verify_standard_workload(
                 ["script.py"], "Banner", "Summary", "Title", wait_for_completion=False
             )
         self.assertEqual(ctx.exception.code, 1)
@@ -502,7 +272,7 @@ class CommonTest(unittest.TestCase):
                 mock_stub.GetExperiment.side_effect = exc
                 with (
                     mock.patch.object(
-                        common,
+                        verifier_cli,
                         "get_flag",
                         side_effect=lambda _, k, d=None: "10" if k == "xid" else d,
                     ),
@@ -513,7 +283,7 @@ class CommonTest(unittest.TestCase):
                     mock.patch("sys.stderr", new_callable=io.StringIO),
                     self.assertRaises(SystemExit) as ctx,
                 ):
-                    common.verify_standard_workload(
+                    workload_verification.verify_standard_workload(
                         ["script.py"],
                         banner_title="Banner",
                         summary_title="Summary",
@@ -526,19 +296,21 @@ class CommonTest(unittest.TestCase):
         expected_res = {"total_rows": 50, "metrics": []}
         with (
             mock.patch.object(
-                common,
+                verifier_cli,
                 "get_flag",
                 side_effect=lambda _, k, d=None: True if k == "require_clickhouse_metrics" else d,
             ),
             mock.patch.object(
-                common, "resolve_clickhouse_endpoint", return_value="http://127.0.0.1:8123"
+                endpoint_resolution,
+                "resolve_clickhouse_endpoint",
+                return_value="http://127.0.0.1:8123",
             ),
             mock.patch(
                 "tools.nightly_tests.xmc_entities_validator.validate_clickhouse_metrics",
                 return_value=expected_res,
             ) as mock_val,
         ):
-            res = common.assert_clickhouse_metrics(
+            res = workload_verification.assert_clickhouse_metrics(
                 "23", expected_metric_names=["train/loss"], expected_min_rows=50, timeout_sec=120
             )
             self.assertEqual(res, expected_res)
@@ -580,7 +352,7 @@ class CommonTest(unittest.TestCase):
             with self.subTest(case=name):
                 with (
                     mock.patch.object(
-                        common,
+                        verifier_cli,
                         "get_flag",
                         side_effect=lambda _, k, d=None, fo=flag_overrides: fo.get(k, d),
                     ),
@@ -590,7 +362,7 @@ class CommonTest(unittest.TestCase):
                         return_value=expected_res,
                     ) as mock_val,
                 ):
-                    res = common.assert_dashboard_chart_data(
+                    res = workload_verification.assert_dashboard_chart_data(
                         "exp_23_overview", min_hydrated_points=2, expected_chart_id="c1"
                     )
                     self.assertEqual(res, expected_res)
@@ -614,7 +386,9 @@ class CommonTest(unittest.TestCase):
             "tools.nightly_tests.xmc_entities_validator.validate_dashboard",
             return_value=[dash_payload],
         ) as mock_val:
-            res = common.assert_dashboard("http://localhost:8080", "dash_1", "VCC", min_charts=3)
+            res = workload_verification.assert_dashboard(
+                "http://localhost:8080", "dash_1", "VCC", min_charts=3
+            )
             self.assertEqual(res, dash_payload)
             mock_val.assert_called_once_with(
                 endpoint="http://localhost:8080",
@@ -629,7 +403,7 @@ class CommonTest(unittest.TestCase):
             ),
             self.assertRaisesRegex(AssertionError, "was not returned by endpoint"),
         ):
-            common.assert_dashboard("http://localhost:8080", "dash_1", "VCC")
+            workload_verification.assert_dashboard("http://localhost:8080", "dash_1", "VCC")
 
     def test_verify_dashboard_workload(self) -> None:
         dash_payload = {
@@ -641,7 +415,7 @@ class CommonTest(unittest.TestCase):
         flags_map = {"xid": "42", "dashboard_endpoint": "localhost:9090"}
         with (
             mock.patch.object(
-                common, "get_flag", side_effect=lambda _, k, d=None: flags_map.get(k, d)
+                verifier_cli, "get_flag", side_effect=lambda _, k, d=None: flags_map.get(k, d)
             ),
             mock.patch(
                 "tools.nightly_tests.xmc_entities_validator.validate_dashboard",
@@ -649,7 +423,7 @@ class CommonTest(unittest.TestCase):
             ) as mock_val,
             mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,
         ):
-            common.verify_dashboard_workload(
+            workload_verification.verify_dashboard_workload(
                 ["script.py"],
                 banner_title="Dashboard Banner",
                 summary_title="DASHBOARD PASSED",
@@ -661,6 +435,30 @@ class CommonTest(unittest.TestCase):
             out = mock_stdout.getvalue()
             self.assertIn("example_vcc_comparison_42", out)
             self.assertIn("DASHBOARD PASSED", out)
+
+        # Non-numeric slug dashboard_id and error exit via handle_verification_errors
+        slug_flags = {"dashboard_id": "custom_slug", "dashboard_endpoint": "localhost:9090"}
+        with (
+            mock.patch.object(
+                verifier_cli, "get_flag", side_effect=lambda _, k, d=None: slug_flags.get(k, d)
+            ),
+            mock.patch(
+                "tools.nightly_tests.xmc_entities_validator.validate_dashboard",
+                return_value=[],
+            ),
+            mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,
+            mock.patch("sys.stderr", new_callable=io.StringIO),
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            workload_verification.verify_dashboard_workload(
+                ["script.py"],
+                banner_title="Dashboard Banner",
+                summary_title="DASHBOARD PASSED",
+                default_dashboard_id="example_vcc_comparison",
+                expected_title_pattern="VCC",
+            )
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("custom_slug", mock_stdout.getvalue())
 
 
 if __name__ == "__main__":

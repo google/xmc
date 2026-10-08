@@ -26,7 +26,12 @@ from typing import Any
 
 from absl import flags
 
-from tools.nightly_tests import common, ui_entities_validator
+from tools.nightly_tests import ui_entities_validator
+from tools.nightly_tests.verification import (
+    endpoint_resolution,
+    ess_session,
+    verifier_cli,
+)
 
 FLAGS = flags.FLAGS
 
@@ -134,7 +139,7 @@ def capture_all_routes(
 ) -> list[dict[str, Any]]:
     """Captures all configured canonical routes and returns their manifest records."""
     os.makedirs(os.path.join(output_dir, "screenshots"), exist_ok=True)
-    resolved_xid = common.parse_xid(str(xid) if xid is not None else "", required=False)
+    resolved_xid = verifier_cli.parse_xid(str(xid) if xid is not None else "", required=False)
     captures: list[dict[str, Any]] = []
     for route in routes:
         if "{xid}" in route.route and not resolved_xid:
@@ -191,7 +196,7 @@ def run_visual_snapshot(
     os.environ.setdefault("XMC_USER_EMAIL", "test@example.com")
     clean_ui_url = str(ui_base_url or "").strip().rstrip("/")
     resolved_sha = commit_sha or os.environ.get("GITHUB_SHA", "local")
-    clean_xid = common.parse_xid(str(xid) if xid is not None else "", required=False)
+    clean_xid = verifier_cli.parse_xid(str(xid) if xid is not None else "", required=False)
     with ui_entities_validator.XMCUIBrowserSession(
         ui_base_url=clean_ui_url,
         auth_token=auth_token,
@@ -214,19 +219,21 @@ def run_visual_snapshot(
 
 def main(argv: Sequence[str]) -> None:
     """CLI entrypoint for weekly_visual_snapshot."""
-    common.validate_argv(argv)
-    raw_ui_url = common.get_flag(FLAGS, "ui_base_url") or common.resolve_ui_base_url()
+    verifier_cli.validate_argv(argv)
+    raw_ui_url = (
+        verifier_cli.get_flag(FLAGS, "ui_base_url") or endpoint_resolution.resolve_ui_base_url()
+    )
     clean_ui_url = str(raw_ui_url or "").strip().rstrip("/")
-    with common.handle_verification_errors():
+    with ess_session.handle_verification_errors():
         run_visual_snapshot(
             ui_base_url=clean_ui_url,
-            xid=common.parse_xid(common.get_flag(FLAGS, "xid"), required=False),
-            output_dir=common.get_flag(FLAGS, "output_dir", "/tmp/visual-gallery"),
-            commit_sha=common.get_flag(FLAGS, "commit_sha"),
-            auth_token=common.get_flag(FLAGS, "auth_token"),
-            headless=common.get_flag(FLAGS, "headless", True),
+            xid=verifier_cli.parse_xid(verifier_cli.get_flag(FLAGS, "xid"), required=False),
+            output_dir=verifier_cli.get_flag(FLAGS, "output_dir", "/tmp/visual-gallery"),
+            commit_sha=verifier_cli.get_flag(FLAGS, "commit_sha"),
+            auth_token=verifier_cli.get_flag(FLAGS, "auth_token"),
+            headless=verifier_cli.get_flag(FLAGS, "headless", True),
         )
 
 
 if __name__ == "__main__":
-    common.run_main(main)
+    verifier_cli.run_main(main)
