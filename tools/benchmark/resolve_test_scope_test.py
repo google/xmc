@@ -855,7 +855,12 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertTrue(unit_wf["has_backend"])
 
     def test_classify_backend_ci_entrypoint_as_core_infra(self):
-        for path in (".github/actions/run-backend-tests/action.yml", "tools/run_affected_tests.py"):
+        for path in (
+            ".github/actions/run-backend-tests/action.yml",
+            "tools/run_affected_tests.py",
+            "tools/common/changed_files.py",
+            "tools/common/tool_utils.py",
+        ):
             with self.subTest(path=path):
                 self.assertTrue(classify_modified_files([path])["has_core_infra"])
 

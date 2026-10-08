@@ -51,9 +51,11 @@ CORE_INFRA_FILES: set[str] = {
     ".bazelversion",
     ".github/workflows/unit-tests.yml",
     ".github/actions/run-backend-tests/action.yml",
-    # The backend CI action runs its Bazel tests through this entrypoint.
+    # The backend CI action runs its Bazel tests through this entrypoint and its shared modules.
     "tools/run_affected_tests.py",
     "tools/benchmark/resolve_test_scope.py",
+    "tools/common/changed_files.py",
+    "tools/common/tool_utils.py",
 }
 
 # The Helm chart suite (.github/actions/run-chart-tests) renders templates with a host helm
