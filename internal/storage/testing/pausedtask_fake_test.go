@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"

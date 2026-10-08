@@ -30,6 +30,6 @@ compat_go_test(
     srcs = ["gcemetadata_test.go"],
     embed = [":gcemetadata"],
     deps = [
-        "//internal/compat/cmp",
+        "@com_github_google_go_cmp//cmp",
     ],
 )

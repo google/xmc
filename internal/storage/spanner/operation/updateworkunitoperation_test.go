@@ -18,8 +18,8 @@ import (
 	"testing"
 	"xmanager_cloud/internal/storage/spanner"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	lropb "longrunning/operations_go_proto"
 	anypb "protobuf/any_go_proto"
 	fmpb "protobuf/field_mask_go_proto"

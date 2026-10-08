@@ -20,7 +20,7 @@ compat_go_test(
     embed = [":jobsetutil"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/cmp",
+        "@com_github_google_go_cmp//cmp",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_sigs_jobset//api/jobset/v1alpha2",
     ],

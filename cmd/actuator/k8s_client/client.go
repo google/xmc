@@ -20,7 +20,7 @@ import (
 	"os"
 	"strconv"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/k8s_io/client_go/v/v0_23/dynamic/dynamic"
 	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"

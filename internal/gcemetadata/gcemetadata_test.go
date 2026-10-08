@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 )
 
 func clearEnv(t *testing.T) {

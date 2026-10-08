@@ -19,7 +19,7 @@ import (
 
 	"golang/protobuf/v2/proto/proto"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	timestamppb "protobuf/timestamp_go_proto"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/schema/xidschema"

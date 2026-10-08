@@ -18,9 +18,9 @@ import (
 	"errors"
 	"testing"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 
 	fmpb "protobuf/field_mask_go_proto"

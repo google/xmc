@@ -38,7 +38,6 @@ compat_go_library(
         "//cmd/reconciler/shared",
         "//cmd/reconciler/workload",
         "//internal/common/health",
-        "//internal/compat/spanner",
         "//internal/configutil",
         "//internal/gcemetadata",
         "//internal/kubernetes/common/constants",

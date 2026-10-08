@@ -22,9 +22,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
-	"golang/cmp/cmp"
-	"golang/cmp/cmpopts/cmpopts"
 	"golang/google_api/option/option"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/spanner/migrations/version"

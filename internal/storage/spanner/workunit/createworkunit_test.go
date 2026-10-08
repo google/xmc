@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"testing"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	domainworkunit "xmanager_cloud/internal/domain/workunit"
 	"xmanager_cloud/internal/storage/spanner"

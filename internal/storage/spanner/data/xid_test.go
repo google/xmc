@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/cmp/cmp"
+	"cloud.google.com/go/spanner"
+	"github.com/google/go-cmp/cmp"
 	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/schema/xidschema"

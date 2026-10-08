@@ -34,7 +34,6 @@ compat_go_library(
         "//cmd/experiment_state_server/server",
         "//internal/auth",
         "//internal/common/health",
-        "//internal/compat/spanner",
         "//internal/logging",
         "//internal/security/keyreloader",
         "//internal/security/tlsutil",

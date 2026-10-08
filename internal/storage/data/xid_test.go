@@ -16,8 +16,8 @@ package data
 import (
 	"testing"
 
-	"golang/cmp/cmp"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "protobuf/field_mask_go_proto"
 	pb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
 	"golang/google_api/option/option"
 	authz "xmanager_cloud/auth/auth"

@@ -18,13 +18,13 @@ import (
 
 	"api/filter/go/filter"
 	"api/filter/go/filtervisitor"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/cmp/cmp"
-	"golang/cmp/cmpopts/cmpopts"
+	"cloud.google.com/go/spanner"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"googlesql/safesql/go/safesql"
 	"xmanager_cloud/query_generator/predicate"
 
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 
 	fpb "api/filter/filter_expression_go_proto"

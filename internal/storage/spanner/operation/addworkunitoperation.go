@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	"golang/uuid/uuid"
 	longrunningpb "longrunning/operations_go_proto"
 	anypb "protobuf/any_go_proto"

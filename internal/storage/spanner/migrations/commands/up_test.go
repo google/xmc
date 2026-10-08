@@ -16,9 +16,9 @@ package commands
 import (
 	"testing"
 
+	"cloud.google.com/go/spanner"
 	"cloud_spanner_emulator/public/go/emulator"
 	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	migdatabase "golang/github_com/golang_migrate/migrate/v/v4/database/database"
 	"golang/github_com/golang_migrate/migrate/v/v4/database/stub/stub"
 	"golang/github_com/golang_migrate/migrate/v/v4/migrate"

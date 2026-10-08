@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 	"task/go/status"
 	"xmanager_cloud/internal/storage"
 )

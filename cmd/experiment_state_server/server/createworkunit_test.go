@@ -21,10 +21,10 @@ import (
 	"strings"
 	"testing"
 
-	"golang/cmp/cmp"
+	"github.com/google/go-cmp/cmp"
 	"golang/protobuf/v2/encoding/protojson/protojson"
 	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"

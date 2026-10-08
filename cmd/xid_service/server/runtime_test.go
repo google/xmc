@@ -19,7 +19,7 @@ import (
 	"errors"
 	"testing"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/xid_service/config"
 )

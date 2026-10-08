@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/cmp/cmp"
+	"cloud.google.com/go/spanner"
+	"github.com/google/go-cmp/cmp"
 	"golang/protobuf/v2/proto/proto"
-	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"google.golang.org/protobuf/testing/protocmp"
 	lropb "longrunning/operations_go_proto"
 	anypb "protobuf/any_go_proto"
 	statuspb "rpc/status_go_proto"

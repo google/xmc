@@ -21,7 +21,7 @@ import (
 	"os"
 	"slices"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	"golang/google_api/option/option"
 	"xmanager_cloud/cmd/actuator/pausescheduling"
 	"xmanager_cloud/common/health"

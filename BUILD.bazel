@@ -35,11 +35,8 @@ nogo(
 # gazelle:resolve go golang/protobuf/v2/proto/proto //internal/compat/proto:proto
 # gazelle:resolve go golang/protobuf/v2/encoding/protojson/protojson @org_golang_google_protobuf//encoding/protojson
 # gazelle:resolve go golang/protobuf/v2/encoding/prototext/prototext @org_golang_google_protobuf//encoding/prototext
-# gazelle:resolve go golang/protobuf/v2/testing/protocmp/protocmp //internal/compat/protocmp:protocmp
 # gazelle:resolve go golang/uuid/uuid //internal/compat/uuid:uuid
 # gazelle:resolve go golang/grpc/metadata/metadata //internal/compat/metadata:metadata
-# gazelle:resolve go golang/cmp/cmp //internal/compat/cmp:cmp
-# gazelle:resolve go golang/cmp/cmpopts/cmpopts //internal/compat/cmpopts:cmpopts
 # gazelle:resolve go golang/google_api/option/option @org_golang_google_api//option:option
 # gazelle:resolve go golang/google_api/iterator/iterator @org_golang_google_api//iterator:iterator
 # gazelle:resolve go golang/google_api/iamcredentials/v1/iamcredentials @org_golang_google_api//iamcredentials/v1:iamcredentials
@@ -54,7 +51,6 @@ nogo(
 # gazelle:resolve go tink/integration/go/jwt/jwtkeyconverter //internal/compat/jwtkeyconverter:jwtkeyconverter
 # gazelle:resolve go golang/github_com/golang_migrate/migrate/v/v4/source/source @com_github_golang_migrate_migrate_v4//source:source
 # gazelle:resolve go golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs @com_github_golang_migrate_migrate_v4//source/iofs:iofs
-# gazelle:resolve go golang/cloud_google_com/go/spanner/v/v1/spanner //internal/compat/spanner:spanner
 
 # Compatibility wrapper package target mappings
 # gazelle:resolve go task/go/status //internal/compat/status:status

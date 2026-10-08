@@ -27,9 +27,9 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/query_generator/querytools"
 
+	"cloud.google.com/go/spanner"
 	"encoding/base64"
 	"encoding/json"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 )
 
 // ListParams contains the parameters for a list query.

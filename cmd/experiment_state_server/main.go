@@ -31,7 +31,7 @@ import (
 	"strings"
 	"syscall"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/grpc"
 	"golang/grpc/health/health"

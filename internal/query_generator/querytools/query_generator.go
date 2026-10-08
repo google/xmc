@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"api/filter/go/filtervisitor"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
 	"golang/protobuf/v2/proto/proto"
 	"googlesql/safesql/go/safesql"
 	"task/go/status"
