@@ -175,7 +175,10 @@ In addition to the full-platform Playwright orchestrator, `test/e2e` includes st
 
 - **ClickHouse 3P E2E Suite** ([clickhouse_3p_test.go](clickhouse_3p_test.go)): Deploys `clickhouse/clickhouse-server:24.3-alpine` inside KinD and validates both operator-managed `wrapperRef` (`ClickHouseInstallation`) discovery and `stable-2026a` operator-less active probing, `componentconfig.ResolveOptions`, and live SQL execution (`CREATE TABLE`, `INSERT`, `SELECT`) from a mock ML workload Pod injected with `.status.access.envVars`.
 - **Redpanda 3P E2E Suite** ([redpanda_3p_test.go](redpanda_3p_test.go)): Deploys `docker.redpanda.com/redpandadata/redpanda:v24.1.1` inside KinD and validates both operator-managed `wrapperRef` (`Cluster`) discovery and `stable-2026a` operator-less active probing, `ingestiongateway.ResolveRedpandaComponentConfig`, and live Kafka topic creation, message production, and consumption (`rpk topic create/produce/consume`) from a mock ML workload Pod injected with `.status.access.envVars`.
-- **KinD 3P Harness** ([kind_3p_harness_test.go](kind_3p_harness_test.go)): Provisions an isolated ephemeral KinD cluster (or attaches to `KIND_CLUSTER_NAME` when set), preloads container images, installs [crd.yaml](../../deploy/helm/templates/components/crd.yaml), bridges cluster-local service probes over KinD `NodePort`s, and drives in-process CMS and `xmc-bridge` reconciliation.
+- **KinD 3P Harness** ([kind_3p_harness_test.go](kind_3p_harness_test.go)): Provisions an isolated ephemeral KinD cluster (or attaches to `KIND_CLUSTER_NAME` when set), preloads container images, installs [crd.yaml](../../deploy/helm/templates/components/crd.yaml), bridges cluster-local service probes over KinD `NodePort`s, and drives in-process CMS and `xmc-bridge` reconciliation. Each reconcile pass persists finalizer and status changes with `bridge.PersistReconcileResult`, the same function `cmd/xmc_bridge` uses; namespace cleanup releases the `finalizers.xmc.dev/deletion-protection` finalizer so reused clusters do not keep namespaces in `Terminating`.
+
+> [!NOTE]
+> The harness server-side applies the CRD with the `e2e-harness` field manager and `force`, so on a cluster reused through `KIND_CLUSTER_NAME` it takes ownership of it. The Go KinD targets are tagged `manual` and do not run in CI yet.
 
 ### Running the 3P Component E2E Suites
 
@@ -189,6 +192,23 @@ bazel test //test/e2e:redpanda_3p_test --test_output=streamed
 
 # Optionally reuse an existing KinD cluster:
 bazel test //test/e2e:clickhouse_3p_test //test/e2e:redpanda_3p_test \
+  --test_env=KIND_CLUSTER_NAME=xmc-dev --test_output=streamed
+```
+
+---
+
+## Component Lifecycle KinD E2E Suite (`components_lifecycle_e2e_test.go`)
+
+`TestComponentsLifecycle` reuses the KinD harness to verify `Component` lifecycle control-plane behavior. Components are 1P without a Helm manager, so no workloads run; each subtest asserts CMS state, CR status conditions, and finalizers. CRD schema, CEL, and deletion `ValidatingAdmissionPolicy` admission are covered by the hermetic `envtest` suite in [pkg/components/bridge](../../pkg/components/bridge/README.md) (`components_admission_test.go`), so this suite does not install the policy:
+
+- **BlockedDeactivation**: Disabling a component that an enabled component depends on is rejected by CMS `PrepareDeactivation`. The bridge reports `DeactivationBlocked=True` naming the dependent, CMS keeps the component active, and the CR keeps its finalizer. After the dependent is disabled, both components reach `COMPONENT_STATE_DISABLED` and the blocked condition clears. The bridge re-checks a blocked deactivation at most every 30s, so this subtest takes about 30s.
+- **FinalizerCleanup**: The bridge attaches `finalizers.xmc.dev/deletion-protection`. After `DELETE` (with `spec.deletionProtection: false`), the finalizer holds the CR until CMS `ExecuteDeletion` runs. The bridge then removes the finalizer and the CR is gone.
+
+```bash
+bazel test //test/e2e:components_lifecycle_test --test_output=streamed
+
+# Optionally reuse an existing KinD cluster:
+bazel test //test/e2e:components_lifecycle_test \
   --test_env=KIND_CLUSTER_NAME=xmc-dev --test_output=streamed
 ```
 
