@@ -876,7 +876,7 @@ func TestConstructJobSet_GPU_H100Mega(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	for _, gpuType := range []string{"nvidia-h100-mega-80gb", "H100_MEGA"} {
 		t.Run(gpuType, func(t *testing.T) {
-			workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+			workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 				job := wu.Executable.GetJobset().Jobs[0]
 				job.Spec.Resources = &esspb.ResourceSet{
 					Resources: &esspb.ResourceSet_GpuResources{
