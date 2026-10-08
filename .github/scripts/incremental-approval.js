@@ -107,7 +107,7 @@ async function run({ github, context, core }) {
 
   let hasProtectedFileChanges = checkProtectedFileChanges(baseRef, latestApproval.approvedSha, currentSha);
   if (hasProtectedFileChanges) {
-    core.info(`PR #${prNumber} modifies sensitive CI workflows, scripts, or ownership files (.github/, OWNERS). Skipping auto-reapproval.`);
+    core.info(`PR #${prNumber} modifies sensitive CI workflows, scripts, ownership files, or the protobuf breaking-change baseline or its configuration (.github/, OWNERS, .githooks/, api/testdata/protos_baseline.binpb, api/buf.yaml, api/BUILD.bazel). Skipping auto-reapproval.`);
   }
 
   let rangeDiffOutput = '';
