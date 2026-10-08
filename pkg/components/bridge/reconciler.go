@@ -152,10 +152,8 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 		return r.reconcileDeletion(ctx, in, canonicalName, res)
 	}
 
-	if !in.HasFinalizer {
-		res.AddFinalizer = true
-		logging.Info(ctx, "Attaching deletion protection finalizer", "name", in.Name)
-	}
+	// The finalizer is attached and logged by PersistReconcileResult, which performs the update.
+	res.AddFinalizer = !in.HasFinalizer
 	if !in.Enabled {
 		if err := r.applyDisabledIntent(ctx, in, canonicalName, res); err != nil {
 			return res, err
@@ -289,8 +287,20 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	if gen := setResp.GetComponent().GetSpec().GetGeneration(); gen > 0 {
 		res.ComponentGeneration = gen
 	}
-	logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "componentGeneration", res.ComponentGeneration, "state", res.State.String())
+	logIntentApplied(ctx, in, canonicalName, res)
 	return nil
+}
+
+// logIntentApplied logs an applied intent at Info when it committed a CMS generation other than
+// the one in status.componentGeneration, or when the custom resource reports none yet (a new or
+// recreated custom resource adopting a record), and at Debug for the idempotent re-apply that every
+// pass performs.
+func logIntentApplied(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) {
+	logAt := logging.Debug
+	if in.ComponentGeneration == 0 || res.ComponentGeneration != in.ComponentGeneration {
+		logAt = logging.Info
+	}
+	logAt(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "previousComponentGeneration", in.ComponentGeneration, "componentGeneration", res.ComponentGeneration, "state", res.State.String())
 }
 
 // intentSource returns the custom resource identity sent with intents, or nil when the input has

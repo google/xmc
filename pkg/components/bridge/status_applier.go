@@ -162,6 +162,7 @@ func ApplyComponentStatusSSA(ctx context.Context, client dynamic.Interface, defa
 
 // SyncComponentFinalizers attaches or detaches the deletion protection finalizer on item in Kubernetes,
 // retrying on optimistic concurrency conflicts so concurrent resource updates do not fail reconciliation.
+// The change is logged once, after the update succeeds.
 func SyncComponentFinalizers(ctx context.Context, client dynamic.Interface, defaultNamespace string, item *unstructured.Unstructured, res *ReconcileResult) (*unstructured.Unstructured, error) {
 	if res == nil || item == nil || (!res.AddFinalizer && !res.RemoveFinalizer) {
 		return item, nil
@@ -172,8 +173,9 @@ func SyncComponentFinalizers(ctx context.Context, client dynamic.Interface, defa
 	resClient := client.Resource(ComponentGVR).Namespace(resolveTargetNamespace(item, defaultNamespace))
 	current := item.DeepCopy()
 	var updated *unstructured.Unstructured
+	var change string
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		if !applyFinalizerMutation(ctx, current, res) {
+		if change = applyFinalizerMutation(current, res); change == "" {
 			updated = current
 			return nil
 		}
@@ -190,6 +192,9 @@ func SyncComponentFinalizers(ctx context.Context, client dynamic.Interface, defa
 	})
 	if err != nil {
 		return nil, err
+	}
+	if change != "" {
+		logging.Info(ctx, change, "name", updated.GetName())
 	}
 	return updated, nil
 }
@@ -219,19 +224,19 @@ func PersistReconcileResult(ctx context.Context, client dynamic.Interface, defau
 	return nil
 }
 
-func applyFinalizerMutation(ctx context.Context, item *unstructured.Unstructured, res *ReconcileResult) bool {
+// applyFinalizerMutation adds or removes the deletion protection finalizer on item as res requests
+// and returns the log message describing the change, or "" when item already matches.
+func applyFinalizerMutation(item *unstructured.Unstructured, res *ReconcileResult) string {
 	hasFin := hasDeletionProtectionFinalizer(item.GetFinalizers())
 	if res.AddFinalizer && !hasFin {
 		item.SetFinalizers(append(item.GetFinalizers(), FinalizerDeletionProtection))
-		logging.Info(ctx, "Attaching deletion protection finalizer", "name", item.GetName())
-		return true
+		return "Attaching deletion protection finalizer"
 	}
 	if res.RemoveFinalizer && hasFin {
 		item.SetFinalizers(removeDeletionProtectionFinalizer(item.GetFinalizers()))
-		logging.Info(ctx, "Removing deletion protection finalizer", "name", item.GetName())
-		return true
+		return "Removing deletion protection finalizer"
 	}
-	return false
+	return ""
 }
 
 func resolveTargetNamespace(item *unstructured.Unstructured, defaultNamespace string) string {
