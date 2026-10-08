@@ -23,8 +23,10 @@ import (
 	"xmanager_cloud/internal/storage/spanner"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/storage"
 
@@ -143,7 +145,7 @@ func TestRestartWorkUnitExecutions_WorkUnitNotFound(t *testing.T) {
 	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 
 	_, err = restartWorkUnitExecutions(ctx, storageClient, "test@example.com", xid, wids)
-	if status.ExtractCanonicalCode(err) != status.NotFound {
+	if status.Code(err) != codes.NotFound {
 		t.Errorf("restartWorkUnitExecutions for non-existent work unit returned error %v, want NotFound", err)
 	}
 }
@@ -199,24 +201,24 @@ func TestRestartWorkUnitExecutions_PreservesAborted(t *testing.T) {
 		name        string
 		mockStorage *storage.MockStorage
 		wantErr     error
-		wantCode    status.Code
+		wantCode    codes.Code
 	}{
 		{
 			name: "fetch_work_unit_aborted",
 			mockStorage: &storage.MockStorage{
-				FetchWorkUnitErr: status.ErrAborted,
+				FetchWorkUnitErr: grpcerr.ErrAborted,
 			},
-			wantErr:  status.ErrAborted,
-			wantCode: status.Aborted,
+			wantErr:  grpcerr.ErrAborted,
+			wantCode: codes.Aborted,
 		},
 		{
 			name: "fetch_experiment_aborted",
 			mockStorage: &storage.MockStorage{
 				WorkUnit:           validWorkUnit,
-				FetchExperimentErr: status.ErrAborted,
+				FetchExperimentErr: grpcerr.ErrAborted,
 			},
-			wantErr:  status.ErrAborted,
-			wantCode: status.Aborted,
+			wantErr:  grpcerr.ErrAborted,
+			wantCode: codes.Aborted,
 		},
 		{
 			name: "invalid_current_execution_name_wraps_internal",
@@ -228,8 +230,8 @@ func TestRestartWorkUnitExecutions_PreservesAborted(t *testing.T) {
 					},
 				},
 			},
-			wantErr:  status.ErrInternal,
-			wantCode: status.Internal,
+			wantErr:  grpcerr.ErrInternal,
+			wantCode: codes.Internal,
 		},
 	}
 
@@ -239,8 +241,8 @@ func TestRestartWorkUnitExecutions_PreservesAborted(t *testing.T) {
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("restartWorkUnitExecutions() error = %v, want errors.Is(err, %v)", err, tc.wantErr)
 			}
-			if status.ExtractCanonicalCode(err) != tc.wantCode {
-				t.Errorf("restartWorkUnitExecutions() canonical code = %v, want %v", status.ExtractCanonicalCode(err), tc.wantCode)
+			if status.Code(err) != tc.wantCode {
+				t.Errorf("restartWorkUnitExecutions() canonical code = %v, want %v", status.Code(err), tc.wantCode)
 			}
 		})
 	}

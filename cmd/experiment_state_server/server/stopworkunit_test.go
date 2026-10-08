@@ -23,8 +23,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
 	"xmanager_cloud/validator/validator"
@@ -197,7 +197,7 @@ func TestStopWorkUnit_BadPaths(t *testing.T) {
 		{
 			name:    "invalid_name",
 			req:     &apipb.StopWorkUnitRequest{Name: "invalid-name"},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -231,18 +231,18 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name: "xid_check_user_authorization_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationErr: status.ErrPermissionDenied,
+				checkUserAuthorizationErr: grpcerr.ErrPermissionDenied,
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "xid_check_user_authorization_unauthorized",
@@ -250,7 +250,7 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "storage_fetch_work_unit_fails",
@@ -260,7 +260,7 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 			storage: &storage.MockStorage{
 				FetchWorkUnitErr: fmt.Errorf("storage fetch work unit failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_fetch_work_unit_not_found",
@@ -268,9 +268,9 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				FetchWorkUnitErr: status.ErrNotFound,
+				FetchWorkUnitErr: grpcerr.ErrNotFound,
 			},
-			wantErr: status.ErrNotFound,
+			wantErr: grpcerr.ErrNotFound,
 		},
 		{
 			name: "storage_add_operation_fails",
@@ -281,7 +281,7 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 				WorkUnit:                workUnit,
 				AddWorkUnitOperationErr: fmt.Errorf("Storage add operation failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_update_work_unit_executions_fails",
@@ -292,7 +292,7 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 				WorkUnit:                    workUnit,
 				UpdateWorkUnitExecutionsErr: fmt.Errorf("Storage update work unit executions failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 	}
 
@@ -343,7 +343,7 @@ func TestStopWorkUnit_TaskEnqueueFails(t *testing.T) {
 
 	req := &apipb.StopWorkUnitRequest{Name: "experiments/123/workUnits/456"}
 	_, err := server.StopWorkUnit(ctx, req)
-	if !errors.Is(err, status.ErrInternal) {
-		t.Errorf("StopWorkUnit() got error %v, want %v", err, status.ErrInternal)
+	if !errors.Is(err, grpcerr.ErrInternal) {
+		t.Errorf("StopWorkUnit() got error %v, want %v", err, grpcerr.ErrInternal)
 	}
 }

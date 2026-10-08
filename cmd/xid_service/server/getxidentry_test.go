@@ -21,8 +21,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -85,17 +85,17 @@ func TestGetXidEntry_BadPaths(t *testing.T) {
 		{
 			name:    "invalid_name",
 			req:     &apipb.GetXidEntryRequest{Name: proto.String("xids/invalid")},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "non_numeric_name",
 			req:     &apipb.GetXidEntryRequest{Name: proto.String("xids/123abc")},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "not_found",
 			req:     &apipb.GetXidEntryRequest{Name: proto.String("xids/999999999")},
-			wantErr: status.ErrNotFound,
+			wantErr: grpcerr.ErrNotFound,
 		},
 	}
 
@@ -118,27 +118,27 @@ func TestGetXidEntry_Failures(t *testing.T) {
 	}{
 		{
 			name:        "AuthFailure",
-			mockAuth:    &auth.MockAuth{AuthnErr: status.ErrPermissionDenied},
+			mockAuth:    &auth.MockAuth{AuthnErr: grpcerr.ErrPermissionDenied},
 			mockStorage: &storage.MockStorage{},
-			wantErr:     status.ErrPermissionDenied,
+			wantErr:     grpcerr.ErrPermissionDenied,
 		},
 		{
 			name:        "StorageFailure",
 			mockAuth:    &auth.MockAuth{},
 			mockStorage: &storage.MockStorage{FetchErr: errors.New("storage error")},
-			wantErr:     status.ErrInternal,
+			wantErr:     grpcerr.ErrInternal,
 		},
 		{
 			name:        "PermissionDenied",
 			mockAuth:    &auth.MockAuth{IsAuthed: false},
 			mockStorage: &storage.MockStorage{},
-			wantErr:     status.ErrPermissionDenied,
+			wantErr:     grpcerr.ErrPermissionDenied,
 		},
 		{
 			name:        "AuthorizationError",
 			mockAuth:    &auth.MockAuth{IsAuthed: false, AuthzErr: errors.New("authz error")},
 			mockStorage: &storage.MockStorage{},
-			wantErr:     status.ErrPermissionDenied,
+			wantErr:     grpcerr.ErrPermissionDenied,
 		},
 	}
 

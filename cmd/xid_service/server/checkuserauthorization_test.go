@@ -19,8 +19,8 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/proto"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -275,7 +275,7 @@ func TestCheckUserAuthorization_BadPaths(t *testing.T) {
 				Name:     proto.String("xids/invalid"),
 				RoleType: msgpb.XidAcls_READER.Enum(),
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "not_found",
@@ -283,7 +283,7 @@ func TestCheckUserAuthorization_BadPaths(t *testing.T) {
 				Name:     proto.String("xids/999999"),
 				RoleType: msgpb.XidAcls_READER.Enum(),
 			},
-			wantErr: status.ErrNotFound,
+			wantErr: grpcerr.ErrNotFound,
 		},
 		{
 			name: "unspecified_role",
@@ -291,7 +291,7 @@ func TestCheckUserAuthorization_BadPaths(t *testing.T) {
 				Name:     proto.String(readerEntry.GetName()),
 				RoleType: msgpb.XidAcls_ROLE_TYPE_UNSPECIFIED.Enum(),
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -314,21 +314,21 @@ func TestCheckUserAuthorization_Failures(t *testing.T) {
 	}{
 		{
 			name:        "AuthFailure",
-			mockAuth:    &auth.MockAuth{AuthnErr: status.ErrUnauthenticated},
+			mockAuth:    &auth.MockAuth{AuthnErr: grpcerr.ErrUnauthenticated},
 			mockStorage: &storage.MockStorage{},
-			wantErr:     status.ErrUnauthenticated,
+			wantErr:     grpcerr.ErrUnauthenticated,
 		},
 		{
 			name:        "StorageFailure",
 			mockAuth:    &auth.MockAuth{},
 			mockStorage: &storage.MockStorage{FetchErr: errors.New("storage error")},
-			wantErr:     status.ErrInternal,
+			wantErr:     grpcerr.ErrInternal,
 		},
 		{
 			name:        "AuthorizationError",
 			mockAuth:    &auth.MockAuth{AuthzErr: errors.New("authz error")},
 			mockStorage: &storage.MockStorage{},
-			wantErr:     status.ErrPermissionDenied,
+			wantErr:     grpcerr.ErrPermissionDenied,
 		},
 	}
 

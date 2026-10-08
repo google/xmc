@@ -19,10 +19,12 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/validator/validator"
@@ -67,7 +69,7 @@ func (h *ExperimentHandler) listExperimentsWithStaleness(ctx context.Context, re
 	}
 	if err := validator.ValidateAIPCompliantList(req.GetPageSize(), req.GetFilter(), req.GetOrderBy(), req.GetPageToken()); err != nil {
 		logging.Warn(ctx, "Invalid ListExperimentsRequest", "error", err)
-		return nil, fmt.Errorf("invalid ListExperimentsRequest: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("invalid ListExperimentsRequest: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	// 3. Get the list of Experiments from the storage layer.
@@ -76,16 +78,16 @@ func (h *ExperimentHandler) listExperimentsWithStaleness(ctx context.Context, re
 		statusErr, ok := status.FromError(err)
 		if !ok {
 			logging.Error(ctx, "Storage layer returned a non-gRPC error for listing Experiments", "error", err)
-			return nil, fmt.Errorf("an internal error occurred while retrieving the Experiments: %w", status.ErrInternal)
+			return nil, fmt.Errorf("an internal error occurred while retrieving the Experiments: %w", grpcerr.ErrInternal)
 		}
 
-		if statusErr.Code == status.InvalidArgument {
+		if statusErr.Code() == codes.InvalidArgument {
 			logging.Error(ctx, "Storage layer returned an invalid argument error for listing Experiments", "error", err)
-			return nil, fmt.Errorf("invalid ListExperimentsRequest %v: %w", err, status.ErrInvalidArgument)
+			return nil, fmt.Errorf("invalid ListExperimentsRequest %v: %w", err, grpcerr.ErrInvalidArgument)
 		}
 
 		logging.Error(ctx, "Storage layer returned a gRPC error for listing Experiments", "error", err)
-		return nil, fmt.Errorf("an internal error occurred while retrieving the Experiments: %w", status.ErrInternal)
+		return nil, fmt.Errorf("an internal error occurred while retrieving the Experiments: %w", grpcerr.ErrInternal)
 	}
 
 	// 4. Populate ACLs from XID service.
@@ -111,7 +113,7 @@ func (h *ExperimentHandler) fetchACLsForExperiments(ctx context.Context, experim
 		xid, err := validator.ValidateExperimentName(exp.GetName())
 		if err != nil {
 			logging.Error(ctx, "Failed to validate experiment name", "error", err)
-			return fmt.Errorf("failed to validate experiment name: %w", status.ErrInternal)
+			return fmt.Errorf("failed to validate experiment name: %w", grpcerr.ErrInternal)
 		}
 		xidFilter = append(xidFilter, fmt.Sprintf("bit_reversed_xid=%d", data.ReverseBits(xid)))
 	}
@@ -123,7 +125,7 @@ func (h *ExperimentHandler) fetchACLsForExperiments(ctx context.Context, experim
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to list XIDs", "error", err)
-		return fmt.Errorf("failed to list XIDs: %w", status.ErrInternal)
+		return fmt.Errorf("failed to list XIDs: %w", grpcerr.ErrInternal)
 	}
 	xidEntries := xidListResponse.GetXidEntries()
 
@@ -133,7 +135,7 @@ func (h *ExperimentHandler) fetchACLsForExperiments(ctx context.Context, experim
 		xid, err := validator.ValidateXIDName(xidEntry.GetName())
 		if err != nil {
 			logging.Error(ctx, "Failed to validate XID name", "name", xidEntry.GetName(), "error", err)
-			return fmt.Errorf("failed to validate XID name: %w", status.ErrInternal)
+			return fmt.Errorf("failed to validate XID name: %w", grpcerr.ErrInternal)
 		}
 		xidMap[xid] = xidEntry
 	}
@@ -143,12 +145,12 @@ func (h *ExperimentHandler) fetchACLsForExperiments(ctx context.Context, experim
 		xid, err := validator.ValidateExperimentName(exp.GetName())
 		if err != nil {
 			logging.Error(ctx, "Failed to validate experiment name", "error", err)
-			return fmt.Errorf("failed to validate experiment name: %w", status.ErrInternal)
+			return fmt.Errorf("failed to validate experiment name: %w", grpcerr.ErrInternal)
 		}
 		xidEntry, ok := xidMap[xid]
 		if !ok {
 			logging.Error(ctx, "XID entry not found for XID", "xid", xid)
-			return fmt.Errorf("XID entry not found for XID %d: %w", xid, status.ErrInternal)
+			return fmt.Errorf("XID entry not found for XID %d: %w", xid, grpcerr.ErrInternal)
 		}
 		exp.Acls = xidEntry.GetAcls()
 	}

@@ -21,10 +21,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/storage/storage"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
@@ -117,14 +117,14 @@ func TestUpdateXidEntry_BadPaths(t *testing.T) {
 			req: prototest.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
 				r.XidEntry.Name = proto.String("xids/invalid")
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "not_found",
 			req: prototest.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
 				r.XidEntry.Name = proto.String("xids/999999")
 			}),
-			wantErr: status.ErrNotFound,
+			wantErr: grpcerr.ErrNotFound,
 		},
 		{
 			name: "immutable_field",
@@ -132,14 +132,14 @@ func TestUpdateXidEntry_BadPaths(t *testing.T) {
 				r.XidEntry.Creator = proto.String("new-creator")
 				r.UpdateMask.Paths = []string{"creator"}
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "no_acls",
 			req: prototest.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
 				r.XidEntry.Acls = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -162,33 +162,33 @@ func TestUpdateXidEntry_Failures(t *testing.T) {
 	}{
 		{
 			name:        "AuthFailure",
-			mockAuth:    &auth.MockAuth{AuthnErr: status.ErrUnauthenticated},
+			mockAuth:    &auth.MockAuth{AuthnErr: grpcerr.ErrUnauthenticated},
 			mockStorage: &storage.MockStorage{},
-			wantErr:     status.ErrUnauthenticated,
+			wantErr:     grpcerr.ErrUnauthenticated,
 		},
 		{
 			name:        "FetchFailure",
 			mockAuth:    &auth.MockAuth{},
 			mockStorage: &storage.MockStorage{FetchErr: errors.New("fetch error")},
-			wantErr:     status.ErrInternal,
+			wantErr:     grpcerr.ErrInternal,
 		},
 		{
 			name:        "StorageFailure",
 			mockAuth:    &auth.MockAuth{IsAuthed: true},
 			mockStorage: &storage.MockStorage{UpdateErr: errors.New("storage error")},
-			wantErr:     status.ErrInternal,
+			wantErr:     grpcerr.ErrInternal,
 		},
 		{
 			name:        "PermissionDenied",
 			mockAuth:    &auth.MockAuth{IsAuthed: false},
 			mockStorage: &storage.MockStorage{},
-			wantErr:     status.ErrPermissionDenied,
+			wantErr:     grpcerr.ErrPermissionDenied,
 		},
 		{
 			name:        "PermissionDeniedDuringStorage",
 			mockAuth:    &auth.MockAuth{IsAuthed: true},
-			mockStorage: &storage.MockStorage{UpdateErr: status.ErrPermissionDenied},
-			wantErr:     status.ErrInternal,
+			mockStorage: &storage.MockStorage{UpdateErr: grpcerr.ErrPermissionDenied},
+			wantErr:     grpcerr.ErrInternal,
 		},
 	}
 

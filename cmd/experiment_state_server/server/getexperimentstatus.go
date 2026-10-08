@@ -17,7 +17,9 @@ import (
 	"context"
 	"fmt"
 
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 
@@ -43,36 +45,36 @@ func (h *ExperimentHandler) GetExperimentStatus(ctx context.Context, req *apipb.
 	xid, err := validator.ValidateExperimentName(name)
 	if err != nil {
 		logging.Warn(ctx, "GetExperimentStatus validation failed", "name", name, "error", err)
-		return nil, fmt.Errorf("GetExperimentStatus validation failed: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("GetExperimentStatus validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithExperimentName(ctx, name)
 
 	// 3. Authorize the caller to get the experiment status for this experiment.
 	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_READER.Enum())
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
+		if status.Code(err) == codes.NotFound {
 			logging.Warn(ctx, "Experiment not found in XID service")
-			return nil, fmt.Errorf("experiment with ID %s not found: %w (%v)", name, status.ErrNotFound, err)
+			return nil, fmt.Errorf("experiment with ID %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
 		}
 
 		return nil, err
 	}
 	if !authorized {
 		logging.Warn(ctx, "User not authorized to get experiment status", "user", email)
-		return nil, fmt.Errorf("user %s is not authorized to get the experiment status for XID %d: %w", email, xid, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user %s is not authorized to get the experiment status for XID %d: %w", email, xid, grpcerr.ErrPermissionDenied)
 	}
 
 	// 4. Retrieve the experiment from the storage layer.
 	logging.Debug(ctx, "Fetching experiment status from storage")
 	exp, err := h.storage.FetchExperimentStatus(ctx, xid)
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
+		if status.Code(err) == codes.NotFound {
 			logging.Warn(ctx, "Experiment not found in storage")
-			return nil, fmt.Errorf("experiment with ID %s not found: %w (%v)", name, status.ErrNotFound, err)
+			return nil, fmt.Errorf("experiment with ID %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
 		}
 
 		logging.Error(ctx, "Failed to retrieve experiment from storage", "error", err)
-		return nil, fmt.Errorf("failed to retrieve experiment %s from storage: %w (%v)", name, status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to retrieve experiment %s from storage: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 
 	// 5. Return the successful response.

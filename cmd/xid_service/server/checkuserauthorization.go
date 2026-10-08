@@ -19,9 +19,8 @@ import (
 	"fmt"
 
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
-
-	"task/go/status"
 	"xmanager_cloud/validator/validator"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -42,27 +41,27 @@ func (s *XIDServer) CheckUserAuthorization(ctx context.Context, in *apipb.CheckU
 	xid, err := validator.ValidateXIDName(in.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Invalid XID name", "name", in.GetName(), "error", err)
-		return nil, fmt.Errorf("invalid GetXid request %v: %w", err, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("invalid GetXid request %v: %w", err, grpcerr.ErrInvalidArgument)
 	}
 	ctx = logging.WithXIDName(ctx, in.GetName())
 
 	// 3. Get the XidEntry from the storage layer.
 	xidEntry, err := s.storage.FetchXidEntry(ctx, xid)
 	if err != nil {
-		if errors.Is(err, status.ErrNotFound) {
+		if errors.Is(err, grpcerr.ErrNotFound) {
 			logging.Warn(ctx, "XID not found", "error", err)
-			return nil, fmt.Errorf("XID %d not found: %w", xid, status.ErrNotFound)
+			return nil, fmt.Errorf("XID %d not found: %w", xid, grpcerr.ErrNotFound)
 		}
 
 		logging.Error(ctx, "Storage layer returned a non-gRPC error for FetchXidEntry", "error", err)
-		return nil, fmt.Errorf("an internal error occurred while retrieving the XID: %w", status.ErrInternal)
+		return nil, fmt.Errorf("an internal error occurred while retrieving the XID: %w", grpcerr.ErrInternal)
 	}
 
 	// 4. Convert the role type to the internal representation.
 	roleType := xidACLsToRoleType(in.GetRoleType())
 	if roleType == auth.Unknown {
 		logging.Warn(ctx, "Unknown role type", "role_type", in.GetRoleType())
-		return nil, fmt.Errorf("unknown role type: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("unknown role type: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	// 5. Check the user's authorization against the XidEntry ACLs.
@@ -93,7 +92,7 @@ func (s *XIDServer) checkUserAuthorization(ctx context.Context, email string, xi
 	isAuthorized, err := s.auth.IsUserAuthorized(ctx, email, xidEntry.Acls, roleType)
 	if err != nil {
 		logging.Warn(ctx, "Failed to check user authorization", "error", err)
-		return false, fmt.Errorf("failed to check user authorization: %w", status.ErrPermissionDenied)
+		return false, fmt.Errorf("failed to check user authorization: %w", grpcerr.ErrPermissionDenied)
 	}
 
 	visited := make(map[string]bool)
@@ -107,7 +106,7 @@ func (s *XIDServer) checkUserAuthorization(ctx context.Context, email string, xi
 
 		if visited[parentXIDName] {
 			logging.Warn(ctx, "Loop detected in XID parent chain", "xid_name", xidEntry.GetName())
-			return false, fmt.Errorf("loop detected in XID parent chain: %w", status.ErrInternal)
+			return false, fmt.Errorf("loop detected in XID parent chain: %w", grpcerr.ErrInternal)
 		}
 		visited[parentXIDName] = true
 
@@ -115,26 +114,26 @@ func (s *XIDServer) checkUserAuthorization(ctx context.Context, email string, xi
 		parentXID, err := validator.ValidateXIDName(parentXIDName)
 		if err != nil {
 			logging.Warn(ctx, "Invalid parent XID", "parent_xid_name", parentXIDName, "error", err)
-			return false, fmt.Errorf("invalid parent XID %q: %w", parentXIDName, status.ErrInvalidArgument)
+			return false, fmt.Errorf("invalid parent XID %q: %w", parentXIDName, grpcerr.ErrInvalidArgument)
 		}
 
 		// 2.2. Get the parent XID from the storage layer.
 		parentXIDEntry, err := s.storage.FetchXidEntry(ctx, parentXID)
 		if err != nil {
-			if errors.Is(err, status.ErrNotFound) {
+			if errors.Is(err, grpcerr.ErrNotFound) {
 				logging.Warn(ctx, "Parent XID not found", "parent_xid", parentXID, "error", err)
-				return false, fmt.Errorf("parent XID %d not found: %w", parentXID, status.ErrNotFound)
+				return false, fmt.Errorf("parent XID %d not found: %w", parentXID, grpcerr.ErrNotFound)
 			}
 
 			logging.Error(ctx, "Storage layer returned a non-gRPC error for FetchXidEntry", "parent_xid", parentXID, "error", err)
-			return false, fmt.Errorf("an internal error occurred while retrieving the XID: %w", status.ErrInternal)
+			return false, fmt.Errorf("an internal error occurred while retrieving the XID: %w", grpcerr.ErrInternal)
 		}
 
 		// 2.3. Check the user's authorization against the parent XID ACLs.
 		isAuthorized, err = s.auth.IsUserAuthorized(ctx, email, parentXIDEntry.Acls, roleType)
 		if err != nil {
 			logging.Warn(ctx, "Failed to check user authorization", "error", err)
-			return false, fmt.Errorf("failed to check user authorization: %w", status.ErrPermissionDenied)
+			return false, fmt.Errorf("failed to check user authorization: %w", grpcerr.ErrPermissionDenied)
 		}
 
 		parentXIDName = parentXIDEntry.GetParentXid()

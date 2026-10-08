@@ -20,10 +20,11 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -124,20 +125,20 @@ func TestListXidEntries_BadPaths(t *testing.T) {
 		{
 			name:    "negative_page_size",
 			req:     &apipb.ListXidEntriesRequest{PageSize: proto.Int32(-1)},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "invalid_filter",
 			req:     &apipb.ListXidEntriesRequest{Filter: proto.String("invalid-filter syntax")},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := server.ListXidEntries(ctx, tc.req)
-			if status.CodeFromError(err) != status.CodeFromError(tc.wantErr) {
-				t.Errorf("ListXidEntries(%v) returned error %v, want code %v", tc.req, err, status.CodeFromError(tc.wantErr))
+			if status.Code(err) != status.Code(tc.wantErr) {
+				t.Errorf("ListXidEntries(%v) returned error %v, want code %v", tc.req, err, status.Code(tc.wantErr))
 			}
 		})
 	}
@@ -204,7 +205,7 @@ func TestSearchXidEntries_BadPaths(t *testing.T) {
 		{
 			name:    "negative_page_size",
 			req:     &apipb.ListXidEntriesRequest{PageSize: proto.Int32(-1)},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -227,21 +228,21 @@ func TestListXidEntries_Failures(t *testing.T) {
 	}{
 		{
 			name:        "AuthFailure",
-			mockAuth:    &auth.MockAuth{AuthnErr: status.ErrPermissionDenied},
+			mockAuth:    &auth.MockAuth{AuthnErr: grpcerr.ErrPermissionDenied},
 			mockStorage: &storage.MockStorage{},
-			wantErr:     status.ErrPermissionDenied,
+			wantErr:     grpcerr.ErrPermissionDenied,
 		},
 		{
 			name:        "StorageGrpcFailure",
 			mockAuth:    &auth.MockAuth{},
-			mockStorage: &storage.MockStorage{ListErr: status.ErrAborted},
-			wantErr:     status.ErrAborted,
+			mockStorage: &storage.MockStorage{ListErr: grpcerr.ErrAborted},
+			wantErr:     grpcerr.ErrAborted,
 		},
 		{
 			name:        "StorageNonGrpcFailure",
 			mockAuth:    &auth.MockAuth{},
 			mockStorage: &storage.MockStorage{ListErr: errors.New("non-grpc error")},
-			wantErr:     status.ErrInternal,
+			wantErr:     grpcerr.ErrInternal,
 		},
 	}
 
@@ -250,8 +251,8 @@ func TestListXidEntries_Failures(t *testing.T) {
 			ctx := context.Background()
 			server := newTestServer(t, withAuthorizer(tc.mockAuth), withStorage(tc.mockStorage))
 			_, err := server.ListXidEntries(ctx, &apipb.ListXidEntriesRequest{})
-			if status.CodeFromError(err) != status.CodeFromError(tc.wantErr) {
-				t.Errorf("ListXidEntries() returned error %v, want code %v", err, status.CodeFromError(tc.wantErr))
+			if status.Code(err) != status.Code(tc.wantErr) {
+				t.Errorf("ListXidEntries() returned error %v, want code %v", err, status.Code(tc.wantErr))
 			}
 		})
 	}
@@ -259,9 +260,9 @@ func TestListXidEntries_Failures(t *testing.T) {
 
 func TestSearchXidEntries_AuthFailure(t *testing.T) {
 	ctx := context.Background()
-	server := newTestServer(t, withAuthorizer(&auth.MockAuth{AuthnErr: status.ErrPermissionDenied}), withStorage(&storage.MockStorage{}))
+	server := newTestServer(t, withAuthorizer(&auth.MockAuth{AuthnErr: grpcerr.ErrPermissionDenied}), withStorage(&storage.MockStorage{}))
 	_, err := server.SearchXidEntries(ctx, &apipb.ListXidEntriesRequest{})
-	if !errors.Is(err, status.ErrPermissionDenied) {
-		t.Errorf("SearchXidEntries() returned error %v, want %v", err, status.ErrPermissionDenied)
+	if !errors.Is(err, grpcerr.ErrPermissionDenied) {
+		t.Errorf("SearchXidEntries() returned error %v, want %v", err, grpcerr.ErrPermissionDenied)
 	}
 }

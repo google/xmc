@@ -17,9 +17,11 @@ import (
 	"context"
 	"fmt"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	emptypb "protobuf/empty_go_proto"
-	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -41,19 +43,19 @@ func (h *ArtifactHandler) DeleteArtifact(ctx context.Context, req *apipb.DeleteA
 	aid, err := validator.ValidateArtifactName(name)
 	if err != nil {
 		logging.Warn(ctx, "DeleteArtifact validation failed", "error", err)
-		return nil, fmt.Errorf("DeleteArtifact validation failed: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("DeleteArtifact validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithArtifactName(ctx, name)
 
 	// 3. Check if artifact exists before authorizing.
 	artifact, err := h.storage.FetchArtifact(ctx, aid)
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
+		if status.Code(err) == codes.NotFound {
 			logging.Warn(ctx, "Artifact not found", "error", err)
-			return nil, fmt.Errorf("artifact %s not found: %w (%v)", name, status.ErrNotFound, err)
+			return nil, fmt.Errorf("artifact %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
 		}
 		logging.Error(ctx, "Failed to get artifact", "error", err)
-		return nil, fmt.Errorf("failed to get artifact %s: %w (%v)", name, status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to get artifact %s: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 	ctx = logging.WithArtifactParent(ctx, artifact.GetParent())
 
@@ -64,7 +66,7 @@ func (h *ArtifactHandler) DeleteArtifact(ctx context.Context, req *apipb.DeleteA
 	}
 	if !isAuthorized {
 		logging.Warn(ctx, "User not authorized to delete artifact", "error", err)
-		return nil, fmt.Errorf("user not authorized to delete artifact %s: %w", name, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user not authorized to delete artifact %s: %w", name, grpcerr.ErrPermissionDenied)
 	}
 
 	// 5. Delete the artifact from the storage layer.
@@ -72,7 +74,7 @@ func (h *ArtifactHandler) DeleteArtifact(ctx context.Context, req *apipb.DeleteA
 	err = h.storage.DeleteArtifact(ctx, aid)
 	if err != nil {
 		logging.Error(ctx, "Failed to delete artifact", "error", err)
-		return nil, fmt.Errorf("failed to delete artifact %s: %w (%v)", name, status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to delete artifact %s: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 
 	// 6. Return the successful response.
