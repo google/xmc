@@ -39,11 +39,13 @@ const MAX_OWNER_GRACE_LINES = getMaxOwnerGraceLines(process.env.MAX_OWNER_GRACE_
 const PROTECTED_FILE_PATTERNS = [
   /^\.github\//i,
   /^OWNERS$/i,
-  /^\.githooks\//i
+  /^\.githooks\//i,
+  // Refreshing the protobuf breaking-change baseline accepts breaking API changes.
+  /^api\/testdata\/protos_baseline\.binpb$/i
 ];
 
 /**
- * Pure function: Checks if a file path is a sensitive CI/security configuration file.
+ * Pure function: Checks if a file path is a sensitive CI/security configuration file or the protobuf breaking-change baseline.
  * @param {string} filePath - Path of modified file.
  * @returns {boolean}
  */
@@ -56,7 +58,7 @@ function isProtectedFile(filePath) {
 }
 
 /**
- * Pure function: Checks if any file in the provided list is a protected CI/security configuration file.
+ * Pure function: Checks if any file in the provided list is a protected file (see PROTECTED_FILE_PATTERNS).
  * @param {Array<string>} filePaths - List of file paths to inspect.
  * @returns {boolean} True if any file matches protected patterns.
  */
@@ -145,7 +147,7 @@ function evaluateIncrementalApproval({
   if (hasProtectedFileChanges) {
     return {
       shouldReapprove: false,
-      reason: 'PR modifies sensitive CI workflows, scripts, or ownership files (.github/, OWNERS, .githooks/). Manual human review is required.',
+      reason: 'PR modifies sensitive CI workflows, scripts, ownership files, or the protobuf breaking-change baseline (.github/, OWNERS, .githooks/, api/testdata/protos_baseline.binpb). Manual human review is required.',
       trigger: 'PROTECTED_FILES_MODIFIED'
     };
   }

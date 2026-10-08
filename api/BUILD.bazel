@@ -42,6 +42,7 @@ proto_descriptor_set(
 # To accept a breaking change, refresh the baseline in the same PR:
 #   bazel build //api:all_protos_descriptor_set && install -m 0644 \
 #     bazel-bin/api/all_protos_descriptor_set.pb api/testdata/protos_baseline.binpb
+# A refresh needs a fresh human approval (see .github/scripts/approval-policy.js).
 buf_breaking_test(
     name = "protos_breaking_test",
     against = "testdata/protos_baseline.binpb",

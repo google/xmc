@@ -93,6 +93,8 @@ bazel build //api:all_protos_descriptor_set && install -m 0644 \
   bazel-bin/api/all_protos_descriptor_set.pb api/testdata/protos_baseline.binpb
 ```
 
+Refreshing the baseline needs a fresh human approval: the baseline is a protected file for [incremental PR approval](../.github/scripts/README.md), so a pull request that changes it is never auto-reapproved.
+
 ---
 
 ## Custom AIP-160 Filter & Parser Engine

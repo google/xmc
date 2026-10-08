@@ -68,7 +68,7 @@ sequenceDiagram
     Git-->>Orch: Refs verified locally
 
     Orch->>Pol: checkProtectedFileChanges(baseRef, currentSha)
-    alt Protected Files Modified (.github, OWNERS)
+    alt Protected Files Modified (.github, OWNERS, .githooks, protobuf baseline)
         Pol-->>Orch: hasProtectedFileChanges = true
         Orch-->>CI: Abort (Fail-safe lockout)
     end
@@ -111,9 +111,11 @@ To handle rebased parent branches seamlessly:
 The incremental approval system enforces defense-in-depth safety invariants:
 
 ### 1. Protected Files Lockout
-Any modification touching protected configuration files immediately aborts auto-reapproval:
+Any modification touching protected files immediately aborts auto-reapproval:
 - `.github/**` (workflows, actions, scripts)
+- `.githooks/**` (local pre-commit hooks)
 - `OWNERS` / `*/OWNERS`
+- `api/testdata/protos_baseline.binpb` (refreshing the protobuf breaking-change baseline accepts breaking API changes)
 - Target base branch configuration files
 
 Scoping uses 3-dot diff against the PR's target base branch (`git diff --name-only origin/${baseRef}...${currentSha}`) to prevent false positives when intermediate commits are merged into `origin/main`. If Git commands fail, the check defaults to `hasProtectedFileChanges = true` (fail-safe).
