@@ -323,6 +323,8 @@ jobs:
 
       - name: 'Execute GKE Deployment Pipeline'
         run: |
+          # Defer verification to the downstream 'Run Environment Health Verification'
+          # step so that metrics addons (when enabled) are provisioned before health checks run.
           python3 tools/dev_env/dev_env.py gke-deploy \
             --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
             --dns-project "${DNS_PROJECT_ID}" \
