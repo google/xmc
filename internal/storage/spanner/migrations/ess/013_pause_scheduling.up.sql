@@ -59,7 +59,7 @@ CREATE TABLE PausedTasks (
   TraceId STRING(MAX) NOT NULL,
   -- Work unit priority at buffering time. Higher values are replayed first.
   Priority INT64 NOT NULL,
-  -- The time the task was buffered. Commit timestamps are not allowed because generated columns reference it.
+  -- The time the task was buffered.
   CreateTime TIMESTAMP NOT NULL,
   -- The time the task was resolved during resumption. NULL while pending.
   ProcessedTime TIMESTAMP,
@@ -69,12 +69,13 @@ CREATE TABLE PausedTasks (
   ResumptionRunId STRING(64),
   -- TRUE while pending, NULL once processed. Backs the null-filtered PausedTasksUnprocessed index.
   IsPending BOOL AS (IF(ProcessedTime IS NULL, TRUE, NULL)) STORED,
-  -- Expiration time for automatic row pruning via TTL policy (7 days after last activity).
-  ExpirationTime TIMESTAMP AS (TIMESTAMP_ADD(IFNULL(ProcessedTime, CreateTime), INTERVAL 7 DAY)) STORED,
+  -- Expiration time for automatic row pruning via TTL policy (7 days after resolution; NULL while pending).
+  ExpirationTime TIMESTAMP AS (TIMESTAMP_ADD(ProcessedTime, INTERVAL 7 DAY)) STORED,
 ) PRIMARY KEY (BitReversedXid, WorkUnitId, TaskId),
   INTERLEAVE IN PARENT WorkUnits
   ON DELETE CASCADE,
   ROW DELETION POLICY (OLDER_THAN(ExpirationTime, INTERVAL 0 DAY));
 
 -- Replay ordering index for pending paused tasks. IsPending must be stored for the null filter.
+-- Unsharded because task buffering only occurs during maintenance windows at low rates.
 CREATE INDEX PausedTasksUnprocessed ON PausedTasks (Priority DESC, CreateTime) STORING (ActionProto, Target, OperationName, TraceId, IsPending) WHERE IsPending IS NOT NULL;
