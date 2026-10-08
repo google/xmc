@@ -19,7 +19,7 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	"googlesql/safesql/go/safesql"
+	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 )

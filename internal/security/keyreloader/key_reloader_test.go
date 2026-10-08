@@ -29,8 +29,7 @@ import (
 	"time"
 
 	"github.com/tink-crypto/tink-go/v2/jwt"
-	"tink/go/insecuresecretdataaccess/insecuresecretdataaccess"
-	"tink/integration/go/jwt/jwtkeyconverter"
+	"xmanager_cloud/internal/security/jwtkeyset"
 )
 
 func generateCertAndKey(certPath, keyPath string) error {
@@ -219,14 +218,13 @@ func createJWTSigner(t *testing.T, priv crypto.Signer) jwt.Signer {
 	if !ok {
 		t.Fatal("private key is not *rsa.PrivateKey")
 	}
-	options := jwtkeyconverter.Options{
+	options := jwtkeyset.Options{
 		RSAAlgorithm: "RS256",
 	}
-	keysetHandle, err := jwtkeyconverter.PrivateKeyToKeysetHandle(
+	keysetHandle, err := jwtkeyset.PrivateKeyToKeysetHandle(
 		rsaPrivateKey,
 		nil,
 		options,
-		insecuresecretdataaccess.Token{},
 	)
 	if err != nil {
 		t.Fatalf("failed to convert private key to keyset handle: %v", err)

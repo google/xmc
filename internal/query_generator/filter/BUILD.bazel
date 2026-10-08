@@ -25,7 +25,7 @@ go_library(
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filtervisitor",
         "//api/filter/go/queryfilterbase",
-        "//internal/compat/safesql",
+        "//internal/safesql",
         "@com_google_cloud_go_spanner//:spanner",
     ],
 )
@@ -40,10 +40,10 @@ go_test(
         "//api/filter/go/filter",
         "//api/filter/go/filtervisitor",
         "//api/filter/go/queryfilterbase",
-        "@com_github_google_go_cmp//cmp",
-        "//internal/compat/safesql",
-        "@com_google_cloud_go_spanner//:spanner",
         "//internal/compat/status",
+        "//internal/safesql",
+        "@com_github_google_go_cmp//cmp",
+        "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_protobuf//proto",
     ],
 )

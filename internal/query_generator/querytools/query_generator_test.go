@@ -21,7 +21,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"googlesql/safesql/go/safesql"
+	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/query_generator/predicate"
 
 	"google.golang.org/protobuf/testing/protocmp"

@@ -44,14 +44,11 @@ nogo(
 # gazelle:resolve go golang/github_com/go_redis/redis/v/v9/redis @com_github_redis_go_redis_v9//:go-redis
 # gazelle:resolve go tink/go/jwt/jwt @com_github_tink_crypto_tink_go_v2//jwt:jwt
 # gazelle:resolve go tink/go/keyset/keyset @com_github_tink_crypto_tink_go_v2//keyset:keyset
-# gazelle:resolve go tink/go/insecuresecretdataaccess/insecuresecretdataaccess //internal/compat/insecuresecretdataaccess:insecuresecretdataaccess
-# gazelle:resolve go tink/integration/go/jwt/jwtkeyconverter //internal/compat/jwtkeyconverter:jwtkeyconverter
 # gazelle:resolve go golang/github_com/golang_migrate/migrate/v/v4/source/source @com_github_golang_migrate_migrate_v4//source:source
 # gazelle:resolve go golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs @com_github_golang_migrate_migrate_v4//source/iofs:iofs
 
 # Compatibility wrapper package target mappings
 # gazelle:resolve go task/go/status //internal/compat/status:status
-# gazelle:resolve go googlesql/safesql/go/safesql //internal/compat/safesql:safesql
 
 # Custom API Filter stack mappings
 # gazelle:resolve go api/filter/go/filtervisitor //api/filter/go/filtervisitor:filtervisitor
@@ -127,6 +124,8 @@ filegroup(
         "//internal/query_generator/liststatement",
         "//internal/query_generator/normalizer",
         "//internal/query_generator/querytools",
+        "//internal/safesql",
+        "//internal/security/jwtkeyset",
         "//internal/security/keyreloader",
         "//internal/security/securitytest",
         "//internal/task_queue:client",
@@ -150,6 +149,8 @@ test_suite(
         "//internal/query_generator/liststatement:liststatement_test",
         "//internal/query_generator/normalizer:normalizer_test",
         "//internal/query_generator/querytools:querytools_test",
+        "//internal/safesql:safesql_test",
+        "//internal/security/jwtkeyset:jwtkeyset_test",
         "//internal/security/keyreloader:keyreloader_test",
         "//internal/task_queue:task_queue_test",
         "//internal/validator:validator_test",

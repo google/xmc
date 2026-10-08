@@ -16,7 +16,7 @@ package statusmessageschema
 
 import (
 	"api/filter/go/filtervisitor"
-	"googlesql/safesql/go/safesql"
+	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/query_generator/querytools"
 )
 

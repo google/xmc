@@ -9,7 +9,7 @@ go_library(
     importpath = "xmanager_cloud/storage/spanner/schema/experimentschema",
     deps = [
         "//api/filter/go/filtervisitor",
-        "//internal/compat/safesql",
         "//internal/query_generator/querytools",
+        "//internal/safesql",
     ],
 )

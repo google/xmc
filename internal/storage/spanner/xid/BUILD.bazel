@@ -27,12 +27,12 @@ compat_go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/xid:messages_go_proto",
-        "//internal/compat/safesql",
         "//internal/compat/status",
         "//internal/logging",
         "//internal/query_generator/liststatement",
         "//internal/query_generator/normalizer",
         "//internal/query_generator/querytools",
+        "//internal/safesql",
         "//internal/storage",
         "//internal/storage/data",
         "//internal/storage/spanner/data:spannerdata",

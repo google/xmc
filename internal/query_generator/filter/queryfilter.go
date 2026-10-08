@@ -24,7 +24,7 @@ import (
 	"api/filter/go/filtervisitor"
 	"api/filter/go/queryfilterbase"
 	"cloud.google.com/go/spanner"
-	"googlesql/safesql/go/safesql"
+	"xmanager_cloud/internal/safesql"
 
 	fpb "api/filter/filter_expression_go_proto"
 )
@@ -91,6 +91,7 @@ type Spanner struct {
 	filterBaseExpOptions *queryfilterbase.ExpOptions
 	isRHS                bool
 	isHAS                bool
+	captureStack         []safesql.TrustedSQLString
 }
 
 // AppendFilters augments the given query with a predicate expression derived from the parsed filter expression.
@@ -212,10 +213,13 @@ func (qf *Spanner) GetExpOptions() *queryfilterbase.ExpOptions {
 }
 
 func (qf *Spanner) appendBinding(v any) {
+	if qf.Q == nil {
+		return
+	}
 	index := atomic.AddUint64(&qf.count, 1) - 1
 
-	// Append the binding name to the query
-	qf.Q.SQL = qf.Q.SQL + fmt.Sprintf("@fb%d", index)
+	// Append the binding name to the query.
+	qf.AppendTrustedSQL(safesql.NewBindingParam("@fb", index))
 
 	// Bind the value.
 	if qf.Q.Params == nil {
@@ -272,7 +276,14 @@ func (qf *Spanner) AppendBindingEnum(e string) {
 
 // AppendTrustedSQL implements queryfilterbase.QueryFilterVisitor
 func (qf *Spanner) AppendTrustedSQL(sql safesql.TrustedSQLString) {
-	qf.Q.SQL = qf.Q.SQL + sql.String()
+	if len(qf.captureStack) > 0 {
+		top := len(qf.captureStack) - 1
+		qf.captureStack[top] = safesql.Concat(qf.captureStack[top], sql)
+		return
+	}
+	if qf.Q != nil {
+		qf.Q.SQL = qf.Q.SQL + sql.String()
+	}
 }
 
 func (qf *Spanner) SetIsRHS(isRHS bool) {
@@ -291,25 +302,29 @@ func (qf *Spanner) GetIsHAS() bool {
 	return qf.isHAS
 }
 
-func (qf *Spanner) GetSQL() string {
-	if qf.Q == nil {
-		return ""
+// CaptureSQL captures TrustedSQLString fragments appended during fn execution.
+func (qf *Spanner) CaptureSQL(fn func() error) (safesql.TrustedSQLString, error) {
+	qf.captureStack = append(qf.captureStack, safesql.EmptyString())
+	top := len(qf.captureStack) - 1
+	defer func() {
+		qf.captureStack = qf.captureStack[:top]
+	}()
+	err := fn()
+	captured := qf.captureStack[top]
+	if err != nil {
+		return safesql.EmptyString(), err
 	}
-	return qf.Q.SQL
-}
-
-func (qf *Spanner) SetSQL(s string) {
-	if qf.Q != nil {
-		qf.Q.SQL = s
-	}
+	return captured, nil
 }
 
 func (qf *Spanner) HandleTextSearch(col safesql.TrustedSQLString, val string) (safesql.TrustedSQLString, error) {
-	oldSQL := qf.GetSQL()
-	qf.SetSQL("")
-	qf.AppendBindingString(val)
-	paramSQL := qf.GetSQL()
-	qf.SetSQL(oldSQL)
+	paramSQL, err := qf.CaptureSQL(func() error {
+		qf.AppendBindingString(val)
+		return nil
+	})
+	if err != nil {
+		return safesql.EmptyString(), err
+	}
 
-	return safesql.New("SEARCH(" + col.String() + ", " + paramSQL + ")"), nil
+	return safesql.Concat(safesql.New("SEARCH("), col, safesql.New(", "), paramSQL, safesql.New(")")), nil
 }

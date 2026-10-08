@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package jwtkeyconverter
+// Package jwtkeyset converts standard RSA keys into Tink JWT keyset handles.
+package jwtkeyset
 
 import (
 	"bytes"
@@ -28,31 +29,49 @@ import (
 	jwt_rsa_ssa_pkcs1_go_proto "github.com/tink-crypto/tink-go/v2/proto/jwt_rsa_ssa_pkcs1_go_proto"
 	tink_go_proto "github.com/tink-crypto/tink-go/v2/proto/tink_go_proto"
 	"google.golang.org/protobuf/proto"
-	"tink/go/insecuresecretdataaccess/insecuresecretdataaccess"
 )
 
+// Options configures JWT key conversion parameters.
 type Options struct {
 	RSAAlgorithm string
 }
 
-func PrivateKeyToKeysetHandle(privKey *rsa.PrivateKey, keyID *uint32, options Options, token insecuresecretdataaccess.Token) (*keyset.Handle, error) {
+func validateAndPrecomputePrivateKey(privKey *rsa.PrivateKey) error {
 	if privKey == nil {
-		return nil, errors.New("nil private key")
+		return errors.New("nil private key")
 	}
-	if len(privKey.Primes) < 2 {
-		return nil, errors.New("private key must have at least 2 primes")
+	if privKey.D == nil || privKey.N == nil || len(privKey.Primes) < 2 || privKey.Primes[0] == nil || privKey.Primes[1] == nil {
+		return errors.New("invalid or incomplete private key")
+	}
+	privKey.Precompute()
+	if privKey.Precomputed.Dp == nil || privKey.Precomputed.Dq == nil || privKey.Precomputed.Qinv == nil {
+		return errors.New("invalid private key precomputed values")
+	}
+	return nil
+}
+
+func resolveRSAAlgorithm(alg string) (jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm, error) {
+	switch alg {
+	case "RS256":
+		return jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm_RS256, nil
+	case "RS384":
+		return jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm_RS384, nil
+	case "RS512":
+		return jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm_RS512, nil
+	default:
+		return 0, fmt.Errorf("unsupported algorithm: %s", alg)
+	}
+}
+
+// PrivateKeyToKeysetHandle converts an *rsa.PrivateKey into a Tink JWT signing keyset handle.
+func PrivateKeyToKeysetHandle(privKey *rsa.PrivateKey, keyID *uint32, options Options) (*keyset.Handle, error) {
+	if err := validateAndPrecomputePrivateKey(privKey); err != nil {
+		return nil, err
 	}
 
-	var algo jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm
-	switch options.RSAAlgorithm {
-	case "RS256":
-		algo = jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm_RS256
-	case "RS384":
-		algo = jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm_RS384
-	case "RS512":
-		algo = jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm_RS512
-	default:
-		return nil, fmt.Errorf("unsupported algorithm: %s", options.RSAAlgorithm)
+	algo, err := resolveRSAAlgorithm(options.RSAAlgorithm)
+	if err != nil {
+		return nil, err
 	}
 
 	publicKey := &jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1PublicKey{
@@ -61,9 +80,6 @@ func PrivateKeyToKeysetHandle(privKey *rsa.PrivateKey, keyID *uint32, options Op
 		N:         privKey.N.Bytes(),
 		E:         big.NewInt(int64(privKey.E)).Bytes(),
 	}
-
-	// Ensure Precomputed values are populated
-	privKey.Precompute()
 
 	privateKey := &jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1PrivateKey{
 		Version:   0,
@@ -118,32 +134,26 @@ func PrivateKeyToKeysetHandle(privKey *rsa.PrivateKey, keyID *uint32, options Op
 	return handle, nil
 }
 
+// PublicKeysToJwtPublicKeyset converts a slice of RSA public keys into a Tink JWT verification keyset handle.
 func PublicKeysToJwtPublicKeyset(keys []crypto.PublicKey, options *Options) (*keyset.Handle, error) {
 	if len(keys) == 0 {
 		return nil, errors.New("empty keys list")
 	}
 
-	var algo jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm
+	algo := jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm_RS256
 	if options != nil {
-		switch options.RSAAlgorithm {
-		case "RS256":
-			algo = jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm_RS256
-		case "RS384":
-			algo = jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm_RS384
-		case "RS512":
-			algo = jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm_RS512
-		default:
-			return nil, fmt.Errorf("unsupported algorithm: %s", options.RSAAlgorithm)
+		var err error
+		algo, err = resolveRSAAlgorithm(options.RSAAlgorithm)
+		if err != nil {
+			return nil, err
 		}
-	} else {
-		algo = jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1Algorithm_RS256
 	}
 
 	var keysetKeys []*tink_go_proto.Keyset_Key
 	for idx, key := range keys {
 		rsaPubKey, ok := key.(*rsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("key %d is not *rsa.PublicKey", idx)
+		if !ok || rsaPubKey == nil || rsaPubKey.N == nil {
+			return nil, fmt.Errorf("key %d is invalid or not *rsa.PublicKey", idx)
 		}
 
 		publicKeyMsg := &jwt_rsa_ssa_pkcs1_go_proto.JwtRsaSsaPkcs1PublicKey{

@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,21 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# gazelle:ignore
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
 
 go_library(
-    name = "jwtkeyconverter",
-    srcs = ["jwtkeyconverter.go"],
-    importpath = "tink/integration/go/jwt/jwtkeyconverter",
-    visibility = ["//visibility:public"],
+    name = "jwtkeyset",
+    srcs = ["jwtkeyset.go"],
+    importpath = "xmanager_cloud/internal/security/jwtkeyset",
     deps = [
-        "//internal/compat/insecuresecretdataaccess",
         "@com_github_tink_crypto_tink_go_v2//insecurecleartextkeyset",
         "@com_github_tink_crypto_tink_go_v2//jwt",
         "@com_github_tink_crypto_tink_go_v2//keyset",
         "@com_github_tink_crypto_tink_go_v2//proto/jwt_rsa_ssa_pkcs1_go_proto",
         "@com_github_tink_crypto_tink_go_v2//proto/tink_go_proto",
         "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "jwtkeyset_test",
+    srcs = ["jwtkeyset_test.go"],
+    embed = [":jwtkeyset"],
+    deps = [
+        "@com_github_tink_crypto_tink_go_v2//jwt",
     ],
 )

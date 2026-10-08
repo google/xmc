@@ -19,8 +19,8 @@ import (
 	fpb "api/filter/filter_expression_go_proto"
 	"api/filter/go/filtervisitor"
 	"cloud.google.com/go/spanner"
-	"googlesql/safesql/go/safesql"
 	"task/go/status"
+	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/query_generator/filter/queryfilter"
 )
 

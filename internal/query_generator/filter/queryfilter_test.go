@@ -25,8 +25,8 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
-	"googlesql/safesql/go/safesql"
 	"task/go/status"
+	"xmanager_cloud/internal/safesql"
 
 	fpb "api/filter/filter_expression_go_proto"
 )
@@ -65,19 +65,19 @@ func functionMap(m map[string]appendix) FunctionFunc {
 		if !ok {
 			return filtervisitor.Invalid, fmt.Errorf("function %q not found", name)
 		}
-		s.Q.SQL = s.Q.SQL + a.ql.String() + "("
+		s.AppendTrustedSQL(safesql.Concat(a.ql, safesql.New("(")))
 		if len(el) > 0 {
 			if _, err := filtervisitor.Visit(s, el[0]); err != nil {
 				return filtervisitor.Invalid, err
 			}
 			for _, e := range el[1:] {
-				s.Q.SQL = s.Q.SQL + ", "
+				s.AppendTrustedSQL(safesql.New(", "))
 				if _, err := filtervisitor.Visit(s, e); err != nil {
 					return filtervisitor.Invalid, err
 				}
 			}
 		}
-		s.Q.SQL = s.Q.SQL + ")"
+		s.AppendTrustedSQL(safesql.New(")"))
 		return a.tp, nil
 	}
 }
