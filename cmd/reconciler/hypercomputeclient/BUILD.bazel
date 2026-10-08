@@ -18,6 +18,8 @@ compat_go_library(
     name = "hypercomputeclient",
     srcs = [
         "client.go",
+        "mlrun.go",
+        "operations.go",
         "sanitize.go",
     ],
     importpath = "xmanager_cloud/cmd/reconciler/hypercomputeclient",
@@ -33,6 +35,8 @@ compat_go_test(
     name = "hypercomputeclient_test",
     srcs = [
         "client_test.go",
+        "mlrun_test.go",
+        "operations_test.go",
         "sanitize_test.go",
     ],
     embed = [":hypercomputeclient"],
