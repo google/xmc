@@ -287,6 +287,7 @@ func TestPersistReconcileResult(t *testing.T) {
 	errPatch := errors.New("patch failed")
 	tests := []struct {
 		name        string
+		nilItem     bool
 		finalizers  []string
 		res         *ReconcileResult
 		updateErr   error
@@ -295,6 +296,7 @@ func TestPersistReconcileResult(t *testing.T) {
 		wantActions []string
 	}{
 		{name: "nil result is a no-op", res: nil, wantActions: nil},
+		{name: "nil item is rejected", nilItem: true, res: &ReconcileResult{State: enabled}, wantErr: errNilComponentItem, wantActions: nil},
 		{name: "status only", res: &ReconcileResult{State: enabled}, wantActions: []string{"patch/status"}},
 		{name: "finalizer is attached before status", res: &ReconcileResult{State: enabled, AddFinalizer: true}, wantActions: []string{"update/", "patch/status"}},
 		{name: "released finalizer skips status", finalizers: []string{FinalizerDeletionProtection}, res: &ReconcileResult{RemoveFinalizer: true}, wantActions: []string{"update/"}},
@@ -304,6 +306,7 @@ func TestPersistReconcileResult(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			item := newTestComponent("comp-persist", "xmc-ns", tt.finalizers...)
+			original := item.DeepCopy()
 			client := dynamicfake.NewSimpleDynamicClient(newStatusApplierTestScheme(), item.DeepCopy())
 			if tt.updateErr != nil {
 				client.PrependReactor("update", "components", func(k8stesting.Action) (bool, runtime.Object, error) {
@@ -314,12 +317,21 @@ func TestPersistReconcileResult(t *testing.T) {
 				if tt.patchErr != nil {
 					return true, nil, tt.patchErr
 				}
-				return true, item.DeepCopy(), nil
+				persisted := item.DeepCopy()
+				persisted.Object["status"] = map[string]any{"state": "ENABLED"}
+				return true, persisted, nil
 			})
 
-			err := PersistReconcileResult(ctx, client, "default", item, tt.res)
+			arg := item
+			if tt.nilItem {
+				arg = nil
+			}
+			err := PersistReconcileResult(ctx, client, "default", arg, tt.res)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("PersistReconcileResult() error = %v, want %v", err, tt.wantErr)
+			}
+			if diff := cmp.Diff(original.Object, item.Object); diff != "" {
+				t.Errorf("PersistReconcileResult() mutated item (-want +got):\n%s", diff)
 			}
 			var gotActions []string
 			for _, a := range client.Actions() {

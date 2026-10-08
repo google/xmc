@@ -259,7 +259,7 @@ func (c *Controller) handleReconcileFailure(ctx context.Context, item *unstructu
 	}
 }
 
-// persistResult writes res back to item with bridge.PersistReconcileResult: the deletion protection
+// persistResult persists res for item with bridge.PersistReconcileResult: the deletion protection
 // finalizer is synced first and .status is then server-side applied with fieldManager "xmc-bridge",
 // unless the finalizer was released. A finalizer error skips the status write so that the finalizer
 // stays in place and the next pass retries both.
