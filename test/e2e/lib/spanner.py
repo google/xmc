@@ -18,49 +18,41 @@ from __future__ import annotations
 
 import concurrent.futures
 import contextlib
+import functools
 import logging
 import os
+import subprocess
 import threading
 import time
+from collections.abc import Iterator
 
 from test.e2e.lib.command import run_cmd
 from test.e2e.lib.config import E2EConfig
+from test.e2e.lib.spanner_retry import (
+    RetryBudget,
+    is_already_exists_error,
+    run_with_transient_retry,
+)
 
 logger = logging.getLogger("xmc_e2e_runner")
 
-
-def _extract_error_details(e: Exception) -> str:
-    """Extracts combined stderr, stdout, and message from exception in lowercase."""
-    stdout = getattr(e, "stdout", "") or getattr(e, "output", "") or ""
-    stderr = getattr(e, "stderr", "") or ""
-    if isinstance(stdout, bytes):
-        stdout = stdout.decode("utf-8", errors="ignore")
-    if isinstance(stderr, bytes):
-        stderr = stderr.decode("utf-8", errors="ignore")
-    return f"{stderr}\n{stdout}\n{e}".lower()
-
-
-def _is_retryable_spanner_error(err_str: str) -> bool:
-    """Returns True if error string contains transient Spanner quota or rate limit errors."""
-    retryable_markers = (
-        "resource_exhausted",
-        "resourceexhausted",
-        "quota exceeded",
-        "rate limit",
-        "429",
-        "503",
-        "unavailable",
-        "504",
-        "deadline_exceeded",
-        "deadlineexceeded",
-        "aborted",
-        "409",
-        "maximum database limit",
-        "too many concurrent",
-        "pending ddl operations",
-    )
-    return any(marker in err_str for marker in retryable_markers)
-
+# Database creation: 4 attempts with waits of 15, 30, and 60 s (each +-20%), every attempt
+# bounded to 120 s and the whole loop to 240 s.
+CREATE_DATABASE_RETRY = RetryBudget(
+    max_attempts=4,
+    base_delay_seconds=15,
+    attempt_timeout_seconds=120,
+    total_seconds=240,
+    jitter_fraction=0.2,
+)
+# Migration version initialization: 3 attempts with waits of 5 and 10 s, every attempt bounded
+# to 45 s and the whole loop to 90 s, so that a first attempt that times out still leaves 40 s
+# for a retry, above the 30 s MIN_RETRY_ATTEMPT_SECONDS floor.
+MIGRATION_INIT_RETRY = RetryBudget(
+    max_attempts=3, base_delay_seconds=5, attempt_timeout_seconds=45, total_seconds=90
+)
+# How often a retried creation that found its database still being created polls its state.
+_READY_POLL_SECONDS = 5
 
 _SCHEMA_MIGRATIONS_DDL = (
     "\n\nCREATE TABLE SchemaMigrations (\n"
@@ -68,6 +60,36 @@ _SCHEMA_MIGRATIONS_DDL = (
     "  Dirty BOOL NOT NULL,\n"
     ") PRIMARY KEY(Version);\n"
 )
+
+
+@contextlib.contextmanager
+def _hold_lock_within(lock: threading.Lock, timeout: float, cmd: list[str]) -> Iterator[float]:
+    """Holds ``lock`` and yields the part of ``timeout`` left after waiting for it.
+
+    Waiting for the lock counts against the timeout of the command that needs it, so that a
+    command queued behind a concurrent one stays within its attempt and total time budgets.
+
+    Args:
+        lock: The lock to hold.
+        timeout: Seconds for waiting for ``lock`` and running ``cmd`` together.
+        cmd: The command that needs ``lock``, reported if the wait times out.
+
+    Yields:
+        The seconds left for running ``cmd``.
+
+    Raises:
+        subprocess.TimeoutExpired: If ``lock`` is not acquired within ``timeout``, which the
+            retry loop treats as transient.
+    """
+    deadline = time.monotonic() + timeout
+    if not lock.acquire(timeout=timeout):
+        raise subprocess.TimeoutExpired(
+            cmd, timeout, stderr="Timed out waiting for a lock held by a concurrent command."
+        )
+    try:
+        yield deadline - time.monotonic()
+    finally:
+        lock.release()
 
 
 class SpannerManager:
@@ -227,8 +249,21 @@ class SpannerManager:
             f.write(schema_sql + _SCHEMA_MIGRATIONS_DDL)
         return combined_ddl_path
 
+    def _databases_cmd(self, verb: str, db_name: str, *flags: str) -> list[str]:
+        """Builds a ``gcloud spanner databases`` command for a database on the test instance."""
+        return [
+            "gcloud",
+            "spanner",
+            "databases",
+            verb,
+            db_name,
+            f"--instance={self.cfg.spanner_instance}",
+            f"--project={self.cfg.project_id}",
+            *flags,
+        ]
+
     def _create_database(self, db_name: str, ddl_file: str, proto_desc_file: str) -> None:
-        """Creates a single Spanner database with retries on RESOURCE_EXHAUSTED / 429."""
+        """Creates a single Spanner database, retrying transient errors with backoff."""
         ddl_path = (
             ddl_file if os.path.isabs(ddl_file) else os.path.join(self.cfg.workspace_root, ddl_file)
         )
@@ -244,39 +279,56 @@ class SpannerManager:
             ddl_file,
             proto_desc_file,
         )
-        max_attempts = 10
-        base_delay = 15
-        for attempt in range(1, max_attempts + 1):
-            try:
-                run_cmd(
-                    [
-                        "gcloud",
-                        "spanner",
-                        "databases",
-                        "create",
-                        db_name,
-                        f"--instance={self.cfg.spanner_instance}",
-                        f"--project={self.cfg.project_id}",
-                        f"--ddl-file={effective_ddl_path}",
-                        f"--proto-descriptors-file={proto_desc_path}",
-                    ],
-                    capture_output=True,
-                )
+        create_cmd = self._databases_cmd(
+            "create",
+            db_name,
+            f"--ddl-file={effective_ddl_path}",
+            f"--proto-descriptors-file={proto_desc_path}",
+        )
+        run_with_transient_retry(
+            functools.partial(self._create_database_once, create_cmd, db_name),
+            f"Creating Spanner database {db_name}",
+            CREATE_DATABASE_RETRY,
+        )
+
+    def _create_database_once(
+        self, create_cmd: list[str], db_name: str, attempt: int, timeout: float
+    ) -> None:
+        """Runs one create attempt; a retried create succeeds once the database is READY.
+
+        An earlier attempt that timed out or failed transiently may still have created the
+        database, in which case the retried create fails with ALREADY_EXISTS while the
+        database is often still CREATING. Its state is then polled for the rest of the
+        attempt.
+        """
+        started = time.monotonic()
+        try:
+            run_cmd(create_cmd, capture_output=True, timeout=timeout)
+        except subprocess.CalledProcessError as exc:
+            if attempt == 1 or not is_already_exists_error(exc):
+                raise
+            self._wait_until_ready(db_name, timeout - (time.monotonic() - started))
+            logger.info("Spanner database %s already exists and is READY.", db_name)
+
+    def _wait_until_ready(self, db_name: str, timeout: float) -> None:
+        """Polls the state of the database until it is READY, for at most ``timeout`` seconds.
+
+        Raises:
+            subprocess.TimeoutExpired: If the database is not READY in time, which the retry
+                loop treats as transient.
+        """
+        describe_cmd = self._databases_cmd("describe", db_name, "--format=value(state)")
+        deadline = time.monotonic() + timeout
+        state = "unknown"
+        while (remaining := deadline - time.monotonic()) > 0:
+            res = run_cmd(describe_cmd, capture_output=True, check=False, timeout=remaining)
+            state = res.stdout.strip() if res.returncode == 0 else "unknown"
+            if state == "READY":
                 return
-            except Exception as e:
-                err_str = _extract_error_details(e)
-                if _is_retryable_spanner_error(err_str) and attempt < max_attempts:
-                    delay = min(base_delay * (2 ** (attempt - 1)), 120)
-                    logger.warning(
-                        "Database creation hit resource quota (attempt %d/%d). "
-                        "Waiting %ds for a slot to free up...",
-                        attempt,
-                        max_attempts,
-                        delay,
-                    )
-                    time.sleep(delay)
-                else:
-                    raise
+            time.sleep(min(_READY_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
+        raise subprocess.TimeoutExpired(
+            describe_cmd, timeout, stderr=f"Spanner database {db_name} is {state}, not READY."
+        )
 
     _bazel_run_lock = threading.Lock()
 
@@ -286,47 +338,28 @@ class SpannerManager:
         mig_binary = self._resolve_migration_binary()
         if not mig_binary:
             lock = self._bazel_run_lock
-            mig_cmd = [
-                "bazel",
-                "run",
-                "//internal/storage/spanner/migrations:migrations",
-                "--",
-            ]
+            mig_cmd = ["bazel", "run", "//internal/storage/spanner/migrations:migrations", "--"]
         else:
-            lock = contextlib.nullcontext()
+            lock = threading.Lock()  # Unshared, so that both databases initialize concurrently.
             mig_cmd = [mig_binary]
+        init_cmd = [
+            *mig_cmd,
+            f"-project={self.cfg.project_id}",
+            f"-instance={self.cfg.spanner_instance}",
+            f"-database={db_name}",
+            f"-migrations_dir={mig_dir}",
+            "-command=init",
+        ]
 
-        max_attempts = 5
-        base_delay = 5
-        for attempt in range(1, max_attempts + 1):
-            try:
-                with lock:
-                    run_cmd(
-                        [
-                            *mig_cmd,
-                            f"-project={self.cfg.project_id}",
-                            f"-instance={self.cfg.spanner_instance}",
-                            f"-database={db_name}",
-                            f"-migrations_dir={mig_dir}",
-                            "-command=init",
-                        ],
-                        cwd=self.cfg.workspace_root,
-                        capture_output=True,
-                    )
-                return
-            except Exception as e:
-                err_str = _extract_error_details(e)
-                if _is_retryable_spanner_error(err_str) and attempt < max_attempts:
-                    delay = min(base_delay * (2 ** (attempt - 1)), 60)
-                    logger.warning(
-                        "Migration init hit rate limit (attempt %d/%d). Retrying in %ds...",
-                        attempt,
-                        max_attempts,
-                        delay,
-                    )
-                    time.sleep(delay)
-                else:
-                    raise
+        def _init_once(_attempt: int, timeout: float) -> None:
+            with _hold_lock_within(lock, timeout, init_cmd) as remaining:
+                run_cmd(
+                    init_cmd, cwd=self.cfg.workspace_root, capture_output=True, timeout=remaining
+                )
+
+        run_with_transient_retry(
+            _init_once, f"Initializing migration version for {db_name}", MIGRATION_INIT_RETRY
+        )
 
     def setup(self) -> None:
         """Creates ephemeral databases and initializes schemas concurrently."""
