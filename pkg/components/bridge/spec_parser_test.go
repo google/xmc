@@ -121,6 +121,20 @@ func TestParseHelpers(t *testing.T) {
 	if len(conds) != 2 || conds[0].ObservedGeneration != 2 || conds[0].Status != "True" || conds[1].ObservedGeneration != 0 {
 		t.Errorf("unexpected conditions: %+v", conds)
 	}
+
+	for _, tc := range []struct {
+		status any
+		want   int64
+	}{
+		{status: map[string]any{"componentGeneration": int64(3)}, want: 3},
+		{status: map[string]any{"componentGeneration": float64(4)}, want: 4},
+		{status: map[string]any{"observedGeneration": int64(7)}, want: 0},
+		{status: nil, want: 0},
+	} {
+		if got := ParseComponentGeneration(tc.status); got != tc.want {
+			t.Errorf("ParseComponentGeneration(%v) = %d, want %d", tc.status, got, tc.want)
+		}
+	}
 }
 
 func TestParseSpecFromUnstructured_Dependencies(t *testing.T) {

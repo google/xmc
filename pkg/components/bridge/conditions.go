@@ -163,6 +163,13 @@ func shouldSyncToCMS(existingConditions []Condition, targetStatus string, curren
 	return false
 }
 
+// componentGenerationChanged reports whether this pass committed a CMS component generation other
+// than the one last reported on the resource, in which case CMS must be told it was observed even
+// if the resource generation and readiness are unchanged.
+func componentGenerationChanged(in ReconcileComponentInput, res *ReconcileResult) bool {
+	return res.ComponentGeneration != in.ComponentGeneration
+}
+
 // resetReadyTransitionTime updates LastTransitionTime on the Ready condition to current UTC time.
 // This resets the heartbeat timer after a successful sync to CMS.
 func resetReadyTransitionTime(conditions []Condition) {

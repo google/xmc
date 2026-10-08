@@ -240,6 +240,16 @@ func ParseConditionsFromUnstructured(statusObj any) []Condition {
 	return res
 }
 
+// ParseComponentGeneration returns status.componentGeneration from the .status map, or 0 when it
+// is absent.
+func ParseComponentGeneration(statusObj any) int64 {
+	statusMap, ok := statusObj.(map[string]any)
+	if !ok {
+		return 0
+	}
+	return extractInt(statusMap, "componentGeneration")
+}
+
 // ParseWrapperRef extracts WrapperRef from unstructured custom resource spec map.
 // Target coordinates are resolved by parseWrapperRef so their key aliases are defined once.
 func ParseWrapperRef(specObj any, defaultNamespace string) WrapperRef {

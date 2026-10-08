@@ -15,6 +15,7 @@
 package e2e
 
 import (
+	"cmp"
 	"context"
 	"slices"
 	"strings"
@@ -30,6 +31,7 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/bridge"
+	"xmanager_cloud/pkg/components/store"
 )
 
 // lifecycleWaitTimeout bounds each lifecycle transition. It exceeds the bridge's 30s
@@ -50,6 +52,7 @@ func TestComponentsLifecycle(t *testing.T) {
 
 	t.Run("BlockedDeactivation", func(t *testing.T) { testBlockedDeactivation(ctx, t, h) })
 	t.Run("FinalizerCleanup", func(t *testing.T) { testFinalizerCleanup(ctx, t, h) })
+	t.Run("RecreatedComponent", func(t *testing.T) { testRecreatedComponent(ctx, t, h) })
 }
 
 // testBlockedDeactivation disables a dependency while an enabled component depends on it: CMS
@@ -106,16 +109,87 @@ func assertComponentsDisabled(ctx context.Context, t *testing.T, h *kindClusterH
 	}
 }
 
-// assertCMSComponent verifies that the CMS record of the Component u is in wantState at the CR
-// generation. Repeated bridge passes must not bump the CMS generation past the CR generation.
-func assertCMSComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, u *unstructured.Unstructured, wantState componentspb.ComponentState) {
+// assertCMSComponent verifies that the CMS record of the Component u is in wantState, records u at
+// its current generation as the intent source, and has the generation reported in
+// status.componentGeneration. It returns the record.
+func assertCMSComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, u *unstructured.Unstructured, wantState componentspb.ComponentState) *store.ComponentRecord {
 	t.Helper()
 	rec, err := h.cmsServer.Store().GetComponent(ctx, u.GetName())
 	if err != nil {
 		t.Fatalf("CMS GetComponent(%s) failed: %v", u.GetName(), err)
 	}
-	if rec.State != wantState || rec.Generation != u.GetGeneration() {
-		t.Errorf("%s CMS state = %v, generation = %d; want %v, CR generation %d", u.GetName(), rec.State, rec.Generation, wantState, u.GetGeneration())
+	componentGen, _, _ := unstructured.NestedInt64(u.Object, "status", "componentGeneration")
+	if rec.State != wantState || rec.Generation != componentGen {
+		t.Errorf("%s CMS state = %v, generation = %d; want %v, status.componentGeneration %d", u.GetName(), rec.State, rec.Generation, wantState, componentGen)
+	}
+	if src := rec.Source; src == nil || src.UID != string(u.GetUID()) || src.Generation != u.GetGeneration() {
+		t.Errorf("%s CMS source = %+v, want UID %q at generation %d", u.GetName(), rec.Source, u.GetUID(), u.GetGeneration())
+	}
+	return rec
+}
+
+// testRecreatedComponent removes a Component CR at generation 3 without a CMS teardown (finalizer
+// stripped) and recreates it with the same spec: the new CR at generation 1 adopts the CMS record
+// at generation 3 under the same ComponentId without StaleIntent, and its next edit is applied.
+func testRecreatedComponent(ctx context.Context, t *testing.T, h *kindClusterHarness) {
+	ns := createTestNamespace(ctx, t, h, "xmc-lc-recreate")
+	const name = "lc-recreate"
+	var original *unstructured.Unstructured
+	for _, version := range []string{"1.0.0", "1.0.1", "1.0.2"} {
+		original = applyReadyLifecycleComponent(ctx, t, h, ns, name, version)
+	}
+	assertComponentGenerations(t, original, 3, 3)
+	before := assertCMSComponent(ctx, t, h, original, componentspb.ComponentState_COMPONENT_STATE_ENABLED)
+	removeComponentWithoutTeardown(ctx, t, h, ns, name)
+	// Creation timestamps have one-second granularity: a later second orders the new CR after the
+	// old one regardless of their UIDs.
+	time.Sleep(time.Until(original.GetCreationTimestamp().Add(1100 * time.Millisecond)))
+	recreated := applyReadyLifecycleComponent(ctx, t, h, ns, name, "1.0.2")
+	if recreated.GetUID() == original.GetUID() {
+		t.Fatalf("recreated %s/%s has the original UID %q", ns, name, recreated.GetUID())
+	}
+	assertComponentGenerations(t, recreated, 1, 3)
+	if adopted := assertCMSComponent(ctx, t, h, recreated, componentspb.ComponentState_COMPONENT_STATE_ENABLED); adopted.ComponentID != before.ComponentID {
+		t.Errorf("recreated CMS ComponentID = %d, want %d", adopted.ComponentID, before.ComponentID)
+	}
+	edited := applyReadyLifecycleComponent(ctx, t, h, ns, name, "1.1.0")
+	assertComponentGenerations(t, edited, 2, 4)
+	assertCMSComponent(ctx, t, h, edited, componentspb.ComponentState_COMPONENT_STATE_ENABLED)
+}
+
+// applyReadyLifecycleComponent applies an enabled Component at version and waits until it is Ready.
+func applyReadyLifecycleComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, name, version string) *unstructured.Unstructured {
+	t.Helper()
+	applyLifecycleComponent(ctx, t, h, ns, name, lifecycleComponentSpec{enabled: true, version: version})
+	return waitForComponent(ctx, t, h, ns, name, "Ready at version "+version, isExistingComponentReady)
+}
+
+// assertComponentGenerations verifies the CR generation (also status.observedGeneration) and
+// status.componentGeneration of u.
+func assertComponentGenerations(t *testing.T, u *unstructured.Unstructured, wantCRGen, wantComponentGen int64) {
+	t.Helper()
+	observedGen, _, _ := unstructured.NestedInt64(u.Object, "status", "observedGeneration")
+	componentGen, _, _ := unstructured.NestedInt64(u.Object, "status", "componentGeneration")
+	if u.GetGeneration() != wantCRGen || observedGen != wantCRGen || componentGen != wantComponentGen {
+		t.Errorf("%s generation = %d, observedGeneration = %d, componentGeneration = %d; want %d, %d, %d", u.GetName(), u.GetGeneration(), observedGen, componentGen, wantCRGen, wantCRGen, wantComponentGen)
+	}
+}
+
+// removeComponentWithoutTeardown strips the bridge finalizer and deletes the Component, so it
+// disappears without a reconcile pass and its CMS record stays.
+func removeComponentWithoutTeardown(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, name string) {
+	t.Helper()
+	compRes := h.dynClient.Resource(componentGVR).Namespace(ns)
+	u := getComponent(ctx, t, compRes, name)
+	u.SetFinalizers(nil)
+	if _, err := compRes.Update(ctx, u, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("failed to strip finalizers from %s/%s: %v", ns, name, err)
+	}
+	if err := compRes.Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
+		t.Fatalf("failed to delete %s/%s: %v", ns, name, err)
+	}
+	if _, err := compRes.Get(ctx, name, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("Get(%s/%s) after delete: error = %v, want NotFound", ns, name, err)
 	}
 }
 
@@ -146,6 +220,8 @@ func testFinalizerCleanup(ctx context.Context, t *testing.T, h *kindClusterHarne
 type lifecycleComponentSpec struct {
 	enabled, deletionProtection bool
 	dependencies                []string
+	// version is spec.version, "1.0.0" if empty.
+	version string
 }
 
 // applyLifecycleComponent server-side applies the full spec of a 1P Component, so fields omitted
@@ -156,7 +232,7 @@ func applyLifecycleComponent(ctx context.Context, t *testing.T, h *kindClusterHa
 		"componentType":      "COMPONENT_TYPE_CUSTOM_1P_COMPONENT",
 		"enabled":            spec.enabled,
 		"deletionProtection": spec.deletionProtection,
-		"version":            "1.0.0",
+		"version":            cmp.Or(spec.version, "1.0.0"),
 	}
 	if len(spec.dependencies) > 0 {
 		specMap["dependencies"] = spec.dependencies

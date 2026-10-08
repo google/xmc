@@ -178,6 +178,10 @@ spec:
                   type: integer
                   format: int64
                   description: "Most recent generation observed by the controller."
+                componentGeneration:
+                  type: integer
+                  format: int64
+                  description: "CMS component generation that the status describes; independent of metadata.generation because CMS orders intents by Component object epoch."
                 state:
                   type: string
                   description: "Current lifecycle state of the component."
