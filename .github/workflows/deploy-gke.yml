@@ -350,18 +350,21 @@ jobs:
           kubectl rollout status statefulset/clickhouse -n xmc-metrics --timeout=180s
           # 7. Apply schema.sql to initialize xmc_metrics MergeTree table, xmc_metrics_queue Kafka engine table, and xmc_metrics_mv materialized view.
           kubectl exec -i -n xmc-metrics clickhouse-0 -- clickhouse-client --multiquery < deploy/clickhouse/schema.sql
-          # 8. Restart and wait for metrics-dependent deployments so they are Ready before health verification.
-          kubectl rollout restart deployment/ingestion-gateway-deployment deployment/dashboard-service-deployment -n xmc
-          kubectl rollout status deployment/ingestion-gateway-deployment -n xmc --timeout=180s
-          kubectl rollout status deployment/dashboard-service-deployment -n xmc --timeout=180s
+          # 8. Restart metrics-dependent deployments if present so they reconnect before health verification.
+          for deploy in ingestion-gateway-deployment dashboard-service-deployment; do
+            if kubectl get deployment "${deploy}" -n xmc &>/dev/null; then
+              kubectl rollout restart "deployment/${deploy}" -n xmc
+            fi
+          done
 
       - name: 'Run Environment Health Verification'
         if: ${{ inputs.skip_verification != true }}
         run: |
-          ENVIRONMENT="${ENVIRONMENT}" \
-          REGION="${REGION}" \
-          PROJECT_ID="${PROJECT_ID}" \
-          python3 ./deploy/ctk_v2/verify_xmc.py
+          python3 tools/dev_env/dev_env.py gke-deploy \
+            --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
+            --dns-project "${DNS_PROJECT_ID}" \
+            --dns-zone "${DNS_ZONE_NAME}" \
+            --only verify
 
       - name: 'Collect Diagnostics on Failure'
         if: failure()

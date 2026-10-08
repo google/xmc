@@ -1030,16 +1030,17 @@ image_tag: latest
     @patch("time.sleep")
     def test_step_verify_success(self, mock_sleep, mock_run):
         cred_res = MagicMock()
+        rollout_res = MagicMock()
         wait_res = MagicMock()
         verify_res = MagicMock()
         cert_res = MagicMock()
         cert_res.stdout = "ACTIVE\n"
 
-        mock_run.side_effect = [cred_res, wait_res, verify_res, cert_res]
+        mock_run.side_effect = [cred_res, rollout_res, wait_res, verify_res, cert_res]
 
         deploy_dev_env.step_verify(self.valid_config, self.dns_project, self.dns_zone)
 
-        self.assertEqual(mock_run.call_count, 4)
+        self.assertEqual(mock_run.call_count, 5)
         mock_run.assert_has_calls(
             [
                 call(
@@ -1051,6 +1052,17 @@ image_tag: latest
                         "xmc-xmc-dev-dev",
                         "--region=us-central1",
                         "--project=my-project",
+                    ]
+                ),
+                call(
+                    [
+                        "kubectl",
+                        "rollout",
+                        "status",
+                        "deployment",
+                        "-n",
+                        "xmc",
+                        "--timeout=180s",
                     ]
                 ),
                 call(
@@ -1088,11 +1100,12 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.run_command")
     def test_step_verify_propagates_failure(self, mock_run):
         cred_res = MagicMock()
+        rollout_res = MagicMock()
         wait_res = MagicMock()
         verify_err = subprocess.CalledProcessError(
             1, [sys.executable, "./deploy/ctk_v2/verify_xmc.py"]
         )
-        mock_run.side_effect = [cred_res, wait_res, verify_err]
+        mock_run.side_effect = [cred_res, rollout_res, wait_res, verify_err]
 
         with self.assertRaises(subprocess.CalledProcessError):
             deploy_dev_env.step_verify(self.valid_config, self.dns_project, self.dns_zone)
