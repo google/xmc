@@ -48,7 +48,6 @@ nogo(
 # gazelle:resolve go tink/integration/go/jwt/jwtkeyconverter //internal/compat/jwtkeyconverter:jwtkeyconverter
 # gazelle:resolve go golang/github_com/golang_migrate/migrate/v/v4/source/source @com_github_golang_migrate_migrate_v4//source:source
 # gazelle:resolve go golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs @com_github_golang_migrate_migrate_v4//source/iofs:iofs
-# gazelle:resolve go golang/cloud_google_com/go/spanner/v/v1/spanner //internal/compat/spanner:spanner
 
 # Compatibility wrapper package target mappings
 # gazelle:resolve go task/go/status //internal/compat/status:status
