@@ -27,8 +27,8 @@ import (
 	fmpb "protobuf/field_mask_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	storagepkg "xmanager_cloud/internal/storage"
 	"xmanager_cloud/kubernetes/common/constants"
-	storagepkg "xmanager_cloud/storage/storage"
 
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 )

@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"golang/prometheus/client/prometheus/prometheus"
-	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
-	"xmanager_cloud/kubernetes/reconciler/shared/shared"
+	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
+	"xmanager_cloud/cmd/reconciler/shared"
 )
 
 // mlRunLatencyBuckets covers the latency range of a remote control-plane RPC

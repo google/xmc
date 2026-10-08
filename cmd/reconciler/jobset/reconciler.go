@@ -40,12 +40,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
 	"xmanager_cloud/cmd/reconciler/shared"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/kubernetes/common/labels"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
 	"xmanager_cloud/validator/validator"
 )
 

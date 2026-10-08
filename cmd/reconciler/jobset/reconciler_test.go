@@ -37,11 +37,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
 	"xmanager_cloud/cmd/reconciler/shared"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	storagepkg "xmanager_cloud/internal/storage"
 	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
 )
 
 type mockStorageUpdater struct {

@@ -22,7 +22,7 @@ import (
 
 	"golang/prometheus/client/prometheus/testutil/testutil"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
-	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
+	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
 )
 
 func TestMLRunResultLabel(t *testing.T) {
