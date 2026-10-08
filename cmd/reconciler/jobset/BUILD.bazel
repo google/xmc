@@ -18,6 +18,7 @@ compat_go_library(
     name = "jobset",
     srcs = [
         "converter.go",
+        "managed_xprof.go",
         "mlrun_metrics.go",
         "predicates.go",
         "reconciler.go",
@@ -60,6 +61,7 @@ compat_go_test(
     name = "jobset_test",
     srcs = [
         "converter_test.go",
+        "managed_xprof_test.go",
         "mlrun_metrics_test.go",
         "predicates_test.go",
         "reconciler_test.go",
