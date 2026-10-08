@@ -91,7 +91,7 @@ func (m *MemoryStore) setIntent(ctx context.Context, name string, spec *componen
 			return nil, err
 		}
 		m.applyIntentPlanLocked(rec, plan, spec, labels, deps, src, now)
-		logIntentEpochChange(ctx, canonicalName, plan, src)
+		reportIntentEpochChange(ctx, canonicalName, plan, src)
 		return cloneRecord(rec), nil
 	}
 
