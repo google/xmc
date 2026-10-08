@@ -15,6 +15,8 @@
 package status
 
 import (
+	"xmanager_cloud/internal/grpcerr"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -88,17 +90,17 @@ func CodeFromError(err error) Code {
 }
 
 var (
-	ErrInvalidArgument    = status.Error(codes.InvalidArgument, "invalid argument")
-	ErrNotFound           = status.Error(codes.NotFound, "not found")
-	ErrAlreadyExists      = status.Error(codes.AlreadyExists, "already exists")
-	ErrPermissionDenied   = status.Error(codes.PermissionDenied, "permission denied")
-	ErrInternal           = status.Error(codes.Internal, "internal error")
-	ErrUnimplemented      = status.Error(codes.Unimplemented, "unimplemented")
-	ErrFailedPrecondition = status.Error(codes.FailedPrecondition, "failed precondition")
-	ErrAborted            = status.Error(codes.Aborted, "aborted")
-	ErrUnavailable        = status.Error(codes.Unavailable, "unavailable")
-	ErrDeadlineExceeded   = status.Error(codes.DeadlineExceeded, "deadline exceeded")
-	ErrUnauthenticated    = status.Error(codes.Unauthenticated, "unauthenticated")
+	ErrInvalidArgument    = grpcerr.ErrInvalidArgument
+	ErrNotFound           = grpcerr.ErrNotFound
+	ErrAlreadyExists      = grpcerr.ErrAlreadyExists
+	ErrPermissionDenied   = grpcerr.ErrPermissionDenied
+	ErrInternal           = grpcerr.ErrInternal
+	ErrUnimplemented      = grpcerr.ErrUnimplemented
+	ErrFailedPrecondition = grpcerr.ErrFailedPrecondition
+	ErrAborted            = grpcerr.ErrAborted
+	ErrUnavailable        = grpcerr.ErrUnavailable
+	ErrDeadlineExceeded   = grpcerr.ErrDeadlineExceeded
+	ErrUnauthenticated    = grpcerr.ErrUnauthenticated
 )
 
 func ExtractCanonicalCode(err error) Code {

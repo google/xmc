@@ -22,7 +22,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -80,7 +80,7 @@ func TestFetchXidEntry_NotFound(t *testing.T) {
 	storage, _ := spanner.NewStorage(xidClient)
 
 	_, err := storage.FetchXidEntry(ctx, 123456789)
-	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("FetchXidEntry for non-existent XID returned error %v, want %v", err, status.ErrNotFound)
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("FetchXidEntry for non-existent XID returned error %v, want %v", err, grpcerr.ErrNotFound)
 	}
 }

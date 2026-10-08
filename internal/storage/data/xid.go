@@ -17,9 +17,8 @@ import (
 	"fmt"
 
 	"google.golang.org/protobuf/proto"
-	"task/go/status"
-
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	"xmanager_cloud/internal/grpcerr"
 	pb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
@@ -27,7 +26,7 @@ import (
 // based on an update mask.
 func MergeXIDEntries(current, updated *pb.XidEntry, updateMask *fieldmaskpb.FieldMask) (*pb.XidEntry, error) {
 	if len(updateMask.Paths) == 0 {
-		return nil, fmt.Errorf("update mask is empty: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("update mask is empty: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	merged := proto.Clone(current).(*pb.XidEntry)
@@ -35,11 +34,11 @@ func MergeXIDEntries(current, updated *pb.XidEntry, updateMask *fieldmaskpb.Fiel
 		switch path {
 		case "acls":
 			if updated.Acls == nil {
-				return nil, fmt.Errorf("acls field is required: %w", status.ErrInvalidArgument)
+				return nil, fmt.Errorf("acls field is required: %w", grpcerr.ErrInvalidArgument)
 			}
 			merged.Acls = updated.Acls
 		default:
-			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+			return nil, fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
 		}
 	}
 	return merged, nil

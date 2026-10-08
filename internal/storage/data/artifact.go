@@ -18,8 +18,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	"task/go/status"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -28,13 +28,13 @@ import (
 // the masked updated XID entry if so.
 func ArtifactRequiresXIDUpdate(art *pb.Artifact, updateMask *fieldmaskpb.FieldMask) (*xidmsgpb.XidEntry, *fieldmaskpb.FieldMask, error) {
 	if art == nil {
-		return nil, nil, fmt.Errorf("artifact is nil: %w", status.ErrInvalidArgument)
+		return nil, nil, fmt.Errorf("artifact is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if updateMask == nil {
-		return nil, nil, fmt.Errorf("update mask is nil: %w", status.ErrInvalidArgument)
+		return nil, nil, fmt.Errorf("update mask is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if len(updateMask.Paths) == 0 {
-		return nil, nil, fmt.Errorf("update mask is empty: %w", status.ErrInvalidArgument)
+		return nil, nil, fmt.Errorf("update mask is empty: %w", grpcerr.ErrInvalidArgument)
 	}
 	aid, err := validator.ValidateArtifactName(art.GetName())
 	if err != nil {
@@ -47,12 +47,12 @@ func ArtifactRequiresXIDUpdate(art *pb.Artifact, updateMask *fieldmaskpb.FieldMa
 	for _, path := range updateMask.GetPaths() {
 		if path == "acls" {
 			if art.GetAcls() == nil {
-				return nil, nil, fmt.Errorf("acls field cannot be nil: %w", status.ErrInvalidArgument)
+				return nil, nil, fmt.Errorf("acls field cannot be nil: %w", grpcerr.ErrInvalidArgument)
 			}
 
 			xidEntry.Acls = art.GetAcls()
 			if len(xidEntry.GetAcls().GetOwners()) == 0 && len(xidEntry.GetAcls().GetWriters()) == 0 && len(xidEntry.GetAcls().GetReaders()) == 0 {
-				return nil, nil, fmt.Errorf("at least one ACL must be provided: %w", status.ErrInvalidArgument)
+				return nil, nil, fmt.Errorf("at least one ACL must be provided: %w", grpcerr.ErrInvalidArgument)
 			}
 			paths = []string{"acls"}
 		}
@@ -64,14 +64,14 @@ func ArtifactRequiresXIDUpdate(art *pb.Artifact, updateMask *fieldmaskpb.FieldMa
 // message based on an update mask.
 func MergeArtifacts(current, updated *pb.Artifact, updateMask *fieldmaskpb.FieldMask) (*pb.Artifact, error) {
 	if current == nil {
-		return nil, fmt.Errorf("current artifact is nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("current artifact is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if updated == nil {
-		return nil, fmt.Errorf("updated artifact is nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("updated artifact is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	if len(updateMask.Paths) == 0 {
-		return nil, fmt.Errorf("update mask is empty: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("update mask is empty: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	merged := proto.Clone(current).(*pb.Artifact)
@@ -89,7 +89,7 @@ func mergeArtifactField(merged, updated *pb.Artifact, path string) error {
 		merged.Acls = updated.Acls
 	case "url":
 		if updated.Url == nil {
-			return fmt.Errorf("url field cannot be nil: %w", status.ErrInvalidArgument)
+			return fmt.Errorf("url field cannot be nil: %w", grpcerr.ErrInvalidArgument)
 		}
 		merged.Url = updated.Url
 		merged.Priority = updated.Url.Priority
@@ -101,7 +101,7 @@ func mergeArtifactField(merged, updated *pb.Artifact, path string) error {
 		merged.Url.Priority = updated.Priority
 	case "tags":
 		if updated.Tags == nil {
-			return fmt.Errorf("tags field cannot be nil: %w", status.ErrInvalidArgument)
+			return fmt.Errorf("tags field cannot be nil: %w", grpcerr.ErrInvalidArgument)
 		}
 		merged.Tags = updated.Tags
 	case "notes":
@@ -117,7 +117,7 @@ func mergeArtifactField(merged, updated *pb.Artifact, path string) error {
 	case "payload":
 		merged.Payload = updated.Payload
 	default:
-		return fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+		return fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
 	}
 	return nil
 }

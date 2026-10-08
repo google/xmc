@@ -23,8 +23,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/storage"
 )
@@ -103,8 +103,8 @@ func TestUpdateWorkUnit_ImmutableField(t *testing.T) {
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"work_unit_type"}},
 	}
 	_, err := s.UpdateWorkUnit(ctx, update)
-	if !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("UpdateWorkUnit with immutable field returned error %v, want %v", err, status.ErrInvalidArgument)
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateWorkUnit with immutable field returned error %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }
 
@@ -122,8 +122,8 @@ func TestUpdateWorkUnit_NotFound(t *testing.T) {
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"notes"}},
 	}
 	_, err := s.UpdateWorkUnit(ctx, update)
-	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("UpdateWorkUnit for non-existent XID returned error %v, want %v", err, status.ErrNotFound)
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("UpdateWorkUnit for non-existent XID returned error %v, want %v", err, grpcerr.ErrNotFound)
 	}
 }
 
@@ -144,7 +144,7 @@ func TestUpdateWorkUnit_EmptyMask(t *testing.T) {
 		UpdateMask: &fmpb.FieldMask{Paths: []string{}},
 	}
 	_, err := s.UpdateWorkUnit(ctx, update)
-	if !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("UpdateWorkUnit with empty mask returned error %v, want %v", err, status.ErrInvalidArgument)
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateWorkUnit with empty mask returned error %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }

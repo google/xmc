@@ -117,6 +117,7 @@ filegroup(
         "//internal/auth",
         "//internal/common/health",
         "//internal/common/interfaces",
+        "//internal/grpcerr",
         "//internal/kubernetes/common/labels",
         "//internal/logging",
         "//internal/query_generator/equalityvisitor",
@@ -141,6 +142,7 @@ test_suite(
     tests = [
         "//internal/auth:auth_test",
         "//internal/common/health:health_test",
+        "//internal/grpcerr:grpcerr_test",
         "//internal/kubernetes/common/labels:labels_test",
         "//internal/logging:logging_test",
         "//internal/prototest:prototest_test",

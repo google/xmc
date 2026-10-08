@@ -24,9 +24,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -64,8 +64,8 @@ func TestFakePausedTask_Create(t *testing.T) {
 	if err := fake.Create(ctx, task); !errors.Is(err, storage.ErrPausedTaskAlreadyExists) {
 		t.Errorf("Create() duplicate error = %v, want %v", err, storage.ErrPausedTaskAlreadyExists)
 	}
-	if err := fake.Create(ctx, nil); !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("Create(nil) error = %v, want %v", err, status.ErrInvalidArgument)
+	if err := fake.Create(ctx, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("Create(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 
 	tasks, err := fake.List(ctx)

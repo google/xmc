@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 )
 
@@ -83,7 +83,7 @@ func (f *FakePauseStateRepository) Set(ctx context.Context, state *storage.Pause
 		return err
 	}
 	if state == nil {
-		return fmt.Errorf("%w: state cannot be nil", status.ErrInvalidArgument)
+		return fmt.Errorf("%w: state cannot be nil", grpcerr.ErrInvalidArgument)
 	}
 
 	f.mu.Lock()

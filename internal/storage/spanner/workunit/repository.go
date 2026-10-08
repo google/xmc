@@ -20,8 +20,8 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/query_generator/querytools"
@@ -87,11 +87,11 @@ func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
 // SaveWorkUnitExecution saves a work unit execution using the bound read-write transaction.
 func (r *TxRepository) SaveWorkUnitExecution(ctx context.Context, execution *essmsgpb.WorkUnitExecution) error {
 	if execution == nil {
-		return fmt.Errorf("execution must not be nil: %w", status.ErrInvalidArgument)
+		return fmt.Errorf("execution must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	mutation, err := spannerdata.WorkUnitExecutionProtoToInsertMutation(execution)
 	if err != nil {
-		return fmt.Errorf("failed to create mutation for work unit execution: %v: %w", err, status.ErrInternal)
+		return fmt.Errorf("failed to create mutation for work unit execution: %v: %w", err, grpcerr.ErrInternal)
 	}
 	return r.tx.BufferWrite([]*spanner.Mutation{mutation})
 }
@@ -99,7 +99,7 @@ func (r *TxRepository) SaveWorkUnitExecution(ctx context.Context, execution *ess
 // UpdateCurrentWorkUnitExecution updates the current work unit execution using the bound read-write transaction.
 func (r *TxRepository) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error {
 	if execution == nil {
-		return fmt.Errorf("execution must not be nil: %w", status.ErrInvalidArgument)
+		return fmt.Errorf("execution must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	mutation := spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, eid, execution)
 	return r.tx.BufferWrite([]*spanner.Mutation{mutation})

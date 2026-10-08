@@ -25,8 +25,8 @@ import (
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 
-	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
 	"xmanager_cloud/validator/validator"
 )
@@ -49,10 +49,10 @@ func ChartIDsEqual(a, b []string) bool {
 // MergeDashboards merges an updated Dashboard proto message into a current Dashboard proto message based on an update mask.
 func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error) {
 	if current == nil {
-		return nil, fmt.Errorf("current dashboard is nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("current dashboard is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if updated == nil {
-		return nil, fmt.Errorf("updated dashboard is nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("updated dashboard is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	merged := proto.Clone(current).(*dpb.Dashboard)
@@ -75,7 +75,7 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 		case "chart_ids", "chartIds":
 			merged.ChartIds = updated.GetChartIds()
 		default:
-			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+			return nil, fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
 		}
 	}
 	return merged, nil
@@ -85,10 +85,10 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 // Note: xid and wid are immutable chart ownership fields and cannot be updated.
 func MergeCharts(current, updated *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
 	if current == nil {
-		return nil, fmt.Errorf("current chart is nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("current chart is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if updated == nil {
-		return nil, fmt.Errorf("updated chart is nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("updated chart is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	merged := proto.Clone(current).(*dpb.Chart)
@@ -111,7 +111,7 @@ func MergeCharts(current, updated *dpb.Chart, updateMask *fieldmaskpb.FieldMask)
 		case "plot_layout", "plotLayout":
 			merged.PlotLayout = updated.GetPlotLayout()
 		default:
-			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+			return nil, fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
 		}
 	}
 	return merged, nil
@@ -171,7 +171,7 @@ func buildDashboardChartMutations(dashID string, dashboard *dpb.Dashboard) ([]*s
 // DashboardProtoToInsertMutations creates Spanner mutations to insert a Dashboard and its child DashboardCharts.
 func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutation, error) {
 	if dashboard == nil {
-		return nil, fmt.Errorf("dashboard proto must not be nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("dashboard proto must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	dashID, err := validator.ValidateDashboardName(dashboard.GetName())
@@ -227,10 +227,10 @@ func DashboardWithChartsToInsertMutations(dashboard *dpb.Dashboard, charts []*dp
 // DashboardProtoToUpdateMutations creates Spanner mutations to update a Dashboard and optionally its child DashboardCharts.
 func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateChartIDs bool) ([]*spanner.Mutation, error) {
 	if dashboard == nil {
-		return nil, fmt.Errorf("dashboard proto must not be nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("dashboard proto must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if dashboard.GetName() == "" {
-		return nil, fmt.Errorf("dashboard name must not be empty: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("dashboard name must not be empty: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	dashID, err := validator.ValidateDashboardName(dashboard.GetName())

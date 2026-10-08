@@ -23,9 +23,9 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
-	"task/go/status"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
@@ -74,7 +74,7 @@ func (f *FakePausedTaskRepository) Create(ctx context.Context, task *storage.Pau
 		return err
 	}
 	if task == nil {
-		return fmt.Errorf("%w: task cannot be nil", status.ErrInvalidArgument)
+		return fmt.Errorf("%w: task cannot be nil", grpcerr.ErrInvalidArgument)
 	}
 
 	f.mu.Lock()

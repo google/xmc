@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/artifact"
 	"xmanager_cloud/internal/storage/spanner/experiment"
@@ -60,16 +60,16 @@ type Storage struct {
 // passing a Transaction struct with repositories bound to the Spanner transaction.
 func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
 	if s.client == nil {
-		return fmt.Errorf("spanner client must not be nil: %w", status.ErrFailedPrecondition)
+		return fmt.Errorf("spanner client must not be nil: %w", grpcerr.ErrFailedPrecondition)
 	}
 	_, err := s.client.ReadWriteTransaction(ctx, func(txCtx context.Context, spannerTx *spanner.ReadWriteTransaction) error {
 		pauseStateTx, ok := s.pauseStateRepository.(storage.PauseStateTxRepository)
 		if !ok {
-			return fmt.Errorf("pause state repository does not support transactions: %w", status.ErrFailedPrecondition)
+			return fmt.Errorf("pause state repository does not support transactions: %w", grpcerr.ErrFailedPrecondition)
 		}
 		pausedTaskTx, ok := s.pausedTaskRepository.(storage.PausedTaskTxRepository)
 		if !ok {
-			return fmt.Errorf("paused task repository does not support transactions: %w", status.ErrFailedPrecondition)
+			return fmt.Errorf("paused task repository does not support transactions: %w", grpcerr.ErrFailedPrecondition)
 		}
 		tx := &storage.Transaction{
 			WorkUnits:      s.WorkUnitRepository.WithTx(spannerTx),
@@ -108,7 +108,7 @@ type StorageConfig struct {
 // NewStorageWithConfig creates a new instance of the Spanner-backed storage with the given configuration.
 func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, error) {
 	if client == nil {
-		return nil, fmt.Errorf("spanner client must not be nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("spanner client must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	expRepo, err := experiment.NewRepository(client, experiment.RepositoryConfig{

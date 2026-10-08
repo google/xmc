@@ -20,8 +20,8 @@ import (
 	"slices"
 
 	"google.golang.org/protobuf/proto"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 )
@@ -228,7 +228,7 @@ func ShouldUpdateWorkUnitExecutionState(ctx context.Context, currentExecution *e
 
 	newXID, newWID, newEID, err := validator.ValidateWorkUnitExecutionName(newExecution.GetName())
 	if err != nil {
-		return false, fmt.Errorf("failed to validate new work unit execution name: %w (%v)", status.ErrInvalidArgument, err)
+		return false, fmt.Errorf("failed to validate new work unit execution name: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 
 	// If the work unit execution XID or WID doesn't match, something is very wrong. Reject the

@@ -21,6 +21,7 @@ go_library(
     srcs = ["status.go"],
     importpath = "task/go/status",  # keep
     deps = [
+        "//internal/grpcerr",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],

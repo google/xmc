@@ -20,8 +20,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	"task/go/status"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/state/state"
 )
 
@@ -33,13 +33,13 @@ import (
 // message if it has the same severity as the incoming message.
 func MergeWorkUnitExecution(ctx context.Context, currentExecution *pb.WorkUnitExecution, updatedExecution *pb.WorkUnitExecution, mask *fmpb.FieldMask, forceStatusMessageUpdate bool, deferToExistingMessage bool) (*pb.WorkUnitExecution, error) {
 	if currentExecution == nil {
-		return nil, fmt.Errorf("current execution is nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("current execution is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if updatedExecution == nil {
-		return nil, fmt.Errorf("updated execution is nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("updated execution is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if len(mask.GetPaths()) == 0 {
-		return nil, fmt.Errorf("update mask is empty: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("update mask is empty: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	newExecution := proto.Clone(currentExecution).(*pb.WorkUnitExecution)
@@ -122,7 +122,7 @@ func mergeWorkUnitExecutionPath(newExecution, updatedExecution *pb.WorkUnitExecu
 	if strings.HasPrefix(path, "status") {
 		return mergeWorkUnitExecutionStatusPath(newExecution, updatedExecution, path)
 	}
-	return fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+	return fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
 }
 
 func mergeWorkUnitExecutionMetadataPath(newExecution, updatedExecution *pb.WorkUnitExecution, path string) error {
@@ -152,7 +152,7 @@ func mergeWorkUnitExecutionMetadataPath(newExecution, updatedExecution *pb.WorkU
 	case "metadata.mlrun_url":
 		newExecution.Metadata.MlrunUrl = updatedExecution.GetMetadata().GetMlrunUrl()
 	default:
-		return fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+		return fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
 	}
 	return nil
 }
@@ -182,7 +182,7 @@ func mergeWorkUnitExecutionClusterPath(newExecution, updatedExecution *pb.WorkUn
 	case "metadata.executing_cluster.cluster_name":
 		newExecution.Metadata.ExecutingCluster.ClusterName = updatedExecution.GetMetadata().GetExecutingCluster().GetClusterName()
 	default:
-		return fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+		return fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
 	}
 	return nil
 }
@@ -196,7 +196,7 @@ func mergeWorkUnitExecutionStatusPath(newExecution, updatedExecution *pb.WorkUni
 		newExecution.Status = updatedExecution.Status
 	case "status.state":
 		if updatedExecution.GetStatus().GetStateUpdateTime() == nil {
-			return fmt.Errorf("StateUpdateTime must be set when updating state: %w", status.ErrInvalidArgument)
+			return fmt.Errorf("StateUpdateTime must be set when updating state: %w", grpcerr.ErrInvalidArgument)
 		}
 		newExecution.Status.State = updatedExecution.GetStatus().GetState()
 		newExecution.Status.StateUpdateTime = updatedExecution.GetStatus().GetStateUpdateTime()
@@ -209,7 +209,7 @@ func mergeWorkUnitExecutionStatusPath(newExecution, updatedExecution *pb.WorkUni
 	case "status.detailed_status":
 		newExecution.Status.DetailedStatus = updatedExecution.GetStatus().GetDetailedStatus()
 	default:
-		return fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+		return fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
 	}
 	return nil
 }
