@@ -21,9 +21,11 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -57,6 +59,11 @@ type AccessStatus struct {
 type ReconcileResult struct {
 	// ObservedGeneration is the custom resource metadata.generation evaluated.
 	ObservedGeneration int64
+	// ComponentGeneration is the CMS component generation committed by this pass's intent, or the
+	// one carried over from ReconcileComponentInput.ComponentGeneration when no intent was
+	// committed. CMS orders intents by the custom resource epoch, so it is independent of
+	// ObservedGeneration. 0 means unknown.
+	ComponentGeneration int64
 	// State is the resulting lifecycle state in CMS.
 	State componentspb.ComponentState
 	// Conditions is the updated list of Kubernetes status conditions.
@@ -95,6 +102,14 @@ type ReconcileComponentInput struct {
 	Name string
 	// Generation is the metadata.generation of the custom resource.
 	Generation int64
+	// UID and CreationTimestamp identify the custom resource object. Intents are sent with them as
+	// their source, so CMS orders intents by object epoch and a recreated resource adopts the
+	// existing component. An empty UID sends unsourced intents ordered by Generation.
+	UID               string
+	CreationTimestamp time.Time
+	// ComponentGeneration is the CMS component generation last reported in
+	// status.componentGeneration, or 0 if none was reported.
+	ComponentGeneration int64
 	// Spec is the parsed protobuf ComponentSpec.
 	Spec *componentspb.ComponentSpec
 	// IsDeleting indicates whether the custom resource has a non-nil deletionTimestamp.
@@ -127,10 +142,11 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 		return nil, errors.New("component name and spec must not be empty/nil")
 	}
 	logging.Debug(ctx, "Reconciling Component custom resource", "name", in.Name, "generation", in.Generation, "enabled", in.Enabled, "isDeleting", in.IsDeleting)
+	// CMS orders an intent by spec.generation only when it carries no source (empty UID).
 	in.Spec.Generation = in.Generation
 	canonicalName := naming.CanonicalComponentName(in.Name)
 	in.Spec.Dependencies = dropSelfDependency(ctx, in.Spec.GetDependencies(), canonicalName)
-	res := &ReconcileResult{ObservedGeneration: in.Generation, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
+	res := &ReconcileResult{ObservedGeneration: in.Generation, ComponentGeneration: in.ComponentGeneration, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
 
 	if in.IsDeleting {
 		return r.reconcileDeletion(ctx, in, canonicalName, res)
@@ -250,12 +266,14 @@ func resolveComponentRef(in ReconcileComponentInput) ComponentRef {
 	return ref
 }
 
-// applyIntent writes the intent to CMS. On failure it reports Ready=False, Degraded=True with
-// reason StaleIntent when CMS rejected a changed intent as older than its record (operator action
-// is needed, see the components README), or IntentApplicationFailed otherwise, and returns the
-// error so the pass is retried with backoff. A failed write records nothing in CMS.
+// applyIntent writes the intent to CMS, with the custom resource as its source, and records the
+// committed CMS generation in res.ComponentGeneration. On failure it reports Ready=False,
+// Degraded=True with reason StaleIntent when CMS rejected the intent as coming from an older
+// generation or an older object than its record (see the components README), or
+// IntentApplicationFailed otherwise, and returns the error so the pass is retried with backoff. A
+// failed write records nothing in CMS.
 func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
-	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec})
+	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec, Source: intentSource(in)})
 	if err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 		reason, msg := reasonIntentApplicationFailed, err.Error()
@@ -265,11 +283,24 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, reason, msg)
 		return fmt.Errorf("failed to apply component intent to CMS: %w", err)
 	}
-	if setResp != nil && setResp.GetComponent() != nil && setResp.GetComponent().GetStatus() != nil {
-		res.State = setResp.GetComponent().GetStatus().GetState()
+	if accessStatus := setResp.GetComponent().GetStatus(); accessStatus != nil {
+		res.State = accessStatus.GetState()
 	}
-	logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "state", res.State.String())
+	if gen := setResp.GetComponent().GetSpec().GetGeneration(); gen > 0 {
+		res.ComponentGeneration = gen
+	}
+	logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "componentGeneration", res.ComponentGeneration, "state", res.State.String())
 	return nil
+}
+
+// intentSource returns the custom resource identity sent with intents, or nil when the input has
+// no UID. A UID with a zero CreationTimestamp yields a zero create_time, which CMS rejects as
+// InvalidArgument; objects read from the API server always carry both.
+func intentSource(in ReconcileComponentInput) *componentspb.IntentSource {
+	if in.UID == "" {
+		return nil
+	}
+	return &componentspb.IntentSource{Uid: in.UID, CreateTime: timestamppb.New(in.CreationTimestamp), Generation: in.Generation}
 }
 
 // unreadyDependenciesMessage returns "waiting on dependencies: ..." naming every unready dependency,
@@ -323,10 +354,10 @@ func setDependenciesReadyCondition(res *ReconcileResult, in ReconcileComponentIn
 func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, msg, degraded string) (*ReconcileResult, error) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 	setReadiness(res, in, ConditionStatusFalse, degraded, reason, msg)
-	if !shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) {
+	if !shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) && !componentGenerationChanged(in, res) {
 		return res, nil
 	}
-	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
+	if err := r.updateObservedCMS(ctx, canonicalName, res.ComponentGeneration, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
 	resetReadyTransitionTime(res.Conditions)
@@ -469,18 +500,21 @@ func (r *Reconciler) ReconcileWithDependencies(ctx context.Context, obj *unstruc
 	opts := ParseHelmComponentOptions(obj.GetName(), obj.GetNamespace(), obj.Object["spec"], spec)
 	wopts := ParseWrapperRef(obj.Object["spec"], obj.GetNamespace())
 	return r.ReconcileComponent(ctx, ReconcileComponentInput{
-		Namespace:          obj.GetNamespace(),
-		Name:               obj.GetName(),
-		Generation:         obj.GetGeneration(),
-		Spec:               spec,
-		IsDeleting:         obj.GetDeletionTimestamp() != nil,
-		HasFinalizer:       hasFinalizer,
-		DeletionProtection: dp,
-		Enabled:            enabled,
-		ExistingConditions: ParseConditionsFromUnstructured(obj.Object["status"]),
-		HelmOpts:           opts,
-		WrapperOpts:        wopts,
-		Dependencies:       deps,
+		Namespace:           obj.GetNamespace(),
+		Name:                obj.GetName(),
+		Generation:          obj.GetGeneration(),
+		UID:                 string(obj.GetUID()),
+		CreationTimestamp:   obj.GetCreationTimestamp().Time,
+		ComponentGeneration: ParseComponentGeneration(obj.Object["status"]),
+		Spec:                spec,
+		IsDeleting:          obj.GetDeletionTimestamp() != nil,
+		HasFinalizer:        hasFinalizer,
+		DeletionProtection:  dp,
+		Enabled:             enabled,
+		ExistingConditions:  ParseConditionsFromUnstructured(obj.Object["status"]),
+		HelmOpts:            opts,
+		WrapperOpts:         wopts,
+		Dependencies:        deps,
 	})
 }
 

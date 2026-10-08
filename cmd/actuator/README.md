@@ -74,10 +74,14 @@ For each required component, Actuator validates operational readiness:
 - **Unhealthy Conditions**: If conditions report `Ready != "True"` (including missing conditions or `Ready == "False"`), or `Degraded == "True"`, placement is blocked with `apierrors.NewServiceUnavailable`.
 
 ### 4. Generation Drift Detection
-If the component is healthy and enabled, but `status.observedGeneration` differs from the `lockedGeneration` in the snapshot:
+If the component is healthy and enabled, but its CMS component generation (`status.componentGeneration`, or `status.observedGeneration` for statuses written by a bridge that predates `componentGeneration`) differs from the `lockedGeneration` in the snapshot (CMS orders intents by Component object epoch, so the CMS generation is independent of `metadata.generation`):
 - Placement is **not blocked**.
 - Actuator logs a warning (`"Component generation drift detected"`).
 - Actuator attaches the `xmc.dev/component-drift-warning` annotation to the synthesized JobSet.
+
+**Rollout**: roll out the Actuator with or before the bridge that writes `status.componentGeneration`. An older Actuator compares `status.observedGeneration` (the CR generation) with the CMS generation and attaches harmless but false drift-warning annotations until it is upgraded.
+
+**Limitation**: the check compares generations only. A snapshot locked on an earlier incarnation of a re-registered component at the same generation is not reported as drift; comparing the ComponentId needs the bridge to persist it in the Component status (follow-up).
 
 ### 5. Environment Variable Injection
 Once components pass the placement gate, Actuator resolves runtime configurations from `status.access`:

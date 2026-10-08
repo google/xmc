@@ -253,7 +253,7 @@ func TestConstructJobSet_ComponentSnapshot_DriftWarning(t *testing.T) {
 	if !exists {
 		t.Fatalf("expected drift warning annotation %q on JobSet, got nil", constants.ComponentDriftWarningAnnotation)
 	}
-	expectedDetail := `component "drifted-comp" generation mismatch: observed 2, locked 1`
+	expectedDetail := `component "drifted-comp" generation mismatch: component generation 2, locked 1`
 	if !strings.Contains(warning, expectedDetail) {
 		t.Errorf("warning %q does not contain %q", warning, expectedDetail)
 	}
@@ -276,8 +276,8 @@ func TestConstructJobSet_ComponentSnapshot_MultipleDriftWarnings(t *testing.T) {
 	}
 
 	warning := jobSet.Annotations[constants.ComponentDriftWarningAnnotation]
-	if !strings.Contains(warning, `component "comp-a" generation mismatch: observed 3, locked 1`) ||
-		!strings.Contains(warning, `component "comp-b" generation mismatch: observed 5, locked 2`) {
+	if !strings.Contains(warning, `component "comp-a" generation mismatch: component generation 3, locked 1`) ||
+		!strings.Contains(warning, `component "comp-b" generation mismatch: component generation 5, locked 2`) {
 		t.Errorf("unexpected multiple drift warning: %q", warning)
 	}
 }
@@ -344,7 +344,7 @@ func TestConstructJobSet_ComponentSnapshot_ContextCanceled(t *testing.T) {
 	}
 }
 
-func TestExtractObservedGeneration(t *testing.T) {
+func TestExtractStatusInt(t *testing.T) {
 	tests := []struct {
 		name string
 		val  any
@@ -360,12 +360,32 @@ func TestExtractObservedGeneration(t *testing.T) {
 	}
 	for _, tt := range tests {
 		comp := &unstructured.Unstructured{Object: map[string]any{"status": map[string]any{"observedGeneration": tt.val}}}
-		if got := extractObservedGeneration(comp); got != tt.want {
-			t.Errorf("extractObservedGeneration(%s) = %v, want %v", tt.name, got, tt.want)
+		if got := extractStatusInt(comp, "observedGeneration"); got != tt.want {
+			t.Errorf("extractStatusInt(%s) = %v, want %v", tt.name, got, tt.want)
 		}
 	}
-	if got := extractObservedGeneration(nil); got != 0 {
-		t.Errorf("extractObservedGeneration(nil) = %v, want 0", got)
+	if got := extractStatusInt(nil, "observedGeneration"); got != 0 {
+		t.Errorf("extractStatusInt(nil) = %v, want 0", got)
+	}
+}
+
+func TestExtractComponentGeneration(t *testing.T) {
+	tests := []struct {
+		name   string
+		status map[string]any
+		want   int64
+	}{
+		{name: "component generation is preferred", status: map[string]any{"observedGeneration": int64(7), "componentGeneration": int64(2)}, want: 2},
+		{name: "observed generation is the fallback", status: map[string]any{"observedGeneration": int64(7)}, want: 7},
+		{name: "no generations", status: map[string]any{}, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			comp := &unstructured.Unstructured{Object: map[string]any{"status": tt.status}}
+			if got := extractComponentGeneration(comp); got != tt.want {
+				t.Errorf("extractComponentGeneration() = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 

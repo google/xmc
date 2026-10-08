@@ -274,16 +274,20 @@ Production-grade controller reliability, conflict elimination, and Cloud Spanner
   - Status synchronization RPCs (`UpdateObservedGeneration`) to CMS are triggered only upon:
     1. Initial component reconciliation (no prior `Ready` condition recorded).
     2. Status transitions (e.g., `Ready=True <-> Ready=False`).
-    3. Spec metadata generation changes (`ObservedGeneration != in.Generation`).
+    3. Spec metadata generation changes (`ObservedGeneration != in.Generation`), or a change of the CMS generation (`status.componentGeneration`).
     4. Heartbeat interval expiration (coarse 5-minute interval via `defaultCMSHeartbeatInterval`).
   - `resetReadyTransitionTime` updates `LastTransitionTime` on the `Ready` condition to current UTC time after successful CMS synchronization, resetting the heartbeat timer.
+- **Intent Source & Component Generation**:
+  - `applyIntent` sends the CR (`metadata.uid`, `metadata.creationTimestamp`, `metadata.generation`) as the intent `source`, so CMS orders intents by CR incarnation and generation (see "Epoch-ordered intents" in the [components README](../README.md)). CMS then assigns its own generation, independent of the CR generation.
+  - `status.observedGeneration` is the CR `metadata.generation` last reconciled; `status.componentGeneration` is the CMS generation committed by the last intent write. `UpdateObservedGeneration` reports `componentGeneration`, and is skipped while it is unknown (`0`), e.g. for a component gated on a dependency cycle before its first intent write. The actuator's drift check reads `componentGeneration`, falling back to `observedGeneration` for status written before the field existed.
+  - A recreated CR (new uid, later creation time) that re-applies the same spec adopts the existing CMS record under the same `ComponentId` and generation. An intent from an older generation or an older incarnation of the CR is rejected and reported as `Ready=False` reason `StaleIntent`.
 
 ---
 
 ## Core Capabilities
 
 - **State Machine Reconciliation**: Deterministic state transitions (`PENDING_RECONCILIATION`, `ENABLED`, `DISABLED`, `DELETED`) synchronized between Kubernetes CR status conditions and CMS access status.
-- **Bi-directional Intent & Status Sync**: Propagates desired spec to CMS via `SetComponentIntent`, and records observed generation and condition history back to the Kubernetes API server.
+- **Bi-directional Intent & Status Sync**: Propagates desired spec to CMS via `SetComponentIntent`, and records observed generation, CMS component generation, and condition history back to the Kubernetes API server.
 - **Deletion Protection & Finalizer Engine**: Enforces `finalizers.xmc.dev/deletion-protection` to safeguard active components, emits `ConditionTypeDeletionBlocked` when protected, and orchestrates teardown according to `spec.deletionPolicy` (`Delete` vs `Orphan`).
 - **Dynamic 3P CRD Status Detection & Coordinate Resolution**: Query third-party operator CRDs dynamically using normalized JSONPath queries and publish structured connection coordinates into CMS.
 - **1P Helm Values Synthesis & Release Management**: Synthesizes structured Helm values and synchronizes release ConfigMaps for automated Helm release actuation.

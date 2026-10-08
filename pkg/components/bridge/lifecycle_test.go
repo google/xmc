@@ -422,23 +422,26 @@ func TestReconcileComponent_DeactivationUnblocksAcrossPasses(t *testing.T) {
 }
 
 // TestReconcileComponent_BlockAfterTeardownSyncsCMS verifies that a block after teardown syncs the DeactivationIncomplete
-// outcome to CMS, throttled by the Ready condition's heartbeat like every other outcome.
+// outcome to CMS, throttled by the Ready condition's heartbeat like every other outcome unless the
+// CMS component generation changed since it was last reported.
 func TestReconcileComponent_BlockAfterTeardownSyncsCMS(t *testing.T) {
 	tests := []struct {
 		name               string
 		lastTransitionTime time.Time
+		reportedGen        int64
 		wantSync           bool
 	}{
-		{name: "never synced", wantSync: true},
-		{name: "synced within the heartbeat interval", lastTransitionTime: time.Now(), wantSync: false},
-		{name: "synced before the heartbeat interval", lastTransitionTime: time.Now().Add(-defaultCMSHeartbeatInterval), wantSync: true},
+		{name: "never synced", reportedGen: 2, wantSync: true},
+		{name: "synced within the heartbeat interval", lastTransitionTime: time.Now(), reportedGen: 2, wantSync: false},
+		{name: "synced before the heartbeat interval", lastTransitionTime: time.Now().Add(-defaultCMSHeartbeatInterval), reportedGen: 2, wantSync: true},
+		{name: "component generation changed within the heartbeat interval", lastTransitionTime: time.Now(), reportedGen: 1, wantSync: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cms := &mockCMS{prepareErr: status.Error(codes.FailedPrecondition, "component redpanda has active dependents: [ingestion-gateway]")}
 			r, _ := NewReconciler(cms, nil, &mockHelm{})
 			_, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
-				Namespace: "xmc", Name: "redpanda", Generation: 2, HasFinalizer: true, Enabled: false,
+				Namespace: "xmc", Name: "redpanda", Generation: 2, ComponentGeneration: tt.reportedGen, HasFinalizer: true, Enabled: false,
 				Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
 				ExistingConditions: []Condition{{
 					Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 2,

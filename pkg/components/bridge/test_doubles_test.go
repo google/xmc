@@ -35,11 +35,14 @@ type mockCMS struct {
 	setErr, delErr, obsErr  error
 	prepareErr, completeErr error
 	state                   componentspb.ComponentState
-	lastSetReq              *componentspb.SetComponentIntentRequest
-	lastObsReq              *componentspb.UpdateObservedGenerationRequest
-	setCalls                int
-	prepareCalls            int
-	completeCalls           int
+	// componentGen is the CMS generation returned by SetComponentIntent; 0 echoes the requested
+	// spec.generation (at least 1), as CMS does for unsourced intents.
+	componentGen  int64
+	lastSetReq    *componentspb.SetComponentIntentRequest
+	lastObsReq    *componentspb.UpdateObservedGenerationRequest
+	setCalls      int
+	prepareCalls  int
+	completeCalls int
 }
 
 func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error) {
@@ -52,8 +55,12 @@ func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetCo
 	if s == componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
 		s = componentspb.ComponentState_COMPONENT_STATE_ENABLED
 	}
+	gen := m.componentGen
+	if gen == 0 {
+		gen = max(in.GetSpec().GetGeneration(), 1)
+	}
 	return &componentspb.SetComponentIntentResponse{
-		Component: &componentspb.Component{Name: in.GetName(), Status: &componentspb.ComponentAccessStatus{State: s}},
+		Component: &componentspb.Component{Name: in.GetName(), Spec: &componentspb.ComponentSpec{Generation: gen}, Status: &componentspb.ComponentAccessStatus{State: s}},
 	}, nil
 }
 

@@ -118,7 +118,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	setReadiness(res, in, ConditionStatusFalse, ConditionStatusFalse, reasonComponentDisabled, "Component is disabled")
-	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
+	if err := r.updateObservedCMS(ctx, canonicalName, res.ComponentGeneration, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
 	logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)

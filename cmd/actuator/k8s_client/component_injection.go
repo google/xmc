@@ -126,17 +126,21 @@ func evaluateComponentPlacement(ctx context.Context, compName string, lockedGen 
 	return nil
 }
 
-// checkAndRecordComponentDrift records a warning annotation if observed generation does not match locked generation.
+// checkAndRecordComponentDrift records a warning annotation if the CMS component generation in the
+// Component status does not match the locked generation.
+//
+// TODO(components): also compare the ComponentId, so a snapshot locked on an earlier incarnation
+// at the same generation is reported as drift (needs the bridge to persist status.componentId).
 func checkAndRecordComponentDrift(ctx context.Context, compName string, lockedGen int64, comp *unstructured.Unstructured, jobSet *jobsetv1alpha2.JobSet) {
 	if lockedGen <= 0 {
 		return
 	}
-	observedGen := extractObservedGeneration(comp)
-	if observedGen == lockedGen {
+	componentGen := extractComponentGeneration(comp)
+	if componentGen == lockedGen {
 		return
 	}
-	logging.Warn(ctx, "Component generation drift detected", "component", compName, "observedGeneration", observedGen, "lockedGeneration", lockedGen)
-	addDriftWarningAnnotation(jobSet, fmt.Sprintf("component %q generation mismatch: observed %d, locked %d", compName, observedGen, lockedGen))
+	logging.Warn(ctx, "Component generation drift detected", "component", compName, "componentGeneration", componentGen, "lockedGeneration", lockedGen)
+	addDriftWarningAnnotation(jobSet, fmt.Sprintf("component %q generation mismatch: component generation %d, locked %d", compName, componentGen, lockedGen))
 }
 
 // addDriftWarningAnnotation appends or sets the component drift warning annotation on the JobSet.
@@ -237,12 +241,23 @@ func checkConditionHealth(c any) (bool, string) {
 	return true, ""
 }
 
-// extractObservedGeneration retrieves observedGeneration from status, supporting multiple numeric formats including json.Number.
-func extractObservedGeneration(comp *unstructured.Unstructured) int64 {
+// extractComponentGeneration returns the CMS component generation the Component status describes:
+// status.componentGeneration, or status.observedGeneration when a bridge that predates
+// componentGeneration wrote the status.
+func extractComponentGeneration(comp *unstructured.Unstructured) int64 {
+	if gen := extractStatusInt(comp, "componentGeneration"); gen > 0 {
+		return gen
+	}
+	return extractStatusInt(comp, "observedGeneration")
+}
+
+// extractStatusInt retrieves the integer status field, supporting multiple numeric formats
+// including json.Number, or returns 0 when it is absent or not a number.
+func extractStatusInt(comp *unstructured.Unstructured, field string) int64 {
 	if comp == nil || comp.Object == nil {
 		return 0
 	}
-	val, ok, err := unstructured.NestedFieldNoCopy(comp.Object, "status", "observedGeneration")
+	val, ok, err := unstructured.NestedFieldNoCopy(comp.Object, "status", field)
 	if err != nil || !ok {
 		return 0
 	}
