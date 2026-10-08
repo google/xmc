@@ -854,6 +854,11 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertTrue(unit_wf["has_ui"])
         self.assertTrue(unit_wf["has_backend"])
 
+    def test_classify_backend_ci_entrypoint_as_core_infra(self):
+        for path in (".github/actions/run-backend-tests/action.yml", "tools/run_affected_tests.py"):
+            with self.subTest(path=path):
+                self.assertTrue(classify_modified_files([path])["has_core_infra"])
+
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_discover_bazel_rdeps_targets_includes_non_code_testdata_package(self, mock_run):
         with tempfile.TemporaryDirectory() as tmpdir:

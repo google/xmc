@@ -51,6 +51,8 @@ CORE_INFRA_FILES: set[str] = {
     ".bazelversion",
     ".github/workflows/unit-tests.yml",
     ".github/actions/run-backend-tests/action.yml",
+    # The backend CI action runs its Bazel tests through this entrypoint.
+    "tools/run_affected_tests.py",
     "tools/benchmark/resolve_test_scope.py",
 }
 

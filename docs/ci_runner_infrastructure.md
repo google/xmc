@@ -99,7 +99,7 @@ Choose one of the two options below for caching on GitHub-hosted runners:
 
 #### Option A: GitHub Actions Cache (`actions/cache`) — Simple, Zero GCP Infrastructure
 
-1. In `.github/workflows/unit-tests.yml`, re-add the disk cache restore and save steps:
+1. In `.github/workflows/unit-tests.yml`, re-add the disk cache restore and save steps around the backend test step, and add `--bazel-flag="--disk_cache=${HOME}/.cache/bazel-disk"` to the `run_affected_tests.py` call in [`.github/actions/run-backend-tests/action.yml`](../.github/actions/run-backend-tests/action.yml):
 
 ```yaml
       - name: 'Restore Bazel Disk Cache'
@@ -112,14 +112,7 @@ Choose one of the two options below for caching on GitHub-hosted runners:
             bazel-disk-${{ runner.os }}-
 
       - name: 'Run Backend Unit Tests'
-        run: |
-          bazel test \
-            --repository_cache=~/.cache/bazel-repo \
-            --disk_cache=~/.cache/bazel-disk \
-            --experimental_repository_cache_hardlinks \
-            --test_output=errors \
-            --build_tests_only \
-            ${RUN_TARGETS}
+        uses: './.github/actions/run-backend-tests'
 
       - name: 'Save Bazel Disk Cache'
         uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2

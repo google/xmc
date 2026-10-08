@@ -213,7 +213,7 @@ python3 ./tools/run_affected_tests.py            # Resolve the scope and run the
 python3 ./tools/run_affected_tests.py --dry-run  # Print the resolved scope without running tests
 ```
 
-The tool scopes every file changed since the merge base of `--base-ref` (default `origin/main`) and `HEAD`, uncommitted and untracked files included, with [`resolve_test_scope.py`](../tools/benchmark/resolve_test_scope.py), and runs `bazel test` on the affected targets with the test flags of CI. Pass extra `bazel test` flags with the repeatable `--bazel-flag=FLAG`. `--ci` scopes the GitHub Actions event instead of the local checkout.
+The tool scopes every file changed since the merge base of `--base-ref` (default `origin/main`) and `HEAD`, uncommitted and untracked files included, with [`resolve_test_scope.py`](../tools/benchmark/resolve_test_scope.py), and runs `bazel test` on the affected targets with the test flags of CI. Pass extra `bazel test` flags with the repeatable `--bazel-flag=FLAG`. `--ci` scopes the GitHub Actions event instead of the local checkout. The backend CI job runs the tool that way and adds its cache and timeout flags with `--bazel-flag`, so local runs and CI share the scope, the test flags, and the emulator check.
 
 - **Output**: stdout carries only the JSON result: the changed files, the backend scope and its reason, the Bazel targets, `other_suites`, and the passed targets. Bazel output and diagnostics go to stderr.
 - **Exit codes**: `0` when tests pass, for a dry run, or when nothing needs to run; `1` for test failures and other handled errors; `2` for unexpected errors. On test failures, the error JSON on stderr has a `details` object with the failed targets and their test logs, the targets that did not run, and any build errors.
