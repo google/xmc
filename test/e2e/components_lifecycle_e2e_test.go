@@ -219,8 +219,12 @@ func isComponentInState(want componentspb.ComponentState) func(*unstructured.Uns
 	}
 }
 
-// conditionField returns field of the status condition condType, or "" if the condition is absent.
+// conditionField returns field of the status condition condType, or "" if u is nil or the condition
+// is absent.
 func conditionField(u *unstructured.Unstructured, condType, field string) string {
+	if u == nil {
+		return ""
+	}
 	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
 	for _, raw := range conds {
 		if m, ok := raw.(map[string]any); ok && m["type"] == condType {
