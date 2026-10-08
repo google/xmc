@@ -17,6 +17,7 @@ package store_test
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -56,9 +57,12 @@ func TestSetSourcedComponentIntent_EpochParity(t *testing.T) {
 		// wantReset expects the state reset by a spec write; otherwise the seeded state, UpdateTime
 		// and Etag must be kept.
 		wantReset bool
+		// wantEpochChange is the previous_source label the epoch change counter must be
+		// incremented for, or "" when it must not change.
+		wantEpochChange string
 	}{
-		{name: "legacy inflated record adopts an unchanged intent without a bump", seedGen: 5000, spec: unchanged, src: seeded, wantGen: 5000, wantSource: seeded},
-		{name: "legacy inflated record adopts a changed intent with a bump by one", seedGen: 5000, spec: changed, src: seeded, wantGen: 5001, wantSource: seeded, wantReset: true},
+		{name: "legacy inflated record adopts an unchanged intent without a bump", seedGen: 5000, spec: unchanged, src: seeded, wantGen: 5000, wantSource: seeded, wantEpochChange: store.PreviousSourceAbsentForTest},
+		{name: "legacy inflated record adopts a changed intent with a bump by one", seedGen: 5000, spec: changed, src: seeded, wantGen: 5001, wantSource: seeded, wantReset: true, wantEpochChange: store.PreviousSourceAbsentForTest},
 		{name: "same source replay is a no-op", seedSource: seeded, spec: unchanged, src: seeded, wantGen: 1, wantSource: seeded},
 		{name: "same object at a newer generation records only the source", seedSource: seeded, spec: unchanged, src: epochSource("uid-b", 0, 4), wantGen: 1, wantSource: epochSource("uid-b", 0, 4)},
 		{name: "same object with a changed spec bumps by one", seedSource: seeded, spec: changed, src: epochSource("uid-b", 0, 4), wantGen: 2, wantSource: epochSource("uid-b", 0, 4), wantReset: true},
@@ -67,22 +71,25 @@ func TestSetSourcedComponentIntent_EpochParity(t *testing.T) {
 		{name: "same object at an older generation with a changed spec is stale", seedSource: seeded, spec: changed, src: epochSource("uid-b", 0, 2), wantStale: true},
 		{name: "older object with an unchanged spec is stale", seedSource: seeded, spec: unchanged, src: epochSource("uid-z", -time.Hour, 9), wantStale: true},
 		{name: "older object with a changed spec is stale", seedSource: seeded, spec: changed, src: epochSource("uid-z", -time.Hour, 9), wantStale: true},
-		{name: "recreated object with an unchanged spec records only the source", seedSource: seeded, spec: unchanged, src: epochSource("uid-a", time.Hour, 1), wantGen: 1, wantSource: epochSource("uid-a", time.Hour, 1)},
-		{name: "recreated object with a changed spec bumps by one", seedSource: seeded, spec: changed, src: epochSource("uid-a", time.Hour, 1), wantGen: 2, wantSource: epochSource("uid-a", time.Hour, 1), wantReset: true},
-		{name: "equal creation time and greater uid is adopted", seedSource: seeded, spec: unchanged, src: epochSource("uid-c", 0, 1), wantGen: 1, wantSource: epochSource("uid-c", 0, 1)},
+		{name: "recreated object with an unchanged spec records only the source", seedSource: seeded, spec: unchanged, src: epochSource("uid-a", time.Hour, 1), wantGen: 1, wantSource: epochSource("uid-a", time.Hour, 1), wantEpochChange: store.PreviousSourcePresentForTest},
+		{name: "recreated object with a changed spec bumps by one", seedSource: seeded, spec: changed, src: epochSource("uid-a", time.Hour, 1), wantGen: 2, wantSource: epochSource("uid-a", time.Hour, 1), wantReset: true, wantEpochChange: store.PreviousSourcePresentForTest},
+		{name: "equal creation time and greater uid is adopted", seedSource: seeded, spec: unchanged, src: epochSource("uid-c", 0, 1), wantGen: 1, wantSource: epochSource("uid-c", 0, 1), wantEpochChange: store.PreviousSourcePresentForTest},
 		{name: "equal creation time and smaller uid is stale", seedSource: seeded, spec: unchanged, src: epochSource("uid-a", 0, 1), wantStale: true},
 	}
 	for _, backend := range intentStoreBackends() {
 		t.Run(backend.name, func(t *testing.T) {
 			ctx := context.Background()
 			s := backend.newStore(t)
-			// Subtests are intentionally sequential (no t.Parallel) because they share one store.
+			// Subtests are intentionally sequential (no t.Parallel) because they share one store
+			// and the process-wide epoch change counter.
 			for i, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
 					name := fmt.Sprintf("intent-epoch-%d", i)
 					before := seedEpochComponent(ctx, t, s, name, tt.seedSource, tt.seedGen)
+					countsBefore := epochChangeCounts()
 
 					got, err := s.SetSourcedComponentIntent(ctx, name, tt.spec, nil, *tt.src)
+					assertEpochChangeCounted(t, countsBefore, tt.wantEpochChange)
 					if tt.wantStale {
 						assertStaleIntentRejected(ctx, t, s, name, err, before)
 						return
@@ -100,6 +107,28 @@ func TestSetSourcedComponentIntent_EpochParity(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+// epochChangeCounts returns xmc_cms_component_epoch_changes_total by previous_source label.
+func epochChangeCounts() map[string]float64 {
+	counts := map[string]float64{}
+	for _, label := range []string{store.PreviousSourcePresentForTest, store.PreviousSourceAbsentForTest} {
+		counts[label] = store.IntentEpochChangesForTest(label)
+	}
+	return counts
+}
+
+// assertEpochChangeCounted checks that the epoch change counter advanced by one for the
+// previous_source label wantLabel since countsBefore, and not at all for any other label.
+func assertEpochChangeCounted(t *testing.T, countsBefore map[string]float64, wantLabel string) {
+	t.Helper()
+	want := maps.Clone(countsBefore)
+	if wantLabel != "" {
+		want[wantLabel]++
+	}
+	if diff := cmp.Diff(want, epochChangeCounts()); diff != "" {
+		t.Errorf("xmc_cms_component_epoch_changes_total mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -129,13 +158,16 @@ func TestSetComponentIntent_KeepsRecordedSource(t *testing.T) {
 		t.Run(backend.name, func(t *testing.T) {
 			ctx := context.Background()
 			s := backend.newStore(t)
-			// Subtests are intentionally sequential (no t.Parallel) because they share one store.
+			// Subtests are intentionally sequential (no t.Parallel) because they share one store
+			// and the process-wide epoch change counter, which no unsourced write may advance.
 			for i, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
 					name := fmt.Sprintf("intent-epoch-unsourced-%d", i)
 					before := seedEpochComponent(ctx, t, s, name, src, 0)
+					countsBefore := epochChangeCounts()
 
 					got, err := s.SetComponentIntent(ctx, name, tt.spec, nil, tt.desiredGen)
+					assertEpochChangeCounted(t, countsBefore, "")
 					if tt.wantStale {
 						assertStaleIntentRejected(ctx, t, s, name, err, before)
 						return
@@ -152,7 +184,8 @@ func TestSetComponentIntent_KeepsRecordedSource(t *testing.T) {
 }
 
 // TestSetSourcedComponentIntent_SoftDeletedRecord checks on both backends that a sourced intent for
-// a soft-deleted component creates a new component at generation 1 with the source recorded.
+// a soft-deleted component, from a newer object, creates a new component at generation 1 with the
+// source recorded, and counts no epoch change because it adopts no record.
 func TestSetSourcedComponentIntent_SoftDeletedRecord(t *testing.T) {
 	for _, backend := range intentStoreBackends() {
 		t.Run(backend.name, func(t *testing.T) {
@@ -163,8 +196,10 @@ func TestSetSourcedComponentIntent_SoftDeletedRecord(t *testing.T) {
 				t.Fatalf("ExecuteDeletion() error = %v", err)
 			}
 
-			src := epochSource("uid-b", 0, 4)
+			src := epochSource("uid-c", time.Hour, 1)
+			countsBefore := epochChangeCounts()
 			got, err := s.SetSourcedComponentIntent(ctx, "intent-epoch-deleted", intentSpec("v1.1.0"), nil, *src)
+			assertEpochChangeCounted(t, countsBefore, "")
 			if err != nil {
 				t.Fatalf("SetSourcedComponentIntent() error = %v", err)
 			}
@@ -172,6 +207,22 @@ func TestSetSourcedComponentIntent_SoftDeletedRecord(t *testing.T) {
 				t.Errorf("ComponentID = %d, generation = %d, want a new ComponentId (not %d) at generation 1", got.ComponentID, got.Generation, deleted.ComponentID)
 			}
 			assertStoredSource(ctx, t, s, "intent-epoch-deleted", src)
+		})
+	}
+}
+
+// TestSetSourcedComponentIntent_CreateNotCounted checks on both backends that a sourced intent
+// creating a component adopts no record, so it leaves the epoch change counter unchanged.
+func TestSetSourcedComponentIntent_CreateNotCounted(t *testing.T) {
+	for _, backend := range intentStoreBackends() {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := backend.newStore(t)
+			countsBefore := epochChangeCounts()
+			if _, err := s.SetSourcedComponentIntent(ctx, "intent-epoch-create", intentSpec("v1.0.0"), nil, *epochSource("uid-a", 0, 1)); err != nil {
+				t.Fatalf("SetSourcedComponentIntent() error = %v", err)
+			}
+			assertEpochChangeCounted(t, countsBefore, "")
 		})
 	}
 }

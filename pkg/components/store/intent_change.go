@@ -143,12 +143,14 @@ func rejectStaleSource(canonicalName string, rec *ComponentRecord, changed bool,
 	return nil
 }
 
-// logIntentEpochChange logs, after a committed write, that a sourced intent adopted a newer object
-// (or a record without a source) for the component canonicalName.
-func logIntentEpochChange(ctx context.Context, canonicalName string, plan intentPlan, src *IntentSource) {
+// reportIntentEpochChange logs and counts (xmc_cms_component_epoch_changes_total), after a
+// committed write, that a sourced intent adopted a newer object (or a record without a source) for
+// the component canonicalName. Callers run it once per commit, outside any retried transaction.
+func reportIntentEpochChange(ctx context.Context, canonicalName string, plan intentPlan, src *IntentSource) {
 	if !plan.epochChange || src == nil {
 		return
 	}
+	countIntentEpochChange(plan.previousSource)
 	var prevUID, prevCreateTime string
 	if prev := plan.previousSource; prev != nil {
 		prevUID, prevCreateTime = prev.UID, prev.CreateTime.Format(time.RFC3339Nano)

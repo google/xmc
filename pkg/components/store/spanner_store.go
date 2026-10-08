@@ -273,7 +273,7 @@ func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, sp
 		finalRec.UpdateTime = commitTimestamp
 		finalRec.Etag = generateEtag(finalRec)
 	}
-	logIntentEpochChange(ctx, canonicalName, plan, src)
+	reportIntentEpochChange(ctx, canonicalName, plan, src)
 
 	return cloneRecord(finalRec), nil
 }
