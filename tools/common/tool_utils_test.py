@@ -22,6 +22,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from types import MappingProxyType
 from unittest.mock import ANY, MagicMock, patch
 
 from tools.common.tool_utils import (
@@ -33,8 +34,10 @@ from tools.common.tool_utils import (
     deploy_component_profile,
     ensure_venv,
     load_and_validate_config,
+    log_info,
     parse_bool_flag,
     parse_yaml_vars,
+    run_command,
     run_tool,
 )
 
@@ -149,6 +152,16 @@ class TestToolUtils(unittest.TestCase):
             mock_run.assert_called_once()
 
     @patch("subprocess.run")
+    def test_bootstrap_venv_sends_setup_output_to_stderr(self, mock_run):
+        """Setup and pip output must not mix with the JSON that tools print to stdout."""
+        with (
+            tempfile.TemporaryDirectory() as tmp_dir,
+            patch("pathlib.Path.is_file", return_value=True),
+        ):
+            _bootstrap_venv(Path(tmp_dir) / "venv")
+        self.assertIs(mock_run.call_args.kwargs["stdout"], sys.stderr)
+
+    @patch("subprocess.run")
     def test_bootstrap_venv_pip_index_url_fallback(self, mock_run):
         env = dict(os.environ)
         env.pop("PIP_INDEX_URL", None)
@@ -215,6 +228,22 @@ class TestToolUtils(unittest.TestCase):
         self.assertEqual(output["error_type"], "handled")
         self.assertEqual(output["message"], "something went wrong")
         self.assertEqual(output["instruction"], "please fix it")
+        self.assertNotIn("details", output)
+
+    def test_run_tool_handled_error_with_details(self):
+        """Test that HandledError details, any Mapping, are added to the error JSON."""
+        details = MappingProxyType({"failed_targets": [{"target": "//a:a_test"}]})
+        main_fn = MagicMock(side_effect=HandledError("tests failed", "fix them", details))
+
+        captured_stderr = io.StringIO()
+        with (
+            patch("sys.stderr", captured_stderr),
+            self.assertRaises(SystemExit) as exit_ctx,
+        ):
+            run_tool(MagicMock(), main_fn)
+
+        self.assertEqual(exit_ctx.exception.code, 1)
+        self.assertEqual(json.loads(captured_stderr.getvalue())["details"], dict(details))
 
     def test_run_tool_unhandled_error(self):
         """Test tool runner with an unexpected Exception."""
@@ -243,6 +272,38 @@ class TestToolUtils(unittest.TestCase):
         self.assertEqual(output["error_type"], "unhandled")
         self.assertEqual(output["message"], "unexpected value")
         self.assertIn("traceback", output)
+
+
+class TestLogStreams(unittest.TestCase):
+    """Tests for the stream parameter of the logging and command helpers."""
+
+    def test_log_info_writes_to_stdout_unless_given_a_stream(self):
+        stdout, stream = io.StringIO(), io.StringIO()
+        with patch("sys.stdout", stdout):
+            log_info("info for stdout")
+            log_info("info for stream", stream=stream)
+        self.assertIn("[INFO] info for stdout", stdout.getvalue())
+        self.assertNotIn("for stream", stdout.getvalue())
+        self.assertIn("[INFO] info for stream", stream.getvalue())
+
+    @patch("subprocess.run")
+    def test_run_command_sends_log_and_stdout_to_stream(self, mock_run):
+        stdout, stream = io.StringIO(), io.StringIO()
+        with patch("sys.stdout", stdout):
+            run_command(["bazel", "test"], check=False, stream=stream)
+        self.assertIs(mock_run.call_args.kwargs["stdout"], stream)
+        self.assertIn("Running: bazel test", stream.getvalue())
+        self.assertEqual(stdout.getvalue(), "")
+
+    @patch("subprocess.run")
+    def test_run_command_keeps_default_stdout_and_captured_pipes(self, mock_run):
+        with patch("sys.stdout", io.StringIO()):
+            run_command(["git", "status"])
+        run_command(["git", "status"], capture_output=True, log_cmd=False, stream=io.StringIO())
+        default_call, captured_call = mock_run.call_args_list
+        self.assertIsNone(default_call.kwargs["stdout"])
+        self.assertIsNone(captured_call.kwargs["stdout"])
+        self.assertTrue(captured_call.kwargs["capture_output"])
 
 
 class TestConfigLoader(unittest.TestCase):

@@ -87,7 +87,8 @@ Offline syntax walkers and static validation tooling:
 ## Backward Compatibility & Forwarding Wrappers
 
 For backward compatibility with existing developer scripts and agent skill definitions, top-level forwarding wrappers and repository-level utilities are maintained directly in `tools/`:
-- **Repository Entrypoints & Hooks**: Tools invoked directly by git hooks or top-level entrypoints (`analyze_diff_size.py`, `dev_env.py`) remain at the `tools/` root for immediate access.
+- **Repository Entrypoints & Hooks**: Tools invoked directly by git hooks or top-level entrypoints (`analyze_diff_size.py`, `dev_env.py`, `run_affected_tests.py`) remain at the `tools/` root for immediate access.
+  - [`run_affected_tests.py`](run_affected_tests.py): Runs the Bazel unit tests affected by local changes, scoped like CI (see [Running Affected Unit Tests](../docs/developer.md#running-affected-unit-tests)).
 - **Forwarding Wrappers**: Executing `./tools/<script>.py` or `python tools/<script>.py` transparently delegates to the corresponding modular script in `tools/<subpackage>/<script>.py`.
 - **Bazel Aliases**: Bazel targets under `//tools:...` alias to their respective `//tools/<subpackage>:...` targets.
 

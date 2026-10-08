@@ -22,9 +22,10 @@ import re
 import subprocess
 import sys
 import traceback
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 
 @dataclass(kw_only=True)
@@ -113,19 +114,25 @@ def _bootstrap_venv(venv_dir: Path) -> None:
     if not setup_script.is_file():
         setup_script = Path(__file__).resolve().parent.parent / "setup_venv.py"
     if setup_script.is_file():
+        # Setup and pip output goes to stderr so that tools keep stdout JSON-only.
         subprocess.run(
             [sys.executable, str(setup_script), "--venv-dir", str(venv_dir)],
             check=True,
+            stdout=sys.stderr,
         )
 
 
 class HandledError(Exception):
-    """Exception raised for errors that are handled with instructions."""
+    """Exception raised for errors that are handled with instructions.
 
-    def __init__(self, message, instruction):
+    details optionally carries structured data that run_tool adds to the error JSON.
+    """
+
+    def __init__(self, message, instruction, details: Mapping[str, Any] | None = None):
         super().__init__(message)
         self.message = message
         self.instruction = instruction
+        self.details = details
 
 
 def run_tool(parser: argparse.ArgumentParser, main_fn):
@@ -154,6 +161,8 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
             "message": e.message,
             "instruction": e.instruction,
         }
+        if e.details is not None:
+            output["details"] = dict(e.details)
         print(json.dumps(output, indent=2), file=sys.stderr)
         sys.exit(1)
 
@@ -304,9 +313,9 @@ RED = "\033[0;31m"
 NC = "\033[0m"  # No Color
 
 
-def log_info(msg: str) -> None:
-    """Logs informational messages in blue text."""
-    print(f"\n{BLUE}[INFO] {msg}{NC}")
+def log_info(msg: str, stream: TextIO | None = None) -> None:
+    """Logs informational messages in blue text to stream (default: stdout)."""
+    print(f"\n{BLUE}[INFO] {msg}{NC}", file=stream)
 
 
 def log_success(msg: str) -> None:
@@ -327,6 +336,7 @@ def run_command(
     log_on_error: bool = True,
     log_cmd: bool = True,
     cwd: Path | str | None = None,
+    stream: TextIO | None = None,
 ) -> subprocess.CompletedProcess:
     """Helper to run shell commands with unified logging and error handling.
 
@@ -338,6 +348,9 @@ def run_command(
         log_on_error: Whether to log errors on failure.
         log_cmd: Whether to log the command being executed.
         cwd: Optional working directory for subprocess execution.
+        stream: Optional file-backed text stream, e.g. sys.stderr, that receives the command
+            log line and, unless capture_output is set, the command's stdout instead of
+            stdout. Tools that print JSON to stdout use it to keep stdout clean.
 
     Returns:
         A subprocess.CompletedProcess object.
@@ -346,7 +359,7 @@ def run_command(
         subprocess.CalledProcessError: If the command fails and check=True.
     """
     if log_cmd:
-        log_info(f"Running: {' '.join(cmd)}")
+        log_info(f"Running: {' '.join(cmd)}", stream=stream)
 
     proc_env = os.environ.copy() | {str(k): str(v) for k, v in (env or {}).items()}
 
@@ -358,6 +371,7 @@ def run_command(
             text=True,
             capture_output=capture_output,
             cwd=str(cwd) if cwd else None,
+            stdout=None if capture_output else stream,
         )
     except subprocess.CalledProcessError:
         if log_on_error:

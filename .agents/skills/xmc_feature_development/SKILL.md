@@ -56,6 +56,7 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
    ```bash
    python3 ./tools/run_affected_tests.py
    ```
+   Use `--dry-run` to print the scope without running tests. The JSON result lists under `other_suites` any UI or Helm chart suite that CI also runs for the change. If the Spanner emulator is unreachable, follow the error's instruction or pass `--skip-emulator-check` when the affected tests do not use Spanner.
 2. **Run Package Unit Tests Directly**:
    ```bash
    # Go package tests
