@@ -62,7 +62,7 @@ func (c *Client) evaluateComponentSnapshots(ctx context.Context, workUnit *esspb
 	logging.Debug(ctx, "Evaluating component snapshots for JobSet", "components", compNames)
 
 	for _, compName := range compNames {
-		lockedGen := snapshots[compName]
+		snapshot := snapshots[compName]
 		comp, err := c.getComponent(ctx, compName, namespace)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -74,7 +74,7 @@ func (c *Client) evaluateComponentSnapshots(ctx context.Context, workUnit *esspb
 			return apierrors.NewServiceUnavailable(fmt.Sprintf("required component %q not found: hydration lag or missing CR: %v", compName, err))
 		}
 
-		if err := evaluateComponentPlacement(ctx, compName, lockedGen, comp, jobSet); err != nil {
+		if err := evaluateComponentPlacement(ctx, compName, snapshot, comp, jobSet); err != nil {
 			return err
 		}
 		access, err := extractComponentAccess(comp)
@@ -84,7 +84,7 @@ func (c *Client) evaluateComponentSnapshots(ctx context.Context, workUnit *esspb
 		injectAccessIntoJobSet(jobSet, access)
 		logging.Debug(ctx, "Injected component access configurations into JobSet",
 			"component", compName,
-			"lockedGeneration", lockedGen,
+			"lockedGeneration", snapshot.Generation,
 			"plainEnvVars", len(access.envVars),
 			"secretEnvVars", len(access.secretEnvVars),
 			"secretVolumes", len(access.secretVolumeMounts),
@@ -94,7 +94,7 @@ func (c *Client) evaluateComponentSnapshots(ctx context.Context, workUnit *esspb
 }
 
 // parseComponentSnapshotsAnnotation extracts and unmarshals component snapshots from JobSet annotations.
-func parseComponentSnapshotsAnnotation(workUnit *esspb.WorkUnit, jobSet *jobsetv1alpha2.JobSet) (map[string]int64, error) {
+func parseComponentSnapshotsAnnotation(workUnit *esspb.WorkUnit, jobSet *jobsetv1alpha2.JobSet) (map[string]componentSnapshot, error) {
 	ann := ""
 	if jobset := workUnit.GetExecutable().GetJobset(); jobset != nil {
 		ann = jobset.GetAnnotations()[constants.ComponentSnapshotsAnnotation]
@@ -105,7 +105,7 @@ func parseComponentSnapshotsAnnotation(workUnit *esspb.WorkUnit, jobSet *jobsetv
 	if ann == "" {
 		return nil, nil
 	}
-	var snapshots map[string]int64
+	var snapshots map[string]componentSnapshot
 	if err := json.Unmarshal([]byte(ann), &snapshots); err != nil {
 		return nil, fmt.Errorf("failed to parse %s annotation %q: %w", constants.ComponentSnapshotsAnnotation, ann, err)
 	}
@@ -113,7 +113,7 @@ func parseComponentSnapshotsAnnotation(workUnit *esspb.WorkUnit, jobSet *jobsetv
 }
 
 // evaluateComponentPlacement validates enablement, health, and drift for a required component.
-func evaluateComponentPlacement(ctx context.Context, compName string, lockedGen int64, comp *unstructured.Unstructured, jobSet *jobsetv1alpha2.JobSet) error {
+func evaluateComponentPlacement(ctx context.Context, compName string, snapshot componentSnapshot, comp *unstructured.Unstructured, jobSet *jobsetv1alpha2.JobSet) error {
 	if crreader.IsDisabled(comp) {
 		return apierrors.NewServiceUnavailable(fmt.Sprintf("required component %q is disabled", compName))
 	}
@@ -122,16 +122,32 @@ func evaluateComponentPlacement(ctx context.Context, compName string, lockedGen 
 		return apierrors.NewServiceUnavailable(fmt.Sprintf("required component %q is unhealthy: %s", compName, reason))
 	}
 
-	checkAndRecordComponentDrift(ctx, compName, lockedGen, comp, jobSet)
+	checkAndRecordComponentDrift(ctx, compName, snapshot, comp, jobSet)
 	return nil
 }
 
-// checkAndRecordComponentDrift records a warning annotation if the CMS component generation in the
-// Component status does not match the locked generation.
-//
-// TODO(components): also compare the ComponentId, so a snapshot locked on an earlier incarnation
-// at the same generation is reported as drift (needs the bridge to persist status.componentId).
-func checkAndRecordComponentDrift(ctx context.Context, compName string, lockedGen int64, comp *unstructured.Unstructured, jobSet *jobsetv1alpha2.JobSet) {
+// checkAndRecordComponentDrift records a warning annotation if the Component status describes
+// another incarnation (ComponentId) or another CMS component generation than the snapshot locks.
+func checkAndRecordComponentDrift(ctx context.Context, compName string, snapshot componentSnapshot, comp *unstructured.Unstructured, jobSet *jobsetv1alpha2.JobSet) {
+	recordIncarnationDrift(ctx, compName, snapshot.ComponentID, comp, jobSet)
+	recordGenerationDrift(ctx, compName, snapshot.Generation, comp, jobSet)
+}
+
+// recordIncarnationDrift records drift when both the locked ComponentId and status.componentId are
+// known and differ: the component was re-registered as a new incarnation since the snapshot was
+// locked, even if its generation matches. Either side unknown skips the check.
+func recordIncarnationDrift(ctx context.Context, compName, lockedID string, comp *unstructured.Unstructured, jobSet *jobsetv1alpha2.JobSet) {
+	componentID := extractComponentID(comp)
+	if lockedID == "" || componentID == "" || componentID == lockedID {
+		return
+	}
+	logging.Warn(ctx, "Component incarnation drift detected", "component", compName, "componentId", componentID, "lockedComponentId", lockedID)
+	addDriftWarningAnnotation(jobSet, fmt.Sprintf("component %q incarnation mismatch: component ID %s, locked %s", compName, componentID, lockedID))
+}
+
+// recordGenerationDrift records drift when the CMS component generation in the Component status
+// does not match lockedGen; a lockedGen <= 0 locks no generation.
+func recordGenerationDrift(ctx context.Context, compName string, lockedGen int64, comp *unstructured.Unstructured, jobSet *jobsetv1alpha2.JobSet) {
 	if lockedGen <= 0 {
 		return
 	}

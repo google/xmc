@@ -19,6 +19,7 @@ compat_go_library(
     srcs = [
         "client.go",
         "component_injection.go",
+        "component_snapshot.go",
         "jobset.go",
         "jobset_builder.go",
         "jobset_containers.go",
@@ -76,6 +77,7 @@ compat_go_test(
     srcs = [
         "client_test.go",
         "component_injection_test.go",
+        "component_snapshot_test.go",
         "jobset_builder_test.go",
         "jobset_containers_test.go",
         "jobset_policies_test.go",

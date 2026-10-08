@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 
@@ -91,21 +92,26 @@ func TestReconcileComponent_AppliedIntentLogLevel(t *testing.T) {
 		name string
 		// reported is status.componentGeneration; committed is the generation CMS returns.
 		reported, committed int64
-		wantLevel           slog.Level
+		// reportedID is status.componentId; committedID is the ComponentId CMS returns.
+		reportedID    string
+		committedID   int64
+		wantLevel     slog.Level
+		wantComponent string
 	}{
 		{name: "first apply without a reported generation", reported: 0, committed: 1, wantLevel: slog.LevelInfo},
-		{name: "unchanged generation re-applied every pass", reported: 4, committed: 4, wantLevel: slog.LevelDebug},
-		{name: "newly committed generation", reported: 4, committed: 5, wantLevel: slog.LevelInfo},
+		{name: "unchanged generation re-applied every pass", reported: 4, committed: 4, reportedID: "1", committedID: 1, wantLevel: slog.LevelDebug, wantComponent: "1"},
+		{name: "newly committed generation", reported: 4, committed: 5, reportedID: "1", committedID: 1, wantLevel: slog.LevelInfo, wantComponent: "1"},
+		{name: "new ComponentId at the same generation", reported: 4, committed: 4, reportedID: "1", committedID: 2, wantLevel: slog.LevelInfo, wantComponent: "2"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, err := NewReconciler(&mockCMS{componentGen: tt.committed}, nil, nil)
+			r, err := NewReconciler(&mockCMS{componentGen: tt.committed, componentID: tt.committedID}, nil, nil)
 			if err != nil {
 				t.Fatalf("NewReconciler() error = %v", err)
 			}
 			ctx, logs := recordLogs()
 			in := sourcedRedpandaInput("uid-a", time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), 7)
-			in.ComponentGeneration = tt.reported
+			in.ComponentGeneration, in.ComponentID = tt.reported, tt.reportedID
 			if _, err := r.ReconcileComponent(ctx, in); err != nil {
 				t.Fatalf("ReconcileComponent() error = %v", err)
 			}
@@ -113,8 +119,13 @@ func TestReconcileComponent_AppliedIntentLogLevel(t *testing.T) {
 			if got.level != tt.wantLevel {
 				t.Errorf("%q level = %v, want %v", appliedIntentMessage, got.level, tt.wantLevel)
 			}
-			if prev := got.attrs["previousComponentGeneration"]; prev != tt.reported {
-				t.Errorf("%q previousComponentGeneration = %v, want %d", appliedIntentMessage, prev, tt.reported)
+			want := map[string]any{"previousComponentGeneration": tt.reported, "previousComponentId": tt.reportedID, "componentId": tt.wantComponent}
+			gotAttrs := make(map[string]any, len(want))
+			for key := range want {
+				gotAttrs[key] = got.attrs[key]
+			}
+			if diff := cmp.Diff(want, gotAttrs); diff != "" {
+				t.Errorf("%q attributes mismatch (-want +got):\n%s", appliedIntentMessage, diff)
 			}
 		})
 	}
