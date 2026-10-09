@@ -161,10 +161,10 @@ func seedIntentComponent(ctx context.Context, t *testing.T, s store.Store, name 
 		t.Fatalf("seed UpdateObservedGeneration(%s) error = %v", name, err)
 	}
 	if state == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
-		if _, err := s.PrepareDeactivation(ctx, name, false); err != nil {
+		if _, err := s.PrepareDeactivation(ctx, name, false, nil); err != nil {
 			t.Fatalf("seed PrepareDeactivation(%s) error = %v", name, err)
 		}
-		if err := s.CompleteDeactivation(ctx, name, false); err != nil {
+		if err := s.CompleteDeactivation(ctx, name, false, nil); err != nil {
 			t.Fatalf("seed CompleteDeactivation(%s) error = %v", name, err)
 		}
 	}

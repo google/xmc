@@ -297,9 +297,11 @@ func applyStatusUpdates(rec *ComponentRecord, observedGen int64, state component
 	}
 }
 
-// PrepareDeactivation checks deactivation safety, transitions the target and any cascaded dependents to DISABLING.
-func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool) (*PrepareDeactivationResult, error) {
-	canonicalName, err := validateResourceName(name)
+// PrepareDeactivation checks deactivation safety and transitions the target, and any cascaded
+// dependents, to DISABLING. It rejects a src that is set but is not the recorded owner of the
+// target (see Store.PrepareDeactivation).
+func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src *IntentSource) (*PrepareDeactivationResult, error) {
+	canonicalName, err := validateSourcedRequest(name, src)
 	if err != nil {
 		return nil, err
 	}
@@ -310,6 +312,9 @@ func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requ
 	rec, exists := m.componentsByName[canonicalName]
 	if !exists || rec == nil || isDeletedRecord(rec) {
 		return nil, ErrComponentNotFound
+	}
+	if err := rejectNonOwnerSource(StaleDeactivationMessagePrefix, "deactivation", canonicalName, rec, src); err != nil {
+		return nil, err
 	}
 
 	result, err := EvaluateDeactivationSafety(m.componentsByName, canonicalName, requestCascade, minDrainTimeout)
@@ -334,9 +339,10 @@ func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requ
 	return result, nil
 }
 
-// CompleteDeactivation marks a component in DISABLING state as DISABLED.
-func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, force bool) error {
-	canonicalName, err := validateResourceName(name)
+// CompleteDeactivation marks a component in DISABLING state as DISABLED, unless src is set and is
+// not the recorded owner (see Store.CompleteDeactivation).
+func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, force bool, src *IntentSource) error {
+	canonicalName, err := validateSourcedRequest(name, src)
 	if err != nil {
 		return err
 	}
@@ -347,6 +353,9 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, for
 	rec, exists := m.componentsByName[canonicalName]
 	if !exists || rec == nil || isDeletedRecord(rec) {
 		return ErrComponentNotFound
+	}
+	if err := rejectNonOwnerSource(StaleDeactivationMessagePrefix, "deactivation", canonicalName, rec, src); err != nil {
+		return err
 	}
 
 	if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {

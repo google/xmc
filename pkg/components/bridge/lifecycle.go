@@ -109,20 +109,19 @@ func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileCompon
 // active dependents exist (the workload keeps running; re-checked every deactivationRecheckInterval).
 // Otherwise the 1P workload is deleted, CompleteDeactivation finalizes the handshake, and the
 // component reports COMPONENT_STATE_DISABLED. Failures after teardown report DeactivationIncomplete.
+// If CMS rejects either step because another custom resource owns the record, the pass releases
+// CMS ownership (see releaseCMSOwnership) and stops. A rejected PrepareDeactivation keeps the
+// workload, as for a stale intent: a non-owner custom resource does not actuate (its HelmOpts.Ref
+// may name the owner's release); delete the custom resource to remove it. applyDisabledIntent
+// already rejects an older custom resource as StaleIntent, so CMS rejects a step only when another
+// custom resource adopts the record after that intent write.
 func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if msg, ok := recentDeactivationBlock(in); ok {
 		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, false)
 	}
 	prepared, err := r.prepareDeactivation(ctx, in, canonicalName)
-	if status.Code(err) == codes.FailedPrecondition {
-		msg := fmt.Sprintf("Cannot disable %q: %s", in.Name, status.Convert(err).Message())
-		logging.Info(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
-		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, true)
-	}
-	if err != nil {
-		err = fmt.Errorf("failed to prepare deactivation in CMS: %w", err)
-		markDeactivationFailed(in, res, "CMSDeactivationFailed", err.Error())
-		return res, err
+	if out, handled, err := r.handlePrepareDeactivationErr(ctx, in, canonicalName, res, err); handled {
+		return out, err
 	}
 	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
 		if err := r.deleteDisabledHelmComponent(ctx, in, res); err != nil {
@@ -130,9 +129,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 		}
 	}
 	if prepared {
-		if _, err := r.cmsClient.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: canonicalName}); err != nil {
-			err = fmt.Errorf("failed to complete deactivation in CMS: %w", err)
-			markDeactivationFailed(in, res, ReasonDeactivationIncomplete, err.Error())
+		if released, err := r.completeDeactivation(ctx, in, canonicalName, res); released || err != nil {
 			return res, err
 		}
 	}
@@ -146,6 +143,47 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 		logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
 	}
 	return res, nil
+}
+
+// handlePrepareDeactivationErr handles err from PrepareDeactivation. handled is false for a nil err;
+// otherwise the pass ends with the returned result and error. A stale deactivation releases CMS
+// ownership and keeps the workload, a check failing because enabled components depend on this one
+// reports DeactivationBlocked, and any other failure is returned and reported as
+// CMSDeactivationFailed. The stale prefix is matched first: it is also a FailedPrecondition.
+func (r *Reconciler) handlePrepareDeactivationErr(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, err error) (out *ReconcileResult, handled bool, outErr error) {
+	if err == nil {
+		return res, false, nil
+	}
+	if stale := storeRejectionMessage(err, staleDeactivationMessagePrefix); stale != "" {
+		releaseCMSOwnership(ctx, in, canonicalName, res, stale)
+		return res, true, nil
+	}
+	if status.Code(err) == codes.FailedPrecondition {
+		msg := fmt.Sprintf("Cannot disable %q: %s", in.Name, status.Convert(err).Message())
+		logging.Info(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
+		out, outErr = r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, true)
+		return out, true, outErr
+	}
+	err = fmt.Errorf("failed to prepare deactivation in CMS: %w", err)
+	markDeactivationFailed(in, res, "CMSDeactivationFailed", err.Error())
+	return res, true, err
+}
+
+// completeDeactivation finalizes the CMS deactivation handshake with the custom resource as its
+// source. released reports that CMS rejected it because another custom resource owns the record,
+// which releaseCMSOwnership then records in res; any other failure is returned.
+func (r *Reconciler) completeDeactivation(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (released bool, err error) {
+	_, err = r.cmsClient.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: canonicalName, Source: intentSource(in)})
+	if stale := storeRejectionMessage(err, staleDeactivationMessagePrefix); stale != "" {
+		releaseCMSOwnership(ctx, in, canonicalName, res, stale)
+		return true, nil
+	}
+	if err != nil {
+		err = fmt.Errorf("failed to complete deactivation in CMS: %w", err)
+		markDeactivationFailed(in, res, ReasonDeactivationIncomplete, err.Error())
+		return false, err
+	}
+	return false, nil
 }
 
 // applyDisabledIntent records the disabled component's intent in CMS. Like registerIntent on the
@@ -172,7 +210,7 @@ func (r *Reconciler) prepareDeactivation(ctx context.Context, in ReconcileCompon
 	if ready := findCondition(in.ExistingConditions, ConditionTypeReady); ready != nil && ready.Reason == reasonComponentDisabled && ready.ObservedGeneration == in.Generation {
 		return false, nil
 	}
-	_, err := r.cmsClient.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: canonicalName})
+	_, err := r.cmsClient.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: canonicalName, Source: intentSource(in)})
 	if status.Code(err) == codes.NotFound {
 		return false, nil
 	}

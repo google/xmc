@@ -602,9 +602,10 @@ func (s *SpannerStore) ListComponents(ctx context.Context) ([]*ComponentRecord, 
 	return results, nil
 }
 
-// PrepareDeactivation checks deactivation safety and transitions target (and cascaded dependents) to DISABLING.
-func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool) (*PrepareDeactivationResult, error) {
-	canonicalName, err := validateResourceName(name)
+// PrepareDeactivation checks deactivation safety and transitions target (and cascaded dependents)
+// to DISABLING, unless src is set and is not the recorded owner (see Store.PrepareDeactivation).
+func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src *IntentSource) (*PrepareDeactivationResult, error) {
+	canonicalName, err := validateSourcedRequest(name, src)
 	if err != nil {
 		return nil, err
 	}
@@ -620,6 +621,9 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 		targetRec, ok := catalog[canonicalName]
 		if !ok || targetRec == nil || isDeletedRecord(targetRec) {
 			return ErrComponentNotFound
+		}
+		if err := rejectNonOwnerSource(StaleDeactivationMessagePrefix, "deactivation", canonicalName, targetRec, src); err != nil {
+			return err
 		}
 
 		res, err := EvaluateDeactivationSafety(catalog, canonicalName, requestCascade, minDrainTimeout)
@@ -693,9 +697,10 @@ func buildDisablingMutations(toTransition []*ComponentRecord, now time.Time) ([]
 	return mutations, nil
 }
 
-// CompleteDeactivation marks a component in DISABLING state as DISABLED.
-func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, force bool) error {
-	canonicalName, err := validateResourceName(name)
+// CompleteDeactivation marks a component in DISABLING state as DISABLED, unless src is set and is
+// not the recorded owner (see Store.CompleteDeactivation).
+func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, force bool, src *IntentSource) error {
+	canonicalName, err := validateSourcedRequest(name, src)
 	if err != nil {
 		return err
 	}
@@ -709,6 +714,9 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 		rec, ok := catalog[canonicalName]
 		if !ok || rec == nil || isDeletedRecord(rec) {
 			return ErrComponentNotFound
+		}
+		if err := rejectNonOwnerSource(StaleDeactivationMessagePrefix, "deactivation", canonicalName, rec, src); err != nil {
+			return err
 		}
 
 		if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {

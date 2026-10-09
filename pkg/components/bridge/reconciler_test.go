@@ -1519,6 +1519,9 @@ func TestStoreRejectionMessage(t *testing.T) {
 	if staleObservationMessagePrefix != store.StaleObservationMessagePrefix {
 		t.Fatalf("staleObservationMessagePrefix = %q, want store.StaleObservationMessagePrefix %q", staleObservationMessagePrefix, store.StaleObservationMessagePrefix)
 	}
+	if staleDeactivationMessagePrefix != store.StaleDeactivationMessagePrefix {
+		t.Fatalf("staleDeactivationMessagePrefix = %q, want store.StaleDeactivationMessagePrefix %q", staleDeactivationMessagePrefix, store.StaleDeactivationMessagePrefix)
+	}
 	const msg = store.DependencyNotFoundMessagePrefix + ` component "a" depends on "b", which is not registered`
 	const staleMsg = store.StaleIntentMessagePrefix + ` component "a" has generation 5, newer than the desired generation 3 of the changed intent`
 	notRegistered := status.Error(codes.FailedPrecondition, msg)

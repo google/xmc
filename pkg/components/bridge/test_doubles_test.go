@@ -39,13 +39,15 @@ type mockCMS struct {
 	// spec.generation (at least 1), as CMS does for unsourced intents.
 	componentGen int64
 	// componentID is the CMS ComponentId returned by SetComponentIntent; 0 returns none.
-	componentID   int64
-	lastSetReq    *componentspb.SetComponentIntentRequest
-	lastObsReq    *componentspb.UpdateObservedGenerationRequest
-	lastDelReq    *componentspb.ExecuteDeletionRequest
-	setCalls      int
-	prepareCalls  int
-	completeCalls int
+	componentID     int64
+	lastSetReq      *componentspb.SetComponentIntentRequest
+	lastObsReq      *componentspb.UpdateObservedGenerationRequest
+	lastDelReq      *componentspb.ExecuteDeletionRequest
+	lastPrepareReq  *componentspb.PrepareDeactivationRequest
+	lastCompleteReq *componentspb.CompleteDeactivationRequest
+	setCalls        int
+	prepareCalls    int
+	completeCalls   int
 }
 
 func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error) {
@@ -79,11 +81,13 @@ func (m *mockCMS) ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteD
 
 func (m *mockCMS) PrepareDeactivation(ctx context.Context, in *componentspb.PrepareDeactivationRequest, opts ...grpc.CallOption) (*componentspb.PrepareDeactivationResponse, error) {
 	m.prepareCalls++
+	m.lastPrepareReq = in
 	return &componentspb.PrepareDeactivationResponse{State: componentspb.ComponentState_COMPONENT_STATE_DISABLING}, m.prepareErr
 }
 
 func (m *mockCMS) CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error) {
 	m.completeCalls++
+	m.lastCompleteReq = in
 	return &componentspb.CompleteDeactivationResponse{State: componentspb.ComponentState_COMPONENT_STATE_DISABLED}, m.completeErr
 }
 

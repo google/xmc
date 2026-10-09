@@ -139,10 +139,12 @@ The `ComponentManagerService` exposes standard AIP-compliant gRPC RPCs for exter
   - Validates `draining_timeout` via `dt.CheckValid()`.
   - Computes drain duration via `calculateEffectiveDrainSeconds` with sub-second ceiling rounding and `math.MaxInt32` overflow protection.
   - Initiates draining and transitions target and cascaded dependents to `COMPONENT_STATE_DISABLING`.
+  - Accepts an optional `source` (the deactivating object), checked against the target's recorded source by the same `rejectNonOwnerSource` rule as `ExecuteDeletion`: a request from any object other than the owner is rejected with `FailedPrecondition` and a message starting with `store.StaleDeactivationMessagePrefix`, leaving every record unchanged, so one CR cannot disable a component another CR of the same name owns.
 - `CompleteDeactivation(ctx, req *CompleteDeactivationRequest) (*CompleteDeactivationResponse, error)`:
   - Finalizes deactivation, transitioning component from `COMPONENT_STATE_DISABLING` to `COMPONENT_STATE_DISABLED`.
   - Idempotent: returns success (`nil`) if component is already in `DISABLED` state.
   - Supports `force = true` to override remaining active dependent checks.
+  - Accepts an optional `source`, checked as for `PrepareDeactivation` before the state checks.
 - `ExecuteDeletion(ctx, req *ExecuteDeletionRequest) (*ExecuteDeletionResponse, error)`:
   - Enforces deletion protection labels and active dependent safety.
   - Transitions component to `COMPONENT_STATE_DELETED` and records deletion timestamp.

@@ -170,3 +170,102 @@ func seedObservationRecord(ctx context.Context, t *testing.T, s store.Store, nam
 	}
 	return nil
 }
+
+// deactivationStep is one sourced deactivation step and the state it leaves the component in.
+type deactivationStep struct {
+	name string
+	// setup moves the seeded ENABLED component to the state the step starts from.
+	setup func(ctx context.Context, s store.Store, name string) error
+	run   func(ctx context.Context, s store.Store, name string, src *store.IntentSource) error
+	want  componentspb.ComponentState
+}
+
+var deactivationSteps = []deactivationStep{
+	{
+		name:  "PrepareDeactivation",
+		setup: func(context.Context, store.Store, string) error { return nil },
+		run: func(ctx context.Context, s store.Store, name string, src *store.IntentSource) error {
+			_, err := s.PrepareDeactivation(ctx, name, false, src)
+			return err
+		},
+		want: componentspb.ComponentState_COMPONENT_STATE_DISABLING,
+	},
+	{
+		name: "CompleteDeactivation",
+		setup: func(ctx context.Context, s store.Store, name string) error {
+			_, err := s.PrepareDeactivation(ctx, name, false, nil)
+			return err
+		},
+		run: func(ctx context.Context, s store.Store, name string, src *store.IntentSource) error {
+			return s.CompleteDeactivation(ctx, name, false, src)
+		},
+		want: componentspb.ComponentState_COMPONENT_STATE_DISABLED,
+	},
+}
+
+// TestDeactivation_OwnershipParity runs the same rows against MemoryStore and SpannerStore so both
+// decide sourced PrepareDeactivation and CompleteDeactivation calls identically: only the owner
+// (recorded source) deactivates a sourced record. Each row seeds an ENABLED component, from
+// seedSource or unsourced when it is nil, moves it to the step's starting state, and runs the step
+// from src.
+func TestDeactivation_OwnershipParity(t *testing.T) {
+	seeded := epochSource("uid-b", 0, 3)
+	const ownedBy = `is owned by source "uid-b"`
+	tests := []struct {
+		name        string
+		seedSource  *store.IntentSource
+		src         *store.IntentSource
+		wantCode    codes.Code
+		wantDetails []string
+	}{
+		{name: "older object is stale", seedSource: seeded, src: epochSource("uid-a", -time.Hour, 5), wantCode: codes.FailedPrecondition, wantDetails: []string{ownedBy, "the deactivation comes from an older object"}},
+		{name: "newer object that has not adopted the record is stale", seedSource: seeded, src: epochSource("uid-c", time.Hour, 1), wantCode: codes.FailedPrecondition, wantDetails: []string{ownedBy, "the deactivation comes from a newer object that has not adopted it"}},
+		{name: "recorded object deactivates", seedSource: seeded, src: epochSource("uid-b", 0, 3)},
+		{name: "unsourced deactivation of a sourced record deactivates", seedSource: seeded},
+		{name: "sourced deactivation of an unsourced record deactivates", src: epochSource("uid-a", -time.Hour, 1)},
+		{name: "invalid source is rejected", seedSource: seeded, src: &store.IntentSource{CreateTime: epochTime, Generation: 1}, wantCode: codes.InvalidArgument},
+	}
+	for _, backend := range intentStoreBackends() {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := backend.newStore(t)
+			// Subtests are intentionally sequential (no t.Parallel) because they share one store.
+			for si, step := range deactivationSteps {
+				for i, tt := range tests {
+					t.Run(step.name+"/"+tt.name, func(t *testing.T) {
+						name := fmt.Sprintf("deactivation-owner-%d-%d", si, i)
+						runDeactivationOwnershipRow(ctx, t, s, step, name, tt.seedSource, tt.src, tt.wantCode, tt.wantDetails)
+					})
+				}
+			}
+		})
+	}
+}
+
+// runDeactivationOwnershipRow seeds name from seedSource, runs step from src and checks the result.
+func runDeactivationOwnershipRow(ctx context.Context, t *testing.T, s store.Store, step deactivationStep, name string, seedSource, src *store.IntentSource, wantCode codes.Code, wantDetails []string) {
+	t.Helper()
+	seedEpochComponent(ctx, t, s, name, seedSource, 1)
+	if err := step.setup(ctx, s, name); err != nil {
+		t.Fatalf("setup for %s(%s) error = %v", step.name, name, err)
+	}
+	before, err := s.GetComponent(ctx, name)
+	if err != nil {
+		t.Fatalf("GetComponent(%s) error = %v", name, err)
+	}
+	err = step.run(ctx, s, name, src)
+	if wantCode != codes.OK {
+		assertOwnershipRejected(ctx, t, s, step.name, name, err, wantCode, store.StaleDeactivationMessagePrefix, wantDetails, before)
+		return
+	}
+	if err != nil {
+		t.Fatalf("%s() error = %v", step.name, err)
+	}
+	got, err := s.GetComponent(ctx, name)
+	if err != nil {
+		t.Fatalf("GetComponent(%s) error = %v", name, err)
+	}
+	if got.State != step.want {
+		t.Errorf("state after %s = %v, want %v", step.name, got.State, step.want)
+	}
+}

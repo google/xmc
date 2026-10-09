@@ -378,8 +378,8 @@ message SetComponentIntentRequest {
 }
 
 // Identity of the declarative object, such as a Kubernetes custom resource, that produced an
-// intent, observed-state report, or deletion. A recreated object has a new uid and a later
-// create_time and starts a new epoch.
+// intent, observed-state report, deactivation, or deletion. A recreated object has a new uid and a
+// later create_time and starts a new epoch.
 message IntentSource {
   // Unique identifier of the source object.
   string uid = 1 [
@@ -438,6 +438,15 @@ message PrepareDeactivationRequest {
     (google.api.field_behavior) = OPTIONAL,
     json_name = "force"
   ];
+
+  // Declarative object deactivating the component. When set and the component has a recorded
+  // source, only that owner (the same uid) may deactivate it, as for ExecuteDeletionRequest.source.
+  // A request from any other object is rejected with FAILED_PRECONDITION naming the owner, and
+  // nothing changes. Unset keeps the unconditional behavior.
+  IntentSource source = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "source"
+  ];
 }
 
 // Response message for PrepareDeactivation.
@@ -477,6 +486,12 @@ message CompleteDeactivationRequest {
   bool force = 2 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "force"
+  ];
+
+  // Declarative object completing the deactivation, checked as PrepareDeactivationRequest.source.
+  IntentSource source = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "source"
   ];
 }
 

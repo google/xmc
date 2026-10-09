@@ -160,11 +160,17 @@ type Store interface {
 	// ListComponents returns all non-deleted components in the catalog.
 	ListComponents(ctx context.Context) ([]*ComponentRecord, error)
 
-	// PrepareDeactivation checks deactivation safety and cascading requirements.
-	PrepareDeactivation(ctx context.Context, name string, requestCascade bool) (*PrepareDeactivationResult, error)
+	// PrepareDeactivation checks deactivation safety and cascading requirements. Like
+	// ExecuteDeletion, only the owner deactivates a sourced record: a nil src, no recorded Source,
+	// or a src with the recorded UID proceeds. Any other src fails with FailedPrecondition and a
+	// message starting with StaleDeactivationMessagePrefix that names the recorded owner, and
+	// changes nothing. A non-nil src must be valid (see ValidateIntentSource), else InvalidArgument.
+	// Ownership is checked on the target only, not on the dependents a cascade transitions.
+	PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src *IntentSource) (*PrepareDeactivationResult, error)
 
-	// CompleteDeactivation marks a component in DISABLING state as DISABLED.
-	CompleteDeactivation(ctx context.Context, name string, force bool) error
+	// CompleteDeactivation marks a component in DISABLING state as DISABLED. src is checked as for
+	// PrepareDeactivation.
+	CompleteDeactivation(ctx context.Context, name string, force bool, src *IntentSource) error
 
 	// UpdateObservedGeneration synchronizes actual component access and state, returning the updated
 	// record. Like ExecuteDeletion, only the owner updates a sourced record: a nil src, no recorded
