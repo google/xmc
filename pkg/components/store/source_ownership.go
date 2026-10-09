@@ -27,6 +27,12 @@ import (
 // component in CMS.
 const StaleDeletionMessagePrefix = "stale deletion:"
 
+// StaleObservationMessagePrefix starts the FailedPrecondition message returned when a sourced
+// observed-state update does not come from the recorded source (the owner) of the component. The
+// GitOps bridge matches codes.FailedPrecondition plus this prefix to stop reporting the component
+// generation of a custom resource that no longer owns the record.
+const StaleObservationMessagePrefix = "stale observation:"
+
 // validateOptionalSource returns an InvalidArgument error for a non-nil src that cannot be ordered
 // (see ValidateIntentSource), and nil for a nil or valid one.
 func validateOptionalSource(src *IntentSource) error {

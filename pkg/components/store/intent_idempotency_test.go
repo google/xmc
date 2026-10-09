@@ -157,7 +157,7 @@ func seedIntentComponent(ctx context.Context, t *testing.T, s store.Store, name 
 	if _, err := s.SetComponentIntent(ctx, name, spec, labels, gen); err != nil {
 		t.Fatalf("seed SetComponentIntent(%s, gen %d) error = %v", name, gen, err)
 	}
-	if _, err := s.UpdateObservedGeneration(ctx, name, gen, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready"); err != nil {
+	if _, err := s.UpdateObservedGeneration(ctx, name, gen, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready", nil); err != nil {
 		t.Fatalf("seed UpdateObservedGeneration(%s) error = %v", name, err)
 	}
 	if state == componentspb.ComponentState_COMPONENT_STATE_DISABLED {

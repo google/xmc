@@ -148,6 +148,9 @@ The `ComponentManagerService` exposes standard AIP-compliant gRPC RPCs for exter
   - Transitions component to `COMPONENT_STATE_DELETED` and records deletion timestamp.
   - Accepts an optional `source` (the deleting object, as in `SetComponentIntentRequest`). Both stores compare it with the recorded source in the same transaction (Spanner) or lock (memory) (`rejectNonOwnerSource` in `pkg/components/store/source_ownership.go`). Only the owner deletes a sourced record: a deletion from the same uid, against a record without a source, or without a `source` proceeds. A deletion from any other object, older (earlier creation time, or equal time and smaller uid) or newer but not yet adopted, is rejected with `FailedPrecondition` and a message starting with `store.StaleDeletionMessagePrefix` that names the recorded owner, leaving the record unchanged, so deleting one CR cannot delete the component another CR of the same name owns.
   - Trade-off: if a newer CR is deleted before its first intent adopts the record, and the owner CR is also gone, the record stays active in CMS. The next CR of that name adopts it, or an unsourced `ExecuteDeletion` removes it.
+- `UpdateObservedGeneration(ctx, req *UpdateObservedGenerationRequest) (*UpdateObservedGenerationResponse, error)`:
+  - Records the observed generation, state, and status message reported by a controller.
+  - Accepts an optional `source` (the reporting object), checked against the recorded source by the same `rejectNonOwnerSource` rule as `ExecuteDeletion`: a report from any object other than the owner is rejected with `FailedPrecondition` and a message starting with `store.StaleObservationMessagePrefix`, leaving the record unchanged, so one CR cannot overwrite the observed state of a component another CR of the same name owns. Invalid arguments (including an invalid `source`) return `InvalidArgument` and a missing or soft-deleted record returns `NotFound` before ownership is checked.
 
 ---
 

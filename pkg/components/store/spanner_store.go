@@ -752,9 +752,10 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 	return err
 }
 
-// UpdateObservedGeneration synchronizes actual component access, generation, and state.
-func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error) {
-	canonicalName, err := validateUpdateObservedArgs(name, observedGen)
+// UpdateObservedGeneration synchronizes actual component access, generation, and state, unless src
+// is set and is not the recorded owner (see Store.UpdateObservedGeneration).
+func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src *IntentSource) (*ComponentRecord, error) {
+	canonicalName, err := validateUpdateObservedArgs(name, observedGen, src)
 	if err != nil {
 		return nil, err
 	}
@@ -764,6 +765,9 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
 		if err != nil {
+			return err
+		}
+		if err := rejectNonOwnerSource(StaleObservationMessagePrefix, "observation", canonicalName, rec, src); err != nil {
 			return err
 		}
 

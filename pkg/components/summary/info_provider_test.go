@@ -77,7 +77,7 @@ func TestStoreComponentsProvider_HealthEvaluation(t *testing.T) {
 	_, _ = memStore.UpdateObservedGeneration(ctx, "gateway-1p", 1, &componentspb.ComponentAccessStatus{
 		Ready:         true,
 		HealthMessage: "Ready=True",
-	}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Healthy")
+	}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Healthy", nil)
 
 	// 2. 3P Wrapper Pending Reconciliation
 	_, _ = memStore.SetComponentIntent(ctx, "clickhouse-3p", &componentspb.ComponentSpec{
@@ -90,7 +90,7 @@ func TestStoreComponentsProvider_HealthEvaluation(t *testing.T) {
 			TargetName:      "chi-cluster",
 		},
 	}, nil, 1)
-	_, _ = memStore.UpdateObservedGeneration(ctx, "clickhouse-3p", 1, nil, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, "Pending")
+	_, _ = memStore.UpdateObservedGeneration(ctx, "clickhouse-3p", 1, nil, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, "Pending", nil)
 
 	// 3. Enabled but Not Ready Component (with health message)
 	_, _ = memStore.SetComponentIntent(ctx, "unready-comp", &componentspb.ComponentSpec{
@@ -99,19 +99,19 @@ func TestStoreComponentsProvider_HealthEvaluation(t *testing.T) {
 	_, _ = memStore.UpdateObservedGeneration(ctx, "unready-comp", 1, &componentspb.ComponentAccessStatus{
 		Ready:         false,
 		HealthMessage: "CrashLoopBackOff",
-	}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "CrashLoopBackOff")
+	}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "CrashLoopBackOff", nil)
 
 	// 4. Enabled Component with Nil Status (unobserved)
 	_, _ = memStore.SetComponentIntent(ctx, "unobserved-comp", &componentspb.ComponentSpec{
 		Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 	}, nil, 1)
-	_, _ = memStore.UpdateObservedGeneration(ctx, "unobserved-comp", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	_, _ = memStore.UpdateObservedGeneration(ctx, "unobserved-comp", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil)
 
 	// 5. Disabled Component
 	_, _ = memStore.SetComponentIntent(ctx, "disabled-comp", &componentspb.ComponentSpec{
 		Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 	}, nil, 1)
-	_, _ = memStore.UpdateObservedGeneration(ctx, "disabled-comp", 1, nil, componentspb.ComponentState_COMPONENT_STATE_DISABLED, "Disabled")
+	_, _ = memStore.UpdateObservedGeneration(ctx, "disabled-comp", 1, nil, componentspb.ComponentState_COMPONENT_STATE_DISABLED, "Disabled", nil)
 
 	healthList, err := provider.GetComponentsHealth(ctx)
 	if err != nil {
@@ -246,7 +246,7 @@ func TestStoreComponentsProvider_ConfigExtraction(t *testing.T) {
 			Scheme:      "http",
 			Host:        "redpanda.xmc-redpanda.svc.cluster.local",
 		},
-	}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready")
+	}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready", nil)
 
 	configList, err := provider.GetComponentsConfig(ctx)
 	if err != nil {
@@ -291,7 +291,7 @@ func TestStoreComponentsProvider_LifecycleAndDependencies(t *testing.T) {
 	}, nil, 1)
 
 	// Update dependencies directly on record or via store
-	_, _ = memStore.UpdateObservedGeneration(ctx, "draining-comp", 1, nil, componentspb.ComponentState_COMPONENT_STATE_DISABLING, "Draining")
+	_, _ = memStore.UpdateObservedGeneration(ctx, "draining-comp", 1, nil, componentspb.ComponentState_COMPONENT_STATE_DISABLING, "Draining", nil)
 
 	healthList, err := provider.GetComponentsHealth(ctx)
 	if err != nil {

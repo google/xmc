@@ -346,7 +346,7 @@ func TestSpannerStore_UpdateObservedGeneration(t *testing.T) {
 		Ready: true,
 	}
 
-	updated, err := s.UpdateObservedGeneration(ctx, "obs-comp", 2, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "reconciled successfully")
+	updated, err := s.UpdateObservedGeneration(ctx, "obs-comp", 2, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "reconciled successfully", nil)
 	if err != nil {
 		t.Fatalf("UpdateObservedGeneration failed: %v", err)
 	}
@@ -365,12 +365,12 @@ func TestSpannerStore_UpdateObservedGeneration(t *testing.T) {
 	}
 
 	// Negative observed generation rejection
-	if _, err := s.UpdateObservedGeneration(ctx, "obs-comp", -1, nil, componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED, ""); status.Code(err) != codes.InvalidArgument {
+	if _, err := s.UpdateObservedGeneration(ctx, "obs-comp", -1, nil, componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED, "", nil); status.Code(err) != codes.InvalidArgument {
 		t.Errorf("expected InvalidArgument for negative generation, got %v", err)
 	}
 
 	// Non-existent component
-	if _, err := s.UpdateObservedGeneration(ctx, "unknown", 1, nil, componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED, ""); status.Code(err) != codes.NotFound {
+	if _, err := s.UpdateObservedGeneration(ctx, "unknown", 1, nil, componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED, "", nil); status.Code(err) != codes.NotFound {
 		t.Errorf("expected NotFound for unknown component, got %v", err)
 	}
 }
@@ -399,8 +399,8 @@ func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T)
 	}
 
 	// Mark both as ENABLED
-	_, _ = s.UpdateObservedGeneration(ctx, "base-dep", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
-	_, _ = s.UpdateObservedGeneration(ctx, "client-app", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	_, _ = s.UpdateObservedGeneration(ctx, "base-dep", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil)
+	_, _ = s.UpdateObservedGeneration(ctx, "client-app", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil)
 
 	// 1. PrepareDeactivation without cascade -> should fail with blocking dependents
 	_, err = s.PrepareDeactivation(ctx, "base-dep", false)
@@ -491,7 +491,7 @@ func TestSpannerStore_CompleteDeactivation_TransitiveInactiveChain(t *testing.T)
 
 	// Make sure all are ENABLED
 	for _, name := range []string{"c-base", "b-mid", "a-active"} {
-		if _, err := s.UpdateObservedGeneration(ctx, name, 1, &componentspb.ComponentAccessStatus{State: componentspb.ComponentState_COMPONENT_STATE_ENABLED}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "ready"); err != nil {
+		if _, err := s.UpdateObservedGeneration(ctx, name, 1, &componentspb.ComponentAccessStatus{State: componentspb.ComponentState_COMPONENT_STATE_ENABLED}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "ready", nil); err != nil {
 			t.Fatalf("failed to mark %s ENABLED: %v", name, err)
 		}
 	}
@@ -716,7 +716,7 @@ func TestSpannerStore_ResolveComponentSnapshot(t *testing.T) {
 			Port:        9000,
 		},
 	}
-	_, err = s.UpdateObservedGeneration(ctx, "snap-comp", 2, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	_, err = s.UpdateObservedGeneration(ctx, "snap-comp", 2, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil)
 	if err != nil {
 		t.Fatalf("UpdateObservedGeneration failed: %v", err)
 	}
@@ -845,7 +845,7 @@ func TestSpannerStore_ResolveComponentSnapshot_SoftDeleted(t *testing.T) {
 			Port:        8080,
 		},
 	}
-	_, err = s.UpdateObservedGeneration(ctx, "soft-del-comp", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	_, err = s.UpdateObservedGeneration(ctx, "soft-del-comp", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil)
 	if err != nil {
 		t.Fatalf("UpdateObservedGeneration failed: %v", err)
 	}
@@ -931,7 +931,7 @@ func TestSpannerStore_ResolveComponentSnapshot_RecreatedLowerGeneration(t *testi
 			Port:        3000,
 		},
 	}
-	_, err = s.UpdateObservedGeneration(ctx, "reincarnated-comp", 3, accessV3, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	_, err = s.UpdateObservedGeneration(ctx, "reincarnated-comp", 3, accessV3, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil)
 	if err != nil {
 		t.Fatalf("UpdateObservedGeneration gen 3 failed: %v", err)
 	}
@@ -1007,7 +1007,7 @@ func TestSpannerStore_ResolveComponentSnapshot_HistoricalDependenciesAndStateIso
 			Port:        8000,
 		},
 	}
-	_, err = s.UpdateObservedGeneration(ctx, "isolated-comp", 2, activeAccess, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	_, err = s.UpdateObservedGeneration(ctx, "isolated-comp", 2, activeAccess, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil)
 	if err != nil {
 		t.Fatalf("UpdateObservedGeneration failed: %v", err)
 	}
@@ -1096,7 +1096,7 @@ func TestSpannerStore_ValidateComponentRequirement(t *testing.T) {
 	}
 
 	// Transition to ENABLED
-	_, _ = s.UpdateObservedGeneration(ctx, "req-comp", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	_, _ = s.UpdateObservedGeneration(ctx, "req-comp", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil)
 
 	// 2. Satisfied requirement
 	res, err = s.ValidateComponentRequirement(ctx, "req-comp", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "v2.0.0")
@@ -1237,7 +1237,7 @@ func TestSpannerStore_SoftDeletion_PreservesSnapshotForeignKey(t *testing.T) {
 		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		ObservedGeneration: 1,
 	}
-	rec, err := s.UpdateObservedGeneration(ctx, "fk-comp", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	rec, err := s.UpdateObservedGeneration(ctx, "fk-comp", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil)
 	if err != nil {
 		t.Fatalf("UpdateObservedGeneration failed: %v", err)
 	}
@@ -1313,7 +1313,7 @@ func TestSpannerStore_ConcurrentIntentUpdatesOnSameComponent(t *testing.T) {
 		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		ObservedGeneration: 1,
 	}
-	if _, err := s.UpdateObservedGeneration(ctx, "contended-comp", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, ""); err != nil {
+	if _, err := s.UpdateObservedGeneration(ctx, "contended-comp", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil); err != nil {
 		t.Fatalf("UpdateObservedGeneration failed: %v", err)
 	}
 
@@ -1389,7 +1389,7 @@ func TestSpannerStore_ConcurrentDeactivationAndIntentUpdate(t *testing.T) {
 		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		ObservedGeneration: 1,
 	}
-	if _, err := s.UpdateObservedGeneration(ctx, "conflict-comp", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, ""); err != nil {
+	if _, err := s.UpdateObservedGeneration(ctx, "conflict-comp", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil); err != nil {
 		t.Fatalf("UpdateObservedGeneration failed: %v", err)
 	}
 

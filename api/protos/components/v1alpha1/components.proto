@@ -378,8 +378,8 @@ message SetComponentIntentRequest {
 }
 
 // Identity of the declarative object, such as a Kubernetes custom resource, that produced an
-// intent or deletion. A recreated object has a new uid and a later create_time and starts a new
-// epoch.
+// intent, observed-state report, or deletion. A recreated object has a new uid and a later
+// create_time and starts a new epoch.
 message IntentSource {
   // Unique identifier of the source object.
   string uid = 1 [
@@ -529,6 +529,15 @@ message UpdateObservedGenerationRequest {
   string status_message = 4 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "statusMessage"
+  ];
+
+  // Declarative object reporting the observation. When set and the component has a recorded
+  // source, only that owner (the same uid) may update it, as for ExecuteDeletionRequest.source.
+  // A report from any other object is rejected with FAILED_PRECONDITION naming the owner, and
+  // nothing changes. Unset keeps the unconditional behavior.
+  IntentSource source = 5 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "source"
   ];
 }
 

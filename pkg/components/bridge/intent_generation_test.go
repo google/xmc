@@ -137,8 +137,10 @@ func TestUpdateObservedCMS_UnknownGenerationSkipsCMS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewReconciler() error = %v", err)
 	}
-	if err := r.updateObservedCMS(context.Background(), "redpanda", 0, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready=True"); err != nil {
-		t.Fatalf("updateObservedCMS() error = %v", err)
+	res := &ReconcileResult{State: componentspb.ComponentState_COMPONENT_STATE_ENABLED}
+	released, err := r.updateObservedCMS(context.Background(), ReconcileComponentInput{Name: "redpanda"}, "redpanda", res, "Ready=True")
+	if err != nil || released {
+		t.Fatalf("updateObservedCMS() = (%t, %v), want (false, nil)", released, err)
 	}
 	if cms.lastObsReq != nil {
 		t.Errorf("UpdateObservedGeneration request = %v, want no call", cms.lastObsReq)

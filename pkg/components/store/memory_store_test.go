@@ -400,7 +400,7 @@ func TestMemoryStore_UpdateObservedGeneration(t *testing.T) {
 		Ready: true,
 	}
 
-	rec, err := ms.UpdateObservedGeneration(ctx, "comp-obs", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Reconciliation successful")
+	rec, err := ms.UpdateObservedGeneration(ctx, "comp-obs", 1, access, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Reconciliation successful", nil)
 	if err != nil {
 		t.Fatalf("UpdateObservedGeneration() unexpected error: %v", err)
 	}
@@ -425,13 +425,13 @@ func TestMemoryStore_UpdateObservedGeneration(t *testing.T) {
 	}
 
 	// Update on nonexistent component
-	_, err = ms.UpdateObservedGeneration(ctx, "nonexistent", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	_, err = ms.UpdateObservedGeneration(ctx, "nonexistent", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil)
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("UpdateObservedGeneration(nonexistent) got code %v, want NotFound", status.Code(err))
 	}
 
 	// Negative observed generation
-	_, err = ms.UpdateObservedGeneration(ctx, "comp-obs", -1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "")
+	_, err = ms.UpdateObservedGeneration(ctx, "comp-obs", -1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil)
 	if status.Code(err) != codes.InvalidArgument {
 		t.Errorf("UpdateObservedGeneration(negative) got code %v, want InvalidArgument", status.Code(err))
 	}
@@ -500,7 +500,7 @@ func TestMemoryStore_ConcurrencyStress(t *testing.T) {
 				case 3:
 					_, _ = ms.ListComponents(ctx)
 				case 4:
-					_, _ = ms.UpdateObservedGeneration(ctx, compName, int64(op), nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK")
+					_, _ = ms.UpdateObservedGeneration(ctx, compName, int64(op), nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK", nil)
 				}
 			}
 		}(g)
@@ -967,7 +967,7 @@ func TestMemoryStore_ResolveComponentSnapshot(t *testing.T) {
 		ServiceName: "snap-svc-v1",
 		Port:        8080,
 	}
-	if _, err := ms.UpdateObservedGeneration(ctx, "comp-snap", 1, &componentspb.ComponentAccessStatus{Coordinates: coords1, Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Reconciled Gen 1"); err != nil {
+	if _, err := ms.UpdateObservedGeneration(ctx, "comp-snap", 1, &componentspb.ComponentAccessStatus{Coordinates: coords1, Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Reconciled Gen 1", nil); err != nil {
 		t.Fatalf("UpdateObservedGeneration failed: %v", err)
 	}
 
@@ -1001,7 +1001,7 @@ func TestMemoryStore_ResolveComponentSnapshot(t *testing.T) {
 		ServiceName: "snap-svc-v2",
 		Port:        9090,
 	}
-	if _, err := ms.UpdateObservedGeneration(ctx, "comp-snap", 2, &componentspb.ComponentAccessStatus{Coordinates: coords2, Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Reconciled Gen 2"); err != nil {
+	if _, err := ms.UpdateObservedGeneration(ctx, "comp-snap", 2, &componentspb.ComponentAccessStatus{Coordinates: coords2, Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Reconciled Gen 2", nil); err != nil {
 		t.Fatalf("UpdateObservedGeneration(2) failed: %v", err)
 	}
 
@@ -1061,7 +1061,7 @@ func TestMemoryStore_ValidateComponentRequirement(t *testing.T) {
 	}
 
 	// 2. Transition to ENABLED -> satisfied
-	if _, err := ms.UpdateObservedGeneration(ctx, "comp-req", 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+	if _, err := ms.UpdateObservedGeneration(ctx, "comp-req", 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK", nil); err != nil {
 		t.Fatalf("UpdateObservedGeneration failed: %v", err)
 	}
 	resEnabled, err := ms.ValidateComponentRequirement(ctx, "comp-req", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "v1.2.0")
@@ -1097,7 +1097,7 @@ func TestMemoryStore_GetPlatformHealth(t *testing.T) {
 		}
 		state := componentspb.ComponentState_COMPONENT_STATE_ENABLED
 		ready := i%2 == 0
-		if _, err := ms.UpdateObservedGeneration(ctx, name, 1, &componentspb.ComponentAccessStatus{Ready: ready}, state, "OK"); err != nil {
+		if _, err := ms.UpdateObservedGeneration(ctx, name, 1, &componentspb.ComponentAccessStatus{Ready: ready}, state, "OK", nil); err != nil {
 			t.Fatalf("UpdateObservedGeneration(%s) failed: %v", name, err)
 		}
 	}
