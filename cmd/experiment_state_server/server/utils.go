@@ -20,11 +20,12 @@ import (
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "protobuf/timestamp_go_proto"
 	rpcstatuspb "rpc/status_go_proto"
-	statusutils "task/go/status"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
 	ee "xmanager_cloud/toollibs/execution_environments/executionenvironments"
@@ -63,7 +64,7 @@ func propagateIAPJWT(ctx context.Context) context.Context {
 
 func (b *baseHandler) getXid(ctx context.Context, name string) (*xidmsgpb.XidEntry, error) {
 	if b.xidClient == nil {
-		return nil, fmt.Errorf("xidClient is nil: %w", statusutils.ErrInternal)
+		return nil, fmt.Errorf("xidClient is nil: %w", grpcerr.ErrInternal)
 	}
 	req := &xidapipb.GetXidEntryRequest{
 		Name: &name,
@@ -78,7 +79,7 @@ func (b *baseHandler) getXid(ctx context.Context, name string) (*xidmsgpb.XidEnt
 
 func (b *baseHandler) checkUserAuthorization(ctx context.Context, name string, user string, roleType *xidmsgpb.XidAcls_RoleType) (bool, error) {
 	if b.xidClient == nil {
-		return false, fmt.Errorf("xidClient is nil: %w", statusutils.ErrInternal)
+		return false, fmt.Errorf("xidClient is nil: %w", grpcerr.ErrInternal)
 	}
 	req := &xidapipb.CheckUserAuthorizationRequest{
 		Name:     &name,
@@ -91,7 +92,7 @@ func (b *baseHandler) checkUserAuthorization(ctx context.Context, name string, u
 		return false, fmt.Errorf("rpc CheckUserAuthorization failed: %w", err)
 	}
 	if resp == nil || resp.Authorized == nil {
-		return false, fmt.Errorf("rpc CheckUserAuthorization returned nil response or authorized field: %w", statusutils.ErrInternal)
+		return false, fmt.Errorf("rpc CheckUserAuthorization returned nil response or authorized field: %w", grpcerr.ErrInternal)
 	}
 	return *resp.Authorized, nil
 }
@@ -120,16 +121,16 @@ func (h *WorkUnitHandler) stopOperationOnError(ctx context.Context, operation *l
 		return
 	}
 
-	status, ok := statusutils.FromError(err)
+	st, ok := status.FromError(err)
 	if !ok {
 		logging.Error(ctx, "Failed to convert error to status", "error", err)
 		return
 	}
 	// The error field in lropb.Operation expects a google.rpc.Status,
-	// while status.FromError returns a util.task.Status. We need to convert.
+	// while status.FromError returns a gRPC Status. We need to convert.
 	rpcStatus := &rpcstatuspb.Status{
-		Code:    int32(status.CanonicalCode()),
-		Message: status.Msg,
+		Code:    int32(st.Code()),
+		Message: st.Message(),
 	}
 
 	xid, wid, oid, err := validator.ValidateOperationName(operation.GetName())
@@ -182,7 +183,7 @@ func (h *WorkUnitHandler) handleEnqueueActionError(ctx context.Context, action s
 	_, _, eid, valErr := validator.ValidateWorkUnitExecutionName(workUnit.GetCurrentWorkUnitExecution().GetName())
 	if valErr != nil {
 		logging.Error(ctx, "Failed to validate work unit execution name", "error", valErr)
-		return fmt.Errorf("failed to validate work unit execution name: %w (%v)", statusutils.ErrInternal, valErr)
+		return fmt.Errorf("failed to validate work unit execution name: %w (%v)", grpcerr.ErrInternal, valErr)
 	}
 
 	userFacingText := fmt.Sprintf("Failed to %s work unit. Please try again.", action)
@@ -193,7 +194,7 @@ func (h *WorkUnitHandler) handleEnqueueActionError(ctx context.Context, action s
 	}, false); statusMsgErr != nil {
 		logging.Error(ctx, fmt.Sprintf("Failed to update work unit execution status message after failed %s attempt", action), "error", statusMsgErr)
 	}
-	return fmt.Errorf("failed to enqueue %s request for work unit %s: %w (%v)", action, workUnit.GetName(), statusutils.ErrInternal, err)
+	return fmt.Errorf("failed to enqueue %s request for work unit %s: %w (%v)", action, workUnit.GetName(), grpcerr.ErrInternal, err)
 }
 
 func newExperimentStatus(name string) *msgpb.ExperimentStatus {
@@ -233,11 +234,11 @@ func (b *baseHandler) createXid(ctx context.Context, creator, endpoint string, a
 
 func (b *baseHandler) defaultExecutionEnvironment() (ee.Environment, error) {
 	if b.cfg == nil {
-		return nil, fmt.Errorf("config is nil: %w", statusutils.ErrInternal)
+		return nil, fmt.Errorf("config is nil: %w", grpcerr.ErrInternal)
 	}
 	executionEnv, ok := ee.Lookup(b.cfg.DefaultExecutionEnvironment)
 	if !ok {
-		return nil, fmt.Errorf("failed to get execution environment %q: %w", b.cfg.DefaultExecutionEnvironment, statusutils.ErrInternal)
+		return nil, fmt.Errorf("failed to get execution environment %q: %w", b.cfg.DefaultExecutionEnvironment, grpcerr.ErrInternal)
 	}
 	return executionEnv, nil
 }

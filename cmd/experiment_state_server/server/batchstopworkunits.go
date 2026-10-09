@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"math"
 
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/task_queue/client"
@@ -49,7 +49,7 @@ func (h *WorkUnitHandler) BatchStopWorkUnits(ctx context.Context, req *apipb.Bat
 	xid, err := validator.ValidateExperimentName(req.GetParent())
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate experiment name", "name", req.GetParent(), "error", err)
-		return nil, fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("failed to validate work unit name: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithExperimentName(ctx, req.GetParent())
 
@@ -60,14 +60,14 @@ func (h *WorkUnitHandler) BatchStopWorkUnits(ctx context.Context, req *apipb.Bat
 	}
 	if !authorized {
 		logging.Error(ctx, "User not authorized to stop work units", "user", email)
-		return nil, fmt.Errorf("user %s is not authorized to stop work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user %s is not authorized to stop work units for XID %d: %w", email, xid, grpcerr.ErrPermissionDenied)
 	}
 
 	// 4. Retrieve the list of work units to stop from the storage layer.
 	workUnits, _, err := h.storage.ListWorkUnits(ctx, req.Parent, math.MaxInt32, "", req.GetFilter(), "", 0)
 	if err != nil {
 		logging.Error(ctx, "Failed to list work units", "error", err, "filter", req.GetFilter())
-		return nil, fmt.Errorf("failed to list work units: %w (%v)", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to list work units: %w (%v)", grpcerr.ErrInternal, err)
 	}
 
 	if len(workUnits) == 0 {
@@ -97,14 +97,14 @@ func (h *WorkUnitHandler) BatchStopWorkUnits(ctx context.Context, req *apipb.Bat
 	if len(execUpdates) > 0 {
 		if _, err := h.storage.UpdateWorkUnitExecutions(ctx, xid, execUpdates); err != nil {
 			logging.Error(ctx, "Failed to batch update work unit statuses", "error", err)
-			multiErr = errors.Join(multiErr, fmt.Errorf("failed to batch update work unit statuses: %w (%v)", status.ErrInternal, err))
+			multiErr = errors.Join(multiErr, fmt.Errorf("failed to batch update work unit statuses: %w (%v)", grpcerr.ErrInternal, err))
 		}
 	}
 
 	// 7. Return all of the successful operations. If any errors occurred, also return them. This
 	// breaks the error handling contract of Golang, but I think it's the best we can do in this case.
 	if len(successfulOperations) == 0 {
-		multiErr = errors.Join(multiErr, fmt.Errorf("no work units were successfully processed: %w", status.ErrNotFound))
+		multiErr = errors.Join(multiErr, fmt.Errorf("no work units were successfully processed: %w", grpcerr.ErrNotFound))
 		return nil, multiErr
 	}
 	// for experiment-level operations.
@@ -123,7 +123,7 @@ func (h *WorkUnitHandler) enqueueWorkUnitStop(ctx context.Context, workUnit *msg
 	xid, wid, eid, err := validator.ValidateWorkUnitExecutionName(workUnit.GetCurrentWorkUnitExecution().GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate work unit name", "name", workUnit.GetName(), "error", err)
-		return WorkUnitStopEnqueueResult{}, fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
+		return WorkUnitStopEnqueueResult{}, fmt.Errorf("failed to validate work unit name: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithWorkUnitName(ctx, workUnit.GetName())
 
@@ -136,7 +136,7 @@ func (h *WorkUnitHandler) enqueueWorkUnitStop(ctx context.Context, workUnit *msg
 	operation, err := h.storage.AddWorkUnitOperation(ctx, xid, wid, metadata)
 	if err != nil {
 		logging.Error(ctx, "Failed to add work unit operation", "error", err)
-		return WorkUnitStopEnqueueResult{}, fmt.Errorf("failed to add work unit operation: %w (%v)", status.ErrInternal, err)
+		return WorkUnitStopEnqueueResult{}, fmt.Errorf("failed to add work unit operation: %w (%v)", grpcerr.ErrInternal, err)
 	}
 
 	// 1.1. Ensure that the operation is marked as done if an error is returned from now on.

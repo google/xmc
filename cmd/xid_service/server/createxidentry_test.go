@@ -21,8 +21,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
@@ -117,28 +117,28 @@ func TestCreateXidEntry_BadPaths(t *testing.T) {
 			req: prototest.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
 				r.XidEntry = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "missing_acls",
 			req: prototest.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
 				r.XidEntry.Acls = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "missing_origin",
 			req: prototest.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
 				r.XidEntry.Origin = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent_xid",
 			req: prototest.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
 				r.XidEntry.ParentXid = proto.String("xids/invalid")
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -161,15 +161,15 @@ func TestCreateXidEntry_Failures(t *testing.T) {
 	}{
 		{
 			name:        "AuthFailure",
-			mockAuth:    &auth.MockAuth{AuthnErr: status.ErrPermissionDenied},
+			mockAuth:    &auth.MockAuth{AuthnErr: grpcerr.ErrPermissionDenied},
 			mockStorage: &storage.MockStorage{},
-			wantErr:     status.ErrPermissionDenied,
+			wantErr:     grpcerr.ErrPermissionDenied,
 		},
 		{
 			name:        "StorageFailure",
 			mockAuth:    &auth.MockAuth{},
 			mockStorage: &storage.MockStorage{CreateErr: errors.New("storage error")},
-			wantErr:     status.ErrInternal,
+			wantErr:     grpcerr.ErrInternal,
 		},
 	}
 

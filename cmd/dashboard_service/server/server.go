@@ -24,7 +24,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	cstatus "task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/internal/auth"
@@ -143,10 +142,7 @@ func isNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if status.Code(err) == codes.NotFound {
-		return true
-	}
-	return cstatus.ExtractCanonicalCode(err) == cstatus.NotFound
+	return status.Code(err) == codes.NotFound
 }
 
 // isAlreadyExistsError checks if an error represents an AlreadyExists error code.
@@ -154,10 +150,7 @@ func isAlreadyExistsError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if status.Code(err) == codes.AlreadyExists {
-		return true
-	}
-	return cstatus.ExtractCanonicalCode(err) == cstatus.AlreadyExists
+	return status.Code(err) == codes.AlreadyExists
 }
 
 // createDefaultPlotSpecs returns standard default plots for on-the-fly work unit charts.

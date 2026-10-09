@@ -17,9 +17,11 @@ import (
 	"context"
 	"fmt"
 
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -43,12 +45,12 @@ func (h *ExperimentHandler) UpdateExperimentLaunchState(ctx context.Context, req
 	xid, err := validator.ValidateExperimentName(name)
 	if err != nil {
 		logging.Warn(ctx, "UpdateExperimentLaunchState validation failed", "name", name, "error", err)
-		return nil, fmt.Errorf("UpdateExperimentLaunchState validation failed: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("UpdateExperimentLaunchState validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithExperimentName(ctx, name)
 	if req.GetLaunchState() != msgpb.ExperimentStatus_COMPLETED && req.GetLaunchState() != msgpb.ExperimentStatus_FAILED {
 		logging.Warn(ctx, "Invalid launch state", "launch_state", req.GetLaunchState())
-		return nil, fmt.Errorf("invalid launch state: %v, must be COMPLETED or FAILED: %w", req.GetLaunchState(), status.ErrInvalidArgument)
+		return nil, fmt.Errorf("invalid launch state: %v, must be COMPLETED or FAILED: %w", req.GetLaunchState(), grpcerr.ErrInvalidArgument)
 	}
 
 	// 3. Authorize the user to update the experiment.
@@ -58,33 +60,33 @@ func (h *ExperimentHandler) UpdateExperimentLaunchState(ctx context.Context, req
 	}
 	if !isAuthorized {
 		logging.Warn(ctx, "User not authorized to update experiment", "error", err)
-		return nil, fmt.Errorf("user not authorized to update experiment %s: %w", name, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user not authorized to update experiment %s: %w", name, grpcerr.ErrPermissionDenied)
 	}
 
 	// 4. Update the experiment status in the storage layer.
 	logging.Debug(ctx, "Updating experiment launch state in storage")
 	exp, err := h.storage.UpdateExperimentLaunchState(ctx, xid, req.GetLaunchState())
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
+		if status.Code(err) == codes.NotFound {
 			logging.Warn(ctx, "Experiment not found in storage")
-			return nil, fmt.Errorf("experiment with ID %s not found: %w (%v)", name, status.ErrNotFound, err)
+			return nil, fmt.Errorf("experiment with ID %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
 		}
 
 		logging.Error(ctx, "Failed to update experiment launch state in storage", "error", err)
-		return nil, fmt.Errorf("failed to update experiment launch state for %s in storage: %w (%v)", name, status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to update experiment launch state for %s in storage: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 
 	// 5. Retrieve the XID entry from the XID service. This is required to populate the ACLs in the
 	// response.
 	xidEntry, err := h.getXid(ctx, validator.ConstructXIDName(xid))
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.PermissionDenied {
+		if status.Code(err) == codes.PermissionDenied {
 			logging.Warn(ctx, "User not authorized to update experiment launch state", "xid", xid, "error", err)
-			return nil, fmt.Errorf("user not authorized to update experiment launch state for XID %d: %w (%v)", xid, status.ErrPermissionDenied, err)
+			return nil, fmt.Errorf("user not authorized to update experiment launch state for XID %d: %w (%v)", xid, grpcerr.ErrPermissionDenied, err)
 		}
 
 		logging.Error(ctx, "XID lookup failed", "error", err)
-		return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", xid, status.ErrInternal, err)
+		return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", xid, grpcerr.ErrInternal, err)
 	}
 
 	exp.Acls = xidEntry.GetAcls()

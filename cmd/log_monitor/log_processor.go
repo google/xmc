@@ -25,8 +25,8 @@ import (
 	"golang/cloud_google_com/go/pubsub/v/v1/pubsub"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/common/labels"
 	"xmanager_cloud/logging/logging"
@@ -160,7 +160,7 @@ func (lp *LogProcessor) processUpdatesForExperiment(ctx context.Context, xid int
 		logging.Error(ctx, "Failed to update work unit executions", "error", err)
 
 		shouldAck := false
-		if errors.Is(err, status.ErrNotFound) {
+		if errors.Is(err, grpcerr.ErrNotFound) {
 			// We ack message for NotFoundError as it doesn't make sense to retry it.
 			logging.Info(ctx, "Acking messages due to the NotFound error")
 			shouldAck = true

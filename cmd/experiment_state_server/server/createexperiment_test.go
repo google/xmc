@@ -23,8 +23,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
@@ -159,14 +159,14 @@ func TestCreateExperiment_BadPaths(t *testing.T) {
 		{
 			name:    "missing_experiment",
 			req:     prototest.Modify(baseReq, func(r *apipb.CreateExperimentRequest) { r.Experiment = nil }),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "missing_acls",
 			req: prototest.Modify(baseReq, func(r *apipb.CreateExperimentRequest) {
 				r.Experiment.Acls = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "creator_not_in_writers",
@@ -176,7 +176,7 @@ func TestCreateExperiment_BadPaths(t *testing.T) {
 					Readers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
 				}
 			}),
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 	}
 
@@ -212,10 +212,10 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name: "xid_creation_fails",
@@ -223,7 +223,7 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 				createXidEntryErr: fmt.Errorf("XID creation failed"),
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_creation_fails",
@@ -234,7 +234,7 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 			storage: &storage.MockStorage{
 				CreateExperimentErr: fmt.Errorf("Storage creation failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "invalid_xid_name",
@@ -242,7 +242,7 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 				createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("invalid-xid-name")},
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 	}
 

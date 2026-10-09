@@ -17,9 +17,9 @@ import (
 	"context"
 	"fmt"
 
-	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/storage"
@@ -45,13 +45,13 @@ func (h *ExperimentHandler) UpdateExperiment(ctx context.Context, req *apipb.Upd
 	xid, err := validator.ValidateExperimentName(name)
 	if err != nil {
 		logging.Warn(ctx, "UpdateExperiment validation failed", "name", name, "error", err)
-		return nil, fmt.Errorf("UpdateExperiment validation failed: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("UpdateExperiment validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithExperimentName(ctx, name)
 
 	if req.GetUpdateMask() == nil {
 		logging.Warn(ctx, "UpdateExperiment validation failed for empty update mask", "update_mask", req.GetUpdateMask())
-		return nil, fmt.Errorf("UpdateExperiment validation failed: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("UpdateExperiment validation failed: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	if err := validator.ValidateUpdateExperimentRequest(req); err != nil {
@@ -66,7 +66,7 @@ func (h *ExperimentHandler) UpdateExperiment(ctx context.Context, req *apipb.Upd
 	}
 	if !isAuthorized {
 		logging.Warn(ctx, "User not authorized to update experiment", "error", err)
-		return nil, fmt.Errorf("user not authorized to update experiment %s: %w", name, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user not authorized to update experiment %s: %w", name, grpcerr.ErrPermissionDenied)
 	}
 
 	// 4. Update the experiment in the storage layer.
@@ -79,7 +79,7 @@ func (h *ExperimentHandler) UpdateExperiment(ctx context.Context, req *apipb.Upd
 	res, err := h.storage.UpdateExperiment(ctx, update)
 	if err != nil {
 		logging.Error(ctx, "Failed to update experiment", "error", err)
-		return nil, fmt.Errorf("failed to update experiment %s: %w (%v)", name, status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to update experiment %s: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 	returnedExp := res.Updated
 
@@ -87,7 +87,7 @@ func (h *ExperimentHandler) UpdateExperiment(ctx context.Context, req *apipb.Upd
 	xidEntryForUpdate, updateMask, err := data.ExperimentRequiresXIDUpdate(req.GetExperiment(), req.GetUpdateMask())
 	if err != nil {
 		logging.Error(ctx, "Failed to check if XID entry needs to be updated", "error", err)
-		return nil, fmt.Errorf("failed to check if XID entry needs to be updated: %w (%v)", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to check if XID entry needs to be updated: %w (%v)", grpcerr.ErrInternal, err)
 	}
 
 	// 6. Update the XID entry in the XID service if required.
@@ -102,7 +102,7 @@ func (h *ExperimentHandler) UpdateExperiment(ctx context.Context, req *apipb.Upd
 
 		if _, err := h.xidClient.UpdateXidEntry(propagateIAPJWT(ctx), request); err != nil {
 			logging.Error(ctx, "Failed to update XID entry", "error", err)
-			return nil, fmt.Errorf("failed to update XID entry, experiment resource may have been partially updated: %w (%v)", status.ErrInternal, err)
+			return nil, fmt.Errorf("failed to update XID entry, experiment resource may have been partially updated: %w (%v)", grpcerr.ErrInternal, err)
 		}
 		returnedExp.Acls = xidEntryForUpdate.GetAcls()
 	} else {
@@ -111,7 +111,7 @@ func (h *ExperimentHandler) UpdateExperiment(ctx context.Context, req *apipb.Upd
 		currentXidEntry, err := h.getXid(ctx, validator.ConstructXIDName(xid))
 		if err != nil {
 			logging.Error(ctx, "XID lookup failed", "error", err)
-			return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", xid, status.ErrInternal, err)
+			return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", xid, grpcerr.ErrInternal, err)
 		}
 
 		returnedExp.Acls = currentXidEntry.GetAcls()

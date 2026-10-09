@@ -23,10 +23,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
@@ -80,7 +80,7 @@ func TestUpdateExperimentLaunchState_BadPaths(t *testing.T) {
 				Name:        "invalid-name",
 				LaunchState: msgpb.ExperimentStatus_COMPLETED,
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_launch_state",
@@ -88,7 +88,7 @@ func TestUpdateExperimentLaunchState_BadPaths(t *testing.T) {
 				Name:        "experiments/123",
 				LaunchState: msgpb.ExperimentStatus_LAUNCH_STATE_UNSPECIFIED,
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -116,10 +116,10 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name: "xid_get_fails",
@@ -128,7 +128,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 				getXidEntryErr:             fmt.Errorf("XID get failed"),
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "xid_get_permission_denied",
@@ -136,7 +136,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "storage_update_fails",
@@ -147,7 +147,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 			storage: &storage.MockStorage{
 				UpdateExperimentLaunchStateErr: fmt.Errorf("Storage update failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_update_not_found",
@@ -156,9 +156,9 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 				getXidEntryResp:            &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 			},
 			storage: &storage.MockStorage{
-				UpdateExperimentLaunchStateErr: status.ErrNotFound,
+				UpdateExperimentLaunchStateErr: grpcerr.ErrNotFound,
 			},
-			wantErr: status.ErrNotFound,
+			wantErr: grpcerr.ErrNotFound,
 		},
 	}
 
@@ -455,7 +455,7 @@ func TestUpdateExperimentLaunchState_InvalidTransition(t *testing.T) {
 		Name:        createdExp.GetName(),
 		LaunchState: msgpb.ExperimentStatus_FAILED,
 	})
-	if !errors.Is(err, status.ErrInternal) {
-		t.Errorf("UpdateExperimentLaunchState() from COMPLETED to FAILED returned error %v, want %v", err, status.ErrInternal)
+	if !errors.Is(err, grpcerr.ErrInternal) {
+		t.Errorf("UpdateExperimentLaunchState() from COMPLETED to FAILED returned error %v, want %v", err, grpcerr.ErrInternal)
 	}
 }

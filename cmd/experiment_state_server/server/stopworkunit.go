@@ -18,9 +18,11 @@ import (
 	"fmt"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
@@ -43,7 +45,7 @@ func (h *WorkUnitHandler) StopWorkUnit(ctx context.Context, req *apipb.StopWorkU
 	xid, wid, err := validator.ValidateWorkUnitName(req.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate work unit name", "name", req.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("failed to validate work unit name: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithWorkUnitName(ctx, req.GetName())
 
@@ -54,19 +56,19 @@ func (h *WorkUnitHandler) StopWorkUnit(ctx context.Context, req *apipb.StopWorkU
 	}
 	if !authorized {
 		logging.Warn(ctx, "User not authorized to stop work units", "user", email)
-		return nil, fmt.Errorf("user %s is not authorized to stop work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user %s is not authorized to stop work units for XID %d: %w", email, xid, grpcerr.ErrPermissionDenied)
 	}
 
 	// 4. Retrieve the work unit from the storage layer.
 	workUnit, err := h.storage.FetchWorkUnit(ctx, xid, wid)
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
+		if status.Code(err) == codes.NotFound {
 			logging.Warn(ctx, "Work unit not found in storage")
-			return nil, fmt.Errorf("StopWorkUnit with ID %s not found: %w (%v)", req.GetName(), status.ErrNotFound, err)
+			return nil, fmt.Errorf("StopWorkUnit with ID %s not found: %w (%v)", req.GetName(), grpcerr.ErrNotFound, err)
 		}
 
 		logging.Error(ctx, "Failed to get work unit", "error", err)
-		return nil, fmt.Errorf("failed to get work unit: %w (%v)", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to get work unit: %w (%v)", grpcerr.ErrInternal, err)
 	}
 
 	// 5. Enqueue the stop request for the work unit.
@@ -80,7 +82,7 @@ func (h *WorkUnitHandler) StopWorkUnit(ctx context.Context, req *apipb.StopWorkU
 	_, err = h.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate})
 	if err != nil {
 		logging.Error(ctx, "Failed to update work unit execution statuses", "error", err)
-		return nil, fmt.Errorf("failed to update work unit execution statuses: %w (%v)", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to update work unit execution statuses: %w (%v)", grpcerr.ErrInternal, err)
 	}
 
 	// 7. Return the successful response.

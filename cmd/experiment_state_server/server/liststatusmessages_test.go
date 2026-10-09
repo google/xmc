@@ -20,9 +20,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
@@ -74,14 +74,14 @@ func TestListStatusMessages_InvalidRequest(t *testing.T) {
 	}
 
 	_, err := server.ListStatusMessages(ctx, req)
-	if !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("ListStatusMessages(%v) returned error %v, want %v", req, err, status.ErrInvalidArgument)
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ListStatusMessages(%v) returned error %v, want %v", req, err, grpcerr.ErrInvalidArgument)
 	}
 }
 
 func TestListStatusMessages_Unauthenticated(t *testing.T) {
 	ctx := t.Context()
-	server := newTestServer(t, withAuthorizer(&mockAuthenticator{err: status.ErrUnauthenticated}))
+	server := newTestServer(t, withAuthorizer(&mockAuthenticator{err: grpcerr.ErrUnauthenticated}))
 
 	req := &apipb.ListStatusMessagesRequest{
 		Parent: "experiments/123",
@@ -109,8 +109,8 @@ func TestListStatusMessages_PermissionDenied(t *testing.T) {
 	}
 
 	_, err := server.ListStatusMessages(ctx, req)
-	if !errors.Is(err, status.ErrPermissionDenied) {
-		t.Errorf("ListStatusMessages(%v) returned error %v, want %v", req, err, status.ErrPermissionDenied)
+	if !errors.Is(err, grpcerr.ErrPermissionDenied) {
+		t.Errorf("ListStatusMessages(%v) returned error %v, want %v", req, err, grpcerr.ErrPermissionDenied)
 	}
 }
 

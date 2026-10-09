@@ -22,8 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -72,7 +72,7 @@ func TestGetExperimentStatus_BadPaths(t *testing.T) {
 		{
 			name:    "invalid_name",
 			req:     &apipb.GetExperimentStatusRequest{Name: "invalid-name"},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -100,18 +100,18 @@ func TestGetExperimentStatus_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name: "xid_check_user_authorization_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationErr: status.ErrPermissionDenied,
+				checkUserAuthorizationErr: grpcerr.ErrPermissionDenied,
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "xid_check_user_authorization_unauthorized",
@@ -119,7 +119,7 @@ func TestGetExperimentStatus_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "storage_fetch_fails",
@@ -129,7 +129,7 @@ func TestGetExperimentStatus_DependencyFailures(t *testing.T) {
 			storage: &storage.MockStorage{
 				FetchExperimentStatusErr: fmt.Errorf("storage fetch failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_fetch_not_found",
@@ -137,9 +137,9 @@ func TestGetExperimentStatus_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				FetchExperimentStatusErr: status.ErrNotFound,
+				FetchExperimentStatusErr: grpcerr.ErrNotFound,
 			},
-			wantErr: status.ErrNotFound,
+			wantErr: grpcerr.ErrNotFound,
 		},
 	}
 

@@ -30,15 +30,16 @@ import (
 	"golang/grpc/grpc"
 	"golang/grpc/health/health"
 	"golang/grpc/reflection/reflection"
+	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	"task/go/status"
 	authz "xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
@@ -403,7 +404,7 @@ func TestStopOperationOnError(t *testing.T) {
 		updateWorkUnitOperationErr  error
 		wantUpdateWorkUnitOperation bool
 		wantDone                    bool
-		wantCode                    status.Code
+		wantCode                    codes.Code
 	}{
 		{
 			name:                        "no_error",
@@ -414,25 +415,25 @@ func TestStopOperationOnError(t *testing.T) {
 		{
 			name:                        "with_error",
 			op:                          &lropb.Operation{Name: opName},
-			err:                         status.ErrInternal,
+			err:                         grpcerr.ErrInternal,
 			wantUpdateWorkUnitOperation: true,
 			wantDone:                    true,
-			wantCode:                    status.Internal,
+			wantCode:                    codes.Internal,
 		},
 		{
 			name:                        "invalid_op_name",
 			op:                          &lropb.Operation{Name: "invalid/op/name"},
-			err:                         status.ErrInternal,
+			err:                         grpcerr.ErrInternal,
 			wantUpdateWorkUnitOperation: false,
 		},
 		{
 			name:                        "update_op_error",
 			op:                          &lropb.Operation{Name: opName},
-			err:                         status.ErrInternal,
+			err:                         grpcerr.ErrInternal,
 			updateWorkUnitOperationErr:  errors.New("storage fails"),
 			wantUpdateWorkUnitOperation: true,
 			wantDone:                    true,
-			wantCode:                    status.Internal,
+			wantCode:                    codes.Internal,
 		},
 	}
 
@@ -458,8 +459,8 @@ func TestStopOperationOnError(t *testing.T) {
 			if storage.GotOperationUpdate.Operation.GetDone() != tc.wantDone {
 				t.Errorf("stopOperationOnError() updated operation with done = %v, want %v", storage.GotOperationUpdate.Operation.GetDone(), tc.wantDone)
 			}
-			if status.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()) != tc.wantCode {
-				t.Errorf("stopOperationOnError() updated operation with code = %v, want %v", status.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()), tc.wantCode)
+			if codes.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()) != tc.wantCode {
+				t.Errorf("stopOperationOnError() updated operation with code = %v, want %v", codes.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()), tc.wantCode)
 			}
 			wantMask := &fmpb.FieldMask{Paths: []string{"done", "error"}}
 			if diff := cmp.Diff(wantMask, storage.GotOperationUpdate.UpdateMask, protocmp.Transform()); diff != "" {
@@ -626,12 +627,12 @@ func TestHandleEnqueueActionError(t *testing.T) {
 				t.Fatalf("handleEnqueueActionError() error = %v, wantErr %v", err, tc.wantErr)
 			}
 			if tc.wantValErr {
-				if !errors.Is(err, status.ErrInternal) {
-					t.Errorf("handleEnqueueActionError() error = %v, want status.ErrInternal", err)
+				if !errors.Is(err, grpcerr.ErrInternal) {
+					t.Errorf("handleEnqueueActionError() error = %v, want grpcerr.ErrInternal", err)
 				}
 			} else {
-				if !errors.Is(err, status.ErrInternal) {
-					t.Errorf("handleEnqueueActionError() error = %v, want status.ErrInternal", err)
+				if !errors.Is(err, grpcerr.ErrInternal) {
+					t.Errorf("handleEnqueueActionError() error = %v, want grpcerr.ErrInternal", err)
 				}
 			}
 		})

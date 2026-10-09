@@ -18,7 +18,8 @@ import (
 	"fmt"
 	"time"
 
-	"task/go/status"
+	"google.golang.org/grpc/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 
 	"xmanager_cloud/validator/validator"
@@ -55,7 +56,7 @@ func (s *XIDServer) listXidEntriesWithStaleness(ctx context.Context, in *apipb.L
 	// 2. Validate the request payload.
 	if err := validator.ValidateAIPCompliantListWithMaxPageSize(in.GetPageSize(), in.GetFilter(), in.GetOrderBy(), in.GetPageToken(), maxPageSize); err != nil {
 		logging.Warn(ctx, "Invalid ListXidEntriesRequest", "error", err)
-		return nil, fmt.Errorf("invalid ListXidEntriesRequest %v: %w", err, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("invalid ListXidEntriesRequest %v: %w", err, grpcerr.ErrInvalidArgument)
 	}
 
 	pageSize := in.GetPageSize()
@@ -69,11 +70,11 @@ func (s *XIDServer) listXidEntriesWithStaleness(ctx context.Context, in *apipb.L
 		statusErr, ok := status.FromError(err)
 		if ok {
 			logging.Error(ctx, "Storage layer returned a gRPC error for listing XIDs", "error", err)
-			return nil, status.Errorf(statusErr.Code, "an error occurred while retrieving the XID %v", err)
+			return nil, status.Errorf(statusErr.Code(), "an error occurred while retrieving the XID %v", err)
 		}
 
 		logging.Error(ctx, "Storage layer returned a non-gRPC error for listing XIDs", "error", err)
-		return nil, fmt.Errorf("an internal error occurred while retrieving the XID: %w", status.ErrInternal)
+		return nil, fmt.Errorf("an internal error occurred while retrieving the XID: %w", grpcerr.ErrInternal)
 	}
 
 	logging.Info(ctx, "Fetched XID entries", "count", len(xids), "nextPageToken", nextPageToken, "staleness", staleness)

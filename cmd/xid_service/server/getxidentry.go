@@ -18,8 +18,8 @@ import (
 	"errors"
 	"fmt"
 
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
@@ -41,20 +41,20 @@ func (s *XIDServer) GetXidEntry(ctx context.Context, in *apipb.GetXidEntryReques
 	xid, err := validator.ValidateXIDName(in.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Invalid GetXidEntry request", "error", err)
-		return nil, fmt.Errorf("invalid GetXid request %v: %w", err, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("invalid GetXid request %v: %w", err, grpcerr.ErrInvalidArgument)
 	}
 	ctx = logging.WithXIDName(ctx, in.GetName())
 
 	// 3. Get the XidEntry from the storage layer.
 	xidEntry, err := s.storage.FetchXidEntry(ctx, xid)
 	if err != nil {
-		if errors.Is(err, status.ErrNotFound) {
+		if errors.Is(err, grpcerr.ErrNotFound) {
 			logging.Warn(ctx, "XID not found", "xid", xid, "error", err)
-			return nil, fmt.Errorf("XID %d not found: %w", xid, status.ErrNotFound)
+			return nil, fmt.Errorf("XID %d not found: %w", xid, grpcerr.ErrNotFound)
 		}
 
 		logging.Error(ctx, "Storage layer returned a non-gRPC error for FetchXidEntry", "xid", xid, "error", err)
-		return nil, fmt.Errorf("an internal error occurred while retrieving the XID: %w", status.ErrInternal)
+		return nil, fmt.Errorf("an internal error occurred while retrieving the XID: %w", grpcerr.ErrInternal)
 	}
 
 	// 4. Authorize the user.
@@ -64,7 +64,7 @@ func (s *XIDServer) GetXidEntry(ctx context.Context, in *apipb.GetXidEntryReques
 	}
 	if !authorized {
 		logging.Warn(ctx, "User is not authorized to read XID", "xid", xid, "email", email)
-		return nil, fmt.Errorf("user is not authorized to read XID %d: %w", xid, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user is not authorized to read XID %d: %w", xid, grpcerr.ErrPermissionDenied)
 	}
 	logging.Info(ctx, "Fetched XID entry", "name", in.GetName())
 

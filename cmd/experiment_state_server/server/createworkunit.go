@@ -18,9 +18,11 @@ import (
 	"fmt"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/task_queue/client"
 	ee "xmanager_cloud/toollibs/execution_environments/executionenvironments"
@@ -44,7 +46,7 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateW
 	xid, err := validator.ValidateExperimentName(req.GetParent())
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate experiment name", "error", err)
-		return nil, fmt.Errorf("failed to validate experiment name: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("failed to validate experiment name: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithExperimentName(ctx, req.GetParent())
 
@@ -89,11 +91,11 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateW
 		logging.Error(ctx, "Failed to save work unit", "error", err)
 
 		// TODO(b/517479143): Fix nil pointer dereference: newWorkUnit is nil when storage returns error, so newWorkUnit.GetName() panics.
-		if status.ExtractCanonicalCode(err) == status.AlreadyExists {
+		if status.Code(err) == codes.AlreadyExists {
 			// If the storage layer returns AlreadyExists, newWorkUnit contains the conflicting work unit.
-			return nil, fmt.Errorf("work unit %s already exists: %w", wu.GetName(), status.ErrAlreadyExists)
+			return nil, fmt.Errorf("work unit %s already exists: %w", wu.GetName(), grpcerr.ErrAlreadyExists)
 		}
-		return nil, fmt.Errorf("failed to save work unit: %v: %w", err, status.ErrInternal)
+		return nil, fmt.Errorf("failed to save work unit: %v: %w", err, grpcerr.ErrInternal)
 	}
 
 	// 5.1. Fetch the name of the newly created work unit.
@@ -101,7 +103,7 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateW
 	_, wid, err := validator.ValidateWorkUnitName(newWorkUnit.GetName())
 	if err != nil {
 		logging.Error(ctx, "Failed to validate work unit name", "error", err)
-		return nil, fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to validate work unit name: %w (%v)", grpcerr.ErrInternal, err)
 	}
 
 	// 6. Create a long-running operation for the work unit creation.
@@ -113,7 +115,7 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateW
 	operation, err := h.storage.AddWorkUnitOperation(ctx, xid, wid, metadata)
 	if err != nil {
 		logging.Error(ctx, "Failed to add work unit operation", "error", err)
-		return nil, fmt.Errorf("failed to add work unit operation: %w (%v)", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to add work unit operation: %w (%v)", grpcerr.ErrInternal, err)
 	}
 
 	// 6.1. Ensure that the operation is marked as done if an error is returned from now on.
@@ -134,19 +136,19 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateW
 
 func (h *WorkUnitHandler) enqueueWorkUnitOnCreation(ctx context.Context, xid, wid int64, newWorkUnit *msgpb.WorkUnit, email string, operation *lropb.Operation) error {
 	if newWorkUnit == nil || newWorkUnit.GetCurrentWorkUnitExecution() == nil {
-		return fmt.Errorf("invalid work unit: %w", status.ErrInternal)
+		return fmt.Errorf("invalid work unit: %w", grpcerr.ErrInternal)
 	}
 	if operation == nil {
-		return fmt.Errorf("invalid operation: %w", status.ErrInternal)
+		return fmt.Errorf("invalid operation: %w", grpcerr.ErrInternal)
 	}
 
 	exp, err := h.storage.FetchExperiment(ctx, xid)
 	if err != nil {
 		logging.Error(ctx, "Failed to fetch experiment", "error", err)
-		return fmt.Errorf("failed to fetch experiment: %w (%v)", status.ErrInternal, err)
+		return fmt.Errorf("failed to fetch experiment: %w (%v)", grpcerr.ErrInternal, err)
 	}
 	if exp == nil {
-		return fmt.Errorf("failed to fetch experiment: experiment %d not found: %w", xid, status.ErrInternal)
+		return fmt.Errorf("failed to fetch experiment: experiment %d not found: %w", xid, grpcerr.ErrInternal)
 	}
 
 	err = h.actuator.EnqueueWorkUnitTask(ctx, newWorkUnit.GetCurrentWorkUnitExecution().GetName(), newWorkUnit, client.CreateAction(exp.GetPriority(), email), operation.GetName())
@@ -156,7 +158,7 @@ func (h *WorkUnitHandler) enqueueWorkUnitOnCreation(ctx context.Context, xid, wi
 		_, _, eid, err := validator.ValidateWorkUnitExecutionName(newWorkUnit.GetCurrentWorkUnitExecution().GetName())
 		if err != nil {
 			logging.Error(ctx, "Failed to validate work unit execution name", "error", err)
-			return fmt.Errorf("failed to validate work unit execution name: %w (%v)", status.ErrInternal, err)
+			return fmt.Errorf("failed to validate work unit execution name: %w (%v)", grpcerr.ErrInternal, err)
 		}
 
 		if statusMsgErr := h.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
@@ -167,7 +169,7 @@ func (h *WorkUnitHandler) enqueueWorkUnitOnCreation(ctx context.Context, xid, wi
 			logging.Error(ctx, "Failed to update work unit execution status message after failed create attempt", "error", statusMsgErr)
 		}
 		logging.Error(ctx, "Failed to enqueue work unit for scheduling", "error", enqueueErr)
-		return fmt.Errorf("failed to enqueue work unit for scheduling: %w (%v)", status.ErrInternal, enqueueErr)
+		return fmt.Errorf("failed to enqueue work unit for scheduling: %w (%v)", grpcerr.ErrInternal, enqueueErr)
 	}
 	return nil
 }
@@ -180,7 +182,7 @@ func (h *WorkUnitHandler) checkExecutionEnvCompatibility(ctx context.Context, wu
 	}
 	if isCompatible, reason := executionEnv.IsCompatibleWithWorkUnit(wu); !isCompatible {
 		logging.Warn(ctx, "CreateWorkUnit environment compatibility check failed", "execution_environment", executionEnv.Name(), "reason", reason)
-		return nil, fmt.Errorf("CreateWorkUnit environment compatibility check failed for execution environment %q (%s): %w", executionEnv.Name(), reason, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("CreateWorkUnit environment compatibility check failed for execution environment %q (%s): %w", executionEnv.Name(), reason, grpcerr.ErrInvalidArgument)
 	}
 	return executionEnv, nil
 }
@@ -192,7 +194,7 @@ func (h *WorkUnitHandler) authorizeCreateWorkUnit(ctx context.Context, xid int64
 	}
 	if !authorized {
 		logging.Warn(ctx, "User not authorized to create work units for XID", "user", email)
-		return fmt.Errorf("user %s is not authorized to create work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
+		return fmt.Errorf("user %s is not authorized to create work units for XID %d: %w", email, xid, grpcerr.ErrPermissionDenied)
 	}
 	return nil
 }

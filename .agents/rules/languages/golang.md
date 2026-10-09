@@ -122,7 +122,7 @@ graph TD
 - **Host File Mount Permissions**: Call `os.Chmod(path, 0644)` on temporary host files mounted into Docker containers so non-root container users (e.g. `clickhouse`) have read access.
 - **Shared Container Networks**: Multi-container integration tests requiring inter-service resolution MUST create and attach a shared bridge network (`testcontainers.NewDockerNetwork(ctx, ...)`).
 - **Bazel Runfiles & Local Tag**: Integration tests reading repo files MUST declare `data` dependencies in `BUILD.bazel`, resolve runfiles using the official `bazel.Runfile(path)` helper from `github.com/bazelbuild/rules_go/go/tools/bazel` (or `os.Getenv("TEST_SRCDIR")`), and set `tags = ["local"]`.
-- **Status Error Wrapping Integrity**: Preserve gRPC status error constructors (`status.Error(codes.Internal, ...)` / `status.Errorf(...)` from `google.golang.org/grpc/status` or package-level error variables from `internal/compat/status` / `task/go/status`). Replacing status error wrappers with generic `fmt.Errorf` breaks upstream RPC status code contracts.
+- **Status Error Wrapping Integrity**: Preserve gRPC status error constructors (`status.Error(codes.Internal, ...)` / `status.Errorf(...)` from `google.golang.org/grpc/status` or package-level sentinel error variables from `internal/grpcerr`). Replacing status error wrappers with generic `fmt.Errorf` breaks upstream RPC status code contracts.
 - **Compile-Time Interface Assertions**: All concrete repository implementations MUST include explicit compile-time interface assertions:
   ```go
   var _ storage.WorkUnitStore = (*Repository)(nil)

@@ -19,11 +19,10 @@ import (
 	"fmt"
 	"strings"
 
-	"task/go/status"
-
 	"google.golang.org/protobuf/proto"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -43,7 +42,7 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 	parentXID, parentWID, err := validator.ValidateArtifactParent(req.GetParent())
 	if err != nil {
 		logging.Error(ctx, "Failed to validate parent", "parent", req.GetParent(), "error", err)
-		return nil, fmt.Errorf("failed to validate parent %s: %w (%v)", req.GetParent(), status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("failed to validate parent %s: %w (%v)", req.GetParent(), grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithArtifactParent(ctx, req.GetParent())
 
@@ -54,13 +53,13 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 	}
 	if !authorized {
 		logging.Warn(ctx, "User not authorized to create artifacts for XID", "user", creator, "xid", parentXID)
-		return nil, fmt.Errorf("user %s is not authorized to create artifacts for XID %d: %w", creator, parentXID, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user %s is not authorized to create artifacts for XID %d: %w", creator, parentXID, grpcerr.ErrPermissionDenied)
 	}
 
 	// 4. Validate the request payload.
 	if err := validator.ValidateCreateArtifactRequest(req); err != nil {
 		logging.Warn(ctx, "CreateArtifact validation failed", "error", err)
-		return nil, fmt.Errorf("CreateArtifact validation failed: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("CreateArtifact validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 
 	// 4.1. Fill in any null values in the request payload.
@@ -89,7 +88,7 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 	artifactXID, err := validator.ValidateXIDName(artifactXIDEntry.GetName())
 	if err != nil {
 		logging.Error(ctx, "Failed to validate XID name", "xid_name", artifactXIDEntry.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to validate XID name %s: %w (%v)", artifactXIDEntry.GetName(), status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to validate XID name %s: %w (%v)", artifactXIDEntry.GetName(), grpcerr.ErrInternal, err)
 	}
 
 	// 5. Assemble the artifact object.
@@ -115,7 +114,7 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 	retArtifact, err := h.storage.CreateArtifact(ctx, newArtifact)
 	if err != nil {
 		logging.Error(ctx, "Failed to save artifact", "artifact_name", newArtifact.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to save artifact %s: %w (%v)", newArtifact.GetName(), status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to save artifact %s: %w (%v)", newArtifact.GetName(), grpcerr.ErrInternal, err)
 	}
 
 	// 6.1. Set the artifact's ACLs to the XIDEntry's ACLs.
@@ -127,7 +126,7 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 			artifactCopy, ok := proto.Clone(retArtifact).(*msgpb.Artifact)
 			if !ok {
 				logging.Error(ctx, "Failed to clone retArtifact for async provisioning")
-				return nil, fmt.Errorf("failed to clone artifact: %w", status.ErrInternal)
+				return nil, fmt.Errorf("failed to clone artifact: %w", grpcerr.ErrInternal)
 			}
 			obs.OnArtifactCreated(context.WithoutCancel(ctx), artifactCopy)
 		}
@@ -142,11 +141,11 @@ func (h *ArtifactHandler) validateChartArtifactPayload(ctx context.Context, arti
 	if chartArtifact := artifact.GetPayload().GetChart(); chartArtifact != nil {
 		if _, _, err := validator.ValidateWorkUnitName(parent); err != nil {
 			logging.Warn(ctx, "ChartArtifact requires a Work Unit parent", "parent", parent, "error", err)
-			return fmt.Errorf("ChartArtifact requires a Work Unit parent: %w (%v)", status.ErrInvalidArgument, err)
+			return fmt.Errorf("ChartArtifact requires a Work Unit parent: %w (%v)", grpcerr.ErrInvalidArgument, err)
 		}
 		if chartArtifact.GetStatus() != msgpb.ChartArtifact_STATUS_UNSPECIFIED || chartArtifact.GetChart() != nil || chartArtifact.GetErrorMessage() != "" {
 			logging.Warn(ctx, "ChartArtifact client-supplied status, chart, or error_message values are not allowed")
-			return fmt.Errorf("ChartArtifact client-supplied status, chart, or error_message values are not allowed: %w", status.ErrInvalidArgument)
+			return fmt.Errorf("ChartArtifact client-supplied status, chart, or error_message values are not allowed: %w", grpcerr.ErrInvalidArgument)
 		}
 		chartArtifact.Status = msgpb.ChartArtifact_PROVISIONING
 	}

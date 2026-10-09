@@ -17,7 +17,9 @@ import (
 	"context"
 	"fmt"
 
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 
@@ -43,7 +45,7 @@ func (h *WorkUnitHandler) GetWorkUnit(ctx context.Context, req *apipb.GetWorkUni
 	xid, wid, err := validator.ValidateWorkUnitName(name)
 	if err != nil {
 		logging.Warn(ctx, "GetWorkUnit validation failed", "name", name, "error", err)
-		return nil, fmt.Errorf("GetWorkUnit validation failed: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("GetWorkUnit validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithWorkUnitName(ctx, name)
 
@@ -54,20 +56,20 @@ func (h *WorkUnitHandler) GetWorkUnit(ctx context.Context, req *apipb.GetWorkUni
 	}
 	if !authorized {
 		logging.Warn(ctx, "User not authorized to get work unit", "user", email)
-		return nil, fmt.Errorf("user %s is not authorized to get the current work unit for XID %d: %w", email, xid, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user %s is not authorized to get the current work unit for XID %d: %w", email, xid, grpcerr.ErrPermissionDenied)
 	}
 
 	// 4. Retrieve the work unit from the storage layer.
 	logging.Debug(ctx, "Fetching work unit from storage")
 	wu, err := h.storage.FetchWorkUnit(ctx, xid, wid)
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
+		if status.Code(err) == codes.NotFound {
 			logging.Warn(ctx, "Work unit not found in storage")
-			return nil, fmt.Errorf("GetWorkUnit with ID %s not found: %w (%v)", name, status.ErrNotFound, err)
+			return nil, fmt.Errorf("GetWorkUnit with ID %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
 		}
 
 		logging.Error(ctx, "Failed to retrieve work unit from storage", "error", err)
-		return nil, fmt.Errorf("failed to retrieve work unit %s from storage: %w (%v)", name, status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to retrieve work unit %s from storage: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 
 	// 5. Return the successful response.
