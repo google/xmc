@@ -19,15 +19,12 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap, tap } from 'rxjs';
 
-import {
-  ChartArtifactPayload,
-  ChartTypedArtifact,
-} from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
-import { PlotDataPipe } from 'xmanager_cloud/ui/app/common/components/dashboard/chart_card/chart_card';
-import { PlotCardComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/plot_card/plot_card';
-import { ErrorBannerComponent } from 'xmanager_cloud/ui/app/common/components/error_banner/error_banner';
-import { PlotData, PlotSpec, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
-import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
+import { ChartArtifactPayload, ChartTypedArtifact } from 'app/common/artifacts/interfaces';
+import { PlotDataPipe } from 'app/common/components/dashboard/chart_card/chart_card';
+import { PlotCardComponent } from 'app/common/components/dashboard/plot_card/plot_card';
+import { ErrorBannerComponent } from 'app/common/components/error_banner/error_banner';
+import { PlotData, PlotSpec, PlotType } from 'app/service/dashboard_models';
+import { DashboardService } from 'app/service/dashboard_service';
 
 /**
  * Reports whether a plot spec is a KPI summary box.

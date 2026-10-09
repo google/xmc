@@ -29,23 +29,20 @@ import { MatTableModule } from '@angular/material/table';
 import { MatTooltip } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
 
-import { WorkUnitStatus } from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
-import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
-import { LoadingBar } from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
-import { PageSizeSelector } from 'xmanager_cloud/ui/app/common/components/page_size_selector/page_size_selector';
-import {
-  StatusChip,
-  StatusOption,
-} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
+import { LoadingBar } from 'app/common/components/loading_bar/loading_bar';
+import { PageSizeSelector } from 'app/common/components/page_size_selector/page_size_selector';
+import { StatusChip, StatusOption } from 'app/common/components/status_chip/status_chip';
 import {
   getStatusMessages,
   StatusMessage,
-} from 'xmanager_cloud/ui/app/common/components/status_message/status_message';
-import { StatusMessageFilter } from 'xmanager_cloud/ui/app/common/components/status_message_filter/status_message_filter';
-import { Tag } from 'xmanager_cloud/ui/app/common/components/tag/tag';
-import { ProcessedUrl, processUrls } from 'xmanager_cloud/ui/app/common/url/url_processor';
-import { StatusMessageFilterService } from 'xmanager_cloud/ui/app/service/status_message_filter_service';
+} from 'app/common/components/status_message/status_message';
+import { StatusMessageFilter } from 'app/common/components/status_message_filter/status_message_filter';
+import { Tag } from 'app/common/components/tag/tag';
+import { ProcessedUrl, processUrls } from 'app/common/url/url_processor';
+import { StatusMessageFilterService } from 'app/service/status_message_filter_service';
+import { WorkUnitStatus } from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
+import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
+import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 
 import { WorkUnitsTableStore } from './work_units_table_store';
 

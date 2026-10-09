@@ -16,7 +16,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output, signal } f
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 
-import { ErrorBannerComponent } from 'xmanager_cloud/ui/app/common/components/error_banner/error_banner';
+import { ErrorBannerComponent } from 'app/common/components/error_banner/error_banner';
 
 export interface ConfigInfo {
   key?: string;

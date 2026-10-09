@@ -14,7 +14,7 @@
 
 import { Pipe, PipeTransform } from '@angular/core';
 
-import { trySanitizeUrl } from 'xmanager_cloud/ui/app/safevalues_helper';
+import { trySanitizeUrl } from 'app/safevalues_helper';
 
 /**
  * A pipe that sanitizes a URL and wraps it in a SafeUrl to bypass Angular's Built-in HTML sanitization.

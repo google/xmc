@@ -5,7 +5,6 @@
     "types": ["jasmine"],
     "paths": {
       "app/*": ["./app/*"],
-      "xmanager_cloud/ui/app/*": ["./app/*"],
       "@angular/cdk/testing/catalyst/async": ["./app/testing/catalyst_async.ts"]
     }
   },

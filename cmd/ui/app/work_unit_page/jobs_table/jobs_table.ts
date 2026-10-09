@@ -17,12 +17,9 @@ import { MatCardModule } from '@angular/material/card';
 import { MatPaginator, MatPaginatorModule } from '@angular/material/paginator';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 
+import { StatusChip, StatusOption } from 'app/common/components/status_chip/status_chip';
 import { type ReplicatedJobStatus } from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
 import { type WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
-import {
-  StatusChip,
-  StatusOption,
-} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
 
 interface ReplicaStatusDisplay {
   status: StatusOption;

@@ -35,20 +35,17 @@ import {
   tap,
 } from 'rxjs/operators';
 
-import { ListStatusMessagesResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import { LoadingBar } from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
-import { StatusMessage } from 'xmanager_cloud/ui/app/common/components/status_message/status_message';
+import { LoadingBar } from 'app/common/components/loading_bar/loading_bar';
+import { StatusMessage } from 'app/common/components/status_message/status_message';
 import {
   StatusMessagesListFilter,
   TimeFilterValue,
   TimePreset,
-} from 'xmanager_cloud/ui/app/common/components/status_messages_list/status_messages_list_filter/status_messages_list_filter';
-import {
-  ALL_SEVERITIES,
-  ALL_SOURCES,
-} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
-import { StatusMessageService } from 'xmanager_cloud/ui/app/service/status_message_service';
+} from 'app/common/components/status_messages_list/status_messages_list_filter/status_messages_list_filter';
+import { ALL_SEVERITIES, ALL_SOURCES } from 'app/service/status_message_filter_service';
+import { StatusMessageService } from 'app/service/status_message_service';
+import { ListStatusMessagesResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 
 const DEFAULT_PAGE_SIZE = 25;
 

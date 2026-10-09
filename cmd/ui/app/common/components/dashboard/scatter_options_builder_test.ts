@@ -12,12 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {
-  GeomType,
-  PlotData,
-  PlotSpec,
-  PlotType,
-} from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { GeomType, PlotData, PlotSpec, PlotType } from 'app/service/dashboard_models';
 
 import { XMC_BASELINE_COLOR } from './echarts_theme';
 import { buildScatterOption, extractHlineSeries } from './scatter_options_builder';

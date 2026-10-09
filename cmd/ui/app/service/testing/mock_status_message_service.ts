@@ -14,11 +14,11 @@
 import { Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
 
+import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'app/common/mock_data';
 import {
   ListStatusMessagesRequest,
   ListStatusMessagesResponse,
 } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'xmanager_cloud/ui/app/common/mock_data';
 
 import { StatusMessageService } from '../status_message_service';
 

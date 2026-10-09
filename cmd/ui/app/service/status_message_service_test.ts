@@ -15,14 +15,9 @@ import { HttpRequest, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
+import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'app/common/mock_data';
+import { cleanState, get, setupModule, setupObservableMatchers } from 'app/testing/test';
 import { ListStatusMessagesResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'xmanager_cloud/ui/app/common/mock_data';
-import {
-  cleanState,
-  get,
-  setupModule,
-  setupObservableMatchers,
-} from 'xmanager_cloud/ui/app/testing/test';
 
 import { XMC_API_DOMAIN } from './constants';
 import { StatusMessageService } from './status_message_service';

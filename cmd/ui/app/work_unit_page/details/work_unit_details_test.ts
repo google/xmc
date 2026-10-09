@@ -14,8 +14,8 @@
 
 import { provideRouter } from '@angular/router';
 
-import { WORK_UNIT_1 } from 'xmanager_cloud/ui/app/common/mock_data';
-import { bootstrap, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import { WORK_UNIT_1 } from 'app/common/mock_data';
+import { bootstrap, setupModule } from 'app/testing/test';
 
 import { WorkUnitDetails } from './work_unit_details';
 

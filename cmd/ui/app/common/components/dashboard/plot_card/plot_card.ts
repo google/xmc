@@ -31,12 +31,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import * as echarts from 'echarts';
 
-import {
-  PlotData,
-  PlotSpec,
-  PlotType,
-  SummaryBoxValue,
-} from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { PlotData, PlotSpec, PlotType, SummaryBoxValue } from 'app/service/dashboard_models';
 
 import { buildEChartsOption } from '../echarts_options_builder';
 import { DEFAULT_XMC_THEME_CONFIG, XmcChartThemeConfig } from '../echarts_theme';

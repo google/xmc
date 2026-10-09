@@ -14,8 +14,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
-import { ARTIFACT_LIST } from 'xmanager_cloud/ui/app/common/mock_data';
-import { cleanState, get, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import { ARTIFACT_LIST } from 'app/common/mock_data';
+import { cleanState, get, setupModule } from 'app/testing/test';
 
 import { MockArtifactService } from './mock_artifact_service';
 

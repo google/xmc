@@ -14,14 +14,14 @@
 import { DOCUMENT } from '@angular/common';
 import { ReplaySubject } from 'rxjs';
 
-import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
+import { AUTO_REFRESH_INTERVAL_MS } from 'app/service/constants';
 import {
   cleanState,
   get,
   setupModule,
   setupObservableMatchers,
   useAutoTick,
-} from 'xmanager_cloud/ui/app/testing/test';
+} from 'app/testing/test';
 
 import { AutoReloadService } from './autoreloader_service';
 

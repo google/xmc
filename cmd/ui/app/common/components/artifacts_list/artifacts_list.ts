@@ -20,20 +20,16 @@ import { MatIconModule } from '@angular/material/icon';
 import { BehaviorSubject, combineLatest, Observable, of } from 'rxjs';
 import { map, shareReplay } from 'rxjs/operators';
 
-import { ListArtifactsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 import {
   groupAndSortArtifacts,
   sortArtifactsByPriority,
   toTypedArtifact,
-} from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
-import {
-  ArtifactListItem,
-  ChartTypedArtifact,
-  PayloadType,
-} from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
-import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
-import { ArtifactService } from 'xmanager_cloud/ui/app/service/artifact_service';
+} from 'app/common/artifacts/artifact_utils';
+import { ArtifactListItem, ChartTypedArtifact, PayloadType } from 'app/common/artifacts/interfaces';
+import { parseWorkUnitName } from 'app/common/resource_name_extractor';
+import { ArtifactService } from 'app/service/artifact_service';
+import { ListArtifactsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 
 import { ArtifactsColumn } from './artifacts_column/artifacts_column';
 import { ChartArtifactView } from './chart_artifact_view/chart_artifact_view';

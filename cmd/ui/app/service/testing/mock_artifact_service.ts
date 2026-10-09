@@ -14,11 +14,11 @@
 import { Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
 
+import { ARTIFACT_LIST, WORK_UNIT_1_ARTIFACT_LIST } from 'app/common/mock_data';
 import {
   ListArtifactsRequest,
   ListArtifactsResponse,
 } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { ARTIFACT_LIST, WORK_UNIT_1_ARTIFACT_LIST } from 'xmanager_cloud/ui/app/common/mock_data';
 
 import { ArtifactService } from '../artifact_service';
 

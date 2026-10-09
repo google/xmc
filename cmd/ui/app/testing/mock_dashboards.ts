@@ -12,13 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {
-  Chart,
-  Dashboard,
-  LayoutType,
-  PlotSpec,
-  PlotType,
-} from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { Chart, Dashboard, LayoutType, PlotSpec, PlotType } from 'app/service/dashboard_models';
 
 /**
  * Creates mock plot specifications for testing metrics dashboards.

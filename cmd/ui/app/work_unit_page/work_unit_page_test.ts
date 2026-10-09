@@ -17,11 +17,11 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
-import { StatusMessagesListHarness } from 'xmanager_cloud/ui/app/common/components/status_messages_list/testing/status_messages_list_harness';
-import { ArtifactService } from 'xmanager_cloud/ui/app/service/artifact_service';
-import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
-import { StatusMessageService } from 'xmanager_cloud/ui/app/service/status_message_service';
-import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
+import { StatusMessagesListHarness } from 'app/common/components/status_messages_list/testing/status_messages_list_harness';
+import { ArtifactService } from 'app/service/artifact_service';
+import { ExperimentService } from 'app/service/experiment_service';
+import { StatusMessageService } from 'app/service/status_message_service';
+import { WorkUnitsService } from 'app/service/work_units_service';
 
 import { bootstrap, cleanState, setupModule } from '../testing/test';
 import { WorkUnitPage } from './work_unit_page';

@@ -17,7 +17,7 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 
-import { MetricPolarity, SummaryBoxValue } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { MetricPolarity, SummaryBoxValue } from 'app/service/dashboard_models';
 
 function formatScalarValue(val: number | undefined | null, metricName: string): string {
   if (val === undefined || val === null || isNaN(val)) return '—';

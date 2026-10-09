@@ -15,13 +15,8 @@ import { HttpRequest, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
-import { WORK_UNIT_1, WORK_UNIT_LIST } from 'xmanager_cloud/ui/app/common/mock_data';
-import {
-  cleanState,
-  get,
-  setupModule,
-  setupObservableMatchers,
-} from 'xmanager_cloud/ui/app/testing/test';
+import { WORK_UNIT_1, WORK_UNIT_LIST } from 'app/common/mock_data';
+import { cleanState, get, setupModule, setupObservableMatchers } from 'app/testing/test';
 
 import { XMC_API_DOMAIN } from './constants';
 import { WorkUnitsService } from './work_units_service';

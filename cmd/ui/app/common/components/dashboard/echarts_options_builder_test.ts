@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { PlotData, PlotSpec, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { PlotData, PlotSpec, PlotType } from 'app/service/dashboard_models';
 
 import { buildEChartsOption, getEmptyChartOption } from './echarts_options_builder';
 import { DEFAULT_XMC_THEME_CONFIG, XmcChartThemeConfig } from './echarts_theme';

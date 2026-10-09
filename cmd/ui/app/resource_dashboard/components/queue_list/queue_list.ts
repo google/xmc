@@ -14,11 +14,11 @@
 
 import { ChangeDetectionStrategy, Component, input, model, output } from '@angular/core';
 
+import { QueueCardComponent } from 'app/resource_dashboard/components/queue_card/queue_card';
 import {
   ClusterQueueSecondaryMetrics,
   QueueOverview,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
-import { QueueCardComponent } from 'xmanager_cloud/ui/app/resource_dashboard/components/queue_card/queue_card';
 
 @Component({
   selector: 'xmc-rod-queue-list',
