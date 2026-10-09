@@ -441,6 +441,28 @@ check_security() {
   fi
 }
 
+check_affected_tests() {
+  echo "--> Running Affected Bazel Unit Tests..."
+  local lockfile_was_clean=0
+  if git diff --quiet -- MODULE.bazel.lock 2>/dev/null; then
+    lockfile_was_clean=1
+  fi
+  # Pass --skip-emulator-check because run_affected_tests.py probes the Spanner
+  # emulator port whenever any Bazel target is in scope. Skipping the pre-flight
+  # port probe lets commits whose affected tests do not use Spanner pass without
+  # a running emulator container, while tests that actually dial Spanner still
+  # fail closed inside bazel test.
+  if ! XMC_BYPASS_VENV=1 python3 ./tools/run_affected_tests.py --skip-emulator-check >/dev/null; then
+    echo "❌ Affected Bazel unit tests failed."
+    FAILED=1
+  fi
+  # Restore MODULE.bazel.lock if Bazel updated it as a side effect when it had
+  # no unstaged changes before the hook ran.
+  if [ "${lockfile_was_clean}" -eq 1 ]; then
+    git checkout -- MODULE.bazel.lock 2>/dev/null || true
+  fi
+}
+
 main() {
   check_bazel
   check_go
@@ -465,6 +487,12 @@ main() {
 
   if [ "$FAILED" -ne 0 ]; then
     echo "=== ❌ Linter checks failed! ==="
+    exit 1
+  fi
+
+  check_affected_tests
+  if [ "$FAILED" -ne 0 ]; then
+    echo "=== ❌ Pre-commit checks failed! ==="
     exit 1
   fi
 

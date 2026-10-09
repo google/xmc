@@ -166,12 +166,12 @@ Based on the parsed review comments, validity triage, and impacted targets, the 
 
 ## 5. Test Verification & Code Coverage Check
 
-To verify code correctness, the agent runs all relevant unit tests and measures code coverage.
+To verify code correctness, the agent runs all affected unit tests (including reverse dependencies) and measures code coverage.
 
-### Run Unit Tests
+### Run Affected Unit Tests
 ```bash
-# Run unit tests for the affected package
-bazel test //pkg/auth/oauth2/...
+# Run all Bazel unit tests affected by the branch changes (also executed by ./.githooks/pre-commit)
+python3 ./tools/run_affected_tests.py
 ```
 
 ### Check Coverage
