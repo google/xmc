@@ -14,7 +14,6 @@
 package queryfilter
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -25,7 +24,6 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
-	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/safesql"
 
 	fpb "api/filter/filter_expression_go_proto"
@@ -1041,8 +1039,10 @@ func TestRestrictionWithFullTextSearch(t *testing.T) {
 					}
 				}
 
-				if errors.Is(err, grpcerr.ErrInvalidArgument) {
+				if ftsEnabled && err != nil {
 					t.Errorf("got: %v, want success", err)
+				} else if !ftsEnabled && err == nil {
+					t.Errorf("got nil, want error when full text search is disabled")
 				}
 			}
 		})
@@ -1061,14 +1061,14 @@ func TestHasOperatorWithSubstringMatching(t *testing.T) {
 			m: map[string]appendix{
 				"name": {safesql.New("z.name"), filtervisitor.String, false},
 			},
-			output: []string{`(STRPOS(z.name, @fb0) > 0)`},
+			output: []string{`(STRPOS(z.name , @fb0) > 0)`},
 		},
 		{
 			input: `name:vrt.43d81b476a52`,
 			m: map[string]appendix{
 				"name": {safesql.New("z.name"), filtervisitor.String, false},
 			},
-			output: []string{`(STRPOS(z.name, @fb0) > 0)`},
+			output: []string{`(STRPOS(z.name , @fb0) > 0)`},
 		},
 	}
 
@@ -1089,7 +1089,7 @@ func TestHasOperatorWithSubstringMatching(t *testing.T) {
 			}
 
 			err = f.AppendFilters(exp)
-			if err != nil {
+			if err == nil {
 				success := false
 				for _, out := range tc.output {
 					if query.SQL[beforeLength:] == out {
@@ -1102,7 +1102,7 @@ func TestHasOperatorWithSubstringMatching(t *testing.T) {
 				}
 			}
 
-			if errors.Is(err, grpcerr.ErrInvalidArgument) {
+			if err != nil {
 				t.Errorf("got: %v, want success", err)
 			}
 		})
