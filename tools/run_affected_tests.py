@@ -150,9 +150,10 @@ def wait_for_port(host: str, port: int, wait_seconds: float) -> bool:
             with socket.create_connection((host, port), timeout=EMULATOR_CONNECT_TIMEOUT_SECONDS):
                 return True
         except OSError:
-            if time.monotonic() >= deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 return False
-            time.sleep(1)
+            time.sleep(min(1.0, remaining))
 
 
 def ensure_emulator_reachable(env: Mapping[str, str], wait_seconds: float) -> None:
@@ -220,7 +221,7 @@ def read_build_events(bep_path: Path) -> list[dict[str, Any]]:
     if not bep_path.exists():
         return []
     events = []
-    with bep_path.open(encoding="utf-8") as bep_file:
+    with bep_path.open(encoding="utf-8", errors="replace") as bep_file:
         for line in filter(str.strip, bep_file):
             try:
                 parsed = json.loads(line)
