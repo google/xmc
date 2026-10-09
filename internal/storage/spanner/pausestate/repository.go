@@ -22,36 +22,16 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	"google.golang.org/grpc/codes"
+	"xmanager_cloud/internal/compat/status"
 	"xmanager_cloud/internal/storage"
-)
-
-// TableName is the Spanner table name persisting the scheduling pause state.
-const TableName = "PauseSchedulingState"
-
-// Spanner column names for the PauseSchedulingState table.
-const (
-	ColID                 = "Id"
-	ColSchedulingPaused   = "SchedulingPaused"
-	ColResumptionRunID    = "ResumptionRunId"
-	ColResumptionWorkerID = "ResumptionWorkerId"
-	ColUpdatedAt          = "UpdatedAt"
+	"xmanager_cloud/internal/storage/spanner/schema/pausestateschema"
 )
 
 // singletonID is the only permitted primary key value of the PauseSchedulingState table.
 const singletonID int64 = 1
 
-var (
-	// ErrInvalidArgument indicates a caller provided an invalid argument (such as a nil state).
-	ErrInvalidArgument = errors.New("invalid argument")
-)
-
 var _ storage.PauseStateRepository = (*Repository)(nil)
 var _ storage.PauseStateTxRepository = (*TxRepository)(nil)
-
-var readColumns = []string{ColSchedulingPaused, ColResumptionRunID, ColResumptionWorkerID, ColUpdatedAt}
-
-var writeColumns = []string{ColID, ColSchedulingPaused, ColResumptionRunID, ColResumptionWorkerID, ColUpdatedAt}
 
 // rowReader is implemented by both single-use reads and read-write transactions.
 type rowReader interface {
@@ -71,7 +51,7 @@ type TxRepository struct {
 // NewRepository creates a Spanner-backed pause state Repository.
 func NewRepository(client *spanner.Client) (*Repository, error) {
 	if client == nil {
-		return nil, fmt.Errorf("spanner client must not be nil")
+		return nil, fmt.Errorf("spanner client must not be nil: %w", status.ErrInvalidArgument)
 	}
 	return &Repository{client: client}, nil
 }
@@ -92,7 +72,9 @@ func (r *TxRepository) Get(ctx context.Context) (*storage.PauseSchedulingState, 
 	return readState(ctx, r.tx)
 }
 
-// Set buffers an upsert of the singleton row in the transaction. UpdatedAt is set to the commit timestamp.
+// Set buffers an upsert of the singleton row in the transaction. UpdatedAt is always set to the
+// commit timestamp (any caller-provided value is ignored), and the write is not visible to Get
+// calls within the same transaction.
 func (r *TxRepository) Set(ctx context.Context, state *storage.PauseSchedulingState) error {
 	mutation, err := stateMutation(state)
 	if err != nil {
@@ -102,8 +84,8 @@ func (r *TxRepository) Set(ctx context.Context, state *storage.PauseSchedulingSt
 }
 
 func readState(ctx context.Context, reader rowReader) (*storage.PauseSchedulingState, error) {
-	row, err := reader.ReadRow(ctx, TableName, spanner.Key{singletonID}, readColumns)
-	if spanner.ErrCode(err) == codes.NotFound {
+	row, err := reader.ReadRow(ctx, pausestateschema.TableName, spanner.Key{singletonID}, pausestateschema.ReadColumns)
+	if errors.Is(err, spanner.ErrRowNotFound) {
 		return storage.DefaultPauseSchedulingState(), nil
 	}
 	if err != nil {
@@ -114,9 +96,9 @@ func readState(ctx context.Context, reader rowReader) (*storage.PauseSchedulingS
 
 func stateMutation(state *storage.PauseSchedulingState) (*spanner.Mutation, error) {
 	if state == nil {
-		return nil, fmt.Errorf("%w: state cannot be nil", ErrInvalidArgument)
+		return nil, fmt.Errorf("state must not be nil: %w", status.ErrInvalidArgument)
 	}
-	return spanner.InsertOrUpdate(TableName, writeColumns, []any{
+	return spanner.InsertOrUpdate(pausestateschema.TableName, pausestateschema.WriteColumns, []any{
 		singletonID,
 		state.SchedulingPaused,
 		toNullString(state.ResumptionRunID),

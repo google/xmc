@@ -23,6 +23,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"xmanager_cloud/internal/compat/status"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 )
@@ -40,8 +41,8 @@ func newTestRepository(t *testing.T) *Repository {
 }
 
 func TestNewRepository_NilClient(t *testing.T) {
-	if _, err := NewRepository(nil); err == nil {
-		t.Error("NewRepository(nil) error = nil, want non-nil")
+	if _, err := NewRepository(nil); !errors.Is(err, status.ErrInvalidArgument) {
+		t.Errorf("NewRepository(nil) error = %v, want %v", err, status.ErrInvalidArgument)
 	}
 }
 
@@ -54,6 +55,16 @@ func TestRepository_GetUninitializedReturnsDefault(t *testing.T) {
 	}
 	if diff := cmp.Diff(storage.DefaultPauseSchedulingState(), got); diff != "" {
 		t.Errorf("Get() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestRepository_GetReadErrorIsNotMaskedAsDefault(t *testing.T) {
+	repo := newTestRepository(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if got, err := repo.Get(ctx); err == nil {
+		t.Errorf("Get(cancelled ctx) = %+v, nil; want error", got)
 	}
 }
 
@@ -148,7 +159,7 @@ func TestTxRepository_GetAndSet(t *testing.T) {
 	}{
 		{name: "committed", state: state, want: state},
 		{name: "rolled_back", state: state, fnErr: errAbort, wantErr: errAbort, want: storage.DefaultPauseSchedulingState()},
-		{name: "nil_state", state: nil, wantErr: ErrInvalidArgument, want: storage.DefaultPauseSchedulingState()},
+		{name: "nil_state", state: nil, wantErr: status.ErrInvalidArgument, want: storage.DefaultPauseSchedulingState()},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
