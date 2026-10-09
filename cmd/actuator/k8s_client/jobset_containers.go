@@ -158,10 +158,7 @@ func parseEnvVarSource(src *esspb.EnvVarSource) *corev1.EnvVarSource {
 			return nil
 		}
 		return &corev1.EnvVarSource{
-			FieldRef: &corev1.ObjectFieldSelector{
-				FieldPath:  ref.FieldRef.FieldPath,
-				APIVersion: ref.FieldRef.ApiVersion,
-			},
+			FieldRef: &corev1.ObjectFieldSelector{FieldPath: ref.FieldRef.FieldPath, APIVersion: ref.FieldRef.ApiVersion},
 		}
 	case *esspb.EnvVarSource_SecretKeyRef:
 		if ref.SecretKeyRef == nil {
@@ -169,11 +166,9 @@ func parseEnvVarSource(src *esspb.EnvVarSource) *corev1.EnvVarSource {
 		}
 		return &corev1.EnvVarSource{
 			SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: ref.SecretKeyRef.Name,
-				},
-				Key:      ref.SecretKeyRef.Key,
-				Optional: ref.SecretKeyRef.Optional,
+				LocalObjectReference: corev1.LocalObjectReference{Name: ref.SecretKeyRef.Name},
+				Key:                  ref.SecretKeyRef.Key,
+				Optional:             ref.SecretKeyRef.Optional,
 			},
 		}
 	default:
