@@ -1,0 +1,31 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+{{- $mk := (.Values.kueueDev).multikueue | default .Values.multikueue | default dict }}
+{{- if $mk.enabled }}
+{{- $limits := (((.Values.queues).cpu).limits) | default dict }}
+{{- $q := $mk.queueName | default "multikueue-cpu-queue" }}
+{{- $cq := $mk.clusterQueueName | default "multikueue-cpu-cluster-queue" }}
+{{- $ac := $mk.admissionCheckName | default "multikueue-admission-check" }}
+{{- $w := $mk.workerClusterName | default "xmc-nightly-worker-1" }}
+apiVersion: v1
+kind: List
+items:
+- { apiVersion: v1, kind: Namespace, metadata: { name: {{ $q | quote }} } }
+- { apiVersion: v1, kind: LimitRange, metadata: { namespace: {{ $q | quote }}, name: "multikueue-cpu-queue-defaults" }, spec: { limits: [{ type: Container, defaultRequest: { cpu: {{ ($limits.defaultRequest).cpu | default "500m" | quote }}, memory: {{ ($limits.defaultRequest).memory | default "2Gi" | quote }} }, max: { cpu: {{ ($limits.max).cpu | default "4" | quote }}, memory: {{ ($limits.max).memory | default "16Gi" | quote }} } }] } }
+- { apiVersion: kueue.x-k8s.io/v1beta2, kind: LocalQueue, metadata: { namespace: {{ $q | quote }}, name: {{ $q | quote }} }, spec: { clusterQueue: {{ $cq | quote }} } }
+- { apiVersion: kueue.x-k8s.io/v1beta2, kind: ClusterQueue, metadata: { name: {{ $cq | quote }} }, spec: { namespaceSelector: {}, admissionChecksStrategy: { admissionChecks: [{ name: {{ $ac | quote }} }] }, resourceGroups: [{ coveredResources: ["cpu", "memory"], flavors: [{ name: "cpu-flavor", resources: [{ name: "cpu", nominalQuota: 100000000 }, { name: "memory", nominalQuota: 100000000Gi }] }] }] } }
+- { apiVersion: kueue.x-k8s.io/v1beta2, kind: AdmissionCheck, metadata: { name: {{ $ac | quote }} }, spec: { controllerName: kueue.x-k8s.io/multikueue, parameters: { apiGroup: kueue.x-k8s.io, kind: MultiKueueConfig, name: {{ $mk.configName | default "multikueue-config" | quote }} } } }
+- { apiVersion: kueue.x-k8s.io/v1beta2, kind: MultiKueueConfig, metadata: { name: {{ $mk.configName | default "multikueue-config" | quote }} }, spec: { clusters: [{{ $w | quote }}] } }
+- { apiVersion: kueue.x-k8s.io/v1beta2, kind: MultiKueueCluster, metadata: { name: {{ $w | quote }}, labels: { xmc.google.com/project: {{ .Values.projectId | default "xmc-dev" | quote }}, xmc.google.com/location: {{ $mk.workerClusterLocation | default .Values.clusterLocation | default "us-central1" | quote }}, xmc.google.com/cluster-name: {{ $w | quote }} } }, spec: { clusterSource: { kubeConfig: { locationType: Secret, location: {{ $mk.kubeconfigSecretName | default "multikueue-worker-kubeconfig" | quote }} } } } }
+{{- end }}

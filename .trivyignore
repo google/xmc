@@ -14,3 +14,6 @@
 
 # KSV-0014: Redpanda and ClickHouse containers require writable runtime paths for dynamic configuration generation and server initialization.
 KSV-0014
+# KSV-0017 & KSV-0118: The in-cluster k3s MultiKueue worker container (k3s-server) requires privileged root execution to run a nested kubelet and containerd inside a GKE pod.
+KSV-0017
+KSV-0118

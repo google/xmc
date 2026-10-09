@@ -1,0 +1,72 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+{{- $mk := (.Values.kueueDev).multikueue | default .Values.multikueue | default dict }}
+{{- $worker := $mk.inClusterWorker | default dict }}
+{{- if and $mk.enabled $worker.enabled (not .Values.isDevEnvironment) }}
+{{- $q := $mk.queueName | default "multikueue-cpu-queue" }}
+{{- $cq := $mk.clusterQueueName | default "multikueue-cpu-cluster-queue" }}
+{{- $img := $worker.image | default "rancher/k3s:v1.32.3-k3s1" }}
+apiVersion: v1
+kind: List
+items:
+- { apiVersion: v1, kind: ServiceAccount, metadata: { name: multikueue-worker-bootstrap, namespace: kueue-system } }
+- { apiVersion: rbac.authorization.k8s.io/v1, kind: Role, metadata: { name: multikueue-worker-bootstrap, namespace: kueue-system }, rules: [{ apiGroups: [""], resources: ["secrets"], verbs: ["get", "create", "update", "patch"] }] }
+- { apiVersion: rbac.authorization.k8s.io/v1, kind: RoleBinding, metadata: { name: multikueue-worker-bootstrap, namespace: kueue-system }, subjects: [{ kind: ServiceAccount, name: multikueue-worker-bootstrap, namespace: kueue-system }], roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: multikueue-worker-bootstrap } }
+- { apiVersion: v1, kind: Service, metadata: { name: multikueue-worker, namespace: kueue-system, labels: { app: multikueue-worker } }, spec: { selector: { app: multikueue-worker }, ports: [{ name: https, port: 6443, targetPort: 6443, protocol: TCP }] } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: multikueue-worker, namespace: kueue-system, labels: { app: multikueue-worker } }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: multikueue-worker } }
+  template:
+    metadata: { labels: { app: multikueue-worker } }
+    spec:
+      serviceAccountName: multikueue-worker-bootstrap
+      securityContext: { seccompProfile: { type: RuntimeDefault } }
+      containers:
+      - name: k3s-server
+        image: {{ $img | quote }}
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -eu
+          [ ! -f /sys/fs/cgroup/cgroup.controllers ] || { mkdir -p /sys/fs/cgroup/init && xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs 2>/dev/null || true; sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null || true; }
+          exec k3s server --disable=traefik,servicelb,metrics-server --kube-proxy-arg=conntrack-max-per-core=0 --tls-san=multikueue-worker.kueue-system.svc --tls-san=multikueue-worker.kueue-system.svc.cluster.local --write-kubeconfig=/k3s-config/k3s.yaml --write-kubeconfig-mode=0644
+        ports: [{ containerPort: 6443, name: https, protocol: TCP }]
+        securityContext: { privileged: true, readOnlyRootFilesystem: false }
+        readinessProbe: { exec: { command: ["kubectl", "--kubeconfig=/k3s-config/k3s.yaml", "get", "--raw=/readyz"] }, initialDelaySeconds: 10, periodSeconds: 5 }
+        resources: { requests: { cpu: "500m", memory: "1536Mi" }, limits: { cpu: "2000m", memory: "3072Mi" } }
+        volumeMounts: [{ name: k3s-config, mountPath: /k3s-config }, { name: k3s-data, mountPath: /var/lib/rancher/k3s }, { name: k3s-kubelet, mountPath: /var/lib/kubelet }, { name: k3s-run, mountPath: /run }]
+      - name: bootstrap-sync
+        image: {{ $img | quote }}
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -eu; KCFG="/k3s-config/k3s.yaml"; K="kubectl --kubeconfig=${KCFG}"
+          until [ -s "${KCFG}" ] && [ -n "$(${K} get nodes -o name 2>/dev/null)" ]; do sleep 2; done && ${K} wait --for=condition=Ready node --all --timeout=180s
+          ${K} apply --server-side -f "https://github.com/kubernetes-sigs/jobset/releases/download/{{ $worker.jobsetVersion | default "v0.12.0" }}/manifests.yaml" -f "https://github.com/kubernetes-sigs/kueue/releases/download/{{ $worker.kueueVersion | default "v0.18.2" }}/manifests.yaml"
+          ${K} wait --for=condition=Available deployment/jobset-controller-manager -n jobset-system --timeout=180s && ${K} wait --for=condition=Available deployment/kueue-controller-manager -n kueue-system --timeout=180s
+          for e in low medium high; do for w in low medium high; do printf 'apiVersion: kueue.x-k8s.io/v1beta2\nkind: WorkloadPriorityClass\nmetadata: { name: exp-%s-wu-%s }\nvalue: 610\n' "$e" "$w" | ${K} apply -f -; done; done
+          printf 'apiVersion: kueue.x-k8s.io/v1beta2\nkind: ResourceFlavor\nmetadata: { name: cpu-flavor }\n---\napiVersion: kueue.x-k8s.io/v1beta2\nkind: ClusterQueue\nmetadata: { name: {{ $cq }} }\nspec: { namespaceSelector: {}, resourceGroups: [{ coveredResources: [cpu, memory], flavors: [{ name: cpu-flavor, resources: [{ name: cpu, nominalQuota: 100000000 }, { name: memory, nominalQuota: 100000000Gi }] }] }] }\n---\napiVersion: v1\nkind: Namespace\nmetadata: { name: {{ $q }} }\n---\napiVersion: kueue.x-k8s.io/v1beta2\nkind: LocalQueue\nmetadata: { name: {{ $q }}, namespace: {{ $q }} }\nspec: { clusterQueue: {{ $cq }} }\n' | ${K} apply -f -
+          sync_secret() { sed 's|https://127.0.0.1:6443|https://multikueue-worker.kueue-system.svc:6443|g' "${KCFG}" > /tmp/worker.kubeconfig && kubectl -n kueue-system create secret generic {{ $mk.kubeconfigSecretName | default "multikueue-worker-kubeconfig" }} --from-file={{ $mk.kubeconfigSecretKey | default "kubeconfig" }}=/tmp/worker.kubeconfig --dry-run=client -o yaml | kubectl -n kueue-system apply -f -; }
+          sync_secret && touch /tmp/bootstrap-ready && while true; do sleep 60; sync_secret || true; done
+        securityContext: { allowPrivilegeEscalation: false, privileged: false, readOnlyRootFilesystem: true, runAsUser: 1000, runAsGroup: 1000, capabilities: { drop: ["ALL"] } }
+        readinessProbe: { exec: { command: ["test", "-f", "/tmp/bootstrap-ready"] }, initialDelaySeconds: 10, periodSeconds: 5 }
+        resources: { requests: { cpu: "100m", memory: "128Mi" }, limits: { cpu: "500m", memory: "512Mi" } }
+        volumeMounts: [{ name: k3s-config, mountPath: /k3s-config, readOnly: true }, { name: bootstrap-tmp, mountPath: /tmp }]
+      volumes: [{ name: k3s-config, emptyDir: {} }, { name: k3s-data, emptyDir: {} }, { name: k3s-kubelet, emptyDir: {} }, { name: k3s-run, emptyDir: {} }, { name: bootstrap-tmp, emptyDir: {} }]
+{{- end }}
