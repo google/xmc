@@ -147,7 +147,7 @@ func seedRegistrationRow(ctx context.Context, t *testing.T, s store.Store, dep, 
 		}
 	}
 	if deleteDep {
-		if err := s.ExecuteDeletion(ctx, dep, componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true); err != nil {
+		if err := s.ExecuteDeletion(ctx, dep, componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true, nil); err != nil {
 			t.Fatalf("ExecuteDeletion(%s) error = %v", dep, err)
 		}
 	}

@@ -40,6 +40,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/record"
 )
 
 var componentGVR = bridge.ComponentGVR
@@ -159,6 +160,7 @@ func BuildKubeConfig(kubeconfigPath string) (*rest.Config, error) {
 type Controller struct {
 	dynamicClient dynamic.Interface
 	reconciler    *bridge.Reconciler
+	recorder      record.EventRecorder
 	namespace     string
 	probeInterval time.Duration
 	probeTimeout  time.Duration
@@ -167,13 +169,15 @@ type Controller struct {
 // NewController creates a new Controller instance.
 // client is the dynamic Kubernetes client used to list and update Component custom resources.
 // r is the core bridge Reconciler handling state synchronization and lifecycle logic.
+// recorder emits the Warning Events of reconcile results on the custom resources; nil emits none.
 // ns is the target namespace to reconcile.
 // interval is the duration between periodic namespace reconciliation sweeps.
 // timeout is the maximum duration allocated per component reconciliation pass.
-func NewController(client dynamic.Interface, r *bridge.Reconciler, ns string, interval time.Duration, timeout time.Duration) *Controller {
+func NewController(client dynamic.Interface, r *bridge.Reconciler, recorder record.EventRecorder, ns string, interval time.Duration, timeout time.Duration) *Controller {
 	return &Controller{
 		dynamicClient: client,
 		reconciler:    r,
+		recorder:      recorder,
 		namespace:     ns,
 		probeInterval: interval,
 		probeTimeout:  timeout,
@@ -259,11 +263,15 @@ func (c *Controller) handleReconcileFailure(ctx context.Context, item *unstructu
 	}
 }
 
-// persistResult persists res for item with bridge.PersistReconcileResult: the deletion protection
-// finalizer is synced first and .status is then server-side applied with fieldManager "xmc-bridge",
-// unless the finalizer was released. A finalizer error skips the status write so that the finalizer
-// stays in place and the next pass retries both.
+// persistResult emits the Warning Event of res, if any, with bridge.EmitReconcileEvents and
+// persists res for item with bridge.PersistReconcileResult: the deletion protection finalizer is
+// synced first and .status is then server-side applied with fieldManager "xmc-bridge", unless the
+// finalizer was released. A finalizer error skips the status write so that the finalizer stays in
+// place and the next pass retries both. The event is emitted on every pass that reports it, so it
+// may repeat on retry (the recorder aggregates repeats); for example, a teardown error after a
+// stale deletion emits the event while the finalizer is still held, and the retry emits it again.
 func (c *Controller) persistResult(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
+	bridge.EmitReconcileEvents(c.recorder, item, res)
 	return bridge.PersistReconcileResult(ctx, c.dynamicClient, c.namespace, item, res)
 }
 
@@ -326,7 +334,11 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}
-	return NewController(dynamicClient, reconciler, cfg.Namespace, cfg.ProbeInterval, cfg.ProbeTimeout).Run(ctx)
+	recorder, stopEvents := bridge.NewEventRecorder(k8sClient)
+	// Stopping the broadcaster at exit hands queued Events to the API server sink; Events still
+	// being written when the process exits may be lost, which is acceptable for Warning Events.
+	defer stopEvents()
+	return NewController(dynamicClient, reconciler, recorder, cfg.Namespace, cfg.ProbeInterval, cfg.ProbeTimeout).Run(ctx)
 }
 
 func main() {

@@ -66,7 +66,7 @@ func TestSpannerStore_SetComponentIntent_ReadOnlyFastPath(t *testing.T) {
 			}
 			before := seedFastPathComponent(ctx, t, s, name, labels, deps)
 			if tt.deleteDep {
-				if err := s.ExecuteDeletion(ctx, dep, componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true); err != nil {
+				if err := s.ExecuteDeletion(ctx, dep, componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true, nil); err != nil {
 					t.Fatalf("ExecuteDeletion(%s) error = %v", dep, err)
 				}
 			}
@@ -113,7 +113,7 @@ func TestSpannerStore_SetComponentIntent_ConcurrentChangeBeforeFallback(t *testi
 		{
 			name: "concurrent dependency deletion makes the fallback reject",
 			concurrent: func(ctx context.Context, other store.Store, dep, _ string) error {
-				return other.ExecuteDeletion(ctx, dep, componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true)
+				return other.ExecuteDeletion(ctx, dep, componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true, nil)
 			},
 			wantGen:  1,
 			wantCode: codes.FailedPrecondition,

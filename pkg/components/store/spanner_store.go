@@ -817,10 +817,14 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 	return cloneRecord(finalRec), nil
 }
 
-// ExecuteDeletion deletes a component using the specified deletion policy.
-func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error {
+// ExecuteDeletion deletes a component using the specified deletion policy, unless src comes from
+// an older object than the recorded source.
+func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src *IntentSource) error {
 	canonicalName, err := validateResourceName(name)
 	if err != nil {
+		return err
+	}
+	if err := validateDeletionSource(src); err != nil {
 		return err
 	}
 
@@ -833,6 +837,9 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 		rec, ok := catalog[canonicalName]
 		if !ok || rec == nil || isDeletedRecord(rec) {
 			return ErrComponentNotFound
+		}
+		if err := rejectStaleDeletion(canonicalName, rec, src); err != nil {
+			return err
 		}
 
 		if err := ValidateDeletionSafety(catalog, canonicalName, policy, force); err != nil {

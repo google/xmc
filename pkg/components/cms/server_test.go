@@ -68,7 +68,7 @@ func (s *stubStore) UpdateObservedGeneration(ctx context.Context, name string, o
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error {
+func (s *stubStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src *store.IntentSource) error {
 	return status.Error(codes.Unimplemented, "not implemented")
 }
 
@@ -1138,6 +1138,41 @@ func TestCMSServer_CompleteDeactivation_MemoryStore(t *testing.T) {
 	}
 }
 
+// TestCMSServer_ExecuteDeletion_Source checks that ExecuteDeletion validates the request source
+// and rejects a deletion from an object older than the recorded source, keeping the component.
+func TestCMSServer_ExecuteDeletion_Source(t *testing.T) {
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	tests := []struct {
+		name     string
+		src      *componentspb.IntentSource
+		wantCode codes.Code
+	}{
+		{name: "older object is stale", src: &componentspb.IntentSource{Uid: "uid-old", CreateTime: timestamppb.New(created.Add(-time.Hour)), Generation: 1}, wantCode: codes.FailedPrecondition},
+		{name: "newer object that has not adopted the record is stale", src: &componentspb.IntentSource{Uid: "uid-new", CreateTime: timestamppb.New(created.Add(time.Hour)), Generation: 1}, wantCode: codes.FailedPrecondition},
+		{name: "missing create time is invalid", src: &componentspb.IntentSource{Uid: "uid-old", Generation: 1}, wantCode: codes.InvalidArgument},
+		{name: "recorded object deletes", src: &componentspb.IntentSource{Uid: "uid-a", CreateTime: timestamppb.New(created), Generation: 2}, wantCode: codes.OK},
+		{name: "unsourced request deletes", wantCode: codes.OK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			ms := store.NewMemoryStore()
+			spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"}
+			if _, err := ms.SetSourcedComponentIntent(ctx, "cms-sourced", spec, nil, store.IntentSource{UID: "uid-a", CreateTime: created, Generation: 1}); err != nil {
+				t.Fatalf("SetSourcedComponentIntent() error = %v", err)
+			}
+			_, err := NewServer(ms).ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: "components/cms-sourced", Source: tt.src})
+			if status.Code(err) != tt.wantCode {
+				t.Fatalf("ExecuteDeletion() error = %v, want code %v", err, tt.wantCode)
+			}
+			_, err = ms.GetComponent(ctx, "cms-sourced")
+			if gotDeleted := status.Code(err) == codes.NotFound; gotDeleted != (tt.wantCode == codes.OK) {
+				t.Errorf("component deleted = %t, want %t", gotDeleted, tt.wantCode == codes.OK)
+			}
+		})
+	}
+}
+
 func TestCMSServer_ExecuteDeletion_MemoryStore(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
@@ -1334,7 +1369,7 @@ func TestCMSServer_ResolveComponentSnapshot_ComponentIDPin(t *testing.T) {
 	}
 	writeIntent("v1.0.0", 1)
 	oldID := writeIntent("v1.1.0", 2).ComponentID
-	if err := ms.ExecuteDeletion(ctx, "cms-pinned", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+	if err := ms.ExecuteDeletion(ctx, "cms-pinned", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil); err != nil {
 		t.Fatalf("ExecuteDeletion() error = %v", err)
 	}
 	liveID := writeIntent("v2.0.0", 1).ComponentID

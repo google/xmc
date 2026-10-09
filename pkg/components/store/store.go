@@ -61,9 +61,9 @@ type ComponentRecord struct {
 }
 
 // IntentSource identifies the declarative object, such as a Kubernetes custom resource, that
-// produced an intent. UID and CreateTime identify its epoch: a recreated object has a new UID and a
-// later CreateTime. Generation is the object's own generation, which is independent of the
-// component generation.
+// produced an intent or deletion. UID and CreateTime identify its epoch: a recreated object has a
+// new UID and a later CreateTime. Generation is the object's own generation, which is independent
+// of the component generation.
 type IntentSource struct {
 	UID        string
 	CreateTime time.Time
@@ -169,8 +169,12 @@ type Store interface {
 	// UpdateObservedGeneration synchronizes actual component access and state, returning the updated record.
 	UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error)
 
-	// ExecuteDeletion deletes a component using the specified deletion policy.
-	ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error
+	// ExecuteDeletion deletes a component using the specified deletion policy. Only the owner
+	// deletes a sourced record: a nil src, no recorded Source, or a src with the recorded UID
+	// proceeds. Any other src, from an older object or from a newer one that has not adopted the
+	// record (as ordered for SetSourcedComponentIntent), fails with FailedPrecondition and a message
+	// starting with StaleDeletionMessagePrefix that names the recorded owner, and changes nothing.
+	ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src *IntentSource) error
 
 	// ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
 	ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error)

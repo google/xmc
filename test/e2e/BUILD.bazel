@@ -70,6 +70,7 @@ _KIND_3P_DEPS = [
     "@io_k8s_client_go//kubernetes/fake",
     "@io_k8s_client_go//restmapper",
     "@io_k8s_client_go//tools/clientcmd",
+    "@io_k8s_client_go//tools/record",
 ]
 
 go_test(

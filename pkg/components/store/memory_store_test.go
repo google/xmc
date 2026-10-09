@@ -573,7 +573,7 @@ func TestMemoryStore_SpecDependencies(t *testing.T) {
 		{
 			name: "non-cascading deletion of a dependency with an active dependent is blocked",
 			action: func(ms *MemoryStore) error {
-				return ms.ExecuteDeletion(ctx, "redpanda", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, false)
+				return ms.ExecuteDeletion(ctx, "redpanda", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, false, nil)
 			},
 			wantCode: codes.FailedPrecondition,
 		},
@@ -836,13 +836,13 @@ func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 	}
 
 	// Attempt deletion without force -> ErrDeletionProtected
-	err := ms.ExecuteDeletion(ctx, "comp-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	err := ms.ExecuteDeletion(ctx, "comp-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("ExecuteDeletion(protected, force=false) got code %v, want FailedPrecondition", status.Code(err))
 	}
 
 	// Deletion with force -> succeeds
-	if err := ms.ExecuteDeletion(ctx, "comp-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true); err != nil {
+	if err := ms.ExecuteDeletion(ctx, "comp-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true, nil); err != nil {
 		t.Fatalf("ExecuteDeletion(protected, force=true) unexpected error: %v", err)
 	}
 
@@ -861,13 +861,13 @@ func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 	}
 
 	// Attempt non-cascading deletion without force -> ErrHasActiveDependents
-	err = ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, false)
+	err = ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, false, nil)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("ExecuteDeletion(with dep, orphan policy, force=false) got code %v, want FailedPrecondition", status.Code(err))
 	}
 
 	// Cascading deletion without force -> succeeds and deletes both root and dependent
-	if err := ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+	if err := ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil); err != nil {
 		t.Fatalf("ExecuteDeletion(with dep, delete policy, force=false) unexpected error: %v", err)
 	}
 
@@ -894,13 +894,13 @@ func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 	}
 
 	// Cascading deletion without force -> ErrDeletionProtected
-	err = ms.ExecuteDeletion(ctx, "parent-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	err = ms.ExecuteDeletion(ctx, "parent-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("ExecuteDeletion(cascading with protected child, force=false) got code %v, want FailedPrecondition", status.Code(err))
 	}
 
 	// Cascading deletion with force -> succeeds and deletes both parent and child
-	if err := ms.ExecuteDeletion(ctx, "parent-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true); err != nil {
+	if err := ms.ExecuteDeletion(ctx, "parent-prot", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true, nil); err != nil {
 		t.Fatalf("ExecuteDeletion(cascading with protected child, force=true) unexpected error: %v", err)
 	}
 	if _, err := ms.GetComponent(ctx, "parent-prot"); status.Code(err) != codes.NotFound {
@@ -931,7 +931,7 @@ func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 		t.Fatalf("CompleteDeactivation(child-4) failed: %v", err)
 	}
 	// Cascading deletion of root-4 should delete disabled child-4 too
-	if err := ms.ExecuteDeletion(ctx, "root-4", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+	if err := ms.ExecuteDeletion(ctx, "root-4", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil); err != nil {
 		t.Fatalf("ExecuteDeletion(root-4) failed: %v", err)
 	}
 	if _, err := ms.GetComponent(ctx, "root-4"); status.Code(err) != codes.NotFound {
@@ -942,7 +942,7 @@ func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 	}
 
 	// Nonexistent deletion
-	err = ms.ExecuteDeletion(ctx, "nonexistent", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	err = ms.ExecuteDeletion(ctx, "nonexistent", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil)
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("ExecuteDeletion(nonexistent) got code %v, want NotFound", status.Code(err))
 	}
