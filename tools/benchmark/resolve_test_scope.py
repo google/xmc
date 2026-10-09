@@ -18,7 +18,9 @@
 Analyzes modified files from git diff or CLI arguments, enforces Inverted Default
 Safety (ensuring new/unknown directories default to running backend tests),
 scopes UI vs Backend test suites, and optionally runs Bazel rdeps query to discover
-specific affected backend test targets.
+specific affected backend test targets. It also reports whether the Helm chart suite
+is affected. With --local it scopes the local checkout (uncommitted work included)
+the way a pull request is scoped.
 """
 
 import argparse
@@ -27,7 +29,14 @@ import os
 import subprocess
 import sys
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.common.changed_files import ChangedFilesError, list_changed_files  # noqa: E402
 
 CORE_INFRA_FILES: set[str] = {
     "go.mod",
@@ -44,6 +53,30 @@ CORE_INFRA_FILES: set[str] = {
     ".github/actions/run-backend-tests/action.yml",
     "tools/benchmark/resolve_test_scope.py",
 }
+
+# The Helm chart suite (.github/actions/run-chart-tests) renders templates with a host helm
+# binary rather than building Bazel targets, so its scope is resolved by path rather than by
+# the Bazel dependency graph.
+HELM_SUITE_PREFIXES: tuple[str, ...] = (
+    "deploy/helm/",
+    "test/helm/",
+    ".github/actions/run-chart-tests/",
+)
+
+HELM_SUITE_FILES: set[str] = {
+    # The suite also asserts the chart agrees with the deployment blueprint, so a
+    # blueprint-only edit can break it just as a chart-only edit can.
+    "deploy/ctk_v2/xmanager-cloud.yaml",
+    ".github/workflows/unit-tests.yml",
+    # The chart job gates on this resolver's run_helm output.
+    "tools/benchmark/resolve_test_scope.py",
+}
+
+DEFAULT_LOCAL_BASE_REF = "origin/main"
+
+# A fresh CI runner fetches every external repository during its first query; the restored
+# repository cache keeps that well under this bound.
+RDEPS_QUERY_TIMEOUT_SECONDS = 600
 
 NON_CODE_PREFIXES: tuple[str, ...] = (
     "docs/",
@@ -142,6 +175,13 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
         "has_ui": has_ui,
         "has_backend": has_backend,
     }
+
+
+def touches_helm_suite(files: list[str]) -> bool:
+    """Returns True if any modified file can affect the Helm chart configuration suite."""
+    return any(
+        f.strip() in HELM_SUITE_FILES or f.strip().startswith(HELM_SUITE_PREFIXES) for f in files
+    )
 
 
 def _get_merge_base(ref_a: str, ref_b: str) -> str | None:
@@ -500,11 +540,17 @@ def find_enclosing_bazel_package(file_path: str, cwd: Path | None = None) -> str
     return f"//{parent_posix}"
 
 
-def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> list[str]:
-    """Runs Bazel query to discover unit test targets that transitively depend on changed packages.
+def warn_full_backend_fallback(reason: str) -> None:
+    """Prints a GitHub Actions warning that backend scoping fell back to the full suite.
 
-    Returns empty list if Bazel is unavailable or query fails.
+    The warning goes to stderr so that stdout stays JSON-only; the Actions runner turns
+    workflow commands on either stream into annotations.
     """
+    print(f"::warning::Running the full backend suite: {reason}", file=sys.stderr)
+
+
+def _changed_bazel_packages(files: list[str], cwd: Path | None) -> set[str] | None:
+    """Maps modified files to `<package>:all` patterns, or None if one has no Bazel package."""
     changed_pkgs: set[str] = set()
     for f in files:
         clean_f = f.strip()
@@ -517,52 +563,74 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
             continue
 
         pkg = find_enclosing_bazel_package(clean_f, cwd=cwd)
-        if not is_code_or_build and pkg in {None, "//"}:
-            return []
-        if pkg:
-            pkg_target = f"{pkg}:all" if pkg != "//" else "//:all"
-            changed_pkgs.add(pkg_target)
+        if pkg is None or (not is_code_or_build and pkg == "//"):
+            warn_full_backend_fallback(f"{clean_f} is not inside a Bazel package")
+            return None
+        pkg_target = f"{pkg}:all" if pkg != "//" else "//:all"
+        changed_pkgs.add(pkg_target)
+    return changed_pkgs
 
-    if not changed_pkgs:
-        return []
 
+def _query_rdeps_tests(
+    changed_pkgs: set[str], cwd: Path | None, repository_cache: str | None
+) -> list[str]:
+    """Returns the non-manual backend test targets that depend on changed_pkgs ([] on failure)."""
     pkg_set_expr = " ".join(sorted(changed_pkgs))
     backend_universe = "//... except //cmd/ui/..."
     query_expr = (
         f"let t = kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr}))) "
         f"in $t except attr('tags', 'manual', $t)"
     )
-
+    # Fetching stays enabled: a fresh CI runner has no external repositories yet, so an offline
+    # (--fetch=false) query cannot load any package there. The repository cache that CI restores
+    # supplies the downloads, and the fetched repositories are reused by the later bazel test.
+    cmd = ["bazel", "query", "--tool_deps", "--noimplicit_deps", "--keep_going"]
+    if repository_cache:
+        cmd.append(f"--repository_cache={repository_cache}")
     try:
         res = subprocess.run(
-            [
-                "bazel",
-                "query",
-                "--fetch=false",
-                "--tool_deps",
-                "--noimplicit_deps",
-                "--keep_going",
-                query_expr,
-            ],
+            [*cmd, query_expr],
             capture_output=True,
             text=True,
             check=False,
-            timeout=30,
+            timeout=RDEPS_QUERY_TIMEOUT_SECONDS,
             cwd=cwd,
         )
-        if res.returncode == 0 and res.stdout.strip():
-            targets = [t.strip() for t in res.stdout.splitlines() if t.strip().startswith("//")]
-            return [t for t in targets if t not in EXCLUDED_TEST_TARGETS]
-        if res.returncode != 0:
-            print(
-                f"Warning: bazel query failed with exit code {res.returncode}: {res.stderr.strip()}",
-                file=sys.stderr,
-            )
     except Exception as e:
-        print(f"Warning: bazel query encountered exception: {e}", file=sys.stderr)
+        warn_full_backend_fallback(f"bazel query encountered exception: {e}")
+        return []
+    if res.returncode != 0:
+        warn_full_backend_fallback(f"bazel query failed with exit code {res.returncode}")
+        print(res.stderr.strip(), file=sys.stderr)
+        return []
+    targets = [t.strip() for t in res.stdout.splitlines() if t.strip().startswith("//")]
+    targets = [t for t in targets if t not in EXCLUDED_TEST_TARGETS]
+    if not targets:
+        warn_full_backend_fallback(f"bazel query found no tests that depend on {pkg_set_expr}")
+    return targets
 
+
+def discover_bazel_rdeps_targets(
+    files: list[str], cwd: Path | None = None, repository_cache: str | None = None
+) -> list[str]:
+    """Runs Bazel query to discover unit test targets that transitively depend on changed packages.
+
+    Returns an empty list, after printing a GitHub Actions warning, if a modified file has no
+    Bazel package or the query fails or finds no tests.
+
+    Args:
+        files: Modified file paths relative to the workspace root.
+        cwd: Workspace root (default: the current directory).
+        repository_cache: Optional Bazel repository cache directory for the query.
+    """
+    changed_pkgs = _changed_bazel_packages(files, cwd)
     # Return empty list on failure so resolve_test_scope safely falls back to the full test suite
-    return []
+    if changed_pkgs is None:
+        return []
+    if not changed_pkgs:
+        warn_full_backend_fallback("no modified file maps to a Bazel package")
+        return []
+    return _query_rdeps_tests(changed_pkgs, cwd, repository_cache)
 
 
 def resolve_test_scope(
@@ -571,8 +639,13 @@ def resolve_test_scope(
     ref: str = "",
     use_rdeps: bool = True,
     cwd: Path | None = None,
+    repository_cache: str | None = None,
 ) -> dict[str, object]:
-    """Main entry point for test scope resolution."""
+    """Main entry point for test scope resolution.
+
+    Full regressions also select the Helm chart suite; otherwise run_helm follows
+    touches_helm_suite, independently of the backend and UI scope.
+    """
     # Main branch push / dispatch / schedule events always run full regression suites
     if event_name in {"push", "workflow_dispatch", "schedule"} and ref in {
         "refs/heads/main",
@@ -585,6 +658,7 @@ def resolve_test_scope(
             "backend_mode": "all",
             "bazel_targets": "//... -//cmd/ui/...",
             "reason": "main branch push full regression",
+            "run_helm": True,
         }
 
     if not any(f.strip() for f in files):
@@ -594,8 +668,17 @@ def resolve_test_scope(
             "backend_mode": "all",
             "bazel_targets": "//... -//cmd/ui/...",
             "reason": "no modified files detected; defaulting to full test suite for safety",
+            "run_helm": True,
         }
 
+    scope = _resolve_code_scope(files, use_rdeps, cwd, repository_cache)
+    return scope | {"run_helm": touches_helm_suite(files)}
+
+
+def _resolve_code_scope(
+    files: list[str], use_rdeps: bool, cwd: Path | None, repository_cache: str | None
+) -> dict[str, object]:
+    """Scopes the backend Bazel and UI suites for a non-empty list of modified files."""
     classification = classify_modified_files(files)
     has_core_infra = classification["has_core_infra"]
     has_ui = classification["has_ui"]
@@ -632,7 +715,7 @@ def resolve_test_scope(
         }
 
     # Attempt fine-grained rdeps scoping for backend changes
-    rdeps_targets = discover_bazel_rdeps_targets(files, cwd=cwd)
+    rdeps_targets = discover_bazel_rdeps_targets(files, cwd=cwd, repository_cache=repository_cache)
     if rdeps_targets:
         return {
             "run_backend": True,
@@ -658,6 +741,7 @@ def write_github_output(github_output_path: str, result: dict[str, object]) -> N
     with path.open("a", encoding="utf-8") as f:
         f.write(f"run_backend={str(result['run_backend']).lower()}\n")
         f.write(f"run_ui={str(result['run_ui']).lower()}\n")
+        f.write(f"run_helm={str(result['run_helm']).lower()}\n")
         f.write(f"backend_mode={result['backend_mode']}\n")
         f.write(f"bazel_targets={result['bazel_targets']}\n")
         f.write(f"reason={result['reason']}\n")
@@ -712,10 +796,95 @@ def apply_github_env_defaults(args: argparse.Namespace, env: dict[str, str]) -> 
     return args
 
 
-def main() -> None:
+def resolve_local_scope(
+    base_ref: str,
+    repo_root: Path,
+    use_rdeps: bool = True,
+    repository_cache: str | None = None,
+) -> dict[str, object]:
+    """Scopes the local checkout the way a pull request against base_ref is scoped.
+
+    Modified files are those changed since the merge base of base_ref and HEAD, uncommitted
+    and untracked files included (see tools.common.changed_files). Unlike CI, an empty change
+    set selects no suites. The result also lists the files under "changed_files".
+
+    Args:
+        base_ref: Ref whose merge base with HEAD is the comparison point.
+        repo_root: Top-level directory of the git checkout and Bazel workspace.
+        use_rdeps: Whether to narrow backend tests with the Bazel rdeps query.
+        repository_cache: Optional Bazel repository cache directory for the rdeps query.
+
+    Raises:
+        ChangedFilesError: If git cannot list the changed files.
+    """
+    files = list_changed_files(base_ref, repo_root)
+    if not files:
+        return {
+            "run_backend": False,
+            "run_ui": False,
+            "backend_mode": "none",
+            "bazel_targets": "",
+            "reason": f"no files changed since the merge base with {base_ref}",
+            "run_helm": False,
+            "changed_files": [],
+        }
+    scope = resolve_test_scope(
+        files, use_rdeps=use_rdeps, cwd=repo_root, repository_cache=repository_cache
+    )
+    return scope | {"changed_files": files}
+
+
+def resolve_ci_scope(args: argparse.Namespace, env: Mapping[str, str]) -> dict[str, object]:
+    """Scopes a CI run from explicit flags, GitHub Actions env vars, and the event payload.
+
+    Args:
+        args: Options parsed by build_parser(); options left unset are filled from env.
+        env: Environment variables, e.g. os.environ.
+    """
+    args = apply_github_env_defaults(args, dict(env))
+
+    if args.files is not None:
+        modified_files = args.files
+    else:
+        modified_files = get_git_modified_files(
+            base_ref=args.base,
+            head_ref=args.head,
+            base_branch=args.base_branch,
+        )
+
+    print(f"DEBUG modified_files: {modified_files}", file=sys.stderr)
+
+    return resolve_test_scope(
+        files=modified_files,
+        event_name=args.event,
+        ref=args.ref,
+        use_rdeps=not args.disable_rdeps,
+        repository_cache=args.repository_cache,
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Returns the command-line parser of the resolver."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--files", nargs="*", help="Optional explicit list of modified file paths.")
-    parser.add_argument("--base", help="Git diff base reference (default: event payload base SHA).")
+    sources = parser.add_mutually_exclusive_group()
+    sources.add_argument(
+        "--files", nargs="*", help="Optional explicit list of modified file paths."
+    )
+    sources.add_argument(
+        "--local",
+        action="store_true",
+        help=(
+            "Scope the local checkout like a pull request: files changed since the merge base of "
+            "--base and HEAD, uncommitted and untracked files included (default --base: "
+            f"{DEFAULT_LOCAL_BASE_REF}). Ignores --base-branch, --head, --event and --ref."
+        ),
+    )
+    parser.add_argument(
+        "--base",
+        "--base-ref",
+        dest="base",
+        help="Git diff base reference (default: event payload base SHA).",
+    )
     parser.add_argument(
         "--base-branch", help="Git diff base branch name (default: $GITHUB_BASE_REF)."
     )
@@ -732,27 +901,30 @@ def main() -> None:
         help="Disable Bazel rdeps scoping.",
     )
     parser.add_argument(
+        "--repository-cache",
+        help="Bazel repository cache directory for the rdeps query (CI passes its restored cache).",
+    )
+    parser.add_argument(
         "--github-output", help="Path to $GITHUB_OUTPUT file (default: $GITHUB_OUTPUT)."
     )
-    args = apply_github_env_defaults(parser.parse_args(), dict(os.environ))
+    return parser
 
-    if args.files is not None:
-        modified_files = args.files
-    else:
-        modified_files = get_git_modified_files(
-            base_ref=args.base,
-            head_ref=args.head,
-            base_branch=args.base_branch,
+
+def main() -> None:
+    args = build_parser().parse_args()
+    try:
+        result = (
+            resolve_local_scope(
+                args.base or DEFAULT_LOCAL_BASE_REF,
+                _REPO_ROOT,
+                use_rdeps=not args.disable_rdeps,
+                repository_cache=args.repository_cache,
+            )
+            if args.local
+            else resolve_ci_scope(args, os.environ)
         )
-
-    print(f"DEBUG modified_files: {modified_files}", file=sys.stderr)
-
-    result = resolve_test_scope(
-        files=modified_files,
-        event_name=args.event,
-        ref=args.ref,
-        use_rdeps=not args.disable_rdeps,
-    )
+    except ChangedFilesError as e:
+        sys.exit(f"Error: {e.message}\n{e.instruction}")
 
     print(f"DEBUG result: {result}", file=sys.stderr)
 

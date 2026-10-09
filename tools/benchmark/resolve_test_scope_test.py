@@ -16,29 +16,38 @@
 """Unit tests for tools/resolve_test_scope.py."""
 
 import argparse
+import io
 import json
 import os
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
 from tools.benchmark.resolve_test_scope import (
+    _REPO_ROOT,
+    RDEPS_QUERY_TIMEOUT_SECONDS,
     _correlate_rebased_parent_tip,
     _get_merge_base,
     _normalize_subject,
     apply_github_env_defaults,
+    build_parser,
     classify_modified_files,
     discover_bazel_rdeps_targets,
     find_enclosing_bazel_package,
     get_git_modified_files,
     is_non_code_file,
     main,
+    resolve_ci_scope,
     resolve_effective_base_ref,
+    resolve_local_scope,
     resolve_test_scope,
+    touches_helm_suite,
     write_github_output,
 )
+from tools.common.changed_files import ChangedFilesError
 
 # Isolates real-git tests from host/user git config (signing, hooks, identity).
 HERMETIC_GIT_ENV: dict[str, str] = {
@@ -145,6 +154,7 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertTrue(scope["run_backend"])
         self.assertTrue(scope["run_ui"])
         self.assertEqual(scope["backend_mode"], "all")
+        self.assertTrue(scope["run_helm"])
 
     @patch("tools.benchmark.resolve_test_scope.discover_bazel_rdeps_targets")
     def test_resolve_test_scope_rdeps_success(self, mock_rdeps):
@@ -258,12 +268,14 @@ class TestResolveTestScope(unittest.TestCase):
                 "backend_mode": "rdeps",
                 "bazel_targets": "//pkg/auth/oauth2:oauth2_test",
                 "reason": "discovered 1 affected target",
+                "run_helm": True,
             }
             write_github_output(tmp_path, sample_result)
 
             content = Path(tmp_path).read_text(encoding="utf-8")
             self.assertIn("run_backend=true\n", content)
             self.assertIn("run_ui=false\n", content)
+            self.assertIn("run_helm=true\n", content)
             self.assertIn("backend_mode=rdeps\n", content)
             self.assertIn("bazel_targets=//pkg/auth/oauth2:oauth2_test\n", content)
         finally:
@@ -818,6 +830,7 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertTrue(empty_scope["run_backend"])
         self.assertTrue(empty_scope["run_ui"])
         self.assertEqual(empty_scope["backend_mode"], "all")
+        self.assertTrue(empty_scope["run_helm"])
 
         dispatch_scope = resolve_test_scope(
             ["README.md"],
@@ -828,6 +841,7 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertTrue(dispatch_scope["run_backend"])
         self.assertTrue(dispatch_scope["run_ui"])
         self.assertEqual(dispatch_scope["backend_mode"], "all")
+        self.assertTrue(dispatch_scope["run_helm"])
 
     def test_classify_ci_workflow_and_ui_action_files(self):
         ui_action = classify_modified_files([".github/actions/run-ui-tests/action.yml"])
@@ -984,6 +998,292 @@ class TestApplyGithubEnvDefaults(unittest.TestCase):
             (args.base, args.head, args.base_branch, args.event, args.ref, args.github_output),
             (None, "HEAD", "", "pull_request", "", None),
         )
+
+
+class TestHelmSuiteScope(unittest.TestCase):
+    def test_touches_helm_suite_matches_chart_paths_only(self):
+        for path in (
+            "deploy/helm/values.yaml",
+            "deploy/helm/templates/reconciler/deployment.yaml",
+            "deploy/ctk_v2/xmanager-cloud.yaml",
+            "test/helm/session_ttl_test.py",
+            ".github/workflows/unit-tests.yml",
+            ".github/actions/run-chart-tests/action.yml",
+            "tools/benchmark/resolve_test_scope.py",
+        ):
+            self.assertTrue(touches_helm_suite(["README.md", path]), path)
+        for path in (
+            "deploy/helmfile.yaml",
+            "deploy/ctk_v2/verify_xmc.py",
+            ".github/actions/run-ui-tests/action.yml",
+            "cmd/ui/src/app/app.component.ts",
+            "README.md",
+        ):
+            self.assertFalse(touches_helm_suite([path]), path)
+
+    def test_chart_only_change_selects_only_the_helm_suite(self):
+        scope = resolve_test_scope(["deploy/helm/values.yaml"], use_rdeps=False)
+        self.assertEqual(
+            (scope["run_backend"], scope["run_ui"], scope["backend_mode"], scope["run_helm"]),
+            (False, False, "none", True),
+        )
+
+    def test_run_helm_is_independent_of_backend_and_ui_scope(self):
+        backend = resolve_test_scope(["services/billing/v1/billing.go"], use_rdeps=False)
+        ui = resolve_test_scope(["cmd/ui/src/app/app.component.ts"], use_rdeps=False)
+        core_and_chart = resolve_test_scope(
+            ["go.mod", "test/helm/session_ttl_test.py"], use_rdeps=False
+        )
+        self.assertFalse(backend["run_helm"])
+        self.assertFalse(ui["run_helm"])
+        self.assertEqual(
+            (core_and_chart["backend_mode"], core_and_chart["run_helm"]), ("all", True)
+        )
+
+    @patch("tools.benchmark.resolve_test_scope.discover_bazel_rdeps_targets")
+    def test_rdeps_scope_carries_run_helm(self, mock_rdeps):
+        mock_rdeps.return_value = ["//test/helm/profiles/stable2026a:stable2026a_test"]
+        scope = resolve_test_scope(["test/helm/profiles/stable2026a/profile.go"])
+        self.assertEqual((scope["backend_mode"], scope["run_helm"]), ("rdeps", True))
+
+
+class TestRdepsQuery(unittest.TestCase):
+    def _discover(self, files: list[str], **kwargs) -> tuple[list[str], str]:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            targets = discover_bazel_rdeps_targets(files, **kwargs)
+        return targets, stderr.getvalue()
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_query_fetches_with_repository_cache(self, mock_run):
+        mock_run.return_value = unittest.mock.Mock(
+            returncode=0, stdout="//pkg/auth/oauth2:oauth2_test\n", stderr=""
+        )
+        targets, warnings = self._discover(
+            ["pkg/auth/oauth2/handlers.go"], repository_cache="/cache/bazel-repo"
+        )
+        self.assertEqual((targets, warnings), (["//pkg/auth/oauth2:oauth2_test"], ""))
+        cmd = mock_run.call_args[0][0]
+        self.assertEqual(
+            cmd[:-1],
+            [
+                "bazel",
+                "query",
+                "--tool_deps",
+                "--noimplicit_deps",
+                "--keep_going",
+                "--repository_cache=/cache/bazel-repo",
+            ],
+        )
+        self.assertEqual(mock_run.call_args.kwargs["timeout"], RDEPS_QUERY_TIMEOUT_SECONDS)
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_query_without_repository_cache_uses_bazel_default(self, mock_run):
+        mock_run.return_value = unittest.mock.Mock(
+            returncode=0, stdout="//pkg/auth/oauth2:oauth2_test\n", stderr=""
+        )
+        self._discover(["pkg/auth/oauth2/handlers.go"])
+        cmd = mock_run.call_args[0][0]
+        self.assertEqual(
+            cmd[:-1], ["bazel", "query", "--tool_deps", "--noimplicit_deps", "--keep_going"]
+        )
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_failed_query_warns_and_echoes_bazel_errors(self, mock_run):
+        mock_run.return_value = unittest.mock.Mock(
+            returncode=3, stdout="", stderr="ERROR: no such package '@@rules_go+//go'"
+        )
+        targets, warnings = self._discover(["pkg/auth/oauth2/handlers.go"])
+        self.assertEqual(targets, [])
+        self.assertIn(
+            "::warning::Running the full backend suite: bazel query failed with exit code 3\n",
+            warnings,
+        )
+        self.assertIn("ERROR: no such package '@@rules_go+//go'", warnings)
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_query_exception_warns(self, mock_run):
+        mock_run.side_effect = subprocess.TimeoutExpired("bazel", RDEPS_QUERY_TIMEOUT_SECONDS)
+        targets, warnings = self._discover(["pkg/auth/oauth2/handlers.go"])
+        self.assertEqual(targets, [])
+        self.assertIn(
+            "::warning::Running the full backend suite: bazel query encountered exception: "
+            "Command 'bazel' timed out after 600 seconds",
+            warnings,
+        )
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_query_without_tests_warns(self, mock_run):
+        mock_run.return_value = unittest.mock.Mock(
+            returncode=0, stdout="//cmd/ui:ui_unit_tests\n", stderr=""
+        )
+        targets, warnings = self._discover(["pkg/auth/oauth2/handlers.go"])
+        self.assertEqual(targets, [])
+        self.assertIn(
+            "::warning::Running the full backend suite: bazel query found no tests that depend "
+            "on //pkg/auth/oauth2:all",
+            warnings,
+        )
+
+    @patch("tools.benchmark.resolve_test_scope.subprocess.run")
+    def test_unmappable_files_warn_without_querying(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "BUILD.bazel").touch()
+            unpackaged, unpackaged_warnings = self._discover(["root_data.yaml"], cwd=Path(tmpdir))
+            outside_code, outside_warnings = self._discover(["../outside.go"], cwd=Path(tmpdir))
+        ui_only, ui_only_warnings = self._discover(["cmd/ui/src/styles.css"])
+        mock_run.assert_not_called()
+        self.assertEqual((unpackaged, outside_code, ui_only), ([], [], []))
+        self.assertIn(
+            "::warning::Running the full backend suite: root_data.yaml is not inside a Bazel "
+            "package",
+            unpackaged_warnings,
+        )
+        self.assertIn(
+            "::warning::Running the full backend suite: ../outside.go is not inside a Bazel "
+            "package",
+            outside_warnings,
+        )
+        self.assertIn(
+            "::warning::Running the full backend suite: no modified file maps to a Bazel package",
+            ui_only_warnings,
+        )
+
+    @patch("tools.benchmark.resolve_test_scope.discover_bazel_rdeps_targets")
+    def test_resolve_test_scope_passes_cwd_and_repository_cache(self, mock_rdeps):
+        mock_rdeps.return_value = ["//pkg/auth:auth_test"]
+        resolve_test_scope(["pkg/auth/auth.go"], cwd=Path("/repo"), repository_cache="/cache")
+        mock_rdeps.assert_called_once_with(
+            ["pkg/auth/auth.go"], cwd=Path("/repo"), repository_cache="/cache"
+        )
+
+
+@patch("tools.benchmark.resolve_test_scope.list_changed_files")
+class TestLocalScope(unittest.TestCase):
+    def _run_main(self, argv: list[str], env: dict[str, str] | None = None) -> dict:
+        stdout = io.StringIO()
+        with (
+            patch("sys.argv", ["resolve_test_scope.py", *argv]),
+            patch.dict(os.environ, env or {}, clear=True),
+            redirect_stdout(stdout),
+            redirect_stderr(io.StringIO()),
+        ):
+            main()
+        return json.loads(stdout.getvalue())
+
+    def test_scopes_changed_files_like_a_pull_request(self, mock_list):
+        mock_list.return_value = ["cmd/ui/src/app/app.component.ts", "deploy/helm/values.yaml"]
+        scope = resolve_local_scope("origin/main", Path("/repo"), use_rdeps=False)
+        mock_list.assert_called_once_with("origin/main", Path("/repo"))
+        self.assertEqual(
+            (scope["run_backend"], scope["run_ui"], scope["run_helm"], scope["changed_files"]),
+            (False, True, True, ["cmd/ui/src/app/app.component.ts", "deploy/helm/values.yaml"]),
+        )
+
+    def test_empty_change_set_selects_no_suites(self, mock_list):
+        mock_list.return_value = []
+        scope = resolve_local_scope("origin/feature", Path("/repo"))
+        self.assertEqual(
+            scope,
+            {
+                "run_backend": False,
+                "run_ui": False,
+                "backend_mode": "none",
+                "bazel_targets": "",
+                "reason": "no files changed since the merge base with origin/feature",
+                "run_helm": False,
+                "changed_files": [],
+            },
+        )
+
+    @patch("tools.benchmark.resolve_test_scope.discover_bazel_rdeps_targets")
+    def test_rdeps_query_runs_in_repo_root(self, mock_rdeps, mock_list):
+        mock_list.return_value = ["pkg/auth/auth.go"]
+        mock_rdeps.return_value = ["//pkg/auth:auth_test"]
+        scope = resolve_local_scope("origin/main", Path("/repo"))
+        self.assertEqual(
+            (scope["backend_mode"], scope["bazel_targets"]), ("rdeps", "//pkg/auth:auth_test")
+        )
+        mock_rdeps.assert_called_once_with(
+            ["pkg/auth/auth.go"], cwd=Path("/repo"), repository_cache=None
+        )
+
+    @patch("tools.benchmark.resolve_test_scope.discover_bazel_rdeps_targets")
+    def test_main_local_passes_repository_cache_to_rdeps_query(self, mock_rdeps, mock_list):
+        mock_list.return_value = ["pkg/auth/auth.go"]
+        mock_rdeps.return_value = ["//pkg/auth:auth_test"]
+        result = self._run_main(["--local", "--repository-cache", "/cache/bazel-repo"])
+        mock_rdeps.assert_called_once_with(
+            ["pkg/auth/auth.go"], cwd=_REPO_ROOT, repository_cache="/cache/bazel-repo"
+        )
+        self.assertEqual(result["backend_mode"], "rdeps")
+
+    def test_main_local_ignores_github_event_and_output_env(self, mock_list):
+        mock_list.return_value = ["README.md"]
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "github_output"
+            output.touch()
+            env = {
+                "GITHUB_EVENT_NAME": "push",
+                "GITHUB_REF": "refs/heads/main",
+                "GITHUB_OUTPUT": str(output),
+            }
+            result = self._run_main(["--local", "--base-ref", "origin/feature"], env)
+            self.assertEqual(output.read_text(encoding="utf-8"), "")
+        mock_list.assert_called_once_with("origin/feature", _REPO_ROOT)
+        self.assertEqual(
+            (result["backend_mode"], result["reason"], result["changed_files"]),
+            ("none", "only non-code or documentation files modified", ["README.md"]),
+        )
+
+    def test_main_local_defaults_base_and_honors_github_output_flag(self, mock_list):
+        mock_list.return_value = ["deploy/helm/values.yaml"]
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "github_output"
+            self._run_main(["--local", "--github-output", str(output)])
+            self.assertIn("run_helm=true\n", output.read_text(encoding="utf-8"))
+        mock_list.assert_called_once_with("origin/main", _REPO_ROOT)
+
+    def test_main_local_git_failure_exits_with_instruction(self, mock_list):
+        mock_list.side_effect = ChangedFilesError("`git merge-base origin/main HEAD` failed: bad")
+        with self.assertRaises(SystemExit) as ctx:
+            self._run_main(["--local"])
+        message = str(ctx.exception.code)
+        self.assertIn("Error: `git merge-base origin/main HEAD` failed: bad", message)
+        self.assertIn("git fetch origin", message)
+
+    def test_main_rejects_files_with_local(self, mock_list):
+        with self.assertRaises(SystemExit) as ctx:
+            self._run_main(["--local", "--files", "README.md"])
+        self.assertEqual(ctx.exception.code, 2)
+        mock_list.assert_not_called()
+
+
+class TestCiScope(unittest.TestCase):
+    def test_base_ref_aliases_base(self):
+        self.assertEqual(build_parser().parse_args(["--base-ref", "abc"]).base, "abc")
+
+    @patch("tools.benchmark.resolve_test_scope.get_git_modified_files")
+    def test_explicit_files_skip_git_and_report_helm(self, mock_get_files):
+        args = build_parser().parse_args(["--files", "deploy/helm/values.yaml", "--no-rdeps"])
+        with redirect_stderr(io.StringIO()):
+            scope = resolve_ci_scope(args, {"GITHUB_EVENT_NAME": "pull_request"})
+        mock_get_files.assert_not_called()
+        self.assertEqual((scope["backend_mode"], scope["run_helm"]), ("none", True))
+
+    @patch("tools.benchmark.resolve_test_scope.discover_bazel_rdeps_targets")
+    @patch("tools.benchmark.resolve_test_scope.get_git_modified_files")
+    def test_repository_cache_reaches_rdeps_query(self, mock_get_files, mock_rdeps):
+        mock_get_files.return_value = ["pkg/auth/auth.go"]
+        mock_rdeps.return_value = ["//pkg/auth:auth_test"]
+        args = build_parser().parse_args(["--repository-cache", "/cache/bazel-repo"])
+        with redirect_stderr(io.StringIO()):
+            scope = resolve_ci_scope(args, {"GITHUB_EVENT_NAME": "pull_request", "GITHUB_SHA": "s"})
+        mock_get_files.assert_called_once_with(base_ref="origin/main", head_ref="s", base_branch="")
+        mock_rdeps.assert_called_once_with(
+            ["pkg/auth/auth.go"], cwd=None, repository_cache="/cache/bazel-repo"
+        )
+        self.assertEqual(scope["backend_mode"], "rdeps")
 
 
 if __name__ == "__main__":
