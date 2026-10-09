@@ -155,10 +155,19 @@ class DescribeScopeTest(unittest.TestCase):
 
     def test_ci_scope_has_no_changed_files_and_lists_ui_first(self):
         ci_scope = {k: v for k, v in RDEPS_SCOPE.items() if k != "changed_files"}
-        report = rat.describe_scope(parse("--ci", "--dry-run"), ci_scope | {"run_ui": True})
+        report = rat.describe_scope(
+            parse("--ci", "--dry-run"),
+            ci_scope | {"run_ui": True, "bazel_targets": ("//pkg/a:a_test", "//pkg/b:b_test")},
+        )
         self.assertEqual(
-            (report["mode"], report["changed_files"], report["other_suites"], report["dry_run"]),
-            ("ci", None, [UI_ACTION, HELM_ACTION], True),
+            (
+                report["mode"],
+                report["changed_files"],
+                report["bazel_targets"],
+                report["other_suites"],
+                report["dry_run"],
+            ),
+            ("ci", None, ["//pkg/a:a_test", "//pkg/b:b_test"], [UI_ACTION, HELM_ACTION], True),
         )
 
 
@@ -338,10 +347,11 @@ class RunBazelTestsTest(unittest.TestCase):
             return subprocess.CompletedProcess(cmd, 0)
 
         mock_run.side_effect = fake_bazel
-        outcome = rat.run_bazel_tests(["//a:a_test"], ["--config=ci"], {})
+        outcome = rat.run_bazel_tests(["//a:a_test"], ["--config=ci"], {"FOO": "bar"})
         self.assertEqual((outcome.exit_code, outcome.passed_targets), (0, ("//a:a_test",)))
         self.assertEqual(
-            mock_run.call_args.kwargs, {"check": False, "cwd": rat._REPO_ROOT, "stream": sys.stderr}
+            mock_run.call_args.kwargs,
+            {"env": {"FOO": "bar"}, "check": False, "cwd": rat._REPO_ROOT, "stream": sys.stderr},
         )
         self.assertIn("--config=ci", mock_run.call_args.args[0])
         self.assertFalse(bep_paths[0].exists())
