@@ -27,7 +27,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/xid:messages_go_proto",
-        "//internal/compat/status",
+        "//internal/grpcerr",
         "//internal/logging",
         "//pkg/auth/jwks",
         "//pkg/auth/oauth2",

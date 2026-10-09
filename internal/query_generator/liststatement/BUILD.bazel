@@ -10,7 +10,7 @@ go_library(
     deps = [
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filter",
-        "//internal/compat/status",
+        "//internal/grpcerr",
         "//internal/logging",
         "//internal/query_generator/querytools",
         "//internal/safesql",
@@ -24,7 +24,6 @@ go_test(
     embed = [":liststatement"],
     deps = [
         "//api/filter:filter_expression_go_proto",
-        "//internal/compat/status",
         "//internal/query_generator/querytools",
         "//internal/safesql",
         "@com_github_google_go_cmp//cmp",

@@ -19,10 +19,10 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
-	"task/go/status"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 )
 
 func TestValidateChartID(t *testing.T) {
@@ -53,32 +53,32 @@ func TestValidateChartID(t *testing.T) {
 		{
 			name:    "rejected_slash_in_id",
 			input:   "invalid/chart-id",
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "rejected_root_chart_name",
 			input:   "charts/f47ac10b-58cc-4372-a567-0e02b2c3d479",
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "rejected_workunit_chart_name",
 			input:   "experiments/100/workUnits/2/charts/f47ac10b-58cc-4372-a567-0e02b2c3d479",
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "rejected_dashboard_chart_name",
 			input:   "dashboards/dash-1/charts/f47ac10b-58cc-4372-a567-0e02b2c3d479",
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "empty_string",
 			input:   "",
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "whitespace_only",
 			input:   "   \t\n  ",
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -119,32 +119,32 @@ func TestValidateChartIDs(t *testing.T) {
 		{
 			name:     "rejected_slash_item_in_slice",
 			chartIDs: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "invalid/chart-id"},
-			wantErr:  status.ErrInvalidArgument,
+			wantErr:  grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:     "rejected_resource_names_in_slice",
 			chartIDs: []string{"charts/f47ac10b-58cc-4372-a567-0e02b2c3d479"},
-			wantErr:  status.ErrInvalidArgument,
+			wantErr:  grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:     "rejected_mixed_names_and_ids",
 			chartIDs: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "experiments/10/workUnits/1/charts/c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
-			wantErr:  status.ErrInvalidArgument,
+			wantErr:  grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:     "empty_item",
 			chartIDs: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", ""},
-			wantErr:  status.ErrInvalidArgument,
+			wantErr:  grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:     "whitespace_item",
 			chartIDs: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "   "},
-			wantErr:  status.ErrInvalidArgument,
+			wantErr:  grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:     "exact_duplicate_ids",
 			chartIDs: []string{"custom-chart-1", "custom-chart-1"},
-			wantErr:  status.ErrInvalidArgument,
+			wantErr:  grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -235,7 +235,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 					ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_request_resource_name_in_chart_ids",
@@ -245,19 +245,19 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 					ChartIds: []string{"charts/f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_dashboard",
 			req: &spb.CreateDashboardRequest{
 				Dashboard: nil,
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_title",
@@ -266,7 +266,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 					Title: "",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "whitespace_title",
@@ -275,7 +275,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 					Title: "   \t\n  ",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_dashboard_id_with_slashes",
@@ -285,7 +285,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 					Title: "Valid Dashboard",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_dashboard_name_format",
@@ -295,7 +295,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 					Title: "Valid Dashboard",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "valid_request_with_inline_charts",
@@ -314,7 +314,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
 				Charts:    []*dpb.Chart{nil},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_request_inline_chart_whitespace_title",
@@ -322,7 +322,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
 				Charts:    []*dpb.Chart{{Title: "   ", Xid: 4321, Wid: 1}},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_request_inline_chart_missing_xid",
@@ -330,7 +330,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
 				Charts:    []*dpb.Chart{{Title: "Baseline", Wid: 1}},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_request_inline_chart_missing_wid",
@@ -338,7 +338,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
 				Charts:    []*dpb.Chart{{Title: "Baseline", Xid: 4321}},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_request_inline_chart_negative_xid",
@@ -346,7 +346,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
 				Charts:    []*dpb.Chart{{Title: "Baseline", Xid: -1, Wid: 1}},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -376,21 +376,21 @@ func TestValidateGetDashboardRequest(t *testing.T) {
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_name",
 			req: &spb.GetDashboardRequest{
 				Name: "",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_name_format",
 			req: &spb.GetDashboardRequest{
 				Name: "invalid/format/dashboards/123",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -427,14 +427,14 @@ func TestValidateListDashboardsRequest(t *testing.T) {
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "negative_page_size",
 			req: &spb.ListDashboardsRequest{
 				PageSize: -5,
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -547,7 +547,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 					Paths: []string{"charts"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "update_mask_chart_ids_with_duplicate",
@@ -560,7 +560,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 					Paths: []string{"chart_ids"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "update_mask_chart_ids_with_slash",
@@ -573,7 +573,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 					Paths: []string{"chart_ids"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "update_mask_chart_ids_with_resource_name",
@@ -586,7 +586,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 					Paths: []string{"chart_ids"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "full_update_with_duplicate_chart_ids",
@@ -597,7 +597,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 					ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "full_update_with_slash_chart_id",
@@ -608,7 +608,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 					ChartIds: []string{"invalid/chart/id"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "full_update_with_resource_name_chart_id",
@@ -619,19 +619,19 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 					ChartIds: []string{"charts/f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_dashboard",
 			req: &spb.UpdateDashboardRequest{
 				Dashboard: nil,
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_dashboard_name",
@@ -641,7 +641,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 					Title: "Updated Title",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_dashboard_name",
@@ -651,7 +651,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 					Title: "Updated Title",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "full_update_empty_title",
@@ -661,7 +661,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 					Title: "",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "unsupported_update_mask_path",
@@ -674,7 +674,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 					Paths: []string{"owner"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "update_mask_title_with_empty_title",
@@ -687,7 +687,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 					Paths: []string{"title"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -717,21 +717,21 @@ func TestValidateDeleteDashboardRequest(t *testing.T) {
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_name",
 			req: &spb.DeleteDashboardRequest{
 				Name: "",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_name",
 			req: &spb.DeleteDashboardRequest{
 				Name: "invalid-name",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -765,7 +765,7 @@ func TestValidateGetChartDataRequest(t *testing.T) {
 				Name:             "experiments/1001/charts/chart-1",
 				ChartWidthPixels: 800,
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "valid_request_work_unit_chart",
@@ -804,21 +804,21 @@ func TestValidateGetChartDataRequest(t *testing.T) {
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_name",
 			req: &spb.GetChartDataRequest{
 				Name: "",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_chart_name",
 			req: &spb.GetChartDataRequest{
 				Name: "invalid-name",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "negative_chart_width_pixels",
@@ -826,7 +826,7 @@ func TestValidateGetChartDataRequest(t *testing.T) {
 				Name:             "dashboards/dash-1/charts/chart-1",
 				ChartWidthPixels: -100,
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent_experiment",
@@ -834,7 +834,7 @@ func TestValidateGetChartDataRequest(t *testing.T) {
 				Name:             "charts/chart-1",
 				ParentExperiment: "invalid-exp",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent_workunit",
@@ -842,7 +842,7 @@ func TestValidateGetChartDataRequest(t *testing.T) {
 				Name:           "charts/chart-1",
 				ParentWorkunit: "invalid-wu",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -881,61 +881,61 @@ func TestValidateGetChartRequest(t *testing.T) {
 			req: &spb.GetChartRequest{
 				Name: "experiments/1001/charts/chart-1",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_name",
 			req: &spb.GetChartRequest{
 				Name: "",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_dashboard_chart_name",
 			req: &spb.GetChartRequest{
 				Name: "dashboards/dash-1/charts/chart-1",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_work_unit_chart_name",
 			req: &spb.GetChartRequest{
 				Name: "experiments/1001/workUnits/123/charts/chart-1",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_name_dashboard_prefix_only",
 			req: &spb.GetChartRequest{
 				Name: "dashboards/dash-1",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_whitespace_name",
 			req: &spb.GetChartRequest{
 				Name: "charts/   ",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_empty_chart_id",
 			req: &spb.GetChartRequest{
 				Name: "charts/",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_extra_parts",
 			req: &spb.GetChartRequest{
 				Name: "charts/chart-1/extra",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -971,40 +971,40 @@ func TestValidateCreateChartParent(t *testing.T) {
 			req: &spb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/0",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_parent",
 			req: &spb.CreateChartRequest{
 				Parent: "",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent_dashboard",
 			req: &spb.CreateChartRequest{
 				Parent: "dashboards/my-dashboard",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent_non_numeric_wid",
 			req: &spb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/abc",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent_format",
 			req: &spb.CreateChartRequest{
 				Parent: "invalid-parent",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -1053,7 +1053,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 				Parent: "experiments/1/workUnits/2",
 				Chart:  &dpb.Chart{Title: "My Chart", Xid: 0, Wid: 2},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "zero_chart_wid",
@@ -1061,7 +1061,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 				Parent: "experiments/1/workUnits/2",
 				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 0},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "mismatched_chart_xid",
@@ -1069,7 +1069,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 				Parent: "experiments/1/workUnits/2",
 				Chart:  &dpb.Chart{Title: "My Chart", Xid: 999, Wid: 2},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "mismatched_chart_wid",
@@ -1077,7 +1077,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 				Parent: "experiments/1/workUnits/2",
 				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 999},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_chart_id_with_slash",
@@ -1086,7 +1086,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 				Chart:   &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
 				ChartId: "invalid/id",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_chart_title",
@@ -1094,12 +1094,12 @@ func TestValidateCreateChartRequest(t *testing.T) {
 				Parent: "experiments/1/workUnits/2",
 				Chart:  &dpb.Chart{Title: "   ", Xid: 1, Wid: 2},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_parent",
@@ -1107,7 +1107,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 				Parent: "",
 				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent",
@@ -1115,7 +1115,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 				Parent: "invalid-parent",
 				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "dashboard_parent_rejected",
@@ -1123,7 +1123,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 				Parent: "dashboards/dash-1",
 				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_chart",
@@ -1131,7 +1131,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 				Parent: "experiments/1/workUnits/2",
 				Chart:  nil,
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -1162,14 +1162,14 @@ func TestValidateListChartsRequest(t *testing.T) {
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_parent",
 			req: &spb.ListChartsRequest{
 				Parent: "",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "valid_work_unit_parent",
@@ -1184,28 +1184,28 @@ func TestValidateListChartsRequest(t *testing.T) {
 			req: &spb.ListChartsRequest{
 				Parent: "invalid-dash",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "experiment_parent_without_work_unit",
 			req: &spb.ListChartsRequest{
 				Parent: "experiments/42",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "work_unit_parent_with_non_numeric_xid",
 			req: &spb.ListChartsRequest{
 				Parent: "experiments/abc/workUnits/7",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "chart_name_is_not_a_parent",
 			req: &spb.ListChartsRequest{
 				Parent: "dashboards/dash-1/charts/chart-1",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "negative_page_size",
@@ -1213,7 +1213,7 @@ func TestValidateListChartsRequest(t *testing.T) {
 				Parent:   "dashboards/dash-1",
 				PageSize: -1,
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -1278,14 +1278,14 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_chart",
 			req: &spb.UpdateChartRequest{
 				Chart: nil,
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_chart_name",
@@ -1295,7 +1295,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 					Title: "Updated Chart",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_chart_name",
@@ -1305,7 +1305,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 					Title: "Updated Chart",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "rejected_dashboard_chart_name",
@@ -1315,7 +1315,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 					Title: "Updated Chart",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "rejected_work_unit_chart_name",
@@ -1325,7 +1325,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 					Title: "Updated Chart",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "full_update_empty_title",
@@ -1335,7 +1335,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 					Title: "",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "full_update_whitespace_title",
@@ -1345,7 +1345,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 					Title: "   \t\n  ",
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "unsupported_update_mask_path",
@@ -1358,7 +1358,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 					Paths: []string{"name"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "update_mask_title_with_empty_title",
@@ -1371,7 +1371,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 					Paths: []string{"title"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "unsupported_update_mask_path_wid",
@@ -1384,7 +1384,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 					Paths: []string{"wid"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "unsupported_update_mask_path_xid",
@@ -1397,7 +1397,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 					Paths: []string{"xid"},
 				},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -1436,47 +1436,47 @@ func TestValidateDeleteChartRequest(t *testing.T) {
 			req: &spb.DeleteChartRequest{
 				Name: "dashboards/dash-1/charts/chart-1",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_work_unit_chart_name",
 			req: &spb.DeleteChartRequest{
 				Name: "experiments/1001/workUnits/123/charts/chart-1",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "nil_request",
 			req:     nil,
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_name",
 			req: &spb.DeleteChartRequest{
 				Name: "",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_name",
 			req: &spb.DeleteChartRequest{
 				Name: "invalid-name",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_whitespace_name",
 			req: &spb.DeleteChartRequest{
 				Name: "charts/   ",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_empty_chart_id",
 			req: &spb.DeleteChartRequest{
 				Name: "charts/",
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 

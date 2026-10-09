@@ -22,7 +22,7 @@ import (
 
 	"google.golang.org/api/idtoken"
 	"google.golang.org/grpc/metadata"
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
@@ -63,7 +63,7 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 		} else {
 			logging.Warn(ctx, "validateJWT: idtoken.Validate failed and could not parse payload for debugging", "error", err, "parse_error", parseErr)
 		}
-		return "", "", fmt.Errorf("JWT validation failed: %w", status.ErrUnauthenticated)
+		return "", "", fmt.Errorf("JWT validation failed: %w", grpcerr.ErrUnauthenticated)
 	}
 
 	email, err := resolveUserEmail(ctx, payload)
@@ -73,7 +73,7 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 
 	userID := payload.Subject
 	if userID == "" {
-		return "", "", fmt.Errorf("user ID claim is empty: %w", status.ErrUnauthenticated)
+		return "", "", fmt.Errorf("user ID claim is empty: %w", grpcerr.ErrUnauthenticated)
 	}
 
 	logging.Info(ctx, "Authenticated request", "email", email, "user_id", userID)
@@ -123,7 +123,7 @@ func (a *Authorizer) parseCustomSessionToken(ctx context.Context, jwt string) (*
 		return nil, nil
 	}
 	if claims == nil || claims.Email == "" {
-		return nil, fmt.Errorf("email in custom session token is empty: %w", status.ErrUnauthenticated)
+		return nil, fmt.Errorf("email in custom session token is empty: %w", grpcerr.ErrUnauthenticated)
 	}
 	return &authIdentity{email: claims.Email, userID: claims.Email}, nil
 }
@@ -133,7 +133,7 @@ func resolveUserEmail(ctx context.Context, payload *idtoken.Payload) (string, er
 	email, ok := payload.Claims["email"].(string)
 	if !ok || email == "" {
 		logging.Warn(ctx, "Email claim is missing or empty")
-		return "", fmt.Errorf("email claim is missing or empty: %w", status.ErrUnauthenticated)
+		return "", fmt.Errorf("email claim is missing or empty: %w", grpcerr.ErrUnauthenticated)
 	}
 	return email, nil
 }
@@ -143,7 +143,7 @@ func jwtFromMetadata(ctx context.Context) (string, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		logging.Warn(ctx, "Missing gRPC metadata")
-		return "", fmt.Errorf("missing gRPC metadata: %w", status.ErrUnauthenticated)
+		return "", fmt.Errorf("missing gRPC metadata: %w", grpcerr.ErrUnauthenticated)
 	}
 
 	jwtValues := md.Get("x-goog-iap-jwt-assertion")
@@ -157,7 +157,7 @@ func jwtFromMetadata(ctx context.Context) (string, error) {
 	}
 
 	logging.Warn(ctx, "Missing IAP JWT or Bearer token in metadata")
-	return "", fmt.Errorf("missing authentication token in metadata: %w", status.ErrUnauthenticated)
+	return "", fmt.Errorf("missing authentication token in metadata: %w", grpcerr.ErrUnauthenticated)
 }
 
 // validateJWT validates the JWT and returns the payload.
