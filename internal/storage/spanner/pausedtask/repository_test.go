@@ -25,10 +25,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	"xmanager_cloud/internal/compat/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
 	ss "xmanager_cloud/internal/storage/spanner"
@@ -129,10 +130,10 @@ func TestTxRepository_CreateErrors(t *testing.T) {
 	}{
 		{name: "duplicate", task: newSpannerTask("task-1", 100), wantCode: codes.AlreadyExists},
 		{name: "missing_parent_work_unit", task: missingParent, wantCode: codes.NotFound},
-		{name: "nil_task", task: nil, wantErr: status.ErrInvalidArgument},
-		{name: "nil_action", task: noAction, wantErr: status.ErrInvalidArgument},
-		{name: "empty_task_id", task: newSpannerTask("", 100), wantErr: status.ErrInvalidArgument},
-		{name: "zero_create_time", task: zeroCreateTime, wantErr: status.ErrInvalidArgument},
+		{name: "nil_task", task: nil, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "nil_action", task: noAction, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "empty_task_id", task: newSpannerTask("", 100), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "zero_create_time", task: zeroCreateTime, wantErr: grpcerr.ErrInvalidArgument},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -140,8 +141,8 @@ func TestTxRepository_CreateErrors(t *testing.T) {
 			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
 				t.Errorf("Create() error = %v, want %v", err, tt.wantErr)
 			}
-			if tt.wantCode != codes.OK && status.ExtractCanonicalCode(err) != tt.wantCode {
-				t.Errorf("Create() error = %v (code %v), want code %v", err, status.ExtractCanonicalCode(err), tt.wantCode)
+			if tt.wantCode != codes.OK && status.Code(err) != tt.wantCode {
+				t.Errorf("Create() error = %v (code %v), want code %v", err, status.Code(err), tt.wantCode)
 			}
 		})
 	}
@@ -160,7 +161,7 @@ func TestTxRepository_Create(t *testing.T) {
 	}{
 		{name: "committed", task: newSpannerTask("task-1", 100), wantIDs: []string{"task-1"}},
 		{name: "rolled_back", task: newSpannerTask("task-1", 100), fnErr: errAbort, wantErr: errAbort},
-		{name: "invalid_task", task: nil, wantErr: status.ErrInvalidArgument},
+		{name: "invalid_task", task: nil, wantErr: grpcerr.ErrInvalidArgument},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -306,8 +307,8 @@ func TestTxRepository_MarkProcessed_UnknownTaskIsAtomic(t *testing.T) {
 		{XID: 100, WID: 200, TaskID: "t1", ResolutionStatus: storage.ResolutionStatusSkipped, ProcessedTime: processedTime},
 		{XID: 100, WID: 200, TaskID: "missing", ResolutionStatus: storage.ResolutionStatusSkipped, ProcessedTime: processedTime},
 	})
-	if status.ExtractCanonicalCode(err) != codes.NotFound {
-		t.Errorf("MarkProcessed() error = %v (code %v), want code %v", err, status.ExtractCanonicalCode(err), codes.NotFound)
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("MarkProcessed() error = %v (code %v), want code %v", err, status.Code(err), codes.NotFound)
 	}
 	assertPendingIDs(ctx, t, repo, []string{"t1"})
 }
@@ -335,7 +336,7 @@ func TestTxRepository_MarkProcessed(t *testing.T) {
 		{name: "committed", resolutions: resolutions, wantIDs: []string{"t2"}},
 		{name: "rolled_back", resolutions: resolutions, fnErr: errAbort, wantErr: errAbort, wantIDs: []string{"t2", "t1"}},
 		{name: "empty", resolutions: nil, wantIDs: []string{"t2", "t1"}},
-		{name: "zero_processed_time", resolutions: []storage.PausedTaskResolution{{XID: 100, WID: 200, TaskID: "t1"}}, wantErr: status.ErrInvalidArgument, wantIDs: []string{"t2", "t1"}},
+		{name: "zero_processed_time", resolutions: []storage.PausedTaskResolution{{XID: 100, WID: 200, TaskID: "t1"}}, wantErr: grpcerr.ErrInvalidArgument, wantIDs: []string{"t2", "t1"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

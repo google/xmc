@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	"xmanager_cloud/internal/compat/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
@@ -116,16 +116,16 @@ func (r *Repository) ListPending(ctx context.Context, limit int) ([]*storage.Pau
 
 func validateTask(task *storage.PausedTask) error {
 	if task == nil {
-		return fmt.Errorf("%w: task cannot be nil", status.ErrInvalidArgument)
+		return fmt.Errorf("%w: task cannot be nil", grpcerr.ErrInvalidArgument)
 	}
 	if task.Action == nil {
-		return fmt.Errorf("%w: task action cannot be nil", status.ErrInvalidArgument)
+		return fmt.Errorf("%w: task action cannot be nil", grpcerr.ErrInvalidArgument)
 	}
 	if task.TaskID == "" {
-		return fmt.Errorf("%w: task ID cannot be empty", status.ErrInvalidArgument)
+		return fmt.Errorf("%w: task ID cannot be empty", grpcerr.ErrInvalidArgument)
 	}
 	if task.CreateTime.IsZero() {
-		return fmt.Errorf("%w: create time cannot be zero", status.ErrInvalidArgument)
+		return fmt.Errorf("%w: create time cannot be zero", grpcerr.ErrInvalidArgument)
 	}
 	return nil
 }
@@ -148,7 +148,7 @@ func resolutionMutations(resolutions []storage.PausedTaskResolution) ([]*spanner
 	mutations := make([]*spanner.Mutation, len(resolutions))
 	for i, res := range resolutions {
 		if res.ProcessedTime.IsZero() {
-			return nil, fmt.Errorf("%w: processed time cannot be zero", status.ErrInvalidArgument)
+			return nil, fmt.Errorf("%w: processed time cannot be zero", grpcerr.ErrInvalidArgument)
 		}
 		mutations[i] = resolutionMutation(res)
 	}
