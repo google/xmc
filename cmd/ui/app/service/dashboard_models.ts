@@ -17,8 +17,8 @@
  *
  * Architectural Structure:
  * 1. Canonical Protobuf Spec & RPC Aliases: Reuses generated Protobuf interfaces
- *    from `messages.jsonpb_decls` and `dashboard_service.jsonpb_decls` as the single
- *    source of truth without duplicate declarations.
+ *    from `app/protos/dashboard_service` as the single source of truth without
+ *    duplicate declarations.
  * 2. Runtime Enums / Constants (`as const`): Defines string-backed mapping objects
  *    to prevent schema drift and seamlessly match Protobuf JSON serialization.
  * 3. Client-Augmented Telemetry View Models: Defines UI view-models (`ChartData`,
@@ -27,34 +27,32 @@
  */
 
 import type {
+  Chart as ProtoChart,
+  ChartData as ProtoChartData,
+  CoordSpec as ProtoCoordSpec,
   CreateChartRequest as ProtoCreateChartRequest,
   CreateDashboardRequest as ProtoCreateDashboardRequest,
+  Dashboard as ProtoDashboard,
+  DataSpec as ProtoDataSpec,
   DeleteChartRequest as ProtoDeleteChartRequest,
   DeleteDashboardRequest as ProtoDeleteDashboardRequest,
+  FacetSpec as ProtoFacetSpec,
+  GeomSpec as ProtoGeomSpec,
   GetChartDataRequest as ProtoGetChartDataRequest,
   GetChartRequest as ProtoGetChartRequest,
   GetDashboardRequest as ProtoGetDashboardRequest,
+  GridPosition as ProtoGridPosition,
+  LayoutSpec as ProtoLayoutSpec,
   ListChartsRequest as ProtoListChartsRequest,
   ListChartsResponse as ProtoListChartsResponse,
   ListDashboardsRequest as ProtoListDashboardsRequest,
   ListDashboardsResponse as ProtoListDashboardsResponse,
-  UpdateChartRequest as ProtoUpdateChartRequest,
-  UpdateDashboardRequest as ProtoUpdateDashboardRequest,
-} from 'xmanager_cloud/dashboard_service/proto/dashboard_service.jsonpb_decls';
-import type {
-  Chart as ProtoChart,
-  ChartData as ProtoChartData,
-  CoordSpec as ProtoCoordSpec,
-  Dashboard as ProtoDashboard,
-  DataSpec as ProtoDataSpec,
-  FacetSpec as ProtoFacetSpec,
-  GeomSpec as ProtoGeomSpec,
-  GridPosition as ProtoGridPosition,
-  LayoutSpec as ProtoLayoutSpec,
   MappingSpec as ProtoMappingSpec,
   PlotSpec as ProtoPlotSpec,
   StatSpec as ProtoStatSpec,
-} from 'xmanager_cloud/dashboard_service/proto/messages.jsonpb_decls';
+  UpdateChartRequest as ProtoUpdateChartRequest,
+  UpdateDashboardRequest as ProtoUpdateDashboardRequest,
+} from 'app/protos/dashboard_service';
 
 // ============================================================================
 // 1. Canonical Protobuf Spec & RPC Aliases (Single Source of Truth)
