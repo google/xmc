@@ -111,6 +111,7 @@ go_test(
         "intent_log_level_test.go",
         "k8s_status_detector_test.go",
         "lifecycle_test.go",
+        "log_detail_attr_test.go",
         "observation_ownership_test.go",
         "reconcile_events_test.go",
         "reconciler_test.go",

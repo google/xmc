@@ -411,7 +411,7 @@ func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput
 	if released {
 		return res, nil
 	}
-	logging.Info(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "message", msg)
+	logging.Info(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "detail", msg)
 	return res, nil
 }
 
@@ -475,7 +475,7 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	isHealthy, reason, healthMsg := r.probeComponentHealth(ctx, in)
 	res.Access = &AccessStatus{EnvVars: make(map[string]string)}
 	if reason == ReasonHelmStatusUnavailable && preserveHealthConditions(in, res) {
-		logging.Warn(ctx, "Transient component health check failure; keeping previous Ready/Degraded conditions", "name", canonicalName, "generation", in.Generation, "message", healthMsg)
+		logging.Warn(ctx, "Transient component health check failure; keeping previous Ready/Degraded conditions", "name", canonicalName, "generation", in.Generation, "detail", healthMsg)
 		return res, nil
 	}
 
