@@ -113,12 +113,14 @@ def resolve_scope(args: argparse.Namespace, env: Mapping[str, str]) -> dict[str,
 
 def describe_scope(args: argparse.Namespace, scope: Mapping[str, Any]) -> dict[str, Any]:
     """Builds the JSON report fields that describe the resolved scope."""
+    raw_targets = scope["bazel_targets"]
+    targets = raw_targets.split() if isinstance(raw_targets, str) else [str(t) for t in raw_targets]
     return {
         "mode": "ci" if args.ci else "local",
         "changed_files": scope.get("changed_files"),
         "backend_mode": scope["backend_mode"],
         "reason": scope["reason"],
-        "bazel_targets": str(scope["bazel_targets"]).split(),
+        "bazel_targets": targets,
         "other_suites": [action for key, action in OTHER_SUITE_ACTIONS.items() if scope[key]],
         "dry_run": args.dry_run,
     }
@@ -215,16 +217,18 @@ def _nested_dict(mapping: Mapping[str, Any], key: str) -> Mapping[str, Any]:
 
 def read_build_events(bep_path: Path) -> list[dict[str, Any]]:
     """Returns the events of a Build Event Protocol JSON file, skipping malformed lines."""
-    lines = bep_path.read_text(encoding="utf-8").splitlines() if bep_path.exists() else []
+    if not bep_path.exists():
+        return []
     events = []
-    for line in filter(str.strip, lines):
-        try:
-            parsed = json.loads(line)
-        except json.JSONDecodeError:  # e.g. the last line of an interrupted Bazel run
-            log_info(f"Skipped a malformed line of {bep_path}.", stream=sys.stderr)
-            continue
-        if isinstance(parsed, dict):
-            events.append(parsed)
+    with bep_path.open(encoding="utf-8") as bep_file:
+        for line in filter(str.strip, bep_file):
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError:  # e.g. the last line of an interrupted Bazel run
+                log_info(f"Skipped a malformed line of {bep_path}.", stream=sys.stderr)
+                continue
+            if isinstance(parsed, dict):
+                events.append(parsed)
     return events
 
 
@@ -270,7 +274,7 @@ def run_bazel_tests(
         bep_path = Path(tmp_dir) / "build_events.json"
         cmd = build_bazel_test_command(targets, extra_flags, env, bep_path)
         try:
-            proc = run_command(cmd, check=False, cwd=_REPO_ROOT, stream=sys.stderr)
+            proc = run_command(cmd, env=dict(env), check=False, cwd=_REPO_ROOT, stream=sys.stderr)
         except FileNotFoundError as e:
             raise HandledError(
                 "`bazel` is not installed or not on PATH.",
