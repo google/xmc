@@ -150,8 +150,8 @@ func TestFakePausedTask_MarkProcessed(t *testing.T) {
 	if err := fake.MarkProcessed(ctx, missingRes); !errors.Is(err, storage.ErrPausedTaskNotFound) {
 		t.Errorf("MarkProcessed() error = %v, want %v", err, storage.ErrPausedTaskNotFound)
 	}
-	if err := fake.MarkProcessed(ctx, []storage.PausedTaskResolution{{XID: 100, WID: 200, TaskID: "t3"}}); !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("MarkProcessed(zero ProcessedTime) error = %v, want %v", err, status.ErrInvalidArgument)
+	if err := fake.MarkProcessed(ctx, []storage.PausedTaskResolution{{XID: 100, WID: 200, TaskID: "t3"}}); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("MarkProcessed(zero ProcessedTime) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 	pending, _ := fake.ListPending(ctx, 0)
 	if diff := cmp.Diff([]string{"t3"}, taskIDs(pending)); diff != "" {
@@ -292,8 +292,8 @@ func TestFakePausedTask_Create_Validation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := fake.Create(ctx, tt.task); !errors.Is(err, status.ErrInvalidArgument) {
-				t.Errorf("Create() error = %v, want %v", err, status.ErrInvalidArgument)
+			if err := fake.Create(ctx, tt.task); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+				t.Errorf("Create() error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 			}
 		})
 	}

@@ -75,13 +75,13 @@ func (f *FakePausedTaskRepository) Create(ctx context.Context, task *storage.Pau
 		return fmt.Errorf("%w: task cannot be nil", grpcerr.ErrInvalidArgument)
 	}
 	if task.Action == nil {
-		return fmt.Errorf("%w: task action cannot be nil", status.ErrInvalidArgument)
+		return fmt.Errorf("%w: task action cannot be nil", grpcerr.ErrInvalidArgument)
 	}
 	if task.TaskID == "" {
-		return fmt.Errorf("%w: task ID cannot be empty", status.ErrInvalidArgument)
+		return fmt.Errorf("%w: task ID cannot be empty", grpcerr.ErrInvalidArgument)
 	}
 	if task.CreateTime.IsZero() {
-		return fmt.Errorf("%w: create time cannot be zero", status.ErrInvalidArgument)
+		return fmt.Errorf("%w: create time cannot be zero", grpcerr.ErrInvalidArgument)
 	}
 
 	f.mu.Lock()
@@ -156,7 +156,7 @@ func (f *FakePausedTaskRepository) MarkProcessed(ctx context.Context, resolution
 	}
 	for _, res := range resolutions {
 		if res.ProcessedTime.IsZero() {
-			return fmt.Errorf("%w: processed time cannot be zero", status.ErrInvalidArgument)
+			return fmt.Errorf("%w: processed time cannot be zero", grpcerr.ErrInvalidArgument)
 		}
 	}
 
