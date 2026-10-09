@@ -28,7 +28,7 @@ from unittest import mock
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+    sys.path.append(str(_REPO_ROOT))
 
 from tools import run_affected_tests as rat  # noqa: E402
 from tools.common.changed_files import ChangedFilesError  # noqa: E402
