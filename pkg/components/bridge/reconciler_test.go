@@ -1640,6 +1640,57 @@ func TestReconciler_EnvtestIntegration(t *testing.T) {
 	t.Run("ContractBrokenDegradedStatusOnMalformed3PPayload", func(t *testing.T) {
 		verifyEnvtestContractBreach(ctx, t, dynClient)
 	})
+	t.Run("FailedCMSSyncPersistsZeroReadyTransitionTime", func(t *testing.T) {
+		verifyEnvtestCMSSyncDue(ctx, t, dynClient)
+	})
+}
+
+// verifyEnvtestCMSSyncDue checks that the API server accepts and returns the zero Ready
+// lastTransitionTime that markCMSSyncDue sets after a failed CMS sync, and that the next pass over
+// the stored custom resource retries the sync.
+func verifyEnvtestCMSSyncDue(ctx context.Context, t *testing.T, dynClient dynamic.Interface) {
+	t.Helper()
+	compClient := dynClient.Resource(ComponentGVR).Namespace("default")
+	cr := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "xmc.dev/v1alpha1", "kind": "Component",
+		"metadata": map[string]any{"name": "cms-sync-due-comp", "namespace": "default"},
+		"spec":     map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"},
+	}}
+	live, err := compClient.Create(ctx, cr, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create Component failed: %v", err)
+	}
+	failed := reconcileEnvtestComponent(ctx, t, &mockCMS{obsErr: status.Error(codes.Unavailable, "cms down")}, live)
+	if err := ApplyComponentStatusSSA(ctx, dynClient, "default", live, failed); err != nil {
+		t.Fatalf("ApplyComponentStatusSSA failed: %v", err)
+	}
+	if live, err = compClient.Get(ctx, live.GetName(), metav1.GetOptions{}); err != nil {
+		t.Fatalf("Get updated Component failed: %v", err)
+	}
+	ready := findCondition(ParseConditionsFromUnstructured(live.Object["status"]), ConditionTypeReady)
+	if ready == nil || ready.Status != ConditionStatusTrue || !ready.LastTransitionTime.IsZero() {
+		t.Fatalf("stored Ready condition = %+v, want status %q and a zero lastTransitionTime", ready, ConditionStatusTrue)
+	}
+	cms := &mockCMS{}
+	reconcileEnvtestComponent(ctx, t, cms, live)
+	if cms.obsCalls != 1 {
+		t.Errorf("retry pass: UpdateObservedGeneration calls = %d, want 1", cms.obsCalls)
+	}
+}
+
+// reconcileEnvtestComponent runs one pass over live against cms and a healthy Helm release. A
+// failing UpdateObservedGeneration of cms is expected to fail the pass; otherwise it must succeed.
+func reconcileEnvtestComponent(ctx context.Context, t *testing.T, cms *mockCMS, live *unstructured.Unstructured) *ReconcileResult {
+	t.Helper()
+	rec, err := NewReconciler(cms, nil, &mockHelm{})
+	if err != nil {
+		t.Fatalf("NewReconciler failed: %v", err)
+	}
+	res, err := rec.ReconcileWithDependencies(ctx, live, nil)
+	if (err != nil) != (cms.obsErr != nil) {
+		t.Fatalf("ReconcileWithDependencies() error = %v, want an error: %t", err, cms.obsErr != nil)
+	}
+	return res
 }
 
 func startReconcilerEnvtest(t *testing.T) dynamic.Interface {

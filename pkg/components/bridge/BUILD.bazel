@@ -100,6 +100,7 @@ go_test(
         "deactivation_ownership_test.go",
         "dependency_readiness_test.go",
         "disabled_sync_test.go",
+        "enabled_sync_retry_test.go",
         "endpoint_health_probe_test.go",
         "fake_helm_manager_test.go",
         "fake_status_detector_test.go",

@@ -136,10 +136,11 @@ const defaultCMSHeartbeatInterval = 5 * time.Minute
 // shouldSyncToCMS determines whether an UpdateObservedGeneration RPC to CMS should be executed.
 // Under the Hybrid Probing Model (Drift 1), periodic steady-state health probe ticks bypass
 // CMS and Cloud Spanner to eliminate write amplification. CMS is only invoked when:
-// 1. Initial reconciliation (no existing Ready condition reported).
-// 2. State/readiness transitions (e.g. Ready=True <-> Ready=False).
-// 3. Metadata generation update (CR spec modified).
-// 4. Coarse heartbeat interval expiration (>= 5 minutes).
+//  1. Initial reconciliation (no existing Ready condition reported), or a retry after a failed
+//     sync, which clears the Ready transition time (see markCMSSyncDue).
+//  2. State/readiness transitions (e.g. Ready=True <-> Ready=False).
+//  3. Metadata generation update (CR spec modified).
+//  4. Coarse heartbeat interval expiration (>= 5 minutes).
 func shouldSyncToCMS(existingConditions []Condition, targetStatus string, currentGen int64) bool {
 	var existingReady *Condition
 	for i := range existingConditions {
@@ -173,10 +174,23 @@ func componentGenerationChanged(in ReconcileComponentInput, res *ReconcileResult
 // resetReadyTransitionTime updates LastTransitionTime on the Ready condition to current UTC time.
 // This resets the heartbeat timer after a successful sync to CMS.
 func resetReadyTransitionTime(conditions []Condition) {
-	now := time.Now().UTC()
+	setReadyTransitionTime(conditions, time.Now().UTC())
+}
+
+// markCMSSyncDue clears LastTransitionTime on the Ready condition after a failed sync to CMS. A
+// zero time is the "never synced" case of shouldSyncToCMS, so the next pass retries the sync
+// instead of waiting for the heartbeat, while the Ready status and reason stay as observed. A
+// later setReadiness in the same pass replaces the condition and its time, as the disabled path
+// does when it reports DeactivationIncomplete.
+func markCMSSyncDue(conditions []Condition) {
+	setReadyTransitionTime(conditions, time.Time{})
+}
+
+// setReadyTransitionTime sets LastTransitionTime on the Ready condition, if any, to t.
+func setReadyTransitionTime(conditions []Condition, t time.Time) {
 	for i := range conditions {
 		if conditions[i].Type == ConditionTypeReady {
-			conditions[i].LastTransitionTime = now
+			conditions[i].LastTransitionTime = t
 			return
 		}
 	}

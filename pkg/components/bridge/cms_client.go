@@ -68,7 +68,9 @@ func (a *serverClientAdapter) CompleteDeactivation(ctx context.Context, in *comp
 // no-op when the generation is 0 (unknown): before the first intent of a resource was committed, or
 // after the resource stopped owning its CMS record. A rejection because another custom resource
 // owns the record is handled by releaseCMSOwnership: it writes nothing to CMS and returns
-// released=true with a nil error, so callers can skip logging their own outcome.
+// released=true with a nil error, so callers can skip logging their own outcome. Any other failure
+// is returned after markCMSSyncDue, so the next pass retries the report; callers that tolerate a
+// NotFound restart the heartbeat with resetReadyTransitionTime instead.
 func (r *Reconciler) updateObservedCMS(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, statusMsg string) (released bool, err error) {
 	if res.ComponentGeneration <= 0 {
 		logging.Debug(ctx, "Skipping CMS observed generation update; component generation unknown", "name", canonicalName)
@@ -80,6 +82,9 @@ func (r *Reconciler) updateObservedCMS(ctx context.Context, in ReconcileComponen
 	if stale := storeRejectionMessage(err, staleObservationMessagePrefix); stale != "" {
 		releaseCMSOwnership(ctx, in, canonicalName, res, stale)
 		return true, nil
+	}
+	if err != nil {
+		markCMSSyncDue(res.Conditions)
 	}
 	return false, err
 }
