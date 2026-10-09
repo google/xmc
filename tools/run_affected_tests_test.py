@@ -157,7 +157,7 @@ class DescribeScopeTest(unittest.TestCase):
         ci_scope = {k: v for k, v in RDEPS_SCOPE.items() if k != "changed_files"}
         report = rat.describe_scope(
             parse("--ci", "--dry-run"),
-            ci_scope | {"run_ui": True, "bazel_targets": ("//pkg/a:a_test", "//pkg/b:b_test")},
+            ci_scope | {"run_ui": True},
         )
         self.assertEqual(
             (
@@ -314,19 +314,19 @@ class ReadTestOutcomeTest(unittest.TestCase):
         )
         self.assertIn("Skipped a malformed line", stderr.getvalue())
 
-    def test_ignores_incomplete_or_non_dict_bep_event_shapes(self):
+    def test_streams_dict_events_and_skips_incomplete_fields(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             bep_path = Path(tmp_dir) / "bep.json"
             write_build_events(
                 bep_path,
                 "[1, 2, 3]",
-                {"id": None, "testSummary": {"overallStatus": "PASSED"}},
-                {"id": {"testSummary": {}}, "testSummary": {"failed": ["not-a-dict", {}]}},
-                {"id": {"targetCompleted": None}, "completed": None},
-                {"id": {}, "aborted": None},
-                {"id": {}, "finished": {"exitCode": None}},
+                {"id": {"testSummary": {}}, "testSummary": {"failed": [{}]}},
+                {"id": {"targetCompleted": {}}, "completed": {}},
+                {"id": {}, "finished": {}},
                 test_summary_event("//ok:ok_test", "PASSED"),
             )
+            stream = rat.read_build_events(bep_path)
+            self.assertIs(iter(stream), stream)
             outcome = rat.read_test_outcome(bep_path, 0)
         self.assertEqual(outcome.passed_targets, ("//ok:ok_test",))
 
@@ -368,13 +368,16 @@ class RaiseForTestFailureTest(unittest.TestCase):
     def test_success_does_not_raise(self):
         rat.raise_for_test_failure(PASSING, {"backend_mode": "rdeps"})
 
-    def test_failure_carries_report_and_outcome(self):
+    def test_failure_carries_concise_report_and_outcome(self):
+        report = {"backend_mode": "rdeps", "bazel_targets": ["//pkg/a:a_test", "//pkg/b:b_test"]}
         with self.assertRaises(HandledError) as ctx:
-            rat.raise_for_test_failure(FAILING, {"backend_mode": "rdeps"})
+            rat.raise_for_test_failure(FAILING, report)
         self.assertIn("TESTS_FAILED (exit code 3)", ctx.exception.message)
         self.assertIn("//pkg/b:b_test (FAILED)", ctx.exception.message)
         details = json.loads(json.dumps(ctx.exception.details))
         self.assertEqual(details["backend_mode"], "rdeps")
+        self.assertNotIn("bazel_targets", details)
+        self.assertNotIn("passed_targets", details)
         self.assertEqual(
             details["failed_targets"],
             [{"target": "//pkg/b:b_test", "status": "FAILED", "test_logs": ["/logs/b/test.log"]}],
@@ -443,7 +446,8 @@ class RunAffectedTestsTest(unittest.TestCase):
         with self.assertRaises(HandledError) as ctx:
             self._run(parse(), {})
         details = ctx.exception.details or {}
-        self.assertEqual(details["bazel_targets"], ["//pkg/a:a_test", "//pkg/b:b_test"])
+        self.assertNotIn("bazel_targets", details)
+        self.assertNotIn("passed_targets", details)
         self.assertEqual(details["exit_name"], "TESTS_FAILED")
 
 

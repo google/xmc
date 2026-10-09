@@ -286,13 +286,18 @@ class TestLogStreams(unittest.TestCase):
         self.assertNotIn("for stream", stdout.getvalue())
         self.assertIn("[INFO] info for stream", stream.getvalue())
 
-    @patch("subprocess.run")
-    def test_run_command_sends_log_and_stdout_to_stream(self, mock_run):
-        stdout, stream = io.StringIO(), io.StringIO()
-        with patch("sys.stdout", stdout):
-            run_command(["bazel", "test"], check=False, stream=stream)
-        self.assertIs(mock_run.call_args.kwargs["stdout"], stream)
-        self.assertIn("Running: bazel test", stream.getvalue())
+    def test_run_command_sends_log_and_stdout_to_stream(self):
+        stdout = io.StringIO()
+        with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stream:
+            with patch("sys.stdout", stdout):
+                run_command(
+                    [sys.executable, "-c", "print('streamed subprocess output')"],
+                    stream=stream,
+                )
+            stream.seek(0)
+            stream_output = stream.read()
+        self.assertIn("Running:", stream_output)
+        self.assertIn("streamed subprocess output", stream_output)
         self.assertEqual(stdout.getvalue(), "")
 
     @patch("subprocess.run")
