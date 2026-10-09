@@ -148,8 +148,9 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	}, nil
 }
 
-// intentSourceFromProto converts and validates the source of a SetComponentIntent or
-// ExecuteDeletion request. It returns nil for a request without a source.
+// intentSourceFromProto converts and validates the source of a SetComponentIntent,
+// UpdateObservedGeneration, or ExecuteDeletion request. It returns nil for a request without a
+// source.
 func intentSourceFromProto(src *componentspb.IntentSource) (*store.IntentSource, error) {
 	if src == nil {
 		return nil, nil
@@ -282,7 +283,12 @@ func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb
 		return nil, status.Errorf(codes.InvalidArgument, "invalid component state %d", req.GetState())
 	}
 
-	rec, err := s.store.UpdateObservedGeneration(ctx, canonicalName, req.GetObservedGeneration(), nil, req.GetState(), req.GetStatusMessage())
+	src, err := intentSourceFromProto(req.GetSource())
+	if err != nil {
+		return nil, err
+	}
+
+	rec, err := s.store.UpdateObservedGeneration(ctx, canonicalName, req.GetObservedGeneration(), nil, req.GetState(), req.GetStatusMessage(), src)
 	if err != nil {
 		return nil, err
 	}

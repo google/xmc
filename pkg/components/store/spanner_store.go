@@ -754,9 +754,10 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 	return err
 }
 
-// UpdateObservedGeneration synchronizes actual component access, generation, and state.
-func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error) {
-	canonicalName, err := validateUpdateObservedArgs(name, observedGen)
+// UpdateObservedGeneration synchronizes actual component access, generation, and state, unless src
+// is set and is not the recorded owner (see Store.UpdateObservedGeneration).
+func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src *IntentSource) (*ComponentRecord, error) {
+	canonicalName, err := validateUpdateObservedArgs(name, observedGen, src)
 	if err != nil {
 		return nil, err
 	}
@@ -766,6 +767,9 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
 		if err != nil {
+			return err
+		}
+		if err := rejectNonOwnerSource(StaleObservationMessagePrefix, "observation", canonicalName, rec, src); err != nil {
 			return err
 		}
 
@@ -817,14 +821,14 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 	return cloneRecord(finalRec), nil
 }
 
-// ExecuteDeletion deletes a component using the specified deletion policy, unless src comes from
-// an older object than the recorded source.
+// ExecuteDeletion deletes a component using the specified deletion policy, unless src is set and
+// is not the recorded owner (see Store.ExecuteDeletion).
 func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src *IntentSource) error {
 	canonicalName, err := validateResourceName(name)
 	if err != nil {
 		return err
 	}
-	if err := validateDeletionSource(src); err != nil {
+	if err := validateOptionalSource(src); err != nil {
 		return err
 	}
 
@@ -838,7 +842,7 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 		if !ok || rec == nil || isDeletedRecord(rec) {
 			return ErrComponentNotFound
 		}
-		if err := rejectStaleDeletion(canonicalName, rec, src); err != nil {
+		if err := rejectNonOwnerSource(StaleDeletionMessagePrefix, "deletion", canonicalName, rec, src); err != nil {
 			return err
 		}
 

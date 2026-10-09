@@ -63,18 +63,40 @@ func (a *serverClientAdapter) CompleteDeactivation(ctx context.Context, in *comp
 	return a.server.CompleteDeactivation(ctx, in)
 }
 
-// updateObservedCMS sends an UpdateObservedGeneration RPC to CMS reporting the CMS component
-// generation gen. It is a no-op when gen is 0 (unknown), which happens only before the first intent
-// of a resource was committed, when CMS has nothing at a known generation to report against.
-func (r *Reconciler) updateObservedCMS(ctx context.Context, name string, gen int64, state componentspb.ComponentState, statusMsg string) error {
-	if gen <= 0 {
-		logging.Debug(ctx, "Skipping CMS observed generation update; component generation unknown", "name", name)
-		return nil
+// updateObservedCMS sends an UpdateObservedGeneration RPC to CMS reporting res.State at the CMS
+// component generation res.ComponentGeneration, with the custom resource as its source. It is a
+// no-op when the generation is 0 (unknown): before the first intent of a resource was committed, or
+// after the resource stopped owning its CMS record. A rejection because another custom resource
+// owns the record is handled by releaseCMSOwnership: it writes nothing to CMS and returns
+// released=true with a nil error, so callers can skip logging their own outcome.
+func (r *Reconciler) updateObservedCMS(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, statusMsg string) (released bool, err error) {
+	if res.ComponentGeneration <= 0 {
+		logging.Debug(ctx, "Skipping CMS observed generation update; component generation unknown", "name", canonicalName)
+		return false, nil
 	}
-	_, err := r.cmsClient.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
-		Name: name, ObservedGeneration: gen, State: state, StatusMessage: statusMsg,
+	_, err = r.cmsClient.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
+		Name: canonicalName, ObservedGeneration: res.ComponentGeneration, State: res.State, StatusMessage: statusMsg, Source: intentSource(in),
 	})
-	return err
+	if stale := storeRejectionMessage(err, staleObservationMessagePrefix); stale != "" {
+		releaseCMSOwnership(ctx, in, canonicalName, res, stale)
+		return true, nil
+	}
+	return false, err
+}
+
+// releaseCMSOwnership records that the custom resource no longer owns its CMS record (CMS rejected
+// its observed-state report with stale, naming the owner): it reports Ready=False, Degraded=True
+// with reason StaleIntent, clears res.ComponentGeneration and res.Access, and keeps
+// res.ComponentID. With status.componentGeneration gone, later passes skip updateObservedCMS until
+// an intent from this resource commits again, and the Actuator's generation drift check falls back
+// to status.observedGeneration. For components whose intent CMS rejects as stale, that is harmless:
+// a Ready=False or Degraded resource already blocks placement.
+func releaseCMSOwnership(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, stale string) {
+	logging.Warn(ctx, "Component is owned by another custom resource; no longer reporting its CMS generation", "name", canonicalName, "generation", in.Generation, "previousComponentGeneration", res.ComponentGeneration, "detail", stale)
+	res.ComponentGeneration = 0
+	res.Access = nil
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, ReasonStaleIntent, stale)
 }
 
 // syncReadyToCMS reports res.State to CMS when shouldSyncToCMS allows it for readyStatus or the
@@ -84,7 +106,7 @@ func (r *Reconciler) syncReadyToCMS(ctx context.Context, in ReconcileComponentIn
 	if !shouldSyncToCMS(in.ExistingConditions, readyStatus, in.Generation) && !componentGenerationChanged(in, res) {
 		return nil
 	}
-	if err := r.updateObservedCMS(ctx, canonicalName, res.ComponentGeneration, res.State, "Ready="+readyStatus); err != nil {
+	if _, err := r.updateObservedCMS(ctx, in, canonicalName, res, "Ready="+readyStatus); err != nil {
 		return fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
 	resetReadyTransitionTime(res.Conditions)

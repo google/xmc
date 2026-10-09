@@ -40,7 +40,9 @@ const (
 	// ReasonDependencyCycle marks an enabled component that is part of a spec.dependencies cycle.
 	ReasonDependencyCycle = "DependencyCycle"
 	// ReasonStaleIntent marks a component whose intent CMS rejected as stale: it comes from an
-	// older custom resource generation or an older incarnation of the custom resource.
+	// older custom resource generation or an older incarnation of the custom resource. It also
+	// marks a custom resource whose observed-state report CMS rejected because another custom
+	// resource owns the record (see releaseCMSOwnership).
 	ReasonStaleIntent = "StaleIntent"
 	// reasonIntentApplicationFailed marks any other rejected or failed intent write.
 	reasonIntentApplicationFailed = "IntentApplicationFailed"
@@ -53,6 +55,8 @@ const (
 	ReasonStaleDeletion = "StaleDeletion"
 	// staleDeletionMessagePrefix mirrors store.StaleDeletionMessagePrefix (pinned by a test).
 	staleDeletionMessagePrefix = "stale deletion:"
+	// staleObservationMessagePrefix mirrors store.StaleObservationMessagePrefix (pinned by a test).
+	staleObservationMessagePrefix = "stale observation:"
 )
 
 // AccessStatus encapsulates network and access metadata (such as environment variables) for a component.
@@ -397,10 +401,14 @@ func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput
 	if !shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) && !componentGenerationChanged(in, res) {
 		return res, nil
 	}
-	if err := r.updateObservedCMS(ctx, canonicalName, res.ComponentGeneration, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
+	released, err := r.updateObservedCMS(ctx, in, canonicalName, res, "Ready=False")
+	if err != nil && status.Code(err) != codes.NotFound {
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
 	resetReadyTransitionTime(res.Conditions)
+	if released {
+		return res, nil
+	}
 	logging.Info(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "message", msg)
 	return res, nil
 }

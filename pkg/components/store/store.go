@@ -166,8 +166,12 @@ type Store interface {
 	// CompleteDeactivation marks a component in DISABLING state as DISABLED.
 	CompleteDeactivation(ctx context.Context, name string, force bool) error
 
-	// UpdateObservedGeneration synchronizes actual component access and state, returning the updated record.
-	UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error)
+	// UpdateObservedGeneration synchronizes actual component access and state, returning the updated
+	// record. Like ExecuteDeletion, only the owner updates a sourced record: a nil src, no recorded
+	// Source, or a src with the recorded UID proceeds. Any other src fails with FailedPrecondition
+	// and a message starting with StaleObservationMessagePrefix that names the recorded owner, and
+	// changes nothing. A non-nil src must be valid (see ValidateIntentSource), else InvalidArgument.
+	UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src *IntentSource) (*ComponentRecord, error)
 
 	// ExecuteDeletion deletes a component using the specified deletion policy. Only the owner
 	// deletes a sourced record: a nil src, no recorded Source, or a src with the recorded UID

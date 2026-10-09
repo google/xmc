@@ -64,7 +64,7 @@ func (s *stubStore) CompleteDeactivation(ctx context.Context, name string, force
 	return status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*store.ComponentRecord, error) {
+func (s *stubStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src *store.IntentSource) (*store.ComponentRecord, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
@@ -1139,7 +1139,7 @@ func TestCMSServer_CompleteDeactivation_MemoryStore(t *testing.T) {
 }
 
 // TestCMSServer_ExecuteDeletion_Source checks that ExecuteDeletion validates the request source
-// and rejects a deletion from an object older than the recorded source, keeping the component.
+// and rejects a deletion from an object other than the recorded owner, keeping the component.
 func TestCMSServer_ExecuteDeletion_Source(t *testing.T) {
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	tests := []struct {
@@ -1168,6 +1168,45 @@ func TestCMSServer_ExecuteDeletion_Source(t *testing.T) {
 			_, err = ms.GetComponent(ctx, "cms-sourced")
 			if gotDeleted := status.Code(err) == codes.NotFound; gotDeleted != (tt.wantCode == codes.OK) {
 				t.Errorf("component deleted = %t, want %t", gotDeleted, tt.wantCode == codes.OK)
+			}
+		})
+	}
+}
+
+// TestCMSServer_UpdateObservedGeneration_Source checks that UpdateObservedGeneration validates the
+// request source and rejects a report from an object other than the recorded owner, keeping the
+// recorded state.
+func TestCMSServer_UpdateObservedGeneration_Source(t *testing.T) {
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	tests := []struct {
+		name      string
+		src       *componentspb.IntentSource
+		wantCode  codes.Code
+		wantState componentspb.ComponentState
+	}{
+		{name: "older object is stale", src: &componentspb.IntentSource{Uid: "uid-old", CreateTime: timestamppb.New(created.Add(-time.Hour)), Generation: 1}, wantCode: codes.FailedPrecondition, wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION},
+		{name: "missing create time is invalid", src: &componentspb.IntentSource{Uid: "uid-old", Generation: 1}, wantCode: codes.InvalidArgument, wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION},
+		{name: "recorded object updates", src: &componentspb.IntentSource{Uid: "uid-a", CreateTime: timestamppb.New(created), Generation: 1}, wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED},
+		{name: "unsourced request updates", wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			ms := store.NewMemoryStore()
+			spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"}
+			if _, err := ms.SetSourcedComponentIntent(ctx, "cms-observed", spec, nil, store.IntentSource{UID: "uid-a", CreateTime: created, Generation: 1}); err != nil {
+				t.Fatalf("SetSourcedComponentIntent() error = %v", err)
+			}
+			_, err := NewServer(ms).UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{Name: "components/cms-observed", ObservedGeneration: 1, State: componentspb.ComponentState_COMPONENT_STATE_ENABLED, Source: tt.src})
+			if status.Code(err) != tt.wantCode {
+				t.Fatalf("UpdateObservedGeneration() error = %v, want code %v", err, tt.wantCode)
+			}
+			rec, err := ms.GetComponent(ctx, "cms-observed")
+			if err != nil {
+				t.Fatalf("GetComponent() error = %v", err)
+			}
+			if rec.State != tt.wantState {
+				t.Errorf("stored state = %v, want %v", rec.State, tt.wantState)
 			}
 		})
 	}
@@ -1311,7 +1350,7 @@ func TestCMSServer_ResolveComponentSnapshot_MemoryStore(t *testing.T) {
 		ServiceName: "cms-snap-svc",
 		Port:        8080,
 	}
-	if _, err := ms.UpdateObservedGeneration(ctx, "cms-snap", 1, &componentspb.ComponentAccessStatus{Coordinates: coords, Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+	if _, err := ms.UpdateObservedGeneration(ctx, "cms-snap", 1, &componentspb.ComponentAccessStatus{Coordinates: coords, Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK", nil); err != nil {
 		t.Fatalf("UpdateObservedGeneration failed: %v", err)
 	}
 
@@ -1429,7 +1468,7 @@ func TestCMSServer_ValidateComponentRequirement_MemoryStore(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetComponentIntent failed: %v", err)
 	}
-	if _, err := ms.UpdateObservedGeneration(ctx, "cms-req", 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+	if _, err := ms.UpdateObservedGeneration(ctx, "cms-req", 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK", nil); err != nil {
 		t.Fatalf("UpdateObservedGeneration failed: %v", err)
 	}
 
@@ -1498,7 +1537,7 @@ func TestCMSServer_GetPlatformHealth_MemoryStore(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("SetComponentIntent(%s) failed: %v", name, err)
 		}
-		if _, err := ms.UpdateObservedGeneration(ctx, name, 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+		if _, err := ms.UpdateObservedGeneration(ctx, name, 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK", nil); err != nil {
 			t.Fatalf("UpdateObservedGeneration(%s) failed: %v", name, err)
 		}
 	}

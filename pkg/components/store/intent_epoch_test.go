@@ -334,7 +334,7 @@ func seedEpochComponent(ctx context.Context, t *testing.T, s store.Store, name s
 	if rec.Generation != 1 {
 		t.Fatalf("seed generation of %s = %d, want 1", name, rec.Generation)
 	}
-	if _, err := s.UpdateObservedGeneration(ctx, name, 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready"); err != nil {
+	if _, err := s.UpdateObservedGeneration(ctx, name, 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready", nil); err != nil {
 		t.Fatalf("seed UpdateObservedGeneration(%s) error = %v", name, err)
 	}
 	stored, err := s.GetComponent(ctx, name)

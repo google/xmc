@@ -231,9 +231,10 @@ func (m *MemoryStore) ListComponents(ctx context.Context) ([]*ComponentRecord, e
 	return results, nil
 }
 
-// UpdateObservedGeneration synchronizes actual component access, generation, and state.
-func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error) {
-	canonicalName, err := validateUpdateObservedArgs(name, observedGen)
+// UpdateObservedGeneration synchronizes actual component access, generation, and state, unless src
+// is set and is not the recorded owner (see Store.UpdateObservedGeneration).
+func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src *IntentSource) (*ComponentRecord, error) {
+	canonicalName, err := validateUpdateObservedArgs(name, observedGen, src)
 	if err != nil {
 		return nil, err
 	}
@@ -244,6 +245,9 @@ func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string,
 	rec, exists := m.componentsByName[canonicalName]
 	if !exists || isDeletedRecord(rec) {
 		return nil, ErrComponentNotFound
+	}
+	if err := rejectNonOwnerSource(StaleObservationMessagePrefix, "observation", canonicalName, rec, src); err != nil {
+		return nil, err
 	}
 
 	rec.ObservedGeneration = &observedGen
@@ -261,7 +265,7 @@ func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string,
 	return cloneRecord(rec), nil
 }
 
-func validateUpdateObservedArgs(name string, observedGen int64) (string, error) {
+func validateUpdateObservedArgs(name string, observedGen int64, src *IntentSource) (string, error) {
 	canonicalName, err := validateResourceName(name)
 	if err != nil {
 		return "", err
@@ -269,7 +273,7 @@ func validateUpdateObservedArgs(name string, observedGen int64) (string, error) 
 	if observedGen < 0 {
 		return "", status.Error(codes.InvalidArgument, "observed generation cannot be negative")
 	}
-	return canonicalName, nil
+	return canonicalName, validateOptionalSource(src)
 }
 
 func isDeletedRecord(rec *ComponentRecord) bool {
@@ -373,14 +377,14 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, for
 	return nil
 }
 
-// ExecuteDeletion deletes a component using the specified deletion policy, unless src comes from
-// an older object than the recorded source.
+// ExecuteDeletion deletes a component using the specified deletion policy, unless src is set and
+// is not the recorded owner (see Store.ExecuteDeletion).
 func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src *IntentSource) error {
 	canonicalName, err := validateResourceName(name)
 	if err != nil {
 		return err
 	}
-	if err := validateDeletionSource(src); err != nil {
+	if err := validateOptionalSource(src); err != nil {
 		return err
 	}
 
@@ -391,7 +395,7 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 	if !exists || rec == nil || isDeletedRecord(rec) {
 		return ErrComponentNotFound
 	}
-	if err := rejectStaleDeletion(canonicalName, rec, src); err != nil {
+	if err := rejectNonOwnerSource(StaleDeletionMessagePrefix, "deletion", canonicalName, rec, src); err != nil {
 		return err
 	}
 
