@@ -109,23 +109,26 @@ class ChangeDetectorTest(unittest.TestCase):
         )
 
     @mock.patch("subprocess.run")
-    def test_get_modified_files_git_status_and_diff(self, mock_run: mock.MagicMock) -> None:
-        """Verifies collecting modified files from git status and diff."""
+    def test_get_modified_files_git_diff_and_untracked(self, mock_run: mock.MagicMock) -> None:
+        """Verifies collecting modified files from the git diff and untracked file listing."""
 
         def side_effect(cmd, **kwargs):
             del kwargs
-            if "status" in cmd:
+            if "ls-files" in cmd:
                 return subprocess.CompletedProcess(
                     args=cmd,
                     returncode=0,
-                    stdout=" M cmd/actuator/main.go\n?? cmd/ui/src/new.ts\nR  old.go -> cmd/xid_service/renamed.go\n",
+                    stdout="cmd/ui/src/new.ts\0",
                     stderr="",
                 )
             if "diff" in cmd:
                 return subprocess.CompletedProcess(
                     args=cmd,
                     returncode=0,
-                    stdout="cmd/actuator/main.go\ninternal/common/config.go\n",
+                    stdout=(
+                        "cmd/actuator/main.go\0old.go\0cmd/xid_service/renamed.go\0"
+                        "internal/common/config.go\0"
+                    ),
                     stderr="",
                 )
             return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
@@ -137,7 +140,30 @@ class ChangeDetectorTest(unittest.TestCase):
         self.assertNotIn("md/actuator/main.go", files)
         self.assertIn("cmd/ui/src/new.ts", files)
         self.assertIn("cmd/xid_service/renamed.go", files)
+        self.assertIn("old.go", files)
         self.assertIn("internal/common/config.go", files)
+        self.assertEqual(files, sorted(files))
+        for call in mock_run.call_args_list:
+            self.assertEqual(call.kwargs["cwd"], "/fake/repo")
+
+    @mock.patch("subprocess.run")
+    def test_get_modified_files_with_base_ref_diffs_against_merge_base(
+        self, mock_run: mock.MagicMock
+    ) -> None:
+        """Verifies base_ref changes are listed relative to its merge base with HEAD."""
+        outputs = {"merge-base": "abc123\n", "diff": "internal/common/config.go\0"}
+        mock_run.side_effect = lambda cmd, **kwargs: subprocess.CompletedProcess(
+            args=cmd, returncode=0, stdout=outputs.get(cmd[1], ""), stderr=""
+        )
+
+        files = self.detector.get_modified_files(base_ref="origin/main")
+
+        self.assertEqual(files, ["internal/common/config.go"])
+        commands = [call.args[0] for call in mock_run.call_args_list]
+        self.assertIn(["git", "merge-base", "origin/main", "HEAD"], commands)
+        self.assertIn(
+            ["git", "diff", "--name-only", "--no-renames", "-z", "abc123", "--"], commands
+        )
 
     @mock.patch("subprocess.run")
     def test_get_modified_files_git_failure_handled(self, mock_run: mock.MagicMock) -> None:
@@ -147,16 +173,18 @@ class ChangeDetectorTest(unittest.TestCase):
         self.assertEqual(files, [])
 
     @mock.patch("subprocess.run")
-    def test_run_git_nonzero_exit_code(self, mock_run: mock.MagicMock) -> None:
-        """Verifies non-zero git exit codes return an empty list."""
+    def test_get_modified_files_git_nonzero_exit_code(self, mock_run: mock.MagicMock) -> None:
+        """Verifies non-zero git exit codes return an empty list and log a warning."""
         mock_run.return_value = subprocess.CompletedProcess(
-            args=["git", "status"],
+            args=["git", "diff"],
             returncode=128,
-            stdout="fatal: not a git repository",
-            stderr="",
+            stdout="",
+            stderr="fatal: not a git repository",
         )
-        lines = self.detector._run_git(["git", "status"])
-        self.assertEqual(lines, [])
+        with self.assertLogs("xmc.dev_env.change_detector", level="WARNING") as logs:
+            files = self.detector.get_modified_files()
+        self.assertEqual(files, [])
+        self.assertIn("fatal: not a git repository", logs.output[0])
 
     def test_detect_changes_service_specific_files(self) -> None:
         """Verifies individual microservice file changes map to their respective service."""

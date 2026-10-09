@@ -16,9 +16,9 @@
 
 import dataclasses
 import logging
-import subprocess
 from pathlib import Path
 
+from tools.common.changed_files import ChangedFilesError, list_changed_files
 from tools.dev_env.image_builder import discover_buildable_services
 from tools.dev_env.service_resolver import (
     SERVICE_ALIASES,
@@ -87,71 +87,27 @@ class ChangeDetector:
         else:
             self.enabled_services = discover_buildable_services(self.repo_root)
 
-    def _run_git(self, cmd: list[str]) -> list[str]:
-        """Executes a git command and returns stdout lines stripped of trailing whitespace.
-
-        Args:
-            cmd: Command line argument list starting with 'git'.
-
-        Returns:
-            List of non-empty stdout lines, or empty list on command failure.
-        """
-        try:
-            p = subprocess.run(
-                cmd,
-                cwd=str(self.repo_root),
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=15,
-            )
-            if p.returncode != 0:
-                _LOGGER.warning(
-                    "Git command %s failed with exit code %d: %s",
-                    cmd,
-                    p.returncode,
-                    p.stderr,
-                )
-                return []
-            return [line.rstrip() for line in p.stdout.splitlines() if line.strip()]
-        except (subprocess.SubprocessError, OSError) as e:
-            _LOGGER.warning("Failed to run git command %s: %s", cmd, e)
-            return []
-
     def get_modified_files(self, base_ref: str | None = None) -> list[str]:
-        """Inspects git status and diffs to discover modified and untracked files.
+        """Inspects git to discover modified and untracked files.
 
-        Combines:
-        1. Unstaged and staged working tree modifications (`git status --porcelain`).
-        2. Renamed files (parsing `old -> new` porcelain notation).
-        3. Committed changes between base_ref and HEAD (if base_ref provided).
+        Delegates to `tools.common.changed_files.list_changed_files`, which combines:
+        1. Committed, staged, and unstaged changes to tracked files relative to the merge base
+           of base_ref and HEAD (relative to HEAD if base_ref is not provided).
+        2. Untracked files that git does not ignore.
+        Deleted files are included, and a rename lists both its old and new path.
 
         Args:
             base_ref: Optional git commit/branch ref to compare HEAD against.
 
         Returns:
-            Sorted list of relative file paths modified in the repository.
+            Sorted list of relative file paths modified in the repository, or an empty list
+            if git fails.
         """
-        files: set[str] = set()
-        for line in self._run_git(["git", "-c", "core.quotepath=false", "status", "--porcelain"]):
-            path_str = line[3:].strip().strip('"') if len(line) > 3 else ""
-            if " -> " in path_str:
-                path_str = path_str.split(" -> ", 1)[1].strip().strip('"')
-            if path_str:
-                files.add(path_str)
-        diff_cmd = [
-            "git",
-            "-c",
-            "core.quotepath=false",
-            "diff",
-            "--name-only",
-            f"{base_ref}...HEAD" if base_ref else "HEAD",
-        ]
-        for line in self._run_git(diff_cmd):
-            path_str = line.strip().strip('"')
-            if path_str:
-                files.add(path_str)
-        res = sorted(files)
+        try:
+            res = list_changed_files(base_ref, self.repo_root)
+        except ChangedFilesError as e:
+            _LOGGER.warning("Failed to discover modified files from git: %s", e.message)
+            return []
         _LOGGER.debug("Discovered modified files from git: %s", res)
         return res
 
