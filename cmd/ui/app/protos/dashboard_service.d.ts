@@ -19,7 +19,6 @@ export type PlotType =
   | 'BAR'
   | 'HISTOGRAM'
   | number;
-
 export type LayoutType =
   | 'LAYOUT_TYPE_UNSPECIFIED'
   | 'GRID'
@@ -27,7 +26,6 @@ export type LayoutType =
   | 'SIDE_BY_SIDE'
   | 'STACKED'
   | number;
-
 export type GeomType =
   | 'GEOM_TYPE_UNSPECIFIED'
   | 'LINE'
@@ -41,6 +39,7 @@ export type GeomType =
 
 export interface GridPosition {
   itemId?: string;
+  item_id?: string;
   x?: number;
   y?: number;
   width?: number;
@@ -62,9 +61,13 @@ export interface LayoutSpec {
 export namespace DataSpec {
   export interface DataRange {
     startStep?: number | string;
+    start_step?: number | string;
     startTime?: string;
+    start_time?: string;
     endStep?: number | string;
+    end_step?: number | string;
     endTime?: string;
+    end_time?: string;
     [key: string]: any;
   }
 }
@@ -86,12 +89,12 @@ export interface MappingSpec {
 
 export namespace GeomSpec {
   export { type GeomType };
-
   export interface StyleSpec {
     color?: string;
     opacity?: number;
     size?: number;
     lineStyle?: string;
+    line_style?: string;
     [key: string]: any;
   }
 }
@@ -113,7 +116,6 @@ export namespace StatSpec {
     | 'SMOOTH'
     | 'FORECAST'
     | number;
-
   export type Aggregation =
     | 'AGG_UNSPECIFIED'
     | 'MEAN'
@@ -123,22 +125,21 @@ export namespace StatSpec {
     | 'SUM'
     | 'MEAN_CI_95'
     | number;
-
   export namespace SmoothConfig {
     export type Algorithm = 'EXPONENTIAL' | 'MOVING_AVERAGE' | number;
   }
-
   export interface SmoothConfig {
     algorithm?: SmoothConfig.Algorithm | number;
     alpha?: number;
     windowSize?: number;
+    window_size?: number;
     [key: string]: any;
   }
-
   export interface ForecastConfig {
     alpha?: number;
     beta?: number;
     stepsAhead?: number;
+    steps_ahead?: number;
     [key: string]: any;
   }
 }
@@ -157,9 +158,13 @@ export namespace CoordSpec {
 
 export interface CoordSpec {
   xScale?: CoordSpec.ScaleType | number;
+  x_scale?: CoordSpec.ScaleType | number;
   yScale?: CoordSpec.ScaleType | number;
+  y_scale?: CoordSpec.ScaleType | number;
   yMin?: number;
+  y_min?: number;
   yMax?: number;
+  y_max?: number;
   [key: string]: any;
 }
 
@@ -170,6 +175,7 @@ export namespace FacetSpec {
 export interface FacetSpec {
   type?: FacetSpec.FacetType | number;
   facetBy?: string[];
+  facet_by?: string[];
   ncol?: number;
   nrow?: number;
   [key: string]: any;
