@@ -230,6 +230,7 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 		WorkUnit:      wu1,
 		OperationName: "op-create",
 		Priority:      100,
+		CreateTime:    time.Now(),
 	})
 	_ = taskRepo.Create(ctx, &storage.PausedTask{
 		XID:           1,
@@ -241,6 +242,7 @@ func TestResumptionWorker_HappyPathReplay(t *testing.T) {
 		WorkUnit:      wu2,
 		OperationName: "op-delete",
 		Priority:      90,
+		CreateTime:    time.Now(),
 	})
 
 	worker := NewResumptionWorker(&storage.MockStorage{PauseStateRepository: pauseRepo, PausedTaskRepository: taskRepo}, newMockTaskQueue(publisher, nil), redisclient.NewFakeClient())
@@ -316,12 +318,13 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 
 	// Task 1: Rule 1 - Newer ExecutionId exists on WorkUnit.
 	_ = taskRepo.Create(ctx, &storage.PausedTask{
-		XID:      1,
-		WID:      1,
-		TaskID:   "task-rule1-stale-exec",
-		Target:   "experiments/1/workUnits/1/executions/1",
-		Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
-		Priority: int64(essmsgpb.Priority_NORMAL),
+		XID:        1,
+		WID:        1,
+		TaskID:     "task-rule1-stale-exec",
+		Target:     "experiments/1/workUnits/1/executions/1",
+		Action:     &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
+		Priority:   int64(essmsgpb.Priority_NORMAL),
+		CreateTime: time.Now(),
 		WorkUnit: &essmsgpb.WorkUnit{
 			Name:     "experiments/1/workUnits/1",
 			Priority: essmsgpb.Priority_NORMAL,
@@ -336,12 +339,13 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 
 	// Task 2: Rule 2 - Stale UpdateAction while WorkUnit is in SCHEDULING_PAUSED state.
 	_ = taskRepo.Create(ctx, &storage.PausedTask{
-		XID:      1,
-		WID:      2,
-		TaskID:   "task-rule2-update-paused",
-		Target:   "experiments/1/workUnits/2/executions/1",
-		Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Update{Update: &actuatortaskpb.UpdateAction{}}},
-		Priority: int64(essmsgpb.Priority_NORMAL),
+		XID:        1,
+		WID:        2,
+		TaskID:     "task-rule2-update-paused",
+		Target:     "experiments/1/workUnits/2/executions/1",
+		Action:     &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Update{Update: &actuatortaskpb.UpdateAction{}}},
+		Priority:   int64(essmsgpb.Priority_NORMAL),
+		CreateTime: time.Now(),
 		WorkUnit: &essmsgpb.WorkUnit{
 			Name:     "experiments/1/workUnits/2",
 			Priority: essmsgpb.Priority_NORMAL,
@@ -356,12 +360,13 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 
 	// Task 3: Rule 3 - Stale UpdateAction where task priority does not match WorkUnit priority.
 	_ = taskRepo.Create(ctx, &storage.PausedTask{
-		XID:      1,
-		WID:      3,
-		TaskID:   "task-rule3-priority-mismatch",
-		Target:   "experiments/1/workUnits/3/executions/1",
-		Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Update{Update: &actuatortaskpb.UpdateAction{}}},
-		Priority: int64(essmsgpb.Priority_LOW),
+		XID:        1,
+		WID:        3,
+		TaskID:     "task-rule3-priority-mismatch",
+		Target:     "experiments/1/workUnits/3/executions/1",
+		Action:     &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Update{Update: &actuatortaskpb.UpdateAction{}}},
+		Priority:   int64(essmsgpb.Priority_LOW),
+		CreateTime: time.Now(),
 		WorkUnit: &essmsgpb.WorkUnit{
 			Name:     "experiments/1/workUnits/3",
 			Priority: essmsgpb.Priority_HIGH,
@@ -376,12 +381,13 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 
 	// Task 4: Rule 4 - Terminal WorkUnit execution state (STOPPED).
 	_ = taskRepo.Create(ctx, &storage.PausedTask{
-		XID:      1,
-		WID:      4,
-		TaskID:   "task-rule4-terminal-stopped",
-		Target:   "experiments/1/workUnits/4/executions/1",
-		Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
-		Priority: int64(essmsgpb.Priority_NORMAL),
+		XID:        1,
+		WID:        4,
+		TaskID:     "task-rule4-terminal-stopped",
+		Target:     "experiments/1/workUnits/4/executions/1",
+		Action:     &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
+		Priority:   int64(essmsgpb.Priority_NORMAL),
+		CreateTime: time.Now(),
 		WorkUnit: &essmsgpb.WorkUnit{
 			Name:     "experiments/1/workUnits/4",
 			Priority: essmsgpb.Priority_NORMAL,
@@ -403,6 +409,7 @@ func TestResumptionWorker_Filtering(t *testing.T) {
 		Action:        &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
 		OperationName: "op-create-5",
 		Priority:      int64(essmsgpb.Priority_NORMAL),
+		CreateTime:    time.Now(),
 		WorkUnit:      wuValid,
 	})
 
@@ -658,12 +665,13 @@ func TestResumptionWorker_MissingWorkUnitFailure(t *testing.T) {
 	_ = taskRepo.Create(ctx, testValidTask(1, "task-1", 100, time.Now()))
 	// Task 2: Corrupted task (missing WorkUnit)
 	_ = taskRepo.Create(ctx, &storage.PausedTask{
-		XID:      1,
-		WID:      2,
-		TaskID:   "task-corrupt",
-		Target:   "experiments/1/workUnits/2/executions/1",
-		Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
-		WorkUnit: nil,
+		XID:        1,
+		WID:        2,
+		TaskID:     "task-corrupt",
+		Target:     "experiments/1/workUnits/2/executions/1",
+		Action:     &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
+		CreateTime: time.Now(),
+		WorkUnit:   nil,
 	})
 
 	publisher := &mockPublisher{}
@@ -877,12 +885,13 @@ func TestResumptionWorker_Metrics(t *testing.T) {
 
 		// 2. Restart -> skipped_stopped (terminal state)
 		_ = taskRepo.Create(ctx, &storage.PausedTask{
-			XID:      1,
-			WID:      2,
-			TaskID:   "task-restart-stopped",
-			Target:   "experiments/1/workUnits/2/executions/1",
-			Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Restart{Restart: &actuatortaskpb.RestartAction{}}},
-			Priority: int64(essmsgpb.Priority_NORMAL),
+			XID:        1,
+			WID:        2,
+			TaskID:     "task-restart-stopped",
+			Target:     "experiments/1/workUnits/2/executions/1",
+			Action:     &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Restart{Restart: &actuatortaskpb.RestartAction{}}},
+			Priority:   int64(essmsgpb.Priority_NORMAL),
+			CreateTime: time.Now(),
 			WorkUnit: &essmsgpb.WorkUnit{
 				Name:     "experiments/1/workUnits/2",
 				Priority: essmsgpb.Priority_NORMAL,
@@ -897,12 +906,13 @@ func TestResumptionWorker_Metrics(t *testing.T) {
 
 		// 3. Update -> skipped_obsolete (priority mismatch)
 		_ = taskRepo.Create(ctx, &storage.PausedTask{
-			XID:      1,
-			WID:      3,
-			TaskID:   "task-update-obsolete",
-			Target:   "experiments/1/workUnits/3/executions/1",
-			Action:   &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Update{Update: &actuatortaskpb.UpdateAction{}}},
-			Priority: int64(essmsgpb.Priority_LOW),
+			XID:        1,
+			WID:        3,
+			TaskID:     "task-update-obsolete",
+			Target:     "experiments/1/workUnits/3/executions/1",
+			Action:     &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Update{Update: &actuatortaskpb.UpdateAction{}}},
+			Priority:   int64(essmsgpb.Priority_LOW),
+			CreateTime: time.Now(),
 			WorkUnit: &essmsgpb.WorkUnit{
 				Name:     "experiments/1/workUnits/3",
 				Priority: essmsgpb.Priority_HIGH,

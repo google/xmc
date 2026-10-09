@@ -17,6 +17,7 @@ compat_go_library(
         "//internal/logging",
         "//internal/storage",
         "//internal/validator",
+        "@com_github_google_uuid//:uuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promauto",
         "@io_k8s_apimachinery//pkg/api/errors",

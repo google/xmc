@@ -29,6 +29,7 @@ import (
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/validator/validator"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -167,6 +168,7 @@ func buildPausedTask(payload *actuatortaskpb.ActuatorPayload, traceID string) (*
 	return &storage.PausedTask{
 		XID:           xid,
 		WID:           wid,
+		TaskID:        uuid.NewString(),
 		Target:        target,
 		Action:        payload.GetAction(),
 		OperationName: payload.GetMetadata().GetOperationName(),

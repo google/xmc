@@ -297,21 +297,32 @@ func TestHandlePause(t *testing.T) {
 				return
 			}
 
-			if tc.expectedBufferedTarget != "" {
-				if len(repo.storedTasks) != 1 {
-					t.Fatalf("expected 1 stored task, got %d", len(repo.storedTasks))
-				}
-				task := repo.storedTasks[0]
-				if task.Target != tc.expectedBufferedTarget {
-					t.Errorf("buffered task target mismatch: got %q, want %q", task.Target, tc.expectedBufferedTarget)
-				}
-				if task.XID != 100 || task.WID != 200 {
-					t.Errorf("buffered task XID/WID mismatch: got %d/%d, want 100/200", task.XID, task.WID)
-				}
-			}
-
+			verifyBufferedTask(t, repo.storedTasks, tc.expectedBufferedTarget)
 			verifyStatusUpdate(t, txRunner, tc.expectedStatusTarget, tc.expectedStatusEID)
 		})
+	}
+}
+
+func verifyBufferedTask(t *testing.T, storedTasks []*storage.PausedTask, wantTarget string) {
+	t.Helper()
+	if wantTarget == "" {
+		return
+	}
+	if len(storedTasks) != 1 {
+		t.Fatalf("expected 1 stored task, got %d", len(storedTasks))
+	}
+	task := storedTasks[0]
+	if task.TaskID == "" {
+		t.Errorf("expected buffered task to have non-empty TaskID")
+	}
+	if task.CreateTime.IsZero() {
+		t.Errorf("expected buffered task to have non-zero CreateTime")
+	}
+	if task.Target != wantTarget {
+		t.Errorf("buffered task target mismatch: got %q, want %q", task.Target, wantTarget)
+	}
+	if task.XID != 100 || task.WID != 200 {
+		t.Errorf("buffered task XID/WID mismatch: got %d/%d, want 100/200", task.XID, task.WID)
 	}
 }
 

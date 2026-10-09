@@ -82,7 +82,7 @@ func TestFakePausedTask_List(t *testing.T) {
 	for _, task := range []*storage.PausedTask{newTask("t1", 10), newTask("t2", 20), newTask("t3", 30)} {
 		_ = fake.Create(ctx, task)
 	}
-	_ = fake.MarkProcessed(ctx, []storage.PausedTaskResolution{{XID: 100, WID: 200, TaskID: "t2", ResolutionStatus: storage.ResolutionStatusReplayed}})
+	_ = fake.MarkProcessed(ctx, []storage.PausedTaskResolution{{XID: 100, WID: 200, TaskID: "t2", ResolutionStatus: storage.ResolutionStatusReplayed, ProcessedTime: baseTime.Add(time.Minute)}})
 
 	got, err := fake.List(ctx)
 	if err != nil {
@@ -100,7 +100,7 @@ func TestFakePausedTask_ListPending_Ordering(t *testing.T) {
 	for _, task := range []*storage.PausedTask{newTask("low", 50), newTask("high-old", 200), tNew, newTask("top", 300), newTask("done", 400)} {
 		_ = fake.Create(ctx, task)
 	}
-	_ = fake.MarkProcessed(ctx, []storage.PausedTaskResolution{{XID: 100, WID: 200, TaskID: "done"}})
+	_ = fake.MarkProcessed(ctx, []storage.PausedTaskResolution{{XID: 100, WID: 200, TaskID: "done", ProcessedTime: baseTime.Add(2 * time.Minute)}})
 
 	tests := []struct {
 		limit   int
@@ -144,11 +144,14 @@ func TestFakePausedTask_MarkProcessed(t *testing.T) {
 	}
 
 	missingRes := []storage.PausedTaskResolution{
-		{XID: 100, WID: 200, TaskID: "t3", ResolutionStatus: storage.ResolutionStatusReplayed},
-		{XID: 999, WID: 999, TaskID: "ghost"},
+		{XID: 100, WID: 200, TaskID: "t3", ResolutionStatus: storage.ResolutionStatusReplayed, ProcessedTime: procTime},
+		{XID: 999, WID: 999, TaskID: "ghost", ProcessedTime: procTime},
 	}
 	if err := fake.MarkProcessed(ctx, missingRes); !errors.Is(err, storage.ErrPausedTaskNotFound) {
 		t.Errorf("MarkProcessed() error = %v, want %v", err, storage.ErrPausedTaskNotFound)
+	}
+	if err := fake.MarkProcessed(ctx, []storage.PausedTaskResolution{{XID: 100, WID: 200, TaskID: "t3"}}); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("MarkProcessed(zero ProcessedTime) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 	pending, _ := fake.ListPending(ctx, 0)
 	if diff := cmp.Diff([]string{"t3"}, taskIDs(pending)); diff != "" {
@@ -270,30 +273,28 @@ func TestFakePausedTask_Concurrency(t *testing.T) {
 	}
 }
 
-func TestFakePausedTask_Create_GeneratesTaskIDWhenEmpty(t *testing.T) {
+func TestFakePausedTask_Create_Validation(t *testing.T) {
 	ctx := context.Background()
 	fake := NewFakePausedTaskRepository()
-	task := newTask("", 100)
 
-	if err := fake.Create(ctx, task); err != nil {
-		t.Fatalf("Create() unexpected error: %v", err)
-	}
+	noAction := newTask("task-1", 100)
+	noAction.Action = nil
+	zeroCreateTime := newTask("task-1", 100)
+	zeroCreateTime.CreateTime = time.Time{}
 
-	if task.TaskID == "" {
-		t.Errorf("expected generated TaskID on task, got empty string")
+	tests := []struct {
+		name string
+		task *storage.PausedTask
+	}{
+		{name: "empty_task_id", task: newTask("", 100)},
+		{name: "nil_action", task: noAction},
+		{name: "zero_create_time", task: zeroCreateTime},
 	}
-
-	list, err := fake.List(ctx)
-	if err != nil {
-		t.Fatalf("List() unexpected error: %v", err)
-	}
-	if len(list) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(list))
-	}
-	if list[0].TaskID == "" {
-		t.Errorf("expected stored task to have generated TaskID, got empty string")
-	}
-	if list[0].TaskID != task.TaskID {
-		t.Errorf("stored TaskID mismatch: got %q, want %q", list[0].TaskID, task.TaskID)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := fake.Create(ctx, tt.task); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+				t.Errorf("Create() error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+			}
+		})
 	}
 }
