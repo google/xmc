@@ -149,8 +149,8 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 }
 
 // intentSourceFromProto converts and validates the source of a SetComponentIntent,
-// UpdateObservedGeneration, or ExecuteDeletion request. It returns nil for a request without a
-// source.
+// UpdateObservedGeneration, PrepareDeactivation, CompleteDeactivation, or ExecuteDeletion request.
+// It returns nil for a request without a source.
 func intentSourceFromProto(src *componentspb.IntentSource) (*store.IntentSource, error) {
 	if src == nil {
 		return nil, nil
@@ -214,7 +214,12 @@ func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.Prep
 		}
 	}
 
-	res, err := s.store.PrepareDeactivation(ctx, canonicalName, req.GetForce())
+	src, err := intentSourceFromProto(req.GetSource())
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := s.store.PrepareDeactivation(ctx, canonicalName, req.GetForce(), src)
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +264,12 @@ func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.Com
 		return nil, err
 	}
 
-	if err := s.store.CompleteDeactivation(ctx, canonicalName, req.GetForce()); err != nil {
+	src, err := intentSourceFromProto(req.GetSource())
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.store.CompleteDeactivation(ctx, canonicalName, req.GetForce(), src); err != nil {
 		return nil, err
 	}
 

@@ -97,6 +97,7 @@ go_test(
         "components_rbac_test.go",
         "conditions_test.go",
         "coordinates_test.go",
+        "deactivation_ownership_test.go",
         "dependency_readiness_test.go",
         "endpoint_health_probe_test.go",
         "fake_helm_manager_test.go",

@@ -46,6 +46,7 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
      2. Deletes the 1P Helm workload.
      3. `CompleteDeactivation` finalizes the CMS handshake (`DISABLING` → `DISABLED`), then `UpdateObservedGeneration` reports `COMPONENT_STATE_DISABLED`. CMS RPC failures before teardown report reason `CMSDeactivationFailed` (`Degraded=True`).
      4. If the handshake fails after the workload was deleted (or a later `PrepareDeactivation` is blocked or fails), `Ready=False`/`Degraded=True` reason `DeactivationIncomplete` is reported and the whole handshake is retried on the next pass (deletion is idempotent).
+     5. Both handshake steps send the CR as their `source`. If CMS rejects either with a `stale deactivation:` message because another CR owns the record, the bridge releases CMS ownership as for a `stale observation:` (reason `StaleIntent`, `componentGeneration` dropped, `componentId` kept, no further CMS write, no failed pass; see "Intent Source & Component Generation"). A rejected `PrepareDeactivation` keeps the workload, as for a stale intent: a non-owner CR does not actuate (its `HelmOpts.Ref` may name the owner's release), so it cannot disable the component either; delete the CR to remove it.
 
 ---
 
@@ -70,7 +71,7 @@ Gating reasons (set on `Ready=False`, state `COMPONENT_STATE_PENDING_RECONCILIAT
 | `HelmUpgradePending` | `False` | An actuated 1P component's Helm upgrade to the current generation is held until its dependencies are ready; the previous release keeps running. |
 | `DeactivationBlocked` | `False` | CMS `PrepareDeactivation` rejected disabling the component because it has active dependents. |
 | `DeactivationIncomplete` | `True` | The workload was deleted but the CMS deactivation handshake has not completed; retried every pass. |
-| `StaleIntent` | `True` | CMS rejected a changed intent because its CMS generation is newer than the CR generation (for example a legacy inflated record); nothing is written to CMS and the pass is retried with backoff until the generations are realigned. Also set, without failing the pass, when CMS rejects the CR's observed-state report because another CR owns the record; `status.componentGeneration` is then dropped (see "Intent Source & Component Generation"). |
+| `StaleIntent` | `True` | CMS rejected a changed intent because its CMS generation is newer than the CR generation (for example a legacy inflated record); nothing is written to CMS and the pass is retried with backoff until the generations are realigned. Also set, without failing the pass, when CMS rejects the CR's observed-state report or a deactivation step because another CR owns the record; `status.componentGeneration` is then dropped (see "Intent Source & Component Generation"). |
 
 ---
 

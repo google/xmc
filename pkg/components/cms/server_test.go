@@ -56,11 +56,11 @@ func (s *stubStore) ListComponents(ctx context.Context) ([]*store.ComponentRecor
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool) (*store.PrepareDeactivationResult, error) {
+func (s *stubStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src *store.IntentSource) (*store.PrepareDeactivationResult, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubStore) CompleteDeactivation(ctx context.Context, name string, force bool) error {
+func (s *stubStore) CompleteDeactivation(ctx context.Context, name string, force bool, src *store.IntentSource) error {
 	return status.Error(codes.Unimplemented, "not implemented")
 }
 
@@ -1209,6 +1209,41 @@ func TestCMSServer_UpdateObservedGeneration_Source(t *testing.T) {
 				t.Errorf("stored state = %v, want %v", rec.State, tt.wantState)
 			}
 		})
+	}
+}
+
+// TestCMSServer_Deactivation_Source checks that PrepareDeactivation and CompleteDeactivation pass
+// their source to the store: a stale source changes nothing, the owner's completes the handshake.
+func TestCMSServer_Deactivation_Source(t *testing.T) {
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	owner := &componentspb.IntentSource{Uid: "uid-a", CreateTime: timestamppb.New(created), Generation: 1}
+	stale := &componentspb.IntentSource{Uid: "uid-old", CreateTime: timestamppb.New(created.Add(-time.Hour)), Generation: 1}
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"}
+	if _, err := ms.SetSourcedComponentIntent(ctx, "cms-deactivate", spec, nil, store.IntentSource{UID: "uid-a", CreateTime: created, Generation: 1}); err != nil {
+		t.Fatalf("SetSourcedComponentIntent() error = %v", err)
+	}
+	server := NewServer(ms)
+	const name = "components/cms-deactivate"
+	if _, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: name, Source: stale}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("PrepareDeactivation(stale) error = %v, want FailedPrecondition", err)
+	}
+	if _, err := server.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: name, Source: owner}); err != nil {
+		t.Fatalf("PrepareDeactivation(owner) error = %v", err)
+	}
+	if _, err := server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: name, Source: stale}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("CompleteDeactivation(stale) error = %v, want FailedPrecondition", err)
+	}
+	if _, err := server.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: name, Source: owner}); err != nil {
+		t.Fatalf("CompleteDeactivation(owner) error = %v", err)
+	}
+	rec, err := ms.GetComponent(ctx, "cms-deactivate")
+	if err != nil {
+		t.Fatalf("GetComponent() error = %v", err)
+	}
+	if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("stored state = %v, want COMPONENT_STATE_DISABLED", rec.State)
 	}
 }
 

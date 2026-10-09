@@ -41,8 +41,8 @@ const (
 	ReasonDependencyCycle = "DependencyCycle"
 	// ReasonStaleIntent marks a component whose intent CMS rejected as stale: it comes from an
 	// older custom resource generation or an older incarnation of the custom resource. It also
-	// marks a custom resource whose observed-state report CMS rejected because another custom
-	// resource owns the record (see releaseCMSOwnership).
+	// marks a custom resource whose observed-state report or deactivation step CMS rejected because
+	// another custom resource owns the record (see releaseCMSOwnership).
 	ReasonStaleIntent = "StaleIntent"
 	// reasonIntentApplicationFailed marks any other rejected or failed intent write.
 	reasonIntentApplicationFailed = "IntentApplicationFailed"
@@ -57,6 +57,8 @@ const (
 	staleDeletionMessagePrefix = "stale deletion:"
 	// staleObservationMessagePrefix mirrors store.StaleObservationMessagePrefix (pinned by a test).
 	staleObservationMessagePrefix = "stale observation:"
+	// staleDeactivationMessagePrefix mirrors store.StaleDeactivationMessagePrefix (pinned by a test).
+	staleDeactivationMessagePrefix = "stale deactivation:"
 )
 
 // AccessStatus encapsulates network and access metadata (such as environment variables) for a component.

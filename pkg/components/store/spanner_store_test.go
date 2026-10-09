@@ -403,7 +403,7 @@ func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T)
 	_, _ = s.UpdateObservedGeneration(ctx, "client-app", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "", nil)
 
 	// 1. PrepareDeactivation without cascade -> should fail with blocking dependents
-	_, err = s.PrepareDeactivation(ctx, "base-dep", false)
+	_, err = s.PrepareDeactivation(ctx, "base-dep", false, nil)
 	if err == nil {
 		t.Fatalf("expected error deactivating base-dep without cascade, got nil")
 	}
@@ -412,7 +412,7 @@ func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T)
 	}
 
 	// 2. PrepareDeactivation with cascade -> should succeed and transition both to DISABLING
-	res, err := s.PrepareDeactivation(ctx, "base-dep", true)
+	res, err := s.PrepareDeactivation(ctx, "base-dep", true, nil)
 	if err != nil {
 		t.Fatalf("PrepareDeactivation with cascade failed: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T)
 	}
 
 	// 3. CompleteDeactivation on base-dep while client-app is still DISABLING (active dependent)
-	err = s.CompleteDeactivation(ctx, "base-dep", false)
+	err = s.CompleteDeactivation(ctx, "base-dep", false, nil)
 	if err == nil {
 		t.Fatalf("expected CompleteDeactivation to fail when active dependent client-app is remaining")
 	}
@@ -446,7 +446,7 @@ func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T)
 	}
 
 	// Complete client-app first
-	if err := s.CompleteDeactivation(ctx, "client-app", false); err != nil {
+	if err := s.CompleteDeactivation(ctx, "client-app", false, nil); err != nil {
 		t.Fatalf("CompleteDeactivation on client-app failed: %v", err)
 	}
 	clientRec, _ = s.GetComponent(ctx, "client-app")
@@ -455,7 +455,7 @@ func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T)
 	}
 
 	// Now complete base-dep
-	if err := s.CompleteDeactivation(ctx, "base-dep", false); err != nil {
+	if err := s.CompleteDeactivation(ctx, "base-dep", false, nil); err != nil {
 		t.Fatalf("CompleteDeactivation on base-dep failed: %v", err)
 	}
 	baseRec, _ = s.GetComponent(ctx, "base-dep")
@@ -464,7 +464,7 @@ func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T)
 	}
 
 	// Idempotency: CompleteDeactivation again on DISABLED component returns nil
-	if err := s.CompleteDeactivation(ctx, "base-dep", false); err != nil {
+	if err := s.CompleteDeactivation(ctx, "base-dep", false, nil); err != nil {
 		t.Errorf("expected idempotent CompleteDeactivation, got %v", err)
 	}
 }
@@ -497,31 +497,31 @@ func TestSpannerStore_CompleteDeactivation_TransitiveInactiveChain(t *testing.T)
 	}
 
 	// Disable b-mid directly (Prepare + Complete with force or single)
-	if _, err := s.PrepareDeactivation(ctx, "b-mid", true); err != nil {
+	if _, err := s.PrepareDeactivation(ctx, "b-mid", true, nil); err != nil {
 		t.Fatalf("failed to prepare b-mid: %v", err)
 	}
-	if err := s.CompleteDeactivation(ctx, "b-mid", true); err != nil {
+	if err := s.CompleteDeactivation(ctx, "b-mid", true, nil); err != nil {
 		t.Fatalf("failed to complete b-mid: %v", err)
 	}
 
 	// Prepare c-base for deactivation with cascade=true (transitions c-base and a-active to DISABLING)
-	if _, err := s.PrepareDeactivation(ctx, "c-base", true); err != nil {
+	if _, err := s.PrepareDeactivation(ctx, "c-base", true, nil); err != nil {
 		t.Fatalf("failed to prepare c-base: %v", err)
 	}
 
 	// Try to CompleteDeactivation on c-base while a-active is still in DISABLING (not yet DISABLED)
-	err := s.CompleteDeactivation(ctx, "c-base", false)
+	err := s.CompleteDeactivation(ctx, "c-base", false, nil)
 	if err == nil {
 		t.Fatalf("expected CompleteDeactivation on c-base to fail because transitive dependent a-active is still active (in DISABLING)")
 	}
 
 	// Complete deactivation of a-active first
-	if err := s.CompleteDeactivation(ctx, "a-active", false); err != nil {
+	if err := s.CompleteDeactivation(ctx, "a-active", false, nil); err != nil {
 		t.Fatalf("failed to complete a-active: %v", err)
 	}
 
 	// Now CompleteDeactivation on c-base should succeed
-	if err := s.CompleteDeactivation(ctx, "c-base", false); err != nil {
+	if err := s.CompleteDeactivation(ctx, "c-base", false, nil); err != nil {
 		t.Fatalf("expected CompleteDeactivation on c-base to succeed after all transitive dependents are disabled, got: %v", err)
 	}
 }
@@ -1401,7 +1401,7 @@ func TestSpannerStore_ConcurrentDeactivationAndIntentUpdate(t *testing.T) {
 	for i := 0; i < concurrentPairs; i++ {
 		go func(workerID int) {
 			defer wg.Done()
-			if _, err := s.PrepareDeactivation(ctx, "conflict-comp", false); err != nil && status.Code(err) != codes.FailedPrecondition {
+			if _, err := s.PrepareDeactivation(ctx, "conflict-comp", false, nil); err != nil && status.Code(err) != codes.FailedPrecondition {
 				t.Errorf("worker %d: PrepareDeactivation returned unexpected code %v: %v", workerID, status.Code(err), err)
 			}
 		}(i)

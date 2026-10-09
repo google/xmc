@@ -33,6 +33,12 @@ const StaleDeletionMessagePrefix = "stale deletion:"
 // generation of a custom resource that no longer owns the record.
 const StaleObservationMessagePrefix = "stale observation:"
 
+// StaleDeactivationMessagePrefix starts the FailedPrecondition message returned when a sourced
+// PrepareDeactivation or CompleteDeactivation does not come from the recorded source (the owner)
+// of the component. The GitOps bridge matches codes.FailedPrecondition plus this prefix to stop
+// deactivating a component its custom resource no longer owns.
+const StaleDeactivationMessagePrefix = "stale deactivation:"
+
 // validateOptionalSource returns an InvalidArgument error for a non-nil src that cannot be ordered
 // (see ValidateIntentSource), and nil for a nil or valid one.
 func validateOptionalSource(src *IntentSource) error {
@@ -40,6 +46,19 @@ func validateOptionalSource(src *IntentSource) error {
 		return nil
 	}
 	return ValidateIntentSource(*src)
+}
+
+// validateSourcedRequest returns the canonical form of name after validating it and the optional
+// src of a request.
+func validateSourcedRequest(name string, src *IntentSource) (string, error) {
+	canonicalName, err := validateResourceName(name)
+	if err != nil {
+		return "", err
+	}
+	if err := validateOptionalSource(src); err != nil {
+		return "", err
+	}
+	return canonicalName, nil
 }
 
 // rejectNonOwnerSource returns a FailedPrecondition error starting with prefix when src is not the
