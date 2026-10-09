@@ -235,13 +235,23 @@ export namespace ChartData {
     mean_value?: number;
     latestStep?: number | string;
     latest_step?: number | string;
+    latestIteration?: number | string;
+    latest_iteration?: number | string;
     latestTimestamp?: string;
     latest_timestamp?: string;
+    deltaVsBaseline?: number;
+    delta_vs_baseline?: number;
+    deltaPercentVsBaseline?: number;
+    delta_percent_vs_baseline?: number;
+    baselineValue?: number;
+    baseline_value?: number;
+    polarity?: 'LOWER_IS_BETTER' | 'HIGHER_IS_BETTER' | 'NEUTRAL';
     [key: string]: any;
   }
 
   export interface SeriesPoint {
     step?: number | string;
+    iteration?: number | string;
     timestamp?: string;
     avgValue?: number;
     avg_value?: number;
@@ -259,6 +269,10 @@ export namespace ChartData {
     work_unit_id?: string;
     xid?: number | string;
     points?: SeriesPoint[];
+    seriesLabel?: string;
+    series_label?: string;
+    isBaseline?: boolean;
+    is_baseline?: boolean;
     [key: string]: any;
   }
 
@@ -310,16 +324,43 @@ export interface ChartData {
   [key: string]: any;
 }
 
-export type CreateDashboardRequest = Record<string, any>;
-export type GetDashboardRequest = Record<string, any>;
-export type ListDashboardsRequest = Record<string, any>;
-export type ListDashboardsResponse = Record<string, any>;
-export type UpdateDashboardRequest = Record<string, any>;
-export type DeleteDashboardRequest = Record<string, any>;
-export type CreateChartRequest = Record<string, any>;
-export type GetChartRequest = Record<string, any>;
-export type GetChartDataRequest = Record<string, any>;
-export type ListChartsRequest = Record<string, any>;
-export type ListChartsResponse = Record<string, any>;
-export type UpdateChartRequest = Record<string, any>;
-export type DeleteChartRequest = Record<string, any>;
+export type CreateDashboardRequest = Record<string, any> & {
+  dashboard?: Dashboard;
+  dashboardId?: string;
+  charts?: Chart[];
+};
+export type GetDashboardRequest = Record<string, any> & { name?: string };
+export type ListDashboardsRequest = Record<string, any> & {
+  pageSize?: number;
+  pageToken?: string;
+  filter?: string;
+};
+export type ListDashboardsResponse = Record<string, any> & {
+  dashboards?: Dashboard[];
+  nextPageToken?: string;
+};
+export type UpdateDashboardRequest = Record<string, any> & {
+  dashboard?: Dashboard;
+  updateMask?: string;
+};
+export type DeleteDashboardRequest = Record<string, any> & { name?: string };
+export type CreateChartRequest = Record<string, any> & {
+  parent?: string;
+  chart?: Chart;
+  chartId?: string;
+};
+export type GetChartRequest = Record<string, any> & { name?: string };
+export type GetChartDataRequest = Record<string, any> & {
+  name?: string;
+  parentExperiment?: string;
+  parentWorkunit?: string;
+  chartWidthPixels?: number;
+};
+export type ListChartsRequest = Record<string, any> & {
+  parent?: string;
+  pageSize?: number;
+  pageToken?: string;
+};
+export type ListChartsResponse = Record<string, any> & { charts?: Chart[]; nextPageToken?: string };
+export type UpdateChartRequest = Record<string, any> & { chart?: Chart; updateMask?: string };
+export type DeleteChartRequest = Record<string, any> & { name?: string };
