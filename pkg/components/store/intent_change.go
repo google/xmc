@@ -91,6 +91,20 @@ type intentPlan struct {
 	previousSource *IntentSource
 }
 
+// planLiveIntent plans an intent against the live (existing and not deleted) record of
+// canonicalName in catalog, returning that record and the plan, or a nil record when there is no
+// live record. Both stores call it before validateIntentDependencies, so an intent rejected as
+// stale is reported as stale (StaleIntentMessagePrefix) even when it also names an unregistered
+// dependency.
+func planLiveIntent(catalog map[string]*ComponentRecord, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *IntentSource) (*ComponentRecord, intentPlan, error) {
+	rec, exists := catalog[canonicalName]
+	if !exists || isDeletedRecord(rec) {
+		return nil, intentPlan{}, nil
+	}
+	plan, err := planIntent(canonicalName, rec, spec, labels, deps, desiredGen, src)
+	return rec, plan, err
+}
+
 // planIntent decides how an intent applies to the existing active record rec. A sourced intent
 // (SetSourcedComponentIntent) is ordered by the epoch of src. An unsourced intent
 // (SetComponentIntent) is ordered by desiredGen: against rec.Generation for a record without a

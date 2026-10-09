@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -179,6 +180,39 @@ func TestReconcileComponent_RecreatedCustomResource(t *testing.T) {
 	}
 	if res.ComponentGeneration != first.Generation || res.ComponentID != original.ComponentID {
 		t.Errorf("(ComponentGeneration, ComponentID) after stale intent = (%d, %q), want unchanged (%d, %q)", res.ComponentGeneration, res.ComponentID, first.Generation, original.ComponentID)
+	}
+}
+
+// TestReconcileComponent_StaleIntentWithUnregisteredDependency verifies against the real CMS server
+// and MemoryStore that an older custom resource whose changed spec names a dependency CMS has not
+// registered is reported as Ready=False/Degraded=True reason StaleIntent, which blocks placement,
+// rather than as waiting on dependencies, and that the CMS record is unchanged.
+func TestReconcileComponent_StaleIntentWithUnregisteredDependency(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	r, err := NewReconciler(NewCMSClientAdapter(cmsserver.NewServer(ms)), nil, nil)
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
+	}
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	seedOwnedRecord(ctx, t, ms, created)
+	before := snapshotRecord(ctx, t, ms, "redpanda")
+
+	in := sourcedRedpandaInput("uid-old", created, 2)
+	in.Spec.Dependencies = []string{"ingestion"}
+	in.Dependencies = NewDependencySnapshot([]unstructured.Unstructured{readyComponent("ingestion", nil)})
+	res, err := r.ReconcileComponent(ctx, in)
+	if err == nil {
+		t.Fatal("ReconcileComponent(older object) error = nil, want stale intent")
+	}
+	if got := findCondition(res.Conditions, ConditionTypeReady); got == nil || got.Reason != ReasonStaleIntent {
+		t.Errorf("Ready condition = %+v, want reason %q", got, ReasonStaleIntent)
+	}
+	if got := findCondition(res.Conditions, ConditionTypeDegraded); got == nil || got.Status != ConditionStatusTrue {
+		t.Errorf("Degraded condition = %+v, want status %q", got, ConditionStatusTrue)
+	}
+	if diff := cmp.Diff(before, snapshotRecord(ctx, t, ms, "redpanda")); diff != "" {
+		t.Errorf("CMS record changed after a stale intent (-before +after):\n%s", diff)
 	}
 }
 

@@ -89,8 +89,8 @@ func (r *Reconciler) updateObservedCMS(ctx context.Context, in ReconcileComponen
 // Ready=False, Degraded=True with reason StaleIntent, clears res.ComponentGeneration and
 // res.Access, and keeps res.ComponentID. With status.componentGeneration gone, later passes skip
 // updateObservedCMS until an intent from this resource commits again, and the Actuator's
-// generation drift check falls back to status.observedGeneration. For components whose intent CMS
-// rejects as stale, that is harmless: a Ready=False or Degraded resource already blocks placement.
+// generation drift check falls back to status.observedGeneration, which is harmless: a Ready=False
+// or Degraded resource already blocks placement.
 func releaseCMSOwnership(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, stale string) {
 	logging.Warn(ctx, "Component is owned by another custom resource; no longer reporting its CMS generation", "name", canonicalName, "generation", in.Generation, "previousComponentGeneration", res.ComponentGeneration, "detail", stale)
 	res.ComponentGeneration = 0

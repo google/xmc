@@ -302,20 +302,18 @@ func (s *SpannerStore) applyIntentTx(
 	if err != nil {
 		return nil, intentPlan{}, err
 	}
+	existingRec, plan, err := planLiveIntent(catalog, canonicalName, spec, labels, deps, desiredGen, src)
+	if err != nil {
+		return nil, intentPlan{}, err
+	}
 	depIDs, err := validateIntentDependencies(catalog, canonicalName, deps)
 	if err != nil {
 		return nil, intentPlan{}, err
 	}
-
-	existingRec, exists := catalog[canonicalName]
-	if !exists || isDeletedRecord(existingRec) {
+	if existingRec == nil {
 		gen := newIntentGeneration(desiredGen, src)
 		rec, err := s.createNewIntentTx(txn, canonicalName, spec, labels, deps, gen, src, depIDs)
 		return rec, intentPlan{write: writeSpec, generation: gen}, err
-	}
-	plan, err := planIntent(canonicalName, existingRec, spec, labels, deps, desiredGen, src)
-	if err != nil {
-		return nil, intentPlan{}, err
 	}
 	var rec *ComponentRecord
 	switch plan.write {

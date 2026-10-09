@@ -83,16 +83,14 @@ func (m *MemoryStore) setIntent(ctx context.Context, name string, spec *componen
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	rec, plan, err := planLiveIntent(m.componentsByName, canonicalName, spec, labels, deps, desiredGen, src)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := validateIntentDependencies(m.componentsByName, canonicalName, deps); err != nil {
 		return nil, err
 	}
-
-	rec, exists := m.componentsByName[canonicalName]
-	if exists && !isDeletedRecord(rec) {
-		plan, err := planIntent(canonicalName, rec, spec, labels, deps, desiredGen, src)
-		if err != nil {
-			return nil, err
-		}
+	if rec != nil {
 		m.applyIntentPlanLocked(rec, plan, spec, labels, deps, src, now)
 		reportIntentEpochChange(ctx, canonicalName, plan, src)
 		return cloneRecord(rec), nil

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -113,6 +114,74 @@ func TestSetComponentIntent_ReRegisteredDependencyParity(t *testing.T) {
 						t.Errorf("SetComponentIntent(%s) generation = %d, want %d", target, got.Generation, tt.wantGen)
 					}
 					assertDependencies(ctx, t, s, target, []string{targetDep})
+				})
+			}
+		})
+	}
+}
+
+// TestSetSourcedComponentIntent_StaleBeforeDependencyCheck runs the same rows against MemoryStore
+// and SpannerStore so both classify a sourced intent against the live record before validating its
+// dependencies: a stale intent naming an unregistered dependency is rejected as stale, not as a
+// missing dependency, and leaves the record unchanged. Each row seeds a component owned by
+// "uid-b" and applies a changed intent naming an unregistered dependency from src.
+func TestSetSourcedComponentIntent_StaleBeforeDependencyCheck(t *testing.T) {
+	tests := []struct {
+		name       string
+		src        *store.IntentSource
+		wantPrefix string
+	}{
+		{name: "older object is stale", src: epochSource("uid-a", -time.Hour, 5), wantPrefix: store.StaleIntentMessagePrefix},
+		{name: "older generation of the recorded object is stale", src: epochSource("uid-b", 0, 2), wantPrefix: store.StaleIntentMessagePrefix},
+		{name: "newer object waits on the dependency", src: epochSource("uid-c", time.Hour, 1), wantPrefix: store.DependencyNotFoundMessagePrefix},
+		{name: "recorded object waits on the dependency", src: epochSource("uid-b", 0, 4), wantPrefix: store.DependencyNotFoundMessagePrefix},
+	}
+	for _, backend := range intentStoreBackends() {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := backend.newStore(t)
+			// Subtests are intentionally sequential (no t.Parallel) because they share one store.
+			for i, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					name := fmt.Sprintf("stale-before-deps-%d", i)
+					before := seedEpochComponent(ctx, t, s, name, epochSource("uid-b", 0, 3), 1)
+
+					_, err := s.SetSourcedComponentIntent(ctx, name, intentSpec("v9.0.0", "unregistered-dep"), nil, *tt.src)
+					assertOwnershipRejected(ctx, t, s, "SetSourcedComponentIntent", name, err, codes.FailedPrecondition, tt.wantPrefix, nil, before)
+				})
+			}
+		})
+	}
+}
+
+// TestSetComponentIntent_StaleBeforeDependencyCheck is the unsourced counterpart of
+// TestSetSourcedComponentIntent_StaleBeforeDependencyCheck: each row seeds a component, unsourced
+// at generation 3 or adopted from generation 3 of "uid-b", and applies a changed unsourced intent
+// at desiredGen naming an unregistered dependency.
+func TestSetComponentIntent_StaleBeforeDependencyCheck(t *testing.T) {
+	tests := []struct {
+		name       string
+		seedSource *store.IntentSource
+		desiredGen int64
+		wantPrefix string
+	}{
+		{name: "older generation of an unsourced record is stale", desiredGen: 2, wantPrefix: store.StaleIntentMessagePrefix},
+		{name: "current generation of an unsourced record waits on the dependency", desiredGen: 3, wantPrefix: store.DependencyNotFoundMessagePrefix},
+		{name: "older generation than the recorded source is stale", seedSource: epochSource("uid-b", 0, 3), desiredGen: 2, wantPrefix: store.StaleIntentMessagePrefix},
+		{name: "recorded source generation waits on the dependency", seedSource: epochSource("uid-b", 0, 3), desiredGen: 3, wantPrefix: store.DependencyNotFoundMessagePrefix},
+	}
+	for _, backend := range intentStoreBackends() {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := backend.newStore(t)
+			// Subtests are intentionally sequential (no t.Parallel) because they share one store.
+			for i, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					name := fmt.Sprintf("unsourced-stale-before-deps-%d", i)
+					before := seedEpochComponent(ctx, t, s, name, tt.seedSource, 3)
+
+					_, err := s.SetComponentIntent(ctx, name, intentSpec("v9.0.0", "unregistered-dep"), nil, tt.desiredGen)
+					assertOwnershipRejected(ctx, t, s, "SetComponentIntent", name, err, codes.FailedPrecondition, tt.wantPrefix, nil, before)
 				})
 			}
 		})

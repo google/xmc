@@ -112,7 +112,9 @@ func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileCompon
 // If CMS rejects either step because another custom resource owns the record, the pass releases
 // CMS ownership (see releaseCMSOwnership) and stops. A rejected PrepareDeactivation keeps the
 // workload, as for a stale intent: a non-owner custom resource does not actuate (its HelmOpts.Ref
-// may name the owner's release); delete the custom resource to remove it.
+// may name the owner's release); delete the custom resource to remove it. applyDisabledIntent
+// already rejects an older custom resource as StaleIntent, so CMS rejects a step only when another
+// custom resource adopts the record after that intent write.
 func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if msg, ok := recentDeactivationBlock(in); ok {
 		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, false)
