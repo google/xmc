@@ -46,6 +46,7 @@ type mockCMS struct {
 	lastPrepareReq  *componentspb.PrepareDeactivationRequest
 	lastCompleteReq *componentspb.CompleteDeactivationRequest
 	setCalls        int
+	obsCalls        int
 	prepareCalls    int
 	completeCalls   int
 }
@@ -70,6 +71,7 @@ func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetCo
 }
 
 func (m *mockCMS) UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error) {
+	m.obsCalls++
 	m.lastObsReq = in
 	return &componentspb.UpdateObservedGenerationResponse{}, m.obsErr
 }

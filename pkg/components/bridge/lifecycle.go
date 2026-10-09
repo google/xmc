@@ -133,14 +133,36 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 			return res, err
 		}
 	}
+	return r.reportDisabled(ctx, in, canonicalName, res)
+}
+
+// reportDisabled reports the component disabled in res and to CMS. A pass that changes the Ready or
+// Degraded condition (such as the first one after deactivation) syncs CMS and logs at Info; an
+// unchanged periodic pass syncs CMS only when shouldSyncToCMS allows it (the heartbeat) or the
+// component generation changed, and logs at Debug. A NotFound from CMS is tolerated. Any other
+// failure reports DeactivationIncomplete, so the next pass sees a changed Ready reason and retries
+// the handshake, whose CMS steps leave a record that is already DISABLED unchanged.
+func (r *Reconciler) reportDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	setReadiness(res, in, ConditionStatusFalse, ConditionStatusFalse, reasonComponentDisabled, "Component is disabled")
+	changed := healthConditionsChanged(in.ExistingConditions, res.Conditions, in.Generation)
+	logAt := logging.Debug
+	if changed {
+		logAt = logging.Info
+	}
+	if !changed && !shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) && !componentGenerationChanged(in, res) {
+		logAt(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
+		return res, nil
+	}
 	released, err := r.updateObservedCMS(ctx, in, canonicalName, res, "Ready=False")
 	if err != nil && status.Code(err) != codes.NotFound {
-		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+		err = fmt.Errorf("failed to update observed generation in CMS: %w", err)
+		markDeactivationFailed(in, res, ReasonDeactivationIncomplete, err.Error())
+		return res, err
 	}
+	resetReadyTransitionTime(res.Conditions)
 	if !released {
-		logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
+		logAt(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
 	}
 	return res, nil
 }
