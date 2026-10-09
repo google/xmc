@@ -26,13 +26,13 @@ export interface SystemInfo {
 export interface HealthStatusResponse {
   healthState?: string;
   systemInfo?: SystemInfo;
-  components?: any[];
+  components?: Record<string, any>[];
   healthCheckTime?: string | { seconds?: number | string; nanos?: number };
   [key: string]: any;
 }
 
 export interface ListConfigEntriesResponse {
-  configGroups?: any[];
+  configGroups?: Record<string, any>[];
   [key: string]: any;
 }
 

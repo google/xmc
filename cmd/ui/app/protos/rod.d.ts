@@ -82,7 +82,7 @@ export interface DashboardJob {
   timeInQueueSeconds?: number;
   requestedResources?: Resource[];
   positionInQueue?: number;
-  createTime?: any;
+  createTime?: string | { seconds?: number | string; nanos?: number };
   tags?: string[];
 }
 

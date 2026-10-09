@@ -13,5 +13,7 @@
 // limitations under the License.
 
 export interface Operation {
+  name?: string;
+  done?: boolean;
   [key: string]: any;
 }
