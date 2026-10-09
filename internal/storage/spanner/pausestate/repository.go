@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	"xmanager_cloud/internal/compat/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/schema/pausestateschema"
 )
@@ -51,7 +51,7 @@ type TxRepository struct {
 // NewRepository creates a Spanner-backed pause state Repository.
 func NewRepository(client *spanner.Client) (*Repository, error) {
 	if client == nil {
-		return nil, fmt.Errorf("spanner client must not be nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("spanner client must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	return &Repository{client: client}, nil
 }
@@ -96,7 +96,7 @@ func readState(ctx context.Context, reader rowReader) (*storage.PauseSchedulingS
 
 func stateMutation(state *storage.PauseSchedulingState) (*spanner.Mutation, error) {
 	if state == nil {
-		return nil, fmt.Errorf("state must not be nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("state must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	return spanner.InsertOrUpdate(pausestateschema.TableName, pausestateschema.WriteColumns, []any{
 		singletonID,
