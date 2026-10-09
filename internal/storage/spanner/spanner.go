@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 
+	"cloud.google.com/go/spanner"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/artifact"
@@ -30,7 +31,6 @@ import (
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/internal/storage/spanner/xid"
-	"cloud.google.com/go/spanner"
 )
 
 type ExperimentRepository = experiment.Repository
