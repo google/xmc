@@ -57,8 +57,9 @@ export interface ClusterQueueSecondaryMetrics {
   queuePredictability?: QueuePredictability[];
 }
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface ListClusterQueuesRequest {}
+export interface ListClusterQueuesRequest {
+  [key: string]: any;
+}
 
 export interface ListClusterQueuesResponse {
   queues?: QueueOverview[];
