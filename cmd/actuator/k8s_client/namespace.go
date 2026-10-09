@@ -17,9 +17,9 @@ import (
 	"context"
 	"fmt"
 
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
-	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"xmanager_cloud/internal/logging"
 )
 
