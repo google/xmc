@@ -17,60 +17,18 @@ package pausedtask
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"time"
 
 	"cloud.google.com/go/spanner"
-	"github.com/google/uuid"
+	"xmanager_cloud/internal/compat/status"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
-)
-
-// TableName is the Spanner table name buffering tasks intercepted during a scheduling pause.
-const TableName = "PausedTasks"
-
-// UnprocessedIndexName is the null-filtered index ordering pending tasks for replay.
-const UnprocessedIndexName = "PausedTasksUnprocessed"
-
-// Spanner column names for the PausedTasks table.
-const (
-	ColXID              = "Xid"
-	ColBitReversedXID   = "BitReversedXid"
-	ColWorkUnitID       = "WorkUnitId"
-	ColTaskID           = "TaskId"
-	ColTarget           = "Target"
-	ColActionProto      = "ActionProto"
-	ColOperationName    = "OperationName"
-	ColTraceID          = "TraceId"
-	ColPriority         = "Priority"
-	ColCreateTime       = "CreateTime"
-	ColProcessedTime    = "ProcessedTime"
-	ColResolutionStatus = "ResolutionStatus"
-	ColResumptionRunID  = "ResumptionRunId"
-	ColIsPending        = "IsPending"
-)
-
-var (
-	// ErrInvalidArgument indicates a caller provided an invalid argument (such as a nil task or action).
-	ErrInvalidArgument = errors.New("invalid argument")
+	"xmanager_cloud/internal/storage/spanner/schema/pausedtaskschema"
 )
 
 var _ storage.PausedTaskRepository = (*Repository)(nil)
 var _ storage.PausedTaskTxRepository = (*TxRepository)(nil)
-
-var insertColumns = []string{
-	ColXID, ColWorkUnitID, ColTaskID, ColTarget, ColActionProto,
-	ColOperationName, ColTraceID, ColPriority, ColCreateTime,
-}
-
-// resolutionColumns starts with the primary key. BitReversedXid is generated but must be
-// supplied as the key for Update mutations.
-var resolutionColumns = []string{
-	ColBitReversedXID, ColWorkUnitID, ColTaskID,
-	ColProcessedTime, ColResolutionStatus, ColResumptionRunID,
-}
 
 // Aliases for PausedTasks columns whose names collide with WorkUnits columns in the join.
 const (
@@ -114,23 +72,27 @@ func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
 	return &TxRepository{tx: tx}
 }
 
-// Create buffers the insert of a new paused task in the transaction. An empty TaskID is
-// populated with a generated UUID and a zero CreateTime defaults to the current time; both stay
-// stable if the transaction is retried. Constraint violations (e.g. a duplicate task) surface when
-// the transaction commits.
+// Create buffers the insert of a new paused task in the transaction. TaskID, Action, and CreateTime
+// must be provided by the caller. Constraint violations (e.g. a duplicate task) surface when the
+// transaction commits.
 func (r *TxRepository) Create(ctx context.Context, task *storage.PausedTask) error {
-	if err := prepareNewTask(task); err != nil {
+	if err := validateTask(task); err != nil {
 		return err
 	}
 	return r.tx.BufferWrite([]*spanner.Mutation{insertMutation(task)})
 }
 
 // MarkProcessed buffers the soft-delete of a batch of paused tasks in the transaction.
+// Calling MarkProcessed on an already-processed task overwrites its resolution fields (last-write-wins).
 func (r *TxRepository) MarkProcessed(ctx context.Context, resolutions []storage.PausedTaskResolution) error {
 	if len(resolutions) == 0 {
 		return nil
 	}
-	return r.tx.BufferWrite(resolutionMutations(resolutions, time.Now().UTC()))
+	mutations, err := resolutionMutations(resolutions)
+	if err != nil {
+		return err
+	}
+	return r.tx.BufferWrite(mutations)
 }
 
 // ListPending retrieves pending paused tasks ordered by Priority DESC, CreateTime ASC, each
@@ -152,25 +114,24 @@ func (r *Repository) ListPending(ctx context.Context, limit int) ([]*storage.Pau
 	return tasks, nil
 }
 
-// prepareNewTask validates a new task and populates default TaskID and CreateTime values.
-func prepareNewTask(task *storage.PausedTask) error {
+func validateTask(task *storage.PausedTask) error {
 	if task == nil {
-		return fmt.Errorf("%w: task cannot be nil", ErrInvalidArgument)
+		return fmt.Errorf("%w: task cannot be nil", status.ErrInvalidArgument)
 	}
 	if task.Action == nil {
-		return fmt.Errorf("%w: task action cannot be nil", ErrInvalidArgument)
+		return fmt.Errorf("%w: task action cannot be nil", status.ErrInvalidArgument)
 	}
 	if task.TaskID == "" {
-		task.TaskID = uuid.NewString()
+		return fmt.Errorf("%w: task ID cannot be empty", status.ErrInvalidArgument)
 	}
 	if task.CreateTime.IsZero() {
-		task.CreateTime = time.Now().UTC()
+		return fmt.Errorf("%w: create time cannot be zero", status.ErrInvalidArgument)
 	}
 	return nil
 }
 
 func insertMutation(task *storage.PausedTask) *spanner.Mutation {
-	return spanner.Insert(TableName, insertColumns, []any{
+	return spanner.Insert(pausedtaskschema.TableName, pausedtaskschema.InsertColumns, []any{
 		task.XID,
 		task.WID,
 		task.TaskID,
@@ -183,24 +144,23 @@ func insertMutation(task *storage.PausedTask) *spanner.Mutation {
 	})
 }
 
-func resolutionMutations(resolutions []storage.PausedTaskResolution, now time.Time) []*spanner.Mutation {
+func resolutionMutations(resolutions []storage.PausedTaskResolution) ([]*spanner.Mutation, error) {
 	mutations := make([]*spanner.Mutation, len(resolutions))
 	for i, res := range resolutions {
-		mutations[i] = resolutionMutation(res, now)
+		if res.ProcessedTime.IsZero() {
+			return nil, fmt.Errorf("%w: processed time cannot be zero", status.ErrInvalidArgument)
+		}
+		mutations[i] = resolutionMutation(res)
 	}
-	return mutations
+	return mutations, nil
 }
 
-func resolutionMutation(res storage.PausedTaskResolution, now time.Time) *spanner.Mutation {
-	processedTime := res.ProcessedTime
-	if processedTime.IsZero() {
-		processedTime = now
-	}
-	return spanner.Update(TableName, resolutionColumns, []any{
+func resolutionMutation(res storage.PausedTaskResolution) *spanner.Mutation {
+	return spanner.Update(pausedtaskschema.TableName, pausedtaskschema.ResolutionColumns, []any{
 		data.ReverseBits(res.XID),
 		res.WID,
 		res.TaskID,
-		processedTime,
+		res.ProcessedTime,
 		spanner.NullString{StringVal: string(res.ResolutionStatus), Valid: res.ResolutionStatus != ""},
 		spanner.NullString{StringVal: res.ResumptionRunID, Valid: res.ResumptionRunID != ""},
 	})
@@ -222,13 +182,13 @@ func rowToPausedTask(row *spanner.Row) (*storage.PausedTask, error) {
 		column string
 		dst    any
 	}{
-		{ColXID, &task.XID},
-		{ColWorkUnitID, &task.WID},
-		{ColTaskID, &task.TaskID},
-		{ColTarget, &task.Target},
-		{ColActionProto, &task.Action},
-		{ColOperationName, &task.OperationName},
-		{ColTraceID, &task.TraceID},
+		{pausedtaskschema.ColXID, &task.XID},
+		{pausedtaskschema.ColWorkUnitID, &task.WID},
+		{pausedtaskschema.ColTaskID, &task.TaskID},
+		{pausedtaskschema.ColTarget, &task.Target},
+		{pausedtaskschema.ColActionProto, &task.Action},
+		{pausedtaskschema.ColOperationName, &task.OperationName},
+		{pausedtaskschema.ColTraceID, &task.TraceID},
 		{aliasTaskPriority, &task.Priority},
 		{aliasTaskCreateTime, &task.CreateTime},
 	}

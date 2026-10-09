@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "testing",
+    testonly = True,
     srcs = [
         "pausedtask_fake.go",
         "pausestate_fake.go",
@@ -28,7 +29,6 @@ go_library(
         "//api/protos/task_queue:task_go_proto",
         "//internal/grpcerr",
         "//internal/storage",
-        "@com_github_google_uuid//:uuid",
         "@org_golang_google_protobuf//proto",
     ],
 )

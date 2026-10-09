@@ -18,7 +18,6 @@ package pausedtask_test
 import (
 	"context"
 	"errors"
-	"reflect"
 	"testing"
 	"time"
 
@@ -26,37 +25,29 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
+	"xmanager_cloud/internal/compat/status"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
 	ss "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
+	"xmanager_cloud/internal/storage/spanner/schema/pausedtaskschema"
 )
 
 var spannerBaseTime = time.Date(2026, 9, 10, 10, 0, 0, 0, time.UTC)
 
-func setTaskActionText(task *storage.PausedTask, text string) {
-	actionElemType := reflect.TypeOf(task.Action).Elem()
-	msg := reflect.New(actionElemType).Interface().(proto.Message)
-	if err := prototext.Unmarshal([]byte(text), msg); err != nil {
-		panic(err)
-	}
-	reflect.ValueOf(&task.Action).Elem().Set(reflect.ValueOf(msg))
-}
-
 func newSpannerTask(taskID string, priority int64) *storage.PausedTask {
-	task := &storage.PausedTask{
+	return &storage.PausedTask{
 		XID:        100,
 		WID:        200,
 		TaskID:     taskID,
 		Priority:   priority,
 		CreateTime: spannerBaseTime,
+		Action:     &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
 	}
-	setTaskActionText(task, `create: {}`)
-	return task
 }
 
 func pendingIDs(tasks []*storage.PausedTask) []string {
@@ -125,7 +116,9 @@ func TestTxRepository_CreateErrors(t *testing.T) {
 
 	noAction := newSpannerTask("task-2", 100)
 	noAction.Action = nil
-	missingParent := newSpannerTask("task-3", 100)
+	zeroCreateTime := newSpannerTask("task-3", 100)
+	zeroCreateTime.CreateTime = time.Time{}
+	missingParent := newSpannerTask("task-4", 100)
 	missingParent.WID = 999
 
 	tests := []struct {
@@ -136,8 +129,10 @@ func TestTxRepository_CreateErrors(t *testing.T) {
 	}{
 		{name: "duplicate", task: newSpannerTask("task-1", 100), wantCode: codes.AlreadyExists},
 		{name: "missing_parent_work_unit", task: missingParent, wantCode: codes.NotFound},
-		{name: "nil_task", task: nil, wantErr: pausedtask.ErrInvalidArgument},
-		{name: "nil_action", task: noAction, wantErr: pausedtask.ErrInvalidArgument},
+		{name: "nil_task", task: nil, wantErr: status.ErrInvalidArgument},
+		{name: "nil_action", task: noAction, wantErr: status.ErrInvalidArgument},
+		{name: "empty_task_id", task: newSpannerTask("", 100), wantErr: status.ErrInvalidArgument},
+		{name: "zero_create_time", task: zeroCreateTime, wantErr: status.ErrInvalidArgument},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -145,37 +140,10 @@ func TestTxRepository_CreateErrors(t *testing.T) {
 			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
 				t.Errorf("Create() error = %v, want %v", err, tt.wantErr)
 			}
-			if tt.wantCode != codes.OK && spanner.ErrCode(err) != tt.wantCode {
-				t.Errorf("Create() error = %v (code %v), want code %v", err, spanner.ErrCode(err), tt.wantCode)
+			if tt.wantCode != codes.OK && status.ExtractCanonicalCode(err) != tt.wantCode {
+				t.Errorf("Create() error = %v (code %v), want code %v", err, status.ExtractCanonicalCode(err), tt.wantCode)
 			}
 		})
-	}
-}
-
-func TestTxRepository_CreateGeneratesTaskIDAndCreateTime(t *testing.T) {
-	ctx := context.Background()
-	repo, client := newTestRepository(t)
-	task := newSpannerTask("", 100)
-	task.CreateTime = time.Time{}
-
-	before := time.Now().Add(-time.Minute)
-	mustCreate(ctx, t, client, repo, task)
-
-	if task.TaskID == "" {
-		t.Fatal("Create() did not populate TaskID")
-	}
-	if task.CreateTime.Before(before) {
-		t.Fatalf("Create() did not populate task.CreateTime: got %v, want after %v", task.CreateTime, before)
-	}
-	got, err := repo.ListPending(ctx, 0)
-	if err != nil || len(got) != 1 {
-		t.Fatalf("ListPending() = (%v, %v), want 1 task and nil error", got, err)
-	}
-	if got[0].TaskID != task.TaskID {
-		t.Errorf("TaskID = %q, want %q", got[0].TaskID, task.TaskID)
-	}
-	if !got[0].CreateTime.Equal(task.CreateTime) {
-		t.Errorf("CreateTime = %v, want %v", got[0].CreateTime, task.CreateTime)
 	}
 }
 
@@ -192,7 +160,7 @@ func TestTxRepository_Create(t *testing.T) {
 	}{
 		{name: "committed", task: newSpannerTask("task-1", 100), wantIDs: []string{"task-1"}},
 		{name: "rolled_back", task: newSpannerTask("task-1", 100), fnErr: errAbort, wantErr: errAbort},
-		{name: "invalid_task", task: nil, wantErr: pausedtask.ErrInvalidArgument},
+		{name: "invalid_task", task: nil, wantErr: status.ErrInvalidArgument},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -218,7 +186,11 @@ func TestRepository_ListPending_RoundTrip(t *testing.T) {
 	want.Target = "experiments/100/workUnits/200/executions/1"
 	want.OperationName = "experiments/100/workUnits/200/operations/op-1"
 	want.TraceID = "trace-1"
-	setTaskActionText(want, `restart: { author: "author@example.com" }`)
+	want.Action = &actuatortaskpb.Action{
+		Action: &actuatortaskpb.Action_Restart{
+			Restart: &actuatortaskpb.RestartAction{Author: proto.String("author@example.com")},
+		},
+	}
 	mustCreate(ctx, t, client, repo, want)
 
 	got, err := repo.ListPending(ctx, 0)
@@ -243,7 +215,7 @@ func TestRepository_ListPending_Ordering(t *testing.T) {
 	highNew := newSpannerTask("high-new", 200)
 	highNew.CreateTime = spannerBaseTime.Add(time.Minute)
 	mustCreate(ctx, t, client, repo, newSpannerTask("low", 50), newSpannerTask("high-old", 200), highNew, newSpannerTask("top", 300), newSpannerTask("done", 400))
-	if err := markProcessedInTx(ctx, client, repo, []storage.PausedTaskResolution{{XID: 100, WID: 200, TaskID: "done"}}); err != nil {
+	if err := markProcessedInTx(ctx, client, repo, []storage.PausedTaskResolution{{XID: 100, WID: 200, TaskID: "done", ProcessedTime: spannerBaseTime.Add(time.Hour)}}); err != nil {
 		t.Fatalf("MarkProcessed() unexpected error: %v", err)
 	}
 
@@ -306,17 +278,36 @@ func TestTxRepository_MarkProcessed_PersistsResolution(t *testing.T) {
 	assertPendingIDs(ctx, t, repo, []string{"t2"})
 }
 
+func TestTxRepository_MarkProcessed_LastWriteWins(t *testing.T) {
+	ctx := context.Background()
+	repo, client := newTestRepository(t)
+	mustCreate(ctx, t, client, repo, newSpannerTask("t1", 10))
+	first := storage.PausedTaskResolution{XID: 100, WID: 200, TaskID: "t1", ResolutionStatus: storage.ResolutionStatusReplayed, ResumptionRunID: "run-1", ProcessedTime: spannerBaseTime.Add(time.Hour)}
+	second := storage.PausedTaskResolution{XID: 100, WID: 200, TaskID: "t1", ResolutionStatus: storage.ResolutionStatusSkipped, ResumptionRunID: "run-2", ProcessedTime: spannerBaseTime.Add(2 * time.Hour)}
+
+	for _, res := range []storage.PausedTaskResolution{first, second} {
+		if err := markProcessedInTx(ctx, client, repo, []storage.PausedTaskResolution{res}); err != nil {
+			t.Fatalf("MarkProcessed(%q) unexpected error: %v", res.ResumptionRunID, err)
+		}
+	}
+
+	if diff := cmp.Diff(second, readResolution(ctx, t, client, "t1")); diff != "" {
+		t.Errorf("persisted resolution mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestTxRepository_MarkProcessed_UnknownTaskIsAtomic(t *testing.T) {
 	ctx := context.Background()
 	repo, client := newTestRepository(t)
 	mustCreate(ctx, t, client, repo, newSpannerTask("t1", 10))
+	processedTime := spannerBaseTime.Add(time.Hour)
 
 	err := markProcessedInTx(ctx, client, repo, []storage.PausedTaskResolution{
-		{XID: 100, WID: 200, TaskID: "t1", ResolutionStatus: storage.ResolutionStatusSkipped},
-		{XID: 100, WID: 200, TaskID: "missing", ResolutionStatus: storage.ResolutionStatusSkipped},
+		{XID: 100, WID: 200, TaskID: "t1", ResolutionStatus: storage.ResolutionStatusSkipped, ProcessedTime: processedTime},
+		{XID: 100, WID: 200, TaskID: "missing", ResolutionStatus: storage.ResolutionStatusSkipped, ProcessedTime: processedTime},
 	})
-	if spanner.ErrCode(err) != codes.NotFound {
-		t.Errorf("MarkProcessed() error = %v (code %v), want code %v", err, spanner.ErrCode(err), codes.NotFound)
+	if status.ExtractCanonicalCode(err) != codes.NotFound {
+		t.Errorf("MarkProcessed() error = %v (code %v), want code %v", err, status.ExtractCanonicalCode(err), codes.NotFound)
 	}
 	assertPendingIDs(ctx, t, repo, []string{"t1"})
 }
@@ -344,6 +335,7 @@ func TestTxRepository_MarkProcessed(t *testing.T) {
 		{name: "committed", resolutions: resolutions, wantIDs: []string{"t2"}},
 		{name: "rolled_back", resolutions: resolutions, fnErr: errAbort, wantErr: errAbort, wantIDs: []string{"t2", "t1"}},
 		{name: "empty", resolutions: nil, wantIDs: []string{"t2", "t1"}},
+		{name: "zero_processed_time", resolutions: []storage.PausedTaskResolution{{XID: 100, WID: 200, TaskID: "t1"}}, wantErr: status.ErrInvalidArgument, wantIDs: []string{"t2", "t1"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -380,8 +372,15 @@ func assertPendingIDs(ctx context.Context, t *testing.T, repo *pausedtask.Reposi
 func readResolution(ctx context.Context, t *testing.T, client *spanner.Client, taskID string) storage.PausedTaskResolution {
 	t.Helper()
 	key := spanner.Key{data.ReverseBits(100), int64(200), taskID}
-	cols := []string{pausedtask.ColXID, pausedtask.ColWorkUnitID, pausedtask.ColTaskID, pausedtask.ColResolutionStatus, pausedtask.ColResumptionRunID, pausedtask.ColProcessedTime}
-	row, err := client.Single().ReadRow(ctx, pausedtask.TableName, key, cols)
+	cols := []string{
+		pausedtaskschema.ColXID,
+		pausedtaskschema.ColWorkUnitID,
+		pausedtaskschema.ColTaskID,
+		pausedtaskschema.ColResolutionStatus,
+		pausedtaskschema.ColResumptionRunID,
+		pausedtaskschema.ColProcessedTime,
+	}
+	row, err := client.Single().ReadRow(ctx, pausedtaskschema.TableName, key, cols)
 	if err != nil {
 		t.Fatalf("ReadRow(%q) unexpected error: %v", taskID, err)
 	}

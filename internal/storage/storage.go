@@ -271,18 +271,20 @@ type PauseStateTxRepository interface {
 
 // PausedTaskRepository defines operations for retrieving paused tasks on the storage facade.
 type PausedTaskRepository interface {
-	// ListPending retrieves pending paused tasks ordered by Priority DESC, CreateTime ASC.
+	// ListPending retrieves pending paused tasks ordered by Priority DESC, CreateTime ASC,
+	// with each returned task's WorkUnit populated with the current state of its parent WorkUnit.
 	// A limit <= 0 returns all pending tasks.
 	ListPending(ctx context.Context, limit int) ([]*PausedTask, error)
 }
 
 // PausedTaskTxRepository defines paused task operations scoped to a read-write transaction.
 type PausedTaskTxRepository interface {
-	// Create persists a new paused task.
-	// Returns an error wrapping ErrPausedTaskAlreadyExists if (XID, WID, TaskID) already exists.
+	// Create persists a new paused task. TaskID, Action, and a non-zero CreateTime must be provided.
+	// Duplicate (XID, WID, TaskID) keys fail the transaction (in-line or at commit) with AlreadyExists.
 	Create(ctx context.Context, task *PausedTask) error
-	// MarkProcessed records resolution details for a batch of paused tasks.
-	// Returns an error wrapping ErrPausedTaskNotFound if any task is missing, and applies nothing.
+	// MarkProcessed records resolution details for a batch of paused tasks. Each resolution must have a non-zero ProcessedTime.
+	// Calling MarkProcessed on an already-processed task overwrites its resolution fields (last-write-wins).
+	// Missing tasks fail the transaction (in-line or at commit) with NotFound, applying nothing.
 	MarkProcessed(ctx context.Context, resolutions []PausedTaskResolution) error
 }
 
