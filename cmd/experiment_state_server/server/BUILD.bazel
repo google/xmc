@@ -71,6 +71,7 @@ compat_go_library(
         "//internal/task_queue:client",
         "//internal/toollibs/execution_environments",
         "//internal/validator",
+        "//internal/workunit",
         "//pkg/auth/jwks",
         "//pkg/auth/oauth2",
         "@com_github_google_uuid//:uuid",

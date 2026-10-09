@@ -287,6 +287,8 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 			},
 			storage: &storage.MockStorage{
 				ListWorkUnitsResp:       []*msgpb.WorkUnit{workUnit},
+				WorkUnit:                workUnit,
+				Experiment:              &msgpb.Experiment{Name: "experiments/123"},
 				AddWorkUnitOperationErr: fmt.Errorf("storage add operation failed"),
 			},
 			wantErr: grpcerr.ErrInternal,
@@ -297,8 +299,10 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				ListWorkUnitsResp:           []*msgpb.WorkUnit{workUnit},
-				UpdateWorkUnitExecutionsErr: fmt.Errorf("Storage update work unit executions failed"),
+				ListWorkUnitsResp:                 []*msgpb.WorkUnit{workUnit},
+				WorkUnit:                          workUnit,
+				Experiment:                        &msgpb.Experiment{Name: "experiments/123"},
+				UpdateCurrentWorkUnitExecutionErr: fmt.Errorf("Storage update work unit executions failed"),
 			},
 			wantErr: grpcerr.ErrInternal,
 		},
@@ -340,7 +344,11 @@ func TestBatchStopWorkUnits_TaskEnqueueFails(t *testing.T) {
 	xidClient := &mockXidClient{
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
-	storage := &storage.MockStorage{ListWorkUnitsResp: []*msgpb.WorkUnit{workUnit}}
+	storage := &storage.MockStorage{
+		ListWorkUnitsResp: []*msgpb.WorkUnit{workUnit},
+		WorkUnit:          workUnit,
+		Experiment:        &msgpb.Experiment{Name: "experiments/123"},
+	}
 	taskQueueClient := &tq.FakeClient{
 		EnqueueErr: fmt.Errorf("task enqueue failed"),
 	}
@@ -508,7 +516,7 @@ func TestBatchStopWorkUnits_SchedulingPausedTransitionsDirectlyToStopped(t *test
 	}
 
 	// Transition both work units to SCHEDULING_PAUSED.
-	if _, err := server.WorkUnitHandler.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+	if _, err := server.WorkUnitHandler.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
 		{
 			WID: workUnitID1,
 			EID: 1,
@@ -614,7 +622,7 @@ func TestBatchStopWorkUnits_MixedSchedulingPausedAndRunning(t *testing.T) {
 	}
 
 	// Transition workUnit1 to RUNNING and workUnit2 to SCHEDULING_PAUSED.
-	if _, err := server.WorkUnitHandler.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+	if _, err := server.WorkUnitHandler.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
 		{
 			WID: workUnitID1,
 			EID: 1,

@@ -24,6 +24,7 @@ import (
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/storage/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
@@ -54,10 +55,11 @@ type WorkUnitActuator interface {
 
 // baseHandler encapsulates common infrastructure dependencies shared across domain handlers.
 type baseHandler struct {
-	cfg       *config.Config
-	storage   storage.Storage
-	auth      auth.AuthorizerInterface
-	xidClient xidgrpcpb.XidServiceClient
+	cfg             *config.Config
+	storage         storage.Storage
+	workUnitUpdater *workunit.Updater
+	auth            auth.AuthorizerInterface
+	xidClient       xidgrpcpb.XidServiceClient
 }
 
 // ExperimentHandler handles experiment lifecycle operations.
@@ -141,10 +143,11 @@ func New(p Params) (*Server, error) {
 	}
 
 	base := baseHandler{
-		cfg:       p.Config,
-		storage:   p.Storage,
-		auth:      p.Authorizer,
-		xidClient: p.XidClient,
+		cfg:             p.Config,
+		storage:         p.Storage,
+		workUnitUpdater: workunit.NewUpdater(p.Storage),
+		auth:            p.Authorizer,
+		xidClient:       p.XidClient,
 	}
 
 	s := &Server{}

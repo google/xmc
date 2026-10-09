@@ -95,7 +95,7 @@ func (h *WorkUnitHandler) BatchStopWorkUnits(ctx context.Context, req *apipb.Bat
 	// 6. Update the work unit execution statuses to STOPPING for all work units that were
 	// successfully processed.
 	if len(execUpdates) > 0 {
-		if _, err := h.storage.UpdateWorkUnitExecutions(ctx, xid, execUpdates); err != nil {
+		if _, err := h.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, execUpdates); err != nil {
 			logging.Error(ctx, "Failed to batch update work unit statuses", "error", err)
 			multiErr = errors.Join(multiErr, fmt.Errorf("failed to batch update work unit statuses: %w (%v)", grpcerr.ErrInternal, err))
 		}

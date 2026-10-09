@@ -27,6 +27,7 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/common/labels"
 	"xmanager_cloud/logging/logging"
@@ -86,7 +87,7 @@ type pendingUpdate struct {
 
 // LogProcessor processes logs from Pub/Sub.
 type LogProcessor struct {
-	storageClient        storage.Storage
+	workUnitUpdater      *workunit.Updater
 	logKeyword           string
 	maxConcurrentUpdates int
 }
@@ -94,7 +95,7 @@ type LogProcessor struct {
 // NewLogProcessor creates a new LogProcessor.
 func NewLogProcessor(storageClient storage.Storage, logKeyword string, maxConcurrentUpdates int) *LogProcessor {
 	return &LogProcessor{
-		storageClient:        storageClient,
+		workUnitUpdater:      workunit.NewUpdater(storageClient),
 		logKeyword:           logKeyword,
 		maxConcurrentUpdates: maxConcurrentUpdates,
 	}
@@ -156,7 +157,7 @@ func (lp *LogProcessor) processUpdatesForExperiment(ctx context.Context, xid int
 	}
 
 	logging.Info(ctx, "Grouped updates", "updates", wuUpdates)
-	if _, err := lp.storageClient.UpdateWorkUnitExecutions(ctx, xid, wuUpdates); err != nil {
+	if _, err := lp.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, wuUpdates); err != nil {
 		logging.Error(ctx, "Failed to update work unit executions", "error", err)
 
 		shouldAck := false

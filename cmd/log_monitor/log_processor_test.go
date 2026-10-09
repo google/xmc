@@ -34,19 +34,75 @@ var testTimestamp = time.Date(2025, time.December, 15, 0, 0, 0, 0, time.UTC)
 
 type mockStorage struct {
 	storage.MockStorage
-	mu sync.Mutex
-	// Map of xid to updates of the UpdateWorkUnitExecutions call.
+	mu        sync.Mutex
+	updateErr error
+	// Map of xid to updates recorded via UpdateCurrentWorkUnitExecution.
 	gotWorkUnitExecutionUpdates map[int64][]*storage.WorkUnitExecutionUpdate
 }
 
-func (s *mockStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
+func (s *mockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
+	tx := &storage.Transaction{
+		Experiments:    s,
+		WorkUnits:      s,
+		StatusMessages: s,
+		StatusHistory:  s,
+	}
+	return fn(ctx, tx)
+}
+
+func (s *mockStorage) InsertWorkUnitExecutionMessage(ctx context.Context, xid, wid, eid int64, msg *essmsgpb.StructuredMessage) error {
+	return nil
+}
+
+func (s *mockStorage) FetchUpdatingWorkUnits(ctx context.Context, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnit, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.updateErr != nil {
+		return nil, s.updateErr
+	}
+	res := make(map[int64]*essmsgpb.WorkUnit, len(wids))
+	for _, wid := range wids {
+		eid := wid + 1
+		res[wid] = &essmsgpb.WorkUnit{
+			Name: fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid),
+			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Name: fmt.Sprintf("experiments/%d/workUnits/%d/executions/%d", xid, wid, eid),
+			},
+		}
+	}
+	return res, nil
+}
+
+func (s *mockStorage) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error) {
+	return &essmsgpb.Experiment{Name: fmt.Sprintf("experiments/%d", xid)}, nil
+}
+
+func (s *mockStorage) UpdateExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error {
+	return nil
+}
+
+func (s *mockStorage) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.updateErr != nil {
+		return s.updateErr
+	}
 	if s.gotWorkUnitExecutionUpdates == nil {
 		s.gotWorkUnitExecutionUpdates = make(map[int64][]*storage.WorkUnitExecutionUpdate)
 	}
-	s.gotWorkUnitExecutionUpdates[xid] = append(s.gotWorkUnitExecutionUpdates[xid], updates...)
-	return nil, s.UpdateWorkUnitExecutionsErr
+	s.gotWorkUnitExecutionUpdates[xid] = append(s.gotWorkUnitExecutionUpdates[xid], &storage.WorkUnitExecutionUpdate{
+		WID: wid,
+		EID: eid,
+		WorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Status: &essmsgpb.WorkUnitStatus{
+				UserMessage: execution.GetStatus().GetUserMessage(),
+			},
+		},
+		UpdateMask: &fmpb.FieldMask{
+			Paths: []string{"status.user_message"},
+		},
+	})
+	return nil
 }
 
 // mockMessage implements PubSubMessage for testing.
@@ -113,6 +169,7 @@ func TestProcessBatch(t *testing.T) {
 				WorkUnitExecution: &essmsgpb.WorkUnitExecution{
 					Status: &essmsgpb.WorkUnitStatus{
 						UserMessage: &essmsgpb.StructuredMessage{
+							Parent:         "experiments/1/workUnits/2",
 							UserFacingText: "test log",
 							Severity:       essmsgpb.StructuredMessage_INFO,
 							Source:         essmsgpb.StructuredMessage_APPLICATION,
@@ -221,6 +278,7 @@ func TestProcessBatchMultipleExperiments(t *testing.T) {
 				WorkUnitExecution: &essmsgpb.WorkUnitExecution{
 					Status: &essmsgpb.WorkUnitStatus{
 						UserMessage: &essmsgpb.StructuredMessage{
+							Parent:         "experiments/1/workUnits/2",
 							UserFacingText: "log 1",
 							Severity:       essmsgpb.StructuredMessage_INFO,
 							Source:         essmsgpb.StructuredMessage_APPLICATION,
@@ -240,6 +298,7 @@ func TestProcessBatchMultipleExperiments(t *testing.T) {
 				WorkUnitExecution: &essmsgpb.WorkUnitExecution{
 					Status: &essmsgpb.WorkUnitStatus{
 						UserMessage: &essmsgpb.StructuredMessage{
+							Parent:         "experiments/5/workUnits/6",
 							UserFacingText: "log 2",
 							Severity:       essmsgpb.StructuredMessage_INFO,
 							Source:         essmsgpb.StructuredMessage_APPLICATION,
@@ -293,8 +352,7 @@ func TestProcessBatchHandlesUpdateErrors(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			mockStorage := &mockStorage{}
-			mockStorage.UpdateWorkUnitExecutionsErr = tc.storageError
+			mockStorage := &mockStorage{updateErr: tc.storageError}
 			lp := NewLogProcessor(mockStorage, "XMC LOG:", 10)
 			msg := &mockMessage{data: validData}
 			messages := []PubSubMessage{msg}

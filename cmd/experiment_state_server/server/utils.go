@@ -162,7 +162,7 @@ func (h *WorkUnitHandler) updateWorkUnitExecutionStatusMessage(ctx context.Conte
 	msg.Source = msgpb.StructuredMessage_XMANAGER_BACKEND
 	msg.CreateTime = timestamppb.Now()
 
-	_, err := h.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+	_, err := h.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
 		{
 			WID: wid,
 			EID: eid,

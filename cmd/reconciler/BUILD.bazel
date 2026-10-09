@@ -44,6 +44,7 @@ compat_go_library(
         "//internal/logging",
         "//internal/storage",
         "//internal/storage/spanner",
+        "//internal/workunit",
         "@com_github_go_logr_logr//:logr",
         "@com_google_cloud_go_spanner//:spanner",
         "@io_k8s_api//core/v1:core",

@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 	"xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/workunit"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -37,6 +38,7 @@ func TestListWorkUnitMessagesBySeverity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
+	updater := workunit.NewUpdater(storageClient)
 
 	xid := int64(1)
 	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
@@ -112,7 +114,7 @@ func TestListWorkUnitMessagesBySeverity(t *testing.T) {
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.system_message", "status.user_message"}},
 			},
 		}
-		if _, err := storageClient.UpdateWorkUnitExecutions(ctx, xid, updates); err != nil {
+		if _, err := updater.UpdateWorkUnitExecutions(ctx, xid, updates); err != nil {
 			t.Fatalf("UpdateWorkUnitExecutions for work unit %d failed: %v", msg.wid, err)
 		}
 	}
@@ -136,7 +138,7 @@ func TestListWorkUnitMessagesBySeverity(t *testing.T) {
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.system_message"}},
 		},
 	}
-	if _, err := storageClient.UpdateWorkUnitExecutions(ctx, xid2, updatesXID2); err != nil {
+	if _, err := updater.UpdateWorkUnitExecutions(ctx, xid2, updatesXID2); err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions for xid %d failed: %v", xid2, err)
 	}
 

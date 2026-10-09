@@ -21,6 +21,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
 	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
@@ -83,7 +84,7 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 			TickDuration:           p.cfg.BatcherTickDuration,
 			MaxParallelExperiments: p.cfg.MaxParallelExperiments,
 		},
-		p.storage,
+		workunit.NewUpdater(p.storage),
 	)
 
 	jobsetReconciler, err := jobset.NewReconciler(jobset.Params{
