@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	batchv1 "k8s.io/api/batch/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -925,5 +926,273 @@ func TestConstructJobSet_TPU_MultiSlice(t *testing.T) {
 	wantAnnotation := "cloud.google.com/gke-nodepool"
 	if got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"] != wantAnnotation {
 		t.Errorf("Expected exclusive-topology annotation=%q, got %q", wantAnnotation, got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"])
+	}
+}
+
+func TestConstructJobSet_PriorityClassName(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Name = "workUnitPriorityClassName"
+		job1 := wu.Executable.GetJobset().Jobs[0]
+		job1.Name = "pathways-head"
+		job1.PriorityClassName = "very-high"
+
+		job2 := proto.Clone(job1).(*esspb.KubernetesJob)
+		job2.Name = "worker"
+		job2.PriorityClassName = ""
+
+		wu.Executable.GetJobset().Jobs = []*esspb.KubernetesJob{job1, job2}
+	})
+
+	priorities := Priorities{
+		ExperimentPriority: esspb.Priority_HIGH,
+		WorkUnitPriority:   esspb.Priority_NORMAL,
+	}
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, priorities)
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if got.ObjectMeta.Labels[kueuePriorityClassLabel] != "exp-high-wu-medium" {
+		t.Errorf("Expected kueuePriorityClassLabel to be %q, got %q", "exp-high-wu-medium", got.ObjectMeta.Labels[kueuePriorityClassLabel])
+	}
+	if len(got.Spec.ReplicatedJobs) != 2 {
+		t.Fatalf("Expected 2 replicated jobs, got %d", len(got.Spec.ReplicatedJobs))
+	}
+	if got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.PriorityClassName != "very-high" {
+		t.Errorf("Expected pathways-head PriorityClassName %q, got %q", "very-high", got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.PriorityClassName)
+	}
+	if got.Spec.ReplicatedJobs[1].Template.Spec.Template.Spec.PriorityClassName != "" {
+		t.Errorf("Expected worker PriorityClassName %q, got %q", "", got.Spec.ReplicatedJobs[1].Template.Spec.Template.Spec.PriorityClassName)
+	}
+}
+
+func TestConstructJobSet_ManagedXprofGCSInjection(t *testing.T) {
+	// The actuator injects the GCS destination purely from the MANAGED_XPROF_GCS_PATH
+	// env var, decoupled from the ManagedXprof artifact or any "requested" env flag.
+	tests := []struct {
+		name          string
+		gcsPathEnv    string
+		wantGCSObject string
+	}{
+		{
+			name:          "gcs path env present injects GCS env",
+			gcsPathEnv:    "gs://my-awesome-profile-bucket",
+			wantGCSObject: "gs://my-awesome-profile-bucket/xmc-123-456-1764149578",
+		},
+		{
+			name: "gcs path env absent skips GCS env",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+			if tc.gcsPathEnv != "" {
+				t.Setenv(constants.XmcEnvVarManagedXprofGCSPath, tc.gcsPathEnv)
+			}
+
+			workUnit := &esspb.WorkUnit{
+				Name: "workUnit1",
+				Executable: &esspb.Executable{
+					Type: &esspb.Executable_Jobset{
+						Jobset: &esspb.JobSetExecutable{
+							Jobs: []*esspb.KubernetesJob{
+								{
+									Name: "job1",
+									Spec: &esspb.ExecutableSpec{
+										Resources: &esspb.ResourceSet{
+											Resources: &esspb.ResourceSet_CpuResources{
+												CpuResources: &esspb.CpuResources{
+													CpuMillicores: 100,
+													MemoryBytes:   1024,
+												},
+											},
+										},
+										DockerImage: "foo/bar",
+									},
+									Replicas: 1,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+			}
+			if len(got.Spec.ReplicatedJobs) != 1 {
+				t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+			}
+			podSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+			if len(podSpec.Containers) != 1 {
+				t.Fatalf("Expected 1 container, got %d", len(podSpec.Containers))
+			}
+
+			envMap := make(map[string]string)
+			for _, ev := range podSpec.Containers[0].Env {
+				envMap[ev.Name] = ev.Value
+			}
+
+			if got := envMap[constants.XmcEnvVarManagedXprofGCSObjectFolder]; got != tc.wantGCSObject {
+				t.Errorf("GCS object folder env = %q, want %q", got, tc.wantGCSObject)
+			}
+			// The actuator must no longer inject display name / run group; those are
+			// resolved by the reconciler from the artifact.
+			if _, ok := envMap[constants.XmcEnvVarManagedXprofDisplayName]; ok {
+				t.Errorf("did not expect %s to be injected by the actuator", constants.XmcEnvVarManagedXprofDisplayName)
+			}
+			if _, ok := envMap[constants.XmcEnvVarManagedXprofRunGroup]; ok {
+				t.Errorf("did not expect %s to be injected by the actuator", constants.XmcEnvVarManagedXprofRunGroup)
+			}
+		})
+	}
+}
+
+func TestConstructJobSet_CustomAnnotationsAndLabels(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			SchedulingConstraints: &esspb.SchedulingConstraints{
+				QueueName: testNamespace,
+			},
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Annotations: map[string]string{
+						"custom.company.com/release": "v1.2.3",
+						"helm.sh/hook":               "pre-install",
+						constants.AuthorAnnotation:   "malicious-author-override",
+					},
+					Labels: map[string]string{
+						"custom.company.com/team":   "ml-platform",
+						"env":                       "production",
+						constants.ExperimentIDLabel: "99999",
+						kueueQueueLabel:             "malicious-queue-override",
+					},
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_CpuResources{
+										CpuResources: &esspb.CpuResources{
+											CpuMillicores: 100,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 1,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	// Verify custom annotations were merged.
+	if got.Annotations["custom.company.com/release"] != "v1.2.3" {
+		t.Errorf("Annotations[\"custom.company.com/release\"] = %q, want \"v1.2.3\"", got.Annotations["custom.company.com/release"])
+	}
+	if got.Annotations["helm.sh/hook"] != "pre-install" {
+		t.Errorf("Annotations[\"helm.sh/hook\"] = %q, want \"pre-install\"", got.Annotations["helm.sh/hook"])
+	}
+	// Verify reserved author annotation was not overwritten.
+	if got.Annotations[constants.AuthorAnnotation] != "test-author" {
+		t.Errorf("Annotations[%q] = %q, want \"test-author\"", constants.AuthorAnnotation, got.Annotations[constants.AuthorAnnotation])
+	}
+
+	// Verify custom labels were merged.
+	if got.Labels["custom.company.com/team"] != "ml-platform" {
+		t.Errorf("Labels[\"custom.company.com/team\"] = %q, want \"ml-platform\"", got.Labels["custom.company.com/team"])
+	}
+	if got.Labels["env"] != "production" {
+		t.Errorf("Labels[\"env\"] = %q, want \"production\"", got.Labels["env"])
+	}
+	// Verify reserved experiment ID label and queue label were not overwritten.
+	if got.Labels[constants.ExperimentIDLabel] != "123" {
+		t.Errorf("Labels[%q] = %q, want \"123\"", constants.ExperimentIDLabel, got.Labels[constants.ExperimentIDLabel])
+	}
+	if got.Labels[kueueQueueLabel] != testNamespace {
+		t.Errorf("Labels[%q] = %q, want %q", kueueQueueLabel, got.Labels[kueueQueueLabel], testNamespace)
+	}
+
+	// Verify custom top-level annotations and labels were NOT propagated to replicated jobs/pods.
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+	}
+	jobAnnotations := got.Spec.ReplicatedJobs[0].Template.ObjectMeta.Annotations
+	if _, ok := jobAnnotations["custom.company.com/release"]; ok {
+		t.Errorf("ReplicatedJob unexpectedly received top-level annotation \"custom.company.com/release\"")
+	}
+	if _, ok := jobAnnotations["helm.sh/hook"]; ok {
+		t.Errorf("ReplicatedJob unexpectedly received top-level annotation \"helm.sh/hook\"")
+	}
+
+	jobLabels := got.Spec.ReplicatedJobs[0].Template.ObjectMeta.Labels
+	if _, ok := jobLabels["custom.company.com/team"]; ok {
+		t.Errorf("ReplicatedJob unexpectedly received top-level label \"custom.company.com/team\"")
+	}
+	if _, ok := jobLabels["env"]; ok {
+		t.Errorf("ReplicatedJob unexpectedly received top-level label \"env\"")
+	}
+}
+
+func TestConstructJobSet_KubernetesJobAnnotationsPropagation(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+
+	workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		job := wu.Executable.GetJobset().Jobs[0]
+		job.Annotations = map[string]string{
+			"alpha.jobset.sigs.k8s.io/exclusive-topology": "kubernetes.io/hostname",
+			"custom.job.annotation/key":                   "custom-value",
+		}
+	})
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+	}
+
+	jobTemplateAnnotations := got.Spec.ReplicatedJobs[0].Template.ObjectMeta.Annotations
+	podTemplateAnnotations := got.Spec.ReplicatedJobs[0].Template.Spec.Template.ObjectMeta.Annotations
+
+	wantExclusiveTopology := "kubernetes.io/hostname"
+	wantCustomAnnotation := "custom-value"
+
+	// Verify JobTemplateSpec annotations
+	if gotVal := jobTemplateAnnotations["alpha.jobset.sigs.k8s.io/exclusive-topology"]; gotVal != wantExclusiveTopology {
+		t.Errorf("JobTemplateSpec.Annotations[\"alpha.jobset.sigs.k8s.io/exclusive-topology\"] = %q, want %q", gotVal, wantExclusiveTopology)
+	}
+	if gotVal := jobTemplateAnnotations["custom.job.annotation/key"]; gotVal != wantCustomAnnotation {
+		t.Errorf("JobTemplateSpec.Annotations[\"custom.job.annotation/key\"] = %q, want %q", gotVal, wantCustomAnnotation)
+	}
+
+	// Verify PodTemplateSpec annotations
+	if gotVal := podTemplateAnnotations["alpha.jobset.sigs.k8s.io/exclusive-topology"]; gotVal != wantExclusiveTopology {
+		t.Errorf("PodTemplateSpec.Annotations[\"alpha.jobset.sigs.k8s.io/exclusive-topology\"] = %q, want %q", gotVal, wantExclusiveTopology)
+	}
+	if gotVal := podTemplateAnnotations["custom.job.annotation/key"]; gotVal != wantCustomAnnotation {
+		t.Errorf("PodTemplateSpec.Annotations[\"custom.job.annotation/key\"] = %q, want %q", gotVal, wantCustomAnnotation)
+	}
+
+	// Verify map pointer separation between JobTemplateSpec and PodTemplateSpec annotations
+	jobTemplateAnnotations["test-mutation-key"] = "mutated"
+	if _, ok := podTemplateAnnotations["test-mutation-key"]; ok {
+		t.Errorf("PodTemplateSpec.Annotations shared map pointer with JobTemplateSpec.Annotations")
 	}
 }

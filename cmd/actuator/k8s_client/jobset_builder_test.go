@@ -14,6 +14,7 @@
 package k8sclient
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -29,6 +30,13 @@ import (
 	"xmanager_cloud/internal/prototest"
 	constants "xmanager_cloud/kubernetes/common/constants"
 )
+
+func envFieldRef(name, fieldPath string) corev1.EnvVar {
+	return corev1.EnvVar{
+		Name:      name,
+		ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: fieldPath}},
+	}
+}
 
 func TestConstructJobSet(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
@@ -91,10 +99,25 @@ func TestConstructJobSet(t *testing.T) {
 							Annotations: jobAnnotations,
 						},
 						Spec: batchv1.JobSpec{
-							BackoffLimit:            proto.Int32(1),
-							CompletionMode:          ptr.To(batchv1.IndexedCompletion),
-							Completions:             proto.Int32(1),
-							PodFailurePolicy:        podFailurePolicy("job1"),
+							BackoffLimit:   proto.Int32(1),
+							CompletionMode: ptr.To(batchv1.IndexedCompletion),
+							Completions:    proto.Int32(1),
+							PodFailurePolicy: &batchv1.PodFailurePolicy{
+								Rules: []batchv1.PodFailurePolicyRule{
+									{
+										Action:          batchv1.PodFailurePolicyActionIgnore,
+										OnPodConditions: []batchv1.PodFailurePolicyOnPodConditionsPattern{{Type: "DisruptionTarget"}},
+									},
+									{
+										Action:      batchv1.PodFailurePolicyActionFailJob,
+										OnExitCodes: &batchv1.PodFailurePolicyOnExitCodesRequirement{ContainerName: proto.String("job1"), Operator: "In", Values: []int32{50}},
+									},
+									{
+										Action:      batchv1.PodFailurePolicyActionIgnore,
+										OnExitCodes: &batchv1.PodFailurePolicyOnExitCodesRequirement{ContainerName: proto.String("job1"), Operator: "In", Values: []int32{42}},
+									},
+								},
+							},
 							TTLSecondsAfterFinished: proto.Int32(604800),
 							Template: corev1.PodTemplateSpec{
 								ObjectMeta: metav1.ObjectMeta{
@@ -112,7 +135,19 @@ func TestConstructJobSet(t *testing.T) {
 											TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 											Command:                  []string{"bash", "-c", "echo hello"},
 											Args:                     []string{"--arg1=val1"},
-											Env:                      client.generateEnvVarsForSpec(workUnit.Executable.GetJobset().Jobs[0].GetSpec()),
+											Env: []corev1.EnvVar{
+												{Name: "env1", Value: "val1"},
+												{Name: constants.XmcEnvVarManagedBy, Value: "true"},
+												{Name: constants.XmcEnvVarMetricsEnabled, Value: "false"},
+												envFieldRef(constants.XmcEnvVarNamespace, "metadata.namespace"),
+												envFieldRef(constants.XmcEnvVarQueueName, fmt.Sprintf("metadata.labels['%s']", kueueQueueLabel)),
+												envFieldRef(constants.XmcEnvVarExperimentID, fmt.Sprintf("metadata.labels['%s']", constants.ExperimentIDLabel)),
+												envFieldRef(constants.XmcEnvVarWorkUnitID, fmt.Sprintf("metadata.labels['%s']", constants.WorkUnitIDLabel)),
+												envFieldRef(constants.XmcEnvVarExecutionID, fmt.Sprintf("metadata.labels['%s']", constants.ExecutionIDLabel)),
+												envFieldRef(constants.XmcEnvVarAuthor, fmt.Sprintf("metadata.annotations['%s']", constants.AuthorAnnotation)),
+												envFieldRef(constants.XmcEnvVarJobIndex, fmt.Sprintf("metadata.labels['%s']", constants.JobSetJobIndexLabel)),
+												envFieldRef(constants.XmcEnvVarJobName, fmt.Sprintf("metadata.labels['%s']", constants.JobSetReplicatedJobNameLabel)),
+											},
 											Resources: corev1.ResourceRequirements{
 												Limits: corev1.ResourceList{
 													corev1.ResourceMemory: resource.MustParse("1024"),
@@ -122,13 +157,29 @@ func TestConstructJobSet(t *testing.T) {
 													corev1.ResourceMemory: resource.MustParse("1024"),
 												},
 											},
-											VolumeMounts:    generateVolumeMountsForSpec(workUnit.Executable.GetJobset().Jobs[0].GetSpec()),
-											SecurityContext: defaultSecurityContext(),
+											VolumeMounts: []corev1.VolumeMount{
+												{Name: "ram-scratch", MountPath: "/dev/ram-scratch"},
+												{Name: "disk-scratch", MountPath: "/dev/disk-scratch"},
+												{Name: "dev-shm-scratch", MountPath: "/dev/shm"},
+											},
+											SecurityContext: &corev1.SecurityContext{
+												AllowPrivilegeEscalation: proto.Bool(false),
+												Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+												Privileged:               proto.Bool(false),
+											},
 										},
 									},
-									RestartPolicy:   corev1.RestartPolicyNever,
-									SecurityContext: defaultPodSecurityContext(),
-									Volumes:         generateVolumesForJob(workUnit.Executable.GetJobset().Jobs[0]),
+									RestartPolicy: corev1.RestartPolicyNever,
+									SecurityContext: &corev1.PodSecurityContext{
+										RunAsGroup:     proto.Int64(1000),
+										RunAsUser:      proto.Int64(1000),
+										SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+									},
+									Volumes: []corev1.Volume{
+										{Name: "ram-scratch", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory}}},
+										{Name: "disk-scratch", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumDefault}}},
+										{Name: "dev-shm-scratch", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory}}},
+									},
 								},
 							},
 						},
@@ -415,189 +466,5 @@ func TestConstructJobSet_NoExecutable(t *testing.T) {
 
 	if _, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}); err == nil {
 		t.Errorf("constructJobSet() with no executable succeeded, want error")
-	}
-}
-
-func TestConstructJobSet_PriorityClassName(t *testing.T) {
-	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
-		wu.Name = "workUnitPriorityClassName"
-		job1 := wu.Executable.GetJobset().Jobs[0]
-		job1.Name = "pathways-head"
-		job1.PriorityClassName = "very-high"
-
-		job2 := proto.Clone(job1).(*esspb.KubernetesJob)
-		job2.Name = "worker"
-		job2.PriorityClassName = ""
-		wu.Executable.GetJobset().Jobs = []*esspb.KubernetesJob{job1, job2}
-	})
-
-	priorities := Priorities{
-		ExperimentPriority: esspb.Priority_HIGH,
-		WorkUnitPriority:   esspb.Priority_NORMAL,
-	}
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, priorities)
-	if err != nil {
-		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
-	}
-
-	if got.ObjectMeta.Labels[kueuePriorityClassLabel] != "exp-high-wu-medium" {
-		t.Errorf("Expected kueuePriorityClassLabel to be %q, got %q", "exp-high-wu-medium", got.ObjectMeta.Labels[kueuePriorityClassLabel])
-	}
-	if len(got.Spec.ReplicatedJobs) != 2 {
-		t.Fatalf("Expected 2 replicated jobs, got %d", len(got.Spec.ReplicatedJobs))
-	}
-	if got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.PriorityClassName != "very-high" {
-		t.Errorf("Expected pathways-head PriorityClassName %q, got %q", "very-high", got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.PriorityClassName)
-	}
-	if got.Spec.ReplicatedJobs[1].Template.Spec.Template.Spec.PriorityClassName != "" {
-		t.Errorf("Expected worker PriorityClassName %q, got %q", "", got.Spec.ReplicatedJobs[1].Template.Spec.Template.Spec.PriorityClassName)
-	}
-}
-
-func TestConstructJobSet_ManagedXprofGCSInjection(t *testing.T) {
-	tests := []struct {
-		name          string
-		gcsPathEnv    string
-		wantGCSObject string
-	}{
-		{
-			name:          "gcs path env present injects GCS env",
-			gcsPathEnv:    "gs://my-awesome-profile-bucket",
-			wantGCSObject: "gs://my-awesome-profile-bucket/xmc-123-456-1764149578",
-		},
-		{
-			name: "gcs path env absent skips GCS env",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-			if tc.gcsPathEnv != "" {
-				t.Setenv(constants.XmcEnvVarManagedXprofGCSPath, tc.gcsPathEnv)
-			}
-
-			got, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
-			if err != nil {
-				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
-			}
-			if len(got.Spec.ReplicatedJobs) != 1 {
-				t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
-			}
-			podSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
-			if len(podSpec.Containers) != 1 {
-				t.Fatalf("Expected 1 container, got %d", len(podSpec.Containers))
-			}
-
-			envMap := make(map[string]string)
-			for _, ev := range podSpec.Containers[0].Env {
-				envMap[ev.Name] = ev.Value
-			}
-
-			if got := envMap[constants.XmcEnvVarManagedXprofGCSObjectFolder]; got != tc.wantGCSObject {
-				t.Errorf("GCS object folder env = %q, want %q", got, tc.wantGCSObject)
-			}
-			if _, ok := envMap[constants.XmcEnvVarManagedXprofDisplayName]; ok {
-				t.Errorf("did not expect %s to be injected by the actuator", constants.XmcEnvVarManagedXprofDisplayName)
-			}
-			if _, ok := envMap[constants.XmcEnvVarManagedXprofRunGroup]; ok {
-				t.Errorf("did not expect %s to be injected by the actuator", constants.XmcEnvVarManagedXprofRunGroup)
-			}
-		})
-	}
-}
-
-func TestConstructJobSet_CustomAnnotationsAndLabels(t *testing.T) {
-	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
-		jobset := wu.Executable.GetJobset()
-		jobset.Annotations = map[string]string{
-			"custom.company.com/release": "v1.2.3",
-			"helm.sh/hook":               "pre-install",
-			constants.AuthorAnnotation:   "malicious-author-override",
-		}
-		jobset.Labels = map[string]string{
-			"custom.company.com/team":   "ml-platform",
-			"env":                       "production",
-			constants.ExperimentIDLabel: "99999",
-			kueueQueueLabel:             "malicious-queue-override",
-		}
-	})
-
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
-	if err != nil {
-		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
-	}
-
-	for k, want := range map[string]string{
-		"custom.company.com/release": "v1.2.3",
-		"helm.sh/hook":               "pre-install",
-		constants.AuthorAnnotation:   "test-author",
-	} {
-		if got.Annotations[k] != want {
-			t.Errorf("Annotations[%q] = %q, want %q", k, got.Annotations[k], want)
-		}
-	}
-	for k, want := range map[string]string{
-		"custom.company.com/team":   "ml-platform",
-		"env":                       "production",
-		constants.ExperimentIDLabel: "123",
-		kueueQueueLabel:             testNamespace,
-	} {
-		if got.Labels[k] != want {
-			t.Errorf("Labels[%q] = %q, want %q", k, got.Labels[k], want)
-		}
-	}
-
-	if len(got.Spec.ReplicatedJobs) != 1 {
-		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
-	}
-	jobAnnotations := got.Spec.ReplicatedJobs[0].Template.ObjectMeta.Annotations
-	for _, k := range []string{"custom.company.com/release", "helm.sh/hook"} {
-		if _, ok := jobAnnotations[k]; ok {
-			t.Errorf("ReplicatedJob unexpectedly received top-level annotation %q", k)
-		}
-	}
-	jobLabels := got.Spec.ReplicatedJobs[0].Template.ObjectMeta.Labels
-	for _, k := range []string{"custom.company.com/team", "env"} {
-		if _, ok := jobLabels[k]; ok {
-			t.Errorf("ReplicatedJob unexpectedly received top-level label %q", k)
-		}
-	}
-}
-
-func TestConstructJobSet_KubernetesJobAnnotationsPropagation(t *testing.T) {
-	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	wantAnnotations := map[string]string{
-		"alpha.jobset.sigs.k8s.io/exclusive-topology": "kubernetes.io/hostname",
-		"custom.job.annotation/key":                   "custom-value",
-	}
-	workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
-		wu.Executable.GetJobset().Jobs[0].Annotations = wantAnnotations
-	})
-
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
-	if err != nil {
-		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
-	}
-	if len(got.Spec.ReplicatedJobs) != 1 {
-		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
-	}
-
-	jobTemplateAnnotations := got.Spec.ReplicatedJobs[0].Template.ObjectMeta.Annotations
-	podTemplateAnnotations := got.Spec.ReplicatedJobs[0].Template.Spec.Template.ObjectMeta.Annotations
-	for k, want := range wantAnnotations {
-		if gotVal := jobTemplateAnnotations[k]; gotVal != want {
-			t.Errorf("JobTemplateSpec.Annotations[%q] = %q, want %q", k, gotVal, want)
-		}
-		if gotVal := podTemplateAnnotations[k]; gotVal != want {
-			t.Errorf("PodTemplateSpec.Annotations[%q] = %q, want %q", k, gotVal, want)
-		}
-	}
-
-	jobTemplateAnnotations["test-mutation-key"] = "mutated"
-	if _, ok := podTemplateAnnotations["test-mutation-key"]; ok {
-		t.Errorf("PodTemplateSpec.Annotations shared map pointer with JobTemplateSpec.Annotations")
 	}
 }
