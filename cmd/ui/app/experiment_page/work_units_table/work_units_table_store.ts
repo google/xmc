@@ -21,10 +21,9 @@ import {
   PaginationState,
   setPageSize,
 } from 'app/common/pagination/pagination';
+import { ListWorkUnitsRequest, WorkUnit } from 'app/protos/experiment_state_server';
 import { SnackbarService } from 'app/service/snackbar_service';
 import { WorkUnitsService } from 'app/service/work_units_service';
-import { ListWorkUnitsRequest } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 
 /** Interface for the state of the WorkUnitsTable. */
 interface WorkUnitsTableState {

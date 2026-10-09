@@ -13,11 +13,11 @@
 // limitations under the License.
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Operation } from 'longrunning/operations.jsonpb_decls';
 import { Observable } from 'rxjs';
 
-import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
+import * as api from 'app/protos/experiment_state_server';
+import { WorkUnit } from 'app/protos/experiment_state_server';
+import { Operation } from 'app/protos/longrunning';
 
 import { XMC_API_DOMAIN } from './constants';
 

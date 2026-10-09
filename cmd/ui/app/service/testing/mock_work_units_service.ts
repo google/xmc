@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { Injectable } from '@angular/core';
-import { Operation } from 'longrunning/operations.jsonpb_decls';
 import { Observable, of } from 'rxjs';
 
 import {
@@ -22,8 +21,9 @@ import {
   WORK_UNIT_4,
   WORK_UNIT_LIST,
 } from 'app/common/mock_data';
-import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
+import * as api from 'app/protos/experiment_state_server';
+import { WorkUnit } from 'app/protos/experiment_state_server';
+import { Operation } from 'app/protos/longrunning';
 
 import { WorkUnitsService } from '../work_units_service';
 

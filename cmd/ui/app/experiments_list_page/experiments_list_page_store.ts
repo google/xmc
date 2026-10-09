@@ -23,9 +23,9 @@ import {
   PaginationState,
   setPageSize,
 } from 'app/common/pagination/pagination';
+import * as api from 'app/protos/experiment_state_server';
 import { ExperimentService } from 'app/service/experiment_service';
 import { SnackbarService } from 'app/service/snackbar_service';
-import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
 /** State for the experiments list page. */
 export interface ExperimentsListPageState {

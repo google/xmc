@@ -23,14 +23,11 @@ import { map } from 'rxjs/operators';
 
 import { parseWorkUnitName } from 'app/common/resource_name_extractor';
 import { ProcessedUrl } from 'app/common/url/url_processor';
+import { QueueInfo, StructuredMessage } from 'app/protos/experiment_state_server';
 import {
   formatSource,
   StatusMessageFilterService,
 } from 'app/service/status_message_filter_service';
-import {
-  QueueInfo,
-  StructuredMessage,
-} from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 
 const STACK_TRACE_PREVIEW_LINES = 5;
 

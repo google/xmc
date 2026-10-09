@@ -16,11 +16,11 @@ import { Observable, of, throwError } from 'rxjs';
 
 import { EXPERIMENT_1, EXPERIMENT_LIST } from 'app/common/mock_data';
 import {
+  Experiment,
   ListExperimentsRequest,
   ListExperimentsResponse,
   UpdateExperimentRequest,
-} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
+} from 'app/protos/experiment_state_server';
 
 import { ExperimentService } from '../experiment_service';
 

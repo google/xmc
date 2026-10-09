@@ -16,10 +16,7 @@ import { HttpClient, HttpRequest, provideHttpClient } from '@angular/common/http
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
-import {
-  GetRunningAndPendingJobsResponse,
-  ListClusterQueuesResponse,
-} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { GetRunningAndPendingJobsResponse, ListClusterQueuesResponse } from 'app/protos/rod';
 
 import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { XMC_API_DOMAIN } from './constants';

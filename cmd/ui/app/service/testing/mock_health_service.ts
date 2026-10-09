@@ -19,7 +19,7 @@ import {
   HealthStatusResponse,
   ListConfigEntriesResponse,
   UserInfoResponse,
-} from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
+} from 'app/protos/health_service';
 
 import { HealthService } from '../health_service';
 

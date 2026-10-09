@@ -27,9 +27,8 @@ import {
 } from 'app/common/artifacts/artifact_utils';
 import { ArtifactListItem, ChartTypedArtifact, PayloadType } from 'app/common/artifacts/interfaces';
 import { parseWorkUnitName } from 'app/common/resource_name_extractor';
+import { Artifact, ListArtifactsResponse } from 'app/protos/experiment_state_server';
 import { ArtifactService } from 'app/service/artifact_service';
-import { ListArtifactsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 
 import { ArtifactsColumn } from './artifacts_column/artifacts_column';
 import { ChartArtifactView } from './chart_artifact_view/chart_artifact_view';

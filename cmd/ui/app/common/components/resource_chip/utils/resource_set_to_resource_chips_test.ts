@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { ResourceSet } from 'xmanager_cloud/experiment_state_server/proto/resources.jsonpb_decls';
+import { ResourceSet } from 'app/protos/experiment_state_server';
 
 import { ResourceType } from '../resource_chip';
 import {

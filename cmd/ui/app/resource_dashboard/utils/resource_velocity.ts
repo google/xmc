@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {
-  ClusterQueueSecondaryMetrics,
-  QueuePredictability,
-  RangePreset,
-} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { ClusterQueueSecondaryMetrics, QueuePredictability, RangePreset } from 'app/protos/rod';
 
 const rateFormatter = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,

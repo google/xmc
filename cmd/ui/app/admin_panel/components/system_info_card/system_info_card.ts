@@ -15,7 +15,7 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 
-import { HealthStatusResponse } from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
+import { HealthStatusResponse } from 'app/protos/health_service';
 
 export type SystemInfo = NonNullable<HealthStatusResponse['systemInfo']>;
 

@@ -16,8 +16,8 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 
 import { EmptyComponent } from 'app/common/testing_utils/empty_component';
+import { ListExperimentsResponse } from 'app/protos/experiment_state_server';
 import { bootstrapTemplate, setupModule } from 'app/testing/test';
-import { ListExperimentsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
 import { ExperimentsTable } from './experiments_table';
 import { ExperimentsTableHarness } from './testing/experiments_table_harness';

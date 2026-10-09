@@ -42,10 +42,9 @@ import {
   TimeFilterValue,
   TimePreset,
 } from 'app/common/components/status_messages_list/status_messages_list_filter/status_messages_list_filter';
+import { ListStatusMessagesResponse, StructuredMessage } from 'app/protos/experiment_state_server';
 import { ALL_SEVERITIES, ALL_SOURCES } from 'app/service/status_message_filter_service';
 import { StatusMessageService } from 'app/service/status_message_service';
-import { ListStatusMessagesResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 
 const DEFAULT_PAGE_SIZE = 25;
 

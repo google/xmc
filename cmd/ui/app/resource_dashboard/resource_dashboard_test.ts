@@ -17,6 +17,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
+import { ListClusterQueuesResponse, QueueOverview } from 'app/protos/rod';
 import { AUTO_REFRESH_INTERVAL_MS } from 'app/service/constants';
 import { ResourceService } from 'app/service/resource_service';
 import {
@@ -27,10 +28,6 @@ import {
   setupModule,
   setupObservableMatchers,
 } from 'app/testing/test';
-import {
-  ListClusterQueuesResponse,
-  QueueOverview,
-} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { ResourceDashboard } from './resource_dashboard';
 import { ResourceDashboardHarness } from './resource_dashboard_harness';

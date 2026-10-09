@@ -26,13 +26,9 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { catchError, EMPTY, Subject, Subscription, switchMap } from 'rxjs';
 
+import { ClusterQueueSecondaryMetrics, QueueOverview, QueueResourceCapacity } from 'app/protos/rod';
 import { ResourceService } from 'app/service/resource_service';
 import { QueueJobsTable } from 'app/side_panel/contents/queue_jobs_table/queue_jobs_table';
-import {
-  ClusterQueueSecondaryMetrics,
-  QueueOverview,
-  QueueResourceCapacity,
-} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import {
   AutoReloadService,

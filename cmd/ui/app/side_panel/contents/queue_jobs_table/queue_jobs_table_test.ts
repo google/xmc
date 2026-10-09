@@ -18,9 +18,9 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { of, Subject, throwError } from 'rxjs';
 
+import { GetRunningAndPendingJobsResponse } from 'app/protos/rod';
 import { ResourceService } from 'app/service/resource_service';
 import { bootstrap, cleanState, flush, setupModule } from 'app/testing/test';
-import { GetRunningAndPendingJobsResponse } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { QueueJobsTable, QueueJobsTableData } from './queue_jobs_table';
 import { QueueJobsTableHarness } from './queue_jobs_table_harness';
