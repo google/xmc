@@ -101,6 +101,7 @@ go_test(
         "endpoint_health_probe_test.go",
         "fake_helm_manager_test.go",
         "fake_status_detector_test.go",
+        "health_log_level_test.go",
         "health_prober_test.go",
         "helm_builder_test.go",
         "helm_manager_test.go",
