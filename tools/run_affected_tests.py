@@ -42,7 +42,7 @@ from urllib.parse import unquote, urlparse
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+    sys.path.append(str(_REPO_ROOT))
 
 from tools.benchmark import resolve_test_scope  # noqa: E402
 from tools.common.tool_utils import HandledError, log_info, run_command, run_tool  # noqa: E402
