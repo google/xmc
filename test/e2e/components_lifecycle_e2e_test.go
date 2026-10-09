@@ -17,6 +17,7 @@ package e2e
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,9 +26,11 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -54,6 +57,7 @@ func TestComponentsLifecycle(t *testing.T) {
 	t.Run("BlockedDeactivation", func(t *testing.T) { testBlockedDeactivation(ctx, t, h) })
 	t.Run("FinalizerCleanup", func(t *testing.T) { testFinalizerCleanup(ctx, t, h) })
 	t.Run("RecreatedComponent", func(t *testing.T) { testRecreatedComponent(ctx, t, h) })
+	t.Run("StaleDeletion", func(t *testing.T) { testStaleDeletion(ctx, t, h) })
 }
 
 // testBlockedDeactivation disables a dependency while an enabled component depends on it: CMS
@@ -218,6 +222,54 @@ func testFinalizerCleanup(ctx context.Context, t *testing.T, h *kindClusterHarne
 	waitForComponent(ctx, t, h, ns, name, "gone", func(u *unstructured.Unstructured) bool { return u == nil })
 	if _, err := h.cmsServer.Store().GetComponent(ctx, name); status.Code(err) != codes.NotFound {
 		t.Errorf("CMS GetComponent(%s) after CR deletion: error = %v, want NotFound (ExecuteDeletion)", name, err)
+	}
+}
+
+// testStaleDeletion deletes a Component CR whose CMS record a newer source object has adopted:
+// the bridge releases the finalizer so the CR disappears, while the CMS record stays active and
+// owned by the newer source.
+func testStaleDeletion(ctx context.Context, t *testing.T, h *kindClusterHarness) {
+	ns := createTestNamespace(ctx, t, h, "xmc-lc-stale-delete")
+	const name = "lc-stale-delete"
+	compRes := h.dynClient.Resource(componentGVR).Namespace(ns)
+	applyLifecycleComponent(ctx, t, h, ns, name, lifecycleComponentSpec{enabled: true})
+	ready := waitForComponent(ctx, t, h, ns, name, "Ready", isExistingComponentReady)
+	rec := assertCMSComponent(ctx, t, h, ready, componentspb.ComponentState_COMPONENT_STATE_ENABLED)
+	newer := store.IntentSource{UID: "lc-stale-delete-newer-owner", CreateTime: ready.GetCreationTimestamp().Add(time.Hour), Generation: 1}
+	if _, err := h.cmsServer.Store().SetSourcedComponentIntent(ctx, name, rec.Spec, rec.Labels, newer); err != nil {
+		t.Fatalf("CMS SetSourcedComponentIntent(%s, newer source) failed: %v", name, err)
+	}
+
+	if err := compRes.Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
+		t.Fatalf("DELETE %s/%s failed: %v", ns, name, err)
+	}
+	waitForComponent(ctx, t, h, ns, name, "gone", func(u *unstructured.Unstructured) bool { return u == nil })
+	kept, err := h.cmsServer.Store().GetComponent(ctx, name)
+	if err != nil {
+		t.Fatalf("CMS GetComponent(%s) after stale CR deletion failed: %v, want the record kept", name, err)
+	}
+	if kept.Source == nil || kept.Source.UID != newer.UID || kept.ComponentID != rec.ComponentID {
+		t.Errorf("CMS record after stale CR deletion: ComponentID = %d, source = %+v; want ComponentID %d owned by %q", kept.ComponentID, kept.Source, rec.ComponentID, newer.UID)
+	}
+	assertSingleStaleDeletionEvent(ctx, t, h, ns, ready.GetUID())
+}
+
+// assertSingleStaleDeletionEvent waits for the Warning Event that the bridge emits on a stale
+// deletion and checks that exactly one core/v1 Event with reason StaleDeletion names the custom
+// resource uid (the recorder aggregates repeats into that one Event).
+func assertSingleStaleDeletionEvent(ctx context.Context, t *testing.T, h *kindClusterHarness, ns string, uid types.UID) {
+	t.Helper()
+	selector := fmt.Sprintf("involvedObject.uid=%s,reason=%s", uid, bridge.ReasonStaleDeletion)
+	var events []corev1.Event
+	waitUntil(ctx, 30*time.Second, 500*time.Millisecond, func() bool {
+		list, err := h.clientset.CoreV1().Events(ns).List(ctx, metav1.ListOptions{FieldSelector: selector})
+		if err == nil {
+			events = list.Items
+		}
+		return len(events) > 0
+	})
+	if len(events) != 1 || events[0].Type != corev1.EventTypeWarning {
+		t.Errorf("Events with %s = %+v, want exactly one Warning Event", selector, events)
 	}
 }
 

@@ -39,9 +39,12 @@ const (
 
 // reconcileDeletion handles component teardown when a deletionTimestamp is present.
 // If DeletionProtection is true, deletion is blocked, DeletionBlocked condition is set to True,
-// and finalizers remain intact. Otherwise, CMS ExecuteDeletion is called first to validate
-// deletion safety before mutating Kubernetes resources. If CMS reports NotFound, deletion
-// is treated as idempotently completed in CMS and proceeds to 1P workload teardown.
+// and finalizers remain intact. Otherwise, CMS ExecuteDeletion is called first, with the custom
+// resource as the source, to validate deletion safety before mutating Kubernetes resources. If CMS
+// reports NotFound, deletion is treated as idempotently completed in CMS and proceeds to 1P
+// workload teardown. If CMS reports a stale deletion (another custom resource, older or newer, owns
+// the component), the component is kept in CMS and only this custom resource's workload and
+// finalizer are released.
 func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if in.DeletionProtection {
 		logging.Warn(ctx, "Component deletion blocked by deletion protection", "name", in.Name, "generation", in.Generation)
@@ -49,14 +52,9 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 		setReadiness(res, in, ConditionStatusFalse, ConditionStatusFalse, "DeletingBlocked", "Deletion blocked by deletion protection")
 		return res, nil
 	}
-	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
-		if status.Code(err) != codes.NotFound {
-			setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "CMSDeletionFailed", err.Error())
-			return res, fmt.Errorf("failed to execute deletion in CMS: %w", err)
-		}
-		logging.Info(ctx, "Component already deleted in CMS, proceeding with workload teardown", "name", canonicalName)
-	} else {
-		logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
+	_, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy(), Source: intentSource(in)})
+	if err := handleCMSDeletionOutcome(ctx, in, canonicalName, err, res); err != nil {
+		return res, err
 	}
 	if err := r.teardown1PComponent(ctx, in, res); err != nil {
 		return res, err
@@ -64,6 +62,28 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 	res.RemoveFinalizer = true
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
 	return res, nil
+}
+
+// handleCMSDeletionOutcome interprets err from CMS ExecuteDeletion and returns nil when workload
+// teardown may proceed: on success, on NotFound (already deleted), and on a stale deletion, which
+// it logs and reports through res.WarningEvent naming the owner from the CMS message. Any other
+// error sets CMSDeletionFailed on res and is returned wrapped.
+func handleCMSDeletionOutcome(ctx context.Context, in ReconcileComponentInput, canonicalName string, err error, res *ReconcileResult) error {
+	if err == nil {
+		logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
+		return nil
+	}
+	if stale := storeRejectionMessage(err, staleDeletionMessagePrefix); stale != "" {
+		logging.Warn(ctx, "Component is owned by another custom resource; releasing this one without deleting the component in CMS", "name", canonicalName, "uid", in.UID, "detail", stale)
+		res.WarningEvent = &Event{Reason: ReasonStaleDeletion, Message: fmt.Sprintf("Component %q kept in CMS for its owner: %s", canonicalName, stale)}
+		return nil
+	}
+	if status.Code(err) == codes.NotFound {
+		logging.Info(ctx, "Component already deleted in CMS, proceeding with workload teardown", "name", canonicalName)
+		return nil
+	}
+	setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "CMSDeletionFailed", err.Error())
+	return fmt.Errorf("failed to execute deletion in CMS: %w", err)
 }
 
 func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {

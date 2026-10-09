@@ -542,13 +542,13 @@ func TestSpannerStore_ExecuteDeletion(t *testing.T) {
 		t.Fatalf("failed to create protected-comp: %v", err)
 	}
 
-	err = s.ExecuteDeletion(ctx, "protected-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	err = s.ExecuteDeletion(ctx, "protected-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("expected FailedPrecondition for protected component deletion, got %v", err)
 	}
 
 	// Force deletion overrides deletion protection
-	err = s.ExecuteDeletion(ctx, "protected-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true)
+	err = s.ExecuteDeletion(ctx, "protected-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, true, nil)
 	if err != nil {
 		t.Fatalf("forced ExecuteDeletion failed: %v", err)
 	}
@@ -567,7 +567,7 @@ func TestSpannerStore_ExecuteDeletion(t *testing.T) {
 	}
 
 	// Delete parent with cascade (DELETION_POLICY_DELETE)
-	err = s.ExecuteDeletion(ctx, "parent-del", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
+	err = s.ExecuteDeletion(ctx, "parent-del", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil)
 	if err != nil {
 		t.Fatalf("cascade ExecuteDeletion failed: %v", err)
 	}
@@ -597,7 +597,7 @@ func TestSpannerStore_SoftDeletion_And_ActiveNameRelease(t *testing.T) {
 	origID := origRec.ComponentID
 
 	// Step 2: Delete the component (soft deletion, State = 5)
-	if err := s.ExecuteDeletion(ctx, "recycled-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+	if err := s.ExecuteDeletion(ctx, "recycled-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil); err != nil {
 		t.Fatalf("ExecuteDeletion failed: %v", err)
 	}
 
@@ -860,7 +860,7 @@ func TestSpannerStore_ResolveComponentSnapshot_SoftDeleted(t *testing.T) {
 	seedExperimentWithSnapshot(ctx, t, essClient, 20001, rec.ComponentID, 1, histConfigBytes, histAccessBytes)
 
 	// Soft-delete the component via ExecuteDeletion
-	if err := s.ExecuteDeletion(ctx, "soft-del-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+	if err := s.ExecuteDeletion(ctx, "soft-del-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil); err != nil {
 		t.Fatalf("ExecuteDeletion failed: %v", err)
 	}
 
@@ -946,7 +946,7 @@ func TestSpannerStore_ResolveComponentSnapshot_RecreatedLowerGeneration(t *testi
 	seedExperimentWithSnapshot(ctx, t, essClient, 20002, rec1.ComponentID, 3, configBytes3, accessBytes3)
 
 	// Soft-delete reincarnation 1 via ExecuteDeletion
-	if err := s.ExecuteDeletion(ctx, "reincarnated-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+	if err := s.ExecuteDeletion(ctx, "reincarnated-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil); err != nil {
 		t.Fatalf("ExecuteDeletion failed: %v", err)
 	}
 
@@ -1258,7 +1258,7 @@ func TestSpannerStore_SoftDeletion_PreservesSnapshotForeignKey(t *testing.T) {
 	}
 
 	// Soft deletion is the supported path and must leave the row (and therefore the FK) intact.
-	if err := s.ExecuteDeletion(ctx, "fk-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+	if err := s.ExecuteDeletion(ctx, "fk-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil); err != nil {
 		t.Fatalf("ExecuteDeletion failed: %v", err)
 	}
 

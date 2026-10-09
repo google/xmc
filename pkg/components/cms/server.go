@@ -148,8 +148,8 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	}, nil
 }
 
-// intentSourceFromProto converts and validates the source of a SetComponentIntent request. It
-// returns nil for a request without a source.
+// intentSourceFromProto converts and validates the source of a SetComponentIntent or
+// ExecuteDeletion request. It returns nil for a request without a source.
 func intentSourceFromProto(src *componentspb.IntentSource) (*store.IntentSource, error) {
 	if src == nil {
 		return nil, nil
@@ -302,8 +302,12 @@ func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteD
 	if policy == componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED {
 		policy = componentspb.DeletionPolicy_DELETION_POLICY_DELETE
 	}
+	src, err := intentSourceFromProto(req.GetSource())
+	if err != nil {
+		return nil, err
+	}
 
-	if err := s.store.ExecuteDeletion(ctx, canonicalName, policy, req.GetForce()); err != nil {
+	if err := s.store.ExecuteDeletion(ctx, canonicalName, policy, req.GetForce(), src); err != nil {
 		return nil, err
 	}
 

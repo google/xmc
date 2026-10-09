@@ -193,7 +193,7 @@ func TestSetSourcedComponentIntent_SoftDeletedRecord(t *testing.T) {
 			ctx := context.Background()
 			s := backend.newStore(t)
 			deleted := seedEpochComponent(ctx, t, s, "intent-epoch-deleted", epochSource("uid-b", 0, 3), 0)
-			if err := s.ExecuteDeletion(ctx, "intent-epoch-deleted", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true); err != nil {
+			if err := s.ExecuteDeletion(ctx, "intent-epoch-deleted", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true, nil); err != nil {
 				t.Fatalf("ExecuteDeletion() error = %v", err)
 			}
 

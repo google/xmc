@@ -378,7 +378,8 @@ message SetComponentIntentRequest {
 }
 
 // Identity of the declarative object, such as a Kubernetes custom resource, that produced an
-// intent. A recreated object has a new uid and a later create_time and starts a new epoch.
+// intent or deletion. A recreated object has a new uid and a later create_time and starts a new
+// epoch.
 message IntentSource {
   // Unique identifier of the source object.
   string uid = 1 [
@@ -562,6 +563,19 @@ message ExecuteDeletionRequest {
   bool force = 3 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "force"
+  ];
+
+  // Declarative object requesting the deletion. When set and the component has a recorded source,
+  // only that owner (the same uid) may delete it. A deletion from any other object, older (an
+  // earlier create_time, or equal create_time and a smaller uid) or newer but not yet adopted, is
+  // rejected with FAILED_PRECONDITION naming the owner, and nothing changes, so deleting one
+  // object cannot delete a component another object owns. If a newer object is deleted before it
+  // adopts the component and the owner is also gone, the component stays active until the next
+  // object of that name adopts it or an unsourced deletion removes it. Unset keeps the
+  // unconditional behavior.
+  IntentSource source = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "source"
   ];
 }
 

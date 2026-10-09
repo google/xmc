@@ -17,13 +17,17 @@ package bridge
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -99,6 +103,117 @@ func TestReconcileComponent_DeletionOrderingAndIdempotency(t *testing.T) {
 			t.Errorf("expected state DELETED, got %v", resOut.State)
 		}
 	})
+}
+
+// TestReconcileDeletion_StaleDeletion verifies that the deletion request carries the custom
+// resource as its source, that a stale-deletion rejection still tears down the local workload per
+// the deletion policy and releases the finalizer, reporting a StaleDeletion Warning Event, and that
+// any other rejection keeps the workload and the finalizer.
+func TestReconcileDeletion_StaleDeletion(t *testing.T) {
+	staleEvent := func(msg string) *Event {
+		return &Event{Reason: ReasonStaleDeletion, Message: `Component "redpanda" kept in CMS for its owner: ` + msg}
+	}
+	const olderMsg = store.StaleDeletionMessagePrefix + ` component "redpanda" is owned by source "uid-new" created at 2026-01-02T04:04:05Z; the deletion comes from an older object, source "uid-old" created at 2026-01-02T03:04:05Z`
+	const newerMsg = store.StaleDeletionMessagePrefix + ` component "redpanda" is owned by source "uid-first" created at 2026-01-02T02:04:05Z; the deletion comes from a newer object that has not adopted it, source "uid-old" created at 2026-01-02T03:04:05Z`
+	blockedErr := status.Error(codes.FailedPrecondition, `cannot delete component "redpanda": active dependents [app]`)
+	tests := []struct {
+		name       string
+		delErr     error
+		policy     componentspb.DeletionPolicy
+		wantErr    bool
+		wantPurge  bool
+		wantOrphan bool
+		wantEvent  *Event
+	}{
+		{name: "deletion in CMS purges without an event", policy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE, wantPurge: true},
+		{name: "stale deletion by an older object purges and warns", delErr: status.Error(codes.FailedPrecondition, olderMsg), policy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE, wantPurge: true, wantEvent: staleEvent(olderMsg)},
+		{name: "stale deletion by a newer non-owner purges and warns", delErr: status.Error(codes.FailedPrecondition, newerMsg), policy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE, wantPurge: true, wantEvent: staleEvent(newerMsg)},
+		{name: "stale deletion orphans per policy and warns", delErr: status.Error(codes.FailedPrecondition, olderMsg), policy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, wantOrphan: true, wantEvent: staleEvent(olderMsg)},
+		{name: "other failed precondition keeps the workload and the finalizer", delErr: blockedErr, policy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helm := &mockHelm{active: true}
+			cms := &mockCMS{delErr: tt.delErr}
+			r, err := NewReconciler(cms, nil, helm)
+			if err != nil {
+				t.Fatalf("NewReconciler() error = %v", err)
+			}
+			in := sourcedRedpandaInput("uid-old", time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), 3)
+			in.IsDeleting = true
+			in.Spec.DeletionPolicy = tt.policy
+
+			res, err := r.reconcileDeletion(context.Background(), in, "redpanda", &ReconcileResult{})
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("reconcileDeletion() error = %v, want error %t", err, tt.wantErr)
+			}
+			if got, want := cms.lastDelReq.GetSource(), intentSource(in); !proto.Equal(got, want) {
+				t.Errorf("ExecuteDeletion source = %v, want %v", got, want)
+			}
+			if helm.purgeCalled != tt.wantPurge || helm.orphanCalled != tt.wantOrphan {
+				t.Errorf("(purged, orphaned) = (%t, %t), want (%t, %t)", helm.purgeCalled, helm.orphanCalled, tt.wantPurge, tt.wantOrphan)
+			}
+			if res.RemoveFinalizer == tt.wantErr {
+				t.Errorf("RemoveFinalizer = %t, want %t", res.RemoveFinalizer, !tt.wantErr)
+			}
+			if diff := cmp.Diff(tt.wantEvent, res.WarningEvent); diff != "" {
+				t.Errorf("WarningEvent mismatch (-want +got):\n%s", diff)
+			}
+			if ready := findCondition(res.Conditions, ConditionTypeReady); tt.wantErr && (ready == nil || ready.Reason != "CMSDeletionFailed") {
+				t.Errorf("Ready condition = %+v, want reason CMSDeletionFailed", ready)
+			}
+		})
+	}
+}
+
+// TestReconcileDeletion_StaleDeletionKeepsOwner verifies against the real CMS server and
+// MemoryStore that deleting a custom resource that does not own the CMS record, whether older or
+// newer than the owner, releases it but keeps the record, logging a warning naming the owner.
+func TestReconcileDeletion_StaleDeletionKeepsOwner(t *testing.T) {
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	older := store.IntentSource{UID: "uid-old", CreateTime: created, Generation: 3}
+	newer := store.IntentSource{UID: "uid-new", CreateTime: created.Add(time.Hour), Generation: 1}
+	tests := []struct {
+		name string
+		// seeds are applied in order; the last one owns the record.
+		seeds   []store.IntentSource
+		deleter store.IntentSource
+	}{
+		{name: "older custom resource keeps the record of its newer owner", seeds: []store.IntentSource{older, newer}, deleter: older},
+		{name: "newer custom resource that has not adopted keeps the record of its owner", seeds: []store.IntentSource{older}, deleter: newer},
+	}
+	spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "1.0.0"}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ms := store.NewMemoryStore()
+			r, err := NewReconciler(NewCMSClientAdapter(cmsserver.NewServer(ms)), nil, &mockHelm{active: true})
+			if err != nil {
+				t.Fatalf("NewReconciler() error = %v", err)
+			}
+			for _, src := range tt.seeds {
+				if _, err := ms.SetSourcedComponentIntent(context.Background(), "redpanda", spec, nil, src); err != nil {
+					t.Fatalf("SetSourcedComponentIntent(%s) error = %v", src.UID, err)
+				}
+			}
+			owner := tt.seeds[len(tt.seeds)-1].UID
+			ctx, logs := recordLogs()
+			in := sourcedRedpandaInput(tt.deleter.UID, tt.deleter.CreateTime, tt.deleter.Generation)
+			in.IsDeleting = true
+
+			res, err := r.reconcileDeletion(ctx, in, "redpanda", &ReconcileResult{})
+			if err != nil || !res.RemoveFinalizer || res.WarningEvent == nil {
+				t.Fatalf("reconcileDeletion() = (RemoveFinalizer %t, WarningEvent %v, error %v), want a released finalizer and an event", res.RemoveFinalizer, res.WarningEvent, err)
+			}
+			rec, err := ms.GetComponent(context.Background(), "redpanda")
+			if err != nil || rec.Source == nil || rec.Source.UID != owner {
+				t.Fatalf("GetComponent() = (%+v, %v), want the record still owned by %s", rec, err, owner)
+			}
+			warn := logs.singleRecord(t, "Component is owned by another custom resource; releasing this one without deleting the component in CMS")
+			if detail, _ := warn.attrs["detail"].(string); warn.level != slog.LevelWarn || !strings.Contains(detail, strconv.Quote(owner)) {
+				t.Errorf("log = (level %v, detail %q), want a warning naming %s", warn.level, detail, owner)
+			}
+		})
+	}
 }
 
 func TestReconciler_DeleteDisabledHelmComponent_SkipsWhenInactive(t *testing.T) {

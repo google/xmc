@@ -48,6 +48,11 @@ const (
 	dependencyNotFoundMessagePrefix = "dependency not found:"
 	// staleIntentMessagePrefix mirrors store.StaleIntentMessagePrefix (pinned by a test).
 	staleIntentMessagePrefix = "stale intent:"
+	// ReasonStaleDeletion is the reason of the Warning Event emitted when a deleted custom resource
+	// is released without deleting its component in CMS, because another custom resource owns it.
+	ReasonStaleDeletion = "StaleDeletion"
+	// staleDeletionMessagePrefix mirrors store.StaleDeletionMessagePrefix (pinned by a test).
+	staleDeletionMessagePrefix = "stale deletion:"
 )
 
 // AccessStatus encapsulates network and access metadata (such as environment variables) for a component.
@@ -80,6 +85,17 @@ type ReconcileResult struct {
 	AddFinalizer bool
 	// RemoveFinalizer indicates whether the deletion protection finalizer should be detached.
 	RemoveFinalizer bool
+	// WarningEvent, when set, is emitted as a Warning Event on the custom resource. Events outlive
+	// the custom resource, so they report outcomes of a pass that also releases the finalizer.
+	WarningEvent *Event
+}
+
+// Event is a Kubernetes Event to emit on the reconciled custom resource.
+type Event struct {
+	// Reason is the machine-readable UpperCamelCase reason, e.g. ReasonStaleDeletion.
+	Reason string
+	// Message is the human-readable description.
+	Message string
 }
 
 // Reconciler executes reconciliation cycles for XMC Component custom resources.

@@ -105,7 +105,7 @@ func TestResolveComponentSnapshot_PinnedIncarnationParity(t *testing.T) {
 			ctx := context.Background()
 			s, seed := backend.newStore(t)
 			oldID := writeIncarnation(ctx, t, s, seed, pinnedComponent, []string{"v1.1.0", "v1.2.0", "v1.3.0"}, 2, 3)
-			if err := s.ExecuteDeletion(ctx, pinnedComponent, componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
+			if err := s.ExecuteDeletion(ctx, pinnedComponent, componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, nil); err != nil {
 				t.Fatalf("ExecuteDeletion() error = %v", err)
 			}
 			liveID := writeIncarnation(ctx, t, s, seed, pinnedComponent, []string{"v2.1.0", "v2.2.0"}, 1)

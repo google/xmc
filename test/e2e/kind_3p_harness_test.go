@@ -48,6 +48,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/record"
 
 	"xmanager_cloud/pkg/components/bridge"
 	"xmanager_cloud/pkg/components/cms"
@@ -67,6 +68,8 @@ type kindClusterHarness struct {
 	restMapper              *restmapper.DeferredDiscoveryRESTMapper
 	cmsServer               *cms.Server
 	reconciler              *bridge.Reconciler
+	// eventRecorder emits the Events of reconcile results, as cmd/xmc_bridge does.
+	eventRecorder record.EventRecorder
 }
 
 func setupKindClusterHarness(t *testing.T, requiredImages ...string) *kindClusterHarness {
@@ -163,7 +166,9 @@ func buildClusterClients(t *testing.T, clusterName, kubeconfig string) *kindClus
 	if err != nil {
 		t.Fatalf("failed to create bridge reconciler: %v", err)
 	}
-	return &kindClusterHarness{clusterName: clusterName, kubeconfig: kubeconfig, clientset: clientset, dynClient: dynClient, restMapper: mapper, cmsServer: cmsServer, reconciler: reconciler}
+	recorder, stopEvents := bridge.NewEventRecorder(clientset)
+	t.Cleanup(stopEvents)
+	return &kindClusterHarness{clusterName: clusterName, kubeconfig: kubeconfig, clientset: clientset, dynClient: dynClient, restMapper: mapper, cmsServer: cmsServer, reconciler: reconciler, eventRecorder: recorder}
 }
 
 func installComponentCRD(ctx context.Context, t *testing.T, h *kindClusterHarness) {
@@ -425,6 +430,7 @@ func (h *kindClusterHarness) reconcileNamespaceComponents(ctx context.Context, n
 		if reconcileErr != nil {
 			errs = append(errs, fmt.Errorf("reconcile %s: %w", item.GetName(), reconcileErr))
 		}
+		bridge.EmitReconcileEvents(h.eventRecorder, item, res)
 		if err := bridge.PersistReconcileResult(ctx, h.dynClient, namespace, item, res); err != nil {
 			errs = append(errs, fmt.Errorf("persist %s: %w", item.GetName(), err))
 		}

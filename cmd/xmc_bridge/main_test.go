@@ -215,7 +215,7 @@ func TestController_RunReconcilePass(t *testing.T) {
 		t.Fatalf("failed to create reconciler: %v", err)
 	}
 
-	ctrl := NewController(fakeDynamic, r, "xmc", time.Second, time.Second)
+	ctrl := NewController(fakeDynamic, r, nil, "xmc", time.Second, time.Second)
 	if err := ctrl.RunReconcilePass(ctx); err != nil {
 		t.Fatalf("RunReconcilePass failed: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestController_RunReconcilePass_GatesOnDependencySnapshot(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create reconciler: %v", err)
 			}
-			if err := NewController(fakeDynamic, r, "xmc", time.Second, time.Second).RunReconcilePass(ctx); err != nil {
+			if err := NewController(fakeDynamic, r, nil, "xmc", time.Second, time.Second).RunReconcilePass(ctx); err != nil {
 				t.Fatalf("RunReconcilePass failed: %v", err)
 			}
 			updated, err := fakeDynamic.Resource(componentGVR).Namespace("xmc").Get(ctx, "ingestion-gateway", metav1.GetOptions{})
@@ -494,7 +494,7 @@ func TestController_RunReconcilePass_ErrorSyncsStatus(t *testing.T) {
 		t.Fatalf("failed to create reconciler: %v", err)
 	}
 
-	ctrl := NewController(fakeDynamic, r, "xmc", time.Second, time.Second)
+	ctrl := NewController(fakeDynamic, r, nil, "xmc", time.Second, time.Second)
 	if err := ctrl.RunReconcilePass(ctx); err != nil {
 		t.Fatalf("RunReconcilePass failed: %v", err)
 	}
@@ -520,7 +520,7 @@ func TestController_PersistResult_NilResult(t *testing.T) {
 	ctx := context.Background()
 	scheme := runtime.NewScheme()
 	fakeDynamic := dynamicfake.NewSimpleDynamicClient(scheme)
-	ctrl := NewController(fakeDynamic, nil, "xmc", time.Second, time.Second)
+	ctrl := NewController(fakeDynamic, nil, nil, "xmc", time.Second, time.Second)
 
 	item := &unstructured.Unstructured{
 		Object: map[string]any{
@@ -568,7 +568,7 @@ func TestController_ReconcileItem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create reconciler: %v", err)
 	}
-	ctrl := NewController(fakeDynamic, r, "xmc", time.Second, time.Second)
+	ctrl := NewController(fakeDynamic, r, nil, "xmc", time.Second, time.Second)
 
 	// Should safely reconcile without panicking
 	ctrl.reconcileItem(ctx, item, nil)

@@ -37,6 +37,7 @@ go_library(
         "@io_k8s_client_go//rest",
         "@io_k8s_client_go//restmapper",
         "@io_k8s_client_go//tools/clientcmd",
+        "@io_k8s_client_go//tools/record",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials/insecure",
     ],

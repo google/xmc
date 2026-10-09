@@ -371,10 +371,14 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, for
 	return nil
 }
 
-// ExecuteDeletion deletes a component using the specified deletion policy.
-func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error {
+// ExecuteDeletion deletes a component using the specified deletion policy, unless src is set and
+// is not the recorded owner (see Store.ExecuteDeletion).
+func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src *IntentSource) error {
 	canonicalName, err := validateResourceName(name)
 	if err != nil {
+		return err
+	}
+	if err := validateOptionalSource(src); err != nil {
 		return err
 	}
 
@@ -385,11 +389,20 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 	if !exists || rec == nil || isDeletedRecord(rec) {
 		return ErrComponentNotFound
 	}
+	if err := rejectNonOwnerSource(StaleDeletionMessagePrefix, "deletion", canonicalName, rec, src); err != nil {
+		return err
+	}
 
 	if err := ValidateDeletionSafety(m.componentsByName, canonicalName, policy, force); err != nil {
 		return err
 	}
+	m.markDeletedLocked(canonicalName, rec, policy)
+	return nil
+}
 
+// markDeletedLocked soft-deletes rec, named canonicalName, and, under a cascading policy, its
+// active dependents, then drops the dependency edges to them. The caller holds m.mu.
+func (m *MemoryStore) markDeletedLocked(canonicalName string, rec *ComponentRecord, policy componentspb.DeletionPolicy) {
 	now := time.Now().UTC()
 	transitionToDeleted(rec, now)
 	if policy != componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED && rec.Spec != nil {
@@ -409,7 +422,6 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 		}
 	}
 	m.dropEdgesToLocked(deleted)
-	return nil
 }
 
 // dropEdgesToLocked removes every dependency edge to the soft-deleted components named in deleted.
