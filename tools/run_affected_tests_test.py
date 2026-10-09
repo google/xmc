@@ -202,13 +202,14 @@ class EmulatorCheckTest(unittest.TestCase):
         mock_connect.assert_called_once()
         mock_sleep.assert_not_called()
 
-    @mock.patch.object(rat.time, "monotonic", side_effect=[0.0, 1.0, 2.0])
+    @mock.patch.object(rat.time, "monotonic", side_effect=[0.0, 1.0, 2.25])
     @mock.patch.object(rat.time, "sleep")
     @mock.patch.object(rat.socket, "create_connection")
     def test_wait_for_port_retries_until_connected(self, mock_connect, mock_sleep, _):
         mock_connect.side_effect = [ConnectionRefusedError, OSError, mock.MagicMock()]
-        self.assertTrue(rat.wait_for_port("localhost", 9010, 15))
-        self.assertEqual((mock_connect.call_count, mock_sleep.call_count), (3, 2))
+        self.assertTrue(rat.wait_for_port("localhost", 9010, 2.5))
+        self.assertEqual(mock_connect.call_count, 3)
+        self.assertEqual(mock_sleep.call_args_list, [mock.call(1.0), mock.call(0.25)])
 
     @mock.patch.object(rat.time, "monotonic", side_effect=[0.0, 1.0, 2.0])
     @mock.patch.object(rat.time, "sleep")
