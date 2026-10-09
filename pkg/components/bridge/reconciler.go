@@ -486,8 +486,44 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	if err := r.syncReadyToCMS(ctx, in, canonicalName, res, readyStatus); err != nil {
 		return res, err
 	}
-	logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", isHealthy, "reason", reason)
+	logHealthEvaluated(ctx, in, canonicalName, res)
 	return res, nil
+}
+
+// logHealthEvaluated logs a health evaluation at Info when it changed the Ready or Degraded
+// condition recorded in the custom resource (see healthConditionsChanged), and at Debug for the
+// unchanged result that every periodic pass over a steady component produces. It logs the final
+// Ready condition, which differs from the probe result when reporting to CMS released ownership.
+func logHealthEvaluated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) {
+	logAt := logging.Debug
+	if healthConditionsChanged(in.ExistingConditions, res.Conditions, in.Generation) {
+		logAt = logging.Info
+	}
+	var healthy bool
+	var reason string
+	if ready := findCondition(res.Conditions, ConditionTypeReady); ready != nil {
+		healthy, reason = ready.Status == ConditionStatusTrue, ready.Reason
+	}
+	logAt(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", healthy, "reason", reason)
+}
+
+// healthConditionsChanged reports whether the Ready or Degraded condition in current differs from
+// existing in presence, status, or reason, or was last observed in existing at a generation other
+// than generation (a first evaluation, or the first one of a new custom resource generation).
+func healthConditionsChanged(existing, current []Condition, generation int64) bool {
+	for _, condType := range []string{ConditionTypeReady, ConditionTypeDegraded} {
+		prev, next := findCondition(existing, condType), findCondition(current, condType)
+		if (prev == nil) != (next == nil) {
+			return true
+		}
+		if prev == nil {
+			continue
+		}
+		if prev.Status != next.Status || prev.Reason != next.Reason || prev.ObservedGeneration != generation {
+			return true
+		}
+	}
+	return false
 }
 
 // preserveHealthConditions copies the existing Ready/Degraded conditions into res and derives the state from them.
