@@ -99,7 +99,7 @@ Choose one of the two options below for caching on GitHub-hosted runners:
 
 #### Option A: GitHub Actions Cache (`actions/cache`) — Simple, Zero GCP Infrastructure
 
-1. In `.github/workflows/unit-tests.yml`, re-add the disk cache restore and save steps around the backend test step, and add `--bazel-flag="--disk_cache=${HOME}/.cache/bazel-disk"` to the `run_affected_tests.py` call in [`.github/actions/run-backend-tests/action.yml`](../.github/actions/run-backend-tests/action.yml):
+1. In `.github/workflows/unit-tests.yml`, re-add the disk cache restore and save steps around the `run-backend-tests` step:
 
 ```yaml
       - name: 'Restore Bazel Disk Cache'
@@ -122,9 +122,10 @@ Choose one of the two options below for caching on GitHub-hosted runners:
           key: bazel-disk-${{ runner.os }}-${{ github.sha }}
 ```
 
-2. In `.bazelrc`, comment out the in-cluster remote cache:
+2. In `.bazelrc`, replace the in-cluster remote cache with the local disk cache path under the `ci` config (which `run-backend-tests` enables via `--config=ci`):
 ```ini
-# build:ci --remote_cache=http://bazel-remote-cache.arc-runners.svc.cluster.local:8080
+# build:ci --remote_cache=grpc://bazel-remote-cache.arc-runners.svc.cluster.local:9092
+build:ci --disk_cache=~/.cache/bazel-disk
 ```
 
 #### Option B: Google Cloud Storage (GCS) Remote Cache — High Performance & Shared Across GitHub Runners
