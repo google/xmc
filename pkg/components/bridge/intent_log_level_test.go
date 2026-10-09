@@ -69,10 +69,17 @@ func recordLogs() (context.Context, *recordingHandler) {
 	return logging.WithLogger(context.Background(), slog.New(h)), h
 }
 
+// recordsFor returns the records logged with message.
+func (h *recordingHandler) recordsFor(message string) []loggedRecord {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]loggedRecord(nil), h.records[message]...)
+}
+
 // singleRecord returns the only record logged with message, failing the test otherwise.
 func (h *recordingHandler) singleRecord(t *testing.T, message string) loggedRecord {
 	t.Helper()
-	recs := h.records[message]
+	recs := h.recordsFor(message)
 	if len(recs) != 1 {
 		t.Fatalf("%q logged %d times, want 1", message, len(recs))
 	}
@@ -138,7 +145,7 @@ func TestReconcileAndPersist_LogsFinalizerAttachOnce(t *testing.T) {
 	if _, err := SyncComponentFinalizers(ctx, client, "xmc", item, res); err != nil {
 		t.Fatalf("SyncComponentFinalizers() error = %v", err)
 	}
-	if got := len(logs.records[attachFinalizerMessage]); got != 1 {
+	if got := len(logs.recordsFor(attachFinalizerMessage)); got != 1 {
 		t.Errorf("%q logged %d times, want 1", attachFinalizerMessage, got)
 	}
 }

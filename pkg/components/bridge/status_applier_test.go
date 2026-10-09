@@ -265,7 +265,7 @@ func TestSyncComponentFinalizers(t *testing.T) {
 		if !slices.Contains(updated.GetFinalizers(), FinalizerDeletionProtection) {
 			t.Errorf("expected finalizer %q after retry, got %v", FinalizerDeletionProtection, updated.GetFinalizers())
 		}
-		if got := len(logs.records[attachFinalizerMessage]); got != 1 {
+		if got := len(logs.recordsFor(attachFinalizerMessage)); got != 1 {
 			t.Errorf("%q logged %d times across the conflict retry, want 1", attachFinalizerMessage, got)
 		}
 	})
