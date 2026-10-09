@@ -177,6 +177,7 @@ export interface FacetSpec {
 
 export interface PlotSpec {
   plotId?: string;
+  plot_id?: string;
   title?: string;
   type?: PlotType | number;
   data?: DataSpec;
@@ -198,7 +199,9 @@ export interface Chart {
   plotLayout?: LayoutSpec;
   plot_layout?: LayoutSpec;
   createTime?: string;
+  create_time?: string;
   updateTime?: string;
+  update_time?: string;
   [key: string]: any;
 }
 
@@ -212,19 +215,28 @@ export interface Dashboard {
   chartLayout?: LayoutSpec;
   chart_layout?: LayoutSpec;
   createTime?: string;
+  create_time?: string;
   updateTime?: string;
+  update_time?: string;
   [key: string]: any;
 }
 
 export namespace ChartData {
   export interface SummaryBoxValue {
     metricName?: string;
+    metric_name?: string;
     latestValue?: number;
+    latest_value?: number;
     minValue?: number;
+    min_value?: number;
     maxValue?: number;
+    max_value?: number;
     meanValue?: number;
+    mean_value?: number;
     latestStep?: number | string;
+    latest_step?: number | string;
     latestTimestamp?: string;
+    latest_timestamp?: string;
     [key: string]: any;
   }
 
@@ -232,14 +244,19 @@ export namespace ChartData {
     step?: number | string;
     timestamp?: string;
     avgValue?: number;
+    avg_value?: number;
     minValue?: number;
+    min_value?: number;
     maxValue?: number;
+    max_value?: number;
     [key: string]: any;
   }
 
   export interface SeriesData {
     metricName?: string;
+    metric_name?: string;
     workUnitId?: string;
+    work_unit_id?: string;
     xid?: number | string;
     points?: SeriesPoint[];
     [key: string]: any;
@@ -247,18 +264,22 @@ export namespace ChartData {
 
   export interface BarBucket {
     categoryOrBin?: string;
+    category_or_bin?: string;
     valueOrCount?: number;
+    value_or_count?: number;
     [key: string]: any;
   }
 
   export interface BarData {
     metricName?: string;
+    metric_name?: string;
     buckets?: BarBucket[];
     [key: string]: any;
   }
 
   export interface PlotData {
     plotId?: string;
+    plot_id?: string;
     type?: PlotType | number;
     summaryData?: SummaryBoxValue;
     summary_data?: SummaryBoxValue;
@@ -289,82 +310,16 @@ export interface ChartData {
   [key: string]: any;
 }
 
-export interface CreateDashboardRequest {
-  dashboard?: any;
-  dashboardId?: string;
-  charts?: any[];
-  [key: string]: any;
-}
-
-export interface GetDashboardRequest {
-  name?: string;
-  [key: string]: any;
-}
-
-export interface ListDashboardsRequest {
-  pageSize?: number;
-  pageToken?: string;
-  filter?: string;
-  [key: string]: any;
-}
-
-export interface ListDashboardsResponse {
-  dashboards?: any[];
-  nextPageToken?: string;
-  [key: string]: any;
-}
-
-export interface UpdateDashboardRequest {
-  dashboard?: any;
-  updateMask?: string;
-  [key: string]: any;
-}
-
-export interface DeleteDashboardRequest {
-  name?: string;
-  [key: string]: any;
-}
-
-export interface CreateChartRequest {
-  parent?: string;
-  chart?: any;
-  chartId?: string;
-  [key: string]: any;
-}
-
-export interface GetChartRequest {
-  name?: string;
-  [key: string]: any;
-}
-
-export interface GetChartDataRequest {
-  name?: string;
-  parentExperiment?: string;
-  parentWorkunit?: string;
-  chartWidthPixels?: number;
-  [key: string]: any;
-}
-
-export interface ListChartsRequest {
-  parent?: string;
-  pageSize?: number;
-  pageToken?: string;
-  [key: string]: any;
-}
-
-export interface ListChartsResponse {
-  charts?: any[];
-  nextPageToken?: string;
-  [key: string]: any;
-}
-
-export interface UpdateChartRequest {
-  chart?: any;
-  updateMask?: string;
-  [key: string]: any;
-}
-
-export interface DeleteChartRequest {
-  name?: string;
-  [key: string]: any;
-}
+export type CreateDashboardRequest = Record<string, any>;
+export type GetDashboardRequest = Record<string, any>;
+export type ListDashboardsRequest = Record<string, any>;
+export type ListDashboardsResponse = Record<string, any>;
+export type UpdateDashboardRequest = Record<string, any>;
+export type DeleteDashboardRequest = Record<string, any>;
+export type CreateChartRequest = Record<string, any>;
+export type GetChartRequest = Record<string, any>;
+export type GetChartDataRequest = Record<string, any>;
+export type ListChartsRequest = Record<string, any>;
+export type ListChartsResponse = Record<string, any>;
+export type UpdateChartRequest = Record<string, any>;
+export type DeleteChartRequest = Record<string, any>;
