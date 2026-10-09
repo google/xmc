@@ -376,3 +376,38 @@ func TestCheckPodsForUnschedulableTPUTopologyMismatch(t *testing.T) {
 		}
 	})
 }
+
+func TestReconcileMultiKueueSkipsStartupPodChecks(t *testing.T) {
+	scheme, err := newScheme()
+	if err != nil {
+		t.Fatalf("Failed to create scheme: %v", err)
+	}
+	js := newStartingTestJobSet()
+	js.CreationTimestamp = metav1.Time{Time: time.Now().Add(-30 * time.Second)}
+	managedBy := constants.KueueMultiKueueControllerName
+	js.Spec.ManagedBy = &managedBy
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(js).Build()
+	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
+	r, err := NewReconciler(Params{
+		Client:                   fakeClient,
+		Scheme:                   scheme,
+		Batcher:                  batcher,
+		StartupPodErrorCheckTime: 2 * time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
+	}
+
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-jobset", Namespace: "default"}}
+	res, err := r.Reconcile(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Reconcile() failed: %v", err)
+	}
+	if res.RequeueAfter != 0 {
+		t.Errorf("Expected RequeueAfter 0 for MultiKueue-managed JobSet, got %v", res.RequeueAfter)
+	}
+	if got := r.handleStartupPodChecks(context.Background(), js); got.Result.RequeueAfter != 0 || got.PodErrorMsg != "" || got.StartupWarningMsg != "" {
+		t.Errorf("handleStartupPodChecks() on MultiKueue JobSet = %+v, want zero result", got)
+	}
+}

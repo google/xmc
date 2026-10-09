@@ -173,6 +173,19 @@ func (b *UpdateBatcher) Add(ctx context.Context, xid int64, update storagepkg.Wo
 	b.Updates[xid][update.WID][source] = update
 }
 
+// Get returns a pending update for the given xid, wid, and source if present.
+func (b *UpdateBatcher) Get(xid, wid int64, source UpdateSource) (storagepkg.WorkUnitExecutionUpdate, bool) {
+	b.UpdatesMu.Lock()
+	defer b.UpdatesMu.Unlock()
+	if widMap, ok := b.Updates[xid]; ok {
+		if sourceMap, ok := widMap[wid]; ok {
+			u, ok := sourceMap[source]
+			return u, ok
+		}
+	}
+	return storagepkg.WorkUnitExecutionUpdate{}, false
+}
+
 // BatchProcessor runs the background processing loop.
 func (b *UpdateBatcher) BatchProcessor(ctx context.Context) error {
 	ctx = logging.WithLogger(ctx, logging.NewGCPLogger(slog.LevelInfo, ""))

@@ -26,7 +26,7 @@ rules:
   resources: ["workloads"]
   verbs: ["get", "list", "watch", "update", "patch"]
 - apiGroups: ["kueue.x-k8s.io"]
-  resources: ["multikueueclusters", "resourceflavors", "clusterqueues"]
+  resources: ["multikueueclusters", "resourceflavors", "clusterqueues", "localqueues", "admissionchecks"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["visibility.kueue.x-k8s.io"]
   resources: ["clusterqueues", "clusterqueues/pendingworkloads"]

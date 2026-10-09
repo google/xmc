@@ -91,6 +91,36 @@ describe('UrlProcessor', () => {
     );
   });
 
+  it('should prefer executingCluster over managementCluster when present', () => {
+    const urls: Url[] = [
+      {
+        url: 'http://test.com/${PROJECT}/${LOCATION}/${CLUSTER}/${RESOURCE_NAME}/${NAMESPACE}/${SERVICE_ACCOUNT}',
+        displayName: 'Test URL',
+        icon: 'link',
+        priority: 1,
+      },
+    ];
+    const workUnitWithExecutingCluster = {
+      ...WORK_UNIT_1,
+      currentWorkUnitExecution: {
+        ...WORK_UNIT_1.currentWorkUnitExecution,
+        metadata: {
+          ...WORK_UNIT_1.currentWorkUnitExecution.metadata,
+          executingCluster: {
+            project: 'worker-project',
+            location: 'us-east1',
+            clusterName: 'worker-cluster',
+          },
+        },
+      },
+    };
+    const processedUrls = processUrls(urls, workUnitWithExecutingCluster);
+    expect(processedUrls.length).toBe(1);
+    expect(processedUrls[0].processedUrl).toBe(
+      `http://test.com/worker-project/us-east1/worker-cluster/test-resource/test-namespace/test-sa`,
+    );
+  });
+
   it('should return undefined processedUrl for work unit with missing metadata', () => {
     const urls: Url[] = [
       {

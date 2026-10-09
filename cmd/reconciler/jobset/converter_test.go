@@ -1168,3 +1168,38 @@ func TestSetMLRunURL(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyExecutingClusterOverride(t *testing.T) {
+	failedJobSet := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "failed-js", Namespace: "multikueue-cpu"},
+		Status: v1alpha2.JobSetStatus{
+			Conditions: []metav1.Condition{
+				{Type: string(v1alpha2.JobSetFailed), Status: metav1.ConditionTrue, Message: "failed", Reason: "Err"},
+			},
+		},
+	}
+	update := ConvertJobSetToWorkUnitExecutionUpdate(t.Context(), failedJobSet, 1, 2, "mgmt-proj", "us-central1", "mgmt-cluster", "", "")
+	currentExec := &spb.WorkUnitExecution{
+		Metadata: &spb.WorkUnitExecutionMetadata{
+			ExecutingCluster: &spb.ClusterInfo{
+				Project:     "worker-proj",
+				Location:    "us-east1",
+				ClusterName: "worker-cluster",
+			},
+			MultiKueueClusterName: "worker-1",
+		},
+	}
+
+	applyExecutingClusterOverride(t.Context(), failedJobSet, update, currentExec)
+
+	if got := update.WorkUnitExecution.GetMetadata().GetExecutingCluster().GetClusterName(); got != "worker-cluster" {
+		t.Errorf("ExecutingCluster.ClusterName = %q, want %q", got, "worker-cluster")
+	}
+	if got := update.WorkUnitExecution.GetMetadata().GetMultiKueueClusterName(); got != "worker-1" {
+		t.Errorf("MultiKueueClusterName = %q, want %q", got, "worker-1")
+	}
+	wantURL := "https://console.cloud.google.com/kubernetes/aiml/jobset/worker-proj/GKE_CLUSTER/us-east1/worker-cluster/multikueue-cpu/failed-js/overview?project=worker-proj"
+	if got := update.WorkUnitExecution.GetStatus().GetSystemMessage().GetUserFacingUrl().GetUrl(); got != wantURL {
+		t.Errorf("SystemMessage.UserFacingUrl = %q, want %q", got, wantURL)
+	}
+}

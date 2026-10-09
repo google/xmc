@@ -220,6 +220,49 @@ func TestEnsureMLRunCreated(t *testing.T) {
 	}
 }
 
+func TestEnsureMLRunCreated_UsesExecutingCluster(t *testing.T) {
+	now := time.UnixMilli(1680000000000)
+	jobSet := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-jobset",
+			Namespace:         "multikueue-cpu",
+			CreationTimestamp: metav1.NewTime(now),
+		},
+	}
+	mockClient := &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}}
+	storage := &mockStorageUpdater{
+		fetchRes: &spb.WorkUnitExecution{
+			Metadata: &spb.WorkUnitExecutionMetadata{
+				ExecutingCluster: &spb.ClusterInfo{
+					Project:     "worker-proj",
+					Location:    "us-east1",
+					ClusterName: "worker-cluster",
+				},
+			},
+		},
+	}
+	r := &Reconciler{
+		Project:     "mgmt-proj",
+		Location:    "us-central1",
+		ClusterName: "mgmt-cluster",
+		MLRunClient: mockClient,
+		Storage:     storage,
+	}
+
+	gotURL := r.ensureMLRunCreated(context.Background(), jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+	if gotURL == "" {
+		t.Fatal("ensureMLRunCreated() returned empty URL, want non-empty")
+	}
+	wantCluster := "projects/worker-proj/locations/us-east1/clusters/worker-cluster"
+	if mockClient.lastOpts.WorkloadDetails.Cluster != wantCluster {
+		t.Errorf("WorkloadDetails.Cluster = %q, want %q", mockClient.lastOpts.WorkloadDetails.Cluster, wantCluster)
+	}
+	wantID := ConstructMLRunID("worker-cluster", jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
+	if mockClient.lastID != wantID {
+		t.Errorf("lastID = %q, want %q", mockClient.lastID, wantID)
+	}
+}
+
 func TestCheckWorkUnitStatusAndMLRun(t *testing.T) {
 	tests := []struct {
 		name     string

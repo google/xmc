@@ -177,4 +177,8 @@ const (
 	ComponentCRDKind           = "Component"
 	ComponentCRDResource       = "components"
 	DefaultComponentsNamespace = "xmc"
+
+	// KueueMultiKueueControllerName is the controller name used by Kueue MultiKueue
+	// in AdmissionCheck.spec.controllerName and JobSet.spec.managedBy.
+	KueueMultiKueueControllerName = "kueue.x-k8s.io/multikueue"
 )

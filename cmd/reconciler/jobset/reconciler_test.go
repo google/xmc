@@ -756,3 +756,33 @@ func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
 		}
 	}
 }
+
+func TestFetchCurrentExecution_PendingBatcherFallback(t *testing.T) {
+	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
+	batcher.Add(t.Context(), 123, storagepkg.WorkUnitExecutionUpdate{
+		WID: 1,
+		EID: 2,
+		WorkUnitExecution: &spb.WorkUnitExecution{
+			Metadata: &spb.WorkUnitExecutionMetadata{
+				ExecutingCluster: &spb.ClusterInfo{
+					Project:     "worker-proj",
+					Location:    "us-east1",
+					ClusterName: "worker-cluster",
+				},
+				MultiKueueClusterName: "xmc-nightly-worker-1",
+			},
+		},
+	}, shared.WorkloadSource)
+
+	r := &Reconciler{
+		Batcher: batcher,
+		Storage: &mockStorageUpdater{fetchRes: nil},
+	}
+	got := r.fetchCurrentExecution(t.Context(), 123, 1)
+	if got.GetMetadata().GetExecutingCluster().GetClusterName() != "worker-cluster" {
+		t.Errorf("ExecutingCluster.ClusterName = %q, want %q", got.GetMetadata().GetExecutingCluster().GetClusterName(), "worker-cluster")
+	}
+	if got.GetMetadata().GetMultiKueueClusterName() != "xmc-nightly-worker-1" {
+		t.Errorf("MultiKueueClusterName = %q, want %q", got.GetMetadata().GetMultiKueueClusterName(), "xmc-nightly-worker-1")
+	}
+}

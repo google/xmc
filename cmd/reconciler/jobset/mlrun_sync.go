@@ -106,8 +106,9 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		logging.Warn(ctx, "JobSet creation timestamp is uninitialized when constructing MLRun ID", "jobset", jobSet.Name)
 	}
 
-	mlRunID := ConstructMLRunID(r.ClusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
-	clusterPath := resolveClusterPath(r.ClusterName, r.Project, r.Location)
+	targetProject, targetLocation, targetCluster := r.resolveTargetCluster(r.fetchCurrentExecution(ctx, xid, wid))
+	mlRunID := ConstructMLRunID(targetCluster, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
+	clusterPath := resolveClusterPath(targetCluster, targetProject, targetLocation)
 	labels := buildMLRunLabels(xid, wid)
 	artifacts := map[string]string{"gcs_path": gcsPath}
 	opts := buildCreateMLRunOptions(jobSet, clusterPath, runGroup, labels, artifacts)

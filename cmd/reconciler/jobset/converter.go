@@ -398,3 +398,26 @@ func setMLRunURL(update *storagepkg.WorkUnitExecutionUpdate, mlRunURL string) {
 		update.UpdateMask.Paths = append(update.UpdateMask.Paths, "metadata.mlrun_url")
 	}
 }
+
+func applyExecutingClusterOverride(ctx context.Context, jobSet *v1alpha2.JobSet, update *storagepkg.WorkUnitExecutionUpdate, currentExecution *spb.WorkUnitExecution) {
+	if currentExecution.GetMetadata() == nil || update == nil || update.WorkUnitExecution == nil {
+		return
+	}
+	execCluster := currentExecution.GetMetadata().GetExecutingCluster()
+	if execCluster == nil {
+		return
+	}
+	if update.WorkUnitExecution.Metadata == nil {
+		update.WorkUnitExecution.Metadata = &spb.WorkUnitExecutionMetadata{}
+	}
+	update.WorkUnitExecution.Metadata.ExecutingCluster = execCluster
+	update.WorkUnitExecution.Metadata.MultiKueueClusterName = currentExecution.GetMetadata().GetMultiKueueClusterName()
+	if execCluster.GetProject() != "" && execCluster.GetLocation() != "" && execCluster.GetClusterName() != "" {
+		state := update.WorkUnitExecution.GetStatus().GetState()
+		if sysMsg := update.WorkUnitExecution.GetStatus().GetSystemMessage(); sysMsg != nil {
+			sysMsg.UserFacingUrl = &spb.Url{
+				Url: buildDebugLink(ctx, jobSet, state, execCluster.GetProject(), execCluster.GetLocation(), execCluster.GetClusterName()),
+			}
+		}
+	}
+}

@@ -253,14 +253,19 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 
 	var result ctrl.Result
 	var podErrorMsg, startupWarningMsg string
-	if ToWorkUnitState(jobSet) == spb.WorkUnitStatus_STARTING {
+	if ToWorkUnitState(jobSet) == spb.WorkUnitStatus_STARTING && !isMultiKueueManaged(jobSet) {
 		checkRes := r.handleStartupPodChecks(ctx, jobSet)
 		result, podErrorMsg, startupWarningMsg = checkRes.Result, checkRes.PodErrorMsg, checkRes.StartupWarningMsg
 	}
 
 	mlRunURL := r.syncMLRun(ctx, jobSet, xid, wid, eid)
 
+	var currentExecution *spb.WorkUnitExecution
+	if isMultiKueueManaged(jobSet) {
+		currentExecution = r.fetchCurrentExecution(ctx, xid, wid)
+	}
 	update := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
+	applyExecutingClusterOverride(ctx, jobSet, update, currentExecution)
 	setMLRunURL(update, mlRunURL)
 	logging.Debug(ctx, "Successfully converted JobSet", "namespace", jobSet.Namespace)
 
@@ -270,6 +275,41 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
 
 	return result, nil
+}
+
+func (r *Reconciler) fetchCurrentExecution(ctx context.Context, xid, wid int64) *spb.WorkUnitExecution {
+	var execution *spb.WorkUnitExecution
+	if r.Storage != nil {
+		var err error
+		execution, err = r.Storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
+		if err != nil {
+			logging.Error(ctx, "Failed to fetch current WorkUnitExecution from ESS", "error", err)
+		}
+	}
+	if r.Batcher == nil || execution.GetMetadata().GetExecutingCluster() != nil {
+		return execution
+	}
+	wlUpdate, ok := r.Batcher.Get(xid, wid, shared.WorkloadSource)
+	if !ok || wlUpdate.WorkUnitExecution.GetMetadata().GetExecutingCluster() == nil {
+		return execution
+	}
+	return &spb.WorkUnitExecution{
+		Name:   execution.GetName(),
+		Status: execution.GetStatus(),
+		Metadata: &spb.WorkUnitExecutionMetadata{
+			ExecutingCluster:      wlUpdate.WorkUnitExecution.GetMetadata().GetExecutingCluster(),
+			MultiKueueClusterName: wlUpdate.WorkUnitExecution.GetMetadata().GetMultiKueueClusterName(),
+			MlrunUrl:              execution.GetMetadata().GetMlrunUrl(),
+		},
+	}
+}
+
+func (r *Reconciler) resolveTargetCluster(execution *spb.WorkUnitExecution) (string, string, string) {
+	if execCluster := execution.GetMetadata().GetExecutingCluster(); execCluster != nil &&
+		execCluster.GetProject() != "" && execCluster.GetLocation() != "" && execCluster.GetClusterName() != "" {
+		return execCluster.GetProject(), execCluster.GetLocation(), execCluster.GetClusterName()
+	}
+	return r.Project, r.Location, r.ClusterName
 }
 
 // SetupWithManager sets up the controller with the Manager.

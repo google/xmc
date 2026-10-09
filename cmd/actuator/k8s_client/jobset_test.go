@@ -30,6 +30,7 @@ import (
 	dynamicfake "golang/k8s_io/client_go/v/v0_23/dynamic/fake/fake"
 	clientgotesting "golang/k8s_io/client_go/v/v0_23/testing/testing"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/utils/ptr"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/prototest"
@@ -200,7 +201,6 @@ func TestConstructJobSet(t *testing.T) {
 		constants.WorkUnitIDLabel:   "456",
 		constants.ExecutionIDLabel:  "1",
 		constants.ManagedByLabel:    constants.XmcLabelValue,
-		kueueQueueLabel:             "test-namespace",
 	}
 	jobAnnotations := map[string]string{
 		"anno1":                    "val1",
@@ -535,7 +535,6 @@ func TestConstructJobSet_PerJobCustomLabels(t *testing.T) {
 		constants.ExperimentIDLabel: "123",
 		constants.WorkUnitIDLabel:   "456",
 		constants.ExecutionIDLabel:  "1",
-		"kueue.x-k8s.io/queue-name": testNamespace,
 	}
 	for labelKey, wantValue := range expectedSystemLabels {
 		if got := rj.Template.ObjectMeta.Labels[labelKey]; got != wantValue {
@@ -544,6 +543,17 @@ func TestConstructJobSet_PerJobCustomLabels(t *testing.T) {
 		if got := podLabels[labelKey]; got != wantValue {
 			t.Errorf("PodTemplateSpec system label %s = %q, want %q (system label must take precedence)", labelKey, got, wantValue)
 		}
+	}
+
+	// Verify kueue.x-k8s.io/queue-name is only set on parent JobSet and excluded from child Job/Pod templates
+	if got := jobSet.ObjectMeta.Labels[kueueQueueLabel]; got != testNamespace {
+		t.Errorf("JobSet.ObjectMeta.Labels[%s] = %q, want %q", kueueQueueLabel, got, testNamespace)
+	}
+	if _, exists := rj.Template.ObjectMeta.Labels[kueueQueueLabel]; exists {
+		t.Errorf("JobTemplateSpec.ObjectMeta.Labels[%s] should not be set on child Job template", kueueQueueLabel)
+	}
+	if _, exists := podLabels[kueueQueueLabel]; exists {
+		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[%s] should not be set on child Pod template", kueueQueueLabel)
 	}
 }
 
@@ -3433,6 +3443,148 @@ func TestHostNetworkAndDNSPolicy(t *testing.T) {
 			}
 			if podSpec.DNSPolicy != tt.wantDNSPolicy {
 				t.Errorf("podSpec.DNSPolicy = %q, want %q", podSpec.DNSPolicy, tt.wantDNSPolicy)
+			}
+		})
+	}
+}
+
+func TestConstructJobSet_MultiKueueManagedBy(t *testing.T) {
+	newLocalQueue := func(ns, name, cq string) *unstructured.Unstructured {
+		return &unstructured.Unstructured{
+			Object: map[string]any{
+				"apiVersion": "kueue.x-k8s.io/v1beta1",
+				"kind":       "LocalQueue",
+				"metadata":   map[string]any{"name": name, "namespace": ns},
+				"spec":       map[string]any{"clusterQueue": cq},
+			},
+		}
+	}
+	newClusterQueueWithChecks := func(name string, checks []any) *unstructured.Unstructured {
+		return &unstructured.Unstructured{
+			Object: map[string]any{
+				"apiVersion": "kueue.x-k8s.io/v1beta1",
+				"kind":       "ClusterQueue",
+				"metadata":   map[string]any{"name": name},
+				"spec":       map[string]any{"admissionChecks": checks},
+			},
+		}
+	}
+	newClusterQueueWithStrategy := func(name, strategyField, checkName string) *unstructured.Unstructured {
+		return &unstructured.Unstructured{
+			Object: map[string]any{
+				"apiVersion": "kueue.x-k8s.io/v1beta1",
+				"kind":       "ClusterQueue",
+				"metadata":   map[string]any{"name": name},
+				"spec": map[string]any{
+					strategyField: map[string]any{
+						"admissionChecks": []any{
+							map[string]any{"name": checkName},
+						},
+					},
+				},
+			},
+		}
+	}
+	newAdmissionCheck := func(name, controllerName string) *unstructured.Unstructured {
+		return &unstructured.Unstructured{
+			Object: map[string]any{
+				"apiVersion": "kueue.x-k8s.io/v1beta1",
+				"kind":       "AdmissionCheck",
+				"metadata":   map[string]any{"name": name},
+				"spec":       map[string]any{"controllerName": controllerName},
+			},
+		}
+	}
+
+	tests := []struct {
+		name          string
+		namespace     string
+		objects       []*unstructured.Unstructured
+		wantManagedBy *string
+	}{
+		{
+			name:      "MultiKueue queue via spec.admissionChecks sets spec.managedBy",
+			namespace: "multikueue-cpu",
+			objects: []*unstructured.Unstructured{
+				newLocalQueue("multikueue-cpu", "multikueue-cpu", "multikueue-cpu"),
+				newClusterQueueWithChecks("multikueue-cpu", []any{"multikueue-check"}),
+				newAdmissionCheck("multikueue-check", constants.KueueMultiKueueControllerName),
+			},
+			wantManagedBy: ptr.To(constants.KueueMultiKueueControllerName),
+		},
+		{
+			name:      "MultiKueue queue via spec.admissionChecksStrategy sets spec.managedBy",
+			namespace: "multikueue-cpu",
+			objects: []*unstructured.Unstructured{
+				newLocalQueue("multikueue-cpu", "multikueue-cpu", "multikueue-cpu"),
+				newClusterQueueWithStrategy("multikueue-cpu", "admissionChecksStrategy", "multikueue-check"),
+				newAdmissionCheck("multikueue-check", constants.KueueMultiKueueControllerName),
+			},
+			wantManagedBy: ptr.To(constants.KueueMultiKueueControllerName),
+		},
+		{
+			name:      "MultiKueue queue via spec.admissionCheckStrategy sets spec.managedBy",
+			namespace: "multikueue-cpu",
+			objects: []*unstructured.Unstructured{
+				newLocalQueue("multikueue-cpu", "multikueue-cpu", "multikueue-cpu"),
+				newClusterQueueWithStrategy("multikueue-cpu", "admissionCheckStrategy", "multikueue-check"),
+				newAdmissionCheck("multikueue-check", constants.KueueMultiKueueControllerName),
+			},
+			wantManagedBy: ptr.To(constants.KueueMultiKueueControllerName),
+		},
+		{
+			name:      "Non-MultiKueue admission check leaves spec.managedBy nil",
+			namespace: "cpu",
+			objects: []*unstructured.Unstructured{
+				newLocalQueue("cpu", "cpu", "cpu"),
+				newClusterQueueWithChecks("cpu", []any{"dws-prov"}),
+				newAdmissionCheck("dws-prov", "kueue.x-k8s.io/provisioning-request"),
+			},
+			wantManagedBy: nil,
+		},
+		{
+			name:      "Standard queue without admissionChecks leaves spec.managedBy nil",
+			namespace: "cpu",
+			objects: []*unstructured.Unstructured{
+				newLocalQueue("cpu", "cpu", "cpu"),
+				newClusterQueueWithChecks("cpu", nil),
+			},
+			wantManagedBy: nil,
+		},
+		{
+			name:          "Missing LocalQueue leaves spec.managedBy nil",
+			namespace:     "unknown-queue",
+			objects:       nil,
+			wantManagedBy: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, client, dynClient := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
+			for _, obj := range tc.objects {
+				switch obj.GetKind() {
+				case "LocalQueue":
+					if _, err := dynClient.Resource(KueueLocalQueueGVR).Namespace(obj.GetNamespace()).Create(ctx, obj, metav1.CreateOptions{}); err != nil {
+						t.Fatalf("failed to seed LocalQueue: %v", err)
+					}
+				case "ClusterQueue":
+					if _, err := dynClient.Resource(KueueClusterQueueGVR).Create(ctx, obj, metav1.CreateOptions{}); err != nil {
+						t.Fatalf("failed to seed ClusterQueue: %v", err)
+					}
+				case "AdmissionCheck":
+					if _, err := dynClient.Resource(KueueAdmissionCheckGVR).Create(ctx, obj, metav1.CreateOptions{}); err != nil {
+						t.Fatalf("failed to seed AdmissionCheck: %v", err)
+					}
+				}
+			}
+
+			got, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", tc.namespace, testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.wantManagedBy, got.Spec.ManagedBy); diff != "" {
+				t.Errorf("jobSet.Spec.ManagedBy diff (-want +got):\n%s", diff)
 			}
 		})
 	}
