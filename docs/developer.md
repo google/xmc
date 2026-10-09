@@ -220,20 +220,7 @@ The **UI** is the frontend portal of XMC, hosting the Angular single-page applic
 
 ## Running Affected Unit Tests
 
-Before opening a pull request, run the Bazel unit tests that your change affects, scoped the same way as CI:
-
-```bash
-python3 ./tools/run_affected_tests.py            # Resolve the scope and run the affected Bazel tests
-python3 ./tools/run_affected_tests.py --dry-run  # Print the resolved scope without running tests
-```
-
-The tool scopes every file changed since the merge base of `--base-ref` (default `origin/main`) and `HEAD`, uncommitted and untracked files included, with [`resolve_test_scope.py`](../tools/benchmark/resolve_test_scope.py), and runs `bazel test` on the affected targets with the test flags of CI. Pass extra `bazel test` flags with the repeatable `--bazel-flag=FLAG`. `--ci` scopes the GitHub Actions event instead of the local checkout.
-
-- **Output**: stdout carries only the JSON result: the changed files, the backend scope and its reason, the Bazel targets, `other_suites`, and the passed targets. Bazel output and diagnostics go to stderr.
-- **Exit codes**: `0` when tests pass, for a dry run, or when nothing needs to run; `1` for test failures and other handled errors; `2` for unexpected errors. On test failures, the error JSON on stderr has a `details` object with the failed targets and their test logs, the targets that did not run, and any build errors.
-- **Spanner emulator**: Before running tests, the tool checks that a Spanner emulator accepts connections on `SPANNER_EMULATOR_HOST` (default `localhost:9010`), and it passes a set `SPANNER_EMULATOR_HOST` to the tests with `--test_env`. Start the emulator as described in [Running Spanner Database Health Unit Tests](#running-spanner-database-health-unit-tests), or pass `--skip-emulator-check` when the affected tests do not use Spanner.
-- **Other suites**: The tool runs only Bazel tests. When CI would also run the UI or Helm chart suite, `other_suites` lists the CI action that runs it.
-- **Full-suite fallback**: The full backend suite (`//... -//cmd/ui/...`) runs when a core infrastructure file such as `MODULE.bazel` or `go.mod` changes, and also, with a `::warning::` line on stderr, when a changed file belongs to no Bazel package or the dependency query fails or finds no tests.
+`.githooks/pre-commit` automatically runs [`tools/run_affected_tests.py`](../tools/run_affected_tests.py) to execute the Bazel unit tests affected by your changes (scoped via [`resolve_test_scope.py`](../tools/benchmark/resolve_test_scope.py) to match CI). To run it standalone or inspect the resolved scope (`--dry-run`), run `python3 ./tools/run_affected_tests.py --help`.
 
 ---
 
