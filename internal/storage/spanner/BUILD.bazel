@@ -25,7 +25,7 @@ compat_go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:messages_go_proto",
-        "//internal/compat/status",
+        "//internal/grpcerr",
         "//internal/storage",
         "//internal/storage/spanner/artifact",
         "//internal/storage/spanner/experiment",

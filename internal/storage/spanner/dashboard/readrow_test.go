@@ -21,7 +21,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
 )
 
@@ -45,8 +45,8 @@ func TestReadRowInTransaction(t *testing.T) {
 			_, err := repo.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 				row, err := readRowInTransaction(ctx, txn, dashboardschema.ChartsTableName, "chart", tc.chartID, dashboardschema.FetchedChartColumns)
 				if tc.wantNotFound {
-					if !errors.Is(err, status.ErrNotFound) {
-						t.Errorf("readRowInTransaction error = %v, want status.ErrNotFound", err)
+					if !errors.Is(err, grpcerr.ErrNotFound) {
+						t.Errorf("readRowInTransaction error = %v, want grpcerr.ErrNotFound", err)
 					}
 					return nil
 				}

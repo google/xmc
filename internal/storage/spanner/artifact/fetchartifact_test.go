@@ -21,8 +21,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"
 )
@@ -74,7 +74,7 @@ func TestFetchArtifact_NotFound(t *testing.T) {
 	}
 
 	_, err = storage.FetchArtifact(ctx, 123456789)
-	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("FetchArtifact for non-existent AID returned error %v, want %v", err, status.ErrNotFound)
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("FetchArtifact for non-existent AID returned error %v, want %v", err, grpcerr.ErrNotFound)
 	}
 }
