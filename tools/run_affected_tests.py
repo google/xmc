@@ -35,7 +35,7 @@ import socket
 import sys
 import tempfile
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -113,14 +113,12 @@ def resolve_scope(args: argparse.Namespace, env: Mapping[str, str]) -> dict[str,
 
 def describe_scope(args: argparse.Namespace, scope: Mapping[str, Any]) -> dict[str, Any]:
     """Builds the JSON report fields that describe the resolved scope."""
-    raw_targets = scope["bazel_targets"]
-    targets = raw_targets.split() if isinstance(raw_targets, str) else [str(t) for t in raw_targets]
     return {
         "mode": "ci" if args.ci else "local",
         "changed_files": scope.get("changed_files"),
         "backend_mode": scope["backend_mode"],
         "reason": scope["reason"],
-        "bazel_targets": targets,
+        "bazel_targets": scope["bazel_targets"].split(),
         "other_suites": [action for key, action in OTHER_SUITE_ACTIONS.items() if scope[key]],
         "dry_run": args.dry_run,
     }
@@ -210,17 +208,10 @@ def summarize_statuses(
     return passed, failed, not_run
 
 
-def _nested_dict(mapping: Mapping[str, Any], key: str) -> Mapping[str, Any]:
-    """Returns mapping[key] if it is a mapping, or an empty dict otherwise."""
-    value = mapping.get(key)
-    return value if isinstance(value, Mapping) else {}
-
-
-def read_build_events(bep_path: Path) -> list[dict[str, Any]]:
-    """Returns the events of a Build Event Protocol JSON file, skipping malformed lines."""
+def read_build_events(bep_path: Path) -> Iterator[dict[str, Any]]:
+    """Yields the events of a Build Event Protocol JSON file, skipping malformed lines."""
     if not bep_path.exists():
-        return []
-    events = []
+        return
     with bep_path.open(encoding="utf-8", errors="replace") as bep_file:
         for line in filter(str.strip, bep_file):
             try:
@@ -229,8 +220,7 @@ def read_build_events(bep_path: Path) -> list[dict[str, Any]]:
                 log_info(f"Skipped a malformed line of {bep_path}.", stream=sys.stderr)
                 continue
             if isinstance(parsed, dict):
-                events.append(parsed)
-    return events
+                yield parsed
 
 
 def read_test_outcome(bep_path: Path, exit_code: int) -> BazelTestOutcome:
@@ -240,23 +230,20 @@ def read_test_outcome(bep_path: Path, exit_code: int) -> BazelTestOutcome:
     build_errors: list[str] = []
     exit_name = "UNKNOWN"
     for event in read_build_events(bep_path):
-        event_id = _nested_dict(event, "id")
-        if summary := _nested_dict(event, "testSummary"):
-            if label := _nested_dict(event_id, "testSummary").get("label"):
+        event_id = event.get("id", {})
+        if summary := event.get("testSummary"):
+            if label := event_id.get("testSummary", {}).get("label"):
                 statuses[label] = summary.get("overallStatus") or "NO_STATUS"
-                failed = summary.get("failed")
                 failed_logs[label] = [
-                    file_uri_to_path(f["uri"])
-                    for f in (failed if isinstance(failed, list) else ())
-                    if isinstance(f, Mapping) and isinstance(f.get("uri"), str)
+                    file_uri_to_path(f["uri"]) for f in summary.get("failed", []) if "uri" in f
                 ]
-        elif "completed" in event and not _nested_dict(event, "completed").get("success"):
-            if label := _nested_dict(event_id, "targetCompleted").get("label"):
+        elif "completed" in event and not event.get("completed", {}).get("success"):
+            if label := event_id.get("targetCompleted", {}).get("label"):
                 statuses.setdefault(label, "FAILED_TO_BUILD")
-        elif description := _nested_dict(event, "aborted").get("description"):
+        elif description := event.get("aborted", {}).get("description"):
             build_errors.append(description)
-        elif finished := _nested_dict(event, "finished"):
-            exit_name = _nested_dict(finished, "exitCode").get("name") or exit_name
+        elif finished := event.get("finished"):
+            exit_name = finished.get("exitCode", {}).get("name") or exit_name
     passed, failed_targets, not_run = summarize_statuses(statuses, failed_logs)
     return BazelTestOutcome(
         exit_code, exit_name, passed, failed_targets, not_run, tuple(build_errors)
@@ -285,17 +272,21 @@ def run_bazel_tests(
 
 
 def raise_for_test_failure(outcome: BazelTestOutcome, report: Mapping[str, Any]) -> None:
-    """Raises HandledError with the report and the outcome unless `bazel test` succeeded."""
+    """Raises HandledError with the report and failure details unless `bazel test` succeeded."""
     if outcome.exit_code == 0:
         return
     failed = ", ".join(f"{f.target} ({f.status})" for f in outcome.failed_targets)
+    report_summary = {k: v for k, v in report.items() if k != "bazel_targets"}
+    outcome_summary = {
+        k: v for k, v in dataclasses.asdict(outcome).items() if k != "passed_targets"
+    }
     raise HandledError(
         f"bazel test failed with {outcome.exit_name} (exit code {outcome.exit_code}); "
         f"failed targets: {failed or 'none, see build_errors'}; "
         f"targets that did not run: {len(outcome.not_run_targets)}.",
         "Fix the failures using the test logs and build errors in details and the Bazel output "
         "on stderr, then re-run python3 ./tools/run_affected_tests.py.",
-        details={**report, **dataclasses.asdict(outcome)},
+        details={**report_summary, **outcome_summary},
     )
 
 
