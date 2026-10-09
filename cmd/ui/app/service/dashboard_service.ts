@@ -136,7 +136,7 @@ export class DashboardService {
       .pipe(
         map(normalizeDashboard),
         catchError((error) => {
-          console.error(`Failed to update dashboard ${request.dashboard.name}:`, error);
+          console.error(`Failed to update dashboard ${request.dashboard?.name}:`, error);
           return throwError(() => error);
         }),
       );
