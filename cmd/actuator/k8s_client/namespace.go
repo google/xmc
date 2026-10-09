@@ -20,7 +20,7 @@ import (
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 // checkNamespaceExists verifies if a given namespace already exists in the cluster.
