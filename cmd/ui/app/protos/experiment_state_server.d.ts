@@ -28,7 +28,7 @@ export interface ListExperimentsRequest {
 }
 
 export interface ListExperimentsResponse {
-  experiments?: any[];
+  experiments?: Experiment[];
   [key: string]: any;
 }
 
@@ -37,7 +37,7 @@ export interface ListStatusMessagesRequest {
 }
 
 export interface ListStatusMessagesResponse {
-  statusMessages?: any[];
+  statusMessages?: StatusMessage[];
   [key: string]: any;
 }
 
@@ -46,7 +46,7 @@ export interface ListArtifactsRequest {
 }
 
 export interface ListArtifactsResponse {
-  artifacts?: any[];
+  artifacts?: Artifact[];
   [key: string]: any;
 }
 
@@ -55,7 +55,7 @@ export interface ListWorkUnitsRequest {
 }
 
 export interface ListWorkUnitsResponse {
-  workUnits?: any[];
+  workUnits?: WorkUnit[];
   [key: string]: any;
 }
 
@@ -93,7 +93,7 @@ export interface ReplicatedJobStatus {
 export type Priority = string;
 
 export namespace StructuredMessage {
-  export type Severity = 'WARNING' | 'ERROR' | 'FATAL' | 'INFO' | 'DEBUG' | string;
+  export type Severity = 'WARNING' | 'ERROR' | 'FATAL' | 'INFO' | 'DEBUG' | (string & {});
   export type Source =
     | 'SOURCE_UNSPECIFIED'
     | 'XMANAGER_CLIENT'
@@ -103,7 +103,7 @@ export namespace StructuredMessage {
     | 'SCHEDULER'
     | 'APPLICATION'
     | 'USER_DEFINED'
-    | string;
+    | (string & {});
 }
 
 export interface StructuredMessage {
@@ -154,6 +154,6 @@ export interface ResourceSet {
 export interface Url {
   priority?: number;
   processedUrl?: string;
-  icon?: any;
+  icon?: string;
   [key: string]: any;
 }

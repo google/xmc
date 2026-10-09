@@ -27,7 +27,7 @@ export interface HealthStatusResponse {
   healthState?: string;
   systemInfo?: SystemInfo;
   components?: any[];
-  healthCheckTime?: any;
+  healthCheckTime?: string | { seconds?: number | string; nanos?: number };
   [key: string]: any;
 }
 
