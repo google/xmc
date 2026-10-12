@@ -23,7 +23,11 @@ package bridge
 
 import (
 	"context"
+	"errors"
+	"strconv"
 	"testing"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	cmsserver "xmanager_cloud/pkg/components/cms"
@@ -136,6 +140,10 @@ func TestReconcileComponent_SourcedIntentAndSameClusterRecreateAdoption(t *testi
 	if err != nil {
 		t.Fatalf("GetComponent() error = %v", err)
 	}
+	wantID := strconv.FormatInt(rec1.ComponentID, 10)
+	if res1.ComponentID != wantID {
+		t.Fatalf("pass 1 ComponentID = %q, want %q", res1.ComponentID, wantID)
+	}
 	if rec1.Owner == nil || rec1.Owner.UID != uidA || rec1.ObservedGeneration == nil || *rec1.ObservedGeneration != 1 {
 		t.Fatalf("pass 1 CMS record = (owner=%+v, obsGen=%v), want uidA and obsGen 1", rec1.Owner, rec1.ObservedGeneration)
 	}
@@ -143,13 +151,13 @@ func TestReconcileComponent_SourcedIntentAndSameClusterRecreateAdoption(t *testi
 	// Pass 2: uidA updates spec at CR generation 2 -> componentGeneration becomes 2.
 	res2, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
 		Namespace: "xmc", Name: "redpanda", Generation: 2, UID: uidA, ComponentGeneration: res1.ComponentGeneration,
-		Enabled: true, ExistingConditions: res1.Conditions, Spec: specV2(),
+		ComponentID: res1.ComponentID, Enabled: true, ExistingConditions: res1.Conditions, Spec: specV2(),
 	})
 	if err != nil {
 		t.Fatalf("pass 2: ReconcileComponent() error = %v", err)
 	}
-	if res2.ComponentGeneration != 2 {
-		t.Fatalf("pass 2 ComponentGeneration = %d, want 2", res2.ComponentGeneration)
+	if res2.ComponentGeneration != 2 || res2.ComponentID != wantID {
+		t.Fatalf("pass 2 (ComponentGeneration, ComponentID) = (%d, %q), want (2, %q)", res2.ComponentGeneration, res2.ComponentID, wantID)
 	}
 
 	// Pass 3a: Stale local informer event from uidB while liveUID is uidA -> StaleIncarnation=true (no SourceConflict status overwrite).
@@ -205,8 +213,8 @@ func TestReconcileComponent_SourcedIntentAndSameClusterRecreateAdoption(t *testi
 	if err != nil {
 		t.Fatalf("pass 4 (adopted recreation): ReconcileComponent() error = %v", err)
 	}
-	if resAdopted.ComponentGeneration != 3 {
-		t.Errorf("pass 4 ComponentGeneration = %d, want 3 after spec change on adoption", resAdopted.ComponentGeneration)
+	if resAdopted.ComponentGeneration != 3 || resAdopted.ComponentID != wantID {
+		t.Errorf("pass 4 (ComponentGeneration, ComponentID) = (%d, %q), want (3, %q)", resAdopted.ComponentGeneration, resAdopted.ComponentID, wantID)
 	}
 	if sc := findCondition(resAdopted.Conditions, ConditionTypeSourceConflict); sc != nil {
 		t.Errorf("pass 4 SourceConflict = %+v, want pruned after adoption", sc)
@@ -243,9 +251,10 @@ func TestReconcileComponent_SourceNamespaceConflictAndStaleGeneration(t *testing
 	specV2 := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "2.0.0"}
 
 	// team-a claims redpanda at generation 2.
-	if _, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+	resClaim, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
 		Namespace: "team-a", Name: "redpanda", Generation: 2, UID: uidTeamA, Enabled: true, Spec: specV2,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("team-a ReconcileComponent() error = %v", err)
 	}
 	helm.ensureCalls = 0
@@ -274,9 +283,10 @@ func TestReconcileComponent_SourceNamespaceConflictAndStaleGeneration(t *testing
 	}
 
 	// team-a sends a changed spec at stale generation 1 -> a stale snapshot, not a SourceConflict:
-	// no status write (StaleIncarnation) and a short requeue so the cache catches up.
+	// no status write (StaleIncarnation) and a short requeue so the cache catches up; the known
+	// ComponentID is preserved.
 	resStaleGen, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
-		Namespace: "team-a", Name: "redpanda", Generation: 1, UID: uidTeamA, Enabled: true, Spec: specV1,
+		Namespace: "team-a", Name: "redpanda", Generation: 1, UID: uidTeamA, ComponentID: resClaim.ComponentID, Enabled: true, Spec: specV1,
 	})
 	if err != nil {
 		t.Fatalf("team-a stale generation ReconcileComponent() unexpected error: %v", err)
@@ -289,6 +299,9 @@ func TestReconcileComponent_SourceNamespaceConflictAndStaleGeneration(t *testing
 	}
 	if helm.ensureCalls != 0 {
 		t.Errorf("stale generation actuated Helm %d times, want 0", helm.ensureCalls)
+	}
+	if resStaleGen.ComponentID != resClaim.ComponentID {
+		t.Errorf("team-a stale generation ComponentID = %q, want %q preserved", resStaleGen.ComponentID, resClaim.ComponentID)
 	}
 
 	// team-b attempts to deactivate redpanda with an unregistered dependency (which applyDisabledIntent
@@ -308,6 +321,56 @@ func TestReconcileComponent_SourceNamespaceConflictAndStaleGeneration(t *testing
 		t.Error("team-b disabled conflict deleted the active 1P Helm release")
 	}
 	assertSourceConflictConditions(t, resDeactConflict.Conditions, ReasonSourceNamespaceConflict)
+}
+
+func TestReconcileComponent_ComponentIDPropagation(t *testing.T) {
+	spec := func(deps ...string) *componentspb.ComponentSpec {
+		return &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: deps}
+	}
+	cycle := NewDependencySnapshot([]unstructured.Unstructured{
+		readyComponent("ingestion", withDependencies("redpanda")),
+		readyComponent("redpanda", withDependencies("ingestion")),
+	})
+	tests := []struct {
+		name    string
+		cms     *mockCMS
+		mutate  func(in *ReconcileComponentInput)
+		wantErr bool
+		want    string
+	}{
+		{name: "replaced by the committed intent", cms: &mockCMS{componentID: 2}, want: "2"},
+		{name: "kept when the intent write fails", cms: &mockCMS{componentID: 2, setErr: errors.New("cms unavailable")}, wantErr: true, want: "1"},
+		{
+			name: "kept while gated on a dependency cycle", cms: &mockCMS{componentID: 2}, want: "1",
+			mutate: func(in *ReconcileComponentInput) { in.Spec, in.Dependencies = spec("redpanda"), cycle },
+		},
+		{
+			name: "kept on deletion", cms: &mockCMS{componentID: 2}, want: "1",
+			mutate: func(in *ReconcileComponentInput) { in.IsDeleting = true },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := NewReconciler(tt.cms, nil, &mockHelm{})
+			if err != nil {
+				t.Fatalf("NewReconciler() error = %v", err)
+			}
+			in := ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec(),
+				Enabled: true, ComponentID: "1",
+			}
+			if tt.mutate != nil {
+				tt.mutate(&in)
+			}
+			res, err := r.ReconcileComponent(context.Background(), in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ReconcileComponent() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if res.ComponentID != tt.want {
+				t.Errorf("ReconcileComponent() ComponentID = %q, want %q", res.ComponentID, tt.want)
+			}
+		})
+	}
 }
 
 func TestReconcileDeletion_OwnershipAndFencedCleanup(t *testing.T) {

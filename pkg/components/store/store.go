@@ -161,8 +161,9 @@ func ToProtoComponent(r *ComponentRecord) *componentspb.Component {
 		return nil
 	}
 	comp := &componentspb.Component{
-		Name: naming.FullComponentName(r.Name),
-		Etag: r.Etag,
+		Name:        naming.FullComponentName(r.Name),
+		Etag:        r.Etag,
+		ComponentId: r.ComponentID,
 	}
 	if r.Spec != nil {
 		comp.Spec = proto.Clone(r.Spec).(*componentspb.ComponentSpec)

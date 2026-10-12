@@ -328,6 +328,14 @@ message Component {
     (google.api.field_behavior) = OPTIONAL,
     json_name = "labels"
   ];
+
+  // Identifier of this incarnation of the component. A component re-registered under the same
+  // name after deletion gets a new identifier and restarts its generations, so (component_id,
+  // generation) identifies a snapshot unambiguously where (name, generation) may not.
+  int64 component_id = 9 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    json_name = "componentId"
+  ];
 }
 
 // Request message for SetComponentIntent.

@@ -65,7 +65,8 @@ func TestToProtoComponent(t *testing.T) {
 				Etag:               "etag-123",
 			},
 			want: &componentspb.Component{
-				Name: "components/comp-a",
+				Name:        "components/comp-a",
+				ComponentId: 10,
 				Spec: &componentspb.ComponentSpec{
 					Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 					Version: "v1.2.3",
