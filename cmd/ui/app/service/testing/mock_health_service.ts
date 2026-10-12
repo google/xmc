@@ -16,6 +16,7 @@ import { Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
 
 import {
+  GetSchedulingStatusResponse,
   HealthStatusResponse,
   ListConfigEntriesResponse,
   UserInfoResponse,
@@ -76,6 +77,12 @@ export class MockHealthService extends HealthService {
       userEmail: 'mock-user@google.com',
       privileges: ['PRIVILEGE_ACCESS_ADMIN_PANEL'],
     } as any);
+  }
+
+  override getSchedulingStatus(): Observable<GetSchedulingStatusResponse> {
+    return of({
+      isSchedulingPaused: this.isSchedulingPaused,
+    });
   }
 
   override pauseScheduling(): Observable<void> {

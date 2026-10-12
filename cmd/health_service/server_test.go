@@ -1252,3 +1252,96 @@ func TestGetHealthStatus_PauseScheduling(t *testing.T) {
 		}
 	})
 }
+
+func TestGetSchedulingStatus(t *testing.T) {
+	nonAdminGuard := &mockAdminRoleGuard{
+		hasRole: false,
+		err:     status.Errorf(codes.PermissionDenied, "forbidden: user lacks admin role"),
+	}
+	enabledCfg := &Config{
+		FeatureFlags: featureflags.Flags{
+			PauseSchedulingEnabled: true,
+		},
+	}
+
+	tests := []struct {
+		name           string
+		cfg            *Config
+		pauseScheduler PauseScheduler
+		wantResp       *spb.GetSchedulingStatusResponse
+		wantErrCode    codes.Code
+		wantErrMsg     string
+	}{
+		{
+			name: "returns true for non-admin caller when feature flag enabled and paused",
+			cfg:  enabledCfg,
+			pauseScheduler: newFakePauseScheduler(
+				storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true}),
+			),
+			wantResp:    &spb.GetSchedulingStatusResponse{IsSchedulingPaused: true},
+			wantErrCode: codes.OK,
+		},
+		{
+			name:           "returns false for non-admin caller when feature flag enabled and not paused",
+			cfg:            enabledCfg,
+			pauseScheduler: newFakePauseScheduler(storagetest.NewFakePauseStateRepository()),
+			wantResp:       &spb.GetSchedulingStatusResponse{IsSchedulingPaused: false},
+			wantErrCode:    codes.OK,
+		},
+		{
+			name: "returns false when feature flag is disabled even if repo is paused",
+			cfg: &Config{
+				FeatureFlags: featureflags.Flags{
+					PauseSchedulingEnabled: false,
+				},
+			},
+			pauseScheduler: newFakePauseScheduler(
+				storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true}),
+			),
+			wantResp:    &spb.GetSchedulingStatusResponse{IsSchedulingPaused: false},
+			wantErrCode: codes.OK,
+		},
+		{
+			name:           "returns false when cfg is nil",
+			cfg:            nil,
+			pauseScheduler: newFakePauseScheduler(storagetest.NewFakePauseStateRepository()),
+			wantResp:       &spb.GetSchedulingStatusResponse{IsSchedulingPaused: false},
+			wantErrCode:    codes.OK,
+		},
+		{
+			name:           "returns false when pauseScheduler is nil",
+			cfg:            enabledCfg,
+			pauseScheduler: nil,
+			wantResp:       &spb.GetSchedulingStatusResponse{IsSchedulingPaused: false},
+			wantErrCode:    codes.OK,
+		},
+		{
+			name: "returns internal error when repository read fails",
+			cfg:  enabledCfg,
+			pauseScheduler: newFakePauseScheduler(
+				&storagetest.FakePauseStateRepository{GetErr: errors.New("spanner write failure")},
+			),
+			wantErrCode: codes.Internal,
+			wantErrMsg:  schedulingPauseUnavailableError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newServer(tt.cfg, &mockHealthChecker{}, nonAdminGuard, nil, tt.pauseScheduler)
+			defer s.Close()
+
+			resp, err := s.GetSchedulingStatus(context.Background(), &spb.GetSchedulingStatusRequest{})
+			if tt.wantErrCode != codes.OK {
+				assertRPCError(t, err, tt.wantErrCode, tt.wantErrMsg)
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetSchedulingStatus() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tt.wantResp, resp, protocmp.Transform()); diff != "" {
+				t.Errorf("GetSchedulingStatus() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

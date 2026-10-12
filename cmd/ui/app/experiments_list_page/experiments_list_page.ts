@@ -52,6 +52,7 @@ export class ExperimentsListPage implements OnInit, OnDestroy {
 
   readonly pageResult = this.componentStore.pageResult;
   readonly isLoading = this.componentStore.isLoading;
+  readonly isSchedulingPaused = this.componentStore.isSchedulingPaused;
 
   readonly pageIndex = this.componentStore.pageIndex;
   readonly pageSize = this.componentStore.pageSize;
@@ -59,6 +60,7 @@ export class ExperimentsListPage implements OnInit, OnDestroy {
   readonly hasPreviousPage = this.componentStore.hasPreviousPage;
 
   ngOnInit() {
+    this.componentStore.fetchSchedulingStatus();
     this.subscriptions.add(
       this.route.queryParams.subscribe((queryParams) => {
         this.componentStore.setFilter(queryParamsToExperimentFilters(queryParams));
@@ -68,6 +70,7 @@ export class ExperimentsListPage implements OnInit, OnDestroy {
     this.subscriptions.add(
       this.reloader.reloader$.subscribe(() => {
         this.componentStore.fetchPage();
+        this.componentStore.fetchSchedulingStatus();
       }),
     );
     this.reloader.start();

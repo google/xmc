@@ -15,6 +15,8 @@ import { of, throwError } from 'rxjs';
 
 import { ListExperimentsResponse } from 'app/protos/experiment_state_server';
 import { ExperimentService } from 'app/service/experiment_service';
+import { FeatureFlagService } from 'app/service/feature_flag_service';
+import { HealthService } from 'app/service/health_service';
 import { SnackbarService } from 'app/service/snackbar_service';
 import { cleanState, get, setupModule, setupObservableMatchers } from 'app/testing/test';
 
@@ -33,12 +35,25 @@ describe('ExperimentsListPageStore', () => {
     const mockExperimentService = jasmine.createSpyObj<ExperimentService>('ExperimentService', [
       'searchExperiments',
     ]);
+    const mockHealthService = jasmine.createSpyObj<HealthService>('HealthService', [
+      'getSchedulingStatus',
+    ]);
+    mockHealthService.getSchedulingStatus.and.returnValue(of({ isSchedulingPaused: false }));
+
+    let pauseSchedulingEnabled = false;
+    const mockFeatureFlagService = {
+      get isPauseSchedulingEnabled() {
+        return pauseSchedulingEnabled;
+      },
+    };
     const mockSnackbarService = jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']);
 
     setupModule({
       providers: [
         ExperimentsListPageStore,
         { provide: ExperimentService, useValue: mockExperimentService },
+        { provide: HealthService, useValue: mockHealthService },
+        { provide: FeatureFlagService, useValue: mockFeatureFlagService },
         { provide: SnackbarService, useValue: mockSnackbarService },
       ],
     });
@@ -48,7 +63,11 @@ describe('ExperimentsListPageStore', () => {
     return {
       store,
       mockExperimentService,
+      mockHealthService,
       mockSnackbarService,
+      setPauseSchedulingEnabled: (val: boolean) => {
+        pauseSchedulingEnabled = val;
+      },
     };
   }, beforeEach);
 
@@ -293,6 +312,40 @@ describe('ExperimentsListPageStore', () => {
       expect(state.mockSnackbarService.open).toHaveBeenCalledWith(
         'Failed to fetch list of experiments: Some error',
       );
+    });
+  });
+
+  describe('fetchSchedulingStatus', () => {
+    it('should not call getSchedulingStatus and keep isSchedulingPaused false when feature flag is disabled', () => {
+      state.setPauseSchedulingEnabled(false);
+      state.store.patchState({ isSchedulingPaused: true });
+
+      state.store.fetchSchedulingStatus();
+
+      expect(state.mockHealthService.getSchedulingStatus).not.toHaveBeenCalled();
+      expect(state.store.isSchedulingPaused()).toBe(false);
+    });
+
+    it('should set isSchedulingPaused to true when feature flag is enabled and scheduling is paused', () => {
+      state.setPauseSchedulingEnabled(true);
+      state.mockHealthService.getSchedulingStatus.and.returnValue(of({ isSchedulingPaused: true }));
+
+      state.store.fetchSchedulingStatus();
+
+      expect(state.mockHealthService.getSchedulingStatus).toHaveBeenCalled();
+      expect(state.store.isSchedulingPaused()).toBe(true);
+    });
+
+    it('should fail open to false when getSchedulingStatus throws an error', () => {
+      state.setPauseSchedulingEnabled(true);
+      state.store.patchState({ isSchedulingPaused: true });
+      state.mockHealthService.getSchedulingStatus.and.returnValue(
+        throwError(() => new Error('Network error')),
+      );
+
+      state.store.fetchSchedulingStatus();
+
+      expect(state.store.isSchedulingPaused()).toBe(false);
     });
   });
 });

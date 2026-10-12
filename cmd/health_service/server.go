@@ -296,6 +296,19 @@ func (s *server) GetUserInfo(ctx context.Context, req *spb.GetUserInfoRequest) (
 	}, nil
 }
 
+// GetSchedulingStatus returns the current global workload scheduling pause state.
+func (s *server) GetSchedulingStatus(ctx context.Context, _ *spb.GetSchedulingStatusRequest) (*spb.GetSchedulingStatusResponse, error) {
+	if s.cfg == nil || !s.cfg.FeatureFlags.PauseSchedulingEnabled || s.pauseScheduler == nil {
+		return &spb.GetSchedulingStatusResponse{IsSchedulingPaused: false}, nil
+	}
+	paused, err := s.pauseScheduler.IsPaused(ctx)
+	if err != nil {
+		logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
+		return nil, status.Error(codes.Internal, schedulingPauseUnavailableError)
+	}
+	return &spb.GetSchedulingStatusResponse{IsSchedulingPaused: paused}, nil
+}
+
 // PauseScheduling handles administrative requests to pause actuator scheduling.
 func (s *server) PauseScheduling(ctx context.Context, req *spb.PauseSchedulingRequest) (*spb.PauseSchedulingResponse, error) {
 	if err := s.guard.CheckAdminRole(ctx); err != nil {

@@ -25,6 +25,8 @@ import {
 } from 'app/common/pagination/pagination';
 import * as api from 'app/protos/experiment_state_server';
 import { ExperimentService } from 'app/service/experiment_service';
+import { FeatureFlagService } from 'app/service/feature_flag_service';
+import { HealthService } from 'app/service/health_service';
 import { SnackbarService } from 'app/service/snackbar_service';
 
 /** State for the experiments list page. */
@@ -43,6 +45,9 @@ export interface ExperimentsListPageState {
 
   /** Whether the experiments list table is loading. */
   isLoading: boolean;
+
+  /** Whether global workload scheduling is currently paused. */
+  isSchedulingPaused: boolean;
 }
 
 /** Initial state for the models search page. */
@@ -51,12 +56,15 @@ export const INITIAL_STATE: ExperimentsListPageState = {
   pagination: getInitialPaginationState(10),
   pageResult: undefined,
   isLoading: false,
+  isSchedulingPaused: false,
 };
 
 /** Component store for the experiments list page. */
 @Injectable()
 export class ExperimentsListPageStore extends ComponentStore<ExperimentsListPageState> {
   private readonly service = inject(ExperimentService);
+  private readonly healthService = inject(HealthService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly snackbarService = inject(SnackbarService);
 
   constructor() {
@@ -68,6 +76,10 @@ export class ExperimentsListPageStore extends ComponentStore<ExperimentsListPage
   );
 
   readonly isLoading: Signal<boolean> = this.selectSignal((state) => state.isLoading);
+
+  readonly isSchedulingPaused: Signal<boolean> = this.selectSignal(
+    (state) => state.isSchedulingPaused,
+  );
 
   readonly pageIndex: Signal<number> = this.selectSignal((state) => state.pagination.pageIndex);
 
@@ -103,6 +115,29 @@ export class ExperimentsListPageStore extends ComponentStore<ExperimentsListPage
 
   /** Goes to the previous page. It does not fetch data. */
   readonly goToPreviousPage = this.updater((state) => goToPreviousPage(state));
+
+  /** Fetches the global workload scheduling pause status. */
+  readonly fetchSchedulingStatus = this.effect((trigger$) =>
+    trigger$.pipe(
+      switchMap(() => {
+        if (!this.featureFlagService.isPauseSchedulingEnabled) {
+          this.patchState({ isSchedulingPaused: false });
+          return EMPTY;
+        }
+        return this.healthService.getSchedulingStatus().pipe(
+          tap((response) =>
+            this.patchState({
+              isSchedulingPaused: Boolean(response.isSchedulingPaused),
+            }),
+          ),
+          catchError(() => {
+            this.patchState({ isSchedulingPaused: false });
+            return EMPTY;
+          }),
+        );
+      }),
+    ),
+  );
 
   /** Fetches the current page of experiments. */
   readonly fetchPage = this.effect((trigger$) =>

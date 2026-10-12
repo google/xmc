@@ -86,7 +86,7 @@ keeps its own Spanner database separate from the ESS database.
 **Source:** [`cmd/health_service`](../../cmd/health_service) ·
 **API:** [`api/protos/health/api.proto`](../../api/protos/health/api.proto)
 
-The operator-facing diagnostic surface, reachable at `/v1/health`. Three RPCs:
+The operator-facing diagnostic and scheduling control surface, reachable at `/v1/health`:
 
 - `GetHealthStatus` — runs checks in parallel against the ESS and XID Spanner databases (including
   reporting the applied schema migration version), Redis, peer gRPC services via the standard gRPC
@@ -95,6 +95,10 @@ The operator-facing diagnostic surface, reachable at `/v1/health`. Three RPCs:
   can confirm what a running pod actually has rather than what the chart intended.
 - `GetUserInfo` — returns the calling identity as the platform sees it, including group membership
   resolved through Cloud Identity. Administrative responses are gated by an admin role guard.
+- `GetSchedulingStatus` — returns whether global workload scheduling is currently paused so the UI
+  can surface a status banner to all authenticated users.
+- `PauseScheduling` / `ResumeScheduling` — administrative RPCs that toggle the global workload
+  scheduling pause state in Spanner and broadcast state transitions to Actuator replicas.
 
 **Depends on:** Cloud Spanner (both databases), Redis, ESS, XID, Cloud Run API, Cloud Identity API.
 
