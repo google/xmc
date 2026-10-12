@@ -76,6 +76,7 @@ func TestProcessBatch(t *testing.T) {
 	ctx := context.Background()
 	mStorage := &mockStorage{}
 	lp := NewLogProcessor(mStorage, "XMC LOG:", 10)
+	lp.workUnitUpdater = mStorage
 
 	validEntry := LogEntry{
 		Labels: map[string]string{
@@ -179,6 +180,7 @@ func TestProcessBatchMultipleExperiments(t *testing.T) {
 	ctx := context.Background()
 	mStorage := &mockStorage{}
 	lp := NewLogProcessor(mStorage, "XMC LOG:", 10)
+	lp.workUnitUpdater = mStorage
 
 	entry1 := LogEntry{
 		Labels: map[string]string{
@@ -299,6 +301,7 @@ func TestProcessBatchHandlesUpdateErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mockStorage := &mockStorage{updateErr: tc.storageError}
 			lp := NewLogProcessor(mockStorage, "XMC LOG:", 10)
+			lp.workUnitUpdater = mockStorage
 			msg := &mockMessage{data: validData}
 			messages := []PubSubMessage{msg}
 

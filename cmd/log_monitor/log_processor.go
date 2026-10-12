@@ -98,12 +98,8 @@ type LogProcessor struct {
 
 // NewLogProcessor creates a new LogProcessor.
 func NewLogProcessor(storageClient storage.Storage, logKeyword string, maxConcurrentUpdates int) *LogProcessor {
-	updater, ok := any(storageClient).(workUnitExecutionUpdater)
-	if !ok {
-		updater = workunit.NewUpdater(storageClient)
-	}
 	return &LogProcessor{
-		workUnitUpdater:      updater,
+		workUnitUpdater:      workunit.NewUpdater(storageClient),
 		logKeyword:           logKeyword,
 		maxConcurrentUpdates: maxConcurrentUpdates,
 	}
