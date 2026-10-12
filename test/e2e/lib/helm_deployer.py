@@ -314,6 +314,8 @@ ui:
         )
         bazel_bin_lines = bazel_bin_res.stdout.strip().splitlines()
         bazel_bin = bazel_bin_lines[-1] if bazel_bin_lines else ""
+        if not bazel_bin:
+            raise RuntimeError("Failed to resolve bazel-bin directory via 'bazel info bazel-bin'")
         return os.path.join(bazel_bin, manifest_rel)
 
     def _apply_crds(self) -> None:
@@ -328,6 +330,7 @@ ui:
                 context,
                 "apply",
                 "--server-side",
+                "--force-conflicts",
                 "-f",
                 crds_manifest,
             ]
