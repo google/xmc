@@ -294,8 +294,13 @@ sequenceDiagram
     Storage-->>Batcher: map[WID] WorkUnitExecution (or error)
     alt Transient error
         Batcher->>Batcher: Queue each update for retry with backoff
-    else Permanent error
-        Batcher->>Batcher: Drop the batch (reason=permanent)
+    else Permanent error, more than one work unit
+        loop First 32 work units, one work unit (all its updates) per call
+            Batcher->>Storage: UpdateWorkUnitExecutions(xid, updates of one WID)
+            Note over Batcher: Transient error or cancelled: requeue it and the rest, stop
+            Note over Batcher: 3 work units failing permanently in a row: drop the rest, stop
+        end
+        Batcher->>Batcher: Work units beyond 32: drop if experiment-wide, else requeue
     end
 ```
 
@@ -337,10 +342,18 @@ When a flush fails, the batcher classifies the error the same way the JobSet fin
   `(xid, wid, source)`. The retry waits with exponential backoff, starting at the tick duration
   (at least 250 ms), doubling per attempt, and capped at 30 s. An update that is still failing
   more than 5 minutes after its first failure is dropped.
-- **Permanent** (`NotFound`, `InvalidArgument`, `FailedPrecondition`, `PermissionDenied`): retrying
-  cannot help, so the whole batch is dropped and counted with `reason="permanent"`. Requeued
-  updates are charged a backoff attempt and, if they expire, are counted as
-  `retry_budget_exhausted`.
+- **Permanent, single work unit:** the work unit's updates are dropped.
+- **Permanent, multiple work units:** one bad work unit fails the whole per-experiment transaction,
+  so up to 32 work units are resent on their own, one work unit (all of its sources' updates) per
+  call, since Storage reports missing rows per work unit. Work units that succeed are persisted and
+  those that fail permanently are dropped. Isolation stops early at the first transient failure or
+  context cancellation (that work unit and all unsent ones are requeued), and after 3 work units in
+  a row fail permanently, which is treated as experiment-wide (the unsent work units are dropped).
+  Work units beyond the first 32 are dropped if the failure was experiment-wide and requeued
+  otherwise, draining over later ticks. Requeued updates, including this overflow, are charged a
+  backoff attempt and, if they expire, are counted as `retry_budget_exhausted`. Isolated writes are
+  separate transactions, so they can record intermediate status-history rows that a single batched
+  write would not.
 
 On each tick, queued retries are merged with the new pending updates slot by slot
 (`(xid, wid, source)`), mirroring `Add`:
@@ -365,7 +378,7 @@ Metrics:
   updates.
 - `batcher_updates_retried_total{xid}` counts retries merged back into a flush.
 - `batcher_retry_queue_size` is the current retry-queue length.
-- `xmc_actuator_batcher_update_calls_total` now includes retried calls, and
+- `xmc_actuator_batcher_update_calls_total` now includes retried and isolated calls, and
   `batcher_updates_processed_total` counts a retried update again each time it is flushed.
 
 The batcher is still an in-memory buffer, and it makes the usual trade: if the Reconciler pod dies

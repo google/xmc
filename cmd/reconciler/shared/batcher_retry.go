@@ -30,6 +30,10 @@ const (
 	minRetryBackoff = 250 * time.Millisecond // smallest delay before resending
 	maxRetryBackoff = 30 * time.Second       // cap on exponential retry backoff
 	maxRetryAge     = 5 * time.Minute        // retry budget from first failure
+	// maxIsolatedWorkUnits caps work units resent individually per failed batch.
+	maxIsolatedWorkUnits = 32
+	// maxConsecutivePermanentFailures (work units) stops isolation as experiment-wide.
+	maxConsecutivePermanentFailures = 3
 
 	dropReasonPermanent            = "permanent"
 	dropReasonRetryBudgetExhausted = "retry_budget_exhausted"
@@ -203,12 +207,32 @@ func updatePointers(batch []batchEntry) []*storagepkg.WorkUnitExecutionUpdate {
 	return updates
 }
 
+// handleFlushFailure requeues a transiently failed batch. A permanent failure
+// drops a single-work-unit batch; otherwise up to maxIsolatedWorkUnits work
+// units are resent one work unit at a time so a single bad work unit does not
+// drop the others. Remaining work units are requeued, or dropped if isolation
+// found the failure to be experiment-wide.
 func (b *UpdateBatcher) handleFlushFailure(ctx context.Context, xid int64, batch []batchEntry, err error) {
 	if !IsPermanentStorageError(err) {
 		b.requeue(ctx, xid, batch, err)
 		return
 	}
-	b.recordDropped(ctx, xid, batch, dropReasonPermanent, err)
+	groups := groupByWorkUnit(batch)
+	if len(groups) == 1 {
+		b.recordDropped(ctx, xid, batch, dropReasonPermanent, err)
+		return
+	}
+	isolated := groups[:min(len(groups), maxIsolatedWorkUnits)]
+	experimentWide := b.isolatePermanentFailure(ctx, xid, isolated)
+	overflow := slices.Concat(groups[len(isolated):]...)
+	if len(overflow) == 0 {
+		return
+	}
+	if experimentWide {
+		b.recordDropped(ctx, xid, overflow, dropReasonPermanent, err)
+		return
+	}
+	b.requeue(ctx, xid, overflow, err)
 }
 
 func countWorkUnits(batch []batchEntry) int {
@@ -219,6 +243,37 @@ func countWorkUnits(batch []batchEntry) int {
 		}
 	}
 	return count
+}
+
+// isolatePermanentFailure resends each work unit's updates in one call, at most
+// once. It stops at the first transient failure or context cancellation,
+// requeueing that work unit and all unsent ones. After
+// maxConsecutivePermanentFailures work units in a row fail permanently, it drops
+// the unsent ones and reports the failure as experiment-wide.
+func (b *UpdateBatcher) isolatePermanentFailure(ctx context.Context, xid int64, groups [][]batchEntry) (experimentWide bool) {
+	consecutivePermanent := 0
+	for i, group := range groups {
+		if ctx.Err() != nil {
+			b.requeue(ctx, xid, slices.Concat(groups[i:]...), ctx.Err())
+			return false
+		}
+		err := b.callUpdateWorkUnitExecutions(ctx, xid, updatePointers(group))
+		if err == nil {
+			consecutivePermanent = 0
+			continue
+		}
+		if !IsPermanentStorageError(err) {
+			b.requeue(ctx, xid, slices.Concat(groups[i:]...), err)
+			return false
+		}
+		b.recordDropped(ctx, xid, group, dropReasonPermanent, err)
+		consecutivePermanent++
+		if consecutivePermanent >= maxConsecutivePermanentFailures {
+			b.recordDropped(ctx, xid, slices.Concat(groups[i+1:]...), dropReasonPermanent, err)
+			return true
+		}
+	}
+	return false
 }
 
 func (b *UpdateBatcher) requeue(ctx context.Context, xid int64, entries []batchEntry, err error) {
