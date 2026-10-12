@@ -25,8 +25,8 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 )
 
@@ -279,7 +279,7 @@ func TestProcessBatchHandlesUpdateErrors(t *testing.T) {
 	}{
 		{
 			name:         "update fails with NotFound error",
-			storageError: status.ErrNotFound,
+			storageError: grpcerr.ErrNotFound,
 			wantAck:      true,
 			wantNack:     false,
 		},

@@ -218,6 +218,12 @@ The **UI** is the frontend portal of XMC, hosting the Angular single-page applic
 
 ---
 
+## Running Affected Unit Tests
+
+`.githooks/pre-commit` automatically runs [`tools/run_affected_tests.py`](../tools/run_affected_tests.py) to execute the Bazel unit tests affected by your changes (scoped via [`resolve_test_scope.py`](../tools/benchmark/resolve_test_scope.py) to match CI). To run it standalone or inspect the resolved scope (`--dry-run`), run `python3 ./tools/run_affected_tests.py --help`.
+
+---
+
 ## Continuous Integration
 
 [![XMC Unit Tests](https://github.com/google/xmc/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/google/xmc/actions/workflows/unit-tests.yml)

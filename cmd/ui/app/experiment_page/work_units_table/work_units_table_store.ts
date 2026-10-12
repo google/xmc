@@ -16,15 +16,15 @@ import { ComponentStore } from '@ngrx/component-store';
 import { EMPTY } from 'rxjs';
 import { catchError, switchMap, tap } from 'rxjs/operators';
 
-import { ListWorkUnitsRequest } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 import {
   getInitialPaginationState,
   PaginationState,
   setPageSize,
-} from 'xmanager_cloud/ui/app/common/pagination/pagination';
-import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
-import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
+} from 'app/common/pagination/pagination';
+import { SnackbarService } from 'app/service/snackbar_service';
+import { WorkUnitsService } from 'app/service/work_units_service';
+import { ListWorkUnitsRequest } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 
 /** Interface for the state of the WorkUnitsTable. */
 interface WorkUnitsTableState {

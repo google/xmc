@@ -17,7 +17,9 @@ import (
 	"context"
 	"fmt"
 
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -41,7 +43,7 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *apipb.Cre
 	// 2. Validate the request payload.
 	if err := validator.ValidateCreateExperimentRequest(req); err != nil {
 		logging.Warn(ctx, "CreateExperiment validation failed", "error", err)
-		return nil, fmt.Errorf("CreateExperiment validation failed: %v: %w", err, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("CreateExperiment validation failed: %v: %w", err, grpcerr.ErrInvalidArgument)
 	}
 
 	// 2.1. Fill in any null values in the request payload.
@@ -55,7 +57,7 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *apipb.Cre
 	exp, err = executionEnv.InjectOnExperimentCreation(ctx, h.server, exp)
 	if err != nil {
 		logging.Error(ctx, "Failed to inject execution environment data into experiment", "error", err)
-		return nil, status.Errorf(status.Internal, "failed to inject execution environment data into experiment: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to inject execution environment data into experiment: %v", err)
 	}
 
 	// 3. Provision an XIDEntry for the experiment.
@@ -70,7 +72,7 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *apipb.Cre
 	xid, err := validator.ValidateXIDName(xidEntry.GetName())
 	if err != nil {
 		logging.Error(ctx, "Failed to validate XID name", "xid_name", xidEntry.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to validate XID name %s: %v: %w", xidEntry.GetName(), err, status.ErrInternal)
+		return nil, fmt.Errorf("failed to validate XID name %s: %v: %w", xidEntry.GetName(), err, grpcerr.ErrInternal)
 	}
 	ctx = logging.WithXIDName(ctx, xidEntry.GetName())
 	logging.Info(ctx, "Successfully provisioned XID")
@@ -82,7 +84,7 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *apipb.Cre
 	}
 	if !authorized {
 		logging.Warn(ctx, "Creator did not give themselves write permissions on the XID", "user", creator)
-		return nil, fmt.Errorf("creator %s did not give themselves write permissions on the XID %d: %w", creator, xid, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("creator %s did not give themselves write permissions on the XID %d: %w", creator, xid, grpcerr.ErrPermissionDenied)
 	}
 
 	name := validator.ConstructExperimentName(xid)
@@ -107,7 +109,7 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *apipb.Cre
 	retExp, err := h.storage.CreateExperiment(ctx, newExp)
 	if err != nil {
 		logging.Error(ctx, "Failed to save experiment", "experiment_name", newExp.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to save experiment %s: %v: %w", newExp.GetName(), err, status.ErrInternal)
+		return nil, fmt.Errorf("failed to save experiment %s: %v: %w", newExp.GetName(), err, grpcerr.ErrInternal)
 	}
 
 	// 5.1. Set the experiment's ACLs to the XIDEntry's ACLs.

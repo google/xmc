@@ -17,7 +17,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
-import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+import { SnackbarService } from 'app/service/snackbar_service';
 
 /**
  * Display a XID badge.

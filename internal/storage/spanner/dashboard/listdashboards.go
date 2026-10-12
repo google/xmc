@@ -21,8 +21,8 @@ import (
 
 	"cloud.google.com/go/spanner"
 
-	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
 	ls "xmanager_cloud/query_generator/liststatement"
@@ -161,7 +161,7 @@ func (r *Repository) ListDashboards(ctx context.Context, pageSize int32, pageTok
 // ExtractDashboardCursor extracts pagination cursor values from a Dashboard proto.
 func ExtractDashboardCursor(dash *dpb.Dashboard) (map[string]any, error) {
 	if dash == nil {
-		return nil, fmt.Errorf("dashboard must not be nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("dashboard must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	dashID, err := validator.ValidateDashboardName(dash.GetName())

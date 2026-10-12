@@ -19,10 +19,12 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/validator/validator"
@@ -71,7 +73,7 @@ func (h *ArtifactHandler) listArtifactsWithStaleness(ctx context.Context, req *a
 	}
 	if err := validator.ValidateAIPCompliantListWithMaxPageSize(req.GetPageSize(), req.GetFilter(), req.GetOrderBy(), req.GetPageToken(), maxArtifactPageSize); err != nil {
 		logging.Warn(ctx, "Invalid ListArtifactsRequest", "error", err)
-		return nil, fmt.Errorf("invalid ListArtifactsRequest: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("invalid ListArtifactsRequest: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	// 3. Get the list of Artifacts from the storage layer.
@@ -80,16 +82,16 @@ func (h *ArtifactHandler) listArtifactsWithStaleness(ctx context.Context, req *a
 		statusErr, ok := status.FromError(err)
 		if !ok {
 			logging.Error(ctx, "Storage layer returned a non-gRPC error for listing Artifacts", "error", err)
-			return nil, fmt.Errorf("an internal error occurred while retrieving the Artifacts: %w", status.ErrInternal)
+			return nil, fmt.Errorf("an internal error occurred while retrieving the Artifacts: %w", grpcerr.ErrInternal)
 		}
 
-		if statusErr.Code == status.InvalidArgument {
+		if statusErr.Code() == codes.InvalidArgument {
 			logging.Error(ctx, "Storage layer returned an invalid argument error for listing Artifacts", "error", err)
 			return nil, fmt.Errorf("invalid ListArtifactsRequest: %w", err)
 		}
 
 		logging.Error(ctx, "Storage layer returned a gRPC error for listing artifacts", "error", err)
-		return nil, fmt.Errorf("an internal error occurred while retrieving the artifacts: %w", status.ErrInternal)
+		return nil, fmt.Errorf("an internal error occurred while retrieving the artifacts: %w", grpcerr.ErrInternal)
 	}
 
 	// 4. Populate ACLs from XID service.
@@ -119,7 +121,7 @@ func (h *ArtifactHandler) fetchACLsForArtifacts(ctx context.Context, artifacts [
 		xid, err := validator.ValidateArtifactName(artifact.GetName())
 		if err != nil {
 			logging.Error(ctx, "Failed to validate artifact name", "error", err)
-			return fmt.Errorf("failed to validate artifact name: %w", status.ErrInternal)
+			return fmt.Errorf("failed to validate artifact name: %w", grpcerr.ErrInternal)
 		}
 		xidFilter = append(xidFilter, fmt.Sprintf("bit_reversed_xid=%d", data.ReverseBits(xid)))
 	}
@@ -132,7 +134,7 @@ func (h *ArtifactHandler) fetchACLsForArtifacts(ctx context.Context, artifacts [
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to list XIDs", "error", err)
-		return fmt.Errorf("failed to list XIDs: %w", status.ErrInternal)
+		return fmt.Errorf("failed to list XIDs: %w", grpcerr.ErrInternal)
 	}
 	xidEntries := xidListResponse.GetXidEntries()
 
@@ -142,7 +144,7 @@ func (h *ArtifactHandler) fetchACLsForArtifacts(ctx context.Context, artifacts [
 		xid, err := validator.ValidateXIDName(xidEntry.GetName())
 		if err != nil {
 			logging.Error(ctx, "Failed to validate XID name", "name", xidEntry.GetName(), "error", err)
-			return fmt.Errorf("failed to validate XID name: %w", status.ErrInternal)
+			return fmt.Errorf("failed to validate XID name: %w", grpcerr.ErrInternal)
 		}
 		xidMap[xid] = xidEntry
 	}
@@ -152,12 +154,12 @@ func (h *ArtifactHandler) fetchACLsForArtifacts(ctx context.Context, artifacts [
 		xid, err := validator.ValidateArtifactName(artifact.GetName())
 		if err != nil {
 			logging.Error(ctx, "Failed to validate artifact name", "error", err)
-			return fmt.Errorf("failed to validate artifact name: %w", status.ErrInternal)
+			return fmt.Errorf("failed to validate artifact name: %w", grpcerr.ErrInternal)
 		}
 		xidEntry, ok := xidMap[xid]
 		if !ok {
 			logging.Error(ctx, "XID entry not found for XID", "xid", xid)
-			return fmt.Errorf("XID entry not found for XID %d: %w", xid, status.ErrInternal)
+			return fmt.Errorf("XID entry not found for XID %d: %w", xid, grpcerr.ErrInternal)
 		}
 		artifact.Acls = xidEntry.GetAcls()
 	}

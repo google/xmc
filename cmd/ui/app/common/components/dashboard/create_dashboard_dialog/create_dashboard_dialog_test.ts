@@ -17,7 +17,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialogRef } from '@angular/material/dialog';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { LayoutType, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { LayoutType, PlotType } from 'app/service/dashboard_models';
 
 import {
   CreateDashboardDialogComponent,

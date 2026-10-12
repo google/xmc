@@ -22,9 +22,9 @@ import {
   ChartArtifactPayload,
   ChartTypedArtifact,
   PayloadType,
-} from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
-import { ChartData, LayoutType, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
-import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
+} from 'app/common/artifacts/interfaces';
+import { ChartData, LayoutType, PlotType } from 'app/service/dashboard_models';
+import { DashboardService } from 'app/service/dashboard_service';
 
 import { ChartArtifactView, chartStatusName, isSummaryBoxPlot } from './chart_artifact_view';
 import { ChartArtifactViewHarness } from './chart_artifact_view_harness';

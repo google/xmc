@@ -31,15 +31,9 @@ proto_library(
     ],
 )
 
-go_proto_library(
+alias(
     name = "task_go_proto",
-    importpath = "xmanager_cloud/task_queue/proto/task_go_proto",
-    proto = ":task_proto",
-    deps = [
-        "//api/protos/experiment:messages_go_proto",
-        "@com_google_googleapis//google/api:field_behavior_go_proto",
-        "@org_golang_google_genproto_googleapis_api//annotations",
-    ],
+    actual = ":task_queue",
 )
 
 go_proto_library(
@@ -57,4 +51,5 @@ go_library(
     name = "task_queue",
     embed = [":cloud_xmanager_v1_go_proto"],
     importpath = "xmanager_cloud/api/protos/task_queue",
+    importpath_aliases = ["xmanager_cloud/task_queue/proto/task_go_proto"],
 )

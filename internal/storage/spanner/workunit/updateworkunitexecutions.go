@@ -26,8 +26,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
@@ -176,7 +176,7 @@ func (r *Repository) updateWorkUnitExecutionsInTxn(ctx context.Context, txn *spa
 	for _, update := range updates {
 		currentWorkUnitExecution := updatedExecutions[update.WID]
 		if currentWorkUnitExecution == nil {
-			return nil, nil, fmt.Errorf("work unit execution %d not found: %w", update.WID, status.ErrNotFound)
+			return nil, nil, fmt.Errorf("work unit execution %d not found: %w", update.WID, grpcerr.ErrNotFound)
 		}
 
 		ctx := logging.WithWorkUnitExecutionName(ctx, currentWorkUnitExecution.GetName())
@@ -250,7 +250,7 @@ func (r *Repository) updateWorkUnitExecutionsInTxn(ctx context.Context, txn *spa
 			return nil, nil, fmt.Errorf("failed to validate work unit execution name %q: %w", execution.GetName(), err)
 		}
 		if eid == 0 {
-			return nil, nil, fmt.Errorf("invalid eid 0 from work unit execution name %q: %w", execution.GetName(), status.ErrInternal)
+			return nil, nil, fmt.Errorf("invalid eid 0 from work unit execution name %q: %w", execution.GetName(), grpcerr.ErrInternal)
 		}
 
 		ctx := logging.WithWorkUnitExecutionName(ctx, execution.GetName())
@@ -429,7 +429,7 @@ func checkIsCurrentMsgUpdated(currentMsg *essmsgpb.StructuredMessage, updatedWUs
 		return isUpdated, nil
 	}
 	if resourceType != validator.ExperimentResource {
-		return false, fmt.Errorf("current message parent %q has invalid resource type %v: %w", currentMsg.Parent, resourceType, status.ErrInternal)
+		return false, fmt.Errorf("current message parent %q has invalid resource type %v: %w", currentMsg.Parent, resourceType, grpcerr.ErrInternal)
 	}
 	return false, nil
 }

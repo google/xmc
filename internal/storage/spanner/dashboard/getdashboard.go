@@ -20,9 +20,11 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
-	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
@@ -31,7 +33,7 @@ import (
 // GetDashboard retrieves a dashboard by its unique ID along with its layout and child chart IDs.
 func (r *Repository) GetDashboard(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
 	if dashboardId == "" {
-		return nil, fmt.Errorf("dashboardId must not be empty: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("dashboardId must not be empty: %w", grpcerr.ErrInvalidArgument)
 	}
 	logging.Info(ctx, "Get dashboard from storage", "dashboardId", dashboardId)
 
@@ -40,8 +42,8 @@ func (r *Repository) GetDashboard(ctx context.Context, dashboardId string) (*dpb
 
 	row, err := txn.ReadRow(ctx, dashboardschema.DashboardsTableName, spanner.Key{dashboardId}, dashboardschema.FetchedDashboardColumns)
 	if err != nil {
-		if err == spanner.ErrRowNotFound || status.ExtractCanonicalCode(err) == status.NotFound {
-			return nil, fmt.Errorf("dashboard %s not found: %w", dashboardId, status.ErrNotFound)
+		if err == spanner.ErrRowNotFound || status.Code(err) == codes.NotFound {
+			return nil, fmt.Errorf("dashboard %s not found: %w", dashboardId, grpcerr.ErrNotFound)
 		}
 		return nil, fmt.Errorf("failed to read dashboard %s: %w", dashboardId, err)
 	}

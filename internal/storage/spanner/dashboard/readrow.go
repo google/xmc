@@ -19,19 +19,21 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 )
 
 // readRowInTransaction reads a single row by primary key inside a ReadWriteTransaction, reporting a
-// missing row as status.ErrNotFound so that callers can map it to a NOT_FOUND response.
+// missing row as grpcerr.ErrNotFound so that callers can map it to a NOT_FOUND response.
 //
 // resource names the kind of row being read and appears in the returned error messages.
 func readRowInTransaction(ctx context.Context, txn *spanner.ReadWriteTransaction, table, resource, id string, columns []string) (*spanner.Row, error) {
 	row, err := txn.ReadRow(ctx, table, spanner.Key{id}, columns)
 	if err != nil {
-		if err == spanner.ErrRowNotFound || status.ExtractCanonicalCode(err) == status.NotFound {
-			return nil, fmt.Errorf("%s %s not found: %w", resource, id, status.ErrNotFound)
+		if err == spanner.ErrRowNotFound || status.Code(err) == codes.NotFound {
+			return nil, fmt.Errorf("%s %s not found: %w", resource, id, grpcerr.ErrNotFound)
 		}
 		return nil, fmt.Errorf("failed to read %s %s: %w", resource, id, err)
 	}

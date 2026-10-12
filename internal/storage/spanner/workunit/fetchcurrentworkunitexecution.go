@@ -19,8 +19,10 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/workunitschema"
@@ -40,8 +42,8 @@ func (r *Repository) FetchCurrentWorkUnitExecutionTransaction(ctx context.Contex
 
 	row, err := txn.ReadRow(ctx, workunitschema.WorkUnitTableName, spanner.Key{spannerutils.ReverseBits(xid), wid}, workunitschema.CurrentWorkUnitExecutionColumns)
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
-			return nil, fmt.Errorf("WorkUnit %d for XID %d not found: %w", wid, xid, status.ErrNotFound)
+		if status.Code(err) == codes.NotFound {
+			return nil, fmt.Errorf("WorkUnit %d for XID %d not found: %w", wid, xid, grpcerr.ErrNotFound)
 		}
 
 		logging.Error(ctx, "Failed to read WorkUnit row", "error", err)

@@ -17,9 +17,11 @@ import (
 	"context"
 	"fmt"
 
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/storage"
@@ -44,13 +46,13 @@ func (h *ArtifactHandler) UpdateArtifact(ctx context.Context, req *apipb.UpdateA
 	aid, err := validator.ValidateArtifactName(name)
 	if err != nil {
 		logging.Warn(ctx, "UpdateArtifact validation failed", "name", name, "error", err)
-		return nil, fmt.Errorf("UpdateArtifact validation failed: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("UpdateArtifact validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithArtifactName(ctx, name)
 
 	if req.GetUpdateMask() == nil || len(req.GetUpdateMask().GetPaths()) == 0 {
 		logging.Warn(ctx, "UpdateArtifact validation failed: update mask is nil or empty")
-		return nil, fmt.Errorf("UpdateArtifact validation failed: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("UpdateArtifact validation failed: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	// 3. Authorize the user to update the artifact.
@@ -60,14 +62,14 @@ func (h *ArtifactHandler) UpdateArtifact(ctx context.Context, req *apipb.UpdateA
 	}
 	if !isAuthorized {
 		logging.Warn(ctx, "User not authorized to update artifact", "error", err)
-		return nil, fmt.Errorf("user not authorized to update artifact %s: %w", name, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user not authorized to update artifact %s: %w", name, grpcerr.ErrPermissionDenied)
 	}
 
 	// 4. Check if the XID entry needs to be updated.
 	xidEntryForUpdate, updateMask, err := data.ArtifactRequiresXIDUpdate(req.GetArtifact(), req.GetUpdateMask())
 	if err != nil {
 		logging.Error(ctx, "Failed to check if XID entry needs to be updated", "error", err)
-		return nil, fmt.Errorf("failed to check if XID entry needs to be updated: %w (%v)", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to check if XID entry needs to be updated: %w (%v)", grpcerr.ErrInternal, err)
 	}
 
 	// 5. Fetch the XID entry from the XID service if no XID update is required.
@@ -77,13 +79,13 @@ func (h *ArtifactHandler) UpdateArtifact(ctx context.Context, req *apipb.UpdateA
 	if updateMask.GetPaths() == nil {
 		xidEntry, err = h.getXid(ctx, validator.ConstructXIDName(aid))
 		if err != nil {
-			if status.ExtractCanonicalCode(err) == status.PermissionDenied {
+			if status.Code(err) == codes.PermissionDenied {
 				logging.Warn(ctx, "User not authorized to read artifact", "error", err)
-				return nil, fmt.Errorf("user not authorized to read artifact %s: %w (%v)", name, status.ErrPermissionDenied, err)
+				return nil, fmt.Errorf("user not authorized to read artifact %s: %w (%v)", name, grpcerr.ErrPermissionDenied, err)
 			}
 
 			logging.Error(ctx, "XID lookup failed", "error", err)
-			return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", aid, status.ErrInternal, err)
+			return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", aid, grpcerr.ErrInternal, err)
 		}
 	}
 
@@ -97,7 +99,7 @@ func (h *ArtifactHandler) UpdateArtifact(ctx context.Context, req *apipb.UpdateA
 	res, err := h.storage.UpdateArtifact(ctx, update)
 	if err != nil {
 		logging.Error(ctx, "Failed to update artifact", "error", err)
-		return nil, fmt.Errorf("failed to update artifact %s: %w (%v)", name, status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to update artifact %s: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 	returnedArtifact := res.Updated
 
@@ -113,7 +115,7 @@ func (h *ArtifactHandler) UpdateArtifact(ctx context.Context, req *apipb.UpdateA
 
 		if _, err := h.xidClient.UpdateXidEntry(propagateIAPJWT(ctx), request); err != nil {
 			logging.Error(ctx, "Failed to update XID entry", "error", err)
-			return nil, fmt.Errorf("failed to update XID entry: %w (%v)", status.ErrInternal, err)
+			return nil, fmt.Errorf("failed to update XID entry: %w (%v)", grpcerr.ErrInternal, err)
 		}
 		returnedArtifact.Acls = xidEntryForUpdate.GetAcls()
 	} else {

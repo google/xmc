@@ -27,8 +27,9 @@ import (
 
 	"api/filter/go/filtervisitor"
 	"cloud.google.com/go/spanner"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"task/go/status"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/query_generator/equalityvisitor"
@@ -223,7 +224,7 @@ func fetchMember(name []string, members map[string]Member) (Member, error) {
 	n := strings.Join(name, ".")
 	m, ok := members[n]
 	if !ok {
-		return m, status.Errorf(status.InvalidArgument, "unsupported querytools.Member name in query: %q", n)
+		return m, status.Errorf(codes.InvalidArgument, "unsupported querytools.Member name in query: %q", n)
 	}
 
 	return m, nil
@@ -256,7 +257,7 @@ func FunctionMap(functions map[string]Function) queryfilter.FunctionFunc {
 	return func(fn string, s *queryfilter.Spanner, args []*fpb.Expression) (filtervisitor.PrimType, error) {
 		f, ok := functions[fn]
 		if !ok {
-			return filtervisitor.Invalid, status.Errorf(status.InvalidArgument, "unsupported function name in query: %q", fn)
+			return filtervisitor.Invalid, status.Errorf(codes.InvalidArgument, "unsupported function name in query: %q", fn)
 		}
 		return f(s, args)
 	}
@@ -523,7 +524,7 @@ func addSortDirectionToOrderedFieldsAndIndices(t TableView) (TableView, error) {
 	table := t
 	if len(table.OrderedIndexTableFields) != 0 {
 		if len(table.OrderedIndicesWithSortDirection) != 0 {
-			return TableView{}, status.Errorf(status.InvalidArgument, "only one of OrderedIndexTableFields and OrderedIndicesWithSortDirection may be provided for table %v", table.Name)
+			return TableView{}, status.Errorf(codes.InvalidArgument, "only one of OrderedIndexTableFields and OrderedIndicesWithSortDirection may be provided for table %v", table.Name)
 		}
 		table.OrderedIndicesWithSortDirection = make([]UserOrderedIndex, len(table.OrderedIndexTableFields))
 		for i, f := range table.OrderedIndexTableFields {
@@ -533,7 +534,7 @@ func addSortDirectionToOrderedFieldsAndIndices(t TableView) (TableView, error) {
 	}
 	if len(table.OrderByFields) != 0 {
 		if len(table.OrderByFieldsWithSortDirection) != 0 {
-			return TableView{}, status.Errorf(status.InvalidArgument, "only one of OrderByFields and OrderByFieldsWithSortDirection may be provided for table %v", table.Name)
+			return TableView{}, status.Errorf(codes.InvalidArgument, "only one of OrderByFields and OrderByFieldsWithSortDirection may be provided for table %v", table.Name)
 		}
 		table.OrderByFieldsWithSortDirection = make([]UserOrderedIndex, len(table.OrderByFields))
 		for i, f := range table.OrderByFields {
@@ -623,7 +624,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	}
 
 	if len(candidateTables) == 0 {
-		return nil, nil, nil, status.Errorf(status.FailedPrecondition, "no tables can satisfy base filters %v", q.baseFilters)
+		return nil, nil, nil, status.Errorf(codes.FailedPrecondition, "no tables can satisfy base filters %v", q.baseFilters)
 	}
 
 	// Iterate over user filters removing tables that don't have the fields to satisfy filters.
@@ -634,7 +635,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	logging.Info(context.Background(), "Available tables updated", "candidateTables", tableNames(candidateTables))
 
 	if len(candidateTables) == 0 {
-		return nil, nil, nil, status.Errorf(status.FailedPrecondition, "no tables can satisfy all user filters %v and base filters %v", userFilters, q.baseFilters)
+		return nil, nil, nil, status.Errorf(codes.FailedPrecondition, "no tables can satisfy all user filters %v and base filters %v", userFilters, q.baseFilters)
 	}
 
 	// Iterate over fields in the requested page token to ensure that we select the same table as
@@ -647,9 +648,9 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 
 	if len(candidateTables) == 0 {
 		if len(ptFields) > 0 {
-			return nil, nil, nil, status.Errorf(status.InvalidArgument, "page token contains unsupported or mismatched fields %v for candidate tables", ptFields)
+			return nil, nil, nil, status.Errorf(codes.InvalidArgument, "page token contains unsupported or mismatched fields %v for candidate tables", ptFields)
 		}
-		return nil, nil, nil, status.Errorf(status.FailedPrecondition, "no tables can satisfy all user filters %v, base filters %v, and page token filters %v", userFilters, q.baseFilters, ptFields)
+		return nil, nil, nil, status.Errorf(codes.FailedPrecondition, "no tables can satisfy all user filters %v, base filters %v, and page token filters %v", userFilters, q.baseFilters, ptFields)
 	}
 
 	// Remove tables that have null filtered fields in them that aren't satisfied by the base or
@@ -659,7 +660,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	logging.Info(context.Background(), "Available tables updated", "candidateTables", tableNames(candidateTables))
 
 	if len(candidateTables) == 0 {
-		return nil, nil, nil, status.Errorf(status.FailedPrecondition, "no tables can satisfy all user filters %v, base filters %v, and page token filters %v", userFilters, q.baseFilters, ptFields)
+		return nil, nil, nil, status.Errorf(codes.FailedPrecondition, "no tables can satisfy all user filters %v, base filters %v, and page token filters %v", userFilters, q.baseFilters, ptFields)
 	}
 
 	// For the remaining candidate tables, update the heuristic for number of filter fields that make
@@ -760,7 +761,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 		if !ok {
 			// At this point we should have already thrown an error
 			// if we have no single Table that has all filters.
-			return nil, nil, nil, status.Errorf(status.FailedPrecondition, "selected from table %q cannot satisfy filter %+v", fromTable.Name, f)
+			return nil, nil, nil, status.Errorf(codes.FailedPrecondition, "selected from table %q cannot satisfy filter %+v", fromTable.Name, f)
 		}
 		filters[string(f)] = m
 		if !emptyExpression(baseFilterExp) {
@@ -772,7 +773,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 		if !ok {
 			// At this point we should have already thrown an error
 			// if we have no single Table that has all filters.
-			return nil, nil, nil, status.Errorf(status.FailedPrecondition, "selected from table %q cannot satisfy user filter %+v", fromTable.Name, f)
+			return nil, nil, nil, status.Errorf(codes.FailedPrecondition, "selected from table %q cannot satisfy user filter %+v", fromTable.Name, f)
 		}
 		filters[n] = m
 		unr.seen[m.UnnestClause] = true
@@ -852,7 +853,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	for _, t := range pageTokenFields {
 		f, ok := fromTable.Fields[t.TableField]
 		if !ok {
-			return nil, nil, nil, status.Errorf(status.Internal, "%s", fmt.Sprintf("unable to find field %v in table %v", t, fromTable))
+			return nil, nil, nil, status.Errorf(codes.Internal, "%s", fmt.Sprintf("unable to find field %v in table %v", t, fromTable))
 		}
 
 		if index, ok := selectedMembers[f.QueryLiteral]; q.options.deduplicateSelects && ok {
@@ -878,7 +879,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	}
 	// Apply the UNNEST.
 	if err := unr.Apply(query, froms); err != nil {
-		return nil, nil, nil, status.Errorf(status.InvalidArgument, "error processing filter expression: %v", err)
+		return nil, nil, nil, status.Errorf(codes.InvalidArgument, "error processing filter expression: %v", err)
 	}
 
 	// Get all the WHERE clauses in UNNEST conditions.
@@ -915,7 +916,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	if hasBaseFilter {
 		err := qf.AppendFilters(baseFilterExp)
 		if err != nil {
-			return nil, nil, nil, status.Errorf(status.InvalidArgument, "error processing base filter expression: %v", err)
+			return nil, nil, nil, status.Errorf(codes.InvalidArgument, "error processing base filter expression: %v", err)
 		}
 	}
 	// Add user filters.
@@ -925,7 +926,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 		}
 		err := qf.AppendFilters(userFilterExp)
 		if err != nil {
-			return nil, nil, nil, status.Errorf(status.InvalidArgument, "error processing filter expression: %v", err)
+			return nil, nil, nil, status.Errorf(codes.InvalidArgument, "error processing filter expression: %v", err)
 		}
 	}
 
@@ -936,7 +937,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 		}
 		query.SQL = query.SQL + "("
 		if err := q.appendPageTokenFields(fromTable, ptFields, orderedPtFields, query); err != nil {
-			return nil, nil, nil, status.Errorf(status.Internal, "error adding page token fields %v", err)
+			return nil, nil, nil, status.Errorf(codes.Internal, "error adding page token fields %v", err)
 		}
 		query.SQL = query.SQL + ")"
 	}
@@ -987,7 +988,7 @@ func resolveOrderedPageTokenFields(pageTokenFields, orderByFields []UserOrderedI
 	orderedPtFields := make([]UserOrderedIndex, 0, len(requiredFields))
 	for _, ob := range requiredFields {
 		if _, ok := ptFields[ob.TableField]; !ok {
-			return nil, status.Errorf(status.InvalidArgument, "page token is missing required sort field %q", ob.TableField)
+			return nil, status.Errorf(codes.InvalidArgument, "page token is missing required sort field %q", ob.TableField)
 		}
 		orderedPtFields = append(orderedPtFields, ob)
 	}
@@ -1028,11 +1029,11 @@ func appendCursorFieldComparison(fromTable TableView, fieldToValue map[TableFiel
 	orderedField := orderedFields[idx]
 	v, ok := fieldToValue[orderedField.TableField]
 	if !ok {
-		return status.Errorf(status.FailedPrecondition, "unable to find value for field %q in map %+v", orderedField.TableField, fieldToValue)
+		return status.Errorf(codes.FailedPrecondition, "unable to find value for field %q in map %+v", orderedField.TableField, fieldToValue)
 	}
 	f, ok := fromTable.Fields[orderedField.TableField]
 	if !ok {
-		return status.Errorf(status.FailedPrecondition, "unable to find field %q in map %+v", orderedField.TableField, fromTable.Fields)
+		return status.Errorf(codes.FailedPrecondition, "unable to find field %q in map %+v", orderedField.TableField, fromTable.Fields)
 	}
 	isLast := idx == len(orderedFields)-1
 	if v == nil {
@@ -1085,7 +1086,7 @@ func coerceCursorValue(fieldType filtervisitor.PrimType, v any) (any, error) {
 		if s, ok := v.(string); ok {
 			t, err := time.Parse(time.RFC3339Nano, s)
 			if err != nil {
-				return nil, status.Errorf(status.InvalidArgument, "invalid timestamp cursor value %q: %v", s, err)
+				return nil, status.Errorf(codes.InvalidArgument, "invalid timestamp cursor value %q: %v", s, err)
 			}
 			return t, nil
 		}
@@ -1106,13 +1107,13 @@ func coerceIntegerCursorValue(v any) (any, error) {
 	case json.Number:
 		i, err := val.Int64()
 		if err != nil {
-			return nil, status.Errorf(status.InvalidArgument, "invalid integer cursor value %q: %v", val, err)
+			return nil, status.Errorf(codes.InvalidArgument, "invalid integer cursor value %q: %v", val, err)
 		}
 		return i, nil
 	case string:
 		i, err := strconv.ParseInt(val, 10, 64)
 		if err != nil {
-			return nil, status.Errorf(status.InvalidArgument, "invalid integer cursor value %q: %v", val, err)
+			return nil, status.Errorf(codes.InvalidArgument, "invalid integer cursor value %q: %v", val, err)
 		}
 		return i, nil
 	default:
@@ -1266,7 +1267,7 @@ func checkCandidateTableOrderBy(t TableView, userOrderBy []UserOrderedIndex, opt
 			return false, nil
 		}
 		if m.Derived && optimizeOrderBy {
-			return false, status.Errorf(status.InvalidArgument, "derived field %q cannot be used for ordering", uob.TableField)
+			return false, status.Errorf(codes.InvalidArgument, "derived field %q cannot be used for ordering", uob.TableField)
 		}
 	}
 	if !optimizeOrderBy {
@@ -1297,7 +1298,7 @@ func resolveJoinFieldFromRelationships(sf TableField, sfs map[TableField]bool, f
 			return true, nil
 		}
 	}
-	return false, status.Errorf(status.FailedPrecondition, "unable to find a table to select %q from", sf)
+	return false, status.Errorf(codes.FailedPrecondition, "unable to find a table to select %q from", sf)
 }
 
 func appendGroupByClause(query *spanner.Statement, selectMembers []Member, orderByFields []UserOrderedIndex, fromTable TableView) {
@@ -1339,7 +1340,7 @@ func (q *queryGen) scoutUserFilterMembers(userFilterExp *fpb.Expression, fullTex
 			n := strings.Join(name, ".")
 			m, ok := q.members[n]
 			if !ok || m.Name == "" {
-				return safesql.New(""), filtervisitor.Invalid, status.Errorf(status.InvalidArgument, "unsupported field name in query: %q", n)
+				return safesql.New(""), filtervisitor.Invalid, status.Errorf(codes.InvalidArgument, "unsupported field name in query: %q", n)
 			}
 			userFilters[n] = m.Name
 			return safesql.New(""), m.Type, nil
@@ -1352,7 +1353,7 @@ func (q *queryGen) scoutUserFilterMembers(userFilterExp *fpb.Expression, fullTex
 
 	err := qf.AppendFilters(userFilterExp)
 	if err != nil {
-		return status.Errorf(status.InvalidArgument, "error processing filters: %v", err)
+		return status.Errorf(codes.InvalidArgument, "error processing filters: %v", err)
 	}
 
 	ev := equalityvisitor.EqualityVisitor{
@@ -1363,7 +1364,7 @@ func (q *queryGen) scoutUserFilterMembers(userFilterExp *fpb.Expression, fullTex
 			n := strings.Join(name, ".")
 			a, ok := q.members[n]
 			if !ok {
-				return filtervisitor.Invalid, status.Errorf(status.InvalidArgument, "name %q not found", n)
+				return filtervisitor.Invalid, status.Errorf(codes.InvalidArgument, "name %q not found", n)
 			}
 			equalityFilters[a.Name] = true
 			return a.Type, nil

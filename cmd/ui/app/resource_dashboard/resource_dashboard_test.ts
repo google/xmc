@@ -17,12 +17,8 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
-import {
-  ListClusterQueuesResponse,
-  QueueOverview,
-} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
-import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
-import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
+import { AUTO_REFRESH_INTERVAL_MS } from 'app/service/constants';
+import { ResourceService } from 'app/service/resource_service';
 import {
   bootstrap,
   cleanState,
@@ -30,7 +26,11 @@ import {
   getHarness,
   setupModule,
   setupObservableMatchers,
-} from 'xmanager_cloud/ui/app/testing/test';
+} from 'app/testing/test';
+import {
+  ListClusterQueuesResponse,
+  QueueOverview,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { ResourceDashboard } from './resource_dashboard';
 import { ResourceDashboardHarness } from './resource_dashboard_harness';

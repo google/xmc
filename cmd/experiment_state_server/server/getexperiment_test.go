@@ -22,10 +22,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -70,7 +70,7 @@ func TestGetExperiment_BadPaths(t *testing.T) {
 		{
 			name:    "invalid_name",
 			req:     &apipb.GetExperimentRequest{Name: "invalid-name"},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -98,10 +98,10 @@ func TestGetExperiment_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name: "xid_get_fails",
@@ -109,15 +109,15 @@ func TestGetExperiment_DependencyFailures(t *testing.T) {
 				getXidEntryErr: fmt.Errorf("XID get failed"),
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "xid_get_permission_denied",
 			xidClient: &mockXidClient{
-				getXidEntryErr: status.ErrPermissionDenied,
+				getXidEntryErr: grpcerr.ErrPermissionDenied,
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "storage_fetch_fails",
@@ -127,7 +127,7 @@ func TestGetExperiment_DependencyFailures(t *testing.T) {
 			storage: &storage.MockStorage{
 				FetchExperimentErr: fmt.Errorf("storage fetch failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_fetch_not_found",
@@ -135,9 +135,9 @@ func TestGetExperiment_DependencyFailures(t *testing.T) {
 				getXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 			},
 			storage: &storage.MockStorage{
-				FetchExperimentErr: status.ErrNotFound,
+				FetchExperimentErr: grpcerr.ErrNotFound,
 			},
-			wantErr: status.ErrNotFound,
+			wantErr: grpcerr.ErrNotFound,
 		},
 	}
 

@@ -79,6 +79,8 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn("kind: LocalQueue", manifest)
         self.assertIn("--write-kubeconfig=/k3s-config/k3s.yaml", manifest)
         self.assertIn("create secret generic multikueue-worker-kubeconfig", manifest)
+        self.assertIn('"configmaps"', manifest)
+        self.assertIn("kueue-manager-config", manifest)
         for doc in manifest.split("---"):
             lines = [
                 ln.strip()

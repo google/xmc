@@ -18,9 +18,9 @@ import { MatInputHarness } from '@angular/material/input/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of } from 'rxjs';
 
-import { EXPERIMENT_1 } from 'xmanager_cloud/ui/app/common/mock_data';
-import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
-import { SidePanelService } from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
+import { EXPERIMENT_1 } from 'app/common/mock_data';
+import { ExperimentService } from 'app/service/experiment_service';
+import { SidePanelService } from 'app/side_panel/side_panel_service';
 import {
   bootstrap,
   cleanState,
@@ -28,7 +28,7 @@ import {
   getEl,
   setupModule,
   setupObservableMatchers,
-} from 'xmanager_cloud/ui/app/testing/test';
+} from 'app/testing/test';
 
 import { EditExperimentForm, EditExperimentFormData } from './edit_experiment_form';
 

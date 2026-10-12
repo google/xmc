@@ -19,8 +19,10 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/schema/experimentschema"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
@@ -47,8 +49,8 @@ func (r *Repository) fetchExperimentStatusTransaction(ctx context.Context, xid i
 
 	row, err := txn.ReadRow(ctx, experimentschema.ExperimentTableName, spanner.Key{spannerutils.ReverseBits(xid)}, []string{"Status"})
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
-			return nil, fmt.Errorf("experiment %d not found: %w", xid, status.ErrNotFound)
+		if status.Code(err) == codes.NotFound {
+			return nil, fmt.Errorf("experiment %d not found: %w", xid, grpcerr.ErrNotFound)
 		}
 
 		logging.Error(ctx, "Failed to read Experiment row", "error", err)

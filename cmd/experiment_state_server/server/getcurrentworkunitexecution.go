@@ -17,7 +17,9 @@ import (
 	"context"
 	"fmt"
 
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 
@@ -43,7 +45,7 @@ func (h *WorkUnitHandler) GetCurrentWorkUnitExecution(ctx context.Context, req *
 	xid, wid, err := validator.ValidateWorkUnitName(name)
 	if err != nil {
 		logging.Warn(ctx, "GetCurrentWorkUnitExecution validation failed", "error", err)
-		return nil, fmt.Errorf("GetCurrentWorkUnitExecution validation failed: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("GetCurrentWorkUnitExecution validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithWorkUnitName(ctx, name)
 
@@ -54,18 +56,18 @@ func (h *WorkUnitHandler) GetCurrentWorkUnitExecution(ctx context.Context, req *
 	}
 	if !authorized {
 		logging.Warn(ctx, "User not authorized to get current work unit execution", "user", email)
-		return nil, fmt.Errorf("user %s is not authorized to get the current work unit execution for XID %d: %w", email, xid, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user %s is not authorized to get the current work unit execution for XID %d: %w", email, xid, grpcerr.ErrPermissionDenied)
 	}
 
 	// 4. Retrieve the work unit from the storage layer.
 	wue, err := h.getCurrentWorkUnitExecution(ctx, name, xid, wid)
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
+		if status.Code(err) == codes.NotFound {
 			logging.Warn(ctx, "Current work unit execution not found in storage")
-			return nil, fmt.Errorf("GetCurrentWorkUnitExecution with ID %s not found: %w (%v)", name, status.ErrNotFound, err)
+			return nil, fmt.Errorf("GetCurrentWorkUnitExecution with ID %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
 		}
 		logging.Error(ctx, "Failed to retrieve current work unit execution from storage", "error", err)
-		return nil, fmt.Errorf("failed to retrieve current work unit execution %s from storage: %w (%v)", name, status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to retrieve current work unit execution %s from storage: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 	ctx = logging.WithWorkUnitExecutionName(ctx, wue.GetName())
 
@@ -79,12 +81,12 @@ func (h *WorkUnitHandler) getCurrentWorkUnitExecution(ctx context.Context, name 
 
 	wue, err := h.storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
-			return nil, fmt.Errorf("current work unit execution with ID %s not found: %w (%v)", name, status.ErrNotFound, err)
+		if status.Code(err) == codes.NotFound {
+			return nil, fmt.Errorf("current work unit execution with ID %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
 		}
 
 		logging.Error(ctx, "Failed to retrieve current work unit execution from storage", "error", err)
-		return nil, fmt.Errorf("failed to retrieve current work unit execution %s from storage: %w (%v)", name, status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to retrieve current work unit execution %s from storage: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 
 	return wue, nil

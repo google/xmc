@@ -19,7 +19,8 @@ import (
 	fpb "api/filter/filter_expression_go_proto"
 	"api/filter/go/filtervisitor"
 	"cloud.google.com/go/spanner"
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/query_generator/filter/queryfilter"
 )
@@ -127,7 +128,7 @@ func NewUnnester(members map[string]Member, functions map[string]Function, filte
 			n := strings.Join(name, ".")
 			m, ok := members[n]
 			if !ok {
-				return safesql.New(""), filtervisitor.Invalid, status.Errorf(status.InvalidArgument, "unsupported filter field in query: %q", n)
+				return safesql.New(""), filtervisitor.Invalid, status.Errorf(codes.InvalidArgument, "unsupported filter field in query: %q", n)
 			}
 			unr.seen[m.UnnestClause] = true
 			return safesql.New(""), m.Type, nil

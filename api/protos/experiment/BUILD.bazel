@@ -23,7 +23,11 @@ package(default_visibility = ["//visibility:public"])
 proto_descriptor_set(
     name = "experiment_messages_descriptor",
     visibility = ["//visibility:public"],
-    deps = [":experiment_messages_proto"],
+    deps = [
+        ":experiment_messages_proto",
+        # Provides cloud.xmanager.v1.Action for the PausedTasks.ActionProto column.
+        "//api/protos/task_queue:task_proto",
+    ],
 )
 
 proto_library(

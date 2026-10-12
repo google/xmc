@@ -17,8 +17,10 @@ import (
 	"context"
 	"fmt"
 
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 )
@@ -41,27 +43,27 @@ func (h *WorkUnitHandler) ListWorkUnitExecutions(ctx context.Context, req *apipb
 	xid, wid, err := validator.ValidateWorkUnitName(name)
 	if err != nil {
 		logging.Warn(ctx, "ListWorkUnitExecutions validation failed", "name", name, "error", err)
-		return nil, fmt.Errorf("ListWorkUnitExecutions validation failed: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("ListWorkUnitExecutions validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithWorkUnitName(ctx, name)
 
 	// 3. Retrieve the XID entry from the XID service. This is purely for authorization purposes.
 	_, err = h.getXid(ctx, validator.ConstructXIDName(xid))
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.PermissionDenied {
+		if status.Code(err) == codes.PermissionDenied {
 			logging.Warn(ctx, "User not authorized to list work unit executions", "xid", xid, "error", err)
-			return nil, fmt.Errorf("user not authorized to list work unit executions for XID %d: %w (%v)", xid, status.ErrPermissionDenied, err)
+			return nil, fmt.Errorf("user not authorized to list work unit executions for XID %d: %w (%v)", xid, grpcerr.ErrPermissionDenied, err)
 		}
 
 		logging.Error(ctx, "XID lookup failed", "xid", xid, "error", err)
-		return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", xid, status.ErrInternal, err)
+		return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", xid, grpcerr.ErrInternal, err)
 	}
 
 	// 4. Retrieve the work unit executions from the storage layer.
 	wues, err := h.storage.ListWorkUnitExecutions(ctx, xid, wid)
 	if err != nil {
 		logging.Error(ctx, "Failed to retrieve work unit executions from storage", "name", name, "error", err)
-		return nil, fmt.Errorf("failed to retrieve work unit executions %s from storage: %w (%v)", name, status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to retrieve work unit executions %s from storage: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 
 	if len(wues) == 0 {

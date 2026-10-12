@@ -20,7 +20,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
-import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
+import { ROD_TERM_TOOLTIPS } from 'app/resource_dashboard/constants/rod_tooltips';
 
 export interface ResourceRequirementRow {
   id: string;

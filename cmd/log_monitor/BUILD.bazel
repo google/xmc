@@ -31,7 +31,7 @@ compat_go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/common/health",
-        "//internal/compat/status",
+        "//internal/grpcerr",
         "//internal/kubernetes/common/constants",
         "//internal/kubernetes/common/labels",
         "//internal/logging",
@@ -69,7 +69,7 @@ compat_go_test(
     embed = [":log_monitor_lib"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/status",
+        "//internal/grpcerr",
         "//internal/storage",
         "//internal/storage/spanner/migrations/version",
         "@com_github_google_go_cmp//cmp",

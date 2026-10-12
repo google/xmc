@@ -18,8 +18,10 @@ import (
 	"fmt"
 	"time"
 
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -62,14 +64,14 @@ func (h *WorkUnitHandler) listWorkUnitsWithStaleness(ctx context.Context, req *a
 	}
 	if err := validator.ValidateAIPCompliantList(req.GetPageSize(), req.GetFilter(), req.GetOrderBy(), req.GetPageToken()); err != nil {
 		logging.Warn(ctx, "Invalid ListWorkUnitsRequest", "error", err)
-		return nil, fmt.Errorf("invalid ListWorkUnitsRequest: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("invalid ListWorkUnitsRequest: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	// 2.1. Get the XID from the request.
 	xid, err := validator.ValidateExperimentName(req.GetParent())
 	if err != nil {
 		logging.Warn(ctx, "Invalid parent name", "error", err)
-		return nil, fmt.Errorf("invalid parent name: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("invalid parent name: %w", grpcerr.ErrInvalidArgument)
 	}
 	ctx = logging.WithExperimentName(ctx, req.GetParent())
 
@@ -80,7 +82,7 @@ func (h *WorkUnitHandler) listWorkUnitsWithStaleness(ctx context.Context, req *a
 	}
 	if !authorized {
 		logging.Warn(ctx, "User not authorized to list work units", "user", email, "xid", xid)
-		return nil, fmt.Errorf("user %s is not authorized to list work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user %s is not authorized to list work units for XID %d: %w", email, xid, grpcerr.ErrPermissionDenied)
 	}
 
 	// 3. Get the list of WorkUnits from the storage layer.
@@ -89,16 +91,16 @@ func (h *WorkUnitHandler) listWorkUnitsWithStaleness(ctx context.Context, req *a
 		statusErr, ok := status.FromError(err)
 		if !ok {
 			logging.Error(ctx, "Storage layer returned a non-gRPC error for listing WorkUnits", "error", err)
-			return nil, fmt.Errorf("an internal error occurred while retrieving the WorkUnits: %w", status.ErrInternal)
+			return nil, fmt.Errorf("an internal error occurred while retrieving the WorkUnits: %w", grpcerr.ErrInternal)
 		}
 
-		if statusErr.Code == status.InvalidArgument {
+		if statusErr.Code() == codes.InvalidArgument {
 			logging.Error(ctx, "Storage layer returned an invalid argument error for listing WorkUnits", "error", err)
-			return nil, fmt.Errorf("invalid ListWorkUnitsRequest %v: %w", err, status.ErrInvalidArgument)
+			return nil, fmt.Errorf("invalid ListWorkUnitsRequest %v: %w", err, grpcerr.ErrInvalidArgument)
 		}
 
 		logging.Error(ctx, "Storage layer returned a gRPC error for listing WorkUnits", "error", err)
-		return nil, fmt.Errorf("an internal error occurred while retrieving the WorkUnits: %w", status.ErrInternal)
+		return nil, fmt.Errorf("an internal error occurred while retrieving the WorkUnits: %w", grpcerr.ErrInternal)
 	}
 
 	// 4. Return the successful response.

@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 )
 
@@ -135,8 +135,8 @@ func TestFakePauseState_SetNil(t *testing.T) {
 	fake := NewFakePauseStateRepository()
 
 	err := fake.Set(ctx, nil)
-	if !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("Set(nil) error = %v, want %v", err, status.ErrInvalidArgument)
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("Set(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }
 

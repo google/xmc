@@ -23,8 +23,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
@@ -213,7 +213,7 @@ func TestBatchStopWorkUnits_BadPaths(t *testing.T) {
 		{
 			name:    "invalid_parent_name",
 			req:     &apipb.BatchStopWorkUnitsRequest{Parent: "invalid-name"},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -249,18 +249,18 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name: "xid_check_user_authorization_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationErr: status.ErrPermissionDenied,
+				checkUserAuthorizationErr: grpcerr.ErrPermissionDenied,
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "xid_check_user_authorization_unauthorized",
@@ -268,7 +268,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "storage_list_work_units_fails",
@@ -278,7 +278,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 			storage: &storage.MockStorage{
 				ListWorkUnitsErr: fmt.Errorf("storage list work units failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_add_operation_fails",
@@ -289,7 +289,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 				ListWorkUnitsResp:       []*msgpb.WorkUnit{workUnit},
 				AddWorkUnitOperationErr: fmt.Errorf("storage add operation failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_update_work_unit_executions_fails",
@@ -300,7 +300,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 				ListWorkUnitsResp:           []*msgpb.WorkUnit{workUnit},
 				UpdateWorkUnitExecutionsErr: fmt.Errorf("Storage update work unit executions failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 	}
 
@@ -353,8 +353,8 @@ func TestBatchStopWorkUnits_TaskEnqueueFails(t *testing.T) {
 
 	req := &apipb.BatchStopWorkUnitsRequest{Parent: "experiments/123"}
 	_, err := server.BatchStopWorkUnits(ctx, req)
-	if !errors.Is(err, status.ErrInternal) {
-		t.Errorf("BatchStopWorkUnits() got error %v, want %v", err, status.ErrInternal)
+	if !errors.Is(err, grpcerr.ErrInternal) {
+		t.Errorf("BatchStopWorkUnits() got error %v, want %v", err, grpcerr.ErrInternal)
 	}
 }
 

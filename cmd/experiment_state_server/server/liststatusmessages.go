@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"time"
 
-	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -65,7 +65,7 @@ func (h *StatusMessageHandler) listStatusMessagesWithStaleness(ctx context.Conte
 	}
 	if err := validator.ValidateAIPCompliantListWithMaxPageSize(req.GetPageSize(), req.GetFilter(), req.GetOrderBy(), req.GetPageToken(), maxStatusMessagePageSize); err != nil {
 		logging.Warn(ctx, "Invalid ListStatusMessagesRequest", "error", err)
-		return nil, fmt.Errorf("invalid ListStatusMessagesRequest: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("invalid ListStatusMessagesRequest: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 
 	// 3. Validate the parent.
@@ -73,7 +73,7 @@ func (h *StatusMessageHandler) listStatusMessagesWithStaleness(ctx context.Conte
 	parentXID, _, err := validator.ValidateStatusMessageParent(parent)
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate parent", "parent", parent, "error", err)
-		return nil, fmt.Errorf("failed to validate parent %s: %w (%v)", parent, status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("failed to validate parent %s: %w (%v)", parent, grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithStatusMessageParent(ctx, parent)
 
@@ -84,7 +84,7 @@ func (h *StatusMessageHandler) listStatusMessagesWithStaleness(ctx context.Conte
 	}
 	if !authorized {
 		logging.Warn(ctx, "User not authorized to list status messages", "user", email, "xid", parentXID)
-		return nil, fmt.Errorf("user %s is not authorized to list status messages for XID %d: %w", email, parentXID, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user %s is not authorized to list status messages for XID %d: %w", email, parentXID, grpcerr.ErrPermissionDenied)
 	}
 
 	// 5. Get the list of StatusMessages from the storage layer.

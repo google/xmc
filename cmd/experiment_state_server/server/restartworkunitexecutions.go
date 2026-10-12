@@ -20,9 +20,9 @@ import (
 	"time"
 
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/common/resourceaccumulator"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/state/state"
@@ -85,7 +85,7 @@ func restartSingleWorkUnitExecution(
 	// 2. Set the execution state to INACTIVE.
 	currentExecution := wu.GetCurrentWorkUnitExecution()
 	if currentExecution == nil {
-		return nil, nil, fmt.Errorf("work unit %d has no current execution: %w", wid, status.ErrInternal)
+		return nil, nil, fmt.Errorf("work unit %d has no current execution: %w", wid, grpcerr.ErrInternal)
 	}
 	currentExecution.State = essmsgpb.WorkUnitExecution_INACTIVE
 	currentExecution.UpdateTime = timestamppb.New(now)
@@ -98,10 +98,10 @@ func restartSingleWorkUnitExecution(
 	// 4. Get the EID so we can increment it.
 	_, _, eid, err := validator.ValidateWorkUnitExecutionName(currentExecution.GetName())
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to validate work unit execution name %q: %w: %w", currentExecution.GetName(), status.ErrInternal, err)
+		return nil, nil, fmt.Errorf("failed to validate work unit execution name %q: %w: %w", currentExecution.GetName(), grpcerr.ErrInternal, err)
 	}
 	if eid == 0 {
-		return nil, nil, fmt.Errorf("invalid eid 0 from work unit execution name %q: %w", currentExecution.GetName(), status.ErrInternal)
+		return nil, nil, fmt.Errorf("invalid eid 0 from work unit execution name %q: %w", currentExecution.GetName(), grpcerr.ErrInternal)
 	}
 
 	// 4.1. Create a new execution with the given state.

@@ -18,9 +18,8 @@ import (
 	"errors"
 	"fmt"
 
-	"task/go/status"
-
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
@@ -42,20 +41,20 @@ func (s *XIDServer) UpdateXidEntry(ctx context.Context, in *apipb.UpdateXidEntry
 	xid, err := validator.ValidateXIDName(in.XidEntry.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Invalid UpdateXidEntry request", "error", err)
-		return nil, fmt.Errorf("invalid UpdateXidEntry request %v: %w", err, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("invalid UpdateXidEntry request %v: %w", err, grpcerr.ErrInvalidArgument)
 	}
 	ctx = logging.WithXIDName(ctx, in.XidEntry.GetName())
 
 	// 3. Get the XidEntry from the storage layer.
 	xidEntry, err := s.storage.FetchXidEntry(ctx, xid)
 	if err != nil {
-		if errors.Is(err, status.ErrNotFound) {
+		if errors.Is(err, grpcerr.ErrNotFound) {
 			logging.Warn(ctx, "XID not found", "xid", xid, "error", err)
-			return nil, fmt.Errorf("XID %d not found: %w", xid, status.ErrNotFound)
+			return nil, fmt.Errorf("XID %d not found: %w", xid, grpcerr.ErrNotFound)
 		}
 
 		logging.Error(ctx, "Storage layer error for FetchXidEntry", "xid", xid, "error", err)
-		return nil, fmt.Errorf("an internal error occurred while retrieving the XID: %w", status.ErrInternal)
+		return nil, fmt.Errorf("an internal error occurred while retrieving the XID: %w", grpcerr.ErrInternal)
 	}
 
 	// 3. Authorize the user.
@@ -64,7 +63,7 @@ func (s *XIDServer) UpdateXidEntry(ctx context.Context, in *apipb.UpdateXidEntry
 		return nil, err
 	}
 	if !isAuthorized {
-		return nil, fmt.Errorf("user is not authorized to update XID %d: %w", xid, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user is not authorized to update XID %d: %w", xid, grpcerr.ErrPermissionDenied)
 	}
 
 	// 4. Update the XidEntry in the storage layer.
@@ -75,16 +74,16 @@ func (s *XIDServer) UpdateXidEntry(ctx context.Context, in *apipb.UpdateXidEntry
 		UpdateMask: in.UpdateMask,
 	})
 	if err != nil {
-		if errors.Is(err, status.ErrNotFound) {
+		if errors.Is(err, grpcerr.ErrNotFound) {
 			logging.Warn(ctx, "XID not found", "xid", xid, "error", err)
-			return nil, fmt.Errorf("XID %d not found: %w", xid, status.ErrNotFound)
+			return nil, fmt.Errorf("XID %d not found: %w", xid, grpcerr.ErrNotFound)
 		}
-		if errors.Is(err, status.ErrInvalidArgument) {
+		if errors.Is(err, grpcerr.ErrInvalidArgument) {
 			logging.Warn(ctx, "Invalid UpdateXidEntry request", "error", err)
-			return nil, fmt.Errorf("invalid UpdateXidEntry request %v: %w", err, status.ErrInvalidArgument)
+			return nil, fmt.Errorf("invalid UpdateXidEntry request %v: %w", err, grpcerr.ErrInvalidArgument)
 		}
 		logging.Error(ctx, "Storage layer error for UpdateXidEntry", "xid", xid, "error", err)
-		return nil, fmt.Errorf("an internal error occurred while updating the XID: %w", status.ErrInternal)
+		return nil, fmt.Errorf("an internal error occurred while updating the XID: %w", grpcerr.ErrInternal)
 	}
 
 	// 5. Return the updated XidEntry.

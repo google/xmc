@@ -26,12 +26,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/security/securitytest"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
@@ -286,8 +286,8 @@ func TestCreateWorkUnit_IncompatibleWorkUnit(t *testing.T) {
 	)
 
 	_, err := server.CreateWorkUnit(ctx, req)
-	if !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("CreateWorkUnit() = error %v, want %v", err, status.ErrInvalidArgument)
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("CreateWorkUnit() = error %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 
 	if !strings.Contains(err.Error(), "incompatible") {
@@ -319,7 +319,7 @@ func TestCreateWorkUnit_BadPaths(t *testing.T) {
 				WorkUnitId: 1,
 				WorkUnit:   &msgpb.WorkUnit{},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "missing_work_unit",
@@ -328,7 +328,7 @@ func TestCreateWorkUnit_BadPaths(t *testing.T) {
 				WorkUnitId: 1,
 				WorkUnit:   nil,
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		// zero_work_unit_id removed as it is now valid
 	}
@@ -367,18 +367,18 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name: "xid_check_user_authorization_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationErr: status.ErrPermissionDenied,
+				checkUserAuthorizationErr: grpcerr.ErrPermissionDenied,
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "xid_check_user_authorization_unauthorized",
@@ -386,7 +386,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "unauthorized_user_with_malformed_payload_returns_permission_denied",
@@ -399,7 +399,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 				WorkUnitId: 1,
 				WorkUnit:   nil,
 			},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "storage_create_work_unit_fails",
@@ -409,7 +409,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 			storage: &storage.MockStorage{
 				CreateWorkUnitErr: fmt.Errorf("Storage create work unit failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_create_work_unit_already_exists",
@@ -417,9 +417,9 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				CreateWorkUnitErr: status.ErrAlreadyExists,
+				CreateWorkUnitErr: grpcerr.ErrAlreadyExists,
 			},
-			wantErr: status.ErrAlreadyExists,
+			wantErr: grpcerr.ErrAlreadyExists,
 		},
 		{
 			name: "storage_add_operation_fails",
@@ -429,7 +429,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 			storage: &storage.MockStorage{
 				AddWorkUnitOperationErr: fmt.Errorf("Storage add operation failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 	}
 
@@ -487,7 +487,7 @@ func TestCreateWorkUnit_TaskEnqueueFails(t *testing.T) {
 	)
 
 	_, err := server.CreateWorkUnit(ctx, proto.Clone(goodReq).(*apipb.CreateWorkUnitRequest))
-	if !errors.Is(err, status.ErrInternal) {
-		t.Errorf("CreateWorkUnit() = error %v, want %v", err, status.ErrInternal)
+	if !errors.Is(err, grpcerr.ErrInternal) {
+		t.Errorf("CreateWorkUnit() = error %v, want %v", err, grpcerr.ErrInternal)
 	}
 }

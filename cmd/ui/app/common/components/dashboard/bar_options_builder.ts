@@ -14,7 +14,7 @@
 
 import type { EChartsOption } from 'echarts';
 
-import { BarData, PlotData, PlotSpec } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { BarData, PlotData, PlotSpec } from 'app/service/dashboard_models';
 
 import { DEFAULT_XMC_THEME_CONFIG, XMC_SERIES_PALETTE, XmcChartThemeConfig } from './echarts_theme';
 

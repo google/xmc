@@ -18,12 +18,12 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { BehaviorSubject, NEVER, of } from 'rxjs';
 
+import { SnackbarService } from 'app/service/snackbar_service';
+import { StatusMessageFilterService } from 'app/service/status_message_filter_service';
+import { WorkUnitsService } from 'app/service/work_units_service';
+import { bootstrap, cleanState, getEls, setupModule } from 'app/testing/test';
 import { ListWorkUnitsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
-import { StatusMessageFilterService } from 'xmanager_cloud/ui/app/service/status_message_filter_service';
-import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
-import { bootstrap, cleanState, getEls, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { WorkUnitsTableHarness } from './testing/work_units_table_harness';
 import { WorkUnitsTable } from './work_units_table';

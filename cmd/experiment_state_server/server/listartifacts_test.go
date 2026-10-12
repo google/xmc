@@ -23,10 +23,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 )
@@ -162,7 +162,7 @@ func TestListArtifacts_BadPaths(t *testing.T) {
 		{
 			name:    "invalid_page_size",
 			req:     &apipb.ListArtifactsRequest{PageSize: -1},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -189,27 +189,27 @@ func TestListArtifacts_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name:          "storage_fails_grpc_invalid_arg",
 			authenticator: createTestAuthorizer(ctx, t),
-			storage:       &storage.MockStorage{ListArtifactsErr: status.ErrInvalidArgument},
-			wantErr:       status.ErrInvalidArgument,
+			storage:       &storage.MockStorage{ListArtifactsErr: grpcerr.ErrInvalidArgument},
+			wantErr:       grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:          "storage_fails_grpc_other",
 			authenticator: createTestAuthorizer(ctx, t),
-			storage:       &storage.MockStorage{ListArtifactsErr: status.ErrPermissionDenied},
-			wantErr:       status.ErrInternal,
+			storage:       &storage.MockStorage{ListArtifactsErr: grpcerr.ErrPermissionDenied},
+			wantErr:       grpcerr.ErrInternal,
 		},
 		{
 			name:          "storage_fails_non_grpc",
 			authenticator: createTestAuthorizer(ctx, t),
 			storage:       &storage.MockStorage{ListArtifactsErr: fmt.Errorf("some other error")},
-			wantErr:       status.ErrInternal,
+			wantErr:       grpcerr.ErrInternal,
 		},
 	}
 

@@ -14,7 +14,6 @@
 
 import { Component, signal } from '@angular/core';
 
-import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import {
   bootstrap,
   cleanState,
@@ -22,7 +21,8 @@ import {
   getHarness,
   setupModule,
   setupObservableMatchers,
-} from 'xmanager_cloud/ui/app/testing/test';
+} from 'app/testing/test';
+import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { QueueListComponent } from './queue_list';
 import { QueueListHarness } from './queue_list_harness';

@@ -20,10 +20,10 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/proto"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
@@ -58,8 +58,8 @@ func TestDeleteArtifact_HappyPath(t *testing.T) {
 	}
 
 	_, err = server.GetArtifact(ctx, &apipb.GetArtifactRequest{Name: artifact.GetName()})
-	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("GetArtifact() after DeleteArtifact() returned error %v, want %v", err, status.ErrNotFound)
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("GetArtifact() after DeleteArtifact() returned error %v, want %v", err, grpcerr.ErrNotFound)
 	}
 }
 
@@ -77,12 +77,12 @@ func TestDeleteArtifact_BadPaths(t *testing.T) {
 		{
 			name:    "invalid_name",
 			req:     &apipb.DeleteArtifactRequest{Name: "invalid-name"},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "not_found",
 			req:     &apipb.DeleteArtifactRequest{Name: "artifacts/123"},
-			wantErr: status.ErrNotFound,
+			wantErr: grpcerr.ErrNotFound,
 		},
 	}
 
@@ -114,20 +114,20 @@ func TestDeleteArtifact_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name: "xid_check_auth_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationErr: status.ErrPermissionDenied,
+				checkUserAuthorizationErr: grpcerr.ErrPermissionDenied,
 			},
 			storage: &storage.MockStorage{
 				Artifact: artifact,
 			},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "xid_check_auth_permission_denied",
@@ -139,7 +139,7 @@ func TestDeleteArtifact_DependencyFailures(t *testing.T) {
 			storage: &storage.MockStorage{
 				Artifact: artifact,
 			},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "storage_delete_fails",
@@ -152,7 +152,7 @@ func TestDeleteArtifact_DependencyFailures(t *testing.T) {
 				Artifact:          artifact,
 				DeleteArtifactErr: fmt.Errorf("storage delete failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 	}
 

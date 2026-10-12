@@ -31,13 +31,10 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
-import { ResourceChip } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
-import { StatusChip } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
-import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
-import {
-  BaseSidePanelContent,
-  BaseSidePanelData,
-} from 'xmanager_cloud/ui/app/side_panel/base_side_panel';
+import { ResourceChip } from 'app/common/components/resource_chip/resource_chip';
+import { StatusChip } from 'app/common/components/status_chip/status_chip';
+import { ResourceService } from 'app/service/resource_service';
+import { BaseSidePanelContent, BaseSidePanelData } from 'app/side_panel/base_side_panel';
 
 import {
   QueueJobPositionPipe,

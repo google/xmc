@@ -14,7 +14,7 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 
-import { ErrorBannerHarness } from 'xmanager_cloud/ui/app/common/components/error_banner/error_banner_harness';
+import { ErrorBannerHarness } from 'app/common/components/error_banner/error_banner_harness';
 
 import { ConfigEntriesCardHarness } from '../components/config_entries_card/testing/config_entries_card_harness';
 import { HealthStatusSectionHarness } from '../components/health_status_section/testing/health_status_section_harness';

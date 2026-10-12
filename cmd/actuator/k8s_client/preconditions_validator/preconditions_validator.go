@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/unstructured/unstructured"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 )
 

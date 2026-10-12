@@ -33,13 +33,8 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { RouterModule } from '@angular/router';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap, tap } from 'rxjs';
 
-import {
-  Chart,
-  PlotData,
-  PlotSpec,
-  PlotType,
-} from 'xmanager_cloud/ui/app/service/dashboard_models';
-import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
+import { Chart, PlotData, PlotSpec, PlotType } from 'app/service/dashboard_models';
+import { DashboardService } from 'app/service/dashboard_service';
 
 import { PlotCardComponent } from '../plot_card/plot_card';
 

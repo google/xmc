@@ -25,13 +25,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
-import {
-  Chart,
-  Dashboard,
-  LayoutType,
-  PlotSpec,
-  PlotType,
-} from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { Chart, Dashboard, LayoutType, PlotSpec, PlotType } from 'app/service/dashboard_models';
 
 export interface ComparisonExperimentEntry {
   xid: number;

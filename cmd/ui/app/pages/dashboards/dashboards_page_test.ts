@@ -19,21 +19,15 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
-import { AddExperimentDialogComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
-import { DashboardGridComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/dashboard_grid/dashboard_grid';
-import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
-import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+import { AddExperimentDialogComponent } from 'app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
+import { DashboardGridComponent } from 'app/common/components/dashboard/dashboard_grid/dashboard_grid';
+import { DashboardService } from 'app/service/dashboard_service';
+import { SnackbarService } from 'app/service/snackbar_service';
 import {
   createMockComparisonCharts,
   createMockComparisonDashboard,
-} from 'xmanager_cloud/ui/app/testing/mock_dashboards';
-import {
-  bootstrap,
-  cleanState,
-  getDebugEl,
-  getHarness,
-  setupModule,
-} from 'xmanager_cloud/ui/app/testing/test';
+} from 'app/testing/mock_dashboards';
+import { bootstrap, cleanState, getDebugEl, getHarness, setupModule } from 'app/testing/test';
 
 import { DashboardsPage } from './dashboards_page';
 import { DashboardsPageHarness } from './dashboards_page_harness';

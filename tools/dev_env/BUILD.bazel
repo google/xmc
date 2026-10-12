@@ -79,6 +79,7 @@ py_library(
     deps = [
         ":image_builder_lib",
         ":service_resolver_lib",
+        "//tools/common:changed_files",
         "//tools/common:tool_utils",
     ],
 )

@@ -20,7 +20,9 @@ import (
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/operationschema"
@@ -40,8 +42,8 @@ func (r *Repository) FetchWorkUnitOperationTransaction(ctx context.Context, xid 
 
 	row, err := txn.ReadRow(ctx, operationschema.OperationsTable, spanner.Key{spannerutils.ReverseBits(xid), wid, oid}, operationschema.OperationColumns)
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
-			return nil, fmt.Errorf("operation %s for XID %d, WID %d not found: %w", oid, xid, wid, status.ErrNotFound)
+		if status.Code(err) == codes.NotFound {
+			return nil, fmt.Errorf("operation %s for XID %d, WID %d not found: %w", oid, xid, wid, grpcerr.ErrNotFound)
 		}
 
 		logging.Error(ctx, "Failed to read Operation row", "error", err)

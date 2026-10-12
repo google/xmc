@@ -20,10 +20,10 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/proto"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -102,7 +102,7 @@ func TestListWorkUnitExecutions_BadPaths(t *testing.T) {
 		{
 			name:    "invalid_parent",
 			req:     &apipb.ListWorkUnitExecutionsRequest{Parent: "invalid-parent"},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -130,10 +130,10 @@ func TestListWorkUnitExecutions_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name: "xid_get_fails",
@@ -141,15 +141,15 @@ func TestListWorkUnitExecutions_DependencyFailures(t *testing.T) {
 				getXidEntryErr: fmt.Errorf("XID get failed"),
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "xid_get_permission_denied",
 			xidClient: &mockXidClient{
-				getXidEntryErr: status.ErrPermissionDenied,
+				getXidEntryErr: grpcerr.ErrPermissionDenied,
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "storage_list_historical_fails",
@@ -160,7 +160,7 @@ func TestListWorkUnitExecutions_DependencyFailures(t *testing.T) {
 				WorkUnitExecution:         &msgpb.WorkUnitExecution{}, // for fetch current
 				ListWorkUnitExecutionsErr: fmt.Errorf("Storage list historical failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 	}
 

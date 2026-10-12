@@ -21,8 +21,8 @@ import (
 
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 )
 
 func TestUpdateDashboard_Success(t *testing.T) {
@@ -192,8 +192,8 @@ func TestUpdateDashboard_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatalf("UpdateDashboard for non-existent dashboard succeeded, want error")
 	}
-	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("UpdateDashboard error = %v, want status.ErrNotFound", err)
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("UpdateDashboard error = %v, want grpcerr.ErrNotFound", err)
 	}
 }
 

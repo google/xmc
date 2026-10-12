@@ -18,16 +18,16 @@ import (
 	"fmt"
 	"time"
 
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
 var (
 	// ErrPausedTaskNotFound indicates the requested paused task does not exist.
-	ErrPausedTaskNotFound = fmt.Errorf("paused task not found: %w", status.ErrNotFound)
+	ErrPausedTaskNotFound = fmt.Errorf("paused task not found: %w", grpcerr.ErrNotFound)
 	// ErrPausedTaskAlreadyExists indicates a task with the given key already exists.
-	ErrPausedTaskAlreadyExists = fmt.Errorf("paused task already exists: %w", status.ErrAlreadyExists)
+	ErrPausedTaskAlreadyExists = fmt.Errorf("paused task already exists: %w", grpcerr.ErrAlreadyExists)
 )
 
 // PauseSchedulingState represents the global scheduling pause state and resumption metadata.

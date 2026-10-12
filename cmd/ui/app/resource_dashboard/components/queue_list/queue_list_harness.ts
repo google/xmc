@@ -14,7 +14,7 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 
-import { QueueCardHarness } from 'xmanager_cloud/ui/app/resource_dashboard/components/queue_card/queue_card_harness';
+import { QueueCardHarness } from 'app/resource_dashboard/components/queue_card/queue_card_harness';
 
 /** Harness for interacting with <xmc-rod-queue-list> in tests. */
 export class QueueListHarness extends ComponentHarness {

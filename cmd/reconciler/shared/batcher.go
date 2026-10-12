@@ -23,8 +23,8 @@ import (
 
 	"golang/prometheus/client/prometheus/promauto/promauto"
 	"golang/prometheus/client/prometheus/prometheus"
+	"google.golang.org/grpc/status"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
 	storagepkg "xmanager_cloud/storage/storage"
@@ -312,7 +312,7 @@ func (b *UpdateBatcher) callUpdateWorkUnitExecutions(ctx context.Context, xid in
 		reason := "unknown"
 		st, ok := status.FromError(err)
 		if ok {
-			reason = st.Code.String()
+			reason = st.Code().String()
 		} else if errors.Is(err, context.DeadlineExceeded) {
 			reason = "deadline_exceeded"
 		}

@@ -28,9 +28,13 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
    - Analyze user request and identify target packages/directories (e.g., `pkg/auth/oauth2`, `cmd/xid_service`).
    - Identify existing 1-to-1 unit test files (e.g., `handlers_test.go` for `handlers.go`). If missing, plan to create a dedicated unit test file.
 2. **Dependency & Target Discovery**:
-   - Use Bazel query to list affected binaries and tests:
+   - Inspect the CI-equivalent affected test scope (including reverse dependencies and any UI/Helm suites under `other_suites`) without running tests:
      ```bash
-     bazel query "rdeps(//..., //pkg/auth/oauth2/...)"
+     python3 ./tools/run_affected_tests.py --dry-run
+     ```
+   - To list affected `go_binary` targets for a specific package when needed:
+     ```bash
+     bazel query "kind(go_binary, rdeps(//..., //pkg/auth/oauth2/...))"
      ```
 
 ---
@@ -52,16 +56,15 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
 ## 3. Test Execution via Affected Tests Tool
 
 1. **Run Affected Tests Script**:
-   Execute the automated affected tests runner to run all unit tests associated with changed packages and their reverse dependencies:
+   Execute the automated affected tests runner to resolve all changed files since `origin/main` (including uncommitted and untracked files) via `resolve_test_scope.py` and run `bazel test` on affected targets with CI-equivalent flags:
    ```bash
    python3 ./tools/run_affected_tests.py
    ```
-2. **Run Package Unit Tests Directly**:
+   - **Output & Exit Codes**: stdout emits structured JSON (`changed_files`, `backend_mode`, `reason`, `bazel_targets`, `other_suites`, `passed_targets`); Bazel output streams to stderr. Exits `0` when tests pass (or dry-run / nothing to run), `1` on test failures or handled errors (with failed targets and log paths in `details`), and `2` on unexpected errors.
+   - **Spanner Emulator**: Pre-flights `SPANNER_EMULATOR_HOST` (default `localhost:9010`) and forwards non-default addresses via `--test_env`. Pass `--skip-emulator-check` when affected targets do not use Spanner.
+   - **Other Suites**: When `other_suites` lists the UI or Helm chart suite, run those suites before opening a PR.
+2. **Targeted Package Iteration (During Editing)**:
    ```bash
-   # Go package tests
-   go test -v ./pkg/auth/oauth2/...
-
-   # Bazel targeted package test
    bazel test //pkg/auth/oauth2/...
    ```
 
@@ -84,11 +87,11 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
 ## 5. Pre-Commit Verification & Staging
 
 1. **Run Pre-Commit Hooks**:
-   Before committing code changes, run the repository pre-commit script to format files and stage clean edits:
+   Before committing code changes, run the repository pre-commit script, which formats files, runs linters, and executes `run_affected_tests.py --skip-emulator-check`:
    ```bash
    ./.githooks/pre-commit && git add .
    ```
-2. **Verify Linter Status**:
-   Ensure all linters pass without errors or warnings.
+2. **Verify Linter & Affected Test Status**:
+   Ensure all linters and affected unit tests pass without errors or warnings.
 3. **Proceed to PR Creation**:
    Refer to the [XMC Create PR Skill](../xmc_create_pr/SKILL.md) to format the commit message and submit a Pull Request.
