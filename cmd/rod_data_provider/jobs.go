@@ -21,8 +21,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	spb "xmanager_cloud/api/protos/rod"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/internal/validator"

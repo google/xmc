@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	epb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/prototest"
 )
 

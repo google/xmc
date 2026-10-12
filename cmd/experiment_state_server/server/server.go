@@ -19,11 +19,10 @@ import (
 	"context"
 	"fmt"
 
+	apipb "xmanager_cloud/api/protos/experiment"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	xidgrpcpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/workunit"
@@ -36,7 +35,7 @@ var _ apipb.ExperimentStateServiceServer = (*Server)(nil)
 // Dashboard charts and Task Queue pushing violates SRP and risks dropped events
 // during pod restarts.
 type ArtifactObserver interface {
-	OnArtifactCreated(ctx context.Context, artifact *essmsgpb.Artifact)
+	OnArtifactCreated(ctx context.Context, artifact *apipb.Artifact)
 }
 
 // Server implements the generated pb.ExperimentStateServiceServer interface.
@@ -49,7 +48,7 @@ type Server struct {
 
 // WorkUnitActuator defines the interface for task actuation on work units.
 type WorkUnitActuator interface {
-	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
+	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *apipb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
 }
 
 // baseHandler encapsulates common infrastructure dependencies shared across domain handlers.

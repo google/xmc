@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 )

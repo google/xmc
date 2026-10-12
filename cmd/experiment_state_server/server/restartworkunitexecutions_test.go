@@ -30,7 +30,7 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 )
 
 func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {

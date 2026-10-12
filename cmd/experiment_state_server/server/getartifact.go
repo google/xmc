@@ -20,15 +20,14 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
 )
 
 // GetArtifact orchestrates the retrieval of a single artifact by its ID.
-func (h *ArtifactHandler) GetArtifact(ctx context.Context, req *apipb.GetArtifactRequest) (*msgpb.Artifact, error) {
+func (h *ArtifactHandler) GetArtifact(ctx context.Context, req *msgpb.GetArtifactRequest) (*msgpb.Artifact, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Received GetArtifact request", "request", req)
 

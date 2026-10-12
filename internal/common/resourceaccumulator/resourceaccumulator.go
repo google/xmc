@@ -20,7 +20,7 @@ import (
 	"math"
 	"strings"
 
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/common/tputopology"
 	"xmanager_cloud/internal/domain/workunit"
 	"xmanager_cloud/internal/kubernetes/common/constants"

@@ -19,9 +19,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
@@ -29,7 +28,7 @@ import (
 
 // UpdateExperimentLaunchState updates the launch state of an experiment. This should be called by
 // the client when it's done with an experiment launch.
-func (h *ExperimentHandler) UpdateExperimentLaunchState(ctx context.Context, req *apipb.UpdateExperimentLaunchStateRequest) (*msgpb.Experiment, error) {
+func (h *ExperimentHandler) UpdateExperimentLaunchState(ctx context.Context, req *msgpb.UpdateExperimentLaunchStateRequest) (*msgpb.Experiment, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Update experiment launch state", "request", req)
 

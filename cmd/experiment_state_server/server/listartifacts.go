@@ -22,9 +22,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	apipb "xmanager_cloud/api/protos/experiment"
 	xidpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/data"
@@ -110,7 +109,7 @@ func (h *ArtifactHandler) listArtifactsWithStaleness(ctx context.Context, req *a
 	}, nil
 }
 
-func (h *ArtifactHandler) fetchACLsForArtifacts(ctx context.Context, artifacts []*essmsgpb.Artifact, pageSize int32) error {
+func (h *ArtifactHandler) fetchACLsForArtifacts(ctx context.Context, artifacts []*apipb.Artifact, pageSize int32) error {
 	if len(artifacts) == 0 {
 		return nil
 	}

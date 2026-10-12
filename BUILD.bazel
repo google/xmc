@@ -26,11 +26,6 @@ nogo(
     ],
 )
 
-# Proto stubs target package mappings (matching how Go codebase imports our proto stubs)
-# gazelle:resolve go xmanager_cloud/experiment_state_server/proto/messages_go_proto //api/protos/experiment:messages_go_proto
-# gazelle:resolve go xmanager_cloud/experiment_state_server/proto/api_go_proto //api/protos/experiment:api_go_proto
-# gazelle:resolve go xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto //api/protos/experiment:api_go_proto
-
 gazelle(name = "gazelle")
 
 filegroup(

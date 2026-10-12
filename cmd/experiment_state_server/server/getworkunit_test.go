@@ -28,9 +28,8 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
 
+	apipb "xmanager_cloud/api/protos/experiment"
 	xidapipb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
 func TestGetWorkUnit_HappyPath(t *testing.T) {
@@ -39,7 +38,7 @@ func TestGetWorkUnit_HappyPath(t *testing.T) {
 
 	now := time.Now()
 
-	exp := &msgpb.Experiment{
+	exp := &apipb.Experiment{
 		Title: "test experiment for getworkunit",
 		Acls: &xidapipb.XidAcls{
 			Owners: []*xidapipb.XidAcls_Role{{Principal: &xidapipb.XidAcls_Role_User{User: "test@example.com"}}},
@@ -47,8 +46,8 @@ func TestGetWorkUnit_HappyPath(t *testing.T) {
 	}
 	createdExp := mustCreateExperiment(ctx, t, server, exp)
 
-	workUnit := &msgpb.WorkUnit{
-		WorkUnitType: msgpb.WorkUnit_STANDARD,
+	workUnit := &apipb.WorkUnit{
+		WorkUnitType: apipb.WorkUnit_STANDARD,
 		Executable:   testExecutable,
 	}
 	workUnitName := fmt.Sprintf("%s/workUnits/1", createdExp.GetName())
@@ -68,8 +67,8 @@ func TestGetWorkUnit_HappyPath(t *testing.T) {
 
 	opts := []cmp.Option{
 		protocmp.Transform(),
-		protocmp.IgnoreFields(&msgpb.WorkUnitExecution{}, "create_time", "update_time"),
-		protocmp.IgnoreFields(&msgpb.WorkUnitStatus{}, "update_time", "state_update_time"),
+		protocmp.IgnoreFields(&apipb.WorkUnitExecution{}, "create_time", "update_time"),
+		protocmp.IgnoreFields(&apipb.WorkUnitStatus{}, "update_time", "state_update_time"),
 	}
 	if diff := cmp.Diff(workUnit, got, opts...); diff != "" {
 		t.Errorf("GetWorkUnit() mismatch (-want +got):\n%s", diff)

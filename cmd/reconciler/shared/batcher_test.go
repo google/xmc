@@ -28,7 +28,7 @@ import (
 	metricspb "github.com/prometheus/client_model/go"
 	"google.golang.org/protobuf/testing/protocmp"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	storagepkg "xmanager_cloud/internal/storage"
 )

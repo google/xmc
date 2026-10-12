@@ -21,7 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	pb "xmanager_cloud/api/protos/experiment"
 )
 
 var (
