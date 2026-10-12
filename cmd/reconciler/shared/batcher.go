@@ -187,13 +187,18 @@ func (b *UpdateBatcher) Add(ctx context.Context, xid int64, update storagepkg.Wo
 	b.Updates[xid][update.WID][source] = update
 }
 
-// Remove evicts any pending update for (xid, wid, source) whose EID is <= eid.
-// Used after a terminal status is persisted synchronously on deletion so a
-// stale pending update cannot flush later without triggering a second Spanner
-// write.
+// Remove evicts any pending or queued-for-retry update for (xid, wid, source)
+// whose EID is <= eid. Used after a terminal status is persisted synchronously
+// on deletion so a stale pending update cannot flush later without triggering a
+// second Spanner write.
 func (b *UpdateBatcher) Remove(xid, wid, eid int64, source UpdateSource) {
 	b.UpdatesMu.Lock()
 	defer b.UpdatesMu.Unlock()
+	key := slotKey{xid: xid, wid: wid, source: source}
+	if r, ok := b.retries[key]; ok && r.entry.update.EID <= eid {
+		delete(b.retries, key)
+		retryQueueSize.WithLabelValues().Set(float64(len(b.retries)))
+	}
 	byWID, ok := b.Updates[xid]
 	if !ok {
 		return
