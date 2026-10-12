@@ -75,11 +75,9 @@ def _assert_multikueue_work_units(stub: Any, xid: str) -> None:
 
 def main(argv: Sequence[str]) -> None:
     """Main verification routine for multikueue_job workload."""
-    if (
-        getattr(verifier_cli.FLAGS, "expected_queue", None) == "cpu-queue"
-        and "QUEUE_NAME" not in os.environ
-    ):
-        verifier_cli.FLAGS.expected_queue = DEFAULT_QUEUE
+    f: Any = verifier_cli.FLAGS
+    if getattr(f, "expected_queue", None) == "cpu-queue" and "QUEUE_NAME" not in os.environ:
+        f.expected_queue = DEFAULT_QUEUE
     count = verifier_cli.resolve_expected_work_units(DEFAULT_WORK_UNITS)
     workers = [f"multikueue-worker-{i}" for i in range(1, count + 1)]
     workload_verification.verify_standard_workload(
