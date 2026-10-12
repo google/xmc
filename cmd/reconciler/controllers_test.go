@@ -30,6 +30,8 @@ import (
 	"xmanager_cloud/cmd/actuator/k8s_client"
 	"xmanager_cloud/cmd/reconciler/clusterqueue"
 	"xmanager_cloud/cmd/reconciler/shared"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/workunit"
 )
 
 // fakeControllerManager records runnables added via Add and serves a fake
@@ -137,5 +139,15 @@ func TestNewMLRunCreator(t *testing.T) {
 	// Hypercompute client creation returns nil or valid client without panic.
 	if client == nil {
 		t.Log("newMLRunCreator returned nil interface in test environment as expected")
+	}
+}
+
+func TestNewJobSetStorage(t *testing.T) {
+	if got := newJobSetStorage(nil, workunit.NewUpdater(nil)); got != nil {
+		t.Errorf("newJobSetStorage(nil, ...) = %v, want nil interface", got)
+	}
+	store := &storage.MockStorage{}
+	if got := newJobSetStorage(store, workunit.NewUpdater(store)); got == nil {
+		t.Error("newJobSetStorage(non-nil, ...) = nil, want non-nil ReconcilerStorage")
 	}
 }
