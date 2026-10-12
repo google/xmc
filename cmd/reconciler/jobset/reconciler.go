@@ -121,9 +121,6 @@ func NewReconciler(p Params) (*Reconciler, error) {
 	if p.Batcher == nil {
 		return nil, errors.New("batcher is required")
 	}
-	if p.Storage == nil {
-		return nil, errors.New("storage is required")
-	}
 	return &Reconciler{
 		Client:                   p.Client,
 		Scheme:                   p.Scheme,
@@ -152,7 +149,7 @@ type ManagedXprofArtifactReader interface {
 
 // ReconcilerStorage is the storage surface the JobSet reconciler depends on. It is
 // composed from focused interfaces so callers and tests only implement what they use.
-// shared.StorageUpdater is used to write the terminal STOPPED status synchronously
+// shared.StorageUpdater is used to write the terminal status synchronously
 // before releasing a deleting JobSet's finalizer.
 type ReconcilerStorage interface {
 	WorkUnitExecutionReader
@@ -254,11 +251,35 @@ func (r *Reconciler) stoppedWriteAbandonReason(jobSet *v1alpha2.JobSet, err erro
 	return ""
 }
 
-// persistStoppedOnDelete synchronously writes the terminal STOPPED status for a
+// buildDeletionUpdate returns the terminal WorkUnitExecutionUpdate to persist
+// before a deleting JobSet's finalizer is removed. If the JobSet already
+// reached Completed or Failed (for example, before TTL cleanup or a concurrent
+// stop), that terminal update is preserved instead of overwriting it with
+// STOPPED.
+func (r *Reconciler) buildDeletionUpdate(ctx context.Context, jobSet *v1alpha2.JobSet, wid, eid int64) *storagepkg.WorkUnitExecutionUpdate {
+	switch ToWorkUnitState(jobSet) {
+	case spb.WorkUnitStatus_COMPLETED, spb.WorkUnitStatus_FAILED:
+		return ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, "", "")
+	default:
+		return createStoppedUpdate(wid, eid)
+	}
+}
+
+// evictPendingJobSetUpdate removes any pending JobsetSource batcher entry for
+// (xid, wid) with EID <= eid so a stale non-terminal update cannot flush after
+// the synchronous deletion write completes.
+func (r *Reconciler) evictPendingJobSetUpdate(xid, wid, eid int64) {
+	if r.Batcher != nil {
+		r.Batcher.Remove(xid, wid, eid, shared.JobsetSource)
+	}
+}
+
+// persistStoppedOnDelete synchronously writes the terminal status for a
 // deleting JobSet. It returns an error only for retryable storage failures, so the
 // caller keeps the finalizer and controller-runtime retries with backoff. Invalid
-// labels, permanent storage errors, and failures past maxStoppedWriteRetryAge are
-// logged and swallowed so that deletion is never blocked indefinitely.
+// labels, nil Storage, permanent storage errors, and failures past
+// maxStoppedWriteRetryAge are logged and swallowed so that deletion is never
+// blocked indefinitely.
 //
 // Retries are safe: storage skips updates whose EID is not the current execution,
 // and terminal states (including STOPPED) allow no further transitions
@@ -268,18 +289,22 @@ func (r *Reconciler) persistStoppedOnDelete(ctx context.Context, jobSet *v1alpha
 		logging.Warn(ctx, "JobSet is being deleted with finalizer but has invalid labels", "namespace", jobSet.Namespace, "error", labelsErr)
 		return nil
 	}
-	update := createStoppedUpdate(wid, eid)
+	if r.Storage == nil {
+		r.evictPendingJobSetUpdate(xid, wid, eid)
+		return nil
+	}
+	update := r.buildDeletionUpdate(ctx, jobSet, wid, eid)
 	writeCtx, cancel := context.WithTimeout(ctx, stoppedWriteTimeout)
 	defer cancel()
 	if _, err := r.Storage.UpdateWorkUnitExecutions(writeCtx, xid, []*storagepkg.WorkUnitExecutionUpdate{update}); err != nil {
-		return r.handleStoppedWriteFailure(ctx, jobSet, err)
+		if handleErr := r.handleStoppedWriteFailure(ctx, jobSet, err); handleErr != nil {
+			return handleErr
+		}
+		r.evictPendingJobSetUpdate(xid, wid, eid)
+		return nil
 	}
-	logging.Debug(ctx, "Persisted STOPPED status for deleting JobSet", "namespace", jobSet.Namespace)
-	// Also enqueue the same update so it replaces any pending stale JobsetSource
-	// update for this work unit, which could otherwise later overwrite the STOPPED
-	// system message when the batcher flushes.
-	updatesSentTotal.WithLabelValues().Inc()
-	r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
+	logging.Debug(ctx, "Persisted terminal status for deleting JobSet", "namespace", jobSet.Namespace)
+	r.evictPendingJobSetUpdate(xid, wid, eid)
 	return nil
 }
 

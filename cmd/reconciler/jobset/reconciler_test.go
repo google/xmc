@@ -174,13 +174,13 @@ func TestNewReconciler_Validation(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "missing storage",
+			name: "missing storage is allowed",
 			params: Params{
 				Client:  cl,
 				Scheme:  scheme,
 				Batcher: batcher,
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 	}
 
@@ -434,11 +434,12 @@ func TestActuatorReconcilerFinalizer_PatchErrors(t *testing.T) {
 				WithInterceptorFuncs(failingPatch(tc.patchErr)).
 				Build()
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
+			store := &mockStorageUpdater{}
 			reconciler, err := NewReconciler(Params{
 				Client:  cl,
 				Scheme:  scheme,
 				Batcher: batcher,
-				Storage: &mockStorageUpdater{},
+				Storage: store,
 			})
 			if err != nil {
 				t.Fatalf("NewReconciler() unexpected error: %v", err)
@@ -454,13 +455,16 @@ func TestActuatorReconcilerFinalizer_PatchErrors(t *testing.T) {
 			if gotErrs := testutil.ToFloat64(reconcileErrorsTotal.WithLabelValues()); gotErrs != tc.wantErrorCount {
 				t.Errorf("reconcileErrorsTotal = %v, want %v", gotErrs, tc.wantErrorCount)
 			}
-			// The STOPPED write and its batcher enqueue happen before the patch, so
-			// they are unaffected by patch failures.
-			if gotSent := testutil.ToFloat64(updatesSentTotal.WithLabelValues()); gotSent != 1 {
-				t.Errorf("updatesSentTotal = %v, want 1 (STOPPED enqueued before patch)", gotSent)
+			// The synchronous STOPPED write happens before the patch, so it is
+			// unaffected by patch failures and does not re-enqueue to the batcher.
+			if got := len(store.calls[123]); got != 1 {
+				t.Fatalf("storage writes for xid 123 = %d, want 1", got)
 			}
-			if got := batcher.Updates[123][1][shared.JobsetSource].WorkUnitExecution.GetStatus().GetState(); got != spb.WorkUnitStatus_STOPPED {
-				t.Errorf("batcher JobsetSource state = %v, want STOPPED", got)
+			if got := store.calls[123][0].WorkUnitExecution.GetStatus().GetState(); got != spb.WorkUnitStatus_STOPPED {
+				t.Errorf("written state = %v, want STOPPED", got)
+			}
+			if len(batcher.Updates) != 0 {
+				t.Errorf("batcher.Updates = %v, want empty", batcher.Updates)
 			}
 		})
 	}
@@ -547,6 +551,7 @@ func deletingJobSet() *v1alpha2.JobSet {
 type stoppedWrite struct {
 	XID, WID, EID     int64
 	State             spb.WorkUnitStatus_WorkUnitState
+	SystemMessageText string
 	FinalizersAtWrite []string
 }
 
@@ -563,6 +568,7 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 		WID:               1,
 		EID:               1,
 		State:             spb.WorkUnitStatus_STOPPED,
+		SystemMessageText: "Work unit has been fully stopped.",
 		FinalizersAtWrite: []string{constants.JobSetFinalizer},
 	}}
 	// A stale pending JobsetSource update for the same work unit execution.
@@ -575,31 +581,81 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		jobSet        *v1alpha2.JobSet
-		pending       *storagepkg.WorkUnitExecutionUpdate
-		updateErr     error
-		sinceDeletion time.Duration
-		wantErr       bool
-		wantDeleted   bool
-		wantWrites    []stoppedWrite
-		wantBatched   bool
-		wantAbandoned map[string]float64
+		name            string
+		jobSet          *v1alpha2.JobSet
+		pending         *storagepkg.WorkUnitExecutionUpdate
+		nilStorage      bool
+		updateErr       error
+		sinceDeletion   time.Duration
+		wantErr         bool
+		wantDeleted     bool
+		wantWrites      []stoppedWrite
+		wantPendingKept bool
+		wantAbandoned   map[string]float64
 	}{
 		{
-			name:        "write succeeds before finalizer is removed and is enqueued",
+			name:        "write succeeds before finalizer is removed",
 			jobSet:      deletingJobSet(),
 			wantDeleted: true,
 			wantWrites:  wantStopped,
-			wantBatched: true,
 		},
 		{
-			name:        "successful write replaces stale pending batcher update",
+			name:        "successful write evicts stale pending batcher update",
 			jobSet:      deletingJobSet(),
 			pending:     pendingRunning,
 			wantDeleted: true,
 			wantWrites:  wantStopped,
-			wantBatched: true,
+		},
+		{
+			name: "deleting already-Completed JobSet persists COMPLETED instead of STOPPED",
+			jobSet: func() *v1alpha2.JobSet {
+				js := deletingJobSet()
+				js.Status.Conditions = []metav1.Condition{{
+					Type:   string(v1alpha2.JobSetCompleted),
+					Status: metav1.ConditionTrue,
+				}}
+				return js
+			}(),
+			pending:     pendingRunning,
+			wantDeleted: true,
+			wantWrites: []stoppedWrite{{
+				XID:               123,
+				WID:               1,
+				EID:               1,
+				State:             spb.WorkUnitStatus_COMPLETED,
+				SystemMessageText: "Work unit completed successfully.",
+				FinalizersAtWrite: []string{constants.JobSetFinalizer},
+			}},
+		},
+		{
+			name: "deleting already-Failed JobSet persists FAILED instead of STOPPED",
+			jobSet: func() *v1alpha2.JobSet {
+				js := deletingJobSet()
+				js.Status.Conditions = []metav1.Condition{{
+					Type:    string(v1alpha2.JobSetFailed),
+					Status:  metav1.ConditionTrue,
+					Reason:  "BackoffLimitExceeded",
+					Message: "job failed",
+				}}
+				return js
+			}(),
+			pending:     pendingRunning,
+			wantDeleted: true,
+			wantWrites: []stoppedWrite{{
+				XID:               123,
+				WID:               1,
+				EID:               1,
+				State:             spb.WorkUnitStatus_FAILED,
+				SystemMessageText: "Work unit failed: job failed (Reason: BackoffLimitExceeded)",
+				FinalizersAtWrite: []string{constants.JobSetFinalizer},
+			}},
+		},
+		{
+			name:        "nil Storage evicts pending batcher update and releases finalizer",
+			jobSet:      deletingJobSet(),
+			pending:     pendingRunning,
+			nilStorage:  true,
+			wantDeleted: true,
 		},
 		{
 			name: "nested CreationTimestamp succeeds",
@@ -618,14 +674,15 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 			}(),
 			wantDeleted: true,
 			wantWrites:  wantStopped,
-			wantBatched: true,
 		},
 		{
-			name:       "transient Unavailable keeps finalizer",
-			jobSet:     deletingJobSet(),
-			updateErr:  fmt.Errorf("spanner: %w", grpcerr.ErrUnavailable),
-			wantErr:    true,
-			wantWrites: wantStopped,
+			name:            "transient Unavailable keeps finalizer and pending batcher update",
+			jobSet:          deletingJobSet(),
+			pending:         pendingRunning,
+			updateErr:       fmt.Errorf("spanner: %w", grpcerr.ErrUnavailable),
+			wantErr:         true,
+			wantWrites:      wantStopped,
+			wantPendingKept: true,
 		},
 		{
 			name:       "context deadline keeps finalizer",
@@ -650,8 +707,9 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 			wantWrites:    wantStopped,
 		},
 		{
-			name:          "transient error past retry budget releases finalizer",
+			name:          "transient error past retry budget evicts pending update and releases finalizer",
 			jobSet:        deletingJobSet(),
+			pending:       pendingRunning,
 			updateErr:     grpcerr.ErrUnavailable,
 			sinceDeletion: 16 * time.Minute,
 			wantDeleted:   true,
@@ -659,8 +717,9 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 			wantAbandoned: map[string]float64{abandonReasonRetryBudgetExhausted: 1},
 		},
 		{
-			name:          "NotFound releases finalizer",
+			name:          "NotFound evicts pending update and releases finalizer",
 			jobSet:        deletingJobSet(),
+			pending:       pendingRunning,
 			updateErr:     fmt.Errorf("work unit execution 1 not found: %w", grpcerr.ErrNotFound),
 			wantDeleted:   true,
 			wantWrites:    wantStopped,
@@ -711,26 +770,29 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 				batcher.Add(t.Context(), 123, *tc.pending, shared.JobsetSource)
 			}
 			var gotWrites []stoppedWrite
-			var lastWritten *storagepkg.WorkUnitExecutionUpdate
-			store := &mockStorageUpdater{updateErr: tc.updateErr}
-			store.onUpdate = func(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) {
-				if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > stoppedWriteTimeout {
-					t.Errorf("storage ctx deadline = %v (set %v), want within %v", deadline, ok, stoppedWriteTimeout)
+			var store ReconcilerStorage
+			if !tc.nilStorage {
+				mockStore := &mockStorageUpdater{updateErr: tc.updateErr}
+				mockStore.onUpdate = func(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) {
+					if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > stoppedWriteTimeout {
+						t.Errorf("storage ctx deadline = %v (set %v), want within %v", deadline, ok, stoppedWriteTimeout)
+					}
+					var js v1alpha2.JobSet
+					if err := cl.Get(context.Background(), key, &js); err != nil {
+						t.Errorf("Get(JobSet) at write time failed: %v", err)
+					}
+					for _, u := range updates {
+						gotWrites = append(gotWrites, stoppedWrite{
+							XID:               xid,
+							WID:               u.WID,
+							EID:               u.EID,
+							State:             u.WorkUnitExecution.GetStatus().GetState(),
+							SystemMessageText: u.WorkUnitExecution.GetStatus().GetSystemMessage().GetUserFacingText(),
+							FinalizersAtWrite: js.Finalizers,
+						})
+					}
 				}
-				var js v1alpha2.JobSet
-				if err := cl.Get(context.Background(), key, &js); err != nil {
-					t.Errorf("Get(JobSet) at write time failed: %v", err)
-				}
-				for _, u := range updates {
-					lastWritten = u
-					gotWrites = append(gotWrites, stoppedWrite{
-						XID:               xid,
-						WID:               u.WID,
-						EID:               u.EID,
-						State:             u.WorkUnitExecution.GetStatus().GetState(),
-						FinalizersAtWrite: js.Finalizers,
-					})
-				}
+				store = mockStore
 			}
 			reconciler, err := NewReconciler(Params{Client: cl, Scheme: scheme, Batcher: batcher, Storage: store})
 			if err != nil {
@@ -765,37 +827,33 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 					t.Errorf("stoppedWriteAbandonedTotal{reason=%q} = %v, want %v", reason, got, tc.wantAbandoned[reason])
 				}
 			}
-			assertStoppedBatched(t, batcher, tc.wantBatched, lastWritten)
+			assertBatcherAfterFinalizer(t, batcher, tc.wantPendingKept, tc.pending)
 		})
 	}
 }
 
-// assertStoppedBatched checks that the batcher holds exactly the written STOPPED
-// update for xid=123/wid=1 (and updatesSentTotal is 1) when wantBatched, or is
-// empty (and updatesSentTotal is 0) otherwise.
-func assertStoppedBatched(t *testing.T, batcher *shared.UpdateBatcher, wantBatched bool, written *storagepkg.WorkUnitExecutionUpdate) {
+// assertBatcherAfterFinalizer checks that updatesSentTotal is 0 on finalizer
+// removal and that the batcher either retains pending (when wantPendingKept) or
+// has been emptied via Batcher.Remove.
+func assertBatcherAfterFinalizer(t *testing.T, batcher *shared.UpdateBatcher, wantPendingKept bool, pending *storagepkg.WorkUnitExecutionUpdate) {
 	t.Helper()
-	wantSent := 0.0
-	if wantBatched {
-		wantSent = 1
-	}
-	if got := testutil.ToFloat64(updatesSentTotal.WithLabelValues()); got != wantSent {
-		t.Errorf("updatesSentTotal = %v, want %v", got, wantSent)
+	if got := testutil.ToFloat64(updatesSentTotal.WithLabelValues()); got != 0 {
+		t.Errorf("updatesSentTotal = %v, want 0", got)
 	}
 	batcher.UpdatesMu.Lock()
 	defer batcher.UpdatesMu.Unlock()
-	if !wantBatched {
+	if !wantPendingKept {
 		if len(batcher.Updates) != 0 {
 			t.Errorf("batcher.Updates = %v, want empty", batcher.Updates)
 		}
 		return
 	}
 	got, ok := batcher.Updates[123][1][shared.JobsetSource]
-	if !ok || written == nil {
-		t.Fatalf("batcher slot present = %v, written = %v; want both", ok, written)
+	if !ok || pending == nil {
+		t.Fatalf("batcher slot present = %v, pending = %v; want both", ok, pending)
 	}
-	if diff := cmp.Diff(*written, got, protocmp.Transform()); diff != "" {
-		t.Errorf("batcher slot mismatch, want the written STOPPED update (-want +got):\n%s", diff)
+	if diff := cmp.Diff(*pending, got, protocmp.Transform()); diff != "" {
+		t.Errorf("batcher slot mismatch (-want +got):\n%s", diff)
 	}
 }
 

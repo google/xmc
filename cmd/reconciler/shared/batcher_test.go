@@ -177,6 +177,64 @@ func TestUpdateBatcherAdd_EIDOrdering(t *testing.T) {
 	}
 }
 
+func TestUpdateBatcherRemove(t *testing.T) {
+	const xid, wid = int64(123), int64(1)
+	tests := []struct {
+		name      string
+		pending   *storagepkg.WorkUnitExecutionUpdate
+		other     *storagepkg.WorkUnitExecutionUpdate
+		removeEID int64
+		want      map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate
+	}{
+		{
+			name:      "no-op on empty batcher",
+			removeEID: 1,
+			want:      map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{},
+		},
+		{
+			name:      "evicts equal EID and cleans up empty maps",
+			pending:   &storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 2},
+			removeEID: 2,
+			want:      map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{},
+		},
+		{
+			name:      "evicts lower pending EID and preserves sibling source",
+			pending:   &storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 1},
+			other:     &storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 1},
+			removeEID: 2,
+			want: map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{
+				xid: {wid: {WorkloadSource: {WID: wid, EID: 1}}},
+			},
+		},
+		{
+			name:      "preserves higher pending EID",
+			pending:   &storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 3},
+			removeEID: 2,
+			want: map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{
+				xid: {wid: {JobsetSource: {WID: wid, EID: 3}}},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b := NewUpdateBatcher(t.Context(), &BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
+			if tc.pending != nil {
+				b.Add(t.Context(), xid, *tc.pending, JobsetSource)
+			}
+			if tc.other != nil {
+				b.Add(t.Context(), xid, *tc.other, WorkloadSource)
+			}
+			b.Remove(xid, wid, tc.removeEID, JobsetSource)
+
+			b.UpdatesMu.Lock()
+			defer b.UpdatesMu.Unlock()
+			if diff := cmp.Diff(tc.want, b.Updates, protocmp.Transform()); diff != "" {
+				t.Errorf("Updates after Remove (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestProcessBatches_Storage(t *testing.T) {
 	ctx := context.Background()
 	mockStorage := &mockStorageUpdater{}

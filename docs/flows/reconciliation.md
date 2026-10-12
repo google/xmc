@@ -20,8 +20,10 @@ components on this page.
 | [ClusterQueue Reconciler](#4-clusterqueue-reconciler) | Controller | Kueue `ClusterQueue` | Which queues exist? |
 | [Kueue Sync Worker](#5-kueue-sync-worker) | Ticker | Kueue pending-workload API | Where is it in the queue? |
 
-All four write through one shared [Update Batcher](#6-the-update-batcher), which is the only
-component that talks to Spanner.
+Periodic and status-change updates from all four flow through one shared
+[Update Batcher](#6-the-update-batcher). The [JobSet Reconciler](#2-jobset-reconciler) also talks
+directly to Spanner to persist terminal status synchronously before releasing a deleting JobSet's
+finalizer and to read execution and artifact state during MLRun reconciliation.
 
 ```mermaid
 graph LR
@@ -39,9 +41,10 @@ graph LR
     KS -->|"pendingworkloads"| K8s
 
     JSR --> B["Update Batcher"]
+    JSR -.->|"deletion write & reads"| SP[("Spanner")]
     WLR --> B
     KS --> B
-    B -->|"UpdateWorkUnitExecutions"| SP[("Spanner")]
+    B -->|"UpdateWorkUnitExecutions"| SP
 ```
 
 The split exists because the three signals arrive on different clocks. JobSet events are
@@ -94,15 +97,18 @@ sequenceDiagram
             Reconciler->>Reconciler: handleJobSetFinalizerRemoval()
             alt Finalizer exists
                 Reconciler->>Reconciler: Parse labels (xid, wid, eid)
-                Reconciler->>Storage: UpdateWorkUnitExecutions(STOPPED) [synchronous]
-                alt Retryable error within 15m of deletionTimestamp
-                    Reconciler-->>ControllerManager: Return error (requeue with backoff, finalizer kept)
-                else Success, permanent error, retry budget exhausted, or invalid labels
-                    opt Write succeeded
-                        Reconciler->>Batcher: Add(StoppedUpdate, JobsetSource)
-                    end
+                alt Labels invalid
                     Reconciler->>K8sAPI: Patch JobSet (Remove Finalizer)
                     K8sAPI-->>Reconciler: result (or Invalid/NotFound)
+                else Labels valid
+                    Reconciler->>Storage: UpdateWorkUnitExecutions(terminal state) [synchronous]
+                    alt Retryable error within 15m of deletionTimestamp
+                        Reconciler-->>ControllerManager: Return error (requeue with backoff, finalizer kept)
+                    else Success, permanent error, or retry budget exhausted
+                        Reconciler->>Batcher: Remove(xid, wid, eid, JobsetSource)
+                        Reconciler->>K8sAPI: Patch JobSet (Remove Finalizer)
+                        K8sAPI-->>Reconciler: result (or Invalid/NotFound)
+                    end
                 end
             else Finalizer already gone
                 Reconciler-->>ControllerManager: Return Result
@@ -138,7 +144,7 @@ disappear from the API server before the Reconciler observed it, leaving the wor
 `STOPPING` forever with no event to ever fix it. With it, the ordering is guaranteed:
 
 1. Parse `xid` / `wid` / `eid` from the JobSet's labels.
-2. Write the terminal `STOPPED` status to Storage synchronously (bounded by a 10s timeout), bypassing the in-memory batcher so a reconciler restart or failed batch flush cannot lose it. On success, the same update is also added to the batcher so it replaces any pending stale JobSet update for that work unit that could otherwise overwrite the `STOPPED` system message on the next flush.
+2. Write the terminal status to Storage synchronously (bounded by a 10s timeout), bypassing the in-memory batcher so a reconciler restart or failed batch flush cannot lose it. If the JobSet already reached `Completed` or `Failed` (for example, before `TTLSecondsAfterFinished` cleanup or a concurrent stop), that terminal update (`COMPLETED` or `FAILED`) is written; otherwise `STOPPED` is written. Once the write succeeds (or is abandoned), any pending `JobsetSource` entry in the batcher for `eid` (or an older execution) is evicted via `Batcher.Remove` so a stale update cannot overwrite the terminal system message on the next tick without incurring a second Spanner write.
 3. Remove the finalizer via an RFC 6902 JSON Patch (`test` + `remove` on `/metadata/finalizers/<idx>`) and patch the JobSet, letting the deletion complete.
 
 If the `STOPPED` write fails, the reconciler decides whether to retry or give up:
