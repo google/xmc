@@ -24,6 +24,7 @@ import {
   ReloaderControl,
 } from '../common/components/autoreloader/autoreloader_service';
 import { PageSizeSelector } from '../common/components/page_size_selector/page_size_selector';
+import { SchedulingPausedBanner } from '../common/components/scheduling_paused_banner/scheduling_paused_banner';
 import { ExperimentsListPageStore } from './experiments_list_page_store';
 import { ExperimentsTable } from './experiments_table/experiments_table';
 import { queryParamsToExperimentFilters } from './utils/query_params';
@@ -37,7 +38,14 @@ import { queryParamsToExperimentFilters } from './utils/query_params';
   templateUrl: './experiments_list_page.ng.html',
   styleUrl: './experiments_list_page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatCardModule, MatIconModule, MatButtonModule, ExperimentsTable, PageSizeSelector],
+  imports: [
+    MatCardModule,
+    MatIconModule,
+    MatButtonModule,
+    ExperimentsTable,
+    PageSizeSelector,
+    SchedulingPausedBanner,
+  ],
   providers: [ExperimentsListPageStore],
 })
 export class ExperimentsListPage implements OnInit, OnDestroy {

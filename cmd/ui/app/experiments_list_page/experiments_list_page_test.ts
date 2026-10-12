@@ -16,7 +16,7 @@ import { MatButtonHarness } from '@angular/material/button/testing';
 import { MatTableHarness } from '@angular/material/table/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Params, provideRouter } from '@angular/router';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, NEVER, of } from 'rxjs';
 
 import { EmptyComponent } from 'app/common/testing_utils/empty_component';
 import { ListExperimentsResponse } from 'app/protos/experiment_state_server';
@@ -24,7 +24,7 @@ import { AUTO_REFRESH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from 'app/servi
 import { ExperimentService } from 'app/service/experiment_service';
 import { FeatureFlagService } from 'app/service/feature_flag_service';
 import { HealthService } from 'app/service/health_service';
-import { bootstrap, cleanState, getEl, hasEl, setupModule, useAutoTick } from 'app/testing/test';
+import { bootstrap, cleanState, hasEl, setupModule, useAutoTick } from 'app/testing/test';
 
 import { ExperimentsListPage } from './experiments_list_page';
 
@@ -172,7 +172,7 @@ describe('ExperimentsListPage Component', () => {
 
     bootstrap(ExperimentsListPage);
 
-    expect(hasEl('[data-testid="scheduling-paused-banner"]')).toBeFalse();
+    expect(hasEl('xmc-scheduling-paused-banner')).toBeFalse();
   });
 
   it('should display the scheduling paused banner when pause scheduling is enabled and active', () => {
@@ -182,11 +182,19 @@ describe('ExperimentsListPage Component', () => {
 
     bootstrap(ExperimentsListPage);
 
-    expect(hasEl('[data-testid="scheduling-paused-banner"]')).toBeTrue();
-    const banner = getEl('[data-testid="scheduling-paused-banner"]');
-    expect(banner.textContent).toContain('Scheduling is paused.');
-    expect(banner.textContent).toContain(
-      'New experiments and work units will remain paused until an administrator resumes scheduling.',
-    );
+    expect(hasEl('xmc-scheduling-paused-banner')).toBeTrue();
+  });
+
+  it('should render experiments while the scheduling status request is still pending', async () => {
+    state.setPauseSchedulingEnabled(true);
+    state.healthService.getSchedulingStatus.and.returnValue(NEVER);
+    state.experimentService.searchExperiments.and.returnValues(of(MOCK_PAGE_RESULT_1));
+
+    bootstrap(ExperimentsListPage);
+
+    const table = await getHarness(MatTableHarness);
+    const rows = await table.getRows({ selector: ':not(.detail-row)' });
+    expect(rows.length).toBe(MOCK_PAGE_RESULT_1.experiments!.length);
+    expect(hasEl('xmc-scheduling-paused-banner')).toBeFalse();
   });
 });

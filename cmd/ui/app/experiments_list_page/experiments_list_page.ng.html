@@ -16,15 +16,7 @@ limitations under the License.
 <h1>Experiments</h1>
 
 @if (isSchedulingPaused()) {
-  <div class="scheduling-paused-banner" role="status" data-testid="scheduling-paused-banner">
-    <mat-icon class="banner-icon">pause_circle</mat-icon>
-    <div class="banner-content">
-      <span class="banner-title">Scheduling is paused.</span>
-      <span class="banner-description">
-        New experiments and work units will remain paused until an administrator resumes scheduling.
-      </span>
-    </div>
-  </div>
+  <xmc-scheduling-paused-banner />
 }
 
 <mat-card appearance="outlined">
