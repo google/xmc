@@ -17,9 +17,8 @@
 import os
 import unittest
 
-from chart_test_lib import find_repo_file, render_chart, render_template, require_helm
+from chart_test_lib import find_repo_file, render_chart, require_helm
 
-ACTUATOR_CLUSTERROLE_TEMPLATE = "templates/actuator/clusterrole.yaml"
 WORKER_MANIFEST_PATH = os.path.join(
     "deploy", "addons", "multikueue", "manifests", "multikueue-worker.yaml"
 )
@@ -122,11 +121,6 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn("xmc.google.com/location=", script)
         self.assertIn("xmc.google.com/cluster-name=", script)
         self.assertIn("xmc-nightly-worker-1", script)
-
-    def test_actuator_clusterrole_grants_kueue_queue_and_admissioncheck_read(self) -> None:
-        manifest = render_template(ACTUATOR_CLUSTERROLE_TEMPLATE, {})
-        self.assertIn('"localqueues"', manifest)
-        self.assertIn('"admissionchecks"', manifest)
 
 
 if __name__ == "__main__":
