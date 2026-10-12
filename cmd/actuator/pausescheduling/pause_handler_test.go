@@ -511,12 +511,6 @@ func TestHandlePause_BufferedTasksMetrics(t *testing.T) {
 	}
 
 	// Verify failed transaction does not increment buffered counter
-	txRunner.WorkUnit = &essmsgpb.WorkUnit{
-		Name: "experiments/100/workUnits/200",
-		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-			Name: "experiments/100/workUnits/200/executions/1",
-		},
-	}
 	txRunner.UpdateCurrentWorkUnitExecutionErr = errors.New("tx failure")
 	if err := h.HandlePause(ctx, newCreatePayload(), "trace-id"); err == nil {
 		t.Fatalf("expected error from HandlePause(), got nil")

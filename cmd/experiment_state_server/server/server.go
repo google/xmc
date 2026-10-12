@@ -55,11 +55,10 @@ type WorkUnitActuator interface {
 
 // baseHandler encapsulates common infrastructure dependencies shared across domain handlers.
 type baseHandler struct {
-	cfg             *config.Config
-	storage         storage.Storage
-	workUnitUpdater *workunit.Updater
-	auth            auth.AuthorizerInterface
-	xidClient       xidgrpcpb.XidServiceClient
+	cfg       *config.Config
+	storage   storage.Storage
+	auth      auth.AuthorizerInterface
+	xidClient xidgrpcpb.XidServiceClient
 }
 
 // ExperimentHandler handles experiment lifecycle operations.
@@ -82,8 +81,9 @@ type StatusMessageHandler struct {
 // WorkUnitHandler handles work unit lifecycle and actuation operations.
 type WorkUnitHandler struct {
 	baseHandler
-	actuator WorkUnitActuator
-	server   spb.ExperimentStateServiceServer
+	workUnitUpdater *workunit.Updater
+	actuator        WorkUnitActuator
+	server          spb.ExperimentStateServiceServer
 }
 
 func newExperimentHandler(base baseHandler, server spb.ExperimentStateServiceServer) *ExperimentHandler {
@@ -108,9 +108,10 @@ func newStatusMessageHandler(base baseHandler) *StatusMessageHandler {
 
 func newWorkUnitHandler(base baseHandler, actuator WorkUnitActuator, server spb.ExperimentStateServiceServer) *WorkUnitHandler {
 	return &WorkUnitHandler{
-		baseHandler: base,
-		actuator:    actuator,
-		server:      server,
+		baseHandler:     base,
+		workUnitUpdater: workunit.NewUpdater(base.storage),
+		actuator:        actuator,
+		server:          server,
 	}
 }
 
@@ -143,11 +144,10 @@ func New(p Params) (*Server, error) {
 	}
 
 	base := baseHandler{
-		cfg:             p.Config,
-		storage:         p.Storage,
-		workUnitUpdater: workunit.NewUpdater(p.Storage),
-		auth:            p.Authorizer,
-		xidClient:       p.XidClient,
+		cfg:       p.Config,
+		storage:   p.Storage,
+		auth:      p.Authorizer,
+		xidClient: p.XidClient,
 	}
 
 	s := &Server{}

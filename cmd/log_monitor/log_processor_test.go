@@ -36,73 +36,21 @@ type mockStorage struct {
 	storage.MockStorage
 	mu        sync.Mutex
 	updateErr error
-	// Map of xid to updates recorded via UpdateCurrentWorkUnitExecution.
+	// Map of xid to updates passed to UpdateWorkUnitExecutions.
 	gotWorkUnitExecutionUpdates map[int64][]*storage.WorkUnitExecutionUpdate
 }
 
-func (s *mockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
-	tx := &storage.Transaction{
-		Experiments:    s,
-		WorkUnits:      s,
-		StatusMessages: s,
-		StatusHistory:  s,
-	}
-	return fn(ctx, tx)
-}
-
-func (s *mockStorage) InsertWorkUnitExecutionMessage(ctx context.Context, xid, wid, eid int64, msg *essmsgpb.StructuredMessage) error {
-	return nil
-}
-
-func (s *mockStorage) FetchUpdatingWorkUnits(ctx context.Context, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnit, error) {
+func (s *mockStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.updateErr != nil {
 		return nil, s.updateErr
 	}
-	res := make(map[int64]*essmsgpb.WorkUnit, len(wids))
-	for _, wid := range wids {
-		eid := wid + 1
-		res[wid] = &essmsgpb.WorkUnit{
-			Name: fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid),
-			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-				Name: fmt.Sprintf("experiments/%d/workUnits/%d/executions/%d", xid, wid, eid),
-			},
-		}
-	}
-	return res, nil
-}
-
-func (s *mockStorage) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error) {
-	return &essmsgpb.Experiment{Name: fmt.Sprintf("experiments/%d", xid)}, nil
-}
-
-func (s *mockStorage) UpdateExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error {
-	return nil
-}
-
-func (s *mockStorage) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.updateErr != nil {
-		return s.updateErr
-	}
 	if s.gotWorkUnitExecutionUpdates == nil {
 		s.gotWorkUnitExecutionUpdates = make(map[int64][]*storage.WorkUnitExecutionUpdate)
 	}
-	s.gotWorkUnitExecutionUpdates[xid] = append(s.gotWorkUnitExecutionUpdates[xid], &storage.WorkUnitExecutionUpdate{
-		WID: wid,
-		EID: eid,
-		WorkUnitExecution: &essmsgpb.WorkUnitExecution{
-			Status: &essmsgpb.WorkUnitStatus{
-				UserMessage: execution.GetStatus().GetUserMessage(),
-			},
-		},
-		UpdateMask: &fmpb.FieldMask{
-			Paths: []string{"status.user_message"},
-		},
-	})
-	return nil
+	s.gotWorkUnitExecutionUpdates[xid] = append(s.gotWorkUnitExecutionUpdates[xid], updates...)
+	return nil, nil
 }
 
 // mockMessage implements PubSubMessage for testing.
@@ -169,7 +117,6 @@ func TestProcessBatch(t *testing.T) {
 				WorkUnitExecution: &essmsgpb.WorkUnitExecution{
 					Status: &essmsgpb.WorkUnitStatus{
 						UserMessage: &essmsgpb.StructuredMessage{
-							Parent:         "experiments/1/workUnits/2",
 							UserFacingText: "test log",
 							Severity:       essmsgpb.StructuredMessage_INFO,
 							Source:         essmsgpb.StructuredMessage_APPLICATION,
@@ -187,7 +134,7 @@ func TestProcessBatch(t *testing.T) {
 	if diff := cmp.Diff(wantUpdates, gotUpdates, protocmp.Transform()); diff != "" {
 		t.Errorf("ProcessBatch() mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(wantUpdates, mStorage.gotWorkUnitExecutionUpdates, protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.StructuredMessage{}, "create_time")); diff != "" {
+	if diff := cmp.Diff(wantUpdates, mStorage.gotWorkUnitExecutionUpdates, protocmp.Transform()); diff != "" {
 		t.Errorf("UpdateWorkUnitExecutions() updates mismatch (-want +got):\n%s", diff)
 	}
 	if !msg2.acked {
@@ -278,7 +225,6 @@ func TestProcessBatchMultipleExperiments(t *testing.T) {
 				WorkUnitExecution: &essmsgpb.WorkUnitExecution{
 					Status: &essmsgpb.WorkUnitStatus{
 						UserMessage: &essmsgpb.StructuredMessage{
-							Parent:         "experiments/1/workUnits/2",
 							UserFacingText: "log 1",
 							Severity:       essmsgpb.StructuredMessage_INFO,
 							Source:         essmsgpb.StructuredMessage_APPLICATION,
@@ -298,7 +244,6 @@ func TestProcessBatchMultipleExperiments(t *testing.T) {
 				WorkUnitExecution: &essmsgpb.WorkUnitExecution{
 					Status: &essmsgpb.WorkUnitStatus{
 						UserMessage: &essmsgpb.StructuredMessage{
-							Parent:         "experiments/5/workUnits/6",
 							UserFacingText: "log 2",
 							Severity:       essmsgpb.StructuredMessage_INFO,
 							Source:         essmsgpb.StructuredMessage_APPLICATION,
@@ -313,7 +258,7 @@ func TestProcessBatchMultipleExperiments(t *testing.T) {
 		},
 	}
 
-	if diff := cmp.Diff(wantUpdates, mStorage.gotWorkUnitExecutionUpdates, protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.StructuredMessage{}, "create_time")); diff != "" {
+	if diff := cmp.Diff(wantUpdates, mStorage.gotWorkUnitExecutionUpdates, protocmp.Transform()); diff != "" {
 		t.Errorf("UpdateWorkUnitExecutions() updates mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -287,8 +287,6 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 			},
 			storage: &storage.MockStorage{
 				ListWorkUnitsResp:       []*msgpb.WorkUnit{workUnit},
-				WorkUnit:                workUnit,
-				Experiment:              &msgpb.Experiment{Name: "experiments/123"},
 				AddWorkUnitOperationErr: fmt.Errorf("storage add operation failed"),
 			},
 			wantErr: grpcerr.ErrInternal,

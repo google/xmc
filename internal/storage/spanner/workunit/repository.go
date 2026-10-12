@@ -43,7 +43,10 @@ type ExperimentTxStore interface {
 	UpdateExperimentResources(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error
 }
 
-var _ storage.WorkUnitStore = (*Repository)(nil)
+var (
+	_ storage.WorkUnitStore        = (*Repository)(nil)
+	_ storage.WorkUnitTxRepository = (*TxRepository)(nil)
+)
 
 // Repository manages persistence for work unit entities in Cloud Spanner.
 type Repository struct {

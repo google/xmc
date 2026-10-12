@@ -33,7 +33,6 @@ compat_go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/domain/experiment",
-        "//internal/domain/workunit",
         "//internal/grpcerr",
         "//internal/logging",
         "//internal/query_generator/liststatement",
@@ -56,7 +55,6 @@ compat_go_library(
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/prototext:go_default_library",
         "@org_golang_google_protobuf//proto",
-        "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )
@@ -101,7 +99,6 @@ compat_go_test(
         "//internal/storage/spanner/utils:spannerutils",
         "//internal/storage/spanner/workunit",
         "//internal/validator",
-        "//internal/workunit",
         "@com_github_google_go_cmp//cmp",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_genproto_googleapis_rpc//status",

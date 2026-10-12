@@ -85,31 +85,25 @@ func UpdateWorkUnitExecutionsInTx(ctx context.Context, tx *storage.Transaction, 
 		return nil, nil
 	}
 
-	batchState, err := fetchExecutionsForUpdate(ctx, tx, xid, updates)
+	workUnits, updatedExecutions, err := fetchExecutionsForUpdate(ctx, tx, xid, updates)
 	if err != nil {
 		return nil, err
 	}
 
-	executionDeltas, err := processExecutionUpdates(ctx, tx, xid, batchState.workUnits, batchState.updatedExecutions, updates)
+	executionDeltas, err := processExecutionUpdates(ctx, tx, xid, workUnits, updatedExecutions, updates)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := persistUpdatedExecutions(ctx, tx, xid, batchState.originalExecutions, batchState.updatedExecutions); err != nil {
+	if err := persistUpdatedExecutions(ctx, tx, xid, workUnits, updatedExecutions); err != nil {
 		return nil, err
 	}
 
-	if err := updateExperimentFromExecutions(ctx, tx, xid, executionDeltas, batchState.updatedExecutions); err != nil {
+	if err := updateExperimentFromExecutions(ctx, tx, xid, executionDeltas, updatedExecutions); err != nil {
 		return nil, err
 	}
 
-	return batchState.updatedExecutions, nil
-}
-
-type executionBatchState struct {
-	workUnits          map[int64]*essmsgpb.WorkUnit
-	updatedExecutions  map[int64]*essmsgpb.WorkUnitExecution
-	originalExecutions map[int64]*essmsgpb.WorkUnitExecution
+	return updatedExecutions, nil
 }
 
 func fetchExecutionsForUpdate(
@@ -117,7 +111,7 @@ func fetchExecutionsForUpdate(
 	tx *storage.Transaction,
 	xid int64,
 	updates []*storage.WorkUnitExecutionUpdate,
-) (*executionBatchState, error) {
+) (map[int64]*essmsgpb.WorkUnit, map[int64]*essmsgpb.WorkUnitExecution, error) {
 	wids := make([]int64, len(updates))
 	for i, update := range updates {
 		wids[i] = update.WID
@@ -125,11 +119,10 @@ func fetchExecutionsForUpdate(
 
 	workUnits, err := tx.WorkUnits.FetchUpdatingWorkUnits(ctx, xid, wids)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	updatedExecutions := make(map[int64]*essmsgpb.WorkUnitExecution, len(workUnits))
-	originalExecutions := make(map[int64]*essmsgpb.WorkUnitExecution, len(workUnits))
 	for wid, wu := range workUnits {
 		exec := wu.GetCurrentWorkUnitExecution()
 		if exec == nil {
@@ -138,16 +131,12 @@ func fetchExecutionsForUpdate(
 		if exec.Status == nil {
 			exec = proto.Clone(exec).(*essmsgpb.WorkUnitExecution)
 			exec.Status = &essmsgpb.WorkUnitStatus{}
+			wu.CurrentWorkUnitExecution = exec
 		}
 		updatedExecutions[wid] = exec
-		originalExecutions[wid] = proto.Clone(exec).(*essmsgpb.WorkUnitExecution)
 	}
 
-	return &executionBatchState{
-		workUnits:          workUnits,
-		updatedExecutions:  updatedExecutions,
-		originalExecutions: originalExecutions,
-	}, nil
+	return workUnits, updatedExecutions, nil
 }
 
 func processExecutionUpdates(
@@ -258,7 +247,8 @@ func persistUpdatedExecutions(
 	ctx context.Context,
 	tx *storage.Transaction,
 	xid int64,
-	originalExecutions, updatedExecutions map[int64]*essmsgpb.WorkUnitExecution,
+	workUnits map[int64]*essmsgpb.WorkUnit,
+	updatedExecutions map[int64]*essmsgpb.WorkUnitExecution,
 ) error {
 	for wid, execution := range updatedExecutions {
 		_, _, eid, err := validator.ValidateWorkUnitExecutionName(execution.GetName())
@@ -270,7 +260,7 @@ func persistUpdatedExecutions(
 		}
 
 		ctx := logging.WithWorkUnitExecutionName(ctx, execution.GetName())
-		protoDiff := diff.Diff(prototext.Format(originalExecutions[wid]), prototext.Format(execution))
+		protoDiff := diff.Diff(prototext.Format(workUnits[wid].GetCurrentWorkUnitExecution()), prototext.Format(execution))
 		if err := tx.WorkUnits.UpdateCurrentWorkUnitExecution(ctx, xid, wid, eid, execution); err != nil {
 			return fmt.Errorf("failed to update current work unit execution: %w", err)
 		}
@@ -389,7 +379,7 @@ func findExperimentStatusMessage(ctx context.Context, xid int64, workUnits stora
 			continue
 		}
 
-		candidates, err := candidatesForSeverity(ctx, xid, sev, workUnits, currentMsg, isCurrentMsgUpdated, hasCurrentMsg, severityCounts[sev], updatedWUs)
+		candidates, err := candidatesForSeverity(ctx, xid, sev, workUnits, currentMsg, isCurrentMsgUpdated, updatedWUs)
 		if err != nil {
 			return nil, err
 		}
@@ -407,16 +397,15 @@ func candidatesForSeverity(
 	sev essmsgpb.StructuredMessage_Severity,
 	workUnits storage.WorkUnitTxRepository,
 	currentMsg *essmsgpb.StructuredMessage,
-	isCurrentMsgUpdated, hasCurrentMsg bool,
-	sevCount int64,
+	isCurrentMsgUpdated bool,
 	updatedWUs map[int64]*essmsgpb.WorkUnitExecution,
 ) ([]*essmsgpb.StructuredMessage, error) {
 	var candidates []*essmsgpb.StructuredMessage
 	if !isCurrentMsgUpdated {
-		if hasCurrentMsg {
+		if currentMsg.GetSeverity() == sev {
 			candidates = append(candidates, currentMsg)
 		}
-	} else if sevCount > 0 {
+	} else {
 		var err error
 		candidates, err = collectUnmodifiedMessagesForSeverity(ctx, xid, sev, workUnits, updatedWUs)
 		if err != nil {

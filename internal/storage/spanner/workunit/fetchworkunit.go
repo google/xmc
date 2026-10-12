@@ -87,16 +87,11 @@ func (r *Repository) FetchWorkUnitTransaction(ctx context.Context, xid int64, wi
 
 // FetchUpdatingWorkUnits retrieves a batch of work units for update by their unique IDs within the bound read-write transaction.
 func (r *TxRepository) FetchUpdatingWorkUnits(ctx context.Context, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnit, error) {
-	return r.FetchUpdatingWorkUnitsTransaction(ctx, xid, wids, r.tx)
-}
-
-// FetchUpdatingWorkUnitsTransaction retrieves a batch of work units for update by their unique IDs in a transaction.
-func (r *Repository) FetchUpdatingWorkUnitsTransaction(ctx context.Context, xid int64, wids []int64, txn spannerTransaction) (map[int64]*essmsgpb.WorkUnit, error) {
 	stmt := spanner.NewStatement(getUpdatingWorkUnitsSQL.String())
 	stmt.Params["bitReversedXid"] = spannerutils.ReverseBits(xid)
 	stmt.Params["workUnitIds"] = wids
 
-	iter := txn.Query(ctx, stmt)
+	iter := r.tx.Query(ctx, stmt)
 	defer iter.Stop()
 
 	workUnits := make(map[int64]*essmsgpb.WorkUnit, len(wids))
