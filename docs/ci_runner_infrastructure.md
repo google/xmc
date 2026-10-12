@@ -52,6 +52,7 @@ XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Acti
      build:ci --remote_download_toplevel
      build:ci --experimental_remote_cache_compression=true
      ```
+   - Workflows override `--remote_upload_local_results=true` on trusted `refs/heads/main` pushes and `merge_group` runs while keeping `pull_request` runs read-only.
 
 ---
 

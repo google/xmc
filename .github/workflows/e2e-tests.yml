@@ -90,9 +90,18 @@ jobs:
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
 
+      - name: 'Restore Bazel Repository Cache'
+        id: 'cache-bazel-repo-restore'
+        uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: ~/.cache/bazel-repo
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'go.mod', 'go.sum') }}
+          restore-keys: |
+            bazel-repo-${{ runner.os }}-
+
       - name: 'Configure Bazel Cache Settings'
         env:
-          REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' }}
+          REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
         run: |
           mkdir -p ~/.cache/bazel-repo
           cat << EOF_BAZEL >> ~/.bazelrc
