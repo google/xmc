@@ -329,7 +329,7 @@ func TestCleanupFinalizer(t *testing.T) {
 		}
 	})
 
-	t.Run("stale read fails instead of overwriting finalizers", func(t *testing.T) {
+	t.Run("stale read or UID mismatch fails instead of overwriting finalizers", func(t *testing.T) {
 		c, _ := newFakeComponentClient(t, nil, newTestComponent("comp-stale", "default", "other-fin"))
 		stale := newTestComponent("comp-stale", "default")
 		if _, err := AddCleanupFinalizer(ctx, c, stale); err == nil {
@@ -337,6 +337,18 @@ func TestCleanupFinalizer(t *testing.T) {
 		}
 		if diff := cmp.Diff([]string{"other-fin"}, getFakeComponent(t, c, "default", "comp-stale").GetFinalizers()); diff != "" {
 			t.Errorf("stored finalizers mismatch (-want +got):\n%s", diff)
+		}
+
+		recreated := newTestComponent("comp-uid", "default", FinalizerCMSCleanup)
+		recreated.SetUID("uid-new")
+		cUID, _ := newFakeComponentClient(t, nil, recreated)
+		oldIncarnation := newTestComponent("comp-uid", "default", FinalizerCMSCleanup)
+		oldIncarnation.SetUID("uid-old")
+		if err := ReleaseCleanupFinalizer(ctx, cUID, oldIncarnation); err == nil {
+			t.Fatal("ReleaseCleanupFinalizer() with a mismatched UID succeeded, want the /metadata/uid test op to fail")
+		}
+		if !HasCleanupFinalizer(getFakeComponent(t, cUID, "default", "comp-uid")) {
+			t.Error("expected recreated CR finalizer to remain intact when old UID release fails")
 		}
 	})
 

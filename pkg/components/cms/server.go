@@ -361,13 +361,17 @@ func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteD
 	if err != nil {
 		return nil, err
 	}
+	srcs, err := requestSourcesFromProto(req.GetSource())
+	if err != nil {
+		return nil, err
+	}
 
 	policy := req.GetDeletionPolicy()
 	if policy == componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED {
 		policy = componentspb.DeletionPolicy_DELETION_POLICY_DELETE
 	}
 
-	if err := s.store.ExecuteDeletion(ctx, canonicalName, policy, req.GetForce()); err != nil {
+	if err := s.store.ExecuteDeletion(ctx, canonicalName, policy, req.GetForce(), srcs...); err != nil {
 		return nil, err
 	}
 

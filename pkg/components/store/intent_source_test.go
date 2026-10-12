@@ -513,6 +513,36 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 			if finalRec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED || !cmp.Equal(finalRec.Owner, wantOwner) {
 				t.Errorf("final record = (state=%v, owner=%+v), want DISABLED owned by %+v", finalRec.State, finalRec.Owner, wantOwner)
 			}
+
+			// Rejections on ExecuteDeletion leave the component intact in the store.
+			staleDelete := casUID
+			staleDelete.ExpectedOwnerUID = ""
+			staleDelete.Generation = 2 // older than casUID.Generation (3)
+			for _, tc := range []struct {
+				src        store.RequestSource
+				wantReason string
+			}{
+				{fencedCluster, store.ReasonClusterFenced},
+				{otherNamespace, store.ReasonSourceNamespaceConflict},
+				{ownerOnProd, store.ReasonSourceIncarnationMismatch},
+				{staleDelete, store.ReasonStaleGeneration},
+			} {
+				err := s.ExecuteDeletion(ctx, name, componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, tc.src)
+				assertReason(t, err, tc.wantReason)
+			}
+			if _, err := s.GetComponent(ctx, name); err != nil {
+				t.Fatalf("GetComponent() after rejected ExecuteDeletion = %v, want component preserved", err)
+			}
+
+			// ExecuteDeletion by the active owner (or CAS takeover) deletes the component.
+			deleteCAS := ownerOnProd
+			deleteCAS.ExpectedOwnerUID = casUID.UID
+			if err := s.ExecuteDeletion(ctx, name, componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, deleteCAS); err != nil {
+				t.Fatalf("ExecuteDeletion(CAS) error = %v", err)
+			}
+			if _, err := s.GetComponent(ctx, name); status.Code(err) != codes.NotFound {
+				t.Errorf("GetComponent() after ExecuteDeletion = %v, want NotFound", err)
+			}
 		})
 	}
 }

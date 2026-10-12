@@ -22,7 +22,9 @@ import (
 	"slices"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -184,8 +186,9 @@ type jsonPatchOp struct {
 	Value any    `json:"value"`
 }
 
-// patchFinalizers sets the finalizers of item to want with a JSON patch whose test op requires the
-// stored finalizers to equal those of item. A test against null passes only while none are stored.
+// patchFinalizers sets the finalizers of item to want with a JSON patch whose test ops require the
+// stored UID (when present on item) and finalizers to equal those of item. A test against null passes
+// only while no finalizers are stored.
 func patchFinalizers(ctx context.Context, c client.Client, item *unstructured.Unstructured, want []string) (*unstructured.Unstructured, error) {
 	if c == nil {
 		return nil, errors.New("client must not be nil")
@@ -196,10 +199,15 @@ func patchFinalizers(ctx context.Context, c client.Client, item *unstructured.Un
 	if f := item.GetFinalizers(); len(f) > 0 {
 		stored = f
 	}
-	patch, err := json.Marshal([]jsonPatchOp{
-		{Op: "test", Path: "/metadata/finalizers", Value: stored},
-		{Op: "add", Path: "/metadata/finalizers", Value: want},
-	})
+	ops := make([]jsonPatchOp, 0, 3)
+	if uid := item.GetUID(); uid != "" {
+		ops = append(ops, jsonPatchOp{Op: "test", Path: "/metadata/uid", Value: string(uid)})
+	}
+	ops = append(ops,
+		jsonPatchOp{Op: "test", Path: "/metadata/finalizers", Value: stored},
+		jsonPatchOp{Op: "add", Path: "/metadata/finalizers", Value: want},
+	)
+	patch, err := json.Marshal(ops)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal finalizer patch: %w", err)
 	}
@@ -224,6 +232,7 @@ func PersistReconcileResult(ctx context.Context, c client.Client, item *unstruct
 		if err := ReleaseCleanupFinalizer(ctx, c, item); err != nil {
 			return fmt.Errorf("failed to release finalizer: %w", err)
 		}
+		recordDeletionConflictEvent(ctx, c, item, res)
 		return nil
 	}
 	// A Component that no longer exists has no status left to persist. The only 409 expected with
@@ -235,3 +244,29 @@ func PersistReconcileResult(ctx context.Context, c client.Client, item *unstruct
 	}
 	return fmt.Errorf("failed to apply status: %w", err)
 }
+
+// ReasonStaleDeletion is the Kubernetes Warning Event reason emitted when CMS deletion is skipped
+// because the deleted CR is not the active CMS owner (DD §5).
+const ReasonStaleDeletion = "StaleDeletion"
+
+func recordDeletionConflictEvent(ctx context.Context, c client.Client, item *unstructured.Unstructured, res *ReconcileResult) {
+	if c == nil || item == nil || res == nil || res.ConflictMessage == "" {
+		return
+	}
+	now := metav1.Now()
+	ev := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{GenerateName: item.GetName() + ".deletion-skipped-", Namespace: item.GetNamespace()},
+		InvolvedObject: corev1.ObjectReference{APIVersion: item.GetAPIVersion(), Kind: item.GetKind(), Namespace: item.GetNamespace(), Name: item.GetName(), UID: item.GetUID()},
+		Reason:         ReasonStaleDeletion,
+		Message:        res.ConflictMessage,
+		Source:         corev1.EventSource{Component: FieldManagerBridge},
+		FirstTimestamp: now,
+		LastTimestamp:  now,
+		Count:          1,
+		Type:           corev1.EventTypeWarning,
+	}
+	if err := c.Create(ctx, ev); err != nil {
+		logging.Warn(ctx, "Failed to record deletion conflict warning event", "namespace", item.GetNamespace(), "name", item.GetName(), "error", err)
+	}
+}
+

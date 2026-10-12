@@ -848,21 +848,16 @@ func writeObservationTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord,
 }
 
 // ExecuteDeletion deletes a component using the specified deletion policy.
-func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error {
-	canonicalName, err := validateResourceName(name)
+func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...RequestSource) error {
+	canonicalName, reqSrc, err := validateSourcedResourceArgs(name, src)
 	if err != nil {
 		return err
 	}
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		catalog, err := s.loadActiveCatalog(ctx, txn)
+		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, operationExecuteDeletion, canonicalName, reqSrc)
 		if err != nil {
 			return err
-		}
-
-		rec, ok := catalog[canonicalName]
-		if !ok || rec == nil || isDeletedRecord(rec) {
-			return ErrComponentNotFound
 		}
 
 		if err := ValidateDeletionSafety(catalog, canonicalName, policy, force); err != nil {
@@ -875,7 +870,10 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 			return err
 		}
 
-		return txn.BufferWrite(mutations)
+		if err := txn.BufferWrite(mutations); err != nil {
+			return err
+		}
+		return recordOwnerTx(txn, rec, reqSrc)
 	})
 
 	return err

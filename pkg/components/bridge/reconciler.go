@@ -67,6 +67,10 @@ type ReconcileResult struct {
 	// already applied a newer generation of it (STALE_GENERATION), so status and finalizer
 	// persistence must be skipped.
 	StaleIncarnation bool
+	// ConflictReason and ConflictMessage record a source or cluster ownership conflict encountered
+	// during deletion when CMS deletion is skipped and only the local CR is cleaned up.
+	ConflictReason  string
+	ConflictMessage string
 	// RequeueAfter optionally overrides ProbeInterval as the delay before the next pass. It is always
 	// honored, whether shorter or longer than ProbeInterval.
 	RequeueAfter time.Duration

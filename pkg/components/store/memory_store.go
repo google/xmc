@@ -443,8 +443,8 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, for
 }
 
 // ExecuteDeletion deletes a component using the specified deletion policy.
-func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error {
-	canonicalName, err := validateResourceName(name)
+func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...RequestSource) error {
+	canonicalName, reqSrc, err := validateSourcedResourceArgs(name, src)
 	if err != nil {
 		return err
 	}
@@ -452,13 +452,16 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	rec, exists := m.componentsByName[canonicalName]
-	if !exists || rec == nil || isDeletedRecord(rec) {
-		return ErrComponentNotFound
+	rec, err := m.lookupMutableRecordLocked(operationExecuteDeletion, canonicalName, reqSrc)
+	if err != nil {
+		return err
 	}
 
 	if err := ValidateDeletionSafety(m.componentsByName, canonicalName, policy, force); err != nil {
 		return err
+	}
+	if reqSrc != nil {
+		rec.Owner = ownerOf(*reqSrc)
 	}
 
 	now := time.Now().UTC()

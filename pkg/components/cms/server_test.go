@@ -73,7 +73,7 @@ func (s *stubStore) UpdateObservedGeneration(ctx context.Context, name string, o
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error {
+func (s *stubStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...store.RequestSource) error {
 	return status.Error(codes.Unimplemented, "not implemented")
 }
 

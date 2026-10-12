@@ -309,3 +309,119 @@ func TestReconcileComponent_SourceNamespaceConflictAndStaleGeneration(t *testing
 	}
 	assertSourceConflictConditions(t, resDeactConflict.Conditions, ReasonSourceNamespaceConflict)
 }
+
+func TestReconcileDeletion_OwnershipAndFencedCleanup(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	cmsClient := NewCMSClientAdapter(cmsserver.NewServer(ms))
+	cluster := &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary", Epoch: 1}
+	fence, err := NewClusterFence(cmsClient, cluster, ClusterFenceOptions{})
+	if err != nil {
+		t.Fatalf("NewClusterFence() error = %v", err)
+	}
+	if err := fence.Declare(ctx); err != nil {
+		t.Fatalf("fence.Declare() error = %v", err)
+	}
+
+	helm := &mockHelm{}
+	r, err := NewReconciler(cmsClient, nil, helm, WithClusterFence(fence))
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
+	}
+
+	const (
+		uidOwner = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+		uidOther = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	)
+	spec := &componentspb.ComponentSpec{
+		Type:           componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:        "1.0.0",
+		DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE,
+	}
+
+	// 1. Owner in ns-a creates and owns ingestion in CMS.
+	if _, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+		Namespace: "ns-a", Name: "ingestion", Generation: 1, UID: uidOwner, Enabled: true, Spec: spec,
+	}); err != nil {
+		t.Fatalf("owner ReconcileComponent() error = %v", err)
+	}
+
+	// 2. Non-owner in ns-b is deleted -> CMS deletion is skipped (SOURCE_NAMESPACE_CONFLICT),
+	// local 1P release for ns-b/uidOther is purged, and RemoveFinalizer is true!
+	helm.purgeCalled = false
+	resNonOwner, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+		Namespace: "ns-b", Name: "ingestion", Generation: 1, UID: uidOther, IsDeleting: true, Spec: spec,
+	})
+	if err != nil {
+		t.Fatalf("non-owner deletion ReconcileComponent() error = %v", err)
+	}
+	if !resNonOwner.RemoveFinalizer || resNonOwner.ConflictReason != ReasonSourceNamespaceConflict || resNonOwner.ConflictMessage == "" {
+		t.Errorf("non-owner deletion result = %+v, want RemoveFinalizer=true and ConflictReason=%q", resNonOwner, ReasonSourceNamespaceConflict)
+	}
+	if !helm.purgeCalled || helm.lastRef.Namespace != "ns-b" || helm.lastRef.UID != uidOther {
+		t.Errorf("expected local purge for ns-b/%s, got purgeCalled=%v lastRef=%+v", uidOther, helm.purgeCalled, helm.lastRef)
+	}
+	if _, err := ms.GetComponent(ctx, "ingestion"); err != nil {
+		t.Fatalf("active owner CMS record was deleted by non-owner CR deletion: %v", err)
+	}
+
+	// 3. Fenced bridge deleting a CR skips CMS deletion, purges local CR workload, and releases finalizer.
+	standbyFence, err := NewClusterFence(cmsClient, &componentspb.ClusterIdentity{
+		Uid: testStandbyClusterUID, Name: "standby", Epoch: 1,
+	}, ClusterFenceOptions{})
+	if err != nil {
+		t.Fatalf("NewClusterFence(standby) error = %v", err)
+	}
+	rFenced, err := NewReconciler(cmsClient, nil, helm, WithClusterFence(standbyFence))
+	if err != nil {
+		t.Fatalf("NewReconciler(standby) error = %v", err)
+	}
+	helm.purgeCalled = false
+	resFenced, err := rFenced.ReconcileComponent(ctx, ReconcileComponentInput{
+		Namespace: "ns-a", Name: "ingestion", Generation: 1, UID: uidOwner, IsDeleting: true, Spec: spec,
+	})
+	if err != nil {
+		t.Fatalf("fenced deletion ReconcileComponent() error = %v", err)
+	}
+	if !resFenced.RemoveFinalizer || resFenced.ConflictReason != ReasonClusterFenced {
+		t.Errorf("fenced deletion result = %+v, want RemoveFinalizer=true and ConflictReason=%q", resFenced, ReasonClusterFenced)
+	}
+	if _, err := ms.GetComponent(ctx, "ingestion"); err != nil {
+		t.Fatalf("active owner CMS record was deleted by fenced cluster CR deletion: %v", err)
+	}
+
+	// 3b. Stale local deletion incarnation in ns-a (uidOther superseded by live uidOwner) sets
+	// StaleIncarnation=true without purging local workload or releasing finalizer.
+	rWithLiveUID, err := NewReconciler(cmsClient, nil, helm, WithClusterFence(fence), WithLiveUIDReader(func(context.Context, string, string) (string, error) {
+		return uidOwner, nil
+	}))
+	if err != nil {
+		t.Fatalf("NewReconciler(withLiveUID) error = %v", err)
+	}
+	helm.purgeCalled = false
+	resStaleDel, err := rWithLiveUID.ReconcileComponent(ctx, ReconcileComponentInput{
+		Namespace: "ns-a", Name: "ingestion", Generation: 1, UID: uidOther, IsDeleting: true, Spec: spec,
+	})
+	if err != nil {
+		t.Fatalf("stale deletion ReconcileComponent() error = %v", err)
+	}
+	if !resStaleDel.StaleIncarnation || resStaleDel.RemoveFinalizer || helm.purgeCalled {
+		t.Errorf("stale deletion result = %+v (purgeCalled=%v), want StaleIncarnation=true, RemoveFinalizer=false, purgeCalled=false", resStaleDel, helm.purgeCalled)
+	}
+
+	// 4. Active owner in ns-a is deleted -> CMS record is deleted, workload purged, finalizer released.
+	helm.purgeCalled = false
+	resOwner, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+		Namespace: "ns-a", Name: "ingestion", Generation: 1, UID: uidOwner, IsDeleting: true, Spec: spec,
+	})
+	if err != nil {
+		t.Fatalf("owner deletion ReconcileComponent() error = %v", err)
+	}
+	if !resOwner.RemoveFinalizer || resOwner.ConflictReason != "" {
+		t.Errorf("owner deletion result = %+v, want RemoveFinalizer=true and empty ConflictReason", resOwner)
+	}
+	if _, err := ms.GetComponent(ctx, "ingestion"); err == nil {
+		t.Error("expected CMS record to be deleted after active owner deletion")
+	}
+}
+

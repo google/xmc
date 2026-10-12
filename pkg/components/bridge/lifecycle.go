@@ -16,6 +16,7 @@ package bridge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -46,19 +47,17 @@ const (
 )
 
 // reconcileDeletion tears a deleted Component down: CMS ExecuteDeletion first (a NotFound means
-// CMS already deleted it), then the 1P workload per deletionPolicy, then the finalizer is
-// released. spec.deletionProtection is not consulted: a deletion that passed admission is final.
+// CMS already deleted it; a source or cluster fence conflict skips CMS deletion so the active
+// owner's CMS record stays intact), then this CR's own 1P workload per deletionPolicy, then the
+// finalizer is released. spec.deletionProtection is not consulted: a deletion that passed admission
+// is final.
 func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
-		if status.Code(err) != codes.NotFound {
-			recordCMSSyncFailure(res, in, err)
-			return res, fmt.Errorf("failed to execute deletion in CMS: %w", err)
+	if err := r.executeCMSDeletion(ctx, in, canonicalName, res); err != nil {
+		if errors.Is(err, errStaleLocalIncarnation) {
+			return res, nil
 		}
-		logging.Info(ctx, "Component already deleted in CMS, proceeding with workload teardown", "name", canonicalName)
-	} else {
-		logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
+		return res, err
 	}
-	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 	if err := r.teardown1PComponent(ctx, in, res); err != nil {
 		return res, err
 	}
@@ -66,6 +65,55 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 	res.RemoveFinalizer = true
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
 	return res, nil
+}
+
+func (r *Reconciler) executeCMSDeletion(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
+	if r.fence != nil {
+		reason, msg, err := r.fence.Check(ctx)
+		if err != nil {
+			recordCMSSyncFailure(res, in, err)
+			return fmt.Errorf("failed to check cluster fence before deletion: %w", err)
+		}
+		if reason != "" {
+			recordDeletionConflict(ctx, res, in, canonicalName, reason, msg)
+			return nil
+		}
+	}
+	_, err := callWithOwnership(ctx, r, in, func(ctx context.Context, src *componentspb.RequestSource) (*componentspb.ExecuteDeletionResponse, error) {
+		return r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+			Name:           canonicalName,
+			DeletionPolicy: in.Spec.GetDeletionPolicy(),
+			Source:         src,
+		})
+	})
+	if errors.Is(err, errStaleLocalIncarnation) {
+		res.StaleIncarnation = true
+		res.RequeueAfter = staleComponentRetryDelay
+		return errStaleLocalIncarnation
+	}
+	if conflictReason, msg := sourceConflictFromError(err); conflictReason != "" {
+		recordDeletionConflict(ctx, res, in, canonicalName, conflictReason, msg)
+		return nil
+	}
+	if err != nil {
+		if status.Code(err) != codes.NotFound {
+			recordCMSSyncFailure(res, in, err)
+			return fmt.Errorf("failed to execute deletion in CMS: %w", err)
+		}
+		logging.Info(ctx, "Component already deleted in CMS, proceeding with workload teardown", "name", canonicalName)
+	} else {
+		logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
+	}
+	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
+	return nil
+}
+
+func recordDeletionConflict(ctx context.Context, res *ReconcileResult, in ReconcileComponentInput, canonicalName, conflictReason, msg string) {
+	skipMsg := fmt.Sprintf("Skipped CMS deletion for %q (%s): %s", canonicalName, conflictReason, msg)
+	logging.Warn(ctx, "Skipping CMS deletion due to ownership conflict; cleaning up local CR workload and finalizer only", "name", canonicalName, "namespace", in.Namespace, "uid", in.UID, "reason", conflictReason, "detail", msg)
+	recordSourceConflict(res, in, conflictReason, skipMsg)
+	res.ConflictReason = conflictReason
+	res.ConflictMessage = skipMsg
 }
 
 func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {

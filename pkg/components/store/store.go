@@ -142,7 +142,7 @@ type Store interface {
 	UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src ...RequestSource) (*ComponentRecord, error)
 
 	// ExecuteDeletion deletes a component using the specified deletion policy.
-	ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error
+	ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...RequestSource) error
 
 	// ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
 	ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error)

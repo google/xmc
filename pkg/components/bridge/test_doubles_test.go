@@ -39,8 +39,10 @@ type mockCMS struct {
 	componentGen            int64
 	lastSetReq              *componentspb.SetComponentIntentRequest
 	lastObsReq              *componentspb.UpdateObservedGenerationRequest
+	lastDelReq              *componentspb.ExecuteDeletionRequest
 	lastDeclareReq          *componentspb.DeclareClusterEpochRequest
 	setCalls                int
+	delCalls                int
 	prepareCalls            int
 	completeCalls           int
 	declareCalls            int
@@ -75,6 +77,8 @@ func (m *mockCMS) UpdateObservedGeneration(ctx context.Context, in *componentspb
 }
 
 func (m *mockCMS) ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error) {
+	m.delCalls++
+	m.lastDelReq = in
 	return &componentspb.ExecuteDeletionResponse{State: componentspb.ComponentState_COMPONENT_STATE_DELETED}, m.delErr
 }
 

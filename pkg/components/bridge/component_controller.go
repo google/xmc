@@ -110,9 +110,10 @@ func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Reque
 		}
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
-	// A rejected finalizer patch, typically a 422 because the cached Component is stale, is
-	// retried with backoff like any other failure: a later pass reads the newer copy, and a
-	// persistent rejection keeps surfacing as an error instead of being retried silently.
+	// A rejected finalizer patch, typically a 422 because the cached Component is stale or a 409
+	// because its UID changed, is retried with backoff like any other failure: a later pass reads
+	// the newer copy, and a persistent rejection keeps surfacing as an error instead of being
+	// retried silently.
 	item, err := c.ensureCleanupFinalizer(ctx, item)
 	if item == nil || err != nil {
 		return reconcile.Result{}, err
