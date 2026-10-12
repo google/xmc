@@ -30,6 +30,16 @@ class MultiKueueConfigTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         require_helm()
 
+    def _assert_no_root_flow_mapping(self, manifest: str) -> None:
+        for doc in manifest.split("---"):
+            lines = [
+                ln.strip()
+                for ln in doc.splitlines()
+                if ln.strip() and not ln.strip().startswith("#")
+            ]
+            if lines:
+                self.assertFalse(lines[0].startswith("{"), f"Root flow mapping found: {lines[0]}")
+
     def test_multikueue_queue_renders_by_default(self) -> None:
         manifest = render_template(
             MULTIKUEUE_QUEUE_TEMPLATE,
@@ -54,14 +64,7 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn('xmc.google.com/cluster-name: "xmc-nightly-worker-1"', manifest)
         self.assertIn("clusterSource:", manifest)
         self.assertIn('"multikueue-worker-kubeconfig"', manifest)
-        for doc in manifest.split("---"):
-            lines = [
-                ln.strip()
-                for ln in doc.splitlines()
-                if ln.strip() and not ln.strip().startswith("#")
-            ]
-            if lines:
-                self.assertFalse(lines[0].startswith("{"), f"Root flow mapping found: {lines[0]}")
+        self._assert_no_root_flow_mapping(manifest)
 
     def test_multikueue_worker_renders_by_default_and_skips_in_dev_env(self) -> None:
         manifest = render_template(MULTIKUEUE_WORKER_TEMPLATE, {})
@@ -81,14 +84,7 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn("create secret generic multikueue-worker-kubeconfig", manifest)
         self.assertIn('"configmaps"', manifest)
         self.assertIn("kueue-manager-config", manifest)
-        for doc in manifest.split("---"):
-            lines = [
-                ln.strip()
-                for ln in doc.splitlines()
-                if ln.strip() and not ln.strip().startswith("#")
-            ]
-            if lines:
-                self.assertFalse(lines[0].startswith("{"), f"Root flow mapping found: {lines[0]}")
+        self._assert_no_root_flow_mapping(manifest)
 
         dev_manifest = render_chart({"isDevEnvironment": "true"})
         self.assertNotIn("name: multikueue-worker-bootstrap", dev_manifest)

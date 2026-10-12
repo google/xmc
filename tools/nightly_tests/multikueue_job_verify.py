@@ -33,13 +33,16 @@ verifier_cli.flags.DEFINE_string(
 )
 
 
+def _run_kubectl(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["kubectl", *args], check=False, capture_output=True, text=True)
+
+
 def _verify_k8s_multikueue_crs(
     xid: str, queue: str = DEFAULT_QUEUE, worker_cluster: str = DEFAULT_WORKER_CLUSTER
 ) -> None:
     """Verifies MultiKueueCluster, AdmissionCheck, and Workload.status.clusterName via kubectl."""
-    kw: dict[str, Any] = {"capture_output": True, "text": True}
     try:
-        ctx = subprocess.run(["kubectl", "config", "current-context"], check=False, **kw)
+        ctx = _run_kubectl("config", "current-context")
     except FileNotFoundError:
         return
     if ctx.returncode != 0 or not ctx.stdout.strip():
@@ -49,7 +52,7 @@ def _verify_k8s_multikueue_crs(
         ("multikueuecluster", worker_cluster),
         ("admissioncheck", "multikueue-admission-check"),
     ):
-        res = subprocess.run(["kubectl", "get", kind, name, "-o", jp], check=False, **kw)
+        res = _run_kubectl("get", kind, name, "-o", jp)
         if res.returncode != 0 or res.stdout.strip() != "True":
             raise AssertionError(
                 f"{kind}/{name} condition Active=True failed "
@@ -59,9 +62,7 @@ def _verify_k8s_multikueue_crs(
         f"jsonpath={{.items[?(@.spec.podSets[0].template.metadata.labels"
         f'.xmc\\.google\\.com/experiment-id=="{xid}")].status.clusterName}}'
     )
-    wl = subprocess.run(
-        ["kubectl", "get", "workloads", "-n", queue, "-o", wl_jp], check=False, **kw
-    )
+    wl = _run_kubectl("get", "workloads", "-n", queue, "-o", wl_jp)
     clusters = wl.stdout.split() if wl.returncode == 0 else []
     if wl.returncode != 0 or not clusters or set(clusters) != {worker_cluster}:
         raise AssertionError(

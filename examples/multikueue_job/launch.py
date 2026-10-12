@@ -38,6 +38,31 @@ _DURATION = flags.DEFINE_integer("duration", 20, "Execution duration in seconds 
 snapshot_code.push_repo_state = lambda *a, **kw: type("Dummy", (), {"commit_url": None})()
 
 
+def _build_work_unit(
+    worker: str, queue: str, dur: int, idx: int, total: int, res: resources_pb2.ResourceSet
+) -> work_unit_pb2.WorkUnit:
+    """Constructs a single MultiKueue WorkUnit protobuf."""
+    cmd = f"import socket, time; print(socket.gethostname(), flush=True); time.sleep({dur})"
+    spec = work_unit_pb2.ExecutableSpec(
+        name="primary-worker",
+        docker_image="python:3.11-slim",
+        command=["python3", "-c", cmd],
+        resources=res,
+    )
+    job = work_unit_pb2.KubernetesJob(name=worker, replicas=1, spec=spec)
+    exec_pb = work_unit_pb2.Executable(
+        scheduling_constraints=work_unit_pb2.SchedulingConstraints(queue_name=queue),
+        jobset=work_unit_pb2.JobSetExecutable(jobs=[job]),
+    )
+    return work_unit_pb2.WorkUnit(
+        work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
+        priority=priority_pb2.Priority.NORMAL,
+        notes=f"MultiKueue WorkUnit {idx}/{total} on queue '{queue}'",
+        tags=[queue, worker, "multikueue"],
+        executable=exec_pb,
+    )
+
+
 def main(argv: Sequence[str]) -> None:
     """Launches the MultiKueue workload experiment."""
     logging.getLogger("dotenv.main").setLevel(logging.ERROR)
@@ -60,26 +85,7 @@ def main(argv: Sequence[str]) -> None:
         xid = exp.resource_name.split("/")[-1]
         print(f"Created Experiment: {exp.resource_name} (XID: {xid})\nExperiment XID: {xid}")
         for i in range(1, n + 1):
-            worker = f"multikueue-worker-{i}"
-            cmd = f"import socket, time; print(socket.gethostname(), flush=True); time.sleep({dur})"
-            spec = work_unit_pb2.ExecutableSpec(
-                name="primary-worker",
-                docker_image="python:3.11-slim",
-                command=["python3", "-c", cmd],
-                resources=res,
-            )
-            job = work_unit_pb2.KubernetesJob(name=worker, replicas=1, spec=spec)
-            exec_pb = work_unit_pb2.Executable(
-                scheduling_constraints=work_unit_pb2.SchedulingConstraints(queue_name=queue),
-                jobset=work_unit_pb2.JobSetExecutable(jobs=[job]),
-            )
-            wu = work_unit_pb2.WorkUnit(
-                work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
-                priority=priority_pb2.Priority.NORMAL,
-                notes=f"MultiKueue WorkUnit {i}/{n} on queue '{queue}'",
-                tags=[queue, worker, "multikueue"],
-                executable=exec_pb,
-            )
+            wu = _build_work_unit(f"multikueue-worker-{i}", queue, dur, i, n, res)
             req = ess_api_pb2.CreateWorkUnitRequest(parent=exp.resource_name, work_unit=wu)
             print(f"  [{i}/{n}] Created: {stub.create_work_unit(req).name}")
 

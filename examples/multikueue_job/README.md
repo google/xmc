@@ -7,7 +7,7 @@ This directory contains a standalone launch script (`launch.py`) for submitting 
 1. Activate the XMC virtual environment and install dependencies:
    ```bash
    source deploy/cli/venv/bin/activate
-   pip install -r examples/multikueue_job/requirements.txt
+   pip install -r requirements.txt
    ```
 
 2. **Environment Variables**:
