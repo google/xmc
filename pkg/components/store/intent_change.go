@@ -77,10 +77,14 @@ func planIntent(canonicalName string, rec *ComponentRecord, spec *componentspb.C
 	return intentPlan{write: writeSpec, generation: max(desiredGen, rec.Generation+1)}, nil
 }
 
-// planSourcedIntent decides how an intent from src applies to rec. An intent from the owner object
-// (same UID) at an older generation is stale when changed and a no-op otherwise. Any other intent
-// is current: a changed one bumps the generation by 1, and an unchanged one records src as owner.
+// planSourcedIntent decides how an intent from src applies to rec. After checkSourceOwnership, an
+// intent from the owner object (same UID) at an older generation is stale when changed and a no-op
+// otherwise. Any other intent, including an adoption, is current: a changed one bumps the
+// generation by 1, and an unchanged one records src as owner.
 func planSourcedIntent(canonicalName string, rec *ComponentRecord, changed bool, src RequestSource) (intentPlan, error) {
+	if err := checkSourceOwnership(setIntentOperation, canonicalName, rec.Owner, src); err != nil {
+		return intentPlan{}, err
+	}
 	plan := intentPlan{write: writeNothing, generation: rec.Generation}
 	olderGeneration := rec.Owner.isOwnerObject(src) && src.Generation < rec.Owner.Generation
 	switch {

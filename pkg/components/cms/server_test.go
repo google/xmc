@@ -642,6 +642,22 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 			wantCode:   codes.FailedPrecondition,
 			wantReason: store.ReasonStaleGeneration,
 		},
+		{
+			name:       "source from another namespace carries the SOURCE_NAMESPACE_CONFLICT ErrorInfo",
+			seed:       true,
+			req:        prototest.Modify(baseReq, func(r *componentspb.SetComponentIntentRequest) { r.Source.Namespace = "other" }),
+			wantCode:   codes.FailedPrecondition,
+			wantReason: store.ReasonSourceNamespaceConflict,
+		},
+		{
+			name: "another incarnation naming the owner in expected_owner_uid takes the component over",
+			seed: true,
+			req: prototest.Modify(baseReq, func(r *componentspb.SetComponentIntentRequest) {
+				r.Source.Uid, r.Source.Generation, r.Source.ExpectedOwnerUid = "uid-b", 1, "uid-a"
+			}),
+			wantGen:   1,
+			wantOwner: &store.SourceOwner{UID: "uid-b", Generation: 1, Namespace: "xmc", ClusterUID: "cluster-1", Epoch: 1},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

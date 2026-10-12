@@ -399,6 +399,13 @@ message RequestSource {
     (google.api.field_behavior) = REQUIRED,
     json_name = "cluster"
   ];
+
+  // Compare-and-swap guard: when it names the uid of the recorded owner, a source with another uid
+  // in the owner's namespace and cluster takes the component over instead of being rejected.
+  string expected_owner_uid = 6 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "expectedOwnerUid"
+  ];
 }
 
 // Identity of a Kubernetes cluster that sends Component requests.
@@ -737,7 +744,8 @@ message GetPlatformHealthResponse {
 service ComponentManagerService {
   // Sets or updates the desired intent and specification for a component. Rejections that callers
   // act on are FailedPrecondition with a google.rpc.ErrorInfo in domain components.xmc.dev:
-  // DEPENDENCY_NOT_REGISTERED, and for sourced requests STALE_GENERATION.
+  // DEPENDENCY_NOT_REGISTERED, and for sourced requests STALE_GENERATION,
+  // SOURCE_NAMESPACE_CONFLICT and SOURCE_INCARNATION_MISMATCH.
   rpc SetComponentIntent(SetComponentIntentRequest) returns (SetComponentIntentResponse) {
     option (google.api.http) = {
       post: "/v1alpha1/{name=components/*}:setIntent"

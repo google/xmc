@@ -60,29 +60,38 @@ func TestSetSourcedComponentIntent_OwnerParity(t *testing.T) {
 	newEpoch := sourceWith(func(s *store.RequestSource) { s.Epoch = 2 })
 	olderGen := sourceWith(func(s *store.RequestSource) { s.Generation = 2 })
 	otherObject := sourceWith(func(s *store.RequestSource) { s.UID, s.Generation = "uid-b", 1 })
+	casAdopter := sourceWith(func(s *store.RequestSource) { s.UID, s.Generation, s.ExpectedOwnerUID = "uid-b", 1, "uid-a" })
+	otherNamespace := sourceWith(func(s *store.RequestSource) { s.Namespace, s.UID, s.ExpectedOwnerUID = "other", "uid-b", "uid-a" })
+	casFromOtherCluster := sourceWith(func(s *store.RequestSource) { s.UID, s.ExpectedOwnerUID, s.ClusterUID = "uid-b", "uid-a", "cluster-2" })
+	withUnregisteredDep := intentSpec("v1.1.0", "intent-source-unregistered")
 	tests := []struct {
-		name      string
-		legacy    bool
-		spec      *componentspb.ComponentSpec
-		src       store.RequestSource
-		wantStale bool
-		wantGen   int64
-		wantOwner *store.SourceOwner
+		name       string
+		legacy     bool
+		spec       *componentspb.ComponentSpec
+		src        store.RequestSource
+		wantReason string
+		wantGen    int64
+		wantOwner  *store.SourceOwner
 		// wantReset expects the state reset by a spec write; otherwise the seeded state,
 		// UpdateTime and Etag must be kept.
 		wantReset bool
 	}{
-		{name: "legacy record adopts an unchanged intent without a bump", legacy: true, spec: unchanged, src: ownerSource, wantGen: 5000, wantOwner: ownerFor(ownerSource)},
-		{name: "legacy record adopts a changed intent with a bump by one", legacy: true, spec: changed, src: ownerSource, wantGen: 5001, wantOwner: ownerFor(ownerSource), wantReset: true},
-		{name: "owner replay is a no-op", spec: unchanged, src: ownerSource, wantGen: 1, wantOwner: ownerFor(ownerSource)},
-		{name: "owner at a newer generation records only the owner", spec: unchanged, src: newerGen, wantGen: 1, wantOwner: ownerFor(newerGen)},
-		{name: "owner at a new cluster epoch records only the owner", spec: unchanged, src: newEpoch, wantGen: 1, wantOwner: ownerFor(newEpoch)},
-		{name: "owner with a changed spec bumps by one", spec: changed, src: ownerSource, wantGen: 2, wantOwner: ownerFor(ownerSource), wantReset: true},
-		{name: "owner at an older generation with an unchanged spec is a no-op", spec: unchanged, src: olderGen, wantGen: 1, wantOwner: ownerFor(ownerSource)},
-		{name: "owner at an older generation with a changed spec is stale", spec: changed, src: olderGen, wantStale: true},
-		{name: "stale intent naming an unregistered dependency is rejected as stale", spec: intentSpec("v1.1.0", "intent-source-unregistered"), src: olderGen, wantStale: true},
-		{name: "another object adopts an unchanged intent", spec: unchanged, src: otherObject, wantGen: 1, wantOwner: ownerFor(otherObject)},
-		{name: "another object adopts a changed intent with a bump by one", spec: changed, src: otherObject, wantGen: 2, wantOwner: ownerFor(otherObject), wantReset: true},
+		{name: "legacy record adopts an unchanged intent without a bump (R2)", legacy: true, spec: unchanged, src: otherNamespace, wantGen: 5000, wantOwner: ownerFor(otherNamespace)},
+		{name: "legacy record adopts a changed intent with a bump by one (R2)", legacy: true, spec: changed, src: ownerSource, wantGen: 5001, wantOwner: ownerFor(ownerSource), wantReset: true},
+		{name: "owner replay is a no-op (R3)", spec: unchanged, src: ownerSource, wantGen: 1, wantOwner: ownerFor(ownerSource)},
+		{name: "owner at a newer generation records only the owner (R3)", spec: unchanged, src: newerGen, wantGen: 1, wantOwner: ownerFor(newerGen)},
+		{name: "owner at a new cluster epoch records only the owner (R3)", spec: unchanged, src: newEpoch, wantGen: 1, wantOwner: ownerFor(newEpoch)},
+		{name: "owner with a changed spec bumps by one (R3)", spec: changed, src: ownerSource, wantGen: 2, wantOwner: ownerFor(ownerSource), wantReset: true},
+		{name: "owner at an older generation with an unchanged spec is a no-op (R3)", spec: unchanged, src: olderGen, wantGen: 1, wantOwner: ownerFor(ownerSource)},
+		{name: "owner at an older generation with a changed spec is stale (R3)", spec: changed, src: olderGen, wantReason: store.ReasonStaleGeneration},
+		{name: "stale intent naming an unregistered dependency is rejected as stale (R3)", spec: withUnregisteredDep, src: olderGen, wantReason: store.ReasonStaleGeneration},
+		{name: "another namespace conflicts even with a CAS guard (R4)", spec: unchanged, src: otherNamespace, wantReason: store.ReasonSourceNamespaceConflict},
+		{name: "conflicting namespace naming an unregistered dependency is rejected as a conflict (R4)", spec: withUnregisteredDep, src: otherNamespace, wantReason: store.ReasonSourceNamespaceConflict},
+		{name: "another object naming the owner adopts an unchanged intent (R5)", spec: unchanged, src: casAdopter, wantGen: 1, wantOwner: ownerFor(casAdopter)},
+		{name: "another object naming the owner adopts a changed intent (R5)", spec: changed, src: casAdopter, wantGen: 2, wantOwner: ownerFor(casAdopter), wantReset: true},
+		{name: "another object without a CAS guard mismatches (R6)", spec: unchanged, src: otherObject, wantReason: store.ReasonSourceIncarnationMismatch},
+		{name: "CAS guard from another cluster mismatches (R6)", spec: unchanged, src: casFromOtherCluster, wantReason: store.ReasonSourceIncarnationMismatch},
+		{name: "mismatching object naming an unregistered dependency is rejected as a mismatch (R6)", spec: withUnregisteredDep, src: otherObject, wantReason: store.ReasonSourceIncarnationMismatch},
 	}
 	for _, backend := range intentStoreBackends() {
 		t.Run(backend.name, func(t *testing.T) {
@@ -95,8 +104,8 @@ func TestSetSourcedComponentIntent_OwnerParity(t *testing.T) {
 					before := seedOwnedComponent(ctx, t, s, name, tt.legacy)
 
 					got, err := s.SetSourcedComponentIntent(ctx, name, tt.spec, nil, tt.src)
-					if tt.wantStale {
-						assertStaleGenerationRejected(ctx, t, s, name, err, before)
+					if tt.wantReason != "" {
+						assertOwnershipRejected(ctx, t, s, name, err, tt.wantReason, before)
 						return
 					}
 					if err != nil {
@@ -150,17 +159,18 @@ func TestSetSourcedComponentIntent_RecordLifecycle(t *testing.T) {
 }
 
 // TestSpannerStore_SetSourcedComponentIntent_ReadOnlyFastPath checks that only sourced intents that
-// write nothing skip the read-write transaction.
+// write nothing skip the read-write transaction, which decides every owner write and rejection.
 func TestSpannerStore_SetSourcedComponentIntent_ReadOnlyFastPath(t *testing.T) {
 	tests := []struct {
 		name          string
 		src           store.RequestSource
 		wantFallbacks int
+		wantCode      codes.Code
 	}{
 		{name: "owner replay skips the read-write transaction", src: ownerSource},
 		{name: "older owner generation skips the read-write transaction", src: sourceWith(func(s *store.RequestSource) { s.Generation = 2 })},
 		{name: "newer owner generation falls back to record the owner", src: sourceWith(func(s *store.RequestSource) { s.Generation = 4 }), wantFallbacks: 1},
-		{name: "another object falls back to adopt the record", src: sourceWith(func(s *store.RequestSource) { s.UID = "uid-b" }), wantFallbacks: 1},
+		{name: "incarnation mismatch falls back and is rejected", src: sourceWith(func(s *store.RequestSource) { s.UID = "uid-b" }), wantFallbacks: 1, wantCode: codes.FailedPrecondition},
 	}
 	ctx := context.Background()
 	s, _ := setupTestStore(ctx, t)
@@ -173,8 +183,8 @@ func TestSpannerStore_SetSourcedComponentIntent_ReadOnlyFastPath(t *testing.T) {
 			s.SetBeforeIntentWriteForTest(func() { fallbacks++ })
 			defer s.SetBeforeIntentWriteForTest(nil)
 
-			if _, err := s.SetSourcedComponentIntent(ctx, name, intentSpec("v1.0.0"), nil, tt.src); err != nil {
-				t.Fatalf("SetSourcedComponentIntent() error = %v", err)
+			if _, err := s.SetSourcedComponentIntent(ctx, name, intentSpec("v1.0.0"), nil, tt.src); status.Code(err) != tt.wantCode {
+				t.Fatalf("SetSourcedComponentIntent() error = %v, want code %v", err, tt.wantCode)
 			}
 			if fallbacks != tt.wantFallbacks {
 				t.Errorf("read-write fallbacks = %d, want %d", fallbacks, tt.wantFallbacks)
@@ -250,20 +260,18 @@ func assertOwnerOutcome(t *testing.T, before, rec *store.ComponentRecord, wantGe
 	}
 }
 
-// assertStaleGenerationRejected checks that err is the FailedPrecondition STALE_GENERATION
-// rejection naming the seeded owner, and that the stored record of name still equals before.
-func assertStaleGenerationRejected(ctx context.Context, t *testing.T, s store.Store, name string, err error, before *store.ComponentRecord) {
+// assertOwnershipRejected checks that err is a FailedPrecondition with an ErrorInfo wantReason
+// naming the seeded owner, and that the stored record of name still equals before.
+func assertOwnershipRejected(ctx context.Context, t *testing.T, s store.Store, name string, err error, wantReason string, before *store.ComponentRecord) {
 	t.Helper()
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("SetSourcedComponentIntent() error = %v, want code %v", err, codes.FailedPrecondition)
 	}
-	wantDetails := []any{&errdetails.ErrorInfo{
-		Reason: store.ReasonStaleGeneration,
-		Domain: store.ErrorInfoDomain,
-		Metadata: map[string]string{
-			"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": "cluster-1", "owner_generation": "3",
-		},
-	}}
+	metadata := map[string]string{"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": "cluster-1"}
+	if wantReason == store.ReasonStaleGeneration {
+		metadata["owner_generation"] = "3"
+	}
+	wantDetails := []any{&errdetails.ErrorInfo{Reason: wantReason, Domain: store.ErrorInfoDomain, Metadata: metadata}}
 	if diff := cmp.Diff(wantDetails, status.Convert(err).Details(), protocmp.Transform()); diff != "" {
 		t.Errorf("error details mismatch (-want +got):\n%s", diff)
 	}

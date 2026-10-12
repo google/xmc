@@ -102,6 +102,7 @@ func TestPlanIntent(t *testing.T) {
 	owned := &ComponentRecord{Generation: 5, Spec: spec, Owner: ownerOf(baseRequestSource)}
 	older := modifiedSource(func(s *RequestSource) { s.Generation = 2 })
 	anotherObject := modifiedSource(func(s *RequestSource) { s.UID, s.Generation = "uid-b", 1 })
+	casAdopter := modifiedSource(func(s *RequestSource) { s.UID, s.Generation, s.ExpectedOwnerUID = "uid-b", 1, "uid-a" })
 	tests := []struct {
 		name       string
 		rec        *ComponentRecord
@@ -124,7 +125,8 @@ func TestPlanIntent(t *testing.T) {
 		{name: "sourced replay writes nothing", rec: owned, spec: spec, src: &baseRequestSource, want: intentPlan{write: writeNothing, generation: 5}},
 		{name: "older unchanged replay writes nothing", rec: owned, spec: spec, src: &older, want: intentPlan{write: writeNothing, generation: 5}},
 		{name: "older changed intent is stale", rec: owned, spec: changedSpec, src: &older, wantReason: ReasonStaleGeneration},
-		{name: "another object at an older generation adopts the record", rec: owned, spec: spec, src: &anotherObject, want: intentPlan{write: writeOwnerOnly, generation: 5}},
+		{name: "another object without a CAS guard is rejected", rec: owned, spec: spec, src: &anotherObject, wantReason: ReasonSourceIncarnationMismatch},
+		{name: "another object naming the owner adopts the record", rec: owned, spec: spec, src: &casAdopter, want: intentPlan{write: writeOwnerOnly, generation: 5}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -59,6 +59,8 @@ func TestValidateRequestSource(t *testing.T) {
 		{name: "namespace wider than the column", src: modifiedSource(func(s *RequestSource) { s.Namespace = strings.Repeat("n", 64) }), wantErr: true},
 		{name: "empty cluster uid", src: modifiedSource(func(s *RequestSource) { s.ClusterUID = "" }), wantErr: true},
 		{name: "zero epoch", src: modifiedSource(func(s *RequestSource) { s.Epoch = 0 }), wantErr: true},
+		{name: "valid CAS guard", src: modifiedSource(func(s *RequestSource) { s.ExpectedOwnerUID = "uid-b" })},
+		{name: "CAS guard wider than the column", src: modifiedSource(func(s *RequestSource) { s.ExpectedOwnerUID = strings.Repeat("u", 65) }), wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -84,6 +86,7 @@ func TestSourceOwnerRelations(t *testing.T) {
 	}{
 		{name: "nil owner", src: baseRequestSource},
 		{name: "same source", owner: owner, src: baseRequestSource, wantRecords: true, wantOwnerObject: true},
+		{name: "same source with a CAS guard", owner: owner, src: modifiedSource(func(s *RequestSource) { s.ExpectedOwnerUID = "uid-z" }), wantRecords: true, wantOwnerObject: true},
 		{name: "owner object at a newer generation", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Generation = 4 }), wantOwnerObject: true},
 		{name: "owner object at a new epoch", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Epoch = 2 }), wantOwnerObject: true},
 		{name: "another object", owner: owner, src: modifiedSource(func(s *RequestSource) { s.UID = "uid-b" })},
@@ -115,5 +118,59 @@ func TestStaleGenerationError(t *testing.T) {
 	}}
 	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
 		t.Errorf("details mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestCheckSourceOwnership(t *testing.T) {
+	owner := ownerOf(baseRequestSource)
+	tests := []struct {
+		name       string
+		owner      *SourceOwner
+		src        RequestSource
+		wantReason string
+	}{
+		{name: "no recorded owner is adopted (R2)", src: modifiedSource(func(s *RequestSource) { s.Namespace = "other" })},
+		{name: "owner object writes (R3)", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Generation = 1 })},
+		{name: "another namespace conflicts (R4)", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Namespace = "other" }), wantReason: "SOURCE_NAMESPACE_CONFLICT"},
+		{
+			name:       "another namespace conflicts even with a CAS guard (R4)",
+			owner:      owner,
+			src:        modifiedSource(func(s *RequestSource) { s.Namespace, s.UID, s.ExpectedOwnerUID = "other", "uid-b", "uid-a" }),
+			wantReason: "SOURCE_NAMESPACE_CONFLICT",
+		},
+		{name: "another incarnation naming the owner adopts (R5)", owner: owner, src: modifiedSource(func(s *RequestSource) { s.UID, s.ExpectedOwnerUID = "uid-b", "uid-a" })},
+		{name: "another incarnation without a CAS guard mismatches (R6)", owner: owner, src: modifiedSource(func(s *RequestSource) { s.UID = "uid-b" }), wantReason: "SOURCE_INCARNATION_MISMATCH"},
+		{
+			name:       "another incarnation naming another owner mismatches (R6)",
+			owner:      owner,
+			src:        modifiedSource(func(s *RequestSource) { s.UID, s.ExpectedOwnerUID = "uid-b", "uid-z" }),
+			wantReason: "SOURCE_INCARNATION_MISMATCH",
+		},
+		{
+			name:       "another cluster naming the owner mismatches (R6)",
+			owner:      owner,
+			src:        modifiedSource(func(s *RequestSource) { s.UID, s.ExpectedOwnerUID, s.ClusterUID = "uid-b", "uid-a", "cluster-2" }),
+			wantReason: "SOURCE_INCARNATION_MISMATCH",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkSourceOwnership("SetComponentIntent", "redpanda", tt.owner, tt.src)
+			if tt.wantReason == "" {
+				if err != nil {
+					t.Fatalf("checkSourceOwnership() error = %v, want nil", err)
+				}
+				return
+			}
+			st := status.Convert(err)
+			want := []any{&errdetails.ErrorInfo{
+				Reason:   tt.wantReason,
+				Domain:   ErrorInfoDomain,
+				Metadata: map[string]string{"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": "cluster-1"},
+			}}
+			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); st.Code() != codes.FailedPrecondition || diff != "" {
+				t.Errorf("checkSourceOwnership() code = %v, details mismatch (-want +got):\n%s", st.Code(), diff)
+			}
+		})
 	}
 }
