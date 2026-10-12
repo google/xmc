@@ -20,19 +20,59 @@ import (
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"google.golang.org/protobuf/proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
+
+// MockXidTxRepository is an in-memory mock implementation of XidTxRepository for unit testing.
+type MockXidTxRepository struct {
+	Entries      map[int64]*msgpb.XidEntry
+	FetchErr     error
+	UpdateErr    error
+	UpdatedEntry *msgpb.XidEntry
+	UpdateCalls  int
+}
+
+// FetchXidEntry retrieves an XidEntry from the mock repository.
+func (m *MockXidTxRepository) FetchXidEntry(_ context.Context, xid int64) (*msgpb.XidEntry, error) {
+	if m.FetchErr != nil {
+		return nil, m.FetchErr
+	}
+	if m.Entries != nil {
+		entry, ok := m.Entries[xid]
+		if !ok {
+			return nil, grpcerr.ErrNotFound
+		}
+		return proto.Clone(entry).(*msgpb.XidEntry), nil
+	}
+	return &msgpb.XidEntry{
+		Name: proto.String("xids/1"),
+		Acls: &msgpb.XidAcls{
+			Owners: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}},
+		},
+	}, nil
+}
+
+// UpdateXidEntry persists an XidEntry in the mock repository.
+func (m *MockXidTxRepository) UpdateXidEntry(_ context.Context, _ int64, entry *msgpb.XidEntry) error {
+	m.UpdateCalls++
+	if m.UpdateErr != nil {
+		return m.UpdateErr
+	}
+	m.UpdatedEntry = proto.Clone(entry).(*msgpb.XidEntry)
+	return nil
+}
 
 // MockStorage is a mock implementation of Storage for testing.
 type MockStorage struct {
 	Storage
 	CreateErr error
 	FetchErr  error
-	UpdateErr error
 	ListErr   error
 
 	ListXidEntriesResp          []*msgpb.XidEntry
 	ListXidEntriesNextPageToken string
+	XidTxRepository             XidTxRepository
 
 	CreateArtifactErr  error
 	Artifact           *essmsgpb.Artifact
@@ -102,11 +142,6 @@ func (s *MockStorage) FetchXidEntry(ctx context.Context, xid int64) (*msgpb.XidE
 		}}, nil
 	}
 	return nil, s.FetchErr
-}
-
-// UpdateXidEntry mocks XID entry updating.
-func (s *MockStorage) UpdateXidEntry(ctx context.Context, update *XidEntryUpdate) (*msgpb.XidEntry, error) {
-	return nil, s.UpdateErr
 }
 
 // ListXidEntries mocks XID entry listing.
@@ -219,15 +254,23 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 	}
 	pauseStateTx, _ := s.PauseStateRepository.(PauseStateTxRepository)
 	pausedTaskTx, _ := s.PausedTaskRepository.(PausedTaskTxRepository)
+	xidsTx := s.XidTxRepository
+	if xidsTx == nil {
+		xidsTx = &MockXidTxRepository{FetchErr: s.FetchErr}
+	}
 	tx := &Transaction{
 		WorkUnits:      s,
 		Experiments:    s,
+		XIDs:           xidsTx,
 		StatusMessages: s,
 		StatusHistory:  s,
 		PauseState:     pauseStateTx,
 		PausedTasks:    pausedTaskTx,
 	}
 	if s.Transaction != nil {
+		if s.Transaction.XIDs != nil {
+			tx.XIDs = s.Transaction.XIDs
+		}
 		if s.Transaction.PauseState != nil {
 			tx.PauseState = s.Transaction.PauseState
 		}
