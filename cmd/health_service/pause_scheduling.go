@@ -247,11 +247,9 @@ func persistResumeState(ctx context.Context, st PauseSchedulingStorage) (string,
 		if err != nil {
 			return fmt.Errorf("failed to retrieve pause scheduling state: %w", err)
 		}
-		if current == nil || !current.SchedulingPaused {
-			if current != nil {
-				resumptionRunID = current.ResumptionRunID
-				dispatch = current.ResumptionRunID != "" && current.ResumptionWorkerID == ""
-			}
+		if current != nil && !current.SchedulingPaused {
+			resumptionRunID = current.ResumptionRunID
+			dispatch = current.ResumptionRunID != "" && current.ResumptionWorkerID == ""
 			return nil
 		}
 

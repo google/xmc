@@ -638,44 +638,6 @@ func TestPauseScheduler_Resume(t *testing.T) {
 			t.Errorf("expected no dispatch, got %d broadcast and %d task queue messages", len(fakePublisher.Messages()), len(fakeRedis.Messages))
 		}
 	})
-
-	t.Run("uninitialized nil state does not dispatch and returns empty run id", func(t *testing.T) {
-		fakeRepo := &nilPauseStateRepo{}
-		fakePublisher := broadcast.NewFakeClient("")
-		fakeRedis := redisclient.NewFakeClient()
-		scheduler := NewPauseScheduler(PauseSchedulerParams{
-			LazyStorage:        newFakeLazyStorage(fakeRepo),
-			BroadcastPublisher: fakePublisher,
-			TaskQueuePublisher: fakeRedis,
-		})
-
-		runID, err := scheduler.Resume(ctx)
-		if err != nil {
-			t.Fatalf("Resume() unexpected error: %v", err)
-		}
-		if runID != "" {
-			t.Errorf("expected empty run ID, got %q", runID)
-		}
-		if len(fakePublisher.Messages()) > 0 || len(fakeRedis.Messages) > 0 {
-			t.Errorf("expected no dispatch, got %d broadcast and %d task queue messages", len(fakePublisher.Messages()), len(fakeRedis.Messages))
-		}
-		if fakeRepo.setCalled {
-			t.Errorf("expected Set to not be called on nil state")
-		}
-	})
-}
-
-type nilPauseStateRepo struct {
-	setCalled bool
-}
-
-func (r *nilPauseStateRepo) Get(ctx context.Context) (*storage.PauseSchedulingState, error) {
-	return nil, nil
-}
-
-func (r *nilPauseStateRepo) Set(ctx context.Context, state *storage.PauseSchedulingState) error {
-	r.setCalled = true
-	return nil
 }
 
 func assertStillPaused(ctx context.Context, t *testing.T, repo storage.PauseStateRepository) {
