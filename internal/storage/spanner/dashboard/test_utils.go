@@ -20,7 +20,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/validator/validator"
 )
 

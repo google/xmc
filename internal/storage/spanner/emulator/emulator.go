@@ -26,10 +26,10 @@ import (
 
 	"cloud.google.com/go/spanner"
 	database "cloud.google.com/go/spanner/admin/database/apiv1"
+	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	instance "cloud.google.com/go/spanner/admin/instance/apiv1"
+	instancepb "cloud.google.com/go/spanner/admin/instance/apiv1/instancepb"
 	"google.golang.org/api/option"
-	dbadminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
-	instancepb "google.golang.org/genproto/googleapis/spanner/admin/instance/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"

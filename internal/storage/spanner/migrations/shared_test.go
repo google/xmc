@@ -17,9 +17,9 @@ import (
 	"fmt"
 	"testing"
 
-	"golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/storage/spanner/migrations/testing"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
 type testRunCase struct {

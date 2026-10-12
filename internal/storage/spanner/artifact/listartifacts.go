@@ -21,9 +21,9 @@ import (
 
 	"cloud.google.com/go/spanner"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/query_generator/normalizer"
 	"xmanager_cloud/logging/logging"
 	ls "xmanager_cloud/query_generator/liststatement"
-	"xmanager_cloud/query_generator/normalizer/normalizer"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/artifactschema"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"

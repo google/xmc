@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-compat_go_library(
+go_library(
     name = "driver",
     srcs = ["spannerdriver.go"],
     importpath = "xmanager_cloud/internal/storage/spanner/migrations/driver",
@@ -26,11 +26,11 @@ compat_go_library(
         "@com_github_golang_migrate_migrate_v4//database/spanner",
         "@com_google_cloud_go_spanner//:spanner",
         "@com_google_cloud_go_spanner//admin/database/apiv1",
-        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
+        "@com_google_cloud_go_spanner//admin/database/apiv1/databasepb",
     ],
 )
 
-compat_go_test(
+go_test(
     name = "driver_test",
     srcs = ["spannerdriver_test.go"],
     embed = [":driver"],
@@ -38,9 +38,9 @@ compat_go_test(
         "//internal/storage/spanner/emulator",
         "@com_google_cloud_go_spanner//:spanner",
         "@com_google_cloud_go_spanner//admin/database/apiv1",
+        "@com_google_cloud_go_spanner//admin/database/apiv1/databasepb",
         "@com_google_cloud_go_spanner//admin/instance/apiv1",
-        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
-        "@org_golang_google_genproto//googleapis/spanner/admin/instance/v1:instance",
+        "@com_google_cloud_go_spanner//admin/instance/apiv1/instancepb",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//reflect/protodesc:go_default_library",
         "@org_golang_google_protobuf//types/descriptorpb:go_default_library",
