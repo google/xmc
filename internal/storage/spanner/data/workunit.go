@@ -21,7 +21,7 @@ import (
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
-	"xmanager_cloud/validator/validator" // For name construction/validation
+	"xmanager_cloud/internal/validator" // For name construction/validation
 )
 
 // WorkUnitRowToProto converts a Spanner Row containing WorkUnits table data into a WorkUnit proto message.

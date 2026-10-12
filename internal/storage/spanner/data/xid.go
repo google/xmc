@@ -23,7 +23,7 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 	pb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

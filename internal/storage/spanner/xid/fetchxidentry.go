@@ -22,11 +22,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
 	"xmanager_cloud/internal/storage/spanner/utils"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

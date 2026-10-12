@@ -26,9 +26,9 @@ import (
 	"google.golang.org/grpc/status"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/logging"
 	storagepkg "xmanager_cloud/internal/storage"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // UpdateSource indicates the origin of a WorkUnitExecutionUpdate.

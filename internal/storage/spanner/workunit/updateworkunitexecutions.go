@@ -28,6 +28,7 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
@@ -36,8 +37,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/internal/storage/state"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 var getUpdatingCurrentWorkUnitExecutionSQL = safesql.New(`

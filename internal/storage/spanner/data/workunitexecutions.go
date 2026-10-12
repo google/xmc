@@ -22,7 +22,7 @@ import (
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/workunitexecutionschema"
 	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // WorkUnitExecutionRowToProto converts a Spanner Row containing WorkUnitExecutions table data into

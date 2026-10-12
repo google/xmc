@@ -29,7 +29,7 @@ import (
 	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
 	"xmanager_cloud/internal/logging"
 	ee "xmanager_cloud/internal/toollibs/execution_environments"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 

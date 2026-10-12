@@ -32,9 +32,9 @@ import (
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"google.golang.org/api/option"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/migrations/commands"
 	"xmanager_cloud/internal/storage/spanner/migrations/driver"
-	"xmanager_cloud/logging/logging"
 )
 
 //go:embed ess_messages.pb

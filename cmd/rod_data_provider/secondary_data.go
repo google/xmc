@@ -24,8 +24,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/statushistory"
-	"xmanager_cloud/logging/logging"
 )
 
 // QueueVelocityFetcher defines interface for fetching velocity metrics from storage.

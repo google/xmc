@@ -39,9 +39,9 @@ import (
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/internal/common/health"
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	ss "xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/logging/logging"
 )
 
 // healthProbeBindAddress is the address on which the manager serves the

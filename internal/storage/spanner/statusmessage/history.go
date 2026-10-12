@@ -25,8 +25,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/logging/logging"
 )
 
 // SaveStatusMessageHistoryIfChanged buffers a status message history mutation in the bound Spanner transaction if the message changed.

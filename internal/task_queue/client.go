@@ -29,8 +29,8 @@ import (
 
 	"xmanager_cloud/internal/common/interfaces"
 	"xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
-	"xmanager_cloud/logging/logging"
 
 	"github.com/google/uuid"
 	"github.com/tink-crypto/tink-go/v2/jwt"

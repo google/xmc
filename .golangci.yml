@@ -83,6 +83,7 @@ linters-settings:
       - name: time-equal
       - name: waitgroup-by-value
       - name: atomic
+      - name: duplicated-imports
 
 issues:
   exclude-dirs:

@@ -28,8 +28,8 @@ import (
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/cmd/reconciler/workload"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/logging/logging"
 )
 
 // newMLRunCreator builds the MLRun control-plane client. It returns a nil

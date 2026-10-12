@@ -25,7 +25,7 @@ import (
 
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/configutil"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 // Config holds the configuration for the XidService server.

@@ -21,7 +21,7 @@ import (
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/experimentschema"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // ExperimentRowToProto converts a Spanner Row containing Experiments table data into an Experiment proto message.

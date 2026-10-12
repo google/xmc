@@ -40,8 +40,8 @@ import (
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	spanner_lib "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/validator"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	"xmanager_cloud/validator/validator"
 )
 
 const (
