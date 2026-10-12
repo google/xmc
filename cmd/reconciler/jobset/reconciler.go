@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"golang/prometheus/client/prometheus/prometheus"
+	"google.golang.org/protobuf/proto"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -258,12 +259,12 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 		result, podErrorMsg, startupWarningMsg = checkRes.Result, checkRes.PodErrorMsg, checkRes.StartupWarningMsg
 	}
 
-	mlRunURL := r.syncMLRun(ctx, jobSet, xid, wid, eid)
-
 	var currentExecution *spb.WorkUnitExecution
 	if isMultiKueueManaged(jobSet) {
 		currentExecution = r.fetchCurrentExecution(ctx, xid, wid)
 	}
+	mlRunURL := r.syncMLRun(ctx, jobSet, xid, wid, eid, currentExecution)
+
 	update := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
 	applyExecutingClusterOverride(ctx, jobSet, update, currentExecution)
 	setMLRunURL(update, mlRunURL)
@@ -293,23 +294,16 @@ func (r *Reconciler) fetchCurrentExecution(ctx context.Context, xid, wid int64) 
 	if !ok || wlUpdate.WorkUnitExecution.GetMetadata().GetExecutingCluster() == nil {
 		return execution
 	}
-	var name string
-	var status *spb.WorkUnitStatus
-	var mlrunUrl string
+	merged := &spb.WorkUnitExecution{}
 	if execution != nil {
-		name = execution.GetName()
-		status = execution.GetStatus()
-		mlrunUrl = execution.GetMetadata().GetMlrunUrl()
+		merged = proto.Clone(execution).(*spb.WorkUnitExecution)
 	}
-	return &spb.WorkUnitExecution{
-		Name:   name,
-		Status: status,
-		Metadata: &spb.WorkUnitExecutionMetadata{
-			ExecutingCluster:      wlUpdate.WorkUnitExecution.GetMetadata().GetExecutingCluster(),
-			MultiKueueClusterName: wlUpdate.WorkUnitExecution.GetMetadata().GetMultiKueueClusterName(),
-			MlrunUrl:              mlrunUrl,
-		},
+	if merged.Metadata == nil {
+		merged.Metadata = &spb.WorkUnitExecutionMetadata{}
 	}
+	merged.Metadata.ExecutingCluster = wlUpdate.WorkUnitExecution.GetMetadata().GetExecutingCluster()
+	merged.Metadata.MultiKueueClusterName = wlUpdate.WorkUnitExecution.GetMetadata().GetMultiKueueClusterName()
+	return merged
 }
 
 func (r *Reconciler) resolveTargetCluster(execution *spb.WorkUnitExecution) (string, string, string) {

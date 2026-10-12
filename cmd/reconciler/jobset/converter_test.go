@@ -1198,9 +1198,24 @@ func TestApplyExecutingClusterOverride(t *testing.T) {
 	if got := update.WorkUnitExecution.GetMetadata().GetMultiKueueClusterName(); got != "worker-1" {
 		t.Errorf("MultiKueueClusterName = %q, want %q", got, "worker-1")
 	}
+	for _, wantPath := range []string{"metadata.executing_cluster", "metadata.multi_kueue_cluster_name"} {
+		found := false
+		for _, p := range update.UpdateMask.GetPaths() {
+			if p == wantPath {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("UpdateMask.Paths %v missing %q", update.UpdateMask.GetPaths(), wantPath)
+		}
+	}
 	wantURL := "https://console.cloud.google.com/kubernetes/aiml/jobset/worker-proj/GKE_CLUSTER/us-east1/worker-cluster/multikueue-cpu/failed-js/overview?project=worker-proj"
 	if got := update.WorkUnitExecution.GetStatus().GetSystemMessage().GetUserFacingUrl().GetUrl(); got != wantURL {
 		t.Errorf("SystemMessage.UserFacingUrl = %q, want %q", got, wantURL)
 	}
 	applyExecutingClusterOverride(t.Context(), failedJobSet, update, nil)
+	if got := update.WorkUnitExecution.GetMetadata().GetExecutingCluster().GetClusterName(); got != "worker-cluster" {
+		t.Errorf("ExecutingCluster.ClusterName after nil override = %q, want %q", got, "worker-cluster")
+	}
 }

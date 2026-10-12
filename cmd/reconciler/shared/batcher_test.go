@@ -479,3 +479,34 @@ func metricFound(mfs []*metricspb.MetricFamily, name, xid string) bool {
 	}
 	return false
 }
+
+func TestUpdateBatcherGet_InFlight(t *testing.T) {
+	blockingStorage := &mockBlockingStorageUpdater{startSignal: make(chan struct{})}
+	b := NewUpdateBatcher(t.Context(), &BatcherConfig{TickDuration: 10 * time.Millisecond}, blockingStorage)
+	want := storagepkg.WorkUnitExecutionUpdate{
+		WID: 7,
+		WorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Name: "experiments/42/workUnits/7/executions/1",
+		},
+	}
+	b.Add(t.Context(), 42, want, WorkloadSource)
+
+	done := make(chan struct{})
+	go func() {
+		b.processBatches(t.Context())
+		close(done)
+	}()
+
+	time.Sleep(25 * time.Millisecond)
+	got, ok := b.Get(42, 7, WorkloadSource)
+	if !ok || got.WorkUnitExecution.GetName() != want.WorkUnitExecution.GetName() {
+		t.Errorf("Get() while in-flight = (%+v, %v), want (%+v, true)", got, ok, want)
+	}
+
+	close(blockingStorage.startSignal)
+	<-done
+
+	if _, ok := b.Get(42, 7, WorkloadSource); ok {
+		t.Errorf("Get() after processBatches completed = true, want false")
+	}
+}

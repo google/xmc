@@ -222,31 +222,40 @@ func TestEnsureMLRunCreated(t *testing.T) {
 
 func TestEnsureMLRunCreated_UsesExecutingCluster(t *testing.T) {
 	now := time.UnixMilli(1680000000000)
+	managedBy := "kueue.x-k8s.io/multikueue"
 	jobSet := &v1alpha2.JobSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              "test-jobset",
 			Namespace:         "multikueue-cpu",
 			CreationTimestamp: metav1.NewTime(now),
 		},
-	}
-	mockClient := &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}}
-	storage := &mockStorageUpdater{
-		fetchRes: &spb.WorkUnitExecution{
-			Metadata: &spb.WorkUnitExecutionMetadata{
-				ExecutingCluster: &spb.ClusterInfo{
-					Project:     "worker-proj",
-					Location:    "us-east1",
-					ClusterName: "worker-cluster",
-				},
-			},
+		Spec: v1alpha2.JobSetSpec{
+			ManagedBy: &managedBy,
 		},
 	}
+	mockClient := &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}}
+	storage := &mockStorageUpdater{}
 	r := &Reconciler{
 		Project:     "mgmt-proj",
 		Location:    "us-central1",
 		ClusterName: "mgmt-cluster",
 		MLRunClient: mockClient,
 		Storage:     storage,
+	}
+
+	// Unresolved ExecutingCluster on MultiKueue JobSet defers MLRun creation.
+	if got := r.ensureMLRunCreated(context.Background(), jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder", nil); got != "" || mockClient.createCalls != 0 {
+		t.Fatalf("ensureMLRunCreated() with unresolved ExecutingCluster = %q (calls=%d), want empty and 0 calls", got, mockClient.createCalls)
+	}
+
+	storage.fetchRes = &spb.WorkUnitExecution{
+		Metadata: &spb.WorkUnitExecutionMetadata{
+			ExecutingCluster: &spb.ClusterInfo{
+				Project:     "worker-proj",
+				Location:    "us-east1",
+				ClusterName: "worker-cluster",
+			},
+		},
 	}
 
 	gotURL := r.ensureMLRunCreated(context.Background(), jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
