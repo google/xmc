@@ -23,7 +23,7 @@ import (
 
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/task_queue_redis/redisclient"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"

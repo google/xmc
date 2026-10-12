@@ -25,8 +25,8 @@ import (
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/internal/featureflags"
+	"xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/task_queue/client"
 )
 
 // Config holds the configuration for the Experiment State Server.

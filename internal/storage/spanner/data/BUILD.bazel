@@ -14,40 +14,6 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-go_library(
-    name = "spannerdata",
-    srcs = [
-        "artifact.go",
-        "experiment.go",
-        "operation.go",
-        "statusmessage.go",
-        "workunit.go",
-        "workunitexecutions.go",
-        "workunitstatushistory.go",
-        "xid.go",
-    ],
-    importpath = "xmanager_cloud/storage/spanner/data/spannerdata",
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//api/protos/experiment:messages_go_proto",
-        "//api/protos/xid:messages_go_proto",
-        "//internal/storage/data",
-        "//internal/storage/spanner/schema/artifactschema",
-        "//internal/storage/spanner/schema/experimentschema",
-        "//internal/storage/spanner/schema/operationschema",
-        "//internal/storage/spanner/schema/workunitexecutionschema",
-        "//internal/storage/spanner/schema/workunitschema",
-        "//internal/storage/spanner/schema/xidschema",
-        "//internal/validator",
-        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
-        "@com_google_cloud_go_spanner//:spanner",
-        "@org_golang_google_genproto_googleapis_rpc//status",
-        "@org_golang_google_protobuf//proto",
-        "@org_golang_google_protobuf//types/known/anypb",
-        "@org_golang_google_protobuf//types/known/timestamppb",
-    ],
-)
-
 go_test(
     name = "data_test",
     srcs = [

@@ -27,7 +27,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/storage/spanner/experiment"
-	"xmanager_cloud/storage/spanner/utils/spannerutils"
+	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/validator/validator"
 )
 

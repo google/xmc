@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
-	"xmanager_cloud/common/health"
+	"xmanager_cloud/internal/common/health"
 	"xmanager_cloud/logging/logging"
 )
 

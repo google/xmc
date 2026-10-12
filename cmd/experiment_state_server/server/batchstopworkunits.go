@@ -21,8 +21,8 @@ import (
 
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/task_queue/client"
 	"xmanager_cloud/validator/validator"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"

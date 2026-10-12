@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"xmanager_cloud/task_queue_redis/redisclient"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 )
 
 func TestStartConsumer_Validation(t *testing.T) {

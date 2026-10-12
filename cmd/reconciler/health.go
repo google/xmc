@@ -22,7 +22,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"xmanager_cloud/cmd/actuator/k8s_client"
-	"xmanager_cloud/common/health"
+	"xmanager_cloud/internal/common/health"
 )
 
 func activeHealthChecker(k8s *k8sclient.Client, spClient health.SpannerHealthClient) func(req *http.Request) error {

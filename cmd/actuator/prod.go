@@ -26,15 +26,15 @@ import (
 	k8sclient "xmanager_cloud/cmd/actuator/k8s_client"
 	"xmanager_cloud/cmd/actuator/pausescheduling"
 	"xmanager_cloud/cmd/actuator/workunittaskhandler"
-	"xmanager_cloud/common/health"
 	"xmanager_cloud/internal/broadcast"
+	"xmanager_cloud/internal/common/health"
+	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/security/keyreloader"
 	"xmanager_cloud/internal/storage"
 	ss "xmanager_cloud/internal/storage/spanner"
-	constants "xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/jwks"
-	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
 var osHostname = os.Hostname

@@ -30,10 +30,10 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
+	"xmanager_cloud/internal/storage/spanner/data"
+	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
+	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/spanner/data/spannerdata"
-	"xmanager_cloud/storage/spanner/schema/xidschema"
-	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

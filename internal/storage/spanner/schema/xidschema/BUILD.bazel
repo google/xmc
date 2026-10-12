@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "xidschema",
     srcs = ["xidschema.go"],
-    importpath = "xmanager_cloud/storage/spanner/schema/xidschema",
+    importpath = "xmanager_cloud/internal/storage/spanner/schema/xidschema",
     deps = [
         "//api/filter/go/filtervisitor",
         "//internal/query_generator/querytools",

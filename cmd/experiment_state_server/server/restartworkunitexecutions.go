@@ -24,8 +24,8 @@ import (
 	"xmanager_cloud/internal/common/resourceaccumulator"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/state"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/state/state"
 	"xmanager_cloud/validator/validator"
 )
 

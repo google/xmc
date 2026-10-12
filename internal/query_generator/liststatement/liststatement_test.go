@@ -21,8 +21,8 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/safesql"
-	"xmanager_cloud/query_generator/querytools"
 )
 
 func TestListStatement(t *testing.T) {

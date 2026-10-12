@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 )
 
 // ErrMissingXMCLabels is returned when an object is missing required XMC labels.

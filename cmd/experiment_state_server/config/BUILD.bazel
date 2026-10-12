@@ -12,6 +12,6 @@ go_library(
         "//internal/configutil",
         "//internal/featureflags",
         "//internal/logging",
-        "//internal/task_queue:client",
+        "//internal/task_queue",
     ],
 )

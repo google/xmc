@@ -21,8 +21,8 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"xmanager_cloud/api/filter/go/filter"
 	"xmanager_cloud/api/filter/go/filtervisitor"
+	"xmanager_cloud/internal/query_generator/predicate"
 	"xmanager_cloud/internal/safesql"
-	"xmanager_cloud/query_generator/predicate"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

@@ -22,8 +22,8 @@ import (
 	"google.golang.org/api/iterator"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/safesql"
+	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/spanner/utils/spannerutils"
 )
 
 var listWorkUnitMessagesSQL = safesql.New(`

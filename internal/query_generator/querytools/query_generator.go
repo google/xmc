@@ -30,10 +30,10 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"xmanager_cloud/api/filter/go/filtervisitor"
+	"xmanager_cloud/internal/query_generator/equalityvisitor"
+	"xmanager_cloud/internal/query_generator/filter"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/query_generator/equalityvisitor"
-	"xmanager_cloud/query_generator/filter/queryfilter"
 
 	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
 )

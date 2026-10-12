@@ -40,9 +40,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"xmanager_cloud/cmd/dashboard_service/server"
-	commonhealth "xmanager_cloud/common/health"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/internal/auth"
+	commonhealth "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/dashboard/dataengine"
 	"xmanager_cloud/internal/storage/spanner/dashboard"
 	"xmanager_cloud/logging/logging"

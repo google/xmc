@@ -24,7 +24,7 @@ import (
 	anypb "google.golang.org/protobuf/types/known/anypb"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/storage/spanner/schema/operationschema"
+	"xmanager_cloud/internal/storage/spanner/schema/operationschema"
 	"xmanager_cloud/validator/validator"
 )
 

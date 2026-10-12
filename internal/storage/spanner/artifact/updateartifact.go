@@ -27,8 +27,8 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
+	"xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/validator/validator"
 )
 

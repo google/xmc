@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "jobsetutil",
     srcs = ["jobsetutil.go"],
-    importpath = "xmanager_cloud/kubernetes/common/jobsetutil",
+    importpath = "xmanager_cloud/internal/kubernetes/common/jobsetutil",
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

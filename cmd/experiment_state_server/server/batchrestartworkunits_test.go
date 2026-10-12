@@ -29,7 +29,7 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
-	tq "xmanager_cloud/task_queue/client"
+	tq "xmanager_cloud/internal/task_queue"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/validator/validator"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"

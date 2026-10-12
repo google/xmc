@@ -19,7 +19,7 @@ import (
 	"net/http"
 
 	"golang.org/x/sync/errgroup"
-	commonhealth "xmanager_cloud/common/health"
+	commonhealth "xmanager_cloud/internal/common/health"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 

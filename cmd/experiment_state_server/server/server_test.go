@@ -21,7 +21,7 @@ import (
 
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/storage"
-	tq "xmanager_cloud/task_queue/client"
+	tq "xmanager_cloud/internal/task_queue"
 )
 
 func TestServer_New_Validation(t *testing.T) {
