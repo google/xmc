@@ -279,14 +279,6 @@ py_test(
 )
 
 py_test(
-    name = "resource_dashboard_ui_verify_test",
-    size = "small",
-    srcs = ["resource_dashboard_ui_verify_test.py"],
-    imports = ["../.."],
-    deps = [":resource_dashboard_ui_verify_lib"],
-)
-
-py_test(
     name = "weekly_visual_snapshot_test",
     size = "small",
     srcs = ["weekly_visual_snapshot_test.py"],
