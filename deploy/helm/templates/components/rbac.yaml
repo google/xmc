@@ -32,6 +32,9 @@ rules:
     resources: ["events"]
     verbs: ["create", "patch"]
   - apiGroups: [""]
+    resources: ["pods", "serviceaccounts"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "watch", "create", "update"]
   - apiGroups: [""]
@@ -40,13 +43,16 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # 1P component releases self-provision their reader RBAC (e.g. xmc-cmp-ingestion-gateway).
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
-    verbs: ["create"]
+    verbs: ["get", "list", "watch", "create"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
     resourceNames: ["ingestion-gateway-components-reader", "ingestion-gateway-components-reader-binding"]
@@ -54,14 +60,17 @@ rules:
   # ...and their NetworkPolicy, so it lives and dies with the component's workload.
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
-    verbs: ["create"]
+    verbs: ["get", "list", "watch", "create"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     resourceNames: ["ingestion-gateway-network-policy"]
     verbs: ["update", "patch", "delete"]
-  - apiGroups: ["*"]
-    resources: ["*"]
+  # Read-only access to configured 3P wrapper custom resources (spec.wrapperRef).
+  {{- range .Values.componentsDeployment.rbac.wrapperRules }}
+  - apiGroups: [{{- range $i, $g := .apiGroups }}{{ if $i }}, {{ end }}{{ printf "%q" $g }}{{- end }}]
+    resources: [{{- range $i, $r := .resources }}{{ if $i }}, {{ end }}{{ printf "%q" $r }}{{- end }}]
     verbs: ["get", "list", "watch"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 {{- if .Values.componentsDeployment.rbac.clusterScope }}

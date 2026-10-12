@@ -1,0 +1,4 @@
+{{- if and .Values.componentsDeployment.enabled .Values.componentsDeployment.rbac.clusterScope }}
+WARNING: componentsDeployment.rbac.clusterScope=true binds xmc-bridge-sa to a ClusterRole across all namespaces.
+Prefer the default namespace-scoped Role (componentsDeployment.rbac.clusterScope=false) unless cross-namespace RBAC is required.
+{{- end }}

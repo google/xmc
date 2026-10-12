@@ -54,7 +54,20 @@ componentsDeployment:
   # Number of Components xmc-bridge reconciles in parallel.
   maxConcurrentReconciles: 1
   rbac:
+    # When false (default), xmc-bridge-role is a namespace-scoped Role in the release namespace.
+    # Set to true only when xmc-bridge must inspect resources across namespaces.
     clusterScope: false
+    # Read-only (get, list, watch) RBAC rules granted to xmc-bridge for 3P wrapper custom resources
+    # inspected via spec.wrapperRef.
+    wrapperRules:
+      - apiGroups: ["clickhouse.altinity.com"]
+        resources: ["clickhouseinstallations"]
+      - apiGroups: ["cluster.redpanda.com", "redpanda.vectorized.io"]
+        resources: ["clusters", "redpandas"]
+      - apiGroups: ["ray.io"]
+        resources: ["rayclusters", "rayjobs", "rayservices"]
+      - apiGroups: ["jobset.x-k8s.io"]
+        resources: ["jobsets"]
 
 essDeployment:
   enabled: true

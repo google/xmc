@@ -102,11 +102,24 @@ The component bridge controller is feature-flagged under `componentsDeployment` 
 componentsDeployment:
   enabled: false                                  # Set to true to deploy xmc-bridge controller
   cmsAddress: "grpc-service:50051"                # In-cluster gRPC endpoint for ESS/CMS
+  clusterName: ""                                 # Cluster label in CMS fence declarations (defaults to release name)
+  ownershipEpoch: 1                               # Monotonic CMS ownership fencing epoch (>= 1)
   chartPath: ""                                   # Optional base Helm chart directory or fallback chart path
   probeInterval: "5s"                             # Per-Component re-probe delay after a successful pass
   probeTimeout: "2s"                              # Timeout per workload health probe
   reconcileTimeout: "60s"                         # Timeout per Component reconcile pass
   maxConcurrentReconciles: 1                      # Components reconciled in parallel
+  rbac:
+    clusterScope: false                           # Namespace-scoped Role by default; explicit opt-in for ClusterRole
+    wrapperRules:                                 # Read-only RBAC rules for 3P wrapper CRDs (spec.wrapperRef)
+      - apiGroups: ["clickhouse.altinity.com"]
+        resources: ["clickhouseinstallations"]
+      - apiGroups: ["cluster.redpanda.com", "redpanda.vectorized.io"]
+        resources: ["clusters", "redpandas"]
+      - apiGroups: ["ray.io"]
+        resources: ["rayclusters", "rayjobs", "rayservices"]
+      - apiGroups: ["jobset.x-k8s.io"]
+        resources: ["jobsets"]
 
 xmc_bridge_custom_image: ""                       # Optional custom container image override
 ```
@@ -156,10 +169,12 @@ Removing the CRD is a deliberate manual step. While `xmc-bridge` is still runnin
 
 ## Security & RBAC Least Privilege
 
-- **ServiceAccount**: `xmc-bridge` runs under a dedicated service account with `automountServiceAccountToken: true`.
-- **ClusterRole**: Grants least-privilege permissions:
-  - Full CRUD permissions on `components.xmc.dev` (including `/status` and `/finalizers`).
-  - Workload management permissions on `apps/deployments` and `core/services` for 1P components.
-  - Read-only (`get`, `list`, `watch`) discovery permissions across all API groups (`*`) to support dynamic 3P CR status detection.
-  - Security contexts enforce read-only root filesystems, non-root execution, privilege escalation disabled, and dropping all capabilities (`ALL`).
-- **Leader election Role**: `xmc-bridge-leader-election` grants `create` on `coordination.k8s.io` leases, and `get` and `update` on the `xmc-bridge` Lease only. It is a namespaced Role in the release namespace also when `componentsDeployment.rbac.clusterScope` is `true`, so the bridge cannot write Leases of other namespaces.
+- **ServiceAccount**: `xmc-bridge` runs under a dedicated service account (`xmc-bridge-sa`) with `automountServiceAccountToken: true`.
+- **Namespace-scoped Role by default (`xmc-bridge-role`)**: Bound in the release namespace when `componentsDeployment.rbac.clusterScope` is `false` (default); opting into `clusterScope: true` renders a `ClusterRole`/`ClusterRoleBinding` and emits a Helm `NOTES.txt` warning. Grants explicit least-privilege permissions without wildcard (`*`) API groups or resources:
+  - `get`, `list`, `watch`, `update`, and `patch` on `components.xmc.dev` (`components`, `components/status`, `components/finalizers`).
+  - Workload and Helm release management on `apps/deployments`, `autoscaling/horizontalpodautoscalers`, `core/services`, `core/secrets`, `core/configmaps`, `core/events`, and read-only inspection on `core/pods`, `core/serviceaccounts`, `apps/statefulsets`, `apps/daemonsets`, and `apps/replicasets`.
+  - Scoped `update`/`patch`/`delete` by `resourceNames` on self-provisioned 1P component RBAC (`ingestion-gateway-components-reader`, `ingestion-gateway-components-reader-binding`) and `NetworkPolicy` (`ingestion-gateway-network-policy`), plus `get`, `list`, `watch`, and `create` on `roles`, `rolebindings`, and `networkpolicies`.
+  - Read-only (`get`, `list`, `watch`) rules generated from `componentsDeployment.rbac.wrapperRules` for 3P wrapper CRDs inspected via `spec.wrapperRef` (by default `clickhouse.altinity.com/clickhouseinstallations`, `cluster.redpanda.com` & `redpanda.vectorized.io` `clusters`/`redpandas`, `ray.io` `rayclusters`/`rayjobs`/`rayservices`, and `jobset.x-k8s.io/jobsets`).
+- **Cluster identity Role (`xmc-bridge-cluster-identity`)**: Grants `get` on `namespaces` restricted to `resourceNames: ["kube-system"]` so `xmc-bridge` can read the cluster UID for CMS ownership fence declarations.
+- **Leader election Role (`xmc-bridge-leader-election`)**: Grants `create` on `coordination.k8s.io` leases, and `get` and `update` on the `xmc-bridge` Lease only. It stays a namespaced `Role` in the release namespace even when `componentsDeployment.rbac.clusterScope` is `true`, so the bridge cannot write Leases of other namespaces.
+- **Pod & Container Security**: Enforces `seccompProfile: RuntimeDefault`, read-only root filesystems, non-root execution, privilege escalation disabled, and dropping all capabilities (`ALL`).
