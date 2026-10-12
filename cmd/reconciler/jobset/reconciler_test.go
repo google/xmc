@@ -785,4 +785,21 @@ func TestFetchCurrentExecution_PendingBatcherFallback(t *testing.T) {
 	if got.GetMetadata().GetMultiKueueClusterName() != "xmc-nightly-worker-1" {
 		t.Errorf("MultiKueueClusterName = %q, want %q", got.GetMetadata().GetMultiKueueClusterName(), "xmc-nightly-worker-1")
 	}
+
+	rWithExec := &Reconciler{
+		Batcher: batcher,
+		Storage: &mockStorageUpdater{
+			fetchRes: &spb.WorkUnitExecution{
+				Name:     "experiments/123/workUnits/1/executions/2",
+				Metadata: &spb.WorkUnitExecutionMetadata{MlrunUrl: "https://mlrun/1"},
+			},
+		},
+	}
+	gotWithExec := rWithExec.fetchCurrentExecution(t.Context(), 123, 1)
+	if gotWithExec.GetName() != "experiments/123/workUnits/1/executions/2" || gotWithExec.GetMetadata().GetMlrunUrl() != "https://mlrun/1" {
+		t.Errorf("gotWithExec = %+v, want Name and MlrunUrl preserved", gotWithExec)
+	}
+	if p, l, c := r.resolveTargetCluster(nil); p != "" || l != "" || c != "" {
+		t.Errorf("resolveTargetCluster(nil) = (%q, %q, %q), want empty strings", p, l, c)
+	}
 }

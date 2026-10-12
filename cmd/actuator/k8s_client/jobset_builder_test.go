@@ -618,4 +618,7 @@ func TestConstructJobSet_MultiKueueManagedBy(t *testing.T) {
 			}
 		})
 	}
+	if names := extractClusterQueueAdmissionCheckNames(nil); names != nil {
+		t.Errorf("extractClusterQueueAdmissionCheckNames(nil) = %v, want nil", names)
+	}
 }
