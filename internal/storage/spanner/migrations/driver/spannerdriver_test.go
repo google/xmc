@@ -20,16 +20,17 @@ import (
 	"testing"
 
 	"cloud.google.com/go/spanner"
-	"cloud_spanner_emulator/public/go/emulator"
-	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
-	"golang/cloud_google_com/go/spanner/v/v1/admin/instance/apiv1/instance"
-	"golang/protobuf/v2/reflect/protodesc/protodesc"
+	"cloud.google.com/go/spanner/admin/database/apiv1"
+	"cloud.google.com/go/spanner/admin/instance/apiv1"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 
-	emptypb "protobuf/empty_go_proto"
-	adminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"
-	instancepb "spanner/admin/instance/v1/spanner_instance_admin_go_proto"
-	xmcemulator "xmanager_cloud/storage/spanner/emulator/emulator"
+	adminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
+	instancepb "google.golang.org/genproto/googleapis/spanner/admin/instance/v1"
+	descpb "google.golang.org/protobuf/types/descriptorpb"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
+	xmcemulator "xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 const (

@@ -23,9 +23,9 @@ import (
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/validator/validator"
 )
 

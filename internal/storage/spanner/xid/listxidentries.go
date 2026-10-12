@@ -24,8 +24,8 @@ import (
 	"xmanager_cloud/storage/spanner/schema/xidschema"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 
+	"xmanager_cloud/internal/query_generator/normalizer"
 	"xmanager_cloud/query_generator/liststatement"
-	"xmanager_cloud/query_generator/normalizer/normalizer"
 
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"

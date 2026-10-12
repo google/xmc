@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
 const defaultFileMode = 0644

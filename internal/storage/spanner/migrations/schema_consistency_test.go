@@ -22,14 +22,14 @@ import (
 	"strings"
 	"testing"
 
+	"cloud.google.com/go/spanner/admin/database/apiv1"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
-	"golang/google_api/option/option"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/spanner/migrations/version"
+	"google.golang.org/api/option"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/storage/spanner/migrations/version"
 
-	databasepb "spanner/admin/database/v1/spanner_database_admin_go_proto"
+	databasepb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
 )
 
 // TestSchemaSynchronization verifies that the schemas in the *-schema.sql files are consistent

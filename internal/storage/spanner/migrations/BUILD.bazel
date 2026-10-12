@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("//:oci.bzl", "oci_image_for_service")
 
 filegroup(
@@ -42,7 +41,7 @@ genrule(
     cmd = "cp $< $@",
 )
 
-compat_go_library(
+go_library(
     name = "migrations_lib",
     srcs = ["runner.go"],
     embedsrcs = glob([
@@ -79,7 +78,7 @@ oci_image_for_service(
     binary = ":migrations",
 )
 
-compat_go_test(
+go_test(
     name = "migrations_test",
     srcs = [
         "runner_test.go",

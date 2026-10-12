@@ -20,16 +20,16 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	"golang/godebug/diff/diff"
-	"golang/protobuf/v2/encoding/prototext/prototext"
+	"github.com/kylelemons/godebug/diff"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
-	timestamppb "protobuf/timestamp_go_proto"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
-	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 )
 

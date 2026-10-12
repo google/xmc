@@ -19,7 +19,7 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	"golang/google_api/iterator/iterator"
+	"google.golang.org/api/iterator"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/logging/logging"

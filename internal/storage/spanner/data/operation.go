@@ -19,11 +19,11 @@ import (
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/proto"
-	anypb "protobuf/any_go_proto"
-	statuspb "rpc/status_go_proto"
+	anypb "google.golang.org/protobuf/types/known/anypb"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/storage/data/data"
+	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/storage/spanner/schema/operationschema"
 	"xmanager_cloud/validator/validator"
 )

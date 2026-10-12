@@ -22,13 +22,13 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
-	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
-	migratedb "golang/github_com/golang_migrate/migrate/v/v4/database/database"
-	migratespanner "golang/github_com/golang_migrate/migrate/v/v4/database/spanner/spanner"
+	"cloud.google.com/go/spanner/admin/database/apiv1"
+	migratedb "github.com/golang-migrate/migrate/v4/database"
+	migratespanner "github.com/golang-migrate/migrate/v4/database/spanner"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 
-	adminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"
+	adminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
 )
 
 // Spanner implements the database.Driver interface for Spanner.
