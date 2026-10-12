@@ -27,6 +27,7 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/internal/workunit"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 
 	"github.com/google/uuid"
