@@ -19,8 +19,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	cmsserver "xmanager_cloud/pkg/components/cms"
@@ -176,6 +178,39 @@ func TestReconcileComponent_RecreatedCustomResource(t *testing.T) {
 	}
 }
 
+// TestReconcileComponent_StaleIntentWithUnregisteredDependency verifies against the real CMS server
+// and MemoryStore that an older custom resource whose changed spec names a dependency CMS has not
+// registered is reported as Ready=False/Degraded=True reason StaleIntent, which blocks placement,
+// rather than as waiting on dependencies, and that the CMS record is unchanged.
+func TestReconcileComponent_StaleIntentWithUnregisteredDependency(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	r, err := NewReconciler(NewCMSClientAdapter(cmsserver.NewServer(ms)), nil, nil)
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
+	}
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	seedOwnedRecord(ctx, t, ms, created)
+	before := snapshotRecord(ctx, t, ms, "redpanda")
+
+	in := sourcedRedpandaInput("uid-old", created, 2)
+	in.Spec.Dependencies = []string{"ingestion"}
+	in.Dependencies = NewDependencySnapshot([]unstructured.Unstructured{readyComponent("ingestion", nil)})
+	res, err := r.ReconcileComponent(ctx, in)
+	if err == nil {
+		t.Fatal("ReconcileComponent(older object) error = nil, want stale intent")
+	}
+	if got := findCondition(res.Conditions, ConditionTypeReady); got == nil || got.Reason != ReasonStaleIntent {
+		t.Errorf("Ready condition = %+v, want reason %q", got, ReasonStaleIntent)
+	}
+	if got := findCondition(res.Conditions, ConditionTypeDegraded); got == nil || got.Status != ConditionStatusTrue {
+		t.Errorf("Degraded condition = %+v, want status %q", got, ConditionStatusTrue)
+	}
+	if diff := cmp.Diff(before, snapshotRecord(ctx, t, ms, "redpanda")); diff != "" {
+		t.Errorf("CMS record changed after a stale intent (-before +after):\n%s", diff)
+	}
+}
+
 func sourcedRedpandaInput(uid string, created time.Time, gen int64) ReconcileComponentInput {
 	return ReconcileComponentInput{
 		Namespace: "xmc", Name: "redpanda", Generation: gen, UID: uid, CreationTimestamp: created,
@@ -196,6 +231,39 @@ func reconcileAndGetRecord(ctx context.Context, t *testing.T, r *Reconciler, ms 
 	}
 	if res.ComponentGeneration != rec.Generation {
 		t.Errorf("ComponentGeneration = %d, want CMS generation %d", res.ComponentGeneration, rec.Generation)
+	}
+	return rec
+}
+
+// recordSnapshot is the part of a CMS record an observed-state report may change.
+type recordSnapshot struct {
+	State              componentspb.ComponentState
+	Generation         int64
+	ObservedGeneration *int64
+	Source             *store.IntentSource
+	Etag               string
+}
+
+func snapshotRecord(ctx context.Context, t *testing.T, ms *store.MemoryStore, name string) recordSnapshot {
+	t.Helper()
+	rec, err := ms.GetComponent(ctx, name)
+	if err != nil {
+		t.Fatalf("GetComponent(%q) error = %v", name, err)
+	}
+	return recordSnapshot{rec.State, rec.Generation, rec.ObservedGeneration, rec.Source, rec.Etag}
+}
+
+// seedOwnedRecord commits an intent from an older and then from a newer custom resource, so the
+// newer one ("uid-new", created an hour after created) owns the returned record.
+func seedOwnedRecord(ctx context.Context, t *testing.T, ms *store.MemoryStore, created time.Time) *store.ComponentRecord {
+	t.Helper()
+	spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
+	if _, err := ms.SetSourcedComponentIntent(ctx, "redpanda", spec, nil, store.IntentSource{UID: "uid-old", CreateTime: created, Generation: 1}); err != nil {
+		t.Fatalf("SetSourcedComponentIntent(uid-old) error = %v", err)
+	}
+	rec, err := ms.SetSourcedComponentIntent(ctx, "redpanda", spec, nil, store.IntentSource{UID: "uid-new", CreateTime: created.Add(time.Hour), Generation: 1})
+	if err != nil {
+		t.Fatalf("SetSourcedComponentIntent(uid-new) error = %v", err)
 	}
 	return rec
 }

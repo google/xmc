@@ -25,6 +25,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -377,5 +378,28 @@ func assertStoredSource(ctx context.Context, t *testing.T, s store.Store, name s
 	}
 	if diff := cmp.Diff(want, stored.Source); diff != "" {
 		t.Errorf("stored Source of %s mismatch (-want +got):\n%s", name, diff)
+	}
+}
+
+// assertOwnershipRejected checks that err from the store method op has wantCode and, for
+// FailedPrecondition, a message starting with wantPrefix and containing each of wantDetails, and
+// that the rejected call left the stored record as it was seeded (before).
+func assertOwnershipRejected(ctx context.Context, t *testing.T, s store.Store, op, name string, err error, wantCode codes.Code, wantPrefix string, wantDetails []string, before *store.ComponentRecord) {
+	t.Helper()
+	msg := status.Convert(err).Message()
+	if status.Code(err) != wantCode || (wantCode == codes.FailedPrecondition && !strings.HasPrefix(msg, wantPrefix)) {
+		t.Fatalf("%s() error = %v, want %v starting with %q", op, err, wantCode, wantPrefix)
+	}
+	for _, detail := range wantDetails {
+		if !strings.Contains(msg, detail) {
+			t.Errorf("%s() message = %q, want it to contain %q", op, msg, detail)
+		}
+	}
+	stored, err := s.GetComponent(ctx, name)
+	if err != nil {
+		t.Fatalf("GetComponent(%s) error = %v", name, err)
+	}
+	if diff := cmp.Diff(before, stored, protocmp.Transform()); diff != "" {
+		t.Errorf("rejected %s changed the stored record (-before +stored):\n%s", op, diff)
 	}
 }
