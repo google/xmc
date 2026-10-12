@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-{{- $mk := (.Values.kueueDev).multikueue | default .Values.multikueue | default dict }}
+{{- $mk := (.Values.kueueDev | default dict).multikueue | default .Values.multikueue | default dict }}
 {{- $worker := $mk.inClusterWorker | default dict }}
 {{- if and $mk.enabled $worker.enabled (not .Values.isDevEnvironment) }}
 {{- $q := $mk.queueName | default "multikueue-cpu-queue" }}

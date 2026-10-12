@@ -1280,12 +1280,14 @@ def _extract_work_unit_execution_metadata(
     )
     req = _make_req("GetCurrentWorkUnitExecutionRequest", name=wu.name)
     exec_pb = wu.current_work_unit_execution if has_exec else stub.GetCurrentWorkUnitExecution(req)
-    meta = getattr(exec_pb, "metadata", None)
+    meta = getattr(exec_pb, "metadata", None) if exec_pb is not None else None
     if meta is None:
         raise AssertionError(f"WorkUnit '{wu.name}' has no WorkUnitExecution metadata.")
     mk = (getattr(meta, "multi_kueue_cluster_name", "") or "").strip()
-    ex = (getattr(getattr(meta, "executing_cluster", None), "cluster_name", "") or "").strip()
-    mg = (getattr(getattr(meta, "management_cluster", None), "cluster_name", "") or "").strip()
+    exec_cluster = getattr(meta, "executing_cluster", None)
+    ex = (getattr(exec_cluster, "cluster_name", "") or "").strip() if exec_cluster else ""
+    mgmt_cluster = getattr(meta, "management_cluster", None)
+    mg = (getattr(mgmt_cluster, "cluster_name", "") or "").strip() if mgmt_cluster else ""
     if not mk or not ex:
         raise AssertionError(f"WorkUnit '{wu.name}' missing MultiKueue metadata ({mk=}, {ex=}).")
     if exp_cluster and (mk != exp_cluster or ex != exp_cluster):

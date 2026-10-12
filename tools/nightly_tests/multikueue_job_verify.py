@@ -51,7 +51,10 @@ def _verify_k8s_multikueue_crs(
     ):
         res = subprocess.run(["kubectl", "get", kind, name, "-o", jp], check=False, **kw)
         if res.returncode != 0 or res.stdout.strip() != "True":
-            raise AssertionError(f"{kind}/{name} condition Active=True failed: {res.stdout!r}")
+            raise AssertionError(
+                f"{kind}/{name} condition Active=True failed "
+                f"(stdout={res.stdout.strip()!r}, stderr={res.stderr.strip()!r})"
+            )
     wl_jp = (
         f"jsonpath={{.items[?(@.spec.podSets[0].template.metadata.labels"
         f'.xmc\\.google\\.com/experiment-id=="{xid}")].status.clusterName}}'
@@ -61,7 +64,10 @@ def _verify_k8s_multikueue_crs(
     )
     clusters = wl.stdout.split() if wl.returncode == 0 else []
     if wl.returncode != 0 or not clusters or set(clusters) != {worker_cluster}:
-        raise AssertionError(f"Workload.status.clusterName={clusters} != {worker_cluster}")
+        raise AssertionError(
+            f"Workload.status.clusterName={clusters} != {worker_cluster} "
+            f"(rc={wl.returncode}, stderr={wl.stderr.strip()!r})"
+        )
 
 
 def _assert_multikueue_work_units(stub: Any, xid: str) -> None:
