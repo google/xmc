@@ -21,9 +21,9 @@ import (
 	"sync"
 	"time"
 
-	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/task_queue_redis/redisclient"
+	"xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 )
 
 const (

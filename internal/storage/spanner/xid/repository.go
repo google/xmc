@@ -21,9 +21,9 @@ import (
 
 	"cloud.google.com/go/spanner"
 
+	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/query_generator/querytools"
-	"xmanager_cloud/storage/spanner/schema/xidschema"
+	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
 )
 
 var _ storage.XidEntryStore = (*Repository)(nil)

@@ -20,7 +20,7 @@ import (
 	"cloud.google.com/go/spanner"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // StatusMessageRowToProto converts a Spanner Row containing StatusMessages table data into a StatusMessage proto message.

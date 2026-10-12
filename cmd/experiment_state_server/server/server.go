@@ -19,15 +19,13 @@ import (
 	"context"
 	"fmt"
 
-	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
-	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
+	"xmanager_cloud/cmd/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/internal/workunit"
-	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 var _ apipb.ExperimentStateServiceServer = (*Server)(nil)
@@ -64,7 +62,7 @@ type baseHandler struct {
 // ExperimentHandler handles experiment lifecycle operations.
 type ExperimentHandler struct {
 	baseHandler
-	server spb.ExperimentStateServiceServer
+	server apipb.ExperimentStateServiceServer
 }
 
 // ArtifactHandler handles artifact operations.
@@ -81,12 +79,11 @@ type StatusMessageHandler struct {
 // WorkUnitHandler handles work unit lifecycle and actuation operations.
 type WorkUnitHandler struct {
 	baseHandler
-	workUnitUpdater *workunit.Updater
-	actuator        WorkUnitActuator
-	server          spb.ExperimentStateServiceServer
+	actuator WorkUnitActuator
+	server   apipb.ExperimentStateServiceServer
 }
 
-func newExperimentHandler(base baseHandler, server spb.ExperimentStateServiceServer) *ExperimentHandler {
+func newExperimentHandler(base baseHandler, server apipb.ExperimentStateServiceServer) *ExperimentHandler {
 	return &ExperimentHandler{
 		baseHandler: base,
 		server:      server,
@@ -106,7 +103,7 @@ func newStatusMessageHandler(base baseHandler) *StatusMessageHandler {
 	}
 }
 
-func newWorkUnitHandler(base baseHandler, actuator WorkUnitActuator, server spb.ExperimentStateServiceServer) *WorkUnitHandler {
+func newWorkUnitHandler(base baseHandler, actuator WorkUnitActuator, server apipb.ExperimentStateServiceServer) *WorkUnitHandler {
 	return &WorkUnitHandler{
 		baseHandler:     base,
 		workUnitUpdater: workunit.NewUpdater(base.storage),

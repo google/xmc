@@ -25,17 +25,17 @@ import (
 	"syscall"
 	"time"
 
-	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
-	"golang/grpc/grpc"
-	"golang/grpc/reflection/reflection"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/broadcast"
+	"xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
-	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/task_queue_redis/redisclient"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	cloudidentity "google.golang.org/api/cloudidentity/v1beta1"
@@ -43,8 +43,7 @@ import (
 
 	run "google.golang.org/api/run/v2"
 
-	gwpb "xmanager_cloud/health_service/proto/api_go_grpc_gateway_proto"
-	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	spb "xmanager_cloud/health_service/proto/api_go_proto"
 )
 
 type grpcServerDeps struct {
@@ -237,7 +236,7 @@ func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Auth
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(httpTransportCreds),
 	}
-	err = gwpb.RegisterHealthServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
+	err = spb.RegisterHealthServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to register gateway", "error", err)
 	}

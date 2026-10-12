@@ -25,11 +25,11 @@ import (
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/spanner/data/spannerdata"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/data"
+	"xmanager_cloud/internal/validator"
 )
 
 // UpdateArtifact updates an artifact with the given update mask. We return both the original and updated artifacts,

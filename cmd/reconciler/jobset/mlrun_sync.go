@@ -27,7 +27,7 @@ import (
 	"xmanager_cloud/cmd/reconciler/shared"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // mlRunSyncDuration measures the wall-clock the reconcile loop spends in the

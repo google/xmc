@@ -22,10 +22,10 @@ import (
 	"strconv"
 	"strings"
 
-	"api/filter/go/filtervisitor"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/api/filter/go/filtervisitor"
+	"xmanager_cloud/internal/logging"
 
-	fpb "api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
 )
 
 // FunctionFunc is the callback used to process function calls when parsing an expression.

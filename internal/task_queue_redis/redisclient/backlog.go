@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 
 	"github.com/redis/go-redis/v9"
 )

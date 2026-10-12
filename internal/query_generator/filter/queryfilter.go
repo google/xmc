@@ -21,12 +21,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"api/filter/go/filtervisitor"
-	"api/filter/go/queryfilterbase"
 	"cloud.google.com/go/spanner"
+	"xmanager_cloud/api/filter/go/filtervisitor"
+	"xmanager_cloud/api/filter/go/queryfilterbase"
 	"xmanager_cloud/internal/safesql"
 
-	fpb "api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
 )
 
 // MemberFunc represents a callback that maps a dynamic query member field path to a database representation.

@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "securitytest",
     srcs = ["test_utils.go"],
-    importpath = "xmanager_cloud/security/securitytest",
+    importpath = "xmanager_cloud/internal/security/securitytest",
     deps = [
         "//internal/security/jwtkeyset",
         "@com_github_tink_crypto_tink_go_v2//jwt",

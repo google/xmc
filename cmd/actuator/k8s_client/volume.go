@@ -16,8 +16,8 @@ package k8sclient
 import (
 	"strings"
 
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
-	resource "golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
+	corev1 "k8s.io/api/core/v1"
+	resource "k8s.io/apimachinery/pkg/api/resource"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 

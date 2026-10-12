@@ -23,7 +23,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	spb "xmanager_cloud/health_service/proto/api_go_proto"
 	"xmanager_cloud/pkg/components/summary"
 )
 

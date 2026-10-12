@@ -25,30 +25,29 @@ import (
 	googlespanner "cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
-	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
-	"golang/grpc/credentials/insecure/insecure"
-	"golang/grpc/grpc"
-	"golang/grpc/health/health"
-	"golang/grpc/reflection/reflection"
+	"google.golang.org/api/cloudidentity/v1beta1"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	authz "xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
+	"xmanager_cloud/cmd/experiment_state_server/config"
+	xidconfig "xmanager_cloud/cmd/xid_service/config"
+	xidserver "xmanager_cloud/cmd/xid_service/server"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	authz "xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/spanner/spanner"
-	"xmanager_cloud/storage/storage"
-	tq "xmanager_cloud/task_queue/client"
-	xidconfig "xmanager_cloud/xid_service/config"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	tq "xmanager_cloud/internal/task_queue"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
-	xidserver "xmanager_cloud/xid_service/server/server"
 )
 
 var testExecutable = &essmsgpb.Executable{
@@ -116,7 +115,7 @@ func withAuthorizer(a authz.AuthorizerInterface) testServerOpt {
 	}
 }
 
-func withXidClient(x xidgrpcpb.XidServiceClient) testServerOpt {
+func withXidClient(x xidapipb.XidServiceClient) testServerOpt {
 	return func(p *Params) {
 		p.XidClient = x
 	}
@@ -173,7 +172,7 @@ func createExperimentStateServer(ctx context.Context, t *testing.T, opts ...test
 	if err != nil {
 		t.Fatalf("Failed to create gRPC client for XID service: %v", err)
 	}
-	xidClient := xidgrpcpb.NewXidServiceClient(conn)
+	xidClient := xidapipb.NewXidServiceClient(conn)
 	p := Params{
 		Config:           &cfg,
 		Storage:          storage,
@@ -212,7 +211,7 @@ func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner
 	if err != nil {
 		t.Fatalf("failed to create xid server: %v", err)
 	}
-	xidgrpcpb.RegisterXidServiceServer(s, xidServer)
+	xidapipb.RegisterXidServiceServer(s, xidServer)
 
 	reflection.Register(s)
 
@@ -331,7 +330,7 @@ func mustCreateArtifact(ctx context.Context, t *testing.T, server *Server, paren
 
 // mockXidClient is a mock implementation of the XidServiceClient.
 type mockXidClient struct {
-	xidgrpcpb.XidServiceClient
+	xidapipb.XidServiceClient
 	getXidEntryErr             error
 	getXidEntryResp            *xidmsgpb.XidEntry
 	createXidEntryErr          error

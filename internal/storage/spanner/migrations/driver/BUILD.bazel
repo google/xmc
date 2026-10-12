@@ -21,7 +21,7 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/logging",
-        "//internal/storage/spanner/utils:spannerutils",
+        "//internal/storage/spanner/utils",
         "@com_github_golang_migrate_migrate_v4//database",
         "@com_github_golang_migrate_migrate_v4//database/spanner",
         "@com_google_cloud_go_spanner//:spanner",

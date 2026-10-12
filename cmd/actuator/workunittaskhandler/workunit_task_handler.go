@@ -25,18 +25,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"golang/google_api/googleapi/googleapi"
-	"golang/google_api/idtoken/idtoken"
-	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	"golang/prometheus/client/prometheus/promauto/promauto"
-	"golang/prometheus/client/prometheus/prometheus"
-	"golang/protobuf/v2/encoding/protojson/protojson"
-	"tink/go/jwt/jwt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/tink-crypto/tink-go/v2/jwt"
+	"google.golang.org/api/googleapi"
+	"google.golang.org/api/idtoken"
+	"google.golang.org/protobuf/encoding/protojson"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"xmanager_cloud/cmd/actuator/pausescheduling"
-	"xmanager_cloud/common/interfaces"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/common/interfaces"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
 var (

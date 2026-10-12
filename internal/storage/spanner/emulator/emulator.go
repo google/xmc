@@ -32,7 +32,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"xmanager_cloud/storage/spanner/utils/spannerutils"
+	"xmanager_cloud/internal/storage/spanner/utils"
 )
 
 var (
