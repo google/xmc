@@ -39,7 +39,6 @@ import (
 	tq "xmanager_cloud/task_queue/client"
 	"xmanager_cloud/validator/validator"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 
 	"google.golang.org/grpc"
@@ -235,7 +234,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 		name          string
 		req           *apipb.CreateArtifactRequest
 		authenticator auth.AuthorizerInterface
-		xidClient     xidgrpcpb.XidServiceClient
+		xidClient     xidapipb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -352,7 +351,7 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create gRPC client for XID service: %v", err)
 	}
-	xidClient := xidgrpcpb.NewXidServiceClient(conn)
+	xidClient := xidapipb.NewXidServiceClient(conn)
 	taskQueueClient := &tq.FakeClient{}
 
 	chartArtifact := &msgpb.Artifact{

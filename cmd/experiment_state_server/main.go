@@ -40,7 +40,6 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/cmd/experiment_state_server/server"
-	gwpb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
@@ -128,7 +127,7 @@ func main() {
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(httpTransportCreds),
 	}
-	err = gwpb.RegisterExperimentStateServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
+	err = spb.RegisterExperimentStateServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
 	if err != nil {
 		logging.Fatal(ctx, "failed to register gateway", "error", err)
 	}

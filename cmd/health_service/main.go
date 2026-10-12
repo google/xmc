@@ -43,7 +43,6 @@ import (
 
 	run "google.golang.org/api/run/v2"
 
-	gwpb "xmanager_cloud/health_service/proto/api_go_proto"
 	spb "xmanager_cloud/health_service/proto/api_go_proto"
 )
 
@@ -237,7 +236,7 @@ func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Auth
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(httpTransportCreds),
 	}
-	err = gwpb.RegisterHealthServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
+	err = spb.RegisterHealthServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to register gateway", "error", err)
 	}

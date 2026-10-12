@@ -21,7 +21,6 @@ import (
 
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	spb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/storage"
@@ -63,7 +62,7 @@ type baseHandler struct {
 // ExperimentHandler handles experiment lifecycle operations.
 type ExperimentHandler struct {
 	baseHandler
-	server spb.ExperimentStateServiceServer
+	server apipb.ExperimentStateServiceServer
 }
 
 // ArtifactHandler handles artifact operations.
@@ -81,10 +80,10 @@ type StatusMessageHandler struct {
 type WorkUnitHandler struct {
 	baseHandler
 	actuator WorkUnitActuator
-	server   spb.ExperimentStateServiceServer
+	server   apipb.ExperimentStateServiceServer
 }
 
-func newExperimentHandler(base baseHandler, server spb.ExperimentStateServiceServer) *ExperimentHandler {
+func newExperimentHandler(base baseHandler, server apipb.ExperimentStateServiceServer) *ExperimentHandler {
 	return &ExperimentHandler{
 		baseHandler: base,
 		server:      server,
@@ -104,7 +103,7 @@ func newStatusMessageHandler(base baseHandler) *StatusMessageHandler {
 	}
 }
 
-func newWorkUnitHandler(base baseHandler, actuator WorkUnitActuator, server spb.ExperimentStateServiceServer) *WorkUnitHandler {
+func newWorkUnitHandler(base baseHandler, actuator WorkUnitActuator, server apipb.ExperimentStateServiceServer) *WorkUnitHandler {
 	return &WorkUnitHandler{
 		baseHandler: base,
 		actuator:    actuator,

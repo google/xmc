@@ -47,7 +47,6 @@ import (
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	tq "xmanager_cloud/task_queue/client"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
@@ -116,7 +115,7 @@ func withAuthorizer(a authz.AuthorizerInterface) testServerOpt {
 	}
 }
 
-func withXidClient(x xidgrpcpb.XidServiceClient) testServerOpt {
+func withXidClient(x xidapipb.XidServiceClient) testServerOpt {
 	return func(p *Params) {
 		p.XidClient = x
 	}
@@ -173,7 +172,7 @@ func createExperimentStateServer(ctx context.Context, t *testing.T, opts ...test
 	if err != nil {
 		t.Fatalf("Failed to create gRPC client for XID service: %v", err)
 	}
-	xidClient := xidgrpcpb.NewXidServiceClient(conn)
+	xidClient := xidapipb.NewXidServiceClient(conn)
 	p := Params{
 		Config:           &cfg,
 		Storage:          storage,
@@ -212,7 +211,7 @@ func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner
 	if err != nil {
 		t.Fatalf("failed to create xid server: %v", err)
 	}
-	xidgrpcpb.RegisterXidServiceServer(s, xidServer)
+	xidapipb.RegisterXidServiceServer(s, xidServer)
 
 	reflection.Register(s)
 
@@ -331,7 +330,7 @@ func mustCreateArtifact(ctx context.Context, t *testing.T, server *Server, paren
 
 // mockXidClient is a mock implementation of the XidServiceClient.
 type mockXidClient struct {
-	xidgrpcpb.XidServiceClient
+	xidapipb.XidServiceClient
 	getXidEntryErr             error
 	getXidEntryResp            *xidmsgpb.XidEntry
 	createXidEntryErr          error
