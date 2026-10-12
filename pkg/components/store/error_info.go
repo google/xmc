@@ -49,6 +49,12 @@ const (
 	// in the owner's namespace. After proving that its own object is live, the caller may retry
 	// once with expected_owner_uid set to the owner_uid metadata.
 	ReasonSourceIncarnationMismatch = "SOURCE_INCARNATION_MISMATCH"
+	// ReasonClusterFenced rejects a cluster that does not hold the ownership fence. It stays in
+	// standby until it declares an epoch higher than the active one.
+	ReasonClusterFenced = "CLUSTER_FENCED"
+	// ReasonClusterEpochRegressed rejects the active cluster declaring a lower epoch, for example
+	// after a reverted configuration.
+	ReasonClusterEpochRegressed = "CLUSTER_EPOCH_REGRESSED"
 )
 
 // google.rpc.ErrorInfo metadata keys of store rejections, part of the contract callers match.

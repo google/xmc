@@ -496,6 +496,16 @@ CREATE TABLE ComponentDependencies (
 
 CREATE INDEX Idx_ComponentDependencies_Dependency ON ComponentDependencies(DependencyComponentId);
 
+-- Table: ComponentOwnershipFence (singleton, FenceId = 1): the cluster allowed to write intents.
+CREATE TABLE ComponentOwnershipFence (
+  FenceId INT64 NOT NULL,
+  ActiveClusterUid STRING(64) NOT NULL,
+  ActiveClusterName STRING(63) NOT NULL,
+  Epoch INT64 NOT NULL,
+  DeclaredTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  LastSeenTime TIMESTAMP OPTIONS (allow_commit_timestamp = TRUE),
+) PRIMARY KEY (FenceId);
+
 -- Table: ExperimentComponentSnapshots
 CREATE TABLE ExperimentComponentSnapshots (
   BitReversedXid INT64 NOT NULL,

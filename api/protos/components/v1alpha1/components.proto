@@ -412,16 +412,74 @@ message RequestSource {
 
 // Identity of a Kubernetes cluster that sends Component requests.
 message ClusterIdentity {
-  // UID of the cluster's kube-system Namespace.
+  // UID of the cluster's kube-system Namespace: a lowercase hyphenated UUID.
   string uid = 1 [
     (google.api.field_behavior) = REQUIRED,
     json_name = "uid"
+  ];
+
+  // Human-readable cluster name (DNS-1123 label), used only in messages, metrics and alerts.
+  // Required by DeclareClusterEpoch.
+  string name = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "name"
   ];
 
   // Ownership fencing epoch declared for the cluster; at least 1.
   int64 epoch = 3 [
     (google.api.field_behavior) = REQUIRED,
     json_name = "epoch"
+  ];
+}
+
+// Request message for DeclareClusterEpoch.
+message DeclareClusterEpochRequest {
+  // Cluster declaring itself the writer of Component intents at its epoch.
+  ClusterIdentity cluster = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "cluster"
+  ];
+}
+
+// Response message for DeclareClusterEpoch.
+message DeclareClusterEpochResponse {
+  // How an accepted declaration changed the ownership fence.
+  enum Outcome {
+    // Unspecified outcome; never returned.
+    OUTCOME_UNSPECIFIED = 0;
+
+    // The first declaration created the fence.
+    OUTCOME_CREATED = 1;
+
+    // The active cluster repeated its epoch; only the heartbeat time and, if it changed, the name
+    // moved.
+    OUTCOME_REFRESHED = 2;
+
+    // The active cluster raised its epoch.
+    OUTCOME_RAISED = 3;
+
+    // Another cluster declared a higher epoch and took the fence and every active component over.
+    OUTCOME_TAKEOVER = 4;
+  }
+
+  // Cluster that holds the ownership fence after the declaration. Every accepted declaration
+  // leaves the caller active, under the name it declared.
+  ClusterIdentity active_cluster = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "activeCluster"
+  ];
+
+  // Number of active components whose owner moved to the caller because the declaration took the
+  // fence over from another cluster; 0 otherwise.
+  int64 records_reassigned = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "recordsReassigned"
+  ];
+
+  // How the declaration changed the fence.
+  Outcome outcome = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "outcome"
   ];
 }
 
@@ -813,6 +871,18 @@ service ComponentManagerService {
   rpc GetPlatformHealth(GetPlatformHealthRequest) returns (GetPlatformHealthResponse) {
     option (google.api.http) = {
       get: "/v1alpha1/components:getPlatformHealth"
+    };
+  }
+
+  // Declares the calling cluster the single writer of Component intents at its epoch. The first
+  // declaration creates the ownership fence; the active cluster refreshes it or raises its epoch; a
+  // higher epoch from another cluster takes the fence and every active component over. A lower
+  // epoch from the active cluster fails with FailedPrecondition and ErrorInfo reason
+  // CLUSTER_EPOCH_REGRESSED; an equal or lower epoch from another cluster with CLUSTER_FENCED.
+  rpc DeclareClusterEpoch(DeclareClusterEpochRequest) returns (DeclareClusterEpochResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha1/components:declareClusterEpoch"
+      body: "*"
     };
   }
 }

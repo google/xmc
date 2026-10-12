@@ -135,6 +135,7 @@ func TestCheckSourceOwnership(t *testing.T) {
 		wantReason string
 	}{
 		{name: "no recorded owner is adopted (R2)", src: modifiedSource(func(s *RequestSource) { s.Namespace = "other" })},
+		{name: "owner without a UID after a takeover is adopted in its namespace (R2)", owner: &SourceOwner{Namespace: "xmc", ClusterUID: "cluster-2", Epoch: 2}, src: modifiedSource(func(s *RequestSource) { s.UID = "uid-b" })},
 		{name: "owner object writes (R3)", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Generation = 1 })},
 		{name: "another namespace conflicts (R4)", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Namespace = "other" }), wantReason: "SOURCE_NAMESPACE_CONFLICT"},
 		{
