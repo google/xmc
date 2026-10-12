@@ -24,6 +24,7 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/workunit"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
@@ -79,8 +80,9 @@ type StatusMessageHandler struct {
 // WorkUnitHandler handles work unit lifecycle and actuation operations.
 type WorkUnitHandler struct {
 	baseHandler
-	actuator WorkUnitActuator
-	server   apipb.ExperimentStateServiceServer
+	workUnitUpdater *workunit.Updater
+	actuator        WorkUnitActuator
+	server          apipb.ExperimentStateServiceServer
 }
 
 func newExperimentHandler(base baseHandler, server apipb.ExperimentStateServiceServer) *ExperimentHandler {
@@ -105,9 +107,10 @@ func newStatusMessageHandler(base baseHandler) *StatusMessageHandler {
 
 func newWorkUnitHandler(base baseHandler, actuator WorkUnitActuator, server apipb.ExperimentStateServiceServer) *WorkUnitHandler {
 	return &WorkUnitHandler{
-		baseHandler: base,
-		actuator:    actuator,
-		server:      server,
+		baseHandler:     base,
+		workUnitUpdater: workunit.NewUpdater(base.storage),
+		actuator:        actuator,
+		server:          server,
 	}
 }
 

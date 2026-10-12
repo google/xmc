@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package workunit orchestrates work unit execution updates across storage repositories.
 package workunit
 
 import (
@@ -20,60 +21,40 @@ import (
 	"slices"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	"github.com/kylelemons/godebug/diff"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/common/resourceaccumulator"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/statushistory"
-	"xmanager_cloud/internal/storage/spanner/statusmessage"
-	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/internal/storage/state"
 	"xmanager_cloud/internal/validator"
 )
 
-var getUpdatingCurrentWorkUnitExecutionSQL = safesql.New(`
-	SELECT
-		Xid,
-		WorkUnitId,
-		ExecutionId,
-		ExecutionCreateTime AS CreateTime,
-		ExecutionUpdateTime AS UpdateTime,
-		ExecutionCompleteTime AS CompleteTime,
-		ExecutionMetadata,
-		WorkUnitStatus,
-		QueueName,
-		Executable
-	FROM
-		WorkUnits
-	WHERE
-		BitReversedXid = @bitReversedXid AND WorkUnitId IN UNNEST(@workUnitIds)
-	FOR UPDATE;
-`)
+// Updater orchestrates work unit execution updates across storage repositories.
+type Updater struct {
+	txRunner storage.TransactionRunner
+}
+
+// NewUpdater creates a new Updater backed by the given TransactionRunner.
+func NewUpdater(txRunner storage.TransactionRunner) *Updater {
+	return &Updater{txRunner: txRunner}
+}
 
 // UpdateWorkUnitExecutions updates the executions of a work unit.
-// TODO(b/517479143): Move work unit status update decision logic and status propagation outside the repository layer into a domain service layer.
 // UpdateWorkUnitExecutions updates the executions of a work unit. It returns the canonical
 // executions, either the updated executions or the original executions if no update was done.
-func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
+func (u *Updater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	logging.Info(ctx, "Update work unit executions", "updates", updates)
 
 	if len(updates) == 0 {
 		return nil, nil
-	}
-
-	wids := make([]int64, len(updates))
-	for i, update := range updates {
-		wids[i] = update.WID
 	}
 
 	for _, update := range updates {
@@ -83,9 +64,9 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 
 	var updatedExecutions map[int64]*essmsgpb.WorkUnitExecution
 	var exp *essmsgpb.Experiment
-	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+	err := u.txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		var err error
-		updatedExecutions, exp, err = r.updateWorkUnitExecutionsInTxn(ctx, txn, xid, wids, updates)
+		updatedExecutions, exp, err = updateWorkUnitExecutionsInTxn(ctx, tx, xid, updates)
 		return err
 	})
 	if err != nil {
@@ -98,70 +79,47 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 	return updatedExecutions, nil
 }
 
-// UpdateWorkUnitExecutions updates the executions of a work unit using the bound read-write
+// UpdateWorkUnitExecutionsInTx updates the executions of a work unit using the bound read-write
 // transaction. It applies the same merge, state transition guard, status history and experiment
-// status denormalization as Repository.UpdateWorkUnitExecutions, but the writes only take effect
+// status denormalization as Updater.UpdateWorkUnitExecutions, but the writes only take effect
 // when the caller's transaction commits.
-func (r *TxRepository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
+func UpdateWorkUnitExecutionsInTx(ctx context.Context, tx *storage.Transaction, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	if len(updates) == 0 {
 		return nil, nil
 	}
 
+	updatedExecutions, _, err := updateWorkUnitExecutionsInTxn(ctx, tx, xid, updates)
+	return updatedExecutions, err
+}
+
+// updateWorkUnitExecutionsInTxn applies the updates within tx and returns the canonical
+// executions and the experiment read within the transaction.
+func updateWorkUnitExecutionsInTxn(ctx context.Context, tx *storage.Transaction, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, *essmsgpb.Experiment, error) {
 	wids := make([]int64, len(updates))
 	for i, update := range updates {
 		wids[i] = update.WID
 	}
 
-	updatedExecutions, _, err := r.updateWorkUnitExecutionsInTxn(ctx, r.tx, xid, wids, updates)
-	return updatedExecutions, err
-}
-
-// updateWorkUnitExecutionsInTxn applies the updates within txn and returns the canonical
-// executions and the experiment read within the transaction.
-func (r *Repository) updateWorkUnitExecutionsInTxn(ctx context.Context, txn *spanner.ReadWriteTransaction, xid int64, wids []int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, *essmsgpb.Experiment, error) {
 	// 1. Read all WorkUnits from storage in a single batch. This also locks the rows for the
 	// duration of the transaction using the `FOR UPDATE` hint.
-	stmt := spanner.NewStatement(getUpdatingCurrentWorkUnitExecutionSQL.String())
-	stmt.Params["bitReversedXid"] = spannerutils.ReverseBits(xid)
-	stmt.Params["workUnitIds"] = wids
-
-	iter := txn.Query(ctx, stmt)
-	defer iter.Stop()
+	workUnits, err := tx.WorkUnits.FetchUpdatingWorkUnits(ctx, xid, wids)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// 1.1. Process the rows and build a map of WorkUnitExecutions keyed by WorkUnitId.
-	updatedExecutions := make(map[int64]*essmsgpb.WorkUnitExecution)
-	queueNames := make(map[int64]string)
-	executables := make(map[int64]*essmsgpb.Executable)
-	if err := iter.Do(func(row *spanner.Row) error {
-		workUnitExecution, err := spannerdata.WorkUnitExecutionRowToProto(row)
-		if err != nil {
-			return fmt.Errorf("failed to convert row to WorkUnitExecution proto: %w", err)
+	updatedExecutions := make(map[int64]*essmsgpb.WorkUnitExecution, len(workUnits))
+	for wid, wu := range workUnits {
+		exec := wu.GetCurrentWorkUnitExecution()
+		if exec == nil {
+			continue
 		}
-
-		_, wid, _, err := validator.ValidateWorkUnitExecutionName(workUnitExecution.GetName())
-		if err != nil {
-			return fmt.Errorf("failed to validate WorkUnitExecution name %q: %w", workUnitExecution.GetName(), err)
+		if exec.Status == nil {
+			exec = proto.Clone(exec).(*essmsgpb.WorkUnitExecution)
+			exec.Status = &essmsgpb.WorkUnitStatus{}
 		}
-
-		var qName string
-		if err := row.ColumnByName("QueueName", &qName); err != nil {
-			logging.Error(ctx, "failed to scan QueueName column from WorkUnits table", "work_unit_id", wid, "error", err)
-			return fmt.Errorf("failed to scan QueueName column: %w", err)
-		}
-		queueNames[wid] = qName
-
-		var exec essmsgpb.Executable
-		if err := row.ColumnByName("Executable", &exec); err != nil {
-			logging.Error(ctx, "failed to scan Executable column from WorkUnits table", "work_unit_id", wid, "error", err)
-			return fmt.Errorf("failed to scan Executable column: %w", err)
-		}
-		executables[wid] = &exec
-
-		updatedExecutions[wid] = workUnitExecution
-		return nil
-	}); err != nil {
-		return nil, nil, err
+		updatedExecutions[wid] = exec
 	}
 
 	originalExecutions := make(map[int64]*essmsgpb.WorkUnitExecution)
@@ -169,78 +127,9 @@ func (r *Repository) updateWorkUnitExecutionsInTxn(ctx context.Context, txn *spa
 		originalExecutions[wid] = proto.Clone(execution).(*essmsgpb.WorkUnitExecution)
 	}
 
-	// 2. Process each update. The updates should be idempotent to the processing order, but if we
-	// have duplicates, we don't want to end up with a mutation ordering dependency issue. So we
-	// process them all and then update the database in one go.
-	var executionDeltas []*state.WorkUnitStateDelta
-	for _, update := range updates {
-		currentWorkUnitExecution := updatedExecutions[update.WID]
-		if currentWorkUnitExecution == nil {
-			return nil, nil, fmt.Errorf("work unit execution %d not found: %w", update.WID, grpcerr.ErrNotFound)
-		}
-
-		ctx := logging.WithWorkUnitExecutionName(ctx, currentWorkUnitExecution.GetName())
-
-		_, _, curEID, err := validator.ValidateWorkUnitExecutionName(currentWorkUnitExecution.GetName())
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to validate work unit execution name %q: %w", currentWorkUnitExecution.GetName(), err)
-		}
-
-		// If the execution ID doesn't match, we can skip this update. This is fine, it just means
-		// that the execution was updated in between the request and our transaction.
-		if curEID != update.EID {
-			continue
-		}
-
-		statusVal := update.WorkUnitExecution.Status
-		if statusVal != nil {
-			// Set the parent field in the structured status message. This is not strictly required, but
-			// it makes the caller's job easier since they don't need to construct the parent resource
-			// name, and it's easier for clients to consume these messages if they're inherently labelled
-			// with their parent.
-			parent := validator.ConstructWorkUnitName(xid, update.WID)
-			setParentIfNonNil(statusVal.SystemMessage, parent)
-			setParentIfNonNil(statusVal.UserMessage, parent)
-		}
-
-		updatedExecution, err := updateWorkUnitExecution(ctx, updatedExecutions[update.WID], update.WorkUnitExecution, update.UpdateMask, update.ForceStatusMessageUpdate, update.DeferToExistingMessage)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to update work unit execution: %w", err)
-		}
-
-		// If the update time is the same, no update was done, so we can skip the update.
-		if updatedExecution.UpdateTime.AsTime().Equal(updatedExecutions[update.WID].UpdateTime.AsTime()) {
-			continue
-		}
-
-		executionDelta := &state.WorkUnitStateDelta{
-			CurrentState:   &updatedExecutions[update.WID].Status.State,
-			NewState:       &updatedExecution.Status.State,
-			CurrentMessage: state.GetBestMessageFromStatus(updatedExecutions[update.WID].GetStatus()),
-			NewMessage:     state.GetBestMessageFromStatus(updatedExecution.GetStatus()),
-		}
-		executionDeltas = append(executionDeltas, executionDelta)
-
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, xid, &update.WID, &update.EID, updatedExecutions[update.WID].GetStatus().GetSystemMessage(), updatedExecution.GetStatus().GetSystemMessage(), txn)
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, xid, &update.WID, &update.EID, updatedExecutions[update.WID].GetStatus().GetUserMessage(), updatedExecution.GetStatus().GetUserMessage(), txn)
-
-		qName := queueNames[update.WID]
-		resMap := statushistory.ExtractAllResourcesFromExecutable(executables[update.WID])
-		var prevState *essmsgpb.WorkUnitStatus_WorkUnitState
-		if updatedExecutions[update.WID].GetStatus() != nil {
-			prevState = updatedExecutions[update.WID].Status.State.Enum()
-		}
-		var newState *essmsgpb.WorkUnitStatus_WorkUnitState
-		var stateTime time.Time
-		if updatedExecution.GetStatus() != nil {
-			newState = updatedExecution.Status.State.Enum()
-			if updatedExecution.Status.GetUpdateTime() != nil {
-				stateTime = updatedExecution.Status.GetUpdateTime().AsTime()
-			}
-		}
-		statushistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, update.WID, &update.EID, qName, prevState, newState, resMap, stateTime, txn)
-
-		updatedExecutions[update.WID] = updatedExecution
+	executionDeltas, err := processExecutionUpdates(ctx, tx, xid, workUnits, updatedExecutions, updates)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// 2.1. Update the database with the processed updates.
@@ -256,22 +145,123 @@ func (r *Repository) updateWorkUnitExecutionsInTxn(ctx context.Context, txn *spa
 		ctx := logging.WithWorkUnitExecutionName(ctx, execution.GetName())
 		protoDiff := diff.Diff(prototext.Format(originalExecutions[wid]), prototext.Format(execution))
 
-		txn.BufferWrite([]*spanner.Mutation{
-			spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, eid, execution),
-		})
+		if err := tx.WorkUnits.UpdateCurrentWorkUnitExecution(ctx, xid, wid, eid, execution); err != nil {
+			return nil, nil, fmt.Errorf("failed to update current work unit execution: %w", err)
+		}
 		logging.Info(ctx, fmt.Sprintf("Updated work unit execution: %s", protoDiff), "execution", execution)
 	}
 
-	if r.experimentRepo == nil {
-		return nil, nil, fmt.Errorf("experiment repository is not initialized")
-	}
-	// 3. Read the Experiment row.
-	exp, err := r.experimentRepo.FetchExperimentTransaction(ctx, xid, txn)
+	exp, err := updateExperimentFromExecutions(ctx, tx, xid, executionDeltas, updatedExecutions)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to fetch experiment: %w", err)
+		return nil, nil, err
+	}
+
+	return updatedExecutions, exp, nil
+}
+
+func processExecutionUpdates(ctx context.Context, tx *storage.Transaction, xid int64, workUnits map[int64]*essmsgpb.WorkUnit, updatedExecutions map[int64]*essmsgpb.WorkUnitExecution, updates []*storage.WorkUnitExecutionUpdate) ([]*state.WorkUnitStateDelta, error) {
+	// 2. Process each update. The updates should be idempotent to the processing order, but if we
+	// have duplicates, we don't want to end up with a mutation ordering dependency issue. So we
+	// process them all and then update the database in one go.
+	var executionDeltas []*state.WorkUnitStateDelta
+	for _, update := range updates {
+		currentWorkUnitExecution := updatedExecutions[update.WID]
+		if currentWorkUnitExecution == nil {
+			return nil, fmt.Errorf("work unit execution %d not found: %w", update.WID, grpcerr.ErrNotFound)
+		}
+
+		ctx := logging.WithWorkUnitExecutionName(ctx, currentWorkUnitExecution.GetName())
+
+		_, _, curEID, err := validator.ValidateWorkUnitExecutionName(currentWorkUnitExecution.GetName())
+		if err != nil {
+			return nil, fmt.Errorf("failed to validate work unit execution name %q: %w", currentWorkUnitExecution.GetName(), err)
+		}
+
+		// If the execution ID doesn't match, we can skip this update. This is fine, it just means
+		// that the execution was updated in between the request and our transaction.
+		if curEID != update.EID {
+			continue
+		}
+
+		statusVal := update.WorkUnitExecution.GetStatus()
+		if statusVal != nil {
+			// Set the parent field in the structured status message. This is not strictly required, but
+			// it makes the caller's job easier since they don't need to construct the parent resource
+			// name, and it's easier for clients to consume these messages if they're inherently labelled
+			// with their parent.
+			parent := validator.ConstructWorkUnitName(xid, update.WID)
+			setParentIfNonNil(statusVal.SystemMessage, parent)
+			setParentIfNonNil(statusVal.UserMessage, parent)
+		}
+
+		updatedExecution, err := updateWorkUnitExecution(ctx, updatedExecutions[update.WID], update.WorkUnitExecution, update.UpdateMask, update.ForceStatusMessageUpdate, update.DeferToExistingMessage)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update work unit execution: %w", err)
+		}
+
+		// If the update time is the same, no update was done, so we can skip the update.
+		if updatedExecution.UpdateTime.AsTime().Equal(updatedExecutions[update.WID].UpdateTime.AsTime()) {
+			continue
+		}
+
+		executionDelta := &state.WorkUnitStateDelta{
+			CurrentState:   &updatedExecutions[update.WID].Status.State,
+			NewState:       &updatedExecution.Status.State,
+			CurrentMessage: state.GetBestMessageFromStatus(updatedExecutions[update.WID].GetStatus()),
+			NewMessage:     state.GetBestMessageFromStatus(updatedExecution.GetStatus()),
+		}
+		executionDeltas = append(executionDeltas, executionDelta)
+
+		if err := recordExecutionHistory(ctx, tx, xid, update, workUnits[update.WID].GetExecutable(), updatedExecutions[update.WID], updatedExecution); err != nil {
+			return nil, err
+		}
+
+		updatedExecutions[update.WID] = updatedExecution
+	}
+	return executionDeltas, nil
+}
+
+func recordExecutionHistory(ctx context.Context, tx *storage.Transaction, xid int64, update *storage.WorkUnitExecutionUpdate, executable *essmsgpb.Executable, currentExec, updatedExecution *essmsgpb.WorkUnitExecution) error {
+	if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, &update.WID, &update.EID, currentExec.GetStatus().GetSystemMessage(), updatedExecution.GetStatus().GetSystemMessage()); err != nil {
+		return fmt.Errorf("failed to save system status message history: %w", err)
+	}
+	if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, &update.WID, &update.EID, currentExec.GetStatus().GetUserMessage(), updatedExecution.GetStatus().GetUserMessage()); err != nil {
+		return fmt.Errorf("failed to save user status message history: %w", err)
+	}
+
+	qName := executable.GetSchedulingConstraints().GetQueueName()
+	acc := resourceaccumulator.New()
+	acc.AccumulateExecutable(executable)
+	resMap := acc.IntTotals()
+	var prevState *essmsgpb.WorkUnitStatus_WorkUnitState
+	if currentExec.GetStatus() != nil {
+		prevState = currentExec.Status.State.Enum()
+	}
+	var newState *essmsgpb.WorkUnitStatus_WorkUnitState
+	var stateTime time.Time
+	if updatedExecution.GetStatus() != nil {
+		newState = updatedExecution.Status.State.Enum()
+		if updatedExecution.Status.GetUpdateTime() != nil {
+			stateTime = updatedExecution.Status.GetUpdateTime().AsTime()
+		}
+	}
+	if err := tx.StatusHistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, update.WID, &update.EID, qName, prevState, newState, resMap, stateTime); err != nil {
+		return fmt.Errorf("failed to save work unit status history: %w", err)
+	}
+	return nil
+}
+
+func updateExperimentFromExecutions(ctx context.Context, tx *storage.Transaction, xid int64, executionDeltas []*state.WorkUnitStateDelta, updatedExecutions map[int64]*essmsgpb.WorkUnitExecution) (*essmsgpb.Experiment, error) {
+	// 3. Read the Experiment row.
+	exp, err := tx.Experiments.FetchExperiment(ctx, xid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch experiment: %w", err)
 	}
 	if exp == nil {
-		return nil, nil, fmt.Errorf("experiment %d not found", xid)
+		return nil, fmt.Errorf("experiment %d not found", xid)
+	}
+	if exp.Status == nil {
+		exp.Status = &essmsgpb.ExperimentStatus{}
 	}
 
 	// 3.1. Clone the experiment status so we can compare it to the updated status later.
@@ -280,13 +270,13 @@ func (r *Repository) updateWorkUnitExecutionsInTxn(ctx context.Context, txn *spa
 	// 4. Update the denormalized status fields in the Experiment row.
 	updatedExp, err := state.DenormalizeWorkUnitStatus(ctx, exp, executionDeltas)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to update experiment status: %w", err)
+		return nil, fmt.Errorf("failed to update experiment status: %w", err)
 	}
 
 	// 4.1. Determine the new experiment status message.
-	newExpMsg, err := r.findExperimentStatusMessage(ctx, xid, txn, updatedExp, updatedExecutions)
+	newExpMsg, err := findExperimentStatusMessage(ctx, xid, tx.WorkUnits, updatedExp, updatedExecutions)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to find experiment status message: %w", err)
+		return nil, fmt.Errorf("failed to find experiment status message: %w", err)
 	}
 	updatedExp.Status.StructuredStatusMessage = newExpMsg
 
@@ -295,27 +285,22 @@ func (r *Repository) updateWorkUnitExecutionsInTxn(ctx context.Context, txn *spa
 		logging.Info(ctx, "Update experiment status", "updatedExp", updatedExp.Status)
 		// Update the update time and state update time if the execution or status or state has changed.
 		now := time.Now()
-		exp.UpdateTime = timestamppb.New(now)
+		updatedExp.UpdateTime = timestamppb.New(now)
 
 		if currentExpStatus.ActiveState == essmsgpb.ExperimentStatus_ACTIVE && updatedExp.Status.ActiveState != essmsgpb.ExperimentStatus_ACTIVE {
-			exp.CompleteTime = timestamppb.New(now)
-			logging.Info(ctx, "Marking experiment as complete", "completeTime", exp.CompleteTime)
-		}
-
-		// TODO(b/517479143): Refactor to use r.experimentRepo.UpdateExperimentStatus(ctx, txn, updatedExp) DAO method.
-		expStatusMutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(updatedExp)
-		if err != nil {
-			logging.Error(ctx, "Failed to create mutation for experiment status update", "error", err)
-			return nil, nil, fmt.Errorf("failed to create mutation for experiment status update: %w", err)
+			updatedExp.CompleteTime = timestamppb.New(now)
+			logging.Info(ctx, "Marking experiment as complete", "completeTime", updatedExp.CompleteTime)
 		}
 
 		protoDiff := diff.Diff(prototext.Format(currentExpStatus), prototext.Format(updatedExp.Status))
 		logging.Info(ctx, fmt.Sprintf("Updated experiment status: %s", protoDiff), "updatedExpStatus", updatedExp.Status)
 
-		txn.BufferWrite([]*spanner.Mutation{expStatusMutation})
+		if err := tx.Experiments.UpdateExperimentStatus(ctx, updatedExp); err != nil {
+			return nil, fmt.Errorf("failed to update experiment status: %w", err)
+		}
 	}
 
-	return updatedExecutions, exp, nil
+	return updatedExp, nil
 }
 
 func updateWorkUnitExecution(ctx context.Context, currentExecution *essmsgpb.WorkUnitExecution, updatedExecution *essmsgpb.WorkUnitExecution, mask *fieldmaskpb.FieldMask, forceStatusMessageUpdate bool, deferToExistingMessage bool) (*essmsgpb.WorkUnitExecution, error) {
@@ -342,7 +327,7 @@ func updateWorkUnitExecution(ctx context.Context, currentExecution *essmsgpb.Wor
 	return newExecution, nil
 }
 
-func (r *Repository) findExperimentStatusMessage(ctx context.Context, xid int64, txn spannerTransaction, updatedExp *essmsgpb.Experiment, updatedWUs map[int64]*essmsgpb.WorkUnitExecution) (*essmsgpb.StructuredMessage, error) {
+func findExperimentStatusMessage(ctx context.Context, xid int64, workUnits storage.WorkUnitTxRepository, updatedExp *essmsgpb.Experiment, updatedWUs map[int64]*essmsgpb.WorkUnitExecution) (*essmsgpb.StructuredMessage, error) {
 	// These are the severities we consider when propagating a work unit status message up to the
 	// experiment.
 	severities := []essmsgpb.StructuredMessage_Severity{
@@ -382,9 +367,9 @@ func (r *Repository) findExperimentStatusMessage(ctx context.Context, xid int64,
 			if hasCurrentMsg {
 				candidates = append(candidates, currentMsg)
 			}
-		} else if count := severityCounts[sev]; count > 0 {
+		} else {
 			var err error
-			candidates, err = r.collectUnmodifiedMessagesForSeverity(ctx, xid, sev, txn, updatedWUs)
+			candidates, err = collectUnmodifiedMessagesForSeverity(ctx, xid, sev, workUnits, updatedWUs)
 			if err != nil {
 				return nil, err
 			}
@@ -434,8 +419,8 @@ func checkIsCurrentMsgUpdated(currentMsg *essmsgpb.StructuredMessage, updatedWUs
 	return false, nil
 }
 
-func (r *Repository) collectUnmodifiedMessagesForSeverity(ctx context.Context, xid int64, sev essmsgpb.StructuredMessage_Severity, txn spannerTransaction, updatedWUs map[int64]*essmsgpb.WorkUnitExecution) ([]*essmsgpb.StructuredMessage, error) {
-	messages, err := r.ListWorkUnitMessagesBySeverity(ctx, xid, sev, txn)
+func collectUnmodifiedMessagesForSeverity(ctx context.Context, xid int64, sev essmsgpb.StructuredMessage_Severity, workUnits storage.WorkUnitTxRepository, updatedWUs map[int64]*essmsgpb.WorkUnitExecution) ([]*essmsgpb.StructuredMessage, error) {
+	messages, err := workUnits.ListWorkUnitMessagesBySeverity(ctx, xid, sev)
 	if err != nil {
 		return nil, err
 	}

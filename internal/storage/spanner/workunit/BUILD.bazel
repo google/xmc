@@ -27,14 +27,12 @@ go_library(
         "listworkunits.go",
         "repository.go",
         "updateworkunit.go",
-        "updateworkunitexecutions.go",
     ],
     importpath = "xmanager_cloud/internal/storage/spanner/workunit",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/domain/experiment",
-        "//internal/domain/workunit",
         "//internal/grpcerr",
         "//internal/logging",
         "//internal/query_generator/liststatement",
@@ -49,7 +47,6 @@ go_library(
         "//internal/storage/spanner/statushistory",
         "//internal/storage/spanner/statusmessage",
         "//internal/storage/spanner/utils",
-        "//internal/storage/state",
         "//internal/validator",
         "@com_github_kylelemons_godebug//diff",
         "@com_google_cloud_go_spanner//:spanner",
@@ -58,7 +55,6 @@ go_library(
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/prototext:go_default_library",
         "@org_golang_google_protobuf//proto",
-        "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )
@@ -89,7 +85,6 @@ go_test(
         "listworkunits_test.go",
         "repository_test.go",
         "updateworkunit_test.go",
-        "updateworkunitexecutions_test.go",
     ],
     # Shard across 4 parallel executors to divide heavy Spanner emulator database
     # setup, DDL schema creation, and live CRUD queries from ~36s down to ~10s.

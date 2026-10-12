@@ -30,6 +30,7 @@ import (
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/workunit"
 )
 
 // newMLRunCreator builds the MLRun control-plane client. It returns a nil
@@ -83,7 +84,7 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 			TickDuration:           p.cfg.BatcherTickDuration,
 			MaxParallelExperiments: p.cfg.MaxParallelExperiments,
 		},
-		p.storage,
+		workunit.NewUpdater(p.storage),
 	)
 
 	jobsetReconciler, err := jobset.NewReconciler(jobset.Params{

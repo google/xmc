@@ -186,7 +186,6 @@ func TestUpdateExperimentLaunchState_ActiveState(t *testing.T) {
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)
 
-	s := server.ExperimentHandler.storage
 	testCases := []struct {
 		name       string
 		wu1State   msgpb.WorkUnitStatus_WorkUnitState
@@ -264,7 +263,7 @@ func TestUpdateExperimentLaunchState_ActiveState(t *testing.T) {
 				t.Errorf("Experiment should be active when work units are pending, got inactive")
 			}
 
-			_, err = s.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+			_, err = server.WorkUnitHandler.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
 				{
 					WID: 1,
 					EID: 1,
@@ -309,7 +308,6 @@ func TestUpdateExperimentLaunchState_ActiveStateUpdatesPostLaunching(t *testing.
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)
 
-	s := server.ExperimentHandler.storage
 	testCases := []struct {
 		name       string
 		wu1State   msgpb.WorkUnitStatus_WorkUnitState
@@ -395,7 +393,7 @@ func TestUpdateExperimentLaunchState_ActiveStateUpdatesPostLaunching(t *testing.
 				t.Fatalf("UpdateExperimentLaunchState() returned an unexpected error: %v", err)
 			}
 
-			_, err = s.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+			_, err = server.WorkUnitHandler.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
 				{
 					WID: 1,
 					EID: 1,

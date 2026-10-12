@@ -150,7 +150,7 @@ func TestStopWorkUnit_SchedulingPausedTransitionsDirectlyToStopped(t *testing.T)
 	}
 
 	// Transition the work unit to SCHEDULING_PAUSED first.
-	if _, err := server.WorkUnitHandler.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+	if _, err := server.WorkUnitHandler.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
 		{
 			WID: workUnitID,
 			EID: eid,
@@ -218,7 +218,7 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 		Name:                     "experiments/123/workUnits/456",
 		WorkUnitType:             msgpb.WorkUnit_STANDARD,
 		Executable:               testExecutable,
-		CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{},
+		CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
 	}
 
 	testCases := []struct {
@@ -278,6 +278,7 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 			},
 			storage: &storage.MockStorage{
 				WorkUnit:                workUnit,
+				Experiment:              &msgpb.Experiment{Name: "experiments/123"},
 				AddWorkUnitOperationErr: fmt.Errorf("Storage add operation failed"),
 			},
 			wantErr: grpcerr.ErrInternal,
@@ -288,8 +289,9 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				WorkUnit:                    workUnit,
-				UpdateWorkUnitExecutionsErr: fmt.Errorf("Storage update work unit executions failed"),
+				WorkUnit:                          workUnit,
+				Experiment:                        &msgpb.Experiment{Name: "experiments/123"},
+				UpdateCurrentWorkUnitExecutionErr: fmt.Errorf("Storage update work unit executions failed"),
 			},
 			wantErr: grpcerr.ErrInternal,
 		},
@@ -323,13 +325,16 @@ func TestStopWorkUnit_TaskEnqueueFails(t *testing.T) {
 		Name:                     "experiments/123/workUnits/456",
 		WorkUnitType:             msgpb.WorkUnit_STANDARD,
 		Executable:               testExecutable,
-		CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{},
+		CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
 	}
 
 	xidClient := &mockXidClient{
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
-	storage := &storage.MockStorage{WorkUnit: workUnit}
+	storage := &storage.MockStorage{
+		WorkUnit:   workUnit,
+		Experiment: &msgpb.Experiment{Name: "experiments/123"},
+	}
 	taskQueueClient := &tq.FakeClient{
 		EnqueueErr: fmt.Errorf("task enqueue failed"),
 	}

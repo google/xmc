@@ -36,6 +36,7 @@ go_library(
         "//internal/logging",
         "//internal/storage",
         "//internal/storage/spanner",
+        "//internal/workunit",
         "@com_google_cloud_go_pubsub//:pubsub",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//option",
