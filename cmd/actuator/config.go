@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
+	k8sclient "xmanager_cloud/cmd/actuator/k8s_client"
 	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/internal/featureflags"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 )

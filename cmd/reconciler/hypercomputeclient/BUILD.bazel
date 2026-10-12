@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-compat_go_library(
+go_library(
     name = "hypercomputeclient",
     srcs = [
         "client.go",
@@ -31,7 +31,7 @@ compat_go_library(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "hypercomputeclient_test",
     srcs = [
         "client_test.go",

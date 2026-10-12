@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"os"
 
-	"golang/cloud_google_com/go/compute/metadata/v/v0/metadata"
+	"cloud.google.com/go/compute/metadata"
 	"xmanager_cloud/logging/logging"
 )
 
