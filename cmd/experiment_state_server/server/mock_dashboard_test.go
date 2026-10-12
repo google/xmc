@@ -17,7 +17,7 @@ package server
 import (
 	"context"
 
-	"golang/grpc/grpc"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	dashboard_apipb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	dashboard_pb "xmanager_cloud/dashboard_service/proto/service_go_proto"

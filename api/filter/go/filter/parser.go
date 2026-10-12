@@ -20,7 +20,7 @@ import (
 	"strings"
 	"unicode"
 
-	fpb "api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
 )
 
 type tokenKind int

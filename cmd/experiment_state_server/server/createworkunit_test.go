@@ -22,24 +22,22 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"golang/protobuf/v2/encoding/protojson/protojson"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
-	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
+	"xmanager_cloud/cmd/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/toollibs/execution_environments"
 	"xmanager_cloud/security/securitytest"
-	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
 	tpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/task_queue_redis/redisclient"
-	"xmanager_cloud/toollibs/execution_environments/executionenvironments"
 	"xmanager_cloud/validator/validator"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -252,10 +250,10 @@ func (e *incompatibleEnv) IsCompatibleWithWorkUnit(workUnit *msgpb.WorkUnit) (bo
 func (e *incompatibleEnv) InjectOnJobSetCreation(ctx context.Context, workUnit *msgpb.WorkUnit, jobSet *jobsetv1alpha2.JobSet) (*jobsetv1alpha2.JobSet, error) {
 	return jobSet, nil
 }
-func (e *incompatibleEnv) InjectOnExperimentCreation(ctx context.Context, essServer spb.ExperimentStateServiceServer, experiment *msgpb.Experiment) (*msgpb.Experiment, error) {
+func (e *incompatibleEnv) InjectOnExperimentCreation(ctx context.Context, essServer apipb.ExperimentStateServiceServer, experiment *msgpb.Experiment) (*msgpb.Experiment, error) {
 	return experiment, nil
 }
-func (e *incompatibleEnv) InjectOnWorkUnitCreation(ctx context.Context, essServer spb.ExperimentStateServiceServer, workUnit *msgpb.WorkUnit) (*msgpb.WorkUnit, error) {
+func (e *incompatibleEnv) InjectOnWorkUnitCreation(ctx context.Context, essServer apipb.ExperimentStateServiceServer, workUnit *msgpb.WorkUnit) (*msgpb.WorkUnit, error) {
 	return workUnit, nil
 }
 
@@ -361,7 +359,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 		name          string
 		req           *apipb.CreateWorkUnitRequest
 		authenticator auth.AuthorizerInterface
-		xidClient     xidgrpcpb.XidServiceClient
+		xidClient     xidapipb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{

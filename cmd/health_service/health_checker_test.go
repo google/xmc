@@ -25,7 +25,7 @@ import (
 	"time"
 
 	commonhealth "xmanager_cloud/common/health"
-	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	spb "xmanager_cloud/health_service/proto/api_go_proto"
 	"xmanager_cloud/pkg/components/summary"
 
 	"google.golang.org/api/option"

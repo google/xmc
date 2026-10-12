@@ -25,7 +25,7 @@ import (
 	"sync"
 	"syscall"
 
-	"golang/cloud_google_com/go/pubsub/v/v1/pubsub"
+	"cloud.google.com/go/pubsub"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/logging/logging"
 )

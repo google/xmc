@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"time"
 
-	"golang/go_sync/errgroup/errgroup"
+	"golang.org/x/sync/errgroup"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/logging/logging"
 )

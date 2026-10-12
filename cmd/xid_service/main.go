@@ -24,14 +24,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"golang/grpc/credentials/insecure/insecure"
-	"golang/grpc/grpc"
-	"golang/grpc/reflection/reflection"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/reflection"
+	"xmanager_cloud/cmd/xid_service/config"
+	"xmanager_cloud/cmd/xid_service/server"
 	"xmanager_cloud/logging/logging"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/xid_service/config"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	"xmanager_cloud/xid_service/server/server"
 )
 
 func main() {

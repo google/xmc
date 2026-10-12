@@ -26,43 +26,8 @@ nogo(
     ],
 )
 
-# Core legacy target mapping directives
-# gazelle:resolve go protobuf/timestamp_go_proto @org_golang_google_protobuf//types/known/timestamppb
-# gazelle:resolve go protobuf/any_go_proto @org_golang_google_protobuf//types/known/anypb
-# gazelle:resolve go rpc/status_go_proto @org_golang_google_genproto_googleapis_rpc//status
-# gazelle:resolve go spanner/admin/database/v1/spanner_database_admin_go_proto @org_golang_google_genproto//googleapis/spanner/admin/database/v1:database
-# gazelle:resolve go spanner/admin/instance/v1/spanner_instance_admin_go_proto @org_golang_google_genproto//googleapis/spanner/admin/instance/v1:instance
-# gazelle:resolve go golang/protobuf/v2/encoding/protojson/protojson @org_golang_google_protobuf//encoding/protojson
-# gazelle:resolve go golang/protobuf/v2/encoding/prototext/prototext @org_golang_google_protobuf//encoding/prototext
-# gazelle:resolve go golang/google_api/option/option @org_golang_google_api//option:option
-# gazelle:resolve go golang/google_api/iterator/iterator @org_golang_google_api//iterator:iterator
-# gazelle:resolve go golang/google_api/iamcredentials/v1/iamcredentials @org_golang_google_api//iamcredentials/v1:iamcredentials
-# gazelle:resolve go golang/google_api/cloudidentity/v1beta1/cloudidentity @org_golang_google_api//cloudidentity/v1beta1:v1beta1
-# gazelle:resolve go golang/google_api/idtoken/idtoken @org_golang_google_api//idtoken:idtoken
-# gazelle:resolve go golang/oauth2/google/google @org_golang_x_oauth2//google
-# gazelle:resolve go golang/godebug/diff/diff @com_github_kylelemons_godebug//diff
-# gazelle:resolve go golang/github_com/go_redis/redis/v/v9/redis @com_github_redis_go_redis_v9//:go-redis
-# gazelle:resolve go tink/go/jwt/jwt @com_github_tink_crypto_tink_go_v2//jwt:jwt
-# gazelle:resolve go tink/go/keyset/keyset @com_github_tink_crypto_tink_go_v2//keyset:keyset
-# gazelle:resolve go golang/github_com/golang_migrate/migrate/v/v4/source/source @com_github_golang_migrate_migrate_v4//source:source
-# gazelle:resolve go golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs @com_github_golang_migrate_migrate_v4//source/iofs:iofs
-
-# Custom API Filter stack mappings
-# gazelle:resolve go api/filter/go/filtervisitor //api/filter/go/filtervisitor:filtervisitor
-# gazelle:resolve go api/filter/go/queryfilterbase //api/filter/go/queryfilterbase:queryfilterbase
-# gazelle:resolve go api/filter/go/filter //api/filter/go/filter:filter
-
-# Kubernetes target mappings
-# gazelle:resolve go golang/k8s_io/api/v/v0_23/core/v1/v1 @io_k8s_api//core/v1:core
-# gazelle:resolve go golang/k8s_io/api/v/v0_23/batch/v1/v1 @io_k8s_api//batch/v1:batch
-# gazelle:resolve go golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource @io_k8s_apimachinery//pkg/api/resource:resource
-# gazelle:resolve go golang/k8s_io/client_go/v/v0_23/kubernetes/typed/core/v1/v1 @io_k8s_client_go//kubernetes/typed/core/v1:core
-# gazelle:resolve go golang/k8s_io/client_go/v/v0_23/rest/fake/fake @io_k8s_client_go//rest/fake:fake
-# gazelle:resolve go golang/k8s_io/client_go/v/v0_23/discovery/discovery @io_k8s_client_go//discovery:discovery
-# gazelle:resolve go golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake @io_k8s_sigs_controller_runtime//pkg/client/fake:fake
-
 # Proto stubs target package mappings (matching how Go codebase imports our proto stubs)
-# gazelle:resolve go api/filter/filter_expression_go_proto //api/filter:filter_expression_go_proto
+# gazelle:resolve go xmanager_cloud/api/filter/filter_expression_go_proto //api/filter:filter_expression_go_proto
 # gazelle:resolve go xmanager_cloud/experiment_state_server/proto/messages_go_proto //api/protos/experiment:messages_go_proto
 # gazelle:resolve go xmanager_cloud/experiment_state_server/proto/api_go_proto //api/protos/experiment:api_go_proto
 # gazelle:resolve go xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto //api/protos/experiment:api_go_proto

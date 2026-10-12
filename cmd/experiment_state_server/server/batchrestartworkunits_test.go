@@ -23,16 +23,15 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"xmanager_cloud/auth/auth"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
-	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/internal/storage"
 	tq "xmanager_cloud/task_queue/client"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/validator/validator"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -311,7 +310,7 @@ func TestBatchRestartWorkUnits_DependencyFailures(t *testing.T) {
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		xidClient     xidgrpcpb.XidServiceClient
+		xidClient     xidapipb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{

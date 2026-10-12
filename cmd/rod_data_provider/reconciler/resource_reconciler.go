@@ -17,10 +17,10 @@ package reconciler
 import (
 	"context"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
+	"k8s.io/apimachinery/pkg/api/errors"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
