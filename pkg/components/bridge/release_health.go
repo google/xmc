@@ -55,7 +55,7 @@ func (m *K8sHelmManager) ComponentHealth(ctx context.Context, ref ComponentRef) 
 // in the deployed release still exists, and caches a healthy result. A missing, terminally failed, or drifted release
 // marks the component for repair so the next reconcile pass re-runs its Helm upgrade at the current generation.
 func (m *K8sHelmManager) releaseHealth(ctx context.Context, ref ComponentRef) (bool, string, string) {
-	releaseName := ComponentReleaseName(ref.Name)
+	releaseName := ComponentReleaseNameForRef(ref)
 	m.mu.RLock()
 	verifiedAt, cached := m.healthVerifiedAt[ref.String()]
 	m.mu.RUnlock()
@@ -88,7 +88,7 @@ func (m *K8sHelmManager) releaseResourceHealth(ctx context.Context, releaseName 
 // recordReleaseHealth caches a healthy verdict, or marks the component for repair when the release needs re-applying
 // and its repair backoff has elapsed.
 func (m *K8sHelmManager) recordReleaseHealth(ctx context.Context, ref ComponentRef, healthy, repair bool, reason string) {
-	key := componentKey(ref.Namespace, ref.Name)
+	key := componentStateKey(ref)
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()

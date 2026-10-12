@@ -512,3 +512,114 @@ func TestK8sHelmManager_RetryFailedUpgrade_Delete(t *testing.T) {
 		t.Fatalf("expected retry Delete1PComponent to succeed, got %v", err)
 	}
 }
+
+func TestComponentReleaseNameForRef(t *testing.T) {
+	tests := []struct {
+		name        string
+		ref         ComponentRef
+		wantRelease string
+		wantCanon   string
+	}{
+		{
+			name:        "empty UID preserves canonical release name",
+			ref:         ComponentRef{Namespace: "xmc", Name: "ingestion"},
+			wantRelease: "xmc-cmp-ingestion",
+			wantCanon:   "ingestion",
+		},
+		{
+			name:        "UUID v4 preserves canonical release name for live upgrades and orphan adoption",
+			ref:         ComponentRef{Namespace: "xmc", Name: "ray-operator", UID: "12345678-9abc-4def-8000-112233445566"},
+			wantRelease: "xmc-cmp-ray-operator",
+			wantCanon:   "ray-operator",
+		},
+		{
+			name:        "synthetic UID preserves canonical release name",
+			ref:         ComponentRef{Namespace: "xmc", Name: "rod-data-provider", UID: "uid-owner-a"},
+			wantRelease: "xmc-cmp-rod-data-provider",
+			wantCanon:   "rod-data-provider",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotRelease := ComponentReleaseNameForRef(tc.ref)
+			if gotRelease != tc.wantRelease {
+				t.Errorf("ComponentReleaseNameForRef(%+v) = %q, want %q", tc.ref, gotRelease, tc.wantRelease)
+			}
+			gotCanon := componentNameFromRelease(gotRelease)
+			if gotCanon != tc.wantCanon {
+				t.Errorf("componentNameFromRelease(%q) = %q, want %q", gotRelease, gotCanon, tc.wantCanon)
+			}
+		})
+	}
+}
+
+func TestK8sHelmManager_PerCRReleaseIsolation(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(true),
+	)
+	defer mgr.Close()
+
+	ownerRef := ComponentRef{Namespace: "ns-a", Name: "ingestion", UID: "11111111-aaaa-4bbb-8ccc-000000000001"}
+	dupeRef := ComponentRef{Namespace: "ns-b", Name: "ingestion", UID: "22222222-dddd-4eee-8fff-000000000002"}
+
+	if err := mgr.Ensure1PComponent(ctx, ownerRef, HelmComponentOptions{Ref: ownerRef, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent(owner) failed: %v", err)
+	}
+	if err := mgr.Ensure1PComponent(ctx, dupeRef, HelmComponentOptions{Ref: dupeRef, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent(dupe) failed: %v", err)
+	}
+
+	ownerKey := componentKey(ownerRef.Namespace, ComponentReleaseNameForRef(ownerRef))
+	dupeKey := componentKey(dupeRef.Namespace, ComponentReleaseNameForRef(dupeRef))
+	if !runner.installed[ownerKey] || !runner.installed[dupeKey] {
+		t.Fatalf("expected both %q and %q to be installed", ownerKey, dupeKey)
+	}
+
+	// Deleting the cross-namespace duplicate CR uninstalls only dupeKey and preserves ownerKey.
+	if err := mgr.Delete1PComponent(ctx, dupeRef); err != nil {
+		t.Fatalf("Delete1PComponent(dupe) failed: %v", err)
+	}
+	if runner.installed[dupeKey] {
+		t.Errorf("expected duplicate release %q to be uninstalled", dupeKey)
+	}
+	if !runner.installed[ownerKey] {
+		t.Errorf("expected owner release %q to remain installed when duplicate is deleted", ownerKey)
+	}
+
+	// Same-namespace recreate: when newRef is active in ns-a, tearing down superseded ownerRef must not
+	// uninstall ns-a/xmc-cmp-ingestion or clobber newRef's active state.
+	newRef := ComponentRef{Namespace: "ns-a", Name: "ingestion", UID: "33333333-eeee-4fff-8000-000000000003"}
+	if err := mgr.Ensure1PComponent(ctx, newRef, HelmComponentOptions{Ref: newRef, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent(newRef) failed: %v", err)
+	}
+	mgr.RecordActuation(ownerRef, 1)
+	mgr.RecordActuation(newRef, 2)
+	if err := mgr.Purge1PComponent(ctx, ownerRef); err != nil {
+		t.Fatalf("Purge1PComponent(superseded ownerRef) failed: %v", err)
+	}
+	if !runner.installed[ownerKey] {
+		t.Errorf("expected active release %q to remain installed when superseded incarnation is purged", ownerKey)
+	}
+	if mgr.IsComponentActuated(ownerRef, 1) {
+		t.Errorf("expected superseded ownerRef actuation state to be forgotten")
+	}
+	if !mgr.IsComponentActuated(newRef, 2) || !mgr.IsComponentActive(newRef) {
+		t.Errorf("expected active newRef state to remain intact")
+	}
+
+	// Cold-start / fenced-cluster Purge1PComponent (inactive in memory, no other active incarnation) still uninstalls.
+	fencedRef := ComponentRef{Namespace: "ns-c", Name: "ingestion", UID: "44444444-0000-4000-8000-000000000004"}
+	fencedKey := componentKey(fencedRef.Namespace, ComponentReleaseNameForRef(fencedRef))
+	runner.installed[fencedKey] = true
+	if err := mgr.Purge1PComponent(ctx, fencedRef); err != nil {
+		t.Fatalf("Purge1PComponent(fencedRef) failed: %v", err)
+	}
+	if runner.installed[fencedKey] {
+		t.Errorf("expected cold-start Purge1PComponent to uninstall %q", fencedKey)
+	}
+}
+

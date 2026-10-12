@@ -288,22 +288,28 @@ func verifyCRDSchemaAndCELRules(ctx context.Context, t *testing.T, compClient dy
 	}
 	tests := []struct {
 		name        string
+		crName      string
 		spec        map[string]any
 		wantErr     bool
 		errContains string
 	}{
-		{"rejects missing required spec.enabled", map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"}, true, "spec.enabled: Required value"},
-		{"rejects invalid deletionPolicy value", map[string]any{"enabled": true, "deletionPolicy": "Retain"}, true, "deletionPolicy"},
-		{"rejects negative lifecycleControl.drainTimeoutSeconds", map[string]any{"enabled": true, "lifecycleControl": map[string]any{"drainTimeoutSeconds": -5}}, true, "drainTimeoutSeconds"},
-		{"rejects 3P wrapper without wrapperRef or parameters", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER"}, true, "either wrapperRef or parameters must be specified when componentType is COMPONENT_TYPE_CUSTOM_3P_WRAPPER"},
-		{"accepts operatorless 3P wrapper with parameters only", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "deletionProtection": false, "parameters": map[string]any{"host": "clickhouse.xmc.svc.cluster.local"}}, false, ""},
-		{"rejects wrapperRef observedGenerationPath outside status", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("$.metadata.generation", "")}, true, "observedGenerationPath"},
-		{"rejects wrapperRef readyConditionPath outside status", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("", "$.spec.ready")}, true, "readyConditionPath"},
-		{"accepts valid 3P wrapper with status JSONPaths and applies schema defaults", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("$.status.observedGeneration", "$.status.conditions[?(@.type=='Ready')].status")}, false, ""},
+		{"rejects missing required spec.enabled", "", map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"}, true, "spec.enabled: Required value"},
+		{"rejects invalid deletionPolicy value", "", map[string]any{"enabled": true, "deletionPolicy": "Retain"}, true, "deletionPolicy"},
+		{"rejects negative lifecycleControl.drainTimeoutSeconds", "", map[string]any{"enabled": true, "lifecycleControl": map[string]any{"drainTimeoutSeconds": -5}}, true, "drainTimeoutSeconds"},
+		{"rejects 3P wrapper without wrapperRef or parameters", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER"}, true, "either wrapperRef or parameters must be specified when componentType is COMPONENT_TYPE_CUSTOM_3P_WRAPPER"},
+		{"accepts operatorless 3P wrapper with parameters only", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "deletionProtection": false, "parameters": map[string]any{"host": "clickhouse.xmc.svc.cluster.local"}}, false, ""},
+		{"rejects wrapperRef observedGenerationPath outside status", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("$.metadata.generation", "")}, true, "observedGenerationPath"},
+		{"rejects wrapperRef readyConditionPath outside status", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("", "$.spec.ready")}, true, "readyConditionPath"},
+		{"accepts valid 3P wrapper with status JSONPaths and applies schema defaults", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("$.status.observedGeneration", "$.status.conditions[?(@.type=='Ready')].status")}, false, ""},
+		{"accepts metadata.name of 45 characters", strings.Repeat("a", 45), map[string]any{"enabled": true, "deletionProtection": false}, false, ""},
+		{"rejects metadata.name exceeding 45 characters", strings.Repeat("a", 46), map[string]any{"enabled": true, "deletionProtection": false}, true, "metadata.name must be at most 45 characters"},
 	}
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			name := fmt.Sprintf("cel-case-%d", i)
+			name := tc.crName
+			if name == "" {
+				name = fmt.Sprintf("cel-case-%d", i)
+			}
 			created, err := compClient.Create(ctx, newComponentManifest(name, tc.spec), metav1.CreateOptions{})
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("Create(%s) error = %v, wantErr %v", name, err, tc.wantErr)

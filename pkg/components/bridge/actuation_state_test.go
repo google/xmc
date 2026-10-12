@@ -171,7 +171,7 @@ func TestK8sHelmManager_HydrationKeepsTornDownComponentsInactive(t *testing.T) {
 			defer mgr.Close()
 			tearDown := func() {
 				mgr.mu.Lock()
-				mgr.forgetComponentLocked(componentKey(torn.Namespace, torn.Name), false)
+				mgr.forgetComponentLocked(torn, false)
 				mgr.mu.Unlock()
 			}
 			if tt.duringRead {

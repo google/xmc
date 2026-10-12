@@ -33,7 +33,7 @@ func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64)
 	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return false
 	}
-	key := componentKey(ref.Namespace, ref.Name)
+	key := componentStateKey(ref)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.activeState[key] && m.upgradeErrs[key] == nil && m.actuatedGenerations[key] == generation
@@ -45,7 +45,7 @@ func (m *K8sHelmManager) RecordActuation(ref ComponentRef, generation int64) {
 	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return
 	}
-	key := componentKey(ref.Namespace, ref.Name)
+	key := componentStateKey(ref)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.actuatedGenerations[key] != generation {
@@ -59,10 +59,13 @@ func (m *K8sHelmManager) IsComponentActive(ref ComponentRef) bool {
 	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return false
 	}
-	key := componentKey(ref.Namespace, ref.Name)
+	key := componentStateKey(ref)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.activeState[key]
+	if active, ok := m.activeState[key]; ok {
+		return active
+	}
+	return m.activeState[componentKey(ref.Namespace, ref.Name)]
 }
 
 // HydrateFromCluster populates in-memory active state from the release ConfigMap (<namespace>/xmc-component-values)
@@ -85,9 +88,13 @@ func (m *K8sHelmManager) HydrateComponentState(ctx context.Context, ref Componen
 	if err := validateComponentRef(ref); err != nil {
 		return nil
 	}
-	key := componentKey(ref.Namespace, ref.Name)
+	key := componentStateKey(ref)
+	baseKey := componentKey(ref.Namespace, ref.Name)
 	m.mu.RLock()
 	_, known := m.activeState[key]
+	if !known {
+		_, known = m.activeState[baseKey]
+	}
 	m.mu.RUnlock()
 	var hydrateErr error
 	if !known {
@@ -97,7 +104,7 @@ func (m *K8sHelmManager) HydrateComponentState(ctx context.Context, ref Componen
 		logging.Warn(ctx, "Component CR reports Ready but its Helm release is missing or failed; forcing re-actuation", "name", ref.Name, "namespace", ref.Namespace, "generation", observedGeneration)
 		crReady = false
 	}
-	m.applyHydratedState(key, observedGeneration, crReady)
+	m.applyHydratedState(key, baseKey, observedGeneration, crReady)
 	return hydrateErr
 }
 
@@ -119,7 +126,7 @@ func (m *K8sHelmManager) releaseContradictsReadyCR(ctx context.Context, ref Comp
 	if m.runner == nil {
 		return true
 	}
-	rel, err := m.runner.Status(ctx, ComponentReleaseName(ref.Name), ref.Namespace)
+	rel, err := m.runner.Status(ctx, ComponentReleaseNameForRef(ref), ref.Namespace)
 	if errors.Is(err, driver.ErrReleaseNotFound) {
 		return true
 	}
@@ -133,24 +140,40 @@ func (m *K8sHelmManager) releaseContradictsReadyCR(ctx context.Context, ref Comp
 	return status != release.StatusDeployed && !status.IsPending()
 }
 
-// forgetComponentLocked drops the component's actuation and repair state after a teardown and records it as inactive,
-// so namespace hydration never re-activates it from the values ConfigMap (Orphan keeps enabled values there). Delete
-// keeps the chart path override (keepInactive); Purge and Orphan drop it. Callers must hold m.mu.
-func (m *K8sHelmManager) forgetComponentLocked(key string, keepInactive bool) {
+// forgetIncarnationLocked marks only the given CR incarnation inactive and drops its actuation and repair state without
+// touching the namespace-level component entry or chart path override. Callers must hold m.mu.
+func (m *K8sHelmManager) forgetIncarnationLocked(ref ComponentRef) {
+	key := componentStateKey(ref)
 	delete(m.actuatedGenerations, key)
 	m.clearRepairLocked(key)
 	m.activeState[key] = false
+}
+
+// forgetComponentLocked drops the component's actuation and repair state after a teardown and records both the CR
+// incarnation and the namespace-level entry as inactive, so namespace hydration never re-activates it from the values
+// ConfigMap (Orphan keeps enabled values there). Delete keeps the chart path override (keepInactive); Purge and Orphan
+// drop it. Callers must hold m.mu.
+func (m *K8sHelmManager) forgetComponentLocked(ref ComponentRef, keepInactive bool) {
+	key := componentStateKey(ref)
+	baseKey := componentKey(ref.Namespace, ref.Name)
+	delete(m.actuatedGenerations, key)
+	m.clearRepairLocked(key)
+	m.activeState[key] = false
+	m.activeState[baseKey] = false
 	if !keepInactive {
-		delete(m.componentChartPaths, key)
+		delete(m.componentChartPaths, baseKey)
 	}
 }
 
 // applyHydratedState records the hydrated activation and actuated generation for a component, never overwriting an
 // actuation already recorded in memory.
-func (m *K8sHelmManager) applyHydratedState(key string, observedGeneration int64, crReady bool) {
+func (m *K8sHelmManager) applyHydratedState(key, baseKey string, observedGeneration int64, crReady bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	activeInCM, hasCM := m.activeState[key]
+	if !hasCM {
+		activeInCM, hasCM = m.activeState[baseKey]
+	}
 	if !crReady {
 		if observedGeneration > 0 && m.actuatedGenerations[key] == 0 {
 			m.activeState[key] = false

@@ -132,7 +132,7 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 	if ref.Namespace == "" {
 		return m.failUpgrade(ref, errors.New("component namespace must not be empty"))
 	}
-	if ComponentReleaseName(ref.Name) == "" {
+	if ComponentReleaseNameForRef(ref) == "" {
 		return m.failUpgrade(ref, errors.New("helm release name must not be empty; cannot actuate release upgrade"))
 	}
 	if m.runner == nil {
@@ -178,7 +178,7 @@ func (m *K8sHelmManager) executeSyncUpgrade(ctx context.Context, ref ComponentRe
 	if err := ctx.Err(); err != nil {
 		return m.failUpgrade(ref, err)
 	}
-	err := m.upgradeRelease(ctx, ComponentReleaseName(ref.Name), targetNamespace, chartPath, values)
+	err := m.upgradeRelease(ctx, ComponentReleaseNameForRef(ref), targetNamespace, chartPath, values)
 	m.setUpgradeErr(ref, err)
 	return err
 }
@@ -197,7 +197,7 @@ func (m *K8sHelmManager) upgradeRelease(ctx context.Context, releaseName, namesp
 // uninstallRelease discards any queued async upgrade and uninstalls the component's Helm release under the upgrade
 // lock, recording the outcome as the component's upgrade error. A release that is already gone counts as uninstalled.
 func (m *K8sHelmManager) uninstallRelease(ctx context.Context, ref ComponentRef) error {
-	releaseName := ComponentReleaseName(ref.Name)
+	releaseName := ComponentReleaseNameForRef(ref)
 	if m.runner == nil {
 		logging.Warn(ctx, "Skipping Helm release uninstall because HelmActionRunner is uninitialized", "release", releaseName, "namespace", ref.Namespace, "component", ref.Name)
 		return nil
@@ -313,11 +313,11 @@ func (m *K8sHelmManager) processUpgradeBatch(batch []upgradeRequest) {
 	if len(batch) == 0 || m.runner == nil {
 		return
 	}
-	// Coalesce requests by component key, retaining the latest requested values.
+	// Coalesce requests by component state key, retaining the latest requested values.
 	latestByComponent := make(map[string]upgradeRequest)
 	var orderedKeys []string
 	for _, req := range batch {
-		key := componentKey(req.namespace, req.ref.Name)
+		key := componentStateKey(req.ref)
 		if _, exists := latestByComponent[key]; !exists {
 			orderedKeys = append(orderedKeys, key)
 		}
@@ -347,7 +347,7 @@ func (m *K8sHelmManager) executeComponentUpgrade(req upgradeRequest) {
 	}
 	defer m.releaseUpgradeLock()
 	if m.isUpgradeSuperseded(req) {
-		logging.Info(execCtx, "Skipping superseded asynchronous Helm upgrade", "release", ComponentReleaseName(req.ref.Name), "name", req.ref.Name, "namespace", req.namespace)
+		logging.Info(execCtx, "Skipping superseded asynchronous Helm upgrade", "release", ComponentReleaseNameForRef(req.ref), "name", req.ref.Name, "namespace", req.namespace)
 		return
 	}
 	// The lock may have been taken after Shutdown began or the manager was cancelled; such an upgrade must not start.
@@ -355,7 +355,7 @@ func (m *K8sHelmManager) executeComponentUpgrade(req upgradeRequest) {
 		m.finishUnstartedUpgrade(execCtx, req, execCtx.Err())
 		return
 	}
-	m.recordAsyncUpgrade(execCtx, req, m.upgradeRelease(execCtx, ComponentReleaseName(req.ref.Name), req.namespace, req.chartPath, req.values))
+	m.recordAsyncUpgrade(execCtx, req, m.upgradeRelease(execCtx, ComponentReleaseNameForRef(req.ref), req.namespace, req.chartPath, req.values))
 }
 
 // finishUnstartedUpgrade drops req with errManagerStopped once the manager is stopping, and otherwise records err.
@@ -387,7 +387,7 @@ func (m *K8sHelmManager) dropPendingUpgrade(ref ComponentRef) {
 // recordAsyncUpgrade records err as the outcome of req and logs it.
 func (m *K8sHelmManager) recordAsyncUpgrade(ctx context.Context, req upgradeRequest, err error) {
 	m.setUpgradeErr(req.ref, err)
-	releaseName := ComponentReleaseName(req.ref.Name)
+	releaseName := ComponentReleaseNameForRef(req.ref)
 	if err != nil {
 		logging.Error(ctx, "Asynchronous Helm upgrade failed", "release", releaseName, "name", req.ref.Name, "namespace", req.namespace, "error", err)
 		return

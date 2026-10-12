@@ -379,7 +379,7 @@ func (r *Reconciler) actuateAndEvaluate(ctx context.Context, in ReconcileCompone
 	return r.evaluateHealth(ctx, in, canonicalName, res)
 }
 
-// resolveComponentRef returns the ComponentRef from HelmOpts with fallback to input Name and Namespace.
+// resolveComponentRef returns the ComponentRef from HelmOpts with fallback to input Name, Namespace, and UID.
 func resolveComponentRef(in ReconcileComponentInput) ComponentRef {
 	ref := in.HelmOpts.Ref
 	if ref.Name == "" {
@@ -387,6 +387,9 @@ func resolveComponentRef(in ReconcileComponentInput) ComponentRef {
 	}
 	if ref.Namespace == "" {
 		ref.Namespace = in.Namespace
+	}
+	if ref.UID == "" {
+		ref.UID = in.UID
 	}
 	return ref
 }

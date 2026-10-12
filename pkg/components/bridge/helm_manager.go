@@ -30,6 +30,7 @@ import (
 	"helm.sh/helm/v3/pkg/cli"
 
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/pkg/components/naming"
 )
 
 const (
@@ -282,10 +283,18 @@ const componentReleasePrefix = "xmc-cmp-"
 
 // ComponentReleaseName returns the Helm release name for an individual 1P component.
 func ComponentReleaseName(componentName string) string {
-	if componentName == "" {
+	canonical := naming.CanonicalComponentName(componentName)
+	if canonical == "" {
 		return ""
 	}
-	return componentReleasePrefix + componentName
+	return componentReleasePrefix + canonical
+}
+
+// ComponentReleaseNameForRef returns the Helm release name ("xmc-cmp-<canonical>") for ref.
+// Keeping the canonical release name across custom resource UIDs preserves Helm resource ownership
+// metadata on live upgrades and allows a recreated CR to adopt an Orphan-retained release.
+func ComponentReleaseNameForRef(ref ComponentRef) string {
+	return ComponentReleaseName(ref.Name)
 }
 
 // componentNameFromRelease is the inverse of ComponentReleaseName.
@@ -295,6 +304,26 @@ func componentNameFromRelease(releaseName string) string {
 
 func componentKey(namespace, componentName string) string {
 	return namespace + "/" + componentName
+}
+
+func componentStateKey(ref ComponentRef) string {
+	return ref.String()
+}
+
+func (m *K8sHelmManager) hasOtherActiveIncarnation(ref ComponentRef) bool {
+	if ref.UID == "" {
+		return false
+	}
+	targetKey := componentStateKey(ref)
+	prefix := componentKey(ref.Namespace, ref.Name) + "@"
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for k, active := range m.activeState {
+		if active && k != targetKey && strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // validateComponentRef reports an error if the component reference is missing a name or namespace.
@@ -335,9 +364,9 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 		return err
 	}
 	m.mu.Lock()
-	m.activeState[componentKey(ref.Namespace, ref.Name)] = opts.Enabled
+	m.activeState[componentStateKey(ref)] = opts.Enabled
 	m.mu.Unlock()
-	logging.Info(ctx, "Ensured 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", ref.Namespace, "release", ComponentReleaseName(ref.Name), "enabled", opts.Enabled, "repair", repair)
+	logging.Info(ctx, "Ensured 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", ref.Namespace, "release", ComponentReleaseNameForRef(ref), "enabled", opts.Enabled, "repair", repair)
 	return nil
 }
 
@@ -363,7 +392,7 @@ func (m *K8sHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef
 
 // Purge1PComponent permanently uninstalls the Helm release and removes component values from the ConfigMap.
 func (m *K8sHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef) error {
-	return m.uninstallComponent(ctx, ref, componentTeardown{action: "purge", updateValues: m.removeComponentValues})
+	return m.uninstallComponent(ctx, ref, componentTeardown{action: "purge", updateValues: m.removeComponentValues, alwaysUninstall: true})
 }
 
 // componentTeardown describes how uninstallComponent records a teardown.
@@ -374,10 +403,14 @@ type componentTeardown struct {
 	updateValues func(ctx context.Context, namespace, componentName string) (bool, error)
 	// keepInactive selects the state kept after uninstall; see forgetComponentLocked.
 	keepInactive bool
+	// alwaysUninstall forces uninstallRelease even when the ConfigMap and in-memory active state were already empty
+	// (e.g. purging a release on cold start or in a fenced cluster).
+	alwaysUninstall bool
 }
 
 // uninstallComponent records the teardown in the values ConfigMap, uninstalls the component's release, and forgets its
-// state. It is a no-op when the values were already torn down, the component is inactive, and no upgrade failed.
+// state. When another CR incarnation in the same namespace is already active, it forgets only ref's state without
+// touching the shared ConfigMap entry or uninstalling the active incarnation's release.
 func (m *K8sHelmManager) uninstallComponent(ctx context.Context, ref ComponentRef, td componentTeardown) error {
 	if m == nil {
 		return nil
@@ -385,20 +418,28 @@ func (m *K8sHelmManager) uninstallComponent(ctx context.Context, ref ComponentRe
 	if err := validateComponentRef(ref); err != nil {
 		return err
 	}
+	if m.hasOtherActiveIncarnation(ref) {
+		m.dropPendingUpgrade(ref)
+		m.setUpgradeErr(ref, nil)
+		m.mu.Lock()
+		m.forgetIncarnationLocked(ref)
+		m.mu.Unlock()
+		return nil
+	}
 	modified, err := td.updateValues(ctx, ref.Namespace, ref.Name)
 	if err != nil {
 		return fmt.Errorf("failed to %s Helm values for %q: %w", td.action, ref.Name, err)
 	}
-	if !modified && !m.IsComponentActive(ref) && m.GetUpgradeError(ref) == nil {
+	if !td.alwaysUninstall && !modified && !m.IsComponentActive(ref) && m.GetUpgradeError(ref) == nil {
 		return nil
 	}
 	if err := m.uninstallRelease(ctx, ref); err != nil {
 		return err
 	}
 	m.mu.Lock()
-	m.forgetComponentLocked(componentKey(ref.Namespace, ref.Name), td.keepInactive)
+	m.forgetComponentLocked(ref, td.keepInactive)
 	m.mu.Unlock()
-	logging.Info(ctx, "Uninstalled 1P component Helm release", "action", td.action, "name", ref.Name, "namespace", ref.Namespace, "release", ComponentReleaseName(ref.Name))
+	logging.Info(ctx, "Uninstalled 1P component Helm release", "action", td.action, "name", ref.Name, "namespace", ref.Namespace, "release", ComponentReleaseNameForRef(ref))
 	return nil
 }
 
@@ -413,7 +454,7 @@ func (m *K8sHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef
 	m.dropPendingUpgrade(ref)
 	m.setUpgradeErr(ref, nil)
 	m.mu.Lock()
-	m.forgetComponentLocked(componentKey(ref.Namespace, ref.Name), false)
+	m.forgetComponentLocked(ref, false)
 	m.mu.Unlock()
 	logging.Info(ctx, "Orphaned 1P component Helm values", "name", ref.Name, "namespace", ref.Namespace)
 	return nil
