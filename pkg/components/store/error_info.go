@@ -55,6 +55,9 @@ const (
 	// ReasonClusterEpochRegressed rejects the active cluster declaring a lower epoch, for example
 	// after a reverted configuration.
 	ReasonClusterEpochRegressed = "CLUSTER_EPOCH_REGRESSED"
+	// ReasonClusterNotDeclared rejects an intent from the fence holder at a newer epoch that it has
+	// not declared yet. The caller declares the epoch and retries.
+	ReasonClusterNotDeclared = "CLUSTER_NOT_DECLARED"
 )
 
 // google.rpc.ErrorInfo metadata keys of store rejections, part of the contract callers match.

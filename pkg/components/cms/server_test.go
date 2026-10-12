@@ -17,6 +17,7 @@ package cms
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -770,6 +771,29 @@ func TestCMSServer_DeclareClusterEpoch(t *testing.T) {
 				t.Errorf("DeclareClusterEpoch() mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestCMSServer_SetComponentIntent_FencedCluster(t *testing.T) {
+	ctx := context.Background()
+	server := NewServer(store.NewMemoryStore())
+	prod := &componentspb.ClusterIdentity{Uid: "5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c01", Name: "prod", Epoch: 2}
+	if _, err := server.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: prod}); err != nil {
+		t.Fatalf("DeclareClusterEpoch() error = %v", err)
+	}
+
+	_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "redpanda",
+		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"},
+		Source: &componentspb.RequestSource{Uid: "uid-a", Generation: 1, Namespace: "xmc", Cluster: &componentspb.ClusterIdentity{
+			Uid: "5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c02", Name: "dr", Epoch: 2,
+		}},
+	})
+	if status.Code(err) != codes.FailedPrecondition || store.ErrorInfoReason(err) != store.ReasonClusterFenced {
+		t.Fatalf("SetComponentIntent() error = %v, want FailedPrecondition with reason %q", err, store.ReasonClusterFenced)
+	}
+	if msg := status.Convert(err).Message(); !strings.Contains(msg, `cluster "dr"`) {
+		t.Errorf("SetComponentIntent() message = %q, want it to name the source cluster \"dr\"", msg)
 	}
 }
 

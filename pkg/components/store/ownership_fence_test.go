@@ -120,3 +120,47 @@ func TestTakenOverOwner(t *testing.T) {
 		t.Errorf("takenOverOwner(nil) = %+v, want nil", got)
 	}
 }
+
+func TestCheckClusterFence(t *testing.T) {
+	fence := &baseCluster
+	src := func(clusterUID, clusterName string, epoch int64) *RequestSource {
+		return &RequestSource{UID: "uid-a", Generation: 1, Namespace: "xmc", ClusterUID: clusterUID, ClusterName: clusterName, Epoch: epoch}
+	}
+	tests := []struct {
+		name          string
+		fence         *ClusterIdentity
+		src           *RequestSource
+		wantReason    string
+		wantInMessage string
+	}{
+		{name: "unsourced intent bypasses the fence", fence: fence},
+		{name: "no fence admits every source", src: src(clusterBUID, "", 1)},
+		{name: "fence holder at the fence epoch is admitted", fence: fence, src: src(clusterAUID, "", 3)},
+		{name: "fence holder at a newer epoch must declare it", fence: fence, src: src(clusterAUID, "prod", 4), wantReason: "CLUSTER_NOT_DECLARED", wantInMessage: `cluster "prod"`},
+		{name: "fence holder at an older epoch is fenced", fence: fence, src: src(clusterAUID, "", 2), wantReason: "CLUSTER_FENCED", wantInMessage: clusterAUID},
+		{name: "another cluster is fenced under its name", fence: fence, src: src(clusterBUID, "dr", 9), wantReason: "CLUSTER_FENCED", wantInMessage: `cluster "dr"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkClusterFence("SetComponentIntent", tt.fence, tt.src)
+			if tt.wantReason == "" {
+				if err != nil {
+					t.Fatalf("checkClusterFence() error = %v, want nil", err)
+				}
+				return
+			}
+			st := status.Convert(err)
+			want := []any{&errdetails.ErrorInfo{
+				Reason:   tt.wantReason,
+				Domain:   ErrorInfoDomain,
+				Metadata: map[string]string{"operation": "SetComponentIntent", "active_cluster_uid": baseCluster.UID, "active_cluster_name": "prod", "active_epoch": "3"},
+			}}
+			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); st.Code() != codes.FailedPrecondition || diff != "" {
+				t.Errorf("checkClusterFence() code = %v, details mismatch (-want +got):\n%s", st.Code(), diff)
+			}
+			if !strings.Contains(st.Message(), tt.wantInMessage) {
+				t.Errorf("checkClusterFence() message = %q, want it to contain %q", st.Message(), tt.wantInMessage)
+			}
+		})
+	}
+}

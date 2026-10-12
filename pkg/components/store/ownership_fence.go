@@ -76,19 +76,47 @@ func planDeclaration(fence *ClusterIdentity, c ClusterIdentity) (DeclarationOutc
 	case fence.UID == c.UID && c.Epoch > fence.Epoch:
 		return DeclarationRaised, nil
 	case fence.UID == c.UID:
-		return 0, fenceError(ReasonClusterEpochRegressed, fence,
+		return 0, fenceError(declareClusterEpochOperation, ReasonClusterEpochRegressed, fence,
 			fmt.Sprintf("cluster %q declared epoch %d, lower than its active epoch %d", c.Name, c.Epoch, fence.Epoch))
 	case c.Epoch > fence.Epoch:
 		return DeclarationTakeover, nil
 	}
-	return 0, fenceError(ReasonClusterFenced, fence,
+	return 0, fenceError(declareClusterEpochOperation, ReasonClusterFenced, fence,
 		fmt.Sprintf("cluster %q at epoch %d is fenced: cluster %q holds the fence at epoch %d; declare a higher epoch to take over", c.Name, c.Epoch, fence.Name, fence.Epoch))
 }
 
+// declareClusterEpochOperation names DeclareClusterEpoch in ErrorInfo metadata.
+const declareClusterEpochOperation = "DeclareClusterEpoch"
+
+// checkClusterFence returns the rejection of a request of operation from src unless src comes
+// from the fence holder at the fence epoch. Unsourced requests (nil src) bypass the fence, and
+// before the first declaration (nil fence) every source passes. The holder's cluster at a newer
+// epoch must declare it first (CLUSTER_NOT_DECLARED); any other cluster or epoch is fenced
+// (CLUSTER_FENCED).
+func checkClusterFence(operation string, fence *ClusterIdentity, src *RequestSource) error {
+	switch {
+	case src == nil, fence == nil, fence.UID == src.ClusterUID && fence.Epoch == src.Epoch:
+		return nil
+	case fence.UID == src.ClusterUID && src.Epoch > fence.Epoch:
+		return fenceError(operation, ReasonClusterNotDeclared, fence, fmt.Sprintf(
+			"epoch %d of cluster %q is not declared; the fence is at epoch %d", src.Epoch, src.clusterDisplayName(), fence.Epoch))
+	}
+	return fenceError(operation, ReasonClusterFenced, fence, fmt.Sprintf(
+		"cluster %q at epoch %d is fenced: cluster %q holds the fence at epoch %d", src.clusterDisplayName(), src.Epoch, fence.Name, fence.Epoch))
+}
+
+// clusterDisplayName returns the name of src's cluster for messages, or its UID when unnamed.
+func (src *RequestSource) clusterDisplayName() string {
+	if src.ClusterName != "" {
+		return src.ClusterName
+	}
+	return src.ClusterUID
+}
+
 // fenceError returns the FailedPrecondition rejection with reason against the fence holder.
-func fenceError(reason string, fence *ClusterIdentity, msg string) error {
+func fenceError(operation, reason string, fence *ClusterIdentity, msg string) error {
 	meta := map[string]string{
-		metadataKeyOperation:         operationDeclareClusterEpoch,
+		metadataKeyOperation:         operation,
 		metadataKeyActiveClusterUID:  fence.UID,
 		metadataKeyActiveClusterName: fence.Name,
 		metadataKeyActiveEpoch:       strconv.FormatInt(fence.Epoch, 10),

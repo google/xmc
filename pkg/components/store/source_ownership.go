@@ -31,6 +31,9 @@ import (
 type RequestSource struct {
 	UID, Namespace, ClusterUID string
 	Generation, Epoch          int64
+	// ClusterName is the human-readable name of the source's cluster, used only in messages. It is
+	// optional and never recorded.
+	ClusterName string
 	// ExpectedOwnerUID is a compare-and-swap guard: when it names the owner UID, a source with
 	// another UID in the owner's namespace and cluster takes the record over. It is never recorded.
 	ExpectedOwnerUID string

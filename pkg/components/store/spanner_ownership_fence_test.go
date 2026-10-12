@@ -245,3 +245,122 @@ func assertStoredOwner(ctx context.Context, t *testing.T, s store.Store, name st
 		t.Errorf("Owner of %s mismatch (-want +got):\n%s", name, diff)
 	}
 }
+
+// TestSetSourcedComponentIntent_FenceParity checks on both backends that, once declared, the fence
+// admits only sourced intents from the active cluster at the fence epoch, while unsourced intents
+// bypass it.
+func TestSetSourcedComponentIntent_FenceParity(t *testing.T) {
+	prod := store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 2}
+	fromCluster := func(clusterUID string, epoch int64) store.RequestSource {
+		return sourceWith(func(s *store.RequestSource) { s.ClusterUID, s.Epoch = clusterUID, epoch })
+	}
+	tests := []struct {
+		name       string
+		component  string
+		src        store.RequestSource
+		wantReason string
+	}{
+		{name: "active cluster at the fence epoch writes", component: "fence-owned", src: fromCluster(prodClusterUID, 2)},
+		{name: "active cluster at an undeclared epoch must declare it", component: "fence-owned", src: fromCluster(prodClusterUID, 3), wantReason: store.ReasonClusterNotDeclared},
+		{name: "active cluster at an older epoch is fenced", component: "fence-owned", src: fromCluster(prodClusterUID, 1), wantReason: store.ReasonClusterFenced},
+		{name: "another cluster is fenced", component: "fence-owned", src: fromCluster(drClusterUID, 2), wantReason: store.ReasonClusterFenced},
+		{name: "another cluster cannot create a component", component: "fence-new", src: fromCluster(drClusterUID, 2), wantReason: store.ReasonClusterFenced},
+	}
+	for _, backend := range intentStoreBackends() {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := backend.newStore(t)
+			seedOwnedComponent(ctx, t, s, "fence-owned", false)
+			if _, err := s.DeclareClusterEpoch(ctx, prod); err != nil {
+				t.Fatalf("DeclareClusterEpoch() error = %v", err)
+			}
+			// Subtests are intentionally sequential (no t.Parallel) because they share one store.
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					_, err := s.SetSourcedComponentIntent(ctx, tt.component, intentSpec("v1.1.0"), nil, tt.src)
+					if tt.wantReason == "" {
+						if err != nil {
+							t.Fatalf("SetSourcedComponentIntent() error = %v, want nil", err)
+						}
+						return
+					}
+					if status.Code(err) != codes.FailedPrecondition {
+						t.Fatalf("SetSourcedComponentIntent() error = %v, want FailedPrecondition", err)
+					}
+					assertReason(t, err, tt.wantReason)
+				})
+			}
+			if _, err := s.GetComponent(ctx, "fence-new"); status.Code(err) != codes.NotFound {
+				t.Errorf("GetComponent(fence-new) error = %v, want NotFound", err)
+			}
+			if _, err := s.SetComponentIntent(ctx, "fence-owned", intentSpec("v1.2.0"), nil, 0); err != nil {
+				t.Errorf("unsourced SetComponentIntent() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+// TestSpannerStore_SetSourcedComponentIntent_FencedReplay checks that the read-only fast path does
+// not answer an unchanged intent from a fenced cluster; the read-write transaction rejects it.
+func TestSpannerStore_SetSourcedComponentIntent_FencedReplay(t *testing.T) {
+	ctx := context.Background()
+	s, _ := setupTestStore(ctx, t)
+	seedOwnedComponent(ctx, t, s, "fence-replay", false)
+	if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: drClusterUID, Name: "dr", Epoch: 1}); err != nil {
+		t.Fatalf("DeclareClusterEpoch() error = %v", err)
+	}
+	fallbacks := 0
+	s.SetBeforeIntentWriteForTest(func() { fallbacks++ })
+	defer s.SetBeforeIntentWriteForTest(nil)
+
+	_, err := s.SetSourcedComponentIntent(ctx, "fence-replay", intentSpec("v1.0.0"), nil, ownerSource)
+	assertReason(t, err, store.ReasonClusterFenced)
+	if fallbacks != 1 {
+		t.Errorf("read-write fallbacks = %d, want 1", fallbacks)
+	}
+}
+
+// TestSpannerStore_SetSourcedComponentIntent_TakeoverBeforeWrite checks that a takeover committed
+// after the fast-path read but before the read-write transaction fences the in-flight intent: the
+// transaction rereads the fence, rejects the intent and leaves the taken-over record unchanged.
+func TestSpannerStore_SetSourcedComponentIntent_TakeoverBeforeWrite(t *testing.T) {
+	ctx := context.Background()
+	s, _ := setupTestStore(ctx, t)
+	prodSource := sourceWith(func(s *store.RequestSource) { s.ClusterUID, s.Epoch = prodClusterUID, 2 })
+	if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 2}); err != nil {
+		t.Fatalf("DeclareClusterEpoch(prod) error = %v", err)
+	}
+	seeded, err := s.SetSourcedComponentIntent(ctx, "fence-race", intentSpec("v1.0.0"), nil, prodSource)
+	if err != nil {
+		t.Fatalf("seed SetSourcedComponentIntent() error = %v", err)
+	}
+	dr := store.ClusterIdentity{UID: drClusterUID, Name: "dr", Epoch: 3}
+	s.SetBeforeIntentWriteForTest(func() {
+		if _, err := s.DeclareClusterEpoch(ctx, dr); err != nil {
+			t.Errorf("concurrent DeclareClusterEpoch(dr) error = %v", err)
+		}
+	})
+	defer s.SetBeforeIntentWriteForTest(nil)
+
+	_, err = s.SetSourcedComponentIntent(ctx, "fence-race", intentSpec("v1.1.0"), nil, prodSource)
+	assertReason(t, err, store.ReasonClusterFenced)
+	got, err := s.GetComponent(ctx, "fence-race")
+	if err != nil {
+		t.Fatalf("GetComponent() error = %v", err)
+	}
+	if got.Generation != seeded.Generation || got.Spec.GetVersion() != "v1.0.0" {
+		t.Errorf("record generation %d, version %q; want the seeded %d, v1.0.0", got.Generation, got.Spec.GetVersion(), seeded.Generation)
+	}
+	assertStoredOwner(ctx, t, s, "fence-race", &store.SourceOwner{Generation: prodSource.Generation, Namespace: "xmc", ClusterUID: drClusterUID, Epoch: 3})
+}
+
+// assertReason checks that err carries an ErrorInfo with wantReason in store.ErrorInfoDomain.
+func assertReason(t *testing.T, err error, wantReason string) {
+	t.Helper()
+	for _, d := range status.Convert(err).Details() {
+		if info, ok := d.(*errdetails.ErrorInfo); ok && info.GetDomain() == store.ErrorInfoDomain && info.GetReason() == wantReason {
+			return
+		}
+	}
+	t.Errorf("error = %v, want ErrorInfo reason %q", err, wantReason)
+}

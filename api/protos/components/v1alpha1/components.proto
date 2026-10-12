@@ -805,8 +805,8 @@ message GetPlatformHealthResponse {
 service ComponentManagerService {
   // Sets or updates the desired intent and specification for a component. Rejections that callers
   // act on are FailedPrecondition with a google.rpc.ErrorInfo in domain components.xmc.dev:
-  // DEPENDENCY_NOT_REGISTERED, and for sourced requests STALE_GENERATION,
-  // SOURCE_NAMESPACE_CONFLICT and SOURCE_INCARNATION_MISMATCH.
+  // DEPENDENCY_NOT_REGISTERED, and for sourced requests CLUSTER_FENCED, CLUSTER_NOT_DECLARED,
+  // STALE_GENERATION, SOURCE_NAMESPACE_CONFLICT and SOURCE_INCARNATION_MISMATCH.
   rpc SetComponentIntent(SetComponentIntentRequest) returns (SetComponentIntentResponse) {
     option (google.api.http) = {
       post: "/v1alpha1/{name=components/*}:setIntent"
