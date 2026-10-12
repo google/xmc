@@ -434,6 +434,11 @@ func TestBuildListChartsFilter(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "invalid dashboard parent rejected",
+			parent:  "dashboards/",
+			wantErr: true,
+		},
+		{
 			name:    "unsupported parent format rejected",
 			parent:  "unknown/parent",
 			wantErr: true,
@@ -454,8 +459,8 @@ func TestBuildListChartsFilter(t *testing.T) {
 }
 
 func TestExtractChartCursor(t *testing.T) {
-	if _, err := ExtractChartCursor(nil); err == nil {
-		t.Errorf("ExtractChartCursor(nil) succeeded, want error")
+	if _, err := ExtractChartCursor(nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ExtractChartCursor(nil) error = %v, want ErrInvalidArgument", err)
 	}
 	if _, err := ExtractChartCursor(&dpb.Chart{Name: "invalid"}); err == nil {
 		t.Errorf("ExtractChartCursor(invalid) succeeded, want error")
@@ -545,6 +550,9 @@ func TestDashboardAndChartAssemblyHelpers(t *testing.T) {
 		if err != nil || ids != nil {
 			t.Fatalf("ExtractChartIDs(nil) = (%v, %v), want nil", ids, err)
 		}
+		if _, err := ExtractChartIDs([]*dpb.Chart{nil}); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+			t.Errorf("ExtractChartIDs([nil]) error = %v, want ErrInvalidArgument", err)
+		}
 		if got := BuildChartPlotsFilter(nil); got != "" {
 			t.Errorf("BuildChartPlotsFilter(nil) = %q, want empty", got)
 		}
@@ -565,7 +573,7 @@ func TestDashboardAndChartAssemblyHelpers(t *testing.T) {
 			t.Errorf("BuildChartPlotsFilter() = %q, want %q", got, wantFilter)
 		}
 
-		AssignChartPlots(charts, chartIDs, map[string][]*dpb.PlotSpec{
+		AssignChartPlots([]*dpb.Chart{c1, nil, c2}, []string{"c1", "ignored", "c2"}, map[string][]*dpb.PlotSpec{
 			"c1": {{PlotId: "p1"}},
 		})
 		if len(c1.GetPlots()) != 1 || c1.GetPlots()[0].GetPlotId() != "p1" {

@@ -243,9 +243,12 @@ func BuildChartParentFilter(parent string) (string, error) {
 		return "", nil
 	}
 	if strings.HasPrefix(parent, "dashboards/") || (!strings.HasPrefix(parent, "experiments/") && !strings.Contains(parent, "/")) {
-		trimmed := strings.TrimPrefix(parent, "dashboards/")
-		withPrefix := "dashboards/" + trimmed
-		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", trimmed, withPrefix), nil
+		withPrefix := "dashboards/" + strings.TrimPrefix(parent, "dashboards/")
+		dashID, err := validator.ValidateDashboardName(withPrefix)
+		if err != nil {
+			return "", fmt.Errorf("invalid dashboard parent name: %w", err)
+		}
+		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", dashID, withPrefix), nil
 	}
 	if strings.HasPrefix(parent, "experiments/") {
 		xid, wid, err := validator.ValidateWorkUnitName(parent)
@@ -269,7 +272,7 @@ func BuildListChartsFilter(parent, filter string) (string, error) {
 // ExtractChartCursor extracts pagination cursor values from a Chart proto.
 func ExtractChartCursor(chart *dpb.Chart) (map[string]any, error) {
 	if chart == nil {
-		return nil, fmt.Errorf("chart cannot be nil")
+		return nil, fmt.Errorf("chart cannot be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	_, _, chartID, err := validator.ValidateChartName(chart.GetName())
 	if err != nil {
@@ -343,6 +346,9 @@ func ExtractChartIDs(charts []*dpb.Chart) ([]string, error) {
 	}
 	chartIDs := make([]string, 0, len(charts))
 	for _, chart := range charts {
+		if chart == nil {
+			return nil, fmt.Errorf("chart cannot be nil: %w", grpcerr.ErrInvalidArgument)
+		}
 		_, _, chartID, err := validator.ValidateChartName(chart.GetName())
 		if err != nil {
 			return nil, fmt.Errorf("failed to extract chart ID from %q: %w", chart.GetName(), err)
@@ -355,6 +361,9 @@ func ExtractChartIDs(charts []*dpb.Chart) ([]string, error) {
 // AssignChartPlots populates each chart's Plots slice from plotsByChartID using the corresponding chartIDs index.
 func AssignChartPlots(charts []*dpb.Chart, chartIDs []string, plotsByChartID map[string][]*dpb.PlotSpec) {
 	for i, chart := range charts {
+		if chart == nil {
+			continue
+		}
 		if i < len(chartIDs) {
 			chart.Plots = plotsByChartID[chartIDs[i]]
 		}
