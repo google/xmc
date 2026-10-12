@@ -390,6 +390,25 @@ func TestWalkAncestors(t *testing.T) {
 			wantErr:   grpcerr.ErrInternal,
 		},
 		{
+			name: "missing parent preserves ErrNotFound",
+			start: &xidpb.XidEntry{
+				Name:      proto.String("xids/1"),
+				ParentXid: proto.String("xids/2"),
+			},
+			predicate: hasOwnersPredicate,
+			wantErr:   grpcerr.ErrNotFound,
+		},
+		{
+			name: "predicate error is propagated",
+			start: &xidpb.XidEntry{
+				Name: proto.String("xids/1"),
+			},
+			predicate: func(context.Context, *xidpb.XidEntry) (bool, error) {
+				return false, grpcerr.ErrPermissionDenied
+			},
+			wantErr: grpcerr.ErrPermissionDenied,
+		},
+		{
 			name: "match on grandparent",
 			start: &xidpb.XidEntry{
 				Name:      proto.String("xids/1"),

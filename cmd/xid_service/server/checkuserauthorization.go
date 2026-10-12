@@ -18,7 +18,7 @@ import (
 	"errors"
 	"fmt"
 
-	"xmanager_cloud/cmd/xid_service/xid"
+	xidpkg "xmanager_cloud/cmd/xid_service/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
@@ -89,7 +89,7 @@ func xidACLsToRoleType(roleType xpb.XidAcls_RoleType) auth.Role {
 }
 
 func (s *XIDServer) checkUserAuthorization(ctx context.Context, email string, xidEntry *xpb.XidEntry, roleType auth.Role) (bool, error) {
-	return xid.WalkAncestors(ctx, xidEntry, s.storage.FetchXidEntry, func(ctx context.Context, entry *xpb.XidEntry) (bool, error) {
+	return xidpkg.WalkAncestors(ctx, xidEntry, s.storage.FetchXidEntry, func(ctx context.Context, entry *xpb.XidEntry) (bool, error) {
 		isAuthorized, err := s.auth.IsUserAuthorized(ctx, email, entry.GetAcls(), roleType)
 		if err != nil {
 			logging.Warn(ctx, "Failed to check user authorization", "error", err)

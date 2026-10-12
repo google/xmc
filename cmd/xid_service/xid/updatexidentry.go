@@ -159,7 +159,7 @@ func WalkAncestors(ctx context.Context, xidEntry *xidmsgpb.XidEntry, fetch Ances
 				return false, fmt.Errorf("parent XID %d not found: %w", parentXID, grpcerr.ErrNotFound)
 			}
 
-			logging.Error(ctx, "Storage layer returned a non-gRPC error for GetXid()", "parentXID", parentXID, "error", err)
+			logging.Error(ctx, "Storage layer returned a non-gRPC error for FetchXidEntry", "parentXID", parentXID, "error", err)
 			return false, fmt.Errorf("an internal error occurred while retrieving the XID: %w", grpcerr.ErrInternal)
 		}
 

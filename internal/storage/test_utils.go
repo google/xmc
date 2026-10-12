@@ -124,8 +124,8 @@ type MockStorage struct {
 
 	PauseStateRepository PauseStateRepository
 	PausedTaskRepository PausedTaskRepository
-	// Transaction optionally overrides Transaction.PauseState and Transaction.PausedTasks
-	// passed to RunInTransaction callbacks; other fields are ignored.
+	// Transaction optionally overrides Transaction.XIDs, Transaction.PauseState, and
+	// Transaction.PausedTasks passed to RunInTransaction callbacks; other fields are ignored.
 	Transaction *Transaction
 }
 
