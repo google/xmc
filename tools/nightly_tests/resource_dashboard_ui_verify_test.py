@@ -52,6 +52,7 @@ class ResourceDashboardUIVerifyTest(unittest.TestCase):
 
         session = mock.MagicMock(spec=ui_entities_validator.XMCUIBrowserSession)
         session.screenshots_dir = "/tmp/xmc_screenshots"
+        session.http_errors = ["500 https://xmc.example.com/v1/clusterqueues"]
         page = mock.MagicMock()
         session.page = page
 
@@ -98,10 +99,13 @@ class ResourceDashboardUIVerifyTest(unittest.TestCase):
 
     def test_assert_queue_cards_success(self) -> None:
         session = self._build_mock_session()
+        session.page.wait_for_selector.side_effect = [RuntimeError("cold start"), None, None]
         titles = resource_dashboard_ui_verify.assert_queue_cards(
             session, expected_queue="cpu-queue"
         )
         self.assertEqual(titles, ["cpu-queue", "gpu-queue"])
+        self.assertEqual(session.http_errors, [])
+        session.page.reload.assert_called_once()
 
     def test_assert_queue_cards_failures(self) -> None:
         empty_session = self._build_mock_session(queue_titles=[])

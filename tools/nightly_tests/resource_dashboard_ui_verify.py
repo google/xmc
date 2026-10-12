@@ -45,18 +45,19 @@ def assert_queue_cards(
 ) -> list[str]:
     """Asserts that cluster queue cards, quota flavors, and copy-flag actions render on /resources."""
     print("\n[ROD UI] Asserting cluster queue cards and capacity metadata...")
-    session.page.wait_for_selector("xmc-rod-queue-card .queue-card", timeout=timeout_ms)
+    try:
+        session.page.wait_for_selector("xmc-rod-queue-card .queue-card", timeout=5000)
+    except Exception:
+        session.http_errors.clear()
+        session.page.reload(wait_until="networkidle", timeout=timeout_ms)
+        session.page.wait_for_selector("xmc-rod-queue-card .queue-card", timeout=timeout_ms)
     session.settle_and_wait_fonts()
     raw_titles = session.page.locator("xmc-rod-queue-card .queue-title").all_inner_texts()
     titles = [t.strip() for t in raw_titles if t and t.strip()]
     if not titles:
         raise ui_entities_validator.UIVerificationError("No cluster queue cards on /resources.")
-    candidates = (
-        {expected_queue, expected_queue.replace("-queue", "-cluster-queue")}
-        if expected_queue
-        else set()
-    )
-    if candidates and not (candidates & set(titles)):
+    cq = expected_queue.replace("-queue", "-cluster-queue") if expected_queue else ""
+    if expected_queue and not ({expected_queue, cq} & set(titles)):
         raise ui_entities_validator.UIVerificationError(
             f"Expected queue '{expected_queue}' not found in rendered queues: {titles}"
         )
