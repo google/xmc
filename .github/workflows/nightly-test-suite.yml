@@ -197,6 +197,9 @@ jobs:
           "${GITHUB_WORKSPACE}/.venv/bin/python3" -m tools.nightly_tests.simple_job_ui_verify \
             --xid="${XID}" --ui_base_url="${UI_URL}" \
             --expected_work_units="${NUM_WORK_UNITS}"
+          "${GITHUB_WORKSPACE}/.venv/bin/python3" -m tools.nightly_tests.resource_dashboard_ui_verify \
+            --ui_base_url="${UI_URL}" \
+            --expected_queue="${QUEUE_NAME}"
 
       - name: 'Upload UI Diagnostic Screenshots'
         if: failure() && steps.verify-ui-traversal.outcome == 'failure'
