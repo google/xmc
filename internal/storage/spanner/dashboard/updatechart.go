@@ -25,6 +25,7 @@ import (
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/grpcerr"
+	storagedata "xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
@@ -83,7 +84,7 @@ func mergeChartInTransaction(ctx context.Context, txn *spanner.ReadWriteTransact
 	if err != nil {
 		return nil, err
 	}
-	return data.MergeCharts(existing, chart, updateMask)
+	return storagedata.MergeCharts(existing, chart, updateMask)
 }
 
 // fetchChartInTransaction reads a chart and its plot specifications inside a ReadWriteTransaction.
@@ -123,7 +124,7 @@ func fetchChartPlotsInTransaction(ctx context.Context, txn *spanner.ReadWriteTra
 		if err := row.Columns(&plotSpecBytes); err != nil {
 			return nil, fmt.Errorf("failed to decode plot row of chart %s: %w", chartID, err)
 		}
-		plot, err := data.UnmarshalPlotSpec(chartID, plotSpecBytes)
+		plot, err := storagedata.UnmarshalPlotSpec(chartID, plotSpecBytes)
 		if err != nil {
 			return nil, err
 		}
