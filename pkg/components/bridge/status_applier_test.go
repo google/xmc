@@ -16,9 +16,7 @@ package bridge
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"slices"
 	"testing"
 	"time"
 
@@ -28,8 +26,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
-	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	componentsv1alpha1 "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -62,6 +62,62 @@ func newTestComponent(name, namespace string, finalizers ...string) *unstructure
 		item.SetFinalizers(finalizers)
 	}
 	return item
+}
+
+// componentWrites records the writes made through a fake Component client.
+type componentWrites struct {
+	// calls lists each write as "patch", "update" or "apply/<subresource>", in order.
+	calls []string
+	// apply holds the options of the last subresource apply.
+	apply client.SubResourceApplyOptions
+}
+
+// newFakeComponentClient returns a controller-runtime fake client holding objs, with the Component
+// status subresource, so reads observe its own writes as they would through the API server. Each
+// write is recorded in the returned componentWrites and fails with failures[call] if set.
+func newFakeComponentClient(t *testing.T, failures map[string]error, objs ...*unstructured.Unstructured) (client.Client, *componentWrites) {
+	t.Helper()
+	w := &componentWrites{}
+	record := func(call string) error {
+		w.calls = append(w.calls, call)
+		return failures[call]
+	}
+	b := fake.NewClientBuilder().WithScheme(newStatusApplierTestScheme()).WithStatusSubresource(newComponentObject())
+	for _, obj := range objs {
+		b = b.WithObjects(obj.DeepCopy())
+	}
+	return b.WithInterceptorFuncs(interceptor.Funcs{
+		Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+			if err := record("patch"); err != nil {
+				return err
+			}
+			return c.Patch(ctx, obj, patch, opts...)
+		},
+		Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+			if err := record("update"); err != nil {
+				return err
+			}
+			return c.Update(ctx, obj, opts...)
+		},
+		SubResourceApply: func(ctx context.Context, c client.Client, sub string, obj runtime.ApplyConfiguration, opts ...client.SubResourceApplyOption) error {
+			if err := record("apply/" + sub); err != nil {
+				return err
+			}
+			w.apply = client.SubResourceApplyOptions{}
+			w.apply.ApplyOpts(opts)
+			return c.SubResource(sub).Apply(ctx, obj, opts...)
+		},
+	}).Build(), w
+}
+
+// getFakeComponent returns the stored Component namespace/name of c.
+func getFakeComponent(t *testing.T, c client.Client, namespace, name string) *unstructured.Unstructured {
+	t.Helper()
+	u := newComponentObject()
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: namespace, Name: name}, u); err != nil {
+		t.Fatalf("Get(%s/%s) failed: %v", namespace, name, err)
+	}
+	return u
 }
 
 func TestBuildStatusAndBuildStatusMap(t *testing.T) {
@@ -129,153 +185,124 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 
 func TestApplyComponentStatusSSA(t *testing.T) {
 	ctx := context.Background()
-	item := newTestComponent("comp-1", "xmc-ns")
 	res := &ReconcileResult{
 		ObservedGeneration: 3,
 		State:              componentsv1alpha1.ComponentState_COMPONENT_STATE_ENABLED,
 	}
 
 	t.Run("rejects nil client, item, or result", func(t *testing.T) {
-		client := dynamicfake.NewSimpleDynamicClient(newStatusApplierTestScheme())
-		if err := ApplyComponentStatusSSA(ctx, nil, "default", item, res); err == nil {
+		item := newTestComponent("comp-1", "xmc-ns")
+		c, _ := newFakeComponentClient(t, nil, item)
+		if err := ApplyComponentStatusSSA(ctx, nil, item, res); err == nil {
 			t.Error("expected error for nil client, got nil")
 		}
-		if err := ApplyComponentStatusSSA(ctx, client, "default", nil, res); err == nil {
+		if err := ApplyComponentStatusSSA(ctx, c, nil, res); err == nil {
 			t.Error("expected error for nil item, got nil")
 		}
-		if err := ApplyComponentStatusSSA(ctx, client, "default", item, nil); err == nil {
+		if err := ApplyComponentStatusSSA(ctx, c, item, nil); err == nil {
 			t.Error("expected error for nil result, got nil")
 		}
 	})
 
-	t.Run("applies SSA patch to status subresource with fieldManager xmc-bridge and default namespace fallback", func(t *testing.T) {
-		noNsItem := newTestComponent("comp-default-ns", "")
-		client := dynamicfake.NewSimpleDynamicClient(newStatusApplierTestScheme())
-		var gotSubresource, gotNamespace string
-		var gotPatchType types.PatchType
-		var gotPayload map[string]any
-
-		client.PrependReactor("patch", "components", func(action k8stesting.Action) (bool, runtime.Object, error) {
-			pa := action.(k8stesting.PatchAction)
-			gotSubresource = pa.GetSubresource()
-			gotNamespace = pa.GetNamespace()
-			gotPatchType = pa.GetPatchType()
-			if err := json.Unmarshal(pa.GetPatch(), &gotPayload); err != nil {
-				t.Fatalf("failed to unmarshal SSA patch: %v", err)
-			}
-			out := noNsItem.DeepCopy()
-			out.Object["status"] = gotPayload["status"]
-			return true, out, nil
-		})
-
-		if err := ApplyComponentStatusSSA(ctx, client, "fallback-ns", noNsItem, res); err != nil {
+	t.Run("applies the status subresource as xmc-bridge with forced ownership", func(t *testing.T) {
+		item := newTestComponent("comp-1", "xmc-ns")
+		c, writes := newFakeComponentClient(t, nil, item)
+		if err := ApplyComponentStatusSSA(ctx, c, item, res); err != nil {
 			t.Fatalf("ApplyComponentStatusSSA() unexpected error: %v", err)
 		}
-		if gotSubresource != "status" {
-			t.Errorf("subresource = %q, want %q", gotSubresource, "status")
+		if diff := cmp.Diff([]string{"apply/status"}, writes.calls); diff != "" {
+			t.Errorf("writes mismatch (-want +got):\n%s", diff)
 		}
-		if gotNamespace != "fallback-ns" {
-			t.Errorf("namespace = %q, want %q", gotNamespace, "fallback-ns")
+		if writes.apply.FieldManager != FieldManagerBridge || !ptr.Deref(writes.apply.Force, false) {
+			t.Errorf("apply options = {FieldManager: %q, Force: %v}, want {%q, true}", writes.apply.FieldManager, writes.apply.Force, FieldManagerBridge)
 		}
-		if gotPatchType != types.ApplyPatchType {
-			t.Errorf("patchType = %q, want %q", gotPatchType, types.ApplyPatchType)
-		}
-		statusObj, _ := noNsItem.Object["status"].(map[string]any)
-		if statusObj["state"] != "COMPONENT_STATE_ENABLED" {
-			t.Errorf("updated item status = %v, want state COMPONENT_STATE_ENABLED", statusObj)
+		state, _, _ := unstructured.NestedString(getFakeComponent(t, c, "xmc-ns", "comp-1").Object, "status", "state")
+		if state != "COMPONENT_STATE_ENABLED" {
+			t.Errorf("stored status.state = %q, want COMPONENT_STATE_ENABLED", state)
 		}
 	})
 
-	t.Run("propagates patch error", func(t *testing.T) {
-		client := dynamicfake.NewSimpleDynamicClient(newStatusApplierTestScheme())
-		client.PrependReactor("patch", "components", func(k8stesting.Action) (bool, runtime.Object, error) {
-			return true, nil, errors.New("apiserver unavailable")
-		})
-		if err := ApplyComponentStatusSSA(ctx, client, "default", item.DeepCopy(), res); err == nil {
+	t.Run("propagates apply error", func(t *testing.T) {
+		item := newTestComponent("comp-1", "xmc-ns")
+		c, _ := newFakeComponentClient(t, map[string]error{"apply/status": errors.New("apiserver unavailable")}, item)
+		if err := ApplyComponentStatusSSA(ctx, c, item, res); err == nil {
 			t.Fatal("expected error from ApplyComponentStatusSSA, got nil")
 		}
 	})
 }
 
-func TestSyncComponentFinalizers(t *testing.T) {
+func TestCleanupFinalizer(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("returns early without error on nil inputs or no-op result even if client is nil", func(t *testing.T) {
-		item := newTestComponent("comp-1", "default")
-		if got, err := SyncComponentFinalizers(ctx, nil, "default", nil, &ReconcileResult{AddFinalizer: true}); err != nil || got != nil {
-			t.Errorf("expected (nil, nil) for nil item, got (%v, %v)", got, err)
-		}
-		if got, err := SyncComponentFinalizers(ctx, nil, "default", item, nil); err != nil || got != item {
-			t.Errorf("expected (item, nil) for nil res, got (%v, %v)", got, err)
-		}
-		if got, err := SyncComponentFinalizers(ctx, nil, "default", item, &ReconcileResult{}); err != nil || got != item {
-			t.Errorf("expected (item, nil) for no-op res, got (%v, %v)", got, err)
-		}
-		if _, err := SyncComponentFinalizers(ctx, nil, "default", item, &ReconcileResult{AddFinalizer: true}); err == nil {
-			t.Error("expected error when client is nil and mutation is requested")
-		}
-	})
-
-	t.Run("attaches and detaches finalizer without mutating input item in-place", func(t *testing.T) {
+	t.Run("attaches and releases the finalizer and keeps the others", func(t *testing.T) {
 		orig := newTestComponent("comp-fin", "default", "other-fin")
-		client := dynamicfake.NewSimpleDynamicClient(newStatusApplierTestScheme(), orig)
+		c, _ := newFakeComponentClient(t, nil, orig)
+		stored := getFakeComponent(t, c, "default", "comp-fin")
 
-		attached, err := SyncComponentFinalizers(ctx, client, "default", orig, &ReconcileResult{AddFinalizer: true})
+		attached, err := AddCleanupFinalizer(ctx, c, stored)
 		if err != nil {
-			t.Fatalf("SyncComponentFinalizers(AddFinalizer) failed: %v", err)
+			t.Fatalf("AddCleanupFinalizer() failed: %v", err)
 		}
-		if slices.Contains(orig.GetFinalizers(), FinalizerDeletionProtection) {
-			t.Errorf("expected original input item not to be mutated in-place, got finalizers %v", orig.GetFinalizers())
+		if HasCleanupFinalizer(stored) {
+			t.Errorf("AddCleanupFinalizer() mutated its input: finalizers %v", stored.GetFinalizers())
 		}
-		if !slices.Contains(attached.GetFinalizers(), FinalizerDeletionProtection) {
-			t.Errorf("expected finalizer %q on returned item, got %v", FinalizerDeletionProtection, attached.GetFinalizers())
+		if diff := cmp.Diff([]string{"other-fin", FinalizerCMSCleanup}, attached.GetFinalizers()); diff != "" {
+			t.Errorf("returned finalizers mismatch (-want +got):\n%s", diff)
 		}
-
-		detached, err := SyncComponentFinalizers(ctx, client, "default", attached, &ReconcileResult{RemoveFinalizer: true})
-		if err != nil {
-			t.Fatalf("SyncComponentFinalizers(RemoveFinalizer) failed: %v", err)
+		if err := ReleaseCleanupFinalizer(ctx, c, attached); err != nil {
+			t.Fatalf("ReleaseCleanupFinalizer() failed: %v", err)
 		}
-		if slices.Contains(detached.GetFinalizers(), FinalizerDeletionProtection) {
-			t.Errorf("expected finalizer %q to be removed, got %v", FinalizerDeletionProtection, detached.GetFinalizers())
+		if diff := cmp.Diff([]string{"other-fin"}, getFakeComponent(t, c, "default", "comp-fin").GetFinalizers()); diff != "" {
+			t.Errorf("stored finalizers mismatch (-want +got):\n%s", diff)
 		}
 	})
 
-	t.Run("retries on conflict and succeeds after fetching latest object", func(t *testing.T) {
-		orig := newTestComponent("comp-conflict", "default")
-		client := dynamicfake.NewSimpleDynamicClient(newStatusApplierTestScheme(), orig)
-		attempts := 0
-		client.PrependReactor("update", "components", func(action k8stesting.Action) (bool, runtime.Object, error) {
-			attempts++
-			if attempts == 1 {
-				return true, nil, apierrors.NewConflict(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "comp-conflict", errors.New("optimistic lock conflict"))
-			}
-			return false, nil, nil
-		})
-
-		updated, err := SyncComponentFinalizers(ctx, client, "default", orig, &ReconcileResult{AddFinalizer: true})
-		if err != nil {
-			t.Fatalf("SyncComponentFinalizers() unexpected error after conflict retry: %v", err)
+	t.Run("attaches to a Component without finalizers", func(t *testing.T) {
+		c, _ := newFakeComponentClient(t, nil, newTestComponent("comp-new", "default"))
+		if _, err := AddCleanupFinalizer(ctx, c, getFakeComponent(t, c, "default", "comp-new")); err != nil {
+			t.Fatalf("AddCleanupFinalizer() failed: %v", err)
 		}
-		if attempts != 2 {
-			t.Errorf("expected 2 update attempts, got %d", attempts)
-		}
-		if !slices.Contains(updated.GetFinalizers(), FinalizerDeletionProtection) {
-			t.Errorf("expected finalizer %q after retry, got %v", FinalizerDeletionProtection, updated.GetFinalizers())
+		if diff := cmp.Diff([]string{FinalizerCMSCleanup}, getFakeComponent(t, c, "default", "comp-new").GetFinalizers()); diff != "" {
+			t.Errorf("stored finalizers mismatch (-want +got):\n%s", diff)
 		}
 	})
 
-	t.Run("returns Get error immediately when conflict refresh fails", func(t *testing.T) {
-		orig := newTestComponent("comp-get-err", "default")
-		client := dynamicfake.NewSimpleDynamicClient(newStatusApplierTestScheme(), orig)
-		client.PrependReactor("update", "components", func(k8stesting.Action) (bool, runtime.Object, error) {
-			return true, nil, apierrors.NewConflict(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "comp-get-err", errors.New("conflict"))
-		})
-		client.PrependReactor("get", "components", func(k8stesting.Action) (bool, runtime.Object, error) {
-			return true, nil, errors.New("get failed during conflict recovery")
-		})
+	t.Run("stale read fails instead of overwriting finalizers", func(t *testing.T) {
+		c, _ := newFakeComponentClient(t, nil, newTestComponent("comp-stale", "default", "other-fin"))
+		stale := newTestComponent("comp-stale", "default")
+		if _, err := AddCleanupFinalizer(ctx, c, stale); err == nil {
+			t.Fatal("AddCleanupFinalizer() with a stale read succeeded, want the test op to fail")
+		}
+		if diff := cmp.Diff([]string{"other-fin"}, getFakeComponent(t, c, "default", "comp-stale").GetFinalizers()); diff != "" {
+			t.Errorf("stored finalizers mismatch (-want +got):\n%s", diff)
+		}
+	})
 
-		if _, err := SyncComponentFinalizers(ctx, client, "default", orig, &ReconcileResult{AddFinalizer: true}); err == nil {
-			t.Fatal("expected error when Get fails during conflict retry, got nil")
+	t.Run("accepts the legacy finalizer and release strips both names", func(t *testing.T) {
+		c, _ := newFakeComponentClient(t, nil, newTestComponent("comp-legacy", "default", legacyFinalizerCMSCleanup, "other-fin", FinalizerCMSCleanup))
+		stored := getFakeComponent(t, c, "default", "comp-legacy")
+		if !HasCleanupFinalizer(newTestComponent("legacy-only", "default", legacyFinalizerCMSCleanup)) {
+			t.Errorf("HasCleanupFinalizer() = false for a Component with only %q, want true", legacyFinalizerCMSCleanup)
+		}
+		if err := ReleaseCleanupFinalizer(ctx, c, stored); err != nil {
+			t.Fatalf("ReleaseCleanupFinalizer() failed: %v", err)
+		}
+		if diff := cmp.Diff([]string{"other-fin"}, getFakeComponent(t, c, "default", "comp-legacy").GetFinalizers()); diff != "" {
+			t.Errorf("stored finalizers mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("release of a missing Component succeeds", func(t *testing.T) {
+		c, _ := newFakeComponentClient(t, nil)
+		if err := ReleaseCleanupFinalizer(ctx, c, newTestComponent("gone", "default", FinalizerCMSCleanup)); err != nil {
+			t.Errorf("ReleaseCleanupFinalizer() error = %v, want nil", err)
+		}
+	})
+
+	t.Run("attach to a missing Component reports NotFound", func(t *testing.T) {
+		c, _ := newFakeComponentClient(t, nil)
+		if _, err := AddCleanupFinalizer(ctx, c, newTestComponent("gone", "default")); !apierrors.IsNotFound(err) {
+			t.Errorf("AddCleanupFinalizer() error = %v, want NotFound", err)
 		}
 	})
 }
@@ -283,64 +310,42 @@ func TestSyncComponentFinalizers(t *testing.T) {
 func TestPersistReconcileResult(t *testing.T) {
 	ctx := context.Background()
 	enabled := componentsv1alpha1.ComponentState_COMPONENT_STATE_ENABLED
-	errUpdate := errors.New("update failed")
 	errPatch := errors.New("patch failed")
+	errApply := errors.New("apply failed")
 	tests := []struct {
-		name        string
-		nilItem     bool
-		finalizers  []string
-		res         *ReconcileResult
-		updateErr   error
-		patchErr    error
-		wantErr     error
-		wantActions []string
+		name       string
+		nilItem    bool
+		res        *ReconcileResult
+		failures   map[string]error
+		wantErr    error
+		wantWrites []string
 	}{
-		{name: "nil result is a no-op", res: nil, wantActions: nil},
-		{name: "nil item is rejected", nilItem: true, res: &ReconcileResult{State: enabled}, wantErr: errNilComponentItem, wantActions: nil},
-		{name: "status only", res: &ReconcileResult{State: enabled}, wantActions: []string{"patch/status"}},
-		{name: "finalizer is attached before status", res: &ReconcileResult{State: enabled, AddFinalizer: true}, wantActions: []string{"update/", "patch/status"}},
-		{name: "released finalizer skips status", finalizers: []string{FinalizerDeletionProtection}, res: &ReconcileResult{RemoveFinalizer: true}, wantActions: []string{"update/"}},
-		{name: "finalizer error skips status", res: &ReconcileResult{State: enabled, AddFinalizer: true}, updateErr: errUpdate, wantErr: errUpdate, wantActions: []string{"update/"}},
-		{name: "status error is returned", res: &ReconcileResult{State: enabled}, patchErr: errPatch, wantErr: errPatch, wantActions: []string{"patch/status"}},
+		{name: "nil result is a no-op", res: nil},
+		{name: "nil item is rejected", nilItem: true, res: &ReconcileResult{State: enabled}, wantErr: errNilComponentItem},
+		{name: "status only", res: &ReconcileResult{State: enabled}, wantWrites: []string{"apply/status"}},
+		{name: "released finalizer skips status", res: &ReconcileResult{RemoveFinalizer: true}, wantWrites: []string{"patch"}},
+		{name: "release error is returned", res: &ReconcileResult{RemoveFinalizer: true}, failures: map[string]error{"patch": errPatch}, wantErr: errPatch, wantWrites: []string{"patch"}},
+		{name: "status error is returned", res: &ReconcileResult{State: enabled}, failures: map[string]error{"apply/status": errApply}, wantErr: errApply, wantWrites: []string{"apply/status"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			item := newTestComponent("comp-persist", "xmc-ns", tt.finalizers...)
-			original := item.DeepCopy()
-			client := dynamicfake.NewSimpleDynamicClient(newStatusApplierTestScheme(), item.DeepCopy())
-			if tt.updateErr != nil {
-				client.PrependReactor("update", "components", func(k8stesting.Action) (bool, runtime.Object, error) {
-					return true, nil, tt.updateErr
-				})
-			}
-			client.PrependReactor("patch", "components", func(k8stesting.Action) (bool, runtime.Object, error) {
-				if tt.patchErr != nil {
-					return true, nil, tt.patchErr
-				}
-				persisted := item.DeepCopy()
-				persisted.Object["status"] = map[string]any{"state": "ENABLED"}
-				return true, persisted, nil
-			})
+			item := newTestComponent("comp-persist", "xmc-ns", FinalizerCMSCleanup)
+			c, writes := newFakeComponentClient(t, tt.failures, item)
 
-			arg := item
+			arg := getFakeComponent(t, c, "xmc-ns", "comp-persist")
 			if tt.nilItem {
 				arg = nil
 			}
-			err := PersistReconcileResult(ctx, client, "default", arg, tt.res)
+			before := arg.DeepCopy()
+			err := PersistReconcileResult(ctx, c, arg, tt.res)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("PersistReconcileResult() error = %v, want %v", err, tt.wantErr)
 			}
-			if diff := cmp.Diff(original.Object, item.Object); diff != "" {
+			if diff := cmp.Diff(before, arg); diff != "" {
 				t.Errorf("PersistReconcileResult() mutated item (-want +got):\n%s", diff)
 			}
-			var gotActions []string
-			for _, a := range client.Actions() {
-				if a.GetVerb() == "update" || a.GetVerb() == "patch" {
-					gotActions = append(gotActions, a.GetVerb()+"/"+a.GetSubresource())
-				}
-			}
-			if diff := cmp.Diff(tt.wantActions, gotActions); diff != "" {
-				t.Errorf("API actions mismatch (-want +got):\n%s", diff)
+			if diff := cmp.Diff(tt.wantWrites, writes.calls); diff != "" {
+				t.Errorf("writes mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

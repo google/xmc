@@ -21,7 +21,6 @@ import (
 const (
 	ConditionTypeReady               = "Ready"
 	ConditionTypeDegraded            = "Degraded"
-	ConditionTypeDeletionBlocked     = "DeletionBlocked"
 	ConditionTypeDeactivationBlocked = "DeactivationBlocked"
 	ConditionStatusTrue              = "True"
 	ConditionStatusFalse             = "False"
@@ -65,7 +64,7 @@ const (
 
 // Condition represents a standardized Kubernetes custom resource condition.
 type Condition struct {
-	// Type is the condition identifier (e.g. Ready, Degraded, DeletionBlocked).
+	// Type is the condition identifier (e.g. Ready, Degraded, DeactivationBlocked).
 	Type string
 	// Status is the condition state ("True" or "False").
 	Status string

@@ -42,11 +42,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
+// namespaceControllerUser is the user the kube-controller-manager namespace controller deletes a
+// namespace's objects as.
+const namespaceControllerUser = "system:serviceaccount:kube-system:namespace-controller"
+
 type admissionClients struct {
-	adminDynamic      dynamic.Interface
-	nonAdminComp      dynamic.ResourceInterface
-	platformAdminComp dynamic.ResourceInterface
-	kubeClient        kubernetes.Interface
+	adminDynamic            dynamic.Interface
+	nonAdminComp            dynamic.ResourceInterface
+	platformAdminComp       dynamic.ResourceInterface
+	namespaceControllerComp dynamic.ResourceInterface
+	kubeClient              kubernetes.Interface
 }
 
 // TestComponentsAdmissionAndControllerSuite verifies the Component CRD OpenAPI/CEL schema validations
@@ -106,7 +111,7 @@ func grantComponentRBAC(ctx context.Context, t *testing.T, kubeClient kubernetes
 	binding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: "xmc-components-test-operator-binding"},
 		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: role.Name},
-		Subjects:   []rbacv1.Subject{{Kind: "User", Name: "system:serviceaccount:xmc:gitops-reconciler"}, {Kind: "Group", Name: "xmc-platform-admins"}},
+		Subjects:   []rbacv1.Subject{{Kind: "User", Name: "system:serviceaccount:xmc:gitops-reconciler"}, {Kind: "Group", Name: "xmc-platform-admins"}, {Kind: "User", Name: namespaceControllerUser}},
 	}
 	if _, err := kubeClient.RbacV1().ClusterRoleBindings().Create(ctx, binding, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("failed to create ClusterRoleBinding: %v", err)
@@ -133,10 +138,11 @@ func buildAdmissionClients(t *testing.T, baseCfg *rest.Config) admissionClients 
 		return dyn.Resource(ComponentGVR).Namespace("default")
 	}
 	return admissionClients{
-		adminDynamic:      adminDyn,
-		nonAdminComp:      impersonateComp("system:serviceaccount:xmc:gitops-reconciler", "system:authenticated"),
-		platformAdminComp: impersonateComp("sre-oncall@example.com", "system:authenticated", "xmc-platform-admins"),
-		kubeClient:        kubeClient,
+		adminDynamic:            adminDyn,
+		nonAdminComp:            impersonateComp("system:serviceaccount:xmc:gitops-reconciler", "system:authenticated"),
+		platformAdminComp:       impersonateComp("sre-oncall@example.com", "system:authenticated", "xmc-platform-admins"),
+		namespaceControllerComp: impersonateComp(namespaceControllerUser, "system:serviceaccounts", "system:serviceaccounts:kube-system", "system:authenticated"),
+		kubeClient:              kubeClient,
 	}
 }
 
@@ -327,7 +333,7 @@ func verifyDeletionProtectionVAP(ctx context.Context, t *testing.T, clients admi
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		for _, name := range []string{"protected-ingestion", "platform-admin-protected"} {
+		for _, name := range []string{"protected-ingestion", "platform-admin-protected", "namespace-teardown-protected"} {
 			_, _ = clients.nonAdminComp.Patch(cleanupCtx, name, types.MergePatchType, []byte(`{"spec":{"deletionProtection":false}}`), metav1.PatchOptions{})
 			_ = clients.nonAdminComp.Delete(cleanupCtx, name, metav1.DeleteOptions{})
 		}
@@ -353,6 +359,13 @@ func verifyDeletionProtectionVAP(ctx context.Context, t *testing.T, clients admi
 	}
 	if err := clients.platformAdminComp.Delete(ctx, platformAdminTarget.GetName(), metav1.DeleteOptions{}); err == nil || !strings.Contains(err.Error(), "Deletion rejected: Component has deletionProtection enabled") {
 		t.Fatalf("expected VAP rejection on xmc-platform-admins DELETE with deletionProtection=true, got: %v", err)
+	}
+	nsTeardownTarget := newComponentManifest("namespace-teardown-protected", protectedSpec)
+	if _, err := clients.nonAdminComp.Create(ctx, nsTeardownTarget, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("Create namespace teardown target failed: %v", err)
+	}
+	if err := clients.namespaceControllerComp.Delete(ctx, nsTeardownTarget.GetName(), metav1.DeleteOptions{}); err != nil {
+		t.Fatalf("expected namespace-controller DELETE of a protected Component to succeed, got: %v", err)
 	}
 }
 

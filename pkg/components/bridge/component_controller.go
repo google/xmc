@@ -21,8 +21,8 @@ import (
 	"slices"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -38,6 +38,10 @@ import (
 
 // componentControllerName names the controller in logs and metrics.
 const componentControllerName = "xmc-bridge-component"
+
+// staleComponentRetryDelay is how long the controller waits before reconciling a Component again
+// after the apiserver rejected a write because the cached copy was stale, so the cache can catch up.
+const staleComponentRetryDelay = time.Second
 
 var componentGVK = ComponentGVR.GroupVersion().WithKind("Component")
 
@@ -60,17 +64,16 @@ type ComponentControllerOptions struct {
 // ProbeInterval after every successful pass. A failed pass is retried with
 // NewComponentRateLimiter backoff.
 type ComponentController struct {
-	reader     client.Reader
-	writer     dynamic.Interface
+	client     client.Client
 	reconciler *Reconciler
 	opts       ComponentControllerOptions
 }
 
-// NewComponentController returns a ComponentController that reads Components through reader,
-// runs r and persists results through writer. reader is normally the client of a manager built
-// with ComponentManagerOptions, which serves the reads from the manager's informer cache.
-func NewComponentController(reader client.Reader, writer dynamic.Interface, r *Reconciler, opts ComponentControllerOptions) *ComponentController {
-	return &ComponentController{reader: reader, writer: writer, reconciler: r, opts: opts}
+// NewComponentController returns a ComponentController that reads and writes Components through
+// c and runs r. c is normally the client of a manager built with ComponentManagerOptions, which
+// serves the reads from the manager's informer cache.
+func NewComponentController(c client.Client, r *Reconciler, opts ComponentControllerOptions) *ComponentController {
+	return &ComponentController{client: c, reconciler: r, opts: opts}
 }
 
 // SetupWithManager registers the controller and its Component watches with mgr.
@@ -97,15 +100,26 @@ func (c *ComponentController) newControllerBuilder(mgr manager.Manager) *builder
 // error, and so a backoff retry, if the pass or the persistence failed.
 func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	item := newComponentObject()
-	if err := c.reader.Get(ctx, req.NamespacedName, item); err != nil {
+	if err := c.client.Get(ctx, req.NamespacedName, item); err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
+	}
+	item, err := c.ensureCleanupFinalizer(ctx, item)
+	if apierrors.IsInvalid(err) {
+		// The apiserver rejected the finalizer patch because the cached Component is stale: its
+		// finalizers changed, or its deletion started, since the cache last saw it. A later pass
+		// reads the newer copy.
+		logging.Info(ctx, "Component changed before the cleanup finalizer was attached; retrying", "namespace", req.Namespace, "name", req.Name, "error", err)
+		return reconcile.Result{RequeueAfter: staleComponentRetryDelay}, nil
+	}
+	if item == nil || err != nil {
+		return reconcile.Result{}, err
 	}
 	items, err := c.listComponents(ctx, req.Namespace)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 	res, passErr := c.runReconciler(ctx, item, NewDependencySnapshot(items))
-	persistErr := PersistReconcileResult(ctx, c.writer, req.Namespace, item, res)
+	persistErr := PersistReconcileResult(ctx, c.client, item, res)
 	if err := joinPassErrors(passErr, persistErr); err != nil {
 		return reconcile.Result{}, err
 	}
@@ -116,6 +130,27 @@ func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Reque
 		return reconcile.Result{}, nil
 	}
 	return reconcile.Result{RequeueAfter: c.opts.ProbeInterval}, nil
+}
+
+// ensureCleanupFinalizer returns item once FinalizerCMSCleanup is persisted on it, attaching the
+// finalizer first if needed, so that no CMS or workload side effect runs before deletion is
+// guaranteed to clean it up. It returns nil if there is nothing to reconcile: item no longer
+// exists, or it is being deleted without the finalizer, so no side effect ever ran for it.
+func (c *ComponentController) ensureCleanupFinalizer(ctx context.Context, item *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+	if HasCleanupFinalizer(item) {
+		return item, nil
+	}
+	if item.GetDeletionTimestamp() != nil {
+		return nil, nil
+	}
+	updated, err := AddCleanupFinalizer(ctx, c.client, item)
+	if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to attach finalizer: %w", err)
+	}
+	return updated, nil
 }
 
 func (c *ComponentController) runReconciler(ctx context.Context, item *unstructured.Unstructured, deps DependencyReadiness) (*ReconcileResult, error) {
@@ -158,7 +193,7 @@ func (c *ComponentController) mapDependents(ctx context.Context, obj client.Obje
 func (c *ComponentController) listComponents(ctx context.Context, namespace string) ([]unstructured.Unstructured, error) {
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(ComponentGVR.GroupVersion().WithKind("ComponentList"))
-	if err := c.reader.List(ctx, list, client.InNamespace(namespace)); err != nil {
+	if err := c.client.List(ctx, list, client.InNamespace(namespace)); err != nil {
 		return nil, fmt.Errorf("failed to list Components in namespace %q: %w", namespace, err)
 	}
 	return list.Items, nil

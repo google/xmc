@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -82,20 +82,18 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		in            ReconcileComponentInput
 		wantErr       bool
 		wantState     componentspb.ComponentState
-		wantAddFin    bool
 		wantRemoveFin bool
 		// wantHealth, when set, asserts the Ready/Degraded condition statuses and shared reason.
 		wantHealth *healthConditions
 	}{
 		{
-			name: "active 3P with finalizer addition",
+			name: "active 3P",
 			cms:  &mockCMS{},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
-				DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
-			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-			wantAddFin: true,
+			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		},
 		{
 			name:   "active operatorless 3P with endpoint and secret in parameters",
@@ -111,10 +109,9 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 						"secretName":          "clickhouse-secret",
 					},
 				},
-				DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
-			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-			wantAddFin: true,
+			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		},
 		{
 			name: "active 3P with coordinate injection",
@@ -128,10 +125,9 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
-				DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
-			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-			wantAddFin: true,
+			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		},
 		{
 			name:   "active 3P with status detector not ready",
@@ -139,10 +135,9 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: false, Message: "Waiting for pods"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
-				DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
-			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantAddFin: true,
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 		{
 			name:   "active 3P with status detector resource not found",
@@ -150,10 +145,9 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			prober: &mockProber{status: &ResourceStatus{Found: false, Message: "CRD not installed: clickhouses.clickhouse.altinity.com"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
-				DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
-			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantAddFin: true,
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 		{
 			name:   "active 3P with status detector error",
@@ -161,11 +155,10 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			prober: &mockProber{detectErr: errors.New("k8s api timeout")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
-				DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
-			wantErr:    true,
-			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantAddFin: true,
+			wantErr:   true,
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 		{
 			name:   "active 3P with status detector nil status",
@@ -173,11 +166,10 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			prober: &mockProber{nilStatus: true},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
-				DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
-			wantErr:    true,
-			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantAddFin: true,
+			wantErr:   true,
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 		{
 			name:   "active 3P with status detector error and CMS failure",
@@ -185,11 +177,10 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			prober: &mockProber{detectErr: errors.New("k8s api timeout")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
-				DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
-			wantErr:    true,
-			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantAddFin: true,
+			wantErr:   true,
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 		{
 			name:   "active 3P with empty target name",
@@ -200,21 +191,9 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				Spec: &componentspb.ComponentSpec{
 					Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
 				},
-				DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
-			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantAddFin: true,
-		},
-		{
-			name: "active 1P without deletion protection still attaches finalizer",
-			cms:  &mockCMS{},
-			helm: &mockHelm{},
-			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				HasFinalizer: false, DeletionProtection: false, Enabled: true,
-			},
-			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-			wantAddFin: true,
+			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 		{
 			name: "active 1P with nil prober defaults to healthy",
@@ -222,7 +201,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		},
@@ -233,7 +212,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm:   &mockHelm{},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
 			wantState:  componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 			wantHealth: &healthConditions{ReadyStatus: ConditionStatusTrue, DegradedStatus: ConditionStatusFalse, Reason: ReasonComponentHealthy},
@@ -245,7 +224,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm:   &mockHelm{unhealthyReason: ReasonHelmReleaseNotFound},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
 			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: ReasonHelmReleaseNotFound},
@@ -256,7 +235,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{unhealthyReason: ReasonHelmUpgradeFailed},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
 			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: ReasonHelmUpgradeFailed},
@@ -267,7 +246,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{unhealthyReason: ReasonHelmUpgradePending},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
 			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusFalse, Reason: ReasonHelmUpgradePending},
@@ -278,7 +257,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{unhealthyReason: ReasonHelmReleaseStuck},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
 			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: ReasonHelmReleaseStuck},
@@ -289,7 +268,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{unhealthyReason: ReasonHelmStatusUnavailable},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 				ExistingConditions: []Condition{
 					{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
 					{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
@@ -304,7 +283,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{unhealthyReason: ReasonHelmStatusUnavailable},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 				ExistingConditions: []Condition{
 					{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonHelmReleaseNotFound},
 					{Type: ConditionTypeDegraded, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonHelmReleaseNotFound},
@@ -319,7 +298,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{unhealthyReason: ReasonHelmStatusUnavailable},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 				ExistingConditions: []Condition{
 					{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
 				},
@@ -333,19 +312,20 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			prober: &mockProber{healthy: false, msg: "probe failed"},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
 			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, DegradedStatus: ConditionStatusTrue, Reason: ReasonHealthProbeFailed},
 		},
 		{
-			name: "deletion blocked by protection",
+			name: "deletion of an enabled 3P cleans up",
 			cms:  &mockCMS{},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
-				IsDeleting: true, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				IsDeleting: true, Enabled: true,
 			},
-			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
+			wantRemoveFin: true,
 		},
 		{
 			name: "deletion successful 1P",
@@ -353,7 +333,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{active: true},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+				IsDeleting: true,
 			},
 			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
 			wantRemoveFin: true,
@@ -368,7 +348,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 					Type:           componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 					DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN,
 				},
-				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+				IsDeleting: true,
 			},
 			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
 			wantRemoveFin: true,
@@ -378,7 +358,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:  &mockCMS{},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 2, Spec: spec3P,
-				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+				IsDeleting: true,
 			},
 			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
 			wantRemoveFin: true,
@@ -389,7 +369,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{deleteErr: errors.New("delete error")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				IsDeleting: true, HasFinalizer: true, DeletionProtection: false,
+				IsDeleting: true,
 			},
 			wantErr: true,
 		},
@@ -398,7 +378,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:  &mockCMS{delErr: errors.New("cms spanner error")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				IsDeleting: true, HasFinalizer: true,
+				IsDeleting: true,
 			},
 			wantErr: true,
 		},
@@ -408,7 +388,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{active: true},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				IsDeleting: true, HasFinalizer: true,
+				IsDeleting: true,
 			},
 			wantErr: true,
 		},
@@ -418,7 +398,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{active: true},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				IsDeleting: true, HasFinalizer: true,
+				IsDeleting: true,
 			},
 			wantState:     componentspb.ComponentState_COMPONENT_STATE_DELETED,
 			wantRemoveFin: true,
@@ -429,7 +409,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{active: true},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: false,
+				Enabled: false,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_DISABLED,
 		},
@@ -439,7 +419,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{active: true, deleteErr: errors.New("cannot stop release")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: false,
+				Enabled: false,
 			},
 			wantErr:   true,
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
@@ -450,7 +430,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			helm: &mockHelm{},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: false,
+				Enabled: false,
 			},
 			wantErr: true,
 		},
@@ -464,7 +444,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 					Type:           componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 					DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN,
 				},
-				HasFinalizer: true, DeletionProtection: true, Enabled: false,
+				Enabled: false,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_DISABLED,
 		},
@@ -475,7 +455,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantErr: true,
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: false,
+				Enabled: false,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -486,7 +466,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantErr: true,
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: false,
+				Enabled: false,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_DISABLED,
 		},
@@ -497,7 +477,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantErr: true,
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -508,7 +488,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			wantErr: true,
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -518,7 +498,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			prober: &mockProber{healthy: false, msg: "Pod CrashLoop"},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -528,7 +508,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			prober: &mockProber{healthy: true, msg: "Service active"},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		},
@@ -537,7 +517,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{},
 			prober: &mockProber{detectErr: errors.New("k8s api error")},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
 			wantErr: true,
 		},
@@ -546,7 +526,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{},
 			prober: &mockProber{status: &ResourceStatus{Found: false, Ready: false, Message: "resource not found"}},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -555,7 +535,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{},
 			prober: &mockProber{status: &ResourceStatus{Found: false, Ready: false, Message: ""}},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -564,7 +544,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{},
 			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: false, Message: "reconciling pods"}},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -573,7 +553,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{},
 			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, probeErr: errors.New("connection refused")},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -582,7 +562,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{},
 			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, probeRes: &HealthProbeResult{Healthy: false, Message: "503 Service Unavailable"}},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -591,7 +571,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{},
 			prober: &mockProber{nilStatus: true},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
 			wantErr: true,
 		},
@@ -600,7 +580,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{},
 			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, hasProbeRes: true, probeRes: nil},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -609,7 +589,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{},
 			prober: nil,
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		},
@@ -618,7 +598,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{},
 			prober: &mockProber{healthy: false, msg: "fallback health probe failed"},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P, Enabled: true,
 			},
 			wantState: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
@@ -627,7 +607,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{obsErr: errors.New("cms update failed")},
 			prober: &mockProber{status: &ResourceStatus{Found: false, Ready: false}},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
 			wantErr: true,
 		},
@@ -636,7 +616,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:    &mockCMS{obsErr: errors.New("cms update failed")},
 			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true}},
 			in: ReconcileComponentInput{
-				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
 			wantErr: true,
 		},
@@ -645,7 +625,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			cms:  &mockCMS{obsErr: errors.New("timeout")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3P,
-				HasFinalizer: true, DeletionProtection: true, Enabled: true,
+				Enabled: true,
 			},
 			wantErr: true,
 		},
@@ -673,9 +653,6 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				if res.State != tt.wantState {
 					t.Errorf("got state %v, want %v", res.State, tt.wantState)
 				}
-				if res.AddFinalizer != tt.wantAddFin {
-					t.Errorf("got AddFinalizer %v, want %v", res.AddFinalizer, tt.wantAddFin)
-				}
 				if res.RemoveFinalizer != tt.wantRemoveFin {
 					t.Errorf("got RemoveFinalizer %v, want %v", res.RemoveFinalizer, tt.wantRemoveFin)
 				}
@@ -688,11 +665,6 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			}
 			if tt.name == "active 3P with coordinate injection" {
 				assertCoordinateEnvVars(t, res.Access)
-			}
-			if tt.name == "deletion blocked by protection" {
-				assertConditionStatus(t, res.Conditions, ConditionTypeReady, ConditionStatusFalse)
-				assertConditionStatus(t, res.Conditions, ConditionTypeDegraded, ConditionStatusFalse)
-				assertConditionStatus(t, res.Conditions, ConditionTypeDeletionBlocked, ConditionStatusTrue)
 			}
 			verify3PStatusDetectorAssertions(t, tt.name, tt.cms, tt.in.Generation, res, err)
 			if tt.wantHealth != nil {
@@ -721,8 +693,8 @@ func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T
 	}
 	in := ReconcileComponentInput{
 		Namespace: "xmc", Name: "ingestion", Generation: 2,
-		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
-		HasFinalizer: true, DeletionProtection: true, Enabled: true,
+		Spec:    &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+		Enabled: true,
 		ExistingConditions: []Condition{
 			{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
 			{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
@@ -773,8 +745,8 @@ func TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration(t *testing.
 	}
 	in := ReconcileComponentInput{
 		Namespace: "xmc", Name: "ingestion", Generation: 1,
-		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
-		HasFinalizer: true, DeletionProtection: true, Enabled: true,
+		Spec:    &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+		Enabled: true,
 		ExistingConditions: []Condition{
 			{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
 			{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
@@ -825,8 +797,8 @@ func TestReconcileComponent_DriftRepairBypassesDependencyHold(t *testing.T) {
 	unready := NewDependencySnapshot([]unstructured.Unstructured{readyComponent("redpanda", func(u *unstructured.Unstructured) { setConditionStatus(u, 0, "status", ConditionStatusFalse) })})
 	in := ReconcileComponentInput{
 		Namespace: "xmc", Name: "ingestion", Generation: 1,
-		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: []string{"redpanda"}},
-		HasFinalizer: true, DeletionProtection: true, Enabled: true, Dependencies: unready,
+		Spec:    &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: []string{"redpanda"}},
+		Enabled: true, Dependencies: unready,
 		ExistingConditions: []Condition{
 			{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
 			{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
@@ -878,7 +850,7 @@ func TestReconcileComponent_RepairOnlyBypassesHoldForActuatedGeneration(t *testi
 				t.Fatalf("NewReconciler() failed: %v", err)
 			}
 			res, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
-				Namespace: "xmc", Name: "ingestion", Generation: tt.generation, HasFinalizer: true, Enabled: true,
+				Namespace: "xmc", Name: "ingestion", Generation: tt.generation, Enabled: true,
 				Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: []string{"redpanda"}},
 				Dependencies: unready,
 			})
@@ -1132,12 +1104,11 @@ func TestReconcileComponent_1P_GenerationGating(t *testing.T) {
 
 	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
 	in := ReconcileComponentInput{
-		Namespace:          "xmc",
-		Name:               "ingestion-gateway",
-		Generation:         1,
-		Spec:               spec1P,
-		Enabled:            true,
-		DeletionProtection: true,
+		Namespace:  "xmc",
+		Name:       "ingestion-gateway",
+		Generation: 1,
+		Spec:       spec1P,
+		Enabled:    true,
 	}
 
 	// First pass (generation 1): should actuate Helm upgrade
@@ -1200,12 +1171,11 @@ func TestReconciler_ColdStartHydration_SkipsRedundantUpgrade(t *testing.T) {
 	}
 
 	in := ReconcileComponentInput{
-		Namespace:    "xmc",
-		Name:         "ingestion-gateway",
-		Generation:   4,
-		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
-		Enabled:      true,
-		HasFinalizer: true,
+		Namespace:  "xmc",
+		Name:       "ingestion-gateway",
+		Generation: 4,
+		Spec:       &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+		Enabled:    true,
 		ExistingConditions: []Condition{
 			{
 				Type:               ConditionTypeReady,
@@ -1435,7 +1405,7 @@ func TestReconcileComponent_DependencyActivationGating(t *testing.T) {
 			wasActive := helm.active
 			r, _ := NewReconciler(cms, nil, helm)
 			res, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
-				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: tt.spec, HasFinalizer: true,
+				Namespace: "xmc", Name: "ingestion", Generation: 2, Spec: tt.spec,
 				Enabled: true, ExistingConditions: tt.existing, Dependencies: tt.deps,
 			})
 			if (err != nil) != tt.wantErr {
@@ -1479,7 +1449,7 @@ func TestReconcileComponent_DependencyBlipHoldsUpgrade(t *testing.T) {
 	var existing []Condition
 	for i, p := range passes {
 		res, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
-			Namespace: "xmc", Name: "ingestion", Generation: p.generation, HasFinalizer: true, Enabled: true,
+			Namespace: "xmc", Name: "ingestion", Generation: p.generation, Enabled: true,
 			Spec:               &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: []string{"redpanda"}},
 			ExistingConditions: existing, Dependencies: p.deps,
 		})
@@ -1551,7 +1521,7 @@ func TestReconcileComponent_ErrorPassPreservesDependenciesReady(t *testing.T) {
 	r, _ := NewReconciler(&mockCMS{setErr: status.Error(codes.Unavailable, "cms down")}, nil, &mockHelm{})
 	prev := Condition{Type: ConditionTypeDependenciesReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonDependenciesNotReady}
 	res, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
-		Namespace: "xmc", Name: "ingestion", Generation: 1, HasFinalizer: true, Enabled: true,
+		Namespace: "xmc", Name: "ingestion", Generation: 1, Enabled: true,
 		Spec:               &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, Dependencies: []string{"redpanda"}},
 		ExistingConditions: []Condition{{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1}, prev},
 		Dependencies:       NewDependencySnapshot(nil),
@@ -1579,22 +1549,22 @@ spec:
       schema: {openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}}
 `
 
-// TestReconciler_EnvtestIntegration verifies controller reconciliation, finalizer synchronization,
+// TestReconciler_EnvtestIntegration verifies controller reconciliation, finalizer attachment,
 // Server-Side Apply condition merging (fieldManager: "xmc-bridge"), and malformed 3P status
 // contract breach handling (ReasonContractBroken) against a local Kubebuilder envtest API server.
 func TestReconciler_EnvtestIntegration(t *testing.T) {
-	dynClient := startReconcilerEnvtest(t)
+	dynClient, c := startReconcilerEnvtest(t)
 	ctx := context.Background()
 
-	t.Run("ServerSideApplyMergesExternalConditionsAndSyncsFinalizers", func(t *testing.T) {
-		verifyEnvtestSSAMergeAndFinalizers(ctx, t, dynClient)
+	t.Run("ServerSideApplyMergesExternalConditionsAndAttachesFinalizer", func(t *testing.T) {
+		verifyEnvtestSSAMergeAndFinalizers(ctx, t, dynClient, c)
 	})
 	t.Run("ContractBrokenDegradedStatusOnMalformed3PPayload", func(t *testing.T) {
-		verifyEnvtestContractBreach(ctx, t, dynClient)
+		verifyEnvtestContractBreach(ctx, t, dynClient, c)
 	})
 }
 
-func startReconcilerEnvtest(t *testing.T) dynamic.Interface {
+func startReconcilerEnvtest(t *testing.T) (dynamic.Interface, client.Client) {
 	t.Helper()
 	crdDir := t.TempDir()
 	combined := append(renderHelmManifestTemplate(t, "crd.yaml", true), []byte("\n---\n"+rayClusterTestCRD)...)
@@ -1615,10 +1585,14 @@ func startReconcilerEnvtest(t *testing.T) dynamic.Interface {
 	if err != nil {
 		t.Fatalf("failed to create dynamic client: %v", err)
 	}
-	return dynClient
+	c, err := client.New(cfg, client.Options{})
+	if err != nil {
+		t.Fatalf("failed to create controller-runtime client: %v", err)
+	}
+	return dynClient, c
 }
 
-func verifyEnvtestSSAMergeAndFinalizers(ctx context.Context, t *testing.T, dynClient dynamic.Interface) {
+func verifyEnvtestSSAMergeAndFinalizers(ctx context.Context, t *testing.T, dynClient dynamic.Interface, c client.Client) {
 	t.Helper()
 	compClient := dynClient.Resource(ComponentGVR).Namespace("default")
 	cr := &unstructured.Unstructured{Object: map[string]any{
@@ -1631,7 +1605,7 @@ func verifyEnvtestSSAMergeAndFinalizers(ctx context.Context, t *testing.T, dynCl
 		t.Fatalf("Create Component failed: %v", err)
 	}
 	applyExternalStatusCondition(ctx, t, compClient, created.GetName())
-	reconcileAndApplyBridgeStatus(ctx, t, dynClient, compClient, created.GetName())
+	reconcileAndApplyBridgeStatus(ctx, t, c, compClient, created.GetName())
 	assertMergedConditionsAndFinalizer(ctx, t, compClient, created.GetName())
 }
 
@@ -1649,11 +1623,14 @@ func applyExternalStatusCondition(ctx context.Context, t *testing.T, compClient 
 	}
 }
 
-func reconcileAndApplyBridgeStatus(ctx context.Context, t *testing.T, dynClient dynamic.Interface, compClient dynamic.ResourceInterface, name string) {
+func reconcileAndApplyBridgeStatus(ctx context.Context, t *testing.T, c client.Client, compClient dynamic.ResourceInterface, name string) {
 	t.Helper()
 	live, err := compClient.Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Get Component failed: %v", err)
+	}
+	if live, err = AddCleanupFinalizer(ctx, c, live); err != nil {
+		t.Fatalf("AddCleanupFinalizer failed: %v", err)
 	}
 	rec, err := NewReconciler(&mockCMS{}, nil, &mockHelm{})
 	if err != nil {
@@ -1663,10 +1640,7 @@ func reconcileAndApplyBridgeStatus(ctx context.Context, t *testing.T, dynClient 
 	if err != nil {
 		t.Fatalf("ReconcileWithDependencies failed: %v", err)
 	}
-	if live, err = SyncComponentFinalizers(ctx, dynClient, "default", live, res); err != nil {
-		t.Fatalf("SyncComponentFinalizers failed: %v", err)
-	}
-	if err := ApplyComponentStatusSSA(ctx, dynClient, "default", live, res); err != nil {
+	if err := ApplyComponentStatusSSA(ctx, c, live, res); err != nil {
 		t.Fatalf("ApplyComponentStatusSSA failed: %v", err)
 	}
 }
@@ -1677,8 +1651,8 @@ func assertMergedConditionsAndFinalizer(ctx context.Context, t *testing.T, compC
 	if err != nil {
 		t.Fatalf("Get updated Component failed: %v", err)
 	}
-	if !slices.Contains(updated.GetFinalizers(), FinalizerDeletionProtection) {
-		t.Errorf("expected finalizer %q on Component, got %v", FinalizerDeletionProtection, updated.GetFinalizers())
+	if !HasCleanupFinalizer(updated) {
+		t.Errorf("expected finalizer %q on Component, got %v", FinalizerCMSCleanup, updated.GetFinalizers())
 	}
 	conds, _, _ := unstructured.NestedSlice(updated.Object, "status", "conditions")
 	seen := make(map[string]string)
@@ -1697,7 +1671,7 @@ func assertMergedConditionsAndFinalizer(ctx context.Context, t *testing.T, compC
 	}
 }
 
-func verifyEnvtestContractBreach(ctx context.Context, t *testing.T, dynClient dynamic.Interface) {
+func verifyEnvtestContractBreach(ctx context.Context, t *testing.T, dynClient dynamic.Interface, c client.Client) {
 	t.Helper()
 	rayGVR := schema.GroupVersionResource{Group: "ray.io", Version: "v1", Resource: "rayclusters"}
 	createMalformedRayCluster(ctx, t, dynClient.Resource(rayGVR).Namespace("default"))
@@ -1714,7 +1688,7 @@ func verifyEnvtestContractBreach(ctx context.Context, t *testing.T, dynClient dy
 	if err != nil {
 		t.Fatalf("Create 3P wrapper Component failed: %v", err)
 	}
-	reconcileMalformedWrapper(ctx, t, dynClient, created)
+	reconcileMalformedWrapper(ctx, t, dynClient, c, created)
 	assertContractBrokenStatus(ctx, t, compClient, created.GetName())
 }
 
@@ -1731,7 +1705,7 @@ func createMalformedRayCluster(ctx context.Context, t *testing.T, rayClient dyna
 	}
 }
 
-func reconcileMalformedWrapper(ctx context.Context, t *testing.T, dynClient dynamic.Interface, live *unstructured.Unstructured) {
+func reconcileMalformedWrapper(ctx context.Context, t *testing.T, dynClient dynamic.Interface, c client.Client, live *unstructured.Unstructured) {
 	t.Helper()
 	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "ray.io", Version: "v1"}})
 	mapper.Add(schema.GroupVersionKind{Group: "ray.io", Version: "v1", Kind: "RayCluster"}, meta.RESTScopeNamespace)
@@ -1744,7 +1718,7 @@ func reconcileMalformedWrapper(ctx context.Context, t *testing.T, dynClient dyna
 	if !errors.Is(err, ErrContractBreach) {
 		t.Fatalf("expected ErrContractBreach from ReconcileWithDependencies, got %v", err)
 	}
-	if err := ApplyComponentStatusSSA(ctx, dynClient, "default", live, res); err != nil {
+	if err := ApplyComponentStatusSSA(ctx, c, live, res); err != nil {
 		t.Fatalf("ApplyComponentStatusSSA failed: %v", err)
 	}
 }

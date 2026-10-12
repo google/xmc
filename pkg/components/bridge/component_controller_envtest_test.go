@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr/testr"
+	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,6 +48,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
 )
@@ -115,6 +117,30 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
+// intentObserver is a CMSClient that calls the hook set by setOnSet, if any, before delegating
+// each SetComponentIntent.
+type intentObserver struct {
+	CMSClient
+	mu    sync.Mutex
+	onSet func(context.Context)
+}
+
+func (o *intentObserver) setOnSet(f func(context.Context)) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.onSet = f
+}
+
+func (o *intentObserver) SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error) {
+	o.mu.Lock()
+	onSet := o.onSet
+	o.mu.Unlock()
+	if onSet != nil {
+		onSet(ctx)
+	}
+	return o.CMSClient.SetComponentIntent(ctx, in, opts...)
+}
+
 // controllerEnv is a running ComponentController over one envtest namespace.
 type controllerEnv struct {
 	namespace string
@@ -122,6 +148,9 @@ type controllerEnv struct {
 	counter   *reconcileCounter
 	// reads counts the Component reads the manager sends to the API server.
 	reads *apiserverReadCounter
+	// cms is the CMS client of the controller, backed by store.
+	cms   *intentObserver
+	store store.Store
 	mgr   manager.Manager
 	// stop stops the manager and waits for it to exit. It is idempotent.
 	stop func()
@@ -138,6 +167,9 @@ func TestComponentControllerEnvtest(t *testing.T) {
 	})
 	t.Run("DeletionReleasesFinalizer", func(t *testing.T) {
 		testDeletionReleasesFinalizer(t, startControllerEnv(t, cfg, "deletion"))
+	})
+	t.Run("CreateDeleteRaceLeaksNothing", func(t *testing.T) {
+		testCreateDeleteRaceLeaksNothing(t, startControllerEnv(t, cfg, "race"))
 	})
 	t.Run("ComponentReadsAreCacheBacked", func(t *testing.T) {
 		testComponentReadsAreCacheBacked(t, startControllerEnv(t, cfg, "cache"))
@@ -177,11 +209,13 @@ func runControllerEnv(t *testing.T, cfg *rest.Config, mgrCfg ComponentManagerCon
 		t.Fatalf("manager.New() failed: %v", err)
 	}
 	writer := dynamic.NewForConfigOrDie(cfg)
-	r, err := NewReconciler(NewCMSClientAdapter(cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(cms.NewDisabledAuthorizer()))), nil, nil)
+	cmsStore := store.NewMemoryStore()
+	cmsClient := &intentObserver{CMSClient: NewCMSClientAdapter(cms.NewServer(cmsStore, cms.WithAuthorizer(cms.NewDisabledAuthorizer())))}
+	r, err := NewReconciler(cmsClient, nil, nil)
 	if err != nil {
 		t.Fatalf("NewReconciler() failed: %v", err)
 	}
-	c := NewComponentController(mgr.GetClient(), writer, r, ComponentControllerOptions{ProbeInterval: envtestProbeInterval, ReconcileTimeout: 10 * time.Second})
+	c := NewComponentController(mgr.GetClient(), r, ComponentControllerOptions{ProbeInterval: envtestProbeInterval, ReconcileTimeout: 10 * time.Second})
 	counter := &reconcileCounter{inner: c, counts: map[string]int{}}
 	if err := c.newControllerBuilder(mgr).Complete(counter); err != nil {
 		t.Fatalf("failed to set up controller: %v", err)
@@ -202,7 +236,7 @@ func runControllerEnv(t *testing.T, cfg *rest.Config, mgrCfg ComponentManagerCon
 		})
 	}
 	t.Cleanup(stop)
-	return &controllerEnv{namespace: mgrCfg.Namespace, client: writer.Resource(ComponentGVR).Namespace(mgrCfg.Namespace), counter: counter, reads: reads, mgr: mgr, stop: stop}
+	return &controllerEnv{namespace: mgrCfg.Namespace, client: writer.Resource(ComponentGVR).Namespace(mgrCfg.Namespace), counter: counter, reads: reads, cms: cmsClient, store: cmsStore, mgr: mgr, stop: stop}
 }
 
 // testComponentReadsAreCacheBacked checks that once the manager's cache has synced, neither
@@ -256,18 +290,86 @@ func testDependencyReadinessActivatesDependent(t *testing.T, env *controllerEnv)
 	}
 }
 
-// testDeletionReleasesFinalizer deletes an unprotected Component: the deletion event alone must
-// drive the bridge to release its finalizer.
+// testDeletionReleasesFinalizer deletes Components with and without deletionProtection: the
+// deletion event alone must drive the bridge to clean up CMS and release its finalizer. Admission
+// policy, absent from envtest, is the only veto on protected deletions, so a deletion that reaches
+// the bridge, such as one issued by the namespace controller, is always carried out.
 func testDeletionReleasesFinalizer(t *testing.T, env *controllerEnv) {
 	ctx := context.Background()
-	env.create(t, "env-del")
-	env.waitFor(t, "env-del", "Ready with finalizer", func(u *unstructured.Unstructured) bool {
-		return readyReason(u) == ReasonComponentHealthy && hasDeletionProtectionFinalizer(u.GetFinalizers())
-	})
-	if err := env.client.Delete(ctx, "env-del", metav1.DeleteOptions{}); err != nil {
-		t.Fatalf("failed to delete env-del: %v", err)
+	for _, tc := range []struct {
+		name      string
+		protected bool
+	}{{"env-del", false}, {"env-del-protected", true}} {
+		name := tc.name
+		env.createSpec(t, name, map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "enabled": true, "deletionProtection": tc.protected, "version": "1.0.0"})
+		env.waitFor(t, name, "Ready with finalizer", func(u *unstructured.Unstructured) bool {
+			return readyReason(u) == ReasonComponentHealthy && HasCleanupFinalizer(u)
+		})
+		if err := env.client.Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
+			t.Fatalf("failed to delete %s: %v", name, err)
+		}
+		env.waitFor(t, name, "gone", func(u *unstructured.Unstructured) bool { return u == nil })
 	}
-	env.waitFor(t, "env-del", "gone", func(u *unstructured.Unstructured) bool { return u == nil })
+	env.assertNoCMSRecords(t)
+}
+
+// testCreateDeleteRaceLeaksNothing deletes a Component from inside the first CMS intent write for
+// it, the latest point at which a deletion can race the bridge's first side effect. That write
+// must already be guarded by the stored cleanup finalizer, and the deletion must then wait for the
+// CMS cleanup: a foreign finalizer keeps the Component around after the bridge releases its own,
+// which must not happen before the CMS record is gone.
+func testCreateDeleteRaceLeaksNothing(t *testing.T, env *controllerEnv) {
+	ctx := context.Background()
+	const name, hold = "env-race", "test.xmc.dev/hold"
+	var calls, unguarded, unheld atomic.Int32
+	env.cms.setOnSet(func(ctx context.Context) {
+		if u, err := env.client.Get(ctx, name, metav1.GetOptions{}); err != nil || !HasCleanupFinalizer(u) {
+			unguarded.Add(1)
+		}
+		if calls.Add(1) != 1 {
+			return
+		}
+		if err := env.client.Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
+			t.Errorf("failed to delete %s during its first CMS intent write: %v", name, err)
+		}
+		if u, err := env.client.Get(ctx, name, metav1.GetOptions{}); err != nil || u.GetDeletionTimestamp() == nil || !HasCleanupFinalizer(u) {
+			unheld.Add(1)
+		}
+	})
+	env.createSpec(t, name, map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "enabled": true, "deletionProtection": false, "version": "1.0.0"}, hold)
+	env.waitFor(t, name, "Terminating without the cleanup finalizer", func(u *unstructured.Unstructured) bool {
+		return u != nil && u.GetDeletionTimestamp() != nil && !HasCleanupFinalizer(u)
+	})
+	env.assertNoCMSRecords(t)
+
+	if _, err := env.client.Patch(ctx, name, types.MergePatchType, []byte(`{"metadata":{"finalizers":null}}`), metav1.PatchOptions{}); err != nil {
+		t.Fatalf("failed to strip the %s finalizer: %v", hold, err)
+	}
+	env.waitFor(t, name, "gone", func(u *unstructured.Unstructured) bool { return u == nil })
+	env.counter.waitSettled(t)
+
+	if calls.Load() == 0 {
+		t.Error("no CMS intent write observed, want the deletion to race the first one")
+	}
+	if got := unguarded.Load(); got != 0 {
+		t.Errorf("CMS intent writes without the stored cleanup finalizer = %d, want 0", got)
+	}
+	if got := unheld.Load(); got != 0 {
+		t.Errorf("deletions not held by the cleanup finalizer = %d, want 0", got)
+	}
+	env.assertNoCMSRecords(t)
+}
+
+// assertNoCMSRecords checks that the CMS of env holds no live Component record.
+func (env *controllerEnv) assertNoCMSRecords(t *testing.T) {
+	t.Helper()
+	recs, err := env.store.ListComponents(context.Background())
+	if err != nil {
+		t.Fatalf("ListComponents() failed: %v", err)
+	}
+	for _, rec := range recs {
+		t.Errorf("CMS record %q (state %v) outlived its Component", rec.Name, rec.State)
+	}
 }
 
 // create creates an enabled, unprotected 1P Component name that depends on deps.
@@ -277,7 +379,13 @@ func (env *controllerEnv) create(t *testing.T, name string, deps ...string) {
 	if len(deps) > 0 {
 		spec["dependencies"] = deps
 	}
-	u := newTestComponent(name, env.namespace)
+	env.createSpec(t, name, spec)
+}
+
+// createSpec creates Component name with spec and finalizers.
+func (env *controllerEnv) createSpec(t *testing.T, name string, spec map[string]any, finalizers ...string) {
+	t.Helper()
+	u := newTestComponent(name, env.namespace, finalizers...)
 	u.Object["spec"] = spec
 	if _, err := env.client.Create(context.Background(), u, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("failed to create Component %s: %v", name, err)
