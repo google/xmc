@@ -17,7 +17,7 @@ package cloud.xmanager.v1;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
-import "third_party/xmanager_cloud/experiment_state_server/proto/structured_message.proto";
+import "xmanager_cloud/experiment_state_server/proto/structured_message.proto";
 
 option java_multiple_files = true;
 option java_outer_classname = "StatusMessageOuterClass";
