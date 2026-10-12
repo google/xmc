@@ -29,7 +29,7 @@ go_library(
     importpath = "xmanager_cloud/internal/storage/data",
     visibility = ["//:__subpackages__"],
     deps = [
-        "//api/protos/dashboard:messages_go_proto",
+        "//api/protos/dashboard",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:messages_go_proto",
         "//internal/grpcerr",
@@ -55,7 +55,7 @@ go_test(
     ],
     embed = [":data"],
     deps = [
-        "//api/protos/dashboard:messages_go_proto",
+        "//api/protos/dashboard",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:messages_go_proto",
         "//internal/grpcerr",
