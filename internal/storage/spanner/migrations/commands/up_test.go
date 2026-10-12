@@ -23,7 +23,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/stub"
 	"github.com/golang-migrate/migrate/v4/source"
 	stubs "github.com/golang-migrate/migrate/v4/source/stub"
-	dbadminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
+	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"k8s.io/utils/ptr"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 )

@@ -26,7 +26,7 @@ go_library(
         "@com_github_golang_migrate_migrate_v4//database/spanner",
         "@com_google_cloud_go_spanner//:spanner",
         "@com_google_cloud_go_spanner//admin/database/apiv1",
-        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
+        "@com_google_cloud_go_spanner//admin/database/apiv1/databasepb",
     ],
 )
 
@@ -38,9 +38,9 @@ go_test(
         "//internal/storage/spanner/emulator",
         "@com_google_cloud_go_spanner//:spanner",
         "@com_google_cloud_go_spanner//admin/database/apiv1",
+        "@com_google_cloud_go_spanner//admin/database/apiv1/databasepb",
         "@com_google_cloud_go_spanner//admin/instance/apiv1",
-        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
-        "@org_golang_google_genproto//googleapis/spanner/admin/instance/v1:instance",
+        "@com_google_cloud_go_spanner//admin/instance/apiv1/instancepb",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//reflect/protodesc:go_default_library",
         "@org_golang_google_protobuf//types/descriptorpb:go_default_library",

@@ -26,8 +26,8 @@ import (
 	"google.golang.org/protobuf/reflect/protodesc"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 
-	adminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
-	instancepb "google.golang.org/genproto/googleapis/spanner/admin/instance/v1"
+	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
+	instancepb "cloud.google.com/go/spanner/admin/instance/apiv1/instancepb"
 	descpb "google.golang.org/protobuf/types/descriptorpb"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )

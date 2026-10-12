@@ -28,7 +28,7 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 
-	adminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
+	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 )
 
 // Spanner implements the database.Driver interface for Spanner.

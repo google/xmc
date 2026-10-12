@@ -94,7 +94,8 @@ go_test(
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_cmp//cmp/cmpopts",
         "@com_google_cloud_go_spanner//:spanner",
+        "@com_google_cloud_go_spanner//admin/database/apiv1",
+        "@com_google_cloud_go_spanner//admin/database/apiv1/databasepb",
         "@org_golang_google_api//option",
-        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
     ],
 )

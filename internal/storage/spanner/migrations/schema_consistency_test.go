@@ -29,7 +29,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
 
-	databasepb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
+	databasepb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 )
 
 // TestSchemaSynchronization verifies that the schemas in the *-schema.sql files are consistent
