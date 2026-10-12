@@ -22,7 +22,7 @@ import (
 	"cloud.google.com/go/spanner"
 
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
 )
 
 func TestReadRowInTransaction(t *testing.T) {

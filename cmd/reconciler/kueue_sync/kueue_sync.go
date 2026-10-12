@@ -24,18 +24,18 @@ import (
 	"time"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
-	timestamppb "protobuf/timestamp_go_proto"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	"xmanager_cloud/cmd/reconciler/clusterqueue"
+	"xmanager_cloud/cmd/reconciler/shared"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/common/labels"
-	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
-	"xmanager_cloud/kubernetes/reconciler/shared/shared"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/internal/kubernetes/common/labels"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage"
 )
 
 // Params holds dependencies and configuration for constructing a KueueSync Reconciler.

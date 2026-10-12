@@ -20,14 +20,14 @@ import (
 	"testing"
 	"time"
 
-	"golang/grpc/credentials/insecure/insecure"
-	"golang/grpc/grpc"
-	"golang/grpc/reflection/reflection"
-	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/xid_service/config"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/reflection"
+	"xmanager_cloud/cmd/xid_service/config"
+	"xmanager_cloud/cmd/xid_service/server"
+	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/storage"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	"xmanager_cloud/xid_service/server/server"
 )
 
 type dummyAuthorizer struct {

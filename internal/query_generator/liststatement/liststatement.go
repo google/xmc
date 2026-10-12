@@ -20,12 +20,12 @@ import (
 	"fmt"
 	"strings"
 
-	fepb "api/filter/filter_expression_go_proto"
-	aipfilter "api/filter/go/filter"
+	fepb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	aipfilter "xmanager_cloud/api/filter/go/filter"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/safesql"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/query_generator/querytools"
 
 	"cloud.google.com/go/spanner"
 	"encoding/base64"

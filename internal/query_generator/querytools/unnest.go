@@ -16,13 +16,13 @@ package querytools
 import (
 	"strings"
 
-	fpb "api/filter/filter_expression_go_proto"
-	"api/filter/go/filtervisitor"
 	"cloud.google.com/go/spanner"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	"xmanager_cloud/api/filter/go/filtervisitor"
+	"xmanager_cloud/internal/query_generator/filter"
 	"xmanager_cloud/internal/safesql"
-	"xmanager_cloud/query_generator/filter/queryfilter"
 )
 
 // Unnester applies unnests to a given query, re-aggregating the unnested fields and

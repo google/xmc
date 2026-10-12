@@ -71,7 +71,7 @@ runs:
         XMC_BYPASS_VENV: '1'
         SPANNER_EMULATOR_HOST: ${{ inputs.spanner-emulator-host }}
         SPANNER_TIMEOUT_INPUT: ${{ inputs.spanner-check-timeout }}
-        REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' }}
+        REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
         TEST_TIMEOUT: ${{ inputs.test-timeout-seconds }}
       shell: bash
       # The same entrypoint as local runs resolves the rdeps scope of the event, waits for the

@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 // devOnlyJWTSecret is a well-known, non-secret value used to sign session tokens

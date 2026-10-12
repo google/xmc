@@ -23,8 +23,8 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/storage/spanner/utils/spannerutils"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/utils"
+	"xmanager_cloud/internal/validator"
 )
 
 func newTestStorageWithComponents(ctx context.Context, t *testing.T, essClient *cloudspanner.Client) *spanner.Storage {

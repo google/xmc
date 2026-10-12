@@ -26,7 +26,7 @@ import (
 	"time"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/bridge"
 
 	"google.golang.org/grpc"

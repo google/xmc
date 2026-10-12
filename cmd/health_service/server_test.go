@@ -26,13 +26,13 @@ import (
 	"testing/synctest"
 	"time"
 
-	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	spb "xmanager_cloud/health_service/proto/api_go_proto"
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/internal/storage"
 	storagetest "xmanager_cloud/internal/storage/testing"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/pkg/components/summary"
-	"xmanager_cloud/task_queue_redis/redisclient"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -881,6 +881,7 @@ func TestPauseScheduling(t *testing.T) {
 			pauseScheduler := NewPauseScheduler(PauseSchedulerParams{
 				LazyStorage:        newFakeLazyStorage(repo),
 				BroadcastPublisher: publisher,
+				TaskQueuePublisher: redisclient.NewFakeClient(),
 			})
 			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, pauseScheduler)
 			resp, err := s.PauseScheduling(context.Background(), &spb.PauseSchedulingRequest{})

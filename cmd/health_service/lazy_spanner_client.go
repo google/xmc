@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sync"
 
-	health "xmanager_cloud/common/health"
+	health "xmanager_cloud/internal/common/health"
 	spannerstorage "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/summary"

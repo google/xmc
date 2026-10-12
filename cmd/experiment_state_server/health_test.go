@@ -21,9 +21,9 @@ import (
 	"strings"
 	"testing"
 
-	commonhealth "xmanager_cloud/common/health"
-	"xmanager_cloud/storage/spanner/migrations/version"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	commonhealth "xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/storage/spanner/migrations/version"
+	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 type fakeXidClient struct {

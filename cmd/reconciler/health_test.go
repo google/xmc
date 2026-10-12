@@ -25,8 +25,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	healthzpkg "sigs.k8s.io/controller-runtime/pkg/healthz"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
-	migversion "xmanager_cloud/storage/spanner/migrations/version"
+	"xmanager_cloud/cmd/actuator/k8s_client"
+	migversion "xmanager_cloud/internal/storage/spanner/migrations/version"
 )
 
 type mockSpannerHealthClient struct {

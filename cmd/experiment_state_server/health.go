@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"golang/go_sync/errgroup/errgroup"
-	commonhealth "xmanager_cloud/common/health"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	"golang.org/x/sync/errgroup"
+	commonhealth "xmanager_cloud/internal/common/health"
+	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 // TaskQueueClient is an interface for the task queue client.

@@ -24,24 +24,24 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
-	dynamicfake "golang/k8s_io/client_go/v/v0_23/dynamic/fake/fake"
-	"golang/k8s_io/client_go/v/v0_23/rest/rest"
-	clientgotesting "golang/k8s_io/client_go/v/v0_23/testing/testing"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	timestamppb "protobuf/timestamp_go_proto"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	"k8s.io/client-go/rest"
+	clientgotesting "k8s.io/client-go/testing"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 
 	// TODO - (internal issue): Consider using a mock instead of the emulator.
+	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	spanner_lib "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
-	constants "xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/internal/validator"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	"xmanager_cloud/validator/validator"
 )
 
 const (

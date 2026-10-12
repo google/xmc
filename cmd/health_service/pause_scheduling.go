@@ -23,7 +23,7 @@ import (
 
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/task_queue_redis/redisclient"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -80,8 +80,9 @@ type PauseScheduler interface {
 	// Pause sets the scheduling state to paused and clears resumption metadata.
 	Pause(ctx context.Context) error
 
-	// Resume clears the scheduling paused state, generates a new ResumptionRunID,
-	// and clears the ResumptionWorkerID. It returns the newly generated ResumptionRunID.
+	// Resume clears the scheduling paused state, generates a new ResumptionRunID (or reuses the
+	// existing one if already unpaused), and clears the ResumptionWorkerID when newly resumed.
+	// It returns the active ResumptionRunID.
 	Resume(ctx context.Context) (string, error)
 
 	// IsPaused returns whether scheduling is currently paused.
@@ -143,6 +144,19 @@ func (p *pauseScheduler) storage(ctx context.Context) (PauseSchedulingStorage, e
 	return st, nil
 }
 
+// checkRedisAvailable pings Redis before any Spanner write, so a known Redis outage fails fast
+// instead of committing state whose notifications cannot be published. Both publishers use the
+// same Redis server, so pinging the task queue publisher (if configured) also covers the broadcast stream.
+func (p *pauseScheduler) checkRedisAvailable(ctx context.Context) error {
+	if p.taskQueuePublisher == nil {
+		return nil
+	}
+	if err := p.taskQueuePublisher.Ping(ctx); err != nil {
+		return fmt.Errorf("redis is unavailable: %w", err)
+	}
+	return nil
+}
+
 // Pause updates the global scheduling state to paused and broadcasts the pause event.
 func (p *pauseScheduler) Pause(ctx context.Context) (err error) {
 	defer func() {
@@ -151,6 +165,9 @@ func (p *pauseScheduler) Pause(ctx context.Context) (err error) {
 
 	if p.broadcastPublisher == nil {
 		return errBroadcastPublisherNotConfigured
+	}
+	if err := p.checkRedisAvailable(ctx); err != nil {
+		return err
 	}
 	st, err := p.storage(ctx)
 	if err != nil {
@@ -174,8 +191,9 @@ func (p *pauseScheduler) Pause(ctx context.Context) (err error) {
 	return p.broadcastPauseEvent(ctx)
 }
 
-// Resume updates the global scheduling state to unpaused with a newly generated run ID,
-// broadcasts the resume event, and publishes the task queue resume trigger.
+// Resume updates the global scheduling state to unpaused with a new run ID (or reuses the existing
+// run ID if already unpaused), broadcasts the resume event, and publishes the task queue trigger
+// whenever the run has not yet been claimed by a worker.
 func (p *pauseScheduler) Resume(ctx context.Context) (_ string, err error) {
 	defer func() {
 		recordPauseSchedulingEvent("resume", err)
@@ -187,16 +205,19 @@ func (p *pauseScheduler) Resume(ctx context.Context) (_ string, err error) {
 	if p.taskQueuePublisher == nil {
 		return "", errTaskQueuePublisherNotConfigured
 	}
+	if err := p.checkRedisAvailable(ctx); err != nil {
+		return "", err
+	}
 	st, err := p.storage(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	resumptionRunID, newlyResumed, err := persistResumeState(ctx, st)
+	resumptionRunID, dispatch, err := persistResumeState(ctx, st)
 	if err != nil {
 		return "", err
 	}
-	if !newlyResumed {
+	if !dispatch {
 		return resumptionRunID, nil
 	}
 
@@ -210,12 +231,17 @@ func (p *pauseScheduler) Resume(ctx context.Context) (_ string, err error) {
 	return resumptionRunID, nil
 }
 
+// persistResumeState unpauses scheduling with a new run ID, or keeps the current run ID when
+// scheduling is already unpaused. It reports whether the resume notifications must be dispatched:
+// always for a new run, and also for an existing run that no worker has claimed yet, because an
+// earlier Resume may have committed state but failed to publish. Dispatching again is safe since
+// the resumption worker fences duplicate triggers by run ID and worker ID.
 func persistResumeState(ctx context.Context, st PauseSchedulingStorage) (string, bool, error) {
 	var resumptionRunID string
-	var newlyResumed bool
+	var dispatch bool
 	err := st.RunInTransaction(ctx, func(txCtx context.Context, tx *storage.Transaction) error {
 		resumptionRunID = ""
-		newlyResumed = false
+		dispatch = false
 
 		current, err := tx.PauseState.Get(txCtx)
 		if err != nil {
@@ -223,11 +249,12 @@ func persistResumeState(ctx context.Context, st PauseSchedulingStorage) (string,
 		}
 		if current != nil && !current.SchedulingPaused {
 			resumptionRunID = current.ResumptionRunID
+			dispatch = current.ResumptionRunID != "" && current.ResumptionWorkerID == ""
 			return nil
 		}
 
 		resumptionRunID = uuid.NewString()
-		newlyResumed = true
+		dispatch = true
 		state := &storage.PauseSchedulingState{
 			SchedulingPaused:   false,
 			ResumptionRunID:    resumptionRunID,
@@ -241,7 +268,7 @@ func persistResumeState(ctx context.Context, st PauseSchedulingStorage) (string,
 	if err != nil {
 		return "", false, err
 	}
-	return resumptionRunID, newlyResumed, nil
+	return resumptionRunID, dispatch, nil
 }
 
 func (p *pauseScheduler) broadcastPauseEvent(ctx context.Context) error {

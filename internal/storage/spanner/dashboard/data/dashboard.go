@@ -27,8 +27,8 @@ import (
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/internal/validator"
 )
 
 // SortChartIDs returns a new cloned and sorted slice of chart IDs, removing duplicates.

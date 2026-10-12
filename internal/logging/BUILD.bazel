@@ -22,7 +22,6 @@ go_library(
         "resources.go",
     ],
     importpath = "xmanager_cloud/internal/logging",
-    importpath_aliases = ["xmanager_cloud/logging/logging"],  # keep
     visibility = ["//visibility:public"],
     deps = [
         # keep

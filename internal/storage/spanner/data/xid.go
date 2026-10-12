@@ -20,10 +20,10 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"cloud.google.com/go/spanner"
-	timestamppb "protobuf/timestamp_go_proto"
-	"xmanager_cloud/storage/data/data"
-	"xmanager_cloud/storage/spanner/schema/xidschema"
-	"xmanager_cloud/validator/validator"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	"xmanager_cloud/internal/storage/data"
+	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
+	"xmanager_cloud/internal/validator"
 	pb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

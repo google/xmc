@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 var randReader io.Reader = rand.Reader

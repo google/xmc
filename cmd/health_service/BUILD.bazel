@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("//:oci.bzl", "oci_image_for_service")
 
-compat_go_library(
+go_library(
     name = "health_service_lib",
     srcs = [
         "admin_role_guard.go",
@@ -85,7 +84,7 @@ oci_image_for_service(
     binary = ":health_service",
 )
 
-compat_go_test(
+go_test(
     name = "server_test",
     srcs = [
         "admin_role_guard_test.go",

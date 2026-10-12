@@ -23,12 +23,12 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	"xmanager_cloud/auth/auth"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/validator"
 )
 
 func TestListExperiments_HappyPath(t *testing.T) {

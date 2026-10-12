@@ -23,14 +23,14 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"golang/prometheus/client/prometheus/prometheus"
-	"golang/prometheus/client/prometheus/testutil/testutil"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	metricspb "github.com/prometheus/client_model/go"
 	"google.golang.org/protobuf/testing/protocmp"
-	metricspb "prometheus_model/metrics_go_proto"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
-	storagepkg "xmanager_cloud/storage/storage"
+	storagepkg "xmanager_cloud/internal/storage"
 )
 
 // mockStorageUpdater is a mock implementation of the StorageUpdater interface.
