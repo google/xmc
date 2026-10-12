@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Any, TypeAlias
 
@@ -45,6 +46,15 @@ Session: TypeAlias = ui_entities_validator.XMCUIBrowserSession
 UIError: TypeAlias = ui_entities_validator.UIVerificationError
 
 
+def _resolve_cluster_queue(expected_queue: str | None) -> str:
+    """Resolves a submit queue or cluster queue name to its rendered cluster queue title."""
+    if not expected_queue:
+        return EXPECTED_CLUSTER_QUEUES[0]
+    if expected_queue.endswith("-cluster-queue"):
+        return expected_queue
+    return expected_queue.replace("-queue", "-cluster-queue")
+
+
 def _wait_for_queue_cards_with_retry(session: Session, timeout_ms: int) -> None:
     """Waits for queue cards to render, reloading once if initial load hit a cold-start 500."""
     try:
@@ -62,7 +72,7 @@ def _extract_and_verify_queue_titles(session: Session, expected_queue: str | Non
     titles = [t.strip() for t in raw_titles if t and t.strip()]
     if missing := [q for q in EXPECTED_CLUSTER_QUEUES if q not in titles]:
         raise UIError(f"Missing expected queues {missing} in rendered queues: {titles}")
-    cq = expected_queue.replace("-queue", "-cluster-queue") if expected_queue else ""
+    cq = _resolve_cluster_queue(expected_queue)
     if expected_queue and not ({expected_queue, cq} & set(titles)):
         raise UIError(f"Missing '{expected_queue}' in {titles}")
     return titles
@@ -112,13 +122,14 @@ def _assert_initial_predictability_empty_state(session: Session, timeout_ms: int
 
 
 def _select_primary_resource_and_amount(session: Session, timeout_ms: int) -> str:
-    """Selects a resource type in Smart Resource Finder and sets the valid amount."""
+    """Selects CPU in Smart Resource Finder and sets the valid amount."""
     session.page.locator(sel.RESOURCE_SELECT_SEL).first.click()
     session.page.wait_for_selector(sel.RESOURCE_OPTION_SEL, timeout=timeout_ms)
     options = session.page.locator(sel.RESOURCE_OPTION_SEL)
     if options.count() < 2:
         raise UIError("Missing selectable resource mat-option.")
-    target_option = options.nth(1)
+    cpu_opt = options.filter(has_text="CPU").first
+    target_option = cpu_opt if cpu_opt.count() > 0 else options.nth(1)
     resource_name = (target_option.text_content() or "").strip()
     target_option.click()
     session.page.locator(sel.RESOURCE_AMOUNT_INPUT_SEL).first.fill(VALID_RESOURCE_AMOUNT)
@@ -135,6 +146,32 @@ def _verify_velocity_timeframe_pills(session: Session, timeout_ms: int) -> None:
         session.page.wait_for_selector(sel.ACTIVE_PILL_SEL_TMPL.format(tf=tf), timeout=timeout_ms)
 
 
+def _parse_velocity_rate(metric_text: str) -> float:
+    """Extracts the numeric velocity rate from a display string such as '0.13 jobs/hr'."""
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)", metric_text)
+    return float(match.group(1)) if match else 0.0
+
+
+def _verify_expected_queue_positive_7d_velocity(
+    session: Session, expected_queue: str | None, timeout_ms: int
+) -> None:
+    """Verifies that the expected queue card displays positive velocity under the 7d period."""
+    target_cq = _resolve_cluster_queue(expected_queue)
+    card = session.page.locator(sel.QUEUE_CARD_SEL).filter(has_text=target_cq).first
+    card.locator(sel.PREDICTABILITY_STATS_GRID_SEL).first.wait_for(
+        state="visible", timeout=timeout_ms
+    )
+    vals = [t.strip() for t in card.locator(sel.PREDICTABILITY_METRIC_VAL_SEL).all_inner_texts()]
+    job_vel, res_vel = (
+        (_parse_velocity_rate(vals[0]), _parse_velocity_rate(vals[1]))
+        if len(vals) >= 2
+        else (0.0, 0.0)
+    )
+    if job_vel <= 0 and res_vel <= 0:
+        raise UIError(f"Expected positive 7d velocity on '{target_cq}', got metrics: {vals}")
+    print(f"  [✓] Verified positive 7d velocity on '{target_cq}': {vals[:2]}")
+
+
 def _verify_unschedulable_quota_empty_state(session: Session, timeout_ms: int) -> None:
     """Filters with an unschedulable amount to verify the empty queue state, then resets."""
     amount_input = session.page.locator(sel.RESOURCE_AMOUNT_INPUT_SEL).first
@@ -146,12 +183,15 @@ def _verify_unschedulable_quota_empty_state(session: Session, timeout_ms: int) -
     session.page.wait_for_selector(sel.QUEUE_CARD_SEL, timeout=timeout_ms)
 
 
-def assert_smart_resource_finder_and_predictability(session: Session) -> str:
+def assert_smart_resource_finder_and_predictability(
+    session: Session, expected_queue: str | None = None
+) -> str:
     """Exercises Smart Resource Finder controls, predictability metrics, and timeframe toggles."""
     print("\n[ROD UI] Exercising Smart Resource Finder & Predictability column...")
     _assert_initial_predictability_empty_state(session, 15000)
     resource_name = _select_primary_resource_and_amount(session, 15000)
     _verify_velocity_timeframe_pills(session, 15000)
+    _verify_expected_queue_positive_7d_velocity(session, expected_queue, 15000)
     _verify_unschedulable_quota_empty_state(session, 15000)
     print(f"  [✓] Verified Smart Resource Finder & Predictability for resource '{resource_name}'")
     return resource_name
@@ -175,7 +215,9 @@ def verify_resource_dashboard_ui(session: Session, expected_q: str | None = None
     queues = assert_queue_cards(session, expected_queue=expected_q)
     selected_q = assert_queue_selection_and_jobs_pane(session, queues)
     session.take_screenshot("ui_rod_step2_queue_selection.png")
-    selected_res = assert_smart_resource_finder_and_predictability(session)
+    selected_res = assert_smart_resource_finder_and_predictability(
+        session, expected_queue=expected_q
+    )
     session.take_screenshot("ui_rod_step3_smart_resource_finder.png")
     assert_subnav_tabs_switching(session)
     session.assert_no_runtime_errors("resource_dashboard")
