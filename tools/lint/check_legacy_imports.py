@@ -63,11 +63,9 @@ LEGACY_GO_ROOTS = frozenset(
 # Exact google3 import paths whose root collides with Go stdlib (`go/...`).
 LEGACY_GO_EXACT = frozenset({"go/flag", "go/google"})
 
-# Files that legitimately contain the patterns this tool searches for
-# (or OSS-native Bazel rules that are not google3 migration leftovers).
+# Files that legitimately contain the patterns this tool searches for.
 SELF_EXCLUDED = frozenset(
     {
-        "test/e2e/manifests/crd_manifests.bzl",
         "tools/lint/check_legacy_imports.py",
         "tools/lint/check_legacy_imports_test.py",
         "tools/lint/legacy_imports_baseline.json",
@@ -96,11 +94,6 @@ LINE_METRICS = (
         name="gazelle_resolve_directives",
         path_regex=r"(^|/)(BUILD|BUILD\.bazel)$",
         line_regex=r"^#\s*gazelle:resolve\s",
-    ),
-    LineMetric(
-        name="custom_repo_rules",
-        path_regex=r"(^|/)(MODULE\.bazel|WORKSPACE|[^/]+\.bzl)$",
-        line_regex=r"repository_rule\(|use_extension\(\"//",
     ),
     LineMetric(
         name="proto_third_party_paths",
