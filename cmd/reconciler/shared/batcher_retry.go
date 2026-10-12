@@ -85,88 +85,113 @@ func (b *UpdateBatcher) currentTime() time.Time {
 	return b.now()
 }
 
-// takeBatches atomically drains pending updates, merges in queued retries, and
-// returns the result grouped by experiment.
-func (b *UpdateBatcher) takeBatches() map[int64][]batchEntry {
-	now := b.currentTime()
+// takeSnapshots atomically swaps out pending updates in O(1) when no retries
+// are queued, and otherwise resolves retry collisions and drains due or
+// piggybacking retries in O(|retries|) under UpdatesMu. Slice construction and
+// sorting happen outside UpdatesMu inside each experiment's flush goroutine.
+func (b *UpdateBatcher) takeSnapshots() (map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, map[int64][]batchEntry) {
 	b.UpdatesMu.Lock()
 	defer b.UpdatesMu.Unlock()
-	entries := toBatchEntries(b.Updates)
-	b.Updates = make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
-	b.mergeRetriesLocked(entries, now)
+	if len(b.Updates) == 0 && len(b.retries) == 0 {
+		return nil, nil
+	}
+	var pending map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate
+	if len(b.Updates) > 0 {
+		pending = b.Updates
+		b.Updates = make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
+	}
+	if len(b.retries) == 0 {
+		return pending, nil
+	}
+	retries := b.drainRetriesLocked(&pending, b.currentTime())
 	retryQueueSize.WithLabelValues().Set(float64(len(b.retries)))
-	return groupByExperiment(entries)
+	return pending, retries
 }
 
-func toBatchEntries(pending map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate) map[slotKey]batchEntry {
-	entries := make(map[slotKey]batchEntry)
-	for xid, widMap := range pending {
-		for wid, sourceMap := range widMap {
-			for source, update := range sourceMap {
-				entries[slotKey{xid: xid, wid: wid, source: source}] = batchEntry{update: update, source: source}
-			}
-		}
-	}
-	return entries
-}
-
-// mergeRetriesLocked moves retries into entries. Due retries are always moved.
-// Retries that are not yet due piggyback on an experiment that is already
-// being flushed this tick, so backoff only bounds retry-only load. Callers must
-// hold UpdatesMu. Only the single flusher goroutine calls this (processBatches
-// never runs concurrently with itself), so entries is not shared.
-func (b *UpdateBatcher) mergeRetriesLocked(entries map[slotKey]batchEntry, now time.Time) {
-	b.discardStaleLocked(entries)
-	flushing := make(map[int64]bool)
-	for key := range entries {
-		flushing[key.xid] = true
-	}
+// drainRetriesLocked resolves EID collisions between queued retries and pending
+// updates, then drains due retries and any retries piggybacking on an
+// experiment already flushing this tick. Callers must hold UpdatesMu.
+func (b *UpdateBatcher) drainRetriesLocked(pending *map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, now time.Time) map[int64][]batchEntry {
+	b.discardStaleLocked(*pending)
 	for key, retry := range b.retries {
-		if !now.Before(retry.notBefore) {
-			flushing[key.xid] = true
-		}
-	}
-	for key, retry := range b.retries {
-		if !flushing[key.xid] {
+		if now.Before(retry.notBefore) {
 			continue
 		}
-		delete(b.retries, key)
-		entries[key] = retry.entry
-		updatesRetriedTotal.WithLabelValues(fmt.Sprintf("%d", key.xid)).Inc()
+		if *pending == nil {
+			*pending = make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
+		}
+		if _, ok := (*pending)[key.xid]; !ok {
+			(*pending)[key.xid] = nil
+		}
 	}
+	if len(*pending) == 0 {
+		return nil
+	}
+	var drained map[int64][]batchEntry
+	for key, retry := range b.retries {
+		if _, flushing := (*pending)[key.xid]; !flushing {
+			continue
+		}
+		if drained == nil {
+			drained = make(map[int64][]batchEntry)
+		}
+		delete(b.retries, key)
+		drained[key.xid] = append(drained[key.xid], retry.entry)
+	}
+	return drained
 }
 
 // discardStaleLocked applies the EID rule between a retry and a pending update
 // for the same slot, mirroring Add: a pending update with an equal or higher
 // EID discards the retry; a lower-EID pending update is discarded in favor of
 // the retry, whether or not the retry is due. Callers must hold UpdatesMu.
-func (b *UpdateBatcher) discardStaleLocked(entries map[slotKey]batchEntry) {
+func (b *UpdateBatcher) discardStaleLocked(pending map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate) {
 	for key, retry := range b.retries {
-		pending, ok := entries[key]
+		widMap, ok := pending[key.xid]
 		if !ok {
 			continue
 		}
-		if pending.update.EID >= retry.entry.update.EID {
+		sourceMap, ok := widMap[key.wid]
+		if !ok {
+			continue
+		}
+		u, ok := sourceMap[key.source]
+		if !ok {
+			continue
+		}
+		if u.EID >= retry.entry.update.EID {
 			delete(b.retries, key)
 			continue
 		}
-		delete(entries, key)
+		delete(sourceMap, key.source)
+		if len(sourceMap) == 0 {
+			delete(widMap, key.wid)
+		}
+		if len(widMap) == 0 {
+			delete(pending, key.xid)
+		}
 	}
 }
 
-// groupByExperiment groups entries by xid, ordered by (wid, source) so each
-// work unit's updates are sent in a deterministic source order.
-func groupByExperiment(entries map[slotKey]batchEntry) map[int64][]batchEntry {
-	batches := make(map[int64][]batchEntry)
-	for key, entry := range entries {
-		batches[key.xid] = append(batches[key.xid], entry)
+// buildExperimentBatch combines an experiment's pending updates and drained
+// retries into a single slice ordered by (wid, source). Executed inside the
+// per-experiment goroutine outside UpdatesMu.
+func buildExperimentBatch(widMap map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, retries []batchEntry) []batchEntry {
+	count := len(retries)
+	for _, sourceMap := range widMap {
+		count += len(sourceMap)
 	}
-	for _, batch := range batches {
-		slices.SortFunc(batch, func(x, y batchEntry) int {
-			return cmp.Or(cmp.Compare(x.update.WID, y.update.WID), cmp.Compare(x.source, y.source))
-		})
+	batch := make([]batchEntry, 0, count)
+	batch = append(batch, retries...)
+	for _, sourceMap := range widMap {
+		for source, update := range sourceMap {
+			batch = append(batch, batchEntry{update: update, source: source})
+		}
 	}
-	return batches
+	slices.SortFunc(batch, func(x, y batchEntry) int {
+		return cmp.Or(cmp.Compare(x.update.WID, y.update.WID), cmp.Compare(x.source, y.source))
+	})
+	return batch
 }
 
 func updatePointers(batch []batchEntry) []*storagepkg.WorkUnitExecutionUpdate {

@@ -248,18 +248,19 @@ func (b *UpdateBatcher) processBatches(ctx context.Context) bool {
 		duration := time.Since(startTime)
 		batchProcessingDuration.WithLabelValues().Observe(duration.Seconds())
 	}()
-	batches := b.takeBatches()
-	if len(batches) == 0 {
+	pending, retries := b.takeSnapshots()
+	if len(pending) == 0 {
 		return false
 	}
 
-	logging.Info(ctx, "Processing batches", "numExperiments", len(batches))
+	logging.Info(ctx, "Processing batches", "numExperiments", len(pending))
 	batchesProcessedTotal.WithLabelValues().Inc()
-	experimentsPerCycle.WithLabelValues().Observe(float64(len(batches)))
+	experimentsPerCycle.WithLabelValues().Observe(float64(len(pending)))
 
 	sem := make(chan struct{}, b.maxParallelExperiments)
 	var wg sync.WaitGroup
-	for xid, batch := range batches {
+	for xid, widMap := range pending {
+		xidRetries := retries[xid]
 		wg.Add(1)
 		sem <- struct{}{} // Acquire semaphore slot
 		go func() {
@@ -267,19 +268,23 @@ func (b *UpdateBatcher) processBatches(ctx context.Context) bool {
 				<-sem // Release semaphore slot
 				wg.Done()
 			}()
-			b.processExperimentUpdates(ctx, xid, batch)
+			b.processExperimentUpdates(ctx, xid, widMap, xidRetries)
 		}()
 	}
 	wg.Wait()
 	return true
 }
 
-func (b *UpdateBatcher) processExperimentUpdates(ctx context.Context, xid int64, batch []batchEntry) {
+func (b *UpdateBatcher) processExperimentUpdates(ctx context.Context, xid int64, widMap map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, retries []batchEntry) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
+	xidStr := fmt.Sprintf("%d", xid)
+	if len(retries) > 0 {
+		updatesRetriedTotal.WithLabelValues(xidStr).Add(float64(len(retries)))
+	}
+	batch := buildExperimentBatch(widMap, retries)
 	if len(batch) == 0 {
 		return
 	}
-	xidStr := fmt.Sprintf("%d", xid)
 	updatesProcessedTotal.WithLabelValues(xidStr).Add(float64(len(batch)))
 	workunitsPerExperiment.WithLabelValues(xidStr).Observe(float64(countWorkUnits(batch)))
 

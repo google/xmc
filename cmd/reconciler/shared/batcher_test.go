@@ -362,7 +362,7 @@ func TestProcessBatches_Metrics(t *testing.T) {
 		batcher := NewUpdateBatcher(t.Context(), &BatcherConfig{TickDuration: 1 * time.Millisecond}, mockStorage)
 
 		// Call processExperimentUpdates with an empty batch
-		batcher.processExperimentUpdates(ctx, 999, nil)
+		batcher.processExperimentUpdates(ctx, 999, nil, nil)
 
 		xidStr := "999"
 		if got := testutil.ToFloat64(updatesProcessedTotal.WithLabelValues(xidStr)); got != 0 {
