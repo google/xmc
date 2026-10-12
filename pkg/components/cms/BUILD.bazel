@@ -45,6 +45,7 @@ go_test(
     embed = [":cms"],
     deps = [
         "//api/protos/components/v1alpha1",
+        "//internal/prototest",
         "//pkg/components/store",
         "@com_github_google_go_cmp//cmp",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",

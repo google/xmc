@@ -99,24 +99,40 @@ func TestPlanIntent(t *testing.T) {
 	spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"}
 	changedSpec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.1.0"}
 	rec := &ComponentRecord{Generation: 5, Spec: spec}
+	owned := &ComponentRecord{Generation: 5, Spec: spec, Owner: ownerOf(baseRequestSource)}
+	older := modifiedSource(func(s *RequestSource) { s.Generation = 2 })
+	anotherObject := modifiedSource(func(s *RequestSource) { s.UID, s.Generation = "uid-b", 1 })
 	tests := []struct {
 		name       string
+		rec        *ComponentRecord
 		spec       *componentspb.ComponentSpec
 		labels     map[string]string
 		deps       []string
 		desiredGen int64
+		src        *RequestSource
 		want       intentPlan
+		wantReason string
 	}{
-		{name: "unchanged intent writes nothing", spec: spec, desiredGen: 5, want: intentPlan{write: writeNothing, generation: 5}},
-		{name: "older desired generation with an equal spec writes nothing", spec: spec, desiredGen: 3, want: intentPlan{write: writeNothing, generation: 5}},
-		{name: "newer desired generation jumps to it", spec: spec, desiredGen: 9, want: intentPlan{write: writeSpec, generation: 9}},
-		{name: "changed spec at an older desired generation bumps by one", spec: changedSpec, desiredGen: 3, want: intentPlan{write: writeSpec, generation: 6}},
-		{name: "labels-only change writes the spec", spec: spec, labels: map[string]string{"tier": "backend"}, desiredGen: 5, want: intentPlan{write: writeSpec, generation: 6}},
-		{name: "dependencies-only change writes the spec", spec: spec, deps: []string{"redpanda"}, desiredGen: 5, want: intentPlan{write: writeSpec, generation: 6}},
+		{name: "unchanged intent writes nothing", rec: rec, spec: spec, desiredGen: 5, want: intentPlan{write: writeNothing, generation: 5}},
+		{name: "older desired generation with an equal spec writes nothing", rec: rec, spec: spec, desiredGen: 3, want: intentPlan{write: writeNothing, generation: 5}},
+		{name: "newer desired generation jumps to it", rec: rec, spec: spec, desiredGen: 9, want: intentPlan{write: writeSpec, generation: 9}},
+		{name: "changed spec at an older desired generation bumps by one", rec: rec, spec: changedSpec, desiredGen: 3, want: intentPlan{write: writeSpec, generation: 6}},
+		{name: "labels-only change writes the spec", rec: rec, spec: spec, labels: map[string]string{"tier": "backend"}, desiredGen: 5, want: intentPlan{write: writeSpec, generation: 6}},
+		{name: "dependencies-only change writes the spec", rec: rec, spec: spec, deps: []string{"redpanda"}, desiredGen: 5, want: intentPlan{write: writeSpec, generation: 6}},
+		{name: "sourced intent ignores a newer spec generation", rec: owned, spec: changedSpec, desiredGen: 9, src: &baseRequestSource, want: intentPlan{write: writeSpec, generation: 6}},
+		{name: "sourced intent adopts a record without an owner without a bump", rec: rec, spec: spec, src: &baseRequestSource, want: intentPlan{write: writeOwnerOnly, generation: 5}},
+		{name: "sourced replay writes nothing", rec: owned, spec: spec, src: &baseRequestSource, want: intentPlan{write: writeNothing, generation: 5}},
+		{name: "older unchanged replay writes nothing", rec: owned, spec: spec, src: &older, want: intentPlan{write: writeNothing, generation: 5}},
+		{name: "older changed intent is stale", rec: owned, spec: changedSpec, src: &older, wantReason: ReasonStaleGeneration},
+		{name: "another object at an older generation adopts the record", rec: owned, spec: spec, src: &anotherObject, want: intentPlan{write: writeOwnerOnly, generation: 5}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := planIntent(rec, tt.spec, tt.labels, tt.deps, tt.desiredGen); got != tt.want {
+			got, err := planIntent("redpanda", tt.rec, tt.spec, tt.labels, tt.deps, tt.desiredGen, tt.src)
+			if reason := reasonOf(err); reason != tt.wantReason || (err == nil) != (tt.wantReason == "") {
+				t.Fatalf("planIntent() error = %v, want reason %q", err, tt.wantReason)
+			}
+			if got != tt.want {
 				t.Errorf("planIntent() = %+v, want %+v", got, tt.want)
 			}
 		})
@@ -144,7 +160,10 @@ func TestPlanLiveIntent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec, plan := planLiveIntent(tt.catalog, "redpanda", spec, nil, nil, tt.desiredGen)
+			rec, plan, err := planLiveIntent(tt.catalog, "redpanda", spec, nil, nil, tt.desiredGen, nil)
+			if err != nil {
+				t.Fatalf("planLiveIntent() error = %v", err)
+			}
 			if rec != tt.wantRec {
 				t.Errorf("planLiveIntent() record = %p, want %p", rec, tt.wantRec)
 			}
@@ -159,16 +178,18 @@ func TestNewIntentGeneration(t *testing.T) {
 	tests := []struct {
 		name       string
 		desiredGen int64
+		src        *RequestSource
 		want       int64
 	}{
 		{name: "zero desired generation", desiredGen: 0, want: 1},
 		{name: "generation one", desiredGen: 1, want: 1},
 		{name: "generation seven", desiredGen: 7, want: 7},
+		{name: "sourced intent starts at one", desiredGen: 7, src: &baseRequestSource, want: 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := newIntentGeneration(tt.desiredGen); got != tt.want {
-				t.Errorf("newIntentGeneration(%d) = %d, want %d", tt.desiredGen, got, tt.want)
+			if got := newIntentGeneration(tt.desiredGen, tt.src); got != tt.want {
+				t.Errorf("newIntentGeneration(%d, %v) = %d, want %d", tt.desiredGen, tt.src, got, tt.want)
 			}
 		})
 	}

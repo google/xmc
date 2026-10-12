@@ -58,6 +58,17 @@ All sources are merged into a single canonical, deduplicated, sorted set that is
 
 **Error contract**: machine-readable store rejections carry a `google.rpc.ErrorInfo` with domain `components.xmc.dev` (`store.ErrorInfoDomain`, built by `errorWithInfo` in `pkg/components/store/error_info.go`); callers branch on its `reason`, never on the message. They all use code `FailedPrecondition`, never `Aborted`, which the Spanner client retries when a read-write transaction body returns it. Every reason carries `operation`, the RPC name, in its metadata: `DEPENDENCY_NOT_REGISTERED` and `DEPENDENCY_CYCLE` (`SetComponentIntent`), and `ACTIVE_DEPENDENTS_EXIST` (`PrepareDeactivation`, non-cascading `ExecuteDeletion`). The bridge still matches the legacy `DependencyNotFoundMessagePrefix` and the cycle message until it switches to the reasons.
 
+**Sourced intents & owner**: a `SetComponentIntentRequest` with `source` (a `RequestSource`: the CR `uid`, `generation` and `namespace`, and the `cluster` `uid` and `epoch`) is applied by `SetSourcedComponentIntent`, which orders intents by the source instead of by `spec.generation`, so the CMS generation is independent of the CR generation. Every write records the source as the owner of the record in the `SourceUid`, `SourceGeneration`, `SourceNamespace`, `SourceClusterUid` and `SourceEpoch` columns, with `SourceLastSeenTime` at the commit time. Both stores share one planner (`planIntent` in `pkg/components/store/intent_change.go`; the owner model is in `source_ownership.go`). No wall clock is compared:
+
+| Source of the intent vs recorded owner | Changed intent | Unchanged intent |
+| :--- | :--- | :--- |
+| No active record (none, or soft-deleted) | Created at generation 1 | Created at generation 1 |
+| Owner object (same uid), generation not older | Applied, generation + 1 | Records a newer CR generation or cluster epoch, else no-op |
+| Owner object, older generation | Rejected (`STALE_GENERATION`, metadata `operation`, `owner_namespace`, `owner_uid`, `owner_cluster_uid`, `owner_generation`) | No-op |
+| No recorded owner, or another object | Adopted, generation + 1 | Adopted: records the owner only |
+
+The intent is classified against the live record (`planLiveIntent`) before its dependencies are validated, in the same lock or transaction, so a rejected source gets its own reason even when it also names an unregistered dependency or would close a cycle; accepted intents, including unchanged ones, keep the dependency checks above. Recording only the owner writes no snapshot, generation, state or `UpdateTime`, so a recreated CR that re-applies the same spec keeps the `ComponentId` and generation. `SourceLastSeenTime` moves only on owner writes (a create, a change, or a newly recorded source), never on a replay that writes nothing. The Spanner read-only fast path still answers such replays. Unsourced intents keep the generation-ordered behavior above and leave the recorded owner unchanged. `validate_only` checks the spec and the source fields, not ownership. Rejecting other objects (namespace conflicts and incarnation compare-and-swap) is a separate rule set on top of this owner record.
+
 Key functions:
 - `ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string`: Extracts unique canonical dependency names from all sources above.
 - `NormalizeDependencies(deps []string) []string`: Strips `components/` prefixes, deduplicates, and sorts lexicographically.

@@ -54,8 +54,21 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-// SetComponentIntent applies or updates component intent, ordered by desiredGen, within the in-memory store.
+// SetComponentIntent applies or updates component intent within the in-memory store.
 func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error) {
+	return m.setIntent(name, spec, labels, desiredGen, nil)
+}
+
+// SetSourcedComponentIntent applies an intent sent by src within the in-memory store.
+func (m *MemoryStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src RequestSource) (*ComponentRecord, error) {
+	if err := ValidateRequestSource(src); err != nil {
+		return nil, err
+	}
+	return m.setIntent(name, spec, labels, 0, &src)
+}
+
+// setIntent applies an intent ordered by desiredGen when src is nil and by src otherwise.
+func (m *MemoryStore) setIntent(name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64, src *RequestSource) (*ComponentRecord, error) {
 	canonicalName, err := validateIntentArgs(name, spec)
 	if err != nil {
 		return nil, err
@@ -67,17 +80,23 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	rec, plan := planLiveIntent(m.componentsByName, canonicalName, spec, labels, deps, desiredGen)
+	rec, plan, err := planLiveIntent(m.componentsByName, canonicalName, spec, labels, deps, desiredGen, src)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := validateIntentDependencies(m.componentsByName, canonicalName, deps); err != nil {
 		return nil, err
 	}
 	if rec != nil {
-		m.applyIntentPlanLocked(rec, plan, spec, labels, deps, now)
+		m.applyIntentPlanLocked(rec, plan, spec, labels, deps, src, now)
 		return cloneRecord(rec), nil
 	}
 
 	m.nextID++
 	rec = createNewIntentRecord(m.nextID, canonicalName, spec, labels, deps, plan.generation, now)
+	if src != nil {
+		rec.Owner = ownerOf(*src)
+	}
 	m.componentsByName[canonicalName] = rec
 	m.componentsByID[rec.ComponentID] = rec
 	m.recordSnapshotLocked(rec)
@@ -85,13 +104,18 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 	return cloneRecord(rec), nil
 }
 
-// applyIntentPlanLocked applies plan to the existing record rec.
-func (m *MemoryStore) applyIntentPlanLocked(rec *ComponentRecord, plan intentPlan, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, now time.Time) {
-	if plan.write != writeSpec {
+// applyIntentPlanLocked applies plan to the existing record rec. A nil src keeps rec.Owner.
+func (m *MemoryStore) applyIntentPlanLocked(rec *ComponentRecord, plan intentPlan, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, src *RequestSource, now time.Time) {
+	if plan.write == writeNothing {
 		return
 	}
-	updateExistingIntent(rec, spec, labels, deps, plan.generation, now)
-	m.recordSnapshotLocked(rec)
+	if src != nil {
+		rec.Owner = ownerOf(*src)
+	}
+	if plan.write == writeSpec {
+		updateExistingIntent(rec, spec, labels, deps, plan.generation, now)
+		m.recordSnapshotLocked(rec)
+	}
 }
 
 func validateResourceName(name string) (string, error) {
@@ -504,6 +528,7 @@ func cloneRecord(r *ComponentRecord) *ComponentRecord {
 	if len(r.Labels) > 0 {
 		cloned.Labels = copyMap(r.Labels)
 	}
+	cloned.Owner = cloneSourceOwner(r.Owner)
 	return cloned
 }
 

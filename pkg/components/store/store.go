@@ -54,6 +54,7 @@ type ComponentRecord struct {
 	DeleteTime         *time.Time
 	Labels             map[string]string
 	Etag               string
+	Owner              *SourceOwner // Source of the last owner write, or nil when never written by a source.
 }
 
 // PrepareDeactivationResult contains safety check outcomes for component deactivation.
@@ -104,8 +105,14 @@ type Store interface {
 	//
 	// Records whose generation already exceeds the caller's generation (inflated by writes made
 	// before intents were idempotent) keep the higher number, and later changes bump from it.
-	// Recreate such records to realign them.
+	// Recreate such records to realign them. SetComponentIntent leaves the recorded Owner unchanged.
 	SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error)
+
+	// SetSourcedComponentIntent applies an intent sent by src (validated by ValidateRequestSource),
+	// ordered by src instead of by generation. A new component starts at generation 1; on an
+	// existing one, planSourcedIntent decides whether the intent is stale (STALE_GENERATION), a
+	// no-op, an owner-only write, or a spec write (+1 generation). Every write records src as owner.
+	SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src RequestSource) (*ComponentRecord, error)
 
 	// GetComponent retrieves a component record by canonical or full resource name.
 	GetComponent(ctx context.Context, name string) (*ComponentRecord, error)

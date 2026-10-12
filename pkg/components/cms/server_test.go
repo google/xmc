@@ -30,6 +30,7 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/pkg/components/store"
 )
 
@@ -37,6 +38,10 @@ import (
 type stubStore struct{}
 
 func (s *stubStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*store.ComponentRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (s *stubStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src store.RequestSource) (*store.ComponentRecord, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
@@ -588,6 +593,83 @@ func TestCMSServer_SetComponentIntent_UnchangedIntentIsNoop(t *testing.T) {
 			got := resp.GetComponent()
 			if got.GetSpec().GetGeneration() != tt.wantGen || got.GetStatus().GetState() != tt.wantState {
 				t.Errorf("generation = %d, state = %v; want %d, %v", got.GetSpec().GetGeneration(), got.GetStatus().GetState(), tt.wantGen, tt.wantState)
+			}
+		})
+	}
+}
+
+func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
+	baseReq := &componentspb.SetComponentIntentRequest{
+		Name: "redpanda",
+		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0", Generation: 7},
+		Source: &componentspb.RequestSource{
+			Uid: "uid-a", Generation: 7, Namespace: "xmc",
+			Cluster: &componentspb.ClusterIdentity{Uid: "cluster-1", Epoch: 1},
+		},
+	}
+	tests := []struct {
+		name       string
+		seed       bool // Apply baseReq first.
+		req        *componentspb.SetComponentIntentRequest
+		wantCode   codes.Code
+		wantReason string
+		wantGen    int64
+		wantOwner  *store.SourceOwner
+	}{
+		{
+			name:      "source orders by CMS generation and records the owner",
+			req:       baseReq,
+			wantGen:   1,
+			wantOwner: &store.SourceOwner{UID: "uid-a", Generation: 7, Namespace: "xmc", ClusterUID: "cluster-1", Epoch: 1},
+		},
+		{name: "no source orders by spec generation", req: prototest.Modify(baseReq, func(r *componentspb.SetComponentIntentRequest) { r.Source = nil }), wantGen: 7},
+		{
+			name:     "source without a cluster is rejected",
+			req:      prototest.Modify(baseReq, func(r *componentspb.SetComponentIntentRequest) { r.Source.Cluster = nil }),
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:     "source without a namespace is rejected in validate_only",
+			req:      prototest.Modify(baseReq, func(r *componentspb.SetComponentIntentRequest) { r.Source.Namespace, r.ValidateOnly = "", true }),
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "changed intent from an older owner generation carries the STALE_GENERATION ErrorInfo",
+			seed: true,
+			req: prototest.Modify(baseReq, func(r *componentspb.SetComponentIntentRequest) {
+				r.Spec.Version, r.Source.Generation = "v1.1.0", 6
+			}),
+			wantCode:   codes.FailedPrecondition,
+			wantReason: store.ReasonStaleGeneration,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			ms := store.NewMemoryStore()
+			server := NewServer(ms)
+			if tt.seed {
+				if _, err := server.SetComponentIntent(ctx, baseReq); err != nil {
+					t.Fatalf("seed SetComponentIntent() error = %v", err)
+				}
+			}
+
+			resp, err := server.SetComponentIntent(ctx, tt.req)
+			if status.Code(err) != tt.wantCode || errorInfoReason(err) != tt.wantReason {
+				t.Fatalf("SetComponentIntent() error = %v, want code %v and reason %q", err, tt.wantCode, tt.wantReason)
+			}
+			if err != nil {
+				return
+			}
+			if got := resp.GetComponent().GetSpec().GetGeneration(); got != tt.wantGen {
+				t.Errorf("generation = %d, want %d", got, tt.wantGen)
+			}
+			stored, err := ms.GetComponent(ctx, "redpanda")
+			if err != nil {
+				t.Fatalf("GetComponent() error = %v", err)
+			}
+			if diff := cmp.Diff(tt.wantOwner, stored.Owner); diff != "" {
+				t.Errorf("stored Owner mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

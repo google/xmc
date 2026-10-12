@@ -53,6 +53,8 @@ type intentWrite int
 const (
 	// writeNothing leaves the record untouched.
 	writeNothing intentWrite = iota
+	// writeOwnerOnly records the request source as owner without touching the spec or generation.
+	writeOwnerOnly
 	// writeSpec stores the intent under a bumped generation and resets the state.
 	writeSpec
 )
@@ -63,29 +65,56 @@ type intentPlan struct {
 	generation int64 // Generation of the record after the write.
 }
 
-// planIntent decides how an intent ordered by desiredGen applies to the existing active record rec.
-// Both stores use it so their semantics stay identical.
-func planIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) intentPlan {
-	if isUnchangedIntent(rec, spec, labels, deps, desiredGen) {
-		return intentPlan{write: writeNothing, generation: rec.Generation}
+// planIntent decides how an intent applies to the existing active record rec: by src for a sourced
+// intent (SetSourcedComponentIntent) and by desiredGen otherwise (SetComponentIntent).
+func planIntent(canonicalName string, rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *RequestSource) (intentPlan, error) {
+	if src != nil {
+		return planSourcedIntent(canonicalName, rec, !isUnchangedIntent(rec, spec, labels, deps, 0), *src)
 	}
-	return intentPlan{write: writeSpec, generation: max(desiredGen, rec.Generation+1)}
+	if isUnchangedIntent(rec, spec, labels, deps, desiredGen) {
+		return intentPlan{write: writeNothing, generation: rec.Generation}, nil
+	}
+	return intentPlan{write: writeSpec, generation: max(desiredGen, rec.Generation+1)}, nil
 }
 
-// newIntentGeneration returns the generation of a newly created component: max(desiredGen, 1).
-func newIntentGeneration(desiredGen int64) int64 {
+// planSourcedIntent decides how an intent from src applies to rec. An intent from the owner object
+// (same UID) at an older generation is stale when changed and a no-op otherwise. Any other intent
+// is current: a changed one bumps the generation by 1, and an unchanged one records src as owner.
+func planSourcedIntent(canonicalName string, rec *ComponentRecord, changed bool, src RequestSource) (intentPlan, error) {
+	plan := intentPlan{write: writeNothing, generation: rec.Generation}
+	olderGeneration := rec.Owner.isOwnerObject(src) && src.Generation < rec.Owner.Generation
+	switch {
+	case olderGeneration && changed:
+		return intentPlan{}, staleGenerationError(operationSetComponentIntent, canonicalName, rec.Owner, src)
+	case olderGeneration:
+		// An unchanged replay of an older generation keeps the newer recorded owner.
+	case changed:
+		plan.write, plan.generation = writeSpec, rec.Generation+1
+	case !rec.Owner.records(src):
+		plan.write = writeOwnerOnly
+	}
+	return plan, nil
+}
+
+// newIntentGeneration returns the generation of a newly created component: 1 for a sourced intent,
+// else max(desiredGen, 1).
+func newIntentGeneration(desiredGen int64, src *RequestSource) int64 {
+	if src != nil {
+		return 1
+	}
 	return max(desiredGen, 1)
 }
 
 // planLiveIntent returns the active record of canonicalName in catalog (nil when there is none)
 // and the plan for applying the intent to it; a missing or soft-deleted record is planned as a
-// create.
-func planLiveIntent(catalog map[string]*ComponentRecord, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) (*ComponentRecord, intentPlan) {
+// create. Both stores call it before validating dependencies so source rejections take precedence.
+func planLiveIntent(catalog map[string]*ComponentRecord, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *RequestSource) (*ComponentRecord, intentPlan, error) {
 	rec := catalog[canonicalName]
 	if isDeletedRecord(rec) {
-		return nil, intentPlan{write: writeSpec, generation: newIntentGeneration(desiredGen)}
+		return nil, intentPlan{write: writeSpec, generation: newIntentGeneration(desiredGen, src)}, nil
 	}
-	return rec, planIntent(rec, spec, labels, deps, desiredGen)
+	plan, err := planIntent(canonicalName, rec, spec, labels, deps, desiredGen, src)
+	return rec, plan, err
 }
 
 // specWithoutGeneration returns spec with the generation field cleared, or nil for a nil spec. It
