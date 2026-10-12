@@ -23,7 +23,7 @@ from absl import flags
 
 from tools.nightly_tests import ui_css_selectors as sel, ui_entities_validator
 from tools.nightly_tests.verification import (
-    endpoint_resolution,
+    endpoint_resolution as ep,
     ess_session,
     verification_report,
     verifier_cli,
@@ -35,7 +35,17 @@ flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token", allow_
 flags.DEFINE_bool("headless", True, "Run browser in headless mode", allow_override=True)
 flags.DEFINE_string("screenshots_dir", None, "Diagnostic screenshots dir", allow_override=True)
 
+EXPECTED_CLUSTER_QUEUES = ("cpu-cluster-queue", "gpu-cluster-queue", "tpu-cluster-queue")
+EXPECTED_FIRST_CARD_FLAVOR: str = "DefaultFlavor / CPU"
+EXPECTED_READY_STATUS: str = "Ready"
+EXPECTED_COPIED_LABEL: str = "Copied"
+EXPECTED_PRIMARY_RESOURCE: str = "CPU"
+VALID_RESOURCE_AMOUNT: str = "1"
+UNSCHEDULABLE_RESOURCE_AMOUNT: str = "999999999"
 VELOCITY_TIMEFRAMES: tuple[str, ...] = ("1h", "24h", "7d")
+ACTIVE_TOGGLE_CLASS: str = "active-toggle"
+MIN_MULTI_RESOURCE_ROWS: int = 2
+
 Session: TypeAlias = ui_entities_validator.XMCUIBrowserSession
 UIError: TypeAlias = ui_entities_validator.UIVerificationError
 
@@ -52,11 +62,11 @@ def _wait_for_queue_cards_with_retry(session: Session, timeout_ms: int) -> None:
 
 
 def _extract_and_verify_queue_titles(session: Session, expected_queue: str | None) -> list[str]:
-    """Extracts rendered queue card titles and verifies the expected queue is present."""
+    """Extracts rendered queue card titles and verifies expected cluster queues are present."""
     raw_titles = session.page.locator(sel.QUEUE_TITLE_SEL).all_inner_texts()
     titles = [t.strip() for t in raw_titles if t and t.strip()]
-    if not titles:
-        raise UIError("No cluster queue cards on /resources.")
+    if missing := [q for q in EXPECTED_CLUSTER_QUEUES if q not in titles]:
+        raise UIError(f"Missing expected queues {missing} in rendered queues: {titles}")
     cq = expected_queue.replace("-queue", "-cluster-queue") if expected_queue else ""
     if expected_queue and not ({expected_queue, cq} & set(titles)):
         raise UIError(f"Missing '{expected_queue}' in {titles}")
@@ -64,11 +74,11 @@ def _extract_and_verify_queue_titles(session: Session, expected_queue: str | Non
 
 
 def _verify_first_card_capacity_and_status(first_card: Any) -> tuple[str, str]:
-    """Verifies that the first queue card renders a non-empty quota flavor and status badge."""
+    """Verifies that the first queue card renders the expected quota flavor and Ready status."""
     flavor = (first_card.locator(sel.FLAVOR_NAME_SEL).first.text_content() or "").strip()
     badge = (first_card.locator(sel.STATUS_BADGE_SEL).first.text_content() or "").strip()
-    if not flavor or not badge:
-        raise UIError(f"Missing flavor/badge: {flavor}/{badge}")
+    if flavor != EXPECTED_FIRST_CARD_FLAVOR or EXPECTED_READY_STATUS not in badge:
+        raise UIError(f"Unexpected flavor/status: {flavor} / {badge}")
     return flavor, badge
 
 
@@ -78,8 +88,8 @@ def _verify_copy_flag_action(session: Session, first_card: Any, timeout_ms: int)
     copy_btn.click()
     session.page.wait_for_selector(sel.COPIED_FLAG_BTN_SEL, timeout=timeout_ms)
     btn_text = (copy_btn.text_content() or "").strip()
-    if "Copied" not in btn_text:
-        raise UIError(f"Expected 'Copied', got '{btn_text}'.")
+    if EXPECTED_COPIED_LABEL not in btn_text:
+        raise UIError(f"Expected '{EXPECTED_COPIED_LABEL}', got '{btn_text}'.")
 
 
 def assert_queue_cards(session: Session, expected_queue: str | None = None) -> list[str]:
@@ -119,7 +129,7 @@ def _assert_initial_predictability_empty_state(session: Session, timeout_ms: int
 
 
 def _select_primary_resource_and_amount(session: Session, timeout_ms: int) -> str:
-    """Selects the first resource type in Smart Resource Finder and sets amount to 1."""
+    """Selects the primary resource type in Smart Resource Finder and sets the valid amount."""
     session.page.locator(sel.RESOURCE_SELECT_SEL).first.click()
     session.page.wait_for_selector(sel.RESOURCE_OPTION_SEL, timeout=timeout_ms)
     options = session.page.locator(sel.RESOURCE_OPTION_SEL)
@@ -127,8 +137,10 @@ def _select_primary_resource_and_amount(session: Session, timeout_ms: int) -> st
         raise UIError("Missing selectable resource mat-option.")
     target_option = options.nth(1)
     resource_name = (target_option.text_content() or "").strip()
+    if resource_name != EXPECTED_PRIMARY_RESOURCE:
+        raise UIError(f"Expected resource '{EXPECTED_PRIMARY_RESOURCE}', got '{resource_name}'.")
     target_option.click()
-    session.page.locator(sel.RESOURCE_AMOUNT_INPUT_SEL).first.fill("1")
+    session.page.locator(sel.RESOURCE_AMOUNT_INPUT_SEL).first.fill(VALID_RESOURCE_AMOUNT)
     session.settle_and_wait_fonts()
     session.page.wait_for_selector(sel.PREDICTABILITY_CONTENT_SEL, timeout=timeout_ms)
     return resource_name
@@ -140,8 +152,8 @@ def _verify_velocity_timeframe_pills(session: Session, timeout_ms: int) -> None:
         pill = session.page.locator(sel.VELOCITY_PILL_SEL_TMPL.format(tf=tf)).first
         pill.click()
         session.page.wait_for_selector(sel.ACTIVE_PILL_SEL_TMPL.format(tf=tf), timeout=timeout_ms)
-        if "active-toggle" not in (pill.get_attribute("class") or ""):
-            raise UIError(f"Pill '{tf}' missing 'active-toggle'.")
+        if ACTIVE_TOGGLE_CLASS not in (pill.get_attribute("class") or ""):
+            raise UIError(f"Pill '{tf}' missing '{ACTIVE_TOGGLE_CLASS}'.")
 
 
 def _verify_multi_resource_row_add_and_remove(session: Session) -> None:
@@ -151,19 +163,19 @@ def _verify_multi_resource_row_add_and_remove(session: Session) -> None:
         add_btn.click()
         session.settle_and_wait_fonts(200)
         row_count = session.page.locator(sel.RESOURCE_QUERY_ROW_SEL).count()
-        if row_count < 2:
-            raise UIError(f"Expected >= 2 rows, got {row_count}.")
+        if row_count < MIN_MULTI_RESOURCE_ROWS:
+            raise UIError(f"Expected >= {MIN_MULTI_RESOURCE_ROWS} rows, got {row_count}.")
         session.page.locator(sel.REMOVE_RESOURCE_BTN_SEL).first.click()
         session.settle_and_wait_fonts(200)
 
 
 def _verify_unschedulable_quota_empty_state(session: Session, timeout_ms: int) -> None:
-    """Filters with an unschedulable amount to verify the empty queue state, then resets to 1."""
+    """Filters with an unschedulable amount to verify the empty queue state, then resets."""
     amount_input = session.page.locator(sel.RESOURCE_AMOUNT_INPUT_SEL).first
-    amount_input.fill("999999999")
+    amount_input.fill(UNSCHEDULABLE_RESOURCE_AMOUNT)
     session.settle_and_wait_fonts()
     session.page.wait_for_selector(sel.QUEUE_LIST_EMPTY_SEL, timeout=timeout_ms)
-    amount_input.fill("1")
+    amount_input.fill(VALID_RESOURCE_AMOUNT)
     session.settle_and_wait_fonts()
     session.page.wait_for_selector(sel.QUEUE_CARD_SEL, timeout=timeout_ms)
 
@@ -192,41 +204,34 @@ def assert_subnav_tabs_switching(session: Session, timeout_ms: int = 15000) -> N
     print("  [✓] Verified ROD subnavigation tab switching")
 
 
-def verify_resource_dashboard_ui(
-    ui_base_url: str,
-    auth_token: str | None = None,
-    headless: bool = True,
-    screenshots_dir: str | None = None,
-    expected_queue: str | None = None,
-) -> dict[str, Any]:
-    """Launches a Playwright session and verifies the Resource Observability Dashboard UI."""
-    with Session(ui_base_url, auth_token, screenshots_dir, headless) as session:
-        session.navigate_to_route("/resources", sel.DASHBOARD_ROOT_SEL, "ui_rod_step1_landing.png")
-        queues = assert_queue_cards(session, expected_queue=expected_queue)
-        selected_q = assert_queue_selection_and_jobs_pane(session, queues)
-        session.take_screenshot("ui_rod_step2_queue_selection.png")
-        selected_res = assert_smart_resource_finder_and_predictability(session)
-        session.take_screenshot("ui_rod_step3_smart_resource_finder.png")
-        assert_subnav_tabs_switching(session)
-        session.assert_no_runtime_errors("resource_dashboard", (":batchGetSecondaryData",))
-        rows = [
-            ("UI Base URL", ui_base_url),
-            ("Verified Queues", ", ".join(queues)),
-            ("Selected Queue", selected_q),
-            ("Smart Finder Resource", selected_res),
-        ]
-        verification_report.print_success_summary("ROD UI E2E PASSED SUCCESSFULLY!", rows)
-        return {"queues": queues, "selected_queue": selected_q, "selected_resource": selected_res}
+def verify_resource_dashboard_ui(session: Session, expected_q: str | None = None) -> dict[str, Any]:
+    """Executes the Resource Observability Dashboard UI E2E verification suite."""
+    session.navigate_to_route("/resources", sel.DASHBOARD_ROOT_SEL, "ui_rod_step1_landing.png")
+    queues = assert_queue_cards(session, expected_queue=expected_q)
+    selected_q = assert_queue_selection_and_jobs_pane(session, queues)
+    session.take_screenshot("ui_rod_step2_queue_selection.png")
+    selected_res = assert_smart_resource_finder_and_predictability(session)
+    session.take_screenshot("ui_rod_step3_smart_resource_finder.png")
+    assert_subnav_tabs_switching(session)
+    session.assert_no_runtime_errors("resource_dashboard", (":batchGetSecondaryData",))
+    rows = [
+        ("UI Base URL", session.ui_base_url),
+        ("Verified Queues", ", ".join(queues)),
+        ("Selected Queue", selected_q),
+        ("Smart Finder Resource", selected_res),
+    ]
+    verification_report.print_success_summary("ROD UI E2E PASSED SUCCESSFULLY!", rows)
+    return {"queues": queues, "selected_queue": selected_q, "selected_resource": selected_res}
 
 
 def main(argv: Sequence[str]) -> None:
     """CLI entrypoint for standalone ROD UI E2E verification."""
     verifier_cli.validate_argv(argv)
     get = verifier_cli.get_flag
-    ui_url = get(FLAGS, "ui_base_url") or endpoint_resolution.resolve_ui_base_url()
-    args = (get(FLAGS, "auth_token"), get(FLAGS, "headless", True), get(FLAGS, "screenshots_dir"))
-    with ess_session.handle_verification_errors():
-        verify_resource_dashboard_ui(ui_url, *args, expected_queue=get(FLAGS, "expected_queue"))
+    ui_url = get(FLAGS, "ui_base_url") or ep.resolve_ui_base_url()
+    args = (ui_url, get(FLAGS, "auth_token"), get(FLAGS, "screenshots_dir"), get(FLAGS, "headless"))
+    with ess_session.handle_verification_errors(), Session(*args) as session:
+        verify_resource_dashboard_ui(session, expected_q=get(FLAGS, "expected_queue"))
 
 
 if __name__ == "__main__":

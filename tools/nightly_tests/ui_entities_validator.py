@@ -116,10 +116,9 @@ class XMCUIBrowserSession:
     def _is_same_origin(self, url: str) -> bool:
         """Checks whether a request or response URL matches the configured UI origin."""
         p = urllib.parse.urlparse(url)
-        b_port = self.port or (
-            443 if self.scheme == "https" else (80 if self.scheme == "http" else None)
-        )
-        r_port = p.port or (443 if p.scheme == "https" else (80 if p.scheme == "http" else None))
+        ports = {"https": 443, "http": 80}
+        b_port = self.port or ports.get(self.scheme)
+        r_port = p.port or ports.get(p.scheme)
         return p.hostname == self.domain_host and p.scheme == self.scheme and r_port == b_port
 
     def _configure_page_interception(self) -> None:
@@ -249,12 +248,7 @@ class XMCUIBrowserSession:
         return path
 
     def navigate_to_route(
-        self,
-        route_path: str,
-        root_selector: str,
-        screenshot_name: str,
-        timeout_ms: int = 60000,
-        error_tag: str | None = None,
+        self, route_path: str, root_sel: str, shot_name: str, timeout_ms: int = 60000, tag: str = ""
     ) -> None:
         """Navigates to an arbitrary UI route and verifies authentication and landing path."""
         normalized_route = "/" + route_path.lstrip("/")
@@ -262,13 +256,13 @@ class XMCUIBrowserSession:
         expected_path = urllib.parse.urlparse(target_url).path.rstrip("/")
         print(f"\n[UI Action] Navigating to UI Route: {target_url}...")
         self.page.goto(target_url, wait_until="networkidle", timeout=timeout_ms)
-        sel = f"{root_selector}, xmc-home-page, .guest-page-container"
+        sel = f"{root_sel}, xmc-home-page, .guest-page-container"
         self.page.wait_for_selector(sel, timeout=timeout_ms)
         self.settle_and_wait_fonts()
-        shot = self.take_screenshot(screenshot_name)
+        shot = self.take_screenshot(shot_name)
         print(f"  [✓] Route loaded. URL: {self.page.url} -> Screenshot: {shot}")
-        tag = error_tag or normalized_route.strip("/").replace("/", "_") or "root"
-        self._assert_authenticated_landing(expected_path, tag)
+        err_tag = tag or normalized_route.strip("/").replace("/", "_") or "root"
+        self._assert_authenticated_landing(expected_path, err_tag)
 
     def _assert_authenticated_landing(self, expected_path: str, error_tag: str) -> None:
         """Verifies the page did not land on an unauthorized view or unexpected redirect."""
@@ -318,12 +312,9 @@ class XMCUIBrowserSession:
 
     def navigate_to_experiment(self, xid: str | int, timeout_ms: int = 60000) -> None:
         """Navigates to `/experiments/<xid>` and verifies that authentication succeeded."""
+        shot = f"ui_step1_landing_xid_{xid}.png"
         self.navigate_to_route(
-            f"/experiments/{xid}",
-            "xmc-experiment-page",
-            f"ui_step1_landing_xid_{xid}.png",
-            timeout_ms=timeout_ms,
-            error_tag=f"xid_{xid}",
+            f"/experiments/{xid}", "xmc-experiment-page", shot, timeout_ms, f"xid_{xid}"
         )
 
     def assert_experiment_header(
