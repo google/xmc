@@ -211,8 +211,6 @@ class TestKindClusterManager(unittest.TestCase):
                 "kubectl",
                 "apply",
                 "-f",
-                os.path.join("/workspace", "test", "e2e", "manifests", "dummy_crds.yaml"),
-                "-f",
                 os.path.join("/workspace", "test", "e2e", "manifests", "redis.yaml"),
                 "-f",
                 os.path.join("/workspace", "test", "e2e", "manifests", "dex.yaml"),

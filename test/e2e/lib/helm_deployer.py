@@ -48,8 +48,6 @@ class HelmDeployer:
         for prune_target in [
             "certs",
             "kueue",
-            "kueue-dev",
-            "wpc",
             "dashboard-service",
             "health-service",
             "ingestion-gateway",
@@ -245,6 +243,8 @@ ui:
             for deploy in [
                 "xid-service-deployment",
                 "experiment-state-server-deployment",
+                "actuator-deployment",
+                "reconciler-deployment",
                 "ui-deployment",
             ]:
                 run_cmd(
@@ -291,12 +291,52 @@ ui:
             self._capture_diagnostics()
             raise
 
+    def _resolve_crds_manifest(self) -> str:
+        """Resolves the Bazel-assembled JobSet and Kueue CRD manifest, building if absent."""
+        manifest_rel = os.path.join("test", "e2e", "manifests", "jobset_kueue_crds.yaml")
+        default_path = os.path.join(self.cfg.workspace_root, "bazel-bin", manifest_rel)
+        if os.path.isfile(default_path) and os.path.getsize(default_path) > 0:
+            return default_path
+
+        logger.info("Building //test/e2e/manifests:jobset_kueue_crds with Bazel...")
+        run_cmd(
+            ["bazel", "build", "//test/e2e/manifests:jobset_kueue_crds"],
+            cwd=self.cfg.workspace_root,
+        )
+        if os.path.isfile(default_path) and os.path.getsize(default_path) > 0:
+            return default_path
+
+        bazel_bin_res = run_cmd(
+            ["bazel", "info", "bazel-bin"],
+            cwd=self.cfg.workspace_root,
+            capture_output=True,
+        )
+        return os.path.join(bazel_bin_res.stdout.strip(), manifest_rel)
+
+    def _apply_crds(self) -> None:
+        """Applies upstream JobSet and Kueue CRDs with server-side apply."""
+        crds_manifest = self._resolve_crds_manifest()
+        context = f"kind-{self.cfg.cluster_name}"
+        logger.info("Applying upstream JobSet and Kueue CRDs from %s...", crds_manifest)
+        run_cmd(
+            [
+                "kubectl",
+                "--context",
+                context,
+                "apply",
+                "--server-side",
+                "-f",
+                crds_manifest,
+            ]
+        )
+
     def deploy(self) -> None:
-        """Copies chart, generates values, and executes helm upgrade --install."""
+        """Copies chart, generates values, applies CRDs, and executes helm upgrade --install."""
         logger.info("=== [Helm] Deploying XMC Stack ===")
         self._prepare_helm_chart()
         self._patch_image_pull_policy()
         self._generate_values_file()
+        self._apply_crds()
 
         context = f"kind-{self.cfg.cluster_name}"
         run_cmd(

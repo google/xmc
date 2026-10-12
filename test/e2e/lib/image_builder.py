@@ -51,6 +51,7 @@ class ImageBuilder:
         "//api/protos/experiment:experiment_messages_descriptor",
         "//api/protos/xid:xid_messages_descriptor",
         "//internal/storage/spanner/migrations:migrations",
+        "//test/e2e/manifests:jobset_kueue_crds",
     ]
 
     def __init__(self, config: E2EConfig) -> None:

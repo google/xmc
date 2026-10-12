@@ -44,7 +44,7 @@ graph TD
    - `KinD.load_images()` loads all built container images into KinD nodes in a single batch.
    - `SpannerManager.setup()` creates the `e2e-ess` and `e2e-xid` databases concurrently and applies DDL schemas.
 3. **Phase 3: Deployment & Scenario Execution**:
-   - `HelmDeployer.deploy()` installs the XMC Helm chart into the cluster and waits for workload readiness.
+   - `HelmDeployer.deploy()` applies the upstream JobSet and Kueue CRDs (`//test/e2e/manifests:jobset_kueue_crds`) with server-side apply, installs the XMC Helm chart (including dev Kueue queue and `WorkloadPriorityClass` manifests) into the cluster, and waits for workload readiness.
    - `TestExecutor.run_tests()` invokes the Playwright scenario suite ([test_e2e_flow.py](test_e2e_flow.py)) in an isolated virtualenv.
 4. **Teardown (`managed_lifecycle`)**:
    - Handled via a Python context manager that drops the ephemeral Spanner databases and deletes the KinD cluster after a success, a failure, or a stop. Teardown is best effort; see [Stopping & Teardown](#stopping--teardown).

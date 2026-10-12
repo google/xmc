@@ -34,12 +34,10 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  run-e2e:
-    name: 'KinD & Playwright Headless E2E'
-    # Report a skipped check on pull_request so required status checks allow queueing; run in merge_group.
+  execute-e2e:
+    name: 'Execute KinD & Playwright Headless E2E'
     if: github.event_name != 'pull_request'
     runs-on: 'arc-runner-set'
     environment: e2e-test
@@ -176,3 +174,29 @@ jobs:
           path: '${{ github.workspace }}/e2e-screenshots/'
           if-no-files-found: ignore
           retention-days: 14
+
+  run-e2e:
+    name: 'KinD & Playwright Headless E2E'
+    needs:
+      - execute-e2e
+    if: always()
+    runs-on: 'arc-runner-set'
+    timeout-minutes: 5
+    permissions: {}
+
+    steps:
+      - name: 'Verify E2E Status'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EXECUTE_RESULT: ${{ needs.execute-e2e.result }}
+        run: |
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            echo "Skipping heavy E2E execution on pull_request; full E2E runs in merge_group."
+            exit 0
+          fi
+          if [ "${EXECUTE_RESULT}" != "success" ]; then
+            echo "::error::Execute KinD & Playwright Headless E2E finished with status '${EXECUTE_RESULT}'."
+            exit 1
+          fi
+          echo "Execute KinD & Playwright Headless E2E succeeded."
+

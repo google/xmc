@@ -12,8 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-filegroup(
-    name = "manifests",
-    srcs = glob(["*.yaml"]),
-    visibility = ["//visibility:public"],
+exports_files([
+    "export_crd_bases.patch",
+])
+
+genrule(
+    name = "jobset_kueue_crds",
+    srcs = [
+        "@io_k8s_sigs_jobset//config/components/crd/bases:jobset.x-k8s.io_jobsets.yaml",
+        "@io_k8s_sigs_kueue//config/components/crd/bases:kueue.x-k8s.io_clusterqueues.yaml",
+        "@io_k8s_sigs_kueue//config/components/crd/bases:kueue.x-k8s.io_localqueues.yaml",
+        "@io_k8s_sigs_kueue//config/components/crd/bases:kueue.x-k8s.io_resourceflavors.yaml",
+        "@io_k8s_sigs_kueue//config/components/crd/bases:kueue.x-k8s.io_workloadpriorityclasses.yaml",
+        "@io_k8s_sigs_kueue//config/components/crd/bases:kueue.x-k8s.io_workloads.yaml",
+    ],
+    outs = ["jobset_kueue_crds.yaml"],
+    cmd = "awk 'FNR==1 && NR!=1 {print \"---\"} {print}' $(SRCS) > $@",
+    visibility = ["//test/e2e:__subpackages__"],
 )
