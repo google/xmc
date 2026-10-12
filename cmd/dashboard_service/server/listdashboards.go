@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 const (

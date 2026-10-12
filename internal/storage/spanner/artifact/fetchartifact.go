@@ -20,14 +20,14 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
-	"golang/google_api/iterator/iterator"
+	"google.golang.org/api/iterator"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/spanner/data/spannerdata"
-	"xmanager_cloud/storage/spanner/schema/artifactschema"
-	"xmanager_cloud/storage/spanner/utils/spannerutils"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage/spanner/data"
+	"xmanager_cloud/internal/storage/spanner/schema/artifactschema"
+	"xmanager_cloud/internal/storage/spanner/utils"
+	"xmanager_cloud/internal/validator"
 )
 
 // FetchArtifact retrieves a single Artifact from storage by its unique numerical ID.

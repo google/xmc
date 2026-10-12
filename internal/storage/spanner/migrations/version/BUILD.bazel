@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//:compat.bzl", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 genrule(
     name = "ess_version_gen",
@@ -46,7 +45,7 @@ go_library(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "version_test",
     srcs = ["version_test.go"],
     embed = [":version"],

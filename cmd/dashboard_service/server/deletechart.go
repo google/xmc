@@ -22,7 +22,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // DeleteChart deletes an existing chart after validating experiment write permissions (AIP-135).

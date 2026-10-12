@@ -20,7 +20,7 @@ import "google/api/client.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/field_mask.proto";
-import "third_party/xmanager_cloud/xid_service/proto/messages.proto";
+import "xmanager_cloud/xid_service/proto/messages.proto";
 
 service XidService {
   // AIP-131 compliant Get API call.

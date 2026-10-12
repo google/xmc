@@ -25,7 +25,7 @@ import type {
   ListDashboardsRequest,
   ListDashboardsResponse,
   UpdateDashboardRequest,
-} from 'xmanager_cloud/dashboard_service/proto/dashboard_service.jsonpb_decls';
+} from 'app/protos/dashboard_service';
 
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { XMC_API_DOMAIN } from './constants';

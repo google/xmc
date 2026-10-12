@@ -23,7 +23,7 @@ import (
 	essapipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/kubernetes/common/jobsetutil"
+	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmessagespb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

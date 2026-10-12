@@ -22,12 +22,12 @@ import (
 	"cloud.google.com/go/spanner"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/internal/logging"
+	ls "xmanager_cloud/internal/query_generator/liststatement"
+	"xmanager_cloud/internal/query_generator/normalizer"
 	storagedata "xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
-	"xmanager_cloud/logging/logging"
-	ls "xmanager_cloud/query_generator/liststatement"
-	"xmanager_cloud/query_generator/normalizer/normalizer"
-	"xmanager_cloud/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
 )
 
 // hydrateChartIDs fills in the chart IDs of the given dashboards from their DashboardCharts rows

@@ -75,8 +75,8 @@ export default tseslint.config(
             ['^\\u0000'],
             // Third-party packages (e.g. @angular, rxjs, jasmine).
             ['^@?\\w'],
-            // First-party absolute imports (starts with app/ or legacy xmanager_cloud/).
-            ['^(xmanager_cloud|app)/'],
+            // First-party absolute imports (starts with app/).
+            ['^app/'],
             // Other absolute imports (e.g. stubs or un-grouped libraries).
             ['^'],
             // Relative imports (starts with a dot).
@@ -95,9 +95,9 @@ export default tseslint.config(
                 'Relative imports must not go up more than one level. Use absolute paths (app/...) instead.',
             },
             {
-              group: ['xmanager_cloud/ui/app/**'],
+              group: ['xmanager_cloud/**', 'longrunning/**'],
               message:
-                'Legacy xmanager_cloud/ui/app/... import path is deprecated. Use app/... instead.',
+                'Legacy google3 import paths (xmanager_cloud/..., longrunning/...) are deprecated. Use app/... or app/protos/... instead.',
             },
           ],
         },

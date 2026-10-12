@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-compat_go_library(
+go_library(
     name = "toollibs",
     srcs = ["dashboard_client.go"],
     importpath = "xmanager_cloud/cmd/experiment_state_server/toollibs",
@@ -26,7 +26,7 @@ compat_go_library(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "toollibs_test",
     srcs = ["dashboard_client_test.go"],
     embed = [":toollibs"],

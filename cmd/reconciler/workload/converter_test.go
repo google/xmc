@@ -28,8 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/common/constants"
-	storagepkg "xmanager_cloud/storage/storage"
+	"xmanager_cloud/internal/kubernetes/common/constants"
+	storagepkg "xmanager_cloud/internal/storage"
 )
 
 var workloadSpecWithNecessaryLabels = v1beta1.WorkloadSpec{

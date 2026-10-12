@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	timestamppb "protobuf/timestamp_go_proto"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

@@ -20,12 +20,11 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/proto"
-	"xmanager_cloud/auth/auth"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/storage/storage"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/internal/storage"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -108,7 +107,7 @@ func TestDeleteArtifact_DependencyFailures(t *testing.T) {
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		xidClient     xidgrpcpb.XidServiceClient
+		xidClient     xidapipb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{

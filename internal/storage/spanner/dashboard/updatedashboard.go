@@ -24,11 +24,11 @@ import (
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/logging"
 	storagedata "xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/internal/validator"
 )
 
 // UpdateDashboard updates an existing dashboard in Spanner and returns the updated proto.

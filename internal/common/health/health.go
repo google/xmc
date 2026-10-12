@@ -20,8 +20,8 @@ import (
 	"errors"
 	"fmt"
 
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
-	"xmanager_cloud/logging/logging"
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"

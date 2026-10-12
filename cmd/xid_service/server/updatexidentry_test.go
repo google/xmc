@@ -23,10 +23,10 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
-	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/internal/storage"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

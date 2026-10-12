@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("//:oci.bzl", "oci_image_for_service")
 
-compat_go_library(
+go_library(
     name = "dashboard_service_lib",
     srcs = [
         "config.go",
@@ -64,13 +63,13 @@ oci_image_for_service(
     binary = ":dashboard_service",
 )
 
-compat_go_test(
+go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":dashboard_service_lib"],
 )
 
-compat_go_test(
+go_test(
     name = "main_test",
     srcs = ["main_test.go"],
     embed = [":dashboard_service_lib"],

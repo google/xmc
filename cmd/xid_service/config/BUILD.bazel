@@ -1,9 +1,9 @@
 # Copyright 2025 Google LLC
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//visibility:public"])
 
-compat_go_library(
+go_library(
     name = "config",
     srcs = ["config.go"],
     importpath = "xmanager_cloud/cmd/xid_service/config",
@@ -14,7 +14,7 @@ compat_go_library(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":config"],

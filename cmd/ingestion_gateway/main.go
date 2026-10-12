@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 func main() {

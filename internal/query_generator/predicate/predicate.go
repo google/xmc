@@ -21,7 +21,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	fpb "api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
 )
 
 // Predicate represents one term in an Expression. It is implemented by versions

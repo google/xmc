@@ -26,8 +26,8 @@ import (
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	storagedata "xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/internal/validator"
 )
 
 // buildDashboardChartMutations generates Spanner mutations for child DashboardCharts of a dashboard.

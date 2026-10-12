@@ -29,8 +29,8 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	clientgotesting "k8s.io/client-go/testing"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/prototest"
-	constants "xmanager_cloud/kubernetes/common/constants"
 )
 
 const testOperationName = "experiments/1/workUnits/1/operations/1"

@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/unstructured/unstructured"
-	"xmanager_cloud/kubernetes/common/constants"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 )
 
 var testTime = time.Date(2025, time.November, 25, 14, 0, 0, 0, time.UTC)

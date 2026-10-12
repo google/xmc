@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-compat_go_library(
+go_library(
     name = "experiment",
     srcs = [
         "createexperiment.go",
@@ -37,10 +37,10 @@ compat_go_library(
         "//internal/query_generator/querytools",
         "//internal/storage",
         "//internal/storage/data",
-        "//internal/storage/spanner/data:spannerdata",
+        "//internal/storage/spanner/data",
         "//internal/storage/spanner/schema/experimentschema",
         "//internal/storage/spanner/statusmessage",
-        "//internal/storage/spanner/utils:spannerutils",
+        "//internal/storage/spanner/utils",
         "//internal/storage/state",
         "//internal/validator",
         "@com_github_kylelemons_godebug//diff",
@@ -54,7 +54,7 @@ compat_go_library(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "experiment_unit_test",
     srcs = ["updateexperiment_unit_test.go"],
     embed = [":experiment"],
@@ -63,7 +63,7 @@ compat_go_test(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "experiment_test",
     srcs = [
         "createexperiment_test.go",
@@ -81,7 +81,7 @@ compat_go_test(
         "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",
         "//internal/storage/spanner/experiment",
-        "//internal/storage/spanner/utils:spannerutils",
+        "//internal/storage/spanner/utils",
         "//internal/validator",
         "@com_github_google_go_cmp//cmp",
         "@com_google_cloud_go_spanner//:spanner",
