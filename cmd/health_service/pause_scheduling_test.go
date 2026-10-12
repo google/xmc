@@ -194,6 +194,7 @@ func TestPauseScheduler_Pause(t *testing.T) {
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
 			LazyStorage:        &fakeLazyStorage{err: storageErr},
 			BroadcastPublisher: broadcast.NewFakeClient(""),
+			TaskQueuePublisher: redisclient.NewFakeClient(),
 		})
 
 		err := scheduler.Pause(ctx)
@@ -205,6 +206,7 @@ func TestPauseScheduler_Pause(t *testing.T) {
 	t.Run("fails when lazy storage is not configured", func(t *testing.T) {
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
 			BroadcastPublisher: broadcast.NewFakeClient(""),
+			TaskQueuePublisher: redisclient.NewFakeClient(),
 		})
 
 		err := scheduler.Pause(ctx)
@@ -219,6 +221,7 @@ func TestPauseScheduler_Pause(t *testing.T) {
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
 			LazyStorage:        newFakeLazyStorage(fakeRepo),
 			BroadcastPublisher: fakePublisher,
+			TaskQueuePublisher: redisclient.NewFakeClient(),
 		})
 
 		if err := scheduler.Pause(ctx); err != nil {
@@ -235,12 +238,49 @@ func TestPauseScheduler_Pause(t *testing.T) {
 		scheduler := NewPauseScheduler(PauseSchedulerParams{
 			LazyStorage:        newFakeLazyStorage(fakeRepo),
 			BroadcastPublisher: fakePublisher,
+			TaskQueuePublisher: redisclient.NewFakeClient(),
 		})
 
 		err := scheduler.Pause(ctx)
 		if err == nil {
 			t.Fatalf("expected error from Pause() when broadcast fails, got nil")
 		}
+	})
+
+	t.Run("fails fast without writing state when redis ping fails", func(t *testing.T) {
+		fakeRepo := storagetest.NewFakePauseStateRepository()
+		pingErr := errors.New("redis connection refused")
+		fakeRedis := redisclient.NewFakeClient()
+		fakeRedis.PingError = pingErr
+		fakePublisher := broadcast.NewFakeClient("")
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			LazyStorage:        newFakeLazyStorage(fakeRepo),
+			BroadcastPublisher: fakePublisher,
+			TaskQueuePublisher: fakeRedis,
+		})
+
+		err := scheduler.Pause(ctx)
+		if !errors.Is(err, pingErr) {
+			t.Fatalf("expected wrapped pingErr, got %v", err)
+		}
+		assertNotPaused(ctx, t, fakeRepo)
+		if len(fakePublisher.Messages()) > 0 {
+			t.Errorf("expected no broadcast messages, got %d", len(fakePublisher.Messages()))
+		}
+	})
+
+	t.Run("fails when task queue publisher is not configured", func(t *testing.T) {
+		fakeRepo := storagetest.NewFakePauseStateRepository()
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			LazyStorage:        newFakeLazyStorage(fakeRepo),
+			BroadcastPublisher: broadcast.NewFakeClient(""),
+		})
+
+		err := scheduler.Pause(ctx)
+		if !errors.Is(err, errTaskQueuePublisherNotConfigured) {
+			t.Fatalf("expected errTaskQueuePublisherNotConfigured, got %v", err)
+		}
+		assertNotPaused(ctx, t, fakeRepo)
 	})
 
 	t.Run("fails when broadcast publisher is not configured", func(t *testing.T) {
@@ -516,6 +556,83 @@ func TestPauseScheduler_Resume(t *testing.T) {
 		}
 		assertStillPaused(ctx, t, fakeRepo)
 	})
+
+	t.Run("fails fast without writing state when redis ping fails", func(t *testing.T) {
+		fakeRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
+		pingErr := errors.New("redis connection refused")
+		fakeRedis := redisclient.NewFakeClient()
+		fakeRedis.PingError = pingErr
+		fakePublisher := broadcast.NewFakeClient("")
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			LazyStorage:        newFakeLazyStorage(fakeRepo),
+			BroadcastPublisher: fakePublisher,
+			TaskQueuePublisher: fakeRedis,
+		})
+
+		_, err := scheduler.Resume(ctx)
+		if !errors.Is(err, pingErr) {
+			t.Fatalf("expected wrapped pingErr, got %v", err)
+		}
+		if len(fakePublisher.Messages()) > 0 {
+			t.Errorf("expected no broadcast messages, got %d", len(fakePublisher.Messages()))
+		}
+		assertStillPaused(ctx, t, fakeRepo)
+	})
+
+	t.Run("retry after failed trigger publish dispatches again with the same run id", func(t *testing.T) {
+		fakeRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
+		fakePublisher := broadcast.NewFakeClient("")
+		fakeRedis := redisclient.NewFakeClient()
+		fakeRedis.AddMessageError = errors.New("redis connection reset")
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			LazyStorage:        newFakeLazyStorage(fakeRepo),
+			BroadcastPublisher: fakePublisher,
+			TaskQueuePublisher: fakeRedis,
+		})
+
+		if _, err := scheduler.Resume(ctx); err == nil {
+			t.Fatalf("expected error from first Resume() when trigger publish fails, got nil")
+		}
+		state, err := fakeRepo.Get(ctx)
+		if err != nil {
+			t.Fatalf("Get() unexpected error: %v", err)
+		}
+		committedRunID := state.ResumptionRunID
+
+		fakeRedis.AddMessageError = nil
+		runID, err := scheduler.Resume(ctx)
+		if err != nil {
+			t.Fatalf("retry Resume() unexpected error: %v", err)
+		}
+		if runID != committedRunID {
+			t.Errorf("expected retry to reuse committed run ID %q, got %q", committedRunID, runID)
+		}
+		msgs := fakePublisher.Messages()
+		assertBroadcastResumed(t, msgs[len(msgs)-1:], committedRunID)
+		assertResumeTrigger(t, fakeRedis.Messages, committedRunID, 0, 0)
+	})
+
+	t.Run("already unpaused without a run id does not dispatch", func(t *testing.T) {
+		fakeRepo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: false})
+		fakePublisher := broadcast.NewFakeClient("")
+		fakeRedis := redisclient.NewFakeClient()
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			LazyStorage:        newFakeLazyStorage(fakeRepo),
+			BroadcastPublisher: fakePublisher,
+			TaskQueuePublisher: fakeRedis,
+		})
+
+		runID, err := scheduler.Resume(ctx)
+		if err != nil {
+			t.Fatalf("Resume() unexpected error: %v", err)
+		}
+		if runID != "" {
+			t.Errorf("expected empty run ID, got %q", runID)
+		}
+		if len(fakePublisher.Messages()) > 0 || len(fakeRedis.Messages) > 0 {
+			t.Errorf("expected no dispatch, got %d broadcast and %d task queue messages", len(fakePublisher.Messages()), len(fakeRedis.Messages))
+		}
+	})
 }
 
 func assertStillPaused(ctx context.Context, t *testing.T, repo storage.PauseStateRepository) {
@@ -529,6 +646,17 @@ func assertStillPaused(ctx context.Context, t *testing.T, repo storage.PauseStat
 	}
 	if state.ResumptionRunID != "" {
 		t.Errorf("expected ResumptionRunID to remain empty, got %q", state.ResumptionRunID)
+	}
+}
+
+func assertNotPaused(ctx context.Context, t *testing.T, repo storage.PauseStateRepository) {
+	t.Helper()
+	state, err := repo.Get(ctx)
+	if err != nil {
+		t.Fatalf("Get() unexpected error: %v", err)
+	}
+	if state != nil && state.SchedulingPaused {
+		t.Errorf("expected scheduling to remain unpaused, got SchedulingPaused=true")
 	}
 }
 
