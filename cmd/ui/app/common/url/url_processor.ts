@@ -48,22 +48,21 @@ function resolveTargetCluster(
   return metadata?.managementCluster;
 }
 
-function populateMetadataReplacements(
-  replacements: Record<string, string | null | undefined>,
+function buildMetadataReplacements(
   data: Experiment | WorkUnit,
-): void {
-  if (!('currentWorkUnitExecution' in data)) return;
-  const metadata = (data as WorkUnit).currentWorkUnitExecution?.metadata;
-  if (!metadata) return;
-  replacements['RESOURCE_NAME'] = metadata.resourceName;
-  replacements['NAMESPACE'] = metadata.namespace;
-  replacements['SERVICE_ACCOUNT'] = metadata.serviceAccount;
+): Record<string, string | undefined> {
+  if (!('currentWorkUnitExecution' in data)) return {};
+  const metadata = data.currentWorkUnitExecution?.metadata;
+  if (!metadata) return {};
   const cluster = resolveTargetCluster(metadata);
-  if (cluster) {
-    replacements['PROJECT'] = cluster.project;
-    replacements['LOCATION'] = cluster.location;
-    replacements['CLUSTER'] = cluster.clusterName;
-  }
+  return {
+    RESOURCE_NAME: metadata.resourceName,
+    NAMESPACE: metadata.namespace,
+    SERVICE_ACCOUNT: metadata.serviceAccount,
+    PROJECT: cluster?.project,
+    LOCATION: cluster?.location,
+    CLUSTER: cluster?.clusterName,
+  };
 }
 
 function fillPlaceholders(urlString: string, data: Experiment | WorkUnit): string | undefined {
@@ -75,8 +74,8 @@ function fillPlaceholders(urlString: string, data: Experiment | WorkUnit): strin
     XID: xid,
     WID: wid,
     CREATED: data.createTime,
+    ...buildMetadataReplacements(data),
   };
-  populateMetadataReplacements(replacements, data);
 
   let missingValue = false;
   const processedUrl = urlString.replace(/\$\{(\w+)\}/g, (match, key) => {

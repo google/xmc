@@ -36,6 +36,8 @@ import (
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
+const kueueMultiKueueController = constants.KueueMultiKueueControllerName
+
 var defaultLabels = map[string]string{
 	constants.ManagedByLabel: constants.XmcLabelValue,
 }
@@ -288,7 +290,7 @@ func buildBaseJobSet(workUnit *esspb.WorkUnit, jobSetName, namespace string, met
 }
 
 func (c *Client) finalizeAndValidateJobSet(ctx context.Context, workUnit *esspb.WorkUnit, namespace string, jobSet *jobsetv1alpha2.JobSet) (*jobsetv1alpha2.JobSet, error) {
-	c.applyMultiKueueManagedBy(ctx, namespace, jobSet.Labels[kueueQueueLabel], jobSet)
+	c.applyMultiKueueManagedBy(ctx, jobSet)
 	executionEnv, ok := ee.Lookup(c.RuntimeConfig.DefaultExecutionEnvironment)
 	if !ok {
 		logging.Error(ctx, "Failed to get execution environment", "execution_environment", c.RuntimeConfig.DefaultExecutionEnvironment)
@@ -308,13 +310,17 @@ func (c *Client) finalizeAndValidateJobSet(ctx context.Context, workUnit *esspb.
 	return jobSet, nil
 }
 
-func (c *Client) applyMultiKueueManagedBy(ctx context.Context, namespace, queueName string, jobSet *jobsetv1alpha2.JobSet) {
-	if c == nil || jobSet == nil || queueName == "" {
+func (c *Client) applyMultiKueueManagedBy(ctx context.Context, jobSet *jobsetv1alpha2.JobSet) {
+	if c == nil || jobSet == nil {
 		return
 	}
-	isMultiKueue, err := c.isMultiKueueQueue(ctx, namespace, queueName, constants.KueueMultiKueueControllerName)
+	queueName := jobSet.Labels[kueueQueueLabel]
+	if queueName == "" {
+		return
+	}
+	isMultiKueue, err := c.isMultiKueueQueue(ctx, jobSet.Namespace, queueName)
 	if err != nil {
-		logging.Warn(ctx, "Failed to inspect Kueue queue for MultiKueue admission check", "namespace", namespace, "queue", queueName, "error", err)
+		logging.Warn(ctx, "Failed to inspect Kueue queue for MultiKueue admission check", "namespace", jobSet.Namespace, "queue", queueName, "error", err)
 		return
 	}
 	if isMultiKueue {

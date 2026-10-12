@@ -253,7 +253,7 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 
 	var result ctrl.Result
 	var podErrorMsg, startupWarningMsg string
-	if ToWorkUnitState(jobSet) == spb.WorkUnitStatus_STARTING && !isMultiKueueManaged(jobSet) {
+	if ToWorkUnitState(jobSet) == spb.WorkUnitStatus_STARTING {
 		checkRes := r.handleStartupPodChecks(ctx, jobSet)
 		result, podErrorMsg, startupWarningMsg = checkRes.Result, checkRes.PodErrorMsg, checkRes.StartupWarningMsg
 	}
