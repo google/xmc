@@ -36,8 +36,8 @@ import (
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/internal/toollibs/execution_environments"
+	"xmanager_cloud/internal/validator"
 	tpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	"xmanager_cloud/validator/validator"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

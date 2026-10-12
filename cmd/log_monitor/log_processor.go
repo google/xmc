@@ -29,8 +29,8 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/kubernetes/common/labels"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/logging/logging"
 )
 
 const (

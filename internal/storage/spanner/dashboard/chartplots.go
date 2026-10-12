@@ -28,7 +28,7 @@ import (
 	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // hydrateChartPlots populates the PlotSpec list of every chart in charts using a single batched

@@ -24,7 +24,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

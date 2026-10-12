@@ -28,7 +28,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner/artifact"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/storage/spanner/utils"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 func TestListArtifacts(t *testing.T) {

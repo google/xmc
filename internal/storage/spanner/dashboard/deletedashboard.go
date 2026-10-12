@@ -23,8 +23,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/logging/logging"
 )
 
 // DeleteDashboard deletes a dashboard and its child relationships from Spanner.

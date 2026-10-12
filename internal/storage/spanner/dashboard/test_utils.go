@@ -21,7 +21,7 @@ import (
 	"cloud.google.com/go/spanner"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 func setupDashboardRepository(ctx context.Context, t *testing.T) *Repository {

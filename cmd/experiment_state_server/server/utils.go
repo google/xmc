@@ -26,10 +26,10 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	ee "xmanager_cloud/internal/toollibs/execution_environments"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

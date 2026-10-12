@@ -41,8 +41,8 @@ import (
 	"xmanager_cloud/cmd/reconciler/shared"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/logging"
 	storagepkg "xmanager_cloud/internal/storage"
-	"xmanager_cloud/logging/logging"
 )
 
 type mockStorageUpdater struct {

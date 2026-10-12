@@ -31,10 +31,10 @@ import (
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
-	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"

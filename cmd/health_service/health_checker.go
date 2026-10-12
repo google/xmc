@@ -23,7 +23,7 @@ import (
 
 	spb "xmanager_cloud/health_service/proto/api_go_proto"
 	health "xmanager_cloud/internal/common/health"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/summary"
 
 	run "google.golang.org/api/run/v2"

@@ -34,8 +34,8 @@ import (
 	"xmanager_cloud/cmd/reconciler/shared"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/kubernetes/common/labels"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/logging/logging"
 )
 
 // Params holds dependencies and configuration for constructing a KueueSync Reconciler.

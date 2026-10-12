@@ -21,9 +21,9 @@ import (
 	"cloud.google.com/go/spanner"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/logging/logging"
 )
 
 // fetchChartPlots retrieves and unmarshals all PlotSpec child records for a chart.

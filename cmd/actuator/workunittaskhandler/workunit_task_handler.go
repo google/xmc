@@ -34,8 +34,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"xmanager_cloud/cmd/actuator/pausescheduling"
 	"xmanager_cloud/internal/common/interfaces"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
-	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 

@@ -27,7 +27,7 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	tq "xmanager_cloud/internal/task_queue"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"

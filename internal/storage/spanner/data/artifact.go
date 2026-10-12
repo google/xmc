@@ -22,7 +22,7 @@ import (
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/artifactschema"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // ArtifactRowToProto converts a Spanner Row containing Artifacts table data into an Artifact proto message.

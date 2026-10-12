@@ -29,11 +29,11 @@ import (
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/common/health"
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/keyreloader"
 	"xmanager_cloud/internal/storage"
 	ss "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
-	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/jwks"
 )
 

@@ -23,11 +23,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/schema/operationschema"
 	"xmanager_cloud/internal/storage/spanner/utils"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // FetchWorkUnitOperation retrieves an operation by its unique ID.

@@ -26,9 +26,9 @@ import (
 	dashboard_apipb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	dashboard_pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"

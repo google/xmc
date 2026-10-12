@@ -38,7 +38,7 @@ import (
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/kubernetes/common/labels"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 var (

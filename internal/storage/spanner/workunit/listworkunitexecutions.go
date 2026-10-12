@@ -20,11 +20,11 @@ import (
 
 	"cloud.google.com/go/spanner"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/utils"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 var listWorkUnitExecutionsSQL = safesql.New(`

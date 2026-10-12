@@ -23,7 +23,7 @@ import (
 	"strings"
 
 	"xmanager_cloud/api/filter/go/filtervisitor"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 
 	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
 )
