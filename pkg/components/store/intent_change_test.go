@@ -93,3 +93,35 @@ func TestMemoryStore_UnchangedIntentRecordsNoSnapshot(t *testing.T) {
 		t.Errorf("snapshots after repeated unchanged intent = %d, want 1", got)
 	}
 }
+
+func TestPlanIntent(t *testing.T) {
+	spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"}
+	changedSpec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.1.0"}
+	rec := &ComponentRecord{Generation: 5, Spec: spec}
+	tests := []struct {
+		name       string
+		spec       *componentspb.ComponentSpec
+		desiredGen int64
+		want       intentPlan
+	}{
+		{name: "unchanged intent writes nothing", spec: spec, desiredGen: 5, want: intentPlan{write: writeNothing, generation: 5}},
+		{name: "older desired generation with an equal spec writes nothing", spec: spec, desiredGen: 3, want: intentPlan{write: writeNothing, generation: 5}},
+		{name: "newer desired generation jumps to it", spec: spec, desiredGen: 9, want: intentPlan{write: writeSpec, generation: 9}},
+		{name: "changed spec at an older desired generation bumps by one", spec: changedSpec, desiredGen: 3, want: intentPlan{write: writeSpec, generation: 6}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := planIntent(rec, tt.spec, nil, nil, tt.desiredGen); got != tt.want {
+				t.Errorf("planIntent() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewIntentGeneration(t *testing.T) {
+	for desiredGen, want := range map[int64]int64{0: 1, 1: 1, 7: 7} {
+		if got := newIntentGeneration(desiredGen); got != want {
+			t.Errorf("newIntentGeneration(%d) = %d, want %d", desiredGen, got, want)
+		}
+	}
+}
