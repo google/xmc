@@ -20,9 +20,9 @@ package server
 import (
 	"fmt"
 
-	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/xid_service/config"
+	"xmanager_cloud/cmd/xid_service/config"
+	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/storage"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 

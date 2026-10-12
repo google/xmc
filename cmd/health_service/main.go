@@ -25,9 +25,9 @@ import (
 	"syscall"
 	"time"
 
-	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
-	"golang/grpc/grpc"
-	"golang/grpc/reflection/reflection"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/security/tlsutil"
@@ -43,8 +43,8 @@ import (
 
 	run "google.golang.org/api/run/v2"
 
-	gwpb "xmanager_cloud/health_service/proto/api_go_grpc_gateway_proto"
-	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	gwpb "xmanager_cloud/health_service/proto/api_go_proto"
+	spb "xmanager_cloud/health_service/proto/api_go_proto"
 )
 
 type grpcServerDeps struct {

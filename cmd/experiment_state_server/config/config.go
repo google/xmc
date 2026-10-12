@@ -22,7 +22,7 @@ import (
 	"log/slog"
 	"os"
 
-	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/logging/logging"

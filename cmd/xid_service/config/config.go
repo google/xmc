@@ -23,7 +23,7 @@ import (
 	"os"
 	"strconv"
 
-	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/logging/logging"
 )

@@ -16,11 +16,11 @@ package querytools
 import (
 	"testing"
 
-	"api/filter/go/filter"
-	"api/filter/go/filtervisitor"
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"xmanager_cloud/api/filter/go/filter"
+	"xmanager_cloud/api/filter/go/filtervisitor"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/query_generator/predicate"
 
@@ -28,7 +28,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 
-	fpb "api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
 )
 
 func TestGenerateQuery(t *testing.T) {

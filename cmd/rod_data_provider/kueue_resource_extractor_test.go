@@ -17,8 +17,8 @@ package main
 import (
 	"testing"
 
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 

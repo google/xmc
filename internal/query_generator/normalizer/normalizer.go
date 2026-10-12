@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	"api/filter/go/filtervisitor"
+	"xmanager_cloud/api/filter/go/filtervisitor"
 	"xmanager_cloud/query_generator/querytools"
 )
 

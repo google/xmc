@@ -22,14 +22,14 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
-	"golang/google_api/option/option"
-	authz "xmanager_cloud/auth/auth"
+	"google.golang.org/api/cloudidentity/v1beta1"
+	"google.golang.org/api/option"
+	"xmanager_cloud/cmd/xid_service/config"
 	commonhealth "xmanager_cloud/common/health"
+	authz "xmanager_cloud/internal/auth"
+	ss "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
-	ss "xmanager_cloud/storage/spanner/spanner"
-	"xmanager_cloud/xid_service/config"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 

@@ -19,8 +19,8 @@ import (
 	"strings"
 	"testing"
 
-	"xmanager_cloud/experiment_state_server/config"
-	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/cmd/experiment_state_server/config"
+	"xmanager_cloud/internal/storage"
 	tq "xmanager_cloud/task_queue/client"
 )
 

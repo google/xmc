@@ -19,11 +19,11 @@ import (
 	"strings"
 	"testing"
 
-	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/spanner/spanner"
-	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/xid_service/config"
+	"xmanager_cloud/cmd/xid_service/config"
+	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 type testServerOpt func(p *Params)

@@ -19,7 +19,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	emptypb "protobuf/empty_go_proto"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"

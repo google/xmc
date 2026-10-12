@@ -18,15 +18,15 @@ import (
 	"strings"
 	"testing"
 
-	"api/filter/go/filter"
-	"api/filter/go/filtervisitor"
-	"api/filter/go/queryfilterbase"
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
+	"xmanager_cloud/api/filter/go/filter"
+	"xmanager_cloud/api/filter/go/filtervisitor"
+	"xmanager_cloud/api/filter/go/queryfilterbase"
 	"xmanager_cloud/internal/safesql"
 
-	fpb "api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
 )
 
 var (

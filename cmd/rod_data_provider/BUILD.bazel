@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("//:oci.bzl", "oci_image_for_service")
 
 package(default_visibility = ["//visibility:public"])
 
-compat_go_library(
+go_library(
     name = "rod_data_provider_lib",
     srcs = [
         "config.go",
@@ -80,7 +79,7 @@ oci_image_for_service(
     binary = ":rod_data_provider",
 )
 
-compat_go_test(
+go_test(
     name = "server_test",
     srcs = [
         "config_test.go",
@@ -112,7 +111,7 @@ compat_go_test(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "kueue_resource_extractor_test",
     srcs = [
         "kueue_resource_extractor_test.go",
@@ -125,7 +124,7 @@ compat_go_test(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "queue_converters_test",
     srcs = [
         "queue_converters_test.go",

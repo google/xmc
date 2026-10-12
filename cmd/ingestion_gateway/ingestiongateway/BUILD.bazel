@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//visibility:private"])
 
-compat_go_library(
+go_library(
     name = "ingestiongateway",
     srcs = [
         "component_resolver.go",
@@ -61,7 +61,7 @@ compat_go_library(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "ingestiongateway_test",
     srcs = [
         "component_resolver_test.go",
