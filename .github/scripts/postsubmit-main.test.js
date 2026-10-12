@@ -33,33 +33,27 @@ test('getDedupMarker constructs standard HTML comment with SHA', () => {
 test('buildJobResults maps needs context dictionary to structured test suite results', () => {
   const needsContext = {
     'unit-tests': { result: 'failure' },
-    'e2e-tests': { result: 'success' },
   };
 
   const results = buildJobResults(needsContext);
-  assert.strictEqual(results.length, 2);
+  assert.strictEqual(results.length, 1);
 
   assert.deepStrictEqual(results[0], {
     name: 'Unit Tests (Backend, UI, Helm)',
     jobId: 'unit-tests',
     result: 'failure',
   });
-  assert.deepStrictEqual(results[1], {
-    name: 'KinD & Playwright Headless E2E',
-    jobId: 'e2e-tests',
-    result: 'success',
-  });
 });
 
 test('buildJobResults handles empty or missing keys gracefully with unknown result', () => {
   const results = buildJobResults({});
-  assert.strictEqual(results.length, 2);
+  assert.strictEqual(results.length, 1);
   for (const r of results) {
     assert.strictEqual(r.result, 'unknown');
   }
 
   const nullResults = buildJobResults(null);
-  assert.strictEqual(nullResults.length, 2);
+  assert.strictEqual(nullResults.length, 1);
 });
 
 test('getFailedJobs correctly filters failure, timed_out, and cancelled states', () => {
@@ -132,7 +126,6 @@ test('run terminates early when all jobs succeed', async () => {
 
   const needsContext = {
     'unit-tests': { result: 'success' },
-    'e2e-tests': { result: 'success' },
   };
 
   const res = await run({
@@ -273,7 +266,6 @@ test('run posts failure breakdown comment on PR when jobs fail and no duplicate 
     core: mockCore,
     needsContext: {
       'unit-tests': { result: 'failure' },
-      'e2e-tests': { result: 'cancelled' },
     },
   });
 
@@ -281,7 +273,6 @@ test('run posts failure breakdown comment on PR when jobs fail and no duplicate 
   assert.strictEqual(res.prNumber, 830);
   assert.deepStrictEqual(res.failedJobs, [
     'Unit Tests (Backend, UI, Helm)',
-    'KinD & Playwright Headless E2E',
   ]);
 
   assert.ok(postedComment);
@@ -291,5 +282,4 @@ test('run posts failure breakdown comment on PR when jobs fail and no duplicate 
   assert.match(postedComment.body, /Hello @test-author,/);
   assert.match(postedComment.body, /<!-- xmc-postsubmit-main-failure: 4444444444444444444444444444444444444444 -->/);
   assert.match(postedComment.body, /Unit Tests \(Backend, UI, Helm\).*❌ `failure`/);
-  assert.match(postedComment.body, /KinD & Playwright Headless E2E.*❌ `cancelled`/);
 });

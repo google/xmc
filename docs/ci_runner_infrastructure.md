@@ -201,7 +201,7 @@ kubectl apply -f deploy/ci/bazel-remote-cache.yaml
 
 ## 4. Headless KinD & Playwright End-to-End (E2E) Pipeline
 
-The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml)) spins up an entire ephemeral XMC environment for every merge queue entry, for every post-submit run on `main` (called from [`.github/workflows/postsubmit-main.yml`](../.github/workflows/postsubmit-main.yml)), and on manual dispatch. It does not run on `pull_request` events.
+The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml)) spins up an entire ephemeral XMC environment for every merge queue entry (`merge_group`), on manual dispatch (`workflow_dispatch`), and via reusable workflow calls (`workflow_call`). On `pull_request` events targeting `main`, the `run-e2e` job is skipped via `if: github.event_name != 'pull_request'` so the `KinD & Playwright Headless E2E` required status check reports a skipped (passing) status for merge-queue entry while only executing the full suite inside the merge queue.
 
 ### Architecture & Resource Isolation
 
@@ -238,9 +238,11 @@ The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/wor
 3. **Automated Stale Database Garbage Collection**:
    - Before provisioning new databases, `SpannerManager` automatically scans for any leftover databases older than 1 hour and deletes them, preventing orphaned resource accumulation if a runner pod is killed abruptly.
 
-### GitHub Repository Secrets & Environment Protection
+### GitHub Repository Secrets, Environment Protection & Break-Glass
 
-The E2E job references the `e2e-test` deployment environment (`environment: e2e-test`), which does not require manual approval. Access to the cloud credentials is limited by the workflow triggers instead: the workflow never runs on `pull_request` events, so pull request code, including code from forks, reaches the job only after the pull request enters the merge queue, and manual dispatch requires write access to the repository.
+The E2E job references the `e2e-test` deployment environment (`environment: e2e-test`), which does not require manual approval. Access to the cloud credentials is limited by the job condition instead: `if: github.event_name != 'pull_request'` skips the job before a runner or environment secret is accessed on `pull_request` events, so pull request code (including code from forks) reaches the job only after a maintainer queues the pull request into the merge queue, and manual dispatch requires write access to the repository.
+
+If a sustained external infrastructure outage (such as a regional Cloud Spanner incident) causes `KinD & Playwright Headless E2E` to fail in `merge_group` even after the harness's automatic infrastructure retry, a repository administrator can temporarily bypass the gate via **Settings → Rules → Rulesets** by disabling the E2E required status check rule until the outage is resolved.
 
 Workload Identity Federation allows GitHub Actions to authenticate directly to GCP using encrypted GitHub Actions Secrets without hardcoded credentials:
 

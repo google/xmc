@@ -15,6 +15,9 @@
 name: 'XMC Headless E2E Tests'
 
 on:
+  pull_request:
+    branches:
+      - main
   merge_group:
   workflow_call:
     secrets:
@@ -36,6 +39,8 @@ permissions:
 jobs:
   run-e2e:
     name: 'KinD & Playwright Headless E2E'
+    # Report a skipped check on pull_request so required status checks allow queueing; run in merge_group.
+    if: github.event_name != 'pull_request'
     runs-on: 'arc-runner-set'
     environment: e2e-test
     timeout-minutes: 20
