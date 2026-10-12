@@ -29,6 +29,7 @@ class HTTPRouteConfigTest(unittest.TestCase):
         for values in (
             {"gateway.enabled": "false", "rodDeployment.enabled": "true"},
             {"gateway.enabled": "true", "rodDeployment.enabled": "false"},
+            {"gateway.enabled": "false", "rodDeployment.enabled": "false"},
         ):
             with self.subTest(values=values):
                 manifest = render_template("templates/rod/httproute.yaml", values)
