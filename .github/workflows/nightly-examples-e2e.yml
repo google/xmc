@@ -354,7 +354,6 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${ENTRYPOINT}" ]; then
-            echo "Skipping workload launch for UI-only verification: ${EXAMPLE_NAME} (${EXAMPLE_ID})"
             echo "xid=ui-e2e" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -458,7 +457,6 @@ jobs:
           name: ui-screenshots-${{ matrix.example.id }}
           path: /tmp/xmc_screenshots/*.png
           if-no-files-found: ignore
-          retention-days: 7
 
       - name: 'Publish Step Summary & Save Result'
         if: always()

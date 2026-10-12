@@ -105,7 +105,9 @@ class ResourceDashboardUIVerifyTest(unittest.TestCase):
 
     def test_assert_queue_cards_failures(self) -> None:
         empty_session = self._build_mock_session(queue_titles=[])
-        with self.assertRaisesRegex(ui_entities_validator.UIVerificationError, "found none"):
+        with self.assertRaisesRegex(
+            ui_entities_validator.UIVerificationError, "No cluster queue cards"
+        ):
             resource_dashboard_ui_verify.assert_queue_cards(empty_session)
 
         missing_q_session = self._build_mock_session(queue_titles=["cpu-queue"])
@@ -160,7 +162,7 @@ class ResourceDashboardUIVerifyTest(unittest.TestCase):
 
         no_options = self._build_mock_session(option_count=1)
         with self.assertRaisesRegex(
-            ui_entities_validator.UIVerificationError, "selectable resource option"
+            ui_entities_validator.UIVerificationError, "selectable resource"
         ):
             resource_dashboard_ui_verify.assert_smart_resource_finder_and_predictability(no_options)
 
@@ -196,7 +198,10 @@ class ResourceDashboardUIVerifyTest(unittest.TestCase):
             },
         )
         session.navigate_to_route.assert_called_once()
-        session.assert_no_runtime_errors.assert_called_once_with("resource_dashboard")
+        session.assert_no_runtime_errors.assert_called_once_with(
+            "resource_dashboard",
+            ignored_http_substrings=(":batchGetSecondaryData",),
+        )
 
     def test_main_invokes_verify_resource_dashboard_ui(self) -> None:
         fake_flags = types.SimpleNamespace(

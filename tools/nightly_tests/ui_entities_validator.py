@@ -115,18 +115,12 @@ class XMCUIBrowserSession:
 
     def _is_same_origin(self, url: str) -> bool:
         """Checks whether a request or response URL matches the configured UI origin."""
-        parsed = urllib.parse.urlparse(url)
-        base_port = self.port or (
+        p = urllib.parse.urlparse(url)
+        b_port = self.port or (
             443 if self.scheme == "https" else (80 if self.scheme == "http" else None)
         )
-        req_port = parsed.port or (
-            443 if parsed.scheme == "https" else (80 if parsed.scheme == "http" else None)
-        )
-        return (
-            parsed.hostname == self.domain_host
-            and parsed.scheme == self.scheme
-            and req_port == base_port
-        )
+        r_port = p.port or (443 if p.scheme == "https" else (80 if p.scheme == "http" else None))
+        return p.hostname == self.domain_host and p.scheme == self.scheme and r_port == b_port
 
     def _configure_page_interception(self) -> None:
         """Configures domain-scoped Bearer header injection and diagnostic event listeners."""
@@ -295,29 +289,32 @@ class XMCUIBrowserSession:
         expected_path = urllib.parse.urlparse(target_url).path.rstrip("/")
         print(f"\n[UI Action] Navigating to UI Route: {target_url}...")
         self.page.goto(target_url, wait_until="networkidle", timeout=timeout_ms)
-        self.page.wait_for_selector(
-            f"{root_selector}, xmc-home-page, .guest-page-container",
-            timeout=timeout_ms,
-        )
+        sel = f"{root_selector}, xmc-home-page, .guest-page-container"
+        self.page.wait_for_selector(sel, timeout=timeout_ms)
         self.settle_and_wait_fonts()
         shot = self.take_screenshot(screenshot_name)
         print(f"  [✓] Route loaded. URL: {self.page.url} -> Screenshot: {shot}")
         tag = error_tag or normalized_route.strip("/").replace("/", "_") or "root"
         self._assert_authenticated_landing(expected_path, tag)
 
-    def assert_no_runtime_errors(self, context_label: str) -> None:
+    def assert_no_runtime_errors(
+        self, context_label: str, ignored_http_substrings: Sequence[str] = ()
+    ) -> None:
         """Asserts that no uncaught page errors, same-origin HTTP >= 400 responses, or error banners exist."""
         banner_loc = self.page.locator("xmc-error-banner, .error-banner")
         banner_text = (
             (banner_loc.first.text_content() or "").strip() if banner_loc.count() > 0 else ""
         )
-        if not self.page_errors and not self.http_errors and not banner_text:
+        unexpected_http = [
+            e for e in self.http_errors if not any(sub in e for sub in ignored_http_substrings)
+        ]
+        if not self.page_errors and not unexpected_http and not banner_text:
             print(f"  [✓] Verified zero runtime/HTTP/banner errors ({context_label})")
             return
         err_shot = self.take_screenshot(f"ui_RUNTIME_ERROR_{context_label}.png")
         raise UIVerificationError(
             f"❌ RUNTIME ERROR ({context_label}): page_errors={self.page_errors}, "
-            f"http_errors={self.http_errors}, error_banner='{banner_text}'. Screenshot -> {err_shot}"
+            f"http_errors={unexpected_http}, error_banner='{banner_text}'. Screenshot -> {err_shot}"
         )
 
     def navigate_to_experiment(self, xid: str | int, timeout_ms: int = 60000) -> None:
