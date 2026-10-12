@@ -114,12 +114,15 @@ func TestParseHelpers(t *testing.T) {
 	conds := ParseConditionsFromUnstructured(map[string]any{
 		"conditions": []any{
 			map[string]any{"type": "Ready", "status": "True", "observedGeneration": float64(2), "lastTransitionTime": "2026-08-24T00:00:00Z"},
-			map[string]any{"type": "Degraded", "status": "False", "observedGeneration": "invalid", "lastTransitionTime": "invalid-date"},
+			map[string]any{"type": "Reconciling", "status": "True", "observedGeneration": "invalid", "lastTransitionTime": "invalid-date"},
 			"not-a-map",
 		},
 	})
 	if len(conds) != 2 || conds[0].ObservedGeneration != 2 || conds[0].Status != "True" || conds[1].ObservedGeneration != 0 {
 		t.Errorf("unexpected conditions: %+v", conds)
+	}
+	if ParseObservedGenerationFromUnstructured(nil) != 0 || ParseObservedGenerationFromUnstructured(map[string]any{"observedGeneration": int64(3)}) != 3 {
+		t.Error("unexpected ParseObservedGenerationFromUnstructured result")
 	}
 }
 

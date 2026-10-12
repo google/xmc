@@ -46,7 +46,7 @@ var errNilComponentItem = errors.New("component item must not be nil")
 
 // ComponentStatus defines the structured representation of .status in the Component CRD.
 type ComponentStatus struct {
-	ObservedGeneration int64                `json:"observedGeneration"`
+	ObservedGeneration int64                `json:"observedGeneration,omitempty"`
 	State              string               `json:"state"`
 	Access             *ComponentAccess     `json:"access,omitempty"`
 	Conditions         []ComponentCondition `json:"conditions,omitempty"`

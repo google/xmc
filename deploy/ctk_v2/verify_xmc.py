@@ -334,7 +334,8 @@ def _are_component_crs_ready(crs_json_str: str) -> tuple[bool, int]:
         )
         exp = (f"COMPONENT_STATE_{suffix[0]}", f"STATE_{suffix[1]}")
         if (
-            conds.get("Degraded") == "True"
+            conds.get("Stalled") == "True"
+            or conds.get("Synced") == "False"
             or conds.get("Ready") != str(enabled)
             or (st and st not in exp)
         ):

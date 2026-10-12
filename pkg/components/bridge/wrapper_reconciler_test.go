@@ -206,20 +206,20 @@ func TestReconcile3PWrapper_InvalidWrapperSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	var readyCond, degradedCond *Condition
+	var readyCond, stalledCond *Condition
 	for i := range res.Conditions {
 		switch res.Conditions[i].Type {
 		case ConditionTypeReady:
 			readyCond = &res.Conditions[i]
-		case ConditionTypeDegraded:
-			degradedCond = &res.Conditions[i]
+		case ConditionTypeStalled:
+			stalledCond = &res.Conditions[i]
 		}
 	}
 	if readyCond == nil || readyCond.Status != ConditionStatusFalse || readyCond.Reason != ReasonInvalidWrapperSpec {
 		t.Errorf("expected Ready=False/InvalidWrapperSpec, got %+v", readyCond)
 	}
-	if degradedCond == nil || degradedCond.Status != ConditionStatusTrue || degradedCond.Reason != ReasonInvalidWrapperSpec {
-		t.Errorf("expected Degraded=True/InvalidWrapperSpec, got %+v", degradedCond)
+	if stalledCond == nil || stalledCond.Status != ConditionStatusTrue || stalledCond.Reason != ReasonInvalidWrapperSpec {
+		t.Errorf("expected Stalled=True/InvalidWrapperSpec, got %+v", stalledCond)
 	}
 }
 

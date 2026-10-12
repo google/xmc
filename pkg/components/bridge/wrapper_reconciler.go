@@ -155,12 +155,12 @@ func (r *Reconciler) verifyEndpointHealth(ctx context.Context, endpoint string) 
 	return true, "", ""
 }
 
-// handle3PUnreadyStatus sets Ready=False and Degraded=True status conditions when 3P health or readiness fails.
+// handle3PUnreadyStatus sets Ready=False and Reconciling/Stalled status conditions when 3P health or readiness fails.
 func (r *Reconciler) handle3PUnreadyStatus(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, message string) (*ReconcileResult, error) {
 	if message == "" {
 		message = fmt.Sprintf("3P wrapper %s is not ready: %s", in.Name, reason)
 	}
-	setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, reason, message)
+	setReadiness(res, in, ConditionStatusFalse, reason, message)
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 	return res, r.syncReadyToCMS(ctx, in, canonicalName, res, ConditionStatusFalse)
 }
@@ -177,7 +177,7 @@ func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileCompon
 	} else {
 		populateAccessEnvVars(res, resStatus)
 	}
-	setReadiness(res, in, ConditionStatusTrue, ConditionStatusFalse, ReasonComponentHealthy, msg)
+	setReadiness(res, in, ConditionStatusTrue, ReasonComponentHealthy, msg)
 	return res, r.syncReadyToCMS(ctx, in, canonicalName, res, ConditionStatusTrue)
 }
 

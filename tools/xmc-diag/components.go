@@ -99,7 +99,7 @@ func validateComponentChecker(checker *ComponentChecker, cfg *Config, ns string)
 	return ComponentsReport{Status: StatusFailed, Namespace: ns, Reason: "failed to connect to Kubernetes cluster", Error: errMsg}, false
 }
 
-type condSummary struct{ readyStatus, readyReason, readyMsg, degStatus, degMsg string }
+type condSummary struct{ readyStatus, readyReason, readyMsg, stalledStatus, stalledMsg string }
 
 func parseConditions(item unstructured.Unstructured) condSummary {
 	var c condSummary
@@ -110,9 +110,9 @@ func parseConditions(item unstructured.Unstructured) condSummary {
 			c.readyStatus, _ = m["status"].(string)
 			c.readyReason, _ = m["reason"].(string)
 			c.readyMsg, _ = m["message"].(string)
-		} else if ok && m["type"] == "Degraded" {
-			c.degStatus, _ = m["status"].(string)
-			c.degMsg, _ = m["message"].(string)
+		} else if ok && m["type"] == "Stalled" {
+			c.stalledStatus, _ = m["status"].(string)
+			c.stalledMsg, _ = m["message"].(string)
 		}
 	}
 	return c
@@ -126,8 +126,8 @@ func deriveComponentStatus(item unstructured.Unstructured) ComponentStatus {
 	state, _, _ := unstructured.NestedString(item.Object, "status", "state")
 	genStale := (hasObsGen && obsGen != item.GetGeneration()) || (!hasObsGen && item.GetGeneration() > 0)
 	c := parseConditions(item)
-	if c.degStatus == "True" {
-		return ComponentStatus{Name: name, Enabled: enabled, State: "STATE_DEGRADED", Message: c.degMsg}
+	if c.stalledStatus == "True" {
+		return ComponentStatus{Name: name, Enabled: enabled, State: "STATE_DEGRADED", Message: c.stalledMsg}
 	}
 	if !enabled {
 		return deriveDisabledStatus(name, state, hasObsGen, genStale, c)
@@ -135,7 +135,7 @@ func deriveComponentStatus(item unstructured.Unstructured) ComponentStatus {
 	if !genStale && c.readyStatus == "True" {
 		return ComponentStatus{Name: name, Enabled: true, State: "STATE_READY", Ready: true, Healthy: true, Message: c.readyMsg}
 	}
-	if genStale || c.readyStatus != "" || c.degStatus != "" || state != "" {
+	if genStale || c.readyStatus != "" || c.stalledStatus != "" || state != "" {
 		return ComponentStatus{Name: name, Enabled: true, State: "STATE_RECONCILING", Message: c.readyMsg}
 	}
 	return ComponentStatus{Name: name, Enabled: true, State: "STATE_UNSPECIFIED"}

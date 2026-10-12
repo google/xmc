@@ -112,7 +112,6 @@ func TestConstructJobSet_ComponentSnapshot_Success(t *testing.T) {
 	compCR := createTestComponentCR("metrics-collector", targetNS, 1, true, "COMPONENT_STATE_ENABLED",
 		[]map[string]any{
 			{"type": "Ready", "status": "True", "reason": "ComponentHealthy", "message": "ready"},
-			{"type": "Degraded", "status": "False", "reason": "ComponentHealthy", "message": "not degraded"},
 		},
 		nil,
 	)
@@ -187,14 +186,6 @@ func TestConstructJobSet_ComponentSnapshot_UnhealthyComponent(t *testing.T) {
 			wantSub: "NodeUnreachable",
 		},
 		{
-			name: "degraded_true",
-			conditions: []map[string]any{
-				{"type": "Ready", "status": "True", "reason": "OK", "message": "ready"},
-				{"type": "Degraded", "status": "True", "reason": "QuotaExceeded", "message": "resource quota reached"},
-			},
-			wantSub: "QuotaExceeded",
-		},
-		{
 			name:       "no_conditions",
 			conditions: nil,
 			wantSub:    "component conditions are uninitialized",
@@ -237,7 +228,6 @@ func TestConstructJobSet_ComponentSnapshot_DriftWarning(t *testing.T) {
 	compCR := createTestComponentCR("drifted-comp", targetNS, 2, true, "COMPONENT_STATE_ENABLED",
 		[]map[string]any{
 			{"type": "Ready", "status": "True", "reason": "ComponentHealthy", "message": "ready"},
-			{"type": "Degraded", "status": "False", "reason": "ComponentHealthy", "message": "not degraded"},
 		},
 		nil,
 	)
@@ -376,7 +366,6 @@ func TestConstructJobSet_ComponentSnapshot_ClusterWideFallback(t *testing.T) {
 	compCR := createTestComponentCR("cluster-comp", constants.DefaultComponentsNamespace, 1, true, "COMPONENT_STATE_ENABLED",
 		[]map[string]any{
 			{"type": "Ready", "status": "True", "reason": "ComponentHealthy", "message": "ready"},
-			{"type": "Degraded", "status": "False", "reason": "ComponentHealthy", "message": "not degraded"},
 		},
 		nil,
 	)
@@ -471,7 +460,6 @@ func TestCreateWorkUnit_ComponentSnapshotValidation_Success(t *testing.T) {
 	compCR := createTestComponentCR("audit-sidecar", testNamespace, 1, true, "COMPONENT_STATE_ENABLED",
 		[]map[string]any{
 			{"type": "Ready", "status": "True", "reason": "ComponentHealthy", "message": "ready"},
-			{"type": "Degraded", "status": "False", "reason": "ComponentHealthy", "message": "healthy"},
 		},
 		map[string]any{},
 	)
@@ -522,7 +510,6 @@ func TestCreateWorkUnit_ComponentSnapshotInjection_EnvVars_Success(t *testing.T)
 	compCR := createTestComponentCR("audit-sidecar", testNamespace, 1, true, "COMPONENT_STATE_ENABLED",
 		[]map[string]any{
 			{"type": "Ready", "status": "True", "reason": "ComponentHealthy", "message": "ready"},
-			{"type": "Degraded", "status": "False", "reason": "ComponentHealthy", "message": "healthy"},
 		},
 		map[string]any{
 			"envVars": map[string]any{
@@ -597,7 +584,6 @@ func TestConstructJobSet_ComponentSnapshot_EnvVars_Injection(t *testing.T) {
 	compCR := createTestComponentCR("env-comp", targetNS, 1, true, "COMPONENT_STATE_ENABLED",
 		[]map[string]any{
 			{"type": "Ready", "status": "True", "reason": "ComponentHealthy", "message": "ready"},
-			{"type": "Degraded", "status": "False", "reason": "ComponentHealthy", "message": "healthy"},
 		},
 		map[string]any{
 			"envVars": map[string]any{
@@ -784,7 +770,6 @@ func TestCreateWorkUnit_ComponentSnapshotInjection_Volumes_Success(t *testing.T)
 	compCR := createTestComponentCR("vol-sidecar", testNamespace, 1, true, "COMPONENT_STATE_ENABLED",
 		[]map[string]any{
 			{"type": "Ready", "status": "True", "reason": "ComponentHealthy", "message": "ready"},
-			{"type": "Degraded", "status": "False", "reason": "ComponentHealthy", "message": "healthy"},
 		},
 		map[string]any{
 			"secretVolumeMounts": map[string]any{

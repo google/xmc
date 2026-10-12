@@ -24,7 +24,8 @@ import (
 const (
 	ConditionTypeReady               = "Ready"
 	ConditionTypeSynced              = "Synced"
-	ConditionTypeDegraded            = "Degraded"
+	ConditionTypeReconciling         = "Reconciling"
+	ConditionTypeStalled             = "Stalled"
 	ConditionTypeDeactivationBlocked = "DeactivationBlocked"
 	ConditionStatusTrue              = "True"
 	ConditionStatusFalse             = "False"
@@ -33,7 +34,7 @@ const (
 	ConditionTypeDependenciesReady = "DependenciesReady"
 )
 
-// Ready, Synced, and Degraded condition reasons reported by component reconciliation.
+// Ready, Synced, Reconciling, and Stalled condition reasons reported by component reconciliation.
 const (
 	// ReasonCMSSynced indicates the component's intent and observed state are synchronized with CMS.
 	ReasonCMSSynced = "CMSSynced"
@@ -41,6 +42,14 @@ const (
 	ReasonCMSSyncFailed = "CMSSyncFailed"
 	// ReasonInitialSyncPending indicates CMS failed before initial component readiness was evaluated.
 	ReasonInitialSyncPending = "InitialSyncPending"
+	// ReasonProgressing indicates the component is actively reconciling or awaiting workload readiness.
+	ReasonProgressing = "Progressing"
+	// ReasonDisabling indicates the component is being deactivated or completing its CMS deactivation handshake.
+	ReasonDisabling = "Disabling"
+	// ReasonDependenciesPending indicates the component is waiting on unready dependencies before activating.
+	ReasonDependenciesPending = "DependenciesPending"
+	// ReasonUpgradePending indicates a Helm upgrade is queued, in flight, or held on unready dependencies.
+	ReasonUpgradePending = "UpgradePending"
 	// ReasonComponentHealthy indicates the component is healthy (for 1P: Helm release deployed, no upgrade pending or failed).
 	ReasonComponentHealthy = "ComponentHealthy"
 	// ReasonHealthProbeFailed indicates the prober-based health check failed.
@@ -49,7 +58,7 @@ const (
 	ReasonInvalidComponentRef = "InvalidComponentRef"
 	// ReasonHelmUpgradeFailed indicates the last Helm upgrade for the component failed.
 	ReasonHelmUpgradeFailed = "HelmUpgradeFailed"
-	// ReasonHelmUpgradePending indicates a Helm upgrade is queued or running; progress, not a fault (Degraded=False).
+	// ReasonHelmUpgradePending indicates a Helm upgrade is queued or running; progress, not a terminal fault.
 	ReasonHelmUpgradePending = "HelmUpgradePending"
 	// ReasonHelmRunnerUninitialized indicates no Helm action runner is configured, so release state cannot be verified.
 	ReasonHelmRunnerUninitialized = "HelmRunnerUninitialized"
@@ -77,9 +86,9 @@ const cmsSyncedMessage = "Component synchronized with CMS"
 
 // Condition represents a standardized Kubernetes custom resource condition.
 type Condition struct {
-	// Type is the condition identifier (e.g. Ready, Degraded, DeactivationBlocked).
+	// Type is the condition identifier (e.g. Ready, Synced, Reconciling, Stalled, DeactivationBlocked).
 	Type string
-	// Status is the condition state ("True" or "False").
+	// Status is the condition state ("True", "False", or "Unknown").
 	Status string
 	// Reason is a single-word camelCase reason explaining the condition transition.
 	Reason string
@@ -114,10 +123,53 @@ func setCondition(conditions *[]Condition, existing []Condition, condType, statu
 	upsertCondition(conditions, Condition{Type: condType, Status: status, ObservedGeneration: gen, LastTransitionTime: transitionTime, Reason: reason, Message: message})
 }
 
-// setReadiness records the Ready and Degraded conditions of one reconciliation outcome, sharing reason and msg.
-func setReadiness(res *ReconcileResult, in ReconcileComponentInput, ready, degraded, reason, msg string) {
+// setReadiness records the Ready condition and manages kstatus abnormal-true conditions (Reconciling and Stalled).
+// Settled states (Ready=True or ComponentDisabled) omit both Reconciling and Stalled.
+func setReadiness(res *ReconcileResult, in ReconcileComponentInput, ready, reason, msg string) {
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReady, ready, in.Generation, reason, msg)
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degraded, in.Generation, reason, msg)
+	deleteCondition(&res.Conditions, ConditionTypeReconciling)
+	deleteCondition(&res.Conditions, ConditionTypeStalled)
+	if ready == ConditionStatusTrue || reason == reasonComponentDisabled {
+		return
+	}
+	if isStalledReason(reason) {
+		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeStalled, ConditionStatusTrue, in.Generation, reason, msg)
+		return
+	}
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeReconciling, ConditionStatusTrue, in.Generation, reconcilingReason(reason), msg)
+}
+
+func isStalledReason(reason string) bool {
+	switch reason {
+	case ReasonDependencyCycle, ReasonDeactivationBlocked, ReasonContractBroken,
+		ReasonInvalidWrapperSpec, "InvalidWrapperRef", "CrossNamespaceForbidden",
+		ReasonInvalidComponentRef, ReasonHelmReleaseStuck, ReasonHelmRunnerUninitialized:
+		return true
+	}
+	return false
+}
+
+func reconcilingReason(readyReason string) string {
+	switch readyReason {
+	case ReasonDependenciesNotReady:
+		return ReasonDependenciesPending
+	case ReasonHelmUpgradePending:
+		return ReasonUpgradePending
+	case ReasonDeactivationIncomplete, "HelmDeletionFailed", "HelmOrphanFailed":
+		return ReasonDisabling
+	default:
+		return ReasonProgressing
+	}
+}
+
+func deleteCondition(conditions *[]Condition, condType string) {
+	s := *conditions
+	for i := range s {
+		if s[i].Type == condType {
+			*conditions = append(s[:i], s[i+1:]...)
+			return
+		}
+	}
 }
 
 // setSynced records the Synced condition on res.
@@ -126,7 +178,7 @@ func setSynced(res *ReconcileResult, in ReconcileComponentInput, status, reason,
 }
 
 // recordCMSSyncFailure records Synced=False when a CMS RPC fails before workload health is
-// evaluated in the current pass, preserving the previous Ready/Degraded conditions and
+// evaluated in the current pass, preserving the previous Ready/Reconciling/Stalled conditions and
 // status.access (or reporting Ready=Unknown/InitialSyncPending on first reconcile). Ready=True is
 // preserved only while spec.enabled: a disabled component whose deactivation cannot reach CMS
 // reports Ready=Unknown/CMSSyncFailed instead.
@@ -136,34 +188,18 @@ func recordCMSSyncFailure(res *ReconcileResult, in ReconcileComponentInput, err 
 	preserveExistingAccess(res, in.ExistingAccess)
 	existingReady := findCondition(in.ExistingConditions, ConditionTypeReady)
 	if existingReady == nil {
-		setReadiness(res, in, ConditionStatusUnknown, ConditionStatusFalse, ReasonInitialSyncPending, err.Error())
+		setReadiness(res, in, ConditionStatusUnknown, ReasonInitialSyncPending, err.Error())
 		return
 	}
 	if !in.Enabled && existingReady.Status == ConditionStatusTrue {
-		setReadiness(res, in, ConditionStatusUnknown, ConditionStatusFalse, ReasonCMSSyncFailed, "deactivation is pending until CMS is reachable: "+err.Error())
+		setReadiness(res, in, ConditionStatusUnknown, ReasonCMSSyncFailed, "deactivation is pending until CMS is reachable: "+err.Error())
 		return
 	}
 	if in.Enabled && !in.IsDeleting && existingReady.Status == ConditionStatusTrue {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
 	}
+	setReadiness(res, in, existingReady.Status, existingReady.Reason, existingReady.Message)
 	upsertCondition(&res.Conditions, *existingReady)
-	if existingDegraded := findCondition(in.ExistingConditions, ConditionTypeDegraded); existingDegraded != nil {
-		upsertCondition(&res.Conditions, *existingDegraded)
-		return
-	}
-	degraded := ConditionStatusFalse
-	if existingReady.Status == ConditionStatusFalse && isFaultReadyReason(existingReady.Reason) {
-		degraded = ConditionStatusTrue
-	}
-	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degraded, existingReady.ObservedGeneration, existingReady.Reason, existingReady.Message)
-}
-
-func isFaultReadyReason(reason string) bool {
-	switch reason {
-	case "", reasonComponentDisabled, ReasonDependenciesNotReady, ReasonHelmUpgradePending, ReasonHelmStatusUnavailable, ReasonDeactivationBlocked, ReasonInitialSyncPending:
-		return false
-	}
-	return true
 }
 
 func preserveExistingAccess(res *ReconcileResult, existing *AccessStatus) {
@@ -182,18 +218,6 @@ func upsertCondition(conditions *[]Condition, c Condition) {
 		}
 	}
 	*conditions = append(*conditions, c)
-}
-
-// healthConditionStatuses maps a health verdict to Ready/Degraded statuses. Pending upgrades and
-// unknown (transient) status are not faults, so they report Degraded=False.
-func healthConditionStatuses(healthy bool, reason string) (ready, degraded string) {
-	if healthy {
-		return ConditionStatusTrue, ConditionStatusFalse
-	}
-	if reason == ReasonHelmUpgradePending || reason == ReasonHelmStatusUnavailable {
-		return ConditionStatusFalse, ConditionStatusFalse
-	}
-	return ConditionStatusFalse, ConditionStatusTrue
 }
 
 const defaultCMSHeartbeatInterval = 5 * time.Minute

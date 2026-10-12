@@ -93,6 +93,8 @@ type ReconcileComponentInput struct {
 	IsDeleting bool
 	// Enabled indicates whether the component should be active.
 	Enabled bool
+	// ExistingObservedGeneration is the status.observedGeneration previously reported on the custom resource.
+	ExistingObservedGeneration int64
 	// ExistingConditions contains conditions previously reported on the custom resource.
 	ExistingConditions []Condition
 	// ExistingAccess contains status.access previously reported on the custom resource.
@@ -124,8 +126,15 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	in.Spec.Generation = in.Generation
 	canonicalName := naming.CanonicalComponentName(in.Name)
 	in.Spec.Dependencies = dropSelfDependency(ctx, in.Spec.GetDependencies(), canonicalName)
-	res := &ReconcileResult{ObservedGeneration: in.Generation, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
+	res := &ReconcileResult{ObservedGeneration: in.ExistingObservedGeneration, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
+	res, err := r.reconcilePass(ctx, in, canonicalName, res)
+	if err == nil && res != nil {
+		res.ObservedGeneration = in.Generation
+	}
+	return res, err
+}
 
+func (r *Reconciler) reconcilePass(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if in.IsDeleting {
 		return r.reconcileDeletion(ctx, in, canonicalName, res)
 	}
@@ -145,7 +154,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 func (r *Reconciler) reconcileEnabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if in.Dependencies != nil {
 		if cycle := in.Dependencies.DependencyCycle(ctx, canonicalName); cycle != "" {
-			return r.reportGated(ctx, in, canonicalName, res, ReasonDependencyCycle, "dependency cycle detected: "+cycle, ConditionStatusTrue)
+			return r.reportGated(ctx, in, canonicalName, res, ReasonDependencyCycle, "dependency cycle detected: "+cycle)
 		}
 	}
 	waitMsg, err := r.registerIntent(ctx, in, canonicalName, res)
@@ -154,7 +163,7 @@ func (r *Reconciler) reconcileEnabled(ctx context.Context, in ReconcileComponent
 		return res, err
 	}
 	if waitMsg != "" && !r.isActuated(in) {
-		return r.reportGated(ctx, in, canonicalName, res, ReasonDependenciesNotReady, waitMsg, ConditionStatusFalse)
+		return r.reportGated(ctx, in, canonicalName, res, ReasonDependenciesNotReady, waitMsg)
 	}
 	res, err = r.actuateAndEvaluate(ctx, in, canonicalName, res, waitMsg != "")
 	if err != nil {
@@ -232,7 +241,7 @@ func (r *Reconciler) actuateAndEvaluate(ctx context.Context, in ReconcileCompone
 	}
 	if held {
 		msg := fmt.Sprintf("Helm upgrade to generation %d is held until dependencies are ready", in.Generation)
-		return r.reportGated(ctx, in, canonicalName, res, ReasonHelmUpgradePending, msg, ConditionStatusFalse)
+		return r.reportGated(ctx, in, canonicalName, res, ReasonHelmUpgradePending, msg)
 	}
 	return r.evaluateHealth(ctx, in, canonicalName, res)
 }
@@ -274,7 +283,7 @@ func (r *Reconciler) handleIntentError(ctx context.Context, in ReconcileComponen
 	}
 	msg := dependencyCycleMessage(err)
 	if msg != "" {
-		if _, syncErr := r.reportGated(ctx, in, canonicalName, res, ReasonDependencyCycle, msg, ConditionStatusTrue); syncErr != nil {
+		if _, syncErr := r.reportGated(ctx, in, canonicalName, res, ReasonDependencyCycle, msg); syncErr != nil {
 			return errors.Join(intentErr, syncErr)
 		}
 		return intentErr
@@ -353,12 +362,12 @@ func setDependenciesReadyCondition(res *ReconcileResult, in ReconcileComponentIn
 // reportGated holds the component in PENDING_RECONCILIATION with Ready=False without touching workloads.
 // CMS gets the coarse "Ready=False" message like other unready paths (it is only re-synced on Ready or
 // generation changes, so details would go stale). NotFound is tolerated: it may not be registered yet.
-func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, msg, degraded string) (*ReconcileResult, error) {
+func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, msg string) (*ReconcileResult, error) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 	if r.isActuated(in) || reason == ReasonDeactivationBlocked || reason == ReasonHelmUpgradePending {
 		preserveExistingAccess(res, in.ExistingAccess)
 	}
-	setReadiness(res, in, ConditionStatusFalse, degraded, reason, msg)
+	setReadiness(res, in, ConditionStatusFalse, reason, msg)
 	if !shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) {
 		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 		return res, nil
@@ -403,7 +412,7 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 	if err := r.helmManager.Ensure1PComponent(ctx, ref, in.HelmOpts); err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 		preserveExistingAccess(res, in.ExistingAccess)
-		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, ReasonHelmUpgradeFailed, err.Error())
+		setReadiness(res, in, ConditionStatusFalse, ReasonHelmUpgradeFailed, err.Error())
 		return false, fmt.Errorf("failed to ensure 1P Helm component: %w", err)
 	}
 	r.helmManager.RecordActuation(ref, in.Generation)
@@ -415,20 +424,16 @@ func isReadyAtGeneration(existing []Condition, generation int64) bool {
 	if generation <= 0 {
 		return false
 	}
-	readyAtGen := false
 	for _, c := range existing {
-		if c.Type == ConditionTypeDegraded && c.Status == ConditionStatusTrue && c.ObservedGeneration == generation {
-			return false
-		}
 		if c.Type == ConditionTypeReady && c.Status == ConditionStatusTrue && c.ObservedGeneration == generation {
-			readyAtGen = true
+			return true
 		}
 	}
-	return readyAtGen
+	return false
 }
 
-// evaluateHealth probes the runtime health of an active component (in.Enabled == true), sets the Ready and Degraded
-// conditions, updates state to COMPONENT_STATE_ENABLED (or PENDING_RECONCILIATION), and reports to CMS.
+// evaluateHealth probes the runtime health of an active component (in.Enabled == true), sets the Ready and
+// Reconciling/Stalled conditions, updates state to COMPONENT_STATE_ENABLED (or PENDING_RECONCILIATION), and reports to CMS.
 // Note: Disabled components (in.Enabled == false) are processed exclusively by reconcileDisabled and do not reach evaluateHealth.
 func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	isHealthy, reason, healthMsg := r.probeComponentHealth(ctx, in)
@@ -436,16 +441,17 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	preserveExistingAccess(res, in.ExistingAccess)
 	if reason == ReasonHelmStatusUnavailable && preserveHealthConditions(in, res) {
 		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
-		logging.Warn(ctx, "Transient component health check failure; keeping previous Ready/Degraded conditions", "name", canonicalName, "generation", in.Generation, "message", healthMsg)
+		logging.Warn(ctx, "Transient component health check failure; keeping previous health conditions", "name", canonicalName, "generation", in.Generation, "message", healthMsg)
 		return res, nil
 	}
 
-	readyStatus, degradedStatus := healthConditionStatuses(isHealthy, reason)
+	readyStatus := ConditionStatusFalse
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 	if isHealthy {
+		readyStatus = ConditionStatusTrue
 		res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
 	}
-	setReadiness(res, in, readyStatus, degradedStatus, reason, healthMsg)
+	setReadiness(res, in, readyStatus, reason, healthMsg)
 	if err := r.syncReadyToCMS(ctx, in, canonicalName, res, readyStatus); err != nil {
 		return res, err
 	}
@@ -453,7 +459,7 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	return res, nil
 }
 
-// preserveHealthConditions copies the existing Ready/Degraded conditions into res and derives the state from them.
+// preserveHealthConditions copies the existing Ready/Reconciling/Stalled conditions into res and derives the state from them.
 // It returns false (leaving res untouched) when there is no Ready condition observed at the current generation.
 func preserveHealthConditions(in ReconcileComponentInput, res *ReconcileResult) bool {
 	idx := slices.IndexFunc(in.ExistingConditions, func(c Condition) bool { return c.Type == ConditionTypeReady })
@@ -464,8 +470,10 @@ func preserveHealthConditions(in ReconcileComponentInput, res *ReconcileResult) 
 	if in.ExistingConditions[idx].Status == ConditionStatusTrue {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
 	}
+	deleteCondition(&res.Conditions, ConditionTypeReconciling)
+	deleteCondition(&res.Conditions, ConditionTypeStalled)
 	for _, c := range in.ExistingConditions {
-		if c.Type == ConditionTypeReady || c.Type == ConditionTypeDegraded {
+		if c.Type == ConditionTypeReady || c.Type == ConditionTypeReconciling || c.Type == ConditionTypeStalled {
 			upsertCondition(&res.Conditions, c)
 		}
 	}
@@ -504,17 +512,18 @@ func (r *Reconciler) ReconcileWithDependencies(ctx context.Context, obj *unstruc
 	opts := ParseHelmComponentOptions(obj.GetName(), obj.GetNamespace(), obj.Object["spec"], spec)
 	wopts := ParseWrapperRef(obj.Object["spec"], obj.GetNamespace())
 	return r.ReconcileComponent(ctx, ReconcileComponentInput{
-		Namespace:          obj.GetNamespace(),
-		Name:               obj.GetName(),
-		Generation:         obj.GetGeneration(),
-		Spec:               spec,
-		IsDeleting:         obj.GetDeletionTimestamp() != nil,
-		Enabled:            enabled,
-		ExistingConditions: ParseConditionsFromUnstructured(obj.Object["status"]),
-		ExistingAccess:     ParseAccessFromUnstructured(obj.Object["status"]),
-		HelmOpts:           opts,
-		WrapperOpts:        wopts,
-		Dependencies:       deps,
+		Namespace:                  obj.GetNamespace(),
+		Name:                       obj.GetName(),
+		Generation:                 obj.GetGeneration(),
+		Spec:                       spec,
+		IsDeleting:                 obj.GetDeletionTimestamp() != nil,
+		Enabled:                    enabled,
+		ExistingObservedGeneration: ParseObservedGenerationFromUnstructured(obj.Object["status"]),
+		ExistingConditions:         ParseConditionsFromUnstructured(obj.Object["status"]),
+		ExistingAccess:             ParseAccessFromUnstructured(obj.Object["status"]),
+		HelmOpts:                   opts,
+		WrapperOpts:                wopts,
+		Dependencies:               deps,
 	})
 }
 

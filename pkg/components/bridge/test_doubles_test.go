@@ -368,7 +368,8 @@ type gateOutcome struct {
 	State               componentspb.ComponentState
 	ReadyStatus         string
 	ReadyReason         string
-	DegradedStatus      string
+	ReconcilingStatus   string
+	StalledStatus       string
 	DependenciesReady   string
 	DeactivationBlocked string
 	SetCalls            int
@@ -386,8 +387,11 @@ func summarizeGate(res *ReconcileResult, cms *mockCMS, helm *mockHelm) gateOutco
 	if c := findCondition(res.Conditions, ConditionTypeReady); c != nil {
 		got.ReadyStatus, got.ReadyReason = c.Status, c.Reason
 	}
-	if c := findCondition(res.Conditions, ConditionTypeDegraded); c != nil {
-		got.DegradedStatus = c.Status
+	if c := findCondition(res.Conditions, ConditionTypeReconciling); c != nil {
+		got.ReconcilingStatus = c.Status
+	}
+	if c := findCondition(res.Conditions, ConditionTypeStalled); c != nil {
+		got.StalledStatus = c.Status
 	}
 	if c := findCondition(res.Conditions, ConditionTypeDependenciesReady); c != nil {
 		got.DependenciesReady = c.Status

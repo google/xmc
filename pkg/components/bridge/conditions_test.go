@@ -19,25 +19,52 @@ import (
 	"time"
 )
 
-func TestHealthConditionStatuses(t *testing.T) {
+func TestSetReadiness_KstatusConditions(t *testing.T) {
 	tests := []struct {
-		healthy      bool
-		reason       string
-		wantReady    string
-		wantDegraded string
+		name            string
+		ready           string
+		reason          string
+		wantReconciling string
+		wantStalled     string
 	}{
-		{healthy: true, reason: ReasonComponentHealthy, wantReady: ConditionStatusTrue, wantDegraded: ConditionStatusFalse},
-		{reason: ReasonHelmUpgradePending, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusFalse},
-		{reason: ReasonHelmStatusUnavailable, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusFalse},
-		{reason: ReasonHelmReleaseStuck, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusTrue},
-		{reason: ReasonHelmReleaseNotReady, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusTrue},
-		{reason: ReasonHelmReleaseDrifted, wantReady: ConditionStatusFalse, wantDegraded: ConditionStatusTrue},
+		{name: "healthy settled", ready: ConditionStatusTrue, reason: ReasonComponentHealthy},
+		{name: "disabled settled", ready: ConditionStatusFalse, reason: reasonComponentDisabled},
+		{name: "initial sync pending", ready: ConditionStatusUnknown, reason: ReasonInitialSyncPending, wantReconciling: ReasonProgressing},
+		{name: "helm upgrade pending", ready: ConditionStatusFalse, reason: ReasonHelmUpgradePending, wantReconciling: ReasonUpgradePending},
+		{name: "dependencies not ready", ready: ConditionStatusFalse, reason: ReasonDependenciesNotReady, wantReconciling: ReasonDependenciesPending},
+		{name: "deactivation incomplete", ready: ConditionStatusFalse, reason: ReasonDeactivationIncomplete, wantReconciling: ReasonDisabling},
+		{name: "helm release not ready", ready: ConditionStatusFalse, reason: ReasonHelmReleaseNotReady, wantReconciling: ReasonProgressing},
+		{name: "helm release drifted", ready: ConditionStatusFalse, reason: ReasonHelmReleaseDrifted, wantReconciling: ReasonProgressing},
+		{name: "helm status unavailable", ready: ConditionStatusFalse, reason: ReasonHelmStatusUnavailable, wantReconciling: ReasonProgressing},
+		{name: "helm release stuck", ready: ConditionStatusFalse, reason: ReasonHelmReleaseStuck, wantStalled: ReasonHelmReleaseStuck},
+		{name: "dependency cycle", ready: ConditionStatusFalse, reason: ReasonDependencyCycle, wantStalled: ReasonDependencyCycle},
+		{name: "deactivation blocked", ready: ConditionStatusFalse, reason: ReasonDeactivationBlocked, wantStalled: ReasonDeactivationBlocked},
+		{name: "contract broken", ready: ConditionStatusFalse, reason: ReasonContractBroken, wantStalled: ReasonContractBroken},
+		{name: "invalid wrapper spec", ready: ConditionStatusFalse, reason: ReasonInvalidWrapperSpec, wantStalled: ReasonInvalidWrapperSpec},
 	}
 	for _, tt := range tests {
-		ready, degraded := healthConditionStatuses(tt.healthy, tt.reason)
-		if ready != tt.wantReady || degraded != tt.wantDegraded {
-			t.Errorf("healthConditionStatuses(%v, %q) = (%s, %s), want (%s, %s)", tt.healthy, tt.reason, ready, degraded, tt.wantReady, tt.wantDegraded)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			res := &ReconcileResult{}
+			setReadiness(res, ReconcileComponentInput{Generation: 3}, tt.ready, tt.reason, "msg")
+			readyCond := findCondition(res.Conditions, ConditionTypeReady)
+			if readyCond == nil || readyCond.Status != tt.ready || readyCond.Reason != tt.reason {
+				t.Errorf("Ready condition = %+v, want status=%s reason=%s", readyCond, tt.ready, tt.reason)
+			}
+			recCond := findCondition(res.Conditions, ConditionTypeReconciling)
+			if tt.wantReconciling == "" && recCond != nil {
+				t.Errorf("unexpected Reconciling condition: %+v", recCond)
+			}
+			if tt.wantReconciling != "" && (recCond == nil || recCond.Status != ConditionStatusTrue || recCond.Reason != tt.wantReconciling) {
+				t.Errorf("Reconciling condition = %+v, want True/%s", recCond, tt.wantReconciling)
+			}
+			stalledCond := findCondition(res.Conditions, ConditionTypeStalled)
+			if tt.wantStalled == "" && stalledCond != nil {
+				t.Errorf("unexpected Stalled condition: %+v", stalledCond)
+			}
+			if tt.wantStalled != "" && (stalledCond == nil || stalledCond.Status != ConditionStatusTrue || stalledCond.Reason != tt.wantStalled) {
+				t.Errorf("Stalled condition = %+v, want True/%s", stalledCond, tt.wantStalled)
+			}
+		})
 	}
 }
 
@@ -61,7 +88,7 @@ func TestSetCondition(t *testing.T) {
 	}
 
 	// Test 3: Appends a new condition of a different type
-	setCondition(&conds, existing, ConditionTypeDegraded, ConditionStatusTrue, 2, "D", "DegradedMsg")
+	setCondition(&conds, existing, ConditionTypeReconciling, ConditionStatusTrue, 2, ReasonProgressing, "ProgressingMsg")
 	if len(conds) != 2 {
 		t.Errorf("expected 2 conditions, got: %+v", conds)
 	}
@@ -203,7 +230,7 @@ func TestShouldSyncToCMS(t *testing.T) {
 func TestResetReadyTransitionTime(t *testing.T) {
 	past := time.Now().UTC().Add(-10 * time.Minute)
 	conditions := []Condition{
-		{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, LastTransitionTime: past},
+		{Type: ConditionTypeSynced, Status: ConditionStatusTrue, LastTransitionTime: past},
 		{Type: ConditionTypeReady, Status: ConditionStatusTrue, LastTransitionTime: past},
 	}
 	resetReadyTransitionTime(conditions)
@@ -211,6 +238,6 @@ func TestResetReadyTransitionTime(t *testing.T) {
 		t.Errorf("expected Ready LastTransitionTime to be reset to now, got %v", conditions[1].LastTransitionTime)
 	}
 	if !conditions[0].LastTransitionTime.Equal(past) {
-		t.Errorf("expected Degraded LastTransitionTime to remain unchanged, got %v", conditions[0].LastTransitionTime)
+		t.Errorf("expected Synced LastTransitionTime to remain unchanged, got %v", conditions[0].LastTransitionTime)
 	}
 }

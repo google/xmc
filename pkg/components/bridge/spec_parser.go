@@ -241,6 +241,15 @@ func ParseConditionsFromUnstructured(statusObj any) []Condition {
 	return res
 }
 
+// ParseObservedGenerationFromUnstructured extracts status.observedGeneration from the unstructured .status map.
+func ParseObservedGenerationFromUnstructured(statusObj any) int64 {
+	statusMap, ok := statusObj.(map[string]any)
+	if !ok || statusMap == nil {
+		return 0
+	}
+	return extractInt(statusMap, "observedGeneration")
+}
+
 // ParseAccessFromUnstructured extracts status.access.envVars from the unstructured .status map.
 func ParseAccessFromUnstructured(statusObj any) *AccessStatus {
 	statusMap, ok := statusObj.(map[string]any)
