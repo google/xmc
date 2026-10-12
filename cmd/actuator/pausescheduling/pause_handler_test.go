@@ -166,7 +166,6 @@ func TestHandlePause(t *testing.T) {
 		expectedBufferedTarget string
 		// expectedStatusTarget is the execution whose status is updated; empty means no status update.
 		expectedStatusTarget string
-		expectedStatusEID    int64
 	}{
 		{
 			name: "nil_action_error",
@@ -203,7 +202,6 @@ func TestHandlePause(t *testing.T) {
 			},
 			expectedBufferedTarget: "experiments/100/workUnits/200/executions/1",
 			expectedStatusTarget:   "experiments/100/workUnits/200/executions/1",
-			expectedStatusEID:      1,
 		},
 		{
 			name: "restart_action_buffered_with_old_target_and_status_updated_with_new_target",
@@ -226,7 +224,6 @@ func TestHandlePause(t *testing.T) {
 			},
 			expectedBufferedTarget: "experiments/100/workUnits/200/executions/1",
 			expectedStatusTarget:   "experiments/100/workUnits/200/executions/2",
-			expectedStatusEID:      2,
 		},
 		{
 			name: "update_action_buffered_without_status_update",
@@ -306,7 +303,7 @@ func TestHandlePause(t *testing.T) {
 			}
 
 			verifyBufferedTask(t, repo.storedTasks, tc.expectedBufferedTarget)
-			verifyStatusUpdate(t, txRunner, tc.expectedStatusTarget, tc.expectedStatusEID)
+			verifyStatusUpdate(t, txRunner, tc.expectedStatusTarget)
 		})
 	}
 }
@@ -344,7 +341,7 @@ func newCreatePayload() *actuatortaskpb.ActuatorPayload {
 	}
 }
 
-func verifyStatusUpdate(t *testing.T, got *storage.MockStorage, wantTarget string, wantEID int64) {
+func verifyStatusUpdate(t *testing.T, got *storage.MockStorage, wantTarget string) {
 	t.Helper()
 	if wantTarget == "" {
 		if len(got.UpdatedWorkUnitExecutions) != 0 {
