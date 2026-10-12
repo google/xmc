@@ -232,6 +232,15 @@ func isPermanentStorageError(err error) bool {
 	}
 }
 
+// currentTime returns the injected clock's time, falling back to time.Now when the
+// Reconciler was constructed directly rather than via NewReconciler.
+func (r *Reconciler) currentTime() time.Time {
+	if r.now == nil {
+		return time.Now()
+	}
+	return r.now()
+}
+
 // stoppedWriteAbandonReason returns why a failed STOPPED write should be given up
 // on, or "" if it should be retried. A nil deletionTimestamp is treated as within
 // the retry budget.
@@ -239,7 +248,7 @@ func (r *Reconciler) stoppedWriteAbandonReason(jobSet *v1alpha2.JobSet, err erro
 	if isPermanentStorageError(err) {
 		return abandonReasonPermanent
 	}
-	if ts := jobSet.DeletionTimestamp; ts != nil && r.now().Sub(ts.Time) > maxStoppedWriteRetryAge {
+	if ts := jobSet.DeletionTimestamp; ts != nil && r.currentTime().Sub(ts.Time) > maxStoppedWriteRetryAge {
 		return abandonReasonRetryBudgetExhausted
 	}
 	return ""

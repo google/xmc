@@ -825,6 +825,27 @@ func TestIsPermanentStorageError(t *testing.T) {
 	}
 }
 
+func TestStoppedWriteAbandonReason_NilClockFallsBackToTimeNow(t *testing.T) {
+	r := &Reconciler{} // Constructed directly, so the injected clock is nil.
+	tests := []struct {
+		name         string
+		deletedSince time.Duration
+		want         string
+	}{
+		{name: "within retry budget", deletedSince: time.Minute, want: ""},
+		{name: "past retry budget", deletedSince: maxStoppedWriteRetryAge + time.Minute, want: abandonReasonRetryBudgetExhausted},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			deletedAt := metav1.NewTime(time.Now().Add(-tc.deletedSince))
+			jobSet := &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &deletedAt}}
+			if got := r.stoppedWriteAbandonReason(jobSet, grpcerr.ErrUnavailable); got != tc.want {
+				t.Errorf("stoppedWriteAbandonReason() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestActuatorReconcilerFinalizer_WithoutXMCFinalizerSkipsStoppedWrite(t *testing.T) {
 	scheme, err := newScheme()
 	if err != nil {
