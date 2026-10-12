@@ -41,7 +41,7 @@ go_proto_compiler(
 go_proto_compiler(
     name = "dashboard_go_grpc",
     options = _DASHBOARD_M_OPTS + ["require_unimplemented_servers=false"],
-    plugin = "@@gazelle++go_deps+org_golang_google_grpc_cmd_protoc_gen_go_grpc//:protoc-gen-go-grpc",
+    plugin = "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:protoc-gen-go-grpc",
     suffix = "_grpc.pb.go",
     visibility = ["//visibility:private"],
     deps = [
