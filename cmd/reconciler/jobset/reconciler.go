@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"golang/prometheus/client/prometheus/prometheus"
-	"google.golang.org/protobuf/proto"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -279,39 +278,20 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 }
 
 func (r *Reconciler) fetchCurrentExecution(ctx context.Context, xid, wid int64) *spb.WorkUnitExecution {
-	var execution *spb.WorkUnitExecution
-	if r.Storage != nil {
-		var err error
-		execution, err = r.Storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
-		if err != nil {
-			logging.Error(ctx, "Failed to fetch current WorkUnitExecution from ESS", "error", err)
-		}
+	if r.Storage == nil {
+		return nil
 	}
-	if r.Batcher == nil || (execution != nil && execution.GetMetadata().GetExecutingCluster() != nil) {
-		return execution
+	execution, err := r.Storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
+	if err != nil {
+		logging.Error(ctx, "Failed to fetch current WorkUnitExecution from ESS", "error", err)
+		return nil
 	}
-	wlUpdate, ok := r.Batcher.Get(xid, wid, shared.WorkloadSource)
-	if !ok || wlUpdate.WorkUnitExecution.GetMetadata().GetExecutingCluster() == nil {
-		return execution
-	}
-	merged := &spb.WorkUnitExecution{}
-	if execution != nil {
-		merged = proto.Clone(execution).(*spb.WorkUnitExecution)
-	}
-	if merged.Metadata == nil {
-		merged.Metadata = &spb.WorkUnitExecutionMetadata{}
-	}
-	merged.Metadata.ExecutingCluster = wlUpdate.WorkUnitExecution.GetMetadata().GetExecutingCluster()
-	merged.Metadata.MultiKueueClusterName = wlUpdate.WorkUnitExecution.GetMetadata().GetMultiKueueClusterName()
-	return merged
+	return execution
 }
 
 func (r *Reconciler) resolveTargetCluster(execution *spb.WorkUnitExecution) (string, string, string) {
-	if execution != nil {
-		if execCluster := execution.GetMetadata().GetExecutingCluster(); execCluster != nil &&
-			execCluster.GetProject() != "" && execCluster.GetLocation() != "" && execCluster.GetClusterName() != "" {
-			return execCluster.GetProject(), execCluster.GetLocation(), execCluster.GetClusterName()
-		}
+	if execCluster := execution.GetMetadata().GetExecutingCluster(); hasCompleteClusterInfo(execCluster) {
+		return execCluster.GetProject(), execCluster.GetLocation(), execCluster.GetClusterName()
 	}
 	return r.Project, r.Location, r.ClusterName
 }

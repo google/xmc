@@ -112,12 +112,9 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 	} else if isMultiKueueManaged(jobSet) {
 		exec = r.fetchCurrentExecution(ctx, xid, wid)
 	}
-	if isMultiKueueManaged(jobSet) {
-		execCluster := exec.GetMetadata().GetExecutingCluster()
-		if execCluster == nil || execCluster.GetProject() == "" || execCluster.GetLocation() == "" || execCluster.GetClusterName() == "" {
-			logging.Debug(ctx, "Deferring MLRun creation for MultiKueue JobSet until executing cluster is resolved", "jobset", jobSet.Name)
-			return ""
-		}
+	if isMultiKueueManaged(jobSet) && !hasCompleteClusterInfo(exec.GetMetadata().GetExecutingCluster()) {
+		logging.Debug(ctx, "Deferring MLRun creation for MultiKueue JobSet until executing cluster is resolved", "jobset", jobSet.Name)
+		return ""
 	}
 	targetProject, targetLocation, targetCluster := r.resolveTargetCluster(exec)
 	mlRunID := ConstructMLRunID(targetCluster, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)

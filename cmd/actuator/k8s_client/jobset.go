@@ -53,24 +53,6 @@ var (
 		Version:  "v1beta1",
 		Resource: "workloads",
 	}
-	// KueueLocalQueueGVR is the GroupVersionResource for the Kueue LocalQueue custom resource.
-	KueueLocalQueueGVR = schema.GroupVersionResource{
-		Group:    "kueue.x-k8s.io",
-		Version:  "v1beta1",
-		Resource: "localqueues",
-	}
-	// KueueClusterQueueGVR is the GroupVersionResource for the Kueue ClusterQueue custom resource.
-	KueueClusterQueueGVR = schema.GroupVersionResource{
-		Group:    "kueue.x-k8s.io",
-		Version:  "v1beta1",
-		Resource: "clusterqueues",
-	}
-	// KueueAdmissionCheckGVR is the GroupVersionResource for the Kueue AdmissionCheck custom resource.
-	KueueAdmissionCheckGVR = schema.GroupVersionResource{
-		Group:    "kueue.x-k8s.io",
-		Version:  "v1beta1",
-		Resource: "admissionchecks",
-	}
 )
 
 func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target, author string, operationTime time.Time, priorities Priorities) error {
@@ -307,98 +289,6 @@ func jobSetToUnstructured(jobSet *jobsetv1alpha2.JobSet) (*unstructured.Unstruct
 	jobSetUnstructured := &unstructured.Unstructured{Object: jobSetObj}
 
 	return jobSetUnstructured, nil
-}
-
-func (c *Client) isMultiKueueQueue(ctx context.Context, namespace, queueName string) (bool, error) {
-	lq, err := c.fetchUnstructuredKueueResource(ctx, KueueLocalQueueGVR, "LocalQueue", namespace, queueName)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	if lq == nil || lq.Object == nil {
-		return false, nil
-	}
-	clusterQueueName, _, err := unstructured.NestedString(lq.Object, "spec", "clusterQueue")
-	if err != nil || clusterQueueName == "" {
-		return false, err
-	}
-	cq, err := c.fetchUnstructuredKueueResource(ctx, KueueClusterQueueGVR, "ClusterQueue", "", clusterQueueName)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	for _, checkName := range extractClusterQueueAdmissionCheckNames(cq) {
-		isMK, err := c.isMultiKueueAdmissionCheck(ctx, checkName)
-		if err != nil {
-			return false, err
-		}
-		if isMK {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func (c *Client) fetchUnstructuredKueueResource(ctx context.Context, gvr schema.GroupVersionResource, kind, namespace, name string) (*unstructured.Unstructured, error) {
-	if c.ManagerClient != nil {
-		u := &unstructured.Unstructured{}
-		u.SetGroupVersionKind(schema.GroupVersionKind{Group: gvr.Group, Version: gvr.Version, Kind: kind})
-		if err := c.ManagerClient.Get(logging.Strip(ctx), types.NamespacedName{Namespace: namespace, Name: name}, u); err != nil {
-			return nil, err
-		}
-		return u, nil
-	}
-	if c.dynamicClient != nil {
-		if namespace != "" {
-			return c.dynamicClient.Resource(gvr).Namespace(namespace).Get(logging.Strip(ctx), name, metav1.GetOptions{})
-		}
-		return c.dynamicClient.Resource(gvr).Get(logging.Strip(ctx), name, metav1.GetOptions{})
-	}
-	return nil, apierrors.NewNotFound(gvr.GroupResource(), name)
-}
-
-func extractClusterQueueAdmissionCheckNames(cq *unstructured.Unstructured) []string {
-	if cq == nil || cq.Object == nil {
-		return nil
-	}
-	var names []string
-	if checks, found, err := unstructured.NestedStringSlice(cq.Object, "spec", "admissionChecks"); err == nil && found {
-		names = append(names, checks...)
-	}
-	stratChecks, found, err := unstructured.NestedSlice(cq.Object, "spec", "admissionChecksStrategy", "admissionChecks")
-	if err != nil || !found {
-		return names
-	}
-	for _, item := range stratChecks {
-		if m, ok := item.(map[string]any); ok {
-			if name, ok := m["name"].(string); ok && name != "" {
-				names = append(names, name)
-			}
-		}
-	}
-	return names
-}
-
-func (c *Client) isMultiKueueAdmissionCheck(ctx context.Context, checkName string) (bool, error) {
-	ac, err := c.fetchUnstructuredKueueResource(ctx, KueueAdmissionCheckGVR, "AdmissionCheck", "", checkName)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	if ac == nil || ac.Object == nil {
-		return false, nil
-	}
-	controllerName, _, err := unstructured.NestedString(ac.Object, "spec", "controllerName")
-	if err != nil {
-		return false, err
-	}
-	return controllerName == kueueMultiKueueController, nil
 }
 
 func ensureQueueName(workUnit *esspb.WorkUnit, namespace string) {

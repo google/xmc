@@ -36,8 +36,6 @@ import (
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
-const kueueMultiKueueController = constants.KueueMultiKueueControllerName
-
 var defaultLabels = map[string]string{
 	constants.ManagedByLabel: constants.XmcLabelValue,
 }
@@ -183,13 +181,13 @@ type jobSetLabelsAndAnnotations struct {
 
 func buildJobSetLabelsAndAnnotations(workUnit *esspb.WorkUnit, xid, wid, eid, author, namespace string, operationTime time.Time, priorities Priorities) jobSetLabelsAndAnnotations {
 	jobLabels := map[string]string{
+		kueueQueueLabel:             namespace,
 		constants.ExperimentIDLabel: xid,
 		constants.WorkUnitIDLabel:   wid,
 		constants.ExecutionIDLabel:  eid,
 	}
 	maps.Copy(jobLabels, defaultLabels)
 	jobSetLabels := maps.Clone(jobLabels)
-	jobSetLabels[kueueQueueLabel] = namespace
 	jobSetLabels[constants.LastEditLabel] = strconv.FormatInt(operationTime.Unix(), 10)
 	jobSetLabels[kueuePriorityClassLabel] = getPriorityClassName(priorities)
 
@@ -290,9 +288,6 @@ func buildBaseJobSet(workUnit *esspb.WorkUnit, jobSetName, namespace string, met
 }
 
 func (c *Client) finalizeAndValidateJobSet(ctx context.Context, workUnit *esspb.WorkUnit, namespace string, jobSet *jobsetv1alpha2.JobSet) (*jobsetv1alpha2.JobSet, error) {
-	if err := c.applyMultiKueueManagedBy(ctx, jobSet); err != nil {
-		return nil, err
-	}
 	executionEnv, ok := ee.Lookup(c.RuntimeConfig.DefaultExecutionEnvironment)
 	if !ok {
 		logging.Error(ctx, "Failed to get execution environment", "execution_environment", c.RuntimeConfig.DefaultExecutionEnvironment)
@@ -310,25 +305,6 @@ func (c *Client) finalizeAndValidateJobSet(ctx context.Context, workUnit *esspb.
 		return nil, err
 	}
 	return jobSet, nil
-}
-
-func (c *Client) applyMultiKueueManagedBy(ctx context.Context, jobSet *jobsetv1alpha2.JobSet) error {
-	if c == nil || jobSet == nil {
-		return nil
-	}
-	queueName := jobSet.Labels[kueueQueueLabel]
-	if queueName == "" {
-		return nil
-	}
-	isMultiKueue, err := c.isMultiKueueQueue(ctx, jobSet.Namespace, queueName)
-	if err != nil {
-		logging.Warn(ctx, "Failed to inspect Kueue queue for MultiKueue admission check", "namespace", jobSet.Namespace, "queue", queueName, "error", err)
-		return fmt.Errorf("failed to inspect Kueue queue %s/%s for MultiKueue admission check: %w", jobSet.Namespace, queueName, err)
-	}
-	if isMultiKueue {
-		jobSet.Spec.ManagedBy = ptr.To(constants.KueueMultiKueueControllerName)
-	}
-	return nil
 }
 
 func buildJobSetName(target string) string {

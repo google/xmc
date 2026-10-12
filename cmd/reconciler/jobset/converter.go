@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"slices"
 	"time"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -400,38 +399,19 @@ func setMLRunURL(update *storagepkg.WorkUnitExecutionUpdate, mlRunURL string) {
 	}
 }
 
-func appendUpdateMaskPath(mask *fmpb.FieldMask, path string) {
-	if !slices.Contains(mask.Paths, path) {
-		mask.Paths = append(mask.Paths, path)
-	}
+func hasCompleteClusterInfo(c *spb.ClusterInfo) bool {
+	return c != nil && c.GetProject() != "" && c.GetLocation() != "" && c.GetClusterName() != ""
 }
 
 func applyExecutingClusterOverride(ctx context.Context, jobSet *v1alpha2.JobSet, update *storagepkg.WorkUnitExecutionUpdate, currentExecution *spb.WorkUnitExecution) {
-	if currentExecution == nil || currentExecution.GetMetadata() == nil || update == nil || update.WorkUnitExecution == nil {
-		return
-	}
 	execCluster := currentExecution.GetMetadata().GetExecutingCluster()
-	if execCluster == nil {
+	if update == nil || !hasCompleteClusterInfo(execCluster) {
 		return
 	}
-	if update.WorkUnitExecution.Metadata == nil {
-		update.WorkUnitExecution.Metadata = &spb.WorkUnitExecutionMetadata{}
-	}
-	if update.UpdateMask == nil {
-		update.UpdateMask = &fmpb.FieldMask{}
-	}
-	update.WorkUnitExecution.Metadata.ExecutingCluster = execCluster
-	appendUpdateMaskPath(update.UpdateMask, "metadata.executing_cluster")
-	if mkName := currentExecution.GetMetadata().GetMultiKueueClusterName(); mkName != "" {
-		update.WorkUnitExecution.Metadata.MultiKueueClusterName = mkName
-		appendUpdateMaskPath(update.UpdateMask, "metadata.multi_kueue_cluster_name")
-	}
-	if execCluster.GetProject() != "" && execCluster.GetLocation() != "" && execCluster.GetClusterName() != "" {
+	if sysMsg := update.WorkUnitExecution.GetStatus().GetSystemMessage(); sysMsg != nil {
 		state := update.WorkUnitExecution.GetStatus().GetState()
-		if sysMsg := update.WorkUnitExecution.GetStatus().GetSystemMessage(); sysMsg != nil {
-			sysMsg.UserFacingUrl = &spb.Url{
-				Url: buildDebugLink(ctx, jobSet, state, execCluster.GetProject(), execCluster.GetLocation(), execCluster.GetClusterName()),
-			}
+		sysMsg.UserFacingUrl = &spb.Url{
+			Url: buildDebugLink(ctx, jobSet, state, execCluster.GetProject(), execCluster.GetLocation(), execCluster.GetClusterName()),
 		}
 	}
 }
