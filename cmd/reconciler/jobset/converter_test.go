@@ -1202,4 +1202,5 @@ func TestApplyExecutingClusterOverride(t *testing.T) {
 	if got := update.WorkUnitExecution.GetStatus().GetSystemMessage().GetUserFacingUrl().GetUrl(); got != wantURL {
 		t.Errorf("SystemMessage.UserFacingUrl = %q, want %q", got, wantURL)
 	}
+	applyExecutingClusterOverride(t.Context(), failedJobSet, update, nil)
 }

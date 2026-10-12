@@ -317,6 +317,9 @@ func (c *Client) isMultiKueueQueue(ctx context.Context, namespace, queueName, ta
 		}
 		return false, err
 	}
+	if lq == nil || lq.Object == nil {
+		return false, nil
+	}
 	clusterQueueName, _, err := unstructured.NestedString(lq.Object, "spec", "clusterQueue")
 	if err != nil || clusterQueueName == "" {
 		return false, err
@@ -360,6 +363,9 @@ func (c *Client) fetchUnstructuredKueueResource(ctx context.Context, gvr schema.
 
 func extractClusterQueueAdmissionCheckNames(cq *unstructured.Unstructured) []string {
 	var names []string
+	if cq == nil || cq.Object == nil {
+		return nil
+	}
 	if checks, found, err := unstructured.NestedStringSlice(cq.Object, "spec", "admissionChecks"); err == nil && found {
 		names = append(names, checks...)
 	}
@@ -384,6 +390,9 @@ func (c *Client) isMultiKueueAdmissionCheck(ctx context.Context, checkName, targ
 			return false, nil
 		}
 		return false, err
+	}
+	if ac == nil || ac.Object == nil {
+		return false, nil
 	}
 	controllerName, _, err := unstructured.NestedString(ac.Object, "spec", "controllerName")
 	if err != nil {

@@ -400,7 +400,7 @@ func setMLRunURL(update *storagepkg.WorkUnitExecutionUpdate, mlRunURL string) {
 }
 
 func applyExecutingClusterOverride(ctx context.Context, jobSet *v1alpha2.JobSet, update *storagepkg.WorkUnitExecutionUpdate, currentExecution *spb.WorkUnitExecution) {
-	if currentExecution.GetMetadata() == nil || update == nil || update.WorkUnitExecution == nil {
+	if currentExecution == nil || currentExecution.GetMetadata() == nil || update == nil || update.WorkUnitExecution == nil {
 		return
 	}
 	execCluster := currentExecution.GetMetadata().GetExecutingCluster()

@@ -286,28 +286,38 @@ func (r *Reconciler) fetchCurrentExecution(ctx context.Context, xid, wid int64) 
 			logging.Error(ctx, "Failed to fetch current WorkUnitExecution from ESS", "error", err)
 		}
 	}
-	if r.Batcher == nil || execution.GetMetadata().GetExecutingCluster() != nil {
+	if r.Batcher == nil || (execution != nil && execution.GetMetadata().GetExecutingCluster() != nil) {
 		return execution
 	}
 	wlUpdate, ok := r.Batcher.Get(xid, wid, shared.WorkloadSource)
 	if !ok || wlUpdate.WorkUnitExecution.GetMetadata().GetExecutingCluster() == nil {
 		return execution
 	}
+	var name string
+	var status *spb.WorkUnitStatus
+	var mlrunUrl string
+	if execution != nil {
+		name = execution.GetName()
+		status = execution.GetStatus()
+		mlrunUrl = execution.GetMetadata().GetMlrunUrl()
+	}
 	return &spb.WorkUnitExecution{
-		Name:   execution.GetName(),
-		Status: execution.GetStatus(),
+		Name:   name,
+		Status: status,
 		Metadata: &spb.WorkUnitExecutionMetadata{
 			ExecutingCluster:      wlUpdate.WorkUnitExecution.GetMetadata().GetExecutingCluster(),
 			MultiKueueClusterName: wlUpdate.WorkUnitExecution.GetMetadata().GetMultiKueueClusterName(),
-			MlrunUrl:              execution.GetMetadata().GetMlrunUrl(),
+			MlrunUrl:              mlrunUrl,
 		},
 	}
 }
 
 func (r *Reconciler) resolveTargetCluster(execution *spb.WorkUnitExecution) (string, string, string) {
-	if execCluster := execution.GetMetadata().GetExecutingCluster(); execCluster != nil &&
-		execCluster.GetProject() != "" && execCluster.GetLocation() != "" && execCluster.GetClusterName() != "" {
-		return execCluster.GetProject(), execCluster.GetLocation(), execCluster.GetClusterName()
+	if execution != nil {
+		if execCluster := execution.GetMetadata().GetExecutingCluster(); execCluster != nil &&
+			execCluster.GetProject() != "" && execCluster.GetLocation() != "" && execCluster.GetClusterName() != "" {
+			return execCluster.GetProject(), execCluster.GetLocation(), execCluster.GetClusterName()
+		}
 	}
 	return r.Project, r.Location, r.ClusterName
 }
