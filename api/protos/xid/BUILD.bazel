@@ -37,16 +37,6 @@ proto_library(
     ],
 )
 
-go_proto_library(
-    name = "messages_go_proto",
-    importpath = "xmanager_cloud/xid_service/proto/messages_go_proto",
-    proto = ":xid_messages_proto",
-    deps = [
-        "@org_golang_google_genproto_googleapis_api//:go_default_library",
-        "@org_golang_google_genproto_googleapis_api//annotations",
-    ],
-)
-
 proto_library(
     name = "xid_api_proto",
     srcs = ["api.proto"],
@@ -59,21 +49,6 @@ proto_library(
         "@com_google_googleapis//google/api:field_behavior_proto",
         "@com_google_googleapis//google/api:resource_proto",
         "@com_google_protobuf//:field_mask_proto",
-    ],
-)
-
-go_proto_library(
-    name = "api_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
-    importpath = "xmanager_cloud/xid_service/proto/api_go_proto",
-    proto = ":xid_api_proto",
-    deps = [
-        ":messages_go_proto",
-        "@org_golang_google_genproto_googleapis_api//:go_default_library",
-        "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
 
@@ -115,4 +90,14 @@ go_library(
     name = "xid",
     embed = [":cloud_xmanager_v1_go_proto"],
     importpath = "xmanager_cloud/api/protos/xid",
+)
+
+alias(
+    name = "messages_go_proto",
+    actual = ":xid",
+)
+
+alias(
+    name = "api_go_proto",
+    actual = ":xid",
 )

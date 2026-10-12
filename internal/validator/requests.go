@@ -20,12 +20,11 @@ import (
 	"strconv"
 	"strings"
 
+	xidmessagespb "xmanager_cloud/api/protos/xid"
 	essapipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmessagespb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 const (
@@ -64,7 +63,7 @@ func validateRoles(roles []*xidmessagespb.XidAcls_Role) error {
 }
 
 // ValidateCreateXidRequest validates the given CreateXidEntryRequest.
-func ValidateCreateXidRequest(in *xidapipb.CreateXidEntryRequest) error {
+func ValidateCreateXidRequest(in *xidmessagespb.CreateXidEntryRequest) error {
 	if in == nil {
 		return fmt.Errorf("request cannot be nil: %w", grpcerr.ErrInvalidArgument)
 	}

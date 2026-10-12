@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -38,8 +39,6 @@ import (
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/validator"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 
 	"google.golang.org/grpc"
 )
@@ -234,7 +233,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 		name          string
 		req           *apipb.CreateArtifactRequest
 		authenticator auth.AuthorizerInterface
-		xidClient     xidapipb.XidServiceClient
+		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -248,7 +247,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 		{
 			name: "unauthorized_user_returns_permission_denied",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{
 					Authorized: proto.Bool(false),
 				},
 			},
@@ -258,7 +257,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 		{
 			name: "unauthorized_user_with_malformed_payload_returns_permission_denied",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{
 					Authorized: proto.Bool(false),
 				},
 			},
@@ -272,7 +271,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 		{
 			name: "xid_creation_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{
 					Authorized: proto.Bool(true),
 				},
 				createXidEntryErr: fmt.Errorf("XID creation failed: %w", grpcerr.ErrInternal),
@@ -283,7 +282,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_creation_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{
 					Authorized: proto.Bool(true),
 				},
 				createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
@@ -296,7 +295,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 		{
 			name: "invalid_xid_name",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{
 					Authorized: proto.Bool(true),
 				},
 				createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("invalid-xid-name")},
@@ -351,7 +350,7 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create gRPC client for XID service: %v", err)
 	}
-	xidClient := xidapipb.NewXidServiceClient(conn)
+	xidClient := xidmsgpb.NewXidServiceClient(conn)
 	taskQueueClient := &tq.FakeClient{}
 
 	chartArtifact := &msgpb.Artifact{

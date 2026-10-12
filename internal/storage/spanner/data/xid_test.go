@@ -22,9 +22,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	pb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
-	pb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 var (

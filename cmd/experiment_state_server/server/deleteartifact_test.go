@@ -20,13 +20,12 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/proto"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestDeleteArtifact_HappyPath(t *testing.T) {
@@ -107,7 +106,7 @@ func TestDeleteArtifact_DependencyFailures(t *testing.T) {
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		xidClient     xidapipb.XidServiceClient
+		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -131,7 +130,7 @@ func TestDeleteArtifact_DependencyFailures(t *testing.T) {
 		{
 			name: "xid_check_auth_permission_denied",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{
 					Authorized: proto.Bool(false),
 				},
 			},
@@ -143,7 +142,7 @@ func TestDeleteArtifact_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_delete_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{
 					Authorized: proto.Bool(true),
 				},
 			},

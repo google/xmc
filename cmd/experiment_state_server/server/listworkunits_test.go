@@ -23,6 +23,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	xidapipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -31,8 +32,6 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestListWorkUnits_HappyPath(t *testing.T) {
@@ -289,7 +288,7 @@ func createExperimentStateServerWithMockXid(ctx context.Context, t *testing.T) (
 	}
 
 	xidClient := &mockXidClient{
-		createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/1")},
+		createXidEntryResp: &xidapipb.XidEntry{Name: proto.String("xids/1")},
 	}
 	server := newTestServer(t,
 		withStorage(storage),

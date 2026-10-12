@@ -19,8 +19,8 @@ import (
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"google.golang.org/protobuf/proto"
+	msgpb "xmanager_cloud/api/protos/xid"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // MockStorage is a mock implementation of Storage for testing.

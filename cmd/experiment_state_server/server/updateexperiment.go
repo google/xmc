@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
@@ -24,8 +25,6 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/validator"
-	xidpb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // UpdateExperiment updates an experiment's data.
@@ -95,7 +94,7 @@ func (h *ExperimentHandler) UpdateExperiment(ctx context.Context, req *apipb.Upd
 		ctx := logging.WithXIDName(ctx, validator.ConstructXIDName(xid))
 		logging.Debug(ctx, "Updating XID entry")
 
-		request := &xidpb.UpdateXidEntryRequest{
+		request := &xidmsgpb.UpdateXidEntryRequest{
 			XidEntry:   xidEntryForUpdate,
 			UpdateMask: updateMask,
 		}

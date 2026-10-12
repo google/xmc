@@ -23,19 +23,18 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	msgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
-	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestUpdateXidEntry_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	server := createXidServer(ctx, t)
 	// Create an XID entry to update.
-	createReq := &apipb.CreateXidEntryRequest{
+	createReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
 			Acls: &msgpb.XidAcls{
@@ -49,7 +48,7 @@ func TestUpdateXidEntry_HappyPath(t *testing.T) {
 	}
 
 	// Update ACLs.
-	updateReq := &apipb.UpdateXidEntryRequest{
+	updateReq := &msgpb.UpdateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Name: createdEntry.Name,
 			Acls: &msgpb.XidAcls{
@@ -73,7 +72,7 @@ func TestUpdateXidEntry_HappyPath(t *testing.T) {
 	}
 
 	// Verify with GetXidEntry.
-	gotEntry, err := server.GetXidEntry(ctx, &apipb.GetXidEntryRequest{Name: createdEntry.Name})
+	gotEntry, err := server.GetXidEntry(ctx, &msgpb.GetXidEntryRequest{Name: createdEntry.Name})
 	if err != nil {
 		t.Fatalf("GetXidEntry() returned an unexpected error: %v", err)
 	}
@@ -86,7 +85,7 @@ func TestUpdateXidEntry_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	server := createXidServer(ctx, t)
 
-	createReq := &apipb.CreateXidEntryRequest{
+	createReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
 			Acls: &msgpb.XidAcls{
@@ -99,7 +98,7 @@ func TestUpdateXidEntry_BadPaths(t *testing.T) {
 		t.Fatalf("CreateXidEntry() returned an unexpected error: %v", err)
 	}
 
-	baseReq := &apipb.UpdateXidEntryRequest{
+	baseReq := &msgpb.UpdateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Name: createdEntry.Name,
 			Acls: &msgpb.XidAcls{},
@@ -109,26 +108,26 @@ func TestUpdateXidEntry_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.UpdateXidEntryRequest
+		req     *msgpb.UpdateXidEntryRequest
 		wantErr error
 	}{
 		{
 			name: "invalid_name",
-			req: prototest.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.UpdateXidEntryRequest) {
 				r.XidEntry.Name = proto.String("xids/invalid")
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "not_found",
-			req: prototest.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.UpdateXidEntryRequest) {
 				r.XidEntry.Name = proto.String("xids/999999")
 			}),
 			wantErr: grpcerr.ErrNotFound,
 		},
 		{
 			name: "immutable_field",
-			req: prototest.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.UpdateXidEntryRequest) {
 				r.XidEntry.Creator = proto.String("new-creator")
 				r.UpdateMask.Paths = []string{"creator"}
 			}),
@@ -136,7 +135,7 @@ func TestUpdateXidEntry_BadPaths(t *testing.T) {
 		},
 		{
 			name: "no_acls",
-			req: prototest.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.UpdateXidEntryRequest) {
 				r.XidEntry.Acls = nil
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
@@ -196,7 +195,7 @@ func TestUpdateXidEntry_Failures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			server := newTestServer(t, withAuthorizer(tc.mockAuth), withStorage(tc.mockStorage))
-			_, err := server.UpdateXidEntry(ctx, &apipb.UpdateXidEntryRequest{
+			_, err := server.UpdateXidEntry(ctx, &msgpb.UpdateXidEntryRequest{
 				XidEntry: &msgpb.XidEntry{Name: proto.String("xids/1")},
 			})
 			if !errors.Is(err, tc.wantErr) {
