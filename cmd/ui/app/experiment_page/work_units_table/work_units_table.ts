@@ -39,10 +39,8 @@ import {
 import { StatusMessageFilter } from 'app/common/components/status_message_filter/status_message_filter';
 import { Tag } from 'app/common/components/tag/tag';
 import { ProcessedUrl, processUrls } from 'app/common/url/url_processor';
+import { StructuredMessage, WorkUnit, WorkUnitStatus } from 'app/protos/experiment_state_server';
 import { StatusMessageFilterService } from 'app/service/status_message_filter_service';
-import { WorkUnitStatus } from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
-import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 
 import { WorkUnitsTableStore } from './work_units_table_store';
 

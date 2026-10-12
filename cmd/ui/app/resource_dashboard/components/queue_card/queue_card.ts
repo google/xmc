@@ -27,6 +27,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { take } from 'rxjs';
 
+import { ClusterQueueSecondaryMetrics, QueueOverview } from 'app/protos/rod';
 import { ROD_TERM_TOOLTIPS } from 'app/resource_dashboard/constants/rod_tooltips';
 import {
   COHORT_STATE_BORROWING,
@@ -45,10 +46,6 @@ import {
   getPendingJobsCount,
 } from 'app/resource_dashboard/utils/resource_velocity';
 import { ResourceService } from 'app/service/resource_service';
-import {
-  ClusterQueueSecondaryMetrics,
-  QueueOverview,
-} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 export interface PredictabilityViewModel {
   readonly jobVelocityDisplay: string;

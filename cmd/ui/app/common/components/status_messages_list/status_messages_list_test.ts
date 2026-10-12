@@ -17,13 +17,15 @@ import { of, throwError } from 'rxjs';
 
 import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'app/common/mock_data';
 import {
+  ListStatusMessagesResponse,
+  StatusMessage as StatusMessageProto,
+} from 'app/protos/experiment_state_server';
+import {
   ALL_SEVERITIES,
   StatusMessageFilterService,
 } from 'app/service/status_message_filter_service';
 import { StatusMessageService } from 'app/service/status_message_service';
 import { bootstrap, flush, get, setupModule } from 'app/testing/test';
-import { ListStatusMessagesResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { StatusMessage as StatusMessageProto } from 'xmanager_cloud/experiment_state_server/proto/status_message.jsonpb_decls';
 
 import { StatusMessagesList } from './status_messages_list';
 import { StatusMessagesListHarness } from './testing/status_messages_list_harness';

@@ -21,7 +21,7 @@ import {
   HealthStatusResponse,
   ListConfigEntriesResponse,
   UserInfoResponse,
-} from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
+} from 'app/protos/health_service';
 
 import { XMC_API_DOMAIN } from './constants';
 import { FeatureFlagService } from './feature_flag_service';

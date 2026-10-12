@@ -16,7 +16,7 @@ import { NavigationEnd, Router } from '@angular/router';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { filter } from 'rxjs/operators';
 
-import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
+import { StructuredMessage } from 'app/protos/experiment_state_server';
 
 const SEVERITIES_STORAGE_KEY_PREFIX = 'xmc-status-filter-severities';
 const SOURCES_STORAGE_KEY_PREFIX = 'xmc-status-filter-sources';

@@ -14,7 +14,7 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { MatChipsModule } from '@angular/material/chips';
 
-import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
+import { Priority } from 'app/protos/experiment_state_server';
 
 /**
  * Component for displaying priority as a colored chip.

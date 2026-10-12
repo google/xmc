@@ -16,8 +16,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { firstValueFrom } from 'rxjs';
 
 import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'app/common/mock_data';
+import { ListStatusMessagesResponse } from 'app/protos/experiment_state_server';
 import { cleanState, get, setupModule, setupObservableMatchers } from 'app/testing/test';
-import { ListStatusMessagesResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
 import { XMC_API_DOMAIN } from './constants';
 import { StatusMessageService } from './status_message_service';

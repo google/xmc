@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {
-  QueueOverview,
-  QueueResourceCapacity,
-} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { QueueOverview, QueueResourceCapacity } from 'app/protos/rod';
 
 import {
   COHORT_STATE_BALANCED,

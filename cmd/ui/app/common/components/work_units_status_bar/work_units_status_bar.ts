@@ -15,10 +15,7 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 import { MatMenuModule } from '@angular/material/menu';
 
-import {
-  ExperimentStatus,
-  WorkUnitStatus,
-} from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
+import { ExperimentStatus, WorkUnitStatus } from 'app/protos/experiment_state_server';
 
 /**
  * A horizontal stacked bar.
