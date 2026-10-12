@@ -140,10 +140,11 @@ class JobSetVerifierTest(unittest.TestCase):
         mock_run: mock.MagicMock,
         mock_sleep: mock.MagicMock,
     ) -> None:
-        """wait_for_jobset_for_experiment retries when kubectl returns a transient error."""
+        """wait_for_jobset_for_experiment retries when kubectl fails or times out."""
         expected = _baseline_jobset()
         mock_run.side_effect = [
-            subprocess.CalledProcessError(returncode=1, cmd=["kubectl"]),
+            subprocess.CalledProcessError(returncode=1, cmd=["kubectl"], stderr="conn refused"),
+            subprocess.TimeoutExpired(cmd=["kubectl"], timeout=10.0),
             subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
@@ -161,20 +162,24 @@ class JobSetVerifierTest(unittest.TestCase):
         )
 
         self.assertEqual(got["metadata"]["name"], "xmc-operation-42-1")
-        self.assertEqual(mock_run.call_count, 2)
-        mock_sleep.assert_called_once()
+        self.assertEqual(mock_run.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2)
 
     def test_wait_for_jobset_rejects_invalid_experiment_name(self) -> None:
-        """wait_for_jobset_for_experiment rejects malformed experiment names."""
-        with self.assertRaises(ValueError):
-            wait_for_jobset_for_experiment("invalid-name")
+        """wait_for_jobset_for_experiment rejects empty or malformed experiment names."""
+        for bad_name in ("", "invalid-name", "experiments/"):
+            with self.subTest(bad_name=bad_name):
+                with self.assertRaises(ValueError):
+                    wait_for_jobset_for_experiment(bad_name)
 
     def test_assert_jobset_contract_accepts_valid_jobset(self) -> None:
-        """assert_jobset_contract succeeds on a compliant JobSet and when failurePolicy is None."""
+        """assert_jobset_contract succeeds on a compliant JobSet and rejects empty dicts."""
         assert_jobset_contract(_baseline_jobset())
         jobset_null_fp = copy.deepcopy(_baseline_jobset())
         jobset_null_fp["spec"]["failurePolicy"] = None
         assert_jobset_contract(jobset_null_fp)
+        with self.assertRaises(ValueError):
+            assert_jobset_contract({})
 
     def test_assert_jobset_contract_rejects_violations(self) -> None:
         """assert_jobset_contract raises RuntimeError for each contract violation."""

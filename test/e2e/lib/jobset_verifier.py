@@ -27,6 +27,7 @@ DEFAULT_KUBE_CONTEXT = "kind-xmc-e2e"
 DEFAULT_QUEUE_NAME = "cpu-queue"
 DEFAULT_POLL_TIMEOUT_SECONDS = 30.0
 DEFAULT_POLL_INTERVAL_SECONDS = 1.0
+KUBECTL_TIMEOUT_SECONDS = 10.0
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,8 @@ def build_work_unit_payload(queue_name: str = DEFAULT_QUEUE_NAME) -> dict[str, A
 
 def _extract_experiment_id(experiment_name: str) -> str:
     """Extracts the numeric experiment ID from an experiment resource name."""
+    if not experiment_name or not isinstance(experiment_name, str):
+        raise ValueError("Experiment name cannot be None or empty")
     prefix = "experiments/"
     if not experiment_name.startswith(prefix) or len(experiment_name) <= len(prefix):
         raise ValueError(f"Invalid experiment resource name: {experiment_name!r}")
@@ -93,6 +96,7 @@ def _fetch_jobsets_for_experiment(
         capture_output=True,
         text=True,
         check=True,
+        timeout=KUBECTL_TIMEOUT_SECONDS,
     )
     payload = json.loads(result.stdout)
     return list(payload.get("items") or [])
@@ -100,21 +104,26 @@ def _fetch_jobsets_for_experiment(
 
 def _log_actuator_diagnostics(kube_context: str) -> None:
     """Logs recent actuator container output to aid debugging on JobSet poll timeout."""
-    result = subprocess.run(
-        [
-            "kubectl",
-            "--context",
-            kube_context,
-            "logs",
-            "-n",
-            "xmc",
-            "deployment/actuator-deployment",
-            "--tail=40",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "kubectl",
+                "--context",
+                kube_context,
+                "logs",
+                "-n",
+                "xmc",
+                "deployment/actuator-deployment",
+                "--tail=40",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=KUBECTL_TIMEOUT_SECONDS,
+        )
+    except subprocess.SubprocessError as exc:
+        logger.warning("Failed to fetch actuator diagnostic logs: %s", exc)
+        return
     output = (result.stdout or result.stderr or "").strip()
     if output:
         logger.error("Actuator logs before timeout:\n%s", output)
@@ -136,8 +145,15 @@ def wait_for_jobset_for_experiment(
             items = _fetch_jobsets_for_experiment(experiment_id, namespace, resolved_context)
             if items:
                 return items[0]
-        except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
-            logger.warning("Transient error fetching JobSets (will retry): %s", exc)
+        except subprocess.SubprocessError as exc:
+            stderr = getattr(exc, "stderr", None)
+            logger.warning(
+                "Transient error fetching JobSets (will retry): %s (stderr: %s)",
+                exc,
+                stderr,
+            )
+        except json.JSONDecodeError as exc:
+            logger.warning("Transient error decoding JobSets JSON (will retry): %s", exc)
         if time.monotonic() >= deadline:
             _log_actuator_diagnostics(resolved_context)
             raise RuntimeError(
@@ -152,6 +168,8 @@ def assert_jobset_contract(
     expected_queue: str = DEFAULT_QUEUE_NAME,
 ) -> None:
     """Asserts XMC's Non-Restarting JobSets Contract and Kueue queue labels on a JobSet."""
+    if not jobset:
+        raise ValueError("JobSet dictionary cannot be None or empty")
     metadata = jobset.get("metadata") or {}
     labels = metadata.get("labels") or {}
     if labels.get("kueue.x-k8s.io/queue-name") != expected_queue:
