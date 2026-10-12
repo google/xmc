@@ -96,6 +96,11 @@ upper: "MIXEDCASE"`,
 
 func boolPtr(v bool) *bool { return &v }
 
+// profileCRAnnotations returns the annotations every stable-2026a Component CR renders with.
+func profileCRAnnotations() map[string]string {
+	return map[string]string{"argocd.argoproj.io/sync-options": "SkipDryRunOnMissingResource=true"}
+}
+
 func verifyBlueprintChart(t *testing.T, chartDir, crdPath string, want linter.ComponentManifest) {
 	t.Helper()
 	res, err := linter.NewLinter(nil).ValidateDirectory(chartDir)
@@ -217,6 +222,7 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 						"app.kubernetes.io/name":       "redpanda",
 						"app.kubernetes.io/managed-by": "Helm",
 					},
+					Annotations: profileCRAnnotations(),
 				},
 				Spec: linter.ComponentManifestSpec{
 					Enabled:            boolPtr(false),
@@ -249,6 +255,7 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 						"app.kubernetes.io/name":       "clickhouse",
 						"app.kubernetes.io/managed-by": "Helm",
 					},
+					Annotations: profileCRAnnotations(),
 				},
 				Spec: linter.ComponentManifestSpec{
 					Enabled:            boolPtr(false),
@@ -300,6 +307,7 @@ parameters:
 						"app.kubernetes.io/name":       "clickhouse",
 						"app.kubernetes.io/managed-by": "Helm",
 					},
+					Annotations: profileCRAnnotations(),
 				},
 				Spec: linter.ComponentManifestSpec{
 					Enabled:            boolPtr(true),
@@ -518,6 +526,7 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 				"app.kubernetes.io/name":       "ingestion-gateway",
 				"app.kubernetes.io/managed-by": "Helm",
 			},
+			Annotations: profileCRAnnotations(),
 		},
 		Spec: linter.ComponentManifestSpec{
 			Enabled:            &enabled,

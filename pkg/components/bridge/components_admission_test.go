@@ -26,6 +26,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -52,8 +53,11 @@ func TestComponentsAdmissionAndControllerSuite(t *testing.T) {
 	ctx := context.Background()
 	clients := startAdmissionEnvtest(ctx, t)
 
-	t.Run("HelmTemplatesRespectEnableComponentsFlag", func(t *testing.T) {
-		verifyEnableComponentsTemplateFlag(t)
+	t.Run("DeletionVAPFollowsEnableComponentsFlag", func(t *testing.T) {
+		verifyDeletionVAPFollowsEnableFlag(t)
+	})
+	t.Run("CRDIgnoresEnableComponentsFlag", func(t *testing.T) {
+		verifyCRDIgnoresEnableFlag(t)
 	})
 	t.Run("CRDOpenAPIAndCELSchemaValidations", func(t *testing.T) {
 		verifyCRDSchemaAndCELRules(ctx, t, clients.adminDynamic.Resource(ComponentGVR).Namespace("default"))
@@ -178,16 +182,49 @@ func waitForVAPActivation(ctx context.Context, t *testing.T, compClient dynamic.
 	}
 }
 
-func verifyEnableComponentsTemplateFlag(t *testing.T) {
+// verifyDeletionVAPFollowsEnableFlag asserts the deletion admission policy renders only with
+// componentsDeployment.enabled=true.
+func verifyDeletionVAPFollowsEnableFlag(t *testing.T) {
 	t.Helper()
-	for _, tmplName := range []string{"crd.yaml", "deletion-vap.yaml"} {
-		var disabledDoc, enabledDoc map[string]any
-		if err := yaml.Unmarshal(renderHelmManifestTemplate(t, tmplName, false), &disabledDoc); err != nil || len(disabledDoc) != 0 {
-			t.Fatalf("expected %s with componentsDeployment.enabled=false to render empty doc, got %v (err=%v)", tmplName, disabledDoc, err)
+	var disabled, enabled map[string]any
+	if err := yaml.Unmarshal(renderHelmManifestTemplate(t, "deletion-vap.yaml", false), &disabled); err != nil || len(disabled) != 0 {
+		t.Errorf("expected deletion-vap.yaml with componentsDeployment.enabled=false to render empty doc, got %v (err=%v)", disabled, err)
+	}
+	if err := yaml.Unmarshal(renderHelmManifestTemplate(t, "deletion-vap.yaml", true), &enabled); err != nil || enabled["kind"] == nil {
+		t.Errorf("expected deletion-vap.yaml with componentsDeployment.enabled=true to render K8s object, got %v (err=%v)", enabled, err)
+	}
+}
+
+// verifyCRDIgnoresEnableFlag asserts the Component CRD renders whatever componentsDeployment.enabled
+// is set to.
+func verifyCRDIgnoresEnableFlag(t *testing.T) {
+	t.Helper()
+	for _, enabled := range []bool{false, true} {
+		var doc map[string]any
+		if err := yaml.Unmarshal(renderHelmManifestTemplate(t, "crd.yaml", enabled), &doc); err != nil || doc["kind"] == nil {
+			t.Errorf("expected crd.yaml with componentsDeployment.enabled=%v to render K8s object, got %v (err=%v)", enabled, doc, err)
 		}
-		if err := yaml.Unmarshal(renderHelmManifestTemplate(t, tmplName, true), &enabledDoc); err != nil || enabledDoc["kind"] == nil {
-			t.Fatalf("expected %s with componentsDeployment.enabled=true to render K8s object, got %v (err=%v)", tmplName, enabledDoc, err)
-		}
+	}
+}
+
+// TestCRDLifecycleAnnotations asserts the CRD survives helm uninstall, a componentsDeployment.enabled
+// flip and an Argo CD prune, because deleting the CRD deletes every Component CR.
+func TestCRDLifecycleAnnotations(t *testing.T) {
+	var crd struct {
+		Metadata struct {
+			Annotations map[string]string `json:"annotations"`
+		} `json:"metadata"`
+	}
+	if err := yaml.Unmarshal(renderHelmManifestTemplate(t, "crd.yaml", false), &crd); err != nil {
+		t.Fatalf("yaml.Unmarshal(crd.yaml) = %v", err)
+	}
+	want := map[string]string{
+		"helm.sh/resource-policy":         "keep",
+		"argocd.argoproj.io/sync-options": "Prune=false,Delete=false",
+		"argocd.argoproj.io/sync-wave":    "-1",
+	}
+	if diff := cmp.Diff(want, crd.Metadata.Annotations); diff != "" {
+		t.Errorf("CRD annotations mismatch (-want +got):\n%s", diff)
 	}
 }
 
