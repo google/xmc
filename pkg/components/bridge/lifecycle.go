@@ -221,12 +221,27 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 		return res, err
 	}
 	r.syncTracker.clearDeactivationBlock(key)
+	return r.reportDisabled(ctx, in, canonicalName, res)
+}
+
+// reportDisabled reports the component disabled in res and to CMS. A pass that changes the Ready,
+// Reconciling, or Stalled condition (such as the first one after deactivation) logs at Info; an
+// unchanged periodic pass logs at Debug. A NotFound from CMS is tolerated; any other CMS failure
+// reports DeactivationIncomplete so the next pass retries the deactivation handshake.
+func (r *Reconciler) reportDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	setReadiness(res, in, ConditionStatusFalse, reasonComponentDisabled, "Component is disabled")
+	logAt := logging.Debug
+	if healthConditionsChanged(in.ExistingConditions, res.Conditions, in.Generation) {
+		logAt = logging.Info
+	}
 	if err := r.syncObservedToCMS(ctx, in, canonicalName, res, ConditionStatusFalse, true); err != nil {
+		markDeactivationFailed(in, res, ReasonDeactivationIncomplete, err.Error())
 		return res, err
 	}
-	logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
+	if !hasSourceConflict(res) {
+		logAt(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
+	}
 	// A settled disabled component has no workload to probe; spec changes requeue it immediately,
 	// so it only needs a pass per CMS heartbeat.
 	res.RequeueAfter = defaultCMSHeartbeatInterval

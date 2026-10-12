@@ -335,6 +335,7 @@ Production-grade controller reliability, conflict elimination, and Cloud Spanner
     3. Spec metadata generation changes (`generation != in.Generation`).
     4. Heartbeat interval expiration (coarse 5-minute interval via `defaultCMSHeartbeatInterval`).
   - `cmsSyncTracker` records the last synced state, generation, and timestamp in memory per component so `Ready.lastTransitionTime` only changes on actual condition status transitions rather than being overwritten on every 5-minute heartbeat. A pass whose CMS component generation is still unknown (0) skips `UpdateObservedGeneration` and records nothing, so the first real sync after the component registers is not delayed by the heartbeat.
+  - Steady-state passes stay quiet in the logs too: `"Evaluated component health"` and `"Component disabled"` are logged at `Info` only when the pass changes the recorded `Ready`, `Reconciling`, or `Stalled` condition (presence, status, or reason) or is the first evaluation of a CR generation, and `"Applied component intent to CMS"` only when the intent commits a new CMS generation or `ComponentId`; otherwise they are logged at `Debug`. Free-form error/gate messages are logged under the `"detail"` attribute so they never collide with the structured JSON `"message"` field.
 
 ---
 
