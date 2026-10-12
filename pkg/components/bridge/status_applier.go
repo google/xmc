@@ -30,7 +30,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/util/retry"
 
-	"xmanager_cloud/internal/logging"
+	"github.com/google/xmc/internal/logging"
 )
 
 // FieldManagerBridge is the Server-Side Apply fieldManager owner identifier for xmc-bridge status updates.

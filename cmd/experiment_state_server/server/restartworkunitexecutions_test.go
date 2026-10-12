@@ -20,17 +20,17 @@ import (
 	"testing"
 
 	googlespanner "cloud.google.com/go/spanner"
-	"xmanager_cloud/internal/storage/spanner"
+	"github.com/google/xmc/internal/storage/spanner"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner/emulator"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
 )
 
 func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {

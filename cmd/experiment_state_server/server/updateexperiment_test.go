@@ -20,13 +20,13 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	msgpb "github.com/google/xmc/api/protos/experiment"
+	xidmsgpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	msgpb "xmanager_cloud/api/protos/experiment"
-	xidmsgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
 
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 )

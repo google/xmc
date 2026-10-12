@@ -17,10 +17,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/xmc/internal/logging"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"xmanager_cloud/internal/logging"
 )
 
 // checkNamespaceExists verifies if a given namespace already exists in the cluster.

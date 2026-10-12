@@ -21,7 +21,7 @@ import (
 
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
+	dpb "github.com/google/xmc/api/protos/dashboard"
 )
 
 // seedChart creates a chart with the shared fixture contents and returns it.

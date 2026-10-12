@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
 	"google.golang.org/protobuf/proto"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
 )
 
 func TestPrepareWorkUnitCreation_NilValidation(t *testing.T) {

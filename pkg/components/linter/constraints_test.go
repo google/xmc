@@ -17,7 +17,7 @@ package linter_test
 import (
 	"testing"
 
-	"xmanager_cloud/pkg/components/linter"
+	"github.com/google/xmc/pkg/components/linter"
 )
 
 func TestMatchConstraint_Comprehensive(t *testing.T) {

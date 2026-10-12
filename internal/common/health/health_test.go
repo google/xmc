@@ -18,11 +18,11 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	migversion "github.com/google/xmc/internal/storage/spanner/migrations/version"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	migversion "xmanager_cloud/internal/storage/spanner/migrations/version"
 )
 
 func TestCheckSpanner(t *testing.T) {

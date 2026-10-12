@@ -21,9 +21,9 @@ import (
 	"strings"
 	"time"
 
-	fpb "xmanager_cloud/api/filter"
-	"xmanager_cloud/api/filter/go/filtervisitor"
-	"xmanager_cloud/internal/safesql"
+	fpb "github.com/google/xmc/api/filter"
+	"github.com/google/xmc/api/filter/go/filtervisitor"
+	"github.com/google/xmc/internal/safesql"
 )
 
 var IntConst = filtervisitor.CustomType("INT_CONST")

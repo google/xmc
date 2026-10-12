@@ -15,15 +15,15 @@ package workunit_test
 
 import (
 	"fmt"
+	"github.com/google/xmc/internal/storage/spanner"
 	"sort"
 	"testing"
 	"time"
-	"xmanager_cloud/internal/storage/spanner"
 
 	"github.com/google/go-cmp/cmp"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 	"google.golang.org/protobuf/testing/protocmp"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage/spanner/emulator"
 
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )

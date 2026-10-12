@@ -19,7 +19,7 @@ import (
 	"errors"
 	"testing"
 
-	"xmanager_cloud/internal/grpcerr"
+	"github.com/google/xmc/internal/grpcerr"
 )
 
 func TestDeleteDashboard_Success(t *testing.T) {

@@ -30,6 +30,6 @@ go_library(
         "parseddl.go",
         "reversebits.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/utils",
+    importpath = "github.com/google/xmc/internal/storage/spanner/utils",
     visibility = ["//:__subpackages__"],
 )

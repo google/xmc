@@ -22,9 +22,9 @@ import (
 	"cloud.google.com/go/spanner"
 	database "cloud.google.com/go/spanner/admin/database/apiv1"
 	instance "cloud.google.com/go/spanner/admin/instance/apiv1"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
-	"xmanager_cloud/internal/storage/spanner/emulator"
 
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	instancepb "cloud.google.com/go/spanner/admin/instance/apiv1/instancepb"

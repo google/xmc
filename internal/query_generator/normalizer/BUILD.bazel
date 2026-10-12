@@ -20,7 +20,7 @@ go_library(
         "lexer.go",
         "normalizer.go",
     ],
-    importpath = "xmanager_cloud/internal/query_generator/normalizer",
+    importpath = "github.com/google/xmc/internal/query_generator/normalizer",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/filter/go/filtervisitor",

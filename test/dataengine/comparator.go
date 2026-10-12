@@ -24,7 +24,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/testing/protocmp"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
+	dpb "github.com/google/xmc/api/protos/dashboard"
 )
 
 // TestCase defines a single test scenario for the DataEngine.

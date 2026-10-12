@@ -21,14 +21,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/logging"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8slabels "k8s.io/apimachinery/pkg/labels"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/logging"
 )
 
 // unschedulablePodsCheckTime bounds how long handleStartupPodChecks keeps

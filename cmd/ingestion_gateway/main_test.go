@@ -18,8 +18,8 @@ import (
 	"context"
 	"testing"
 
-	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
-	"xmanager_cloud/pkg/components/crreader/crreadertest"
+	"github.com/google/xmc/cmd/ingestion_gateway/ingestiongateway"
+	"github.com/google/xmc/pkg/components/crreader/crreadertest"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )

@@ -20,9 +20,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/xmc/cmd/reconciler/hypercomputeclient"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
-	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
 )
 
 func TestMLRunResultLabel(t *testing.T) {

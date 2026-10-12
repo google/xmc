@@ -46,7 +46,7 @@ go_library(
         "status_detector.go",
         "wrapper_reconciler.go",
     ],
-    importpath = "xmanager_cloud/pkg/components/bridge",
+    importpath = "github.com/google/xmc/pkg/components/bridge",
     deps = [
         "//api/protos/components/v1alpha1",
         "//deploy/profiles/stable-2026a:stable2026a",

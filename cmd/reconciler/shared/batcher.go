@@ -21,14 +21,14 @@ import (
 	"sync"
 	"time"
 
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/logging"
+	storagepkg "github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/validator"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc/status"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/logging"
-	storagepkg "xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/validator"
 )
 
 // UpdateSource indicates the origin of a WorkUnitExecutionUpdate.

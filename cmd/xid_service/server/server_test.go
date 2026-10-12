@@ -19,11 +19,11 @@ import (
 	"strings"
 	"testing"
 
-	"xmanager_cloud/cmd/xid_service/config"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/internal/storage/spanner/emulator"
+	"github.com/google/xmc/cmd/xid_service/config"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/storage/spanner"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 )
 
 type testServerOpt func(p *Params)

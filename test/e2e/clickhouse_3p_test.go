@@ -24,8 +24,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"xmanager_cloud/pkg/clickhouse/componentconfig"
-	"xmanager_cloud/pkg/components/crreader"
+	"github.com/google/xmc/pkg/clickhouse/componentconfig"
+	"github.com/google/xmc/pkg/components/crreader"
 )
 
 const (

@@ -24,7 +24,7 @@ import (
 	"io"
 	"strings"
 
-	"xmanager_cloud/internal/storage/spanner/utils"
+	"github.com/google/xmc/internal/storage/spanner/utils"
 
 	"github.com/golang-migrate/migrate/v4/source"
 )

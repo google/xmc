@@ -18,11 +18,11 @@ import (
 	"errors"
 	"fmt"
 
-	xpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/validator"
+	xpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/validator"
 )
 
 // CheckUserAuthorization checks whether a user has access to an XID.

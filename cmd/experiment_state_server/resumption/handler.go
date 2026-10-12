@@ -19,8 +19,8 @@ import (
 	"context"
 	"fmt"
 
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/task_queue_redis/redisclient"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/task_queue_redis/redisclient"
 )
 
 // Handler processes resumption triggers from the Redis resume stream.

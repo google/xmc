@@ -17,9 +17,9 @@ import (
 	"context"
 	"testing"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/internal/storage/spanner/emulator"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/storage/spanner"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 )
 
 func TestCreateExperiment(t *testing.T) {

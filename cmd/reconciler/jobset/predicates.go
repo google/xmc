@@ -18,13 +18,13 @@ import (
 	"context"
 	"errors"
 
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/kubernetes/common/labels"
+	"github.com/google/xmc/internal/logging"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/kubernetes/common/labels"
-	"xmanager_cloud/internal/logging"
 )
 
 func hasValidXMCLabels(ctx context.Context, jobSet *v1alpha2.JobSet) bool {

@@ -28,7 +28,7 @@ go_library(
         "namespace.go",
         "volume.go",
     ],
-    importpath = "xmanager_cloud/cmd/actuator/k8s_client",
+    importpath = "github.com/google/xmc/cmd/actuator/k8s_client",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

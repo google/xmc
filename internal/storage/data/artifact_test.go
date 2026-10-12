@@ -17,12 +17,12 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	pb "github.com/google/xmc/api/protos/experiment"
+	xidmsgpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/prototest"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	pb "xmanager_cloud/api/protos/experiment"
-	xidmsgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/prototest"
 )
 
 func TestMergeArtifacts(t *testing.T) {

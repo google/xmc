@@ -19,11 +19,11 @@ import (
 	"fmt"
 	"slices"
 
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/protobuf/proto"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/validator"
 )
 
 var (

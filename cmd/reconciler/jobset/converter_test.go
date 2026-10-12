@@ -19,6 +19,9 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	spb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	storagepkg "github.com/google/xmc/internal/storage"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -26,9 +29,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
-	spb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	storagepkg "xmanager_cloud/internal/storage"
 
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 )

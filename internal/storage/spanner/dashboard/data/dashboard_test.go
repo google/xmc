@@ -20,9 +20,9 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	dpb "github.com/google/xmc/api/protos/dashboard"
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	dpb "xmanager_cloud/api/protos/dashboard"
 )
 
 func TestDashboardProtoToInsertMutations_Success(t *testing.T) {

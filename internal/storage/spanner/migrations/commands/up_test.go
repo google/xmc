@@ -24,8 +24,8 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/stub"
 	"github.com/golang-migrate/migrate/v4/source"
 	stubs "github.com/golang-migrate/migrate/v4/source/stub"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 	"k8s.io/utils/ptr"
-	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestUp(t *testing.T) {

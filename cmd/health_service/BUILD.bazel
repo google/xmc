@@ -27,7 +27,7 @@ go_library(
         "pause_scheduling.go",
         "server.go",
     ],
-    importpath = "xmanager_cloud/cmd/health_service/main",
+    importpath = "github.com/google/xmc/cmd/health_service/main",
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/health:api_go_proto",
@@ -75,7 +75,7 @@ go_binary(
     pure = "on",
     visibility = ["//visibility:public"],
     x_defs = {
-        "xmanager_cloud/cmd/health_service/main.buildVersion": "{STABLE_APP_VERSION}",
+        "github.com/google/xmc/cmd/health_service/main.buildVersion": "{STABLE_APP_VERSION}",
     },
 )
 

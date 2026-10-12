@@ -30,12 +30,12 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage/data"
-	spannerdata "xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/pkg/components/store"
+	componentspb "github.com/google/xmc/api/protos/components/v1alpha1"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/storage/data"
+	spannerdata "github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/pkg/components/store"
 )
 
 func setupTestStore(ctx context.Context, t *testing.T) (*store.SpannerStore, *spanner.Client) {

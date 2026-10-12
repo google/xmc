@@ -50,7 +50,7 @@ func testHandler(w io.Writer, level slog.Level, projectID string) slog.Handler {
 				source, _ := a.Value.Any().(*slog.Source)
 				if source != nil {
 					source.File = filepath.Base(source.File)
-					source.Function = strings.TrimPrefix(source.Function, "xmanager_cloud/")
+					source.Function = strings.TrimPrefix(source.Function, "github.com/google/xmc/")
 				}
 			}
 			if a.Key == keyTrace && projectID != "" {

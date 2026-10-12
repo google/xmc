@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"xmanager_cloud/internal/broadcast"
-	"xmanager_cloud/internal/storage"
-	storagetest "xmanager_cloud/internal/storage/testing"
+	"github.com/google/xmc/internal/broadcast"
+	"github.com/google/xmc/internal/storage"
+	storagetest "github.com/google/xmc/internal/storage/testing"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )

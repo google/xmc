@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/xmc/internal/logging"
 	"github.com/redis/go-redis/v9"
-	"xmanager_cloud/internal/logging"
 )
 
 // claimKey is the context key under which processMessage stores the claim of the message being

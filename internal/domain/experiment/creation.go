@@ -21,11 +21,11 @@ import (
 	"slices"
 	"time"
 
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/domain/workunit"
+	"github.com/google/xmc/internal/storage/state"
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/domain/workunit"
-	"xmanager_cloud/internal/storage/state"
 )
 
 // WorkUnitCreationResult contains the updated Experiment domain object and mutation metadata.

@@ -20,11 +20,11 @@ import (
 	"testing"
 
 	cloudspanner "cloud.google.com/go/spanner"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/storage/spanner/utils"
-	"xmanager_cloud/internal/validator"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/storage/spanner"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/storage/spanner/utils"
+	"github.com/google/xmc/internal/validator"
 )
 
 func newTestStorageWithComponents(ctx context.Context, t *testing.T, essClient *cloudspanner.Client) *spanner.Storage {

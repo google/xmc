@@ -21,7 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	componentspb "github.com/google/xmc/api/protos/components/v1alpha1"
 )
 
 func TestParseHelpers(t *testing.T) {

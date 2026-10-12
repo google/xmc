@@ -16,7 +16,7 @@ package validator
 import (
 	"fmt"
 
-	"xmanager_cloud/internal/grpcerr"
+	"github.com/google/xmc/internal/grpcerr"
 )
 
 const (

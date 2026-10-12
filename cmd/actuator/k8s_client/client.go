@@ -22,6 +22,13 @@ import (
 
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
+	esspb "github.com/google/xmc/api/protos/experiment"
+	actuatortaskpb "github.com/google/xmc/api/protos/task_queue"
+	preconditionsvalidator "github.com/google/xmc/cmd/actuator/k8s_client/preconditions_validator"
+	constants "github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/validator"
 	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/status"
 	anypb "google.golang.org/protobuf/types/known/anypb"
@@ -32,13 +39,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
-	esspb "xmanager_cloud/api/protos/experiment"
-	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	preconditionsvalidator "xmanager_cloud/cmd/actuator/k8s_client/preconditions_validator"
-	constants "xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/validator"
 )
 
 // ActuatorRuntimeConfig holds runtime configuration for Actuator.

@@ -15,11 +15,11 @@ package artifact_test
 
 import (
 	"context"
+	"github.com/google/xmc/internal/storage/spanner"
 	"testing"
-	"xmanager_cloud/internal/storage/spanner"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage/spanner/emulator"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 )
 
 func TestCreateArtifact(t *testing.T) {

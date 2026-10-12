@@ -19,13 +19,13 @@ import (
 	"context"
 	"fmt"
 
-	apipb "xmanager_cloud/api/protos/experiment"
-	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	xidgrpcpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/cmd/experiment_state_server/config"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/workunit"
+	apipb "github.com/google/xmc/api/protos/experiment"
+	actuatortaskpb "github.com/google/xmc/api/protos/task_queue"
+	xidgrpcpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/cmd/experiment_state_server/config"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/workunit"
 )
 
 var _ apipb.ExperimentStateServiceServer = (*Server)(nil)

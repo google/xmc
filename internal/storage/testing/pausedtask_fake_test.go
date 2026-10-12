@@ -25,11 +25,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/prototest"
-	"xmanager_cloud/internal/storage"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	actuatortaskpb "github.com/google/xmc/api/protos/task_queue"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/prototest"
+	"github.com/google/xmc/internal/storage"
 )
 
 var baseTime = time.Date(2026, 9, 10, 10, 0, 0, 0, time.UTC)

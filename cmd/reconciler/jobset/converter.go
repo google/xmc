@@ -19,13 +19,13 @@ import (
 	"net/url"
 	"time"
 
+	spb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/kubernetes/common/jobsetutil"
+	"github.com/google/xmc/internal/logging"
+	storagepkg "github.com/google/xmc/internal/storage"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	spb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
-	"xmanager_cloud/internal/logging"
-	storagepkg "xmanager_cloud/internal/storage"
 
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 )

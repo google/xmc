@@ -25,17 +25,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/broadcast"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/security/tlsutil"
+	"github.com/google/xmc/internal/storage/spanner/migrations/version"
+	"github.com/google/xmc/internal/task_queue_redis/redisclient"
+	"github.com/google/xmc/pkg/auth/oauth2"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/broadcast"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/security/tlsutil"
-	"xmanager_cloud/internal/storage/spanner/migrations/version"
-	"xmanager_cloud/internal/task_queue_redis/redisclient"
-	"xmanager_cloud/pkg/auth/oauth2"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	cloudidentity "google.golang.org/api/cloudidentity/v1beta1"
@@ -43,7 +43,7 @@ import (
 
 	run "google.golang.org/api/run/v2"
 
-	spb "xmanager_cloud/api/protos/health"
+	spb "github.com/google/xmc/api/protos/health"
 )
 
 type grpcServerDeps struct {

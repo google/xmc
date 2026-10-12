@@ -19,7 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "queryfilterbase",
     srcs = ["base.go"],
-    importpath = "xmanager_cloud/api/filter/go/queryfilterbase",  # keep
+    importpath = "github.com/google/xmc/api/filter/go/queryfilterbase",  # keep
     deps = [
         # keep
         "//api/filter:filter_expression_go_proto",

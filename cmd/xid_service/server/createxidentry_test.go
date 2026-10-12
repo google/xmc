@@ -19,14 +19,14 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	msgpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/prototest"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	msgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/prototest"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/validator"
 )
 
 func TestCreateXidEntry_HappyPath(t *testing.T) {

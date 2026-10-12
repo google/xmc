@@ -21,15 +21,15 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/validator"
 
-	apipb "xmanager_cloud/api/protos/experiment"
-	xidapipb "xmanager_cloud/api/protos/xid"
+	apipb "github.com/google/xmc/api/protos/experiment"
+	xidapipb "github.com/google/xmc/api/protos/xid"
 )
 
 func TestGetCurrentWorkUnitExecution_HappyPath_Create(t *testing.T) {

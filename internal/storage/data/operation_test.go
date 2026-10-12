@@ -18,12 +18,12 @@ import (
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/google/go-cmp/cmp"
+	pb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/prototest"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	anypb "google.golang.org/protobuf/types/known/anypb"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	pb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/prototest"
 )
 
 func TestMergeOperations(t *testing.T) {

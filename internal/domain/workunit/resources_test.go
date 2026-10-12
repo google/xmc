@@ -18,8 +18,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
 	"google.golang.org/protobuf/testing/protocmp"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
 )
 
 func TestGetWorkUnitResources_Nil(t *testing.T) {

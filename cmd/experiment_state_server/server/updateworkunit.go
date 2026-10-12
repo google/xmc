@@ -17,14 +17,14 @@ import (
 	"context"
 	"fmt"
 
+	msgpb "github.com/google/xmc/api/protos/experiment"
+	actuatortaskpb "github.com/google/xmc/api/protos/task_queue"
+	xidmsgpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/validator"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	msgpb "xmanager_cloud/api/protos/experiment"
-	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	xidmsgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/validator"
 )
 
 // UpdateWorkUnit updates a work unit's data.

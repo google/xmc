@@ -21,17 +21,17 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	spb "github.com/google/xmc/api/protos/rod"
+	"github.com/google/xmc/cmd/rod_data_provider/cache"
+	"github.com/google/xmc/internal/prototest"
+	"github.com/google/xmc/internal/storage/spanner/workunit"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	spb "xmanager_cloud/api/protos/rod"
-	"xmanager_cloud/cmd/rod_data_provider/cache"
-	"xmanager_cloud/internal/prototest"
-	"xmanager_cloud/internal/storage/spanner/workunit"
 )
 
 var (

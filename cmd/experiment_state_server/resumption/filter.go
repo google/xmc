@@ -15,9 +15,9 @@
 package resumption
 
 import (
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/validator"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/validator"
 )
 
 // TaskFilterReason explains why a paused task was skipped during unpause resumption.

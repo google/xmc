@@ -20,9 +20,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
 )
 
 var (

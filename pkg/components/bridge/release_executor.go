@@ -22,7 +22,7 @@ import (
 
 	"helm.sh/helm/v3/pkg/storage/driver"
 
-	"xmanager_cloud/internal/logging"
+	"github.com/google/xmc/internal/logging"
 )
 
 // asyncUpgradeTimeout bounds a single asynchronous Helm upgrade executed by the background worker.

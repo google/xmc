@@ -22,6 +22,10 @@ import (
 	"strconv"
 	"strings"
 
+	esspb "github.com/google/xmc/api/protos/experiment"
+	constants "github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/pkg/components/crreader"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,10 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	esspb "xmanager_cloud/api/protos/experiment"
-	constants "xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/pkg/components/crreader"
 )
 
 // componentAccess encapsulates resolved access configurations from a component custom resource.

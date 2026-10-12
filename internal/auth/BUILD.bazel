@@ -23,7 +23,7 @@ go_library(
         "authorization.go",
         "test_utils.go",
     ],
-    importpath = "xmanager_cloud/internal/auth",
+    importpath = "github.com/google/xmc/internal/auth",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/xid:messages_go_proto",

@@ -20,6 +20,9 @@ import (
 	"testing"
 	"time"
 
+	spb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/cmd/reconciler/shared"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,9 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	spb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/cmd/reconciler/shared"
-	"xmanager_cloud/internal/kubernetes/common/constants"
 )
 
 func newStartingTestJobSet() *v1alpha2.JobSet {

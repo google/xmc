@@ -16,9 +16,9 @@ package k8sclient
 import (
 	"strings"
 
+	esspb "github.com/google/xmc/api/protos/experiment"
 	corev1 "k8s.io/api/core/v1"
 	resource "k8s.io/apimachinery/pkg/api/resource"
-	esspb "xmanager_cloud/api/protos/experiment"
 )
 
 func defaultVolumes() []corev1.Volume {

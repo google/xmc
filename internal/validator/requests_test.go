@@ -23,12 +23,12 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/google/go-cmp/cmp"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	xidmessagespb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/prototest"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	xidmessagespb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/prototest"
 )
 
 func TestValidateCreateXidRequest(t *testing.T) {

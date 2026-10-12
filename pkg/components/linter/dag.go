@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"sort"
 
-	"xmanager_cloud/pkg/components/graph"
-	"xmanager_cloud/pkg/components/naming"
+	"github.com/google/xmc/pkg/components/graph"
+	"github.com/google/xmc/pkg/components/naming"
 )
 
 // validateDAG validates DAG construction, enabled-state completeness, and dependency cycles.

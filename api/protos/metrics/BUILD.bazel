@@ -25,7 +25,7 @@ proto_library(
 
 go_proto_library(
     name = "metrics_go_proto",
-    importpath = "xmanager_cloud/api/protos/metrics",
+    importpath = "github.com/google/xmc/api/protos/metrics",
     proto = ":metrics_proto",
 )
 

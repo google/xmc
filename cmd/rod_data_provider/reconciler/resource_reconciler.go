@@ -17,12 +17,12 @@ package reconciler
 import (
 	"context"
 
+	"github.com/google/xmc/cmd/rod_data_provider/cache"
 	"k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
 // ResourceReconciler manages reconciliation of Kueue CRDs into a ResourceCache.

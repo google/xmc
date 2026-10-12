@@ -29,7 +29,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/restmapper"
 
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	componentspb "github.com/google/xmc/api/protos/components/v1alpha1"
 )
 
 type statusTestStringer struct {

@@ -19,8 +19,8 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/security/keyreloader"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/security/keyreloader"
 
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"

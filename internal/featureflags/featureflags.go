@@ -16,7 +16,7 @@
 package featureflags
 
 import (
-	"xmanager_cloud/internal/configutil"
+	"github.com/google/xmc/internal/configutil"
 )
 
 const (

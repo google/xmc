@@ -16,7 +16,7 @@ package filtervisitor
 
 import (
 	"errors"
-	fpb "xmanager_cloud/api/filter"
+	fpb "github.com/google/xmc/api/filter"
 )
 
 type PrimType struct {

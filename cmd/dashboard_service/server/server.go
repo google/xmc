@@ -24,11 +24,11 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
-	xpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/validator"
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	xpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/validator"
 )
 
 // DashboardRepository defines the persistence contract for dashboards and charts.

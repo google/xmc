@@ -19,7 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "jwtkeyset",
     srcs = ["jwtkeyset.go"],
-    importpath = "xmanager_cloud/internal/security/jwtkeyset",
+    importpath = "github.com/google/xmc/internal/security/jwtkeyset",
     deps = [
         "@com_github_tink_crypto_tink_go_v2//insecurecleartextkeyset",
         "@com_github_tink_crypto_tink_go_v2//jwt",

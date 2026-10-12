@@ -20,8 +20,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	spb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/validator"
+	spb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/validator"
 )
 
 const (

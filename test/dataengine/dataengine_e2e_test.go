@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"xmanager_cloud/pkg/clickhouse"
-	dataenginetest "xmanager_cloud/test/dataengine"
+	"github.com/google/xmc/pkg/clickhouse"
+	dataenginetest "github.com/google/xmc/test/dataengine"
 )
 
 func TestDataEngineLive(t *testing.T) {

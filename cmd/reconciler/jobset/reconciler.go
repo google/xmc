@@ -22,6 +22,12 @@ import (
 	"slices"
 	"time"
 
+	spb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/cmd/reconciler/shared"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/kubernetes/common/labels"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/validator"
 	"github.com/prometheus/client_golang/prometheus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -33,12 +39,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	spb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/cmd/reconciler/shared"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/kubernetes/common/labels"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/validator"
 )
 
 var (

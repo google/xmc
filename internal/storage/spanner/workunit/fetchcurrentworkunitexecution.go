@@ -19,15 +19,15 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	spannerdata "github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/workunitschema"
+	"github.com/google/xmc/internal/storage/spanner/utils"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	spannerdata "xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
-	"xmanager_cloud/internal/storage/spanner/utils"
-	"xmanager_cloud/internal/validator"
 )
 
 // FetchCurrentWorkUnitExecution retrieves the current work unit execution for a given work unit.

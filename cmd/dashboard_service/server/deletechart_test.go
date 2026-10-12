@@ -25,8 +25,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	spb "xmanager_cloud/api/protos/dashboard"
-	xidapipb "xmanager_cloud/api/protos/xid"
+	spb "github.com/google/xmc/api/protos/dashboard"
+	xidapipb "github.com/google/xmc/api/protos/xid"
 )
 
 func TestDeleteChart(t *testing.T) {

@@ -22,9 +22,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	spb "xmanager_cloud/api/protos/health"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/pkg/components/summary"
+	spb "github.com/google/xmc/api/protos/health"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/pkg/components/summary"
 )
 
 // readConfigDir reads all files in the given directory from fsys and returns ConfigInfo slice.

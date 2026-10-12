@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"xmanager_cloud/pkg/components/naming"
+	"github.com/google/xmc/pkg/components/naming"
 )
 
 func TestCanonicalComponentName(t *testing.T) {

@@ -17,7 +17,7 @@ package main
 import (
 	"context"
 
-	"xmanager_cloud/internal/gcemetadata"
+	"github.com/google/xmc/internal/gcemetadata"
 )
 
 // GceMetadata holds cluster metadata fetched from GCE metadata server or environment variables.

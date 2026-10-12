@@ -21,7 +21,7 @@ import (
 	"os"
 
 	"cloud.google.com/go/compute/metadata"
-	"xmanager_cloud/internal/logging"
+	"github.com/google/xmc/internal/logging"
 )
 
 // Metadata holds cluster metadata such as project ID, location, and cluster name.

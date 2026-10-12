@@ -25,8 +25,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
-	xidapipb "xmanager_cloud/api/protos/xid"
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	xidapipb "github.com/google/xmc/api/protos/xid"
 )
 
 // existingChartFn answers GetChart with a chart belonging to the given experiment, so that chart

@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "keyreloader",
     srcs = ["key_reloader.go"],
-    importpath = "xmanager_cloud/internal/security/keyreloader",
+    importpath = "github.com/google/xmc/internal/security/keyreloader",
     deps = [
         "//internal/logging",
         "//internal/security/jwtkeyset",

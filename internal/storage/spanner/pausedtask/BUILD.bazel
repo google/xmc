@@ -19,7 +19,7 @@ go_library(
     srcs = [
         "repository.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/pausedtask",
+    importpath = "github.com/google/xmc/internal/storage/spanner/pausedtask",
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/grpcerr",

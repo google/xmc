@@ -17,14 +17,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/validator"
 
-	msgpb "xmanager_cloud/api/protos/experiment"
-	xidmsgpb "xmanager_cloud/api/protos/xid"
+	msgpb "github.com/google/xmc/api/protos/experiment"
+	xidmsgpb "github.com/google/xmc/api/protos/xid"
 )
 
 // GetCurrentWorkUnitExecution returns the current execution that was run for a work unit.

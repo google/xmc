@@ -20,7 +20,7 @@ go_library(
     name = "crreadertest",
     testonly = True,
     srcs = ["fake.go"],
-    importpath = "xmanager_cloud/pkg/components/crreader/crreadertest",
+    importpath = "github.com/google/xmc/pkg/components/crreader/crreadertest",
     deps = [
         "//pkg/components/crreader",
         "@io_k8s_apimachinery//pkg/api/errors",

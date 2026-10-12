@@ -19,12 +19,12 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
+	pb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/storage/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/xidschema"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	pb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
 )
 
 var (

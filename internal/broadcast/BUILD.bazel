@@ -12,7 +12,7 @@ go_library(
         "fake.go",
         "publisher.go",
     ],
-    importpath = "xmanager_cloud/internal/broadcast",
+    importpath = "github.com/google/xmc/internal/broadcast",
     deps = [
         "@com_github_redis_go_redis_v9//:go-redis",
     ],

@@ -32,7 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/protobuf/proto"
 
-	metrics "xmanager_cloud/api/protos/metrics"
+	metrics "github.com/google/xmc/api/protos/metrics"
 )
 
 type noopProducer struct{}

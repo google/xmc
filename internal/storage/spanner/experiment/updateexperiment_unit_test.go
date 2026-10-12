@@ -18,7 +18,7 @@ import (
 	"context"
 	"testing"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
 )
 
 func TestUpdateExperimentStatus_NilExperiment(t *testing.T) {

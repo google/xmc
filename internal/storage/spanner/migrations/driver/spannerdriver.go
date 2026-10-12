@@ -25,8 +25,8 @@ import (
 	database "cloud.google.com/go/spanner/admin/database/apiv1"
 	migratedb "github.com/golang-migrate/migrate/v4/database"
 	migratespanner "github.com/golang-migrate/migrate/v4/database/spanner"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/utils"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage/spanner/utils"
 
 	adminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 )

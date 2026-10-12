@@ -22,12 +22,12 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	apipb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/protobuf/testing/protocmp"
-	apipb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/validator"
 )
 
 func TestListArtifacts_HappyPath(t *testing.T) {

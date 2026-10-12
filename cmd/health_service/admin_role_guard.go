@@ -17,8 +17,8 @@ package main
 import (
 	"context"
 
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/pkg/auth/oauth2"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/pkg/auth/oauth2"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

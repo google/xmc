@@ -17,9 +17,9 @@ package dashboard
 import (
 	"context"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/dashboard/data"
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage/spanner/dashboard/data"
 )
 
 // CreateChart writes a new chart and its plot specifications to Spanner.

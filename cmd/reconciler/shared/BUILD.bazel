@@ -19,7 +19,7 @@ go_library(
     srcs = [
         "batcher.go",
     ],
-    importpath = "xmanager_cloud/cmd/reconciler/shared",
+    importpath = "github.com/google/xmc/cmd/reconciler/shared",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

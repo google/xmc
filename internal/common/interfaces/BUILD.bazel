@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "interfaces",
     srcs = ["interfaces.go"],
-    importpath = "xmanager_cloud/internal/common/interfaces",
+    importpath = "github.com/google/xmc/internal/common/interfaces",
     deps = [
         "//api/protos/task_queue:task_go_proto",
     ],

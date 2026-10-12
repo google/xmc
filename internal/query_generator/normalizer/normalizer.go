@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"strings"
 
-	"xmanager_cloud/api/filter/go/filtervisitor"
-	"xmanager_cloud/internal/query_generator/querytools"
+	"github.com/google/xmc/api/filter/go/filtervisitor"
+	"github.com/google/xmc/internal/query_generator/querytools"
 )
 
 // Normalize takes a semi-compliant AIP-160 string and enforces quoting rules

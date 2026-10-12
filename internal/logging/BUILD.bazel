@@ -21,7 +21,7 @@ go_library(
         "operation.go",
         "resources.go",
     ],
-    importpath = "xmanager_cloud/internal/logging",
+    importpath = "github.com/google/xmc/internal/logging",
     visibility = ["//visibility:public"],
     deps = [
         # keep

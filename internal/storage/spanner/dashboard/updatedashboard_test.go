@@ -21,8 +21,8 @@ import (
 
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/grpcerr"
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/grpcerr"
 )
 
 func TestUpdateDashboard_Success(t *testing.T) {

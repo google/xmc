@@ -23,13 +23,13 @@ import (
 	"testing"
 	"time"
 
+	spb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/cmd/reconciler/hypercomputeclient"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	spb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
-	"xmanager_cloud/internal/kubernetes/common/constants"
 )
 
 func jobSetWithWorkerContainers(containers ...corev1.Container) *v1alpha2.JobSet {

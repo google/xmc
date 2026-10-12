@@ -24,11 +24,11 @@ import (
 	"sync"
 	"testing"
 
-	dashboard_apipb "xmanager_cloud/api/protos/dashboard"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/cmd/experiment_state_server/toollibs"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
+	dashboard_apipb "github.com/google/xmc/api/protos/dashboard"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/cmd/experiment_state_server/toollibs"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage"
 
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"

@@ -20,8 +20,8 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 
-	"xmanager_cloud/pkg/components/naming"
-	componentsemver "xmanager_cloud/pkg/components/semver"
+	"github.com/google/xmc/pkg/components/naming"
+	componentsemver "github.com/google/xmc/pkg/components/semver"
 )
 
 // validateMatrix validates SemVer compatibility matrix constraints and requirements.

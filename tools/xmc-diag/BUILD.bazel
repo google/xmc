@@ -27,7 +27,7 @@ go_library(
         "redpanda.go",
         "types.go",
     ],
-    importpath = "xmanager_cloud/tools/xmc_diag/main",
+    importpath = "github.com/google/xmc/tools/xmc_diag/main",
     deps = [
         "//pkg/clickhouse",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",

@@ -20,10 +20,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/xmc/pkg/auth/jwks"
 	"google.golang.org/api/cloudidentity/v1beta1"
-	"xmanager_cloud/pkg/auth/jwks"
 
-	xpb "xmanager_cloud/api/protos/xid"
+	xpb "github.com/google/xmc/api/protos/xid"
 )
 
 // Role represents a user's authorization level.

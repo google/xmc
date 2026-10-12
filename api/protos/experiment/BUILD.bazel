@@ -139,7 +139,7 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_grpc_v2",
         ":go_grpc_gateway",
     ],
-    importpath = "xmanager_cloud/api/protos/experiment",
+    importpath = "github.com/google/xmc/api/protos/experiment",
     proto = ":cloud_xmanager_v1_proto",
     deps = [
         "//api/protos/dashboard:messages_go_proto",
@@ -156,5 +156,5 @@ go_proto_library(
 go_library(
     name = "experiment",
     embed = [":cloud_xmanager_v1_go_proto"],
-    importpath = "xmanager_cloud/api/protos/experiment",
+    importpath = "github.com/google/xmc/api/protos/experiment",
 )

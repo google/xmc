@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "clusterqueue",
     srcs = ["reconciler.go"],
-    importpath = "xmanager_cloud/cmd/reconciler/clusterqueue",
+    importpath = "github.com/google/xmc/cmd/reconciler/clusterqueue",
     visibility = ["//visibility:public"],
     deps = [
         "//internal/logging",

@@ -21,7 +21,7 @@ go_library(
     srcs = [
         "info_provider.go",
     ],
-    importpath = "xmanager_cloud/pkg/components/summary",
+    importpath = "github.com/google/xmc/pkg/components/summary",
     deps = [
         "//api/protos/components/v1alpha1",
         "//pkg/components/store",

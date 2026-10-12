@@ -20,8 +20,8 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
 	"google.golang.org/protobuf/testing/protocmp"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
 )
 
 func TestWorkUnitStatusHistoryToInsertMutation(t *testing.T) {

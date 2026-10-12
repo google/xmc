@@ -21,8 +21,8 @@ import (
 	"log/slog"
 
 	"github.com/go-logr/logr"
+	"github.com/google/xmc/internal/logging"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"xmanager_cloud/internal/logging"
 )
 
 func main() {

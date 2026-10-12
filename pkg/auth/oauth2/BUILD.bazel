@@ -25,7 +25,7 @@ go_library(
         "provider.go",
         "session.go",
     ],
-    importpath = "xmanager_cloud/pkg/auth/oauth2",
+    importpath = "github.com/google/xmc/pkg/auth/oauth2",
     visibility = ["//visibility:public"],
     deps = [
         "//internal/logging",

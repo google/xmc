@@ -1,4 +1,4 @@
-module xmanager_cloud
+module github.com/google/xmc
 
 go 1.26.3
 

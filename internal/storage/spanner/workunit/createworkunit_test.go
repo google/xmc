@@ -19,11 +19,11 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	domainworkunit "github.com/google/xmc/internal/domain/workunit"
+	"github.com/google/xmc/internal/storage/spanner"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 	"google.golang.org/protobuf/testing/protocmp"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	domainworkunit "xmanager_cloud/internal/domain/workunit"
-	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestCreateWorkUnit(t *testing.T) {

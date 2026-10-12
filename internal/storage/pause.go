@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"time"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	"xmanager_cloud/internal/grpcerr"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	actuatortaskpb "github.com/google/xmc/api/protos/task_queue"
+	"github.com/google/xmc/internal/grpcerr"
 )
 
 var (

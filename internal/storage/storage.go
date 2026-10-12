@@ -21,9 +21,9 @@ import (
 	"time"
 
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	xidmsgpb "github.com/google/xmc/api/protos/xid"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	xidmsgpb "xmanager_cloud/api/protos/xid"
 )
 
 // ExperimentUpdate represents an update to an experiment.

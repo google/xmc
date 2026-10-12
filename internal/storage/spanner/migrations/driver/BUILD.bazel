@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "driver",
     srcs = ["spannerdriver.go"],
-    importpath = "xmanager_cloud/internal/storage/spanner/migrations/driver",
+    importpath = "github.com/google/xmc/internal/storage/spanner/migrations/driver",
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/logging",

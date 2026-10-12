@@ -21,11 +21,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/xmc/internal/common/health"
+	"github.com/google/xmc/internal/storage/spanner/migrations/version"
+	"github.com/google/xmc/internal/task_queue_redis/redisclient"
 	"k8s.io/client-go/kubernetes"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
-	"xmanager_cloud/internal/common/health"
-	"xmanager_cloud/internal/storage/spanner/migrations/version"
-	"xmanager_cloud/internal/task_queue_redis/redisclient"
 )
 
 type mockK8sHealthClient struct {

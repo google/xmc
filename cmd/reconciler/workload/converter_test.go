@@ -20,6 +20,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	spb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	storagepkg "github.com/google/xmc/internal/storage"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,9 +30,6 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	spb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	storagepkg "xmanager_cloud/internal/storage"
 )
 
 var workloadSpecWithNecessaryLabels = v1beta1.WorkloadSpec{

@@ -20,17 +20,17 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/storage/data"
+	"github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/storage/spanner/statusmessage"
+	"github.com/google/xmc/internal/validator"
 	"github.com/kylelemons/godebug/diff"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/statusmessage"
-	"xmanager_cloud/internal/validator"
 )
 
 // TODO(b/517479143): Refactor UpdateExperiment to extract experiment merging and status message persistence to a higher domain service layer.

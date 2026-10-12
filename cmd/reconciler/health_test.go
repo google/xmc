@@ -20,13 +20,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/xmc/cmd/actuator/k8s_client"
+	migversion "github.com/google/xmc/internal/storage/spanner/migrations/version"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	healthzpkg "sigs.k8s.io/controller-runtime/pkg/healthz"
-	"xmanager_cloud/cmd/actuator/k8s_client"
-	migversion "xmanager_cloud/internal/storage/spanner/migrations/version"
 )
 
 type mockSpannerHealthClient struct {

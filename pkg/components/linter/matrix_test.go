@@ -17,7 +17,7 @@ package linter_test
 import (
 	"testing"
 
-	"xmanager_cloud/pkg/components/linter"
+	"github.com/google/xmc/pkg/components/linter"
 )
 
 func TestMatrix_SemVerCompatibility(t *testing.T) {

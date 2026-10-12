@@ -21,15 +21,15 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	apipb "github.com/google/xmc/api/protos/experiment"
+	xidapipb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
+	tq "github.com/google/xmc/internal/task_queue"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	apipb "xmanager_cloud/api/protos/experiment"
-	xidapipb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
-	tq "xmanager_cloud/internal/task_queue"
-	"xmanager_cloud/internal/validator"
 )
 
 func TestRestartWorkUnit_HappyPath(t *testing.T) {

@@ -19,8 +19,8 @@ import (
 	"log/slog"
 	"strings"
 
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/validator"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/validator"
 )
 
 const (

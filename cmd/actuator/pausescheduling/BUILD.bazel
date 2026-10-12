@@ -10,7 +10,7 @@ go_library(
         "listener.go",
         "pause_handler.go",
     ],
-    importpath = "xmanager_cloud/cmd/actuator/pausescheduling",
+    importpath = "github.com/google/xmc/cmd/actuator/pausescheduling",
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",

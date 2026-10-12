@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"xmanager_cloud/pkg/components/linter"
+	"github.com/google/xmc/pkg/components/linter"
 )
 
 func TestDAG_AcyclicAndCompletenessChecks(t *testing.T) {

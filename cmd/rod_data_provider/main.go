@@ -28,6 +28,13 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/option"
 
+	spb "github.com/google/xmc/api/protos/rod"
+	"github.com/google/xmc/cmd/rod_data_provider/cache"
+	"github.com/google/xmc/cmd/rod_data_provider/reconciler"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage/spanner/statushistory"
+	"github.com/google/xmc/internal/storage/spanner/workunit"
+	"github.com/google/xmc/pkg/auth/oauth2"
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -39,13 +46,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	spb "xmanager_cloud/api/protos/rod"
-	"xmanager_cloud/cmd/rod_data_provider/cache"
-	"xmanager_cloud/cmd/rod_data_provider/reconciler"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/statushistory"
-	"xmanager_cloud/internal/storage/spanner/workunit"
-	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 func main() {

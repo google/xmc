@@ -16,7 +16,7 @@
 
 package main
 
-import "xmanager_cloud/pkg/auth/oauth2"
+import "github.com/google/xmc/pkg/auth/oauth2"
 
 func configureAuth(a *oauth2.Authenticator, cfg *oauth2.Config) {
 	// No-op in production.

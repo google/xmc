@@ -17,12 +17,12 @@ import (
 	"context"
 	"fmt"
 
+	apipb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	apipb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/validator"
 )
 
 // ListWorkUnitExecutions returns all executions that were run for a work unit. This includes the

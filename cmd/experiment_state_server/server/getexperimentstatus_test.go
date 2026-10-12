@@ -20,14 +20,14 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
 
-	apipb "xmanager_cloud/api/protos/experiment"
-	xidapipb "xmanager_cloud/api/protos/xid"
+	apipb "github.com/google/xmc/api/protos/experiment"
+	xidapipb "github.com/google/xmc/api/protos/xid"
 )
 
 func TestGetExperimentStatus_HappyPath(t *testing.T) {

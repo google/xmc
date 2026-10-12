@@ -22,7 +22,7 @@ go_library(
         "fields.go",
         "reader.go",
     ],
-    importpath = "xmanager_cloud/pkg/components/crreader",
+    importpath = "github.com/google/xmc/pkg/components/crreader",
     deps = [
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",

@@ -28,7 +28,7 @@ go_library(
         "repository.go",
         "updateworkunit.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/workunit",
+    importpath = "github.com/google/xmc/internal/storage/spanner/workunit",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

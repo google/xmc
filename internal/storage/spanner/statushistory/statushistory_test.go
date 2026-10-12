@@ -20,9 +20,9 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	spannerdata "xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/emulator"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	spannerdata "github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 )
 
 func TestQueueMetricRow(t *testing.T) {

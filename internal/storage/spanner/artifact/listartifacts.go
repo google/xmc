@@ -20,14 +20,14 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/logging"
-	ls "xmanager_cloud/internal/query_generator/liststatement"
-	"xmanager_cloud/internal/query_generator/normalizer"
-	"xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/schema/artifactschema"
-	"xmanager_cloud/internal/storage/spanner/utils"
-	"xmanager_cloud/internal/validator"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/logging"
+	ls "github.com/google/xmc/internal/query_generator/liststatement"
+	"github.com/google/xmc/internal/query_generator/normalizer"
+	"github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/artifactschema"
+	"github.com/google/xmc/internal/storage/spanner/utils"
+	"github.com/google/xmc/internal/validator"
 )
 
 // ListArtifacts returns a paginated list of Artifact protos based on the provided filter and order.

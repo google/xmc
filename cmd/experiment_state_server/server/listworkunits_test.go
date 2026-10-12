@@ -21,16 +21,16 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	apipb "github.com/google/xmc/api/protos/experiment"
+	xidapipb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/cmd/experiment_state_server/config"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/storage/spanner"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	apipb "xmanager_cloud/api/protos/experiment"
-	xidapipb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/cmd/experiment_state_server/config"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestListWorkUnits_HappyPath(t *testing.T) {

@@ -19,8 +19,8 @@ import (
 	"cmp"
 	"slices"
 
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
 	"google.golang.org/protobuf/proto"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
 )
 
 // GetWorkUnitResources returns the resources required by the work unit in a minimal merged set.

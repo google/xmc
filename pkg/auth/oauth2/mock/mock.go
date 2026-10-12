@@ -20,8 +20,8 @@ import (
 	"net/http"
 
 	"cloud.google.com/go/iam/apiv1/iampb"
+	"github.com/google/xmc/pkg/auth/oauth2"
 	"google.golang.org/api/idtoken"
-	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 // MockOAuthProvider implements OAuthProvider with hardcoded credentials for local dev/testing.

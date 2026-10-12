@@ -31,7 +31,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	componentsv1alpha1 "xmanager_cloud/api/protos/components/v1alpha1"
+	componentsv1alpha1 "github.com/google/xmc/api/protos/components/v1alpha1"
 )
 
 func newStatusApplierTestScheme() *runtime.Scheme {

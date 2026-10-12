@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	xidpb "github.com/google/xmc/api/protos/xid"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	xidpb "xmanager_cloud/api/protos/xid"
 )
 
 func BlankExperimentProto(xid int64) *essmsgpb.Experiment {

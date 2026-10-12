@@ -21,10 +21,10 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/xmc/pkg/auth/jwks"
+	"github.com/google/xmc/pkg/auth/oauth2"
 	"google.golang.org/api/idtoken"
 	"google.golang.org/grpc/metadata"
-	"xmanager_cloud/pkg/auth/jwks"
-	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 func TestAuthenticateUserFromContext_Unauthenticated(t *testing.T) {

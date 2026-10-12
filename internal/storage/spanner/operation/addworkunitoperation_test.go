@@ -15,13 +15,13 @@ package operation_test
 
 import (
 	"context"
+	"github.com/google/xmc/internal/storage/spanner"
 	"strings"
 	"testing"
-	"xmanager_cloud/internal/storage/spanner"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/validator"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/validator"
 )
 
 func TestAddWorkUnitOperation(t *testing.T) {

@@ -17,7 +17,7 @@ import (
 	"errors"
 	"testing"
 
-	"xmanager_cloud/internal/grpcerr"
+	"github.com/google/xmc/internal/grpcerr"
 )
 
 func TestValidateXidName(t *testing.T) {

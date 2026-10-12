@@ -25,8 +25,8 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/protobuf/proto"
 
-	metricspb "xmanager_cloud/api/protos/metrics"
-	"xmanager_cloud/test/metrics/infra"
+	metricspb "github.com/google/xmc/api/protos/metrics"
+	"github.com/google/xmc/test/metrics/infra"
 )
 
 const (

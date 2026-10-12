@@ -17,10 +17,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	pb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/prototest"
 	"google.golang.org/protobuf/testing/protocmp"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	pb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/prototest"
 )
 
 func TestMergeWorkUnits(t *testing.T) {

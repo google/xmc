@@ -23,9 +23,9 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 )
 
 var ignoreUpdatedAt = cmpopts.IgnoreFields(storage.PauseSchedulingState{}, "UpdatedAt")

@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	xpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/logging"
+	xpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/logging"
 )
 
 // IsUserAuthorized checks if a user is authorized for a given role on an XidEntry.

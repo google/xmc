@@ -23,9 +23,9 @@ import (
 	"os"
 	"strconv"
 
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/configutil"
-	"xmanager_cloud/internal/logging"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/configutil"
+	"github.com/google/xmc/internal/logging"
 )
 
 // Config holds the configuration for the XidService server.

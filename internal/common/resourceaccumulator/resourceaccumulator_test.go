@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
 )
 
 func TestAccumulator(t *testing.T) {

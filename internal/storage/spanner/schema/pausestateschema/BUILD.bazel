@@ -19,5 +19,5 @@ package(default_visibility = ["//:__subpackages__"])
 go_library(
     name = "pausestateschema",
     srcs = ["pausestateschema.go"],
-    importpath = "xmanager_cloud/internal/storage/spanner/schema/pausestateschema",
+    importpath = "github.com/google/xmc/internal/storage/spanner/schema/pausestateschema",
 )

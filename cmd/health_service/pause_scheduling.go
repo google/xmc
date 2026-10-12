@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"io"
 
-	"xmanager_cloud/internal/broadcast"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/task_queue_redis/redisclient"
+	"github.com/google/xmc/internal/broadcast"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/task_queue_redis/redisclient"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"

@@ -21,11 +21,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	actuatortaskpb "github.com/google/xmc/api/protos/task_queue"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"

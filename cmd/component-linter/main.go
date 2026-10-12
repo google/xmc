@@ -22,7 +22,7 @@ import (
 	"io"
 	"os"
 
-	"xmanager_cloud/pkg/components/linter"
+	"github.com/google/xmc/pkg/components/linter"
 )
 
 func run(args []string, stdout, stderr io.Writer) int {

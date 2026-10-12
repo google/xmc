@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	componentspb "github.com/google/xmc/api/protos/components/v1alpha1"
 )
 
 func TestIsDeletionProtected(t *testing.T) {

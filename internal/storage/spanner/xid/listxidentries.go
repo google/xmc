@@ -20,16 +20,16 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	spannerdata "xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
-	"xmanager_cloud/internal/storage/spanner/utils"
+	spannerdata "github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/xidschema"
+	"github.com/google/xmc/internal/storage/spanner/utils"
 
-	"xmanager_cloud/internal/query_generator/liststatement"
-	"xmanager_cloud/internal/query_generator/normalizer"
+	"github.com/google/xmc/internal/query_generator/liststatement"
+	"github.com/google/xmc/internal/query_generator/normalizer"
 
-	xidpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/validator"
+	xidpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/validator"
 )
 
 // ListXidEntries returns a paginated list of XidEntry protos based on the provided filter and order.

@@ -26,8 +26,8 @@ import (
 	"syscall"
 
 	"cloud.google.com/go/pubsub"
-	"xmanager_cloud/internal/common/health"
-	"xmanager_cloud/internal/logging"
+	"github.com/google/xmc/internal/common/health"
+	"github.com/google/xmc/internal/logging"
 )
 
 func main() {

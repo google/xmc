@@ -19,11 +19,11 @@ import (
 	"testing"
 
 	cloudspanner "cloud.google.com/go/spanner"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/storage/spanner"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/storage/spanner/statusmessage"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/storage/spanner/statusmessage"
 )
 
 func TestSaveStatusMessageHistoryIfChanged_NilNewMessage(t *testing.T) {

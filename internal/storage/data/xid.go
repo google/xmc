@@ -16,10 +16,10 @@ package data
 import (
 	"fmt"
 
+	pb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/grpcerr"
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	pb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/grpcerr"
 )
 
 // MergeXIDEntries merges an updated XidEntry proto message into a current XidEntry proto message

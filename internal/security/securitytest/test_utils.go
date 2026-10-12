@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/google/xmc/internal/security/jwtkeyset"
 	"github.com/tink-crypto/tink-go/v2/jwt"
-	"xmanager_cloud/internal/security/jwtkeyset"
 )
 
 var (

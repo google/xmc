@@ -20,7 +20,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"xmanager_cloud/internal/storage/spanner/migrations/version"
+	"github.com/google/xmc/internal/storage/spanner/migrations/version"
 )
 
 type mockSpannerHealthClient struct {

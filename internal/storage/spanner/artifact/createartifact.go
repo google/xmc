@@ -20,11 +20,11 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/validator"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/validator"
 )
 
 // CreateArtifact creates a new artifact in Spanner. It returns the artifact proto with

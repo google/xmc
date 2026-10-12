@@ -22,9 +22,9 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/dashboard/dataengine"
-	"xmanager_cloud/pkg/clickhouse"
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/dashboard/dataengine"
+	"github.com/google/xmc/pkg/clickhouse"
 )
 
 // HarnessOptions controls the execution of the DataEngine test harness.

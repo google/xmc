@@ -18,7 +18,7 @@ import (
 	"flag"
 	"os"
 
-	"xmanager_cloud/internal/configutil"
+	"github.com/google/xmc/internal/configutil"
 )
 
 // Config holds configuration parameters for rod_data_provider service.

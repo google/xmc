@@ -20,7 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"xmanager_cloud/internal/logging"
+	"github.com/google/xmc/internal/logging"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	ctrl "sigs.k8s.io/controller-runtime"

@@ -20,7 +20,7 @@ go_library(
     name = "prototest",
     testonly = True,
     srcs = ["prototest.go"],
-    importpath = "xmanager_cloud/internal/prototest",
+    importpath = "github.com/google/xmc/internal/prototest",
     deps = ["@org_golang_google_protobuf//proto"],
 )
 

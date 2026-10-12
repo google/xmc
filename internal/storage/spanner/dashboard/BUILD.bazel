@@ -31,7 +31,7 @@ go_library(
         "updatechart.go",
         "updatedashboard.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/dashboard",
+    importpath = "github.com/google/xmc/internal/storage/spanner/dashboard",
     visibility = ["//visibility:public"],
     deps = [
         "//api/filter:filter_expression_go_proto",

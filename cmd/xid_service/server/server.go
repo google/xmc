@@ -20,10 +20,10 @@ package server
 import (
 	"fmt"
 
-	apipb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/cmd/xid_service/config"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/storage"
+	apipb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/cmd/xid_service/config"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/storage"
 )
 
 var _ apipb.XidServiceServer = (*XIDServer)(nil)

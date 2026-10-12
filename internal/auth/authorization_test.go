@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	xpb "xmanager_cloud/api/protos/xid"
+	xpb "github.com/google/xmc/api/protos/xid"
 )
 
 func TestIsAuthorized_RoleHierarchy(t *testing.T) {

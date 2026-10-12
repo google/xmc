@@ -25,10 +25,10 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/xmc/pkg/components/crreader/crreadertest"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"xmanager_cloud/pkg/components/crreader/crreadertest"
 )
 
 func baselineClickHouseCR() *unstructured.Unstructured {

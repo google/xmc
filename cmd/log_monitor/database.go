@@ -18,9 +18,9 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
+	"github.com/google/xmc/internal/storage"
+	ss "github.com/google/xmc/internal/storage/spanner"
 	"google.golang.org/api/option"
-	"xmanager_cloud/internal/storage"
-	ss "xmanager_cloud/internal/storage/spanner"
 )
 
 // StorageComponents holds initialized Spanner and storage clients along with cleanup callback.

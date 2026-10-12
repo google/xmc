@@ -20,7 +20,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	pb "xmanager_cloud/api/protos/dashboard"
+	pb "github.com/google/xmc/api/protos/dashboard"
 )
 
 // DashboardToolClient is a wrapper for communicating with xmc-dashboard-service.

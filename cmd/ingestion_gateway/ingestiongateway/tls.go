@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"os"
 
-	"xmanager_cloud/internal/security/keyreloader"
+	"github.com/google/xmc/internal/security/keyreloader"
 )
 
 // TLSComponents contains the built tls.Config and keyreloader.

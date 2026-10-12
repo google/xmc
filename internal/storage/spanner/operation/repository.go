@@ -21,7 +21,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 
-	"xmanager_cloud/internal/storage"
+	"github.com/google/xmc/internal/storage"
 )
 
 var _ storage.OperationStore = (*Repository)(nil)

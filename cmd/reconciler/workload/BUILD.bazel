@@ -20,7 +20,7 @@ go_library(
         "converter.go",
         "reconciler.go",
     ],
-    importpath = "xmanager_cloud/cmd/reconciler/workload",
+    importpath = "github.com/google/xmc/cmd/reconciler/workload",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

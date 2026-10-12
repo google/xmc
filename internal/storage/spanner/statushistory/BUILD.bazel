@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "statushistory",
     srcs = ["statushistory.go"],
-    importpath = "xmanager_cloud/internal/storage/spanner/statushistory",
+    importpath = "github.com/google/xmc/internal/storage/spanner/statushistory",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

@@ -17,13 +17,13 @@ import (
 	"context"
 	"fmt"
 
+	msgpb "github.com/google/xmc/api/protos/experiment"
+	xidmsgpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	msgpb "xmanager_cloud/api/protos/experiment"
-	xidmsgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/validator"
 )
 
 // UpdateExperimentLaunchState updates the launch state of an experiment. This should be called by

@@ -22,11 +22,11 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	"xmanager_cloud/api/filter/go/filtervisitor"
-	"xmanager_cloud/api/filter/go/queryfilterbase"
-	"xmanager_cloud/internal/safesql"
+	"github.com/google/xmc/api/filter/go/filtervisitor"
+	"github.com/google/xmc/api/filter/go/queryfilterbase"
+	"github.com/google/xmc/internal/safesql"
 
-	fpb "xmanager_cloud/api/filter"
+	fpb "github.com/google/xmc/api/filter"
 )
 
 // MemberFunc represents a callback that maps a dynamic query member field path to a database representation.

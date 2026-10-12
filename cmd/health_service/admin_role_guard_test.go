@@ -20,9 +20,9 @@ import (
 	"testing"
 
 	"cloud.google.com/go/iam/apiv1/iampb"
+	"github.com/google/xmc/pkg/auth/oauth2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 type testAuthorizer struct {

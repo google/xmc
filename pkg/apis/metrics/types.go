@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"math"
 
-	pb "xmanager_cloud/api/protos/metrics"
+	pb "github.com/google/xmc/api/protos/metrics"
 )
 
 // Metric wraps the generated proto Metric to add validation methods.

@@ -19,9 +19,9 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/safesql"
-	"xmanager_cloud/internal/storage/spanner/utils"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/safesql"
+	"github.com/google/xmc/internal/storage/spanner/utils"
 )
 
 // TODO(b/517479143): Optimize query to ORDER BY WorkUnitId DESC LIMIT 1 to perform a single-row index scan instead of MAX aggregation.

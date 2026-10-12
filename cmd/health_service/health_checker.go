@@ -21,10 +21,10 @@ import (
 	"sync"
 	"time"
 
-	spb "xmanager_cloud/api/protos/health"
-	health "xmanager_cloud/internal/common/health"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/pkg/components/summary"
+	spb "github.com/google/xmc/api/protos/health"
+	health "github.com/google/xmc/internal/common/health"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/pkg/components/summary"
 
 	run "google.golang.org/api/run/v2"
 	"google.golang.org/grpc"

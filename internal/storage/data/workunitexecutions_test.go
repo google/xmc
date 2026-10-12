@@ -19,11 +19,11 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	pb "github.com/google/xmc/api/protos/experiment"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	pb "xmanager_cloud/api/protos/experiment"
 )
 
 func TestMergeWorkUnitExecution(t *testing.T) {

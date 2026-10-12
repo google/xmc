@@ -21,7 +21,7 @@ go_library(
         "storage.go",
         "test_utils.go",
     ],
-    importpath = "xmanager_cloud/internal/storage",
+    importpath = "github.com/google/xmc/internal/storage",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

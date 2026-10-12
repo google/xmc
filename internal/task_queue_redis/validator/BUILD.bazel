@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:private"])
 go_library(
     name = "validator_lib",
     srcs = ["validator.go"],
-    importpath = "xmanager_cloud/internal/task_queue_redis/validator",
+    importpath = "github.com/google/xmc/internal/task_queue_redis/validator",
     deps = [
         "//internal/logging",
         "//internal/task_queue_redis/redisclient",

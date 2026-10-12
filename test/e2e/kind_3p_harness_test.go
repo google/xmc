@@ -48,9 +48,9 @@ import (
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"xmanager_cloud/pkg/components/bridge"
-	"xmanager_cloud/pkg/components/cms"
-	"xmanager_cloud/pkg/components/store"
+	"github.com/google/xmc/pkg/components/bridge"
+	"github.com/google/xmc/pkg/components/cms"
+	"github.com/google/xmc/pkg/components/store"
 )
 
 var (

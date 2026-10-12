@@ -17,14 +17,14 @@ import (
 	"context"
 	"fmt"
 
+	xidmsgpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	xidmsgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/validator"
 
-	msgpb "xmanager_cloud/api/protos/experiment"
+	msgpb "github.com/google/xmc/api/protos/experiment"
 )
 
 // CreateExperiment orchestrates the creation of a new experiment.

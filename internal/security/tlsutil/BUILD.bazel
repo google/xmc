@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "tlsutil",
     srcs = ["tlsutil.go"],
-    importpath = "xmanager_cloud/internal/security/tlsutil",
+    importpath = "github.com/google/xmc/internal/security/tlsutil",
     deps = [
         "//internal/logging",
         "//internal/security/keyreloader",

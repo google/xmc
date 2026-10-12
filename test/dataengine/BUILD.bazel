@@ -23,7 +23,7 @@ go_library(
         "seeder.go",
     ],
     data = glob(["testdata/**"]),
-    importpath = "xmanager_cloud/test/dataengine",
+    importpath = "github.com/google/xmc/test/dataengine",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/dashboard:api_go_proto",
@@ -40,7 +40,7 @@ go_library(
 go_library(
     name = "runner_lib",
     srcs = ["runner/main.go"],
-    importpath = "xmanager_cloud/test/dataengine/runner",
+    importpath = "github.com/google/xmc/test/dataengine/runner",
     visibility = ["//visibility:private"],
     deps = [
         ":dataengine_harness",

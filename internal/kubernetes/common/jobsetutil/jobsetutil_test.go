@@ -17,9 +17,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	esspb "github.com/google/xmc/api/protos/experiment"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	esspb "xmanager_cloud/api/protos/experiment"
 )
 
 func TestHasCondition(t *testing.T) {

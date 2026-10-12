@@ -16,11 +16,11 @@ package data
 import (
 	"fmt"
 
+	pb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	pb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/validator"
 )
 
 // MergeWorkUnits merges an updated WorkUnit proto message into a current WorkUnit proto

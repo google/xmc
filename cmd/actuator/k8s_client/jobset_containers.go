@@ -24,9 +24,9 @@ import (
 	"k8s.io/utils/ptr"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 
-	esspb "xmanager_cloud/api/protos/experiment"
-	constants "xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
+	esspb "github.com/google/xmc/api/protos/experiment"
+	constants "github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/kubernetes/common/jobsetutil"
 )
 
 // injectManagedXprofGCSEnvVars appends the per-work-unit managed-xprof GCS object

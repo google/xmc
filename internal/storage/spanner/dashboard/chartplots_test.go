@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
+	dpb "github.com/google/xmc/api/protos/dashboard"
 )
 
 func TestHydrateChartPlots_BatchesAcrossCharts(t *testing.T) {

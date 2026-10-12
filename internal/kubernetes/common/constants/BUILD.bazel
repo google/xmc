@@ -6,5 +6,5 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "constants",
     srcs = ["constants.go"],
-    importpath = "xmanager_cloud/internal/kubernetes/common/constants",
+    importpath = "github.com/google/xmc/internal/kubernetes/common/constants",
 )

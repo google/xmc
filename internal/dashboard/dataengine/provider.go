@@ -22,9 +22,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/logging"
 	"golang.org/x/sync/singleflight"
-	dpb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/logging"
 )
 
 // defaultRetryInterval bounds how often a Provider redials ClickHouse.

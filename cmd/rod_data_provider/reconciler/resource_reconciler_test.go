@@ -18,13 +18,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/xmc/cmd/rod_data_provider/cache"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrlreq "sigs.k8s.io/controller-runtime"
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
 func TestClusterQueueReconciler(t *testing.T) {

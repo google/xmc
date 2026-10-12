@@ -19,7 +19,7 @@ go_library(
     srcs = [
         "updateworkunitexecutions.go",
     ],
-    importpath = "xmanager_cloud/internal/workunit",
+    importpath = "github.com/google/xmc/internal/workunit",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

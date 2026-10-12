@@ -20,11 +20,11 @@ import (
 	"net/mail"
 	"strings"
 
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/pkg/auth/oauth2"
 	"google.golang.org/api/idtoken"
 	"google.golang.org/grpc/metadata"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 // validate is the function that validates the JWT. It is stubbed out for testing.

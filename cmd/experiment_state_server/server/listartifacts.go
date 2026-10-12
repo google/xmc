@@ -19,15 +19,15 @@ import (
 	"strings"
 	"time"
 
+	apipb "github.com/google/xmc/api/protos/experiment"
+	xidpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage/data"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	apipb "xmanager_cloud/api/protos/experiment"
-	xidpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/internal/validator"
 )
 
 const (

@@ -23,7 +23,7 @@ go_library(
         "contract.go",
         "render.go",
     ],
-    importpath = "xmanager_cloud/test/helm/profiles/profilecontract",
+    importpath = "github.com/google/xmc/test/helm/profiles/profilecontract",
     visibility = ["//test/helm/profiles:__subpackages__"],
     deps = [
         "@com_github_google_go_cmp//cmp",

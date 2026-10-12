@@ -59,7 +59,7 @@ go_library(
         "workunitstatushistory.go",
         "xid.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/data",
+    importpath = "github.com/google/xmc/internal/storage/spanner/data",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

@@ -22,8 +22,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
-	"xmanager_cloud/internal/logging"
+	componentspb "github.com/google/xmc/api/protos/components/v1alpha1"
+	"github.com/google/xmc/internal/logging"
 )
 
 const (

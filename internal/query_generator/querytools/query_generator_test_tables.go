@@ -14,8 +14,8 @@
 package querytools
 
 import (
-	"xmanager_cloud/api/filter/go/filtervisitor"
-	"xmanager_cloud/internal/safesql"
+	"github.com/google/xmc/api/filter/go/filtervisitor"
+	"github.com/google/xmc/internal/safesql"
 )
 
 // The following table metadata would be from an SDL definition that looks like the following:

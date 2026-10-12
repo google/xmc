@@ -20,12 +20,12 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	xidpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/safesql"
+	spannerdata "github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/validator"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	xidpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/safesql"
-	spannerdata "xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/validator"
 )
 
 // We cannot use Mutations here, because we need to return the XID. Mutations do not support THEN

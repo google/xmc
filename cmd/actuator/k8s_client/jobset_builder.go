@@ -21,19 +21,19 @@ import (
 	"strings"
 	"time"
 
+	constants "github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/kubernetes/common/jobsetutil"
+	"github.com/google/xmc/internal/logging"
+	ee "github.com/google/xmc/internal/toollibs/execution_environments"
+	"github.com/google/xmc/internal/validator"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
-	constants "xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
-	"xmanager_cloud/internal/logging"
-	ee "xmanager_cloud/internal/toollibs/execution_environments"
-	"xmanager_cloud/internal/validator"
 
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 
-	esspb "xmanager_cloud/api/protos/experiment"
+	esspb "github.com/google/xmc/api/protos/experiment"
 )
 
 var defaultLabels = map[string]string{

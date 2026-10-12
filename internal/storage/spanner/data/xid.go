@@ -20,11 +20,11 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"cloud.google.com/go/spanner"
+	pb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/storage/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/xidschema"
+	"github.com/google/xmc/internal/validator"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	pb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
-	"xmanager_cloud/internal/validator"
 )
 
 // XIDRowToProto converts a Spanner Row containing Xids table data into an XidEntry proto message.

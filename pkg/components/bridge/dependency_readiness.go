@@ -21,8 +21,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"xmanager_cloud/pkg/components/graph"
-	"xmanager_cloud/pkg/components/naming"
+	"github.com/google/xmc/pkg/components/graph"
+	"github.com/google/xmc/pkg/components/naming"
 )
 
 // DependencyReadiness reports whether a dependency Component can be depended upon.

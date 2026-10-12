@@ -18,9 +18,9 @@ import (
 	"time"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	msgpb "github.com/google/xmc/api/protos/xid"
 	"google.golang.org/protobuf/proto"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	msgpb "xmanager_cloud/api/protos/xid"
 )
 
 // MockStorage is a mock implementation of Storage for testing.

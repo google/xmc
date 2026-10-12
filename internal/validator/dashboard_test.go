@@ -20,8 +20,8 @@ import (
 
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	spb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/grpcerr"
+	spb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/grpcerr"
 )
 
 func TestValidateChartID(t *testing.T) {

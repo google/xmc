@@ -17,11 +17,11 @@ package main
 import (
 	"context"
 
+	spb "github.com/google/xmc/api/protos/rod"
+	"github.com/google/xmc/cmd/rod_data_provider/cache"
+	"github.com/google/xmc/internal/storage/spanner/workunit"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	spb "xmanager_cloud/api/protos/rod"
-	"xmanager_cloud/cmd/rod_data_provider/cache"
-	"xmanager_cloud/internal/storage/spanner/workunit"
 )
 
 // WorkUnitFetcher defines storage operations required to fetch active jobs by queue name.

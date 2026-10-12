@@ -38,7 +38,7 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
     ],
-    importpath = "xmanager_cloud/api/protos/components/v1alpha1",
+    importpath = "github.com/google/xmc/api/protos/components/v1alpha1",
     proto = ":components_proto",
     deps = [
         "@com_google_googleapis//google/api:field_behavior_go_proto",
@@ -51,5 +51,5 @@ go_proto_library(
 go_library(
     name = "v1alpha1",
     embed = [":components_go_proto"],
-    importpath = "xmanager_cloud/api/protos/components/v1alpha1",
+    importpath = "github.com/google/xmc/api/protos/components/v1alpha1",
 )

@@ -27,9 +27,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
-	xidapipb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/auth"
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	xidapipb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/auth"
 )
 
 type (

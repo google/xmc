@@ -22,11 +22,11 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/common/resourceaccumulator"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	spannerdata "github.com/google/xmc/internal/storage/spanner/data"
 	"google.golang.org/api/iterator"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/common/resourceaccumulator"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 )
 
 // WorkUnitStatusHistoryItem represents a single WorkUnitStatusHistory record for Spanner queries and UNNEST mocks.

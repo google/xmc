@@ -10,7 +10,7 @@ go_library(
         "query_generator_test_tables.go",
         "unnest.go",
     ],
-    importpath = "xmanager_cloud/internal/query_generator/querytools",
+    importpath = "github.com/google/xmc/internal/query_generator/querytools",
     deps = [
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filtervisitor",

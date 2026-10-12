@@ -19,7 +19,7 @@ go_library(
     srcs = [
         "repository.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/pausestate",
+    importpath = "github.com/google/xmc/internal/storage/spanner/pausestate",
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/grpcerr",

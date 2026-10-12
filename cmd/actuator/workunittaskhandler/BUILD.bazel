@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "workunittaskhandler",
     srcs = ["workunit_task_handler.go"],
-    importpath = "xmanager_cloud/cmd/actuator/workunittaskhandler",
+    importpath = "github.com/google/xmc/cmd/actuator/workunittaskhandler",
     deps = [
         "//api/protos/task_queue:task_go_proto",
         "//cmd/actuator/pausescheduling",

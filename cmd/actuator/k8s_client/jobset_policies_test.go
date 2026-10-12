@@ -18,13 +18,13 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	esspb "github.com/google/xmc/api/protos/experiment"
+	constants "github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/prototest"
 	"google.golang.org/protobuf/proto"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	esspb "xmanager_cloud/api/protos/experiment"
-	constants "xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/prototest"
 )
 
 func TestConstructJobSet_PodFailurePolicy(t *testing.T) {

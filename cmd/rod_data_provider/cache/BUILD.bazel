@@ -22,7 +22,7 @@ go_library(
         "kueue_cache.go",
         "resource_cache.go",
     ],
-    importpath = "xmanager_cloud/cmd/rod_data_provider/cache",
+    importpath = "github.com/google/xmc/cmd/rod_data_provider/cache",
     visibility = ["//visibility:public"],
     deps = [
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",

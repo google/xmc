@@ -19,8 +19,8 @@ import (
 	"os"
 	"time"
 
-	"xmanager_cloud/internal/configutil"
-	"xmanager_cloud/internal/featureflags"
+	"github.com/google/xmc/internal/configutil"
+	"github.com/google/xmc/internal/featureflags"
 )
 
 // Config holds the configuration for the health service.

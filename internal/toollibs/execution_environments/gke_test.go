@@ -18,6 +18,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	epb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/prototest"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	batchv1 "k8s.io/api/batch/v1"
@@ -26,8 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	epb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/prototest"
 )
 
 func TestGKEName(t *testing.T) {

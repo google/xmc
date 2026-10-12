@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/xmc/internal/kubernetes/common/constants"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"xmanager_cloud/internal/kubernetes/common/constants"
 )
 
 var testTime = time.Date(2025, time.November, 25, 14, 0, 0, 0, time.UTC)

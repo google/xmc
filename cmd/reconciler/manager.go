@@ -20,6 +20,15 @@ import (
 	"sync"
 
 	"cloud.google.com/go/spanner"
+	"github.com/google/xmc/cmd/actuator/k8s_client"
+	"github.com/google/xmc/cmd/reconciler/clusterqueue"
+	"github.com/google/xmc/cmd/reconciler/jobset"
+	"github.com/google/xmc/cmd/reconciler/shared"
+	"github.com/google/xmc/internal/common/health"
+	constants "github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage"
+	ss "github.com/google/xmc/internal/storage/spanner"
 	"google.golang.org/api/option"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -33,15 +42,6 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	"xmanager_cloud/cmd/actuator/k8s_client"
-	"xmanager_cloud/cmd/reconciler/clusterqueue"
-	"xmanager_cloud/cmd/reconciler/jobset"
-	"xmanager_cloud/cmd/reconciler/shared"
-	"xmanager_cloud/internal/common/health"
-	constants "xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
-	ss "xmanager_cloud/internal/storage/spanner"
 )
 
 // healthProbeBindAddress is the address on which the manager serves the

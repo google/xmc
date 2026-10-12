@@ -26,8 +26,8 @@ import (
 	"syscall"
 	"time"
 
-	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
-	"xmanager_cloud/internal/logging"
+	"github.com/google/xmc/cmd/ingestion_gateway/ingestiongateway"
+	"github.com/google/xmc/internal/logging"
 )
 
 func main() {

@@ -19,7 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"xmanager_cloud/pkg/components/linter"
+	"github.com/google/xmc/pkg/components/linter"
 )
 
 func TestParseRules(t *testing.T) {

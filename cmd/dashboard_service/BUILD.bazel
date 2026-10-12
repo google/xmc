@@ -21,7 +21,7 @@ go_library(
         "config.go",
         "main.go",
     ],
-    importpath = "xmanager_cloud/cmd/dashboard_service/main",
+    importpath = "github.com/google/xmc/cmd/dashboard_service/main",
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/dashboard:api_go_grpc_proto",

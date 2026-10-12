@@ -20,9 +20,9 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	componentspb "github.com/google/xmc/api/protos/components/v1alpha1"
+	"github.com/google/xmc/pkg/components/store"
 	"google.golang.org/protobuf/types/known/durationpb"
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
-	"xmanager_cloud/pkg/components/store"
 )
 
 func TestNewStoreComponentsProvider_NilStore(t *testing.T) {

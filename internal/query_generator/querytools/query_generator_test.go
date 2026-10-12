@@ -19,16 +19,16 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"xmanager_cloud/api/filter/go/filter"
-	"xmanager_cloud/api/filter/go/filtervisitor"
-	"xmanager_cloud/internal/query_generator/predicate"
-	"xmanager_cloud/internal/safesql"
+	"github.com/google/xmc/api/filter/go/filter"
+	"github.com/google/xmc/api/filter/go/filtervisitor"
+	"github.com/google/xmc/internal/query_generator/predicate"
+	"github.com/google/xmc/internal/safesql"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 
-	fpb "xmanager_cloud/api/filter"
+	fpb "github.com/google/xmc/api/filter"
 )
 
 func TestGenerateQuery(t *testing.T) {

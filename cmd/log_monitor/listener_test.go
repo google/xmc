@@ -20,10 +20,10 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	"cloud.google.com/go/pubsub/pstest"
+	"github.com/google/xmc/internal/storage"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"xmanager_cloud/internal/storage"
 )
 
 type MockLogProcessor struct {

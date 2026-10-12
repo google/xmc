@@ -28,7 +28,7 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"
 
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	componentspb "github.com/google/xmc/api/protos/components/v1alpha1"
 )
 
 type mockCMS struct {

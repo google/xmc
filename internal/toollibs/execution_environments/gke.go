@@ -19,12 +19,12 @@ import (
 	"strconv"
 	"strings"
 
+	epb "github.com/google/xmc/api/protos/experiment"
 	"google.golang.org/protobuf/proto"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	epb "xmanager_cloud/api/protos/experiment"
 )
 
 const (

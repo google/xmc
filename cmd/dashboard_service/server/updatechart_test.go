@@ -28,8 +28,8 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
-	xidapipb "xmanager_cloud/api/protos/xid"
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	xidapipb "github.com/google/xmc/api/protos/xid"
 )
 
 func TestUpdateChart(t *testing.T) {

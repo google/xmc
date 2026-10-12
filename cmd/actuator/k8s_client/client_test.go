@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	esspb "github.com/google/xmc/api/protos/experiment"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -34,14 +35,13 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/rest"
 	clientgotesting "k8s.io/client-go/testing"
-	esspb "xmanager_cloud/api/protos/experiment"
 
 	// TODO - (internal issue): Consider using a mock instead of the emulator.
-	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	constants "xmanager_cloud/internal/kubernetes/common/constants"
-	spanner_lib "xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/validator"
+	actuatortaskpb "github.com/google/xmc/api/protos/task_queue"
+	constants "github.com/google/xmc/internal/kubernetes/common/constants"
+	spanner_lib "github.com/google/xmc/internal/storage/spanner"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/validator"
 )
 
 const (

@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "tputopology",
     srcs = ["tputopology.go"],
-    importpath = "xmanager_cloud/internal/common/tputopology",
+    importpath = "github.com/google/xmc/internal/common/tputopology",
     visibility = ["//:__subpackages__"],
 )
 

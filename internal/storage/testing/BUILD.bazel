@@ -22,7 +22,7 @@ go_library(
         "pausedtask_fake.go",
         "pausestate_fake.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/testing",
+    importpath = "github.com/google/xmc/internal/storage/testing",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

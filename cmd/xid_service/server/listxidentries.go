@@ -18,12 +18,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
 	"google.golang.org/grpc/status"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
 
-	apipb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/validator"
+	apipb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/validator"
 )
 
 const (

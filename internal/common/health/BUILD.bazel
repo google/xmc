@@ -9,7 +9,7 @@ go_library(
         "health.go",
         "spanner_health.go",
     ],
-    importpath = "xmanager_cloud/internal/common/health",
+    importpath = "github.com/google/xmc/internal/common/health",
     deps = [
         "//internal/logging",
         "//internal/storage/spanner/migrations/version",

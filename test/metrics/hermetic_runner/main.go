@@ -29,8 +29,8 @@ import (
 	"syscall"
 	"time"
 
-	ingestiongateway "xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
-	"xmanager_cloud/test/metrics/infra"
+	ingestiongateway "github.com/google/xmc/cmd/ingestion_gateway/ingestiongateway"
+	"github.com/google/xmc/test/metrics/infra"
 )
 
 // RunnerConfig represents the JSON readiness payload emitted on stdout for parent test runners to consume.

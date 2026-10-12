@@ -21,9 +21,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/xmc/pkg/components/crreader"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"xmanager_cloud/pkg/components/crreader"
 )
 
 // FakeGetter is a concurrency-safe in-memory test double for crreader.Getter.

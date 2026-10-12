@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"strings"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/grpcerr"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/grpcerr"
 )
 
 func validateJobVolumes(volumes []*essmsgpb.Volume, prefix string) (map[string]bool, error) {

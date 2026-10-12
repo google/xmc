@@ -19,7 +19,7 @@ go_library(
     srcs = [
         "validator.go",
     ],
-    importpath = "xmanager_cloud/pkg/auth/jwks",
+    importpath = "github.com/google/xmc/pkg/auth/jwks",
     visibility = ["//visibility:public"],
     deps = [
         "//internal/logging",

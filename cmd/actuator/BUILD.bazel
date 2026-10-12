@@ -13,7 +13,7 @@ go_library(
         "metadata.go",
         "prod.go",
     ],
-    importpath = "xmanager_cloud/cmd/actuator/main",
+    importpath = "github.com/google/xmc/cmd/actuator/main",
     deps = [
         "//cmd/actuator/k8s_client",
         "//cmd/actuator/pausescheduling",

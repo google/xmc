@@ -17,9 +17,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	esspb "github.com/google/xmc/api/protos/experiment"
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
-	esspb "xmanager_cloud/api/protos/experiment"
 )
 
 func TestConstructJobSet_CustomVolumesAndMounts(t *testing.T) {

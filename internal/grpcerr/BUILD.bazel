@@ -19,7 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "grpcerr",
     srcs = ["grpcerr.go"],
-    importpath = "xmanager_cloud/internal/grpcerr",
+    importpath = "github.com/google/xmc/internal/grpcerr",
     deps = [
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

@@ -51,7 +51,7 @@ go_library(
         "xid-schema.sql",
         "xid_messages.pb",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/emulator",
+    importpath = "github.com/google/xmc/internal/storage/spanner/emulator",
     visibility = ["//visibility:public"],
     deps = [
         "//internal/storage/spanner/utils",

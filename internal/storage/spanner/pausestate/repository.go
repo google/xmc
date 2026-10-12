@@ -22,9 +22,9 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner/schema/pausestateschema"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/storage/spanner/schema/pausestateschema"
 )
 
 // singletonID is the only permitted primary key value of the PauseSchedulingState table.

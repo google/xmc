@@ -51,7 +51,7 @@ go_library(
         ":ess_messages.pb",
         ":xid_messages.pb",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/migrations",
+    importpath = "github.com/google/xmc/internal/storage/spanner/migrations",
     visibility = ["//visibility:private"],
     deps = [
         "//internal/logging",

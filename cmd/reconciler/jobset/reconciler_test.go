@@ -20,6 +20,10 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	spb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/cmd/reconciler/shared"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	storagepkg "github.com/google/xmc/internal/storage"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -34,10 +38,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	spb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/cmd/reconciler/shared"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	storagepkg "xmanager_cloud/internal/storage"
 )
 
 type mockStorageUpdater struct {

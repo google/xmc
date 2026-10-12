@@ -23,12 +23,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/dashboard/data"
-	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/internal/validator"
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage/spanner/dashboard/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/dashboardschema"
+	"github.com/google/xmc/internal/validator"
 )
 
 // UpdateDashboard updates an existing dashboard in Spanner and returns the updated proto.

@@ -22,9 +22,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	spb "xmanager_cloud/api/protos/dashboard"
-	xpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/auth"
+	spb "github.com/google/xmc/api/protos/dashboard"
+	xpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/auth"
 )
 
 func TestDeleteDashboard(t *testing.T) {

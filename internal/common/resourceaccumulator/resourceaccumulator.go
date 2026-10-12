@@ -20,10 +20,10 @@ import (
 	"math"
 	"strings"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/common/tputopology"
-	"xmanager_cloud/internal/domain/workunit"
-	"xmanager_cloud/internal/kubernetes/common/constants"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/common/tputopology"
+	"github.com/google/xmc/internal/domain/workunit"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
 )
 
 const (

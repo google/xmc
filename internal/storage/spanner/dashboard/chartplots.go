@@ -22,13 +22,13 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
 
-	fepb "xmanager_cloud/api/filter"
-	aipfilter "xmanager_cloud/api/filter/go/filter"
-	dpb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/query_generator/querytools"
-	"xmanager_cloud/internal/storage/spanner/dashboard/data"
-	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/internal/validator"
+	fepb "github.com/google/xmc/api/filter"
+	aipfilter "github.com/google/xmc/api/filter/go/filter"
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/query_generator/querytools"
+	"github.com/google/xmc/internal/storage/spanner/dashboard/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/dashboardschema"
+	"github.com/google/xmc/internal/validator"
 )
 
 // hydrateChartPlots populates the PlotSpec list of every chart in charts using a single batched

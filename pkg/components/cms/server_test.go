@@ -28,8 +28,8 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
-	"xmanager_cloud/pkg/components/store"
+	componentspb "github.com/google/xmc/api/protos/components/v1alpha1"
+	"github.com/google/xmc/pkg/components/store"
 )
 
 // stubStore implements store.Store for unit testing CMS scaffolding.

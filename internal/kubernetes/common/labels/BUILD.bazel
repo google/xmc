@@ -19,7 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "labels",
     srcs = ["labels.go"],
-    importpath = "xmanager_cloud/internal/kubernetes/common/labels",
+    importpath = "github.com/google/xmc/internal/kubernetes/common/labels",
     deps = [
         "//internal/kubernetes/common/constants",
     ],

@@ -18,11 +18,11 @@ import (
 	"fmt"
 	"strings"
 
+	pb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage/state"
 	"google.golang.org/protobuf/proto"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	pb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage/state"
 )
 
 // MergeWorkUnitExecution merges an updated WorkUnitExecution proto message with a current one using a field mask.

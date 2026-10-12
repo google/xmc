@@ -23,7 +23,7 @@ go_library(
         "requests.go",
         "volumes.go",
     ],
-    importpath = "xmanager_cloud/internal/validator",
+    importpath = "github.com/google/xmc/internal/validator",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/dashboard:messages_go_proto",

@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"xmanager_cloud/internal/grpcerr"
+	"github.com/google/xmc/internal/grpcerr"
 )
 
 // validateStringID checks if a given ID string is valid, and returns the ID if it is valid.

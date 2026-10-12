@@ -17,13 +17,13 @@ import (
 	"context"
 	"fmt"
 
-	msgpb "xmanager_cloud/api/protos/experiment"
-	xidmsgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/internal/validator"
+	msgpb "github.com/google/xmc/api/protos/experiment"
+	xidmsgpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/storage/data"
+	"github.com/google/xmc/internal/validator"
 )
 
 // UpdateExperiment updates an experiment's data.

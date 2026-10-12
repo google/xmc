@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage"
 )
 
 // LogBatchProcessor processes a batch of Pub/Sub messages.

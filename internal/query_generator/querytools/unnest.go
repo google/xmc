@@ -17,12 +17,12 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
+	fpb "github.com/google/xmc/api/filter"
+	"github.com/google/xmc/api/filter/go/filtervisitor"
+	"github.com/google/xmc/internal/query_generator/filter"
+	"github.com/google/xmc/internal/safesql"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	fpb "xmanager_cloud/api/filter"
-	"xmanager_cloud/api/filter/go/filtervisitor"
-	"xmanager_cloud/internal/query_generator/filter"
-	"xmanager_cloud/internal/safesql"
 )
 
 // Unnester applies unnests to a given query, re-aggregating the unnested fields and

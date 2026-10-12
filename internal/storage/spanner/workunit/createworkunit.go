@@ -20,16 +20,16 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	experimentdomain "github.com/google/xmc/internal/domain/experiment"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	spannerdata "github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/storage/spanner/statushistory"
+	"github.com/google/xmc/internal/storage/spanner/statusmessage"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	experimentdomain "xmanager_cloud/internal/domain/experiment"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	spannerdata "xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/statushistory"
-	"xmanager_cloud/internal/storage/spanner/statusmessage"
-	"xmanager_cloud/internal/validator"
 )
 
 // CreateWorkUnit creates a new work unit in Spanner.

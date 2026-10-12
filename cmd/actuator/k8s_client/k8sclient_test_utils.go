@@ -19,14 +19,14 @@ import (
 	"testing"
 	"time"
 
+	esspb "github.com/google/xmc/api/protos/experiment"
+	preconditionsvalidator "github.com/google/xmc/cmd/actuator/k8s_client/preconditions_validator"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
-	esspb "xmanager_cloud/api/protos/experiment"
-	preconditionsvalidator "xmanager_cloud/cmd/actuator/k8s_client/preconditions_validator"
 )
 
 var testTime = time.Date(2025, time.November, 26, 9, 32, 58, 0, time.UTC)

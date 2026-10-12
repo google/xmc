@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "kueue_sync",
     srcs = ["kueue_sync.go"],
-    importpath = "xmanager_cloud/cmd/reconciler/kueue_sync",
+    importpath = "github.com/google/xmc/cmd/reconciler/kueue_sync",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

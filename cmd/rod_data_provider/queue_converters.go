@@ -15,9 +15,9 @@
 package main
 
 import (
+	spb "github.com/google/xmc/api/protos/rod"
+	"github.com/google/xmc/cmd/rod_data_provider/cache"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	spb "xmanager_cloud/api/protos/rod"
-	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
 func buildResourceFlavorMap(c *cache.KueueCache) map[string]*kueuev1beta1.ResourceFlavor {

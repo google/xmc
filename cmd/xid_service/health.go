@@ -17,11 +17,11 @@ import (
 	"context"
 	"time"
 
+	commonhealth "github.com/google/xmc/internal/common/health"
+	"github.com/google/xmc/internal/logging"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	commonhealth "xmanager_cloud/internal/common/health"
-	"xmanager_cloud/internal/logging"
 )
 
 const (

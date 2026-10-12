@@ -17,10 +17,10 @@ import (
 	"context"
 	"fmt"
 
-	msgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/validator"
+	msgpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/validator"
 )
 
 func (s *XIDServer) CreateXidEntry(ctx context.Context, in *msgpb.CreateXidEntryRequest) (*msgpb.XidEntry, error) {

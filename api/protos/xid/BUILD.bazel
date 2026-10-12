@@ -76,7 +76,7 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
     ],
-    importpath = "xmanager_cloud/api/protos/xid",
+    importpath = "github.com/google/xmc/api/protos/xid",
     proto = ":cloud_xmanager_v1_proto",
     deps = [
         "@com_google_googleapis//google/api:field_behavior_go_proto",
@@ -89,7 +89,7 @@ go_proto_library(
 go_library(
     name = "xid",
     embed = [":cloud_xmanager_v1_go_proto"],
-    importpath = "xmanager_cloud/api/protos/xid",
+    importpath = "github.com/google/xmc/api/protos/xid",
 )
 
 alias(

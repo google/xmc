@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "config",
     srcs = ["config.go"],
-    importpath = "xmanager_cloud/cmd/xid_service/config",
+    importpath = "github.com/google/xmc/cmd/xid_service/config",
     deps = [
         "//internal/auth",
         "//internal/configutil",

@@ -22,13 +22,13 @@ import (
 
 	"cloud.google.com/go/spanner"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/logging"
-	ls "xmanager_cloud/internal/query_generator/liststatement"
-	"xmanager_cloud/internal/query_generator/normalizer"
-	"xmanager_cloud/internal/storage/spanner/dashboard/data"
-	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/internal/validator"
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/logging"
+	ls "github.com/google/xmc/internal/query_generator/liststatement"
+	"github.com/google/xmc/internal/query_generator/normalizer"
+	"github.com/google/xmc/internal/storage/spanner/dashboard/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/dashboardschema"
+	"github.com/google/xmc/internal/validator"
 )
 
 // ListCharts returns a paginated list of Chart protos based on parent, filter, order, and cursor token.

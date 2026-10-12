@@ -17,9 +17,9 @@ package prototest_test
 import (
 	"testing"
 
+	"github.com/google/xmc/internal/prototest"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
-	"xmanager_cloud/internal/prototest"
 )
 
 func TestModify_ClonesAndMutatesWithoutAffectingBase(t *testing.T) {

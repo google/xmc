@@ -22,9 +22,9 @@ import (
 	"testing/fstest"
 
 	"github.com/google/go-cmp/cmp"
+	spb "github.com/google/xmc/api/protos/health"
+	"github.com/google/xmc/pkg/components/summary"
 	"google.golang.org/protobuf/testing/protocmp"
-	spb "xmanager_cloud/api/protos/health"
-	"xmanager_cloud/pkg/components/summary"
 )
 
 func TestListConfigs(t *testing.T) {

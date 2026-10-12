@@ -21,14 +21,14 @@ import (
 
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/storage/data"
+	"github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/validator"
 	"github.com/kylelemons/godebug/diff"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/validator"
 )
 
 // UpdateWorkUnitOperation updates the status of an operation. It returns the updated operation, or

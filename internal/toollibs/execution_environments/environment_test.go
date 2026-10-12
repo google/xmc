@@ -17,8 +17,8 @@ import (
 	"context"
 	"testing"
 
+	epb "github.com/google/xmc/api/protos/experiment"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	epb "xmanager_cloud/api/protos/experiment"
 )
 
 type mockEnv struct {

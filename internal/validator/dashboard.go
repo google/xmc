@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"strings"
 
-	spb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/grpcerr"
+	spb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/grpcerr"
 )
 
 var allowedUpdateDashboardPaths = map[string]bool{

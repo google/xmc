@@ -20,13 +20,13 @@ import (
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
+	pb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/storage/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/operationschema"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	anypb "google.golang.org/protobuf/types/known/anypb"
-	pb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/internal/storage/spanner/schema/operationschema"
 )
 
 var (

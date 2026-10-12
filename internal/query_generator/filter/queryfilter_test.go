@@ -20,13 +20,13 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/xmc/api/filter/go/filter"
+	"github.com/google/xmc/api/filter/go/filtervisitor"
+	"github.com/google/xmc/api/filter/go/queryfilterbase"
+	"github.com/google/xmc/internal/safesql"
 	"google.golang.org/protobuf/proto"
-	"xmanager_cloud/api/filter/go/filter"
-	"xmanager_cloud/api/filter/go/filtervisitor"
-	"xmanager_cloud/api/filter/go/queryfilterbase"
-	"xmanager_cloud/internal/safesql"
 
-	fpb "xmanager_cloud/api/filter"
+	fpb "github.com/google/xmc/api/filter"
 )
 
 var (

@@ -21,7 +21,7 @@ import (
 	"os"
 	"time"
 
-	"xmanager_cloud/internal/logging"
+	"github.com/google/xmc/internal/logging"
 
 	"github.com/redis/go-redis/v9"
 )

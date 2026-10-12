@@ -18,7 +18,7 @@ package bridge
 import (
 	"context"
 
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	componentspb "github.com/google/xmc/api/protos/components/v1alpha1"
 )
 
 const (

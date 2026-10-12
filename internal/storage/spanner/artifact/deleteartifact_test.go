@@ -16,13 +16,13 @@ package artifact_test
 import (
 	"context"
 	"errors"
+	"github.com/google/xmc/internal/storage/spanner"
 	"testing"
-	"xmanager_cloud/internal/storage/spanner"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/validator"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/validator"
 )
 
 func TestDeleteArtifact(t *testing.T) {

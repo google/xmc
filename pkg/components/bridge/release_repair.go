@@ -20,7 +20,7 @@ import (
 
 	"helm.sh/helm/v3/pkg/release"
 
-	"xmanager_cloud/internal/logging"
+	"github.com/google/xmc/internal/logging"
 )
 
 // Repair backoff rate-limits re-upgrades of a release that keeps drifting (e.g. another actor keeps deleting one of

@@ -37,7 +37,7 @@ go_library(
         ":ess_version_gen",
         ":xid_version_gen",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/migrations/version",
+    importpath = "github.com/google/xmc/internal/storage/spanner/migrations/version",
     visibility = ["//visibility:public"],
     deps = [
         "@com_google_cloud_go_spanner//:spanner",

@@ -18,14 +18,14 @@ import (
 	"context"
 	"testing"
 
+	spb "github.com/google/xmc/api/protos/rod"
+	"github.com/google/xmc/cmd/rod_data_provider/cache"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	spb "xmanager_cloud/api/protos/rod"
-	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
 func TestListClusterQueues(t *testing.T) {

@@ -20,7 +20,7 @@ go_library(
         "spanner.go",
         "test_utils.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner",
+    importpath = "github.com/google/xmc/internal/storage/spanner",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

@@ -23,10 +23,10 @@ import (
 	"testing"
 	"time"
 
+	spb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/cmd/reconciler/hypercomputeclient"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	spb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
 )
 
 // mockMLRunCreator records the arguments of the most recent CreateMLRun call so

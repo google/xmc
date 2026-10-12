@@ -23,7 +23,7 @@ go_library(
         "repository.go",
         "updatexidentry.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/xid",
+    importpath = "github.com/google/xmc/internal/storage/spanner/xid",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/xid:messages_go_proto",

@@ -25,7 +25,7 @@ go_library(
         "log_processor.go",
         "main.go",
     ],
-    importpath = "xmanager_cloud/cmd/log_monitor",
+    importpath = "github.com/google/xmc/cmd/log_monitor",
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

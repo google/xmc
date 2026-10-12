@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "configutil",
     srcs = ["configutil.go"],
-    importpath = "xmanager_cloud/internal/configutil",
+    importpath = "github.com/google/xmc/internal/configutil",
     visibility = ["//visibility:public"],
 )
 

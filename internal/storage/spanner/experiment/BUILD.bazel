@@ -26,7 +26,7 @@ go_library(
         "updateexperiment.go",
         "updateexperimentlaunchstate.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/experiment",
+    importpath = "github.com/google/xmc/internal/storage/spanner/experiment",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

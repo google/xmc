@@ -18,11 +18,11 @@ import (
 	"errors"
 	"testing"
 
+	msgpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
 	"google.golang.org/protobuf/proto"
-	msgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
 )
 
 func TestCheckUserAuthorization_HappyPath(t *testing.T) {

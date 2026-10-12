@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
+	dpb "github.com/google/xmc/api/protos/dashboard"
 )
 
 func TestListCharts_All(t *testing.T) {

@@ -20,9 +20,9 @@ import (
 	"errors"
 	"testing"
 
-	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/storage/spanner/workunit"
+	"github.com/google/xmc/internal/storage/spanner"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/storage/spanner/workunit"
 )
 
 func TestFetchActiveWorkUnitsByQueues_Uninitialized(t *testing.T) {

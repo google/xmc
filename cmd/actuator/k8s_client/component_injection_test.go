@@ -22,6 +22,9 @@ import (
 	"strings"
 	"testing"
 
+	esspb "github.com/google/xmc/api/protos/experiment"
+	actuatortaskpb "github.com/google/xmc/api/protos/task_queue"
+	constants "github.com/google/xmc/internal/kubernetes/common/constants"
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,9 +35,6 @@ import (
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	runtimefake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	esspb "xmanager_cloud/api/protos/experiment"
-	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	constants "xmanager_cloud/internal/kubernetes/common/constants"
 )
 
 func createTestComponentCR(name, namespace string, gen int64, enabled bool, state string, conditions []map[string]any, access map[string]any) *unstructured.Unstructured {

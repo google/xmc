@@ -22,7 +22,7 @@ go_library(
     srcs = [
         "main.go",
     ],
-    importpath = "xmanager_cloud/cmd/xmc_bridge",
+    importpath = "github.com/google/xmc/cmd/xmc_bridge",
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/components/v1alpha1",

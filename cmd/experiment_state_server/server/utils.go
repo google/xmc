@@ -19,18 +19,18 @@ import (
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/google/uuid"
+	msgpb "github.com/google/xmc/api/protos/experiment"
+	xidmsgpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage"
+	ee "github.com/google/xmc/internal/toollibs/execution_environments"
+	"github.com/google/xmc/internal/validator"
 	rpcstatuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	msgpb "xmanager_cloud/api/protos/experiment"
-	xidmsgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
-	ee "xmanager_cloud/internal/toollibs/execution_environments"
-	"xmanager_cloud/internal/validator"
 )
 
 func propagateIAPJWT(ctx context.Context) context.Context {

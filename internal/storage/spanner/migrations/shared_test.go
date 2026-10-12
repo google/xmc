@@ -18,8 +18,8 @@ import (
 	"testing"
 
 	"github.com/golang-migrate/migrate/v4/source/iofs"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/storage/spanner/migrations/testing"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/storage/spanner/migrations/testing"
 )
 
 type testRunCase struct {

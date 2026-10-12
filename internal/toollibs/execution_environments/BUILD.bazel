@@ -20,7 +20,7 @@ go_library(
         "environment.go",
         "gke.go",
     ],
-    importpath = "xmanager_cloud/internal/toollibs/execution_environments",
+    importpath = "github.com/google/xmc/internal/toollibs/execution_environments",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:api_go_proto",

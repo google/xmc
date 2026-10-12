@@ -19,12 +19,12 @@ import (
 	"fmt"
 	"strings"
 
+	msgpb "github.com/google/xmc/api/protos/experiment"
+	xidmsgpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/protobuf/proto"
-	msgpb "xmanager_cloud/api/protos/experiment"
-	xidmsgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/validator"
 )
 
 func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *msgpb.CreateArtifactRequest) (*msgpb.Artifact, error) {

@@ -21,7 +21,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	pb "xmanager_cloud/api/protos/dashboard"
+	pb "github.com/google/xmc/api/protos/dashboard"
 )
 
 var _ pb.DashboardServiceClient = (*mockDashboardServiceClient)(nil)

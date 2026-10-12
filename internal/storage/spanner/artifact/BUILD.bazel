@@ -24,7 +24,7 @@ go_library(
         "repository.go",
         "updateartifact.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/artifact",
+    importpath = "github.com/google/xmc/internal/storage/spanner/artifact",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

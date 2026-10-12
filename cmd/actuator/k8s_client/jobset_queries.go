@@ -17,11 +17,11 @@ import (
 	"context"
 	"fmt"
 
+	esspb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/logging"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	esspb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/logging"
 )
 
 func (c *Client) getNamespaceFromTarget(ctx context.Context, target string) (string, error) {

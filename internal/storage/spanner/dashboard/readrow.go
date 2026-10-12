@@ -22,7 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"xmanager_cloud/internal/grpcerr"
+	"github.com/google/xmc/internal/grpcerr"
 )
 
 // readRowInTransaction reads a single row by primary key inside a ReadWriteTransaction, reporting a

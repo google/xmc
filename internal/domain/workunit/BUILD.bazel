@@ -19,7 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "workunit",
     srcs = ["resources.go"],
-    importpath = "xmanager_cloud/internal/domain/workunit",
+    importpath = "github.com/google/xmc/internal/domain/workunit",
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "@org_golang_google_protobuf//proto",

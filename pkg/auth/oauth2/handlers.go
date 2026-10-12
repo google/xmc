@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/xmc/internal/logging"
 	"golang.org/x/oauth2"
-	"xmanager_cloud/internal/logging"
 )
 
 var randReader io.Reader = rand.Reader

@@ -19,11 +19,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/xmc/internal/kubernetes/common/constants"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	"xmanager_cloud/internal/kubernetes/common/constants"
 )
 
 func newTestLabeledJobSet(name string) *v1alpha2.JobSet {

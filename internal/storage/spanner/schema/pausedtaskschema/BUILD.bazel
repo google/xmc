@@ -17,6 +17,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "pausedtaskschema",
     srcs = ["pausedtaskschema.go"],
-    importpath = "xmanager_cloud/internal/storage/spanner/schema/pausedtaskschema",
+    importpath = "github.com/google/xmc/internal/storage/spanner/schema/pausedtaskschema",
     visibility = ["//:__subpackages__"],
 )

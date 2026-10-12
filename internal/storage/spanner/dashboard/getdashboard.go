@@ -23,11 +23,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/dashboard/data"
-	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage/spanner/dashboard/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/dashboardschema"
 )
 
 // GetDashboard retrieves a dashboard by its unique ID along with its layout and child chart IDs.

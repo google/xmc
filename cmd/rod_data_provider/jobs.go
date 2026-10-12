@@ -19,13 +19,13 @@ import (
 	"errors"
 	"time"
 
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	spb "github.com/google/xmc/api/protos/rod"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage/spanner/workunit"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	spb "xmanager_cloud/api/protos/rod"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/workunit"
-	"xmanager_cloud/internal/validator"
 )
 
 // GetRunningAndPendingJobs handles fetching active and pending jobs for a cluster queue.

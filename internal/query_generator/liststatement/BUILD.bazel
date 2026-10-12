@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "liststatement",
     srcs = ["liststatement.go"],
-    importpath = "xmanager_cloud/internal/query_generator/liststatement",
+    importpath = "github.com/google/xmc/internal/query_generator/liststatement",
     deps = [
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filter",

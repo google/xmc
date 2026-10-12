@@ -21,7 +21,7 @@ go_library(
         "liststatusmessages.go",
         "repository.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/statusmessage",
+    importpath = "github.com/google/xmc/internal/storage/spanner/statusmessage",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

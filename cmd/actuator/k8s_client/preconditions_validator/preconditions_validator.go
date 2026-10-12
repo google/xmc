@@ -21,10 +21,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/validator"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/validator"
 )
 
 // Validator validates preconditions for actuation requests.

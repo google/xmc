@@ -20,10 +20,10 @@ import (
 	"strconv"
 	"strings"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	xidmessagespb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	xidmessagespb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/kubernetes/common/jobsetutil"
 )
 
 const (

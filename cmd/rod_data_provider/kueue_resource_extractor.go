@@ -17,9 +17,9 @@ package main
 import (
 	"strings"
 
+	"github.com/google/xmc/internal/common/resourceaccumulator"
 	"k8s.io/apimachinery/pkg/api/resource"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	"xmanager_cloud/internal/common/resourceaccumulator"
 )
 
 const bytesPerGiB = 1024 * 1024 * 1024

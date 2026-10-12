@@ -22,7 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	spb "xmanager_cloud/api/protos/dashboard"
+	spb "github.com/google/xmc/api/protos/dashboard"
 )
 
 func TestGetDashboard(t *testing.T) {

@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"os"
 
-	dataenginetest "xmanager_cloud/test/dataengine"
+	dataenginetest "github.com/google/xmc/test/dataengine"
 )
 
 func main() {

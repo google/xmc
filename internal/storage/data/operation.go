@@ -17,9 +17,9 @@ import (
 	"fmt"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/google/xmc/internal/grpcerr"
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	"xmanager_cloud/internal/grpcerr"
 )
 
 // MergeOperations merges an updated Operation proto message into a current Operation proto

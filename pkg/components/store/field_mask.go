@@ -17,7 +17,7 @@ package store
 import (
 	"google.golang.org/protobuf/proto"
 
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	componentspb "github.com/google/xmc/api/protos/components/v1alpha1"
 )
 
 // ApplySpecUpdateMask merges fields from update into base according to field mask paths.

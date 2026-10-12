@@ -18,7 +18,7 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 go_library(
     name = "infra",
     srcs = ["setup.go"],
-    importpath = "xmanager_cloud/test/metrics/infra",
+    importpath = "github.com/google/xmc/test/metrics/infra",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",

@@ -20,11 +20,11 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/data"
-	spannerdata "xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/schema/pausedtaskschema"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/storage/data"
+	spannerdata "github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/pausedtaskschema"
 )
 
 var _ storage.PausedTaskRepository = (*Repository)(nil)

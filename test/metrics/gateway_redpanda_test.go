@@ -35,9 +35,9 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	metricspb "xmanager_cloud/api/protos/metrics"
-	ingestiongateway "xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
-	"xmanager_cloud/test/metrics/infra"
+	metricspb "github.com/google/xmc/api/protos/metrics"
+	ingestiongateway "github.com/google/xmc/cmd/ingestion_gateway/ingestiongateway"
+	"github.com/google/xmc/test/metrics/infra"
 )
 
 var (

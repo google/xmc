@@ -23,6 +23,10 @@ import (
 	"testing"
 	"time"
 
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	actuatortaskpb "github.com/google/xmc/api/protos/task_queue"
+	"github.com/google/xmc/cmd/actuator/pausescheduling"
+	"github.com/google/xmc/internal/security/securitytest"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/tink-crypto/tink-go/v2/jwt"
 	"google.golang.org/api/googleapi"
@@ -34,10 +38,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/ptr"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	"xmanager_cloud/cmd/actuator/pausescheduling"
-	"xmanager_cloud/internal/security/securitytest"
 )
 
 const testAudience = "test-audience"

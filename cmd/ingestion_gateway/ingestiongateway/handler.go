@@ -25,9 +25,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/pkg/apis/metrics"
 	"google.golang.org/protobuf/proto"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/pkg/apis/metrics"
 )
 
 const (

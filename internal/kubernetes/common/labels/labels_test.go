@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"xmanager_cloud/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
 )
 
 func TestParseXMCLabels(t *testing.T) {

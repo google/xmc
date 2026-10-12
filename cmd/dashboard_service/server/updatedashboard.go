@@ -20,9 +20,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/validator"
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/validator"
 )
 
 // UpdateDashboard handles updating an existing dashboard with authorization and field mask validation.

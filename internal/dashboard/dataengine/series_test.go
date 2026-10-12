@@ -23,7 +23,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
+	dpb "github.com/google/xmc/api/protos/dashboard"
 )
 
 func TestCalculateBucketSize(t *testing.T) {

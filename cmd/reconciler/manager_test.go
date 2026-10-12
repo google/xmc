@@ -20,14 +20,14 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/google/xmc/cmd/actuator/k8s_client"
+	constants "github.com/google/xmc/internal/kubernetes/common/constants"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	ctrl "sigs.k8s.io/controller-runtime"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	"xmanager_cloud/cmd/actuator/k8s_client"
-	constants "xmanager_cloud/internal/kubernetes/common/constants"
 )
 
 type fakeStartManager struct {

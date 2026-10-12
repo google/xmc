@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "mock",
     srcs = ["mock.go"],
-    importpath = "xmanager_cloud/pkg/auth/oauth2/mock",
+    importpath = "github.com/google/xmc/pkg/auth/oauth2/mock",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/auth/oauth2",

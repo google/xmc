@@ -19,6 +19,9 @@ import (
 	"testing"
 	"time"
 
+	esspb "github.com/google/xmc/api/protos/experiment"
+	constants "github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/prototest"
 	"google.golang.org/protobuf/proto"
 	batchv1 "k8s.io/api/batch/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,9 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	clientgotesting "k8s.io/client-go/testing"
-	esspb "xmanager_cloud/api/protos/experiment"
-	constants "xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/prototest"
 )
 
 const testOperationName = "experiments/1/workUnits/1/operations/1"

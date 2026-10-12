@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"xmanager_cloud/internal/logging"
+	"github.com/google/xmc/internal/logging"
 )
 
 // GKEWorkloadDetails holds GKE-specific workload information.

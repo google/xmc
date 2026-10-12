@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage"
 )
 
 var _ io.Closer = (*Listener)(nil)

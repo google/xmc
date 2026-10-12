@@ -24,7 +24,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"xmanager_cloud/test/helm/profiles/profilecontract"
+	"github.com/google/xmc/test/helm/profiles/profilecontract"
 )
 
 // stable2026a describes the stable-2026a profile: three catalog components, rendered in

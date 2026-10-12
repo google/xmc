@@ -21,9 +21,9 @@ import (
 	"testing"
 	"time"
 
+	dpb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/storage/spanner/dashboard/data"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	dpb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 )
 
 func TestListDashboards_Empty(t *testing.T) {

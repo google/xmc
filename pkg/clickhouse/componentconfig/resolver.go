@@ -28,10 +28,10 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/google/xmc/internal/logging"
+	xmcclickhouse "github.com/google/xmc/pkg/clickhouse"
+	"github.com/google/xmc/pkg/components/crreader"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"xmanager_cloud/internal/logging"
-	xmcclickhouse "xmanager_cloud/pkg/clickhouse"
-	"xmanager_cloud/pkg/components/crreader"
 )
 
 // ClickHouseComponentName is the canonical Kubernetes Component CR name for ClickHouse.

@@ -20,14 +20,14 @@ import (
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/operationschema"
+	"github.com/google/xmc/internal/storage/spanner/utils"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/schema/operationschema"
-	"xmanager_cloud/internal/storage/spanner/utils"
-	"xmanager_cloud/internal/validator"
 )
 
 // FetchWorkUnitOperation retrieves an operation by its unique ID.

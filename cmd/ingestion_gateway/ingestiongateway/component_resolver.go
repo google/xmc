@@ -20,9 +20,9 @@ import (
 	"net"
 	"strings"
 
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/pkg/components/crreader"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/pkg/components/crreader"
 )
 
 const (

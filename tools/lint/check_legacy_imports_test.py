@@ -39,8 +39,8 @@ import (
 \t_ "golang/uuid/uuid"
 \t. "go/flag"
 \t"go/ast"
-\t"xmanager_cloud/internal/real"
-\t"xmanager_cloud/storage/storage" // legacy layout
+\t"github.com/google/xmc/internal/real"
+\t"github.com/google/xmc/storage/storage" // legacy layout
 \t"github.com/google/go-cmp/cmp"
 )
 
@@ -59,8 +59,8 @@ class ExtractGoImportsTest(unittest.TestCase):
                 "golang/uuid/uuid",
                 "go/flag",
                 "go/ast",
-                "xmanager_cloud/internal/real",
-                "xmanager_cloud/storage/storage",
+                "github.com/google/xmc/internal/real",
+                "github.com/google/xmc/storage/storage",
                 "github.com/google/go-cmp/cmp",
             ],
         )
@@ -76,11 +76,12 @@ class ClassificationTest(unittest.TestCase):
             "golang/cmp/cmp": True,
             "go/flag": True,
             "go/google": True,
+            "xmanager_cloud/internal/logging": True,
             "go/ast": False,
             "net/rpc": False,
             "encoding/json": False,
             "github.com/google/uuid": False,
-            "xmanager_cloud/internal/logging": False,
+            "github.com/google/xmc/internal/logging": False,
         }
         for path, want in cases.items():
             with self.subTest(path=path):
@@ -88,8 +89,12 @@ class ClassificationTest(unittest.TestCase):
 
     def test_is_unresolved_module_import(self):
         tracked = frozenset({"internal", "internal/real"})
-        self.assertFalse(cli.is_unresolved_module_import("xmanager_cloud/internal/real", tracked))
-        self.assertTrue(cli.is_unresolved_module_import("xmanager_cloud/storage/storage", tracked))
+        self.assertFalse(
+            cli.is_unresolved_module_import("github.com/google/xmc/internal/real", tracked)
+        )
+        self.assertTrue(
+            cli.is_unresolved_module_import("github.com/google/xmc/storage/storage", tracked)
+        )
         self.assertFalse(cli.is_unresolved_module_import("github.com/x/y", tracked))
 
     def test_tracked_directories(self):
@@ -109,7 +114,7 @@ class CollectMetricsTest(unittest.TestCase):
                 'compat_go_library(name = "a")\ncompat_go_test(name = "b")\n'
                 '    import_prefix = "third_party/x/proto",\n'
             ),
-            "BUILD.bazel": "# gazelle:resolve go a //b\n# gazelle:prefix xmanager_cloud\n",
+            "BUILD.bazel": "# gazelle:resolve go a //b\n# gazelle:prefix github.com/google/xmc\n",
             "compat.bzl": "def compat_go_library(name):\n    pass\n",
             "import.bzl": "_r = repository_rule(implementation = _impl)\n",
             "api/x.proto": 'import "third_party/xmanager_cloud/x.proto";\n',
@@ -159,7 +164,9 @@ class CollectMetricsTest(unittest.TestCase):
         # A leftover directory on disk (e.g. after `git rm`) must not hide an
         # unresolved import; only tracked files define package directories.
         (self.root / "removed_pkg").mkdir()
-        (self.root / "use.go").write_text('package a\n\nimport "xmanager_cloud/removed_pkg"\n')
+        (self.root / "use.go").write_text(
+            'package a\n\nimport "github.com/google/xmc/removed_pkg"\n'
+        )
         metrics = cli.collect_metrics(self.root, ["use.go"])
         self.assertEqual(metrics["go_unresolved_module_imports"], 1)
 

@@ -24,14 +24,14 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	actuatortaskpb "github.com/google/xmc/api/protos/task_queue"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage"
+	storagetest "github.com/google/xmc/internal/storage/testing"
+	"github.com/google/xmc/internal/task_queue_redis/redisclient"
 	"google.golang.org/protobuf/testing/protocmp"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
-	storagetest "xmanager_cloud/internal/storage/testing"
-	"xmanager_cloud/internal/task_queue_redis/redisclient"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )

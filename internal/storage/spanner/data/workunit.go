@@ -17,11 +17,11 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
+	pb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/storage/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/workunitschema"
+	"github.com/google/xmc/internal/validator" // For name construction/validation
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	pb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
-	"xmanager_cloud/internal/validator" // For name construction/validation
 )
 
 // WorkUnitRowToProto converts a Spanner Row containing WorkUnits table data into a WorkUnit proto message.

@@ -25,9 +25,9 @@ import (
 	database "cloud.google.com/go/spanner/admin/database/apiv1"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/storage/spanner/migrations/version"
 	"google.golang.org/api/option"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/storage/spanner/migrations/version"
 
 	databasepb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 )

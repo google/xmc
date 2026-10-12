@@ -20,7 +20,7 @@ package(default_visibility = ["//visibility:private"])
 go_library(
     name = "ingestion_gateway_lib",
     srcs = ["main.go"],
-    importpath = "xmanager_cloud/cmd/ingestion_gateway",
+    importpath = "github.com/google/xmc/cmd/ingestion_gateway",
     deps = [
         "//cmd/ingestion_gateway/ingestiongateway",
         "//internal/logging",

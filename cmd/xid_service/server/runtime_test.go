@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	"cloud.google.com/go/spanner"
-	"xmanager_cloud/cmd/xid_service/config"
-	oauth "xmanager_cloud/pkg/auth/oauth2"
+	"github.com/google/xmc/cmd/xid_service/config"
+	oauth "github.com/google/xmc/pkg/auth/oauth2"
 )
 
 func TestRuntimeServer_Close(t *testing.T) {

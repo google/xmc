@@ -30,6 +30,6 @@ go_library(
     name = "stable2026a",
     srcs = ["charts.go"],
     embedsrcs = ["//deploy/profiles/stable-2026a/components/ingestion-gateway:chart"],
-    importpath = "xmanager_cloud/deploy/profiles/stable-2026a",
+    importpath = "github.com/google/xmc/deploy/profiles/stable-2026a",
     visibility = ["//visibility:public"],
 )

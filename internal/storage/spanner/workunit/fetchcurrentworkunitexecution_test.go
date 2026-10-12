@@ -16,15 +16,15 @@ package workunit_test
 import (
 	"context"
 	"errors"
+	"github.com/google/xmc/internal/storage/spanner"
 	"testing"
-	"xmanager_cloud/internal/storage/spanner"
 
 	"github.com/google/go-cmp/cmp"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/protobuf/testing/protocmp"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/validator"
 )
 
 func TestFetchCurrentWorkUnitExecution(t *testing.T) {

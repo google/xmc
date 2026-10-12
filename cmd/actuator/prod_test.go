@@ -20,9 +20,9 @@ import (
 	"strings"
 	"testing"
 
-	k8sclient "xmanager_cloud/cmd/actuator/k8s_client"
-	"xmanager_cloud/cmd/actuator/pausescheduling"
-	"xmanager_cloud/internal/featureflags"
+	k8sclient "github.com/google/xmc/cmd/actuator/k8s_client"
+	"github.com/google/xmc/cmd/actuator/pausescheduling"
+	"github.com/google/xmc/internal/featureflags"
 )
 
 func TestProdServer_Close(t *testing.T) {

@@ -15,12 +15,12 @@ package xid_test
 
 import (
 	"context"
+	"github.com/google/xmc/internal/storage/spanner"
 	"testing"
-	"xmanager_cloud/internal/storage/spanner"
 
+	xidpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 	"google.golang.org/protobuf/proto"
-	xidpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestCreateXidEntry(t *testing.T) {

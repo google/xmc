@@ -20,7 +20,7 @@ import (
 	"strings"
 	"unicode"
 
-	fpb "xmanager_cloud/api/filter"
+	fpb "github.com/google/xmc/api/filter"
 )
 
 type tokenKind int

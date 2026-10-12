@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"xmanager_cloud/pkg/apis/metrics"
+	"github.com/google/xmc/pkg/apis/metrics"
 )
 
 func TestDecodeAndValidateMetrics_EmptyPayload(t *testing.T) {

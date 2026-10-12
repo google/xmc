@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
+	dpb "github.com/google/xmc/api/protos/dashboard"
 )
 
 const defaultMetricsTable = "xmc_metrics"

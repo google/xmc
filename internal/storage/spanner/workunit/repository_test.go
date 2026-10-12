@@ -19,8 +19,8 @@ import (
 	"errors"
 	"testing"
 
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage/spanner/workunit"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage/spanner/workunit"
 )
 
 func TestTxRepository_SaveWorkUnitExecution_NilExecution(t *testing.T) {

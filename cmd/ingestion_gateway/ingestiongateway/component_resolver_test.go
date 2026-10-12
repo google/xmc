@@ -20,11 +20,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/xmc/pkg/components/crreader"
+	"github.com/google/xmc/pkg/components/crreader/crreadertest"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
-	"xmanager_cloud/pkg/components/crreader"
-	"xmanager_cloud/pkg/components/crreader/crreadertest"
 )
 
 func baselineRedpandaComponent() *unstructured.Unstructured {

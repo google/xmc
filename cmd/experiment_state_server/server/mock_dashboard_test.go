@@ -17,9 +17,9 @@ package server
 import (
 	"context"
 
+	dashboard_pb "github.com/google/xmc/api/protos/dashboard"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	dashboard_pb "xmanager_cloud/api/protos/dashboard"
 )
 
 type mockDashboardClient struct {

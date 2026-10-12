@@ -19,7 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "safesql",
     srcs = ["safesql.go"],
-    importpath = "xmanager_cloud/internal/safesql",
+    importpath = "github.com/google/xmc/internal/safesql",
 )
 
 go_test(

@@ -16,20 +16,20 @@ package xid_test
 import (
 	"context"
 	"fmt"
+	"github.com/google/xmc/internal/storage/spanner"
 	"sort"
 	"testing"
 	"time"
-	"xmanager_cloud/internal/storage/spanner"
 
 	"github.com/google/go-cmp/cmp"
+	xidpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/storage/spanner/utils"
+	"github.com/google/xmc/internal/storage/spanner/xid"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	xidpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/storage/spanner/utils"
-	"xmanager_cloud/internal/storage/spanner/xid"
-	"xmanager_cloud/internal/validator"
 )
 
 func TestListXidEntries(t *testing.T) {

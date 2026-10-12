@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"strings"
 
-	"xmanager_cloud/pkg/components/naming"
+	"github.com/google/xmc/pkg/components/naming"
 )
 
 // validateSchema validates YAML structural correctness and schema conformance.

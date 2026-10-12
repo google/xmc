@@ -26,7 +26,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"xmanager_cloud/pkg/components/naming"
+	"github.com/google/xmc/pkg/components/naming"
 )
 
 // Linter executes multi-pass static validation against manifest directories.

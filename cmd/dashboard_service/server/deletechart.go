@@ -21,8 +21,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	spb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/validator"
+	spb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/validator"
 )
 
 // DeleteChart deletes an existing chart after validating experiment write permissions (AIP-135).

@@ -19,7 +19,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"xmanager_cloud/pkg/components/semver"
+	"github.com/google/xmc/pkg/components/semver"
 )
 
 func TestParse(t *testing.T) {

@@ -16,16 +16,16 @@ package xid_test
 import (
 	"context"
 	"errors"
+	"github.com/google/xmc/internal/storage/spanner"
 	"testing"
-	"xmanager_cloud/internal/storage/spanner"
 
 	"github.com/google/go-cmp/cmp"
+	xidpb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	xidpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/validator"
 )
 
 func TestFetchXidEntry(t *testing.T) {

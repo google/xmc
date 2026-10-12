@@ -20,17 +20,17 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner/artifact"
-	"xmanager_cloud/internal/storage/spanner/experiment"
-	"xmanager_cloud/internal/storage/spanner/operation"
-	"xmanager_cloud/internal/storage/spanner/pausedtask"
-	"xmanager_cloud/internal/storage/spanner/pausestate"
-	"xmanager_cloud/internal/storage/spanner/statushistory"
-	"xmanager_cloud/internal/storage/spanner/statusmessage"
-	"xmanager_cloud/internal/storage/spanner/workunit"
-	"xmanager_cloud/internal/storage/spanner/xid"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/storage/spanner/artifact"
+	"github.com/google/xmc/internal/storage/spanner/experiment"
+	"github.com/google/xmc/internal/storage/spanner/operation"
+	"github.com/google/xmc/internal/storage/spanner/pausedtask"
+	"github.com/google/xmc/internal/storage/spanner/pausestate"
+	"github.com/google/xmc/internal/storage/spanner/statushistory"
+	"github.com/google/xmc/internal/storage/spanner/statusmessage"
+	"github.com/google/xmc/internal/storage/spanner/workunit"
+	"github.com/google/xmc/internal/storage/spanner/xid"
 )
 
 type ExperimentRepository = experiment.Repository

@@ -28,7 +28,7 @@ go_library(
         "rules.go",
         "schema.go",
     ],
-    importpath = "xmanager_cloud/pkg/components/linter",
+    importpath = "github.com/google/xmc/pkg/components/linter",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/components/graph",

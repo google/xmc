@@ -24,9 +24,9 @@ import (
 	"testing"
 	"time"
 
-	spb "xmanager_cloud/api/protos/health"
-	commonhealth "xmanager_cloud/internal/common/health"
-	"xmanager_cloud/pkg/components/summary"
+	spb "github.com/google/xmc/api/protos/health"
+	commonhealth "github.com/google/xmc/internal/common/health"
+	"github.com/google/xmc/pkg/components/summary"
 
 	"google.golang.org/api/option"
 	run "google.golang.org/api/run/v2"

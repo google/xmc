@@ -20,8 +20,8 @@ import (
 
 	"cloud.google.com/go/spanner"
 
-	"xmanager_cloud/internal/query_generator/querytools"
-	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
+	"github.com/google/xmc/internal/query_generator/querytools"
+	"github.com/google/xmc/internal/storage/spanner/schema/dashboardschema"
 )
 
 // Repository manages persistence for dashboard and chart entities in Cloud Spanner.

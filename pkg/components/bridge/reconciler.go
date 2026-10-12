@@ -26,9 +26,9 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/pkg/components/naming"
+	componentspb "github.com/google/xmc/api/protos/components/v1alpha1"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/pkg/components/naming"
 )
 
 const (

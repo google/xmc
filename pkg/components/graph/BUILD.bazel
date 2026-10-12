@@ -19,7 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "graph",
     srcs = ["graph.go"],
-    importpath = "xmanager_cloud/pkg/components/graph",
+    importpath = "github.com/google/xmc/pkg/components/graph",
 )
 
 go_test(

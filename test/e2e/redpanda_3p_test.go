@@ -24,8 +24,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
-	"xmanager_cloud/pkg/components/crreader"
+	"github.com/google/xmc/cmd/ingestion_gateway/ingestiongateway"
+	"github.com/google/xmc/pkg/components/crreader"
 )
 
 const (

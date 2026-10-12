@@ -16,8 +16,8 @@ package normalizer
 import (
 	"testing"
 
-	"xmanager_cloud/api/filter/go/filtervisitor"
-	"xmanager_cloud/internal/query_generator/querytools"
+	"github.com/google/xmc/api/filter/go/filtervisitor"
+	"github.com/google/xmc/internal/query_generator/querytools"
 )
 
 var experimentsTableView = querytools.TableView{

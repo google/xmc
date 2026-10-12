@@ -27,16 +27,16 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	actuatortaskpb "github.com/google/xmc/api/protos/task_queue"
+	"github.com/google/xmc/internal/common/interfaces"
+	"github.com/google/xmc/internal/security/securitytest"
+	"github.com/google/xmc/internal/task_queue_redis/redisclient"
 	"github.com/tink-crypto/tink-go/v2/jwt"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	"xmanager_cloud/internal/common/interfaces"
-	"xmanager_cloud/internal/security/securitytest"
-	"xmanager_cloud/internal/task_queue_redis/redisclient"
 )
 
 type mockTokenProvider struct {

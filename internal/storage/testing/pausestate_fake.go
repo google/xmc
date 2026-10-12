@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
 )
 
 var _ storage.PauseStateRepository = (*FakePauseStateRepository)(nil)

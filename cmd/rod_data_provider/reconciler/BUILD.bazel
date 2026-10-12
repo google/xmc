@@ -21,7 +21,7 @@ go_library(
     srcs = [
         "resource_reconciler.go",
     ],
-    importpath = "xmanager_cloud/cmd/rod_data_provider/reconciler",
+    importpath = "github.com/google/xmc/cmd/rod_data_provider/reconciler",
     visibility = ["//visibility:public"],
     deps = [
         "//cmd/rod_data_provider/cache",

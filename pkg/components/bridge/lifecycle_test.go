@@ -26,9 +26,9 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
-	cmsserver "xmanager_cloud/pkg/components/cms"
-	"xmanager_cloud/pkg/components/store"
+	componentspb "github.com/google/xmc/api/protos/components/v1alpha1"
+	cmsserver "github.com/google/xmc/pkg/components/cms"
+	"github.com/google/xmc/pkg/components/store"
 )
 
 func TestReconcileComponent_DeletionOrderingAndIdempotency(t *testing.T) {

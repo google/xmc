@@ -22,15 +22,15 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	apipb "github.com/google/xmc/api/protos/xid"
+	"github.com/google/xmc/cmd/xid_service/config"
+	authz "github.com/google/xmc/internal/auth"
+	commonhealth "github.com/google/xmc/internal/common/health"
+	ss "github.com/google/xmc/internal/storage/spanner"
+	"github.com/google/xmc/pkg/auth/jwks"
+	oauth "github.com/google/xmc/pkg/auth/oauth2"
 	"google.golang.org/api/cloudidentity/v1beta1"
 	"google.golang.org/api/option"
-	apipb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/cmd/xid_service/config"
-	authz "xmanager_cloud/internal/auth"
-	commonhealth "xmanager_cloud/internal/common/health"
-	ss "xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/pkg/auth/jwks"
-	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
 var _ apipb.XidServiceServer = (*RuntimeServer)(nil)

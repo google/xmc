@@ -24,12 +24,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/xmc/pkg/clickhouse"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
-	"xmanager_cloud/pkg/clickhouse"
 )
 
 func setClickHouseEnvs(cfg *Config) {

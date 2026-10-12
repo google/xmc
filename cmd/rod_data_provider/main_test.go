@@ -20,7 +20,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"xmanager_cloud/cmd/rod_data_provider/cache"
+	"github.com/google/xmc/cmd/rod_data_provider/cache"
 )
 
 func TestInitStorage(t *testing.T) {

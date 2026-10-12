@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	pb "xmanager_cloud/api/protos/metrics"
+	pb "github.com/google/xmc/api/protos/metrics"
 )
 
 func TestMetric_IsValid(t *testing.T) {

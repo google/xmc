@@ -34,12 +34,12 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"xmanager_cloud/cmd/dashboard_service/server"
-	"xmanager_cloud/internal/dashboard/dataengine"
-	"xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/pkg/clickhouse"
-	"xmanager_cloud/pkg/clickhouse/componentconfig"
-	"xmanager_cloud/pkg/components/crreader/crreadertest"
+	"github.com/google/xmc/cmd/dashboard_service/server"
+	"github.com/google/xmc/internal/dashboard/dataengine"
+	"github.com/google/xmc/pkg/auth/oauth2"
+	"github.com/google/xmc/pkg/clickhouse"
+	"github.com/google/xmc/pkg/clickhouse/componentconfig"
+	"github.com/google/xmc/pkg/components/crreader/crreadertest"
 )
 
 func TestSetupHTTPHandler(t *testing.T) {

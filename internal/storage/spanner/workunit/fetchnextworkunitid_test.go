@@ -18,8 +18,8 @@ import (
 	"testing"
 
 	cloudspanner "cloud.google.com/go/spanner"
-	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/storage/spanner"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 )
 
 func TestFetchNextWorkUnitIDTransaction(t *testing.T) {

@@ -15,16 +15,16 @@ package workunit_test
 
 import (
 	"context"
+	"github.com/google/xmc/internal/storage"
+	"github.com/google/xmc/internal/storage/spanner"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
 	"testing"
 	"time"
-	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/internal/storage/spanner/emulator"
 
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/workunit"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/workunit"
 )
 
 func TestUpdateWorkUnitExecutions_EmptyUpdates(t *testing.T) {

@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/storage"
 )
 
 func TestFakePauseState_UninitializedDefault(t *testing.T) {

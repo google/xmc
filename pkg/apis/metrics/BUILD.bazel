@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "metrics",
     srcs = ["types.go"],
-    importpath = "xmanager_cloud/pkg/apis/metrics",
+    importpath = "github.com/google/xmc/pkg/apis/metrics",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/metrics:metrics_go_proto",

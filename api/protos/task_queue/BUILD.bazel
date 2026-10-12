@@ -38,7 +38,7 @@ alias(
 
 go_proto_library(
     name = "cloud_xmanager_v1_go_proto",
-    importpath = "xmanager_cloud/api/protos/task_queue",
+    importpath = "github.com/google/xmc/api/protos/task_queue",
     proto = ":task_proto",
     deps = [
         "//api/protos/experiment:messages_go_proto",
@@ -50,5 +50,5 @@ go_proto_library(
 go_library(
     name = "task_queue",
     embed = [":cloud_xmanager_v1_go_proto"],
-    importpath = "xmanager_cloud/api/protos/task_queue",
+    importpath = "github.com/google/xmc/api/protos/task_queue",
 )

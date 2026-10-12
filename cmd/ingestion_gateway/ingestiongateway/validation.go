@@ -23,8 +23,8 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
-	pb "xmanager_cloud/api/protos/metrics"
-	"xmanager_cloud/pkg/apis/metrics"
+	pb "github.com/google/xmc/api/protos/metrics"
+	"github.com/google/xmc/pkg/apis/metrics"
 )
 
 // FailedRecord represents a single record validation failure diagnostic.

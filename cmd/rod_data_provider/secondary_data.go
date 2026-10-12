@@ -21,11 +21,11 @@ import (
 	"strings"
 	"time"
 
+	spb "github.com/google/xmc/api/protos/rod"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/storage/spanner/statushistory"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	spb "xmanager_cloud/api/protos/rod"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/statushistory"
 )
 
 // QueueVelocityFetcher defines interface for fetching velocity metrics from storage.

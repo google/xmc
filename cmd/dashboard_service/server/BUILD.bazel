@@ -31,7 +31,7 @@ go_library(
         "updatechart.go",
         "updatedashboard.go",
     ],
-    importpath = "xmanager_cloud/cmd/dashboard_service/server",
+    importpath = "github.com/google/xmc/cmd/dashboard_service/server",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/dashboard:api_go_proto",

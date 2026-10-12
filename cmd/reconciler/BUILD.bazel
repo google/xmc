@@ -25,7 +25,7 @@ go_library(
         "manager.go",
         "metadata.go",
     ],
-    importpath = "xmanager_cloud/cmd/reconciler",
+    importpath = "github.com/google/xmc/cmd/reconciler",
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

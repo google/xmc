@@ -25,9 +25,9 @@ import (
 	"k8s.io/utils/ptr"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 
-	esspb "xmanager_cloud/api/protos/experiment"
-	constants "xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/logging"
+	esspb "github.com/google/xmc/api/protos/experiment"
+	constants "github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/logging"
 )
 
 // copyNodeSelector creates an immutable copy of the job node selector map.

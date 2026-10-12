@@ -19,7 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "experiment",
     srcs = ["creation.go"],
-    importpath = "xmanager_cloud/internal/domain/experiment",
+    importpath = "github.com/google/xmc/internal/domain/experiment",
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/domain/workunit",

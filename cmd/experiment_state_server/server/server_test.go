@@ -19,9 +19,9 @@ import (
 	"strings"
 	"testing"
 
-	"xmanager_cloud/cmd/experiment_state_server/config"
-	"xmanager_cloud/internal/storage"
-	tq "xmanager_cloud/internal/task_queue"
+	"github.com/google/xmc/cmd/experiment_state_server/config"
+	"github.com/google/xmc/internal/storage"
+	tq "github.com/google/xmc/internal/task_queue"
 )
 
 func TestServer_New_Validation(t *testing.T) {

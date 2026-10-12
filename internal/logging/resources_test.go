@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"xmanager_cloud/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
 )
 
 func TestWithJobSetName(t *testing.T) {

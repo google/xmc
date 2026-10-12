@@ -16,19 +16,19 @@ package workunit_test
 import (
 	"context"
 	"fmt"
+	"github.com/google/xmc/internal/storage/spanner"
 	"sort"
 	"testing"
 	"time"
-	"xmanager_cloud/internal/storage/spanner"
 
 	"github.com/google/go-cmp/cmp"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/storage/spanner/emulator"
+	"github.com/google/xmc/internal/storage/spanner/utils"
+	"github.com/google/xmc/internal/storage/spanner/workunit"
+	"github.com/google/xmc/internal/validator"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/internal/storage/spanner/utils"
-	"xmanager_cloud/internal/storage/spanner/workunit"
-	"xmanager_cloud/internal/validator"
 )
 
 func TestListWorkUnits(t *testing.T) {

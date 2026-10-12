@@ -24,10 +24,10 @@ import (
 
 	"cloud.google.com/go/iam/apiv1/iampb"
 	resourcemanager "cloud.google.com/go/resourcemanager/apiv3"
+	"github.com/google/xmc/internal/logging"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/api/idtoken"
-	"xmanager_cloud/internal/logging"
 )
 
 var ErrAdminRoleNotConfigured = errors.New("admin IAM role not configured")

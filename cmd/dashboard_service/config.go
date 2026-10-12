@@ -18,8 +18,8 @@ import (
 	"flag"
 	"os"
 
-	"xmanager_cloud/cmd/dashboard_service/server"
-	"xmanager_cloud/internal/configutil"
+	"github.com/google/xmc/cmd/dashboard_service/server"
+	"github.com/google/xmc/internal/configutil"
 )
 
 // Config holds the configuration for the dashboard service.

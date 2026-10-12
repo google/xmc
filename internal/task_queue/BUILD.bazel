@@ -39,7 +39,7 @@ go_library(
         "client.go",
         "test_utils.go",
     ],
-    importpath = "xmanager_cloud/internal/task_queue",
+    importpath = "github.com/google/xmc/internal/task_queue",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

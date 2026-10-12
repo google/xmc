@@ -18,7 +18,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "testing",
     srcs = ["driverinterceptor.go"],
-    importpath = "xmanager_cloud/internal/storage/spanner/migrations/testing",
+    importpath = "github.com/google/xmc/internal/storage/spanner/migrations/testing",
     visibility = ["//visibility:public"],
     deps = [
         "//internal/storage/spanner/utils",

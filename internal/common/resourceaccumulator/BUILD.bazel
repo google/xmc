@@ -20,7 +20,7 @@ go_library(
         "classifier.go",
         "resourceaccumulator.go",
     ],
-    importpath = "xmanager_cloud/internal/common/resourceaccumulator",
+    importpath = "github.com/google/xmc/internal/common/resourceaccumulator",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "equalityvisitor",
     srcs = ["equalityvisitor.go"],
-    importpath = "xmanager_cloud/internal/query_generator/equalityvisitor",
+    importpath = "github.com/google/xmc/internal/query_generator/equalityvisitor",
     deps = [
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filtervisitor",

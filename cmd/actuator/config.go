@@ -22,11 +22,11 @@ import (
 	"strings"
 	"time"
 
-	k8sclient "xmanager_cloud/cmd/actuator/k8s_client"
-	"xmanager_cloud/internal/configutil"
-	"xmanager_cloud/internal/featureflags"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/logging"
+	k8sclient "github.com/google/xmc/cmd/actuator/k8s_client"
+	"github.com/google/xmc/internal/configutil"
+	"github.com/google/xmc/internal/featureflags"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/logging"
 )
 
 // RedisConfig holds the configuration for the Redis queue.

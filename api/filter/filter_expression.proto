@@ -16,7 +16,7 @@ syntax = "proto3";
 
 package api.filter;
 
-option go_package = "xmanager_cloud/api/filter;filter_expression_go_proto";
+option go_package = "github.com/google/xmc/api/filter;filter_expression_go_proto";
 
 message Expression {
   oneof expression {

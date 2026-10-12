@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 go_library(
     name = "component-linter_lib",
     srcs = ["main.go"],
-    importpath = "xmanager_cloud/cmd/component-linter",
+    importpath = "github.com/google/xmc/cmd/component-linter",
     visibility = ["//visibility:private"],
     deps = ["//pkg/components/linter"],
 )

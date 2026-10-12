@@ -19,13 +19,13 @@ import (
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
+	pb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/storage/data"
+	"github.com/google/xmc/internal/storage/spanner/schema/operationschema"
+	"github.com/google/xmc/internal/validator"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/proto"
 	anypb "google.golang.org/protobuf/types/known/anypb"
-	pb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/internal/storage/spanner/schema/operationschema"
-	"xmanager_cloud/internal/validator"
 )
 
 // OperationRowToProto converts a Spanner Row containing Operations table data into an Operation proto message.

@@ -30,7 +30,7 @@ go_library(
         "server.go",
         "submit_queue.go",
     ],
-    importpath = "xmanager_cloud/cmd/rod_data_provider/main",
+    importpath = "github.com/google/xmc/cmd/rod_data_provider/main",
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

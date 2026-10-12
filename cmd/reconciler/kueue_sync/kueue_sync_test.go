@@ -26,6 +26,11 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/cmd/reconciler/clusterqueue"
+	"github.com/google/xmc/cmd/reconciler/shared"
+	constants "github.com/google/xmc/internal/kubernetes/common/constants"
+	storagepkg "github.com/google/xmc/internal/storage"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,11 +46,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/cmd/reconciler/clusterqueue"
-	"xmanager_cloud/cmd/reconciler/shared"
-	constants "xmanager_cloud/internal/kubernetes/common/constants"
-	storagepkg "xmanager_cloud/internal/storage"
 )
 
 const (

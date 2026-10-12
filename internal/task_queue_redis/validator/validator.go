@@ -24,9 +24,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/task_queue_redis/redisclient"
 	"github.com/redis/go-redis/v9"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/task_queue_redis/redisclient"
 )
 
 const (

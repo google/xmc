@@ -17,8 +17,8 @@
 package main
 
 import (
-	"xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/pkg/auth/oauth2/mock"
+	"github.com/google/xmc/pkg/auth/oauth2"
+	"github.com/google/xmc/pkg/auth/oauth2/mock"
 )
 
 func configureAuth(a *oauth2.Authenticator, cfg *oauth2.Config) {

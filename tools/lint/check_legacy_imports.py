@@ -41,7 +41,7 @@ if str(_REPO_ROOT) not in sys.path:
 from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 
 BASELINE_RELPATH = Path("tools/lint/legacy_imports_baseline.json")
-GO_MODULE_PREFIX = "xmanager_cloud/"
+GO_MODULE_PREFIX = "github.com/google/xmc/"
 
 # First path segments of google3-style Go import paths (none are Go stdlib).
 LEGACY_GO_ROOTS = frozenset(
@@ -58,6 +58,7 @@ LEGACY_GO_ROOTS = frozenset(
         "spanner",
         "task",
         "tink",
+        "xmanager_cloud",
     }
 )
 # Exact google3 import paths whose root collides with Go stdlib (`go/...`).

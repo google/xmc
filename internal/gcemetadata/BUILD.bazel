@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "gcemetadata",
     srcs = ["gcemetadata.go"],
-    importpath = "xmanager_cloud/internal/gcemetadata",
+    importpath = "github.com/google/xmc/internal/gcemetadata",
     visibility = ["//visibility:public"],
     deps = [
         "//internal/logging",

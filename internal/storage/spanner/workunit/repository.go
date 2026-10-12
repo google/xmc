@@ -20,13 +20,13 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/query_generator/querytools"
-	"xmanager_cloud/internal/storage"
-	spannerdata "xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/experiment"
-	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/query_generator/querytools"
+	"github.com/google/xmc/internal/storage"
+	spannerdata "github.com/google/xmc/internal/storage/spanner/data"
+	"github.com/google/xmc/internal/storage/spanner/experiment"
+	"github.com/google/xmc/internal/storage/spanner/schema/workunitschema"
 )
 
 type spannerTransaction interface {

@@ -27,10 +27,10 @@ import (
 	"sync"
 	"time"
 
-	"xmanager_cloud/internal/common/interfaces"
-	"xmanager_cloud/internal/kubernetes/common/constants"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/task_queue_redis/redisclient"
+	"github.com/google/xmc/internal/common/interfaces"
+	"github.com/google/xmc/internal/kubernetes/common/constants"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/task_queue_redis/redisclient"
 
 	"github.com/google/uuid"
 	"github.com/tink-crypto/tink-go/v2/jwt"
@@ -41,8 +41,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	actuatortaskpb "github.com/google/xmc/api/protos/task_queue"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )

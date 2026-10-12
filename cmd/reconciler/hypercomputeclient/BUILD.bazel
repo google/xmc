@@ -22,7 +22,7 @@ go_library(
         "operations.go",
         "sanitize.go",
     ],
-    importpath = "xmanager_cloud/cmd/reconciler/hypercomputeclient",
+    importpath = "github.com/google/xmc/cmd/reconciler/hypercomputeclient",
     visibility = ["//visibility:public"],
     deps = [
         "//internal/logging",

@@ -19,14 +19,14 @@ import (
 	"fmt"
 	"math"
 
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/task_queue"
-	"xmanager_cloud/internal/validator"
+	"github.com/google/xmc/internal/grpcerr"
+	"github.com/google/xmc/internal/logging"
+	"github.com/google/xmc/internal/task_queue"
+	"github.com/google/xmc/internal/validator"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
-	msgpb "xmanager_cloud/api/protos/experiment"
-	xidmsgpb "xmanager_cloud/api/protos/xid"
+	msgpb "github.com/google/xmc/api/protos/experiment"
+	xidmsgpb "github.com/google/xmc/api/protos/xid"
 )
 
 // BatchRestartWorkUnits sends a request to restart a work unit.

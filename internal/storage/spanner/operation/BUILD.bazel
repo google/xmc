@@ -22,7 +22,7 @@ go_library(
         "repository.go",
         "updateworkunitoperation.go",
     ],
-    importpath = "xmanager_cloud/internal/storage/spanner/operation",
+    importpath = "github.com/google/xmc/internal/storage/spanner/operation",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

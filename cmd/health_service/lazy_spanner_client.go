@@ -20,10 +20,10 @@ import (
 	"fmt"
 	"sync"
 
-	health "xmanager_cloud/internal/common/health"
-	spannerstorage "xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/pkg/components/store"
-	"xmanager_cloud/pkg/components/summary"
+	health "github.com/google/xmc/internal/common/health"
+	spannerstorage "github.com/google/xmc/internal/storage/spanner"
+	"github.com/google/xmc/pkg/components/store"
+	"github.com/google/xmc/pkg/components/summary"
 
 	"cloud.google.com/go/spanner"
 )

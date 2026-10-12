@@ -18,9 +18,9 @@ import (
 	"strings"
 	"testing"
 
-	fpb "xmanager_cloud/api/filter"
-	"xmanager_cloud/api/filter/go/filter"
-	"xmanager_cloud/api/filter/go/filtervisitor"
+	fpb "github.com/google/xmc/api/filter"
+	"github.com/google/xmc/api/filter/go/filter"
+	"github.com/google/xmc/api/filter/go/filtervisitor"
 )
 
 type testCase struct {

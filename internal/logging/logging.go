@@ -36,7 +36,7 @@ const (
 	keyTimestamp = "timestamp"
 	keyTrace     = "trace"
 
-	trimPrefix = "xmanager_cloud/"
+	trimPrefix = "github.com/google/xmc/"
 )
 
 // contextKey is a private type to prevent key collisions in context

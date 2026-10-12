@@ -24,7 +24,7 @@ go_library(
         "series.go",
         "summary_box.go",
     ],
-    importpath = "xmanager_cloud/internal/dashboard/dataengine",
+    importpath = "github.com/google/xmc/internal/dashboard/dataengine",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/dashboard:api_go_proto",

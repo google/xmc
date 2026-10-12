@@ -29,7 +29,7 @@ go_library(
         "spanner_store.go",
         "store.go",
     ],
-    importpath = "xmanager_cloud/pkg/components/store",
+    importpath = "github.com/google/xmc/pkg/components/store",
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/logging",

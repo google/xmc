@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "featureflags",
     srcs = ["featureflags.go"],
-    importpath = "xmanager_cloud/internal/featureflags",
+    importpath = "github.com/google/xmc/internal/featureflags",
     visibility = ["//visibility:public"],
     deps = [
         "//internal/configutil",

@@ -23,8 +23,8 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/xmc/internal/logging"
 	"github.com/rs/cors"
-	"xmanager_cloud/internal/logging"
 )
 
 type contextKey string

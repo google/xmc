@@ -15,9 +15,9 @@
 package main
 
 import (
-	essmsgpb "xmanager_cloud/api/protos/experiment"
-	spb "xmanager_cloud/api/protos/rod"
-	"xmanager_cloud/internal/common/resourceaccumulator"
+	essmsgpb "github.com/google/xmc/api/protos/experiment"
+	spb "github.com/google/xmc/api/protos/rod"
+	"github.com/google/xmc/internal/common/resourceaccumulator"
 )
 
 // extractRequestedResources converts domain ResourceSets from workunit.GetWorkUnitResources

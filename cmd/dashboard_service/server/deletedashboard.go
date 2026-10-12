@@ -21,9 +21,9 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	spb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/validator"
+	spb "github.com/google/xmc/api/protos/dashboard"
+	"github.com/google/xmc/internal/auth"
+	"github.com/google/xmc/internal/validator"
 )
 
 // DeleteDashboard handles deleting an existing dashboard with owner authorization.
