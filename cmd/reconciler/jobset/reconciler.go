@@ -23,8 +23,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -216,19 +214,6 @@ const stoppedWriteTimeout = 10 * time.Second
 // is abandoned so that deletion is never blocked indefinitely.
 const maxStoppedWriteRetryAge = 15 * time.Minute
 
-// isPermanentStorageError reports whether a WorkUnitExecution update failed in a
-// way that retrying cannot fix (for example, the work unit no longer exists).
-// All other errors, including deadlines and Unavailable/Aborted, are treated as
-// transient.
-func isPermanentStorageError(err error) bool {
-	switch status.Code(err) {
-	case codes.NotFound, codes.InvalidArgument, codes.FailedPrecondition, codes.PermissionDenied:
-		return true
-	default:
-		return false
-	}
-}
-
 // currentTime returns the injected clock's time, falling back to time.Now when the
 // Reconciler was constructed directly rather than via NewReconciler.
 func (r *Reconciler) currentTime() time.Time {
@@ -242,7 +227,7 @@ func (r *Reconciler) currentTime() time.Time {
 // on, or "" if it should be retried. A nil deletionTimestamp is treated as within
 // the retry budget.
 func (r *Reconciler) stoppedWriteAbandonReason(jobSet *v1alpha2.JobSet, err error) string {
-	if isPermanentStorageError(err) {
+	if shared.IsPermanentStorageError(err) {
 		return abandonReasonPermanent
 	}
 	if ts := jobSet.DeletionTimestamp; ts != nil && r.currentTime().Sub(ts.Time) > maxStoppedWriteRetryAge {

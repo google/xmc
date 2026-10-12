@@ -361,8 +361,8 @@ func TestProcessBatches_Metrics(t *testing.T) {
 		mockStorage := &mockStorageUpdater{}
 		batcher := NewUpdateBatcher(t.Context(), &BatcherConfig{TickDuration: 1 * time.Millisecond}, mockStorage)
 
-		// Call processExperimentUpdates with an empty widMap
-		batcher.processExperimentUpdates(ctx, 999, make(map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate))
+		// Call processExperimentUpdates with an empty batch
+		batcher.processExperimentUpdates(ctx, 999, nil)
 
 		xidStr := "999"
 		if got := testutil.ToFloat64(updatesProcessedTotal.WithLabelValues(xidStr)); got != 0 {

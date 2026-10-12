@@ -286,14 +286,17 @@ sequenceDiagram
 
     Batcher->>Batcher: LOOP: Every TickDuration (Background Thread)
     Batcher->>Batcher: processBatches()
-    Batcher->>Batcher: Swaps in-memory map and processes batches in parallel
+    Batcher->>Batcher: Swaps in-memory map, merges retries, processes batches in parallel
 
     Batcher->>Batcher: PAR: For each Experiment (XID)
-    Batcher->>Batcher: processExperimentUpdates(xid, widMap)
-    Batcher->>Batcher: Flattens updates from all sources (Jobset, Workload, KueueSync)
-
+    Batcher->>Batcher: processExperimentUpdates(xid, batch)
     Batcher->>Storage: UpdateWorkUnitExecutions(xid, updatesToSend)
-    Storage-->>Batcher: map[WID] WorkUnitExecution
+    Storage-->>Batcher: map[WID] WorkUnitExecution (or error)
+    alt Transient error
+        Batcher->>Batcher: Queue each update for retry with backoff
+    else Permanent error
+        Batcher->>Batcher: Drop the batch (reason=permanent)
+    end
 ```
 
 ### The keying, and what it buys
@@ -308,7 +311,8 @@ Two consequences follow from that shape, and both are deliberate:
 
 - **Within a source, the latest update wins.** A work unit whose JobSet changes fifty times in one
   250 ms tick produces exactly one Spanner write. This is what lets XMC absorb the event storm of a
-  thousand-pod experiment starting at once.
+  thousand-pod experiment starting at once. The one exception: a lower-`eid` update never replaces
+  a pending higher-`eid` update, because Storage skips updates for a non-current execution.
 - **Across sources, nothing is lost.** The JobSet, Workload, and Kueue Sync updates for the same
   work unit are kept side by side and all flushed. They describe different facets — execution
   state, admission state, queue position — so collapsing them would mean a scheduling explanation
@@ -317,7 +321,8 @@ Two consequences follow from that shape, and both are deliberate:
 ### The flush
 
 Every `batcher_tick_duration` (default 250 ms) the batcher **swaps** the accumulation map for an
-empty one and processes the old one. Producers are never blocked while a flush is in flight.
+empty one and processes the old one, together with any retries that are due. Producers are never
+blocked while a flush is in flight.
 
 Experiments are then processed in parallel, bounded by `max_parallel_experiments` (default 10), with
 one `UpdateWorkUnitExecutions` call per experiment. Batching per experiment matches Spanner's
@@ -325,11 +330,49 @@ interleaved schema, where an experiment's work units are physically co-located.
 
 ### Failure behaviour
 
-The batcher is an in-memory buffer, and it makes the usual trade: if the Reconciler pod dies with a
-tick pending, those updates are gone. This is safe because every update is a *snapshot* of current
-cluster state, not a delta. On restart, controller-runtime re-lists all watched resources and
-reconciles each one, so the next tick rewrites the current truth. The visible symptom of a
-Reconciler outage is stale state, never wrong state.
+When a flush fails, the batcher classifies the error the same way the JobSet finalizer path does:
+
+- **Transient** (anything other than `NotFound`, `InvalidArgument`, `FailedPrecondition`,
+  `PermissionDenied`): each update in the batch moves to a retry queue keyed by
+  `(xid, wid, source)`. The retry waits with exponential backoff, starting at the tick duration
+  (at least 250 ms), doubling per attempt, and capped at 30 s. An update that is still failing
+  more than 5 minutes after its first failure is dropped.
+- **Permanent** (`NotFound`, `InvalidArgument`, `FailedPrecondition`, `PermissionDenied`): retrying
+  cannot help, so the whole batch is dropped and counted with `reason="permanent"`. Requeued
+  updates are charged a backoff attempt and, if they expire, are counted as
+  `retry_budget_exhausted`.
+
+On each tick, queued retries are merged with the new pending updates slot by slot
+(`(xid, wid, source)`), mirroring `Add`:
+
+- A pending update with an equal or higher `eid` is newer state and discards the retry.
+- A pending update with a lower `eid` is discarded in favor of the retry, whether or not the retry
+  is due yet.
+- A due retry is sent. A retry that is not yet due is also sent if its experiment is being flushed
+  this tick anyway, since that costs no extra call. Backoff therefore only bounds retry-only load.
+
+An update can therefore take up to about 6 minutes to be dropped: the 5 minute budget, plus up to
+30 s of backoff before the attempt that notices it, plus the 30 s storage call timeout. A pending
+update that supersedes a retry starts a fresh budget. Non-state fields are last-writer-wins across
+sources, and because a retry can now land up to 5 minutes late, an older value from one source can
+overwrite a newer value from another source in that window.
+
+Metrics:
+
+- `batcher_updates_dropped_total{xid, reason="permanent"|"retry_budget_exhausted"}` counts dropped
+  updates.
+- `batcher_updates_retried_total{xid}` counts retries merged back into a flush.
+- `batcher_retry_queue_size` is the current retry-queue length.
+- `xmc_actuator_batcher_update_calls_total` now includes retried calls, and
+  `batcher_updates_processed_total` counts a retried update again each time it is flushed.
+
+The batcher is still an in-memory buffer, and it makes the usual trade: if the Reconciler pod dies
+with a tick or retry pending, those updates are gone. This is safe because every update is a
+*snapshot* of current cluster state, not a delta. On restart, controller-runtime re-lists all
+watched resources and reconciles each one, so the next tick rewrites the current truth. The visible
+symptom of a Reconciler outage is stale state, never wrong state. The one update with no later
+snapshot, the terminal `STOPPED` written when a JobSet is deleted, is persisted synchronously
+before the finalizer is removed (see [§2](#2-jobset-reconciler)).
 
 ---
 
