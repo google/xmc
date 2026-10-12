@@ -425,13 +425,17 @@ check_security() {
   fi
 
   echo "--> Running Infrastructure & Workload Security Scanner (Trivy)..."
+  local ignore_flag=""
+  if [ -f ".trivyignore.yaml" ]; then
+    ignore_flag="--ignorefile .trivyignore.yaml"
+  fi
   if command -v trivy >/dev/null 2>&1; then
-    if ! trivy config --skip-check-update --severity HIGH,CRITICAL deploy/; then
+    if ! trivy config $ignore_flag --skip-check-update --severity HIGH,CRITICAL deploy/; then
       echo "❌ Trivy security check failed."
       FAILED=1
     fi
   elif command -v docker >/dev/null 2>&1; then
-    if ! docker run --rm -v "$(pwd):/src" -w /src aquasec/trivy:latest config --skip-check-update --severity HIGH,CRITICAL deploy/; then
+    if ! docker run --rm -v "$(pwd):/src" -w /src aquasec/trivy:latest config $ignore_flag --skip-check-update --severity HIGH,CRITICAL deploy/; then
       echo "❌ Trivy security check failed."
       FAILED=1
     fi

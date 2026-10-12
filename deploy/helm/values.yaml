@@ -277,15 +277,6 @@ kueue:
           - "xmc.google.com/experiment-id"
           - "xmc.google.com/work-unit-id"
 
-# MultiKueue workload delegation configuration
-kueueDev:
-  multikueue:
-    enabled: false
-    queueName: "multikueue-cpu-queue"
-    workerClusterName: "xmc-nightly-worker-1"
-    inClusterWorker:
-      enabled: false
-
 # Remote Kubernetes cluster configuration (for hybrid KinD control plane + remote GKE workload execution)
 remoteK8s:
   enabled: false

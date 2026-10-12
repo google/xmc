@@ -12,23 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Verifies the Helm chart renders MultiKueue CRs and in-cluster k3s worker templates correctly."""
+"""Verifies the MultiKueue CI addon manifests and default Helm chart isolation."""
 
+import os
 import unittest
 
-from chart_test_lib import render_chart, render_template, require_helm
+from chart_test_lib import find_repo_file, render_chart, render_template, require_helm
 
-MULTIKUEUE_QUEUE_TEMPLATE = "templates/kueue-dev/multikueue-cpu-queue.yaml"
-MULTIKUEUE_WORKER_TEMPLATE = "templates/kueue-dev/multikueue-worker.yaml"
 ACTUATOR_CLUSTERROLE_TEMPLATE = "templates/actuator/clusterrole.yaml"
+WORKER_MANIFEST_PATH = os.path.join(
+    "deploy", "addons", "multikueue", "manifests", "multikueue-worker.yaml"
+)
+WORKER_QUEUES_MANIFEST_PATH = os.path.join(
+    "deploy", "addons", "multikueue", "manifests", "worker-queues.yaml"
+)
+MANAGEMENT_MULTIKUEUE_MANIFEST_PATH = os.path.join(
+    "deploy", "addons", "multikueue", "manifests", "management-multikueue.yaml"
+)
+SETUP_SCRIPT_PATH = os.path.join("deploy", "addons", "multikueue", "setup_multikueue.sh")
 
 
 class MultiKueueConfigTest(unittest.TestCase):
-    """Asserts MultiKueue queue CRs, worker deployment, and Actuator RBAC render properly."""
+    """Asserts MultiKueue addon manifests, customer chart isolation, and Actuator RBAC."""
 
     @classmethod
     def setUpClass(cls) -> None:
         require_helm()
+
+    def _read_repo_file(self, relative_path: str) -> str:
+        with open(find_repo_file(relative_path), encoding="utf-8") as handle:
+            return handle.read()
 
     def _assert_no_root_flow_mapping(self, manifest: str) -> None:
         for doc in manifest.split("---"):
@@ -38,96 +51,76 @@ class MultiKueueConfigTest(unittest.TestCase):
                 if ln.strip() and not ln.strip().startswith("#")
             ]
             if lines:
-                self.assertFalse(lines[0].startswith("{"), f"Root flow mapping found: {lines[0]}")
+                self.assertFalse(
+                    lines[0].startswith("{"),
+                    f"Root flow mapping found: {lines[0]}",
+                )
 
-    def test_multikueue_disabled_by_default(self) -> None:
-        self.assertNotIn("kind:", render_template(MULTIKUEUE_QUEUE_TEMPLATE, {}))
-        self.assertNotIn("kind:", render_template(MULTIKUEUE_WORKER_TEMPLATE, {}))
+    def test_customer_helm_chart_excludes_multikueue_test_resources(self) -> None:
+        manifest = render_chart({})
+        self.assertNotIn("multikueue-worker", manifest)
+        self.assertNotIn("multikueue-cpu-queue", manifest)
+        self.assertNotIn("xmc-nightly-worker-1", manifest)
 
-    def test_multikueue_queue_renders_when_enabled(self) -> None:
-        manifest = render_template(
-            MULTIKUEUE_QUEUE_TEMPLATE,
-            {
-                "projectId": "test-proj",
-                "clusterLocation": "us-central1",
-                "kueueDev.multikueue.enabled": "true",
-                "kueueDev.multikueue.inClusterWorker.enabled": "true",
-            },
-        )
+    def test_management_multikueue_addon_manifest_is_valid(self) -> None:
+        manifest = self._read_repo_file(MANAGEMENT_MULTIKUEUE_MANIFEST_PATH)
+        self.assertIn("kind: Namespace", manifest)
+        self.assertIn("kind: LimitRange", manifest)
         self.assertIn("kind: LocalQueue", manifest)
-        self.assertIn('"multikueue-cpu-queue"', manifest)
-        self.assertIn('"multikueue-cpu-cluster-queue"', manifest)
+        self.assertIn("name: multikueue-cpu-queue", manifest)
+        self.assertIn("clusterQueue: multikueue-cpu-cluster-queue", manifest)
         self.assertIn("kind: ClusterQueue", manifest)
-        self.assertIn('name: "cpu-flavor"', manifest)
+        self.assertIn("name: cpu-flavor", manifest)
         self.assertNotIn("default-flavor", manifest)
         self.assertIn("admissionChecksStrategy:", manifest)
-        self.assertIn('"multikueue-admission-check"', manifest)
+        self.assertIn("name: multikueue-admission-check", manifest)
         self.assertIn("kind: AdmissionCheck", manifest)
         self.assertIn("controllerName: kueue.x-k8s.io/multikueue", manifest)
         self.assertIn("kind: MultiKueueConfig", manifest)
         self.assertIn("kind: MultiKueueCluster", manifest)
-        self.assertIn("labels:", manifest)
-        self.assertNotIn("annotations:", manifest)
-        self.assertIn('xmc.google.com/project: "test-proj"', manifest)
-        self.assertIn('xmc.google.com/location: "us-central1"', manifest)
-        self.assertIn('xmc.google.com/cluster-name: "xmc-nightly-worker-1"', manifest)
+        self.assertIn("name: xmc-nightly-worker-1", manifest)
         self.assertIn("clusterSource:", manifest)
-        self.assertIn('"multikueue-worker-kubeconfig"', manifest)
+        self.assertIn("location: multikueue-worker-kubeconfig", manifest)
         self._assert_no_root_flow_mapping(manifest)
 
-        # Without inClusterWorker.enabled or explicit kubeconfigSecretName, queue does not render a dangling MultiKueueCluster
-        no_worker_manifest = render_template(
-            MULTIKUEUE_QUEUE_TEMPLATE,
-            {"kueueDev.multikueue.enabled": "true"},
-        )
-        self.assertNotIn("kind:", no_worker_manifest)
-
-        # With explicit external kubeconfigSecretName, queue renders without inClusterWorker
-        ext_manifest = render_template(
-            MULTIKUEUE_QUEUE_TEMPLATE,
-            {
-                "kueueDev.multikueue.enabled": "true",
-                "kueueDev.multikueue.kubeconfigSecretName": "external-worker-kubeconfig",
-            },
-        )
-        self.assertIn('"external-worker-kubeconfig"', ext_manifest)
-
-    def test_multikueue_worker_renders_when_enabled_and_skips_in_dev_env(self) -> None:
-        manifest = render_template(
-            MULTIKUEUE_WORKER_TEMPLATE,
-            {
-                "kueueDev.multikueue.enabled": "true",
-                "kueueDev.multikueue.inClusterWorker.enabled": "true",
-            },
-        )
-        self.assertIn("kind: Deployment", manifest)
+    def test_multikueue_worker_addon_manifest_is_statefulset_without_sidecar(self) -> None:
+        manifest = self._read_repo_file(WORKER_MANIFEST_PATH)
+        self.assertIn("kind: Service", manifest)
+        self.assertIn("kind: StatefulSet", manifest)
+        self.assertIn("serviceName: multikueue-worker", manifest)
         self.assertIn("name: multikueue-worker", manifest)
         self.assertIn("rancher/k3s:v1.32.3-k3s1", manifest)
-        self.assertNotIn("k3s kubectl", manifest)
         self.assertIn("name: k3s-server", manifest)
-        self.assertIn("name: bootstrap-sync", manifest)
-        self.assertIn("jobset/releases/download/v0.12.0/manifests.yaml", manifest)
-        self.assertIn("kueue/releases/download/v0.18.2/manifests.yaml", manifest)
-        self.assertIn("kind: WorkloadPriorityClass", manifest)
-        self.assertIn("kind: ResourceFlavor", manifest)
-        self.assertIn("kind: ClusterQueue", manifest)
-        self.assertIn("kind: LocalQueue", manifest)
-        self.assertIn("--write-kubeconfig=/k3s-config/k3s.yaml", manifest)
-        self.assertIn("create secret generic multikueue-worker-kubeconfig", manifest)
-        self.assertIn("exec sleep infinity", manifest)
-        self.assertNotIn('"configmaps"', manifest)
-        self.assertNotIn("kueue-manager-config", manifest)
+        self.assertIn("--write-kubeconfig=/var/lib/rancher/k3s/k3s.yaml", manifest)
+        self.assertIn("volumeClaimTemplates:", manifest)
+        self.assertIn("name: k3s-data", manifest)
+        self.assertNotIn("bootstrap-sync", manifest)
+        self.assertNotIn("sleep infinity", manifest)
+        self.assertNotIn("kind: ServiceAccount", manifest)
+        self.assertNotIn("kind: Role", manifest)
+        self.assertNotIn("kind: RoleBinding", manifest)
         self._assert_no_root_flow_mapping(manifest)
 
-        dev_manifest = render_chart(
-            {
-                "isDevEnvironment": "true",
-                "kueueDev.multikueue.enabled": "true",
-                "kueueDev.multikueue.inClusterWorker.enabled": "true",
-            }
-        )
-        self.assertNotIn("name: multikueue-worker-bootstrap", dev_manifest)
-        self.assertNotIn('"multikueue-cpu-queue"', dev_manifest)
+    def test_worker_queues_addon_manifest_defines_priorities_and_queues(self) -> None:
+        manifest = self._read_repo_file(WORKER_QUEUES_MANIFEST_PATH)
+        self.assertEqual(manifest.count("kind: WorkloadPriorityClass"), 9)
+        self.assertIn("kind: ResourceFlavor", manifest)
+        self.assertIn("name: cpu-flavor", manifest)
+        self.assertIn("kind: ClusterQueue", manifest)
+        self.assertIn("name: multikueue-cpu-cluster-queue", manifest)
+        self.assertIn("kind: Namespace", manifest)
+        self.assertIn("kind: LocalQueue", manifest)
+        self.assertIn("name: multikueue-cpu-queue", manifest)
+        self._assert_no_root_flow_mapping(manifest)
+
+    def test_setup_multikueue_script_references_addon_manifests(self) -> None:
+        script = self._read_repo_file(SETUP_SCRIPT_PATH)
+        self.assertIn("multikueue-worker.yaml", script)
+        self.assertIn("worker-queues.yaml", script)
+        self.assertIn("management-multikueue.yaml", script)
+        self.assertIn("xmc.google.com/project=", script)
+        self.assertIn("xmc.google.com/location=", script)
+        self.assertIn("xmc.google.com/cluster-name=xmc-nightly-worker-1", script)
 
     def test_actuator_clusterrole_grants_kueue_queue_and_admissioncheck_read(self) -> None:
         manifest = render_template(ACTUATOR_CLUSTERROLE_TEMPLATE, {})

@@ -125,7 +125,10 @@ py_test(
 py_test(
     name = "multikueue_config_test",
     srcs = ["multikueue_config_test.py"],
-    data = ["//deploy/helm:chart"],
+    data = [
+        "//deploy/addons/multikueue:addon_files",
+        "//deploy/helm:chart",
+    ],
     tags = [
         "local",
         "manual",

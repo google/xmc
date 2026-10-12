@@ -1,0 +1,114 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: exp-low-wu-low
+value: 110
+description: "Experiment Priority: Low, WorkUnit Priority: Low"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: exp-low-wu-medium
+value: 150
+description: "Experiment Priority: Low, WorkUnit Priority: Medium"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: exp-low-wu-high
+value: 190
+description: "Experiment Priority: Low, WorkUnit Priority: High"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: exp-medium-wu-low
+value: 510
+description: "Experiment Priority: Medium, WorkUnit Priority: Low"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: exp-medium-wu-medium
+value: 550
+description: "Experiment Priority: Medium, WorkUnit Priority: Medium"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: exp-medium-wu-high
+value: 590
+description: "Experiment Priority: Medium, WorkUnit Priority: High"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: exp-high-wu-low
+value: 910
+description: "Experiment Priority: High, WorkUnit Priority: Low"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: exp-high-wu-medium
+value: 950
+description: "Experiment Priority: High, WorkUnit Priority: Medium"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: exp-high-wu-high
+value: 990
+description: "Experiment Priority: High, WorkUnit Priority: High"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: cpu-flavor
+spec:
+  nodeLabels: {}
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: multikueue-cpu-cluster-queue
+spec:
+  namespaceSelector: {}
+  resourceGroups:
+    - coveredResources:
+        - cpu
+        - memory
+      flavors:
+        - name: cpu-flavor
+          resources:
+            - name: cpu
+              nominalQuota: 100000000
+            - name: memory
+              nominalQuota: 100000000Gi
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: multikueue-cpu-queue
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: multikueue-cpu-queue
+  namespace: multikueue-cpu-queue
+spec:
+  clusterQueue: multikueue-cpu-cluster-queue

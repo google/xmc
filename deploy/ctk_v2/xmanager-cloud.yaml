@@ -70,7 +70,6 @@ vars:
   clickhouse_user: "default"
   clickhouse_password: ""
   enable_components: false
-  enable_multikueue: false
   health_service_deployment_enabled: true
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
   dashboard_service_deployment_enabled: false
@@ -370,39 +369,6 @@ deployment_groups:
       namespace: kueue-system
       create_namespace: true
       dependencies: [$(install_cert_manager.release_completion_id)]
-      set_values:
-      - name: managerConfig.controllerManagerConfigYaml
-        type: string
-        value: |-
-          apiVersion: config.kueue.x-k8s.io/v1beta2
-          kind: Configuration
-          health:
-            healthProbeBindAddress: :8081
-          metrics:
-            bindAddress: :8443
-          webhook:
-            port: 9443
-          leaderElection:
-            leaderElect: true
-            resourceName: c1f6bfd2.kueue.x-k8s.io
-          controller:
-            groupKindConcurrency:
-              Job.batch: 5
-              Pod: 5
-              Workload.kueue.x-k8s.io: 5
-              LocalQueue.kueue.x-k8s.io: 1
-              ClusterQueue.kueue.x-k8s.io: 1
-              ResourceFlavor.kueue.x-k8s.io: 1
-          clientConnection:
-            qps: 50
-            burst: 100
-          integrations:
-            frameworks:
-            - batch/job
-            - jobset.x-k8s.io/jobset
-            - pod
-            - deployment
-            - statefulset
 
   - id: install_jobset
     source: community/modules/management/direct-helm-install
@@ -589,12 +555,6 @@ deployment_groups:
         type: auto
       - name: componentsDeployment.enabled
         value: $(vars.enable_components)
-        type: auto
-      - name: kueueDev.multikueue.enabled
-        value: $(vars.enable_multikueue)
-        type: auto
-      - name: kueueDev.multikueue.inClusterWorker.enabled
-        value: $(vars.enable_multikueue)
         type: auto
       - name: xmc_bridge_custom_image
         value: $(vars.xmc_bridge_image)

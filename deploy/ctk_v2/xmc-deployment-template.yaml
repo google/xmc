@@ -93,9 +93,6 @@ vars:
   # Enable Foundational Component Controllers
   enable_components: false
 
-  # Enable MultiKueue workload delegation and in-cluster worker deployment
-  enable_multikueue: false
-
   # Enable Resource Optimization & Diagnostics (ROD) Data Provider
   rod_deployment_enabled: true
 
