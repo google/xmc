@@ -51,10 +51,8 @@ from xmanager_cloud.experiment_state_server.proto import (
 from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 if TYPE_CHECKING:
-    # Type-only, and taken from xdash's resolver rather than imported directly: the generated
-    # module lands under either xmanager_cloud. or third_party.xmanager_cloud. depending on how
-    # the protos were installed, and xdash already owns that fallback. `from __future__ import
-    # annotations` above keeps the reference out of the runtime path entirely.
+    # Type-only import resolved via xdash._protos; `from __future__ import annotations` above
+    # keeps the reference out of the runtime path entirely.
     from xdash._protos import messages_pb2 as dashboard_messages_pb2
 
 # Skip git push snapshot during local test launch

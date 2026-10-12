@@ -18,7 +18,7 @@ import { firstValueFrom } from 'rxjs';
 import {
   ListExperimentsRequest,
   ListExperimentsResponse,
-} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+} from 'app/protos/experiment_state_server';
 
 import { EXPERIMENT_1 } from '../common/mock_data';
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';

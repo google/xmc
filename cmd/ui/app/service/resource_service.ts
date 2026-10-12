@@ -22,7 +22,7 @@ import {
   GetSubmitQueueResponse,
   ListClusterQueuesResponse,
   RangePreset,
-} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+} from 'app/protos/rod';
 
 import { XMC_API_DOMAIN } from './constants';
 

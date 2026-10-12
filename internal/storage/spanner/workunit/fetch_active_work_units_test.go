@@ -21,8 +21,8 @@ import (
 	"testing"
 
 	"xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/storage/spanner/workunit"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
 func TestFetchActiveWorkUnitsByQueues_Uninitialized(t *testing.T) {

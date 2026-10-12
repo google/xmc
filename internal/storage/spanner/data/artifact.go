@@ -18,9 +18,9 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
-	timestamppb "protobuf/timestamp_go_proto"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/storage/data/data"
+	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/storage/spanner/schema/artifactschema"
 	"xmanager_cloud/validator/validator"
 )

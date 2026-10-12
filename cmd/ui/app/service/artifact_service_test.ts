@@ -15,10 +15,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
-import {
-  ListArtifactsRequest,
-  ListArtifactsResponse,
-} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { ListArtifactsRequest, ListArtifactsResponse } from 'app/protos/experiment_state_server';
 
 import { ARTIFACT_LIST } from '../common/mock_data';
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';

@@ -15,10 +15,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
-import {
-  ListArtifactsRequest,
-  ListArtifactsResponse,
-} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { ListArtifactsRequest, ListArtifactsResponse } from 'app/protos/experiment_state_server';
 
 import { XMC_API_DOMAIN } from './constants';
 

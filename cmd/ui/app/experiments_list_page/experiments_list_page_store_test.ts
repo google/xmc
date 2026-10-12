@@ -13,10 +13,10 @@
 // limitations under the License.
 import { of, throwError } from 'rxjs';
 
+import { ListExperimentsResponse } from 'app/protos/experiment_state_server';
 import { ExperimentService } from 'app/service/experiment_service';
 import { SnackbarService } from 'app/service/snackbar_service';
 import { cleanState, get, setupModule, setupObservableMatchers } from 'app/testing/test';
-import { ListExperimentsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
 import {
   ExperimentsListPageState,

@@ -109,19 +109,6 @@ class TestInstallXmanager(unittest.TestCase):
                 install_xmanager.check_git_version()
                 self.assertIn("Warning: Git version is 2.20.0", stderr.getvalue())
 
-    def test_rewrite_proto_imports(self) -> None:
-        """Test rewrite_proto_imports replaces third_party path."""
-        with tempfile.TemporaryDirectory() as tmp_dir_str:
-            tmp_dir = Path(tmp_dir_str)
-            proto_file = tmp_dir / "test.proto"
-            proto_file.write_text(
-                'import "third_party/xmanager_cloud/service.proto";\n',
-                encoding="utf-8",
-            )
-            install_xmanager.rewrite_proto_imports(tmp_dir)
-            updated = proto_file.read_text(encoding="utf-8")
-            self.assertEqual(updated, 'import "xmanager_cloud/service.proto";\n')
-
     def test_retrieve_protos_local(self) -> None:
         """Test retrieve_protos with local directory containing required protos."""
         with tempfile.TemporaryDirectory() as tmp_src_str:

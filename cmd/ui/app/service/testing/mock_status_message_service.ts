@@ -18,7 +18,7 @@ import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'app/common/mock_data';
 import {
   ListStatusMessagesRequest,
   ListStatusMessagesResponse,
-} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+} from 'app/protos/experiment_state_server';
 
 import { StatusMessageService } from '../status_message_service';
 

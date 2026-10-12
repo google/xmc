@@ -27,14 +27,14 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
-	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
-	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
-	"golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs"
-	"golang/github_com/golang_migrate/migrate/v/v4/source/source"
-	"golang/google_api/option/option"
+	database "cloud.google.com/go/spanner/admin/database/apiv1"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/source"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"google.golang.org/api/option"
+	"xmanager_cloud/internal/storage/spanner/migrations/commands"
+	"xmanager_cloud/internal/storage/spanner/migrations/driver"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/spanner/migrations/commands/commands"
-	"xmanager_cloud/storage/spanner/migrations/driver/spannerdriver"
 )
 
 //go:embed ess_messages.pb

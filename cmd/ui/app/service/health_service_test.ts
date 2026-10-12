@@ -20,7 +20,7 @@ import {
   HealthStatusResponse,
   ListConfigEntriesResponse,
   UserInfoResponse,
-} from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
+} from 'app/protos/health_service';
 
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { XMC_API_DOMAIN } from './constants';

@@ -14,8 +14,8 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
 
+import { StructuredMessage } from 'app/protos/experiment_state_server';
 import { cleanState, get, setupModule } from 'app/testing/test';
-import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 
 import {
   ALL_SOURCES,

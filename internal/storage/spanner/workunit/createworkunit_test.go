@@ -23,7 +23,7 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	domainworkunit "xmanager_cloud/internal/domain/workunit"
 	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestCreateWorkUnit(t *testing.T) {

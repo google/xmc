@@ -21,13 +21,13 @@ import (
 
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
-	"golang/godebug/diff/diff"
-	"golang/protobuf/v2/encoding/prototext/prototext"
+	"github.com/kylelemons/godebug/diff"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
-	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 )
 

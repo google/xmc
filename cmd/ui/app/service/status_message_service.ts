@@ -18,7 +18,7 @@ import { Observable } from 'rxjs';
 import {
   ListStatusMessagesRequest,
   ListStatusMessagesResponse,
-} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+} from 'app/protos/experiment_state_server';
 
 import { XMC_API_DOMAIN } from './constants';
 

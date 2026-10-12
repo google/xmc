@@ -26,9 +26,7 @@ import { ActivatedRoute } from '@angular/router';
 
 import { ArtifactsList } from 'app/common/components/artifacts_list/artifacts_list';
 import { StatusMessagesList } from 'app/common/components/status_messages_list/status_messages_list';
-import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
-import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
+import { Experiment, StructuredMessage, WorkUnit } from 'app/protos/experiment_state_server';
 
 import {
   getStatusMessages,

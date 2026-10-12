@@ -353,21 +353,6 @@ def copy_protos_to_service(
     shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True)
 
 
-def rewrite_proto_imports(proto_dir: Path) -> None:
-    """Rewrite proto import paths in-place for all .proto files in proto_dir.
-
-    Replaces 'third_party/xmanager_cloud/' with 'xmanager_cloud/'.
-
-    Args:
-        proto_dir: Path to directory containing .proto files.
-    """
-    for proto_file in proto_dir.glob("*.proto"):
-        content = proto_file.read_text(encoding="utf-8")
-        updated = content.replace("third_party/xmanager_cloud/", "xmanager_cloud/")
-        if updated != content:
-            proto_file.write_text(updated, encoding="utf-8")
-
-
 def compile_protos(
     venv_python: Path,
     xmanager_dir: Path,
@@ -489,11 +474,6 @@ def main(raw_args: list[str] | None = None) -> None:
             xmc_protos_dir, "experiment", "experiment_state_server", xmanager_dir
         )
         copy_protos_to_service(xmc_protos_dir, "dashboard", "dashboard_service", xmanager_dir)
-
-        sys.stdout.write("Adjusting proto import paths...\n")
-        rewrite_proto_imports(xmanager_dir / "xmanager_cloud" / "xid_service" / "proto")
-        rewrite_proto_imports(xmanager_dir / "xmanager_cloud" / "experiment_state_server" / "proto")
-        rewrite_proto_imports(xmanager_dir / "xmanager_cloud" / "dashboard_service" / "proto")
 
         compile_protos(venv_python, xmanager_dir, googleapis_dir)
         install_xmanager_package(venv_python, xmanager_dir)

@@ -18,6 +18,7 @@ import { BehaviorSubject, NEVER, of } from 'rxjs';
 
 import { AutoReloadService } from 'app/common/components/autoreloader/autoreloader_service';
 import { ConfirmDialogService } from 'app/common/components/confirmation_dialog/confirmation_dialog_service';
+import { Experiment } from 'app/protos/experiment_state_server';
 import { ArtifactService } from 'app/service/artifact_service';
 import { AUTO_REFRESH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from 'app/service/constants';
 import { ExperimentService } from 'app/service/experiment_service';
@@ -26,7 +27,6 @@ import { StatusMessageService } from 'app/service/status_message_service';
 import { WorkUnitsService } from 'app/service/work_units_service';
 import { SidePanelService } from 'app/side_panel/side_panel_service';
 import { bootstrap, cleanState, setupModule } from 'app/testing/test';
-import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 
 import { ExperimentPage } from './experiment_page';
 import { ExperimentPageHarness } from './testing/experiment_page_harness';

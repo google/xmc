@@ -207,8 +207,8 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 	}
 }
 
-// TODO(pausescheduling): Consider introducing a lazy Redis broadcast publisher wrapper (similar to HealthServiceLazySpannerWrapper)
-// in a follow-up PR to allow deferred connection initialization and reconnection handling without failing startup.
+// initPauseScheduler wires the pause scheduler. Redis clients need no lazy wrapper: go-redis does no
+// network I/O at construction time, dials on the first command, and reconnects after failures.
 func initPauseScheduler(cfg *Config, lazyStorage LazyStorageProvider, taskQueuePublisher redisclient.Publisher) PauseScheduler {
 	var broadcastPublisher broadcast.Publisher
 	if cfg.RedisAddr != "" {

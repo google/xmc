@@ -19,11 +19,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of } from 'rxjs';
 
+import { ClusterQueueSecondaryMetrics, QueueOverview } from 'app/protos/rod';
 import { ResourceService } from 'app/service/resource_service';
-import {
-  ClusterQueueSecondaryMetrics,
-  QueueOverview,
-} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { QueueCardComponent } from './queue_card';
 import { QueueCardHarness } from './queue_card_harness';

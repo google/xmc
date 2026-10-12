@@ -26,10 +26,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { BehaviorSubject, of } from 'rxjs';
 import { catchError, finalize, switchMap, tap } from 'rxjs/operators';
 
-import {
-  HealthStatusResponse,
-  ListConfigEntriesResponse,
-} from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
+import { HealthStatusResponse, ListConfigEntriesResponse } from 'app/protos/health_service';
 
 import { ErrorBannerComponent } from '../common/components/error_banner/error_banner';
 import { FeatureFlagService } from '../service/feature_flag_service';

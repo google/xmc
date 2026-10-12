@@ -15,23 +15,23 @@
 import type { Page, Route } from '@playwright/test';
 
 import type {
-  ClusterQueueSecondaryMetrics,
-  DashboardJob,
-  ListClusterQueuesResponse,
-} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
-import type {
+  Experiment,
   ListArtifactsResponse,
   ListExperimentsResponse,
   ListStatusMessagesResponse,
   ListWorkUnitsResponse,
-} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import type { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
-import type { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
+  WorkUnit,
+} from 'app/protos/experiment_state_server';
 import type {
   HealthStatusResponse,
   ListConfigEntriesResponse,
   UserInfoResponse,
-} from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
+} from 'app/protos/health_service';
+import type {
+  ClusterQueueSecondaryMetrics,
+  DashboardJob,
+  ListClusterQueuesResponse,
+} from 'app/protos/rod';
 
 import type { UserResponse } from '../app/service/auth.service';
 

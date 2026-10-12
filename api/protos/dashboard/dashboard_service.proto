@@ -24,7 +24,7 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
-import "third_party/xmanager_cloud/dashboard_service/proto/messages.proto";
+import "xmanager_cloud/dashboard_service/proto/messages.proto";
 
 service DashboardService {
   option (google.api.default_host) = "cloud.xmanager.googleapis.com";

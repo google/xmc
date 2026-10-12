@@ -16,11 +16,11 @@ import { inject, Injectable } from '@angular/core';
 import { Observable, throwError } from 'rxjs';
 
 import {
+  Experiment,
   ListExperimentsRequest,
   ListExperimentsResponse,
   UpdateExperimentRequest,
-} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
+} from 'app/protos/experiment_state_server';
 
 import { XMC_API_DOMAIN } from './constants';
 

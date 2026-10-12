@@ -18,7 +18,7 @@ package cloud.xmanager.v1;
 
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
-import "third_party/xmanager_cloud/experiment_state_server/proto/status.proto";
+import "xmanager_cloud/experiment_state_server/proto/status.proto";
 
 option go_package = "xmanager_cloud/api/protos/rod";
 

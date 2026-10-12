@@ -881,6 +881,7 @@ func TestPauseScheduling(t *testing.T) {
 			pauseScheduler := NewPauseScheduler(PauseSchedulerParams{
 				LazyStorage:        newFakeLazyStorage(repo),
 				BroadcastPublisher: publisher,
+				TaskQueuePublisher: redisclient.NewFakeClient(),
 			})
 			s := newServer(tt.cfg, &mockHealthChecker{}, tt.guard, nil, pauseScheduler)
 			resp, err := s.PauseScheduling(context.Background(), &spb.PauseSchedulingRequest{})

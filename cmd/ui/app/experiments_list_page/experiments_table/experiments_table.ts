@@ -40,14 +40,16 @@ import { StatusMessageFilter } from 'app/common/components/status_message_filter
 import { Tag } from 'app/common/components/tag/tag';
 import { WorkUnitsStatusBar } from 'app/common/components/work_units_status_bar/work_units_status_bar';
 import { XidBadge } from 'app/common/components/xid_badge/xid_badge';
+import * as api from 'app/protos/experiment_state_server';
+import {
+  Experiment,
+  ExperimentStatus,
+  Priority,
+  StructuredMessage,
+} from 'app/protos/experiment_state_server';
 import { StatusMessageFilterService } from 'app/service/status_message_filter_service';
 import { EditExperimentFormData } from 'app/side_panel/contents/edit_experiment_form/edit_experiment_form';
 import { SidePanelService } from 'app/side_panel/side_panel_service';
-import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
-import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
-import { ExperimentStatus } from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
-import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 
 enum TableColumns {
   XID = 'XID',

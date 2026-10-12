@@ -41,12 +41,12 @@ import { UrlsWidget } from 'app/common/components/urls_widget/urls_widget';
 import { WorkUnitsStatusBar } from 'app/common/components/work_units_status_bar/work_units_status_bar';
 import { XidBadge } from 'app/common/components/xid_badge/xid_badge';
 import { ProcessedUrl, processUrls } from 'app/common/url/url_processor';
+import { Experiment } from 'app/protos/experiment_state_server';
 import { ExperimentService } from 'app/service/experiment_service';
 import { SnackbarService } from 'app/service/snackbar_service';
 import { WorkUnitsService } from 'app/service/work_units_service';
 import { EditExperimentFormData } from 'app/side_panel/contents/edit_experiment_form/edit_experiment_form';
 import { SidePanelService } from 'app/side_panel/side_panel_service';
-import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 
 import { WorkUnitsTable } from './work_units_table/work_units_table';
 
