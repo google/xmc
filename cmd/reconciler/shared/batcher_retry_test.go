@@ -473,3 +473,23 @@ func TestRetry_ConcurrentAddAndRequeue(t *testing.T) {
 		t.Errorf("batcher_updates_dropped_total{retry_budget_exhausted} = %v, want 0", dropped)
 	}
 }
+
+func TestCountWorkUnitsAndUpdatePointers(t *testing.T) {
+	if got := countWorkUnits(nil); got != 0 {
+		t.Errorf("countWorkUnits(nil) = %d, want 0", got)
+	}
+	batch := []batchEntry{
+		{update: storagepkg.WorkUnitExecutionUpdate{WID: 1}, source: JobsetSource},
+		{update: storagepkg.WorkUnitExecutionUpdate{WID: 1}, source: WorkloadSource},
+		{update: storagepkg.WorkUnitExecutionUpdate{WID: 3}, source: JobsetSource},
+	}
+	if got := countWorkUnits(batch); got != 2 {
+		t.Errorf("countWorkUnits() = %d, want 2", got)
+	}
+	ptrs := updatePointers(batch)
+	for i := range batch {
+		if ptrs[i] != &batch[i].update {
+			t.Errorf("updatePointers()[%d] = %p, want &batch[%d].update (%p)", i, ptrs[i], i, &batch[i].update)
+		}
+	}
+}

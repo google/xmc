@@ -276,7 +276,7 @@ func (b *UpdateBatcher) processExperimentUpdates(ctx context.Context, xid int64,
 	}
 	xidStr := fmt.Sprintf("%d", xid)
 	updatesProcessedTotal.WithLabelValues(xidStr).Add(float64(len(batch)))
-	workunitsPerExperiment.WithLabelValues(xidStr).Observe(float64(len(groupByWorkUnit(batch))))
+	workunitsPerExperiment.WithLabelValues(xidStr).Observe(float64(countWorkUnits(batch)))
 
 	if b.Storage == nil {
 		logging.Error(ctx, "Storage is not initialized in UpdateBatcher")

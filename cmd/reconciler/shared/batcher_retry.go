@@ -172,8 +172,7 @@ func groupByExperiment(entries map[slotKey]batchEntry) map[int64][]batchEntry {
 func updatePointers(batch []batchEntry) []*storagepkg.WorkUnitExecutionUpdate {
 	updates := make([]*storagepkg.WorkUnitExecutionUpdate, len(batch))
 	for i := range batch {
-		update := batch[i].update
-		updates[i] = &update
+		updates[i] = &batch[i].update
 	}
 	return updates
 }
@@ -188,16 +187,16 @@ func (b *UpdateBatcher) handleFlushFailure(ctx context.Context, xid int64, batch
 	b.recordDropped(ctx, xid, batch, dropReasonPermanent, err)
 }
 
-// groupByWorkUnit splits a batch sorted by WID into contiguous per-WID groups.
-func groupByWorkUnit(batch []batchEntry) [][]batchEntry {
-	var groups [][]batchEntry
+// countWorkUnits counts distinct WIDs in a batch sorted by WID, without
+// allocating.
+func countWorkUnits(batch []batchEntry) int {
+	count := 0
 	for i, entry := range batch {
 		if i == 0 || entry.update.WID != batch[i-1].update.WID {
-			groups = append(groups, nil)
+			count++
 		}
-		groups[len(groups)-1] = append(groups[len(groups)-1], entry)
 	}
-	return groups
+	return count
 }
 
 // requeue schedules failed entries for retry, dropping those past maxRetryAge.
