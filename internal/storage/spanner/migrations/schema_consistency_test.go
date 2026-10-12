@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"cloud.google.com/go/spanner/admin/database/apiv1"
+	database "cloud.google.com/go/spanner/admin/database/apiv1"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/api/option"

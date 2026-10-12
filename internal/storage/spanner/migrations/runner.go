@@ -27,7 +27,7 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
-	"cloud.google.com/go/spanner/admin/database/apiv1"
+	database "cloud.google.com/go/spanner/admin/database/apiv1"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"

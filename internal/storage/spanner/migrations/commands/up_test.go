@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	"cloud.google.com/go/spanner"
-	"cloud.google.com/go/spanner/admin/database/apiv1"
+	database "cloud.google.com/go/spanner/admin/database/apiv1"
 	"github.com/golang-migrate/migrate/v4"
 	migdatabase "github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/stub"
@@ -26,7 +26,6 @@ import (
 	dbadminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
 	"k8s.io/utils/ptr"
 	"xmanager_cloud/internal/storage/spanner/emulator"
-	xmcemulator "xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestUp(t *testing.T) {
@@ -101,7 +100,7 @@ func TestUp(t *testing.T) {
 
 			dbStub.CurrentVersion = tc.initialVersion
 
-			clients := xmcemulator.SetupEmpty(ctx, t)
+			clients := emulator.SetupEmpty(ctx, t)
 			dataClient, emu := clients.ESSClient, clients.Emulator
 			if !tc.emptyDatabase {
 				updateDDL(t, dataClient, emu, []string{"CREATE TABLE NonEmptyTable (ID INT64) PRIMARY KEY (ID)"})

@@ -19,8 +19,7 @@ import (
 	"testing"
 
 	"github.com/golang-migrate/migrate/v4"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	_ "xmanager_cloud/internal/storage/spanner/emulator" // definitions for emulator options
+	"xmanager_cloud/internal/storage/spanner/emulator" // definitions for emulator options
 )
 
 func TestRun(t *testing.T) {

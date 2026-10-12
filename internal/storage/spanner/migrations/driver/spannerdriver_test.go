@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	"cloud.google.com/go/spanner"
-	"cloud.google.com/go/spanner/admin/database/apiv1"
-	"cloud.google.com/go/spanner/admin/instance/apiv1"
+	database "cloud.google.com/go/spanner/admin/database/apiv1"
+	instance "cloud.google.com/go/spanner/admin/instance/apiv1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"xmanager_cloud/internal/storage/spanner/emulator"
@@ -30,7 +30,6 @@ import (
 	instancepb "google.golang.org/genproto/googleapis/spanner/admin/instance/v1"
 	descpb "google.golang.org/protobuf/types/descriptorpb"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
-	xmcemulator "xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 const (
@@ -110,7 +109,7 @@ func TestNew(t *testing.T) {
 	ctx := t.Context()
 	emu := newSpannerServer(ctx, t)
 	adminClient := createAdminClient(ctx, t, emu)
-	dbName := "test-db-" + xmcemulator.RandomSuffix()
+	dbName := "test-db-" + emulator.RandomSuffix()
 	dbPath := fmt.Sprintf("%s/databases/%s", instancePath, dbName)
 	createDatabase(ctx, t, adminClient, dbName)
 	dataClient := createDataClient(ctx, t, emu, dbPath)
@@ -251,7 +250,7 @@ func TestRun(t *testing.T) {
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a new database for each test case.
-			dbName := fmt.Sprintf("testdb-%d-%s", i, xmcemulator.RandomSuffix())
+			dbName := fmt.Sprintf("testdb-%d-%s", i, emulator.RandomSuffix())
 			dbPath := fmt.Sprintf("%s/databases/%s", instancePath, dbName)
 			createDatabase(ctx, t, adminClient, dbName)
 			dataClient := createDataClient(ctx, t, emu, dbPath)
