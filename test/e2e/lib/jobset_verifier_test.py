@@ -133,14 +133,48 @@ class JobSetVerifierTest(unittest.TestCase):
             )
         mock_sleep.assert_not_called()
 
+    @mock.patch("test.e2e.lib.jobset_verifier.time.sleep")
+    @mock.patch("test.e2e.lib.jobset_verifier.subprocess.run")
+    def test_wait_for_jobset_retries_on_transient_kubectl_error(
+        self,
+        mock_run: mock.MagicMock,
+        mock_sleep: mock.MagicMock,
+    ) -> None:
+        """wait_for_jobset_for_experiment retries when kubectl returns a transient error."""
+        expected = _baseline_jobset()
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(returncode=1, cmd=["kubectl"]),
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps({"items": [expected]}),
+                stderr="",
+            ),
+        ]
+
+        got = wait_for_jobset_for_experiment(
+            "experiments/42",
+            namespace="cpu-queue",
+            kube_context="kind-xmc-e2e",
+            timeout_seconds=5.0,
+            poll_interval_seconds=0.01,
+        )
+
+        self.assertEqual(got["metadata"]["name"], "xmc-operation-42-1")
+        self.assertEqual(mock_run.call_count, 2)
+        mock_sleep.assert_called_once()
+
     def test_wait_for_jobset_rejects_invalid_experiment_name(self) -> None:
         """wait_for_jobset_for_experiment rejects malformed experiment names."""
         with self.assertRaises(ValueError):
             wait_for_jobset_for_experiment("invalid-name")
 
     def test_assert_jobset_contract_accepts_valid_jobset(self) -> None:
-        """assert_jobset_contract succeeds on a compliant JobSet."""
+        """assert_jobset_contract succeeds on a compliant JobSet and when failurePolicy is None."""
         assert_jobset_contract(_baseline_jobset())
+        jobset_null_fp = copy.deepcopy(_baseline_jobset())
+        jobset_null_fp["spec"]["failurePolicy"] = None
+        assert_jobset_contract(jobset_null_fp)
 
     def test_assert_jobset_contract_rejects_violations(self) -> None:
         """assert_jobset_contract raises RuntimeError for each contract violation."""
@@ -161,12 +195,16 @@ class JobSetVerifierTest(unittest.TestCase):
             "restartPolicy"
         ] = "OnFailure"
 
+        null_template = copy.deepcopy(_baseline_jobset())
+        null_template["spec"]["replicatedJobs"][0]["template"] = None
+
         cases = [
             ("queue label", bad_queue, "kueue.x-k8s.io/queue-name"),
             ("managed-by label", bad_managed_by, "managed-by"),
             ("maxRestarts", bad_restarts, "maxRestarts"),
             ("empty replicatedJobs", empty_jobs, "replicatedJobs"),
             ("restartPolicy", bad_policy, "restartPolicy"),
+            ("null template", null_template, "restartPolicy"),
         ]
         for name, candidate, expected_msg in cases:
             with self.subTest(name=name):

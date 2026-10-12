@@ -44,6 +44,6 @@ data:
   XMC_PROJECT_ID: {{ .Values.projectId | quote }}
   XMC_CLUSTER_NAME: {{ .Values.clusterName | default (printf "xmc-%s" .Values.environment) | quote }}
   XMC_CLUSTER_LOCATION: {{ .Values.clusterLocation | default "local" | quote }}
-  CLIENT_ID: {{ if and .Values.auth .Values.auth.clientId }}{{ .Values.auth.clientId | quote }}{{ else }}""{{ end }}
-  OIDC_USERNAME: {{ if and .Values.auth .Values.auth.username }}{{ .Values.auth.username | quote }}{{ else }}""{{ end }}
+  CLIENT_ID: {{ with .Values.auth }}{{ .clientId | default "" | quote }}{{ else }}""{{ end }}
+  OIDC_USERNAME: {{ with .Values.auth }}{{ .username | default "" | quote }}{{ else }}""{{ end }}
   {{- end }}

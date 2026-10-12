@@ -132,9 +132,12 @@ def wait_for_jobset_for_experiment(
     resolved_context = kube_context or os.environ.get("KUBE_CONTEXT", DEFAULT_KUBE_CONTEXT)
     deadline = time.monotonic() + timeout_seconds
     while True:
-        items = _fetch_jobsets_for_experiment(experiment_id, namespace, resolved_context)
-        if items:
-            return items[0]
+        try:
+            items = _fetch_jobsets_for_experiment(experiment_id, namespace, resolved_context)
+            if items:
+                return items[0]
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+            logger.warning("Transient error fetching JobSets (will retry): %s", exc)
         if time.monotonic() >= deadline:
             _log_actuator_diagnostics(resolved_context)
             raise RuntimeError(
@@ -149,14 +152,16 @@ def assert_jobset_contract(
     expected_queue: str = DEFAULT_QUEUE_NAME,
 ) -> None:
     """Asserts XMC's Non-Restarting JobSets Contract and Kueue queue labels on a JobSet."""
-    labels = jobset.get("metadata", {}).get("labels", {})
+    metadata = jobset.get("metadata") or {}
+    labels = metadata.get("labels") or {}
     if labels.get("kueue.x-k8s.io/queue-name") != expected_queue:
         raise RuntimeError(f"Expected kueue.x-k8s.io/queue-name={expected_queue!r}, got {labels!r}")
     if labels.get("app.kubernetes.io/managed-by") != "xmc":
         raise RuntimeError(f"Expected app.kubernetes.io/managed-by='xmc', got {labels!r}")
 
-    spec = jobset.get("spec", {})
-    max_restarts = spec.get("failurePolicy", {}).get("maxRestarts", 0)
+    spec = jobset.get("spec") or {}
+    failure_policy = spec.get("failurePolicy") or {}
+    max_restarts = failure_policy.get("maxRestarts", 0)
     if max_restarts != 0:
         raise RuntimeError(f"Expected spec.failurePolicy.maxRestarts == 0, got {max_restarts!r}")
 
@@ -164,13 +169,11 @@ def assert_jobset_contract(
     if not replicated_jobs:
         raise RuntimeError("Expected non-empty spec.replicatedJobs on JobSet")
     for rj in replicated_jobs:
-        restart_policy = (
-            rj.get("template", {})
-            .get("spec", {})
-            .get("template", {})
-            .get("spec", {})
-            .get("restartPolicy")
-        )
+        template = (rj or {}).get("template") or {}
+        job_spec = template.get("spec") or {}
+        pod_template = job_spec.get("template") or {}
+        pod_spec = pod_template.get("spec") or {}
+        restart_policy = pod_spec.get("restartPolicy")
         if restart_policy != "Never":
             raise RuntimeError(
                 f"Expected pod spec restartPolicy == 'Never', got {restart_policy!r}"

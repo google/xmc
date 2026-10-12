@@ -54,6 +54,17 @@ class ActuatorDevOidcConfigTest(unittest.TestCase):
         self.assertNotIn("CLIENT_ID:", manifest)
         self.assertNotIn("OIDC_USERNAME:", manifest)
 
+    def test_dev_environment_with_missing_auth_fields_renders_empty_strings(self) -> None:
+        """actuator-config must render empty strings when auth.clientId and auth.username are unset."""
+        manifest = render_template(
+            ACTUATOR_CONFIGMAP,
+            {
+                "isDevEnvironment": "true",
+            },
+        )
+        self.assertIn('CLIENT_ID: ""', manifest)
+        self.assertIn('OIDC_USERNAME: ""', manifest)
+
 
 if __name__ == "__main__":
     unittest.main()
