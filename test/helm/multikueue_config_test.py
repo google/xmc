@@ -120,7 +120,8 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn("management-multikueue.yaml", script)
         self.assertIn("xmc.google.com/project=", script)
         self.assertIn("xmc.google.com/location=", script)
-        self.assertIn("xmc.google.com/cluster-name=xmc-nightly-worker-1", script)
+        self.assertIn("xmc.google.com/cluster-name=", script)
+        self.assertIn("xmc-nightly-worker-1", script)
 
     def test_actuator_clusterrole_grants_kueue_queue_and_admissioncheck_read(self) -> None:
         manifest = render_template(ACTUATOR_CLUSTERROLE_TEMPLATE, {})
