@@ -248,33 +248,6 @@ class XMCUIBrowserSession:
         self.page.screenshot(path=path, full_page=full_page)
         return path
 
-    def _assert_authenticated_landing(self, expected_path: str, error_tag: str) -> None:
-        """Verifies the page did not land on an unauthorized view or unexpected redirect."""
-        body = self.page.locator("body").inner_text() or ""
-        current_path = urllib.parse.urlparse(self.page.url).path.rstrip("/")
-        auth_error_markers = (
-            "Sign in with Google",
-            "Secure ML Experiment Management",
-            "HTTP ERROR 401",
-            "HTTP ERROR 403",
-            "Access Denied",
-        )
-        if (
-            any(marker in body for marker in auth_error_markers)
-            or self.page.locator("xmc-home-page, .guest-page-container").count() != 0
-        ):
-            err_shot = self.take_screenshot(f"ui_AUTHENTICATION_REQUIRED_{error_tag}.png")
-            raise UIVerificationError(
-                f"❌ AUTHENTICATION REQUIRED: Landed on unauthorized or guest page "
-                f"(url={self.page.url}). Screenshot -> {err_shot}"
-            )
-        if current_path != expected_path:
-            err_shot = self.take_screenshot(f"ui_REDIRECT_{error_tag}.png")
-            raise UIVerificationError(
-                f"❌ UNEXPECTED REDIRECT: Expected path '{expected_path}' but landed on '{current_path}' "
-                f"(url={self.page.url}). Screenshot -> {err_shot}"
-            )
-
     def navigate_to_route(
         self,
         route_path: str,
@@ -297,24 +270,50 @@ class XMCUIBrowserSession:
         tag = error_tag or normalized_route.strip("/").replace("/", "_") or "root"
         self._assert_authenticated_landing(expected_path, tag)
 
+    def _assert_authenticated_landing(self, expected_path: str, error_tag: str) -> None:
+        """Verifies the page did not land on an unauthorized view or unexpected redirect."""
+        body = self.page.locator("body").inner_text() or ""
+        current_path = urllib.parse.urlparse(self.page.url).path.rstrip("/")
+        auth_error_markers = (
+            "Sign in with Google",
+            "Secure ML Experiment Management",
+            "HTTP ERROR 401",
+            "HTTP ERROR 403",
+            "Access Denied",
+        )
+        if (
+            any(marker in body for marker in auth_error_markers)
+            or self.page.locator("xmc-home-page, .guest-page-container").count() != 0
+        ):
+            err_shot = self.take_screenshot(f"ui_AUTHENTICATION_REQUIRED_{error_tag}.png")
+            raise UIVerificationError(
+                f"❌ AUTHENTICATION REQUIRED: Landed on unauthorized or guest page "
+                f"(url={self.page.url}). Screenshot -> {err_shot}"
+            )
+
+        if current_path != expected_path:
+            err_shot = self.take_screenshot(f"ui_REDIRECT_{error_tag}.png")
+            raise UIVerificationError(
+                f"❌ UNEXPECTED REDIRECT: Expected path '{expected_path}' but landed on '{current_path}' "
+                f"(url={self.page.url}). Screenshot -> {err_shot}"
+            )
+
     def assert_no_runtime_errors(
         self, context_label: str, ignored_http_substrings: Sequence[str] = ()
     ) -> None:
         """Asserts that no uncaught page errors, same-origin HTTP >= 400 responses, or error banners exist."""
-        banner_loc = self.page.locator("xmc-error-banner, .error-banner")
-        banner_text = (
-            (banner_loc.first.text_content() or "").strip() if banner_loc.count() > 0 else ""
-        )
-        unexpected_http = [
-            e for e in self.http_errors if not any(sub in e for sub in ignored_http_substrings)
+        b_loc = self.page.locator("xmc-error-banner, .error-banner")
+        banner = (b_loc.first.text_content() or "").strip() if b_loc.count() > 0 else ""
+        http_errs = [
+            e for e in self.http_errors if not any(s in e for s in ignored_http_substrings)
         ]
-        if not self.page_errors and not unexpected_http and not banner_text:
+        if not self.page_errors and not http_errs and not banner:
             print(f"  [✓] Verified zero runtime/HTTP/banner errors ({context_label})")
             return
         err_shot = self.take_screenshot(f"ui_RUNTIME_ERROR_{context_label}.png")
         raise UIVerificationError(
             f"❌ RUNTIME ERROR ({context_label}): page_errors={self.page_errors}, "
-            f"http_errors={unexpected_http}, error_banner='{banner_text}'. Screenshot -> {err_shot}"
+            f"http_errors={http_errs}, error_banner='{banner}'. Screenshot -> {err_shot}"
         )
 
     def navigate_to_experiment(self, xid: str | int, timeout_ms: int = 60000) -> None:
