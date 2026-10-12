@@ -499,14 +499,14 @@ func TestConstructJobSet_MultiKueueManagedBy(t *testing.T) {
 			},
 		}
 	}
-	newClusterQueueWithStrategy := func(name, strategyField, checkName string) *unstructured.Unstructured {
+	newClusterQueueWithStrategy := func(name, checkName string) *unstructured.Unstructured {
 		return &unstructured.Unstructured{
 			Object: map[string]any{
 				"apiVersion": "kueue.x-k8s.io/v1beta1",
 				"kind":       "ClusterQueue",
 				"metadata":   map[string]any{"name": name},
 				"spec": map[string]any{
-					strategyField: map[string]any{
+					"admissionChecksStrategy": map[string]any{
 						"admissionChecks": []any{
 							map[string]any{"name": checkName},
 						},
@@ -547,17 +547,7 @@ func TestConstructJobSet_MultiKueueManagedBy(t *testing.T) {
 			namespace: "multikueue-cpu",
 			objects: []*unstructured.Unstructured{
 				newLocalQueue("multikueue-cpu", "multikueue-cpu", "multikueue-cpu"),
-				newClusterQueueWithStrategy("multikueue-cpu", "admissionChecksStrategy", "multikueue-check"),
-				newAdmissionCheck("multikueue-check", constants.KueueMultiKueueControllerName),
-			},
-			wantManagedBy: ptr.To(constants.KueueMultiKueueControllerName),
-		},
-		{
-			name:      "MultiKueue queue via spec.admissionCheckStrategy sets spec.managedBy",
-			namespace: "multikueue-cpu",
-			objects: []*unstructured.Unstructured{
-				newLocalQueue("multikueue-cpu", "multikueue-cpu", "multikueue-cpu"),
-				newClusterQueueWithStrategy("multikueue-cpu", "admissionCheckStrategy", "multikueue-check"),
+				newClusterQueueWithStrategy("multikueue-cpu", "multikueue-check"),
 				newAdmissionCheck("multikueue-check", constants.KueueMultiKueueControllerName),
 			},
 			wantManagedBy: ptr.To(constants.KueueMultiKueueControllerName),

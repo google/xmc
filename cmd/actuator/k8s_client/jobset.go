@@ -309,7 +309,7 @@ func jobSetToUnstructured(jobSet *jobsetv1alpha2.JobSet) (*unstructured.Unstruct
 	return jobSetUnstructured, nil
 }
 
-func (c *Client) isMultiKueueQueue(ctx context.Context, namespace, queueName, targetController string) (bool, error) {
+func (c *Client) isMultiKueueQueue(ctx context.Context, namespace, queueName string) (bool, error) {
 	lq, err := c.fetchUnstructuredKueueResource(ctx, KueueLocalQueueGVR, "LocalQueue", namespace, queueName)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -332,7 +332,7 @@ func (c *Client) isMultiKueueQueue(ctx context.Context, namespace, queueName, ta
 		return false, err
 	}
 	for _, checkName := range extractClusterQueueAdmissionCheckNames(cq) {
-		isMK, err := c.isMultiKueueAdmissionCheck(ctx, checkName, targetController)
+		isMK, err := c.isMultiKueueAdmissionCheck(ctx, checkName)
 		if err != nil {
 			return false, err
 		}
@@ -362,28 +362,28 @@ func (c *Client) fetchUnstructuredKueueResource(ctx context.Context, gvr schema.
 }
 
 func extractClusterQueueAdmissionCheckNames(cq *unstructured.Unstructured) []string {
-	var names []string
 	if cq == nil || cq.Object == nil {
 		return nil
 	}
+	var names []string
 	if checks, found, err := unstructured.NestedStringSlice(cq.Object, "spec", "admissionChecks"); err == nil && found {
 		names = append(names, checks...)
 	}
-	for _, strategyKey := range []string{"admissionChecksStrategy", "admissionCheckStrategy"} {
-		if stratChecks, found, err := unstructured.NestedSlice(cq.Object, "spec", strategyKey, "admissionChecks"); err == nil && found {
-			for _, item := range stratChecks {
-				if m, ok := item.(map[string]any); ok {
-					if name, ok := m["name"].(string); ok && name != "" {
-						names = append(names, name)
-					}
-				}
+	stratChecks, found, err := unstructured.NestedSlice(cq.Object, "spec", "admissionChecksStrategy", "admissionChecks")
+	if err != nil || !found {
+		return names
+	}
+	for _, item := range stratChecks {
+		if m, ok := item.(map[string]any); ok {
+			if name, ok := m["name"].(string); ok && name != "" {
+				names = append(names, name)
 			}
 		}
 	}
 	return names
 }
 
-func (c *Client) isMultiKueueAdmissionCheck(ctx context.Context, checkName, targetController string) (bool, error) {
+func (c *Client) isMultiKueueAdmissionCheck(ctx context.Context, checkName string) (bool, error) {
 	ac, err := c.fetchUnstructuredKueueResource(ctx, KueueAdmissionCheckGVR, "AdmissionCheck", "", checkName)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -398,7 +398,7 @@ func (c *Client) isMultiKueueAdmissionCheck(ctx context.Context, checkName, targ
 	if err != nil {
 		return false, err
 	}
-	return controllerName == targetController, nil
+	return controllerName == kueueMultiKueueController, nil
 }
 
 func ensureQueueName(workUnit *esspb.WorkUnit, namespace string) {
