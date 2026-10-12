@@ -72,7 +72,7 @@ func WorkUnitExecutionRowToProto(row *spanner.Row) (*pb.WorkUnitExecution, error
 		execution.CompleteTime = timestamppb.New(completeTime.Time)
 	}
 
-	execution.State = pb.WorkUnitExecution_INACTIVE
+	data.MarkWorkUnitExecutionHistorical(execution)
 
 	return execution, nil
 }
@@ -107,8 +107,8 @@ func WorkUnitCurrentExecutionRowToProto(row *spanner.Row) (*pb.WorkUnitExecution
 	if err := row.ColumnByName("WorkUnitStatus", &workUnitExecution.Status); err != nil {
 		return nil, fmt.Errorf("failed to read column WorkUnitStatus: %w", err)
 	}
-	workUnitExecution.State = pb.WorkUnitExecution_ACTIVE
-	workUnitExecution.UpdateTime = workUnitExecution.Status.UpdateTime
+	data.MarkWorkUnitExecutionCurrent(workUnitExecution)
+	data.MirrorWorkUnitExecutionStatusUpdateTime(workUnitExecution)
 
 	return workUnitExecution, nil
 }
@@ -161,7 +161,7 @@ func CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, eid int64, executio
 			completeTime,                  // ExecutionCompleteTime
 			execution.Metadata,            // ExecutionMetadata
 			execution.Status,              // WorkUnitStatus
-			execution.UpdateTime.AsTime(), // UpdateTime
+			data.WorkUnitUpdateTimeForExecution(execution), // UpdateTime
 		},
 	)
 	return m

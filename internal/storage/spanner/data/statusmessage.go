@@ -20,6 +20,7 @@ import (
 	"cloud.google.com/go/spanner"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -113,9 +114,9 @@ func StatusMessageRowToProto(row *spanner.Row) (*essmsgpb.StatusMessage, error) 
 
 // StatusMessageProtoToInsertMutation creates a Spanner mutation to insert a StatusMessage.
 func StatusMessageProtoToInsertMutation(msg *essmsgpb.StructuredMessage, messageID int64, eid *int64, previousMsg *essmsgpb.StructuredMessage) (*spanner.Mutation, error) {
-	xid, wid, err := validator.ValidateStatusMessageParent(msg.GetParent())
+	xid, wid, err := data.StatusMessageParentIDs(msg.GetParent())
 	if err != nil {
-		return nil, fmt.Errorf("failed to validate status message parent %q: %w", msg.GetParent(), err)
+		return nil, err
 	}
 	workUnitID := spanner.NullInt64{Int64: wid, Valid: wid != 0}
 
@@ -124,10 +125,7 @@ func StatusMessageProtoToInsertMutation(msg *essmsgpb.StructuredMessage, message
 		executionID = spanner.NullInt64{Valid: true, Int64: *eid}
 	}
 
-	createTime := time.Now()
-	if msg.GetCreateTime() != nil {
-		createTime = msg.GetCreateTime().AsTime()
-	}
+	createTime := data.StatusMessageCreateTime(msg.GetCreateTime(), time.Now())
 
 	return spanner.Insert(
 		"StatusMessages",

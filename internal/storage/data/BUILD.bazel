@@ -21,6 +21,7 @@ go_library(
         "bits.go",
         "experiment.go",
         "operation.go",
+        "statusmessage.go",
         "workunit.go",
         "workunitexecutions.go",
         "xid.go",
@@ -36,6 +37,7 @@ go_library(
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/fieldmaskpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -46,6 +48,7 @@ go_test(
         "bits_test.go",
         "experiment_test.go",
         "operation_test.go",
+        "statusmessage_test.go",
         "workunit_test.go",
         "workunitexecutions_test.go",
         "xid_test.go",

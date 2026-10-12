@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -24,6 +25,36 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/state"
 )
+
+// MarkWorkUnitExecutionCurrent marks an execution stored as a work unit's current execution as ACTIVE.
+func MarkWorkUnitExecutionCurrent(execution *pb.WorkUnitExecution) {
+	if execution == nil {
+		return
+	}
+	execution.State = pb.WorkUnitExecution_ACTIVE
+}
+
+// MarkWorkUnitExecutionHistorical marks an archived (historical) execution as INACTIVE.
+func MarkWorkUnitExecutionHistorical(execution *pb.WorkUnitExecution) {
+	if execution == nil {
+		return
+	}
+	execution.State = pb.WorkUnitExecution_INACTIVE
+}
+
+// MirrorWorkUnitExecutionStatusUpdateTime copies Status.UpdateTime onto the execution UpdateTime.
+func MirrorWorkUnitExecutionStatusUpdateTime(execution *pb.WorkUnitExecution) {
+	if execution == nil {
+		return
+	}
+	execution.UpdateTime = execution.GetStatus().GetUpdateTime()
+}
+
+// WorkUnitUpdateTimeForExecution returns the parent WorkUnit UpdateTime to persist when the
+// current execution is written; it mirrors the execution UpdateTime.
+func WorkUnitUpdateTimeForExecution(execution *pb.WorkUnitExecution) time.Time {
+	return execution.GetUpdateTime().AsTime()
+}
 
 // MergeWorkUnitExecution merges an updated WorkUnitExecution proto message with a current one using a field mask.
 // The forceStatusMessageUpdate and deferToExistingMessage parameters control how the
