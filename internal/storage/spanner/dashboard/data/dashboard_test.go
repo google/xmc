@@ -20,7 +20,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/protobuf/proto"
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 )
 
 func TestDashboardProtoToInsertMutations_Success(t *testing.T) {

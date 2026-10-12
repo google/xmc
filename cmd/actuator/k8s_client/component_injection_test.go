@@ -32,9 +32,9 @@ import (
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	runtimefake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
 func createTestComponentCR(name, namespace string, gen int64, enabled bool, state string, conditions []map[string]any, access map[string]any) *unstructured.Unstructured {

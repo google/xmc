@@ -25,7 +25,7 @@ import (
 	"xmanager_cloud/api/filter/go/filtervisitor"
 	"xmanager_cloud/internal/logging"
 
-	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter"
 )
 
 // FunctionFunc is the callback used to process function calls when parsing an expression.

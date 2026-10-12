@@ -28,7 +28,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 
-	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter"
 )
 
 func TestGenerateQuery(t *testing.T) {

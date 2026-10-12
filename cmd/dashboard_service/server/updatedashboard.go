@@ -20,14 +20,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/validator"
 )
 
 // UpdateDashboard handles updating an existing dashboard with authorization and field mask validation.
-func (s *Server) UpdateDashboard(ctx context.Context, req *spb.UpdateDashboardRequest) (*dpb.Dashboard, error) {
+func (s *Server) UpdateDashboard(ctx context.Context, req *dpb.UpdateDashboardRequest) (*dpb.Dashboard, error) {
 	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)

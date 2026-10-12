@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	tpb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -37,7 +38,6 @@ import (
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/internal/toollibs/execution_environments"
 	"xmanager_cloud/internal/validator"
-	tpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

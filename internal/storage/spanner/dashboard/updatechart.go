@@ -23,7 +23,7 @@ import (
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	storagedata "xmanager_cloud/internal/storage/data"

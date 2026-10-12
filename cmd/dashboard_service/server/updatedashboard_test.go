@@ -23,8 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/auth"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -55,7 +54,7 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.UpdateDashboardRequest{
+		req := &dpb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
 				Name:  "dashboards/dash-123",
 				Title: "Updated Title",
@@ -99,7 +98,7 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.UpdateDashboardRequest{
+		req := &dpb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
 				Name:        "dashboards/dash-123",
 				Description: "New Description",
@@ -146,7 +145,7 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.UpdateDashboardRequest{
+		req := &dpb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
 				Name:     "dashboards/dash-123",
 				ChartIds: []string{"c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
@@ -190,7 +189,7 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.UpdateDashboardRequest{
+		req := &dpb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
 				Name:  "dashboards/dash-123",
 				Title: "Updated Title",
@@ -218,7 +217,7 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, &mockRepository{}, authMock, &mockXidClient{}, nil)
 
-		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
+		_, err := s.UpdateDashboard(ctx, &dpb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/1", Title: "Title"},
 		})
 		if status.Code(err) != codes.Unauthenticated {
@@ -231,21 +230,21 @@ func TestUpdateDashboard(t *testing.T) {
 
 		tests := []struct {
 			name string
-			req  *spb.UpdateDashboardRequest
+			req  *dpb.UpdateDashboardRequest
 		}{
 			{name: "nil request", req: nil},
-			{name: "nil dashboard", req: &spb.UpdateDashboardRequest{}},
-			{name: "empty name", req: &spb.UpdateDashboardRequest{Dashboard: &dpb.Dashboard{Title: "Title"}}},
-			{name: "invalid name format", req: &spb.UpdateDashboardRequest{Dashboard: &dpb.Dashboard{Name: "invalid", Title: "Title"}}},
-			{name: "invalid update mask path", req: &spb.UpdateDashboardRequest{
+			{name: "nil dashboard", req: &dpb.UpdateDashboardRequest{}},
+			{name: "empty name", req: &dpb.UpdateDashboardRequest{Dashboard: &dpb.Dashboard{Title: "Title"}}},
+			{name: "invalid name format", req: &dpb.UpdateDashboardRequest{Dashboard: &dpb.Dashboard{Name: "invalid", Title: "Title"}}},
+			{name: "invalid update mask path", req: &dpb.UpdateDashboardRequest{
 				Dashboard:  &dpb.Dashboard{Name: "dashboards/1", Title: "Title"},
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"owner"}},
 			}},
-			{name: "legacy charts update mask path", req: &spb.UpdateDashboardRequest{
+			{name: "legacy charts update mask path", req: &dpb.UpdateDashboardRequest{
 				Dashboard:  &dpb.Dashboard{Name: "dashboards/1", Title: "Title"},
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"charts"}},
 			}},
-			{name: "duplicate chart IDs in update mask", req: &spb.UpdateDashboardRequest{
+			{name: "duplicate chart IDs in update mask", req: &dpb.UpdateDashboardRequest{
 				Dashboard: &dpb.Dashboard{
 					Name:     "dashboards/1",
 					Title:    "Title",
@@ -253,7 +252,7 @@ func TestUpdateDashboard(t *testing.T) {
 				},
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"chart_ids"}},
 			}},
-			{name: "resource name in chart_ids update mask rejected", req: &spb.UpdateDashboardRequest{
+			{name: "resource name in chart_ids update mask rejected", req: &dpb.UpdateDashboardRequest{
 				Dashboard: &dpb.Dashboard{
 					Name:     "dashboards/1",
 					Title:    "Title",
@@ -281,7 +280,7 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
-		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
+		_, err := s.UpdateDashboard(ctx, &dpb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
 		})
 		if status.Code(err) != codes.NotFound {
@@ -297,7 +296,7 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
-		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
+		_, err := s.UpdateDashboard(ctx, &dpb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
 		})
 		if status.Code(err) != codes.Internal {
@@ -318,7 +317,7 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
+		_, err := s.UpdateDashboard(ctx, &dpb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
 		})
 		if status.Code(err) != codes.PermissionDenied {
@@ -339,7 +338,7 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
+		_, err := s.UpdateDashboard(ctx, &dpb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
 		})
 		if status.Code(err) != codes.Internal {
@@ -358,7 +357,7 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
-		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
+		_, err := s.UpdateDashboard(ctx, &dpb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
 		})
 		if status.Code(err) != codes.Internal {
@@ -377,7 +376,7 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
-		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
+		_, err := s.UpdateDashboard(ctx, &dpb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
 		})
 		if status.Code(err) != codes.NotFound {
@@ -389,7 +388,7 @@ func TestUpdateDashboard(t *testing.T) {
 		s := &Server{
 			auth: &mockAuthorizer{},
 		}
-		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
+		_, err := s.UpdateDashboard(ctx, &dpb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
 		})
 		if status.Code(err) != codes.FailedPrecondition {

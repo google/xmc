@@ -25,13 +25,13 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	storagetest "xmanager_cloud/internal/storage/testing"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )

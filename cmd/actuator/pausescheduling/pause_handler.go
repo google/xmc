@@ -23,12 +23,12 @@ import (
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/internal/workunit"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
