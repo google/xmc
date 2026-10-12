@@ -70,9 +70,14 @@ jobs:
       - name: 'Build and Push Example Container Images'
         env:
           PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}'
+          FILTER: ${{ inputs.examples_filter || '' }}
         run: |
           set -euo pipefail
           build_and_push() {
+            if [ -n "${FILTER}" ] && ! echo ",${FILTER}," | grep -qi ",$2,"; then
+              echo "Skipping $1 image build ($2 not in filter: ${FILTER})"
+              return 0
+            fi
             local image="us-docker.pkg.dev/${PROJECT_ID}/xmc/$1:latest"
             echo "Building $1 container image..."
             docker build -t "${image}" -f "examples/$2/Dockerfile" "${3:-examples/$2}"
