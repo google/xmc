@@ -302,10 +302,13 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 			want:     disabled(gateOutcome{PrepareCalls: 1, CompleteCalls: 1}),
 		},
 		{
-			name: "prepare failure keeps workload",
+			name: "prepare failure keeps workload and preserves Ready",
 			cms:  &mockCMS{prepareErr: status.Error(codes.Unavailable, "cms down")}, helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
-			want:    failed("CMSDeactivationFailed", gateOutcome{PrepareCalls: 1}),
-			wantMsg: "failed to prepare deactivation in CMS: rpc error: code = Unavailable desc = cms down",
+			want: gateOutcome{
+				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+				ReadyStatus: ConditionStatusTrue, ReadyReason: ReasonComponentHealthy, DegradedStatus: ConditionStatusFalse,
+				SetCalls: 1, PrepareCalls: 1,
+			},
 			wantErr: true,
 		},
 		{
@@ -352,9 +355,13 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 			want: disabled(gateOutcome{PrepareCalls: 1, CompleteCalls: 1, HelmDeleted: true}),
 		},
 		{
-			name: "other intent failure still fails deactivation",
+			name: "other intent failure still fails deactivation while preserving Ready",
 			cms:  &mockCMS{setErr: status.Error(codes.Unavailable, "cms down")}, helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
-			want:    failed("IntentApplicationFailed", gateOutcome{}),
+			want: gateOutcome{
+				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+				ReadyStatus: ConditionStatusTrue, ReadyReason: ReasonComponentHealthy, DegradedStatus: ConditionStatusFalse,
+				SetCalls: 1,
+			},
 			wantErr: true,
 		},
 	}
@@ -466,8 +473,8 @@ func TestWasComponentPreviouslyActive(t *testing.T) {
 		{name: "unhealthy after actuation", status: ConditionStatusFalse, reason: ReasonHealthProbeFailed, want: true},
 		{name: "deactivation blocked keeps workload", status: ConditionStatusFalse, reason: ReasonDeactivationBlocked, want: true},
 		{name: "deactivation incomplete was already torn down", status: ConditionStatusFalse, reason: ReasonDeactivationIncomplete, want: false},
-		{name: "intent failure may hide a running workload", status: ConditionStatusFalse, reason: "IntentApplicationFailed", want: true},
-		{name: "prepare failure may hide a running workload", status: ConditionStatusFalse, reason: "CMSDeactivationFailed", want: true},
+		{name: "helm upgrade failed after actuation", status: ConditionStatusFalse, reason: ReasonHelmUpgradeFailed, want: true},
+		{name: "initial sync pending never actuated", status: ConditionStatusUnknown, reason: ReasonInitialSyncPending, want: false},
 		{name: "gated on dependencies", status: ConditionStatusFalse, reason: ReasonDependenciesNotReady, want: false},
 		{name: "gated on a cycle", status: ConditionStatusFalse, reason: ReasonDependencyCycle, want: false},
 		{name: "disabled", status: ConditionStatusFalse, reason: reasonComponentDisabled, want: false},

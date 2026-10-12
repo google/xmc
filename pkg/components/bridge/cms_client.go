@@ -74,11 +74,14 @@ func (r *Reconciler) updateObservedCMS(ctx context.Context, name string, gen int
 // restarts the CMS heartbeat by stamping the Ready condition's transition time.
 func (r *Reconciler) syncReadyToCMS(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, readyStatus string) error {
 	if !shouldSyncToCMS(in.ExistingConditions, readyStatus, in.Generation) {
+		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 		return nil
 	}
 	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready="+readyStatus); err != nil {
+		setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
 		return fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
+	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 	resetReadyTransitionTime(res.Conditions)
 	return nil
 }

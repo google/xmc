@@ -1342,7 +1342,7 @@ func TestReconcileComponent_DependencyActivationGating(t *testing.T) {
 			spec: spec1P("redpanda"), deps: snapshot(readyComponent("redpanda", nil)),
 			want: gateOutcome{
 				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-				ReadyStatus: ConditionStatusFalse, ReadyReason: "IntentApplicationFailed", DegradedStatus: ConditionStatusTrue, SetCalls: 1,
+				ReadyStatus: ConditionStatusUnknown, ReadyReason: ReasonInitialSyncPending, DegradedStatus: ConditionStatusFalse, SetCalls: 1,
 			},
 			wantErr: true,
 		},
@@ -1665,9 +1665,151 @@ func assertMergedConditionsAndFinalizer(ctx context.Context, t *testing.T, compC
 		"ExternalSLA":         "True",
 		ConditionTypeReady:    ConditionStatusTrue,
 		ConditionTypeDegraded: ConditionStatusFalse,
+		ConditionTypeSynced:   ConditionStatusTrue,
 	}
 	if diff := cmp.Diff(want, seen); diff != "" {
 		t.Errorf("merged conditions mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
+	ctx := context.Background()
+	spec3P := &componentspb.ComponentSpec{
+		Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+		WrapperRef: &componentspb.WrapperRef{CrdGroup: "clickhouse.altinity.com", CrdVersion: "v1", CrdKind: "ClickHouseInstallation", TargetName: "ch"},
+	}
+	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
+	prober := &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123", ConnectionSecret: "ch-sec"}}
+	prevAccess := &AccessStatus{EnvVars: map[string]string{"ENDPOINT": "http://ch.xmc:8123", "HOST": "ch.xmc", "PORT": "8123", "SCHEME": "http", "SECRET_NAME": "ch-sec"}}
+	prevReady := []Condition{
+		{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy, Message: "Ready"},
+		{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonComponentHealthy, Message: "Ready"},
+	}
+
+	tests := []struct {
+		name           string
+		cms            *mockCMS
+		helm           *mockHelm
+		in             ReconcileComponentInput
+		wantErr        bool
+		wantState      componentspb.ComponentState
+		wantReady      string
+		wantReadyRsn   string
+		wantSynced     string
+		wantSyncedRsn  string
+		wantAccessKept bool
+	}{
+		{
+			name:          "initial reconcile CMS failure sets Ready=Unknown/InitialSyncPending and Synced=False/CMSSyncFailed",
+			cms:           &mockCMS{setErr: status.Error(codes.Unavailable, "cms down")},
+			in:            ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 1, Spec: spec3P, Enabled: true},
+			wantErr:       true,
+			wantState:     componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantReady:     ConditionStatusUnknown,
+			wantReadyRsn:  ReasonInitialSyncPending,
+			wantSynced:    ConditionStatusFalse,
+			wantSyncedRsn: ReasonCMSSyncFailed,
+		},
+		{
+			name:           "transient SetComponentIntent failure preserves Ready=True, ENABLED state, and status.access",
+			cms:            &mockCMS{setErr: status.Error(codes.Unavailable, "cms down")},
+			in:             ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true, ExistingConditions: prevReady, ExistingAccess: prevAccess},
+			wantErr:        true,
+			wantState:      componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantReady:      ConditionStatusTrue,
+			wantReadyRsn:   ReasonComponentHealthy,
+			wantSynced:     ConditionStatusFalse,
+			wantSyncedRsn:  ReasonCMSSyncFailed,
+			wantAccessKept: true,
+		},
+		{
+			name:           "transient UpdateObservedGeneration failure keeps newly evaluated Ready=True and status.access with Synced=False",
+			cms:            &mockCMS{obsErr: status.Error(codes.Unavailable, "cms down")},
+			in:             ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true},
+			wantErr:        true,
+			wantState:      componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantReady:      ConditionStatusTrue,
+			wantReadyRsn:   ReasonComponentHealthy,
+			wantSynced:     ConditionStatusFalse,
+			wantSyncedRsn:  ReasonCMSSyncFailed,
+			wantAccessKept: true,
+		},
+		{
+			name:           "successful CMS sync sets Synced=True/CMSSynced",
+			cms:            &mockCMS{},
+			in:             ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true},
+			wantState:      componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantReady:      ConditionStatusTrue,
+			wantReadyRsn:   ReasonComponentHealthy,
+			wantSynced:     ConditionStatusTrue,
+			wantSyncedRsn:  ReasonCMSSynced,
+			wantAccessKept: true,
+		},
+		{
+			name:           "CMS-detected dependency cycle in SetComponentIntent reports DependencyCycle and Synced=True while preserving access",
+			cms:            &mockCMS{setErr: status.Error(codes.FailedPrecondition, "dependency cycle detected: ch -> b -> ch")},
+			in:             ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true, ExistingConditions: prevReady, ExistingAccess: prevAccess},
+			wantErr:        true,
+			wantState:      componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantReady:      ConditionStatusFalse,
+			wantReadyRsn:   ReasonDependencyCycle,
+			wantSynced:     ConditionStatusTrue,
+			wantSyncedRsn:  ReasonCMSSynced,
+			wantAccessKept: true,
+		},
+		{
+			name:           "blocked deactivation preserves status.access while workload remains active",
+			cms:            &mockCMS{prepareErr: status.Error(codes.FailedPrecondition, "active dependents")},
+			in:             ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: false, ExistingConditions: prevReady, ExistingAccess: prevAccess},
+			wantState:      componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantReady:      ConditionStatusFalse,
+			wantReadyRsn:   ReasonDeactivationBlocked,
+			wantSynced:     ConditionStatusTrue,
+			wantSyncedRsn:  ReasonCMSSynced,
+			wantAccessKept: true,
+		},
+		{
+			name:           "1P Helm upgrade failure preserves status.access",
+			cms:            &mockCMS{},
+			helm:           &mockHelm{active: true, ensureErr: errors.New("helm upgrade failed")},
+			in:             ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec1P, Enabled: true, ExistingConditions: prevReady, ExistingAccess: prevAccess},
+			wantErr:        true,
+			wantState:      componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantReady:      ConditionStatusFalse,
+			wantReadyRsn:   ReasonHelmUpgradeFailed,
+			wantSynced:     ConditionStatusTrue,
+			wantSyncedRsn:  ReasonCMSSynced,
+			wantAccessKept: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var helmMgr HelmManager
+			if tt.helm != nil {
+				helmMgr = tt.helm
+			}
+			r, _ := NewReconciler(tt.cms, prober, helmMgr)
+			res, err := r.ReconcileComponent(ctx, tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ReconcileComponent() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if res.State != tt.wantState {
+				t.Errorf("State = %v, want %v", res.State, tt.wantState)
+			}
+			ready := findCondition(res.Conditions, ConditionTypeReady)
+			if ready == nil || ready.Status != tt.wantReady || ready.Reason != tt.wantReadyRsn {
+				t.Errorf("Ready condition = %+v, want %s/%s", ready, tt.wantReady, tt.wantReadyRsn)
+			}
+			synced := findCondition(res.Conditions, ConditionTypeSynced)
+			if synced == nil || synced.Status != tt.wantSynced || synced.Reason != tt.wantSyncedRsn {
+				t.Errorf("Synced condition = %+v, want %s/%s", synced, tt.wantSynced, tt.wantSyncedRsn)
+			}
+			if tt.wantAccessKept {
+				if diff := cmp.Diff(prevAccess, res.Access); diff != "" {
+					t.Errorf("Access mismatch (-want +got):\n%s", diff)
+				}
+			}
+		})
 	}
 }
 

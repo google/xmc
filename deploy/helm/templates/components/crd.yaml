@@ -49,6 +49,9 @@ spec:
         - name: Ready
           type: string
           jsonPath: .status.conditions[?(@.type=="Ready")].status
+        - name: Synced
+          type: string
+          jsonPath: .status.conditions[?(@.type=="Synced")].status
         - name: Class
           type: string
           jsonPath: .spec.componentClass
