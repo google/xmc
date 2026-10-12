@@ -16,11 +16,15 @@ package jobset
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,6 +40,7 @@ import (
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	"xmanager_cloud/cmd/reconciler/shared"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	storagepkg "xmanager_cloud/internal/storage"
 )
@@ -57,6 +62,10 @@ type mockStorageUpdater struct {
 	// gotFilters records the filter argument passed to each ListArtifacts call so
 	// tests can assert the reconciler applies the server-side ManagedXprof filter.
 	gotFilters []string
+
+	// onUpdate, when set, is invoked at the start of each UpdateWorkUnitExecutions
+	// call so tests can observe external state (e.g. finalizers) at write time.
+	onUpdate func(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate)
 }
 
 func (m *mockStorageUpdater) FetchCurrentWorkUnitExecution(ctx context.Context, xid, wid int64) (*spb.WorkUnitExecution, error) {
@@ -73,6 +82,9 @@ func (m *mockStorageUpdater) ListArtifacts(ctx context.Context, parent string, p
 }
 
 func (m *mockStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*spb.WorkUnitExecution, error) {
+	if m.onUpdate != nil {
+		m.onUpdate(ctx, xid, updates)
+	}
 	if m.calls == nil {
 		m.calls = make(map[int64][]*storagepkg.WorkUnitExecutionUpdate)
 	}
@@ -117,6 +129,7 @@ func TestNewReconciler_Validation(t *testing.T) {
 	}
 	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
 	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
+	store := &mockStorageUpdater{}
 
 	tests := []struct {
 		name    string
@@ -129,6 +142,7 @@ func TestNewReconciler_Validation(t *testing.T) {
 				Client:  cl,
 				Scheme:  scheme,
 				Batcher: batcher,
+				Storage: store,
 			},
 			wantErr: false,
 		},
@@ -137,6 +151,7 @@ func TestNewReconciler_Validation(t *testing.T) {
 			params: Params{
 				Scheme:  scheme,
 				Batcher: batcher,
+				Storage: store,
 			},
 			wantErr: true,
 		},
@@ -145,14 +160,25 @@ func TestNewReconciler_Validation(t *testing.T) {
 			params: Params{
 				Client:  cl,
 				Batcher: batcher,
+				Storage: store,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing batcher",
 			params: Params{
-				Client: cl,
-				Scheme: scheme,
+				Client:  cl,
+				Scheme:  scheme,
+				Storage: store,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing storage",
+			params: Params{
+				Client:  cl,
+				Scheme:  scheme,
+				Batcher: batcher,
 			},
 			wantErr: true,
 		},
@@ -255,6 +281,7 @@ func TestActuatorReconciler(t *testing.T) {
 				Client:  builder.Build(),
 				Scheme:  scheme,
 				Batcher: shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{}),
+				Storage: &mockStorageUpdater{},
 			})
 			if err != nil {
 				t.Fatalf("NewReconciler() unexpected error: %v", err)
@@ -310,6 +337,7 @@ func TestReconcileAddsToBatcher(t *testing.T) {
 		Client:  fakeClient,
 		Scheme:  scheme,
 		Batcher: shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{}),
+		Storage: &mockStorageUpdater{},
 	})
 	if err != nil {
 		t.Fatalf("NewReconciler() unexpected error: %v", err)
@@ -410,6 +438,7 @@ func TestActuatorReconcilerFinalizer_PatchErrors(t *testing.T) {
 				Client:  cl,
 				Scheme:  scheme,
 				Batcher: batcher,
+				Storage: &mockStorageUpdater{},
 			})
 			if err != nil {
 				t.Fatalf("NewReconciler() unexpected error: %v", err)
@@ -425,11 +454,13 @@ func TestActuatorReconcilerFinalizer_PatchErrors(t *testing.T) {
 			if gotErrs := testutil.ToFloat64(reconcileErrorsTotal.WithLabelValues()); gotErrs != tc.wantErrorCount {
 				t.Errorf("reconcileErrorsTotal = %v, want %v", gotErrs, tc.wantErrorCount)
 			}
-			if gotSent := testutil.ToFloat64(updatesSentTotal.WithLabelValues()); gotSent != 0 {
-				t.Errorf("updatesSentTotal = %v, want 0 when patch fails", gotSent)
+			// The STOPPED write and its batcher enqueue happen before the patch, so
+			// they are unaffected by patch failures.
+			if gotSent := testutil.ToFloat64(updatesSentTotal.WithLabelValues()); gotSent != 1 {
+				t.Errorf("updatesSentTotal = %v, want 1 (STOPPED enqueued before patch)", gotSent)
 			}
-			if len(batcher.Updates) != 0 {
-				t.Errorf("batcher.Updates len = %d, want 0 when patch fails", len(batcher.Updates))
+			if got := batcher.Updates[123][1][shared.JobsetSource].WorkUnitExecution.GetStatus().GetState(); got != spb.WorkUnitStatus_STOPPED {
+				t.Errorf("batcher JobsetSource state = %v, want STOPPED", got)
 			}
 		})
 	}
@@ -474,6 +505,7 @@ func TestActuatorReconcilerFinalizer_PatchTestsFinalizerIndex(t *testing.T) {
 		Client:  cl,
 		Scheme:  scheme,
 		Batcher: shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{}),
+		Storage: &mockStorageUpdater{},
 	})
 	if err != nil {
 		t.Fatalf("NewReconciler() unexpected error: %v", err)
@@ -492,13 +524,10 @@ func TestActuatorReconcilerFinalizer_PatchTestsFinalizerIndex(t *testing.T) {
 	}
 }
 
-func TestActuatorReconcilerFinalizer_WithBatcherUpdate(t *testing.T) {
-	scheme, err := newScheme()
-	if err != nil {
-		t.Fatalf("Failed to create scheme: %v", err)
-	}
-
-	baseJobSetWithLabels := &v1alpha2.JobSet{
+// deletingJobSet returns the baseline JobSet for finalizer tests: being deleted,
+// carrying valid XMC labels (xid=123, wid=1, eid=1) and the reconciler finalizer.
+func deletingJobSet() *v1alpha2.JobSet {
+	return &v1alpha2.JobSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-jobset",
 			Namespace: "default",
@@ -507,176 +536,296 @@ func TestActuatorReconcilerFinalizer_WithBatcherUpdate(t *testing.T) {
 				constants.WorkUnitIDLabel:   "1",
 				constants.ExecutionIDLabel:  "1",
 			},
+			Finalizers:        []string{constants.JobSetFinalizer},
+			DeletionTimestamp: &metav1.Time{Time: time.Date(2025, time.November, 19, 15, 59, 26, 0, time.UTC)},
+		},
+	}
+}
+
+// stoppedWrite captures the storage-write fields asserted by finalizer tests, plus
+// the JobSet finalizers observed at the moment of the write.
+type stoppedWrite struct {
+	XID, WID, EID     int64
+	State             spb.WorkUnitStatus_WorkUnitState
+	FinalizersAtWrite []string
+}
+
+func TestHandleJobSetFinalizerRemoval(t *testing.T) {
+	scheme, err := newScheme()
+	if err != nil {
+		t.Fatalf("Failed to create scheme: %v", err)
+	}
+	key := types.NamespacedName{Name: "test-jobset", Namespace: "default"}
+	creationTime := metav1.Time{Time: time.Date(2025, time.November, 19, 15, 59, 26, 0, time.UTC)}
+	// A STOPPED write for the baseline labels, made while the finalizer is still present.
+	wantStopped := []stoppedWrite{{
+		XID:               123,
+		WID:               1,
+		EID:               1,
+		State:             spb.WorkUnitStatus_STOPPED,
+		FinalizersAtWrite: []string{constants.JobSetFinalizer},
+	}}
+	// A stale pending JobsetSource update for the same work unit execution.
+	pendingRunning := &storagepkg.WorkUnitExecutionUpdate{
+		WID: 1,
+		EID: 1,
+		WorkUnitExecution: &spb.WorkUnitExecution{
+			Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_RUNNING},
 		},
 	}
 
-	jobSetWithLabelsAndFinalizer := baseJobSetWithLabels.DeepCopy()
-	jobSetWithLabelsAndFinalizer.Finalizers = []string{constants.JobSetFinalizer}
-
-	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-jobset", Namespace: "default"}}
-
-	testCases := []struct {
-		name           string
-		initialJobSet  *v1alpha2.JobSet
-		req            ctrl.Request
-		wantRequeue    bool
-		wantFinalizers []string
-		wantState      spb.WorkUnitStatus_WorkUnitState
+	tests := []struct {
+		name          string
+		jobSet        *v1alpha2.JobSet
+		pending       *storagepkg.WorkUnitExecutionUpdate
+		updateErr     error
+		sinceDeletion time.Duration
+		wantErr       bool
+		wantDeleted   bool
+		wantWrites    []stoppedWrite
+		wantBatched   bool
+		wantAbandoned map[string]float64
 	}{
 		{
-			name: "Deletion with valid labels sends STOPPED update and removes finalizer",
-			initialJobSet: func() *v1alpha2.JobSet {
-				js := jobSetWithLabelsAndFinalizer.DeepCopy()
-				js.DeletionTimestamp = &metav1.Time{Time: time.Date(2025, time.November, 19, 15, 59, 26, 0, time.UTC)}
-				return js
-			}(),
-			req:            req,
-			wantRequeue:    false,
-			wantFinalizers: nil,
-			wantState:      spb.WorkUnitStatus_STOPPED,
+			name:        "write succeeds before finalizer is removed and is enqueued",
+			jobSet:      deletingJobSet(),
+			wantDeleted: true,
+			wantWrites:  wantStopped,
+			wantBatched: true,
 		},
 		{
-			name: "Deletion with nested CreationTimestamp succeeds",
-			initialJobSet: func() *v1alpha2.JobSet {
-				js := jobSetWithLabelsAndFinalizer.DeepCopy()
-				js.DeletionTimestamp = &metav1.Time{Time: time.Date(2025, time.November, 19, 15, 59, 26, 0, time.UTC)}
-				js.Spec.ReplicatedJobs = []v1alpha2.ReplicatedJob{
-					{
-						Name: "rj1",
-						Template: batchv1.JobTemplateSpec{
-							ObjectMeta: metav1.ObjectMeta{
-								CreationTimestamp: metav1.Time{Time: time.Date(2025, time.November, 19, 15, 59, 26, 0, time.UTC)},
-							},
-							Spec: batchv1.JobSpec{
-								Template: corev1.PodTemplateSpec{
-									ObjectMeta: metav1.ObjectMeta{
-										CreationTimestamp: metav1.Time{Time: time.Date(2025, time.November, 19, 15, 59, 26, 0, time.UTC)},
-									},
-								},
-							},
-						},
+			name:        "successful write replaces stale pending batcher update",
+			jobSet:      deletingJobSet(),
+			pending:     pendingRunning,
+			wantDeleted: true,
+			wantWrites:  wantStopped,
+			wantBatched: true,
+		},
+		{
+			name: "nested CreationTimestamp succeeds",
+			jobSet: func() *v1alpha2.JobSet {
+				js := deletingJobSet()
+				js.Spec.ReplicatedJobs = []v1alpha2.ReplicatedJob{{
+					Name: "rj1",
+					Template: batchv1.JobTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{CreationTimestamp: creationTime},
+						Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{
+							ObjectMeta: metav1.ObjectMeta{CreationTimestamp: creationTime},
+						}},
 					},
-				}
+				}}
 				return js
 			}(),
-			req:            req,
-			wantRequeue:    false,
-			wantFinalizers: nil,
-			wantState:      spb.WorkUnitStatus_STOPPED,
+			wantDeleted: true,
+			wantWrites:  wantStopped,
+			wantBatched: true,
+		},
+		{
+			name:       "transient Unavailable keeps finalizer",
+			jobSet:     deletingJobSet(),
+			updateErr:  fmt.Errorf("spanner: %w", grpcerr.ErrUnavailable),
+			wantErr:    true,
+			wantWrites: wantStopped,
+		},
+		{
+			name:       "context deadline keeps finalizer",
+			jobSet:     deletingJobSet(),
+			updateErr:  context.DeadlineExceeded,
+			wantErr:    true,
+			wantWrites: wantStopped,
+		},
+		{
+			name:       "unclassified error keeps finalizer",
+			jobSet:     deletingJobSet(),
+			updateErr:  errors.New("boom"),
+			wantErr:    true,
+			wantWrites: wantStopped,
+		},
+		{
+			name:          "transient error within retry budget keeps finalizer",
+			jobSet:        deletingJobSet(),
+			updateErr:     grpcerr.ErrUnavailable,
+			sinceDeletion: 14 * time.Minute,
+			wantErr:       true,
+			wantWrites:    wantStopped,
+		},
+		{
+			name:          "transient error past retry budget releases finalizer",
+			jobSet:        deletingJobSet(),
+			updateErr:     grpcerr.ErrUnavailable,
+			sinceDeletion: 16 * time.Minute,
+			wantDeleted:   true,
+			wantWrites:    wantStopped,
+			wantAbandoned: map[string]float64{abandonReasonRetryBudgetExhausted: 1},
+		},
+		{
+			name:          "NotFound releases finalizer",
+			jobSet:        deletingJobSet(),
+			updateErr:     fmt.Errorf("work unit execution 1 not found: %w", grpcerr.ErrNotFound),
+			wantDeleted:   true,
+			wantWrites:    wantStopped,
+			wantAbandoned: map[string]float64{abandonReasonPermanent: 1},
+		},
+		{
+			name:          "FailedPrecondition releases finalizer",
+			jobSet:        deletingJobSet(),
+			updateErr:     grpcerr.ErrFailedPrecondition,
+			wantDeleted:   true,
+			wantWrites:    wantStopped,
+			wantAbandoned: map[string]float64{abandonReasonPermanent: 1},
+		},
+		{
+			name:          "InvalidArgument releases finalizer",
+			jobSet:        deletingJobSet(),
+			updateErr:     grpcerr.ErrInvalidArgument,
+			wantDeleted:   true,
+			wantWrites:    wantStopped,
+			wantAbandoned: map[string]float64{abandonReasonPermanent: 1},
+		},
+		{
+			name:          "PermissionDenied releases finalizer",
+			jobSet:        deletingJobSet(),
+			updateErr:     grpcerr.ErrPermissionDenied,
+			wantDeleted:   true,
+			wantWrites:    wantStopped,
+			wantAbandoned: map[string]float64{abandonReasonPermanent: 1},
+		},
+		{
+			name: "invalid labels skip write and release finalizer",
+			jobSet: func() *v1alpha2.JobSet {
+				js := deletingJobSet()
+				js.Labels = nil
+				return js
+			}(),
+			wantDeleted: true,
 		},
 	}
 
-	for _, tc := range testCases {
+	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			updatesSentTotal.Reset()
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tc.initialJobSet).Build()
+			stoppedWriteAbandonedTotal.Reset()
+			cl := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tc.jobSet).Build()
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
-			reconciler, err := NewReconciler(Params{
-				Client:  fakeClient,
-				Scheme:  scheme,
-				Batcher: batcher,
-			})
+			if tc.pending != nil {
+				batcher.Add(t.Context(), 123, *tc.pending, shared.JobsetSource)
+			}
+			var gotWrites []stoppedWrite
+			var lastWritten *storagepkg.WorkUnitExecutionUpdate
+			store := &mockStorageUpdater{updateErr: tc.updateErr}
+			store.onUpdate = func(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) {
+				if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > stoppedWriteTimeout {
+					t.Errorf("storage ctx deadline = %v (set %v), want within %v", deadline, ok, stoppedWriteTimeout)
+				}
+				var js v1alpha2.JobSet
+				if err := cl.Get(context.Background(), key, &js); err != nil {
+					t.Errorf("Get(JobSet) at write time failed: %v", err)
+				}
+				for _, u := range updates {
+					lastWritten = u
+					gotWrites = append(gotWrites, stoppedWrite{
+						XID:               xid,
+						WID:               u.WID,
+						EID:               u.EID,
+						State:             u.WorkUnitExecution.GetStatus().GetState(),
+						FinalizersAtWrite: js.Finalizers,
+					})
+				}
+			}
+			reconciler, err := NewReconciler(Params{Client: cl, Scheme: scheme, Batcher: batcher, Storage: store})
 			if err != nil {
 				t.Fatalf("NewReconciler() unexpected error: %v", err)
 			}
+			reconciler.now = func() time.Time { return tc.jobSet.DeletionTimestamp.Add(tc.sinceDeletion) }
 
-			result, err := reconciler.Reconcile(context.Background(), tc.req)
-			if err != nil {
-				t.Fatalf("Reconcile() failed: %v", err)
+			result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+			if (err != nil) != tc.wantErr {
+				t.Errorf("Reconcile() error = %v, wantErr %v", err, tc.wantErr)
 			}
-
-			if gotRequeue := !result.IsZero(); gotRequeue != tc.wantRequeue {
-				t.Errorf("Reconcile() result = %+v, want requeue %v", result, tc.wantRequeue)
+			if !result.IsZero() {
+				t.Errorf("Reconcile() result = %+v, want zero result", result)
+			}
+			if diff := cmp.Diff(tc.wantWrites, gotWrites); diff != "" {
+				t.Errorf("storage writes mismatch (-want +got):\n%s", diff)
 			}
 
 			var gotJobSet v1alpha2.JobSet
-			err = fakeClient.Get(context.Background(), tc.req.NamespacedName, &gotJobSet)
-			if tc.initialJobSet.DeletionTimestamp != nil && len(tc.initialJobSet.Finalizers) > 0 {
-				if err == nil || !k8serrors.IsNotFound(err) {
-					t.Fatalf("Expected NotFound error after finalizer removal during deletion, but got err: %v", err)
-				}
-			} else if err != nil {
-				t.Fatalf("Failed to get JobSet after reconcile: %v", err)
+			getErr := cl.Get(context.Background(), key, &gotJobSet)
+			if gotDeleted := k8serrors.IsNotFound(getErr); gotDeleted != tc.wantDeleted {
+				t.Errorf("JobSet deleted = %v (Get err: %v), want %v", gotDeleted, getErr, tc.wantDeleted)
 			}
-
-			if err == nil {
-				if diff := cmp.Diff(tc.wantFinalizers, gotJobSet.Finalizers); diff != "" {
-					t.Errorf("JobSet finalizers unexpected diff (-want +got):\n%s", diff)
+			if !tc.wantDeleted {
+				if diff := cmp.Diff([]string{constants.JobSetFinalizer}, gotJobSet.Finalizers); diff != "" {
+					t.Errorf("JobSet finalizers mismatch (-want +got):\n%s", diff)
 				}
 			}
 
-			batcher.UpdatesMu.Lock()
-			defer batcher.UpdatesMu.Unlock()
-			if len(batcher.Updates) == 0 {
-				t.Fatalf("Expected update in batcher, but batcher is empty")
+			for _, reason := range []string{abandonReasonPermanent, abandonReasonRetryBudgetExhausted} {
+				if got := testutil.ToFloat64(stoppedWriteAbandonedTotal.WithLabelValues(reason)); got != tc.wantAbandoned[reason] {
+					t.Errorf("stoppedWriteAbandonedTotal{reason=%q} = %v, want %v", reason, got, tc.wantAbandoned[reason])
+				}
 			}
-			update := batcher.Updates[123][1][shared.JobsetSource]
-			if update.WorkUnitExecution.GetStatus().GetState() != tc.wantState {
-				t.Errorf("Batcher update state = %v, want %v", update.WorkUnitExecution.GetStatus().GetState(), tc.wantState)
-			}
+			assertStoppedBatched(t, batcher, tc.wantBatched, lastWritten)
+		})
+	}
+}
 
-			if val := testutil.ToFloat64(updatesSentTotal.WithLabelValues()); val != 1 {
-				t.Errorf("updatesSentTotal counter mismatch: got %v, want 1", val)
+// assertStoppedBatched checks that the batcher holds exactly the written STOPPED
+// update for xid=123/wid=1 (and updatesSentTotal is 1) when wantBatched, or is
+// empty (and updatesSentTotal is 0) otherwise.
+func assertStoppedBatched(t *testing.T, batcher *shared.UpdateBatcher, wantBatched bool, written *storagepkg.WorkUnitExecutionUpdate) {
+	t.Helper()
+	wantSent := 0.0
+	if wantBatched {
+		wantSent = 1
+	}
+	if got := testutil.ToFloat64(updatesSentTotal.WithLabelValues()); got != wantSent {
+		t.Errorf("updatesSentTotal = %v, want %v", got, wantSent)
+	}
+	batcher.UpdatesMu.Lock()
+	defer batcher.UpdatesMu.Unlock()
+	if !wantBatched {
+		if len(batcher.Updates) != 0 {
+			t.Errorf("batcher.Updates = %v, want empty", batcher.Updates)
+		}
+		return
+	}
+	got, ok := batcher.Updates[123][1][shared.JobsetSource]
+	if !ok || written == nil {
+		t.Fatalf("batcher slot present = %v, written = %v; want both", ok, written)
+	}
+	if diff := cmp.Diff(*written, got, protocmp.Transform()); diff != "" {
+		t.Errorf("batcher slot mismatch, want the written STOPPED update (-want +got):\n%s", diff)
+	}
+}
+
+func TestIsPermanentStorageError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "wrapped NotFound sentinel", err: fmt.Errorf("lookup: %w", grpcerr.ErrNotFound), want: true},
+		{name: "raw InvalidArgument status", err: status.Error(codes.InvalidArgument, "bad"), want: true},
+		{name: "FailedPrecondition sentinel", err: grpcerr.ErrFailedPrecondition, want: true},
+		{name: "PermissionDenied sentinel", err: grpcerr.ErrPermissionDenied, want: true},
+		{name: "Unavailable", err: grpcerr.ErrUnavailable, want: false},
+		{name: "Aborted", err: status.Error(codes.Aborted, "retry"), want: false},
+		{name: "Unknown status", err: status.Error(codes.Unknown, "?"), want: false},
+		{name: "plain error", err: errors.New("boom"), want: false},
+		{name: "context deadline", err: context.DeadlineExceeded, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isPermanentStorageError(tc.err); got != tc.want {
+				t.Errorf("isPermanentStorageError(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
 	}
 }
 
-func TestActuatorReconcilerFinalizer_WithoutBatcherUpdateDeletesJobSet(t *testing.T) {
-	scheme, err := newScheme()
-	if err != nil {
-		t.Fatalf("Failed to create scheme: %v", err)
-	}
-
-	jobSetWithoutLabels := &v1alpha2.JobSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-jobset-no-labels",
-			Namespace: "default",
-		},
-	}
-
-	jobSetWithoutLabelsWithFinalizer := jobSetWithoutLabels.DeepCopy()
-	jobSetWithoutLabelsWithFinalizer.Finalizers = []string{constants.JobSetFinalizer}
-
-	reqNoLabels := ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-jobset-no-labels", Namespace: "default"}}
-
-	initialJobSet := jobSetWithoutLabelsWithFinalizer.DeepCopy()
-	initialJobSet.DeletionTimestamp = &metav1.Time{Time: time.Date(2025, time.November, 19, 15, 59, 26, 0, time.UTC)}
-
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initialJobSet).Build()
-	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
-	reconciler, err := NewReconciler(Params{
-		Client:  fakeClient,
-		Scheme:  scheme,
-		Batcher: batcher,
-	})
-	if err != nil {
-		t.Fatalf("NewReconciler() unexpected error: %v", err)
-	}
-
-	result, err := reconciler.Reconcile(context.Background(), reqNoLabels)
-	if err != nil {
-		t.Fatalf("Reconcile() failed: %v", err)
-	}
-
-	if !result.IsZero() {
-		t.Errorf("Reconcile() result = %+v, want zero result", result)
-	}
-
-	var gotJobSet v1alpha2.JobSet
-	err = fakeClient.Get(context.Background(), reqNoLabels.NamespacedName, &gotJobSet)
-	if err == nil || !k8serrors.IsNotFound(err) {
-		t.Fatalf("Expected NotFound error after finalizer removal during deletion, but got err: %v", err)
-	}
-
-	batcher.UpdatesMu.Lock()
-	defer batcher.UpdatesMu.Unlock()
-	if len(batcher.Updates) != 0 {
-		t.Errorf("Expected no updates in batcher, got %d", len(batcher.Updates))
-	}
-}
-
-func TestActuatorReconcilerFinalizer_WithoutBatcherUpdateDoesNotDeleteJobSet(t *testing.T) {
+func TestActuatorReconcilerFinalizer_WithoutXMCFinalizerSkipsStoppedWrite(t *testing.T) {
 	scheme, err := newScheme()
 	if err != nil {
 		t.Fatalf("Failed to create scheme: %v", err)
@@ -702,10 +851,12 @@ func TestActuatorReconcilerFinalizer_WithoutBatcherUpdateDoesNotDeleteJobSet(t *
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initialJobSet).Build()
 	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
+	store := &mockStorageUpdater{}
 	reconciler, err := NewReconciler(Params{
 		Client:  fakeClient,
 		Scheme:  scheme,
 		Batcher: batcher,
+		Storage: store,
 	})
 	if err != nil {
 		t.Fatalf("NewReconciler() unexpected error: %v", err)
@@ -734,6 +885,9 @@ func TestActuatorReconcilerFinalizer_WithoutBatcherUpdateDoesNotDeleteJobSet(t *
 	if len(batcher.Updates) != 0 {
 		t.Errorf("Expected no updates in batcher, got %d", len(batcher.Updates))
 	}
+	if len(store.calls) != 0 {
+		t.Errorf("Expected no storage writes, got %v", store.calls)
+	}
 }
 
 func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
@@ -742,6 +896,7 @@ func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
 	reconcileErrorsTotal.WithLabelValues()
 	reconcileDuration.WithLabelValues()
 	updatesSentTotal.WithLabelValues()
+	stoppedWriteAbandonedTotal.WithLabelValues(abandonReasonPermanent)
 	mfs, err := ctrlmetrics.Registry.Gather()
 	if err != nil {
 		t.Fatalf("ctrlmetrics.Registry.Gather() failed: %v", err)
@@ -750,7 +905,7 @@ func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
 	for _, mf := range mfs {
 		registered[mf.GetName()] = true
 	}
-	for _, name := range []string{"jobset_reconcile_total", "jobset_reconcile_errors_total", "jobset_reconcile_duration_milliseconds", "jobset_updates_sent_to_batcher_total", "jobset_reconciler_mlrun_sync_duration_seconds"} {
+	for _, name := range []string{"jobset_reconcile_total", "jobset_reconcile_errors_total", "jobset_reconcile_duration_milliseconds", "jobset_updates_sent_to_batcher_total", "jobset_stopped_write_abandoned_total", "jobset_reconciler_mlrun_sync_duration_seconds"} {
 		if !registered[name] {
 			t.Errorf("metric family %q not registered on ctrlmetrics.Registry", name)
 		}

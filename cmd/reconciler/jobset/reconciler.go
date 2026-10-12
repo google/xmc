@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,6 +40,7 @@ import (
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/kubernetes/common/labels"
 	"xmanager_cloud/internal/logging"
+	storagepkg "xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -62,6 +65,17 @@ var (
 		Name: "jobset_updates_sent_to_batcher_total",
 		Help: "Total number of updates sent to the batcher from the JobSet reconciler",
 	}, []string{})
+
+	stoppedWriteAbandonedTotal = shared.MetricsFactory.NewCounterVec(prometheus.CounterOpts{
+		Name: "jobset_stopped_write_abandoned_total",
+		Help: "Total number of STOPPED status writes on JobSet deletion that were abandoned (finalizer removed without a successful write), by reason",
+	}, []string{"reason"})
+)
+
+// Reasons recorded on stoppedWriteAbandonedTotal.
+const (
+	abandonReasonPermanent            = "permanent"
+	abandonReasonRetryBudgetExhausted = "retry_budget_exhausted"
 )
 
 // Params holds dependencies and configuration for constructing a JobSet Reconciler.
@@ -90,6 +104,10 @@ type Reconciler struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
+
+	// now returns the current time; injectable so tests can control the
+	// STOPPED-write retry budget.
+	now func() time.Time
 }
 
 // NewReconciler creates and validates a new JobSet Reconciler.
@@ -103,6 +121,9 @@ func NewReconciler(p Params) (*Reconciler, error) {
 	if p.Batcher == nil {
 		return nil, errors.New("batcher is required")
 	}
+	if p.Storage == nil {
+		return nil, errors.New("storage is required")
+	}
 	return &Reconciler{
 		Client:                   p.Client,
 		Scheme:                   p.Scheme,
@@ -114,6 +135,7 @@ func NewReconciler(p Params) (*Reconciler, error) {
 		StartupPodErrorCheckTime: p.StartupPodErrorCheckTime,
 		Storage:                  p.Storage,
 		MLRunClient:              p.MLRunClient,
+		now:                      time.Now,
 	}, nil
 }
 
@@ -130,8 +152,11 @@ type ManagedXprofArtifactReader interface {
 
 // ReconcilerStorage is the storage surface the JobSet reconciler depends on. It is
 // composed from focused interfaces so callers and tests only implement what they use.
+// shared.StorageUpdater is used to write the terminal STOPPED status synchronously
+// before releasing a deleting JobSet's finalizer.
 type ReconcilerStorage interface {
 	WorkUnitExecutionReader
+	shared.StorageUpdater
 	ManagedXprofArtifactReader
 }
 
@@ -183,18 +208,88 @@ func removeFinalizerPatch(idx int, finalizer string) client.Patch {
 	return client.RawPatch(types.JSONPatchType, []byte(payload))
 }
 
-func (r *Reconciler) enqueueStoppedUpdateOnDelete(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, labelsErr error) {
-	if labelsErr != nil {
-		logging.Warn(ctx, "JobSet is being deleted with finalizer but has invalid labels", "namespace", jobSet.Namespace, "error", labelsErr)
-		return
+// stoppedWriteTimeout bounds the synchronous STOPPED write performed before the
+// finalizer is removed. The finalizer is kept when the write fails, so retries are
+// cheap; the short bound limits how long a reconcile worker blocks during a
+// storage outage.
+const stoppedWriteTimeout = 10 * time.Second
+
+// maxStoppedWriteRetryAge bounds how long after the JobSet's deletionTimestamp a
+// transiently failing STOPPED write keeps the finalizer. Past this age the write
+// is abandoned so that deletion is never blocked indefinitely.
+const maxStoppedWriteRetryAge = 15 * time.Minute
+
+// isPermanentStorageError reports whether a WorkUnitExecution update failed in a
+// way that retrying cannot fix (for example, the work unit no longer exists).
+// All other errors, including deadlines and Unavailable/Aborted, are treated as
+// transient.
+func isPermanentStorageError(err error) bool {
+	switch status.Code(err) {
+	case codes.NotFound, codes.InvalidArgument, codes.FailedPrecondition, codes.PermissionDenied:
+		return true
+	default:
+		return false
 	}
-	update := createStoppedUpdate(wid, eid)
-	updatesSentTotal.WithLabelValues().Inc()
-	r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
-	logging.Debug(ctx, "Added STOPPED update to batch for JobSet", "namespace", jobSet.Namespace)
 }
 
-// handleJobSetFinalizerRemoval processes a JobSet that is being deleted.
+// stoppedWriteAbandonReason returns why a failed STOPPED write should be given up
+// on, or "" if it should be retried. A nil deletionTimestamp is treated as within
+// the retry budget.
+func (r *Reconciler) stoppedWriteAbandonReason(jobSet *v1alpha2.JobSet, err error) string {
+	if isPermanentStorageError(err) {
+		return abandonReasonPermanent
+	}
+	if ts := jobSet.DeletionTimestamp; ts != nil && r.now().Sub(ts.Time) > maxStoppedWriteRetryAge {
+		return abandonReasonRetryBudgetExhausted
+	}
+	return ""
+}
+
+// persistStoppedOnDelete synchronously writes the terminal STOPPED status for a
+// deleting JobSet. It returns an error only for retryable storage failures, so the
+// caller keeps the finalizer and controller-runtime retries with backoff. Invalid
+// labels, permanent storage errors, and failures past maxStoppedWriteRetryAge are
+// logged and swallowed so that deletion is never blocked indefinitely.
+//
+// Retries are safe: storage skips updates whose EID is not the current execution,
+// and terminal states (including STOPPED) allow no further transitions
+// (state.WorkUnitAllowedForwardTransitions).
+func (r *Reconciler) persistStoppedOnDelete(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, labelsErr error) error {
+	if labelsErr != nil {
+		logging.Warn(ctx, "JobSet is being deleted with finalizer but has invalid labels", "namespace", jobSet.Namespace, "error", labelsErr)
+		return nil
+	}
+	update := createStoppedUpdate(wid, eid)
+	writeCtx, cancel := context.WithTimeout(ctx, stoppedWriteTimeout)
+	defer cancel()
+	if _, err := r.Storage.UpdateWorkUnitExecutions(writeCtx, xid, []*storagepkg.WorkUnitExecutionUpdate{update}); err != nil {
+		return r.handleStoppedWriteFailure(ctx, jobSet, err)
+	}
+	logging.Debug(ctx, "Persisted STOPPED status for deleting JobSet", "namespace", jobSet.Namespace)
+	// Also enqueue the same update so it replaces any pending stale JobsetSource
+	// update for this work unit, which could otherwise later overwrite the STOPPED
+	// system message when the batcher flushes.
+	updatesSentTotal.WithLabelValues().Inc()
+	r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
+	return nil
+}
+
+// handleStoppedWriteFailure either abandons a failed STOPPED write (returning nil
+// so the finalizer is released) or returns a wrapped error so it is retried.
+func (r *Reconciler) handleStoppedWriteFailure(ctx context.Context, jobSet *v1alpha2.JobSet, err error) error {
+	reason := r.stoppedWriteAbandonReason(jobSet, err)
+	if reason == "" {
+		return fmt.Errorf("failed to persist STOPPED status for JobSet %s/%s: %w", jobSet.Namespace, jobSet.Name, err)
+	}
+	stoppedWriteAbandonedTotal.WithLabelValues(reason).Inc()
+	logging.Error(ctx, "Abandoning STOPPED status write, removing finalizer anyway", "namespace", jobSet.Namespace, "reason", reason, "error", err)
+	return nil
+}
+
+// handleJobSetFinalizerRemoval processes a JobSet that is being deleted. The
+// terminal STOPPED status is persisted before the finalizer is removed so that a
+// reconciler restart or a failed batch flush cannot leave the execution stuck in
+// STOPPING after the JobSet is gone.
 func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v1alpha2.JobSet) (ctrl.Result, error) {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
@@ -210,12 +305,15 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 	xid, wid, eid := parsedLabels.XID, parsedLabels.WID, parsedLabels.EID
 	ctx = logging.WithWorkUnitExecutionName(ctx, validator.ConstructWorkUnitExecutionName(xid, wid, eid))
 
+	if err := r.persistStoppedOnDelete(ctx, jobSet, xid, wid, eid, labelsErr); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT.
 	if err := r.Patch(logging.Strip(ctx), jobSet, removeFinalizerPatch(finalizerIdx, constants.JobSetFinalizer)); err != nil {
 		return r.handlePatchError(ctx, jobSet, err)
 	}
 
-	r.enqueueStoppedUpdateOnDelete(ctx, jobSet, xid, wid, eid, labelsErr)
 	logging.Debug(ctx, "Successfully patched finalizer from JobSet", "namespace", jobSet.Namespace)
 	return ctrl.Result{}, nil
 }
