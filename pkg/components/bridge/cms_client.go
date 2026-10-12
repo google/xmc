@@ -209,13 +209,15 @@ func (a *serverClientAdapter) DeclareClusterEpoch(ctx context.Context, in *compo
 // updateObservedCMS sends an UpdateObservedGeneration RPC to CMS reporting the CMS component
 // generation gen. It is a no-op when gen is 0 (unknown), which happens only before the first intent
 // of a resource was committed, when CMS has nothing at a known generation to report against.
-func (r *Reconciler) updateObservedCMS(ctx context.Context, name string, gen int64, state componentspb.ComponentState, statusMsg string) error {
+func (r *Reconciler) updateObservedCMS(ctx context.Context, in ReconcileComponentInput, name string, gen int64, state componentspb.ComponentState, statusMsg string) error {
 	if gen <= 0 {
 		logging.Debug(ctx, "Skipping CMS observed generation update; component generation unknown", "name", name)
 		return nil
 	}
-	_, err := r.cmsClient.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
-		Name: name, ObservedGeneration: gen, State: state, StatusMessage: statusMsg,
+	_, err := callWithOwnership(ctx, r, in, func(ctx context.Context, src *componentspb.RequestSource) (*componentspb.UpdateObservedGenerationResponse, error) {
+		return r.cmsClient.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
+			Name: name, ObservedGeneration: gen, State: state, StatusMessage: statusMsg, Source: src,
+		})
 	})
 	return err
 }
@@ -235,7 +237,10 @@ func (r *Reconciler) syncObservedToCMS(ctx context.Context, in ReconcileComponen
 		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 		return nil
 	}
-	if err := r.updateObservedCMS(ctx, canonicalName, res.ComponentGeneration, res.State, "Ready="+readyStatus); err != nil {
+	if err := r.updateObservedCMS(ctx, in, canonicalName, res.ComponentGeneration, res.State, "Ready="+readyStatus); err != nil {
+		if handleOwnershipError(res, in, err) {
+			return nil
+		}
 		if !ignoreNotFound || status.Code(err) != codes.NotFound {
 			setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
 			return fmt.Errorf("failed to update observed generation in CMS: %w", err)

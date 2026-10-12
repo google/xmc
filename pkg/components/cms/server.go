@@ -209,6 +209,15 @@ func requestSourceFromProto(src *componentspb.RequestSource) (*store.RequestSour
 	return &storeSrc, nil
 }
 
+// requestSourcesFromProto converts an optional RequestSource proto into a variadic slice for store calls.
+func requestSourcesFromProto(src *componentspb.RequestSource) ([]store.RequestSource, error) {
+	storeSrc, err := requestSourceFromProto(src)
+	if err != nil || storeSrc == nil {
+		return nil, err
+	}
+	return []store.RequestSource{*storeSrc}, nil
+}
+
 // applyIntent stores spec ordered by src when it is set, and by spec.generation otherwise.
 func (s *Server) applyIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, src *store.RequestSource) (*store.ComponentRecord, error) {
 	if src == nil {
@@ -255,8 +264,12 @@ func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.Prep
 			return nil, status.Error(codes.InvalidArgument, "draining timeout cannot be negative")
 		}
 	}
+	srcs, err := requestSourcesFromProto(req.GetSource())
+	if err != nil {
+		return nil, err
+	}
 
-	res, err := s.store.PrepareDeactivation(ctx, canonicalName, req.GetForce())
+	res, err := s.store.PrepareDeactivation(ctx, canonicalName, req.GetForce(), srcs...)
 	if err != nil {
 		return nil, err
 	}
@@ -300,8 +313,12 @@ func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.Com
 	if err != nil {
 		return nil, err
 	}
+	srcs, err := requestSourcesFromProto(req.GetSource())
+	if err != nil {
+		return nil, err
+	}
 
-	if err := s.store.CompleteDeactivation(ctx, canonicalName, req.GetForce()); err != nil {
+	if err := s.store.CompleteDeactivation(ctx, canonicalName, req.GetForce(), srcs...); err != nil {
 		return nil, err
 	}
 
@@ -324,8 +341,12 @@ func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb
 	if req.GetState() < componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED || req.GetState() > componentspb.ComponentState_COMPONENT_STATE_DELETED {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid component state %d", req.GetState())
 	}
+	srcs, err := requestSourcesFromProto(req.GetSource())
+	if err != nil {
+		return nil, err
+	}
 
-	rec, err := s.store.UpdateObservedGeneration(ctx, canonicalName, req.GetObservedGeneration(), nil, req.GetState(), req.GetStatusMessage())
+	rec, err := s.store.UpdateObservedGeneration(ctx, canonicalName, req.GetObservedGeneration(), nil, req.GetState(), req.GetStatusMessage(), srcs...)
 	if err != nil {
 		return nil, err
 	}

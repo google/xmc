@@ -61,15 +61,15 @@ func (s *stubStore) ListComponents(ctx context.Context) ([]*store.ComponentRecor
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool) (*store.PrepareDeactivationResult, error) {
+func (s *stubStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src ...store.RequestSource) (*store.PrepareDeactivationResult, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubStore) CompleteDeactivation(ctx context.Context, name string, force bool) error {
+func (s *stubStore) CompleteDeactivation(ctx context.Context, name string, force bool, src ...store.RequestSource) error {
 	return status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (s *stubStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*store.ComponentRecord, error) {
+func (s *stubStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src ...store.RequestSource) (*store.ComponentRecord, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 

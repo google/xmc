@@ -306,7 +306,7 @@ func (s *SpannerStore) applyIntentTx(
 	desiredGen int64,
 	src *RequestSource,
 ) (*ComponentRecord, intentPlan, error) {
-	if err := checkFence(ctx, txn, src); err != nil {
+	if err := checkFence(ctx, txn, operationSetComponentIntent, src); err != nil {
 		return nil, intentPlan{}, err
 	}
 	catalog, err := s.loadActiveCatalog(ctx, txn)
@@ -347,10 +347,21 @@ func recordOwnerTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord, src 
 	if src == nil {
 		return nil
 	}
-	rec.Owner = ownerOf(*src)
+	return writeOwnerColumnsTx(txn, rec, ownerOf(*src))
+}
+
+func recordNonIntentOwnerTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord, src *RequestSource) error {
+	if src == nil {
+		return nil
+	}
+	return writeOwnerColumnsTx(txn, rec, nonIntentOwner(rec.Owner, src))
+}
+
+func writeOwnerColumnsTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord, owner *SourceOwner) error {
+	rec.Owner = owner
 	return txn.BufferWrite([]*spanner.Mutation{spanner.UpdateMap("Components", map[string]any{
-		"ComponentId": rec.ComponentID, "SourceUid": src.UID, "SourceGeneration": src.Generation,
-		"SourceNamespace": src.Namespace, "SourceClusterUid": src.ClusterUID, "SourceEpoch": src.Epoch,
+		"ComponentId": rec.ComponentID, "SourceUid": owner.UID, "SourceGeneration": owner.Generation,
+		"SourceNamespace": owner.Namespace, "SourceClusterUid": owner.ClusterUID, "SourceEpoch": owner.Epoch,
 		"SourceLastSeenTime": spanner.CommitTimestamp,
 	})})
 }
@@ -595,8 +606,8 @@ func (s *SpannerStore) ListComponents(ctx context.Context) ([]*ComponentRecord, 
 }
 
 // PrepareDeactivation checks deactivation safety and transitions target (and cascaded dependents) to DISABLING.
-func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool) (*PrepareDeactivationResult, error) {
-	canonicalName, err := validateResourceName(name)
+func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src ...RequestSource) (*PrepareDeactivationResult, error) {
+	canonicalName, reqSrc, err := validateSourcedResourceArgs(name, src)
 	if err != nil {
 		return nil, err
 	}
@@ -604,14 +615,9 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 	var result *PrepareDeactivationResult
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		catalog, err := s.loadActiveCatalog(ctx, txn)
+		catalog, targetRec, err := s.lookupCatalogTargetTx(ctx, txn, prepareDeactivationOperation, canonicalName, reqSrc)
 		if err != nil {
 			return err
-		}
-
-		targetRec, ok := catalog[canonicalName]
-		if !ok || targetRec == nil || isDeletedRecord(targetRec) {
-			return ErrComponentNotFound
 		}
 
 		res, err := EvaluateDeactivationSafety(catalog, canonicalName, requestCascade, minDrainTimeout)
@@ -627,15 +633,37 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 		}
 
 		if len(mutations) > 0 {
-			return txn.BufferWrite(mutations)
+			if err := txn.BufferWrite(mutations); err != nil {
+				return err
+			}
 		}
-		return nil
+		return recordNonIntentOwnerTx(txn, targetRec, reqSrc)
 	})
 
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// lookupCatalogTargetTx checks the cluster fence, loads the active catalog, finds canonicalName,
+// and checks source ownership for operation.
+func (s *SpannerStore) lookupCatalogTargetTx(ctx context.Context, txn *spanner.ReadWriteTransaction, operation, canonicalName string, src *RequestSource) (map[string]*ComponentRecord, *ComponentRecord, error) {
+	if err := checkFence(ctx, txn, operation, src); err != nil {
+		return nil, nil, err
+	}
+	catalog, err := s.loadActiveCatalog(ctx, txn)
+	if err != nil {
+		return nil, nil, err
+	}
+	rec, ok := catalog[canonicalName]
+	if !ok || rec == nil || isDeletedRecord(rec) {
+		return nil, nil, ErrComponentNotFound
+	}
+	if err := checkSourceMutation(operation, canonicalName, rec.Owner, src); err != nil {
+		return nil, nil, err
+	}
+	return catalog, rec, nil
 }
 
 func collectDeactivationTargets(targetRec *ComponentRecord, catalog map[string]*ComponentRecord, cascaded []string, requestCascade bool) []*ComponentRecord {
@@ -683,25 +711,20 @@ func buildDisablingMutations(toTransition []*ComponentRecord, now time.Time) ([]
 }
 
 // CompleteDeactivation marks a component in DISABLING state as DISABLED.
-func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, force bool) error {
-	canonicalName, err := validateResourceName(name)
+func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, force bool, src ...RequestSource) error {
+	canonicalName, reqSrc, err := validateSourcedResourceArgs(name, src)
 	if err != nil {
 		return err
 	}
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		catalog, err := s.loadActiveCatalog(ctx, txn)
+		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, completeDeactivationOperation, canonicalName, reqSrc)
 		if err != nil {
 			return err
 		}
 
-		rec, ok := catalog[canonicalName]
-		if !ok || rec == nil || isDeletedRecord(rec) {
-			return ErrComponentNotFound
-		}
-
 		if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
-			return nil
+			return recordNonIntentOwnerTx(txn, rec, reqSrc)
 		}
 		if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
 			return ErrInvalidStateTransition
@@ -735,15 +758,18 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 			"AccessPayload": accessBytes,
 			"UpdateTime":    spanner.CommitTimestamp,
 		})
-		return txn.BufferWrite([]*spanner.Mutation{mutation})
+		if err := txn.BufferWrite([]*spanner.Mutation{mutation}); err != nil {
+			return err
+		}
+		return recordNonIntentOwnerTx(txn, rec, reqSrc)
 	})
 
 	return err
 }
 
 // UpdateObservedGeneration synchronizes actual component access, generation, and state.
-func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error) {
-	canonicalName, err := validateUpdateObservedArgs(name, observedGen)
+func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src ...RequestSource) (*ComponentRecord, error) {
+	canonicalName, reqSrc, err := validateUpdateObservedArgs(name, observedGen, src)
 	if err != nil {
 		return nil, err
 	}
@@ -751,8 +777,14 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 	var finalRec *ComponentRecord
 
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		if err := checkFence(ctx, txn, updateObservedGenerationOperation, reqSrc); err != nil {
+			return err
+		}
 		rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
 		if err != nil {
+			return err
+		}
+		if err := checkSourceMutation(updateObservedGenerationOperation, canonicalName, rec.Owner, reqSrc); err != nil {
 			return err
 		}
 
@@ -785,6 +817,9 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 		}
 
 		if err := txn.BufferWrite([]*spanner.Mutation{spanner.UpdateMap("Components", updateMap)}); err != nil {
+			return err
+		}
+		if err := recordNonIntentOwnerTx(txn, rec, reqSrc); err != nil {
 			return err
 		}
 

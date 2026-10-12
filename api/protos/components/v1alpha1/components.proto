@@ -523,6 +523,13 @@ message PrepareDeactivationRequest {
     (google.api.field_behavior) = OPTIONAL,
     json_name = "force"
   ];
+
+  // Declarative object requesting deactivation. When set, CMS checks the cluster ownership fence
+  // and source ownership before preparing deactivation.
+  RequestSource source = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "source"
+  ];
 }
 
 // Response message for PrepareDeactivation.
@@ -562,6 +569,13 @@ message CompleteDeactivationRequest {
   bool force = 2 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "force"
+  ];
+
+  // Declarative object completing deactivation. When set, CMS checks the cluster ownership fence
+  // and source ownership before completing deactivation.
+  RequestSource source = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "source"
   ];
 }
 
@@ -614,6 +628,13 @@ message UpdateObservedGenerationRequest {
   string status_message = 4 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "statusMessage"
+  ];
+
+  // Declarative object reporting the observed generation. When set, CMS checks the cluster
+  // ownership fence and source ownership and refreshes the source's last-seen timestamp.
+  RequestSource source = 5 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "source"
   ];
 }
 

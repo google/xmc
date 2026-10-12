@@ -190,3 +190,54 @@ func ownerMetadata(operation string, owner *SourceOwner) map[string]string {
 		MetadataKeyOwnerClusterUID: owner.ClusterUID,
 	}
 }
+
+// Operation names recorded in ErrorInfo metadata for sourced lifecycle mutations.
+const (
+	prepareDeactivationOperation      = "PrepareDeactivation"
+	completeDeactivationOperation     = "CompleteDeactivation"
+	updateObservedGenerationOperation = "UpdateObservedGeneration"
+)
+
+// optionalRequestSource validates and returns the first source in srcs, or nil when srcs is empty.
+func optionalRequestSource(srcs []RequestSource) (*RequestSource, error) {
+	if len(srcs) == 0 {
+		return nil, nil
+	}
+	if err := ValidateRequestSource(srcs[0]); err != nil {
+		return nil, err
+	}
+	src := srcs[0]
+	return &src, nil
+}
+
+// checkSourceMutation checks whether src may mutate the active record canonicalName owned by owner
+// in operation. A nil src bypasses ownership checks; otherwise src must pass checkSourceOwnership
+// and, when coming from the owner object itself, must not carry an older generation.
+func checkSourceMutation(operation, canonicalName string, owner *SourceOwner, src *RequestSource) error {
+	if src == nil {
+		return nil
+	}
+	if err := checkSourceOwnership(operation, canonicalName, owner, *src); err != nil {
+		return err
+	}
+	if owner.isOwnerObject(*src) && src.Generation < owner.Generation {
+		return staleGenerationError(operation, canonicalName, owner, *src)
+	}
+	return nil
+}
+
+// nonIntentOwner returns the owner recorded by a non-intent mutation (UpdateObservedGeneration,
+// PrepareDeactivation, CompleteDeactivation) from src on a record currently owned by existing.
+// When existing is already owned by src.UID, existing.Generation (the last committed intent's CR
+// generation) is preserved so an observation or deactivation call never advances SourceGeneration
+// past a gated SetComponentIntent.
+func nonIntentOwner(existing *SourceOwner, src *RequestSource) *SourceOwner {
+	if src == nil {
+		return existing
+	}
+	next := ownerOf(*src)
+	if existing.isOwnerObject(*src) && existing.Generation > 0 {
+		next.Generation = existing.Generation
+	}
+	return next
+}

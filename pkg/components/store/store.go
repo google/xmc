@@ -133,13 +133,13 @@ type Store interface {
 	ListComponents(ctx context.Context) ([]*ComponentRecord, error)
 
 	// PrepareDeactivation checks deactivation safety and cascading requirements.
-	PrepareDeactivation(ctx context.Context, name string, requestCascade bool) (*PrepareDeactivationResult, error)
+	PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src ...RequestSource) (*PrepareDeactivationResult, error)
 
 	// CompleteDeactivation marks a component in DISABLING state as DISABLED.
-	CompleteDeactivation(ctx context.Context, name string, force bool) error
+	CompleteDeactivation(ctx context.Context, name string, force bool, src ...RequestSource) error
 
 	// UpdateObservedGeneration synchronizes actual component access and state, returning the updated record.
-	UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error)
+	UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src ...RequestSource) (*ComponentRecord, error)
 
 	// ExecuteDeletion deletes a component using the specified deletion policy.
 	ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error

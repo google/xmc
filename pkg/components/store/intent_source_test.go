@@ -364,22 +364,137 @@ func assertOwnerOutcome(t *testing.T, before, rec *store.ComponentRecord, wantGe
 // naming the seeded owner, and that the stored record of name still equals before.
 func assertOwnershipRejected(ctx context.Context, t *testing.T, s store.Store, name string, err error, wantReason string, before *store.ComponentRecord) {
 	t.Helper()
+	assertOperationOwnershipRejected(ctx, t, s, "SetComponentIntent", name, err, wantReason, before)
+}
+
+func assertOperationOwnershipRejected(ctx context.Context, t *testing.T, s store.Store, operation, name string, err error, wantReason string, before *store.ComponentRecord) {
+	t.Helper()
 	if status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("SetSourcedComponentIntent() error = %v, want code %v", err, codes.FailedPrecondition)
+		t.Fatalf("%s error = %v, want code %v", operation, err, codes.FailedPrecondition)
 	}
-	metadata := map[string]string{"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": ownerSource.ClusterUID}
+	metadata := map[string]string{"operation": operation, "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": ownerSource.ClusterUID}
 	if wantReason == store.ReasonStaleGeneration {
 		metadata["owner_generation"] = "3"
 	}
 	wantDetails := []any{&errdetails.ErrorInfo{Reason: wantReason, Domain: store.ErrorInfoDomain, Metadata: metadata}}
 	if diff := cmp.Diff(wantDetails, status.Convert(err).Details(), protocmp.Transform()); diff != "" {
-		t.Errorf("error details mismatch (-want +got):\n%s", diff)
+		t.Errorf("%s error details mismatch (-want +got):\n%s", operation, diff)
 	}
 	stored, err := s.GetComponent(ctx, name)
 	if err != nil {
 		t.Fatalf("GetComponent(%s) error = %v", name, err)
 	}
 	if diff := cmp.Diff(before, stored, protocmp.Transform()); diff != "" {
-		t.Errorf("rejected intent changed the stored record (-before +stored):\n%s", diff)
+		t.Errorf("rejected %s changed the stored record (-before +stored):\n%s", operation, diff)
+	}
+}
+
+// TestSourcedObservationAndDeactivation_Parity checks on both MemoryStore and SpannerStore that
+// UpdateObservedGeneration, PrepareDeactivation, and CompleteDeactivation enforce the cluster
+// fence and source ownership when a RequestSource is supplied, while unsourced calls still work.
+func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
+	activeCluster := store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 2}
+	ownerOnProd := store.RequestSource{UID: "uid-a", Generation: 3, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 2}
+	newerGen := ownerOnProd
+	newerGen.Generation = 4
+	olderGen := ownerOnProd
+	olderGen.Generation = 2
+	otherNamespace := ownerOnProd
+	otherNamespace.Namespace, otherNamespace.UID = "other", "uid-b"
+	otherUID := ownerOnProd
+	otherUID.UID = "uid-b"
+	casUID := otherUID
+	casUID.ExpectedOwnerUID = "uid-a"
+	fencedCluster := ownerOnProd
+	fencedCluster.ClusterUID = drClusterUID
+
+	for _, backend := range intentStoreBackends() {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := backend.newStore(t)
+			if _, err := s.DeclareClusterEpoch(ctx, activeCluster); err != nil {
+				t.Fatalf("DeclareClusterEpoch() error = %v", err)
+			}
+			const name = "obs-deact-owned"
+			if _, err := s.SetSourcedComponentIntent(ctx, name, intentSpec("v1.0.0"), nil, ownerOnProd); err != nil {
+				t.Fatalf("SetSourcedComponentIntent() error = %v", err)
+			}
+
+			// Rejections on UpdateObservedGeneration leave the component in PENDING_RECONCILIATION.
+			for _, tc := range []struct {
+				src        store.RequestSource
+				wantReason string
+			}{
+				{fencedCluster, store.ReasonClusterFenced},
+				{otherNamespace, store.ReasonSourceNamespaceConflict},
+				{otherUID, store.ReasonSourceIncarnationMismatch},
+				{olderGen, store.ReasonStaleGeneration},
+			} {
+				_, err := s.UpdateObservedGeneration(ctx, name, 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready=True", tc.src)
+				assertReason(t, err, tc.wantReason)
+			}
+
+			// Owner updates observed generation at newer CR generation (e.g., while a spec upgrade is held on dependencies)
+			// without advancing the recorded intent owner generation past ownerOnProd.Generation (3).
+			obsRec, err := s.UpdateObservedGeneration(ctx, name, 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready=True", newerGen)
+			if err != nil {
+				t.Fatalf("UpdateObservedGeneration(owner) error = %v", err)
+			}
+			if obsRec.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED || !cmp.Equal(obsRec.Owner, ownerFor(ownerOnProd)) {
+				t.Fatalf("UpdateObservedGeneration(owner) = (state=%v, owner=%+v), want ENABLED owned by %+v", obsRec.State, obsRec.Owner, ownerOnProd)
+			}
+
+			// Rejections on PrepareDeactivation leave the component ENABLED.
+			for _, tc := range []struct {
+				src        store.RequestSource
+				wantReason string
+			}{
+				{fencedCluster, store.ReasonClusterFenced},
+				{otherNamespace, store.ReasonSourceNamespaceConflict},
+				{otherUID, store.ReasonSourceIncarnationMismatch},
+				{olderGen, store.ReasonStaleGeneration}, // generation 2 < recorded generation 3
+			} {
+				_, err := s.PrepareDeactivation(ctx, name, false, tc.src)
+				assertReason(t, err, tc.wantReason)
+			}
+			if got, _ := s.GetComponent(ctx, name); got.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+				t.Fatalf("state after rejected PrepareDeactivation = %v, want ENABLED", got.State)
+			}
+
+			// PrepareDeactivation from owner transitions to DISABLING while keeping committed intent generation 3.
+			if _, err := s.PrepareDeactivation(ctx, name, false, newerGen); err != nil {
+				t.Fatalf("PrepareDeactivation(owner) error = %v", err)
+			}
+
+			// Rejections on CompleteDeactivation leave the component DISABLING.
+			for _, tc := range []struct {
+				src        store.RequestSource
+				wantReason string
+			}{
+				{fencedCluster, store.ReasonClusterFenced},
+				{otherNamespace, store.ReasonSourceNamespaceConflict},
+				{otherUID, store.ReasonSourceIncarnationMismatch},
+				{olderGen, store.ReasonStaleGeneration},
+			} {
+				err := s.CompleteDeactivation(ctx, name, false, tc.src)
+				assertReason(t, err, tc.wantReason)
+			}
+			if got, _ := s.GetComponent(ctx, name); got.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
+				t.Fatalf("state after rejected CompleteDeactivation = %v, want DISABLING", got.State)
+			}
+
+			// CompleteDeactivation with CAS takeover succeeds and adopts ownership at casUID's generation.
+			casUID.ExpectedOwnerUID = newerGen.UID
+			if err := s.CompleteDeactivation(ctx, name, false, casUID); err != nil {
+				t.Fatalf("CompleteDeactivation(CAS) error = %v", err)
+			}
+			finalRec, err := s.GetComponent(ctx, name)
+			if err != nil {
+				t.Fatalf("GetComponent() error = %v", err)
+			}
+			if finalRec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED || !cmp.Equal(finalRec.Owner, ownerFor(casUID)) {
+				t.Errorf("final record = (state=%v, owner=%+v), want DISABLED owned by %+v", finalRec.State, finalRec.Owner, casUID)
+			}
+		})
 	}
 }

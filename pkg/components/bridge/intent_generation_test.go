@@ -290,4 +290,22 @@ func TestReconcileComponent_SourceNamespaceConflictAndStaleGeneration(t *testing
 	if helm.ensureCalls != 0 {
 		t.Errorf("stale generation actuated Helm %d times, want 0", helm.ensureCalls)
 	}
+
+	// team-b attempts to deactivate redpanda with an unregistered dependency (which applyDisabledIntent
+	// tolerates) -> PrepareDeactivation rejects with SourceNamespaceConflict without deleting the 1P workload.
+	resDeactConflict, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+		Namespace: "team-b", Name: "redpanda", Generation: 1, UID: uidTeamB, Enabled: false,
+		Spec: &componentspb.ComponentSpec{
+			Type:         componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version:      "1.0.0",
+			Dependencies: []string{"unregistered-dep"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("team-b disabled with unregistered dep unexpected error: %v", err)
+	}
+	if helm.deleteCalled {
+		t.Error("team-b disabled conflict deleted the active 1P Helm release")
+	}
+	assertSourceConflictConditions(t, resDeactConflict.Conditions, ReasonSourceNamespaceConflict)
 }
