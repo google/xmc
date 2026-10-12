@@ -27,6 +27,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -36,6 +37,10 @@ import (
 type stubStore struct{}
 
 func (s *stubStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*store.ComponentRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (s *stubStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src store.IntentSource) (*store.ComponentRecord, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
@@ -587,6 +592,64 @@ func TestCMSServer_SetComponentIntent_UnchangedIntentIsNoop(t *testing.T) {
 			got := resp.GetComponent()
 			if got.GetSpec().GetGeneration() != tt.wantGen || got.GetStatus().GetState() != tt.wantState {
 				t.Errorf("generation = %d, state = %v; want %d, %v", got.GetSpec().GetGeneration(), got.GetStatus().GetState(), tt.wantGen, tt.wantState)
+			}
+		})
+	}
+}
+
+func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
+	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	tests := []struct {
+		name         string
+		src          *componentspb.IntentSource
+		validateOnly bool
+		wantCode     codes.Code
+		wantGen      int64
+		wantSource   *store.IntentSource
+	}{
+		{
+			name:       "source orders by epoch and ignores spec generation",
+			src:        &componentspb.IntentSource{Uid: "uid-a", CreateTime: timestamppb.New(created), Generation: 7},
+			wantGen:    1,
+			wantSource: &store.IntentSource{UID: "uid-a", CreateTime: created, Generation: 7},
+		},
+		{name: "no source orders by spec generation", wantGen: 7},
+		{name: "source without create time is rejected", src: &componentspb.IntentSource{Uid: "uid-a", Generation: 7}, wantCode: codes.InvalidArgument},
+		{
+			name:     "source with invalid create time is rejected",
+			src:      &componentspb.IntentSource{Uid: "uid-a", CreateTime: &timestamppb.Timestamp{Nanos: -1}, Generation: 7},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:         "source without uid is rejected in validate_only",
+			src:          &componentspb.IntentSource{CreateTime: timestamppb.New(created), Generation: 7},
+			validateOnly: true,
+			wantCode:     codes.InvalidArgument,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			ms := store.NewMemoryStore()
+			server := NewServer(ms)
+			spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0", Generation: 7}
+
+			resp, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "redpanda", Spec: spec, Source: tt.src, ValidateOnly: tt.validateOnly})
+			if status.Code(err) != tt.wantCode {
+				t.Fatalf("SetComponentIntent() error = %v, want code %v", err, tt.wantCode)
+			}
+			if err != nil {
+				return
+			}
+			if got := resp.GetComponent().GetSpec().GetGeneration(); got != tt.wantGen {
+				t.Errorf("generation = %d, want %d", got, tt.wantGen)
+			}
+			stored, err := ms.GetComponent(ctx, "redpanda")
+			if err != nil {
+				t.Fatalf("GetComponent() error = %v", err)
+			}
+			if diff := cmp.Diff(tt.wantSource, stored.Source); diff != "" {
+				t.Errorf("stored Source mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

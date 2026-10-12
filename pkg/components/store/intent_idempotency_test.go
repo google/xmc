@@ -17,7 +17,13 @@ package store_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -161,4 +167,20 @@ func seedIntentComponent(ctx context.Context, t *testing.T, s store.Store, name 
 		t.Fatalf("seed state of %s = %v, want %v", name, rec.State, state)
 	}
 	return rec
+}
+
+// assertStaleIntentRejected checks that err is the store's stale-intent FailedPrecondition and that
+// the stored record of name still equals before.
+func assertStaleIntentRejected(ctx context.Context, t *testing.T, s store.Store, name string, err error, before *store.ComponentRecord) {
+	t.Helper()
+	if status.Code(err) != codes.FailedPrecondition || !strings.HasPrefix(status.Convert(err).Message(), store.StaleIntentMessagePrefix) {
+		t.Fatalf("SetComponentIntent() error = %v, want FailedPrecondition starting with %q", err, store.StaleIntentMessagePrefix)
+	}
+	stored, err := s.GetComponent(ctx, name)
+	if err != nil {
+		t.Fatalf("GetComponent(%s) error = %v", name, err)
+	}
+	if diff := cmp.Diff(before, stored, protocmp.Transform()); diff != "" {
+		t.Errorf("stale intent changed the stored record (-before +stored):\n%s", diff)
+	}
 }

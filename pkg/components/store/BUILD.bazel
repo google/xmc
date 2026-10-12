@@ -61,6 +61,7 @@ go_test(
         "health_aggregator_test.go",
         "intent_change_test.go",
         "intent_dependency_registration_test.go",
+        "intent_epoch_test.go",
         "intent_idempotency_test.go",
         "memory_store_test.go",
         "snapshot_resolver_test.go",

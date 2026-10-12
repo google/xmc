@@ -56,6 +56,19 @@ func NewMemoryStore() *MemoryStore {
 
 // SetComponentIntent applies or updates component intent within the in-memory store.
 func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error) {
+	return m.setIntent(name, spec, labels, desiredGen, nil)
+}
+
+// SetSourcedComponentIntent applies an intent produced by src within the in-memory store.
+func (m *MemoryStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src IntentSource) (*ComponentRecord, error) {
+	if err := ValidateIntentSource(src); err != nil {
+		return nil, err
+	}
+	return m.setIntent(name, spec, labels, 0, cloneIntentSource(&src))
+}
+
+// setIntent applies an intent ordered by desiredGen when src is nil and by src otherwise.
+func (m *MemoryStore) setIntent(name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64, src *IntentSource) (*ComponentRecord, error) {
 	canonicalName, err := validateIntentArgs(name, spec)
 	if err != nil {
 		return nil, err
@@ -73,21 +86,36 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 
 	rec, exists := m.componentsByName[canonicalName]
 	if exists && !isDeletedRecord(rec) {
-		if isUnchangedIntent(rec, spec, labels, deps, desiredGen) {
-			return cloneRecord(rec), nil
+		plan, err := planIntent(canonicalName, rec, spec, labels, deps, desiredGen, src)
+		if err != nil {
+			return nil, err
 		}
-		updateExistingIntent(rec, spec, labels, deps, desiredGen, now)
-		m.recordSnapshotLocked(rec)
+		m.applyIntentPlanLocked(rec, plan, spec, labels, deps, src, now)
 		return cloneRecord(rec), nil
 	}
 
 	m.nextID++
-	rec = createNewIntentRecord(m.nextID, canonicalName, spec, labels, deps, desiredGen, now)
+	rec = createNewIntentRecord(m.nextID, canonicalName, spec, labels, deps, newIntentGeneration(desiredGen, src), now)
+	rec.Source = src
 	m.componentsByName[canonicalName] = rec
 	m.componentsByID[rec.ComponentID] = rec
 	m.recordSnapshotLocked(rec)
 
 	return cloneRecord(rec), nil
+}
+
+// applyIntentPlanLocked applies plan to the existing record rec. A nil src keeps rec.Source.
+func (m *MemoryStore) applyIntentPlanLocked(rec *ComponentRecord, plan intentPlan, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, src *IntentSource, now time.Time) {
+	switch plan.write {
+	case writeSourceOnly:
+		rec.Source = src
+	case writeSpec:
+		updateExistingIntent(rec, spec, labels, deps, plan.generation, now)
+		if src != nil {
+			rec.Source = src
+		}
+		m.recordSnapshotLocked(rec)
+	}
 }
 
 func validateResourceName(name string) (string, error) {
@@ -112,11 +140,7 @@ func validateIntentArgs(name string, spec *componentspb.ComponentSpec) (string, 
 	return canonicalName, nil
 }
 
-func updateExistingIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, now time.Time) {
-	newGen := rec.Generation + 1
-	if desiredGen > rec.Generation {
-		newGen = desiredGen
-	}
+func updateExistingIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, newGen int64, now time.Time) {
 	rec.Generation = newGen
 	rec.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 	rec.Spec = proto.Clone(spec).(*componentspb.ComponentSpec)
@@ -131,12 +155,7 @@ func updateExistingIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec
 	rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 }
 
-func createNewIntentRecord(id int64, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, now time.Time) *ComponentRecord {
-	gen := int64(1)
-	if desiredGen > 1 {
-		gen = desiredGen
-	}
-
+func createNewIntentRecord(id int64, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, gen int64, now time.Time) *ComponentRecord {
 	specClone := proto.Clone(spec).(*componentspb.ComponentSpec)
 	specClone.Generation = gen
 
@@ -512,6 +531,7 @@ func cloneRecord(r *ComponentRecord) *ComponentRecord {
 	if len(r.Labels) > 0 {
 		cloned.Labels = copyMap(r.Labels)
 	}
+	cloned.Source = cloneIntentSource(r.Source)
 	return cloned
 }
 

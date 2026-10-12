@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"time"
 
@@ -40,12 +41,12 @@ import (
 var _ Store = (*SpannerStore)(nil)
 
 const (
-	selectComponentByActiveNameSQL = `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
+	selectComponentByActiveNameSQL = `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime, SourceUid, SourceGeneration, SourceCreateTime
 FROM Components
 WHERE ActiveName = @name
 LIMIT 1`
 
-	selectComponentWithActiveDependenciesSQL = `SELECT c.ComponentId, c.Name, c.ComponentClass, c.ConfigProto, c.AccessPayload, c.State, c.Generation, c.ObservedGeneration, c.CreateTime, c.UpdateTime,
+	selectComponentWithActiveDependenciesSQL = `SELECT c.ComponentId, c.Name, c.ComponentClass, c.ConfigProto, c.AccessPayload, c.State, c.Generation, c.ObservedGeneration, c.CreateTime, c.UpdateTime, c.SourceUid, c.SourceGeneration, c.SourceCreateTime,
   ARRAY(
     SELECT dep.Name
     FROM ComponentDependencies cd
@@ -57,12 +58,12 @@ FROM Components c
 WHERE c.ActiveName = @name
 LIMIT 1`
 
-	selectComponentByIDSQL = `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
+	selectComponentByIDSQL = `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime, SourceUid, SourceGeneration, SourceCreateTime
 FROM Components
 WHERE ComponentId = @id AND State != 5
 LIMIT 1`
 
-	selectAllActiveComponentsSQL = `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
+	selectAllActiveComponentsSQL = `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime, SourceUid, SourceGeneration, SourceCreateTime
 FROM Components
 WHERE ActiveName IS NOT NULL
 ORDER BY Name ASC`
@@ -160,35 +161,50 @@ func NewSpannerStore(client *spanner.Client) *SpannerStore {
 // read-write transaction; anything else, including every changed or new intent (which therefore
 // pays the extra read), is decided by the read-write transaction.
 func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error) {
+	return s.setIntent(ctx, name, spec, labels, desiredGen, nil)
+}
+
+// SetSourcedComponentIntent applies an intent produced by src within Spanner, with the same
+// read-only fast path as SetComponentIntent. Recording a new source needs the read-write
+// transaction.
+func (s *SpannerStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src IntentSource) (*ComponentRecord, error) {
+	if err := ValidateIntentSource(src); err != nil {
+		return nil, err
+	}
+	return s.setIntent(ctx, name, spec, labels, 0, cloneIntentSource(&src))
+}
+
+// setIntent applies an intent ordered by desiredGen when src is nil and by src otherwise.
+func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64, src *IntentSource) (*ComponentRecord, error) {
 	canonicalName, err := validateIntentArgs(name, spec)
 	if err != nil {
 		return nil, err
 	}
 
 	deps := ExtractDependencies(spec, labels)
-	if rec, ok := s.readUnchangedIntent(ctx, canonicalName, spec, labels, deps, desiredGen); ok {
+	if rec, ok := s.readUnchangedIntent(ctx, canonicalName, spec, labels, deps, desiredGen, src); ok {
 		return rec, nil
 	}
 	if s.beforeIntentWrite != nil {
 		s.beforeIntentWrite()
 	}
-	return s.writeIntent(ctx, canonicalName, spec, labels, deps, desiredGen)
+	return s.writeIntent(ctx, canonicalName, spec, labels, deps, desiredGen, src)
 }
 
 // readUnchangedIntent reads the active record of canonicalName and its active dependencies with a
-// single strong read. It returns the record and true only when the intent is unchanged at that
-// read; on any other outcome, including read errors, it returns false so that the read-write
-// transaction decides authoritatively.
-func (s *SpannerStore) readUnchangedIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) (*ComponentRecord, bool) {
+// single strong read. It returns the record and true only when the intent writes nothing at that
+// read; on any other outcome, including read errors and stale rejections, it returns false so that
+// the read-write transaction decides authoritatively.
+func (s *SpannerStore) readUnchangedIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *IntentSource) (*ComponentRecord, bool) {
 	rec, err := queryComponentWithActiveDependencies(ctx, s.client.Single(), canonicalName)
 	if err != nil {
 		logFastPathReadError(ctx, canonicalName, err)
 		return nil, false
 	}
 	// The read returns only registered, non-deleted dependencies, so a deregistered dependency
-	// makes the intent's dependencies differ and isUnchangedIntent false; the read-write fallback
-	// then rejects it authoritatively.
-	if !isUnchangedIntent(rec, spec, labels, deps, desiredGen) {
+	// makes the intent's dependencies differ and the plan a write; the read-write fallback then
+	// rejects it authoritatively.
+	if plan, err := planIntent(canonicalName, rec, spec, labels, deps, desiredGen, src); err != nil || plan.write != writeNothing {
 		return nil, false
 	}
 	return cloneRecord(rec), true
@@ -234,23 +250,23 @@ func queryComponentWithActiveDependencies(ctx context.Context, queryable spanner
 	return rec, nil
 }
 
-// writeIntent applies the intent in a read-write transaction. It is a no-op that returns the
-// existing record when applyIntentTx finds the intent unchanged.
-func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) (*ComponentRecord, error) {
+// writeIntent applies the intent in a read-write transaction. It returns the existing record, with
+// any newly recorded source, when the intent writes neither the spec nor the generation.
+func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *IntentSource) (*ComponentRecord, error) {
 	var finalRec *ComponentRecord
-	var unchanged bool
+	var plan intentPlan
 
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		// Assign both results on every attempt because the transaction body may be retried.
 		var err error
-		finalRec, unchanged, err = s.applyIntentTx(ctx, txn, canonicalName, spec, labels, deps, desiredGen)
+		finalRec, plan, err = s.applyIntentTx(ctx, txn, canonicalName, spec, labels, deps, desiredGen, src)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	if finalRec != nil && !unchanged {
+	if plan.write == writeSpec {
 		if finalRec.CreateTime.IsZero() {
 			finalRec.CreateTime = commitTimestamp
 		}
@@ -261,9 +277,9 @@ func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, sp
 	return cloneRecord(finalRec), nil
 }
 
-// applyIntentTx validates the intent against the active catalog and buffers the mutations that
-// create or update the component. It reports unchanged=true and buffers nothing when the intent
-// would not change the existing record.
+// applyIntentTx validates the intent against the active catalog, buffers the mutations that
+// create or update the component, and returns the resulting record with the applied plan. A
+// created component is reported as a writeSpec plan.
 func (s *SpannerStore) applyIntentTx(
 	ctx context.Context,
 	txn *spanner.ReadWriteTransaction,
@@ -272,28 +288,63 @@ func (s *SpannerStore) applyIntentTx(
 	labels map[string]string,
 	deps []string,
 	desiredGen int64,
-) (rec *ComponentRecord, unchanged bool, err error) {
+	src *IntentSource,
+) (*ComponentRecord, intentPlan, error) {
 	catalog, err := s.loadActiveCatalog(ctx, txn)
 	if err != nil {
-		return nil, false, err
+		return nil, intentPlan{}, err
 	}
 	depIDs, err := validateIntentDependencies(catalog, canonicalName, deps)
 	if err != nil {
-		return nil, false, err
+		return nil, intentPlan{}, err
 	}
 
 	existingRec, exists := catalog[canonicalName]
 	if !exists || isDeletedRecord(existingRec) {
-		rec, err = s.createNewIntentTx(txn, canonicalName, spec, labels, deps, desiredGen, depIDs)
-		return rec, false, err
+		gen := newIntentGeneration(desiredGen, src)
+		rec, err := s.createNewIntentTx(txn, canonicalName, spec, labels, deps, gen, src, depIDs)
+		return rec, intentPlan{write: writeSpec, generation: gen}, err
 	}
-	if isUnchangedIntent(existingRec, spec, labels, deps, desiredGen) {
-		return existingRec, true, nil
+	plan, err := planIntent(canonicalName, existingRec, spec, labels, deps, desiredGen, src)
+	if err != nil {
+		return nil, intentPlan{}, err
 	}
-	rec, err = s.updateExistingIntentTx(txn, existingRec, canonicalName, spec, labels, deps, desiredGen, depIDs)
-	return rec, false, err
+	var rec *ComponentRecord
+	switch plan.write {
+	case writeNothing:
+		rec = existingRec
+	case writeSourceOnly:
+		rec, err = recordIntentSourceTx(txn, existingRec, src)
+	case writeSpec:
+		rec, err = s.updateExistingIntentTx(txn, existingRec, canonicalName, spec, labels, deps, plan.generation, src, depIDs)
+	}
+	return rec, plan, err
 }
 
+// recordIntentSourceTx buffers a write of only the source columns of existingRec and returns a copy
+// of existingRec with Source set to src.
+func recordIntentSourceTx(txn *spanner.ReadWriteTransaction, existingRec *ComponentRecord, src *IntentSource) (*ComponentRecord, error) {
+	cols := intentSourceColumns(src)
+	cols["ComponentId"] = existingRec.ComponentID
+	if err := txn.BufferWrite([]*spanner.Mutation{spanner.UpdateMap("Components", cols)}); err != nil {
+		return nil, err
+	}
+	rec := cloneRecord(existingRec)
+	rec.Source = cloneIntentSource(src)
+	return rec, nil
+}
+
+// intentSourceColumns returns the Components columns that record src, keyed by column name.
+func intentSourceColumns(src *IntentSource) map[string]any {
+	return map[string]any{
+		"SourceUid":        src.UID,
+		"SourceGeneration": src.Generation,
+		"SourceCreateTime": src.CreateTime,
+	}
+}
+
+// updateExistingIntentTx buffers the mutations that store the intent under newGen. A nil src keeps
+// the recorded source.
 func (s *SpannerStore) updateExistingIntentTx(
 	txn *spanner.ReadWriteTransaction,
 	existingRec *ComponentRecord,
@@ -301,14 +352,10 @@ func (s *SpannerStore) updateExistingIntentTx(
 	spec *componentspb.ComponentSpec,
 	labels map[string]string,
 	deps []string,
-	desiredGen int64,
+	newGen int64,
+	src *IntentSource,
 	depIDs map[string]int64,
 ) (*ComponentRecord, error) {
-	newGen := existingRec.Generation + 1
-	if desiredGen > existingRec.Generation {
-		newGen = desiredGen
-	}
-
 	specClone := proto.Clone(spec).(*componentspb.ComponentSpec)
 	specClone.Generation = newGen
 
@@ -344,6 +391,11 @@ func (s *SpannerStore) updateExistingIntentTx(
 		"Generation":     newGen,
 		"UpdateTime":     spanner.CommitTimestamp,
 	}
+	source := existingRec.Source
+	if src != nil {
+		maps.Copy(updateMap, intentSourceColumns(src))
+		source = src
+	}
 
 	mutations := []*spanner.Mutation{
 		spanner.UpdateMap("Components", updateMap),
@@ -377,6 +429,7 @@ func (s *SpannerStore) updateExistingIntentTx(
 		Dependencies:       deps,
 		CreateTime:         existingRec.CreateTime,
 		Labels:             copyMap(labels),
+		Source:             cloneIntentSource(source),
 	}, nil
 }
 
@@ -386,17 +439,13 @@ func (s *SpannerStore) createNewIntentTx(
 	spec *componentspb.ComponentSpec,
 	labels map[string]string,
 	deps []string,
-	desiredGen int64,
+	gen int64,
+	src *IntentSource,
 	depIDs map[string]int64,
 ) (*ComponentRecord, error) {
 	id, err := generateRandomID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate component ID: %w", err)
-	}
-
-	gen := int64(1)
-	if desiredGen > 1 {
-		gen = desiredGen
 	}
 
 	specClone := proto.Clone(spec).(*componentspb.ComponentSpec)
@@ -423,6 +472,11 @@ func (s *SpannerStore) createNewIntentTx(
 	compClass := determineComponentClass(specClone)
 	insertCols := []string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "AccessPayload", "State", "Generation", "CreateTime", "UpdateTime"}
 	insertVals := []any{id, canonicalName, spanner.NullString{StringVal: compClass, Valid: compClass != ""}, configBytes, accessBytes, int64(componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION), gen, spanner.CommitTimestamp, spanner.CommitTimestamp}
+	if src != nil {
+		for col, val := range intentSourceColumns(src) {
+			insertCols, insertVals = append(insertCols, col), append(insertVals, val)
+		}
+	}
 
 	mutations := []*spanner.Mutation{spanner.Insert("Components", insertCols, insertVals)}
 	for _, dep := range deps {
@@ -446,6 +500,7 @@ func (s *SpannerStore) createNewIntentTx(
 		Generation:   gen,
 		Dependencies: deps,
 		Labels:       copyMap(labels),
+		Source:       cloneIntentSource(src),
 	}, nil
 }
 
@@ -1165,6 +1220,9 @@ func rowToComponentRecord(row *spanner.Row) (*ComponentRecord, error) {
 		gen := d.observedGen.Int64
 		rec.ObservedGeneration = &gen
 	}
+	if rec.Source, err = scanIntentSource(row); err != nil {
+		return nil, err
+	}
 
 	if err := unmarshalConfigProto(d.configProto, rec); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config proto: %w", err)
@@ -1180,6 +1238,31 @@ func rowToComponentRecord(row *spanner.Row) (*ComponentRecord, error) {
 
 	rec.Etag = generateEtag(rec)
 	return rec, nil
+}
+
+// scanIntentSource reads the recorded intent source of a component row, or nil when none is
+// recorded. The source columns are always written together, so a partially recorded source is an
+// error.
+func scanIntentSource(row *spanner.Row) (*IntentSource, error) {
+	var uid spanner.NullString
+	var gen spanner.NullInt64
+	var createTime spanner.NullTime
+	if err := row.ColumnByName("SourceUid", &uid); err != nil {
+		return nil, fmt.Errorf("failed to read SourceUid: %w", err)
+	}
+	if err := row.ColumnByName("SourceGeneration", &gen); err != nil {
+		return nil, fmt.Errorf("failed to read SourceGeneration: %w", err)
+	}
+	if err := row.ColumnByName("SourceCreateTime", &createTime); err != nil {
+		return nil, fmt.Errorf("failed to read SourceCreateTime: %w", err)
+	}
+	if uid.Valid != gen.Valid || uid.Valid != createTime.Valid {
+		return nil, fmt.Errorf("partially recorded intent source: uid set %t, generation set %t, create time set %t", uid.Valid, gen.Valid, createTime.Valid)
+	}
+	if !uid.Valid {
+		return nil, nil
+	}
+	return &IntentSource{UID: uid.StringVal, CreateTime: createTime.Time.UTC(), Generation: gen.Int64}, nil
 }
 
 func unmarshalConfigProto(configBytes []byte, rec *ComponentRecord) error {

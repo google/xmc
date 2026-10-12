@@ -98,6 +98,10 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	if req.GetSpec() == nil {
 		return nil, status.Error(codes.InvalidArgument, "component spec is required")
 	}
+	src, err := intentSourceFromProto(req.GetSource())
+	if err != nil {
+		return nil, err
+	}
 
 	specToSet := req.GetSpec()
 	if req.GetUpdateMask() != nil && len(req.GetUpdateMask().GetPaths()) > 0 {
@@ -135,13 +139,39 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 		}, nil
 	}
 
-	rec, err := s.store.SetComponentIntent(ctx, canonicalName, specToSet, nil, specToSet.GetGeneration())
+	rec, err := s.applyIntent(ctx, canonicalName, specToSet, src)
 	if err != nil {
 		return nil, err
 	}
 	return &componentspb.SetComponentIntentResponse{
 		Component: store.ToProtoComponent(rec),
 	}, nil
+}
+
+// intentSourceFromProto converts and validates the source of a SetComponentIntent request. It
+// returns nil for a request without a source.
+func intentSourceFromProto(src *componentspb.IntentSource) (*store.IntentSource, error) {
+	if src == nil {
+		return nil, nil
+	}
+	// AsTime maps a missing or invalid timestamp to an arbitrary time; reject it instead.
+	if !src.GetCreateTime().IsValid() {
+		return nil, status.Error(codes.InvalidArgument, "intent source create_time must be a valid timestamp")
+	}
+	storeSrc := store.IntentSource{UID: src.GetUid(), CreateTime: src.GetCreateTime().AsTime(), Generation: src.GetGeneration()}
+	if err := store.ValidateIntentSource(storeSrc); err != nil {
+		return nil, err
+	}
+	return &storeSrc, nil
+}
+
+// applyIntent stores spec, ordered by the epoch of src when it is set and by spec.generation
+// otherwise.
+func (s *Server) applyIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, src *store.IntentSource) (*store.ComponentRecord, error) {
+	if src == nil {
+		return s.store.SetComponentIntent(ctx, canonicalName, spec, nil, spec.GetGeneration())
+	}
+	return s.store.SetSourcedComponentIntent(ctx, canonicalName, spec, nil, *src)
 }
 
 // canonicalDependencies returns spec.dependencies as deduplicated canonical component names in

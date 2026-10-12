@@ -359,6 +359,36 @@ message SetComponentIntentRequest {
     (google.api.field_behavior) = OPTIONAL,
     json_name = "validateOnly"
   ];
+
+  // Declarative object that produced this intent. When set, intents are ordered by the epoch
+  // (uid and create_time) and generation of the source instead of by spec.generation, and the
+  // component generation advances only when the stored intent changes.
+  IntentSource source = 5 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "source"
+  ];
+}
+
+// Identity of the declarative object, such as a Kubernetes custom resource, that produced an
+// intent. A recreated object has a new uid and a later create_time and starts a new epoch.
+message IntentSource {
+  // Unique identifier of the source object.
+  string uid = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "uid"
+  ];
+
+  // Creation timestamp of the source object.
+  google.protobuf.Timestamp create_time = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "createTime"
+  ];
+
+  // Generation of the source object that produced the intent.
+  int64 generation = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "generation"
+  ];
 }
 
 // Response message for SetComponentIntent.
