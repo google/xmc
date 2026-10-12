@@ -20,9 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"golang/grpc/grpc"
+	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"xmanager_cloud/storage/spanner/migrations/version"
+	"xmanager_cloud/internal/storage/spanner/migrations/version"
 )
 
 type mockSpannerHealthClient struct {

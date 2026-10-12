@@ -23,9 +23,9 @@ import (
 	"google.golang.org/grpc/status"
 	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/workunit"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // GetRunningAndPendingJobs handles fetching active and pending jobs for a cluster queue.

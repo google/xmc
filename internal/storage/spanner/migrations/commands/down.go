@@ -21,8 +21,8 @@ import (
 	"os"
 	"strings"
 
-	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
-	"golang/github_com/golang_migrate/migrate/v/v4/source/source"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/source"
 )
 
 const (

@@ -31,7 +31,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/sync/singleflight"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 // GoogleOAuth2CertsURL is the standard public Google OAuth2 / OIDC JWKS certificate endpoint.

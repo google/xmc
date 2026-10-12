@@ -1,9 +1,9 @@
 # Copyright 2026 Google LLC
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//visibility:public"])
 
-compat_go_library(
+go_library(
     name = "pausescheduling",
     srcs = [
         "cache.go",
@@ -17,6 +17,7 @@ compat_go_library(
         "//internal/logging",
         "//internal/storage",
         "//internal/validator",
+        "//internal/workunit",
         "@com_github_google_uuid//:uuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promauto",
@@ -26,7 +27,7 @@ compat_go_library(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "pausescheduling_test",
     srcs = [
         "cache_test.go",

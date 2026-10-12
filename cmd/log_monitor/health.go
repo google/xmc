@@ -19,9 +19,9 @@ import (
 	"net/http"
 	"time"
 
-	"golang/go_sync/errgroup/errgroup"
-	"xmanager_cloud/common/health"
-	"xmanager_cloud/logging/logging"
+	"golang.org/x/sync/errgroup"
+	"xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/logging"
 )
 
 // activeHealthCheck returns an HTTP handler that performs active dependency checks.

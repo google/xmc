@@ -22,11 +22,11 @@ import (
 	"log/slog"
 	"os"
 
-	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/internal/featureflags"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/task_queue/client"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/task_queue"
 )
 
 // Config holds the configuration for the Experiment State Server.

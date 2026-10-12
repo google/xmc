@@ -20,10 +20,10 @@ import (
 	"log/slog"
 	"net/http"
 
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 
-	"golang/prometheus/client/prometheus/promhttp/promhttp"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 func main() {

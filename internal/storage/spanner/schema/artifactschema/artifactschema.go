@@ -15,9 +15,9 @@
 package artifactschema
 
 import (
-	"api/filter/go/filtervisitor"
+	"xmanager_cloud/api/filter/go/filtervisitor"
+	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/safesql"
-	"xmanager_cloud/query_generator/querytools"
 )
 
 const (

@@ -22,7 +22,7 @@ import (
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // GetDashboard retrieves a dashboard by resource name with open read for authenticated users

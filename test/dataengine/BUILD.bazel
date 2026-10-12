@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
-compat_go_library(
+go_library(
     name = "dataengine_harness",
     srcs = [
         "comparator.go",
@@ -38,7 +37,7 @@ compat_go_library(
     ],
 )
 
-compat_go_library(
+go_library(
     name = "runner_lib",
     srcs = ["runner/main.go"],
     importpath = "xmanager_cloud/test/dataengine/runner",
@@ -55,7 +54,7 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-compat_go_test(
+go_test(
     name = "comparator_test",
     srcs = ["comparator_test.go"],
     data = glob(["testdata/**"]),
@@ -66,19 +65,19 @@ compat_go_test(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "env_test",
     srcs = ["env_test.go"],
     embed = [":dataengine_harness"],
 )
 
-compat_go_test(
+go_test(
     name = "seeder_test",
     srcs = ["seeder_test.go"],
     embed = [":dataengine_harness"],
 )
 
-compat_go_test(
+go_test(
     name = "dataengine_e2e_test",
     srcs = ["dataengine_e2e_test.go"],
     data = glob(["testdata/**"]),

@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"xmanager_cloud/experiment_state_server/config"
+	"xmanager_cloud/cmd/experiment_state_server/config"
 )
 
 func TestProdServer_Close(t *testing.T) {

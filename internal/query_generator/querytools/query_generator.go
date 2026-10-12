@@ -25,17 +25,17 @@ import (
 	"strings"
 	"time"
 
-	"api/filter/go/filtervisitor"
 	"cloud.google.com/go/spanner"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"xmanager_cloud/api/filter/go/filtervisitor"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/query_generator/equalityvisitor"
+	"xmanager_cloud/internal/query_generator/filter"
 	"xmanager_cloud/internal/safesql"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/query_generator/equalityvisitor"
-	"xmanager_cloud/query_generator/filter/queryfilter"
 
-	fpb "api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
 )
 
 // QueryGenerator defines a generator containing the table schema and a space

@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"testing"
 
-	"golang/prometheus/client/prometheus/testutil/testutil"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
 )

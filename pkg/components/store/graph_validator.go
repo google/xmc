@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/graph"
 	"xmanager_cloud/pkg/components/naming"
 )

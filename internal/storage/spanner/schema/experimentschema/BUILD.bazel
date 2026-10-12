@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "experimentschema",
     srcs = ["experimentschema.go"],
-    importpath = "xmanager_cloud/storage/spanner/schema/experimentschema",
+    importpath = "xmanager_cloud/internal/storage/spanner/schema/experimentschema",
     deps = [
         "//api/filter/go/filtervisitor",
         "//internal/query_generator/querytools",

@@ -22,9 +22,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/validator"
 
 	"google.golang.org/protobuf/proto"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"

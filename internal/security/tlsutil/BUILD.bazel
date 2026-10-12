@@ -1,9 +1,9 @@
 # Copyright 2026 Google LLC
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//visibility:public"])
 
-compat_go_library(
+go_library(
     name = "tlsutil",
     srcs = ["tlsutil.go"],
     importpath = "xmanager_cloud/internal/security/tlsutil",
@@ -15,7 +15,7 @@ compat_go_library(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "tlsutil_test",
     srcs = ["tlsutil_test.go"],
     embed = [":tlsutil"],

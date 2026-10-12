@@ -45,7 +45,7 @@ proto_library(
         "work_unit.proto",
         "work_unit_execution.proto",
     ],
-    import_prefix = "third_party/xmanager_cloud/experiment_state_server/proto",
+    import_prefix = "xmanager_cloud/experiment_state_server/proto",
     strip_import_prefix = "/api/protos/experiment",
     deps = [
         "//api/protos/dashboard:dashboard_messages_proto",
@@ -73,7 +73,7 @@ go_proto_library(
 proto_library(
     name = "experiment_api_proto",
     srcs = ["api.proto"],
-    import_prefix = "third_party/xmanager_cloud/experiment_state_server/proto",
+    import_prefix = "xmanager_cloud/experiment_state_server/proto",
     strip_import_prefix = "/api/protos/experiment",
     deps = [
         ":experiment_messages_proto",
@@ -135,7 +135,7 @@ proto_library(
         "work_unit.proto",
         "work_unit_execution.proto",
     ],
-    import_prefix = "third_party/xmanager_cloud/experiment_state_server/proto",
+    import_prefix = "xmanager_cloud/experiment_state_server/proto",
     strip_import_prefix = "/api/protos/experiment",
     deps = [
         "//api/protos/dashboard:dashboard_messages_proto",

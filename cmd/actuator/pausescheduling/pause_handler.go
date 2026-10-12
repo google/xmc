@@ -20,14 +20,15 @@ import (
 	"fmt"
 	"time"
 
-	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	timestamppb "protobuf/timestamp_go_proto"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/internal/workunit"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	"xmanager_cloud/validator/validator"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -137,7 +138,7 @@ func (h *TaskPauseHandler) HandlePause(ctx context.Context, payload *actuatortas
 		if !updateStatus {
 			return nil
 		}
-		return markExecutionSchedulingPaused(ctx, tx.WorkUnits, payload)
+		return markExecutionSchedulingPaused(ctx, tx, payload)
 	})
 	if err != nil {
 		return err
@@ -189,7 +190,7 @@ func resolveExecutionTarget(payload *actuatortaskpb.ActuatorPayload) string {
 
 // markExecutionSchedulingPaused sets the target execution's state to SCHEDULING_PAUSED within the
 // transaction.
-func markExecutionSchedulingPaused(ctx context.Context, workUnits storage.WorkUnitTxRepository, payload *actuatortaskpb.ActuatorPayload) error {
+func markExecutionSchedulingPaused(ctx context.Context, tx *storage.Transaction, payload *actuatortaskpb.ActuatorPayload) error {
 	targetToUpdate := resolveExecutionTarget(payload)
 	xid, wid, eid, err := validator.ValidateWorkUnitExecutionName(targetToUpdate)
 	if err != nil {
@@ -209,7 +210,7 @@ func markExecutionSchedulingPaused(ctx context.Context, workUnits storage.WorkUn
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state"}},
 	}
 
-	if _, err := workUnits.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate}); err != nil {
+	if _, err := workunit.UpdateWorkUnitExecutionsInTx(ctx, tx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate}); err != nil {
 		return fmt.Errorf("failed to update work unit execution status to SCHEDULING_PAUSED for %q: %w", targetToUpdate, err)
 	}
 	return nil

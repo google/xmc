@@ -43,36 +43,37 @@ type MockStorage struct {
 	UpdateArtifactResp *essmsgpb.Artifact
 	DeleteArtifactErr  error
 
-	FetchExperimentErr               error
-	Experiment                       *essmsgpb.Experiment
-	FetchExperimentStatusErr         error
-	ExperimentStatus                 *essmsgpb.ExperimentStatus
-	FetchWorkUnitErr                 error
-	WorkUnit                         *essmsgpb.WorkUnit
-	FetchCurrentWorkUnitExecutionErr error
-	WorkUnitExecution                *essmsgpb.WorkUnitExecution
-	CreateExperimentErr              error
-	CreateWorkUnitErr                error
-	AddWorkUnitOperationErr          error
-	LROOp                            *lropb.Operation
-	UpdateWorkUnitExecutionsErr      error
-	ListWorkUnitsResp                []*essmsgpb.WorkUnit
-	ListWorkUnitsErr                 error
-	UpdateExperimentLaunchStateErr   error
-	ListWorkUnitExecutionsErr        error
-	ListWorkUnitExecutionsResp       []*essmsgpb.WorkUnitExecution
-	ListExperimentsResp              []*essmsgpb.Experiment
-	NextPageToken                    string
-	ListExperimentsErr               error
-	UpdateExperimentErr              error
-	UpdateWorkUnitErr                error
-	UpdateWorkUnitRespOriginal       *essmsgpb.WorkUnit
-	UpdateWorkUnitRespReturned       *essmsgpb.WorkUnit
-	UpdateWorkUnitOperationErr       error
-	UpdateWorkUnitOperationCalls     int
-	GotOperationUpdate               *OperationUpdate
-	ListStatusMessagesResp           []*essmsgpb.StatusMessage
-	ListStatusMessagesErr            error
+	FetchExperimentErr                error
+	Experiment                        *essmsgpb.Experiment
+	FetchExperimentStatusErr          error
+	ExperimentStatus                  *essmsgpb.ExperimentStatus
+	FetchWorkUnitErr                  error
+	WorkUnit                          *essmsgpb.WorkUnit
+	FetchCurrentWorkUnitExecutionErr  error
+	WorkUnitExecution                 *essmsgpb.WorkUnitExecution
+	CreateExperimentErr               error
+	CreateWorkUnitErr                 error
+	AddWorkUnitOperationErr           error
+	LROOp                             *lropb.Operation
+	UpdateCurrentWorkUnitExecutionErr error
+	UpdatedWorkUnitExecutions         map[int64]*essmsgpb.WorkUnitExecution
+	ListWorkUnitsResp                 []*essmsgpb.WorkUnit
+	ListWorkUnitsErr                  error
+	UpdateExperimentLaunchStateErr    error
+	ListWorkUnitExecutionsErr         error
+	ListWorkUnitExecutionsResp        []*essmsgpb.WorkUnitExecution
+	ListExperimentsResp               []*essmsgpb.Experiment
+	NextPageToken                     string
+	ListExperimentsErr                error
+	UpdateExperimentErr               error
+	UpdateWorkUnitErr                 error
+	UpdateWorkUnitRespOriginal        *essmsgpb.WorkUnit
+	UpdateWorkUnitRespReturned        *essmsgpb.WorkUnit
+	UpdateWorkUnitOperationErr        error
+	UpdateWorkUnitOperationCalls      int
+	GotOperationUpdate                *OperationUpdate
+	ListStatusMessagesResp            []*essmsgpb.StatusMessage
+	ListStatusMessagesErr             error
 
 	RunInTransactionErr error
 	// RunInTransactionAttempts is how many times RunInTransaction invokes fn, simulating
@@ -86,10 +87,6 @@ type MockStorage struct {
 	// Transaction optionally overrides Transaction.PauseState and Transaction.PausedTasks
 	// passed to RunInTransaction callbacks; other fields are ignored.
 	Transaction *Transaction
-	// GotWorkUnitExecutionsXID and GotWorkUnitExecutionUpdates record the arguments of every
-	// UpdateWorkUnitExecutions call.
-	GotWorkUnitExecutionsXID    int64
-	GotWorkUnitExecutionUpdates []*WorkUnitExecutionUpdate
 }
 
 // CreateXidEntry mocks XID entry creation.
@@ -195,11 +192,24 @@ func (s *MockStorage) AddWorkUnitOperation(ctx context.Context, xid int64, wid i
 	return s.LROOp, nil
 }
 
-// UpdateWorkUnitExecutions mocks updating work unit executions and records the updates.
-func (s *MockStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
-	s.GotWorkUnitExecutionsXID = xid
-	s.GotWorkUnitExecutionUpdates = append(s.GotWorkUnitExecutionUpdates, updates...)
-	return nil, s.UpdateWorkUnitExecutionsErr
+// FetchUpdatingWorkUnits mocks fetching a batch of work units for update within a transaction.
+func (s *MockStorage) FetchUpdatingWorkUnits(ctx context.Context, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnit, error) {
+	if s.FetchWorkUnitErr != nil {
+		return nil, s.FetchWorkUnitErr
+	}
+	if s.WorkUnit == nil {
+		return nil, nil
+	}
+	res := make(map[int64]*essmsgpb.WorkUnit, len(wids))
+	for _, wid := range wids {
+		res[wid] = proto.Clone(s.WorkUnit).(*essmsgpb.WorkUnit)
+	}
+	return res, nil
+}
+
+// ListWorkUnitMessagesBySeverity mocks listing work unit status messages by severity within a transaction.
+func (s *MockStorage) ListWorkUnitMessagesBySeverity(ctx context.Context, xid int64, severity essmsgpb.StructuredMessage_Severity) ([]*essmsgpb.StructuredMessage, error) {
+	return nil, nil
 }
 
 // RunInTransaction mocks running a function within a transaction context.
@@ -250,6 +260,13 @@ func (s *MockStorage) SaveWorkUnitExecution(ctx context.Context, execution *essm
 
 // UpdateCurrentWorkUnitExecution mocks updating the current work unit execution.
 func (s *MockStorage) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error {
+	if s.UpdateCurrentWorkUnitExecutionErr != nil {
+		return s.UpdateCurrentWorkUnitExecutionErr
+	}
+	if s.UpdatedWorkUnitExecutions == nil {
+		s.UpdatedWorkUnitExecutions = make(map[int64]*essmsgpb.WorkUnitExecution)
+	}
+	s.UpdatedWorkUnitExecutions[wid] = proto.Clone(execution).(*essmsgpb.WorkUnitExecution)
 	return nil
 }
 

@@ -31,8 +31,8 @@ import (
 	"time"
 
 	"github.com/tink-crypto/tink-go/v2/jwt"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/jwtkeyset"
-	"xmanager_cloud/logging/logging"
 )
 
 // KeyPairReloader manages a cached certificate and reloads it when the file changes.

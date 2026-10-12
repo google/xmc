@@ -27,8 +27,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )

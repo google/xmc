@@ -22,12 +22,12 @@ import (
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
 	"github.com/google/uuid"
-	anypb "protobuf/any_go_proto"
-	timestamppb "protobuf/timestamp_go_proto"
+	anypb "google.golang.org/protobuf/types/known/anypb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/spanner/data/spannerdata"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage/spanner/data"
+	"xmanager_cloud/internal/validator"
 )
 
 // AddWorkUnitOperation adds an operation to a work unit.

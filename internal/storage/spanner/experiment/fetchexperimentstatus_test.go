@@ -22,8 +22,8 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/validator"
 )
 
 func TestFetchExperimentStatus(t *testing.T) {

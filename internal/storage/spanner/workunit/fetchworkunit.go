@@ -23,12 +23,31 @@ import (
 	"google.golang.org/grpc/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/spanner/data/spannerdata"
-	"xmanager_cloud/storage/spanner/schema/workunitschema"
-	"xmanager_cloud/storage/spanner/utils/spannerutils"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/safesql"
+	"xmanager_cloud/internal/storage/spanner/data"
+	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
+	"xmanager_cloud/internal/storage/spanner/utils"
+	"xmanager_cloud/internal/validator"
 )
+
+var getUpdatingWorkUnitsSQL = safesql.New(`
+	SELECT
+		Xid,
+		WorkUnitId,
+		ExecutionId,
+		ExecutionCreateTime AS CreateTime,
+		ExecutionUpdateTime AS UpdateTime,
+		ExecutionCompleteTime AS CompleteTime,
+		ExecutionMetadata,
+		WorkUnitStatus,
+		Executable
+	FROM
+		WorkUnits
+	WHERE
+		BitReversedXid = @bitReversedXid AND WorkUnitId IN UNNEST(@workUnitIds)
+	FOR UPDATE;
+`)
 
 // FetchWorkUnit retrieves a single WorkUnit from storage by its unique XID and WID.
 func (r *Repository) FetchWorkUnit(ctx context.Context, xid int64, wid int64) (*essmsgpb.WorkUnit, error) {
@@ -64,4 +83,44 @@ func (r *Repository) FetchWorkUnitTransaction(ctx context.Context, xid int64, wi
 	logging.Info(ctx, "Fetched work unit from storage", "work_unit", workUnit)
 
 	return workUnit, nil
+}
+
+// FetchUpdatingWorkUnits retrieves a batch of work units for update by their unique IDs within the bound read-write transaction.
+func (r *TxRepository) FetchUpdatingWorkUnits(ctx context.Context, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnit, error) {
+	stmt := spanner.NewStatement(getUpdatingWorkUnitsSQL.String())
+	stmt.Params["bitReversedXid"] = spannerutils.ReverseBits(xid)
+	stmt.Params["workUnitIds"] = wids
+
+	iter := r.tx.Query(ctx, stmt)
+	defer iter.Stop()
+
+	workUnits := make(map[int64]*essmsgpb.WorkUnit, len(wids))
+	if err := iter.Do(func(row *spanner.Row) error {
+		workUnitExecution, err := spannerdata.WorkUnitExecutionRowToProto(row)
+		if err != nil {
+			return fmt.Errorf("failed to convert row to WorkUnitExecution proto: %w", err)
+		}
+
+		_, wid, _, err := validator.ValidateWorkUnitExecutionName(workUnitExecution.GetName())
+		if err != nil {
+			return fmt.Errorf("failed to validate WorkUnitExecution name %q: %w", workUnitExecution.GetName(), err)
+		}
+
+		var exec essmsgpb.Executable
+		if err := row.ColumnByName("Executable", &exec); err != nil {
+			logging.Error(ctx, "failed to scan Executable column from WorkUnits table", "work_unit_id", wid, "error", err)
+			return fmt.Errorf("failed to scan Executable column: %w", err)
+		}
+
+		workUnits[wid] = &essmsgpb.WorkUnit{
+			Name:                     validator.ConstructWorkUnitName(xid, wid),
+			Executable:               &exec,
+			CurrentWorkUnitExecution: workUnitExecution,
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return workUnits, nil
 }

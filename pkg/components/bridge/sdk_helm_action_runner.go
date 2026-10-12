@@ -33,7 +33,7 @@ import (
 	"helm.sh/helm/v3/pkg/storage/driver"
 
 	stable2026a "xmanager_cloud/deploy/profiles/stable-2026a"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 // HelmActionRunner abstracts the execution of Helm release upgrades, uninstalls, and status queries via the Helm Go SDK or test doubles.

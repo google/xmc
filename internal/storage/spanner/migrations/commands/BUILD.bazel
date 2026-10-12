@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-compat_go_library(
+go_library(
     name = "commands",
     srcs = [
         "create.go",
@@ -33,7 +33,7 @@ compat_go_library(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "commands_test",
     srcs = [
         "create_test.go",
@@ -51,7 +51,7 @@ compat_go_test(
         "@com_github_google_go_cmp//cmp",
         "@com_google_cloud_go_spanner//:spanner",
         "@com_google_cloud_go_spanner//admin/database/apiv1",
+        "@com_google_cloud_go_spanner//admin/database/apiv1/databasepb",
         "@io_k8s_utils//ptr",
-        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
     ],
 )

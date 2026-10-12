@@ -27,9 +27,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
-	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
-	"xmanager_cloud/kubernetes/reconciler/shared/shared"
+	"xmanager_cloud/cmd/actuator/k8s_client"
+	"xmanager_cloud/cmd/reconciler/clusterqueue"
+	"xmanager_cloud/cmd/reconciler/shared"
 )
 
 // fakeControllerManager records runnables added via Add and serves a fake

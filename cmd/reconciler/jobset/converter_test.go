@@ -21,14 +21,14 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
-	timestamppb "protobuf/timestamp_go_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 	storagepkg "xmanager_cloud/internal/storage"
-	"xmanager_cloud/kubernetes/common/constants"
 
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 )

@@ -24,11 +24,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	timestamppb "protobuf/timestamp_go_proto"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/internal/storage/spanner/xid"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/spanner/utils/spannerutils"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

@@ -24,8 +24,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/logging/logging"
-	storagepkg "xmanager_cloud/storage/storage"
+	"xmanager_cloud/internal/logging"
+	storagepkg "xmanager_cloud/internal/storage"
 )
 
 // ConvertWorkloadToWorkUnitExecutionUpdate converts a Workload to a WorkUnitExecutionUpdate.
