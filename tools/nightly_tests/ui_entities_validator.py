@@ -251,21 +251,18 @@ class XMCUIBrowserSession:
         self, route_path: str, root_sel: str, shot_name: str, timeout_ms: int = 60000, tag: str = ""
     ) -> None:
         """Navigates to an arbitrary UI route and verifies authentication and landing path."""
-        normalized_route = "/" + route_path.lstrip("/")
-        target_url = f"{self.ui_base_url}{normalized_route}"
+        target_url = f"{self.ui_base_url}/" + route_path.lstrip("/")
         expected_path = urllib.parse.urlparse(target_url).path.rstrip("/")
         print(f"\n[UI Action] Navigating to UI Route: {target_url}...")
         self.page.goto(target_url, wait_until="networkidle", timeout=timeout_ms)
-        sel = f"{root_sel}, xmc-home-page, .guest-page-container"
-        self.page.wait_for_selector(sel, timeout=timeout_ms)
+        self.page.wait_for_selector(
+            f"{root_sel}, xmc-home-page, .guest-page-container", timeout=timeout_ms
+        )
         self.settle_and_wait_fonts()
         shot = self.take_screenshot(shot_name)
         print(f"  [✓] Route loaded. URL: {self.page.url} -> Screenshot: {shot}")
-        err_tag = tag or normalized_route.strip("/").replace("/", "_") or "root"
-        self._assert_authenticated_landing(expected_path, err_tag)
+        err_tag = tag or route_path.strip("/").replace("/", "_") or "root"
 
-    def _assert_authenticated_landing(self, expected_path: str, error_tag: str) -> None:
-        """Verifies the page did not land on an unauthorized view or unexpected redirect."""
         body = self.page.locator("body").inner_text() or ""
         current_path = urllib.parse.urlparse(self.page.url).path.rstrip("/")
         auth_error_markers = (
@@ -279,14 +276,14 @@ class XMCUIBrowserSession:
             any(marker in body for marker in auth_error_markers)
             or self.page.locator("xmc-home-page, .guest-page-container").count() != 0
         ):
-            err_shot = self.take_screenshot(f"ui_AUTHENTICATION_REQUIRED_{error_tag}.png")
+            err_shot = self.take_screenshot(f"ui_AUTHENTICATION_REQUIRED_{err_tag}.png")
             raise UIVerificationError(
                 f"❌ AUTHENTICATION REQUIRED: Landed on unauthorized or guest page "
                 f"(url={self.page.url}). Screenshot -> {err_shot}"
             )
 
         if current_path != expected_path:
-            err_shot = self.take_screenshot(f"ui_REDIRECT_{error_tag}.png")
+            err_shot = self.take_screenshot(f"ui_REDIRECT_{err_tag}.png")
             raise UIVerificationError(
                 f"❌ UNEXPECTED REDIRECT: Expected path '{expected_path}' but landed on '{current_path}' "
                 f"(url={self.page.url}). Screenshot -> {err_shot}"
@@ -295,26 +292,24 @@ class XMCUIBrowserSession:
     def assert_no_runtime_errors(
         self, context_label: str, ignored_http_substrings: Sequence[str] = ()
     ) -> None:
-        """Asserts that no uncaught page errors, same-origin HTTP >= 400 responses, or error banners exist."""
+        """Asserts zero uncaught page errors, same-origin HTTP >= 400 responses, or error banners."""
         b_loc = self.page.locator("xmc-error-banner, .error-banner")
         banner = (b_loc.first.text_content() or "").strip() if b_loc.count() > 0 else ""
-        http_errs = [
-            e for e in self.http_errors if not any(s in e for s in ignored_http_substrings)
-        ]
-        if not self.page_errors and not http_errs and not banner:
-            print(f"  [✓] Verified zero runtime/HTTP/banner errors ({context_label})")
-            return
-        err_shot = self.take_screenshot(f"ui_RUNTIME_ERROR_{context_label}.png")
-        raise UIVerificationError(
-            f"❌ RUNTIME ERROR ({context_label}): page_errors={self.page_errors}, "
-            f"http_errors={http_errs}, error_banner='{banner}'. Screenshot -> {err_shot}"
-        )
+        errs = [e for e in self.http_errors if not any(s in e for s in ignored_http_substrings)]
+        if self.page_errors or errs or banner:
+            shot = self.take_screenshot(f"ui_RUNTIME_ERROR_{context_label}.png")
+            raise UIVerificationError(
+                f"❌ RUNTIME ERROR ({context_label}): page_errors={self.page_errors}, http_errors={errs}, error_banner='{banner}'. Screenshot -> {shot}"
+            )
 
     def navigate_to_experiment(self, xid: str | int, timeout_ms: int = 60000) -> None:
         """Navigates to `/experiments/<xid>` and verifies that authentication succeeded."""
-        shot = f"ui_step1_landing_xid_{xid}.png"
         self.navigate_to_route(
-            f"/experiments/{xid}", "xmc-experiment-page", shot, timeout_ms, f"xid_{xid}"
+            f"/experiments/{xid}",
+            "xmc-experiment-page",
+            f"ui_step1_landing_xid_{xid}.png",
+            timeout_ms,
+            f"xid_{xid}",
         )
 
     def assert_experiment_header(

@@ -219,9 +219,9 @@ jobs:
             timeout_minutes: 15
           - id: 'resource_dashboard_ui'
             name: 'Resource Observability Dashboard (Playwright UI)'
-            example_path: ''
-            entrypoint: ''
-            args: ''
+            example_path: 'examples/simple_job'
+            entrypoint: 'launch.py'
+            args: '--queue=${QUEUE_NAME} --num_work_units=3 --duration=180 --gpus=0'
             verify_module: 'tools.nightly_tests.resource_dashboard_ui_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_playwright: true
@@ -293,7 +293,7 @@ jobs:
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xdash
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install absl-py python-dotenv
-          if [ -n "${EXAMPLE_PATH}" ] && [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
+          if [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt"
           fi
           if [ "${REQUIRES_PLAYWRIGHT:-}" = "true" ]; then
@@ -353,10 +353,6 @@ jobs:
           RAW_ARGS: '${{ matrix.example.args }}'
         run: |
           set -euo pipefail
-          if [ -z "${ENTRYPOINT}" ]; then
-            echo "xid=ui-e2e" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           if [ -n "${IAP_CLIENT_ID:-}" ]; then
             if [ -n "${XMC_CLIENT_SA:-}" ]; then
               XMC_AUTH_TOKEN=$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --impersonate-service-account="${XMC_CLIENT_SA}" --include-email)
@@ -491,7 +487,7 @@ jobs:
             echo "| **Launch Step** | \`${LAUNCH_OUTCOME}\` |"
             echo "| **Verify Step** | \`${VERIFY_OUTCOME}\` |"
             echo "| **Experiment / Dashboard ID** | \`${XID:-N/A}\` |"
-            if [ -n "${XID:-}" ] && [ "${XID}" != "skipped" ] && [ "${XID}" != "N/A" ] && [ "${XID}" != "ui-e2e" ]; then
+            if [ -n "${XID:-}" ] && [ "${XID}" != "skipped" ] && [ "${XID}" != "N/A" ]; then
               echo "| **Web UI Link** | https://xmc-nightly.${DOMAIN_NAME}/experiments/${XID} |"
             fi
             echo ""
