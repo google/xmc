@@ -114,6 +114,7 @@ def _log_actuator_diagnostics(kube_context: str) -> None:
                 "-n",
                 "xmc",
                 "deployment/actuator-deployment",
+                "--all-containers=true",
                 "--tail=40",
             ],
             capture_output=True,
