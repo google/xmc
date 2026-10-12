@@ -138,12 +138,13 @@ def assert_smart_resource_finder_and_predictability(
 ) -> str:
     """Exercises Smart Resource Finder controls, predictability metrics, and timeframe toggles."""
     print("\n[ROD UI] Exercising Smart Resource Finder & Predictability column...")
+    session.page.wait_for_selector(".predictability-empty-state", timeout=timeout_ms)
     if session.page.locator(".predictability-empty-state").count() == 0:
         raise ui_entities_validator.UIVerificationError(
             "Expected initial .predictability-empty-state before selecting a resource type."
         )
     session.page.locator("xmc-smart-resource-finder mat-select.query-select-box").first.click()
-    session.settle_and_wait_fonts(200)
+    session.page.wait_for_selector("mat-option", timeout=timeout_ms)
     options = session.page.locator("mat-option")
     if options.count() < 2:
         raise ui_entities_validator.UIVerificationError(
@@ -162,7 +163,10 @@ def assert_smart_resource_finder_and_predictability(
             f'xmc-rod-queue-list button.toggle-pill:has-text("{timeframe}")'
         ).first
         pill.click()
-        session.settle_and_wait_fonts(150)
+        session.page.wait_for_selector(
+            f'xmc-rod-queue-list button.toggle-pill.active-toggle:has-text("{timeframe}")',
+            timeout=timeout_ms,
+        )
         if "active-toggle" not in (pill.get_attribute("class") or ""):
             raise ui_entities_validator.UIVerificationError(
                 f"Velocity timeframe pill '{timeframe}' did not acquire 'active-toggle' class."

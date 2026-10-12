@@ -143,6 +143,12 @@ class ResourceDashboardUIVerifyTest(unittest.TestCase):
         session = self._build_mock_session()
         res = resource_dashboard_ui_verify.assert_smart_resource_finder_and_predictability(session)
         self.assertEqual(res, "cpu")
+        session.page.wait_for_selector.assert_any_call(".predictability-empty-state", timeout=15000)
+        session.page.wait_for_selector.assert_any_call("mat-option", timeout=15000)
+        session.page.wait_for_selector.assert_any_call(
+            'xmc-rod-queue-list button.toggle-pill.active-toggle:has-text("1h")',
+            timeout=15000,
+        )
 
         no_empty_state = self._build_mock_session(predictability_empty_count=0)
         with self.assertRaisesRegex(
