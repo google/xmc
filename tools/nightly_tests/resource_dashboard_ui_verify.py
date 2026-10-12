@@ -37,7 +37,7 @@ flags.DEFINE_bool("headless", True, "Run browser in headless mode", allow_overri
 flags.DEFINE_string("screenshots_dir", None, "Diagnostic screenshots dir", allow_override=True)
 
 EXPECTED_CLUSTER_QUEUES = ("cpu-cluster-queue", "gpu-cluster-queue", "tpu-cluster-queue")
-EXPECTED_FIRST_CARD_FLAVOR: str = "DefaultFlavor / CPU"
+EXPECTED_FIRST_CARD_FLAVOR: str = "cpu"
 EXPECTED_WORK_UNITS: tuple[str, ...] = ("1", "2", "3")
 EXPECTED_RUNNING_POS: str = "N/A - running"
 VELOCITY_TIMEFRAMES: tuple[str, ...] = ("1h", "24h", "7d")
