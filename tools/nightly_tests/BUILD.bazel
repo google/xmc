@@ -35,10 +35,10 @@ exports_files([
     "pathways_job_verify.py",
     "per_job_node_selector_verify.py",
     "resource_dashboard_ui_verify.py",
-    "resource_dashboard_ui_verify_test.py",
     "sidecar_verify.py",
     "simple_job_ui_verify.py",
     "simple_job_verify.py",
+    "ui_css_selectors.py",
     "ui_entities_validator.py",
     "ui_entities_validator_test.py",
     "weekly_visual_snapshot.py",
@@ -64,7 +64,10 @@ py_library(
 
 py_library(
     name = "ui_entities_validator_lib",
-    srcs = ["ui_entities_validator.py"],
+    srcs = [
+        "ui_css_selectors.py",
+        "ui_entities_validator.py",
+    ],
     imports = ["../.."],
 )
 
