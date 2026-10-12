@@ -27,12 +27,9 @@ import (
 )
 
 const (
-	// minRetryBackoff is the smallest delay before resending a failed update.
-	minRetryBackoff = 250 * time.Millisecond
-	// maxRetryBackoff caps the exponential backoff between resend attempts.
-	maxRetryBackoff = 30 * time.Second
-	// maxRetryAge is how long after its first failure an update is still retried.
-	maxRetryAge = 5 * time.Minute
+	minRetryBackoff = 250 * time.Millisecond // smallest delay before resending
+	maxRetryBackoff = 30 * time.Second       // cap on exponential retry backoff
+	maxRetryAge     = 5 * time.Minute        // retry budget from first failure
 
 	dropReasonPermanent            = "permanent"
 	dropReasonRetryBudgetExhausted = "retry_budget_exhausted"
@@ -43,12 +40,10 @@ var (
 		Name: "batcher_updates_dropped_total",
 		Help: "Total number of work unit updates the batcher dropped without persisting, by reason",
 	}, []string{"xid", "reason"})
-
 	updatesRetriedTotal = MetricsFactory.NewCounterVec(prometheus.CounterOpts{
 		Name: "batcher_updates_retried_total",
 		Help: "Total number of queued retries merged back into a flush batch",
 	}, []string{"xid"})
-
 	retryQueueSize = MetricsFactory.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "batcher_retry_queue_size",
 		Help: "Number of failed work unit updates waiting in the batcher retry queue",
@@ -61,8 +56,7 @@ type slotKey struct {
 	source   UpdateSource
 }
 
-// batchEntry is an update in a flush batch, tagged with its source and retry
-// history so a failed flush can requeue it.
+// batchEntry is an update in a flush batch, tagged with its source and retry history.
 type batchEntry struct {
 	update        storagepkg.WorkUnitExecutionUpdate
 	source        UpdateSource
@@ -76,8 +70,6 @@ type retryEntry struct {
 	notBefore time.Time
 }
 
-// currentTime returns the injected clock's time, falling back to time.Now when
-// the batcher was constructed without one.
 func (b *UpdateBatcher) currentTime() time.Time {
 	if b.now == nil {
 		return time.Now()
@@ -85,13 +77,12 @@ func (b *UpdateBatcher) currentTime() time.Time {
 	return b.now()
 }
 
-// takeSnapshots atomically swaps out pending updates in O(1) when no retries
-// are queued, and otherwise resolves retry collisions and drains due or
-// piggybacking retries in O(|retries|) under UpdatesMu. Slice construction and
-// sorting happen outside UpdatesMu inside each experiment's flush goroutine.
+// takeSnapshots swaps out pending updates in O(1) when no retries are queued,
+// and otherwise drains due or piggybacking retries in O(|retries|) under UpdatesMu.
 func (b *UpdateBatcher) takeSnapshots() (map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, map[int64][]batchEntry) {
 	b.UpdatesMu.Lock()
 	defer b.UpdatesMu.Unlock()
+	clear(b.removed)
 	if len(b.Updates) == 0 && len(b.retries) == 0 {
 		return nil, nil
 	}
@@ -100,20 +91,43 @@ func (b *UpdateBatcher) takeSnapshots() (map[int64]map[int64]map[UpdateSource]st
 		pending = b.Updates
 		b.Updates = make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
 	}
-	if len(b.retries) == 0 {
-		return pending, nil
+	var retries map[int64][]batchEntry
+	if len(b.retries) > 0 {
+		retries = b.drainRetriesLocked(&pending, b.currentTime())
+		retryQueueSize.WithLabelValues().Set(float64(len(b.retries)))
 	}
-	retries := b.drainRetriesLocked(&pending, b.currentTime())
-	retryQueueSize.WithLabelValues().Set(float64(len(b.retries)))
+	b.flushing = len(pending) > 0
 	return pending, retries
 }
 
-// drainRetriesLocked resolves EID collisions between queued retries and pending
-// updates, then drains due retries and any retries piggybacking on an
-// experiment already flushing this tick. Callers must hold UpdatesMu.
+func (b *UpdateBatcher) finishFlush() {
+	b.UpdatesMu.Lock()
+	defer b.UpdatesMu.Unlock()
+	b.flushing = false
+	clear(b.removed)
+}
+
+func (b *UpdateBatcher) removeRetryLocked(key slotKey, eid int64) {
+	if b.flushing {
+		if b.removed == nil {
+			b.removed = make(map[slotKey]int64)
+		}
+		b.removed[key] = max(b.removed[key], eid)
+	}
+	if r, ok := b.retries[key]; ok && r.entry.update.EID <= eid {
+		delete(b.retries, key)
+		retryQueueSize.WithLabelValues().Set(float64(len(b.retries)))
+	}
+}
+
+// drainRetriesLocked resolves EID collisions with pending updates, then drains
+// due retries and retries piggybacking on an experiment flushing this tick.
 func (b *UpdateBatcher) drainRetriesLocked(pending *map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, now time.Time) map[int64][]batchEntry {
-	b.discardStaleLocked(*pending)
 	for key, retry := range b.retries {
+		if evictPendingUpTo(*pending, key, retry.entry.update.EID-1) {
+			delete(b.retries, key)
+			continue
+		}
 		if now.Before(retry.notBefore) {
 			continue
 		}
@@ -141,41 +155,28 @@ func (b *UpdateBatcher) drainRetriesLocked(pending *map[int64]map[int64]map[Upda
 	return drained
 }
 
-// discardStaleLocked applies the EID rule between a retry and a pending update
-// for the same slot, mirroring Add: a pending update with an equal or higher
-// EID discards the retry; a lower-EID pending update is discarded in favor of
-// the retry, whether or not the retry is due. Callers must hold UpdatesMu.
-func (b *UpdateBatcher) discardStaleLocked(pending map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate) {
-	for key, retry := range b.retries {
-		widMap, ok := pending[key.xid]
-		if !ok {
-			continue
-		}
-		sourceMap, ok := widMap[key.wid]
-		if !ok {
-			continue
-		}
-		u, ok := sourceMap[key.source]
-		if !ok {
-			continue
-		}
-		if u.EID >= retry.entry.update.EID {
-			delete(b.retries, key)
-			continue
-		}
-		delete(sourceMap, key.source)
-		if len(sourceMap) == 0 {
-			delete(widMap, key.wid)
-		}
-		if len(widMap) == 0 {
-			delete(pending, key.xid)
-		}
+// evictPendingUpTo deletes m[key] when its EID is <= maxEID (pruning empty
+// maps) and reports whether an entry with EID > maxEID remains in m.
+func evictPendingUpTo(m map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, key slotKey, maxEID int64) bool {
+	u, ok := m[key.xid][key.wid][key.source]
+	if !ok {
+		return false
 	}
+	if u.EID > maxEID {
+		return true
+	}
+	delete(m[key.xid][key.wid], key.source)
+	if len(m[key.xid][key.wid]) == 0 {
+		delete(m[key.xid], key.wid)
+	}
+	if len(m[key.xid]) == 0 {
+		delete(m, key.xid)
+	}
+	return false
 }
 
 // buildExperimentBatch combines an experiment's pending updates and drained
-// retries into a single slice ordered by (wid, source). Executed inside the
-// per-experiment goroutine outside UpdatesMu.
+// retries into a single slice ordered by (wid, source).
 func buildExperimentBatch(widMap map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, retries []batchEntry) []batchEntry {
 	count := len(retries)
 	for _, sourceMap := range widMap {
@@ -202,8 +203,6 @@ func updatePointers(batch []batchEntry) []*storagepkg.WorkUnitExecutionUpdate {
 	return updates
 }
 
-// handleFlushFailure requeues a transiently failed batch and drops a
-// permanently failed one.
 func (b *UpdateBatcher) handleFlushFailure(ctx context.Context, xid int64, batch []batchEntry, err error) {
 	if !IsPermanentStorageError(err) {
 		b.requeue(ctx, xid, batch, err)
@@ -212,8 +211,6 @@ func (b *UpdateBatcher) handleFlushFailure(ctx context.Context, xid int64, batch
 	b.recordDropped(ctx, xid, batch, dropReasonPermanent, err)
 }
 
-// countWorkUnits counts distinct WIDs in a batch sorted by WID, without
-// allocating.
 func countWorkUnits(batch []batchEntry) int {
 	count := 0
 	for i, entry := range batch {
@@ -224,17 +221,15 @@ func countWorkUnits(batch []batchEntry) int {
 	return count
 }
 
-// requeue schedules failed entries for retry, dropping those past maxRetryAge.
 func (b *UpdateBatcher) requeue(ctx context.Context, xid int64, entries []batchEntry, err error) {
-	expired := b.scheduleRetries(xid, entries, b.currentTime())
-	if len(expired) > 0 {
+	if expired := b.scheduleRetries(xid, entries, b.currentTime()); len(expired) > 0 {
 		b.recordDropped(ctx, xid, expired, dropReasonRetryBudgetExhausted, err)
 	}
 }
 
-// scheduleRetries records a failed attempt for each entry and queues it with
-// exponential backoff. A queued retry with a higher EID for the same slot is
-// kept. Returns the entries whose retry budget is exhausted.
+// scheduleRetries queues failed entries with exponential backoff, skipping
+// entries superseded while in flight by Remove, a newer Add, or a higher-EID
+// retry. Returns entries whose retry budget is exhausted.
 func (b *UpdateBatcher) scheduleRetries(xid int64, entries []batchEntry, now time.Time) []batchEntry {
 	b.UpdatesMu.Lock()
 	defer b.UpdatesMu.Unlock()
@@ -244,6 +239,10 @@ func (b *UpdateBatcher) scheduleRetries(xid int64, entries []batchEntry, now tim
 	defer func() { retryQueueSize.WithLabelValues().Set(float64(len(b.retries))) }()
 	var expired []batchEntry
 	for _, entry := range entries {
+		key := slotKey{xid: xid, wid: entry.update.WID, source: entry.source}
+		if b.isSupersededLocked(key, entry.update.EID) {
+			continue
+		}
 		entry.attempt++
 		if entry.firstFailedAt.IsZero() {
 			entry.firstFailedAt = now
@@ -252,18 +251,22 @@ func (b *UpdateBatcher) scheduleRetries(xid int64, entries []batchEntry, now tim
 			expired = append(expired, entry)
 			continue
 		}
-		key := slotKey{xid: xid, wid: entry.update.WID, source: entry.source}
-		if queued, ok := b.retries[key]; ok && queued.entry.update.EID > entry.update.EID {
-			continue
-		}
 		b.retries[key] = retryEntry{entry: entry, notBefore: now.Add(b.retryBackoff(entry.attempt))}
 	}
 	return expired
 }
 
-// retryBackoff returns the delay before resend attempt number attempt+1: the
-// tick duration (at least minRetryBackoff), doubled per prior attempt, capped
-// at maxRetryBackoff.
+func (b *UpdateBatcher) isSupersededLocked(key slotKey, eid int64) bool {
+	if evictPendingUpTo(b.Updates, key, eid-1) {
+		return true
+	}
+	if removedEID, ok := b.removed[key]; ok && eid <= removedEID {
+		return true
+	}
+	queued, ok := b.retries[key]
+	return ok && queued.entry.update.EID > eid
+}
+
 func (b *UpdateBatcher) retryBackoff(attempt int) time.Duration {
 	backoff := max(b.tickDuration, minRetryBackoff)
 	for i := 1; i < attempt && backoff < maxRetryBackoff; i++ {
@@ -272,7 +275,6 @@ func (b *UpdateBatcher) retryBackoff(attempt int) time.Duration {
 	return min(backoff, maxRetryBackoff)
 }
 
-// recordDropped counts and logs entries that will not be persisted.
 func (b *UpdateBatcher) recordDropped(ctx context.Context, xid int64, entries []batchEntry, reason string, err error) {
 	if len(entries) == 0 {
 		return

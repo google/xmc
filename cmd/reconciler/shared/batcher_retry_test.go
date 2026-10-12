@@ -51,11 +51,15 @@ type scriptedStorage struct {
 	errs      []error
 	alwaysErr error
 	errForWID map[int64]error
+	onCall    func()
 	calls     [][]sentUpdate
 	callXIDs  []int64
 }
 
 func (s *scriptedStorage) UpdateWorkUnitExecutions(_ context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*workUnitExecution, error) {
+	if s.onCall != nil {
+		s.onCall()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	call := make([]sentUpdate, len(updates))
@@ -360,41 +364,82 @@ func TestScheduleRetries_QueuedHigherEIDSurvivesLowerEIDFailure(t *testing.T) {
 	}
 }
 
-func TestRetry_PermanentSingleUpdateDroppedWithoutRetry(t *testing.T) {
-	storage := &scriptedStorage{alwaysErr: grpcerr.ErrNotFound}
-	b, clock := newRetryTestBatcher(t, storage)
-	addRunning(t, b, retryTestXID, 1)
-
-	b.processBatches(t.Context())
-	clock.advance(time.Minute)
+func TestRetry_RemoveEvictsQueuedRetries(t *testing.T) {
+	storage := &scriptedStorage{alwaysErr: grpcerr.ErrUnavailable}
+	b, _ := newRetryTestBatcher(t, storage)
+	b.Add(t.Context(), retryTestXID, testUpdate(1, 2, stateRunning), JobsetSource)
 	b.processBatches(t.Context())
 
-	if got := storage.callCount(); got != 1 {
-		t.Errorf("storage calls = %d, want 1 (no retry)", got)
+	b.Remove(retryTestXID, 1, 1, JobsetSource)
+	if got, gauge := queuedRetries(b), testutil.ToFloat64(retryQueueSize.WithLabelValues()); got != 1 || gauge != 1 {
+		t.Errorf("after Remove(eid=1): queued=%d, gauge=%v, want 1, 1", got, gauge)
 	}
-	if got := droppedCount(dropReasonPermanent); got != 1 {
-		t.Errorf("dropped{permanent} = %v, want 1", got)
-	}
-	if got := queuedRetries(b); got != 0 {
-		t.Errorf("queued retries = %d, want 0", got)
+	b.Remove(retryTestXID, 1, 2, JobsetSource)
+	if got, gauge := queuedRetries(b), testutil.ToFloat64(retryQueueSize.WithLabelValues()); got != 0 || gauge != 0 {
+		t.Errorf("after Remove(eid=2): queued=%d, gauge=%v, want 0, 0", got, gauge)
 	}
 }
 
-func TestRetry_PermanentMultiWorkUnitBatchDropped(t *testing.T) {
-	storage := &scriptedStorage{errForWID: map[int64]error{2: grpcerr.ErrNotFound}}
-	b, _ := newRetryTestBatcher(t, storage)
-	addRunning(t, b, retryTestXID, 1, 2, 3)
-
-	b.processBatches(t.Context())
-
-	if got := storage.callCount(); got != 1 {
-		t.Errorf("storage calls = %d, want 1 (no retry)", got)
+func TestRetry_InFlightRemoveAndAddSupersede(t *testing.T) {
+	tests := []struct {
+		name        string
+		elapsed     time.Duration
+		onCall      func(b *UpdateBatcher)
+		wantQueue   int
+		wantPending int
+	}{
+		{name: "in-flight Remove matching EID suppresses retry", onCall: func(b *UpdateBatcher) { b.Remove(retryTestXID, 1, 2, JobsetSource) }},
+		{name: "in-flight Remove lower EID keeps retry", onCall: func(b *UpdateBatcher) { b.Remove(retryTestXID, 1, 1, JobsetSource) }, wantQueue: 1},
+		{name: "in-flight Add equal EID suppresses retry and budget-exhausted drop", elapsed: maxRetryAge + time.Nanosecond, onCall: func(b *UpdateBatcher) {
+			b.Add(t.Context(), retryTestXID, testUpdate(1, 2, stateCompleted), JobsetSource)
+		}, wantPending: 1},
+		{name: "in-flight Add lower EID is evicted on failure", onCall: func(b *UpdateBatcher) {
+			b.Add(t.Context(), retryTestXID, testUpdate(1, 1, stateCompleted), JobsetSource)
+		}, wantQueue: 1},
 	}
-	if got := droppedCount(dropReasonPermanent); got != 3 {
-		t.Errorf("dropped{permanent} = %v, want 3 (whole batch)", got)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			storage := &scriptedStorage{alwaysErr: grpcerr.ErrUnavailable}
+			b, clock := newRetryTestBatcher(t, storage)
+			b.Add(t.Context(), retryTestXID, testUpdate(1, 2, stateRunning), JobsetSource)
+			if tc.elapsed > 0 {
+				b.processBatches(t.Context())
+				clock.advance(tc.elapsed)
+			}
+			storage.onCall = func() { tc.onCall(b) }
+			b.processBatches(t.Context())
+
+			if got := queuedRetries(b); got != tc.wantQueue {
+				t.Errorf("queued retries = %d, want %d", got, tc.wantQueue)
+			}
+			if got := len(b.Updates); got != tc.wantPending {
+				t.Errorf("len(b.Updates) = %d, want %d", got, tc.wantPending)
+			}
+			if got := droppedCount(dropReasonRetryBudgetExhausted); got != 0 {
+				t.Errorf("dropped{retry_budget_exhausted} = %v, want 0", got)
+			}
+		})
 	}
-	if got := queuedRetries(b); got != 0 {
-		t.Errorf("queued retries = %d, want 0", got)
+}
+
+func TestRetry_PermanentErrorsDroppedWithoutRetry(t *testing.T) {
+	for _, wids := range [][]int64{{1}, {1, 2, 3}} {
+		storage := &scriptedStorage{alwaysErr: grpcerr.ErrNotFound}
+		b, clock := newRetryTestBatcher(t, storage)
+		addRunning(t, b, retryTestXID, wids...)
+		b.processBatches(t.Context())
+		clock.advance(time.Minute)
+		b.processBatches(t.Context())
+
+		if got := storage.callCount(); got != 1 {
+			t.Errorf("wids=%v: storage calls = %d, want 1", wids, got)
+		}
+		if got := droppedCount(dropReasonPermanent); got != float64(len(wids)) {
+			t.Errorf("wids=%v: dropped{permanent} = %v, want %d", wids, got, len(wids))
+		}
+		if got := queuedRetries(b); got != 0 {
+			t.Errorf("wids=%v: queued retries = %d, want 0", wids, got)
+		}
 	}
 }
 

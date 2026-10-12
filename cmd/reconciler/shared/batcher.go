@@ -147,7 +147,9 @@ type UpdateBatcher struct {
 
 	// retries holds updates whose flush failed transiently, keyed by
 	// (xid, wid, source). Guarded by UpdatesMu; lazily initialized.
-	retries map[slotKey]retryEntry
+	retries  map[slotKey]retryEntry
+	removed  map[slotKey]int64
+	flushing bool
 	// now returns the current time; nil means time.Now. Injectable for tests.
 	now func() time.Time
 }
@@ -194,11 +196,7 @@ func (b *UpdateBatcher) Add(ctx context.Context, xid int64, update storagepkg.Wo
 func (b *UpdateBatcher) Remove(xid, wid, eid int64, source UpdateSource) {
 	b.UpdatesMu.Lock()
 	defer b.UpdatesMu.Unlock()
-	key := slotKey{xid: xid, wid: wid, source: source}
-	if r, ok := b.retries[key]; ok && r.entry.update.EID <= eid {
-		delete(b.retries, key)
-		retryQueueSize.WithLabelValues().Set(float64(len(b.retries)))
-	}
+	b.removeRetryLocked(slotKey{xid: xid, wid: wid, source: source}, eid)
 	byWID, ok := b.Updates[xid]
 	if !ok {
 		return
@@ -252,6 +250,7 @@ func (b *UpdateBatcher) processBatches(ctx context.Context) bool {
 	if len(pending) == 0 {
 		return false
 	}
+	defer b.finishFlush()
 
 	logging.Info(ctx, "Processing batches", "numExperiments", len(pending))
 	batchesProcessedTotal.WithLabelValues().Inc()

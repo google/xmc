@@ -350,6 +350,8 @@ On each tick, queued retries are merged with the new pending updates slot by slo
   is due yet.
 - A due retry is sent. A retry that is not yet due is also sent if its experiment is being flushed
   this tick anyway, since that costs no extra call. Backoff therefore only bounds retry-only load.
+- If a flush fails after `Remove` or a newer `Add` (`eid >= entry.eid`) arrived while the RPC was in
+  flight, the superseded entry is skipped rather than re-queued or counted as budget-exhausted.
 
 An update can therefore take up to about 6 minutes to be dropped: the 5 minute budget, plus up to
 30 s of backoff before the attempt that notices it, plus the 30 s storage call timeout. A pending
