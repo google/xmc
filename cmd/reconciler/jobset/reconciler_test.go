@@ -775,8 +775,11 @@ func TestFetchCurrentExecution_PendingBatcherFallback(t *testing.T) {
 	}, shared.WorkloadSource)
 
 	r := &Reconciler{
-		Batcher: batcher,
-		Storage: &mockStorageUpdater{fetchRes: nil},
+		Project:     "mgmt-p",
+		Location:    "mgmt-l",
+		ClusterName: "mgmt-c",
+		Batcher:     batcher,
+		Storage:     &mockStorageUpdater{fetchRes: nil},
 	}
 	got := r.fetchCurrentExecution(t.Context(), 123, 1)
 	if got.GetMetadata().GetExecutingCluster().GetClusterName() != "worker-cluster" {
@@ -790,16 +793,21 @@ func TestFetchCurrentExecution_PendingBatcherFallback(t *testing.T) {
 		Batcher: batcher,
 		Storage: &mockStorageUpdater{
 			fetchRes: &spb.WorkUnitExecution{
-				Name:     "experiments/123/workUnits/1/executions/2",
-				Metadata: &spb.WorkUnitExecutionMetadata{MlrunUrl: "https://mlrun/1"},
+				Name: "experiments/123/workUnits/1/executions/2",
+				Metadata: &spb.WorkUnitExecutionMetadata{
+					MlrunUrl:     "https://mlrun/1",
+					ResourceName: "xmc-operation-123-1",
+				},
 			},
 		},
 	}
 	gotWithExec := rWithExec.fetchCurrentExecution(t.Context(), 123, 1)
-	if gotWithExec.GetName() != "experiments/123/workUnits/1/executions/2" || gotWithExec.GetMetadata().GetMlrunUrl() != "https://mlrun/1" {
-		t.Errorf("gotWithExec = %+v, want Name and MlrunUrl preserved", gotWithExec)
+	if gotWithExec.GetName() != "experiments/123/workUnits/1/executions/2" ||
+		gotWithExec.GetMetadata().GetMlrunUrl() != "https://mlrun/1" ||
+		gotWithExec.GetMetadata().GetResourceName() != "xmc-operation-123-1" {
+		t.Errorf("gotWithExec = %+v, want Name, MlrunUrl, and ResourceName preserved", gotWithExec)
 	}
-	if p, l, c := r.resolveTargetCluster(nil); p != "" || l != "" || c != "" {
-		t.Errorf("resolveTargetCluster(nil) = (%q, %q, %q), want empty strings", p, l, c)
+	if p, l, c := r.resolveTargetCluster(nil); p != "mgmt-p" || l != "mgmt-l" || c != "mgmt-c" {
+		t.Errorf("resolveTargetCluster(nil) = (%q, %q, %q), want (mgmt-p, mgmt-l, mgmt-c)", p, l, c)
 	}
 }

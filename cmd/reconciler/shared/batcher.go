@@ -138,6 +138,7 @@ type BatcherConfig struct {
 // UpdateBatcher is responsible for batching updates and processing them.
 type UpdateBatcher struct {
 	Updates                map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate
+	inFlight               map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate
 	UpdatesMu              sync.Mutex
 	tickDuration           time.Duration
 	maxParallelExperiments int
@@ -153,6 +154,7 @@ func NewUpdateBatcher(ctx context.Context, cfg *BatcherConfig, storage StorageUp
 	}
 	return &UpdateBatcher{
 		Updates:                make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate),
+		inFlight:               make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate),
 		tickDuration:           cfg.TickDuration,
 		maxParallelExperiments: maxParallelExperiments,
 		Storage:                storage,
@@ -173,14 +175,17 @@ func (b *UpdateBatcher) Add(ctx context.Context, xid int64, update storagepkg.Wo
 	b.Updates[xid][update.WID][source] = update
 }
 
-// Get returns a pending update for the given xid, wid, and source if present.
+// Get returns a pending or in-flight update for the given xid, wid, and source if present.
 func (b *UpdateBatcher) Get(xid, wid int64, source UpdateSource) (storagepkg.WorkUnitExecutionUpdate, bool) {
 	b.UpdatesMu.Lock()
 	defer b.UpdatesMu.Unlock()
-	if widMap, ok := b.Updates[xid]; ok {
-		if sourceMap, ok := widMap[wid]; ok {
-			u, ok := sourceMap[source]
-			return u, ok
+	for _, store := range []map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{b.Updates, b.inFlight} {
+		if widMap, ok := store[xid]; ok {
+			if sourceMap, ok := widMap[wid]; ok {
+				if u, ok := sourceMap[source]; ok {
+					return u, true
+				}
+			}
 		}
 	}
 	return storagepkg.WorkUnitExecutionUpdate{}, false
@@ -205,6 +210,23 @@ func (b *UpdateBatcher) BatchProcessor(ctx context.Context) error {
 	}
 }
 
+func (b *UpdateBatcher) drainUpdatesToInFlight() map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate {
+	b.UpdatesMu.Lock()
+	defer b.UpdatesMu.Unlock()
+	if len(b.Updates) == 0 {
+		return nil
+	}
+	currentUpdates := b.Updates
+	b.Updates = make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
+	if b.inFlight == nil {
+		b.inFlight = make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, len(currentUpdates))
+	}
+	for xid, widMap := range currentUpdates {
+		b.inFlight[xid] = widMap
+	}
+	return currentUpdates
+}
+
 // processBatches processes one batch of updates. Returns true if any batches were processed.
 func (b *UpdateBatcher) processBatches(ctx context.Context) bool {
 	startTime := time.Now()
@@ -212,14 +234,10 @@ func (b *UpdateBatcher) processBatches(ctx context.Context) bool {
 		duration := time.Since(startTime)
 		batchProcessingDuration.WithLabelValues().Observe(duration.Seconds())
 	}()
-	b.UpdatesMu.Lock()
-	if len(b.Updates) == 0 {
-		b.UpdatesMu.Unlock()
+	currentUpdates := b.drainUpdatesToInFlight()
+	if len(currentUpdates) == 0 {
 		return false
 	}
-	currentUpdates := b.Updates
-	b.Updates = make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
-	b.UpdatesMu.Unlock()
 
 	logging.Info(ctx, "Processing batches", "numExperiments", len(currentUpdates))
 	batchesProcessedTotal.WithLabelValues().Inc()
@@ -247,6 +265,17 @@ func (b *UpdateBatcher) processBatches(ctx context.Context) bool {
 }
 
 func (b *UpdateBatcher) processExperimentUpdates(ctx context.Context, xid int64, widMap map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate) {
+	b.UpdatesMu.Lock()
+	if b.inFlight == nil {
+		b.inFlight = make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
+	}
+	b.inFlight[xid] = widMap
+	b.UpdatesMu.Unlock()
+	defer func() {
+		b.UpdatesMu.Lock()
+		delete(b.inFlight, xid)
+		b.UpdatesMu.Unlock()
+	}()
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 
 	var updatesToSend []*storagepkg.WorkUnitExecutionUpdate

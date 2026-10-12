@@ -611,4 +611,22 @@ func TestConstructJobSet_MultiKueueManagedBy(t *testing.T) {
 	if names := extractClusterQueueAdmissionCheckNames(nil); names != nil {
 		t.Errorf("extractClusterQueueAdmissionCheckNames(nil) = %v, want nil", names)
 	}
+	t.Run("Transient Kueue lookup error propagates from constructJobSet", func(t *testing.T) {
+		ctx, client, _ := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
+		// Seed a LocalQueue with an invalid non-string spec.clusterQueue (slice) so NestedString returns an error.
+		badLQ := &unstructured.Unstructured{
+			Object: map[string]any{
+				"apiVersion": "kueue.x-k8s.io/v1beta1",
+				"kind":       "LocalQueue",
+				"metadata":   map[string]any{"name": "multikueue-cpu", "namespace": "multikueue-cpu"},
+				"spec":       map[string]any{"clusterQueue": []any{"invalid"}},
+			},
+		}
+		if _, err := client.dynamicClient.Resource(KueueLocalQueueGVR).Namespace("multikueue-cpu").Create(ctx, badLQ, metav1.CreateOptions{}); err != nil {
+			t.Fatalf("failed to seed bad LocalQueue: %v", err)
+		}
+		if _, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", "multikueue-cpu", testTime, Priorities{}); err == nil {
+			t.Fatal("constructJobSet() succeeded on invalid Kueue LocalQueue spec, want error")
+		}
+	})
 }
