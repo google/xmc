@@ -61,6 +61,11 @@ on:
         type: boolean
         required: false
         default: false
+      enable_multikueue:
+        description: 'Enable MultiKueue workload delegation and in-cluster worker deployment'
+        type: boolean
+        required: false
+        default: false
     secrets:
       GCP_PROJECT_ID:
         required: false
@@ -160,6 +165,11 @@ on:
         default: false
       enable_metrics:
         description: 'Enable Metrics system (ClickHouse & Redpanda) deployment'
+        type: boolean
+        required: false
+        default: false
+      enable_multikueue:
+        description: 'Enable MultiKueue workload delegation and in-cluster worker deployment'
         type: boolean
         required: false
         default: false
@@ -286,6 +296,7 @@ jobs:
           DASHBOARD_SERVICE_ENABLED: '${{ inputs.dashboard_service_deployment_enabled }}'
           ROD_ENABLED: '${{ inputs.rod_deployment_enabled }}'
           ENABLE_METRICS: '${{ inputs.enable_metrics }}'
+          ENABLE_MULTIKUEUE: '${{ inputs.enable_multikueue }}'
         run: |
           cat << EOF_YAML > deploy/ctk_v2/xmanager-cloud-deployment.yaml
           terraform_backend_defaults:
@@ -319,6 +330,7 @@ jobs:
             dashboard_service_deployment_enabled: ${DASHBOARD_SERVICE_ENABLED}
             rod_deployment_enabled: ${ROD_ENABLED}
             enable_metrics: ${ENABLE_METRICS}
+            enable_multikueue: ${ENABLE_MULTIKUEUE:-false}
           EOF_YAML
 
       - name: 'Execute GKE Deployment Pipeline'

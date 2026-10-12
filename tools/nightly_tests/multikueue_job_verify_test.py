@@ -81,13 +81,33 @@ class MultikueueJobVerifyTest(unittest.TestCase):
         ):
             multikueue_job_verify._assert_multikueue_work_units(stub, "42")
 
-    def test_verify_k8s_multikueue_crs_skips_when_no_kubectl_or_context(self) -> None:
-        with mock.patch.object(subprocess, "run", side_effect=FileNotFoundError):
-            multikueue_job_verify._verify_k8s_multikueue_crs("42")
-        with mock.patch.object(
-            subprocess, "run", side_effect=_kubectl_side_effect(ctx_rc=1, ctx_stdout="")
+    def test_verify_k8s_multikueue_crs_skips_locally_and_fails_in_ci_when_no_context(self) -> None:
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(subprocess, "run", side_effect=FileNotFoundError),
         ):
             multikueue_job_verify._verify_k8s_multikueue_crs("42")
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(
+                subprocess, "run", side_effect=_kubectl_side_effect(ctx_rc=1, ctx_stdout="")
+            ),
+        ):
+            multikueue_job_verify._verify_k8s_multikueue_crs("42")
+        with (
+            mock.patch.dict(os.environ, {"CI": "true"}, clear=True),
+            mock.patch.object(subprocess, "run", side_effect=FileNotFoundError),
+            self.assertRaisesRegex(AssertionError, "kubectl current-context unavailable"),
+        ):
+            multikueue_job_verify._verify_k8s_multikueue_crs("42")
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(
+                subprocess, "run", side_effect=_kubectl_side_effect(ctx_rc=1, ctx_stdout="")
+            ),
+            self.assertRaisesRegex(AssertionError, "kubectl current-context unavailable"),
+        ):
+            multikueue_job_verify._verify_k8s_multikueue_crs("42", require_k8s=True)
 
     def test_verify_k8s_multikueue_crs_fails_on_kubectl_get_error_or_inactive(self) -> None:
         with (
@@ -103,14 +123,25 @@ class MultikueueJobVerifyTest(unittest.TestCase):
         ):
             multikueue_job_verify._verify_k8s_multikueue_crs("42")
 
-    def test_verify_k8s_multikueue_crs_fails_on_workload_cluster_mismatch(self) -> None:
+    def test_verify_k8s_multikueue_crs_fails_on_workload_cluster_or_count_mismatch(self) -> None:
         with (
             mock.patch.object(
-                subprocess, "run", side_effect=_kubectl_side_effect(wl_stdout="wrong-cluster")
+                subprocess,
+                "run",
+                side_effect=_kubectl_side_effect(wl_stdout="wrong-cluster wrong-cluster"),
             ),
             self.assertRaisesRegex(AssertionError, "Workload.status.clusterName"),
         ):
             multikueue_job_verify._verify_k8s_multikueue_crs("42")
+        with (
+            mock.patch.object(
+                subprocess,
+                "run",
+                side_effect=_kubectl_side_effect(wl_stdout="xmc-nightly-worker-1"),
+            ),
+            self.assertRaisesRegex(AssertionError, "expected 2x"),
+        ):
+            multikueue_job_verify._verify_k8s_multikueue_crs("42", expected_count=2)
         with (
             mock.patch.object(subprocess, "run", side_effect=_kubectl_side_effect(wl_rc=1)),
             self.assertRaisesRegex(AssertionError, "Workload.status.clusterName"),

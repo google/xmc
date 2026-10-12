@@ -40,10 +40,19 @@ class MultiKueueConfigTest(unittest.TestCase):
             if lines:
                 self.assertFalse(lines[0].startswith("{"), f"Root flow mapping found: {lines[0]}")
 
-    def test_multikueue_queue_renders_by_default(self) -> None:
+    def test_multikueue_disabled_by_default(self) -> None:
+        self.assertNotIn("kind:", render_template(MULTIKUEUE_QUEUE_TEMPLATE, {}))
+        self.assertNotIn("kind:", render_template(MULTIKUEUE_WORKER_TEMPLATE, {}))
+
+    def test_multikueue_queue_renders_when_enabled(self) -> None:
         manifest = render_template(
             MULTIKUEUE_QUEUE_TEMPLATE,
-            {"projectId": "test-proj", "clusterLocation": "us-central1"},
+            {
+                "projectId": "test-proj",
+                "clusterLocation": "us-central1",
+                "kueueDev.multikueue.enabled": "true",
+                "kueueDev.multikueue.inClusterWorker.enabled": "true",
+            },
         )
         self.assertIn("kind: LocalQueue", manifest)
         self.assertIn('"multikueue-cpu-queue"', manifest)
@@ -66,8 +75,31 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn('"multikueue-worker-kubeconfig"', manifest)
         self._assert_no_root_flow_mapping(manifest)
 
-    def test_multikueue_worker_renders_by_default_and_skips_in_dev_env(self) -> None:
-        manifest = render_template(MULTIKUEUE_WORKER_TEMPLATE, {})
+        # Without inClusterWorker.enabled or explicit kubeconfigSecretName, queue does not render a dangling MultiKueueCluster
+        no_worker_manifest = render_template(
+            MULTIKUEUE_QUEUE_TEMPLATE,
+            {"kueueDev.multikueue.enabled": "true"},
+        )
+        self.assertNotIn("kind:", no_worker_manifest)
+
+        # With explicit external kubeconfigSecretName, queue renders without inClusterWorker
+        ext_manifest = render_template(
+            MULTIKUEUE_QUEUE_TEMPLATE,
+            {
+                "kueueDev.multikueue.enabled": "true",
+                "kueueDev.multikueue.kubeconfigSecretName": "external-worker-kubeconfig",
+            },
+        )
+        self.assertIn('"external-worker-kubeconfig"', ext_manifest)
+
+    def test_multikueue_worker_renders_when_enabled_and_skips_in_dev_env(self) -> None:
+        manifest = render_template(
+            MULTIKUEUE_WORKER_TEMPLATE,
+            {
+                "kueueDev.multikueue.enabled": "true",
+                "kueueDev.multikueue.inClusterWorker.enabled": "true",
+            },
+        )
         self.assertIn("kind: Deployment", manifest)
         self.assertIn("name: multikueue-worker", manifest)
         self.assertIn("rancher/k3s:v1.32.3-k3s1", manifest)
@@ -82,12 +114,20 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn("kind: LocalQueue", manifest)
         self.assertIn("--write-kubeconfig=/k3s-config/k3s.yaml", manifest)
         self.assertIn("create secret generic multikueue-worker-kubeconfig", manifest)
-        self.assertIn('"configmaps"', manifest)
-        self.assertIn("kueue-manager-config", manifest)
+        self.assertIn("exec sleep infinity", manifest)
+        self.assertNotIn('"configmaps"', manifest)
+        self.assertNotIn("kueue-manager-config", manifest)
         self._assert_no_root_flow_mapping(manifest)
 
-        dev_manifest = render_chart({"isDevEnvironment": "true"})
+        dev_manifest = render_chart(
+            {
+                "isDevEnvironment": "true",
+                "kueueDev.multikueue.enabled": "true",
+                "kueueDev.multikueue.inClusterWorker.enabled": "true",
+            }
+        )
         self.assertNotIn("name: multikueue-worker-bootstrap", dev_manifest)
+        self.assertNotIn('"multikueue-cpu-queue"', dev_manifest)
 
     def test_actuator_clusterrole_grants_kueue_queue_and_admissioncheck_read(self) -> None:
         manifest = render_template(ACTUATOR_CLUSTERROLE_TEMPLATE, {})

@@ -280,11 +280,11 @@ kueue:
 # MultiKueue workload delegation configuration
 kueueDev:
   multikueue:
-    enabled: true
+    enabled: false
     queueName: "multikueue-cpu-queue"
     workerClusterName: "xmc-nightly-worker-1"
     inClusterWorker:
-      enabled: true
+      enabled: false
 
 # Remote Kubernetes cluster configuration (for hybrid KinD control plane + remote GKE workload execution)
 remoteK8s:

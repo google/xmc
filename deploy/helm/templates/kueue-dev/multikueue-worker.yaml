@@ -21,7 +21,7 @@ apiVersion: v1
 kind: List
 items:
 - { apiVersion: v1, kind: ServiceAccount, metadata: { name: multikueue-worker-bootstrap, namespace: kueue-system } }
-- { apiVersion: rbac.authorization.k8s.io/v1, kind: Role, metadata: { name: multikueue-worker-bootstrap, namespace: kueue-system }, rules: [{ apiGroups: [""], resources: ["secrets", "configmaps"], verbs: ["get", "create", "update", "patch"] }, { apiGroups: ["apps"], resources: ["deployments"], resourceNames: ["kueue-controller-manager"], verbs: ["get", "patch"] }] }
+- { apiVersion: rbac.authorization.k8s.io/v1, kind: Role, metadata: { name: multikueue-worker-bootstrap, namespace: kueue-system }, rules: [{ apiGroups: [""], resources: ["secrets"], verbs: ["get", "create", "update", "patch"] }] }
 - { apiVersion: rbac.authorization.k8s.io/v1, kind: RoleBinding, metadata: { name: multikueue-worker-bootstrap, namespace: kueue-system }, subjects: [{ kind: ServiceAccount, name: multikueue-worker-bootstrap, namespace: kueue-system }], roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: multikueue-worker-bootstrap } }
 - { apiVersion: v1, kind: Service, metadata: { name: multikueue-worker, namespace: kueue-system, labels: { app: multikueue-worker } }, spec: { selector: { app: multikueue-worker }, ports: [{ name: https, port: 6443, targetPort: 6443, protocol: TCP }] } }
 ---
@@ -62,9 +62,8 @@ spec:
           ${K} wait --for=condition=Available deployment/jobset-controller-manager -n jobset-system --timeout=180s && ${K} wait --for=condition=Available deployment/kueue-controller-manager -n kueue-system --timeout=180s
           for e in low medium high; do for w in low medium high; do printf 'apiVersion: kueue.x-k8s.io/v1beta2\nkind: WorkloadPriorityClass\nmetadata: { name: exp-%s-wu-%s }\nvalue: 610\n' "$e" "$w" | ${K} apply -f -; done; done
           printf 'apiVersion: kueue.x-k8s.io/v1beta2\nkind: ResourceFlavor\nmetadata: { name: cpu-flavor }\n---\napiVersion: kueue.x-k8s.io/v1beta2\nkind: ClusterQueue\nmetadata: { name: {{ $cq }} }\nspec: { namespaceSelector: {}, resourceGroups: [{ coveredResources: [cpu, memory], flavors: [{ name: cpu-flavor, resources: [{ name: cpu, nominalQuota: 100000000 }, { name: memory, nominalQuota: 100000000Gi }] }] }] }\n---\napiVersion: v1\nkind: Namespace\nmetadata: { name: {{ $q }} }\n---\napiVersion: kueue.x-k8s.io/v1beta2\nkind: LocalQueue\nmetadata: { name: {{ $q }}, namespace: {{ $q }} }\nspec: { clusterQueue: {{ $cq }} }\n' | ${K} apply -f -
-          ! kubectl -n kueue-system get cm kueue-manager-config -o yaml 2>/dev/null | grep -q 'kubeflow.org/' || { kubectl -n kueue-system get cm kueue-manager-config -o yaml | grep -vE 'kubeflow\.org/|ray\.io/|codeflare\.dev/|leaderworkerset|resourceVersion:|uid:|creationTimestamp:' | kubectl apply -f - && kubectl -n kueue-system rollout restart deploy/kueue-controller-manager; }
           sync_secret() { sed 's|https://127.0.0.1:6443|https://multikueue-worker.kueue-system.svc:6443|g' "${KCFG}" > /tmp/worker.kubeconfig && kubectl -n kueue-system create secret generic {{ $mk.kubeconfigSecretName | default "multikueue-worker-kubeconfig" }} --from-file={{ $mk.kubeconfigSecretKey | default "kubeconfig" }}=/tmp/worker.kubeconfig --dry-run=client -o yaml | kubectl -n kueue-system apply -f -; }
-          sync_secret && touch /tmp/bootstrap-ready && while true; do sleep 60; sync_secret || true; done
+          sync_secret && touch /tmp/bootstrap-ready && exec sleep infinity
         securityContext: { allowPrivilegeEscalation: false, privileged: false, readOnlyRootFilesystem: true, runAsUser: 1000, runAsGroup: 1000, capabilities: { drop: ["ALL"] } }
         readinessProbe: { exec: { command: ["test", "-f", "/tmp/bootstrap-ready"] }, initialDelaySeconds: 10, periodSeconds: 5 }
         resources: { requests: { cpu: "100m", memory: "128Mi" }, limits: { cpu: "500m", memory: "512Mi" } }

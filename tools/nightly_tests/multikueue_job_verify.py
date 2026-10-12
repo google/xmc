@@ -31,6 +31,9 @@ DEFAULT_WORKER_CLUSTER: str = "xmc-nightly-worker-1"
 verifier_cli.flags.DEFINE_string(
     "expected_worker_cluster", DEFAULT_WORKER_CLUSTER, "Expected worker cluster."
 )
+verifier_cli.flags.DEFINE_boolean(
+    "require_k8s_assertions", False, "Require kubectl context for K8s CR assertions."
+)
 
 
 def _run_kubectl(*args: str) -> subprocess.CompletedProcess[str]:
@@ -38,14 +41,23 @@ def _run_kubectl(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _verify_k8s_multikueue_crs(
-    xid: str, queue: str = DEFAULT_QUEUE, worker_cluster: str = DEFAULT_WORKER_CLUSTER
+    xid: str,
+    queue: str = DEFAULT_QUEUE,
+    worker_cluster: str = DEFAULT_WORKER_CLUSTER,
+    expected_count: int = DEFAULT_WORK_UNITS,
+    require_k8s: bool = False,
 ) -> None:
     """Verifies MultiKueueCluster, AdmissionCheck, and Workload.status.clusterName via kubectl."""
+    ctx_ok = False
     try:
         ctx = _run_kubectl("config", "current-context")
+        ctx_ok = ctx.returncode == 0 and bool(ctx.stdout.strip())
     except FileNotFoundError:
-        return
-    if ctx.returncode != 0 or not ctx.stdout.strip():
+        pass
+    if not ctx_ok:
+        if require_k8s or os.environ.get("CI") == "true":
+            raise AssertionError("kubectl current-context unavailable for MultiKueue K8s checks")
+        print("WARNING: Skipping K8s MultiKueue CR assertions (kubectl context unavailable).")
         return
     jp = 'jsonpath={.status.conditions[?(@.type=="Active")].status}'
     for kind, name in (
@@ -64,10 +76,10 @@ def _verify_k8s_multikueue_crs(
     )
     wl = _run_kubectl("get", "workloads", "-n", queue, "-o", wl_jp)
     clusters = wl.stdout.split() if wl.returncode == 0 else []
-    if wl.returncode != 0 or not clusters or set(clusters) != {worker_cluster}:
+    if wl.returncode != 0 or len(clusters) != expected_count or set(clusters) != {worker_cluster}:
         raise AssertionError(
-            f"Workload.status.clusterName={clusters} != {worker_cluster} "
-            f"(rc={wl.returncode}, stderr={wl.stderr.strip()!r})"
+            f"Workload.status.clusterName={clusters} (expected {expected_count}x "
+            f"{worker_cluster!r}, rc={wl.returncode}, stderr={wl.stderr.strip()!r})"
         )
 
 
@@ -76,8 +88,10 @@ def _assert_multikueue_work_units(stub: Any, xid: str) -> None:
     f = verifier_cli.FLAGS
     q = verifier_cli.get_flag(f, "expected_queue", DEFAULT_QUEUE)
     c = verifier_cli.get_flag(f, "expected_worker_cluster", DEFAULT_WORKER_CLUSTER)
+    req_k8s = bool(verifier_cli.get_flag(f, "require_k8s_assertions", False))
+    count = verifier_cli.resolve_expected_work_units(DEFAULT_WORK_UNITS)
     xmc_entities_validator.validate_multikueue_execution_metadata(stub, xid, c)
-    _verify_k8s_multikueue_crs(xid, q, c)
+    _verify_k8s_multikueue_crs(xid, q, c, expected_count=count, require_k8s=req_k8s)
 
 
 def main(argv: Sequence[str]) -> None:
