@@ -18,9 +18,9 @@ import (
 	"fmt"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -45,7 +45,7 @@ func (h *WorkUnitHandler) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateW
 	xid, wid, err := validator.ValidateWorkUnitName(name)
 	if err != nil {
 		logging.Warn(ctx, "UpdateWorkUnit validation failed", "name", name, "error", err)
-		return nil, fmt.Errorf("UpdateWorkUnit validation failed: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("UpdateWorkUnit validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithWorkUnitName(ctx, name)
 
@@ -56,7 +56,7 @@ func (h *WorkUnitHandler) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateW
 	}
 	if !authorized {
 		logging.Warn(ctx, "User not authorized to update work units", "user", email, "xid", xid)
-		return nil, fmt.Errorf("user %s is not authorized to update work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user %s is not authorized to update work units for XID %d: %w", email, xid, grpcerr.ErrPermissionDenied)
 	}
 
 	// 4. Update the work unit in the storage layer.
@@ -70,25 +70,25 @@ func (h *WorkUnitHandler) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateW
 	res, err := h.storage.UpdateWorkUnit(ctx, update)
 	if err != nil {
 		logging.Error(ctx, "Failed to update work unit", "error", err)
-		return nil, fmt.Errorf("failed to update work unit %s: %w (%v)", name, status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to update work unit %s: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 	originalWu, returnedWu := res.Original, res.Updated
 
 	if originalWu == nil || returnedWu == nil {
-		return nil, fmt.Errorf("storage returned nil work unit: %w", status.ErrInternal)
+		return nil, fmt.Errorf("storage returned nil work unit: %w", grpcerr.ErrInternal)
 	}
 
 	// 5. Check if we need to enqueue a task to update the work unit execution.
 	updateAction, err := h.shouldEnqueueWorkUnitTask(ctx, xid, originalWu, returnedWu)
 	if err != nil {
 		logging.Error(ctx, "Failed to check if we need to enqueue a task to update the work unit execution", "error", err)
-		return nil, fmt.Errorf("failed to check if we need to enqueue a task to update the work unit execution: %w (%v)", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to check if we need to enqueue a task to update the work unit execution: %w (%v)", grpcerr.ErrInternal, err)
 	}
 
 	// 6. Enqueue the work unit for updating the corresponding work unit execution in the adapter.
 	if len(updateAction.GetUpdateMask().GetPaths()) > 0 {
 		if returnedWu.GetCurrentWorkUnitExecution() == nil {
-			return nil, fmt.Errorf("updated work unit %s has no current execution to update: %w", returnedWu.GetName(), status.ErrInternal)
+			return nil, fmt.Errorf("updated work unit %s has no current execution to update: %w", returnedWu.GetName(), grpcerr.ErrInternal)
 		}
 		ctx := logging.WithWorkUnitExecutionName(ctx, returnedWu.GetCurrentWorkUnitExecution().GetName())
 		logging.Debug(ctx, "Work unit update requires enqueuing a task to update the corresponding work unit execution")
@@ -102,7 +102,7 @@ func (h *WorkUnitHandler) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateW
 		err = h.actuator.EnqueueWorkUnitTask(ctx, returnedWu.GetCurrentWorkUnitExecution().GetName(), returnedWu, action, "")
 		if err != nil {
 			logging.Error(ctx, "Failed to enqueue work unit for updating the corresponding work unit execution", "error", err)
-			return nil, fmt.Errorf("failed to enqueue work unit for updating the corresponding work unit execution %s: %w (%v)", returnedWu.GetName(), status.ErrInternal, err)
+			return nil, fmt.Errorf("failed to enqueue work unit for updating the corresponding work unit execution %s: %w (%v)", returnedWu.GetName(), grpcerr.ErrInternal, err)
 		}
 	}
 
@@ -122,7 +122,7 @@ func (h *WorkUnitHandler) shouldEnqueueWorkUnitTask(ctx context.Context, xid int
 		exp, err := h.storage.FetchExperiment(ctx, xid)
 		if err != nil {
 			logging.Error(ctx, "Failed to fetch experiment", "error", err)
-			return nil, fmt.Errorf("failed to fetch experiment: %w (%v)", status.ErrInternal, err)
+			return nil, fmt.Errorf("failed to fetch experiment: %w (%v)", grpcerr.ErrInternal, err)
 		}
 
 		updateAction.ExperimentPriority = exp.GetPriority().Enum()

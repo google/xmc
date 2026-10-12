@@ -35,11 +35,11 @@ import { Router, RouterLink } from '@angular/router';
 import {
   CreateDashboardDialogComponent,
   CreateDashboardDialogResult,
-} from 'xmanager_cloud/ui/app/common/components/dashboard/create_dashboard_dialog/create_dashboard_dialog';
-import { extractDashboardId } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
-import { Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
-import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
-import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+} from 'app/common/components/dashboard/create_dashboard_dialog/create_dashboard_dialog';
+import { extractDashboardId } from 'app/common/resource_name_extractor';
+import { Dashboard } from 'app/service/dashboard_models';
+import { DashboardService } from 'app/service/dashboard_service';
+import { SnackbarService } from 'app/service/snackbar_service';
 
 /**
  * Page size requested when listing dashboards. This page renders the whole response at once and

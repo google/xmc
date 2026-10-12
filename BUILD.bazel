@@ -47,9 +47,6 @@ nogo(
 # gazelle:resolve go golang/github_com/golang_migrate/migrate/v/v4/source/source @com_github_golang_migrate_migrate_v4//source:source
 # gazelle:resolve go golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs @com_github_golang_migrate_migrate_v4//source/iofs:iofs
 
-# Compatibility wrapper package target mappings
-# gazelle:resolve go task/go/status //internal/compat/status:status
-
 # Custom API Filter stack mappings
 # gazelle:resolve go api/filter/go/filtervisitor //api/filter/go/filtervisitor:filtervisitor
 # gazelle:resolve go api/filter/go/queryfilterbase //api/filter/go/queryfilterbase:queryfilterbase
@@ -117,6 +114,7 @@ filegroup(
         "//internal/auth",
         "//internal/common/health",
         "//internal/common/interfaces",
+        "//internal/grpcerr",
         "//internal/kubernetes/common/labels",
         "//internal/logging",
         "//internal/query_generator/equalityvisitor",
@@ -141,6 +139,7 @@ test_suite(
     tests = [
         "//internal/auth:auth_test",
         "//internal/common/health:health_test",
+        "//internal/grpcerr:grpcerr_test",
         "//internal/kubernetes/common/labels:labels_test",
         "//internal/logging:logging_test",
         "//internal/prototest:prototest_test",

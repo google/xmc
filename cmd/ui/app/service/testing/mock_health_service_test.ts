@@ -15,7 +15,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
-import { cleanState, get, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import { cleanState, get, setupModule } from 'app/testing/test';
 
 import { MockHealthService } from './mock_health_service';
 

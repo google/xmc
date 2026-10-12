@@ -23,8 +23,8 @@ import (
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
@@ -40,10 +40,10 @@ import (
 // the later commit would silently discard the earlier one.
 func (r *Repository) UpdateChart(ctx context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
 	if chart == nil {
-		return nil, fmt.Errorf("chart proto must not be nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("chart proto must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if chart.GetName() == "" {
-		return nil, fmt.Errorf("chart name must not be empty: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("chart name must not be empty: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	_, _, chartID, err := validator.ValidateChartName(chart.GetName())

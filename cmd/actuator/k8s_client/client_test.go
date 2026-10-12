@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
@@ -33,13 +32,14 @@ import (
 	clientgotesting "golang/k8s_io/client_go/v/v0_23/testing/testing"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	timestamppb "protobuf/timestamp_go_proto"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 
 	// TODO - (internal issue): Consider using a mock instead of the emulator.
+	spanner_lib "xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 	constants "xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	spanner_lib "xmanager_cloud/storage/spanner/spanner"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/validator/validator"
 )

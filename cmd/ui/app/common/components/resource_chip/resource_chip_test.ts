@@ -15,7 +15,7 @@ import { getHarness } from '@angular/cdk/testing/catalyst/async';
 import { MatChipHarness } from '@angular/material/chips/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { bootstrap, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import { bootstrap, setupModule } from 'app/testing/test';
 
 import { ResourceChip, ResourceType } from './resource_chip';
 

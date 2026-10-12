@@ -23,11 +23,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
@@ -168,12 +168,12 @@ func TestListWorkUnits_BadPaths(t *testing.T) {
 		{
 			name:    "invalid_page_size",
 			req:     &apipb.ListWorkUnitsRequest{PageSize: -1, Parent: "experiments/1"},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "invalid_parent_name",
 			req:     &apipb.ListWorkUnitsRequest{PageSize: 10, Parent: "invalid-parent"},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -201,17 +201,17 @@ func TestListWorkUnits_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name:          "check_auth_fails",
 			authenticator: createTestAuthorizer(ctx, t),
-			xidClient:     &mockXidClient{checkUserAuthorizationErr: status.ErrPermissionDenied},
+			xidClient:     &mockXidClient{checkUserAuthorizationErr: grpcerr.ErrPermissionDenied},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrPermissionDenied,
+			wantErr:       grpcerr.ErrPermissionDenied,
 		},
 		{
 			name:          "storage_fails_grpc_invalid_arg",
@@ -219,8 +219,8 @@ func TestListWorkUnits_DependencyFailures(t *testing.T) {
 			xidClient: &mockXidClient{
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
-			storage: &storage.MockStorage{ListWorkUnitsErr: status.ErrInvalidArgument},
-			wantErr: status.ErrInvalidArgument,
+			storage: &storage.MockStorage{ListWorkUnitsErr: grpcerr.ErrInvalidArgument},
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:          "storage_fails_grpc_other",
@@ -228,8 +228,8 @@ func TestListWorkUnits_DependencyFailures(t *testing.T) {
 			xidClient: &mockXidClient{
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
-			storage: &storage.MockStorage{ListWorkUnitsErr: status.ErrPermissionDenied},
-			wantErr: status.ErrInternal,
+			storage: &storage.MockStorage{ListWorkUnitsErr: grpcerr.ErrPermissionDenied},
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name:          "storage_fails_non_grpc",
@@ -238,7 +238,7 @@ func TestListWorkUnits_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{ListWorkUnitsErr: fmt.Errorf("some other error")},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 	}
 
@@ -275,8 +275,8 @@ func TestListWorkUnits_PermissionDenied(t *testing.T) {
 	mockXidClient.checkUserAuthorizationResp = &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)}
 	req := &apipb.ListWorkUnitsRequest{Parent: exp.GetName(), PageSize: 10}
 	_, err := server.ListWorkUnits(ctx, req)
-	if !errors.Is(err, status.ErrPermissionDenied) {
-		t.Errorf("ListWorkUnits(%v) returned error %v, want %v", req, err, status.ErrPermissionDenied)
+	if !errors.Is(err, grpcerr.ErrPermissionDenied) {
+		t.Errorf("ListWorkUnits(%v) returned error %v, want %v", req, err, grpcerr.ErrPermissionDenied)
 	}
 }
 

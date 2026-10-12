@@ -28,8 +28,8 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	metricspb "prometheus_model/metrics_go_proto"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	storagepkg "xmanager_cloud/storage/storage"
 )
 
@@ -293,7 +293,7 @@ func TestProcessBatches_Metrics(t *testing.T) {
 		},
 		{
 			name:       "status error",
-			err:        fmt.Errorf("invalid arg: %w", status.ErrInvalidArgument),
+			err:        fmt.Errorf("invalid arg: %w", grpcerr.ErrInvalidArgument),
 			wantReason: "InvalidArgument",
 		},
 		{

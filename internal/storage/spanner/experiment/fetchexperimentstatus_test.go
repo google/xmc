@@ -20,7 +20,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"
@@ -54,7 +54,7 @@ func TestFetchExperimentStatus_NotFound(t *testing.T) {
 	storage, _ := spanner.NewStorage(essClient)
 
 	_, err := storage.FetchExperimentStatus(ctx, 123456789)
-	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("FetchExperimentStatus for non-existent XID returned error %v, want %v", err, status.ErrNotFound)
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("FetchExperimentStatus for non-existent XID returned error %v, want %v", err, grpcerr.ErrNotFound)
 	}
 }

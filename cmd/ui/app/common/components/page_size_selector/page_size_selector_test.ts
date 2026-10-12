@@ -15,7 +15,7 @@ import { getHarness } from '@angular/cdk/testing/catalyst/async';
 import { MatSelectHarness } from '@angular/material/select/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { bootstrapTemplate, getDebugEl, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import { bootstrapTemplate, getDebugEl, setupModule } from 'app/testing/test';
 
 import { PageSizeSelector } from './page_size_selector';
 

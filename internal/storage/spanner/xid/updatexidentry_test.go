@@ -21,7 +21,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
@@ -130,8 +130,8 @@ func TestUpdateXidEntry_ImmutableField(t *testing.T) {
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"creator"}},
 	}
 	_, err = s.UpdateXidEntry(ctx, update)
-	if !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("UpdateXidEntry with immutable field returned error %v, want %v", err, status.ErrInvalidArgument)
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateXidEntry with immutable field returned error %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }
 
@@ -168,8 +168,8 @@ func TestUpdateXidEntry_ImmutableParentField(t *testing.T) {
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"parent_xid"}},
 	}
 	_, err = s.UpdateXidEntry(ctx, update)
-	if !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("UpdateXidEntry with immutable field returned error %v, want %v", err, status.ErrInvalidArgument)
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateXidEntry with immutable field returned error %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }
 
@@ -187,8 +187,8 @@ func TestUpdateXidEntry_NotFound(t *testing.T) {
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"acls"}},
 	}
 	_, err := s.UpdateXidEntry(ctx, update)
-	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("UpdateXidEntry for non-existent XID returned error %v, want %v", err, status.ErrNotFound)
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("UpdateXidEntry for non-existent XID returned error %v, want %v", err, grpcerr.ErrNotFound)
 	}
 }
 
@@ -227,8 +227,8 @@ func TestUpdateXidEntry_NoOwnerFailsWithoutParent(t *testing.T) {
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"acls"}},
 	}
 	_, err = s.UpdateXidEntry(ctx, update)
-	if !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("UpdateXidEntry with no owners returned error %v, want %v", err, status.ErrInvalidArgument)
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateXidEntry with no owners returned error %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }
 
@@ -319,7 +319,7 @@ func TestUpdateXidEntry_NoUpdateableFields(t *testing.T) {
 		UpdateMask: &fmpb.FieldMask{Paths: []string{}},
 	}
 	_, err = s.UpdateXidEntry(ctx, update)
-	if !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("UpdateXidEntry with no updateable fields returned error %v, want %v", err, status.ErrInvalidArgument)
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateXidEntry with no updateable fields returned error %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }

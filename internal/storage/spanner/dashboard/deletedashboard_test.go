@@ -19,7 +19,7 @@ import (
 	"errors"
 	"testing"
 
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 )
 
 func TestDeleteDashboard_Success(t *testing.T) {
@@ -80,8 +80,8 @@ func TestDeleteDashboard_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatalf("DeleteDashboard for non-existent dashboard succeeded, want error")
 	}
-	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("DeleteDashboard error = %v, want status.ErrNotFound", err)
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("DeleteDashboard error = %v, want grpcerr.ErrNotFound", err)
 	}
 }
 

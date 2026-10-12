@@ -18,19 +18,11 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Params, provideRouter } from '@angular/router';
 import { BehaviorSubject, of } from 'rxjs';
 
+import { EmptyComponent } from 'app/common/testing_utils/empty_component';
+import { AUTO_REFRESH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from 'app/service/constants';
+import { ExperimentService } from 'app/service/experiment_service';
+import { bootstrap, cleanState, setupModule, useAutoTick } from 'app/testing/test';
 import { ListExperimentsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { EmptyComponent } from 'xmanager_cloud/ui/app/common/testing_utils/empty_component';
-import {
-  AUTO_REFRESH_INTERVAL_MS,
-  DEFAULT_REFRESH_INTERVAL_MS,
-} from 'xmanager_cloud/ui/app/service/constants';
-import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
-import {
-  bootstrap,
-  cleanState,
-  setupModule,
-  useAutoTick,
-} from 'xmanager_cloud/ui/app/testing/test';
 
 import { ExperimentsListPage } from './experiments_list_page';
 

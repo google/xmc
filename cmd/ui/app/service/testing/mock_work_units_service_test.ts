@@ -14,8 +14,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
-import { WORK_UNIT_1, WORK_UNIT_LIST } from 'xmanager_cloud/ui/app/common/mock_data';
-import { cleanState, get, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import { WORK_UNIT_1, WORK_UNIT_LIST } from 'app/common/mock_data';
+import { cleanState, get, setupModule } from 'app/testing/test';
 
 import { MockWorkUnitsService } from './mock_work_units_service';
 

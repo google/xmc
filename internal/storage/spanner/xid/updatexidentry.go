@@ -22,10 +22,12 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
@@ -54,8 +56,8 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 		// 1. Read the existing XidEntry from storage.
 		row, err := txn.ReadRow(ctx, xidschema.XIDTableName, spanner.Key{spannerutils.ReverseBits(update.XID)}, xidschema.FetchedXIDColumns)
 		if err != nil {
-			if status.ExtractCanonicalCode(err) == status.NotFound {
-				return fmt.Errorf("XID %d not found: %w", update.XID, status.ErrNotFound)
+			if status.Code(err) == codes.NotFound {
+				return fmt.Errorf("XID %d not found: %w", update.XID, grpcerr.ErrNotFound)
 			}
 
 			logging.Error(ctx, "failed to read Xid row", "error", err)
@@ -83,7 +85,7 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 		}
 
 		if !hasOwners {
-			return fmt.Errorf("XidEntry %s does not have owners after update: %w", updatedEntry.GetName(), status.ErrInvalidArgument)
+			return fmt.Errorf("XidEntry %s does not have owners after update: %w", updatedEntry.GetName(), grpcerr.ErrInvalidArgument)
 		}
 
 		// 3.1. Update the UpdateTime column to the current time.
@@ -126,7 +128,7 @@ func (r *Repository) xidEntryHasOwners(ctx context.Context, txn spannerTransacti
 		// 1.1. Check if we've already visited this parent XID.
 		if visited[parentXIDName] {
 			logging.Warn(ctx, "Loop detected in XID parent chain", "xidEntryName", xidEntry.GetName())
-			return false, fmt.Errorf("loop detected in XID parent chain: %w", status.ErrInternal)
+			return false, fmt.Errorf("loop detected in XID parent chain: %w", grpcerr.ErrInternal)
 		}
 		visited[parentXIDName] = true
 
@@ -134,19 +136,19 @@ func (r *Repository) xidEntryHasOwners(ctx context.Context, txn spannerTransacti
 		parentXID, err := validator.ValidateXIDName(parentXIDName)
 		if err != nil {
 			logging.Warn(ctx, "Invalid parent XID", "parentXIDName", parentXIDName, "error", err)
-			return false, fmt.Errorf("invalid parent XID %q: %w", parentXIDName, status.ErrInvalidArgument)
+			return false, fmt.Errorf("invalid parent XID %q: %w", parentXIDName, grpcerr.ErrInvalidArgument)
 		}
 
 		// 2.2. Get the parent XID from the storage layer.
 		parentXIDEntry, err := r.FetchXidEntryTransaction(ctx, parentXID, txn)
 		if err != nil {
-			if errors.Is(err, status.ErrNotFound) {
+			if errors.Is(err, grpcerr.ErrNotFound) {
 				logging.Warn(ctx, "Parent XID not found", "parentXID", parentXID, "error", err)
-				return false, fmt.Errorf("parent XID %d not found: %w", parentXID, status.ErrNotFound)
+				return false, fmt.Errorf("parent XID %d not found: %w", parentXID, grpcerr.ErrNotFound)
 			}
 
 			logging.Error(ctx, "Storage layer returned a non-gRPC error for GetXid()", "parentXID", parentXID, "error", err)
-			return false, fmt.Errorf("an internal error occurred while retrieving the XID: %w", status.ErrInternal)
+			return false, fmt.Errorf("an internal error occurred while retrieving the XID: %w", grpcerr.ErrInternal)
 		}
 
 		hasOwners = len(parentXIDEntry.GetAcls().GetOwners()) > 0

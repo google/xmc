@@ -19,9 +19,10 @@ import (
 	"xmanager_cloud/internal/storage/spanner"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	corestorage "xmanager_cloud/internal/storage"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
@@ -142,7 +143,7 @@ func TestListWorkUnitExecutions_NotFound(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := storage.ListWorkUnitExecutions(ctx, tc.xid, tc.wid)
-			if got, want := status.ExtractCanonicalCode(err), status.NotFound; got != want {
+			if got, want := status.Code(err), codes.NotFound; got != want {
 				t.Errorf("ListWorkUnitExecutions(%d, %d) returned error %v, want %v", tc.xid, tc.wid, err, want)
 			}
 		})

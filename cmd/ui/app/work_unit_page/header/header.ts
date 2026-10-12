@@ -30,16 +30,13 @@ import { RouterModule } from '@angular/router';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { filter, finalize, switchMap, tap } from 'rxjs/operators';
 
+import { ConfirmDialogService } from 'app/common/components/confirmation_dialog/confirmation_dialog_service';
+import { PriorityChip } from 'app/common/components/priority_chip/priority_chip';
+import { StatusChip, StatusOption } from 'app/common/components/status_chip/status_chip';
+import { SnackbarService } from 'app/service/snackbar_service';
+import { WorkUnitsService } from 'app/service/work_units_service';
 import { type Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 import { type WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
-import { ConfirmDialogService } from 'xmanager_cloud/ui/app/common/components/confirmation_dialog/confirmation_dialog_service';
-import { PriorityChip } from 'xmanager_cloud/ui/app/common/components/priority_chip/priority_chip';
-import {
-  StatusChip,
-  StatusOption,
-} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
-import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
-import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
 
 import { WorkUnitPageStore } from '../work_unit_page_store';
 

@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+import type { Chart } from 'app/service/dashboard_models';
 import {
   Artifact,
   CodeSourceArtifact,
@@ -18,7 +19,6 @@ import {
   TextArtifact,
   UrlArtifact,
 } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
-import type { Chart } from 'xmanager_cloud/ui/app/service/dashboard_models';
 
 export enum PayloadType {
   MANAGED_XPROF = 'managedXprof',

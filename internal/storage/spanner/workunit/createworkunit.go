@@ -22,9 +22,9 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/protobuf/proto"
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	experimentdomain "xmanager_cloud/internal/domain/experiment"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/logging/logging"
@@ -47,7 +47,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 		// 1. Extract the XID and WID from the work unit name.
 		xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(localWU.GetName())
 		if err != nil {
-			return fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
+			return fmt.Errorf("failed to validate work unit name: %w (%v)", grpcerr.ErrInvalidArgument, err)
 		}
 
 		// 1.1. If the work unit ID is 0, fetch the next available ID and update the names.

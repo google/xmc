@@ -22,8 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"
@@ -176,8 +176,8 @@ func TestUpdateExperimentLaunchState_InvalidTargetState(t *testing.T) {
 	}
 
 	_, err = storage.UpdateExperimentLaunchState(ctx, 123, essmsgpb.ExperimentStatus_LAUNCHING)
-	if !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("UpdateExperimentLaunchState with invalid target state returned error %v, want %v", err, status.ErrInvalidArgument)
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateExperimentLaunchState with invalid target state returned error %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }
 
@@ -187,8 +187,8 @@ func TestUpdateExperimentLaunchState_NotFound(t *testing.T) {
 	storage, _ := spanner.NewStorage(essClient)
 
 	_, err := storage.UpdateExperimentLaunchState(ctx, 123, essmsgpb.ExperimentStatus_COMPLETED)
-	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("UpdateExperimentLaunchState for non-existent XID returned error %v, want %v", err, status.ErrNotFound)
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("UpdateExperimentLaunchState for non-existent XID returned error %v, want %v", err, grpcerr.ErrNotFound)
 	}
 }
 
@@ -216,7 +216,7 @@ func TestUpdateExperimentLaunchState_FailedPrecondition(t *testing.T) {
 	}
 
 	_, err = storage.UpdateExperimentLaunchState(ctx, 123, essmsgpb.ExperimentStatus_FAILED)
-	if !errors.Is(err, status.ErrFailedPrecondition) {
-		t.Errorf("UpdateExperimentLaunchState with wrong initial state returned error %v, want %v", err, status.ErrFailedPrecondition)
+	if !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("UpdateExperimentLaunchState with wrong initial state returned error %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}
 }

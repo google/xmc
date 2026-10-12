@@ -27,15 +27,12 @@ import { map, Observable } from 'rxjs';
 import {
   AddExperimentDialogComponent,
   AddExperimentDialogResult,
-} from 'xmanager_cloud/ui/app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
-import { DashboardGridComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/dashboard_grid/dashboard_grid';
-import {
-  extractChartId,
-  formatWorkUnitParent,
-} from 'xmanager_cloud/ui/app/common/resource_name_extractor';
-import { Chart, LayoutType } from 'xmanager_cloud/ui/app/service/dashboard_models';
-import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
-import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+} from 'app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
+import { DashboardGridComponent } from 'app/common/components/dashboard/dashboard_grid/dashboard_grid';
+import { extractChartId, formatWorkUnitParent } from 'app/common/resource_name_extractor';
+import { Chart, LayoutType } from 'app/service/dashboard_models';
+import { DashboardService } from 'app/service/dashboard_service';
+import { SnackbarService } from 'app/service/snackbar_service';
 
 /**
  * Main Dashboards Page component rendering comparative metrics dashboards.

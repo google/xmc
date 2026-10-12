@@ -94,6 +94,11 @@ export default tseslint.config(
               message:
                 'Relative imports must not go up more than one level. Use absolute paths (app/...) instead.',
             },
+            {
+              group: ['xmanager_cloud/ui/app/**'],
+              message:
+                'Legacy xmanager_cloud/ui/app/... import path is deprecated. Use app/... instead.',
+            },
           ],
         },
       ],

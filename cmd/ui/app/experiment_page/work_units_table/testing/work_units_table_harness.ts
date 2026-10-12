@@ -21,7 +21,7 @@ import {
 } from '@angular/material/table/testing';
 import { MatTooltipHarness } from '@angular/material/tooltip/testing';
 
-import { LoadingBarHarness } from 'xmanager_cloud/ui/app/common/components/loading_bar/testing/loading_bar_harness';
+import { LoadingBarHarness } from 'app/common/components/loading_bar/testing/loading_bar_harness';
 
 /** Harness for interacting with <xmc-work-units-table> in tests. */
 export class WorkUnitsTableHarness extends ComponentHarness {

@@ -25,8 +25,8 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
 	dynamicfake "golang/k8s_io/client_go/v/v0_23/dynamic/fake/fake"
 	kubernetesfake "golang/k8s_io/client_go/v/v0_23/kubernetes/fake/fake"
+	preconditionsvalidator "xmanager_cloud/cmd/actuator/k8s_client/preconditions_validator"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/preconditions_validator/preconditionsvalidator"
 )
 
 var testTime = time.Date(2025, time.November, 26, 9, 32, 58, 0, time.UTC)

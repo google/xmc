@@ -20,16 +20,17 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/artifact"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/internal/storage/spanner/operation"
+	"xmanager_cloud/internal/storage/spanner/pausedtask"
+	"xmanager_cloud/internal/storage/spanner/pausestate"
 	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/internal/storage/spanner/xid"
-	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
 type ExperimentRepository = experiment.Repository
@@ -39,6 +40,8 @@ type XIDRepository = xid.Repository
 type StatusMessageRepository = statusmessage.Repository
 type OperationRepository = operation.Repository
 type StatusHistoryRepository = statushistory.Repository
+type PauseStateRepository = pausestate.Repository
+type PausedTaskRepository = pausedtask.Repository
 
 var _ storage.Storage = (*Storage)(nil)
 
@@ -52,33 +55,24 @@ type Storage struct {
 	*StatusMessageRepository
 	*OperationRepository
 	*StatusHistoryRepository
-	pauseStateRepository storage.PauseStateRepository
-	pausedTaskRepository storage.PausedTaskRepository
+	pauseStateRepository *PauseStateRepository
+	pausedTaskRepository *PausedTaskRepository
 }
 
 // RunInTransaction executes the given function in a Spanner read-write transaction,
 // passing a Transaction struct with repositories bound to the Spanner transaction.
 func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
 	if s.client == nil {
-		return fmt.Errorf("spanner client must not be nil: %w", status.ErrFailedPrecondition)
+		return fmt.Errorf("spanner client must not be nil: %w", grpcerr.ErrFailedPrecondition)
 	}
 	_, err := s.client.ReadWriteTransaction(ctx, func(txCtx context.Context, spannerTx *spanner.ReadWriteTransaction) error {
-		pauseStateTx, ok := s.pauseStateRepository.(storage.PauseStateTxRepository)
-		if !ok {
-			return fmt.Errorf("pause state repository does not support transactions: %w", status.ErrFailedPrecondition)
-		}
-		pausedTaskTx, ok := s.pausedTaskRepository.(storage.PausedTaskTxRepository)
-		if !ok {
-			return fmt.Errorf("paused task repository does not support transactions: %w", status.ErrFailedPrecondition)
-		}
 		tx := &storage.Transaction{
 			WorkUnits:      s.WorkUnitRepository.WithTx(spannerTx),
 			Experiments:    s.ExperimentRepository.WithTx(spannerTx),
 			StatusMessages: s.StatusMessageRepository.WithTx(spannerTx),
 			StatusHistory:  s.StatusHistoryRepository.WithTx(spannerTx),
-			// TODO(pausescheduling): Replace with WithTx(spannerTx) once Spanner repositories land.
-			PauseState:  pauseStateTx,
-			PausedTasks: pausedTaskTx,
+			PauseState:     s.pauseStateRepository.WithTx(spannerTx),
+			PausedTasks:    s.pausedTaskRepository.WithTx(spannerTx),
 		}
 		return fn(txCtx, tx)
 	})
@@ -108,7 +102,7 @@ type StorageConfig struct {
 // NewStorageWithConfig creates a new instance of the Spanner-backed storage with the given configuration.
 func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, error) {
 	if client == nil {
-		return nil, fmt.Errorf("spanner client must not be nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("spanner client must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	expRepo, err := experiment.NewRepository(client, experiment.RepositoryConfig{
@@ -145,11 +139,15 @@ func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, 
 
 	statusHistoryRepo := statushistory.NewRepository(client)
 
-	// TODO(pausescheduling): Replace with concrete Spanner repository once available.
-	// NOTE: storagetest is intentionally used as a production stub until then; it must
-	// not take test-only dependencies and cannot be marked testonly.
-	pauseStateRepo := storagetest.NewFakePauseStateRepository()
-	pausedTaskRepo := storagetest.NewFakePausedTaskRepository()
+	pauseStateRepo, err := pausestate.NewRepository(client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pausestate repository: %w", err)
+	}
+
+	pausedTaskRepo, err := pausedtask.NewRepository(client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pausedtask repository: %w", err)
+	}
 
 	return &Storage{
 		client:                  client,

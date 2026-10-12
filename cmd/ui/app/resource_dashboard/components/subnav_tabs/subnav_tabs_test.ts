@@ -21,7 +21,7 @@ import {
   getHarness,
   setupModule,
   setupObservableMatchers,
-} from 'xmanager_cloud/ui/app/testing/test';
+} from 'app/testing/test';
 
 import {
   DashboardTab,

@@ -23,8 +23,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
@@ -34,10 +34,10 @@ import (
 // UpdateDashboard updates an existing dashboard in Spanner and returns the updated proto.
 func (r *Repository) UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error) {
 	if dashboard == nil {
-		return nil, fmt.Errorf("dashboard proto must not be nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("dashboard proto must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if dashboard.GetName() == "" {
-		return nil, fmt.Errorf("dashboard name must not be empty: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("dashboard name must not be empty: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	dashID, err := validator.ValidateDashboardName(dashboard.GetName())

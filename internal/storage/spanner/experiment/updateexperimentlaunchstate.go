@@ -24,8 +24,8 @@ import (
 	"golang/protobuf/v2/encoding/prototext/prototext"
 	"google.golang.org/protobuf/proto"
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
@@ -39,7 +39,7 @@ func (r *Repository) UpdateExperimentLaunchState(ctx context.Context, xid int64,
 	logging.Info(ctx, "Update experiment launch state", "launchState", launchState)
 
 	if launchState != essmsgpb.ExperimentStatus_COMPLETED && launchState != essmsgpb.ExperimentStatus_FAILED {
-		return nil, fmt.Errorf("invalid target launch state %v, must be COMPLETED or FAILED: %w", launchState, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("invalid target launch state %v, must be COMPLETED or FAILED: %w", launchState, grpcerr.ErrInvalidArgument)
 	}
 
 	var currentExp *essmsgpb.Experiment
@@ -56,7 +56,7 @@ func (r *Repository) UpdateExperimentLaunchState(ctx context.Context, xid int64,
 		currentExp = proto.Clone(updatedExp).(*essmsgpb.Experiment)
 
 		if updatedExp.GetStatus().GetLaunchState() != essmsgpb.ExperimentStatus_LAUNCHING {
-			return fmt.Errorf("experiment launch state is %v, want LAUNCHING: %w", updatedExp.GetStatus().GetLaunchState(), status.ErrFailedPrecondition)
+			return fmt.Errorf("experiment launch state is %v, want LAUNCHING: %w", updatedExp.GetStatus().GetLaunchState(), grpcerr.ErrFailedPrecondition)
 		}
 
 		// 2. Update the experiment status and timestamps.

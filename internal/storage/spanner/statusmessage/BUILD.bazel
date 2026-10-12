@@ -25,7 +25,6 @@ compat_go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/status",
         "//internal/logging",
         "//internal/query_generator/liststatement",
         "//internal/query_generator/normalizer",
@@ -48,7 +47,6 @@ compat_go_test(
     ],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/compat/status",
         "//internal/storage",
         "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",

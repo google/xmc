@@ -18,19 +18,11 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
-import { Chart, Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
-import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
-import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
-import { createMockDashboardList } from 'xmanager_cloud/ui/app/testing/mock_dashboards';
-import {
-  bootstrap,
-  cleanState,
-  flush,
-  get,
-  getEl,
-  getEls,
-  setupModule,
-} from 'xmanager_cloud/ui/app/testing/test';
+import { Chart, Dashboard } from 'app/service/dashboard_models';
+import { DashboardService } from 'app/service/dashboard_service';
+import { SnackbarService } from 'app/service/snackbar_service';
+import { createMockDashboardList } from 'app/testing/mock_dashboards';
+import { bootstrap, cleanState, flush, get, getEl, getEls, setupModule } from 'app/testing/test';
 
 import { DashboardsListPage } from './dashboards_list_page';
 

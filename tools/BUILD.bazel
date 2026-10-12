@@ -475,6 +475,28 @@ py_test(
     ],
 )
 
+py_library(
+    name = "run_affected_tests_lib",
+    srcs = ["run_affected_tests.py"],
+    imports = ["."],
+    deps = [
+        ":tool_utils",
+        "//tools/benchmark:resolve_test_scope_lib",
+    ],
+)
+
+py_test(
+    name = "run_affected_tests_test",
+    srcs = ["run_affected_tests_test.py"],
+    imports = ["."],
+    deps = [
+        ":run_affected_tests_lib",
+        ":tool_utils",
+        "//tools/benchmark:resolve_test_scope_lib",
+        "//tools/common:changed_files",
+    ],
+)
+
 alias(
     name = "extract_release_metadata_lib",
     actual = "//tools/release:extract_release_metadata_lib",

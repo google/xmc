@@ -19,7 +19,9 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/xidschema"
@@ -39,8 +41,8 @@ func (r *Repository) FetchXidEntryTransaction(ctx context.Context, xid int64, tx
 	logging.Info(ctx, "Fetch XID entry row")
 	row, err := txn.ReadRow(ctx, xidschema.XIDTableName, spanner.Key{spannerutils.ReverseBits(xid)}, xidschema.FetchedXIDColumns)
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
-			return nil, fmt.Errorf("XID %d not found: %w", xid, status.ErrNotFound)
+		if status.Code(err) == codes.NotFound {
+			return nil, fmt.Errorf("XID %d not found: %w", xid, grpcerr.ErrNotFound)
 		}
 
 		logging.Error(ctx, "Failed to read Xid row", "error", err)

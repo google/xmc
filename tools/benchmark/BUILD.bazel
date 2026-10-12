@@ -184,6 +184,9 @@ py_library(
     name = "resolve_test_scope_lib",
     srcs = ["resolve_test_scope.py"],
     imports = ["../.."],
+    deps = [
+        "//tools/common:changed_files",
+    ],
 )
 
 py_binary(
@@ -201,6 +204,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":resolve_test_scope_lib",
+        "//tools/common:changed_files",
     ],
 )
 

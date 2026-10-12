@@ -15,7 +15,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 
-import { Chart } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { Chart } from 'app/service/dashboard_models';
 
 import { ChartCardComponent, getChartKey } from '../chart_card/chart_card';
 

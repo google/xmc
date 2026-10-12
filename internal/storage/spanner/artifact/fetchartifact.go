@@ -21,8 +21,8 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"golang/google_api/iterator/iterator"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/artifactschema"
@@ -46,7 +46,7 @@ func (r *Repository) FetchArtifactTransaction(ctx context.Context, aid int64, tx
 	defer iter.Stop()
 	row, err := iter.Next()
 	if err == iterator.Done {
-		return nil, fmt.Errorf("artifact %d not found: %w", aid, status.ErrNotFound)
+		return nil, fmt.Errorf("artifact %d not found: %w", aid, grpcerr.ErrNotFound)
 	}
 	if err != nil {
 		logging.Error(ctx, "Failed to read artifact row", "error", err)

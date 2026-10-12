@@ -21,16 +21,16 @@ import { Router, RouterLink } from '@angular/router';
 import { combineLatest } from 'rxjs';
 import { map } from 'rxjs/operators';
 
+import { parseWorkUnitName } from 'app/common/resource_name_extractor';
+import { ProcessedUrl } from 'app/common/url/url_processor';
+import {
+  formatSource,
+  StatusMessageFilterService,
+} from 'app/service/status_message_filter_service';
 import {
   QueueInfo,
   StructuredMessage,
 } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
-import { ProcessedUrl } from 'xmanager_cloud/ui/app/common/url/url_processor';
-import {
-  formatSource,
-  StatusMessageFilterService,
-} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
 
 const STACK_TRACE_PREVIEW_LINES = 5;
 

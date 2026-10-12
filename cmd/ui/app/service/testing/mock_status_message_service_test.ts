@@ -14,8 +14,8 @@
 import { provideHttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
-import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'xmanager_cloud/ui/app/common/mock_data';
-import { cleanState, get, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'app/common/mock_data';
+import { cleanState, get, setupModule } from 'app/testing/test';
 
 import { MockStatusMessageService } from './mock_status_message_service';
 

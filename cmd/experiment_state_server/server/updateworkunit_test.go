@@ -22,10 +22,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/storage"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
@@ -173,8 +173,8 @@ func TestUpdateWorkUnit_EmptyMask(t *testing.T) {
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{}},
 	}
 	_, err := server.UpdateWorkUnit(ctx, req)
-	if !errors.Is(err, status.ErrInternal) {
-		t.Errorf("UpdateWorkUnit() with empty mask got error %v, want %v", err, status.ErrInternal)
+	if !errors.Is(err, grpcerr.ErrInternal) {
+		t.Errorf("UpdateWorkUnit() with empty mask got error %v, want %v", err, grpcerr.ErrInternal)
 	}
 }
 
@@ -192,7 +192,7 @@ func TestUpdateWorkUnit_BadPaths(t *testing.T) {
 			req: &apipb.UpdateWorkUnitRequest{
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"priority"}},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_name",
@@ -202,7 +202,7 @@ func TestUpdateWorkUnit_BadPaths(t *testing.T) {
 				},
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"priority"}},
 			},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -236,18 +236,18 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name: "xid_check_user_authorization_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationErr: status.ErrPermissionDenied,
+				checkUserAuthorizationErr: grpcerr.ErrPermissionDenied,
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "xid_check_user_authorization_unauthorized",
@@ -255,7 +255,7 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "storage_update_work_unit_fails",
@@ -265,7 +265,7 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 			storage: &storage.MockStorage{
 				UpdateWorkUnitErr: fmt.Errorf("Storage update work unit failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_update_work_unit_not_found",
@@ -273,9 +273,9 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				UpdateWorkUnitErr: status.ErrNotFound,
+				UpdateWorkUnitErr: grpcerr.ErrNotFound,
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_fetch_experiment_fails",
@@ -287,7 +287,7 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 				UpdateWorkUnitRespReturned: &msgpb.WorkUnit{Priority: msgpb.Priority_NORMAL},
 				FetchExperimentErr:         fmt.Errorf("Storage fetch experiment failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 	}
 

@@ -19,8 +19,10 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
 )
@@ -28,7 +30,7 @@ import (
 // DeleteDashboard deletes a dashboard and its child relationships from Spanner.
 func (r *Repository) DeleteDashboard(ctx context.Context, dashboardId string) error {
 	if dashboardId == "" {
-		return fmt.Errorf("dashboardId must not be empty: %w", status.ErrInvalidArgument)
+		return fmt.Errorf("dashboardId must not be empty: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	logging.Info(ctx, "Delete dashboard from storage", "dashboardId", dashboardId)
@@ -37,8 +39,8 @@ func (r *Repository) DeleteDashboard(ctx context.Context, dashboardId string) er
 		// 1. Verify that the dashboard exists.
 		_, err := txn.ReadRow(ctx, dashboardschema.DashboardsTableName, spanner.Key{dashboardId}, []string{"DashboardId"})
 		if err != nil {
-			if err == spanner.ErrRowNotFound || status.ExtractCanonicalCode(err) == status.NotFound {
-				return fmt.Errorf("dashboard %s not found: %w", dashboardId, status.ErrNotFound)
+			if err == spanner.ErrRowNotFound || status.Code(err) == codes.NotFound {
+				return fmt.Errorf("dashboard %s not found: %w", dashboardId, grpcerr.ErrNotFound)
 			}
 			return fmt.Errorf("failed to read dashboard %s: %w", dashboardId, err)
 		}

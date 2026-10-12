@@ -13,7 +13,7 @@
 # limitations under the License.
 
 name: 'Run Go & Backend Unit Tests'
-description: 'Resolves test scope and executes Go and backend Bazel unit tests (requires actions/checkout with fetch-depth: 0)'
+description: 'Runs the affected Go and backend Bazel unit tests through tools/run_affected_tests.py (requires actions/checkout with fetch-depth: 0)'
 
 inputs:
   test-timeout-seconds:
@@ -52,14 +52,8 @@ runs:
         restore-keys: |
           bazel-repo-${{ runner.os }}-
 
-    - name: 'Resolve Backend Test Scope'
-      if: steps.classify.outputs.run_backend == 'true'
-      id: 'scope'
-      shell: bash
-      run: python3 tools/benchmark/resolve_test_scope.py
-
     - name: 'Check Protobuf Breaking-Change Coverage'
-      if: steps.scope.outputs.run_backend == 'true'
+      if: steps.classify.outputs.run_backend == 'true'
       shell: bash
       # Every .proto of an //api proto_library must be checked by //api:protos_breaking_test.
       run: |
@@ -70,52 +64,27 @@ runs:
           exit 1
         fi
 
-    - name: 'Verify Spanner Emulator Endpoint'
-      if: steps.scope.outputs.run_backend == 'true'
-      env:
-        SPANNER_HOST_INPUT: ${{ inputs.spanner-emulator-host }}
-        SPANNER_TIMEOUT_INPUT: ${{ inputs.spanner-check-timeout }}
-      shell: bash
-      run: |
-        echo "Verifying Spanner Emulator at ${SPANNER_HOST_INPUT}..."
-        HOST=$(echo "${SPANNER_HOST_INPUT}" | cut -d: -f1)
-        PORT=$(echo "${SPANNER_HOST_INPUT}" | cut -d: -f2)
-        
-        # Try connecting to the port
-        for i in $(seq 1 "${SPANNER_TIMEOUT_INPUT}"); do
-          if nc -z "$HOST" "$PORT" >/dev/null 2>&1 || timeout 1s bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" 2>/dev/null; then
-            echo "Successfully connected to Spanner Emulator at ${SPANNER_HOST_INPUT}."
-            exit 0
-          fi
-          echo "Waiting for Spanner Emulator to start (attempt $i/${SPANNER_TIMEOUT_INPUT})..."
-          sleep 1
-        done
-        
-        echo "CRITICAL: Spanner Emulator at ${SPANNER_HOST_INPUT} did not start within ${SPANNER_TIMEOUT_INPUT} seconds."
-        exit 1
-
     - name: 'Run Backend Unit Tests'
-      if: steps.scope.outputs.run_backend == 'true'
+      if: steps.classify.outputs.run_backend == 'true'
       env:
-        TARGETS: ${{ steps.scope.outputs.bazel_targets }}
+        # The tool needs only the standard library, so skip bootstrapping the tools venv.
+        XMC_BYPASS_VENV: '1'
+        SPANNER_EMULATOR_HOST: ${{ inputs.spanner-emulator-host }}
+        SPANNER_TIMEOUT_INPUT: ${{ inputs.spanner-check-timeout }}
         REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' }}
         TEST_TIMEOUT: ${{ inputs.test-timeout-seconds }}
-        SPANNER_EMULATOR_HOST: ${{ inputs.spanner-emulator-host }}
       shell: bash
+      # The same entrypoint as local runs resolves the rdeps scope of the event, waits for the
+      # Spanner emulator, and runs the affected targets with the shared test flags. CI-only
+      # flags are appended with --bazel-flag and win over the defaults.
       run: |
-        RUN_TARGETS="${TARGETS:-//... -//cmd/ui/...}"
-        echo "Executing Bazel tests for targets: ${RUN_TARGETS} (remote_upload: ${REMOTE_UPLOAD})"
-        bazel test \
-          --config=ci \
-          --remote_upload_local_results="${REMOTE_UPLOAD}" \
-          --repository_cache="${HOME}/.cache/bazel-repo" \
-          --experimental_repository_cache_hardlinks \
-          --test_output=errors \
-          --experimental_ui_max_stdouterr_bytes=2097152 \
-          --build_tests_only \
-          --test_timeout="${TEST_TIMEOUT}",300,300,300 \
-          -- \
-          ${RUN_TARGETS}
+        python3 tools/run_affected_tests.py --ci \
+          --repository-cache "${HOME}/.cache/bazel-repo" \
+          --emulator-wait-seconds "${SPANNER_TIMEOUT_INPUT}" \
+          --bazel-flag=--config=ci \
+          --bazel-flag="--remote_upload_local_results=${REMOTE_UPLOAD}" \
+          --bazel-flag=--experimental_repository_cache_hardlinks \
+          --bazel-flag="--test_timeout=${TEST_TIMEOUT},300,300,300"
 
     - name: 'Save Bazel Repository Cache'
       uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2

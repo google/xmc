@@ -27,16 +27,16 @@ import (
 	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
 	"golang/k8s_io/client_go/v/v0_23/rest/rest"
 	runtimeclient "golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
+	"google.golang.org/grpc/status"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	"k8s.io/client-go/tools/clientcmd"
 	anypb "protobuf/any_go_proto"
 	spb "rpc/status_go_proto"
-	"task/go/status"
+	preconditionsvalidator "xmanager_cloud/cmd/actuator/k8s_client/preconditions_validator"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/preconditions_validator/preconditionsvalidator"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage"
 	constants "xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/validator/validator"
 )
@@ -343,7 +343,7 @@ func createSuccessfulOperationUpdate(workUnit *esspb.WorkUnit, xid int64, wid in
 
 func createFailedOperationUpdate(xid int64, wid int64, oid string, jobSetErr error) *storage.OperationUpdate {
 	op := &longrunningpb.Operation{}
-	op.Result = &longrunningpb.Operation_Error{Error: &spb.Status{Code: int32(status.ExtractCanonicalCode(jobSetErr)), Message: jobSetErr.Error()}}
+	op.Result = &longrunningpb.Operation_Error{Error: &spb.Status{Code: int32(status.Code(jobSetErr)), Message: jobSetErr.Error()}}
 	op.Done = true
 	return &storage.OperationUpdate{
 		XID:       xid,

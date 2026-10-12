@@ -13,7 +13,7 @@
 # limitations under the License.
 
 name: 'Run Helm Chart Configuration Tests'
-description: 'Checks changed chart paths and executes Helm chart configuration unit tests'
+description: 'Resolves test scope and executes Helm chart configuration unit tests (requires actions/checkout with fetch-depth: 0)'
 
 inputs:
   helm-version:
@@ -29,23 +29,15 @@ runs:
   using: 'composite'
   steps:
     # The chart suite renders templates with a host helm binary rather than building Bazel
-    # targets, so its scope is resolved by path rather than by the Bazel dependency graph.
-    - name: 'Check Changed Chart Paths'
-      id: 'changes'
-      uses: 'dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36' # v3.0.2
-      with:
-        filters: |
-          chart:
-            - 'deploy/helm/**'
-            # The suite also asserts the chart agrees with the deployment blueprint, so a
-            # blueprint-only edit can break it just as a chart-only edit can.
-            - 'deploy/ctk_v2/xmanager-cloud.yaml'
-            - 'test/helm/**'
-            - '.github/workflows/unit-tests.yml'
-            - '.github/actions/run-chart-tests/**'
+    # targets, so the resolver scopes it by path (HELM_SUITE_* in resolve_test_scope.py).
+    - name: 'Resolve Chart Test Scope'
+      id: 'scope'
+      shell: bash
+      # Base/head/ref/event/output are derived from GITHUB_* env and GITHUB_EVENT_PATH.
+      run: python3 tools/benchmark/resolve_test_scope.py --no-rdeps
 
     - name: 'Install Helm'
-      if: steps.changes.outputs.chart == 'true'
+      if: steps.scope.outputs.run_helm == 'true'
       shell: bash
       env:
         HELM_VER: ${{ inputs.helm-version }}
@@ -59,13 +51,13 @@ runs:
         fi
 
     - name: 'Run Helm Lint'
-      if: steps.changes.outputs.chart == 'true'
+      if: steps.scope.outputs.run_helm == 'true'
       shell: bash
       run: |
         helm lint deploy/helm
 
     - name: 'Run Helm Chart Configuration Tests'
-      if: steps.changes.outputs.chart == 'true'
+      if: steps.scope.outputs.run_helm == 'true'
       shell: bash
       env:
         XMC_REQUIRE_HELM: ${{ inputs.require-helm }}
@@ -74,7 +66,7 @@ runs:
         python3 -m unittest discover --start-directory test/helm --pattern '*_test.py' --verbose
 
     - name: 'Log Chart Test Skip Summary'
-      if: steps.changes.outputs.chart != 'true'
+      if: steps.scope.outputs.run_helm != 'true'
       shell: bash
       run: |
         echo "NOTICE: Helm chart configuration tests skipped (no chart files modified)."

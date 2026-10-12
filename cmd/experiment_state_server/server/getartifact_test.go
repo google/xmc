@@ -22,10 +22,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/storage/storage"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
@@ -80,7 +80,7 @@ func TestGetArtifact_BadPaths(t *testing.T) {
 		{
 			name:    "invalid_name",
 			req:     &apipb.GetArtifactRequest{Name: "invalid-name"},
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -108,10 +108,10 @@ func TestGetArtifact_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name: "xid_get_fails",
@@ -119,23 +119,23 @@ func TestGetArtifact_DependencyFailures(t *testing.T) {
 				getXidEntryErr: fmt.Errorf("XID get failed"),
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "xid_get_permission_denied",
 			xidClient: &mockXidClient{
-				getXidEntryErr: status.ErrPermissionDenied,
+				getXidEntryErr: grpcerr.ErrPermissionDenied,
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "xid_get_not_found",
 			xidClient: &mockXidClient{
-				getXidEntryErr: status.ErrNotFound,
+				getXidEntryErr: grpcerr.ErrNotFound,
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrNotFound,
+			wantErr: grpcerr.ErrNotFound,
 		},
 		{
 			name: "storage_fetch_fails",
@@ -145,7 +145,7 @@ func TestGetArtifact_DependencyFailures(t *testing.T) {
 			storage: &storage.MockStorage{
 				FetchArtifactErr: fmt.Errorf("storage fetch failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_fetch_not_found",
@@ -153,9 +153,9 @@ func TestGetArtifact_DependencyFailures(t *testing.T) {
 				getXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 			},
 			storage: &storage.MockStorage{
-				FetchArtifactErr: status.ErrNotFound,
+				FetchArtifactErr: grpcerr.ErrNotFound,
 			},
-			wantErr: status.ErrNotFound,
+			wantErr: grpcerr.ErrNotFound,
 		},
 	}
 
@@ -224,7 +224,7 @@ func TestEnrichManagedXprof(t *testing.T) {
 			name:     "storage_not_found",
 			artifact: proto.Clone(baseManagedXprofArtifact).(*msgpb.Artifact),
 			mockStorage: &storage.MockStorage{
-				FetchCurrentWorkUnitExecutionErr: status.ErrNotFound,
+				FetchCurrentWorkUnitExecutionErr: grpcerr.ErrNotFound,
 			},
 			wantEnriched: false,
 		},
@@ -427,8 +427,8 @@ func TestIsWorkUnitExecutionNotFound(t *testing.T) {
 		want bool
 	}{
 		{name: "nil_error", err: nil, want: false},
-		{name: "not_found_sentinel", err: status.ErrNotFound, want: true},
-		{name: "wrapped_not_found", err: fmt.Errorf("WorkUnit 1 for XID 1 not found: %w", status.ErrNotFound), want: true},
+		{name: "not_found_sentinel", err: grpcerr.ErrNotFound, want: true},
+		{name: "wrapped_not_found", err: fmt.Errorf("WorkUnit 1 for XID 1 not found: %w", grpcerr.ErrNotFound), want: true},
 		{name: "other_error", err: fmt.Errorf("boom"), want: false},
 	}
 

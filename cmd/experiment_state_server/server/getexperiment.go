@@ -17,7 +17,9 @@ import (
 	"context"
 	"fmt"
 
-	"task/go/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 
@@ -42,7 +44,7 @@ func (h *ExperimentHandler) GetExperiment(ctx context.Context, req *apipb.GetExp
 	xid, err := validator.ValidateExperimentName(name)
 	if err != nil {
 		logging.Warn(ctx, "GetExperiment validation failed", "name", name, "error", err)
-		return nil, fmt.Errorf("GetExperiment validation failed: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("GetExperiment validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithExperimentName(ctx, name)
 
@@ -50,30 +52,30 @@ func (h *ExperimentHandler) GetExperiment(ctx context.Context, req *apipb.GetExp
 	// the ACLs.
 	xidEntry, err := h.getXid(ctx, validator.ConstructXIDName(xid))
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.PermissionDenied {
+		if status.Code(err) == codes.PermissionDenied {
 			logging.Warn(ctx, "User not authorized to get experiment", "error", err)
-			return nil, fmt.Errorf("user not authorized to get experiment %s: %w (%v)", name, status.ErrPermissionDenied, err)
+			return nil, fmt.Errorf("user not authorized to get experiment %s: %w (%v)", name, grpcerr.ErrPermissionDenied, err)
 		}
-		if status.ExtractCanonicalCode(err) == status.NotFound {
+		if status.Code(err) == codes.NotFound {
 			logging.Warn(ctx, "Experiment not found in XID service")
-			return nil, fmt.Errorf("experiment with name %s not found: %w (%v)", name, status.ErrNotFound, err)
+			return nil, fmt.Errorf("experiment with name %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
 		}
 
 		logging.Error(ctx, "XID lookup failed", "error", err)
-		return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", xid, status.ErrInternal, err)
+		return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", xid, grpcerr.ErrInternal, err)
 	}
 
 	// 4. Retrieve the experiment from the storage layer.
 	logging.Debug(ctx, "Fetching experiment from storage")
 	exp, err := h.storage.FetchExperiment(ctx, xid)
 	if err != nil {
-		if status.ExtractCanonicalCode(err) == status.NotFound {
+		if status.Code(err) == codes.NotFound {
 			logging.Warn(ctx, "Experiment not found in storage")
-			return nil, fmt.Errorf("experiment with name %s not found: %w (%v)", name, status.ErrNotFound, err)
+			return nil, fmt.Errorf("experiment with name %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
 		}
 
 		logging.Error(ctx, "Failed to retrieve experiment from storage", "error", err)
-		return nil, fmt.Errorf("failed to retrieve experiment %s from storage: %w (%v)", name, status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to retrieve experiment %s from storage: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 
 	// 4.1. Attach the ACLs from the XID entry to the experiment.

@@ -16,16 +16,16 @@ import { ComponentStore } from '@ngrx/component-store';
 import { EMPTY } from 'rxjs';
 import { catchError, switchMap, tap } from 'rxjs/operators';
 
-import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import {
   getInitialPaginationState,
   goToNextPage,
   goToPreviousPage,
   PaginationState,
   setPageSize,
-} from 'xmanager_cloud/ui/app/common/pagination/pagination';
-import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
-import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+} from 'app/common/pagination/pagination';
+import { ExperimentService } from 'app/service/experiment_service';
+import { SnackbarService } from 'app/service/snackbar_service';
+import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
 /** State for the experiments list page. */
 export interface ExperimentsListPageState {

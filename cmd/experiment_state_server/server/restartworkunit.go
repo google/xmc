@@ -18,9 +18,9 @@ import (
 	"fmt"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -42,7 +42,7 @@ func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *apipb.Restar
 	xid, wid, err := validator.ValidateWorkUnitName(req.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate work unit name", "name", req.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to validate work unit name: %w: %w", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("failed to validate work unit name: %w: %w", grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithWorkUnitName(ctx, req.GetName())
 
@@ -53,14 +53,14 @@ func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *apipb.Restar
 	}
 	if !authorized {
 		logging.Warn(ctx, "User not authorized to restart work units", "user", email)
-		return nil, fmt.Errorf("user %s is not authorized to restart work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
+		return nil, fmt.Errorf("user %s is not authorized to restart work units for XID %d: %w", email, xid, grpcerr.ErrPermissionDenied)
 	}
 
 	// 4. Retrieve the work unit from the storage layer. We need this to get the executable later.
 	workUnit, err := h.storage.FetchWorkUnit(ctx, xid, wid)
 	if err != nil {
 		logging.Error(ctx, "Failed to get work unit", "error", err)
-		return nil, fmt.Errorf("failed to get work unit: %w: %w", status.ErrNotFound, err)
+		return nil, fmt.Errorf("failed to get work unit: %w: %w", grpcerr.ErrNotFound, err)
 	}
 	oldExecutionName := workUnit.GetCurrentWorkUnitExecution().GetName()
 
@@ -68,14 +68,14 @@ func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *apipb.Restar
 	restartedExecutions, err := restartWorkUnitExecutions(ctx, h.storage, email, xid, []int64{wid})
 	if err != nil {
 		logging.Error(ctx, "Failed to restart work unit executions", "error", err)
-		return nil, fmt.Errorf("failed to restart work unit executions: %w: %w", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to restart work unit executions: %w: %w", grpcerr.ErrInternal, err)
 	}
 
 	// 5.1. Extract the restarted work unit execution and patch the work unit with it.
 	restartedExecution := restartedExecutions[wid]
 	if restartedExecution == nil {
 		logging.Error(ctx, "No execution was restarted for work unit")
-		return nil, fmt.Errorf("no execution was restarted for work unit %s: %w", req.GetName(), status.ErrInternal)
+		return nil, fmt.Errorf("no execution was restarted for work unit %s: %w", req.GetName(), grpcerr.ErrInternal)
 	}
 	workUnit.CurrentWorkUnitExecution = restartedExecution
 
@@ -83,7 +83,7 @@ func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *apipb.Restar
 	experiment, err := h.storage.FetchExperiment(ctx, xid)
 	if err != nil {
 		logging.Error(ctx, "Failed to get experiment priority", "error", err)
-		return nil, fmt.Errorf("failed to get experiment priority: %w: %w", status.ErrInternal, err)
+		return nil, fmt.Errorf("failed to get experiment priority: %w: %w", grpcerr.ErrInternal, err)
 	}
 
 	// 7. Enqueue the restart request for the work unit.

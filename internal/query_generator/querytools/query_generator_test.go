@@ -24,8 +24,9 @@ import (
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/query_generator/predicate"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 
 	fpb "api/filter/filter_expression_go_proto"
 )
@@ -272,14 +273,14 @@ func TestGenerateQueryErrors(t *testing.T) {
 		userFilter              string
 		orderByFields           []UserOrderedIndex
 		allowUnoptimizedOrderBy bool
-		wantErrCode             status.Code
+		wantErrCode             codes.Code
 	}{
 		{
 			desc:         "no single table can satisfy all filters",
 			tables:       AllTables,
 			selectFields: []TableField{SingerIDTableField},
 			userFilter:   `SingerName = "Ringo" AND AlbumTitle = "Killer Queen"`,
-			wantErrCode:  status.FailedPrecondition,
+			wantErrCode:  codes.FailedPrecondition,
 		},
 		{
 			desc:          "user filter on a field that doesn't exist (made up field)",
@@ -288,7 +289,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 			baseFilters:   []TableField{SingerIDTableField},
 			baseFilterExp: predicate.Conjunction(predicate.String{Field: string(SingerIDTableField), Value: "1"}),
 			userFilter:    `MadeUpField = "rawr"`,
-			wantErrCode:   status.InvalidArgument,
+			wantErrCode:   codes.InvalidArgument,
 		},
 		{
 			desc:   "user filter cannot use a field (singer ID) not specified in members even if it's in the base filters",
@@ -303,7 +304,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 			baseFilters:   []TableField{SingerIDTableField},
 			baseFilterExp: predicate.Conjunction(predicate.String{Field: string(SingerIDTableField), Value: "1"}),
 			userFilter:    `SingerId = "3"`,
-			wantErrCode:   status.InvalidArgument,
+			wantErrCode:   codes.InvalidArgument,
 		},
 		{
 			desc:          "selecting a field (album ID) that doesn't exist in any singer tables",
@@ -311,7 +312,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 			selectFields:  []TableField{SingerIDTableField, AlbumIDTableField},
 			baseFilters:   []TableField{SingerIDTableField},
 			baseFilterExp: predicate.Conjunction(predicate.String{Field: string(SingerIDTableField), Value: "1"}),
-			wantErrCode:   status.FailedPrecondition,
+			wantErrCode:   codes.FailedPrecondition,
 		},
 		{
 			desc:          "specifying a base filter (album ID) that doesn't exist in any singer tables when creating a query generator",
@@ -319,7 +320,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 			selectFields:  []TableField{SingerIDTableField},
 			baseFilters:   []TableField{SingerIDTableField, AlbumIDTableField},
 			baseFilterExp: predicate.Conjunction(predicate.String{Field: string(SingerIDTableField), Value: "1"}),
-			wantErrCode:   status.FailedPrecondition,
+			wantErrCode:   codes.FailedPrecondition,
 		},
 		{
 			desc:          "filtering on a base filter (album ID) that wasn't specified when creating the query generator",
@@ -327,7 +328,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 			selectFields:  []TableField{SingerIDTableField},
 			baseFilters:   []TableField{SingerIDTableField},
 			baseFilterExp: predicate.Conjunction(predicate.String{Field: string(AlbumIDTableField), Value: "1"}),
-			wantErrCode:   status.InvalidArgument,
+			wantErrCode:   codes.InvalidArgument,
 		},
 		{
 			desc:                    "user specified order by not allowed on an unindexed column, base filter, user filter, optimized order by",
@@ -338,7 +339,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 			userFilter:              `ReleaseDate = "2016-12-02"`,
 			allowUnoptimizedOrderBy: false,
 			orderByFields:           []UserOrderedIndex{{TableField: ReleaseDateTableField, SortOrder: Desc}},
-			wantErrCode:             status.FailedPrecondition,
+			wantErrCode:             codes.FailedPrecondition,
 		},
 		{
 			desc:                    "user specified order by not allowed on a derived field, base filter, no user filter, optimized order by",
@@ -348,7 +349,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 			baseFilterExp:           predicate.Conjunction(predicate.String{Field: string(SingerIDTableField), Value: "1"}),
 			allowUnoptimizedOrderBy: false,
 			orderByFields:           []UserOrderedIndex{{TableField: SingerNameCountTableField, SortOrder: Desc}},
-			wantErrCode:             status.InvalidArgument,
+			wantErrCode:             codes.InvalidArgument,
 		},
 		{
 			desc:                    "user specified order by does not match order of indexed fields, base filter, no user filter, optimized order by",
@@ -361,7 +362,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 				{TableField: AlbumIDTableField, SortOrder: Desc},
 				{TableField: AlbumSingerIDTableField, SortOrder: Desc},
 			},
-			wantErrCode: status.FailedPrecondition,
+			wantErrCode: codes.FailedPrecondition,
 		},
 	}
 
@@ -379,7 +380,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 
 			_, _, _, err = qg.GenerateQuery(tt.selectFields, nil, tt.baseFilterExp, exp, tt.orderByFields, 0, 0, nil, nil)
 			t.Logf("Got error: %v", err)
-			if c := status.ExtractCanonicalCode(err); c != tt.wantErrCode {
+			if c := status.Code(err); c != tt.wantErrCode {
 				t.Errorf("Generating query got err code %v, want %v", c, tt.wantErrCode)
 			}
 		})
@@ -1296,7 +1297,7 @@ func TestGenerateQuery_PageTokenValidationAndNullableCursors(t *testing.T) {
 			nil,
 		)
 		statusErr, ok := status.FromError(err)
-		if !ok || statusErr.Code != status.InvalidArgument {
+		if !ok || statusErr.Code() != codes.InvalidArgument {
 			t.Errorf("GenerateQuery() got error %v, want InvalidArgument", err)
 		}
 	})
@@ -1314,7 +1315,7 @@ func TestGenerateQuery_PageTokenValidationAndNullableCursors(t *testing.T) {
 			nil,
 		)
 		statusErr, ok := status.FromError(err)
-		if !ok || statusErr.Code != status.InvalidArgument {
+		if !ok || statusErr.Code() != codes.InvalidArgument {
 			t.Errorf("GenerateQuery() got error %v, want InvalidArgument", err)
 		}
 	})

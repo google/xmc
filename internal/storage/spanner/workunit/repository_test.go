@@ -19,7 +19,7 @@ import (
 	"errors"
 	"testing"
 
-	"task/go/status"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 )
 
@@ -27,8 +27,8 @@ func TestTxRepository_SaveWorkUnitExecution_NilExecution(t *testing.T) {
 	ctx := context.Background()
 	repo := &workunit.TxRepository{}
 
-	if err := repo.SaveWorkUnitExecution(ctx, nil); !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("SaveWorkUnitExecution(nil) returned %v, want %v", err, status.ErrInvalidArgument)
+	if err := repo.SaveWorkUnitExecution(ctx, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("SaveWorkUnitExecution(nil) returned %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }
 
@@ -36,7 +36,7 @@ func TestTxRepository_UpdateCurrentWorkUnitExecution_NilExecution(t *testing.T) 
 	ctx := context.Background()
 	repo := &workunit.TxRepository{}
 
-	if err := repo.UpdateCurrentWorkUnitExecution(ctx, 1, 1, 1, nil); !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("UpdateCurrentWorkUnitExecution(nil) returned %v, want %v", err, status.ErrInvalidArgument)
+	if err := repo.UpdateCurrentWorkUnitExecution(ctx, 1, 1, 1, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateCurrentWorkUnitExecution(nil) returned %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }

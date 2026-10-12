@@ -30,8 +30,8 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/types/types"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/logging"
 	constants "xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/components/crreader"
 )
 

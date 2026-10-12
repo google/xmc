@@ -39,7 +39,6 @@ go_library(
         "//api/protos/xid:api_go_proto",
         "//api/protos/xid:messages_go_proto",
         "//internal/auth",
-        "//internal/compat/status",
         "//internal/dashboard/dataengine",
         "//internal/logging",
         "//internal/validator",

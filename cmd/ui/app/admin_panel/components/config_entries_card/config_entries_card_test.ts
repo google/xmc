@@ -15,13 +15,7 @@
 import { Component, signal } from '@angular/core';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import {
-  bootstrap,
-  cleanState,
-  flush,
-  getHarness,
-  setupModule,
-} from 'xmanager_cloud/ui/app/testing/test';
+import { bootstrap, cleanState, flush, getHarness, setupModule } from 'app/testing/test';
 
 import { ConfigEntriesCardComponent, ConfigGroup } from './config_entries_card';
 import { ConfigEntriesCardHarness } from './testing/config_entries_card_harness';

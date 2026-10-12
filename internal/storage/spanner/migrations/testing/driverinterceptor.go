@@ -108,6 +108,14 @@ type interceptedStatement struct {
 }
 
 var fixes = []interceptedStatement{
+	// The emulator rejects updating an enum referenced by a stored generated column
+	// (WorkUnits.ExecutionState), while real Spanner accepts it. The emulator's bundle is created
+	// from the current descriptor set, which already contains SCHEDULING_PAUSED, so skip it.
+	{version: 13,
+		trigger:   "ALTER PROTO BUNDLE UPDATE (CLOUD.XMANAGER.V1.WORKUNITSTATUS.WORKUNITSTATE)",
+		direction: UP,
+		action:    func(drops, adds, statement string, result *strings.Builder) {},
+	},
 	{version: 00,
 		trigger:   "ALTER PROTO BUNDLE",
 		direction: DONT_CARE,

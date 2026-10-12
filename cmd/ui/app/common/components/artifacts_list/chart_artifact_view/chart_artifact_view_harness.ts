@@ -14,9 +14,9 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 
-import { PlotCardHarness } from 'xmanager_cloud/ui/app/common/components/dashboard/plot_card/plot_card_harness';
-import { SummaryBoxHarness } from 'xmanager_cloud/ui/app/common/components/dashboard/summary_box/summary_box_harness';
-import { ErrorBannerHarness } from 'xmanager_cloud/ui/app/common/components/error_banner/error_banner_harness';
+import { PlotCardHarness } from 'app/common/components/dashboard/plot_card/plot_card_harness';
+import { SummaryBoxHarness } from 'app/common/components/dashboard/summary_box/summary_box_harness';
+import { ErrorBannerHarness } from 'app/common/components/error_banner/error_banner_harness';
 
 /**
  * Component harness for ChartArtifactView.

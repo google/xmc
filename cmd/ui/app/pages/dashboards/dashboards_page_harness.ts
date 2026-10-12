@@ -14,7 +14,7 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 
-import { DashboardGridHarness } from 'xmanager_cloud/ui/app/common/components/dashboard/dashboard_grid/dashboard_grid_harness';
+import { DashboardGridHarness } from 'app/common/components/dashboard/dashboard_grid/dashboard_grid_harness';
 
 /**
  * Component harness for DashboardsPage.

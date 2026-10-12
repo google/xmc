@@ -22,8 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
@@ -111,8 +111,8 @@ func TestUpdateArtifact_ImmutableField(t *testing.T) {
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"name"}},
 	}
 	_, err := s.UpdateArtifact(ctx, update)
-	if !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("UpdateArtifact with immutable field returned error %v, want %v", err, status.ErrInvalidArgument)
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateArtifact with immutable field returned error %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }
 
@@ -129,8 +129,8 @@ func TestUpdateArtifact_NotFound(t *testing.T) {
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"notes"}},
 	}
 	_, err := s.UpdateArtifact(ctx, update)
-	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("UpdateArtifact for non-existent AID returned error %v, want %v", err, status.ErrNotFound)
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("UpdateArtifact for non-existent AID returned error %v, want %v", err, grpcerr.ErrNotFound)
 	}
 }
 
@@ -151,7 +151,7 @@ func TestUpdateArtifact_EmptyMask(t *testing.T) {
 		UpdateMask: &fmpb.FieldMask{Paths: []string{}},
 	}
 	_, err := s.UpdateArtifact(ctx, update)
-	if !errors.Is(err, status.ErrInvalidArgument) {
-		t.Errorf("UpdateArtifact with empty mask returned error %v, want %v", err, status.ErrInvalidArgument)
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateArtifact with empty mask returned error %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }

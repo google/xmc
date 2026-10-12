@@ -25,13 +25,13 @@ import (
 	"golang/grpc/credentials/insecure/insecure"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/spanner/spanner"
@@ -173,28 +173,28 @@ func TestCreateArtifact_BadPaths(t *testing.T) {
 			req: prototest.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
 				r.Parent = ""
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent",
 			req: prototest.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
 				r.Parent = "invalid-parent"
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "missing_artifact",
 			req: prototest.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
 				r.Artifact = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "missing_url",
 			req: prototest.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
 				r.Artifact.Url = nil
 			}),
-			wantErr: status.ErrInvalidArgument,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
 
@@ -241,10 +241,10 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 	}{
 		{
 			name:          "auth_fails",
-			authenticator: &mockAuthenticator{err: status.ErrUnauthenticated},
+			authenticator: &mockAuthenticator{err: grpcerr.ErrUnauthenticated},
 			xidClient:     &mockXidClient{},
 			storage:       &storage.MockStorage{},
-			wantErr:       status.ErrUnauthenticated,
+			wantErr:       grpcerr.ErrUnauthenticated,
 		},
 		{
 			name: "unauthorized_user_returns_permission_denied",
@@ -254,7 +254,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 				},
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "unauthorized_user_with_malformed_payload_returns_permission_denied",
@@ -268,7 +268,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 				Parent:   "experiments/123",
 				Artifact: nil,
 			},
-			wantErr: status.ErrPermissionDenied,
+			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
 			name: "xid_creation_fails",
@@ -276,10 +276,10 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{
 					Authorized: proto.Bool(true),
 				},
-				createXidEntryErr: fmt.Errorf("XID creation failed: %w", status.ErrInternal),
+				createXidEntryErr: fmt.Errorf("XID creation failed: %w", grpcerr.ErrInternal),
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "storage_creation_fails",
@@ -292,7 +292,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 			storage: &storage.MockStorage{
 				CreateArtifactErr: fmt.Errorf("Storage creation failed"),
 			},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name: "invalid_xid_name",
@@ -303,7 +303,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 				createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("invalid-xid-name")},
 			},
 			storage: &storage.MockStorage{},
-			wantErr: status.ErrInternal,
+			wantErr: grpcerr.ErrInternal,
 		},
 	}
 

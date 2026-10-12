@@ -22,12 +22,12 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
-import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 import {
   ALL_SEVERITIES,
   ALL_SOURCES,
   formatSource,
-} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
+} from 'app/service/status_message_filter_service';
+import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 
 /**
  * Available presets for time filter.

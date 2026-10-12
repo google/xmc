@@ -18,8 +18,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	"task/go/status"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -28,13 +28,13 @@ import (
 // the masked updated XID entry if so.
 func ExperimentRequiresXIDUpdate(exp *pb.Experiment, updateMask *fieldmaskpb.FieldMask) (*xidmsgpb.XidEntry, *fieldmaskpb.FieldMask, error) {
 	if exp == nil {
-		return nil, nil, fmt.Errorf("experiment is nil: %w", status.ErrInvalidArgument)
+		return nil, nil, fmt.Errorf("experiment is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if updateMask == nil {
-		return nil, nil, fmt.Errorf("update mask is nil: %w", status.ErrInvalidArgument)
+		return nil, nil, fmt.Errorf("update mask is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if len(updateMask.Paths) == 0 {
-		return nil, nil, fmt.Errorf("update mask is empty: %w", status.ErrInvalidArgument)
+		return nil, nil, fmt.Errorf("update mask is empty: %w", grpcerr.ErrInvalidArgument)
 	}
 	xid, err := validator.ValidateExperimentName(exp.GetName())
 	if err != nil {
@@ -48,7 +48,7 @@ func ExperimentRequiresXIDUpdate(exp *pb.Experiment, updateMask *fieldmaskpb.Fie
 		if path == "acls" {
 			xidEntry.Acls = exp.GetAcls()
 			if len(xidEntry.GetAcls().GetOwners()) == 0 && len(xidEntry.GetAcls().GetWriters()) == 0 && len(xidEntry.GetAcls().GetReaders()) == 0 {
-				return nil, nil, fmt.Errorf("at least one ACL must be provided: %w", status.ErrInvalidArgument)
+				return nil, nil, fmt.Errorf("at least one ACL must be provided: %w", grpcerr.ErrInvalidArgument)
 			}
 			paths = []string{"acls"}
 		}
@@ -60,14 +60,14 @@ func ExperimentRequiresXIDUpdate(exp *pb.Experiment, updateMask *fieldmaskpb.Fie
 // message based on an update mask.
 func MergeExperiments(current, updated *pb.Experiment, updateMask *fieldmaskpb.FieldMask) (*pb.Experiment, error) {
 	if current == nil {
-		return nil, fmt.Errorf("current experiment is nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("current experiment is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if updated == nil {
-		return nil, fmt.Errorf("updated experiment is nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("updated experiment is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	if len(updateMask.Paths) == 0 {
-		return nil, fmt.Errorf("update mask is empty: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("update mask is empty: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	merged := proto.Clone(current).(*pb.Experiment)
@@ -77,25 +77,25 @@ func MergeExperiments(current, updated *pb.Experiment, updateMask *fieldmaskpb.F
 			merged.Acls = updated.Acls
 		case "title":
 			if updated.Title == "" {
-				return nil, fmt.Errorf("title field is required: %w", status.ErrInvalidArgument)
+				return nil, fmt.Errorf("title field is required: %w", grpcerr.ErrInvalidArgument)
 			}
 			merged.Title = updated.Title
 		case "priority":
 			merged.Priority = updated.Priority
 		case "urls":
 			if updated.Urls == nil {
-				return nil, fmt.Errorf("urls field cannot be nil: %w", status.ErrInvalidArgument)
+				return nil, fmt.Errorf("urls field cannot be nil: %w", grpcerr.ErrInvalidArgument)
 			}
 			merged.Urls = updated.Urls
 		case "tags":
 			if updated.Tags == nil {
-				return nil, fmt.Errorf("tags field cannot be nil: %w", status.ErrInvalidArgument)
+				return nil, fmt.Errorf("tags field cannot be nil: %w", grpcerr.ErrInvalidArgument)
 			}
 			merged.Tags = updated.Tags
 		case "notes":
 			merged.Notes = updated.Notes
 		default:
-			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+			return nil, fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
 		}
 	}
 	return validator.FillExperimentNullValues(merged), nil

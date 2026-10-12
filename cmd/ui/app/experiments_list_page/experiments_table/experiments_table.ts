@@ -27,30 +27,27 @@ import { RouterLink } from '@angular/router';
 import { combineLatest, Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
+import { LoadingBar } from 'app/common/components/loading_bar/loading_bar';
+import { PriorityChip } from 'app/common/components/priority_chip/priority_chip';
+import { ResourceChip } from 'app/common/components/resource_chip/resource_chip';
+import {
+  ResourceChipData,
+  resourceSetsToResourceChipsData,
+} from 'app/common/components/resource_chip/utils/resource_set_to_resource_chips';
+import { StatusChip, StatusOption } from 'app/common/components/status_chip/status_chip';
+import { StatusMessage } from 'app/common/components/status_message/status_message';
+import { StatusMessageFilter } from 'app/common/components/status_message_filter/status_message_filter';
+import { Tag } from 'app/common/components/tag/tag';
+import { WorkUnitsStatusBar } from 'app/common/components/work_units_status_bar/work_units_status_bar';
+import { XidBadge } from 'app/common/components/xid_badge/xid_badge';
+import { StatusMessageFilterService } from 'app/service/status_message_filter_service';
+import { EditExperimentFormData } from 'app/side_panel/contents/edit_experiment_form/edit_experiment_form';
+import { SidePanelService } from 'app/side_panel/side_panel_service';
 import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
 import { ExperimentStatus } from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
 import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import { LoadingBar } from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
-import { PriorityChip } from 'xmanager_cloud/ui/app/common/components/priority_chip/priority_chip';
-import { ResourceChip } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
-import {
-  ResourceChipData,
-  resourceSetsToResourceChipsData,
-} from 'xmanager_cloud/ui/app/common/components/resource_chip/utils/resource_set_to_resource_chips';
-import {
-  StatusChip,
-  StatusOption,
-} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
-import { StatusMessage } from 'xmanager_cloud/ui/app/common/components/status_message/status_message';
-import { StatusMessageFilter } from 'xmanager_cloud/ui/app/common/components/status_message_filter/status_message_filter';
-import { Tag } from 'xmanager_cloud/ui/app/common/components/tag/tag';
-import { WorkUnitsStatusBar } from 'xmanager_cloud/ui/app/common/components/work_units_status_bar/work_units_status_bar';
-import { XidBadge } from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
-import { StatusMessageFilterService } from 'xmanager_cloud/ui/app/service/status_message_filter_service';
-import { EditExperimentFormData } from 'xmanager_cloud/ui/app/side_panel/contents/edit_experiment_form/edit_experiment_form';
-import { SidePanelService } from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
 
 enum TableColumns {
   XID = 'XID',

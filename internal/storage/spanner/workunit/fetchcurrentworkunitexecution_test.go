@@ -21,8 +21,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"
 )
@@ -65,8 +65,8 @@ func TestFetchCurrentWorkUnitExecution_NotFound(t *testing.T) {
 	}
 
 	_, err = storage.FetchCurrentWorkUnitExecution(ctx, 123456789, 1)
-	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("FetchCurrentWorkUnitExecution for non-existent XID returned error %v, want %v", err, status.ErrNotFound)
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("FetchCurrentWorkUnitExecution for non-existent XID returned error %v, want %v", err, grpcerr.ErrNotFound)
 	}
 }
 
@@ -81,7 +81,7 @@ func TestFetchCurrentWorkUnitExecution_ExperimentExists_NotFound(t *testing.T) {
 	spanner.CreateBlankExperiment(ctx, t, storage, 123)
 
 	_, err = storage.FetchCurrentWorkUnitExecution(ctx, 123, 999)
-	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("FetchCurrentWorkUnitExecution for non-existent WorkUnit returned error %v, want %v", err, status.ErrNotFound)
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("FetchCurrentWorkUnitExecution for non-existent WorkUnit returned error %v, want %v", err, grpcerr.ErrNotFound)
 	}
 }

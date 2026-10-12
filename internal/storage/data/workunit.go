@@ -18,8 +18,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	"task/go/status"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -27,14 +27,14 @@ import (
 // message based on an update mask.
 func MergeWorkUnits(current, updated *pb.WorkUnit, updateMask *fieldmaskpb.FieldMask) (*pb.WorkUnit, error) {
 	if current == nil {
-		return nil, fmt.Errorf("current work unit is nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("current work unit is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	if updated == nil {
-		return nil, fmt.Errorf("updated work unit is nil: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("updated work unit is nil: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	if len(updateMask.Paths) == 0 {
-		return nil, fmt.Errorf("update mask is empty: %w", status.ErrInvalidArgument)
+		return nil, fmt.Errorf("update mask is empty: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	merged := proto.Clone(current).(*pb.WorkUnit)
@@ -44,18 +44,18 @@ func MergeWorkUnits(current, updated *pb.WorkUnit, updateMask *fieldmaskpb.Field
 			merged.Priority = updated.Priority
 		case "urls":
 			if updated.Urls == nil {
-				return nil, fmt.Errorf("urls field cannot be nil: %w", status.ErrInvalidArgument)
+				return nil, fmt.Errorf("urls field cannot be nil: %w", grpcerr.ErrInvalidArgument)
 			}
 			merged.Urls = updated.Urls
 		case "tags":
 			if updated.Tags == nil {
-				return nil, fmt.Errorf("tags field cannot be nil: %w", status.ErrInvalidArgument)
+				return nil, fmt.Errorf("tags field cannot be nil: %w", grpcerr.ErrInvalidArgument)
 			}
 			merged.Tags = updated.Tags
 		case "notes":
 			merged.Notes = updated.Notes
 		default:
-			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+			return nil, fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
 		}
 	}
 	return validator.FillWorkUnitNullValues(merged), nil
