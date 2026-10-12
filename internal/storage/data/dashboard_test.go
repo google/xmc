@@ -57,11 +57,27 @@ func TestSortChartIDs(t *testing.T) {
 }
 
 func TestChartIDsEqual(t *testing.T) {
-	if !ChartIDsEqual([]string{"a", "b"}, []string{"a", "b"}) {
-		t.Errorf("ChartIDsEqual([a,b], [a,b]) = false, want true")
+	tests := []struct {
+		name string
+		a    []string
+		b    []string
+		want bool
+	}{
+		{name: "both nil", a: nil, b: nil, want: true},
+		{name: "one nil one empty", a: nil, b: []string{}, want: true},
+		{name: "both empty", a: []string{}, b: []string{}, want: true},
+		{name: "equal single", a: []string{"a"}, b: []string{"a"}, want: true},
+		{name: "equal multiple", a: []string{"a", "b"}, b: []string{"a", "b"}, want: true},
+		{name: "different lengths", a: []string{"a"}, b: []string{"a", "b"}, want: false},
+		{name: "different elements", a: []string{"a", "b"}, b: []string{"a", "c"}, want: false},
 	}
-	if ChartIDsEqual([]string{"a", "b"}, []string{"a", "c"}) {
-		t.Errorf("ChartIDsEqual([a,b], [a,c]) = true, want false")
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ChartIDsEqual(tc.a, tc.b); got != tc.want {
+				t.Errorf("ChartIDsEqual(%v, %v) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -459,57 +475,110 @@ func TestBuildListChartsFilter(t *testing.T) {
 }
 
 func TestExtractChartCursor(t *testing.T) {
-	if _, err := ExtractChartCursor(nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
-		t.Errorf("ExtractChartCursor(nil) error = %v, want ErrInvalidArgument", err)
+	tests := []struct {
+		name    string
+		chart   *dpb.Chart
+		want    map[string]any
+		wantErr error
+	}{
+		{
+			name:    "nil chart returns ErrInvalidArgument",
+			chart:   nil,
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid chart name returns ErrInvalidArgument",
+			chart:   &dpb.Chart{Name: "invalid"},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name:  "valid chart returns chart_id cursor",
+			chart: &dpb.Chart{Name: "experiments/100/workUnits/1/charts/c1"},
+			want: map[string]any{
+				"chart_id": "c1",
+			},
+		},
 	}
-	if _, err := ExtractChartCursor(&dpb.Chart{Name: "invalid"}); err == nil {
-		t.Errorf("ExtractChartCursor(invalid) succeeded, want error")
-	}
-	cursor, err := ExtractChartCursor(&dpb.Chart{Name: "experiments/100/workUnits/1/charts/c1"})
-	if err != nil {
-		t.Fatalf("ExtractChartCursor() unexpected error: %v", err)
-	}
-	if cursor["chart_id"] != "c1" {
-		t.Errorf("cursor[chart_id] = %v, want c1", cursor["chart_id"])
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ExtractChartCursor(tc.chart)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("ExtractChartCursor() error = %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ExtractChartCursor() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("ExtractChartCursor() diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
 func TestExtractDashboardCursor(t *testing.T) {
-	if _, err := ExtractDashboardCursor(nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
-		t.Errorf("ExtractDashboardCursor(nil) error = %v, want ErrInvalidArgument", err)
-	}
-	if _, err := ExtractDashboardCursor(&dpb.Dashboard{Name: "invalid"}); err == nil {
-		t.Errorf("ExtractDashboardCursor(invalid) succeeded, want error")
-	}
-
-	emptyCursor, err := ExtractDashboardCursor(&dpb.Dashboard{Name: "dashboards/d0"})
-	if err != nil {
-		t.Fatalf("ExtractDashboardCursor(d0) unexpected error: %v", err)
-	}
-	if emptyCursor["dashboard_id"] != "d0" || emptyCursor["created"] != (time.Time{}) || emptyCursor["updated"] != (time.Time{}) {
-		t.Errorf("ExtractDashboardCursor(d0) = %+v, want d0 and zero times", emptyCursor)
-	}
-
 	now := time.Now().Truncate(time.Microsecond).UTC()
-	dash := &dpb.Dashboard{
-		Name:       "dashboards/d1",
-		Title:      "My Dashboard",
-		Owner:      "user@example.com",
-		CreateTime: timestamppb.New(now),
-		UpdateTime: timestamppb.New(now),
+	tests := []struct {
+		name    string
+		dash    *dpb.Dashboard
+		want    map[string]any
+		wantErr error
+	}{
+		{
+			name:    "nil dashboard returns ErrInvalidArgument",
+			dash:    nil,
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid dashboard name returns ErrInvalidArgument",
+			dash:    &dpb.Dashboard{Name: "invalid"},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "dashboard with zero timestamps",
+			dash: &dpb.Dashboard{Name: "dashboards/d0"},
+			want: map[string]any{
+				"dashboard_id": "d0",
+				"created":      time.Time{},
+				"updated":      time.Time{},
+			},
+		},
+		{
+			name: "dashboard with timestamps excludes title and owner",
+			dash: &dpb.Dashboard{
+				Name:       "dashboards/d1",
+				Title:      "My Dashboard",
+				Owner:      "user@example.com",
+				CreateTime: timestamppb.New(now),
+				UpdateTime: timestamppb.New(now),
+			},
+			want: map[string]any{
+				"dashboard_id": "d1",
+				"created":      now,
+				"updated":      now,
+			},
+		},
 	}
-	cursor, err := ExtractDashboardCursor(dash)
-	if err != nil {
-		t.Fatalf("ExtractDashboardCursor() unexpected error: %v", err)
-	}
-	if cursor["dashboard_id"] != "d1" || cursor["created"] != now || cursor["updated"] != now {
-		t.Errorf("ExtractDashboardCursor() = %+v, want d1 and %v", cursor, now)
-	}
-	if _, ok := cursor["title"]; ok {
-		t.Errorf("title should not be present in cursor")
-	}
-	if _, ok := cursor["owner"]; ok {
-		t.Errorf("owner should not be present in cursor")
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ExtractDashboardCursor(tc.dash)
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("ExtractDashboardCursor() error = %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ExtractDashboardCursor() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("ExtractDashboardCursor() diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -573,14 +642,15 @@ func TestDashboardAndChartAssemblyHelpers(t *testing.T) {
 			t.Errorf("BuildChartPlotsFilter() = %q, want %q", got, wantFilter)
 		}
 
+		wantPlots := []*dpb.PlotSpec{{PlotId: "p1"}}
 		AssignChartPlots([]*dpb.Chart{c1, nil, c2}, []string{"c1", "ignored", "c2"}, map[string][]*dpb.PlotSpec{
-			"c1": {{PlotId: "p1"}},
+			"c1": wantPlots,
 		})
-		if len(c1.GetPlots()) != 1 || c1.GetPlots()[0].GetPlotId() != "p1" {
-			t.Errorf("c1.Plots = %+v, want [p1]", c1.GetPlots())
+		if diff := cmp.Diff(wantPlots, c1.GetPlots(), protocmp.Transform()); diff != "" {
+			t.Errorf("c1.Plots diff (-want +got):\n%s", diff)
 		}
-		if len(c2.GetPlots()) != 0 {
-			t.Errorf("c2.Plots = %+v, want empty", c2.GetPlots())
+		if diff := cmp.Diff([]*dpb.PlotSpec(nil), c2.GetPlots(), protocmp.Transform()); diff != "" {
+			t.Errorf("c2.Plots diff (-want +got):\n%s", diff)
 		}
 
 		if _, err := ExtractChartIDs([]*dpb.Chart{{Name: "bad"}}); err == nil {
