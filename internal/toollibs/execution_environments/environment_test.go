@@ -18,8 +18,7 @@ import (
 	"testing"
 
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	spb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	epb "xmanager_cloud/api/protos/experiment"
 )
 
 type mockEnv struct {
@@ -38,10 +37,10 @@ func (m *mockEnv) IsCompatibleWithWorkUnit(workUnit *epb.WorkUnit) (bool, string
 func (m *mockEnv) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit, jobSet *jobsetv1alpha2.JobSet) (*jobsetv1alpha2.JobSet, error) {
 	return jobSet, nil
 }
-func (m *mockEnv) InjectOnExperimentCreation(ctx context.Context, essServer spb.ExperimentStateServiceServer, experiment *epb.Experiment) (*epb.Experiment, error) {
+func (m *mockEnv) InjectOnExperimentCreation(ctx context.Context, essServer epb.ExperimentStateServiceServer, experiment *epb.Experiment) (*epb.Experiment, error) {
 	return experiment, nil
 }
-func (m *mockEnv) InjectOnWorkUnitCreation(ctx context.Context, essServer spb.ExperimentStateServiceServer, workUnit *epb.WorkUnit) (*epb.WorkUnit, error) {
+func (m *mockEnv) InjectOnWorkUnitCreation(ctx context.Context, essServer epb.ExperimentStateServiceServer, workUnit *epb.WorkUnit) (*epb.WorkUnit, error) {
 	return workUnit, nil
 }
 

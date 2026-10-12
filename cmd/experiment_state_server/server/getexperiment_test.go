@@ -22,9 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -43,7 +42,7 @@ func TestGetExperiment_HappyPath(t *testing.T) {
 	}
 	createdExp := mustCreateExperiment(ctx, t, server, exp)
 
-	req := &apipb.GetExperimentRequest{Name: createdExp.GetName()}
+	req := &msgpb.GetExperimentRequest{Name: createdExp.GetName()}
 	got, err := server.GetExperiment(ctx, req)
 	if err != nil {
 		t.Fatalf("GetExperiment() returned an unexpected error: %v", err)
@@ -63,12 +62,12 @@ func TestGetExperiment_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.GetExperimentRequest
+		req     *msgpb.GetExperimentRequest
 		wantErr error
 	}{
 		{
 			name:    "invalid_name",
-			req:     &apipb.GetExperimentRequest{Name: "invalid-name"},
+			req:     &msgpb.GetExperimentRequest{Name: "invalid-name"},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
@@ -86,7 +85,7 @@ func TestGetExperiment_BadPaths(t *testing.T) {
 func TestGetExperiment_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
-	goodReq := &apipb.GetExperimentRequest{Name: "experiments/123"}
+	goodReq := &msgpb.GetExperimentRequest{Name: "experiments/123"}
 
 	testCases := []struct {
 		name          string
@@ -163,7 +162,7 @@ func TestGetExperiment_DependencyFailures(t *testing.T) {
 
 func TestGetExperiment_DriftWarningPropagation(t *testing.T) {
 	ctx := context.Background()
-	req := &apipb.GetExperimentRequest{Name: "experiments/123"}
+	req := &msgpb.GetExperimentRequest{Name: "experiments/123"}
 	driftMsg := &msgpb.StructuredMessage{
 		Severity:       msgpb.StructuredMessage_WARNING,
 		Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,

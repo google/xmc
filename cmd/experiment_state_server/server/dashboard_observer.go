@@ -23,8 +23,8 @@ import (
 	"time"
 
 	dashboard_apipb "xmanager_cloud/api/protos/dashboard"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"

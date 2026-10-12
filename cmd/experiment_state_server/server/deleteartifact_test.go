@@ -20,9 +20,8 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/proto"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -50,12 +49,12 @@ func TestDeleteArtifact_HappyPath(t *testing.T) {
 	}
 	artifact = mustCreateArtifact(ctx, t, server, exp.GetName(), artifact)
 
-	_, err := server.DeleteArtifact(ctx, &apipb.DeleteArtifactRequest{Name: artifact.GetName()})
+	_, err := server.DeleteArtifact(ctx, &msgpb.DeleteArtifactRequest{Name: artifact.GetName()})
 	if err != nil {
 		t.Fatalf("DeleteArtifact() returned an unexpected error: %v", err)
 	}
 
-	_, err = server.GetArtifact(ctx, &apipb.GetArtifactRequest{Name: artifact.GetName()})
+	_, err = server.GetArtifact(ctx, &msgpb.GetArtifactRequest{Name: artifact.GetName()})
 	if !errors.Is(err, grpcerr.ErrNotFound) {
 		t.Errorf("GetArtifact() after DeleteArtifact() returned error %v, want %v", err, grpcerr.ErrNotFound)
 	}
@@ -69,17 +68,17 @@ func TestDeleteArtifact_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.DeleteArtifactRequest
+		req     *msgpb.DeleteArtifactRequest
 		wantErr error
 	}{
 		{
 			name:    "invalid_name",
-			req:     &apipb.DeleteArtifactRequest{Name: "invalid-name"},
+			req:     &msgpb.DeleteArtifactRequest{Name: "invalid-name"},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "not_found",
-			req:     &apipb.DeleteArtifactRequest{Name: "artifacts/123"},
+			req:     &msgpb.DeleteArtifactRequest{Name: "artifacts/123"},
 			wantErr: grpcerr.ErrNotFound,
 		},
 	}
@@ -97,7 +96,7 @@ func TestDeleteArtifact_BadPaths(t *testing.T) {
 func TestDeleteArtifact_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
-	goodReq := &apipb.DeleteArtifactRequest{Name: "artifacts/123"}
+	goodReq := &msgpb.DeleteArtifactRequest{Name: "artifacts/123"}
 	artifact := &msgpb.Artifact{
 		Name:   "artifacts/123",
 		Parent: "experiments/456",

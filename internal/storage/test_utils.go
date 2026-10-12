@@ -19,8 +19,8 @@ import (
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"google.golang.org/protobuf/proto"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	msgpb "xmanager_cloud/api/protos/xid"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 )
 

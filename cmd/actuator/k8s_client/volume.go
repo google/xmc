@@ -18,7 +18,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	resource "k8s.io/apimachinery/pkg/api/resource"
-	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	esspb "xmanager_cloud/api/protos/experiment"
 )
 
 func defaultVolumes() []corev1.Volume {

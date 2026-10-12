@@ -20,9 +20,8 @@ import (
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/task_queue"
@@ -31,7 +30,7 @@ import (
 )
 
 // CreateWorkUnit orchestrates the creation of a new work unit for an experiment.
-func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateWorkUnitRequest) (*lropb.Operation, error) {
+func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *msgpb.CreateWorkUnitRequest) (*lropb.Operation, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Create work unit", "request", req)
 

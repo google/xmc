@@ -21,7 +21,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	esspb "xmanager_cloud/api/protos/experiment"
 )
 
 // PrimaryContainerName returns the primary container name for a job, defaulting to the job name if unset.

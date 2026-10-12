@@ -29,9 +29,8 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
 
+	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
 func TestCreateExperiment_HappyPath(t *testing.T) {
@@ -55,7 +54,7 @@ func TestCreateExperiment_HappyPath(t *testing.T) {
 			},
 		},
 	}
-	req := &apipb.CreateExperimentRequest{
+	req := &msgpb.CreateExperimentRequest{
 		Experiment: exp,
 	}
 
@@ -116,7 +115,7 @@ func TestCreateExperiment_FillNilValues(t *testing.T) {
 			Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
 		},
 	}
-	req := &apipb.CreateExperimentRequest{
+	req := &msgpb.CreateExperimentRequest{
 		Experiment: exp,
 	}
 
@@ -140,7 +139,7 @@ func TestCreateExperiment_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)
 
-	baseReq := &apipb.CreateExperimentRequest{
+	baseReq := &msgpb.CreateExperimentRequest{
 		Experiment: &msgpb.Experiment{
 			Title: "test experiment",
 			Acls: &xidmsgpb.XidAcls{
@@ -151,24 +150,24 @@ func TestCreateExperiment_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.CreateExperimentRequest
+		req     *msgpb.CreateExperimentRequest
 		wantErr error
 	}{
 		{
 			name:    "missing_experiment",
-			req:     prototest.Modify(baseReq, func(r *apipb.CreateExperimentRequest) { r.Experiment = nil }),
+			req:     prototest.Modify(baseReq, func(r *msgpb.CreateExperimentRequest) { r.Experiment = nil }),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "missing_acls",
-			req: prototest.Modify(baseReq, func(r *apipb.CreateExperimentRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.CreateExperimentRequest) {
 				r.Experiment.Acls = nil
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "creator_not_in_writers",
-			req: prototest.Modify(baseReq, func(r *apipb.CreateExperimentRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.CreateExperimentRequest) {
 				r.Experiment.Acls = &xidmsgpb.XidAcls{
 					Owners:  []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "not-me@example.com"}}},
 					Readers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
@@ -197,7 +196,7 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 			Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
 		},
 	}
-	goodReq := &apipb.CreateExperimentRequest{
+	goodReq := &msgpb.CreateExperimentRequest{
 		Experiment: goodExp,
 	}
 

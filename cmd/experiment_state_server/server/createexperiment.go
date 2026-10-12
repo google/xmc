@@ -24,12 +24,11 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
 
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	msgpb "xmanager_cloud/api/protos/experiment"
 )
 
 // CreateExperiment orchestrates the creation of a new experiment.
-func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *apipb.CreateExperimentRequest) (*msgpb.Experiment, error) {
+func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.CreateExperimentRequest) (*msgpb.Experiment, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Received CreateExperiment request", "request", req)
 

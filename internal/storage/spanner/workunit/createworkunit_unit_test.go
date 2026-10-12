@@ -18,7 +18,7 @@ import (
 	"context"
 	"testing"
 
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 )
 
 func TestInsertWorkUnit_NilWorkUnit(t *testing.T) {

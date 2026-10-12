@@ -26,11 +26,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
@@ -71,7 +70,7 @@ func TestCreateArtifact_HappyPath(t *testing.T) {
 			},
 		},
 	}
-	req := &apipb.CreateArtifactRequest{
+	req := &msgpb.CreateArtifactRequest{
 		Parent:   exp.GetName(),
 		Artifact: artifact,
 	}
@@ -131,7 +130,7 @@ func TestCreateArtifact_FillNilValues(t *testing.T) {
 			},
 		},
 	}
-	req := &apipb.CreateArtifactRequest{
+	req := &msgpb.CreateArtifactRequest{
 		Parent:   exp.GetName(),
 		Artifact: artifact,
 	}
@@ -154,7 +153,7 @@ func TestCreateArtifact_BadPaths(t *testing.T) {
 	server, _ := createExperimentStateServer(ctx, t)
 	exp := mustCreateExperiment(ctx, t, server, nil)
 
-	baseReq := &apipb.CreateArtifactRequest{
+	baseReq := &msgpb.CreateArtifactRequest{
 		Parent: exp.GetName(),
 		Artifact: &msgpb.Artifact{
 			Url: &msgpb.Url{Url: "http://www.google.com"},
@@ -163,33 +162,33 @@ func TestCreateArtifact_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.CreateArtifactRequest
+		req     *msgpb.CreateArtifactRequest
 		wantErr error
 	}{
 		{
 			name: "missing_parent",
-			req: prototest.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.CreateArtifactRequest) {
 				r.Parent = ""
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent",
-			req: prototest.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.CreateArtifactRequest) {
 				r.Parent = "invalid-parent"
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "missing_artifact",
-			req: prototest.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.CreateArtifactRequest) {
 				r.Artifact = nil
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "missing_url",
-			req: prototest.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.CreateArtifactRequest) {
 				r.Artifact.Url = nil
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
@@ -224,14 +223,14 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 			Writers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
 		},
 	}
-	goodReq := &apipb.CreateArtifactRequest{
+	goodReq := &msgpb.CreateArtifactRequest{
 		Parent:   exp.GetName(),
 		Artifact: goodArtifact,
 	}
 
 	testCases := []struct {
 		name          string
-		req           *apipb.CreateArtifactRequest
+		req           *msgpb.CreateArtifactRequest
 		authenticator auth.AuthorizerInterface
 		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
@@ -262,7 +261,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 				},
 			},
 			storage: &storage.MockStorage{},
-			req: &apipb.CreateArtifactRequest{
+			req: &msgpb.CreateArtifactRequest{
 				Parent:   "experiments/123",
 				Artifact: nil,
 			},
@@ -413,7 +412,7 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 			// Create parent Experiment
 			exp := mustCreateExperiment(ctx, t, server, nil)
 			mustCreateWorkUnit(ctx, t, server, exp.GetName(), 1, nil)
-			req := &apipb.CreateArtifactRequest{
+			req := &msgpb.CreateArtifactRequest{
 				Parent:   fmt.Sprintf("%s/workUnits/1", exp.GetName()),
 				Artifact: proto.Clone(chartArtifact).(*msgpb.Artifact),
 			}
@@ -426,7 +425,7 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 			// Synchronize WaitGroup on the server to wait for async tasks
 			bgTaskWG.Wait()
 
-			gotFromDB, err := server.GetArtifact(ctx, &apipb.GetArtifactRequest{
+			gotFromDB, err := server.GetArtifact(ctx, &msgpb.GetArtifactRequest{
 				Name: got.GetName(),
 			})
 			if err != nil {
@@ -530,7 +529,7 @@ func TestCreateArtifact_ManagedXprofDefaults(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := server.CreateArtifact(ctx, &apipb.CreateArtifactRequest{
+			got, err := server.CreateArtifact(ctx, &msgpb.CreateArtifactRequest{
 				Parent:   tc.parent,
 				Artifact: tc.initialArt,
 			})

@@ -19,7 +19,7 @@ import (
 	"testing"
 	"xmanager_cloud/internal/storage/spanner"
 
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/validator"

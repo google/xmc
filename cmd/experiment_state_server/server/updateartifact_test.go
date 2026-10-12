@@ -22,9 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -122,7 +121,7 @@ func TestUpdateArtifact_HappyPath(t *testing.T) {
 
 			tc.update.Name = createdArtifact.GetName()
 
-			req := &apipb.UpdateArtifactRequest{
+			req := &msgpb.UpdateArtifactRequest{
 				Artifact:   tc.update,
 				UpdateMask: tc.updateMask,
 			}
@@ -154,7 +153,7 @@ func TestUpdateArtifact_HappyPath(t *testing.T) {
 			}
 
 			// Verify with GetArtifact that update persisted and non-updated fields are unchanged.
-			getReq := &apipb.GetArtifactRequest{Name: createdArtifact.GetName()}
+			getReq := &msgpb.GetArtifactRequest{Name: createdArtifact.GetName()}
 			gotGet, err := server.GetArtifact(ctx, getReq)
 			if err != nil {
 				t.Fatalf("GetArtifact(%q) returned an unexpected error: %v", createdArtifact.GetName(), err)
@@ -202,12 +201,12 @@ func TestUpdateArtifact_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.UpdateArtifactRequest
+		req     *msgpb.UpdateArtifactRequest
 		wantErr error
 	}{
 		{
 			name: "invalid_name",
-			req: &apipb.UpdateArtifactRequest{
+			req: &msgpb.UpdateArtifactRequest{
 				Artifact: &msgpb.Artifact{
 					Name:   "invalid-name",
 					Parent: "experiments/123",
@@ -218,7 +217,7 @@ func TestUpdateArtifact_BadPaths(t *testing.T) {
 		},
 		{
 			name: "empty_mask",
-			req: &apipb.UpdateArtifactRequest{
+			req: &msgpb.UpdateArtifactRequest{
 				Artifact: &msgpb.Artifact{
 					Name:   "artifacts/123",
 					Parent: "experiments/123",
@@ -242,11 +241,11 @@ func TestUpdateArtifact_BadPaths(t *testing.T) {
 func TestUpdateArtifact_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
-	goodReq := &apipb.UpdateArtifactRequest{
+	goodReq := &msgpb.UpdateArtifactRequest{
 		Artifact:   &msgpb.Artifact{Name: "artifacts/123", Parent: "experiments/123", Notes: "new notes"},
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
 	}
-	goodReqWithAcls := &apipb.UpdateArtifactRequest{
+	goodReqWithAcls := &msgpb.UpdateArtifactRequest{
 		Artifact: &msgpb.Artifact{
 			Name:   "artifacts/123",
 			Parent: "experiments/123",
@@ -258,7 +257,7 @@ func TestUpdateArtifact_DependencyFailures(t *testing.T) {
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		req           *apipb.UpdateArtifactRequest
+		req           *msgpb.UpdateArtifactRequest
 		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error

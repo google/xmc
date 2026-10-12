@@ -43,7 +43,7 @@ import (
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	actuatorpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	actuatorpb "xmanager_cloud/api/protos/experiment"
 )
 
 var (

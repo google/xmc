@@ -22,9 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -129,7 +128,7 @@ func TestUpdateWorkUnit_HappyPath(t *testing.T) {
 
 			tc.updateWu.Name = fmt.Sprintf("%s/workUnits/%d", createdExp.GetName(), 1)
 			tc.want.Name = tc.updateWu.Name
-			req := &apipb.UpdateWorkUnitRequest{
+			req := &msgpb.UpdateWorkUnitRequest{
 				WorkUnit:   tc.updateWu,
 				UpdateMask: tc.updateMask,
 			}
@@ -166,7 +165,7 @@ func TestUpdateWorkUnit_EmptyMask(t *testing.T) {
 
 	wuName := fmt.Sprintf("%s/workUnits/%d", createdExp.GetName(), 1)
 
-	req := &apipb.UpdateWorkUnitRequest{
+	req := &msgpb.UpdateWorkUnitRequest{
 		WorkUnit:   &msgpb.WorkUnit{Name: wuName},
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{}},
 	}
@@ -182,19 +181,19 @@ func TestUpdateWorkUnit_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.UpdateWorkUnitRequest
+		req     *msgpb.UpdateWorkUnitRequest
 		wantErr error
 	}{
 		{
 			name: "missing_work_unit",
-			req: &apipb.UpdateWorkUnitRequest{
+			req: &msgpb.UpdateWorkUnitRequest{
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"priority"}},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_name",
-			req: &apipb.UpdateWorkUnitRequest{
+			req: &msgpb.UpdateWorkUnitRequest{
 				WorkUnit: &msgpb.WorkUnit{
 					Name: "invalid-name",
 				},
@@ -217,7 +216,7 @@ func TestUpdateWorkUnit_BadPaths(t *testing.T) {
 func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
-	goodReq := &apipb.UpdateWorkUnitRequest{
+	goodReq := &msgpb.UpdateWorkUnitRequest{
 		WorkUnit: &msgpb.WorkUnit{
 			Name:     "experiments/123/workUnits/456",
 			Priority: 200,
@@ -317,7 +316,7 @@ func TestUpdateWorkUnit_EnqueuesTaskOnPriorityChange(t *testing.T) {
 	mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), 1, nil)
 	wuName := fmt.Sprintf("%s/workUnits/%d", createdExp.GetName(), 1)
 
-	req := &apipb.UpdateWorkUnitRequest{
+	req := &msgpb.UpdateWorkUnitRequest{
 		WorkUnit: &msgpb.WorkUnit{
 			Name:     wuName,
 			Priority: 200,
@@ -361,7 +360,7 @@ func TestUpdateWorkUnit_DoesNotEnqueueOnOtherChanges(t *testing.T) {
 	wuName := fmt.Sprintf("%s/workUnits/%d", createdExp.GetName(), 1)
 	taskQueueClient.EnqueuedTasks = nil // Clear requests from CreateWorkUnit
 
-	req := &apipb.UpdateWorkUnitRequest{
+	req := &msgpb.UpdateWorkUnitRequest{
 		WorkUnit: &msgpb.WorkUnit{
 			Name:  wuName,
 			Notes: "new notes",
@@ -395,7 +394,7 @@ func TestUpdateWorkUnit_NoExecutionWithoutActuationSucceeds(t *testing.T) {
 	}
 	server := newTestServer(t, withStorage(mockStorage), withXidClient(mockXid))
 
-	req := &apipb.UpdateWorkUnitRequest{
+	req := &msgpb.UpdateWorkUnitRequest{
 		WorkUnit: &msgpb.WorkUnit{
 			Name:  "experiments/1/workUnits/1",
 			Notes: "updated notes",
