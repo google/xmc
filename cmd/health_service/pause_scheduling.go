@@ -80,8 +80,9 @@ type PauseScheduler interface {
 	// Pause sets the scheduling state to paused and clears resumption metadata.
 	Pause(ctx context.Context) error
 
-	// Resume clears the scheduling paused state, generates a new ResumptionRunID,
-	// and clears the ResumptionWorkerID. It returns the newly generated ResumptionRunID.
+	// Resume clears the scheduling paused state, generates a new ResumptionRunID (or reuses the
+	// existing one if already unpaused), and clears the ResumptionWorkerID when newly resumed.
+	// It returns the active ResumptionRunID.
 	Resume(ctx context.Context) (string, error)
 
 	// IsPaused returns whether scheduling is currently paused.
@@ -190,8 +191,9 @@ func (p *pauseScheduler) Pause(ctx context.Context) (err error) {
 	return p.broadcastPauseEvent(ctx)
 }
 
-// Resume updates the global scheduling state to unpaused with a newly generated run ID,
-// broadcasts the resume event, and publishes the task queue resume trigger.
+// Resume updates the global scheduling state to unpaused with a new run ID (or reuses the existing
+// run ID if already unpaused), broadcasts the resume event, and publishes the task queue trigger
+// whenever the run has not yet been claimed by a worker.
 func (p *pauseScheduler) Resume(ctx context.Context) (_ string, err error) {
 	defer func() {
 		recordPauseSchedulingEvent("resume", err)
