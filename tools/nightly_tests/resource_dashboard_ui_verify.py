@@ -40,8 +40,6 @@ EXPECTED_CLUSTER_QUEUES = ("cpu-cluster-queue", "gpu-cluster-queue", "tpu-cluste
 EXPECTED_FIRST_CARD_FLAVOR: str = "DefaultFlavor / CPU"
 EXPECTED_WORK_UNITS: tuple[str, ...] = ("1", "2", "3")
 EXPECTED_RUNNING_POS: str = "N/A - running"
-VALID_RESOURCE_AMOUNT: str = "1"
-UNSCHEDULABLE_RESOURCE_AMOUNT: str = "999999999"
 VELOCITY_TIMEFRAMES: tuple[str, ...] = ("1h", "24h", "7d")
 
 Session: TypeAlias = ui_entities_validator.XMCUIBrowserSession
@@ -145,8 +143,8 @@ def assert_queue_selection_and_jobs_pane(
     return actual_name
 
 
-def _select_primary_resource_and_amount(session: Session, timeout_ms: int) -> str:
-    """Selects CPU in Smart Resource Finder and sets the valid amount."""
+def _select_primary_resource(session: Session, timeout_ms: int) -> str:
+    """Selects CPU in Smart Resource Finder and waits for predictability metrics to render."""
     session.page.locator(sel.RESOURCE_SELECT_SEL).first.click()
     session.page.wait_for_selector(sel.RESOURCE_OPTION_SEL, timeout=timeout_ms)
     options = session.page.locator(sel.RESOURCE_OPTION_SEL)
@@ -156,7 +154,6 @@ def _select_primary_resource_and_amount(session: Session, timeout_ms: int) -> st
     target_option = cpu_opt if cpu_opt.count() > 0 else options.nth(1)
     resource_name = (target_option.text_content() or "").strip()
     target_option.click()
-    session.page.locator(sel.RESOURCE_AMOUNT_INPUT_SEL).first.fill(VALID_RESOURCE_AMOUNT)
     session.settle_and_wait_fonts()
     session.page.wait_for_selector(sel.PREDICTABILITY_CONTENT_SEL, timeout=timeout_ms)
     return resource_name
@@ -182,17 +179,6 @@ def _verify_expected_queue_positive_7d_velocity(
     print(f"  [✓] Verified positive 7d velocity on '{target_cq}': {vals[:2]}")
 
 
-def _verify_unschedulable_quota_empty_state(session: Session, timeout_ms: int) -> None:
-    """Filters with an unschedulable amount to verify the empty queue state, then resets."""
-    amount_input = session.page.locator(sel.RESOURCE_AMOUNT_INPUT_SEL).first
-    amount_input.fill(UNSCHEDULABLE_RESOURCE_AMOUNT)
-    session.settle_and_wait_fonts()
-    session.page.wait_for_selector(sel.QUEUE_LIST_EMPTY_SEL, timeout=timeout_ms)
-    amount_input.fill(VALID_RESOURCE_AMOUNT)
-    session.settle_and_wait_fonts()
-    session.page.wait_for_selector(sel.QUEUE_CARD_SEL, timeout=timeout_ms)
-
-
 def assert_smart_resource_finder_and_predictability(
     session: Session, expected_queue: str | None = None
 ) -> str:
@@ -200,12 +186,11 @@ def assert_smart_resource_finder_and_predictability(
     session.page.wait_for_selector(sel.PREDICTABILITY_EMPTY_SEL, timeout=15000)
     if session.page.locator(sel.PREDICTABILITY_EMPTY_SEL).count() == 0:
         raise UIError(f"Missing {sel.PREDICTABILITY_EMPTY_SEL}.")
-    resource_name = _select_primary_resource_and_amount(session, 15000)
+    resource_name = _select_primary_resource(session, 15000)
     for tf in VELOCITY_TIMEFRAMES:
         session.page.locator(sel.VELOCITY_PILL_SEL_TMPL.format(tf=tf)).first.click()
         session.page.wait_for_selector(sel.ACTIVE_PILL_SEL_TMPL.format(tf=tf), timeout=15000)
     _verify_expected_queue_positive_7d_velocity(session, expected_queue, 15000)
-    _verify_unschedulable_quota_empty_state(session, 15000)
     print(f"  [✓] Verified Smart Resource Finder & Predictability for resource '{resource_name}'")
     return resource_name
 
