@@ -34,7 +34,7 @@ exports_files([
     "multipod_job_verify.py",
     "pathways_job_verify.py",
     "per_job_node_selector_verify.py",
-    "resource_dashboard_ui_verify.py",
+    "resource_observability_dashboard_ui_verify.py",
     "sidecar_verify.py",
     "simple_job_ui_verify.py",
     "simple_job_verify.py",
@@ -121,8 +121,8 @@ py_binary(
 )
 
 py_binary(
-    name = "resource_dashboard_ui_verify",
-    srcs = ["resource_dashboard_ui_verify.py"],
+    name = "resource_observability_dashboard_ui_verify",
+    srcs = ["resource_observability_dashboard_ui_verify.py"],
     imports = ["../.."],
     deps = [
         ":ui_entities_validator_lib",

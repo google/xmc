@@ -222,7 +222,7 @@ jobs:
             example_path: 'examples/simple_job'
             entrypoint: 'launch.py'
             args: '--queue=${QUEUE_NAME} --num_work_units=3 --duration=180 --gpus=0'
-            verify_module: 'tools.nightly_tests.resource_dashboard_ui_verify'
+            verify_module: 'tools.nightly_tests.resource_observability_dashboard_ui_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_playwright: true
             timeout_minutes: 15
