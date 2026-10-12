@@ -51,5 +51,4 @@ go_library(
     name = "task_queue",
     embed = [":cloud_xmanager_v1_go_proto"],
     importpath = "xmanager_cloud/api/protos/task_queue",
-    importpath_aliases = ["xmanager_cloud/task_queue/proto/task_go_proto"],
 )

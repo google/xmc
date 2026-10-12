@@ -23,8 +23,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 )
 
 func TestNew(t *testing.T) {
@@ -137,7 +136,7 @@ func TestFetchChartData(t *testing.T) {
 	tests := []struct {
 		name           string
 		chart          *dpb.Chart
-		req            *spb.GetChartDataRequest
+		req            *dpb.GetChartDataRequest
 		queryResponses map[string][][]any
 		wantErr        bool
 		wantPlots      int
@@ -165,7 +164,7 @@ func TestFetchChartData(t *testing.T) {
 					},
 				},
 			},
-			req: &spb.GetChartDataRequest{
+			req: &dpb.GetChartDataRequest{
 				Name:             "experiments/1001/workUnits/1/charts/chart-1",
 				ChartWidthPixels: 1000,
 			},

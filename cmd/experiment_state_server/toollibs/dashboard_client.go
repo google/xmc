@@ -20,8 +20,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	apipb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	pb "xmanager_cloud/api/protos/dashboard"
 )
 
 // DashboardToolClient is a wrapper for communicating with xmc-dashboard-service.
@@ -37,7 +36,7 @@ func NewDashboardToolClient(client pb.DashboardServiceClient) *DashboardToolClie
 }
 
 // CreateChart issues a CreateChart RPC to the xmc-dashboard-service.
-func (c *DashboardToolClient) CreateChart(ctx context.Context, req *pb.CreateChartRequest, opts ...grpc.CallOption) (*apipb.Chart, error) {
+func (c *DashboardToolClient) CreateChart(ctx context.Context, req *pb.CreateChartRequest, opts ...grpc.CallOption) (*pb.Chart, error) {
 	if c == nil || c.client == nil {
 		return nil, errors.New("client is not initialized")
 	}

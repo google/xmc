@@ -21,7 +21,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	ls "xmanager_cloud/internal/query_generator/liststatement"

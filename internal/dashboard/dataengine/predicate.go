@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"strings"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 )
 
 type queryPredicate struct {

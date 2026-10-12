@@ -26,7 +26,7 @@ import (
 	"xmanager_cloud/api/filter/go/queryfilterbase"
 	"xmanager_cloud/internal/safesql"
 
-	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter"
 )
 
 // MemberFunc represents a callback that maps a dynamic query member field path to a database representation.

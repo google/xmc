@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"testing"
 
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
 func newTestWorkUnit(name string, eid int64, state essmsgpb.WorkUnitStatus_WorkUnitState, priority essmsgpb.Priority) *essmsgpb.WorkUnit {
