@@ -21,12 +21,12 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
 
-	fepb "api/filter/filter_expression_go_proto"
-	aipfilter "api/filter/go/filter"
+	fepb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	aipfilter "xmanager_cloud/api/filter/go/filter"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/query_generator/querytools"
-	"xmanager_cloud/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
 )
 
 // DeleteChart deletes a chart by its unique ID in a ReadWriteTransaction.

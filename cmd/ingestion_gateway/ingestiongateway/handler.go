@@ -26,7 +26,7 @@ import (
 	"sync/atomic"
 
 	"google.golang.org/protobuf/proto"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/apis/metrics"
 )
 

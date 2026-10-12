@@ -17,8 +17,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	"google.golang.org/protobuf/proto"
+	corev1 "k8s.io/api/core/v1"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 

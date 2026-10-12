@@ -18,9 +18,9 @@ import (
 	"strings"
 	"testing"
 
-	fpb "api/filter/filter_expression_go_proto"
-	"api/filter/go/filter"
-	"api/filter/go/filtervisitor"
+	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	"xmanager_cloud/api/filter/go/filter"
+	"xmanager_cloud/api/filter/go/filtervisitor"
 )
 
 type testCase struct {

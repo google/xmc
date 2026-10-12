@@ -20,16 +20,17 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"xmanager_cloud/cmd/actuator/k8s_client"
+	"xmanager_cloud/cmd/reconciler/clusterqueue"
+	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
+	"xmanager_cloud/cmd/reconciler/jobset"
+	"xmanager_cloud/cmd/reconciler/kueue_sync"
+	"xmanager_cloud/cmd/reconciler/shared"
+	"xmanager_cloud/cmd/reconciler/workload"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
-	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
-	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
-	"xmanager_cloud/kubernetes/reconciler/jobset/jobset"
-	"xmanager_cloud/kubernetes/reconciler/kueue_sync/kueuesync"
-	"xmanager_cloud/kubernetes/reconciler/shared/shared"
-	"xmanager_cloud/kubernetes/reconciler/workload/workload"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/workunit"
 )
 
 // newMLRunCreator builds the MLRun control-plane client. It returns a nil
@@ -83,7 +84,7 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 			TickDuration:           p.cfg.BatcherTickDuration,
 			MaxParallelExperiments: p.cfg.MaxParallelExperiments,
 		},
-		p.storage,
+		workunit.NewUpdater(p.storage),
 	)
 
 	jobsetReconciler, err := jobset.NewReconciler(jobset.Params{

@@ -17,7 +17,7 @@ package main
 import (
 	"strings"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
+	"k8s.io/apimachinery/pkg/api/resource"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/internal/common/resourceaccumulator"
 )

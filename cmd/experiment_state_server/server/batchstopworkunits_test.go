@@ -23,18 +23,17 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
-	"xmanager_cloud/storage/storage"
-	tq "xmanager_cloud/task_queue/client"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage"
+	tq "xmanager_cloud/internal/task_queue"
+	"xmanager_cloud/internal/validator"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -243,7 +242,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		xidClient     xidgrpcpb.XidServiceClient
+		xidClient     xidapipb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -297,8 +296,10 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				ListWorkUnitsResp:           []*msgpb.WorkUnit{workUnit},
-				UpdateWorkUnitExecutionsErr: fmt.Errorf("Storage update work unit executions failed"),
+				ListWorkUnitsResp:                 []*msgpb.WorkUnit{workUnit},
+				WorkUnit:                          workUnit,
+				Experiment:                        &msgpb.Experiment{Name: "experiments/123"},
+				UpdateCurrentWorkUnitExecutionErr: fmt.Errorf("Storage update work unit executions failed"),
 			},
 			wantErr: grpcerr.ErrInternal,
 		},
@@ -340,7 +341,11 @@ func TestBatchStopWorkUnits_TaskEnqueueFails(t *testing.T) {
 	xidClient := &mockXidClient{
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
-	storage := &storage.MockStorage{ListWorkUnitsResp: []*msgpb.WorkUnit{workUnit}}
+	storage := &storage.MockStorage{
+		ListWorkUnitsResp: []*msgpb.WorkUnit{workUnit},
+		WorkUnit:          workUnit,
+		Experiment:        &msgpb.Experiment{Name: "experiments/123"},
+	}
 	taskQueueClient := &tq.FakeClient{
 		EnqueueErr: fmt.Errorf("task enqueue failed"),
 	}
@@ -508,7 +513,7 @@ func TestBatchStopWorkUnits_SchedulingPausedTransitionsDirectlyToStopped(t *test
 	}
 
 	// Transition both work units to SCHEDULING_PAUSED.
-	if _, err := server.WorkUnitHandler.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+	if _, err := server.WorkUnitHandler.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
 		{
 			WID: workUnitID1,
 			EID: 1,
@@ -614,7 +619,7 @@ func TestBatchStopWorkUnits_MixedSchedulingPausedAndRunning(t *testing.T) {
 	}
 
 	// Transition workUnit1 to RUNNING and workUnit2 to SCHEDULING_PAUSED.
-	if _, err := server.WorkUnitHandler.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+	if _, err := server.WorkUnitHandler.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
 		{
 			WID: workUnitID1,
 			EID: 1,

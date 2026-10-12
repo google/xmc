@@ -22,14 +22,13 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	timestamppb "protobuf/timestamp_go_proto"
-	"xmanager_cloud/auth/auth"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/validator"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -110,7 +109,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		xidClient     xidgrpcpb.XidServiceClient
+		xidClient     xidapipb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -187,7 +186,6 @@ func TestUpdateExperimentLaunchState_ActiveState(t *testing.T) {
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)
 
-	s := server.ExperimentHandler.storage
 	testCases := []struct {
 		name       string
 		wu1State   msgpb.WorkUnitStatus_WorkUnitState
@@ -265,7 +263,7 @@ func TestUpdateExperimentLaunchState_ActiveState(t *testing.T) {
 				t.Errorf("Experiment should be active when work units are pending, got inactive")
 			}
 
-			_, err = s.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+			_, err = server.WorkUnitHandler.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
 				{
 					WID: 1,
 					EID: 1,
@@ -310,7 +308,6 @@ func TestUpdateExperimentLaunchState_ActiveStateUpdatesPostLaunching(t *testing.
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)
 
-	s := server.ExperimentHandler.storage
 	testCases := []struct {
 		name       string
 		wu1State   msgpb.WorkUnitStatus_WorkUnitState
@@ -396,7 +393,7 @@ func TestUpdateExperimentLaunchState_ActiveStateUpdatesPostLaunching(t *testing.
 				t.Fatalf("UpdateExperimentLaunchState() returned an unexpected error: %v", err)
 			}
 
-			_, err = s.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+			_, err = server.WorkUnitHandler.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
 				{
 					WID: 1,
 					EID: 1,

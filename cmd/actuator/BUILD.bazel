@@ -1,11 +1,10 @@
 # Copyright 2025 Google LLC
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("//:oci.bzl", "oci_image_for_service")
 
 package(default_visibility = ["//visibility:private"])
 
-compat_go_library(
+go_library(
     name = "actuator_lib",
     srcs = [
         "config.go",
@@ -40,7 +39,7 @@ compat_go_library(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "actuator_test",
     srcs = [
         "health_test.go",

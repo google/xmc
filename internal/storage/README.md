@@ -65,7 +65,7 @@ err := txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Tran
 })
 ```
 
-> **Note:** Migrating the remaining multi-step transactions (such as `UpdateWorkUnitExecutions` and `UpdateExperiment`) out of `internal/storage/spanner/` is tracked in `b/517479143`.
+> **Note:** Migrating the remaining multi-step transactions (such as `UpdateWorkUnit` and `UpdateExperiment`) out of `internal/storage/spanner/` is tracked in `b/517479143`.
 
 ### `Repository` and `TxRepository`
 

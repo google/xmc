@@ -23,7 +23,7 @@ import (
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/internal/storage"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 

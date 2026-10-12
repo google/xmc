@@ -21,7 +21,7 @@ go_library(
     importpath = "xmanager_cloud/internal/storage/spanner/migrations/testing",
     visibility = ["//visibility:public"],
     deps = [
-        "//internal/storage/spanner/utils:spannerutils",
+        "//internal/storage/spanner/utils",
         "@com_github_golang_migrate_migrate_v4//source",
     ],
 )

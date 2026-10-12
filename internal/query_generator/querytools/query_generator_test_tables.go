@@ -14,7 +14,7 @@
 package querytools
 
 import (
-	"api/filter/go/filtervisitor"
+	"xmanager_cloud/api/filter/go/filtervisitor"
 	"xmanager_cloud/internal/safesql"
 )
 

@@ -14,16 +14,6 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-go_library(
-    name = "spannerutils",
-    srcs = [
-        "parseddl.go",
-        "reversebits.go",
-    ],
-    importpath = "xmanager_cloud/storage/spanner/utils/spannerutils",
-    visibility = ["//:__subpackages__"],
-)
-
 go_test(
     name = "utils_test",
     srcs = [

@@ -23,7 +23,7 @@ import (
 
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // DeleteDashboard handles deleting an existing dashboard with owner authorization.

@@ -32,11 +32,11 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"xmanager_cloud/common/interfaces"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/security/securitytest"
+	"xmanager_cloud/internal/common/interfaces"
+	"xmanager_cloud/internal/security/securitytest"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
 type mockTokenProvider struct {

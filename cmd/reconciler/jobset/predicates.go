@@ -22,9 +22,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/kubernetes/common/labels"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/kubernetes/common/constants"
 )
 
 func hasValidXMCLabels(ctx context.Context, jobSet *v1alpha2.JobSet) bool {
