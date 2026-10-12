@@ -18,12 +18,12 @@ import (
 
 	"cloud.google.com/go/spanner"
 	database "cloud.google.com/go/spanner/admin/database/apiv1"
+	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/golang-migrate/migrate/v4"
 	migdatabase "github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/stub"
 	"github.com/golang-migrate/migrate/v4/source"
 	stubs "github.com/golang-migrate/migrate/v4/source/stub"
-	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"k8s.io/utils/ptr"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 )
