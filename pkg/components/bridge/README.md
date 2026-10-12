@@ -41,7 +41,7 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
      - For 3P wrapper components, queries `StatusDetector` to evaluate dynamic CR health and updates observed status.
      - Transitions to `COMPONENT_STATE_ENABLED` upon success.
    - **Disabled (`spec.enabled: false`)**: Gated by CMS deactivation safety:
-     1. `PrepareDeactivation` (skipped once the CR already reports `Ready` reason `ComponentDisabled` at the current generation). If CMS returns `FailedPrecondition` because enabled components still depend on this one, the workload keeps running and serving its dependents, so `Ready` follows the workload's health (normally `True`, reason `ComponentHealthy`), while `DeactivationBlocked=True` and `Stalled=True` (reason `DeactivationBlocked`) name the active dependents, and the pass returns without error. A blocked component with no running workload (never actuated, e.g. gated on `DependenciesNotReady` or already disabled, or removed by an earlier pass) is not health-probed and reports `DeactivationIncomplete` instead (step 4). While blocked, CMS is re-checked at most every 30s (the `DeactivationBlocked` `lastTransitionTime` records the last check). `NotFound` (never registered) proceeds without the handshake.
+     1. `PrepareDeactivation` (skipped once the CR already reports `Ready` reason `ComponentDisabled` at the current generation). If CMS returns `FailedPrecondition` because enabled components still depend on this one, the workload keeps running and serving its dependents, so `Ready` follows the workload's health (normally `True`, reason `ComponentHealthy`), while `DeactivationBlocked=True` and `Stalled=True` (reason `DeactivationBlocked`) name the active dependents, and the pass returns without error with `RequeueAfter: 30s` (`deactivationRecheckInterval`). A blocked component with no running workload (never actuated, e.g. gated on `DependenciesNotReady` or already disabled, or removed by an earlier pass) is not health-probed and reports `DeactivationIncomplete` instead (step 4). While blocked, CMS is re-checked at most every 30s (tracked in memory by `cmsSyncTracker` so `DeactivationBlocked.lastTransitionTime` only changes on status transitions). `NotFound` (never registered) proceeds without the handshake.
      2. Deletes the 1P Helm workload.
      3. `CompleteDeactivation` finalizes the CMS handshake (`DISABLING` → `DISABLED`), then `UpdateObservedGeneration` reports `COMPONENT_STATE_DISABLED`. CMS RPC failures before teardown report `Synced=False` (reason `CMSSyncFailed`) and preserve the existing `Ready` condition, except that `Ready=True` becomes `Ready=Unknown` (reason `CMSSyncFailed`): `Ready=True` is kept only while `spec.enabled`.
      4. If the handshake fails after the workload was deleted (or a later `PrepareDeactivation` is blocked or fails), or `PrepareDeactivation` is blocked while no workload was ever actuated, `Ready=False` (reason `DeactivationIncomplete`) and `Reconciling=True` (reason `Disabling`) are reported alongside `Synced=False` (`CMSSyncFailed` on RPC errors) and the whole handshake is retried on the next pass (deletion is idempotent).
@@ -311,14 +311,14 @@ Production-grade controller reliability, conflict elimination, and Cloud Spanner
   - Atomic field ownership eliminates optimistic concurrency update conflicts with other controllers (e.g. `xmc-syncer`) and prevents stale object overwrites.
 - **Control-Plane `envtest` Integration Suite (`components_admission_test.go`, `reconciler_test.go`)**:
   - Boots an in-process `kube-apiserver` and `etcd` via `controller-runtime/pkg/envtest` to verify `Component` CRD OpenAPI v3 structural schema defaults, `x-kubernetes-validations` CEL rules, `ValidatingAdmissionPolicy` deletion protection (including rejection of `xmc-platform-admins`, which has no exemption), multi-manager SSA `.status.conditions` merge semantics, and 3P `ContractBroken` condition persistence.
-- **Hybrid CMS Heartbeat Throttling (`shouldSyncToCMS`)**:
+- **Hybrid CMS Heartbeat Throttling (`cmsSyncTracker`)**:
   - To eliminate Cloud Spanner write amplification caused by periodic steady-state health probe ticks, the bridge decouples Kubernetes data-plane polling from Spanner persistence.
   - Status synchronization RPCs (`UpdateObservedGeneration`) to CMS are triggered only upon:
-    1. Initial component reconciliation (no prior `Ready` condition recorded).
-    2. Status transitions (e.g., `Ready=True <-> Ready=False`).
-    3. Spec metadata generation changes (`ObservedGeneration != in.Generation`).
+    1. Initial component reconciliation on the reconciler instance.
+    2. Status or state transitions (e.g., `Ready=True <-> Ready=False`, `ENABLED <-> DISABLED`).
+    3. Spec metadata generation changes (`generation != in.Generation`).
     4. Heartbeat interval expiration (coarse 5-minute interval via `defaultCMSHeartbeatInterval`).
-  - `resetReadyTransitionTime` updates `LastTransitionTime` on the `Ready` condition to current UTC time after successful CMS synchronization, resetting the heartbeat timer.
+  - `cmsSyncTracker` records the last synced state, generation, and timestamp in memory per component so `Ready.lastTransitionTime` only changes on actual condition status transitions rather than being overwritten on every 5-minute heartbeat.
 
 ---
 

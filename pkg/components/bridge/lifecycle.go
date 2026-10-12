@@ -62,6 +62,7 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 	if err := r.teardown1PComponent(ctx, in, res); err != nil {
 		return res, err
 	}
+	r.syncTracker.forget(componentKey(in.Namespace, canonicalName))
 	res.RemoveFinalizer = true
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
 	return res, nil
@@ -91,42 +92,51 @@ func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileCompon
 // Otherwise the 1P workload is deleted, CompleteDeactivation finalizes the handshake, and the
 // component reports COMPONENT_STATE_DISABLED. Failures after teardown report DeactivationIncomplete.
 func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	if msg, ok := recentDeactivationBlock(in); ok {
-		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, false)
+	key := componentKey(in.Namespace, canonicalName)
+	if msg, ok := r.syncTracker.recentDeactivationBlock(key, in); ok {
+		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg)
 	}
 	prepared, err := r.prepareDeactivation(ctx, in, canonicalName)
 	if status.Code(err) == codes.FailedPrecondition {
 		msg := fmt.Sprintf("Cannot disable %q: %s", in.Name, status.Convert(err).Message())
 		logging.Info(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
-		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg, true)
+		r.syncTracker.recordDeactivationBlock(key, in.Generation, msg)
+		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg)
 	}
 	if err != nil {
 		err = fmt.Errorf("failed to prepare deactivation in CMS: %w", err)
 		recordCMSSyncFailure(res, in, err)
 		return res, err
 	}
-	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
-		if err := r.deleteDisabledHelmComponent(ctx, in, res); err != nil {
-			return res, err
-		}
+	if err := r.teardownAndCompleteDeactivation(ctx, in, canonicalName, res, prepared); err != nil {
+		return res, err
 	}
-	if prepared {
-		if _, err := r.cmsClient.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: canonicalName}); err != nil {
-			err = fmt.Errorf("failed to complete deactivation in CMS: %w", err)
-			markDeactivationFailed(in, res, ReasonDeactivationIncomplete, err.Error())
-			setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
-			return res, err
-		}
-	}
+	r.syncTracker.clearDeactivationBlock(key)
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	setReadiness(res, in, ConditionStatusFalse, reasonComponentDisabled, "Component is disabled")
-	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
-		setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
-		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
+	if err := r.syncObservedToCMS(ctx, in, canonicalName, res, ConditionStatusFalse, true); err != nil {
+		return res, err
 	}
-	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 	logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
 	return res, nil
+}
+
+func (r *Reconciler) teardownAndCompleteDeactivation(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, prepared bool) error {
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
+		if err := r.deleteDisabledHelmComponent(ctx, in, res); err != nil {
+			return err
+		}
+	}
+	if !prepared {
+		return nil
+	}
+	if _, err := r.cmsClient.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: canonicalName}); err != nil {
+		err = fmt.Errorf("failed to complete deactivation in CMS: %w", err)
+		markDeactivationFailed(in, res, ReasonDeactivationIncomplete, err.Error())
+		setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
+		return err
+	}
+	return nil
 }
 
 // applyDisabledIntent records the disabled component's intent in CMS. Like registerIntent on the
@@ -159,24 +169,12 @@ func (r *Reconciler) prepareDeactivation(ctx context.Context, in ReconcileCompon
 	return err == nil, err
 }
 
-// recentDeactivationBlock returns the DeactivationBlocked message if CMS rejected deactivation at
-// this generation less than deactivationRecheckInterval ago (its LastTransitionTime is the last check).
-func recentDeactivationBlock(in ReconcileComponentInput) (string, bool) {
-	c := findCondition(in.ExistingConditions, ConditionTypeDeactivationBlocked)
-	if c == nil || c.Status != ConditionStatusTrue || c.ObservedGeneration != in.Generation || time.Since(c.LastTransitionTime) >= deactivationRecheckInterval {
-		return "", false
-	}
-	return c.Message, true
-}
-
-// reportDeactivationBlocked reports DeactivationBlocked=True with msg; checked marks a fresh CMS
-// check, restarting the recheck interval. Ready reports DeactivationIncomplete when no workload is
+// reportDeactivationBlocked reports DeactivationBlocked=True with msg and schedules a recheck
+// after deactivationRecheckInterval. Ready reports DeactivationIncomplete when no workload is
 // running (an earlier pass removed it, or it was never actuated), so no local health probe runs.
-func (r *Reconciler) reportDeactivationBlocked(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, msg string, checked bool) (*ReconcileResult, error) {
+func (r *Reconciler) reportDeactivationBlocked(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, msg string) (*ReconcileResult, error) {
+	res.RequeueAfter = deactivationRecheckInterval
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDeactivationBlocked, ConditionStatusTrue, in.Generation, ReasonDeactivationBlocked, msg)
-	if cond := findCondition(res.Conditions, ConditionTypeDeactivationBlocked); checked && cond != nil {
-		cond.LastTransitionTime = time.Now().UTC()
-	}
 	if wasTornDown(in) || !r.isActuated(in) {
 		return r.reportGated(ctx, in, canonicalName, res, ReasonDeactivationIncomplete, "no workload is running; "+msg)
 	}

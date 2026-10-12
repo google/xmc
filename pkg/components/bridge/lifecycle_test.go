@@ -219,10 +219,11 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 	blockedErr := status.Error(codes.FailedPrecondition, "component redpanda has active dependents: [ingestion-gateway]")
 	blockedMsg := `Cannot disable "redpanda": component redpanda has active dependents: [ingestion-gateway]`
 	notRegisteredErr := status.Error(codes.FailedPrecondition, store.DependencyNotFoundMessagePrefix+` component "redpanda" depends on "zookeeper", which is not registered`)
-	blockedAt := func(gen int64, age time.Duration) []Condition {
+	initialBlockLTT := time.Date(2026, 10, 12, 11, 0, 0, 0, time.UTC)
+	blockedAt := func(gen int64) []Condition {
 		return append(slices.Clone(wasReady), Condition{
 			Type: ConditionTypeDeactivationBlocked, Status: ConditionStatusTrue, ObservedGeneration: gen,
-			LastTransitionTime: time.Now().Add(-age), Reason: ReasonDeactivationBlocked, Message: blockedMsg,
+			LastTransitionTime: initialBlockLTT, Reason: ReasonDeactivationBlocked, Message: blockedMsg,
 		})
 	}
 	disabled := func(o gateOutcome) gateOutcome {
@@ -259,6 +260,8 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 		helm           *mockHelm
 		spec           *componentspb.ComponentSpec
 		existing       []Condition
+		blockedGen     int64
+		blockedAge     time.Duration
 		want           gateOutcome
 		wantMsg        string
 		wantStalledMsg string
@@ -281,17 +284,20 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 		},
 		{
 			name: "recent block skips the CMS recheck",
-			cms:  &mockCMS{}, helm: &mockHelm{active: true}, spec: spec1P, existing: blockedAt(2, 5*time.Second),
+			cms:  &mockCMS{}, helm: &mockHelm{active: true}, spec: spec1P, existing: blockedAt(2),
+			blockedGen: 2, blockedAge: 5 * time.Second,
 			want: blocked(0), wantStalledMsg: blockedMsg,
 		},
 		{
-			name: "block older than the recheck interval is rechecked",
-			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{active: true}, spec: spec1P, existing: blockedAt(2, time.Minute),
+			name: "block older than the recheck interval is rechecked without overwriting LastTransitionTime",
+			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{active: true}, spec: spec1P, existing: blockedAt(2),
+			blockedGen: 2, blockedAge: time.Minute,
 			want: blocked(1), wantStalledMsg: blockedMsg,
 		},
 		{
 			name: "block at an older generation is rechecked",
-			cms:  &mockCMS{}, helm: &mockHelm{active: true}, spec: spec1P, existing: blockedAt(1, 5*time.Second),
+			cms:  &mockCMS{}, helm: &mockHelm{active: true}, spec: spec1P, existing: blockedAt(1),
+			blockedGen: 1, blockedAge: 5 * time.Second,
 			want: disabled(gateOutcome{PrepareCalls: 1, CompleteCalls: 1, HelmDeleted: true}),
 		},
 		{
@@ -388,6 +394,13 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r, _ := NewReconciler(tt.cms, nil, tt.helm)
+			now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+			r.syncTracker.now = func() time.Time { return now }
+			if tt.blockedGen > 0 {
+				now = now.Add(-tt.blockedAge)
+				r.syncTracker.recordDeactivationBlock("xmc/redpanda", tt.blockedGen, blockedMsg)
+				now = now.Add(tt.blockedAge)
+			}
 			res, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
 				Namespace: "xmc", Name: "redpanda", Generation: 2, Spec: tt.spec,
 				Enabled: false, ExistingConditions: tt.existing,
@@ -397,6 +410,18 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 			}
 			if diff := cmp.Diff(tt.want, summarizeGate(res, tt.cms, tt.helm)); diff != "" {
 				t.Errorf("ReconcileComponent() outcome mismatch (-want +got):\n%s", diff)
+			}
+			wantRequeue := time.Duration(0)
+			if tt.want.DeactivationBlocked == ConditionStatusTrue {
+				wantRequeue = deactivationRecheckInterval
+			}
+			if res.RequeueAfter != wantRequeue {
+				t.Errorf("ReconcileResult.RequeueAfter = %v, want %v", res.RequeueAfter, wantRequeue)
+			}
+			if tt.blockedGen == 2 && tt.want.DeactivationBlocked == ConditionStatusTrue {
+				if c := findCondition(res.Conditions, ConditionTypeDeactivationBlocked); c == nil || !c.LastTransitionTime.Equal(initialBlockLTT) {
+					t.Errorf("DeactivationBlocked.LastTransitionTime = %v, want %v preserved", c, initialBlockLTT)
+				}
 			}
 			checkReadyMessage(t, res, tt.wantMsg)
 			if c := findCondition(res.Conditions, ConditionTypeStalled); tt.wantStalledMsg != "" && (c == nil || c.Reason != ReasonDeactivationBlocked || c.Message != tt.wantStalledMsg) {
@@ -414,6 +439,8 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 func TestReconcileComponent_DeactivationUnblocksAcrossPasses(t *testing.T) {
 	cms, helm := &mockCMS{prepareErr: status.Error(codes.FailedPrecondition, "component redpanda has active dependents: [ingestion-gateway]")}, &mockHelm{active: true}
 	r, _ := NewReconciler(cms, nil, helm)
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	r.syncTracker.now = func() time.Time { return now }
 	in := ReconcileComponentInput{
 		Namespace: "xmc", Name: "redpanda", Generation: 2, Enabled: false,
 		Spec:               &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
@@ -428,7 +455,7 @@ func TestReconcileComponent_DeactivationUnblocksAcrossPasses(t *testing.T) {
 	}
 
 	in.ExistingConditions = slices.Clone(first.Conditions)
-	findCondition(in.ExistingConditions, ConditionTypeDeactivationBlocked).LastTransitionTime = time.Now().Add(-time.Minute)
+	now = now.Add(time.Minute)
 	cms.prepareErr = nil
 	second, err := r.ReconcileComponent(context.Background(), in)
 	if err != nil {
@@ -445,27 +472,35 @@ func TestReconcileComponent_DeactivationUnblocksAcrossPasses(t *testing.T) {
 }
 
 // TestReconcileComponent_BlockAfterTeardownSyncsCMS verifies that a block after teardown syncs the DeactivationIncomplete
-// outcome to CMS, throttled by the Ready condition's heartbeat like every other outcome.
+// outcome to CMS, throttled by the in-memory cmsSyncTracker heartbeat like every other outcome.
 func TestReconcileComponent_BlockAfterTeardownSyncsCMS(t *testing.T) {
+	base := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
-		name               string
-		lastTransitionTime time.Time
-		wantSync           bool
+		name     string
+		recorded bool
+		age      time.Duration
+		wantSync bool
 	}{
 		{name: "never synced", wantSync: true},
-		{name: "synced within the heartbeat interval", lastTransitionTime: time.Now(), wantSync: false},
-		{name: "synced before the heartbeat interval", lastTransitionTime: time.Now().Add(-defaultCMSHeartbeatInterval), wantSync: true},
+		{name: "synced within the heartbeat interval", recorded: true, age: time.Minute, wantSync: false},
+		{name: "synced before the heartbeat interval", recorded: true, age: defaultCMSHeartbeatInterval, wantSync: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cms := &mockCMS{prepareErr: status.Error(codes.FailedPrecondition, "component redpanda has active dependents: [ingestion-gateway]")}
 			r, _ := NewReconciler(cms, nil, &mockHelm{})
+			now := base
+			r.syncTracker.now = func() time.Time { return now }
+			if tt.recorded {
+				r.syncTracker.recordSync("xmc/redpanda", componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, ConditionStatusFalse, 2)
+				now = base.Add(tt.age)
+			}
 			_, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
 				Namespace: "xmc", Name: "redpanda", Generation: 2, Enabled: false,
 				Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
 				ExistingConditions: []Condition{{
 					Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 2,
-					Reason: ReasonDeactivationIncomplete, LastTransitionTime: tt.lastTransitionTime,
+					Reason: ReasonDeactivationIncomplete,
 				}},
 			})
 			if err != nil {
@@ -516,5 +551,34 @@ func TestWasComponentPreviouslyActive(t *testing.T) {
 	}
 	if wasComponentPreviouslyActive(nil) {
 		t.Error("wasComponentPreviouslyActive(nil) = true, want false")
+	}
+}
+
+func TestReconcileComponent_DisabledSteadyStateThrottlesCMSUpdate(t *testing.T) {
+	cms := &mockCMS{}
+	r, _ := NewReconciler(cms, nil, &mockHelm{})
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	r.syncTracker.now = func() time.Time { return now }
+	in := ReconcileComponentInput{
+		Namespace: "xmc", Name: "redpanda", Generation: 2, Enabled: false,
+		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+	}
+
+	first, err := r.ReconcileComponent(context.Background(), in)
+	if err != nil {
+		t.Fatalf("first pass error = %v", err)
+	}
+	if cms.lastObsReq == nil {
+		t.Fatal("first pass: expected UpdateObservedGeneration to be called")
+	}
+
+	in.ExistingConditions = first.Conditions
+	cms.lastObsReq = nil
+	now = now.Add(time.Minute)
+	if _, err := r.ReconcileComponent(context.Background(), in); err != nil {
+		t.Fatalf("second pass error = %v", err)
+	}
+	if cms.lastObsReq != nil {
+		t.Errorf("second pass within heartbeat interval called UpdateObservedGeneration(%v), want throttled", cms.lastObsReq)
 	}
 }

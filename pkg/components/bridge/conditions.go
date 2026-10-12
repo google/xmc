@@ -220,43 +220,9 @@ func upsertCondition(conditions *[]Condition, c Condition) {
 	*conditions = append(*conditions, c)
 }
 
-const defaultCMSHeartbeatInterval = 5 * time.Minute
-
-// shouldSyncToCMS determines whether an UpdateObservedGeneration RPC to CMS should be executed.
-// Under the Hybrid Probing Model (Drift 1), periodic steady-state health probe ticks bypass
-// CMS and Cloud Spanner to eliminate write amplification. CMS is only invoked when:
-// 1. Initial reconciliation (no existing Ready condition reported) or recovery from Synced!=True.
-// 2. State/readiness transitions (e.g. Ready=True <-> Ready=False).
-// 3. Metadata generation update (CR spec modified).
-// 4. Coarse heartbeat interval expiration (>= 5 minutes).
-func shouldSyncToCMS(existingConditions []Condition, targetStatus string, currentGen int64) bool {
-	if existingSynced := findCondition(existingConditions, ConditionTypeSynced); existingSynced != nil && existingSynced.Status != ConditionStatusTrue {
-		return true
-	}
-	existingReady := findCondition(existingConditions, ConditionTypeReady)
-	if existingReady == nil {
-		return true
-	}
-	if existingReady.ObservedGeneration != currentGen {
-		return true
-	}
-	if existingReady.Status != targetStatus {
-		return true
-	}
-	if existingReady.LastTransitionTime.IsZero() || time.Since(existingReady.LastTransitionTime) >= defaultCMSHeartbeatInterval {
-		return true
-	}
-	return false
-}
-
-// resetReadyTransitionTime updates LastTransitionTime on the Ready condition to current UTC time.
-// This resets the heartbeat timer after a successful sync to CMS.
-func resetReadyTransitionTime(conditions []Condition) {
-	now := time.Now().UTC()
-	for i := range conditions {
-		if conditions[i].Type == ConditionTypeReady {
-			conditions[i].LastTransitionTime = now
-			return
-		}
-	}
+// isCMSSynced reports whether existingConditions has no non-True Synced condition (meaning the last
+// reconcile pass did not leave the CR in a Synced=False state).
+func isCMSSynced(existingConditions []Condition) bool {
+	existingSynced := findCondition(existingConditions, ConditionTypeSynced)
+	return existingSynced == nil || existingSynced.Status == ConditionStatusTrue
 }

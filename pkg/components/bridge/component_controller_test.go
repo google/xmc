@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -67,12 +69,18 @@ func persistedReadyReason(t *testing.T, c client.Client, name string) string {
 
 func TestComponentControllerReconcile(t *testing.T) {
 	enabled := map[string]any{"enabled": true, "deletionProtection": false}
+	disabledSpec := map[string]any{"enabled": false, "deletionProtection": false}
 	finalizedWith := func(name, finalizer string) *unstructured.Unstructured {
 		u := controllerTestComponent(name, enabled)
 		u.SetFinalizers([]string{finalizer})
 		return u
 	}
 	finalized := func(name string) *unstructured.Unstructured { return finalizedWith(name, FinalizerCMSCleanup) }
+	finalizedDisabled := func(name string) *unstructured.Unstructured {
+		u := controllerTestComponent(name, disabledSpec)
+		u.SetFinalizers([]string{FinalizerCMSCleanup})
+		return u
+	}
 	deleting := func(finalizers ...string) *unstructured.Unstructured {
 		u := controllerTestComponent("deleting", enabled)
 		u.SetFinalizers(finalizers)
@@ -124,6 +132,16 @@ func TestComponentControllerReconcile(t *testing.T) {
 			cms:          &mockCMS{},
 			target:       "app",
 			wantResult:   reconcile.Result{RequeueAfter: time.Minute},
+			wantWrites:   []string{"apply/status"},
+			wantSetCalls: 1,
+			wantFinal:    []string{FinalizerCMSCleanup},
+		},
+		{
+			name:         "blocked deactivation shortens RequeueAfter to deactivationRecheckInterval",
+			objs:         []*unstructured.Unstructured{finalizedDisabled("app")},
+			cms:          &mockCMS{prepareErr: status.Error(codes.FailedPrecondition, "active dependents")},
+			target:       "app",
+			wantResult:   reconcile.Result{RequeueAfter: deactivationRecheckInterval},
 			wantWrites:   []string{"apply/status"},
 			wantSetCalls: 1,
 			wantFinal:    []string{FinalizerCMSCleanup},

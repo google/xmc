@@ -97,6 +97,9 @@ func (c *ComponentController) newControllerBuilder(mgr manager.Manager) *builder
 func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	item := newComponentObject()
 	if err := c.client.Get(ctx, req.NamespacedName, item); err != nil {
+		if apierrors.IsNotFound(err) && c.reconciler != nil {
+			c.reconciler.ForgetComponent(req.Namespace, req.Name)
+		}
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 	// A rejected finalizer patch, typically a 422 because the cached Component is stale, is
@@ -121,7 +124,15 @@ func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Reque
 	if res != nil && res.RemoveFinalizer {
 		return reconcile.Result{}, nil
 	}
-	return reconcile.Result{RequeueAfter: c.opts.ProbeInterval}, nil
+	return reconcile.Result{RequeueAfter: c.requeueDelay(res)}, nil
+}
+
+func (c *ComponentController) requeueDelay(res *ReconcileResult) time.Duration {
+	delay := c.opts.ProbeInterval
+	if res != nil && res.RequeueAfter > 0 && (delay <= 0 || res.RequeueAfter < delay) {
+		return res.RequeueAfter
+	}
+	return delay
 }
 
 // ensureCleanupFinalizer returns item once FinalizerCMSCleanup is persisted on it, attaching the
@@ -133,10 +144,12 @@ func (c *ComponentController) ensureCleanupFinalizer(ctx context.Context, item *
 		return item, nil
 	}
 	if item.GetDeletionTimestamp() != nil {
+		c.reconciler.ForgetComponent(item.GetNamespace(), item.GetName())
 		return nil, nil
 	}
 	updated, err := AddCleanupFinalizer(ctx, c.client, item)
 	if apierrors.IsNotFound(err) {
+		c.reconciler.ForgetComponent(item.GetNamespace(), item.GetName())
 		return nil, nil
 	}
 	if err != nil {

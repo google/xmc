@@ -15,8 +15,11 @@
 package bridge
 
 import (
+	"context"
 	"testing"
 	"time"
+
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
 
 func TestSetReadiness_KstatusConditions(t *testing.T) {
@@ -109,150 +112,115 @@ func TestSetCondition(t *testing.T) {
 	}
 }
 
-func TestShouldSyncToCMS(t *testing.T) {
-	now := time.Now().UTC()
+func TestCMSSyncTracker_ShouldSyncAndForget(t *testing.T) {
+	base := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	enabled := componentspb.ComponentState_COMPONENT_STATE_ENABLED
+	pending := componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 
 	tests := []struct {
-		name         string
-		conditions   []Condition
-		targetStatus string
-		currentGen   int64
-		wantSync     bool
+		name        string
+		recorded    bool
+		age         time.Duration
+		recState    componentspb.ComponentState
+		recReady    string
+		recGen      int64
+		targetState componentspb.ComponentState
+		targetReady string
+		targetGen   int64
+		wantSync    bool
 	}{
-		{
-			name:         "initial reconciliation with empty conditions",
-			conditions:   nil,
-			targetStatus: ConditionStatusTrue,
-			currentGen:   1,
-			wantSync:     true,
-		},
-		{
-			name: "steady state unchanged health within heartbeat interval",
-			conditions: []Condition{
-				{
-					Type:               ConditionTypeReady,
-					Status:             ConditionStatusTrue,
-					ObservedGeneration: 1,
-					LastTransitionTime: now.Add(-1 * time.Minute),
-				},
-			},
-			targetStatus: ConditionStatusTrue,
-			currentGen:   1,
-			wantSync:     false,
-		},
-		{
-			name: "readiness state transition from False to True",
-			conditions: []Condition{
-				{
-					Type:               ConditionTypeReady,
-					Status:             ConditionStatusFalse,
-					ObservedGeneration: 1,
-					LastTransitionTime: now.Add(-1 * time.Minute),
-				},
-			},
-			targetStatus: ConditionStatusTrue,
-			currentGen:   1,
-			wantSync:     true,
-		},
-		{
-			name: "readiness state transition from True to False",
-			conditions: []Condition{
-				{
-					Type:               ConditionTypeReady,
-					Status:             ConditionStatusTrue,
-					ObservedGeneration: 1,
-					LastTransitionTime: now.Add(-1 * time.Minute),
-				},
-			},
-			targetStatus: ConditionStatusFalse,
-			currentGen:   1,
-			wantSync:     true,
-		},
-		{
-			name: "metadata generation increment",
-			conditions: []Condition{
-				{
-					Type:               ConditionTypeReady,
-					Status:             ConditionStatusTrue,
-					ObservedGeneration: 1,
-					LastTransitionTime: now.Add(-1 * time.Minute),
-				},
-			},
-			targetStatus: ConditionStatusTrue,
-			currentGen:   2,
-			wantSync:     true,
-		},
-		{
-			name: "coarse heartbeat expired after 5 minutes",
-			conditions: []Condition{
-				{
-					Type:               ConditionTypeReady,
-					Status:             ConditionStatusTrue,
-					ObservedGeneration: 1,
-					LastTransitionTime: now.Add(-6 * time.Minute),
-				},
-			},
-			targetStatus: ConditionStatusTrue,
-			currentGen:   1,
-			wantSync:     true,
-		},
-		{
-			name: "zero LastTransitionTime triggers sync",
-			conditions: []Condition{
-				{
-					Type:               ConditionTypeReady,
-					Status:             ConditionStatusTrue,
-					ObservedGeneration: 1,
-					LastTransitionTime: time.Time{},
-				},
-			},
-			targetStatus: ConditionStatusTrue,
-			currentGen:   1,
-			wantSync:     true,
-		},
-		{
-			name: "Synced=False recovery triggers sync even when Ready is unchanged within heartbeat",
-			conditions: []Condition{
-				{
-					Type:               ConditionTypeReady,
-					Status:             ConditionStatusTrue,
-					ObservedGeneration: 2,
-					LastTransitionTime: now.Add(-5 * time.Second),
-				},
-				{
-					Type:               ConditionTypeSynced,
-					Status:             ConditionStatusFalse,
-					ObservedGeneration: 2,
-					Reason:             ReasonCMSSyncFailed,
-				},
-			},
-			targetStatus: ConditionStatusTrue,
-			currentGen:   2,
-			wantSync:     true,
-		},
+		{name: "initial reconciliation", targetState: enabled, targetReady: ConditionStatusTrue, targetGen: 1, wantSync: true},
+		{name: "steady state within heartbeat interval", recorded: true, age: time.Minute, recState: enabled, recReady: ConditionStatusTrue, recGen: 1, targetState: enabled, targetReady: ConditionStatusTrue, targetGen: 1, wantSync: false},
+		{name: "readiness transition False to True", recorded: true, age: time.Minute, recState: pending, recReady: ConditionStatusFalse, recGen: 1, targetState: enabled, targetReady: ConditionStatusTrue, targetGen: 1, wantSync: true},
+		{name: "readiness transition True to False", recorded: true, age: time.Minute, recState: enabled, recReady: ConditionStatusTrue, recGen: 1, targetState: pending, targetReady: ConditionStatusFalse, targetGen: 1, wantSync: true},
+		{name: "state transition with same Ready status", recorded: true, age: time.Minute, recState: pending, recReady: ConditionStatusFalse, recGen: 1, targetState: componentspb.ComponentState_COMPONENT_STATE_DISABLED, targetReady: ConditionStatusFalse, targetGen: 1, wantSync: true},
+		{name: "metadata generation increment", recorded: true, age: time.Minute, recState: enabled, recReady: ConditionStatusTrue, recGen: 1, targetState: enabled, targetReady: ConditionStatusTrue, targetGen: 2, wantSync: true},
+		{name: "coarse heartbeat expired after 5 minutes", recorded: true, age: 6 * time.Minute, recState: enabled, recReady: ConditionStatusTrue, recGen: 1, targetState: enabled, targetReady: ConditionStatusTrue, targetGen: 1, wantSync: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := shouldSyncToCMS(tt.conditions, tt.targetStatus, tt.currentGen)
-			if got != tt.wantSync {
-				t.Errorf("shouldSyncToCMS() = %v, want %v", got, tt.wantSync)
+			now := base
+			tracker := cmsSyncTracker{now: func() time.Time { return now }}
+			if tt.recorded {
+				tracker.recordSync("xmc/comp", tt.recState, tt.recReady, tt.recGen)
+				now = base.Add(tt.age)
+			}
+			if got := tracker.shouldSync("xmc/comp", tt.targetState, tt.targetReady, tt.targetGen); got != tt.wantSync {
+				t.Errorf("shouldSync() = %v, want %v", got, tt.wantSync)
 			}
 		})
 	}
+
+	t.Run("forget clears recorded sync state", func(t *testing.T) {
+		tracker := cmsSyncTracker{}
+		tracker.recordSync("xmc/comp", enabled, ConditionStatusTrue, 1)
+		tracker.forget("xmc/comp")
+		if !tracker.shouldSync("xmc/comp", enabled, ConditionStatusTrue, 1) {
+			t.Error("shouldSync() after forget = false, want true")
+		}
+	})
 }
 
-func TestResetReadyTransitionTime(t *testing.T) {
-	past := time.Now().UTC().Add(-10 * time.Minute)
-	conditions := []Condition{
-		{Type: ConditionTypeSynced, Status: ConditionStatusTrue, LastTransitionTime: past},
-		{Type: ConditionTypeReady, Status: ConditionStatusTrue, LastTransitionTime: past},
+func TestSyncReadyToCMS_PreservesReadyTransitionTimeAcrossHeartbeats(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	initialLTT := time.Date(2026, 10, 12, 11, 0, 0, 0, time.UTC)
+	cms := &mockCMS{}
+	r, err := NewReconciler(cms, nil, nil)
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
 	}
-	resetReadyTransitionTime(conditions)
-	if time.Since(conditions[1].LastTransitionTime) > 5*time.Second {
-		t.Errorf("expected Ready LastTransitionTime to be reset to now, got %v", conditions[1].LastTransitionTime)
+	r.syncTracker.now = func() time.Time { return now }
+
+	in := ReconcileComponentInput{
+		Namespace:  "xmc",
+		Name:       "clickhouse",
+		Generation: 1,
+		Enabled:    true,
+		Spec:       &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER},
+		ExistingConditions: []Condition{
+			{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy, LastTransitionTime: initialLTT},
+		},
 	}
-	if !conditions[0].LastTransitionTime.Equal(past) {
-		t.Errorf("expected Synced LastTransitionTime to remain unchanged, got %v", conditions[0].LastTransitionTime)
+
+	// Pass 1: initial sync for this Reconciler sends UpdateObservedGeneration without mutating Ready.LastTransitionTime.
+	res1, err := r.ReconcileComponent(context.Background(), in)
+	if err != nil {
+		t.Fatalf("pass 1: ReconcileComponent() error = %v", err)
+	}
+	if cms.lastObsReq == nil {
+		t.Fatal("pass 1: expected UpdateObservedGeneration call")
+	}
+	if ready := findCondition(res1.Conditions, ConditionTypeReady); ready == nil || !ready.LastTransitionTime.Equal(initialLTT) {
+		t.Errorf("pass 1: Ready.LastTransitionTime = %v, want %v", ready, initialLTT)
+	}
+
+	// Pass 2: within heartbeat window skips UpdateObservedGeneration and preserves Ready.LastTransitionTime.
+	cms.lastObsReq = nil
+	in.ExistingConditions = res1.Conditions
+	now = now.Add(time.Minute)
+	res2, err := r.ReconcileComponent(context.Background(), in)
+	if err != nil {
+		t.Fatalf("pass 2: ReconcileComponent() error = %v", err)
+	}
+	if cms.lastObsReq != nil {
+		t.Errorf("pass 2: unexpected UpdateObservedGeneration call within heartbeat interval: %v", cms.lastObsReq)
+	}
+	if ready := findCondition(res2.Conditions, ConditionTypeReady); ready == nil || !ready.LastTransitionTime.Equal(initialLTT) {
+		t.Errorf("pass 2: Ready.LastTransitionTime = %v, want %v", ready, initialLTT)
+	}
+
+	// Pass 3: after heartbeat expiration sends UpdateObservedGeneration and still preserves Ready.LastTransitionTime.
+	in.ExistingConditions = res2.Conditions
+	now = now.Add(defaultCMSHeartbeatInterval)
+	res3, err := r.ReconcileComponent(context.Background(), in)
+	if err != nil {
+		t.Fatalf("pass 3: ReconcileComponent() error = %v", err)
+	}
+	if cms.lastObsReq == nil {
+		t.Fatal("pass 3: expected UpdateObservedGeneration call after heartbeat expiration")
+	}
+	if ready := findCondition(res3.Conditions, ConditionTypeReady); ready == nil || !ready.LastTransitionTime.Equal(initialLTT) {
+		t.Errorf("pass 3: Ready.LastTransitionTime = %v, want %v", ready, initialLTT)
 	}
 }
