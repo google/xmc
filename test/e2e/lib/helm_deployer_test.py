@@ -235,6 +235,14 @@ class TestHelmDeployer(unittest.TestCase):
             cwd=self.tmp_dir.name,
         )
 
+    @patch("test.e2e.lib.helm_deployer.run_cmd")
+    def test_resolve_crds_manifest_raises_on_empty_bazel_bin(self, mock_run):
+        mock_run.return_value = unittest.mock.MagicMock(stdout="   \n")
+        self.deployer.cfg.workspace_root = self.tmp_dir.name
+
+        with self.assertRaisesRegex(RuntimeError, "Failed to resolve bazel-bin"):
+            self.deployer._resolve_crds_manifest()
+
     @patch.object(HelmDeployer, "_resolve_crds_manifest", return_value="/path/to/crds.yaml")
     @patch("test.e2e.lib.helm_deployer.run_cmd")
     def test_apply_crds_uses_server_side_apply(self, mock_run, mock_resolve):
@@ -248,6 +256,7 @@ class TestHelmDeployer(unittest.TestCase):
                 "kind-test-cluster",
                 "apply",
                 "--server-side",
+                "--force-conflicts",
                 "-f",
                 "/path/to/crds.yaml",
             ]
