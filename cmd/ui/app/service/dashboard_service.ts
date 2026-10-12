@@ -20,7 +20,7 @@ import type {
   Chart as RawChart,
   ChartData as RawChartData,
   Dashboard as RawDashboard,
-} from 'xmanager_cloud/dashboard_service/proto/messages.jsonpb_decls';
+} from 'app/protos/dashboard_service';
 
 import { XMC_API_DOMAIN } from './constants';
 import {
@@ -136,7 +136,7 @@ export class DashboardService {
       .pipe(
         map(normalizeDashboard),
         catchError((error) => {
-          console.error(`Failed to update dashboard ${request.dashboard.name}:`, error);
+          console.error(`Failed to update dashboard ${request.dashboard?.name}:`, error);
           return throwError(() => error);
         }),
       );
