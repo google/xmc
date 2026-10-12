@@ -17,14 +17,13 @@ import (
 	"context"
 	"fmt"
 
+	msgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
-	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
-func (s *XIDServer) CreateXidEntry(ctx context.Context, in *apipb.CreateXidEntryRequest) (*msgpb.XidEntry, error) {
+func (s *XIDServer) CreateXidEntry(ctx context.Context, in *msgpb.CreateXidEntryRequest) (*msgpb.XidEntry, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Create XID entry", "request", in)
 

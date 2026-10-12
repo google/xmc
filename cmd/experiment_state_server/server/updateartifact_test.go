@@ -22,13 +22,12 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 )
@@ -189,7 +188,7 @@ func TestUpdateArtifact_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	xidClient := &mockXidClient{
 		getXidEntryResp:            &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
-		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+		checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
 	server := newTestServer(t,
 		withStorage(&storage.MockStorage{
@@ -260,7 +259,7 @@ func TestUpdateArtifact_DependencyFailures(t *testing.T) {
 		name          string
 		authenticator auth.AuthorizerInterface
 		req           *apipb.UpdateArtifactRequest
-		xidClient     xidapipb.XidServiceClient
+		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -281,7 +280,7 @@ func TestUpdateArtifact_DependencyFailures(t *testing.T) {
 			name: "xid_get_fails",
 			req:  goodReq,
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 				getXidEntryErr:             fmt.Errorf("XID get failed"),
 			},
 			storage: &storage.MockStorage{
@@ -296,7 +295,7 @@ func TestUpdateArtifact_DependencyFailures(t *testing.T) {
 			name: "xid_check_permission_denied",
 			req:  goodReq,
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{
 				Artifact: &msgpb.Artifact{
@@ -310,7 +309,7 @@ func TestUpdateArtifact_DependencyFailures(t *testing.T) {
 			name: "xid_get_permission_denied_on_non_acl_update",
 			req:  goodReq, // Updates notes, not acls.
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 				getXidEntryErr:             grpcerr.ErrPermissionDenied,
 			},
 			storage: &storage.MockStorage{
@@ -325,7 +324,7 @@ func TestUpdateArtifact_DependencyFailures(t *testing.T) {
 			name: "storage_update_fails",
 			req:  goodReq,
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				Artifact: &msgpb.Artifact{
@@ -340,7 +339,7 @@ func TestUpdateArtifact_DependencyFailures(t *testing.T) {
 			name: "xid_update_fails",
 			req:  goodReqWithAcls,
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 				updateXidEntryErr:          fmt.Errorf("XID update failed"),
 			},
 			storage: &storage.MockStorage{

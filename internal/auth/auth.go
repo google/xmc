@@ -23,7 +23,7 @@ import (
 	"google.golang.org/api/cloudidentity/v1beta1"
 	"xmanager_cloud/pkg/auth/jwks"
 
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	xpb "xmanager_cloud/api/protos/xid"
 )
 
 // Role represents a user's authorization level.

@@ -22,14 +22,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	xidpb "xmanager_cloud/api/protos/xid"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/validator"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 const (
@@ -119,7 +118,7 @@ func (h *ExperimentHandler) fetchACLsForExperiments(ctx context.Context, experim
 	}
 
 	// Call the XID service to get the XID entries.
-	xidListResponse, err := h.xidClient.ListXidEntries(propagateIAPJWT(ctx), &xidapipb.ListXidEntriesRequest{
+	xidListResponse, err := h.xidClient.ListXidEntries(propagateIAPJWT(ctx), &xidpb.ListXidEntriesRequest{
 		PageSize: proto.Int32(pageSize),
 		Filter:   proto.String(strings.Join(xidFilter, " OR ")),
 	})

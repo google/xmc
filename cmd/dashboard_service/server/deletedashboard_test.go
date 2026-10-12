@@ -23,8 +23,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	spb "xmanager_cloud/api/protos/dashboard"
+	xpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestDeleteDashboard(t *testing.T) {

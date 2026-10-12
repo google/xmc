@@ -19,7 +19,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	pb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	pb "xmanager_cloud/api/protos/xid"
 )
 
 func TestMergeXIDEntries(t *testing.T) {

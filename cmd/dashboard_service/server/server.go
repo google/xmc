@@ -25,11 +25,10 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
+	xpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // DashboardRepository defines the persistence contract for dashboards and charts.
@@ -68,14 +67,14 @@ type Server struct {
 	cfg        *Config
 	repo       DashboardRepository
 	auth       auth.AuthorizerInterface
-	xidClient  xidapipb.XidServiceClient
+	xidClient  xpb.XidServiceClient
 	dataEngine ChartDataEngine
 }
 
 var _ dpb.DashboardServiceServer = (*Server)(nil)
 
 // NewServer creates a new instance of Server.
-func NewServer(cfg *Config, repo DashboardRepository, auth auth.AuthorizerInterface, xidClient xidapipb.XidServiceClient, de ChartDataEngine) *Server {
+func NewServer(cfg *Config, repo DashboardRepository, auth auth.AuthorizerInterface, xidClient xpb.XidServiceClient, de ChartDataEngine) *Server {
 	if repo == nil {
 		panic("repo must not be nil")
 	}
@@ -266,7 +265,7 @@ func (s *Server) authorizeExperimentWrite(ctx context.Context, user string, xid 
 // authorizeExperiment checks user authorization for a specific role against the XID service.
 func (s *Server) authorizeExperiment(ctx context.Context, user string, xid int64, roleType xpb.XidAcls_RoleType) error {
 	xidName := validator.ConstructXIDName(xid)
-	xidResp, err := s.xidClient.CheckUserAuthorization(propagateAuthContext(ctx), &xidapipb.CheckUserAuthorizationRequest{
+	xidResp, err := s.xidClient.CheckUserAuthorization(propagateAuthContext(ctx), &xpb.CheckUserAuthorizationRequest{
 		Name:     &xidName,
 		User:     &user,
 		RoleType: &roleType,

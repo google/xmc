@@ -25,7 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
+	xidapipb "xmanager_cloud/api/protos/xid"
 )
 
 // chartWithXid builds a minimal chart carrying only the fields the ACL filter reads.

@@ -19,6 +19,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
@@ -26,8 +27,6 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/validator"
-	xidpb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // UpdateArtifact updates an artifact's data.
@@ -108,7 +107,7 @@ func (h *ArtifactHandler) UpdateArtifact(ctx context.Context, req *apipb.UpdateA
 		ctx := logging.WithXIDName(ctx, validator.ConstructXIDName(aid))
 		logging.Info(ctx, "Updating XID entry", "xid_entry", xidEntryForUpdate)
 
-		request := &xidpb.UpdateXidEntryRequest{
+		request := &xidmsgpb.UpdateXidEntryRequest{
 			XidEntry:   xidEntryForUpdate,
 			UpdateMask: updateMask,
 		}
