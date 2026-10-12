@@ -245,6 +245,18 @@ func countWorkUnits(batch []batchEntry) int {
 	return count
 }
 
+// groupByWorkUnit splits a batch sorted by WID into contiguous per-WID groups.
+func groupByWorkUnit(batch []batchEntry) [][]batchEntry {
+	var groups [][]batchEntry
+	for i, entry := range batch {
+		if i == 0 || entry.update.WID != batch[i-1].update.WID {
+			groups = append(groups, nil)
+		}
+		groups[len(groups)-1] = append(groups[len(groups)-1], entry)
+	}
+	return groups
+}
+
 // isolatePermanentFailure resends each work unit's updates in one call, at most
 // once. It stops at the first transient failure or context cancellation,
 // requeueing that work unit and all unsent ones. After
@@ -252,9 +264,11 @@ func countWorkUnits(batch []batchEntry) int {
 // the unsent ones and reports the failure as experiment-wide.
 func (b *UpdateBatcher) isolatePermanentFailure(ctx context.Context, xid int64, groups [][]batchEntry) (experimentWide bool) {
 	consecutivePermanent := 0
+	// Requeueing must still run (and log) after ctx is cancelled.
+	cleanupCtx := context.WithoutCancel(ctx)
 	for i, group := range groups {
 		if ctx.Err() != nil {
-			b.requeue(ctx, xid, slices.Concat(groups[i:]...), ctx.Err())
+			b.requeue(cleanupCtx, xid, slices.Concat(groups[i:]...), ctx.Err())
 			return false
 		}
 		err := b.callUpdateWorkUnitExecutions(ctx, xid, updatePointers(group))
@@ -263,7 +277,7 @@ func (b *UpdateBatcher) isolatePermanentFailure(ctx context.Context, xid int64, 
 			continue
 		}
 		if !IsPermanentStorageError(err) {
-			b.requeue(ctx, xid, slices.Concat(groups[i:]...), err)
+			b.requeue(cleanupCtx, xid, slices.Concat(groups[i:]...), err)
 			return false
 		}
 		b.recordDropped(ctx, xid, group, dropReasonPermanent, err)
