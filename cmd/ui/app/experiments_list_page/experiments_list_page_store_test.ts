@@ -336,16 +336,17 @@ describe('ExperimentsListPageStore', () => {
       expect(state.store.isSchedulingPaused()).toBe(true);
     });
 
-    it('should fail open to false when getSchedulingStatus throws an error', () => {
+    it('should log the error and fail open to false when getSchedulingStatus throws an error', () => {
       state.setPauseSchedulingEnabled(true);
       state.store.patchState({ isSchedulingPaused: true });
-      state.mockHealthService.getSchedulingStatus.and.returnValue(
-        throwError(() => new Error('Network error')),
-      );
+      const error = new Error('Network error');
+      state.mockHealthService.getSchedulingStatus.and.returnValue(throwError(() => error));
+      const consoleErrorSpy = spyOn(console, 'error');
 
       state.store.fetchSchedulingStatus();
 
       expect(state.store.isSchedulingPaused()).toBe(false);
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch scheduling status', error);
     });
   });
 });

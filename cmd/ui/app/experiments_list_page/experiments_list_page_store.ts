@@ -130,7 +130,8 @@ export class ExperimentsListPageStore extends ComponentStore<ExperimentsListPage
               isSchedulingPaused: Boolean(response.isSchedulingPaused),
             }),
           ),
-          catchError(() => {
+          catchError((error: unknown) => {
+            console.error('Failed to fetch scheduling status', error);
             this.patchState({ isSchedulingPaused: false });
             return EMPTY;
           }),
