@@ -757,57 +757,35 @@ func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
 	}
 }
 
-func TestFetchCurrentExecution_PendingBatcherFallback(t *testing.T) {
-	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
-	batcher.Add(t.Context(), 123, storagepkg.WorkUnitExecutionUpdate{
-		WID: 1,
-		EID: 2,
-		WorkUnitExecution: &spb.WorkUnitExecution{
-			Metadata: &spb.WorkUnitExecutionMetadata{
-				ExecutingCluster: &spb.ClusterInfo{
-					Project:     "worker-proj",
-					Location:    "us-east1",
-					ClusterName: "worker-cluster",
-				},
-				MultiKueueClusterName: "xmc-nightly-worker-1",
+func TestFetchCurrentExecutionAndResolveTargetCluster(t *testing.T) {
+	exec := &spb.WorkUnitExecution{
+		Name: "experiments/123/workUnits/1/executions/2",
+		Metadata: &spb.WorkUnitExecutionMetadata{
+			ExecutingCluster: &spb.ClusterInfo{
+				Project:     "worker-proj",
+				Location:    "us-east1",
+				ClusterName: "worker-cluster",
 			},
 		},
-	}, shared.WorkloadSource)
-
+	}
 	r := &Reconciler{
 		Project:     "mgmt-p",
 		Location:    "mgmt-l",
 		ClusterName: "mgmt-c",
-		Batcher:     batcher,
-		Storage:     &mockStorageUpdater{fetchRes: nil},
+		Storage:     &mockStorageUpdater{fetchRes: exec},
 	}
 	got := r.fetchCurrentExecution(t.Context(), 123, 1)
-	if got.GetMetadata().GetExecutingCluster().GetClusterName() != "worker-cluster" {
-		t.Errorf("ExecutingCluster.ClusterName = %q, want %q", got.GetMetadata().GetExecutingCluster().GetClusterName(), "worker-cluster")
+	if got.GetName() != exec.GetName() {
+		t.Errorf("fetchCurrentExecution() = %v, want %v", got, exec)
 	}
-	if got.GetMetadata().GetMultiKueueClusterName() != "xmc-nightly-worker-1" {
-		t.Errorf("MultiKueueClusterName = %q, want %q", got.GetMetadata().GetMultiKueueClusterName(), "xmc-nightly-worker-1")
-	}
-
-	rWithExec := &Reconciler{
-		Batcher: batcher,
-		Storage: &mockStorageUpdater{
-			fetchRes: &spb.WorkUnitExecution{
-				Name: "experiments/123/workUnits/1/executions/2",
-				Metadata: &spb.WorkUnitExecutionMetadata{
-					MlrunUrl:     "https://mlrun/1",
-					ResourceName: "xmc-operation-123-1",
-				},
-			},
-		},
-	}
-	gotWithExec := rWithExec.fetchCurrentExecution(t.Context(), 123, 1)
-	if gotWithExec.GetName() != "experiments/123/workUnits/1/executions/2" ||
-		gotWithExec.GetMetadata().GetMlrunUrl() != "https://mlrun/1" ||
-		gotWithExec.GetMetadata().GetResourceName() != "xmc-operation-123-1" {
-		t.Errorf("gotWithExec = %+v, want Name, MlrunUrl, and ResourceName preserved", gotWithExec)
+	if p, l, c := r.resolveTargetCluster(got); p != "worker-proj" || l != "us-east1" || c != "worker-cluster" {
+		t.Errorf("resolveTargetCluster(got) = (%q, %q, %q), want (worker-proj, us-east1, worker-cluster)", p, l, c)
 	}
 	if p, l, c := r.resolveTargetCluster(nil); p != "mgmt-p" || l != "mgmt-l" || c != "mgmt-c" {
 		t.Errorf("resolveTargetCluster(nil) = (%q, %q, %q), want (mgmt-p, mgmt-l, mgmt-c)", p, l, c)
+	}
+	rNilStorage := &Reconciler{}
+	if got := rNilStorage.fetchCurrentExecution(t.Context(), 123, 1); got != nil {
+		t.Errorf("fetchCurrentExecution() with nil Storage = %v, want nil", got)
 	}
 }

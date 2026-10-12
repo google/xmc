@@ -59,11 +59,8 @@ func setupTestClient(createNewNamespaces bool, validator preconditionsvalidator.
 	ctx := context.Background()
 	scheme := runtime.NewScheme()
 	dynamicClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
-		JobSetGVR:              "JobSetList",
-		KueueWorkloadGVR:       "WorkloadList",
-		KueueLocalQueueGVR:     "LocalQueueList",
-		KueueClusterQueueGVR:   "ClusterQueueList",
-		KueueAdmissionCheckGVR: "AdmissionCheckList",
+		JobSetGVR:        "JobSetList",
+		KueueWorkloadGVR: "WorkloadList",
 	})
 	client := &Client{
 		clientset:              kubernetesfake.NewSimpleClientset(),
