@@ -178,7 +178,7 @@ def verify_resource_dashboard_ui(session: Session, expected_q: str | None = None
     selected_res = assert_smart_resource_finder_and_predictability(session)
     session.take_screenshot("ui_rod_step3_smart_resource_finder.png")
     assert_subnav_tabs_switching(session)
-    session.assert_no_runtime_errors("resource_dashboard", (":batchGetSecondaryData",))
+    session.assert_no_runtime_errors("resource_dashboard")
     rows = [
         ("UI Base URL", session.ui_base_url),
         ("Verified Queues", ", ".join(queues)),
