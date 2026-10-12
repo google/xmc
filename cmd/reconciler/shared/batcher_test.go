@@ -56,6 +56,22 @@ func (m *mockStorageUpdater) clearCalls() {
 	m.calls = make(map[int64][]*storagepkg.WorkUnitExecutionUpdate)
 }
 
+type workUnitState = essmsgpb.WorkUnitStatus_WorkUnitState
+type workUnitExecution = essmsgpb.WorkUnitExecution
+
+const (
+	stateRunning   = essmsgpb.WorkUnitStatus_RUNNING
+	stateCompleted = essmsgpb.WorkUnitStatus_COMPLETED
+)
+
+func testUpdate(wid, eid int64, state workUnitState) storagepkg.WorkUnitExecutionUpdate {
+	return storagepkg.WorkUnitExecutionUpdate{
+		WID:               wid,
+		EID:               eid,
+		WorkUnitExecution: &essmsgpb.WorkUnitExecution{Status: &essmsgpb.WorkUnitStatus{State: state}},
+	}
+}
+
 func TestNewUpdateBatcher(t *testing.T) {
 	tests := []struct {
 		name                 string

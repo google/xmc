@@ -27,7 +27,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	storagepkg "xmanager_cloud/internal/storage"
 )
@@ -41,7 +40,7 @@ const (
 // sentUpdate is the projection of a WorkUnitExecutionUpdate asserted by retry tests.
 type sentUpdate struct {
 	WID, EID int64
-	State    essmsgpb.WorkUnitStatus_WorkUnitState
+	State    workUnitState
 }
 
 // scriptedStorage is a fault-injecting StorageUpdater. A call that includes a
@@ -56,7 +55,7 @@ type scriptedStorage struct {
 	callXIDs  []int64
 }
 
-func (s *scriptedStorage) UpdateWorkUnitExecutions(_ context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
+func (s *scriptedStorage) UpdateWorkUnitExecutions(_ context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*workUnitExecution, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	call := make([]sentUpdate, len(updates))
@@ -102,18 +101,10 @@ func newRetryTestBatcher(t *testing.T, storage StorageUpdater) (*UpdateBatcher, 
 	return b, clock
 }
 
-func testUpdate(wid, eid int64, state essmsgpb.WorkUnitStatus_WorkUnitState) storagepkg.WorkUnitExecutionUpdate {
-	return storagepkg.WorkUnitExecutionUpdate{
-		WID:               wid,
-		EID:               eid,
-		WorkUnitExecution: &essmsgpb.WorkUnitExecution{Status: &essmsgpb.WorkUnitStatus{State: state}},
-	}
-}
-
 func addRunning(t *testing.T, b *UpdateBatcher, xid int64, wids ...int64) {
 	t.Helper()
 	for _, wid := range wids {
-		b.Add(t.Context(), xid, testUpdate(wid, 1, essmsgpb.WorkUnitStatus_RUNNING), JobsetSource)
+		b.Add(t.Context(), xid, testUpdate(wid, 1, stateRunning), JobsetSource)
 	}
 }
 
@@ -145,7 +136,7 @@ func TestRetry_TransientThenSuccessPersistsOnRetry(t *testing.T) {
 		t.Error("processBatches() = false with a due retry and no pending updates, want true")
 	}
 
-	running := sentUpdate{WID: 1, EID: 1, State: essmsgpb.WorkUnitStatus_RUNNING}
+	running := sentUpdate{WID: 1, EID: 1, State: stateRunning}
 	if diff := cmp.Diff([][]sentUpdate{{running}, {running}}, storage.calls); diff != "" {
 		t.Errorf("storage calls mismatch (-want +got):\n%s", diff)
 	}
@@ -230,8 +221,8 @@ func TestRetry_BackoffDoublesAndCapsAcrossFailures(t *testing.T) {
 }
 
 func TestRetry_PendingUpdateMerge(t *testing.T) {
-	running := essmsgpb.WorkUnitStatus_RUNNING
-	completed := essmsgpb.WorkUnitStatus_COMPLETED
+	running := stateRunning
+	completed := stateCompleted
 	tests := []struct {
 		name      string
 		failed    storagepkg.WorkUnitExecutionUpdate
@@ -304,7 +295,7 @@ func TestRetry_NotDueRetryPiggybacksOnExperimentBeingFlushed(t *testing.T) {
 	addRunning(t, b, retryTestXID, 2)
 	b.processBatches(t.Context())
 
-	running := essmsgpb.WorkUnitStatus_RUNNING
+	running := stateRunning
 	wantLast := []sentUpdate{{WID: 1, EID: 1, State: running}, {WID: 2, EID: 1, State: running}}
 	if got := len(storage.calls); got != 3 {
 		t.Fatalf("storage calls = %d, want 3 (two failures, one piggybacked flush)", got)
@@ -356,10 +347,10 @@ func TestRetry_BudgetExhaustion(t *testing.T) {
 func TestScheduleRetries_QueuedHigherEIDSurvivesLowerEIDFailure(t *testing.T) {
 	b, clock := newRetryTestBatcher(t, &scriptedStorage{})
 	key := slotKey{xid: retryTestXID, wid: 1, source: JobsetSource}
-	queued := retryEntry{entry: batchEntry{update: testUpdate(1, 2, essmsgpb.WorkUnitStatus_RUNNING), attempt: 1}, notBefore: clock.t}
+	queued := retryEntry{entry: batchEntry{update: testUpdate(1, 2, stateRunning), attempt: 1}, notBefore: clock.t}
 	b.retries = map[slotKey]retryEntry{key: queued}
 
-	lower := batchEntry{update: testUpdate(1, 1, essmsgpb.WorkUnitStatus_COMPLETED), source: JobsetSource}
+	lower := batchEntry{update: testUpdate(1, 1, stateCompleted), source: JobsetSource}
 	if expired := b.scheduleRetries(retryTestXID, []batchEntry{lower}, clock.t); len(expired) != 0 {
 		t.Errorf("scheduleRetries() expired = %v, want none", expired)
 	}
