@@ -24,7 +24,7 @@ import (
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // DashboardUpdatePlan holds the merged dashboard proto and diff flags for an UpdateDashboard operation.
