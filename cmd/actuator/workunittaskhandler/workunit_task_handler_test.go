@@ -36,7 +36,7 @@ import (
 	"k8s.io/utils/ptr"
 	"xmanager_cloud/cmd/actuator/pausescheduling"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/security/securitytest"
+	"xmanager_cloud/internal/security/securitytest"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 

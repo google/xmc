@@ -26,7 +26,7 @@ import (
 	"syscall"
 
 	"cloud.google.com/go/pubsub"
-	"xmanager_cloud/common/health"
+	"xmanager_cloud/internal/common/health"
 	"xmanager_cloud/logging/logging"
 )
 

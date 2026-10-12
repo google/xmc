@@ -27,7 +27,7 @@ import (
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/cmd/actuator/k8s_client"
-	constants "xmanager_cloud/kubernetes/common/constants"
+	constants "xmanager_cloud/internal/kubernetes/common/constants"
 )
 
 type fakeStartManager struct {

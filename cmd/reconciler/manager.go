@@ -37,10 +37,10 @@ import (
 	"xmanager_cloud/cmd/reconciler/clusterqueue"
 	"xmanager_cloud/cmd/reconciler/jobset"
 	"xmanager_cloud/cmd/reconciler/shared"
-	"xmanager_cloud/common/health"
+	"xmanager_cloud/internal/common/health"
+	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/storage"
 	ss "xmanager_cloud/internal/storage/spanner"
-	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 )
 

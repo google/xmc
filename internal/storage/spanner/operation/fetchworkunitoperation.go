@@ -23,10 +23,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/storage/spanner/data"
+	"xmanager_cloud/internal/storage/spanner/schema/operationschema"
+	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/spanner/data/spannerdata"
-	"xmanager_cloud/storage/spanner/schema/operationschema"
-	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 

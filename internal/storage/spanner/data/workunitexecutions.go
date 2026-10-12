@@ -20,8 +20,8 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/storage/spanner/schema/workunitexecutionschema"
-	"xmanager_cloud/storage/spanner/schema/workunitschema"
+	"xmanager_cloud/internal/storage/spanner/schema/workunitexecutionschema"
+	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
 	"xmanager_cloud/validator/validator"
 )
 

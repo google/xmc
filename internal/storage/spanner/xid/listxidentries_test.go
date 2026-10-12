@@ -26,8 +26,8 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/internal/storage/spanner/xid"
-	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

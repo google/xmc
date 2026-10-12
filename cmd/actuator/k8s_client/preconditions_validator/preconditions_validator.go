@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/validator/validator"
 )
 

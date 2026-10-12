@@ -20,7 +20,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	commonhealth "xmanager_cloud/common/health"
+	commonhealth "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/logging/logging"
 )
 

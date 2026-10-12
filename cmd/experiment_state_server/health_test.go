@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	commonhealth "xmanager_cloud/common/health"
+	commonhealth "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )

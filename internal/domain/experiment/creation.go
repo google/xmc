@@ -25,7 +25,7 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/domain/workunit"
-	"xmanager_cloud/storage/state/state"
+	"xmanager_cloud/internal/storage/state"
 )
 
 // WorkUnitCreationResult contains the updated Experiment domain object and mutation metadata.

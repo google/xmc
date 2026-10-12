@@ -31,8 +31,8 @@ import (
 	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/internal/storage"
 	storagetest "xmanager_cloud/internal/storage/testing"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/pkg/components/summary"
-	"xmanager_cloud/task_queue_redis/redisclient"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"

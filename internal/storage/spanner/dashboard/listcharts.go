@@ -23,11 +23,11 @@ import (
 	"cloud.google.com/go/spanner"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	ls "xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
 	"xmanager_cloud/logging/logging"
-	ls "xmanager_cloud/query_generator/liststatement"
-	"xmanager_cloud/storage/spanner/schema/dashboardschema"
 	"xmanager_cloud/validator/validator"
 )
 

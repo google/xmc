@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "predicate",
     srcs = ["predicate.go"],
-    importpath = "xmanager_cloud/query_generator/predicate",
+    importpath = "xmanager_cloud/internal/query_generator/predicate",
     deps = [
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filtervisitor",

@@ -28,7 +28,7 @@ import (
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
-	tq "xmanager_cloud/task_queue/client"
+	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/validator/validator"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"

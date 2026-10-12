@@ -25,9 +25,9 @@ import (
 	fepb "xmanager_cloud/api/filter/filter_expression_go_proto"
 	aipfilter "xmanager_cloud/api/filter/go/filter"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
-	"xmanager_cloud/query_generator/querytools"
-	"xmanager_cloud/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
 	"xmanager_cloud/validator/validator"
 )
 

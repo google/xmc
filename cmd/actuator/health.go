@@ -22,9 +22,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"k8s.io/client-go/kubernetes"
-	"xmanager_cloud/common/health"
+	"xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
 // k8sHealthClient defines the Kubernetes client interface required for health checking.

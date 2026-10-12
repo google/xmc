@@ -54,7 +54,7 @@ go_library(
     importpath = "xmanager_cloud/internal/storage/spanner/emulator",
     visibility = ["//visibility:public"],
     deps = [
-        "//internal/storage/spanner/utils:spannerutils",
+        "//internal/storage/spanner/utils",
         "@com_google_cloud_go_spanner//:spanner",
         "@com_google_cloud_go_spanner//admin/database/apiv1",
         "@com_google_cloud_go_spanner//admin/database/apiv1/databasepb",

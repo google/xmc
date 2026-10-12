@@ -23,9 +23,9 @@ import (
 
 	"k8s.io/client-go/kubernetes"
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
-	"xmanager_cloud/common/health"
+	"xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
-	"xmanager_cloud/task_queue_redis/redisclient"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 )
 
 type mockK8sHealthClient struct {
