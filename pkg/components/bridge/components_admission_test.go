@@ -66,6 +66,16 @@ func TestComponentsAdmissionAndControllerSuite(t *testing.T) {
 
 func startAdmissionEnvtest(ctx context.Context, t *testing.T) admissionClients {
 	t.Helper()
+	clients := buildAdmissionClients(t, startComponentEnvtest(t))
+	grantComponentRBAC(ctx, t, clients.kubeClient)
+	installDeletionProtectionVAP(ctx, t, clients)
+	return clients
+}
+
+// startComponentEnvtest starts an envtest kube-apiserver and etcd with the chart's Component CRD
+// installed, stopped on test cleanup, and returns its admin config.
+func startComponentEnvtest(t *testing.T) *rest.Config {
+	t.Helper()
 	crdDir := t.TempDir()
 	crdBytes := renderHelmManifestTemplate(t, "crd.yaml", true)
 	if err := os.WriteFile(filepath.Join(crdDir, "crds.yaml"), crdBytes, 0600); err != nil {
@@ -81,11 +91,7 @@ func startAdmissionEnvtest(ctx context.Context, t *testing.T) admissionClients {
 		t.Fatalf("failed to start envtest: %v", err)
 	}
 	t.Cleanup(func() { _ = testEnv.Stop() })
-
-	clients := buildAdmissionClients(t, cfg)
-	grantComponentRBAC(ctx, t, clients.kubeClient)
-	installDeletionProtectionVAP(ctx, t, clients)
-	return clients
+	return cfg
 }
 
 func grantComponentRBAC(ctx context.Context, t *testing.T, kubeClient kubernetes.Interface) {

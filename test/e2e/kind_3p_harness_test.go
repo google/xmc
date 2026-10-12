@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -48,8 +47,11 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/bridge"
@@ -83,8 +85,14 @@ var (
 	_            bridge.HealthProber = (*kindNodePortProber)(nil)
 )
 
+// kindBridgeProbeInterval is the re-probe interval of the per-namespace bridge controller. It is
+// short because 3P readiness follows external CR and workload status, which emit no Component
+// event.
+const kindBridgeProbeInterval = time.Second
+
 type kindClusterHarness struct {
 	clusterName, kubeconfig string
+	restCfg                 *rest.Config
 	clientset               kubernetes.Interface
 	dynClient               dynamic.Interface
 	restMapper              *restmapper.DeferredDiscoveryRESTMapper
@@ -186,7 +194,7 @@ func buildClusterClients(t *testing.T, clusterName, kubeconfig string) *kindClus
 	if err != nil {
 		t.Fatalf("failed to create bridge reconciler: %v", err)
 	}
-	return &kindClusterHarness{clusterName: clusterName, kubeconfig: kubeconfig, clientset: clientset, dynClient: dynClient, restMapper: mapper, cmsServer: cmsServer, reconciler: reconciler}
+	return &kindClusterHarness{clusterName: clusterName, kubeconfig: kubeconfig, restCfg: restCfg, clientset: clientset, dynClient: dynClient, restMapper: mapper, cmsServer: cmsServer, reconciler: reconciler}
 }
 
 func installComponentCRD(ctx context.Context, t *testing.T, h *kindClusterHarness) {
@@ -354,6 +362,8 @@ func isComponentReady(u *unstructured.Unstructured) bool {
 	return obsGen == u.GetGeneration() && state == "COMPONENT_STATE_ENABLED" && hasConditionTrue(u, "Ready")
 }
 
+// createTestNamespace creates a namespace named after prefix and runs a bridge controller over it
+// until the test ends.
 func createTestNamespace(ctx context.Context, t *testing.T, h *kindClusterHarness, prefix string) string {
 	t.Helper()
 	nsName := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
@@ -366,11 +376,38 @@ func createTestNamespace(ctx context.Context, t *testing.T, h *kindClusterHarnes
 		releaseComponentFinalizers(delCtx, t, h, nsName)
 		_ = h.clientset.CoreV1().Namespaces().Delete(delCtx, nsName, metav1.DeleteOptions{})
 	})
+	// Registered after the namespace cleanup, so the bridge stops before it runs.
+	startNamespaceBridge(t, h, nsName)
 	return nsName
 }
 
+// startNamespaceBridge runs a bridge ComponentController over namespace in its own manager, as the
+// deployed xmc-bridge does for its Release namespace, until the test ends.
+func startNamespaceBridge(t *testing.T, h *kindClusterHarness, namespace string) {
+	t.Helper()
+	opts := bridge.ComponentManagerOptions(namespace)
+	opts.Controller.SkipNameValidation = ptr.To(true) // Every namespace gets an "xmc-bridge-component" controller.
+	mgr, err := manager.New(h.restCfg, opts)
+	if err != nil {
+		t.Fatalf("failed to create bridge manager for %s: %v", namespace, err)
+	}
+	c := bridge.NewComponentController(mgr.GetClient(), h.dynClient, h.reconciler, bridge.ComponentControllerOptions{ProbeInterval: kindBridgeProbeInterval, ReconcileTimeout: 30 * time.Second})
+	if err := c.SetupWithManager(mgr); err != nil {
+		t.Fatalf("failed to set up bridge controller for %s: %v", namespace, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- mgr.Start(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("bridge manager for %s stopped with error: %v", namespace, err)
+		}
+	})
+}
+
 // releaseComponentFinalizers removes the bridge deletion protection finalizer from every Component in
-// namespace. No bridge reconciles after a test, so finalized Components would otherwise keep the
+// namespace. The bridge stops before this cleanup, so finalized Components would otherwise keep the
 // namespace in Terminating on a reused KinD cluster. Failures are logged, not fatal, because this
 // runs during cleanup.
 func releaseComponentFinalizers(ctx context.Context, t *testing.T, h *kindClusterHarness, namespace string) {
@@ -432,46 +469,23 @@ func createNodePortService(ctx context.Context, t *testing.T, h *kindClusterHarn
 	}
 }
 
-// reconcileNamespaceComponents runs one bridge pass over every Component in namespace. Like
-// cmd/xmc_bridge, it reconciles all items even if one fails and persists the result of failed
-// passes too; the per-item errors are joined.
-func (h *kindClusterHarness) reconcileNamespaceComponents(ctx context.Context, namespace string) error {
-	list, err := h.dynClient.Resource(componentGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to list components in %s: %w", namespace, err)
-	}
-	deps := bridge.NewDependencySnapshot(list.Items)
-	var errs []error
-	for i := range list.Items {
-		item := &list.Items[i]
-		res, reconcileErr := h.reconciler.ReconcileWithDependencies(ctx, item, deps)
-		if reconcileErr != nil {
-			errs = append(errs, fmt.Errorf("reconcile %s: %w", item.GetName(), reconcileErr))
-		}
-		if err := bridge.PersistReconcileResult(ctx, h.dynClient, namespace, item, res); err != nil {
-			errs = append(errs, fmt.Errorf("persist %s: %w", item.GetName(), err))
-		}
-	}
-	return errors.Join(errs...)
-}
-
+// waitForComponentReady waits for the namespace bridge to report the named Component Ready and
+// returns its access envVars.
 func waitForComponentReady(ctx context.Context, t *testing.T, h *kindClusterHarness, namespace, name string) map[string]string {
 	t.Helper()
 	var envVars map[string]string
+	var last *unstructured.Unstructured
 	var lastErr error
 	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func() bool {
-		if lastErr = h.reconcileNamespaceComponents(ctx, namespace); lastErr != nil {
+		last, lastErr = h.dynClient.Resource(componentGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+		if lastErr != nil || !isComponentReady(last) {
 			return false
 		}
-		u, err := h.dynClient.Resource(componentGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
-		if err != nil || !isComponentReady(u) {
-			return false
-		}
-		envVars, _, _ = unstructured.NestedStringMap(u.Object, "status", "access", "envVars")
+		envVars, _, _ = unstructured.NestedStringMap(last.Object, "status", "access", "envVars")
 		return true
 	})
 	if !ok {
-		t.Fatalf("timed out waiting for Component %s/%s Ready (last err: %v)", namespace, name, lastErr)
+		t.Fatalf("timed out waiting for Component %s/%s Ready (last err: %v); last object: %v", namespace, name, lastErr, last)
 	}
 	return envVars
 }

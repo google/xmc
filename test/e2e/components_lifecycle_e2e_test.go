@@ -37,12 +37,12 @@ import (
 const lifecycleWaitTimeout = 90 * time.Second
 
 // TestComponentsLifecycle verifies Component lifecycle control-plane behavior on a KinD API server
-// running the production Component CRD, reconciled by the in-process bridge against an in-process
-// CMS (MemoryStore). Components are 1P without a HelmManager, so no workloads are actuated:
-// scenarios assert CMS lifecycle state, CR status conditions and finalizers. CRD schema and
-// deletion ValidatingAdmissionPolicy admission are covered by the bridge envtest suite
-// (pkg/components/bridge/components_admission_test.go). Each scenario uses its own namespace and
-// component names because the CMS store is shared.
+// running the production Component CRD, reconciled by an in-process bridge controller manager per
+// test namespace against an in-process CMS (MemoryStore). Components are 1P without a HelmManager,
+// so no workloads are actuated: scenarios assert CMS lifecycle state, CR status conditions and
+// finalizers. CRD schema and deletion ValidatingAdmissionPolicy admission are covered by the bridge
+// envtest suite (pkg/components/bridge/components_admission_test.go). Each scenario uses its own
+// namespace and component names because the CMS store is shared.
 func TestComponentsLifecycle(t *testing.T) {
 	h := setupKindClusterHarness(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -119,9 +119,9 @@ func assertCMSComponent(ctx context.Context, t *testing.T, h *kindClusterHarness
 	}
 }
 
-// testFinalizerCleanup verifies the deletion path through the full bridge persistence flow: the
-// bridge finalizer holds a deleted CR until CMS ExecuteDeletion runs, after which the finalizer is
-// released and the CR disappears. Admission of the DELETE itself is covered by the envtest suite.
+// testFinalizerCleanup verifies the deletion path through the full bridge persistence flow: a
+// deleted CR disappears only after CMS ExecuteDeletion ran and the bridge released its finalizer.
+// Admission of the DELETE itself is covered by the envtest suite.
 func testFinalizerCleanup(ctx context.Context, t *testing.T, h *kindClusterHarness) {
 	ns := createTestNamespace(ctx, t, h, "xmc-lc-finalizer")
 	const name = "lc-finalizer"
@@ -133,9 +133,6 @@ func testFinalizerCleanup(ctx context.Context, t *testing.T, h *kindClusterHarne
 	cmsComponentState(ctx, t, h, name) // The CMS record must exist for the NotFound check below to be meaningful.
 	if err := compRes.Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
 		t.Fatalf("DELETE with deletionProtection=false failed: %v", err)
-	}
-	if u := getComponent(ctx, t, compRes, name); u.GetDeletionTimestamp() == nil || !slices.Contains(u.GetFinalizers(), bridge.FinalizerDeletionProtection) {
-		t.Fatalf("deleted %s/%s: deletionTimestamp=%v finalizers=%v, want deletion held by %s", ns, name, u.GetDeletionTimestamp(), u.GetFinalizers(), bridge.FinalizerDeletionProtection)
 	}
 	waitForComponent(ctx, t, h, ns, name, "gone", func(u *unstructured.Unstructured) bool { return u == nil })
 	if _, err := h.cmsServer.Store().GetComponent(ctx, name); status.Code(err) != codes.NotFound {
@@ -166,25 +163,13 @@ func applyLifecycleComponent(ctx context.Context, t *testing.T, h *kindClusterHa
 	})
 }
 
-// waitForComponent runs bridge reconcile passes over ns until cond holds for the named Component,
-// described by desc in failures. cond receives nil once the Component no longer exists. Reconcile
-// pass errors do not stop the wait, because cond judges the persisted CR state; they are logged
-// whenever they change and reported on timeout.
+// waitForComponent waits until cond holds for the named Component, as persisted by the namespace
+// bridge, described by desc in failures. cond receives nil once the Component no longer exists.
 func waitForComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, name, desc string, cond func(*unstructured.Unstructured) bool) *unstructured.Unstructured {
 	t.Helper()
 	var last *unstructured.Unstructured
 	var lastErr error
-	lastReconcileMsg := ""
 	ok := waitUntil(ctx, lifecycleWaitTimeout, 500*time.Millisecond, func() bool {
-		reconcileMsg := ""
-		if err := h.reconcileNamespaceComponents(ctx, ns); err != nil {
-			lastErr = err
-			reconcileMsg = err.Error()
-		}
-		if reconcileMsg != lastReconcileMsg {
-			t.Logf("reconcile pass over %s while waiting for %s/%s to be %s: error = %q", ns, ns, name, desc, reconcileMsg)
-			lastReconcileMsg = reconcileMsg
-		}
 		u, err := h.dynClient.Resource(componentGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
 		switch {
 		case apierrors.IsNotFound(err):

@@ -1,0 +1,200 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package bridge
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"time"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/dynamic"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/pkg/components/naming"
+)
+
+// componentControllerName names the controller in logs and metrics.
+const componentControllerName = "xmc-bridge-component"
+
+var componentGVK = ComponentGVR.GroupVersion().WithKind("Component")
+
+// ComponentControllerOptions configures a ComponentController.
+type ComponentControllerOptions struct {
+	// ProbeInterval is how long after a successful pass a Component is reconciled again, so that
+	// workload health changes, which emit no Component event, are still observed.
+	ProbeInterval time.Duration
+	// ReconcileTimeout bounds the Reconciler pass of a single Component; persisting its result is
+	// not bounded by it.
+	ReconcileTimeout time.Duration
+	// MaxConcurrentReconciles is the number of Components reconciled in parallel. Values below 1
+	// mean 1.
+	MaxConcurrentReconciles int
+}
+
+// ComponentController runs Reconciler as a controller-runtime controller over the Component CRs of
+// the namespace its manager caches. A Component is reconciled when its spec, labels or annotations
+// change, when its deletion starts, when the readiness of a Component it depends on changes, and
+// ProbeInterval after every successful pass. A failed pass is retried with
+// NewComponentRateLimiter backoff.
+type ComponentController struct {
+	reader     client.Reader
+	writer     dynamic.Interface
+	reconciler *Reconciler
+	opts       ComponentControllerOptions
+}
+
+// NewComponentController returns a ComponentController that reads Components through reader,
+// runs r and persists results through writer. reader is normally the client of a manager built
+// with ComponentManagerOptions, which serves the reads from the manager's informer cache.
+func NewComponentController(reader client.Reader, writer dynamic.Interface, r *Reconciler, opts ComponentControllerOptions) *ComponentController {
+	return &ComponentController{reader: reader, writer: writer, reconciler: r, opts: opts}
+}
+
+// ComponentManagerOptions returns the manager options of an xmc-bridge that reconciles the
+// Components of namespace: the cache is limited to namespace, the manager's client serves
+// unstructured Gets and Lists from that cache instead of the API server, and the metrics server
+// is disabled.
+func ComponentManagerOptions(namespace string) manager.Options {
+	return manager.Options{
+		Cache:   cache.Options{DefaultNamespaces: map[string]cache.Config{namespace: {}}},
+		Client:  client.Options{Cache: &client.CacheOptions{Unstructured: true}},
+		Metrics: metricsserver.Options{BindAddress: "0"},
+	}
+}
+
+// SetupWithManager registers the controller and its Component watches with mgr.
+func (c *ComponentController) SetupWithManager(mgr manager.Manager) error {
+	return c.newControllerBuilder(mgr).Complete(c)
+}
+
+func (c *ComponentController) newControllerBuilder(mgr manager.Manager) *builder.Builder {
+	ownChanges := predicate.Or[client.Object](
+		predicate.GenerationChangedPredicate{},
+		predicate.LabelChangedPredicate{},
+		predicate.AnnotationChangedPredicate{},
+		deletionStarted(),
+	)
+	return builder.ControllerManagedBy(mgr).
+		Named(componentControllerName).
+		For(newComponentObject(), builder.WithPredicates(ownChanges)).
+		Watches(newComponentObject(), handler.EnqueueRequestsFromMapFunc(c.mapDependents), builder.WithPredicates(dependencyReadinessChanged())).
+		WithOptions(controller.Options{MaxConcurrentReconciles: c.opts.MaxConcurrentReconciles, RateLimiter: NewComponentRateLimiter()})
+}
+
+// Reconcile runs one Reconciler pass for the Component named by req, gated on a dependency
+// snapshot of its namespace, and persists the result, also when the pass failed. It returns an
+// error, and so a backoff retry, if the pass or the persistence failed.
+func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	item := newComponentObject()
+	if err := c.reader.Get(ctx, req.NamespacedName, item); err != nil {
+		return reconcile.Result{}, client.IgnoreNotFound(err)
+	}
+	items, err := c.listComponents(ctx, req.Namespace)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	res, err := c.runReconciler(ctx, item, NewDependencySnapshot(items))
+	if err := errors.Join(err, PersistReconcileResult(ctx, c.writer, req.Namespace, item, res)); err != nil {
+		return reconcile.Result{}, err
+	}
+	if res == nil {
+		logging.Warn(ctx, "Reconciler returned no result; re-probing after the probe interval", "namespace", req.Namespace, "name", req.Name)
+	}
+	if res != nil && res.RemoveFinalizer {
+		return reconcile.Result{}, nil
+	}
+	return reconcile.Result{RequeueAfter: c.opts.ProbeInterval}, nil
+}
+
+func (c *ComponentController) runReconciler(ctx context.Context, item *unstructured.Unstructured, deps DependencyReadiness) (*ReconcileResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.opts.ReconcileTimeout)
+	defer cancel()
+	return c.reconciler.ReconcileWithDependencies(ctx, item, deps)
+}
+
+// mapDependents returns a request for every other Component in obj's namespace that lists obj in
+// spec.dependencies.
+func (c *ComponentController) mapDependents(ctx context.Context, obj client.Object) []reconcile.Request {
+	items, err := c.listComponents(ctx, obj.GetNamespace())
+	if err != nil {
+		logging.Error(ctx, "Failed to list Components to enqueue dependents", "name", obj.GetName(), "error", err)
+		return nil
+	}
+	dep := naming.CanonicalComponentName(obj.GetName())
+	var reqs []reconcile.Request
+	for i := range items {
+		spec, _, _ := ParseSpecFromUnstructured(items[i].Object["spec"])
+		if items[i].GetName() != obj.GetName() && slices.Contains(spec.GetDependencies(), dep) {
+			reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&items[i])})
+		}
+	}
+	return reqs
+}
+
+func (c *ComponentController) listComponents(ctx context.Context, namespace string) ([]unstructured.Unstructured, error) {
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(ComponentGVR.GroupVersion().WithKind("ComponentList"))
+	if err := c.reader.List(ctx, list, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("failed to list Components in namespace %q: %w", namespace, err)
+	}
+	return list.Items, nil
+}
+
+func newComponentObject() *unstructured.Unstructured {
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(componentGVK)
+	return u
+}
+
+// deletionStarted passes the update that sets a Component's deletionTimestamp.
+func deletionStarted() predicate.Predicate {
+	return predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+		return e.ObjectOld.GetDeletionTimestamp() == nil && e.ObjectNew.GetDeletionTimestamp() != nil
+	}}
+}
+
+// dependencyReadinessChanged passes the Component events that can change what its dependents see:
+// creation, deletion, and updates that change its generation or its readiness as a dependency.
+// Status writes that keep its readiness, such as condition timestamp refreshes, do not pass, so
+// they never re-enqueue its dependents.
+func dependencyReadinessChanged() predicate.Predicate {
+	return predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+		return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration() || dependencyUnreadyReason(e.ObjectOld) != dependencyUnreadyReason(e.ObjectNew)
+	}}
+}
+
+// dependencyUnreadyReason returns why obj cannot be depended upon, as DependencySnapshot reports it,
+// or "" if it can.
+func dependencyUnreadyReason(obj client.Object) string {
+	u, ok := obj.(*unstructured.Unstructured)
+	if !ok {
+		return "not a Component"
+	}
+	_, _, enabled := ParseSpecFromUnstructured(u.Object["spec"])
+	return componentUnreadyReason(u, enabled)
+}
