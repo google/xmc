@@ -79,7 +79,7 @@ func (h *WorkUnitHandler) StopWorkUnit(ctx context.Context, req *apipb.StopWorkU
 	operation, execUpdate := res.Operation, res.ExecutionUpdate
 
 	// 6. Update the work unit execution status to STOPPING.
-	_, err = h.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate})
+	_, err = h.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate})
 	if err != nil {
 		logging.Error(ctx, "Failed to update work unit execution statuses", "error", err)
 		return nil, fmt.Errorf("failed to update work unit execution statuses: %w (%v)", grpcerr.ErrInternal, err)

@@ -34,19 +34,23 @@ var testTimestamp = time.Date(2025, time.December, 15, 0, 0, 0, 0, time.UTC)
 
 type mockStorage struct {
 	storage.MockStorage
-	mu sync.Mutex
-	// Map of xid to updates of the UpdateWorkUnitExecutions call.
+	mu        sync.Mutex
+	updateErr error
+	// Map of xid to updates passed to UpdateWorkUnitExecutions.
 	gotWorkUnitExecutionUpdates map[int64][]*storage.WorkUnitExecutionUpdate
 }
 
 func (s *mockStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.updateErr != nil {
+		return nil, s.updateErr
+	}
 	if s.gotWorkUnitExecutionUpdates == nil {
 		s.gotWorkUnitExecutionUpdates = make(map[int64][]*storage.WorkUnitExecutionUpdate)
 	}
 	s.gotWorkUnitExecutionUpdates[xid] = append(s.gotWorkUnitExecutionUpdates[xid], updates...)
-	return nil, s.UpdateWorkUnitExecutionsErr
+	return nil, nil
 }
 
 // mockMessage implements PubSubMessage for testing.
@@ -72,6 +76,7 @@ func TestProcessBatch(t *testing.T) {
 	ctx := context.Background()
 	mStorage := &mockStorage{}
 	lp := NewLogProcessor(mStorage, "XMC LOG:", 10)
+	lp.workUnitUpdater = mStorage
 
 	validEntry := LogEntry{
 		Labels: map[string]string{
@@ -130,7 +135,7 @@ func TestProcessBatch(t *testing.T) {
 	if diff := cmp.Diff(wantUpdates, gotUpdates, protocmp.Transform()); diff != "" {
 		t.Errorf("ProcessBatch() mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(wantUpdates, mStorage.gotWorkUnitExecutionUpdates, protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.StructuredMessage{}, "create_time")); diff != "" {
+	if diff := cmp.Diff(wantUpdates, mStorage.gotWorkUnitExecutionUpdates, protocmp.Transform()); diff != "" {
 		t.Errorf("UpdateWorkUnitExecutions() updates mismatch (-want +got):\n%s", diff)
 	}
 	if !msg2.acked {
@@ -175,6 +180,7 @@ func TestProcessBatchMultipleExperiments(t *testing.T) {
 	ctx := context.Background()
 	mStorage := &mockStorage{}
 	lp := NewLogProcessor(mStorage, "XMC LOG:", 10)
+	lp.workUnitUpdater = mStorage
 
 	entry1 := LogEntry{
 		Labels: map[string]string{
@@ -254,7 +260,7 @@ func TestProcessBatchMultipleExperiments(t *testing.T) {
 		},
 	}
 
-	if diff := cmp.Diff(wantUpdates, mStorage.gotWorkUnitExecutionUpdates, protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.StructuredMessage{}, "create_time")); diff != "" {
+	if diff := cmp.Diff(wantUpdates, mStorage.gotWorkUnitExecutionUpdates, protocmp.Transform()); diff != "" {
 		t.Errorf("UpdateWorkUnitExecutions() updates mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -293,9 +299,9 @@ func TestProcessBatchHandlesUpdateErrors(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			mockStorage := &mockStorage{}
-			mockStorage.UpdateWorkUnitExecutionsErr = tc.storageError
+			mockStorage := &mockStorage{updateErr: tc.storageError}
 			lp := NewLogProcessor(mockStorage, "XMC LOG:", 10)
+			lp.workUnitUpdater = mockStorage
 			msg := &mockMessage{data: validData}
 			messages := []PubSubMessage{msg}
 

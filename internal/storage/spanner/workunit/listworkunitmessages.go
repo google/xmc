@@ -36,6 +36,11 @@ WHERE
 	AND ExecutionStatusMessageSeverity = @severity
 `)
 
+// ListWorkUnitMessagesBySeverity retrieves work unit status messages matching a given severity level within the bound read-write transaction.
+func (r *TxRepository) ListWorkUnitMessagesBySeverity(ctx context.Context, xid int64, severity essmsgpb.StructuredMessage_Severity) ([]*essmsgpb.StructuredMessage, error) {
+	return r.Repository.ListWorkUnitMessagesBySeverity(ctx, xid, severity, r.tx)
+}
+
 // ListWorkUnitMessagesBySeverity retrieves work unit status messages matching a given severity level.
 func (r *Repository) ListWorkUnitMessagesBySeverity(ctx context.Context, xid int64, severity essmsgpb.StructuredMessage_Severity, txn spannerTransaction) ([]*essmsgpb.StructuredMessage, error) {
 	logging.Info(ctx, "Fetch work unit messages by severity", "severity", severity)

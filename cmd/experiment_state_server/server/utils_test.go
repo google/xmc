@@ -617,7 +617,9 @@ func TestHandleEnqueueActionError(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockStore := &storage.MockStorage{
-				UpdateWorkUnitExecutionsErr: tc.updateWorkUnitExecutionsErr,
+				WorkUnit:                          tc.workUnit,
+				Experiment:                        &essmsgpb.Experiment{Name: "experiments/123"},
+				UpdateCurrentWorkUnitExecutionErr: tc.updateWorkUnitExecutionsErr,
 			}
 			server := newTestServer(t, withStorage(mockStore))
 
