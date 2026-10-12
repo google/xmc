@@ -102,7 +102,14 @@ class TestHelmDeployer(unittest.TestCase):
                 "--timeout=180s",
             ]
         )
-        for deploy_name in ("actuator-deployment", "reconciler-deployment", "gateway-proxy"):
+        for deploy_name in (
+            "xid-service-deployment",
+            "experiment-state-server-deployment",
+            "actuator-deployment",
+            "reconciler-deployment",
+            "ui-deployment",
+            "gateway-proxy",
+        ):
             mock_run.assert_any_call(
                 [
                     "kubectl",
@@ -212,7 +219,9 @@ class TestHelmDeployer(unittest.TestCase):
 
     @patch("test.e2e.lib.helm_deployer.run_cmd")
     def test_resolve_crds_manifest_builds_when_absent(self, mock_run):
-        mock_run.return_value = unittest.mock.MagicMock(stdout="/custom/bazel-bin\n")
+        mock_run.return_value = unittest.mock.MagicMock(
+            stdout="Starting local Bazel server...\n/custom/bazel-bin\n"
+        )
         self.deployer.cfg.workspace_root = self.tmp_dir.name
 
         resolved = self.deployer._resolve_crds_manifest()

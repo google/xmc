@@ -311,7 +311,9 @@ ui:
             cwd=self.cfg.workspace_root,
             capture_output=True,
         )
-        return os.path.join(bazel_bin_res.stdout.strip(), manifest_rel)
+        bazel_bin_lines = bazel_bin_res.stdout.strip().splitlines()
+        bazel_bin = bazel_bin_lines[-1] if bazel_bin_lines else ""
+        return os.path.join(bazel_bin, manifest_rel)
 
     def _apply_crds(self) -> None:
         """Applies upstream JobSet and Kueue CRDs with server-side apply."""
