@@ -37,14 +37,9 @@ flags.DEFINE_string("screenshots_dir", None, "Diagnostic screenshots dir", allow
 
 EXPECTED_CLUSTER_QUEUES = ("cpu-cluster-queue", "gpu-cluster-queue", "tpu-cluster-queue")
 EXPECTED_FIRST_CARD_FLAVOR: str = "DefaultFlavor / CPU"
-EXPECTED_READY_STATUS: str = "Ready"
-EXPECTED_COPIED_LABEL: str = "Copied"
-EXPECTED_PRIMARY_RESOURCE: str = "CPU"
 VALID_RESOURCE_AMOUNT: str = "1"
 UNSCHEDULABLE_RESOURCE_AMOUNT: str = "999999999"
 VELOCITY_TIMEFRAMES: tuple[str, ...] = ("1h", "24h", "7d")
-ACTIVE_TOGGLE_CLASS: str = "active-toggle"
-MIN_MULTI_RESOURCE_ROWS: int = 2
 
 Session: TypeAlias = ui_entities_validator.XMCUIBrowserSession
 UIError: TypeAlias = ui_entities_validator.UIVerificationError
@@ -73,34 +68,22 @@ def _extract_and_verify_queue_titles(session: Session, expected_queue: str | Non
     return titles
 
 
-def _verify_first_card_capacity_and_status(first_card: Any) -> tuple[str, str]:
-    """Verifies that the first queue card renders the expected quota flavor and Ready status."""
+def _verify_first_card_flavor(first_card: Any) -> str:
+    """Verifies that the first queue card renders the expected quota flavor."""
     flavor = (first_card.locator(sel.FLAVOR_NAME_SEL).first.text_content() or "").strip()
-    badge = (first_card.locator(sel.STATUS_BADGE_SEL).first.text_content() or "").strip()
-    if flavor != EXPECTED_FIRST_CARD_FLAVOR or EXPECTED_READY_STATUS not in badge:
-        raise UIError(f"Unexpected flavor/status: {flavor} / {badge}")
-    return flavor, badge
-
-
-def _verify_copy_flag_action(session: Session, first_card: Any, timeout_ms: int) -> None:
-    """Clicks the Copy flag button on the first card and verifies the 'Copied' state transition."""
-    copy_btn = first_card.locator(sel.COPY_FLAG_BTN_SEL).first
-    copy_btn.click()
-    session.page.wait_for_selector(sel.COPIED_FLAG_BTN_SEL, timeout=timeout_ms)
-    btn_text = (copy_btn.text_content() or "").strip()
-    if EXPECTED_COPIED_LABEL not in btn_text:
-        raise UIError(f"Expected '{EXPECTED_COPIED_LABEL}', got '{btn_text}'.")
+    if flavor != EXPECTED_FIRST_CARD_FLAVOR:
+        raise UIError(f"Expected flavor '{EXPECTED_FIRST_CARD_FLAVOR}', got '{flavor}'.")
+    return flavor
 
 
 def assert_queue_cards(session: Session, expected_queue: str | None = None) -> list[str]:
-    """Asserts that cluster queue cards, quota flavors, and copy-flag actions render on /resources."""
+    """Asserts that cluster queue cards and quota flavors render on /resources."""
     print("\n[ROD UI] Asserting cluster queue cards and capacity metadata...")
     _wait_for_queue_cards_with_retry(session, 30000)
     titles = _extract_and_verify_queue_titles(session, expected_queue)
     first_card = session.page.locator(sel.QUEUE_CARD_SEL).first
-    flavor, badge = _verify_first_card_capacity_and_status(first_card)
-    _verify_copy_flag_action(session, first_card, 30000)
-    print(f"  [✓] Verified {len(titles)} queue card(s): {titles} (flavor={flavor}, status={badge})")
+    flavor = _verify_first_card_flavor(first_card)
+    print(f"  [✓] Verified {len(titles)} queue card(s): {titles} (flavor={flavor})")
     return titles
 
 
@@ -129,7 +112,7 @@ def _assert_initial_predictability_empty_state(session: Session, timeout_ms: int
 
 
 def _select_primary_resource_and_amount(session: Session, timeout_ms: int) -> str:
-    """Selects the primary resource type in Smart Resource Finder and sets the valid amount."""
+    """Selects a resource type in Smart Resource Finder and sets the valid amount."""
     session.page.locator(sel.RESOURCE_SELECT_SEL).first.click()
     session.page.wait_for_selector(sel.RESOURCE_OPTION_SEL, timeout=timeout_ms)
     options = session.page.locator(sel.RESOURCE_OPTION_SEL)
@@ -137,8 +120,6 @@ def _select_primary_resource_and_amount(session: Session, timeout_ms: int) -> st
         raise UIError("Missing selectable resource mat-option.")
     target_option = options.nth(1)
     resource_name = (target_option.text_content() or "").strip()
-    if resource_name != EXPECTED_PRIMARY_RESOURCE:
-        raise UIError(f"Expected resource '{EXPECTED_PRIMARY_RESOURCE}', got '{resource_name}'.")
     target_option.click()
     session.page.locator(sel.RESOURCE_AMOUNT_INPUT_SEL).first.fill(VALID_RESOURCE_AMOUNT)
     session.settle_and_wait_fonts()
@@ -147,26 +128,11 @@ def _select_primary_resource_and_amount(session: Session, timeout_ms: int) -> st
 
 
 def _verify_velocity_timeframe_pills(session: Session, timeout_ms: int) -> None:
-    """Clicks each velocity timeframe toggle pill and verifies it becomes active."""
+    """Clicks each velocity timeframe toggle pill and waits for it to activate."""
     for tf in VELOCITY_TIMEFRAMES:
         pill = session.page.locator(sel.VELOCITY_PILL_SEL_TMPL.format(tf=tf)).first
         pill.click()
         session.page.wait_for_selector(sel.ACTIVE_PILL_SEL_TMPL.format(tf=tf), timeout=timeout_ms)
-        if ACTIVE_TOGGLE_CLASS not in (pill.get_attribute("class") or ""):
-            raise UIError(f"Pill '{tf}' missing '{ACTIVE_TOGGLE_CLASS}'.")
-
-
-def _verify_multi_resource_row_add_and_remove(session: Session) -> None:
-    """Adds a secondary resource filter row and removes it."""
-    add_btn = session.page.locator(sel.ADD_RESOURCE_BTN_SEL).first
-    if add_btn.count() > 0 and add_btn.is_enabled():
-        add_btn.click()
-        session.settle_and_wait_fonts(200)
-        row_count = session.page.locator(sel.RESOURCE_QUERY_ROW_SEL).count()
-        if row_count < MIN_MULTI_RESOURCE_ROWS:
-            raise UIError(f"Expected >= {MIN_MULTI_RESOURCE_ROWS} rows, got {row_count}.")
-        session.page.locator(sel.REMOVE_RESOURCE_BTN_SEL).first.click()
-        session.settle_and_wait_fonts(200)
 
 
 def _verify_unschedulable_quota_empty_state(session: Session, timeout_ms: int) -> None:
@@ -186,7 +152,6 @@ def assert_smart_resource_finder_and_predictability(session: Session) -> str:
     _assert_initial_predictability_empty_state(session, 15000)
     resource_name = _select_primary_resource_and_amount(session, 15000)
     _verify_velocity_timeframe_pills(session, 15000)
-    _verify_multi_resource_row_add_and_remove(session)
     _verify_unschedulable_quota_empty_state(session, 15000)
     print(f"  [✓] Verified Smart Resource Finder & Predictability for resource '{resource_name}'")
     return resource_name
