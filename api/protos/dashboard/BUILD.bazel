@@ -33,7 +33,7 @@ proto_descriptor_set(
 proto_library(
     name = "dashboard_messages_proto",
     srcs = ["messages.proto"],
-    import_prefix = "third_party/xmanager_cloud/dashboard_service/proto",
+    import_prefix = "xmanager_cloud/dashboard_service/proto",
     strip_import_prefix = "/api/protos/dashboard",
     deps = [
         "@com_google_googleapis//google/api:field_behavior_proto",
@@ -45,7 +45,7 @@ proto_library(
 proto_library(
     name = "dashboard_service_proto",
     srcs = ["dashboard_service.proto"],
-    import_prefix = "third_party/xmanager_cloud/dashboard_service/proto",
+    import_prefix = "xmanager_cloud/dashboard_service/proto",
     strip_import_prefix = "/api/protos/dashboard",
     deps = [
         ":dashboard_messages_proto",

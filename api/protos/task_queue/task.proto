@@ -18,8 +18,8 @@ package cloud.xmanager.v1;
 import "google/api/field_behavior.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
-import "third_party/xmanager_cloud/experiment_state_server/proto/priority.proto";
-import "third_party/xmanager_cloud/experiment_state_server/proto/work_unit.proto";
+import "xmanager_cloud/experiment_state_server/proto/priority.proto";
+import "xmanager_cloud/experiment_state_server/proto/work_unit.proto";
 
 // ActuatorPayload is the structured, versioned message sent via Cloud Tasks
 // from the Experiment State Server to the Actuator.
