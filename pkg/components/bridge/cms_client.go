@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/logging"
 )
 
 // CMSClient defines the interface for communicating with the CMS control plane.
@@ -62,21 +63,28 @@ func (a *serverClientAdapter) CompleteDeactivation(ctx context.Context, in *comp
 	return a.server.CompleteDeactivation(ctx, in)
 }
 
-// updateObservedCMS sends an UpdateObservedGeneration RPC to CMS.
+// updateObservedCMS sends an UpdateObservedGeneration RPC to CMS reporting the CMS component
+// generation gen. It is a no-op when gen is 0 (unknown), which happens only before the first intent
+// of a resource was committed, when CMS has nothing at a known generation to report against.
 func (r *Reconciler) updateObservedCMS(ctx context.Context, name string, gen int64, state componentspb.ComponentState, statusMsg string) error {
+	if gen <= 0 {
+		logging.Debug(ctx, "Skipping CMS observed generation update; component generation unknown", "name", name)
+		return nil
+	}
 	_, err := r.cmsClient.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
 		Name: name, ObservedGeneration: gen, State: state, StatusMessage: statusMsg,
 	})
 	return err
 }
 
-// syncReadyToCMS reports res.State to CMS when shouldSyncToCMS allows it for readyStatus, then
-// restarts the CMS heartbeat by stamping the Ready condition's transition time.
+// syncReadyToCMS reports res.State to CMS when shouldSyncToCMS allows it for readyStatus or the
+// component generation changed, then restarts the CMS heartbeat by stamping the Ready condition's
+// transition time.
 func (r *Reconciler) syncReadyToCMS(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, readyStatus string) error {
-	if !shouldSyncToCMS(in.ExistingConditions, readyStatus, in.Generation) {
+	if !shouldSyncToCMS(in.ExistingConditions, readyStatus, in.Generation) && !componentGenerationChanged(in, res) {
 		return nil
 	}
-	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready="+readyStatus); err != nil {
+	if err := r.updateObservedCMS(ctx, canonicalName, res.ComponentGeneration, res.State, "Ready="+readyStatus); err != nil {
 		return fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
 	resetReadyTransitionTime(res.Conditions)

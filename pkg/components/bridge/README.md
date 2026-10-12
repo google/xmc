@@ -26,7 +26,8 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
    - If unprotected, prune child workloads, execute CMS deletion, and remove the `finalizers.xmc.dev/deletion-protection` finalizer.
 2. **Intent Registration** (enabled components):
    - Propagate desired spec (including `spec.dependencies`) to CMS via `SetComponentIntent` on every pass, with the CR generation as `ComponentSpec.generation`. CMS treats an unchanged intent as a no-op and moves a changed one to `COMPONENT_STATE_PENDING_RECONCILIATION` (see "Idempotent intent" in [../README.md](../README.md)). Registration happens **before** and independently of the activation gate, so CMS knows the dependency edges that make deactivation of a dependency unsafe even while the dependent is still waiting.
-   - A `FailedPrecondition` whose message starts with `store.DependencyNotFoundMessagePrefix` (either store: a dependency is not registered yet) is treated as "waiting on dependencies", not as an error; the intent is retried on the next pass. Any other intent failure reports `IntentApplicationFailed`.
+   - A `FailedPrecondition` whose message starts with `store.DependencyNotFoundMessagePrefix` (either store: a dependency is not registered yet) is treated as "waiting on dependencies", not as an error; the intent is retried on the next pass.
+   - A `FailedPrecondition` whose message starts with `store.StaleIntentMessagePrefix` (the CR changed but its generation is older than the CMS record's, see "Stale intents" in [../README.md](../README.md)) reports `Ready=False`/`Degraded=True` reason `StaleIntent` with the CMS message, writes nothing to CMS, and returns an error so the pass is retried with backoff. On the disabled path it also stops deactivation, so an outdated CR cannot disable the component. Any other intent failure reports `IntentApplicationFailed`.
 3. **Dependency Activation Gate** (`spec.enabled: true` with `spec.dependencies`, all component types):
    - `cmd/xmc_bridge` builds a `DependencySnapshot` (`dependency_readiness.go`) once per reconcile pass from the listed Component CRs and passes it to `ReconcileWithDependencies`. A dependency is ready only if its CR exists, has `spec.enabled: true`, is not being deleted, reports `Ready=True` with `observedGeneration == metadata.generation`, and is not `Degraded=True`.
    - A component on a multi-node `spec.dependencies` cycle (self-references are dropped) reports `Ready=False`/`Degraded=True` reason `DependencyCycle` with the cycle path (e.g. `dependency cycle detected: ingestion -> redpanda -> ingestion`); intent is not sent.
@@ -68,6 +69,7 @@ Gating reasons (set on `Ready=False`, state `COMPONENT_STATE_PENDING_RECONCILIAT
 | `HelmUpgradePending` | `False` | An actuated 1P component's Helm upgrade to the current generation is held until its dependencies are ready; the previous release keeps running. |
 | `DeactivationBlocked` | `False` | CMS `PrepareDeactivation` rejected disabling the component because it has active dependents. |
 | `DeactivationIncomplete` | `True` | The workload was deleted but the CMS deactivation handshake has not completed; retried every pass. |
+| `StaleIntent` | `True` | CMS rejected a changed intent because its CMS generation is newer than the CR generation (for example a legacy inflated record); nothing is written to CMS and the pass is retried with backoff until the generations are realigned. |
 
 ---
 
@@ -272,16 +274,20 @@ Production-grade controller reliability, conflict elimination, and Cloud Spanner
   - Status synchronization RPCs (`UpdateObservedGeneration`) to CMS are triggered only upon:
     1. Initial component reconciliation (no prior `Ready` condition recorded).
     2. Status transitions (e.g., `Ready=True <-> Ready=False`).
-    3. Spec metadata generation changes (`ObservedGeneration != in.Generation`).
+    3. Spec metadata generation changes (`ObservedGeneration != in.Generation`), or a change of the CMS generation (`status.componentGeneration`).
     4. Heartbeat interval expiration (coarse 5-minute interval via `defaultCMSHeartbeatInterval`).
   - `resetReadyTransitionTime` updates `LastTransitionTime` on the `Ready` condition to current UTC time after successful CMS synchronization, resetting the heartbeat timer.
+- **Intent Source & Component Generation**:
+  - `applyIntent` sends the CR (`metadata.uid`, `metadata.creationTimestamp`, `metadata.generation`) as the intent `source`, so CMS orders intents by CR incarnation and generation (see "Epoch-ordered intents" in the [components README](../README.md)). CMS then assigns its own generation, independent of the CR generation.
+  - `status.observedGeneration` is the CR `metadata.generation` last reconciled; `status.componentGeneration` is the CMS generation committed by the last intent write. `UpdateObservedGeneration` reports `componentGeneration`, and is skipped while it is unknown (`0`), e.g. for a component gated on a dependency cycle before its first intent write. The actuator's drift check reads `componentGeneration`, falling back to `observedGeneration` for status written before the field existed.
+  - A recreated CR (new uid, later creation time) that re-applies the same spec adopts the existing CMS record under the same `ComponentId` and generation. An intent from an older generation or an older incarnation of the CR is rejected and reported as `Ready=False` reason `StaleIntent`.
 
 ---
 
 ## Core Capabilities
 
 - **State Machine Reconciliation**: Deterministic state transitions (`PENDING_RECONCILIATION`, `ENABLED`, `DISABLED`, `DELETED`) synchronized between Kubernetes CR status conditions and CMS access status.
-- **Bi-directional Intent & Status Sync**: Propagates desired spec to CMS via `SetComponentIntent`, and records observed generation and condition history back to the Kubernetes API server.
+- **Bi-directional Intent & Status Sync**: Propagates desired spec to CMS via `SetComponentIntent`, and records observed generation, CMS component generation, and condition history back to the Kubernetes API server.
 - **Deletion Protection & Finalizer Engine**: Enforces `finalizers.xmc.dev/deletion-protection` to safeguard active components, emits `ConditionTypeDeletionBlocked` when protected, and orchestrates teardown according to `spec.deletionPolicy` (`Delete` vs `Orphan`).
 - **Dynamic 3P CRD Status Detection & Coordinate Resolution**: Query third-party operator CRDs dynamically using normalized JSONPath queries and publish structured connection coordinates into CMS.
 - **1P Helm Values Synthesis & Release Management**: Synthesizes structured Helm values and synchronizes release ConfigMaps for automated Helm release actuation.

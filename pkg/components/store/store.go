@@ -102,7 +102,10 @@ type Store interface {
 	//
 	// A new component starts at max(desiredGen, 1). For an existing component, a changed intent
 	// sets the generation to desiredGen if it is newer, else to the current generation + 1, and
-	// resets the state to COMPONENT_STATE_PENDING_RECONCILIATION.
+	// resets the state to COMPONENT_STATE_PENDING_RECONCILIATION. A changed intent whose desiredGen
+	// is specified but older than the current generation comes from a stale writer and fails with
+	// FailedPrecondition and a message starting with StaleIntentMessagePrefix, leaving the record
+	// unchanged.
 	//
 	// An intent is unchanged when desiredGen is not newer than the current generation (0 means
 	// unspecified) and it has equal labels, dependencies, and spec (ignoring spec.generation). An
@@ -117,9 +120,9 @@ type Store interface {
 	// the read-write transaction.
 	//
 	// Records whose generation already exceeds the caller's generation (inflated by writes made
-	// before intents were idempotent) keep the higher number, and later changes bump from it.
-	// Callers that can identify their source should use SetSourcedComponentIntent, which does not
-	// compare against desiredGen.
+	// before intents were idempotent) keep the higher number: replaying their stored spec is a
+	// no-op, but any change from that caller is rejected as stale. Callers that can identify their
+	// source should use SetSourcedComponentIntent, which does not compare against desiredGen.
 	//
 	// SetComponentIntent leaves the recorded Source unchanged. On a record with a Source, the
 	// rules above compare desiredGen with Source.Generation instead of the record generation,

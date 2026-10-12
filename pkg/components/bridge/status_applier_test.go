@@ -84,8 +84,9 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 
 	t.Run("populated ReconcileResult converts access and conditions", func(t *testing.T) {
 		res := &ReconcileResult{
-			ObservedGeneration: 5,
-			State:              componentsv1alpha1.ComponentState_COMPONENT_STATE_ENABLED,
+			ObservedGeneration:  5,
+			ComponentGeneration: 2,
+			State:               componentsv1alpha1.ComponentState_COMPONENT_STATE_ENABLED,
 			Access: &AccessStatus{
 				EnvVars: map[string]string{"DB_HOST": "clickhouse.xmc.svc"},
 			},
@@ -102,9 +103,10 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 		}
 		got := BuildStatus(res)
 		want := ComponentStatus{
-			ObservedGeneration: 5,
-			State:              "COMPONENT_STATE_ENABLED",
-			Access:             &ComponentAccess{EnvVars: map[string]string{"DB_HOST": "clickhouse.xmc.svc"}},
+			ObservedGeneration:  5,
+			ComponentGeneration: 2,
+			State:               "COMPONENT_STATE_ENABLED",
+			Access:              &ComponentAccess{EnvVars: map[string]string{"DB_HOST": "clickhouse.xmc.svc"}},
 			Conditions: []ComponentCondition{
 				{
 					Type:               ConditionTypeReady,
@@ -121,7 +123,7 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 		}
 
 		gotMap := BuildStatusMap(res)
-		if gotMap["state"] != "COMPONENT_STATE_ENABLED" || gotMap["observedGeneration"] != int64(5) {
+		if gotMap["state"] != "COMPONENT_STATE_ENABLED" || gotMap["observedGeneration"] != int64(5) || gotMap["componentGeneration"] != int64(2) {
 			t.Errorf("unexpected BuildStatusMap output: %v", gotMap)
 		}
 	})

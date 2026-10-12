@@ -118,7 +118,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	setReadiness(res, in, ConditionStatusFalse, ConditionStatusFalse, reasonComponentDisabled, "Component is disabled")
-	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
+	if err := r.updateObservedCMS(ctx, canonicalName, res.ComponentGeneration, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
 	logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
@@ -131,10 +131,11 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 // a missing one (NotFound) is tolerated by prepareDeactivation and the final observed-state update.
 //
 // Intent is written on every pass, as on the enabled path; CMS treats an unchanged intent at the
-// same generation as a no-op.
+// same generation as a no-op. A stale-intent rejection is not tolerated: it reports StaleIntent and
+// stops the pass, so a custom resource older than its CMS record cannot deactivate the component.
 func (r *Reconciler) applyDisabledIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
 	err := r.applyIntent(ctx, in, canonicalName, res)
-	notRegistered := dependencyNotRegisteredMessage(err)
+	notRegistered := storeRejectionMessage(err, dependencyNotFoundMessagePrefix)
 	if notRegistered == "" {
 		return err
 	}
@@ -220,9 +221,9 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 
 // wasComponentPreviouslyActive infers from the last Ready condition whether a workload may exist;
 // gated (DependenciesNotReady, DependencyCycle) or disabled components never had one actuated, and
-// DeactivationIncomplete means an earlier pass already removed it. Transient error reasons such as
-// IntentApplicationFailed or CMSDeactivationFailed overwrite the previous reason, so they are
-// treated as active: an idempotent extra uninstall is cheaper than leaking a running workload.
+// DeactivationIncomplete means an earlier pass already removed it. Error reasons such as
+// IntentApplicationFailed, StaleIntent, or CMSDeactivationFailed overwrite the previous reason, so
+// they are treated as active: an idempotent extra uninstall is cheaper than leaking a running workload.
 func wasComponentPreviouslyActive(existing []Condition) bool {
 	ready := findCondition(existing, ConditionTypeReady)
 	if ready == nil {

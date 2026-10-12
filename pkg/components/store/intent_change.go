@@ -28,8 +28,9 @@ import (
 	"xmanager_cloud/internal/logging"
 )
 
-// StaleIntentMessagePrefix starts the FailedPrecondition message returned when a changed sourced
-// intent is older than the recorded source of the component.
+// StaleIntentMessagePrefix starts the FailedPrecondition message returned when a changed intent
+// carries a desired generation older than the stored generation. The GitOps bridge matches
+// codes.FailedPrecondition plus this prefix to report the StaleIntent condition.
 const StaleIntentMessagePrefix = "stale intent:"
 
 // isUnchangedIntent reports whether applying an intent to the existing record rec would change
@@ -40,9 +41,9 @@ const StaleIntentMessagePrefix = "stale intent:"
 //
 // A stale desired generation with an equal spec is a no-op, so records whose generation was bumped
 // by earlier non-idempotent writes stop growing once callers pass their own generation. A changed
-// intent is not an unchanged one and is bumped to max(desiredGen, rec.Generation+1) by the stores.
+// intent is rejected by rejectStaleIntent when its desired generation is stale, and otherwise
+// bumped to max(desiredGen, rec.Generation+1) by the stores.
 func isUnchangedIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) bool {
-	// TODO(b/548436300): reject a changed spec with 0 < desiredGen < rec.Generation (stale writer) once legacy-inflated generations are remediated.
 	if desiredGen > rec.Generation {
 		return false
 	}
@@ -54,6 +55,18 @@ func isUnchangedIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, l
 		return true
 	}
 	return proto.Equal(specWithoutGeneration(rec.Spec), specWithoutGeneration(spec))
+}
+
+// rejectStaleIntent returns a FailedPrecondition error starting with StaleIntentMessagePrefix when
+// desiredGen is specified and older than rec.Generation, and nil otherwise. Stores call it only for
+// changed intents (after isUnchangedIntent), so a stale writer cannot overwrite a newer spec while
+// a stale replay of the stored spec stays a no-op. A desired generation equal to rec.Generation is
+// accepted and bumped, as is an unspecified (0) one.
+func rejectStaleIntent(canonicalName string, rec *ComponentRecord, desiredGen int64) error {
+	if desiredGen <= 0 || desiredGen >= rec.Generation {
+		return nil
+	}
+	return status.Errorf(codes.FailedPrecondition, StaleIntentMessagePrefix+" component %q has generation %d, newer than the desired generation %d of the changed intent", canonicalName, rec.Generation, desiredGen)
 }
 
 // intentWrite is what applying an intent to an existing active record writes.
@@ -93,6 +106,9 @@ func planIntent(canonicalName string, rec *ComponentRecord, spec *componentspb.C
 	}
 	if isUnchangedIntent(rec, spec, labels, deps, desiredGen) {
 		return intentPlan{write: writeNothing, generation: rec.Generation}, nil
+	}
+	if err := rejectStaleIntent(canonicalName, rec, desiredGen); err != nil {
+		return intentPlan{}, err
 	}
 	return intentPlan{write: writeSpec, generation: max(desiredGen, rec.Generation+1)}, nil
 }
