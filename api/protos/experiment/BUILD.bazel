@@ -87,10 +87,10 @@ go_proto_compiler(
     deps = [
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//utilities",
-        "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//grpclog:go_default_library",
-        "@org_golang_google_grpc//metadata:go_default_library",
-        "@org_golang_google_protobuf//proto:go_default_library",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//grpclog",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -147,7 +147,7 @@ go_proto_library(
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@com_google_googleapis//google/api:field_behavior_go_proto",
         "@com_google_googleapis//google/api:resource_go_proto",
-        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//:api",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],

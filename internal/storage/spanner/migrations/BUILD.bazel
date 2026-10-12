@@ -57,7 +57,7 @@ go_library(
         "//internal/logging",
         "//internal/storage/spanner/migrations/commands",
         "//internal/storage/spanner/migrations/driver",
-        "@com_github_golang_migrate_migrate_v4//:go_default_library",
+        "@com_github_golang_migrate_migrate_v4//:migrate",
         "@com_github_golang_migrate_migrate_v4//source",
         "@com_github_golang_migrate_migrate_v4//source/iofs",
         "@com_google_cloud_go_spanner//:spanner",
