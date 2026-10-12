@@ -145,10 +145,10 @@ func (p *pauseScheduler) storage(ctx context.Context) (PauseSchedulingStorage, e
 
 // checkRedisAvailable pings Redis before any Spanner write, so a known Redis outage fails fast
 // instead of committing state whose notifications cannot be published. Both publishers use the
-// same Redis server, so pinging the task queue publisher also covers the broadcast stream.
+// same Redis server, so pinging the task queue publisher (if configured) also covers the broadcast stream.
 func (p *pauseScheduler) checkRedisAvailable(ctx context.Context) error {
 	if p.taskQueuePublisher == nil {
-		return errTaskQueuePublisherNotConfigured
+		return nil
 	}
 	if err := p.taskQueuePublisher.Ping(ctx); err != nil {
 		return fmt.Errorf("redis is unavailable: %w", err)
@@ -200,6 +200,9 @@ func (p *pauseScheduler) Resume(ctx context.Context) (_ string, err error) {
 	if p.broadcastPublisher == nil {
 		return "", errBroadcastPublisherNotConfigured
 	}
+	if p.taskQueuePublisher == nil {
+		return "", errTaskQueuePublisherNotConfigured
+	}
 	if err := p.checkRedisAvailable(ctx); err != nil {
 		return "", err
 	}
@@ -242,9 +245,11 @@ func persistResumeState(ctx context.Context, st PauseSchedulingStorage) (string,
 		if err != nil {
 			return fmt.Errorf("failed to retrieve pause scheduling state: %w", err)
 		}
-		if current != nil && !current.SchedulingPaused {
-			resumptionRunID = current.ResumptionRunID
-			dispatch = current.ResumptionRunID != "" && current.ResumptionWorkerID == ""
+		if current == nil || !current.SchedulingPaused {
+			if current != nil {
+				resumptionRunID = current.ResumptionRunID
+				dispatch = current.ResumptionRunID != "" && current.ResumptionWorkerID == ""
+			}
 			return nil
 		}
 
