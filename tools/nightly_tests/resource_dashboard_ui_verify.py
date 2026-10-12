@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, TypeAlias
 
 from absl import flags
 
@@ -36,15 +36,11 @@ flags.DEFINE_bool("headless", True, "Run browser in headless mode", allow_overri
 flags.DEFINE_string("screenshots_dir", None, "Diagnostic screenshots dir", allow_override=True)
 
 VELOCITY_TIMEFRAMES: tuple[str, ...] = ("1h", "24h", "7d")
+Session: TypeAlias = ui_entities_validator.XMCUIBrowserSession
 
 
-def assert_queue_cards(
-    session: ui_entities_validator.XMCUIBrowserSession,
-    expected_queue: str | None = None,
-    timeout_ms: int = 30000,
-) -> list[str]:
-    """Asserts that cluster queue cards, quota flavors, and copy-flag actions render on /resources."""
-    print("\n[ROD UI] Asserting cluster queue cards and capacity metadata...")
+def _wait_for_queue_cards_with_retry(session: Session, timeout_ms: int) -> None:
+    """Waits for queue cards to render, reloading once if initial load hit a cold-start 500."""
     try:
         session.page.wait_for_selector("xmc-rod-queue-card .queue-card", timeout=5000)
     except Exception:
@@ -52,41 +48,57 @@ def assert_queue_cards(
         session.page.reload(wait_until="networkidle", timeout=timeout_ms)
         session.page.wait_for_selector("xmc-rod-queue-card .queue-card", timeout=timeout_ms)
     session.settle_and_wait_fonts()
+
+
+def _extract_and_verify_queue_titles(session: Session, expected_queue: str | None) -> list[str]:
+    """Extracts rendered queue card titles and verifies the expected queue is present."""
     raw_titles = session.page.locator("xmc-rod-queue-card .queue-title").all_inner_texts()
     titles = [t.strip() for t in raw_titles if t and t.strip()]
     if not titles:
         raise ui_entities_validator.UIVerificationError("No cluster queue cards on /resources.")
     cq = expected_queue.replace("-queue", "-cluster-queue") if expected_queue else ""
     if expected_queue and not ({expected_queue, cq} & set(titles)):
-        raise ui_entities_validator.UIVerificationError(
-            f"Expected queue '{expected_queue}' not found in rendered queues: {titles}"
-        )
-    first_card = session.page.locator("xmc-rod-queue-card .queue-card").first
+        raise ui_entities_validator.UIVerificationError(f"Missing '{expected_queue}' in {titles}")
+    return titles
+
+
+def _verify_first_card_capacity_and_status(first_card: Any) -> tuple[str, str]:
+    """Verifies that the first queue card renders a non-empty quota flavor and status badge."""
     flavor_loc = first_card.locator(".capacity-box .flavor-main-name").first
     flavor = (flavor_loc.text_content() or "").strip()
     badge = (first_card.locator(".status-badge").first.text_content() or "").strip()
     if not flavor or not badge:
-        raise ui_entities_validator.UIVerificationError(
-            f"Queue card missing flavor ('{flavor}') or status badge ('{badge}')."
-        )
+        raise ui_entities_validator.UIVerificationError(f"Missing flavor/badge: {flavor}/{badge}")
+    return flavor, badge
+
+
+def _verify_copy_flag_action(session: Session, first_card: Any, timeout_ms: int) -> None:
+    """Clicks the Copy flag button on the first card and verifies the 'Copied' state transition."""
     copy_btn = first_card.locator("button.copy-flag-btn").first
     copy_btn.click()
-    session.page.wait_for_selector(
-        'xmc-rod-queue-card button.copy-flag-btn:has-text("Copied")', timeout=timeout_ms
-    )
+    copied_sel = 'xmc-rod-queue-card button.copy-flag-btn:has-text("Copied")'
+    session.page.wait_for_selector(copied_sel, timeout=timeout_ms)
     btn_text = (copy_btn.text_content() or "").strip()
     if "Copied" not in btn_text:
-        raise ui_entities_validator.UIVerificationError(
-            f"Expected copy-flag button text to transition to 'Copied', got '{btn_text}'."
-        )
+        raise ui_entities_validator.UIVerificationError(f"Expected 'Copied', got '{btn_text}'.")
+
+
+def assert_queue_cards(
+    session: Session, expected_queue: str | None = None, timeout_ms: int = 30000
+) -> list[str]:
+    """Asserts that cluster queue cards, quota flavors, and copy-flag actions render on /resources."""
+    print("\n[ROD UI] Asserting cluster queue cards and capacity metadata...")
+    _wait_for_queue_cards_with_retry(session, timeout_ms)
+    titles = _extract_and_verify_queue_titles(session, expected_queue)
+    first_card = session.page.locator("xmc-rod-queue-card .queue-card").first
+    flavor, badge = _verify_first_card_capacity_and_status(first_card)
+    _verify_copy_flag_action(session, first_card, timeout_ms)
     print(f"  [✓] Verified {len(titles)} queue card(s): {titles} (flavor={flavor}, status={badge})")
     return titles
 
 
 def assert_queue_selection_and_jobs_pane(
-    session: ui_entities_validator.XMCUIBrowserSession,
-    queue_titles: Sequence[str],
-    timeout_ms: int = 15000,
+    session: Session, queue_titles: Sequence[str], timeout_ms: int = 15000
 ) -> str:
     """Clicks a queue card and verifies that the Jobs in the Queue side pane updates."""
     target_idx = 1 if len(queue_titles) > 1 else 0
@@ -107,40 +119,15 @@ def assert_queue_selection_and_jobs_pane(
     return actual_name
 
 
-def _exercise_resource_rows_and_unschedulable_filter(
-    session: ui_entities_validator.XMCUIBrowserSession, timeout_ms: int = 15000
-) -> None:
-    """Exercises multi-resource row addition/removal and unschedulable quota filtering."""
-    add_btn = session.page.locator("xmc-smart-resource-finder button.add-resource-btn").first
-    if add_btn.count() > 0 and add_btn.is_enabled():
-        add_btn.click()
-        session.settle_and_wait_fonts(200)
-        row_count = session.page.locator("xmc-smart-resource-finder .query-row").count()
-        if row_count < 2:
-            raise ui_entities_validator.UIVerificationError(
-                f"Expected >= 2 resource query rows after clicking add, found {row_count}."
-            )
-        session.page.locator("xmc-smart-resource-finder button.remove-resource-btn").first.click()
-        session.settle_and_wait_fonts(200)
-    amount_input = session.page.locator("xmc-smart-resource-finder input.query-amount-input").first
-    amount_input.fill("999999999")
-    session.settle_and_wait_fonts()
-    session.page.wait_for_selector("xmc-rod-queue-list .empty-state", timeout=timeout_ms)
-    amount_input.fill("1")
-    session.settle_and_wait_fonts()
-    session.page.wait_for_selector("xmc-rod-queue-card .queue-card", timeout=timeout_ms)
-
-
-def assert_smart_resource_finder_and_predictability(
-    session: ui_entities_validator.XMCUIBrowserSession, timeout_ms: int = 15000
-) -> str:
-    """Exercises Smart Resource Finder controls, predictability metrics, and timeframe toggles."""
-    print("\n[ROD UI] Exercising Smart Resource Finder & Predictability column...")
+def _assert_initial_predictability_empty_state(session: Session, timeout_ms: int) -> None:
+    """Verifies that the predictability column starts in its empty prompt state."""
     session.page.wait_for_selector(".predictability-empty-state", timeout=timeout_ms)
     if session.page.locator(".predictability-empty-state").count() == 0:
-        raise ui_entities_validator.UIVerificationError(
-            "Missing initial .predictability-empty-state."
-        )
+        raise ui_entities_validator.UIVerificationError("Missing .predictability-empty-state.")
+
+
+def _select_primary_resource_and_amount(session: Session, timeout_ms: int) -> str:
+    """Selects the first resource type in Smart Resource Finder and sets amount to 1."""
     session.page.locator("xmc-smart-resource-finder mat-select.query-select-box").first.click()
     session.page.wait_for_selector("mat-option", timeout=timeout_ms)
     options = session.page.locator("mat-option")
@@ -153,6 +140,11 @@ def assert_smart_resource_finder_and_predictability(
     session.settle_and_wait_fonts()
     pred_sel = ".predictability-stats-grid, .predictability-spinner-container"
     session.page.wait_for_selector(pred_sel, timeout=timeout_ms)
+    return resource_name
+
+
+def _verify_velocity_timeframe_pills(session: Session, timeout_ms: int) -> None:
+    """Clicks each velocity timeframe toggle pill and verifies it becomes active."""
     for tf in VELOCITY_TIMEFRAMES:
         pill = session.page.locator(f'xmc-rod-queue-list button.toggle-pill:has-text("{tf}")').first
         pill.click()
@@ -160,14 +152,47 @@ def assert_smart_resource_finder_and_predictability(
         session.page.wait_for_selector(active_sel, timeout=timeout_ms)
         if "active-toggle" not in (pill.get_attribute("class") or ""):
             raise ui_entities_validator.UIVerificationError(f"Pill '{tf}' missing 'active-toggle'.")
-    _exercise_resource_rows_and_unschedulable_filter(session, timeout_ms=timeout_ms)
+
+
+def _verify_multi_resource_row_add_and_remove(session: Session) -> None:
+    """Adds a secondary resource filter row and removes it."""
+    add_btn = session.page.locator("xmc-smart-resource-finder button.add-resource-btn").first
+    if add_btn.count() > 0 and add_btn.is_enabled():
+        add_btn.click()
+        session.settle_and_wait_fonts(200)
+        row_count = session.page.locator("xmc-smart-resource-finder .query-row").count()
+        if row_count < 2:
+            raise ui_entities_validator.UIVerificationError(f"Expected >= 2 rows, got {row_count}.")
+        session.page.locator("xmc-smart-resource-finder button.remove-resource-btn").first.click()
+        session.settle_and_wait_fonts(200)
+
+
+def _verify_unschedulable_quota_empty_state(session: Session, timeout_ms: int) -> None:
+    """Filters with an unschedulable amount to verify the empty queue state, then resets to 1."""
+    amount_input = session.page.locator("xmc-smart-resource-finder input.query-amount-input").first
+    amount_input.fill("999999999")
+    session.settle_and_wait_fonts()
+    session.page.wait_for_selector("xmc-rod-queue-list .empty-state", timeout=timeout_ms)
+    amount_input.fill("1")
+    session.settle_and_wait_fonts()
+    session.page.wait_for_selector("xmc-rod-queue-card .queue-card", timeout=timeout_ms)
+
+
+def assert_smart_resource_finder_and_predictability(
+    session: Session, timeout_ms: int = 15000
+) -> str:
+    """Exercises Smart Resource Finder controls, predictability metrics, and timeframe toggles."""
+    print("\n[ROD UI] Exercising Smart Resource Finder & Predictability column...")
+    _assert_initial_predictability_empty_state(session, timeout_ms)
+    resource_name = _select_primary_resource_and_amount(session, timeout_ms)
+    _verify_velocity_timeframe_pills(session, timeout_ms)
+    _verify_multi_resource_row_add_and_remove(session)
+    _verify_unschedulable_quota_empty_state(session, timeout_ms)
     print(f"  [✓] Verified Smart Resource Finder & Predictability for resource '{resource_name}'")
     return resource_name
 
 
-def assert_subnav_tabs_switching(
-    session: ui_entities_validator.XMCUIBrowserSession, timeout_ms: int = 15000
-) -> None:
+def assert_subnav_tabs_switching(session: Session, timeout_ms: int = 15000) -> None:
     """Switches between ROD subnavigation tabs and verifies view transitions."""
     print("\n[ROD UI] Switching subnavigation tabs...")
     avail_sel = 'xmc-rod-subnav-tabs button.subnav-tab:has-text("Resource availability")'
@@ -182,28 +207,20 @@ def assert_subnav_tabs_switching(
 
 
 def verify_resource_dashboard_in_session(
-    session: ui_entities_validator.XMCUIBrowserSession,
-    expected_queue: str | None = None,
-    timeout_ms: int = 30000,
+    session: Session, expected_queue: str | None = None, timeout_ms: int = 30000
 ) -> dict[str, Any]:
     """Executes the full Resource Observability Dashboard UI E2E suite in an active session."""
     session.navigate_to_route(
         "/resources", "xmc-resource-dashboard", "ui_rod_step1_landing.png", timeout_ms=timeout_ms
     )
     queues = assert_queue_cards(session, expected_queue=expected_queue, timeout_ms=timeout_ms)
-    selected_queue = assert_queue_selection_and_jobs_pane(session, queues)
+    selected_q = assert_queue_selection_and_jobs_pane(session, queues)
     session.take_screenshot("ui_rod_step2_queue_selection.png")
-    selected_resource = assert_smart_resource_finder_and_predictability(session)
+    selected_res = assert_smart_resource_finder_and_predictability(session)
     session.take_screenshot("ui_rod_step3_smart_resource_finder.png")
     assert_subnav_tabs_switching(session)
-    session.assert_no_runtime_errors(
-        "resource_dashboard", ignored_http_substrings=(":batchGetSecondaryData",)
-    )
-    return {
-        "queues": queues,
-        "selected_queue": selected_queue,
-        "selected_resource": selected_resource,
-    }
+    session.assert_no_runtime_errors("resource_dashboard", (":batchGetSecondaryData",))
+    return {"queues": queues, "selected_queue": selected_q, "selected_resource": selected_res}
 
 
 def verify_resource_dashboard_ui(
@@ -214,12 +231,7 @@ def verify_resource_dashboard_ui(
     expected_queue: str | None = None,
 ) -> dict[str, Any]:
     """Launches a Playwright session and verifies the Resource Observability Dashboard UI."""
-    with ui_entities_validator.XMCUIBrowserSession(
-        ui_base_url=ui_base_url,
-        auth_token=auth_token,
-        headless=headless,
-        screenshots_dir=screenshots_dir,
-    ) as session:
+    with Session(ui_base_url, auth_token, screenshots_dir, headless) as session:
         summary = verify_resource_dashboard_in_session(session, expected_queue=expected_queue)
         verification_report.print_success_summary(
             "RESOURCE OBSERVABILITY DASHBOARD (ROD) UI E2E PASSED SUCCESSFULLY!",
