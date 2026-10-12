@@ -126,15 +126,16 @@ auth:
   clientId: "xmc-client"
   iap:
     clientId: "xmc-client"
-    iapIssuer: "http://dex.dex.svc.cluster.local:5556/dex"
+    iapIssuer: "http://localhost:5556/dex"
   googleApplicationCredentials: "/etc/gcp-secrets/key.json"
   redirectUrl: "http://localhost:8080/api/callback"
   frontendUrl: "http://localhost:8080"
   authUrl: "http://localhost:5556/dex/auth"
   tokenUrl: "http://dex.dex.svc.cluster.local:5556/dex/token"
   apiUrl: "http://dex.dex.svc.cluster.local:5556/dex/userinfo"
+  jwksUrl: "http://dex.dex.svc.cluster.local:5556/dex/keys"
   secureCookie: false
-  issuerUrl: "http://dex.dex.svc.cluster.local:5556/dex"
+  issuerUrl: "http://localhost:5556/dex"
   username: "admin@xmc.local"
   password: "password123"
 
