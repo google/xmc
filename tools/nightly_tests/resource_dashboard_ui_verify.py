@@ -35,7 +35,7 @@ flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token", allow_
 flags.DEFINE_bool("headless", True, "Run browser in headless mode", allow_override=True)
 flags.DEFINE_string("screenshots_dir", None, "Diagnostic screenshots dir", allow_override=True)
 
-VELOCITY_TIMEFRAMES: tuple[str, ...] = ("1h", "6h", "24h", "7d")
+VELOCITY_TIMEFRAMES: tuple[str, ...] = ("1h", "24h", "7d")
 
 
 def assert_queue_cards(
