@@ -280,7 +280,7 @@ func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, sp
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
 
 	if plan.write == writeSpec {
@@ -289,6 +289,9 @@ func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, sp
 		}
 		finalRec.UpdateTime = commitTimestamp
 		finalRec.Etag = generateEtag(finalRec)
+	}
+	if plan.write != writeNothing {
+		recordOwnerAdoption(plan.prevOwner, src, plan.created)
 	}
 
 	return cloneRecord(finalRec), nil
@@ -627,6 +630,7 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 	}
 
 	var result *PrepareDeactivationResult
+	var prevOwner *SourceOwner
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		catalog, targetRec, err := s.lookupCatalogTargetTx(ctx, txn, operationPrepareDeactivation, canonicalName, reqSrc)
@@ -651,12 +655,14 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 				return err
 			}
 		}
+		prevOwner = cloneSourceOwner(targetRec.Owner)
 		return recordNonIntentOwnerTx(txn, targetRec, reqSrc)
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
+	recordOwnerAdoption(prevOwner, reqSrc, false)
 	return result, nil
 }
 
@@ -731,6 +737,7 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 		return err
 	}
 
+	var prevOwner *SourceOwner
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, operationCompleteDeactivation, canonicalName, reqSrc)
 		if err != nil {
@@ -738,6 +745,7 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 		}
 
 		if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+			prevOwner = cloneSourceOwner(rec.Owner)
 			return recordNonIntentOwnerTx(txn, rec, reqSrc)
 		}
 		if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
@@ -775,10 +783,15 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 		if err := txn.BufferWrite([]*spanner.Mutation{mutation}); err != nil {
 			return err
 		}
+		prevOwner = cloneSourceOwner(rec.Owner)
 		return recordNonIntentOwnerTx(txn, rec, reqSrc)
 	})
 
-	return err
+	if err != nil {
+		return recordSourceConflictError(err)
+	}
+	recordOwnerAdoption(prevOwner, reqSrc, false)
+	return nil
 }
 
 // UpdateObservedGeneration synchronizes actual component access, generation, and state.
@@ -790,6 +803,7 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 
 	var finalRec *ComponentRecord
 	var unchanged bool
+	var prevOwner *SourceOwner
 
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		unchanged = false
@@ -812,6 +826,7 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 				return err
 			}
 		}
+		prevOwner = cloneSourceOwner(rec.Owner)
 		if err := recordNonIntentOwnerTx(txn, rec, reqSrc); err != nil {
 			return err
 		}
@@ -821,8 +836,9 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
+	recordOwnerAdoption(prevOwner, reqSrc, false)
 
 	if finalRec != nil && !unchanged {
 		finalRec.UpdateTime = commitTimestamp
@@ -863,6 +879,7 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 		return err
 	}
 
+	var prevOwner *SourceOwner
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, operationExecuteDeletion, canonicalName, reqSrc)
 		if err != nil {
@@ -873,6 +890,7 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 			return err
 		}
 
+		prevOwner = cloneSourceOwner(rec.Owner)
 		var owner *SourceOwner
 		if reqSrc != nil {
 			owner = deletionOwner(rec.Owner, *reqSrc)
@@ -886,7 +904,11 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 		return txn.BufferWrite(mutations)
 	})
 
-	return err
+	if err != nil {
+		return recordSourceConflictError(err)
+	}
+	recordOwnerAdoption(prevOwner, reqSrc, false)
+	return nil
 }
 
 func collectDeletionTargets(rec *ComponentRecord, catalog map[string]*ComponentRecord, canonicalName string, policy componentspb.DeletionPolicy) []*ComponentRecord {
