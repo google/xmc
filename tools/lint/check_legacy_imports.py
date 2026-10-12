@@ -63,9 +63,11 @@ LEGACY_GO_ROOTS = frozenset(
 # Exact google3 import paths whose root collides with Go stdlib (`go/...`).
 LEGACY_GO_EXACT = frozenset({"go/flag", "go/google"})
 
-# Files that legitimately contain the patterns this tool searches for.
+# Files that legitimately contain the patterns this tool searches for
+# (or OSS-native Bazel rules that are not google3 migration leftovers).
 SELF_EXCLUDED = frozenset(
     {
+        "test/e2e/manifests/crd_manifests.bzl",
         "tools/lint/check_legacy_imports.py",
         "tools/lint/check_legacy_imports_test.py",
         "tools/lint/legacy_imports_baseline.json",

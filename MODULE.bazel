@@ -94,16 +94,6 @@ go_deps.gazelle_override(
     ],
     path = "github.com/grpc-ecosystem/grpc-gateway/v2",
 )
-go_deps.module_override(
-    patch_strip = 1,
-    patches = ["//test/e2e/manifests:export_crd_bases.patch"],
-    path = "sigs.k8s.io/jobset",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = ["//test/e2e/manifests:export_crd_bases.patch"],
-    path = "sigs.k8s.io/kueue",
-)
 use_repo(
     go_deps,
     "com_github_clickhouse_clickhouse_go_v2",
@@ -158,3 +148,7 @@ use_repo(
     "sh_helm_helm_v3",
     "xyz_gomodules_jsonpatch_v2",
 )
+
+k8s_crd_manifests = use_repo_rule("//test/e2e/manifests:crd_manifests.bzl", "k8s_crd_manifests")
+
+k8s_crd_manifests(name = "k8s_crd_manifests")
