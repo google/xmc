@@ -17,8 +17,8 @@ import (
 	"flag"
 	"time"
 
+	"xmanager_cloud/cmd/actuator/k8s_client"
 	"xmanager_cloud/internal/configutil"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 )
 
 // Config holds the configuration for the Reconciler.

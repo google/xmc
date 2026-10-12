@@ -1,9 +1,9 @@
 # Copyright 2025 Google LLC
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//visibility:public"])
 
-compat_go_library(
+go_library(
     name = "workunittaskhandler",
     srcs = ["workunit_task_handler.go"],
     importpath = "xmanager_cloud/cmd/actuator/workunittaskhandler",
@@ -24,7 +24,7 @@ compat_go_library(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "workunittaskhandler_test",
     srcs = ["workunit_task_handler_test.go"],
     embed = [":workunittaskhandler"],

@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"golang/prometheus/client/prometheus/testutil/testutil"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,11 +38,11 @@ import (
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	"xmanager_cloud/cmd/reconciler/shared"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	storagepkg "xmanager_cloud/internal/storage"
 	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	"xmanager_cloud/logging/logging"
-	storagepkg "xmanager_cloud/storage/storage"
 )
 
 type mockStorageUpdater struct {

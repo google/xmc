@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"time"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/unstructured/unstructured"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/validator/validator"

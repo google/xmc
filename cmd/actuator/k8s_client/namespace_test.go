@@ -17,13 +17,13 @@ import (
 	"context"
 	"testing"
 
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
-	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
-	kubernetesfake "golang/k8s_io/client_go/v/v0_23/kubernetes/fake/fake"
-	k8stesting "golang/k8s_io/client_go/v/v0_23/testing/testing"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	kubernetesfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func TestCheckNamespaceExists(t *testing.T) {

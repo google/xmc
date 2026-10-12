@@ -18,7 +18,7 @@ import (
 	"context"
 	"time"
 
-	"golang/prometheus/client/prometheus/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
 	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
 	"xmanager_cloud/cmd/reconciler/shared"
 )

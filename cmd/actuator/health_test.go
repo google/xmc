@@ -21,8 +21,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	kubernetesfake "golang/k8s_io/client_go/v/v0_23/kubernetes/fake/fake"
-	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
+	"k8s.io/client-go/kubernetes"
+	kubernetesfake "k8s.io/client-go/kubernetes/fake"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
 	"xmanager_cloud/task_queue_redis/redisclient"
