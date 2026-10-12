@@ -139,7 +139,6 @@ class CollectMetricsTest(unittest.TestCase):
             metrics,
             {
                 "compat_go_targets": 2,
-                "custom_repo_rules": 1,
                 "gazelle_resolve_directives": 1,
                 "go_legacy_root_imports": 3,
                 "go_unresolved_module_imports": 1,
