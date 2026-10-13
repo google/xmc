@@ -37,18 +37,19 @@ import {
   StatusMessageFilterService,
 } from 'app/service/status_message_filter_service';
 
-/** One selectable work unit state in the optional Status block. */
+/** One selectable option (value sent to the parent, label shown) in the optional Status block. */
 export interface StateFilterOption {
   readonly value: string;
   readonly label: string;
 }
 
 /**
- * Filter component for status messages.
+ * Filters menu for status messages.
  *
- * When `stateOptions` is set, the menu also shows a Status block above the status message
- * filters. Its selection is applied once, when the menu closes, so several states can be picked
- * with a single request.
+ * By default it only filters which status messages are displayed. When the parent sets
+ * `stateOptions`, the menu also shows a Status block above the status message filters; its
+ * selection is emitted once, when the menu closes, so several states can be picked with a single
+ * request. The parent owns what the selection filters.
  */
 @Component({
   selector: 'xmc-status-message-filter',
@@ -85,6 +86,11 @@ export class StatusMessageFilter {
   private readonly pendingStates = signal<ReadonlySet<string>>(new Set());
 
   protected readonly activeStateCount = computed(() => this.selectedStates().length);
+  /** Screen-reader text for the badge, which MatBadge otherwise hides from assistive tech. */
+  protected readonly badgeDescription = computed(() => {
+    const count = this.activeStateCount();
+    return count === 1 ? '1 status filter applied' : `${count} status filters applied`;
+  });
   protected readonly triggerLabel = computed(() =>
     this.stateOptions() ? 'Filters' : 'Filter status messages',
   );
