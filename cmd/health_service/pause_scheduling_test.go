@@ -18,6 +18,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -744,6 +746,7 @@ func TestPauseScheduler_IsPaused(t *testing.T) {
 			}
 			// Direct IsPaused read also refreshes the cache.
 			assertIsPausedCached(t, scheduler, true)
+			synctest.Wait()
 		})
 	})
 
@@ -798,6 +801,40 @@ func TestPauseScheduler_IsPaused(t *testing.T) {
 		assertIsPausedCached(t, scheduler, false)
 	})
 
+	t.Run("coalesces concurrent cache misses via singleflight", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			repo := &blockingPauseStateRepo{
+				PauseStateRepository: storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true}),
+				unblock:              make(chan struct{}),
+			}
+			scheduler := NewPauseScheduler(PauseSchedulerParams{
+				LazyStorage:        newFakeLazyStorage(repo),
+				BroadcastPublisher: broadcast.NewFakeClient(""),
+				TaskQueuePublisher: redisclient.NewFakeClient(),
+				CacheTTL:           1 * time.Minute,
+			})
+
+			const callers = 5
+			var wg sync.WaitGroup
+			wg.Add(callers)
+			for range callers {
+				go func() {
+					defer wg.Done()
+					assertIsPausedCached(t, scheduler, true)
+				}()
+			}
+
+			synctest.Wait()
+			close(repo.unblock)
+			wg.Wait()
+			synctest.Wait()
+
+			if got := repo.calls.Load(); got != 1 {
+				t.Errorf("repo.Get() calls = %d, want 1", got)
+			}
+		})
+	})
+
 	t.Run("returns error when repo fails", func(t *testing.T) {
 		repoErr := errors.New("spanner read failed")
 		failingRepo := &storagetest.FakePauseStateRepository{GetErr: repoErr}
@@ -834,11 +871,26 @@ func TestPauseScheduler_IsPaused(t *testing.T) {
 	})
 }
 
+type blockingPauseStateRepo struct {
+	storage.PauseStateRepository
+	unblock chan struct{}
+	calls   atomic.Int32
+}
+
+func (b *blockingPauseStateRepo) Get(ctx context.Context) (*storage.PauseSchedulingState, error) {
+	b.calls.Add(1)
+	if b.unblock != nil {
+		<-b.unblock
+	}
+	return b.PauseStateRepository.Get(ctx)
+}
+
 func assertIsPausedCached(t *testing.T, scheduler PauseScheduler, want bool) {
 	t.Helper()
 	got, err := scheduler.IsPausedCached(context.Background())
 	if err != nil {
-		t.Fatalf("IsPausedCached() unexpected error: %v", err)
+		t.Errorf("IsPausedCached() unexpected error: %v", err)
+		return
 	}
 	if got != want {
 		t.Errorf("IsPausedCached() = %v, want %v", got, want)

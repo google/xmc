@@ -30,6 +30,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"golang.org/x/sync/singleflight"
 )
 
 var schedulingPauseEventsTotal = promauto.NewCounterVec(
@@ -121,6 +122,7 @@ type pauseScheduler struct {
 	cacheMu             sync.RWMutex
 	cachedPaused        bool
 	cacheExpires        time.Time
+	sfGroup             singleflight.Group
 }
 
 var _ PauseScheduler = (*pauseScheduler)(nil)
@@ -341,12 +343,23 @@ func (p *pauseScheduler) IsPaused(ctx context.Context) (bool, error) {
 }
 
 // IsPausedCached returns whether scheduling is currently paused, serving from
-// the in-memory TTL cache when available.
+// the in-memory TTL cache when available and coalescing concurrent cache misses.
 func (p *pauseScheduler) IsPausedCached(ctx context.Context) (bool, error) {
 	if paused, ok := p.getCachedPaused(); ok {
 		return paused, nil
 	}
-	return p.IsPaused(ctx)
+	ch := p.sfGroup.DoChan("is_paused", func() (any, error) {
+		detachedCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		return p.IsPaused(detachedCtx)
+	})
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case res := <-ch:
+		paused, _ := res.Val.(bool)
+		return paused, res.Err
+	}
 }
 
 func (p *pauseScheduler) getCachedPaused() (paused bool, ok bool) {
