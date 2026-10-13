@@ -122,8 +122,12 @@ def _collect_xid_work_unit_positions(session: Session, xid: str) -> dict[str, st
     return positions
 
 
-def _verify_work_units_in_jobs_table(session: Session, cq: str, alt: str, norm_xid: str) -> None:
+def _verify_work_units_in_jobs_table(session: Session, cq: str, alt: str, xid: str | None) -> None:
     """Polls the Jobs in the Queue table until all 3 work units appear with valid positions."""
+    if not xid:
+        return
+    if not (norm_xid := cli.parse_xid(str(xid), required=False)).isdigit():
+        raise UIError(f"Invalid numeric XID: '{xid}'")
     for attempt in range(12):
         pos = _collect_xid_work_unit_positions(session, norm_xid)
         vals = [pos.get(w, "") for w in EXPECTED_WORK_UNITS]
@@ -145,11 +149,7 @@ def assert_queue_selection_and_jobs_pane(
     alt_cq = next((q for q in queues if q != target_cq), target_cq)
     _select_queue_card_by_name(session, alt_cq)
     actual_name = _select_queue_card_by_name(session, target_cq)
-    if xid:
-        norm_xid = cli.parse_xid(str(xid), required=False)
-        if not norm_xid.isdigit():
-            raise UIError(f"Invalid numeric XID: '{xid}'")
-        _verify_work_units_in_jobs_table(session, target_cq, alt_cq, norm_xid)
+    _verify_work_units_in_jobs_table(session, target_cq, alt_cq, xid)
     print(f"  [✓] Verified Jobs in the Queue side pane synchronized to '{actual_name}'")
     return actual_name
 
@@ -231,8 +231,8 @@ def verify_resource_dashboard_ui(
 
 
 def _stop_experiment_work_units(xid: str | None, endpoint: str | None) -> None:
-    """Stops active work units for the launched experiment when xid is provided."""
-    if xid:
+    """Stops active work units for the launched experiment when a valid numeric xid is provided."""
+    if xid and xid.isdigit():
         with ess.ess_channel_context(endpoint) as (stub, _):
             xmc_entities_validator.stop_work_units(stub, xid)
 

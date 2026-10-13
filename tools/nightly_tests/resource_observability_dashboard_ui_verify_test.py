@@ -74,7 +74,7 @@ class ResourceObservabilityDashboardUIVerifyTest(unittest.TestCase):
         session = mock.MagicMock()
         page1_rows = [_make_row_mock("1", "N/A - running"), _make_row_mock("2", "1")]
         page2_rows = [_make_row_mock("3", "2")]
-        state = {"page": 0}
+        state: dict[str, Any] = {"page": 0, "filter_args": []}
 
         def _locator_side_effect(selector: str) -> Any:
             loc = mock.MagicMock()
@@ -83,7 +83,12 @@ class ResourceObservabilityDashboardUIVerifyTest(unittest.TestCase):
                 filtered = mock.MagicMock()
                 filtered.count.return_value = len(current)
                 filtered.nth.side_effect = lambda idx: current[idx]
-                loc.filter.return_value = filtered
+
+                def _record_filter(**kwargs: Any) -> Any:
+                    state["filter_args"].append(kwargs)
+                    return filtered
+
+                loc.filter.side_effect = _record_filter
             elif selector == sel.JOBS_NEXT_PAGE_BTN_SEL:
                 loc.count.return_value = 1 if state["page"] == 0 else 0
                 loc.first.click.side_effect = lambda: state.__setitem__("page", 1)
@@ -94,11 +99,14 @@ class ResourceObservabilityDashboardUIVerifyTest(unittest.TestCase):
             session, "cpu-cluster-queue", "gpu-cluster-queue", "experiments/36272"
         )
         self.assertEqual(state["page"], 1)
+        self.assertEqual(state["filter_args"], [{"has_text": "Experiment #36272"}] * 2)
 
-        with self.assertRaises(ui_entities_validator.UIVerificationError):
+        state["page"] = 0
+        with self.assertRaises(ui_entities_validator.UIVerificationError) as err_ctx:
             rod_verify._verify_work_units_in_jobs_table(
                 session, "cpu-cluster-queue", "gpu-cluster-queue", "invalid-xid"
             )
+        self.assertIn("Invalid numeric XID: 'invalid-xid'", str(err_ctx.exception))
 
     def test_main_passes_keyword_args_and_stops_work_units_in_finally(self) -> None:
         flag_vals = {
@@ -136,6 +144,9 @@ class ResourceObservabilityDashboardUIVerifyTest(unittest.TestCase):
             )
             mock_verify.assert_called_once()
             mock_stop.assert_called_once_with(mock_stub, "36272")
+            mock_stop.reset_mock()
+            rod_verify._stop_experiment_work_units("invalid-xid", "grpc.xmc.example.com:443")
+            mock_stop.assert_not_called()
 
 
 if __name__ == "__main__":
