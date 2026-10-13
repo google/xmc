@@ -116,10 +116,12 @@ func TestDeclareClusterEpoch_TakeoverParity(t *testing.T) {
 			_, err = s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 5})
 			assertFenceRejected(t, err, store.ReasonClusterFenced, dr)
 
+			// The fence is enforced before the ownership rules, so the fenced-out cluster is rejected
+			// with CLUSTER_FENCED before its source is compared with the reassigned owner.
 			prodSource := store.RequestSource{UID: "uid-prod-2", Generation: 1, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 4}
 			_, err = s.SetSourcedComponentIntent(ctx, "fence-owned", intentSpec("v1.0.0"), nil, prodSource)
-			if reason := store.ErrorInfoReason(err); status.Code(err) != codes.FailedPrecondition || reason != store.ReasonSourceIncarnationMismatch {
-				t.Errorf("SetSourcedComponentIntent() from the fenced-out cluster error = %v (reason %q), want reason %q", err, reason, store.ReasonSourceIncarnationMismatch)
+			if reason := store.ErrorInfoReason(err); status.Code(err) != codes.FailedPrecondition || reason != store.ReasonClusterFenced {
+				t.Errorf("SetSourcedComponentIntent() from the fenced-out cluster error = %v (reason %q), want reason %q", err, reason, store.ReasonClusterFenced)
 			}
 			assertStoredOwner(ctx, t, s, "fence-owned", &store.SourceOwner{Generation: 3, Namespace: "xmc", ClusterUID: drClusterUID, Epoch: 5})
 
