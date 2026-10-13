@@ -420,8 +420,6 @@ func (m *K8sHelmManager) uninstallComponent(ctx context.Context, ref ComponentRe
 		return err
 	}
 	if m.hasOtherActiveIncarnation(ref) {
-		m.dropPendingUpgrade(ref)
-		m.setUpgradeErr(ref, nil)
 		m.mu.Lock()
 		m.forgetIncarnationLocked(ref)
 		m.mu.Unlock()
