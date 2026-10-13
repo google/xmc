@@ -2476,5 +2476,3 @@ func sourceConflictTestErr(t *testing.T, reason string) error {
 	}
 	return st.Err()
 }
-
-
