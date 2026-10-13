@@ -82,7 +82,11 @@ func newCMSTokenCredentialsWithFactory(ctx context.Context, newIDTokenSource idT
 			return NewBearerTokenCredentials(fn)
 		}
 	}
-	return NewBearerTokenCredentials(buildGoogleIDTokenFunc(ctx, resolveCMSAudience(oauthCfg), newIDTokenSource))
+	aud := resolveCMSAudience(oauthCfg)
+	if aud == "placeholder-grpc-audience" {
+		logging.Warn(ctx, "No gRPC audience configured for CMS credentials; using placeholder. Production calls will likely fail.")
+	}
+	return NewBearerTokenCredentials(buildGoogleIDTokenFunc(ctx, aud, newIDTokenSource))
 }
 
 func buildNonProdTokenFunc(oauthCfg *xmcoauth.Config) TokenSourceFunc {
