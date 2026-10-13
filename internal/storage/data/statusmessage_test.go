@@ -21,38 +21,6 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestStatusMessageParentIDs(t *testing.T) {
-	testCases := []struct {
-		name    string
-		parent  string
-		wantXID int64
-		wantWID int64
-		wantErr bool
-	}{
-		{name: "work unit parent", parent: "experiments/123/workUnits/456", wantXID: 123, wantWID: 456},
-		{name: "experiment parent", parent: "experiments/123", wantXID: 123, wantWID: 0},
-		{name: "empty parent", parent: "", wantErr: true},
-		{name: "invalid parent", parent: "invalid", wantErr: true},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			xid, wid, err := StatusMessageParentIDs(tc.parent)
-			if tc.wantErr {
-				if err == nil {
-					t.Errorf("StatusMessageParentIDs(%q) succeeded, want error", tc.parent)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("StatusMessageParentIDs(%q) failed: %v", tc.parent, err)
-			}
-			if xid != tc.wantXID || wid != tc.wantWID {
-				t.Errorf("StatusMessageParentIDs(%q) = (%d, %d), want (%d, %d)", tc.parent, xid, wid, tc.wantXID, tc.wantWID)
-			}
-		})
-	}
-}
-
 func TestStatusMessageCreateTime(t *testing.T) {
 	now := time.Date(2024, time.January, 5, 0, 0, 0, 0, time.UTC)
 	set := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)

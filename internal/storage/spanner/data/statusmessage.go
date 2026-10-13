@@ -114,9 +114,9 @@ func StatusMessageRowToProto(row *spanner.Row) (*essmsgpb.StatusMessage, error) 
 
 // StatusMessageProtoToInsertMutation creates a Spanner mutation to insert a StatusMessage.
 func StatusMessageProtoToInsertMutation(msg *essmsgpb.StructuredMessage, messageID int64, eid *int64, previousMsg *essmsgpb.StructuredMessage) (*spanner.Mutation, error) {
-	xid, wid, err := data.StatusMessageParentIDs(msg.GetParent())
+	xid, wid, err := validator.ValidateStatusMessageParent(msg.GetParent())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to validate status message parent %q: %w", msg.GetParent(), err)
 	}
 	workUnitID := spanner.NullInt64{Int64: wid, Valid: wid != 0}
 

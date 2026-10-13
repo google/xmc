@@ -15,22 +15,10 @@
 package data
 
 import (
-	"fmt"
 	"time"
 
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	"xmanager_cloud/internal/validator"
 )
-
-// StatusMessageParentIDs extracts the experiment ID and the work unit ID from a status message
-// parent resource name. The work unit ID is 0 for experiment-level messages.
-func StatusMessageParentIDs(parent string) (xid, wid int64, err error) {
-	xid, wid, err = validator.ValidateStatusMessageParent(parent)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to validate status message parent %q: %w", parent, err)
-	}
-	return xid, wid, nil
-}
 
 // StatusMessageCreateTime returns the create time to persist for a status message, defaulting
 // to now when the message has no create time.

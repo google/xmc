@@ -93,7 +93,7 @@ func WorkUnitRowToProto(row *spanner.Row) (*pb.WorkUnit, error) {
 	if err := row.ColumnByName("WorkUnitStatus", &workUnit.CurrentWorkUnitExecution.Status); err != nil {
 		return nil, fmt.Errorf("failed to read column WorkUnitStatus: %w", err)
 	}
-	data.MarkWorkUnitExecutionCurrent(workUnit.CurrentWorkUnitExecution)
+	workUnit.CurrentWorkUnitExecution.State = pb.WorkUnitExecution_ACTIVE
 
 	var createTime, updateTime spanner.NullTime
 	if err := row.ColumnByName("CreateTime", &createTime); err != nil {
