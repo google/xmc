@@ -150,13 +150,55 @@ func (m *K8sHelmManager) releaseContradictsReadyCR(ctx context.Context, ref Comp
 	return status != release.StatusDeployed && !status.IsPending()
 }
 
-// forgetIncarnationLocked marks only the given CR incarnation inactive and drops its actuation and repair state without
-// touching the namespace-level component entry or chart path override. Callers must hold m.mu.
+// forgetIncarnationLocked drops all in-memory state of the given CR incarnation without touching the namespace-level
+// component entry or chart path override. Callers must hold m.mu.
 func (m *K8sHelmManager) forgetIncarnationLocked(ref ComponentRef) {
-	key := componentStateKey(ref)
+	m.dropIncarnationStateLocked(componentStateKey(ref))
+}
+
+// dropIncarnationStateLocked deletes the activation, actuation, upgrade, health and repair state stored under a
+// UID-scoped incarnation key. Dropping the pending upgrade marks any queued upgrade for that incarnation as
+// superseded. Callers must hold m.mu.
+func (m *K8sHelmManager) dropIncarnationStateLocked(key string) {
+	delete(m.activeState, key)
 	delete(m.actuatedGenerations, key)
+	delete(m.upgradeErrs, key)
+	delete(m.pendingUpgrades, key)
+	delete(m.healthVerifiedAt, key)
 	m.clearRepairLocked(key)
-	m.activeState[key] = false
+}
+
+// retireOtherIncarnationsLocked drops the state of every incarnation of ref's component other than ref itself.
+// Kubernetes keeps at most one live CR per namespace/name, so once ref is actuated any other incarnation is stale
+// (e.g. its teardown never ran) and must neither block ref's teardown nor run a queued upgrade. Callers must hold m.mu.
+func (m *K8sHelmManager) retireOtherIncarnationsLocked(ref ComponentRef) {
+	if ref.UID == "" {
+		return
+	}
+	target := componentStateKey(ref)
+	prefix := componentKey(ref.Namespace, ref.Name) + "@"
+	for _, key := range m.incarnationKeysLocked(prefix) {
+		if key != target {
+			m.dropIncarnationStateLocked(key)
+		}
+	}
+}
+
+// incarnationKeysLocked returns the UID-scoped keys with the given namespace/name@ prefix that hold activation or
+// pending upgrade state. Callers must hold m.mu.
+func (m *K8sHelmManager) incarnationKeysLocked(prefix string) []string {
+	var keys []string
+	for key := range m.activeState {
+		if strings.HasPrefix(key, prefix) {
+			keys = append(keys, key)
+		}
+	}
+	for key := range m.pendingUpgrades {
+		if _, seen := m.activeState[key]; !seen && strings.HasPrefix(key, prefix) {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 
 // forgetComponentLocked drops the component's actuation and repair state after a teardown and records both the CR
@@ -168,6 +210,7 @@ func (m *K8sHelmManager) forgetComponentLocked(ref ComponentRef, keepInactive bo
 	baseKey := componentKey(ref.Namespace, ref.Name)
 	delete(m.actuatedGenerations, key)
 	m.clearRepairLocked(key)
+	m.retireOtherIncarnationsLocked(ref)
 	m.activeState[key] = false
 	m.activeState[baseKey] = false
 	if !keepInactive {

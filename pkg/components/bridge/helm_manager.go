@@ -364,6 +364,7 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 		return err
 	}
 	m.mu.Lock()
+	m.retireOtherIncarnationsLocked(ref)
 	m.activeState[componentStateKey(ref)] = opts.Enabled
 	m.mu.Unlock()
 	logging.Info(ctx, "Ensured 1P component Helm values and triggered upgrade", "name", ref.Name, "namespace", ref.Namespace, "release", ComponentReleaseNameForRef(ref), "enabled", opts.Enabled, "repair", repair)

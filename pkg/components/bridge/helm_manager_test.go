@@ -668,3 +668,34 @@ func TestK8sHelmManager_Delete1PComponent_ColdStartUninstallsLeakedRelease(t *te
 		t.Errorf("repeated Delete1PComponent() uninstall calls = %d, want %d", runner.uninstallCalls, callsBefore)
 	}
 }
+
+// TestK8sHelmManager_EnsureRetiresStaleIncarnation verifies that actuating a new CR incarnation drops the state of an
+// older incarnation whose teardown never ran, so the stale entry cannot suppress the new incarnation's teardown.
+func TestK8sHelmManager_EnsureRetiresStaleIncarnation(t *testing.T) {
+	ctx := context.Background()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	defer mgr.Close()
+	staleRef := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "66666666-0000-4000-8000-000000000006"}
+	liveRef := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "77777777-0000-4000-8000-000000000007"}
+	releaseKey := componentKey(liveRef.Namespace, ComponentReleaseNameForRef(liveRef))
+
+	if err := mgr.Ensure1PComponent(ctx, staleRef, HelmComponentOptions{Ref: staleRef, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent(staleRef) failed: %v", err)
+	}
+	mgr.RecordActuation(staleRef, 1)
+	// staleRef's CR is gone without a teardown; its recreation liveRef is actuated next.
+	if err := mgr.Ensure1PComponent(ctx, liveRef, HelmComponentOptions{Ref: liveRef, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent(liveRef) failed: %v", err)
+	}
+	if mgr.IsComponentActuated(staleRef, 1) {
+		t.Errorf("IsComponentActuated(staleRef) = true after liveRef was actuated, want false")
+	}
+
+	if err := mgr.Delete1PComponent(ctx, liveRef); err != nil {
+		t.Fatalf("Delete1PComponent(liveRef) failed: %v", err)
+	}
+	if runner.installed[releaseKey] {
+		t.Errorf("expected Delete1PComponent(liveRef) to uninstall %q despite the stale incarnation", releaseKey)
+	}
+}
