@@ -188,7 +188,8 @@ func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *compone
 	deps := ExtractDependencies(spec, labels)
 	rec, ok, err := s.readUnchangedIntent(ctx, canonicalName, spec, labels, deps, desiredGen, src)
 	if err != nil {
-		return nil, err
+		// The fast path returns only fence rejections, which count as source conflicts.
+		return nil, recordSourceConflictError(err)
 	}
 	if ok {
 		return rec, nil
