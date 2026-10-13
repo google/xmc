@@ -506,7 +506,7 @@ func TestProcessBatches_Parallelization(t *testing.T) {
 // TestUpdateBatcherConcurrency stress tests the batcher by calling Add and processBatches
 // from multiple goroutines simultaneously. This test does not perform value assertions;
 // its primary purpose is to detect data races when run with the Go race detector,
-// e.g., using `bazel test --config=gotsan`.
+// e.g., using `bazel test --@io_bazel_rules_go//go/config:race //cmd/reconciler/shared:shared_test`.
 func TestUpdateBatcherConcurrency(t *testing.T) {
 	b := NewUpdateBatcher(t.Context(), &BatcherConfig{TickDuration: 10 * time.Millisecond}, &mockStorageUpdater{})
 	ctx := context.Background()
