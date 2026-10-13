@@ -129,20 +129,28 @@ func ApplyComponentStatusSSA(ctx context.Context, c client.Client, item *unstruc
 
 // AddCleanupFinalizer persists FinalizerCMSCleanup on item and returns the stored object; item is
 // not modified. The patch fails, rather than overwriting finalizers that other writers changed,
-// unless the stored finalizers still equal those of item.
+// unless the stored finalizers still equal those of item. An item that already carries the cleanup
+// finalizer, or its legacy name, is returned as is without a write.
 func AddCleanupFinalizer(ctx context.Context, c client.Client, item *unstructured.Unstructured) (*unstructured.Unstructured, error) {
 	if item == nil {
 		return nil, errNilComponentItem
+	}
+	if HasCleanupFinalizer(item) {
+		return item, nil
 	}
 	logging.Info(ctx, "Attaching CMS cleanup finalizer", "name", item.GetName())
 	return patchFinalizers(ctx, c, item, append(slices.Clone(item.GetFinalizers()), FinalizerCMSCleanup))
 }
 
 // ReleaseCleanupFinalizer removes FinalizerCMSCleanup, and its legacy name, from item, guarded like
-// AddCleanupFinalizer. A Component that no longer exists counts as released.
+// AddCleanupFinalizer. A Component that no longer exists, or whose item carries neither name,
+// counts as released.
 func ReleaseCleanupFinalizer(ctx context.Context, c client.Client, item *unstructured.Unstructured) error {
 	if item == nil {
 		return errNilComponentItem
+	}
+	if !HasCleanupFinalizer(item) {
+		return nil
 	}
 	logging.Info(ctx, "Releasing CMS cleanup finalizer", "name", item.GetName())
 	kept := slices.DeleteFunc(slices.Clone(item.GetFinalizers()), isCleanupFinalizer)

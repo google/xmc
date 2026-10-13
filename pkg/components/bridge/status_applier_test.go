@@ -305,6 +305,39 @@ func TestCleanupFinalizer(t *testing.T) {
 			t.Errorf("AddCleanupFinalizer() error = %v, want NotFound", err)
 		}
 	})
+
+	t.Run("attach and release skip the write when nothing changes", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			finalizers []string
+			call       func(client.Client, *unstructured.Unstructured) error
+		}{
+			{"attach with the finalizer", []string{FinalizerCMSCleanup}, func(c client.Client, u *unstructured.Unstructured) error {
+				_, err := AddCleanupFinalizer(ctx, c, u)
+				return err
+			}},
+			{"attach with the legacy finalizer", []string{legacyFinalizerCMSCleanup}, func(c client.Client, u *unstructured.Unstructured) error {
+				_, err := AddCleanupFinalizer(ctx, c, u)
+				return err
+			}},
+			{"release without the finalizer", []string{"other-fin"}, func(c client.Client, u *unstructured.Unstructured) error {
+				return ReleaseCleanupFinalizer(ctx, c, u)
+			}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				c, writes := newFakeComponentClient(t, nil, newTestComponent("comp-noop", "default", tc.finalizers...))
+				if err := tc.call(c, getFakeComponent(t, c, "default", "comp-noop")); err != nil {
+					t.Fatalf("call failed: %v", err)
+				}
+				if len(writes.calls) != 0 {
+					t.Errorf("writes = %v, want none", writes.calls)
+				}
+				if diff := cmp.Diff(tc.finalizers, getFakeComponent(t, c, "default", "comp-noop").GetFinalizers()); diff != "" {
+					t.Errorf("stored finalizers mismatch (-want +got):\n%s", diff)
+				}
+			})
+		}
+	})
 }
 
 func TestPersistReconcileResult(t *testing.T) {
