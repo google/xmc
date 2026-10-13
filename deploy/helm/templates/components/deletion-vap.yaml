@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-{{- if .Values.componentsDeployment.enabled }}
+# Rendered regardless of componentsDeployment.enabled and kept on helm uninstall, so disabling
+# xmc-bridge or uninstalling the chart never silently drops deletion protection for the Component
+# CRs that the kept CRD still holds.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: component-deletion-protection
+  annotations:
+    helm.sh/resource-policy: keep
   labels:
     app.kubernetes.io/name: xmc
     app.kubernetes.io/part-of: xmanager-cloud
@@ -33,8 +37,8 @@ spec:
         resources:
           - components
   matchConditions:
-    - name: exclude-system-controllers-and-admin-breakglass
-      expression: "request.userInfo.username != 'system:serviceaccount:kube-system:namespace-controller' && request.userInfo.username != 'system:serviceaccount:kube-system:generic-garbage-collector' && !('system:masters' in request.userInfo.groups) && !('xmc-platform-admins' in request.userInfo.groups)"
+    - name: exclude-system-controllers
+      expression: "request.userInfo.username != 'system:serviceaccount:kube-system:namespace-controller' && request.userInfo.username != 'system:serviceaccount:kube-system:generic-garbage-collector' && !('system:masters' in request.userInfo.groups)"
   validations:
     - expression: "has(oldObject.spec) && has(oldObject.spec.deletionProtection) && oldObject.spec.deletionProtection == false"
       message: "Deletion rejected: Component has deletionProtection enabled (or default true). Disable deletionProtection before deleting the manifest."
@@ -43,6 +47,8 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: component-deletion-protection-binding
+  annotations:
+    helm.sh/resource-policy: keep
   labels:
     app.kubernetes.io/name: xmc
     app.kubernetes.io/part-of: xmanager-cloud
@@ -51,4 +57,3 @@ spec:
   validationActions:
     - Deny
   matchResources: {}
-{{- end }}

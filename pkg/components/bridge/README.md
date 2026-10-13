@@ -266,7 +266,7 @@ Production-grade controller reliability, conflict elimination, and Cloud Spanner
   - `BuildStatus` and `BuildStatusMap`: Construct RFC3339-formatted typed and unstructured status payloads. Companion unit tests in `status_applier_test.go`.
   - Atomic field ownership eliminates optimistic concurrency update conflicts with other controllers (e.g. `xmc-syncer`) and prevents stale object overwrites.
 - **Control-Plane `envtest` Integration Suite (`components_admission_test.go`, `reconciler_test.go`)**:
-  - Boots an in-process `kube-apiserver` and `etcd` via `controller-runtime/pkg/envtest` to verify `Component` CRD OpenAPI v3 structural schema defaults, `x-kubernetes-validations` CEL rules, `ValidatingAdmissionPolicy` deletion protection with `xmc-platform-admins` RBAC breakglass impersonation, multi-manager SSA `.status.conditions` merge semantics, and 3P `ContractBroken` condition persistence.
+  - Boots an in-process `kube-apiserver` and `etcd` via `controller-runtime/pkg/envtest` to verify `Component` CRD OpenAPI v3 structural schema defaults, `x-kubernetes-validations` CEL rules, `ValidatingAdmissionPolicy` deletion protection (including rejection of `xmc-platform-admins`, which has no exemption), multi-manager SSA `.status.conditions` merge semantics, and 3P `ContractBroken` condition persistence.
 - **Hybrid CMS Heartbeat Throttling (`shouldSyncToCMS`)**:
   - To eliminate Cloud Spanner write amplification caused by periodic steady-state health probe ticks, the bridge decouples Kubernetes data-plane polling from Spanner persistence.
   - Status synchronization RPCs (`UpdateObservedGeneration`) to CMS are triggered only upon:

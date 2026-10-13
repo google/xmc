@@ -38,7 +38,7 @@ The meta-chart has no Helm `dependencies:`. It reads each co-located component c
 
 ### Prerequisites
 
-The XMC umbrella chart must be installed with `enable_components=true` (Helm value `componentsDeployment.enabled=true`). That installs the `component-deletion-protection` admission policy and `xmc-bridge`. The chart installs the `Component` CRD regardless of the flag and never deletes it (see [CRD lifecycle](../../../cmd/xmc_bridge/README.md#crd-lifecycle)).
+The XMC umbrella chart must be installed with `enable_components=true` (Helm value `componentsDeployment.enabled=true`). That installs `xmc-bridge`. The chart installs the `Component` CRD and the `component-deletion-protection` admission policy regardless of the flag and never deletes them (see [CRD lifecycle](../../../cmd/xmc_bridge/README.md#crd-lifecycle)).
 
 Components are an unlaunched feature, so install the profile fresh. If you installed a component chart directly as its own Helm release during development, uninstall that release first. There is no procedure for adopting existing releases into the profile.
 
@@ -80,7 +80,7 @@ components:
 
 ### Disable or Uninstall
 
-`Component` CRs default to `deletionProtection: true`, and the `component-deletion-protection` admission policy denies deleting a `Component` unless its `spec.deletionProtection` is `false`.
+`Component` CRs default to `deletionProtection: true`, and the `component-deletion-protection` admission policy denies deleting a `Component` unless its `spec.deletionProtection` is `false`. The policy has no `xmc-platform-admins` group exemption; only the Kubernetes namespace controller and garbage collector, and `system:masters`, bypass it.
 
 - **Disable a component:** set `components.<name>.enabled=false` and run `helm upgrade`. The CR stays, and `xmc-bridge` removes the `xmc-cmp-<name>` workload release.
 - **Uninstall the profile:** first run `helm upgrade` with `components.<name>.deletionProtection=false` for every component, then run `helm uninstall xmc-profile -n xmc`.
