@@ -49,6 +49,7 @@ var _ apipb.ExperimentStateServiceServer = (*ProdServer)(nil)
 type ProdServer struct {
 	*Server
 	spannerClient   *spanner.Client
+	authorizer      authz.AuthorizerInterface
 	xidClient       xidgrpcpb.XidServiceClient
 	taskQueueClient *tq.Client
 	bgTaskWG        *sync.WaitGroup
@@ -69,6 +70,14 @@ func (p *ProdServer) SpannerClient() *spanner.Client {
 		return nil
 	}
 	return p.spannerClient
+}
+
+// Authorizer returns the initialized AuthorizerInterface.
+func (p *ProdServer) Authorizer() authz.AuthorizerInterface {
+	if p == nil {
+		return nil
+	}
+	return p.authorizer
 }
 
 // Close closes all underlying production client connections.
@@ -278,6 +287,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 	return &ProdServer{
 		Server:          srv,
 		spannerClient:   spannerClient,
+		authorizer:      auth,
 		xidClient:       xidClient,
 		taskQueueClient: taskQueueClient,
 		bgTaskWG:        &bgTaskWG,

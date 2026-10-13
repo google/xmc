@@ -22,8 +22,10 @@ import (
 	"testing"
 
 	xidgrpcpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/cmd/experiment_state_server/config"
 	commonhealth "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
+	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
 type fakeXidClient struct {
@@ -170,5 +172,39 @@ func TestLivenessCheck(t *testing.T) {
 	wantBody := "OK"
 	if gotBody != wantBody {
 		t.Errorf("livenessCheck() body = %q, want %q", gotBody, wantBody)
+	}
+}
+
+type stubUserAuth struct{ email string }
+
+func (s stubUserAuth) AuthenticateUserFromContext(context.Context) (string, string, error) {
+	return s.email, "uid-1", nil
+}
+
+type stubAdminChecker struct {
+	isAdmin bool
+	err     error
+}
+
+func (s stubAdminChecker) IsAdmin(context.Context, string) (bool, error) { return s.isAdmin, s.err }
+
+func TestBuildCMSAuthorizer(t *testing.T) {
+	cfg := &config.Config{InvokerSA: "bridge@proj.iam.gserviceaccount.com"}
+	ctx := context.Background()
+
+	t.Setenv("DISABLE_AUTHENTICATION", "true")
+	if _, err := buildCMSAuthorizer(cfg, &oauth.Config{}, nil, nil).AuthorizeMutating(ctx); err != nil {
+		t.Fatalf("AuthorizeMutating() with DISABLE_AUTHENTICATION=true error = %v", err)
+	}
+
+	t.Setenv("DISABLE_AUTHENTICATION", "false")
+	nonProdAuth := buildCMSAuthorizer(cfg, &oauth.Config{AuthURL: "https://dex/auth"}, stubUserAuth{email: "viewer@xmc.local"}, stubAdminChecker{err: fmt.Errorf("crm down")})
+	if _, err := nonProdAuth.AuthorizeMutating(ctx); err == nil {
+		t.Fatal("AuthorizeMutating() expected PermissionDenied error, got nil")
+	}
+
+	prodAuth := buildCMSAuthorizer(cfg, &oauth.Config{AdminIAMRole: "roles/owner"}, stubUserAuth{email: "admin@example.com"}, stubAdminChecker{isAdmin: true})
+	if _, err := prodAuth.AuthorizeMutating(ctx); err != nil {
+		t.Fatalf("AuthorizeMutating() unexpected error = %v", err)
 	}
 }

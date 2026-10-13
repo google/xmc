@@ -32,22 +32,43 @@ import (
 	"xmanager_cloud/pkg/components/store"
 )
 
+// ServerOption configures optional dependencies on a CMS Server.
+type ServerOption func(*Server)
+
+// WithAuthorizer configures the CallerAuthorizer used to authenticate and authorize RPC requests.
+func WithAuthorizer(auth CallerAuthorizer) ServerOption {
+	return func(s *Server) { s.auth = auth }
+}
+
 // Server implements the componentspb.ComponentManagerServiceServer interface.
 type Server struct {
 	componentspb.UnimplementedComponentManagerServiceServer
 	store store.Store
+	auth  CallerAuthorizer
 }
 
 // NewServer creates a new ComponentManagerService gRPC server backed by the provided Store.
-func NewServer(s store.Store) *Server {
-	return &Server{
-		store: s,
+func NewServer(s store.Store, opts ...ServerOption) *Server {
+	srv := &Server{store: s}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(srv)
+		}
 	}
+	return srv
 }
 
 // Store returns the underlying store instance.
 func (s *Server) Store() store.Store {
 	return s.store
+}
+
+func (s *Server) authenticate(ctx context.Context) error {
+	if s.auth == nil {
+		return status.Error(codes.Unauthenticated, "CMS authorizer is not configured")
+	}
+	_, err := s.auth.Authenticate(ctx)
+	return err
 }
 
 // validateComponentName validates and returns the canonical component name.
@@ -81,6 +102,23 @@ func validateNamedRequest[T namedRequest](s *Server, req T) (string, error) {
 	return validateComponentName(req.GetName())
 }
 
+func validateMutatingRequest[T namedRequest](ctx context.Context, s *Server, req T) (string, error) {
+	if s.auth == nil {
+		return "", status.Error(codes.Unauthenticated, "CMS authorizer is not configured")
+	}
+	if _, err := s.auth.AuthorizeMutating(ctx); err != nil {
+		return "", err
+	}
+	return validateNamedRequest(s, req)
+}
+
+func validateReadRequest[T namedRequest](ctx context.Context, s *Server, req T) (string, error) {
+	if err := s.authenticate(ctx); err != nil {
+		return "", err
+	}
+	return validateNamedRequest(s, req)
+}
+
 // checkStoreReady verifies that the component store is initialized.
 func (s *Server) checkStoreReady() error {
 	if s.store == nil {
@@ -91,7 +129,7 @@ func (s *Server) checkStoreReady() error {
 
 // SetComponentIntent applies or updates component intent within the store.
 func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetComponentIntentRequest) (*componentspb.SetComponentIntentResponse, error) {
-	canonicalName, err := validateNamedRequest(s, req)
+	canonicalName, err := validateMutatingRequest(ctx, s, req)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +208,7 @@ func canonicalDependencies(canonicalName string, deps []string) ([]string, error
 
 // PrepareDeactivation evaluates the safety of deactivating a component and initiates draining.
 func (s *Server) PrepareDeactivation(ctx context.Context, req *componentspb.PrepareDeactivationRequest) (*componentspb.PrepareDeactivationResponse, error) {
-	canonicalName, err := validateNamedRequest(s, req)
+	canonicalName, err := validateMutatingRequest(ctx, s, req)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +261,7 @@ func calculateEffectiveDrainSeconds(defaultSec int32, dt *durationpb.Duration) i
 
 // CompleteDeactivation finalizes component deactivation after draining is complete.
 func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.CompleteDeactivationRequest) (*componentspb.CompleteDeactivationResponse, error) {
-	canonicalName, err := validateNamedRequest(s, req)
+	canonicalName, err := validateMutatingRequest(ctx, s, req)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +279,7 @@ func (s *Server) CompleteDeactivation(ctx context.Context, req *componentspb.Com
 
 // UpdateObservedGeneration records the controller-observed generation and access coordinates.
 func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb.UpdateObservedGenerationRequest) (*componentspb.UpdateObservedGenerationResponse, error) {
-	canonicalName, err := validateNamedRequest(s, req)
+	canonicalName, err := validateMutatingRequest(ctx, s, req)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +301,7 @@ func (s *Server) UpdateObservedGeneration(ctx context.Context, req *componentspb
 
 // ExecuteDeletion executes component deletion according to policy and deletion protection.
 func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteDeletionRequest) (*componentspb.ExecuteDeletionResponse, error) {
-	canonicalName, err := validateNamedRequest(s, req)
+	canonicalName, err := validateMutatingRequest(ctx, s, req)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +323,7 @@ func (s *Server) ExecuteDeletion(ctx context.Context, req *componentspb.ExecuteD
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
 func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb.ResolveComponentSnapshotRequest) (*componentspb.ResolveComponentSnapshotResponse, error) {
-	canonicalName, err := validateNamedRequest(s, req)
+	canonicalName, err := validateReadRequest(ctx, s, req)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +349,7 @@ func (s *Server) ResolveComponentSnapshot(ctx context.Context, req *componentspb
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
 func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componentspb.ValidateComponentRequirementRequest) (*componentspb.ValidateComponentRequirementResponse, error) {
-	canonicalName, err := validateNamedRequest(s, req)
+	canonicalName, err := validateReadRequest(ctx, s, req)
 	if err != nil {
 		return nil, err
 	}
@@ -342,6 +380,9 @@ func (s *Server) ValidateComponentRequirement(ctx context.Context, req *componen
 // GetPlatformHealth retrieves overall system component health metrics and status.
 // If pageSize is unspecified or 0, the store defaults to 50 (max 1000) per AIP-158.
 func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPlatformHealthRequest) (*componentspb.GetPlatformHealthResponse, error) {
+	if err := s.authenticate(ctx); err != nil {
+		return nil, err
+	}
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
