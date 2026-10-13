@@ -434,6 +434,9 @@ func (s *Server) DeclareClusterEpoch(ctx context.Context, req *componentspb.Decl
 		return nil, err
 	}
 	c := req.GetCluster()
+	if c == nil {
+		return nil, status.Error(codes.InvalidArgument, "cluster identity is required")
+	}
 	res, err := s.store.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: c.GetUid(), Name: c.GetName(), Epoch: c.GetEpoch()})
 	if err != nil {
 		return nil, err

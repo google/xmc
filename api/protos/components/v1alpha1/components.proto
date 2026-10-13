@@ -412,7 +412,8 @@ message RequestSource {
 
 // Identity of a Kubernetes cluster that sends Component requests.
 message ClusterIdentity {
-  // UID of the cluster's kube-system Namespace: a lowercase hyphenated UUID.
+  // UID of the cluster's kube-system Namespace. DeclareClusterEpoch requires a lowercase hyphenated
+  // UUID; a RequestSource cluster uid must match the uid its cluster declared.
   string uid = 1 [
     (google.api.field_behavior) = REQUIRED,
     json_name = "uid"

@@ -135,7 +135,8 @@ func TestCheckSourceOwnership(t *testing.T) {
 		wantReason string
 	}{
 		{name: "no recorded owner is adopted (R2)", src: modifiedSource(func(s *RequestSource) { s.Namespace = "other" })},
-		{name: "owner without a UID after a takeover is adopted in its namespace (R2)", owner: &SourceOwner{Namespace: "xmc", ClusterUID: "cluster-2", Epoch: 2}, src: modifiedSource(func(s *RequestSource) { s.UID = "uid-b" })},
+		{name: "owner without a UID after a takeover is adopted in its namespace and cluster (R2)", owner: &SourceOwner{Namespace: "xmc", ClusterUID: "cluster-2", Epoch: 2}, src: modifiedSource(func(s *RequestSource) { s.UID, s.ClusterUID = "uid-b", "cluster-2" })},
+		{name: "owner without a UID after a takeover rejects the fenced-out cluster (R6)", owner: &SourceOwner{Namespace: "xmc", ClusterUID: "cluster-2", Epoch: 2}, src: modifiedSource(func(s *RequestSource) { s.UID = "uid-b" }), wantReason: "SOURCE_INCARNATION_MISMATCH"},
 		{name: "owner object writes (R3)", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Generation = 1 })},
 		{name: "another namespace conflicts (R4)", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Namespace = "other" }), wantReason: "SOURCE_NAMESPACE_CONFLICT"},
 		{
@@ -174,7 +175,7 @@ func TestCheckSourceOwnership(t *testing.T) {
 			want := []any{&errdetails.ErrorInfo{
 				Reason:   tt.wantReason,
 				Domain:   ErrorInfoDomain,
-				Metadata: map[string]string{"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": baseRequestSource.ClusterUID},
+				Metadata: map[string]string{"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": tt.owner.UID, "owner_cluster_uid": tt.owner.ClusterUID},
 			}}
 			if st.Code() != codes.FailedPrecondition {
 				t.Errorf("checkSourceOwnership() code = %v, want %v", st.Code(), codes.FailedPrecondition)

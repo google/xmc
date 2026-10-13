@@ -144,7 +144,8 @@ func checkSourceCreation(operation, canonicalName string, src RequestSource) err
 // write it:
 //   - R2: no recorded owner (written only by unsourced intents): src adopts the record.
 //   - R4: an owner in another namespace keeps the record: SOURCE_NAMESPACE_CONFLICT.
-//   - R2: an owner without a UID (cleared by a fence takeover) in src's namespace: src adopts it.
+//   - R2: an owner without a UID (cleared by a fence takeover) in src's namespace and cluster: src
+//     adopts it. The takeover records the declaring cluster, so a fenced-out cluster cannot.
 //   - R3: the owner object itself (same UID) writes; planSourcedIntent orders its generations.
 //   - R5: another incarnation in the owner's namespace and cluster adopts the record when
 //     ExpectedOwnerUID names the owner UID, which the caller sets after an uncached GET in its
@@ -160,7 +161,7 @@ func checkSourceOwnership(operation, canonicalName string, owner *SourceOwner, s
 		return errorWithInfo(codes.FailedPrecondition, ReasonSourceNamespaceConflict, ownerMetadata(operation, owner), fmt.Sprintf(
 			"component %q is owned by source %q in namespace %q; the request comes from namespace %q",
 			canonicalName, owner.UID, owner.Namespace, src.Namespace))
-	case owner.UID == "", owner.UID == src.UID:
+	case owner.UID == "" && owner.ClusterUID == src.ClusterUID, owner.UID == src.UID:
 		return nil
 	case owner.UID == src.ExpectedOwnerUID && owner.ClusterUID == src.ClusterUID:
 		return nil

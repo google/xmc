@@ -42,7 +42,10 @@ func (s *SpannerStore) DeclareClusterEpoch(ctx context.Context, cluster ClusterI
 		res, err = declareClusterEpochTx(ctx, txn, cluster)
 		return err
 	})
-	return res, err
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 // declareClusterEpochTx applies a declaration by cluster within txn.
@@ -84,10 +87,10 @@ func fenceMutation(fence *ClusterIdentity, cluster ClusterIdentity, outcome Decl
 // readFence returns the current fence holder, or nil before the first declaration.
 func readFence(ctx context.Context, txn *spanner.ReadWriteTransaction) (*ClusterIdentity, error) {
 	row, err := txn.ReadRow(ctx, fenceTable, spanner.Key{fenceID}, []string{"ActiveClusterUid", "ActiveClusterName", "Epoch"})
-	if spanner.ErrCode(err) == codes.NotFound {
-		return nil, nil
-	}
 	if err != nil {
+		if spanner.ErrCode(err) == codes.NotFound {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("failed to read the ownership fence: %w", err)
 	}
 	var fence ClusterIdentity

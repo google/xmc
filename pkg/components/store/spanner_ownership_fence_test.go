@@ -110,6 +110,13 @@ func TestDeclareClusterEpoch_TakeoverParity(t *testing.T) {
 			_, err = s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 5})
 			assertFenceRejected(t, err, store.ReasonClusterFenced, dr)
 
+			prodSource := store.RequestSource{UID: "uid-prod-2", Generation: 1, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 4}
+			_, err = s.SetSourcedComponentIntent(ctx, "fence-owned", intentSpec("v1.0.0"), nil, prodSource)
+			if reason := errorInfoReason(err); status.Code(err) != codes.FailedPrecondition || reason != store.ReasonSourceIncarnationMismatch {
+				t.Errorf("SetSourcedComponentIntent() from the fenced-out cluster error = %v (reason %q), want reason %q", err, reason, store.ReasonSourceIncarnationMismatch)
+			}
+			assertStoredOwner(ctx, t, s, "fence-owned", &store.SourceOwner{Generation: 3, Namespace: "xmc", ClusterUID: drClusterUID, Epoch: 5})
+
 			drSource := store.RequestSource{UID: "uid-dr", Generation: 1, Namespace: "xmc", ClusterUID: drClusterUID, Epoch: 5}
 			adopted, err := s.SetSourcedComponentIntent(ctx, "fence-owned", intentSpec("v1.0.0"), nil, drSource)
 			if err != nil {
@@ -136,6 +143,16 @@ func assertFenceRejected(t *testing.T, err error, wantReason string, active stor
 	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); st.Code() != codes.FailedPrecondition || diff != "" {
 		t.Errorf("DeclareClusterEpoch() error = %v, details mismatch (-want +got):\n%s", err, diff)
 	}
+}
+
+// errorInfoReason returns the ErrorInfo reason of err, or "" if it has none.
+func errorInfoReason(err error) string {
+	for _, d := range status.Convert(err).Details() {
+		if info, ok := d.(*errdetails.ErrorInfo); ok {
+			return info.GetReason()
+		}
+	}
+	return ""
 }
 
 // assertStoredOwner checks the recorded owner of name.

@@ -504,6 +504,7 @@ CREATE TABLE ComponentOwnershipFence (
   Epoch INT64 NOT NULL,
   DeclaredTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
   LastSeenTime TIMESTAMP OPTIONS (allow_commit_timestamp = TRUE),
+  CONSTRAINT Check_FenceId_Is_One CHECK (FenceId = 1),
 ) PRIMARY KEY (FenceId);
 
 -- Table: ExperimentComponentSnapshots

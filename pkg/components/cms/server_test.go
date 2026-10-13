@@ -745,6 +745,7 @@ func TestCMSServer_DeclareClusterEpoch(t *testing.T) {
 		},
 		{name: "cluster without a name is rejected", req: &componentspb.DeclareClusterEpochRequest{Cluster: &componentspb.ClusterIdentity{Uid: prodUID, Epoch: 2}}, wantCode: codes.InvalidArgument},
 		{name: "cluster uid that is not a UUID is rejected", req: &componentspb.DeclareClusterEpochRequest{Cluster: &componentspb.ClusterIdentity{Uid: "cluster-1", Name: "prod", Epoch: 2}}, wantCode: codes.InvalidArgument},
+		{name: "request without a cluster is rejected", req: &componentspb.DeclareClusterEpochRequest{}, wantCode: codes.InvalidArgument},
 		{name: "nil request is rejected", wantCode: codes.InvalidArgument},
 	}
 	for _, tt := range tests {
