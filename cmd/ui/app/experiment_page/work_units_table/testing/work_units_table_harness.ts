@@ -13,6 +13,7 @@
 // limitations under the License.
 import { ComponentHarness } from '@angular/cdk/testing';
 import { MatButtonHarness } from '@angular/material/button/testing';
+import { MatSortHarness } from '@angular/material/sort/testing';
 import {
   MatCellHarness,
   MatRowHarness,
@@ -29,6 +30,8 @@ export class WorkUnitsTableHarness extends ComponentHarness {
 
   private readonly _loadingBar = this.locatorForOptional(LoadingBarHarness);
   private readonly _table = this.locatorForOptional(MatTableHarness);
+  private readonly _sort = this.locatorFor(MatSortHarness);
+  private readonly _pageLabel = this.locatorFor('.paginator .page-label');
   private readonly _noWorkUnitsMessage = this.locatorForOptional('.no-work-units-message');
   private readonly _errorMessage = this.locatorForOptional('.error-message');
 
@@ -81,6 +84,16 @@ export class WorkUnitsTableHarness extends ComponentHarness {
 
   async hasNoWorkUnitsMessage(): Promise<boolean> {
     return !!(await this._noWorkUnitsMessage());
+  }
+
+  /** Returns the sort harness of the work units table. */
+  async getSort(): Promise<MatSortHarness> {
+    return this._sort();
+  }
+
+  /** Returns the trimmed paginator page label, e.g. "Page 1". */
+  async getPageLabel(): Promise<string> {
+    return (await (await this._pageLabel()).text()).trim();
   }
 
   async hasErrorMessage(): Promise<boolean> {
