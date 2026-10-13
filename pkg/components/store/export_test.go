@@ -86,4 +86,3 @@ func SetSourceLastSeenTimeForTest(ctx context.Context, s Store, canonicalName st
 		return nil
 	}
 }
-

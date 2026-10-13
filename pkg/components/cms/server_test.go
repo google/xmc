@@ -1665,4 +1665,3 @@ func TestCMSServer_OwnershipMetrics(t *testing.T) {
 		t.Errorf("SOURCE_INCARNATION_MISMATCH conflicts = %v, want %v", got, mismatchBefore+1)
 	}
 }
-

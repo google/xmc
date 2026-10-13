@@ -39,6 +39,7 @@ var (
 		store.ReasonSourceNamespaceConflict,
 		store.ReasonClusterFenced,
 		store.ReasonClusterEpochRegressed,
+		store.ReasonClusterNotDeclared,
 	}
 )
 
@@ -120,6 +121,13 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 		t.Fatalf("SetSourcedComponentIntent(initial) error = %v", err)
 	}
 	assertAdoptionIncremented(t, beforeAdoptions, store.AdoptionReasonInitial)
+	got, err := s.GetComponent(ctx, "metrics-comp")
+	if err != nil {
+		t.Fatalf("GetComponent(metrics-comp) error = %v", err)
+	}
+	if got.SourceLastSeenTime.IsZero() {
+		t.Errorf("GetComponent(metrics-comp).SourceLastSeenTime is zero, want the commit time of the sourced write")
+	}
 
 	// Unchanged replay does not increment adoptions.
 	beforeAdoptions = adoptionCounts()
@@ -140,6 +148,10 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 	beforeConflicts = conflictCounts()
 	_, _ = s.SetSourcedComponentIntent(ctx, "metrics-comp", intentSpec("v1.0.0"), nil, store.RequestSource{UID: "uid-2", Generation: 1, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 2})
 	assertConflictIncremented(t, beforeConflicts, store.ReasonSourceIncarnationMismatch)
+
+	beforeConflicts = conflictCounts()
+	_, _ = s.SetSourcedComponentIntent(ctx, "metrics-comp", intentSpec("v1.0.0"), nil, store.RequestSource{UID: "uid-1", Generation: 2, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 3})
+	assertConflictIncremented(t, beforeConflicts, store.ReasonClusterNotDeclared)
 
 	// Same-cluster CAS recreate increments same_cluster_recreate.
 	beforeAdoptions = adoptionCounts()

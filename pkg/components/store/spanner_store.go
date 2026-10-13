@@ -70,7 +70,7 @@ WHERE ActiveName IS NOT NULL
 ORDER BY Name ASC`
 
 	// componentColumnsSQL lists the Components columns that rowToComponentRecord reads.
-	componentColumnsSQL = `ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime, SourceUid, SourceGeneration, SourceNamespace, SourceClusterUid, SourceEpoch`
+	componentColumnsSQL = `ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime, SourceUid, SourceGeneration, SourceNamespace, SourceClusterUid, SourceEpoch, SourceLastSeenTime`
 
 	selectDependenciesByComponentIDSQL = `SELECT dep.Name
 FROM ComponentDependencies cd
@@ -289,6 +289,9 @@ func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, sp
 		}
 		finalRec.UpdateTime = commitTimestamp
 		finalRec.Etag = generateEtag(finalRec)
+	}
+	if src != nil {
+		finalRec.SourceLastSeenTime = commitTimestamp
 	}
 	if plan.write != writeNothing {
 		recordOwnerAdoption(plan.prevOwner, src, plan.created)
@@ -1237,6 +1240,7 @@ type componentRowData struct {
 	observedGen    spanner.NullInt64
 	createTime     time.Time
 	updateTime     time.Time
+	sourceLastSeen spanner.NullTime
 }
 
 func scanComponentRow(row *spanner.Row) (*componentRowData, error) {
@@ -1271,6 +1275,9 @@ func scanComponentRow(row *spanner.Row) (*componentRowData, error) {
 	if err := row.ColumnByName("UpdateTime", &d.updateTime); err != nil {
 		return nil, fmt.Errorf("failed to read UpdateTime: %w", err)
 	}
+	if err := row.ColumnByName("SourceLastSeenTime", &d.sourceLastSeen); err != nil {
+		return nil, fmt.Errorf("failed to read SourceLastSeenTime: %w", err)
+	}
 	return &d, nil
 }
 
@@ -1281,12 +1288,13 @@ func rowToComponentRecord(row *spanner.Row) (*ComponentRecord, error) {
 	}
 
 	rec := &ComponentRecord{
-		ComponentID: d.componentID,
-		Name:        d.name,
-		State:       componentspb.ComponentState(d.state),
-		Generation:  d.generation,
-		CreateTime:  d.createTime,
-		UpdateTime:  d.updateTime,
+		ComponentID:        d.componentID,
+		Name:               d.name,
+		State:              componentspb.ComponentState(d.state),
+		Generation:         d.generation,
+		CreateTime:         d.createTime,
+		UpdateTime:         d.updateTime,
+		SourceLastSeenTime: d.sourceLastSeen.Time, // Zero when NULL.
 	}
 
 	if d.observedGen.Valid {

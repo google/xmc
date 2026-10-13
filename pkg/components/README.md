@@ -101,7 +101,7 @@ All labels are bounded (no per-component or per-UID label cardinality):
 | Metric | Type & Labels | Alert / Meaning |
 | :--- | :--- | :--- |
 | `xmc_cms_component_owner_adoptions_total` | Counter (`reason=initial\|same_cluster_recreate\|epoch_takeover\|unsourced_claim`) | Committed owner adoptions across store writes. Alert/notify on `reason="epoch_takeover"` (confirm expected DR takeover). |
-| `xmc_cms_component_source_conflicts_total` | Counter (`reason=STALE_GENERATION\|SOURCE_INCARNATION_MISMATCH\|SOURCE_NAMESPACE_CONFLICT\|CLUSTER_FENCED\|CLUSTER_EPOCH_REGRESSED`) | Store ownership and cluster fence rejections. Page on `CLUSTER_EPOCH_REGRESSED` or sustained `CLUSTER_FENCED` at an equal epoch (split-brain or cluster restore). |
+| `xmc_cms_component_source_conflicts_total` | Counter (`reason=STALE_GENERATION\|SOURCE_INCARNATION_MISMATCH\|SOURCE_NAMESPACE_CONFLICT\|CLUSTER_FENCED\|CLUSTER_EPOCH_REGRESSED\|CLUSTER_NOT_DECLARED`) | Store ownership and cluster fence rejections. Page on `CLUSTER_EPOCH_REGRESSED` or sustained `CLUSTER_FENCED` at an equal epoch (split-brain or cluster restore). |
 | `xmc_cms_cluster_fence_epoch` | Gauge | Active cluster ownership fence epoch declared in CMS. |
 | `xmc_cms_component_owner_stale` | Gauge | Active owned components whose owner UID is unassigned after a fence takeover (`SourceUid IS NULL`) or whose `SourceLastSeenTime` is older than 15 minutes (`OwnerStaleThreshold`), updated on `DeclareClusterEpoch`. Alert when `> 0` for 30 minutes (orphaned component owner). |
 

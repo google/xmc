@@ -15,6 +15,7 @@
 package store
 
 import (
+	"slices"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -36,6 +37,17 @@ const (
 // OwnerStaleThreshold is the age after which an active component owner's last-seen timestamp is
 // counted as stale by xmc_cms_component_owner_stale.
 const OwnerStaleThreshold = 15 * time.Minute
+
+// sourceConflictReasons lists the ErrorInfo reasons counted by
+// xmc_cms_component_source_conflicts_total; each is pre-registered as a label value.
+var sourceConflictReasons = []string{
+	ReasonStaleGeneration,
+	ReasonSourceIncarnationMismatch,
+	ReasonSourceNamespaceConflict,
+	ReasonClusterFenced,
+	ReasonClusterEpochRegressed,
+	ReasonClusterNotDeclared,
+}
 
 var (
 	ownerAdoptionsTotal      = newOwnerAdoptionsCounter()
@@ -65,13 +77,7 @@ func newSourceConflictsCounter() *prometheus.CounterVec {
 		Name: "xmc_cms_component_source_conflicts_total",
 		Help: "Total number of component source ownership and cluster fence conflicts in CMS by reason.",
 	}, []string{"reason"})
-	for _, r := range []string{
-		ReasonStaleGeneration,
-		ReasonSourceIncarnationMismatch,
-		ReasonSourceNamespaceConflict,
-		ReasonClusterFenced,
-		ReasonClusterEpochRegressed,
-	} {
+	for _, r := range sourceConflictReasons {
 		counter.WithLabelValues(r)
 	}
 	return counter
@@ -141,12 +147,7 @@ func recordOwnerAdoption(prev *SourceOwner, src *RequestSource, created bool) {
 // recordSourceConflictError increments xmc_cms_component_source_conflicts_total when err carries a
 // source ownership or cluster fence conflict reason, and returns err unchanged.
 func recordSourceConflictError(err error) error {
-	switch reason := ErrorInfoReason(err); reason {
-	case ReasonStaleGeneration,
-		ReasonSourceIncarnationMismatch,
-		ReasonSourceNamespaceConflict,
-		ReasonClusterFenced,
-		ReasonClusterEpochRegressed:
+	if reason := ErrorInfoReason(err); slices.Contains(sourceConflictReasons, reason) {
 		sourceConflictsTotal.WithLabelValues(reason).Inc()
 	}
 	return err
