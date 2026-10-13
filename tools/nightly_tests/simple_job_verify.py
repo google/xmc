@@ -61,15 +61,6 @@ def _assert_work_unit_spec(
         expected_cpu_milli=EXPECTED_CPU_MILLICORES,
         expected_memory_bytes=EXPECTED_MEMORY_BYTES,
     )
-    if "multikueue" in expected_queue:
-        meta = raw_wu.current_work_unit_execution.metadata
-        mk = meta.multi_kueue_cluster_name
-        ex = meta.executing_cluster.cluster_name
-        mg = meta.management_cluster.cluster_name
-        if not mk or ex != mk or not mg or ex == mg:
-            raise AssertionError(
-                f"WorkUnit '{raw_wu.name}' invalid MultiKueue metadata: {mk=}, {ex=}, {mg=}."
-            )
     print(
         f"  [✓] Verified 100% Protobuf spec & resources for: {raw_wu.name} (Worker={worker_name})",
         flush=True,

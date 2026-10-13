@@ -31,6 +31,8 @@ exports_files([
     "managed_xprof_artifact_job_verify.py",
     "metrics_dashboard_job_verify.py",
     "metrics_job_verify.py",
+    "multikueue_job_verify.py",
+    "multikueue_job_verify_test.py",
     "multipod_job_verify.py",
     "pathways_job_verify.py",
     "per_job_node_selector_verify.py",
@@ -234,6 +236,26 @@ py_binary(
         "//tools/nightly_tests/verification:verifier_cli",
         "//tools/nightly_tests/verification:workload_verification",
     ],
+)
+
+py_binary(
+    name = "multikueue_job_verify",
+    srcs = ["multikueue_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":simple_job_verify",
+        ":xmc_entities_validator_lib",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
+    ],
+)
+
+py_test(
+    name = "multikueue_job_verify_test",
+    size = "small",
+    srcs = ["multikueue_job_verify_test.py"],
+    imports = ["../.."],
+    deps = [":multikueue_job_verify"],
 )
 
 py_test(
