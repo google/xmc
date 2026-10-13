@@ -94,10 +94,14 @@ export class StatusMessageFilter {
   protected readonly triggerLabel = computed(() =>
     this.stateOptions() ? 'Filters' : 'Filter status messages',
   );
-  /** Rows of the two-column Status grid, so options fill the first column top to bottom. */
-  protected readonly stateGridRows = computed(
-    () => `repeat(${Math.ceil((this.stateOptions()?.length ?? 0) / 2)}, auto)`,
-  );
+  /**
+   * Rows of the two-column Status grid, so options fill the first column top to bottom.
+   * Undefined without options, since `repeat(0, auto)` is invalid CSS.
+   */
+  protected readonly stateGridRows = computed(() => {
+    const length = this.stateOptions()?.length ?? 0;
+    return length > 0 ? `repeat(${Math.ceil(length / 2)}, auto)` : undefined;
+  });
 
   protected isStatePending(value: string): boolean {
     return this.pendingStates().has(value);
