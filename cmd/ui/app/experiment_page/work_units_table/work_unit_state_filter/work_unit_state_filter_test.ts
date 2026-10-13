@@ -60,7 +60,7 @@ describe('WorkUnitStateFilter', () => {
 
   it('should show the applied selection as checked', async () => {
     bootstrapFilter(['FAILED']);
-    const menu = await getHarness(MatMenuHarness);
+    const menu: MatMenuHarness = await getHarness(MatMenuHarness);
 
     await menu.open();
 
@@ -70,7 +70,7 @@ describe('WorkUnitStateFilter', () => {
 
   it('should emit the new selection once, in option order, when the menu closes', async () => {
     const context = bootstrapFilter();
-    const menu = await getHarness(MatMenuHarness);
+    const menu: MatMenuHarness = await getHarness(MatMenuHarness);
 
     await toggleStates(menu, 'Failed', 'Running');
 
@@ -79,7 +79,7 @@ describe('WorkUnitStateFilter', () => {
 
   it('should not emit when the selection is unchanged on close', async () => {
     const context = bootstrapFilter(['STOPPED']);
-    const menu = await getHarness(MatMenuHarness);
+    const menu: MatMenuHarness = await getHarness(MatMenuHarness);
 
     await toggleStates(menu);
     await toggleStates(menu, 'Running', 'Running');
@@ -89,7 +89,7 @@ describe('WorkUnitStateFilter', () => {
 
   it('should not overwrite a selection changed externally while the menu is open', async () => {
     const context = bootstrapFilter(['STOPPED']);
-    const menu = await getHarness(MatMenuHarness);
+    const menu: MatMenuHarness = await getHarness(MatMenuHarness);
 
     await menu.open();
     context.selected = ['FAILED'];
