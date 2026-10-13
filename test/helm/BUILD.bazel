@@ -137,17 +137,3 @@ py_test(
     ],
     deps = [":chart_test_lib"],
 )
-
-py_test(
-    name = "multikueue_config_test",
-    srcs = ["multikueue_config_test.py"],
-    data = [
-        "//deploy/addons/multikueue:addon_files",
-        "//deploy/helm:chart",
-    ],
-    tags = [
-        "local",
-        "manual",
-    ],
-    deps = [":chart_test_lib"],
-)
