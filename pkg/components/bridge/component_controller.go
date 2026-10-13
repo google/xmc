@@ -39,10 +39,6 @@ import (
 // componentControllerName names the controller in logs and metrics.
 const componentControllerName = "xmc-bridge-component"
 
-// staleComponentRetryDelay is how long the controller waits before reconciling a Component again
-// after the apiserver rejected a write because the cached copy was stale, so the cache can catch up.
-const staleComponentRetryDelay = time.Second
-
 var componentGVK = ComponentGVR.GroupVersion().WithKind("Component")
 
 // ComponentControllerOptions configures a ComponentController.
@@ -103,14 +99,10 @@ func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Reque
 	if err := c.client.Get(ctx, req.NamespacedName, item); err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
+	// A rejected finalizer patch, typically a 422 because the cached Component is stale, is
+	// retried with backoff like any other failure: a later pass reads the newer copy, and a
+	// persistent rejection keeps surfacing as an error instead of being retried silently.
 	item, err := c.ensureCleanupFinalizer(ctx, item)
-	if apierrors.IsInvalid(err) {
-		// The apiserver rejected the finalizer patch because the cached Component is stale: its
-		// finalizers changed, or its deletion started, since the cache last saw it. A later pass
-		// reads the newer copy.
-		logging.Info(ctx, "Component changed before the cleanup finalizer was attached; retrying", "namespace", req.Namespace, "name", req.Name, "error", err)
-		return reconcile.Result{RequeueAfter: staleComponentRetryDelay}, nil
-	}
 	if item == nil || err != nil {
 		return reconcile.Result{}, err
 	}

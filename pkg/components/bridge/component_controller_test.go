@@ -188,12 +188,12 @@ func TestComponentControllerReconcile(t *testing.T) {
 			wantFinal:    []string{legacyFinalizerCMSCleanup},
 		},
 		{
-			name:       "finalizer patch rejected as stale requeues shortly without an error",
+			name:       "finalizer patch rejected as stale returns an error for backoff without side effects",
 			objs:       []*unstructured.Unstructured{controllerTestComponent("app", enabled)},
 			cms:        &mockCMS{},
 			failures:   map[string]error{"patch": apierrors.NewInvalid(componentGVK.GroupKind(), "app", nil)},
 			target:     "app",
-			wantResult: reconcile.Result{RequeueAfter: staleComponentRetryDelay},
+			wantErr:    true,
 			wantWrites: []string{"patch"},
 		},
 		{
