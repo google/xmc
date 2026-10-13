@@ -41,6 +41,11 @@ from test.e2e.lib.config import (
     DEFAULT_VIEWER_USER,
 )
 from test.e2e.lib.dex_authenticator import DexAuthenticator
+from test.e2e.lib.jobset_verifier import (
+    assert_jobset_contract,
+    build_work_unit_payload,
+    wait_for_jobset_for_experiment,
+)
 from test.e2e.lib.ui_diagnostics import (
     get_screenshots_dir,
     save_screenshot,
@@ -77,6 +82,28 @@ class AdminResources:
 
     experiment_name: str
     artifact_name: str
+
+
+def _create_and_verify_work_unit(page: Page, experiment_name: str) -> None:
+    """Creates a work unit via REST and verifies its JobSet in Kubernetes."""
+    logger.info("Creating work unit under %s...", experiment_name)
+    wu_response = page.request.post(
+        f"{BASE_URL}/v1/{experiment_name}/workUnits",
+        data=build_work_unit_payload(),
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if wu_response.status not in (200, 201):
+        raise RuntimeError(
+            f"Failed to create work unit via API: {wu_response.status} {wu_response.text()}"
+        )
+    logger.info("✓ Work unit creation operation enqueued: %s", wu_response.json().get("name", ""))
+
+    jobset = wait_for_jobset_for_experiment(experiment_name)
+    assert_jobset_contract(jobset)
+    logger.info(
+        "✓ Verified JobSet %s in cpu-queue satisfies Non-Restarting JobSets Contract.",
+        jobset.get("metadata", {}).get("name", ""),
+    )
 
 
 def test_admin_flow_and_experiment_lifecycle(
@@ -163,7 +190,10 @@ def test_admin_flow_and_experiment_lifecycle(
     admin_art_name = art_json.get("name", "")
     logger.info("✓ Created admin artifact: %s", admin_art_name)
 
-    # 5. Assert experiment appears in the UI table
+    # 5. Create a work unit and verify the actuator creates a valid JobSet in cpu-queue
+    _create_and_verify_work_unit(page, experiment_name)
+
+    # 6. Assert experiment appears in the UI table
     logger.info("Reloading dashboard to verify experiment in table...")
     page.reload()
 
