@@ -308,3 +308,39 @@ CREATE TABLE WorkUnitStatusHistory (
 -- Sliding-window queue velocity and turnover rate queries.
 CREATE INDEX WorkUnitStatusHistoryByQueueAndCreateTime ON WorkUnitStatusHistory (QueueName, CreateTime DESC, NewState, PreviousState)
   INCLUDE (ResourceType, ResourceUnits, Xid, WorkUnitId, ExecutionId);
+
+-- Singleton table persisting the global scheduling pause toggle and resumption metadata.
+CREATE TABLE PauseSchedulingState (
+  Id BIGINT NOT NULL, -- Singleton key. Always 1.
+  SchedulingPaused BOOLEAN NOT NULL DEFAULT FALSE,
+  ResumptionRunId TEXT, -- Last triggered resumption run. NULL while paused.
+  ResumptionWorkerId TEXT, -- Worker currently holding the run, for fencing stale workers.
+  UpdatedAt TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (Id),
+  CONSTRAINT Check_Id_Is_One CHECK (Id = 1)
+);
+
+-- Tasks intercepted by the Actuator while scheduling is paused.
+CREATE TABLE PausedTasks (
+  Xid BIGINT NOT NULL,
+  WorkUnitId BIGINT NOT NULL,
+  TaskId TEXT NOT NULL,
+  Target TEXT NOT NULL, -- "experiments/{xid}/workUnits/{wid}/executions/{execution_id}"
+  ActionProto BYTEA NOT NULL, -- cloud.xmanager.v1.Action
+  OperationName TEXT NOT NULL,
+  TraceId TEXT NOT NULL,
+  Priority BIGINT NOT NULL, -- Higher values are replayed first.
+  CreateTime TIMESTAMPTZ NOT NULL,
+  ProcessedTime TIMESTAMPTZ, -- NULL while pending.
+  ResolutionStatus TEXT, -- e.g. replayed, skipped.
+  ResumptionRunId TEXT,
+  IsPending BOOLEAN GENERATED ALWAYS AS (CASE WHEN ProcessedTime IS NULL THEN TRUE ELSE NULL END) STORED,
+  -- 7 days after resolution; NULL while pending. UTC conversion keeps the expression IMMUTABLE.
+  ExpirationTime TIMESTAMPTZ GENERATED ALWAYS AS (((ProcessedTime AT TIME ZONE 'UTC') + INTERVAL '7 days') AT TIME ZONE 'UTC') STORED,
+  PRIMARY KEY (Xid, WorkUnitId, TaskId),
+  FOREIGN KEY (Xid, WorkUnitId) REFERENCES WorkUnits (Xid, WorkUnitId) ON DELETE CASCADE
+);
+
+-- Replay ordering for pending tasks. ActionProto is not included: B-tree entries are capped at ~2.7KB.
+CREATE INDEX PausedTasksUnprocessed ON PausedTasks (Priority DESC, CreateTime)
+  INCLUDE (Target, OperationName, TraceId, IsPending, Xid, WorkUnitId, TaskId) WHERE IsPending IS NOT NULL;
