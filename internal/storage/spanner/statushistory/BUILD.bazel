@@ -38,6 +38,7 @@ go_test(
     embed = [":statushistory"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//internal/storage",
         "//internal/storage/spanner/data",
         "//internal/storage/spanner/emulator",
         "@com_google_cloud_go_spanner//:spanner",
