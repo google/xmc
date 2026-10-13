@@ -482,7 +482,6 @@ func testConflictingCRDeletionPreservesOwner(t *testing.T, cfg *rest.Config) {
 	envOwner.assertNoCMSRecords(t)
 }
 
-
 // testComponentReadsAreCacheBacked checks that once the manager's cache has synced, neither
 // Reconcile's Get and List nor the dependents watch's List reach the API server.
 func testComponentReadsAreCacheBacked(t *testing.T, env *controllerEnv) {

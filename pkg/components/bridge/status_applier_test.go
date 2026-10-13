@@ -469,3 +469,27 @@ func TestPersistReconcileResult(t *testing.T) {
 		})
 	}
 }
+
+func TestDeletionEventGenerateName(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "short name kept", input: "my-comp", want: "my-comp.deletion-skipped-"},
+		{name: "exact max name kept", input: "a234567890123456789012345678901234567890", want: "a234567890123456789012345678901234567890.deletion-skipped-"},
+		{name: "long name truncated", input: "a2345678901234567890123456789012345678901234567890", want: "a234567890123456789012345678901234567890.deletion-skipped-"},
+		{name: "trailing separators trimmed", input: "a23456789012345678901234567890123456789-.x", want: "a23456789012345678901234567890123456789.deletion-skipped-"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := deletionEventGenerateName(tt.input)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("deletionEventGenerateName(%q) mismatch (-want +got):\n%s", tt.input, diff)
+			}
+			if len(got) > maxEventGenerateNameLen {
+				t.Errorf("deletionEventGenerateName(%q) length = %d, want <= %d", tt.input, len(got), maxEventGenerateNameLen)
+			}
+		})
+	}
+}

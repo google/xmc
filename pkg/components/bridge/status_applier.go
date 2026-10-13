@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -249,13 +250,31 @@ func PersistReconcileResult(ctx context.Context, c client.Client, item *unstruct
 // because the deleted CR is not the active CMS owner (DD §5).
 const ReasonStaleDeletion = "StaleDeletion"
 
+// deletionEventSuffix is appended to the CR name to form the Event GenerateName prefix.
+const deletionEventSuffix = ".deletion-skipped-"
+
+// maxEventGenerateNameLen bounds the GenerateName prefix to the API server's generated-name base
+// length (63 minus the 5-character random suffix), well within the 253-character name limit.
+const maxEventGenerateNameLen = 58
+
+// deletionEventGenerateName returns a GenerateName prefix for name that stays within
+// maxEventGenerateNameLen by truncating name while keeping deletionEventSuffix. Trailing '-' and
+// '.' left by truncation are trimmed so the prefix remains a valid DNS-1123 subdomain.
+func deletionEventGenerateName(name string) string {
+	maxNameLen := maxEventGenerateNameLen - len(deletionEventSuffix)
+	if len(name) > maxNameLen {
+		name = strings.TrimRight(name[:maxNameLen], "-.")
+	}
+	return name + deletionEventSuffix
+}
+
 func recordDeletionConflictEvent(ctx context.Context, c client.Client, item *unstructured.Unstructured, res *ReconcileResult) {
 	if c == nil || item == nil || res == nil || res.ConflictMessage == "" {
 		return
 	}
 	now := metav1.Now()
 	ev := &corev1.Event{
-		ObjectMeta:     metav1.ObjectMeta{GenerateName: item.GetName() + ".deletion-skipped-", Namespace: item.GetNamespace()},
+		ObjectMeta:     metav1.ObjectMeta{GenerateName: deletionEventGenerateName(item.GetName()), Namespace: item.GetNamespace()},
 		InvolvedObject: corev1.ObjectReference{APIVersion: item.GetAPIVersion(), Kind: item.GetKind(), Namespace: item.GetNamespace(), Name: item.GetName(), UID: item.GetUID()},
 		Reason:         ReasonStaleDeletion,
 		Message:        res.ConflictMessage,
@@ -269,4 +288,3 @@ func recordDeletionConflictEvent(ctx context.Context, c client.Client, item *uns
 		logging.Warn(ctx, "Failed to record deletion conflict warning event", "namespace", item.GetNamespace(), "name", item.GetName(), "error", err)
 	}
 }
-
