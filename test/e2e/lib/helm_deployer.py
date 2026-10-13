@@ -318,7 +318,7 @@ ui:
         return os.path.join(bazel_bin, manifest_rel)
 
     def _apply_crds(self) -> None:
-        """Applies upstream JobSet and Kueue CRDs with server-side apply."""
+        """Applies upstream JobSet and Kueue CRDs with server-side apply and waits until established."""
         crds_manifest = self._resolve_crds_manifest()
         context = f"kind-{self.cfg.cluster_name}"
         logger.info("Applying upstream JobSet and Kueue CRDs from %s...", crds_manifest)
@@ -330,6 +330,18 @@ ui:
                 "apply",
                 "--server-side",
                 "--force-conflicts",
+                "-f",
+                crds_manifest,
+            ]
+        )
+        run_cmd(
+            [
+                "kubectl",
+                "--context",
+                context,
+                "wait",
+                "--for=condition=established",
+                "--timeout=60s",
                 "-f",
                 crds_manifest,
             ]

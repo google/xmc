@@ -245,11 +245,14 @@ class TestHelmDeployer(unittest.TestCase):
 
     @patch.object(HelmDeployer, "_resolve_crds_manifest", return_value="/path/to/crds.yaml")
     @patch("test.e2e.lib.helm_deployer.run_cmd")
-    def test_apply_crds_uses_server_side_apply(self, mock_run, mock_resolve):
+    def test_apply_crds_uses_server_side_apply_and_waits_for_established(
+        self, mock_run, mock_resolve
+    ):
         self.deployer._apply_crds()
 
         mock_resolve.assert_called_once()
-        mock_run.assert_called_once_with(
+        self.assertEqual(mock_run.call_count, 2)
+        mock_run.assert_any_call(
             [
                 "kubectl",
                 "--context",
@@ -257,6 +260,18 @@ class TestHelmDeployer(unittest.TestCase):
                 "apply",
                 "--server-side",
                 "--force-conflicts",
+                "-f",
+                "/path/to/crds.yaml",
+            ]
+        )
+        mock_run.assert_any_call(
+            [
+                "kubectl",
+                "--context",
+                "kind-test-cluster",
+                "wait",
+                "--for=condition=established",
+                "--timeout=60s",
                 "-f",
                 "/path/to/crds.yaml",
             ]
