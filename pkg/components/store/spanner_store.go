@@ -1218,15 +1218,12 @@ func rowToComponentRecord(row *spanner.Row) (*ComponentRecord, error) {
 func scanSourceOwner(row *spanner.Row) (*SourceOwner, error) {
 	var uid, namespace, clusterUID spanner.NullString
 	var generation, epoch spanner.NullInt64
-	// A fixed-size array (not a map) avoids a per-row heap allocation and reads in a stable order.
-	cols := [...]struct {
+	for _, col := range [...]struct {
 		name string
 		dst  any
-	}{
-		{"SourceUid", &uid}, {"SourceGeneration", &generation}, {"SourceNamespace", &namespace},
-		{"SourceClusterUid", &clusterUID}, {"SourceEpoch", &epoch},
-	}
-	for _, col := range cols {
+	}{ // An array, unlike a map, does not allocate per row.
+		{"SourceUid", &uid}, {"SourceGeneration", &generation}, {"SourceNamespace", &namespace}, {"SourceClusterUid", &clusterUID}, {"SourceEpoch", &epoch},
+	} {
 		if err := row.ColumnByName(col.name, col.dst); err != nil {
 			return nil, fmt.Errorf("failed to read %s: %w", col.name, err)
 		}
