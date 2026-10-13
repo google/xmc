@@ -64,6 +64,9 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn("kind: MultiKueueConfig", manifest)
         self.assertIn("kind: MultiKueueCluster", manifest)
         self.assertIn("name: xmc-nightly-worker-1", manifest)
+        self.assertIn("xmc.google.com/project:", manifest)
+        self.assertIn("xmc.google.com/location:", manifest)
+        self.assertIn("xmc.google.com/cluster-name: xmc-nightly-worker-1", manifest)
         self.assertIn("clusterSource:", manifest)
         self.assertIn("location: multikueue-worker-kubeconfig", manifest)
 
@@ -77,8 +80,9 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn("rancher/k3s:v1.32.3-k3s1", manifest)
         self.assertIn("name: k3s-server", manifest)
         self.assertIn("--write-kubeconfig=/var/lib/rancher/k3s/k3s.yaml", manifest)
-        self.assertIn("volumeClaimTemplates:", manifest)
+        self.assertIn("node/multikueue-worker-0", manifest)
         self.assertIn("name: k3s-data", manifest)
+        self.assertNotIn("volumeClaimTemplates:", manifest)
 
     def test_worker_queues_addon_manifest_defines_queues_without_duplicating_wpc(self) -> None:
         manifest = self._read_repo_file(WORKER_QUEUES_MANIFEST_PATH)
@@ -94,12 +98,9 @@ class MultiKueueConfigTest(unittest.TestCase):
     def test_setup_multikueue_script_references_addon_and_wpc_manifests(self) -> None:
         script = self._read_repo_file(SETUP_SCRIPT_PATH)
         self.assertIn("multikueue-worker.yaml", script)
-        self.assertIn("deploy/helm/templates/wpc/", script)
+        self.assertIn("deploy/helm/templates/wpc", script)
         self.assertIn("worker-queues.yaml", script)
         self.assertIn("management-multikueue.yaml", script)
-        self.assertIn("xmc.google.com/project=", script)
-        self.assertIn("xmc.google.com/location=", script)
-        self.assertIn("xmc.google.com/cluster-name=", script)
         self.assertIn("xmc-nightly-worker-1", script)
 
 

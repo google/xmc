@@ -74,8 +74,10 @@ spec:
               command:
                 - kubectl
                 - --kubeconfig=/var/lib/rancher/k3s/k3s.yaml
-                - get
-                - --raw=/readyz
+                - wait
+                - --for=condition=Ready
+                - node/multikueue-worker-0
+                - --timeout=1s
             initialDelaySeconds: 10
             periodSeconds: 5
           resources:
@@ -93,16 +95,9 @@ spec:
             - name: k3s-run
               mountPath: /run
       volumes:
+        - name: k3s-data
+          emptyDir: {}
         - name: k3s-kubelet
           emptyDir: {}
         - name: k3s-run
           emptyDir: {}
-  volumeClaimTemplates:
-    - metadata:
-        name: k3s-data
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 10Gi
