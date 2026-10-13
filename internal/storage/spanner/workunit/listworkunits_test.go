@@ -475,7 +475,10 @@ func TestListWorkUnits_FilterIsolation(t *testing.T) {
 			t.Fatalf("ListWorkUnits(filter=%q, page=%d) failed: %v", filter, page, err)
 		}
 		for _, wu := range workUnits {
-			xid, _, _ := validator.ValidateWorkUnitName(wu.GetName())
+			xid, _, err := validator.ValidateWorkUnitName(wu.GetName())
+			if err != nil {
+				t.Fatalf("ValidateWorkUnitName(%q) failed: %v", wu.GetName(), err)
+			}
 			gotXIDs = append(gotXIDs, xid)
 		}
 		if nextPageToken == "" {
