@@ -11,6 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+@use '@angular/material' as mat;
+
+// Same blue as the experiment page action buttons, instead of the default error-red badge.
+:host {
+  @include mat.badge-overrides(
+    (
+      background-color: var(--mat-sys-primary),
+      text-color: var(--mat-sys-on-primary),
+    )
+  );
+}
+
 :host ::ng-deep .cdk-overlay-pane > .filter-menu.mat-mdc-menu-panel {
   max-width: none;
   min-width: 0;
