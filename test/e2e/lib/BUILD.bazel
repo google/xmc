@@ -27,6 +27,7 @@ py_library(
         "helm_deployer.py",
         "image_builder.py",
         "infra_retry.py",
+        "jobset_verifier.py",
         "kind.py",
         "orchestrator.py",
         "outcome.py",
@@ -133,6 +134,12 @@ py_test(
 py_test(
     name = "infra_retry_test",
     srcs = ["infra_retry_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "jobset_verifier_test",
+    srcs = ["jobset_verifier_test.py"],
     deps = [":orchestration_lib"],
 )
 

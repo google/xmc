@@ -123,6 +123,22 @@ py_test(
 )
 
 py_test(
+    name = "actuator_dev_oidc_config_test",
+    srcs = ["actuator_dev_oidc_config_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "actuator_dev_oidc_config_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
     name = "httproute_config_test",
     srcs = ["httproute_config_test.py"],
     data = ["//deploy/helm:chart"],

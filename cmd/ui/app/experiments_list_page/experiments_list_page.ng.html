@@ -15,6 +15,10 @@ limitations under the License.
 -->
 <h1>Experiments</h1>
 
+@if (isSchedulingPaused()) {
+  <xmc-scheduling-paused-banner />
+}
+
 <mat-card appearance="outlined">
   <mat-card-content>
     <xmc-experiments-table

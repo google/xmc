@@ -17,6 +17,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { firstValueFrom } from 'rxjs';
 
 import {
+  GetSchedulingStatusResponse,
   HealthStatusResponse,
   ListConfigEntriesResponse,
   UserInfoResponse,
@@ -148,6 +149,24 @@ describe('HealthService', () => {
       const result = await responsePromise;
 
       expect(result).toBeFalse();
+    });
+  });
+
+  describe('getSchedulingStatus', () => {
+    const mockResponse: GetSchedulingStatusResponse = {
+      isSchedulingPaused: true,
+    };
+
+    it('should GET /health/scheduling with credentials', async () => {
+      const responsePromise = firstValueFrom(state.service.getSchedulingStatus());
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/health/scheduling`);
+
+      expect(req.request.method).toBe('GET');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush(mockResponse);
+      const response = await responsePromise;
+
+      expect(response).toEqual(mockResponse);
     });
   });
 

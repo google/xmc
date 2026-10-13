@@ -73,6 +73,7 @@ go_test(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//cmd/reconciler/hypercomputeclient",
+        "//internal/grpcerr",
         "//internal/kubernetes/common/constants",
         "//internal/storage",
         "@com_github_google_go_cmp//cmp",

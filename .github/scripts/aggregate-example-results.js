@@ -120,7 +120,7 @@ function aggregateResults(rawResults, { title } = {}) {
       const name = r.name || '';
       const statusBadge = formatStatusBadge(r.status);
       const launchStatus = r.launch_status || 'N/A';
-      const verifyStatus = r.verify_status || 'N/A';
+      const verifyStatus = r.verify_status?.toLowerCase() === 'skipped' ? '⏭️ Skipped' : r.verify_status || 'N/A';
       const xid = r.xid || 'N/A';
 
       summaryLines.push(
@@ -133,7 +133,7 @@ function aggregateResults(rawResults, { title } = {}) {
     const name = r.name || 'N/A';
     const statusBadge = formatStatusBadge(r.status);
     const launchStatus = r.launch_status || 'N/A';
-    const verifyStatus = r.verify_status || 'N/A';
+    const verifyStatus = r.verify_status?.toLowerCase() === 'skipped' ? '⏭️ Skipped' : r.verify_status || 'N/A';
     const xid = r.xid || 'N/A';
 
     summaryLines.push('| Property | Value |');

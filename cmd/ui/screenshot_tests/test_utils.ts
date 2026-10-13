@@ -819,6 +819,18 @@ export async function handleConfigsRoute(route: Route) {
   });
 }
 
+export async function handleSchedulingStatusRoute(route: Route) {
+  if (route.request().resourceType() === 'document') {
+    await route.fallback();
+    return;
+  }
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ isSchedulingPaused: false }),
+  });
+}
+
 export async function handleClusterQueuesRoute(route: Route) {
   if (route.request().resourceType() === 'document') {
     await route.fallback();
@@ -964,9 +976,10 @@ export async function setupMockRoutes(page: Page) {
   await page.route(/\/health\/userinfo/, handleUserInfoRoute);
   await page.route(/\/config\.js/, handleConfigRoute);
 
-  // Admin Panel
+  // Admin Panel & Scheduling Status
   await page.route(/\/health\/status/, handleHealthStatusRoute);
   await page.route(/\/health\/configs/, handleConfigsRoute);
+  await page.route(/\/health\/scheduling$/, handleSchedulingStatusRoute);
 
   // Resource Dashboard
   await page.route(/\/clusterqueues(?:\?.*)?$/, handleClusterQueuesRoute);
