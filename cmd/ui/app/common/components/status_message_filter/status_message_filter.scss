@@ -55,11 +55,11 @@
   gap: 0.25rem;
 }
 
-// Two columns filled top to bottom, so options keep proto order down the first column.
+// Two columns filled top to bottom (rows set from the option count in the template), so options
+// keep proto order down the first column.
 .state-filter-grid {
   display: grid;
   grid-template-columns: repeat(2, auto);
-  grid-template-rows: repeat(6, auto);
   grid-auto-flow: column;
   column-gap: 1rem;
 }

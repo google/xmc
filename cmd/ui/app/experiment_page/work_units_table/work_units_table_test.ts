@@ -490,6 +490,20 @@ describe('WorkUnitsTable Component', () => {
       expect((await harness.getDataRows()).length).toBe(3);
     });
 
+    it('should keep the filter when moving to the next page', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+      await harness.toggleStates('Failed');
+
+      await goToSecondPage(harness);
+
+      expect(lastRequest()).toEqual({
+        ...DEFAULT_REQUEST,
+        pageToken: 'page2',
+        filter: 'state = "FAILED"',
+      });
+    });
+
     it('should show a filter-specific message when no work units match', async () => {
       bootstrap(WorkUnitsTable, { xid: '1' });
       const harness = await getHarness(WorkUnitsTableHarness);
