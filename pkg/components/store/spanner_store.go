@@ -357,7 +357,12 @@ func recordNonIntentOwnerTx(txn *spanner.ReadWriteTransaction, rec *ComponentRec
 	return writeOwnerColumnsTx(txn, rec, nonIntentOwner(rec.Owner, src))
 }
 
+// writeOwnerColumnsTx buffers a write of owner into rec's source columns, with SourceLastSeenTime
+// at the commit timestamp, and sets rec.Owner. A nil owner is a no-op that keeps the recorded owner.
 func writeOwnerColumnsTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord, owner *SourceOwner) error {
+	if owner == nil {
+		return nil
+	}
 	rec.Owner = owner
 	return txn.BufferWrite([]*spanner.Mutation{spanner.UpdateMap("Components", map[string]any{
 		"ComponentId": rec.ComponentID, "SourceUid": owner.UID, "SourceGeneration": owner.Generation,
