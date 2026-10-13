@@ -202,7 +202,7 @@ kubectl apply -f deploy/ci/bazel-remote-cache.yaml
 
 ## 4. Headless KinD & Playwright End-to-End (E2E) Pipeline
 
-The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml)) spins up an entire ephemeral XMC environment for every merge queue entry (`merge_group`), on manual dispatch (`workflow_dispatch`), and via reusable workflow calls (`workflow_call`). On `pull_request` events targeting `main`, the `run-e2e` job is skipped via `if: github.event_name != 'pull_request'` so the `KinD & Playwright Headless E2E` required status check reports a skipped (passing) status on pull requests (allowing them to enter the merge queue) while executing the full suite on `merge_group`.
+The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml)) spins up an entire ephemeral XMC environment for every merge queue entry (`merge_group`), on manual dispatch (`workflow_dispatch`), and via reusable workflow calls (`workflow_call`). On `pull_request` events targeting `main`, the heavy `execute-e2e` job is skipped via `if: github.event_name != 'pull_request'` while the lightweight `run-e2e` (`KinD & Playwright Headless E2E`) gate job completes with `conclusion: SUCCESS` so pull requests satisfy the required status check to enter the merge queue, where the full E2E suite executes on `merge_group`.
 
 ### Architecture & Resource Isolation
 

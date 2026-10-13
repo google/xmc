@@ -43,3 +43,8 @@ export interface UserInfoResponse {
   privileges?: Privilege[];
   [key: string]: any;
 }
+
+export interface GetSchedulingStatusResponse {
+  isSchedulingPaused?: boolean;
+  [key: string]: any;
+}

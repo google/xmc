@@ -137,11 +137,21 @@ type BatcherConfig struct {
 
 // UpdateBatcher is responsible for batching updates and processing them.
 type UpdateBatcher struct {
-	Updates                map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate
+	Updates map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate
+	// UpdatesMu guards Updates and retries. Sharing one lock lets each tick
+	// snapshot pending updates and merge due retries atomically.
 	UpdatesMu              sync.Mutex
 	tickDuration           time.Duration
 	maxParallelExperiments int
 	Storage                StorageUpdater // Use an interface for testability
+
+	// retries holds updates whose flush failed transiently, keyed by
+	// (xid, wid, source). Guarded by UpdatesMu; lazily initialized.
+	retries  map[slotKey]retryEntry
+	removed  map[slotKey]int64
+	flushing bool
+	// now returns the current time; nil means time.Now. Injectable for tests.
+	now func() time.Time
 }
 
 // NewUpdateBatcher creates a new UpdateBatcher.
@@ -170,7 +180,41 @@ func (b *UpdateBatcher) Add(ctx context.Context, xid int64, update storagepkg.Wo
 	if _, exists := b.Updates[xid][update.WID]; !exists {
 		b.Updates[xid][update.WID] = make(map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
 	}
+	// Storage skips updates whose EID is not the current execution, so letting a
+	// stale (lower-EID) update replace a pending newer one would silently drop the
+	// newer execution's update.
+	if pending, exists := b.Updates[xid][update.WID][source]; exists && update.EID < pending.EID {
+		return
+	}
 	b.Updates[xid][update.WID][source] = update
+}
+
+// Remove evicts any pending or queued-for-retry update for (xid, wid, source)
+// whose EID is <= eid. Used after a terminal status is persisted synchronously
+// on deletion so a stale pending update cannot flush later without triggering a
+// second Spanner write.
+func (b *UpdateBatcher) Remove(xid, wid, eid int64, source UpdateSource) {
+	b.UpdatesMu.Lock()
+	defer b.UpdatesMu.Unlock()
+	b.removeRetryLocked(slotKey{xid: xid, wid: wid, source: source}, eid)
+	byWID, ok := b.Updates[xid]
+	if !ok {
+		return
+	}
+	bySource, ok := byWID[wid]
+	if !ok {
+		return
+	}
+	if pending, ok := bySource[source]; !ok || pending.EID > eid {
+		return
+	}
+	delete(bySource, source)
+	if len(bySource) == 0 {
+		delete(byWID, wid)
+	}
+	if len(byWID) == 0 {
+		delete(b.Updates, xid)
+	}
 }
 
 // BatchProcessor runs the background processing loop.
@@ -192,96 +236,76 @@ func (b *UpdateBatcher) BatchProcessor(ctx context.Context) error {
 	}
 }
 
-// processBatches processes one batch of updates. Returns true if any batches were processed.
+// processBatches processes one batch of updates, including retries that are due.
+// Returns true if any batches were processed. It is only called from the single
+// BatchProcessor goroutine and never runs concurrently with itself; Add and the
+// per-experiment flush goroutines may run concurrently with it.
 func (b *UpdateBatcher) processBatches(ctx context.Context) bool {
 	startTime := time.Now()
 	defer func() {
 		duration := time.Since(startTime)
 		batchProcessingDuration.WithLabelValues().Observe(duration.Seconds())
 	}()
-	b.UpdatesMu.Lock()
-	if len(b.Updates) == 0 {
-		b.UpdatesMu.Unlock()
+	pending, retries := b.takeSnapshots()
+	if len(pending) == 0 {
 		return false
 	}
-	currentUpdates := b.Updates
-	b.Updates = make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
-	b.UpdatesMu.Unlock()
+	defer b.finishFlush()
 
-	logging.Info(ctx, "Processing batches", "numExperiments", len(currentUpdates))
+	logging.Info(ctx, "Processing batches", "numExperiments", len(pending))
 	batchesProcessedTotal.WithLabelValues().Inc()
-	experimentsPerCycle.WithLabelValues().Observe(float64(len(currentUpdates)))
+	experimentsPerCycle.WithLabelValues().Observe(float64(len(pending)))
 
-	limit := b.maxParallelExperiments
-	sem := make(chan struct{}, limit)
-
+	sem := make(chan struct{}, b.maxParallelExperiments)
 	var wg sync.WaitGroup
-	for xid, widMap := range currentUpdates {
+	for xid, widMap := range pending {
+		xidRetries := retries[xid]
 		wg.Add(1)
 		sem <- struct{}{} // Acquire semaphore slot
-
-		go func(xid int64, widMap map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate) {
+		go func() {
 			defer func() {
 				<-sem // Release semaphore slot
 				wg.Done()
 			}()
-			b.processExperimentUpdates(ctx, xid, widMap)
-		}(xid, widMap)
+			b.processExperimentUpdates(ctx, xid, widMap, xidRetries)
+		}()
 	}
 	wg.Wait()
-
 	return true
 }
 
-func (b *UpdateBatcher) processExperimentUpdates(ctx context.Context, xid int64, widMap map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate) {
+func (b *UpdateBatcher) processExperimentUpdates(ctx context.Context, xid int64, widMap map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, retries []batchEntry) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
-
-	var updatesToSend []*storagepkg.WorkUnitExecutionUpdate
-	numUpdates := 0
-	for _, sourceMap := range widMap {
-		if jsUpdate, ok := sourceMap[JobsetSource]; ok {
-			u := jsUpdate
-			updatesToSend = append(updatesToSend, &u)
-			numUpdates++
-		}
-		if wlUpdate, ok := sourceMap[WorkloadSource]; ok {
-			u := wlUpdate
-			updatesToSend = append(updatesToSend, &u)
-			numUpdates++
-		}
-		if ksUpdate, ok := sourceMap[KueueSyncSource]; ok {
-			u := ksUpdate
-			updatesToSend = append(updatesToSend, &u)
-			numUpdates++
-		}
+	xidStr := fmt.Sprintf("%d", xid)
+	if len(retries) > 0 {
+		updatesRetriedTotal.WithLabelValues(xidStr).Add(float64(len(retries)))
 	}
-
-	if numUpdates > 0 {
-		xidStr := fmt.Sprintf("%d", xid)
-		updatesProcessedTotal.WithLabelValues(xidStr).Add(float64(numUpdates))
-		workunitsPerExperiment.WithLabelValues(xidStr).Observe(float64(len(widMap)))
-	}
-
-	if len(updatesToSend) == 0 {
+	batch := buildExperimentBatch(widMap, retries)
+	if len(batch) == 0 {
 		return
 	}
+	updatesProcessedTotal.WithLabelValues(xidStr).Add(float64(len(batch)))
+	workunitsPerExperiment.WithLabelValues(xidStr).Observe(float64(countWorkUnits(batch)))
 
 	if b.Storage == nil {
 		logging.Error(ctx, "Storage is not initialized in UpdateBatcher")
-		updateWorkUnitExecutionsFailures.WithLabelValues(fmt.Sprintf("%d", xid), "storage_nil").Inc()
+		updateWorkUnitExecutionsFailures.WithLabelValues(xidStr, "storage_nil").Inc()
 		return
 	}
 
-	xidStr := fmt.Sprintf("%d", xid)
-	updateWorkUnitExecutionsCalls.WithLabelValues(xidStr).Inc()
-	updatesPerBatch.WithLabelValues(xidStr).Observe(float64(len(updatesToSend)))
-	b.callUpdateWorkUnitExecutions(ctx, xid, updatesToSend)
+	updatesPerBatch.WithLabelValues(xidStr).Observe(float64(len(batch)))
+	if err := b.callUpdateWorkUnitExecutions(ctx, xid, updatePointers(batch)); err != nil {
+		b.handleFlushFailure(ctx, xid, batch, err)
+	}
 }
 
-func (b *UpdateBatcher) callUpdateWorkUnitExecutions(ctx context.Context, xid int64, updatesToSend []*storagepkg.WorkUnitExecutionUpdate) {
+// callUpdateWorkUnitExecutions sends updatesToSend to storage, records call
+// metrics, and returns the storage error, if any.
+func (b *UpdateBatcher) callUpdateWorkUnitExecutions(ctx context.Context, xid int64, updatesToSend []*storagepkg.WorkUnitExecutionUpdate) error {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 
 	xidStr := fmt.Sprintf("%d", xid)
+	updateWorkUnitExecutionsCalls.WithLabelValues(xidStr).Inc()
 	storageCallStartTime := time.Now()
 
 	taskCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -295,17 +319,22 @@ func (b *UpdateBatcher) callUpdateWorkUnitExecutions(ctx context.Context, xid in
 
 	if err != nil {
 		logging.Error(taskCtx, "Failed to update work unit executions for xid", "xid", xid, "error", err)
-		// Attempt to get a status code, default to "unknown"
-		reason := "unknown"
-		st, ok := status.FromError(err)
-		if ok {
-			reason = st.Code().String()
-		} else if errors.Is(err, context.DeadlineExceeded) {
-			reason = "deadline_exceeded"
-		}
-		updateWorkUnitExecutionsFailures.WithLabelValues(xidStr, reason).Inc()
-	} else {
-		logging.Info(taskCtx, "Updated work unit executions for xid", "xid", xid, "res", res)
-		updateWorkUnitExecutionsSuccess.WithLabelValues(xidStr).Inc()
+		updateWorkUnitExecutionsFailures.WithLabelValues(xidStr, storageFailureReason(err)).Inc()
+		return err
 	}
+	logging.Info(taskCtx, "Updated work unit executions for xid", "xid", xid, "res", res)
+	updateWorkUnitExecutionsSuccess.WithLabelValues(xidStr).Inc()
+	return nil
+}
+
+// storageFailureReason returns the metric label for a storage error: its gRPC
+// code if it has one, "deadline_exceeded" for context deadlines, else "unknown".
+func storageFailureReason(err error) string {
+	if st, ok := status.FromError(err); ok {
+		return st.Code().String()
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "deadline_exceeded"
+	}
+	return "unknown"
 }
