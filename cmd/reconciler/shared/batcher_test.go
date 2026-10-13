@@ -56,6 +56,22 @@ func (m *mockStorageUpdater) clearCalls() {
 	m.calls = make(map[int64][]*storagepkg.WorkUnitExecutionUpdate)
 }
 
+type workUnitState = essmsgpb.WorkUnitStatus_WorkUnitState
+type workUnitExecution = essmsgpb.WorkUnitExecution
+
+const (
+	stateRunning   = essmsgpb.WorkUnitStatus_RUNNING
+	stateCompleted = essmsgpb.WorkUnitStatus_COMPLETED
+)
+
+func testUpdate(wid, eid int64, state workUnitState) storagepkg.WorkUnitExecutionUpdate {
+	return storagepkg.WorkUnitExecutionUpdate{
+		WID:               wid,
+		EID:               eid,
+		WorkUnitExecution: &essmsgpb.WorkUnitExecution{Status: &essmsgpb.WorkUnitStatus{State: state}},
+	}
+}
+
 func TestNewUpdateBatcher(t *testing.T) {
 	tests := []struct {
 		name                 string
@@ -132,6 +148,106 @@ func TestUpdateBatcherAdd(t *testing.T) {
 	}
 	if val := testutil.ToFloat64(updatesAddedTotal.WithLabelValues("456")); val != 1 {
 		t.Errorf("updatesAddedTotal counter mismatch for xid 456: got %v, want 1", val)
+	}
+}
+
+func TestUpdateBatcherAdd_EIDOrdering(t *testing.T) {
+	const xid, wid = int64(123), int64(1)
+	tests := []struct {
+		name   string
+		first  storagepkg.WorkUnitExecutionUpdate
+		second storagepkg.WorkUnitExecutionUpdate
+		want   storagepkg.WorkUnitExecutionUpdate
+	}{
+		{
+			name:   "lower EID does not overwrite higher EID",
+			first:  storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 2, ForceStatusMessageUpdate: true},
+			second: storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 1},
+			want:   storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 2, ForceStatusMessageUpdate: true},
+		},
+		{
+			name:   "equal EID overwrites",
+			first:  storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 2},
+			second: storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 2, ForceStatusMessageUpdate: true},
+			want:   storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 2, ForceStatusMessageUpdate: true},
+		},
+		{
+			name:   "higher EID overwrites",
+			first:  storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 1},
+			second: storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 2},
+			want:   storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 2},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b := NewUpdateBatcher(t.Context(), &BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
+			b.Add(t.Context(), xid, tc.first, JobsetSource)
+			b.Add(t.Context(), xid, tc.second, JobsetSource)
+
+			b.UpdatesMu.Lock()
+			defer b.UpdatesMu.Unlock()
+			if diff := cmp.Diff(tc.want, b.Updates[xid][wid][JobsetSource], protocmp.Transform()); diff != "" {
+				t.Errorf("pending update mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestUpdateBatcherRemove(t *testing.T) {
+	const xid, wid = int64(123), int64(1)
+	tests := []struct {
+		name      string
+		pending   *storagepkg.WorkUnitExecutionUpdate
+		other     *storagepkg.WorkUnitExecutionUpdate
+		removeEID int64
+		want      map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate
+	}{
+		{
+			name:      "no-op on empty batcher",
+			removeEID: 1,
+			want:      map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{},
+		},
+		{
+			name:      "evicts equal EID and cleans up empty maps",
+			pending:   &storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 2},
+			removeEID: 2,
+			want:      map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{},
+		},
+		{
+			name:      "evicts lower pending EID and preserves sibling source",
+			pending:   &storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 1},
+			other:     &storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 1},
+			removeEID: 2,
+			want: map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{
+				xid: {wid: {WorkloadSource: {WID: wid, EID: 1}}},
+			},
+		},
+		{
+			name:      "preserves higher pending EID",
+			pending:   &storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 3},
+			removeEID: 2,
+			want: map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{
+				xid: {wid: {JobsetSource: {WID: wid, EID: 3}}},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b := NewUpdateBatcher(t.Context(), &BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
+			if tc.pending != nil {
+				b.Add(t.Context(), xid, *tc.pending, JobsetSource)
+			}
+			if tc.other != nil {
+				b.Add(t.Context(), xid, *tc.other, WorkloadSource)
+			}
+			b.Remove(xid, wid, tc.removeEID, JobsetSource)
+
+			b.UpdatesMu.Lock()
+			defer b.UpdatesMu.Unlock()
+			if diff := cmp.Diff(tc.want, b.Updates, protocmp.Transform()); diff != "" {
+				t.Errorf("Updates after Remove (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -261,8 +377,8 @@ func TestProcessBatches_Metrics(t *testing.T) {
 		mockStorage := &mockStorageUpdater{}
 		batcher := NewUpdateBatcher(t.Context(), &BatcherConfig{TickDuration: 1 * time.Millisecond}, mockStorage)
 
-		// Call processExperimentUpdates with an empty widMap
-		batcher.processExperimentUpdates(ctx, 999, make(map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate))
+		// Call processExperimentUpdates with an empty batch
+		batcher.processExperimentUpdates(ctx, 999, nil, nil)
 
 		xidStr := "999"
 		if got := testutil.ToFloat64(updatesProcessedTotal.WithLabelValues(xidStr)); got != 0 {

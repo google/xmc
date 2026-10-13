@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 )
 
 func TestListCharts_All(t *testing.T) {
@@ -419,11 +419,5 @@ func TestListCharts_ParentDashboard_Pagination(t *testing.T) {
 	}
 	if token2 != "" {
 		t.Errorf("ListCharts page 2 token should be empty, got %q", token2)
-	}
-}
-
-func TestExtractChartCursor_Nil(t *testing.T) {
-	if _, err := ExtractChartCursor(nil); err == nil {
-		t.Errorf("ExtractChartCursor(nil) expected error, got nil")
 	}
 }

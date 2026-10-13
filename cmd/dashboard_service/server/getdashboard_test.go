@@ -22,8 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	spb "xmanager_cloud/api/protos/dashboard"
 )
 
 func TestGetDashboard(t *testing.T) {
@@ -31,8 +30,8 @@ func TestGetDashboard(t *testing.T) {
 
 	t.Run("successful retrieval by non-owner authenticated user", func(t *testing.T) {
 		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return &dpb.Dashboard{
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*spb.Dashboard, error) {
+				return &spb.Dashboard{
 					Name:  "dashboards/" + dashboardId,
 					Title: "Sample Dashboard",
 					Owner: "owner@example.com",
@@ -61,8 +60,8 @@ func TestGetDashboard(t *testing.T) {
 
 	t.Run("successful retrieval with populated chart_ids", func(t *testing.T) {
 		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return &dpb.Dashboard{
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*spb.Dashboard, error) {
+				return &spb.Dashboard{
 					Name:     "dashboards/" + dashboardId,
 					Title:    "Dashboard with Charts",
 					Owner:    "owner@example.com",
@@ -125,7 +124,7 @@ func TestGetDashboard(t *testing.T) {
 
 	t.Run("dashboard not found returns NotFound", func(t *testing.T) {
 		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*spb.Dashboard, error) {
 				return nil, status.Error(codes.NotFound, "row not found")
 			},
 		}
@@ -139,7 +138,7 @@ func TestGetDashboard(t *testing.T) {
 
 	t.Run("repo error returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*spb.Dashboard, error) {
 				return nil, errors.New("spanner timeout")
 			},
 		}

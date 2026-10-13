@@ -521,6 +521,99 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         )
         self.assertEqual(len(res), 1)
 
+    def test_pageerror_and_same_origin_http_errors_captured(self) -> None:
+        mock_pw, _, _, mock_page = self._create_mock_playwright()
+        with mock.patch.object(
+            ui_entities_validator,
+            "sync_playwright",
+            return_value=mock.MagicMock(start=mock.MagicMock(return_value=mock_pw)),
+        ):
+            s = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+            s.start()
+
+        listeners = {call[0][0]: call[0][1] for call in mock_page.on.call_args_list}
+        listeners["pageerror"](RuntimeError("uncaught TypeError"))
+        self.assertEqual(s.page_errors, ["uncaught TypeError"])
+
+        with mock.patch("sys.stdout", io.StringIO()):
+            listeners["response"](
+                mock.MagicMock(status=502, url="https://xmc.example.com/v1/clusterqueues?a=1")
+            )
+            listeners["response"](
+                mock.MagicMock(status=404, url="https://external-cdn.example.org/font.woff2")
+            )
+            listeners["response"](
+                mock.MagicMock(status=200, url="https://xmc.example.com/api/v1/ok")
+            )
+
+        self.assertEqual(s.http_errors, ["502 https://xmc.example.com/v1/clusterqueues"])
+        s.close()
+
+    def test_navigate_to_route_success_and_error_cases(self) -> None:
+        session = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+        _, _, _, mock_page = self._create_mock_playwright()
+        session._page = mock_page
+        mock_page.url = "https://xmc.example.com/resources"
+
+        session.navigate_to_route("resources", "xmc-resource-dashboard", "rod_landing.png")
+        mock_page.goto.assert_called_once_with(
+            "https://xmc.example.com/resources", wait_until="networkidle", timeout=60000
+        )
+        mock_page.wait_for_selector.assert_called_once_with(
+            "xmc-resource-dashboard, xmc-home-page, .guest-page-container",
+            timeout=60000,
+        )
+
+        mock_page.url = "https://xmc.example.com/unexpected"
+        with self.assertRaises(ui_entities_validator.UIVerificationError) as redir_ctx:
+            session.navigate_to_route("resources", "xmc-resource-dashboard", "rod_landing.png")
+        self.assertIn("UNEXPECTED REDIRECT", str(redir_ctx.exception))
+
+        mock_page.url = "https://xmc.example.com/resources"
+        mock_page.locator.side_effect = lambda sel: mock.MagicMock(
+            count=mock.MagicMock(return_value=1),
+            inner_text=mock.MagicMock(return_value="Access Denied"),
+        )
+        with self.assertRaises(ui_entities_validator.UIVerificationError) as auth_ctx:
+            session.navigate_to_route("resources", "xmc-resource-dashboard", "rod_landing.png")
+        self.assertIn("AUTHENTICATION REQUIRED", str(auth_ctx.exception))
+
+    def test_assert_no_runtime_errors_pass_and_failures(self) -> None:
+        session = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+        _, _, _, mock_page = self._create_mock_playwright()
+        session._page = mock_page
+
+        def _clean_locator(selector: str) -> Any:
+            loc = mock.MagicMock()
+            loc.count.return_value = 0
+            return loc
+
+        mock_page.locator.side_effect = _clean_locator
+        session.assert_no_runtime_errors("clean_check")
+
+        session.page_errors.append("TypeError: null")
+        with self.assertRaises(ui_entities_validator.UIVerificationError) as ctx:
+            session.assert_no_runtime_errors("page_err")
+        self.assertIn("TypeError: null", str(ctx.exception))
+        session.page_errors.clear()
+
+        session.http_errors.append("500 https://xmc.example.com/v1/clusterqueues")
+        with self.assertRaises(ui_entities_validator.UIVerificationError) as ctx:
+            session.assert_no_runtime_errors("http_err")
+        self.assertIn("500 https://xmc.example.com/v1/clusterqueues", str(ctx.exception))
+        session.http_errors.clear()
+
+        def _banner_locator(selector: str) -> Any:
+            loc = mock.MagicMock()
+            loc.count.return_value = 1
+            loc.first.text_content.return_value = "Backend unreachable"
+            return loc
+
+        mock_page.locator.side_effect = _banner_locator
+        with self.assertRaises(ui_entities_validator.UIVerificationError) as ctx:
+            session.assert_no_runtime_errors("banner_err")
+        self.assertIn("Backend unreachable", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

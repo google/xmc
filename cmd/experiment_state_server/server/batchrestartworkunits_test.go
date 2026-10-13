@@ -23,6 +23,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
@@ -31,7 +32,6 @@ import (
 	"xmanager_cloud/internal/storage"
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/validator"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

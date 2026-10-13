@@ -35,7 +35,7 @@ import (
 	"xmanager_cloud/internal/query_generator/filter"
 	"xmanager_cloud/internal/safesql"
 
-	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter"
 )
 
 // QueryGenerator defines a generator containing the table schema and a space

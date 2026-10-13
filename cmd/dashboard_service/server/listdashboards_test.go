@@ -23,8 +23,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	spb "xmanager_cloud/api/protos/dashboard"
 )
 
 func TestListDashboards(t *testing.T) {
@@ -32,8 +31,8 @@ func TestListDashboards(t *testing.T) {
 
 	t.Run("returns all dashboards without owner filtering", func(t *testing.T) {
 		repo := &mockRepository{
-			listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error) {
-				return []*dpb.Dashboard{
+			listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Dashboard, string, error) {
+				return []*spb.Dashboard{
 					{Name: "dashboards/1", Owner: "user@example.com"},
 					{Name: "dashboards/2", Owner: "other@example.com"},
 					{Name: "dashboards/3", Owner: "third@example.com"},
@@ -61,7 +60,7 @@ func TestListDashboards(t *testing.T) {
 
 	t.Run("empty list", func(t *testing.T) {
 		repo := &mockRepository{
-			listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error) {
+			listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Dashboard, string, error) {
 				return nil, "", nil
 			},
 		}
@@ -114,7 +113,7 @@ func TestListDashboards(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				var gotPageSize int32
 				repo := &mockRepository{
-					listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error) {
+					listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Dashboard, string, error) {
 						gotPageSize = pageSize
 						return nil, "", nil
 					},
@@ -133,7 +132,7 @@ func TestListDashboards(t *testing.T) {
 
 	t.Run("repo error returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
-			listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error) {
+			listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Dashboard, string, error) {
 				return nil, "", errors.New("storage query failure")
 			},
 		}

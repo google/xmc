@@ -18,7 +18,7 @@ import (
 	"context"
 	"testing"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 )
 
 func TestCreateDashboard_Success(t *testing.T) {

@@ -25,8 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	spb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -36,11 +35,11 @@ func TestGetChart(t *testing.T) {
 
 	t.Run("successful retrieval under root pattern", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
 				if chartId != "chart-1" {
 					t.Errorf("Expected chartId %q, got %q", "chart-1", chartId)
 				}
-				return &dpb.Chart{
+				return &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Loss Curve",
 					Xid:   100,
@@ -132,7 +131,7 @@ func TestGetChart(t *testing.T) {
 
 	t.Run("chart not found in repository returns NotFound", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
 				return nil, status.Error(codes.NotFound, "not found")
 			},
 		}
@@ -146,7 +145,7 @@ func TestGetChart(t *testing.T) {
 
 	t.Run("repository error returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
 				return nil, errors.New("spanner timeout")
 			},
 		}
@@ -160,8 +159,8 @@ func TestGetChart(t *testing.T) {
 
 	t.Run("unauthorized user returns PermissionDenied", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
+				return &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Secret Chart",
 					Xid:   100,
@@ -184,8 +183,8 @@ func TestGetChart(t *testing.T) {
 
 	t.Run("metadata propagation forwards auth headers to downstream XID service", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
+				return &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Chart",
 					Xid:   100,

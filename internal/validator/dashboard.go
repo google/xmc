@@ -19,8 +19,7 @@ import (
 	"fmt"
 	"strings"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	spb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/grpcerr"
 )
 
@@ -114,7 +113,7 @@ func ValidateCreateDashboardRequest(in *spb.CreateDashboardRequest) error {
 // validateInlineCharts validates the charts created alongside a dashboard. Their names and IDs are
 // assigned by the server, so only the caller-supplied fields are checked: a title, and the work unit
 // coordinates that decide which experiment's ACL governs the write.
-func validateInlineCharts(charts []*dpb.Chart) error {
+func validateInlineCharts(charts []*spb.Chart) error {
 	for i, chart := range charts {
 		if chart == nil {
 			return fmt.Errorf("charts[%d] cannot be nil: %w", i, grpcerr.ErrInvalidArgument)

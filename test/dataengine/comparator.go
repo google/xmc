@@ -24,8 +24,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/testing/protocmp"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 )
 
 // TestCase defines a single test scenario for the DataEngine.
@@ -36,7 +35,7 @@ type TestCase struct {
 	ChartJSON   json.RawMessage          `json:"chart"`
 	RequestJSON json.RawMessage          `json:"request"`
 	Chart       *dpb.Chart               `json:"-"`
-	Request     *spb.GetChartDataRequest `json:"-"`
+	Request     *dpb.GetChartDataRequest `json:"-"`
 }
 
 // LoadTestCases parses the test case specifications file.
@@ -63,7 +62,7 @@ func LoadTestCases(filePath string) ([]*TestCase, error) {
 			return nil, fmt.Errorf("failed to unmarshal chart for test case %q: %w", tc.ID, err)
 		}
 
-		tc.Request = &spb.GetChartDataRequest{}
+		tc.Request = &dpb.GetChartDataRequest{}
 		if err := unmarshaler.Unmarshal(tc.RequestJSON, tc.Request); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal request for test case %q: %w", tc.ID, err)
 		}

@@ -25,8 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	spb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -37,11 +36,11 @@ func TestDeleteChart(t *testing.T) {
 	t.Run("successful deletion under root pattern", func(t *testing.T) {
 		var deletedChartID string
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
 				if chartId != "chart-1" {
 					t.Errorf("Expected chartId %q, got %q", "chart-1", chartId)
 				}
-				return &dpb.Chart{
+				return &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Loss Curve",
 					Xid:   100,
@@ -137,7 +136,7 @@ func TestDeleteChart(t *testing.T) {
 
 	t.Run("chart not found in repository on fetch returns NotFound", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
 				return nil, status.Error(codes.NotFound, "not found")
 			},
 		}
@@ -151,7 +150,7 @@ func TestDeleteChart(t *testing.T) {
 
 	t.Run("repository error on fetch returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
 				return nil, errors.New("spanner timeout")
 			},
 		}
@@ -165,7 +164,7 @@ func TestDeleteChart(t *testing.T) {
 
 	t.Run("nil chart returned by repository returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
 				return nil, nil
 			},
 		}
@@ -179,8 +178,8 @@ func TestDeleteChart(t *testing.T) {
 
 	t.Run("chart with non-positive experiment xid returns FailedPrecondition", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
+				return &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Chart Missing XID",
 					Xid:   0,
@@ -197,8 +196,8 @@ func TestDeleteChart(t *testing.T) {
 
 	t.Run("unauthorized user without writer role returns PermissionDenied", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
+				return &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Protected Chart",
 					Xid:   100,
@@ -221,8 +220,8 @@ func TestDeleteChart(t *testing.T) {
 
 	t.Run("xid service check error returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
+				return &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Chart",
 					Xid:   100,
@@ -245,8 +244,8 @@ func TestDeleteChart(t *testing.T) {
 
 	t.Run("repository delete error returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
+				return &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Chart",
 					Xid:   100,
@@ -267,8 +266,8 @@ func TestDeleteChart(t *testing.T) {
 
 	t.Run("repository delete returns not found returns NotFound", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
+				return &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Chart",
 					Xid:   100,
@@ -289,8 +288,8 @@ func TestDeleteChart(t *testing.T) {
 
 	t.Run("metadata propagation forwards auth headers to downstream XID service", func(t *testing.T) {
 		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{
+			getChartFn: func(ctx context.Context, chartId string) (*spb.Chart, error) {
+				return &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Chart",
 					Xid:   100,

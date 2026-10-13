@@ -26,8 +26,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -50,7 +49,7 @@ func TestCreateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.CreateChartRequest{
+		req := &dpb.CreateChartRequest{
 			Parent: "experiments/100/workUnits/2",
 			Chart: &dpb.Chart{
 				Title:       "Loss Curve",
@@ -91,7 +90,7 @@ func TestCreateChart(t *testing.T) {
 		authMock := &mockAuthorizer{}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.CreateChartRequest{
+		req := &dpb.CreateChartRequest{
 			Parent:  "experiments/100/workUnits/2",
 			ChartId: "custom-chart-1",
 			Chart: &dpb.Chart{
@@ -123,7 +122,7 @@ func TestCreateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.CreateChartRequest{
+		req := &dpb.CreateChartRequest{
 			Parent: "experiments/100/workUnits/1",
 			Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 		}
@@ -141,48 +140,48 @@ func TestCreateChart(t *testing.T) {
 
 		tests := []struct {
 			name string
-			req  *spb.CreateChartRequest
+			req  *dpb.CreateChartRequest
 		}{
 			{name: "nil request", req: nil},
-			{name: "nil chart", req: &spb.CreateChartRequest{Parent: "experiments/100/workUnits/1"}},
-			{name: "empty title", req: &spb.CreateChartRequest{
+			{name: "nil chart", req: &dpb.CreateChartRequest{Parent: "experiments/100/workUnits/1"}},
+			{name: "empty title", req: &dpb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/1",
 				Chart:  &dpb.Chart{Title: "   ", Xid: 100, Wid: 1},
 			}},
-			{name: "invalid chart ID with slash", req: &spb.CreateChartRequest{
+			{name: "invalid chart ID with slash", req: &dpb.CreateChartRequest{
 				Parent:  "experiments/100/workUnits/1",
 				ChartId: "invalid/id",
 				Chart:   &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 			}},
-			{name: "empty parent", req: &spb.CreateChartRequest{
+			{name: "empty parent", req: &dpb.CreateChartRequest{
 				Parent: "",
 				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 			}},
-			{name: "invalid parent zero wid", req: &spb.CreateChartRequest{
+			{name: "invalid parent zero wid", req: &dpb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/0",
 				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 			}},
-			{name: "invalid parent", req: &spb.CreateChartRequest{
+			{name: "invalid parent", req: &dpb.CreateChartRequest{
 				Parent: "invalid-parent",
 				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 			}},
-			{name: "dashboard parent rejected", req: &spb.CreateChartRequest{
+			{name: "dashboard parent rejected", req: &dpb.CreateChartRequest{
 				Parent: "dashboards/d1",
 				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 			}},
-			{name: "zero chart xid", req: &spb.CreateChartRequest{
+			{name: "zero chart xid", req: &dpb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/1",
 				Chart:  &dpb.Chart{Title: "Title", Xid: 0, Wid: 1},
 			}},
-			{name: "zero chart wid", req: &spb.CreateChartRequest{
+			{name: "zero chart wid", req: &dpb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/1",
 				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 0},
 			}},
-			{name: "mismatched chart xid", req: &spb.CreateChartRequest{
+			{name: "mismatched chart xid", req: &dpb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/1",
 				Chart:  &dpb.Chart{Title: "Title", Xid: 999, Wid: 1},
 			}},
-			{name: "mismatched chart wid", req: &spb.CreateChartRequest{
+			{name: "mismatched chart wid", req: &dpb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/1",
 				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 999},
 			}},
@@ -207,7 +206,7 @@ func TestCreateChart(t *testing.T) {
 		authMock := &mockAuthorizer{}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.CreateChartRequest{
+		req := &dpb.CreateChartRequest{
 			Parent: "experiments/100/workUnits/1",
 			Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 		}
@@ -227,7 +226,7 @@ func TestCreateChart(t *testing.T) {
 		authMock := &mockAuthorizer{}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.CreateChartRequest{
+		req := &dpb.CreateChartRequest{
 			Parent:  "experiments/100/workUnits/1",
 			ChartId: "dup-id",
 			Chart:   &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
@@ -253,7 +252,7 @@ func TestCreateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, xidMock, nil)
 
-		req := &spb.CreateChartRequest{
+		req := &dpb.CreateChartRequest{
 			Parent: "experiments/100/workUnits/1",
 			Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 		}
@@ -280,7 +279,7 @@ func TestCreateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, xidMock, nil)
 
-		req := &spb.CreateChartRequest{
+		req := &dpb.CreateChartRequest{
 			Parent: "experiments/42/workUnits/7",
 			Chart:  &dpb.Chart{Title: "Metrics", Xid: 42, Wid: 7},
 		}
@@ -313,7 +312,7 @@ func TestCreateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, xidMock, nil)
 
-		req := &spb.CreateChartRequest{
+		req := &dpb.CreateChartRequest{
 			Parent: "experiments/100/workUnits/1",
 			Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 		}

@@ -38,10 +38,15 @@ go_library(
         "expression_helper.go",
         ":generate_filter_proto_go",
     ],
-    importpath = "xmanager_cloud/api/filter/filter_expression_go_proto",  # keep
+    importpath = "xmanager_cloud/api/filter",  # keep
     deps = [
         # keep
         "@org_golang_google_protobuf//reflect/protoreflect",
         "@org_golang_google_protobuf//runtime/protoimpl",
     ],
+)
+
+alias(
+    name = "filter",
+    actual = ":filter_expression_go_proto",
 )

@@ -26,7 +26,10 @@ import (
 	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
 )
 
-var _ storage.XidEntryStore = (*Repository)(nil)
+var (
+	_ storage.XidEntryStore   = (*Repository)(nil)
+	_ storage.XidTxRepository = (*TxRepository)(nil)
+)
 
 type spannerTransaction interface {
 	ReadRow(ctx context.Context, table string, key spanner.Key, columns []string) (*spanner.Row, error)
@@ -37,6 +40,20 @@ type spannerTransaction interface {
 type Repository struct {
 	client       *spanner.Client
 	xidsQueryGen querytools.QueryGenerator
+}
+
+// TxRepository wraps Repository to execute operations within an active Spanner ReadWriteTransaction.
+type TxRepository struct {
+	*Repository
+	tx *spanner.ReadWriteTransaction
+}
+
+// WithTx returns a TxRepository bound to the provided Spanner ReadWriteTransaction.
+func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
+	return &TxRepository{
+		Repository: r,
+		tx:         tx,
+	}
 }
 
 // NewRepository creates a new Xid repository instance with initialized query generator.

@@ -22,9 +22,8 @@ import (
 	"sync"
 	"time"
 
+	dashboard_apipb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
-	dashboard_apipb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	dashboard_pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
@@ -223,7 +222,7 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 		}
 
 		// Call Dashboard service.
-		created, err := o.client.CreateChart(ctxAuth, &dashboard_pb.CreateChartRequest{
+		created, err := o.client.CreateChart(ctxAuth, &dashboard_apipb.CreateChartRequest{
 			Parent: fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid),
 			Chart: &dashboard_apipb.Chart{
 				Title: title,

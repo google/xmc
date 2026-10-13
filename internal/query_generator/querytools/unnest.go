@@ -19,7 +19,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter"
 	"xmanager_cloud/api/filter/go/filtervisitor"
 	"xmanager_cloud/internal/query_generator/filter"
 	"xmanager_cloud/internal/safesql"

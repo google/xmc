@@ -21,18 +21,17 @@ import (
 
 	"google.golang.org/grpc"
 
-	apipb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	pb "xmanager_cloud/api/protos/dashboard"
 )
 
 var _ pb.DashboardServiceClient = (*mockDashboardServiceClient)(nil)
 
 type mockDashboardServiceClient struct {
 	pb.DashboardServiceClient
-	createChartFunc func(ctx context.Context, in *pb.CreateChartRequest, opts ...grpc.CallOption) (*apipb.Chart, error)
+	createChartFunc func(ctx context.Context, in *pb.CreateChartRequest, opts ...grpc.CallOption) (*pb.Chart, error)
 }
 
-func (m *mockDashboardServiceClient) CreateChart(ctx context.Context, in *pb.CreateChartRequest, opts ...grpc.CallOption) (*apipb.Chart, error) {
+func (m *mockDashboardServiceClient) CreateChart(ctx context.Context, in *pb.CreateChartRequest, opts ...grpc.CallOption) (*pb.Chart, error) {
 	if m.createChartFunc != nil {
 		return m.createChartFunc(ctx, in, opts...)
 	}
@@ -40,7 +39,7 @@ func (m *mockDashboardServiceClient) CreateChart(ctx context.Context, in *pb.Cre
 }
 
 func TestDashboardToolClient_CreateChart(t *testing.T) {
-	expectedChart := &apipb.Chart{Name: "test-chart"}
+	expectedChart := &pb.Chart{Name: "test-chart"}
 
 	tests := []struct {
 		name      string
@@ -53,7 +52,7 @@ func TestDashboardToolClient_CreateChart(t *testing.T) {
 			req:  &pb.CreateChartRequest{Parent: "experiments/100/workUnits/1"},
 			setupMock: func(t *testing.T) *mockDashboardServiceClient {
 				return &mockDashboardServiceClient{
-					createChartFunc: func(ctx context.Context, in *pb.CreateChartRequest, opts ...grpc.CallOption) (*apipb.Chart, error) {
+					createChartFunc: func(ctx context.Context, in *pb.CreateChartRequest, opts ...grpc.CallOption) (*pb.Chart, error) {
 						if in.Parent != "experiments/100/workUnits/1" {
 							t.Errorf("expected parent experiments/100/workUnits/1, got %s", in.Parent)
 						}
@@ -68,7 +67,7 @@ func TestDashboardToolClient_CreateChart(t *testing.T) {
 			req:  &pb.CreateChartRequest{Parent: "experiments/100/workUnits/1"},
 			setupMock: func(t *testing.T) *mockDashboardServiceClient {
 				return &mockDashboardServiceClient{
-					createChartFunc: func(ctx context.Context, in *pb.CreateChartRequest, opts ...grpc.CallOption) (*apipb.Chart, error) {
+					createChartFunc: func(ctx context.Context, in *pb.CreateChartRequest, opts ...grpc.CallOption) (*pb.Chart, error) {
 						return nil, errors.New("rpc failed")
 					},
 				}

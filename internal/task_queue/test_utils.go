@@ -16,8 +16,8 @@ package client
 import (
 	"context"
 
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
 // EnqueuedTask represents a task enqueued for testing.

@@ -15,6 +15,7 @@ package data
 
 import (
 	"fmt"
+	"strings"
 
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -120,4 +121,57 @@ func mergeArtifactField(merged, updated *pb.Artifact, path string) error {
 		return fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
 	}
 	return nil
+}
+
+// ArtifactSearchableContent derives the space-joined searchable text for an artifact payload.
+// It returns an empty string for a nil payload or a payload without searchable fields.
+func ArtifactSearchableContent(payload *pb.ArtifactPayload) string {
+	if payload == nil {
+		return ""
+	}
+	return strings.Join(artifactPayloadSearchParts(payload), " ")
+}
+
+func artifactPayloadSearchParts(payload *pb.ArtifactPayload) []string {
+	switch p := payload.Type.(type) {
+	case *pb.ArtifactPayload_ManagedXprof:
+		return nonEmpty(p.ManagedXprof.GetDisplayName(), p.ManagedXprof.GetRunGroup())
+	case *pb.ArtifactPayload_CodeSource:
+		cs := p.CodeSource
+		return nonEmpty(cs.GetTitle(), cs.GetDescription(), cs.GetCodeBlock(), cs.GetCodeUrl())
+	case *pb.ArtifactPayload_Text:
+		return nonEmpty(p.Text.GetTitle(), p.Text.GetText())
+	case *pb.ArtifactPayload_Url:
+		return nonEmpty(p.Url.GetUrl(), p.Url.GetDisplayName())
+	case *pb.ArtifactPayload_Chart:
+		return append(nonEmpty(p.Chart.GetTitle()), p.Chart.GetMetricNames()...)
+	}
+	return nil
+}
+
+func nonEmpty(values ...string) []string {
+	var out []string
+	for _, v := range values {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// ArtifactPriority returns the artifact priority to persist, falling back to the URL priority
+// when the top-level priority is unset.
+func ArtifactPriority(art *pb.Artifact) int64 {
+	if art.GetPriority() != 0 {
+		return int64(art.GetPriority())
+	}
+	return int64(art.GetUrl().GetPriority())
+}
+
+// ArtifactTags returns the artifact tags to persist, defaulting nil tags to an empty slice.
+func ArtifactTags(art *pb.Artifact) []string {
+	if art.GetTags() == nil {
+		return []string{}
+	}
+	return art.GetTags()
 }

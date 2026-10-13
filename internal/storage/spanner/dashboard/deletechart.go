@@ -21,7 +21,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
 
-	fepb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	fepb "xmanager_cloud/api/filter"
 	aipfilter "xmanager_cloud/api/filter/go/filter"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/query_generator/querytools"

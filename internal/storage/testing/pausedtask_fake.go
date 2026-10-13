@@ -22,10 +22,10 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
 var _ storage.PausedTaskRepository = (*FakePausedTaskRepository)(nil)

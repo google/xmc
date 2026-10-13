@@ -13,10 +13,59 @@
 # limitations under the License.
 
 load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:compiler.bzl", "go_proto_compiler")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@rules_proto//proto:defs.bzl", "proto_descriptor_set", "proto_library")
 
 package(default_visibility = ["//visibility:public"])
+
+_DASHBOARD_M_OPTS = [
+    "Mxmanager_cloud/dashboard_service/proto/dashboard_service.proto=xmanager_cloud/api/protos/dashboard;dashboard",
+    "Mxmanager_cloud/dashboard_service/proto/messages.proto=xmanager_cloud/api/protos/dashboard;dashboard",
+]
+
+go_proto_compiler(
+    name = "dashboard_go_proto",
+    options = _DASHBOARD_M_OPTS,
+    plugin = "@org_golang_google_protobuf//cmd/protoc-gen-go",
+    suffix = ".pb.go",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//runtime/protoimpl",
+    ],
+)
+
+go_proto_compiler(
+    name = "dashboard_go_grpc",
+    options = _DASHBOARD_M_OPTS + ["require_unimplemented_servers=false"],
+    plugin = "@org_golang_google_grpc_cmd_protoc_gen_go_grpc//:protoc-gen-go-grpc",
+    suffix = "_grpc.pb.go",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_proto_compiler(
+    name = "dashboard_go_grpc_gateway",
+    options = _DASHBOARD_M_OPTS,
+    plugin = "@com_github_grpc_ecosystem_grpc_gateway_v2//protoc-gen-grpc-gateway",
+    suffix = ".pb.gw.go",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//utilities",
+        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//grpclog:go_default_library",
+        "@org_golang_google_grpc//metadata:go_default_library",
+        "@org_golang_google_protobuf//proto:go_default_library",
+    ],
+)
 
 proto_descriptor_set(
     name = "dashboard_messages_descriptor",
@@ -58,46 +107,72 @@ proto_library(
     ],
 )
 
-go_proto_library(
-    name = "messages_go_proto",
-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
-    importpath = "xmanager_cloud/dashboard_service/proto/api_go_proto",
-    proto = ":dashboard_messages_proto",
+proto_library(
+    name = "cloud_xmanager_v1_proto",
+    srcs = [
+        "dashboard_service.proto",
+        "messages.proto",
+    ],
+    import_prefix = "xmanager_cloud/dashboard_service/proto",
+    strip_import_prefix = "/api/protos/dashboard",
     deps = [
-        "@org_golang_google_genproto_googleapis_api//:go_default_library",
-        "@org_golang_google_genproto_googleapis_api//annotations",
+        "@com_google_googleapis//google/api:annotations_proto",
+        "@com_google_googleapis//google/api:client_proto",
+        "@com_google_googleapis//google/api:field_behavior_proto",
+        "@com_google_googleapis//google/api:resource_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:field_mask_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
 go_proto_library(
-    name = "service_go_proto",
+    name = "cloud_xmanager_v1_go_proto",
     compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-        "//api/protos/experiment:go_grpc_gateway",
+        ":dashboard_go_proto",
+        ":dashboard_go_grpc",
+        ":dashboard_go_grpc_gateway",
     ],
-    importpath = "xmanager_cloud/dashboard_service/proto/service_go_proto",
-    proto = ":dashboard_service_proto",
+    importpath = "xmanager_cloud/api/protos/dashboard",
+    proto = ":cloud_xmanager_v1_proto",
     deps = [
-        ":messages_go_proto",
         "@org_golang_google_genproto_googleapis_api//:go_default_library",
         "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_protobuf//types/known/emptypb",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
+)
+
+go_library(
+    name = "dashboard",
+    embed = [":cloud_xmanager_v1_go_proto"],
+    importpath = "xmanager_cloud/api/protos/dashboard",
+)
+
+alias(
+    name = "messages_go_proto",
+    actual = ":dashboard",
+)
+
+alias(
+    name = "service_go_proto",
+    actual = ":dashboard",
 )
 
 alias(
     name = "api_go_proto",
-    actual = ":messages_go_proto",
+    actual = ":dashboard",
 )
 
 alias(
     name = "api_go_grpc_proto",
-    actual = ":service_go_proto",
+    actual = ":dashboard",
 )
 
 alias(
     name = "api_go_grpc_gateway_proto",
-    actual = ":service_go_proto",
+    actual = ":dashboard",
 )
 
 py_proto_library(
