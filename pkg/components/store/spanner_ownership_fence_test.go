@@ -320,6 +320,36 @@ func TestSpannerStore_SetSourcedComponentIntent_FencedReplay(t *testing.T) {
 	}
 }
 
+// TestSpannerStore_SetSourcedComponentIntent_AdmittedReplay checks that the read-only fast path
+// decodes a declared fence and answers an unchanged intent from the fence holder at the fence
+// epoch without a read-write transaction.
+func TestSpannerStore_SetSourcedComponentIntent_AdmittedReplay(t *testing.T) {
+	ctx := context.Background()
+	s, _ := setupTestStore(ctx, t)
+	prodSource := sourceWith(func(s *store.RequestSource) { s.ClusterUID, s.Epoch = prodClusterUID, 2 })
+	if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 2}); err != nil {
+		t.Fatalf("DeclareClusterEpoch(prod) error = %v", err)
+	}
+	seeded, err := s.SetSourcedComponentIntent(ctx, "fence-admitted", intentSpec("v1.0.0"), nil, prodSource)
+	if err != nil {
+		t.Fatalf("seed SetSourcedComponentIntent() error = %v", err)
+	}
+	fallbacks := 0
+	s.SetBeforeIntentWriteForTest(func() { fallbacks++ })
+	defer s.SetBeforeIntentWriteForTest(nil)
+
+	got, err := s.SetSourcedComponentIntent(ctx, "fence-admitted", intentSpec("v1.0.0"), nil, prodSource)
+	if err != nil {
+		t.Fatalf("replay SetSourcedComponentIntent() error = %v, want nil", err)
+	}
+	if got.Generation != seeded.Generation {
+		t.Errorf("replay generation = %d, want the seeded %d", got.Generation, seeded.Generation)
+	}
+	if fallbacks != 0 {
+		t.Errorf("read-write fallbacks = %d, want 0", fallbacks)
+	}
+}
+
 // TestSpannerStore_SetSourcedComponentIntent_TakeoverBeforeWrite checks that a takeover committed
 // after the fast-path read but before the read-write transaction fences the in-flight intent: the
 // transaction rereads the fence, rejects the intent and leaves the taken-over record unchanged.
