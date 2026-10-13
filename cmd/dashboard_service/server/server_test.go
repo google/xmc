@@ -27,8 +27,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/auth"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -170,10 +169,10 @@ func (m *mockXidClient) CheckUserAuthorization(ctx context.Context, in *xidapipb
 }
 
 type mockChartDataEngine struct {
-	fetchChartDataFn func(ctx context.Context, chart *dpb.Chart, req *spb.GetChartDataRequest) (*dpb.ChartData, error)
+	fetchChartDataFn func(ctx context.Context, chart *dpb.Chart, req *dpb.GetChartDataRequest) (*dpb.ChartData, error)
 }
 
-func (m *mockChartDataEngine) FetchChartData(ctx context.Context, chart *dpb.Chart, req *spb.GetChartDataRequest) (*dpb.ChartData, error) {
+func (m *mockChartDataEngine) FetchChartData(ctx context.Context, chart *dpb.Chart, req *dpb.GetChartDataRequest) (*dpb.ChartData, error) {
 	if m.fetchChartDataFn != nil {
 		return m.fetchChartDataFn(ctx, chart, req)
 	}
@@ -234,7 +233,7 @@ func TestGetChartData(t *testing.T) {
 
 	t.Run("invalid chart name returns InvalidArgument", func(t *testing.T) {
 		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "invalid-name"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "invalid-name"})
 		if status.Code(err) != codes.InvalidArgument {
 			t.Errorf("GetChartData(invalid name) code = %v, want %v", status.Code(err), codes.InvalidArgument)
 		}
@@ -242,7 +241,7 @@ func TestGetChartData(t *testing.T) {
 
 	t.Run("negative chart width returns InvalidArgument", func(t *testing.T) {
 		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456", ChartWidthPixels: -50})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456", ChartWidthPixels: -50})
 		if status.Code(err) != codes.InvalidArgument {
 			t.Errorf("GetChartData(negative width) code = %v, want %v", status.Code(err), codes.InvalidArgument)
 		}
@@ -255,7 +254,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, &mockRepository{}, authMock, &mockXidClient{}, nil)
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.Unauthenticated {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Unauthenticated)
 		}
@@ -263,7 +262,7 @@ func TestGetChartData(t *testing.T) {
 
 	t.Run("nil dataEngine returns FailedPrecondition", func(t *testing.T) {
 		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.FailedPrecondition {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.FailedPrecondition)
 		}
@@ -275,7 +274,7 @@ func TestGetChartData(t *testing.T) {
 			xidClient:  &mockXidClient{},
 			dataEngine: &mockChartDataEngine{},
 		}
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.FailedPrecondition {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.FailedPrecondition)
 		}
@@ -287,7 +286,7 @@ func TestGetChartData(t *testing.T) {
 			repo:       &mockRepository{},
 			dataEngine: &mockChartDataEngine{},
 		}
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.FailedPrecondition {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.FailedPrecondition)
 		}
@@ -300,7 +299,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.NotFound {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.NotFound)
 		}
@@ -313,7 +312,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.Internal {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
 		}
@@ -326,7 +325,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.Internal {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
 		}
@@ -339,7 +338,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.FailedPrecondition {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.FailedPrecondition)
 		}
@@ -357,7 +356,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &mockChartDataEngine{})
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.Internal {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
 		}
@@ -375,7 +374,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &mockChartDataEngine{})
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.PermissionDenied {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.PermissionDenied)
 		}
@@ -404,7 +403,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, authMock, xidMock, &mockChartDataEngine{})
-		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		resp, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
 		}
@@ -443,7 +442,7 @@ func TestGetChartData(t *testing.T) {
 		)
 		callCtx := metadata.NewIncomingContext(context.Background(), incomingMD)
 
-		_, err := s.GetChartData(callCtx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		_, err := s.GetChartData(callCtx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
 		}
@@ -481,7 +480,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, authMock, xidMock, &mockChartDataEngine{})
-		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "charts/chart-loss"})
+		resp, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "charts/chart-loss"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
 		}
@@ -509,7 +508,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, &mockChartDataEngine{})
-		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/1001/workUnits/2002/charts/chart-loss"})
+		resp, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "experiments/1001/workUnits/2002/charts/chart-loss"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
 		}
@@ -540,7 +539,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, authMock, xidMock, &mockChartDataEngine{})
-		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/1001/workUnits/2002/charts/chart-loss"})
+		resp, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "experiments/1001/workUnits/2002/charts/chart-loss"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
 		}
@@ -554,7 +553,7 @@ func TestGetChartData(t *testing.T) {
 
 	t.Run("returns InvalidArgument when experiment chart without work unit is requested", func(t *testing.T) {
 		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/234911122/charts/baseline"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "experiments/234911122/charts/baseline"})
 		if status.Code(err) != codes.InvalidArgument {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.InvalidArgument)
 		}
@@ -562,7 +561,7 @@ func TestGetChartData(t *testing.T) {
 
 	t.Run("returns InvalidArgument for work unit 0 chart names", func(t *testing.T) {
 		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/234911122/workUnits/0/charts/baseline"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "experiments/234911122/workUnits/0/charts/baseline"})
 		if status.Code(err) != codes.InvalidArgument {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.InvalidArgument)
 		}
@@ -585,7 +584,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, authMock, xidMock, &mockChartDataEngine{})
-		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/234911122/workUnits/5/charts/baseline"})
+		resp, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "experiments/234911122/workUnits/5/charts/baseline"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
 		}
@@ -607,7 +606,7 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/nonexistent"})
+		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "dashboards/123/charts/nonexistent"})
 		if status.Code(err) != codes.NotFound {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.NotFound)
 		}

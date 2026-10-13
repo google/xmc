@@ -19,13 +19,12 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	dashboard_apipb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	dashboard_pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dashboard_pb "xmanager_cloud/api/protos/dashboard"
 )
 
 type mockDashboardClient struct {
 	dashboard_pb.DashboardServiceClient
-	createChartResp *dashboard_apipb.Chart
+	createChartResp *dashboard_pb.Chart
 	createChartErr  error
 	reqs            []*dashboard_pb.CreateChartRequest
 	// outgoingMD records the metadata each call carried, so tests can assert that the caller's
@@ -33,7 +32,7 @@ type mockDashboardClient struct {
 	outgoingMD []metadata.MD
 }
 
-func (m *mockDashboardClient) CreateChart(ctx context.Context, in *dashboard_pb.CreateChartRequest, opts ...grpc.CallOption) (*dashboard_apipb.Chart, error) {
+func (m *mockDashboardClient) CreateChart(ctx context.Context, in *dashboard_pb.CreateChartRequest, opts ...grpc.CallOption) (*dashboard_pb.Chart, error) {
 	m.reqs = append(m.reqs, in)
 	md, _ := metadata.FromOutgoingContext(ctx)
 	m.outgoingMD = append(m.outgoingMD, md)

@@ -31,7 +31,7 @@ import (
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/prototest"
-	"xmanager_cloud/internal/storage/spanner/workunit"
+	"xmanager_cloud/internal/storage"
 )
 
 var (
@@ -89,8 +89,8 @@ func newTestKueueCache() *cache.KueueCache {
 	return c
 }
 
-func newTestWorkUnits(now time.Time) []workunit.WorkUnitWithAuthor {
-	return []workunit.WorkUnitWithAuthor{
+func newTestWorkUnits(now time.Time) []storage.WorkUnitWithAuthor {
+	return []storage.WorkUnitWithAuthor{
 		{
 			WorkUnit: prototest.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
 				wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
@@ -101,7 +101,7 @@ func newTestWorkUnits(now time.Time) []workunit.WorkUnitWithAuthor {
 }
 
 type mockWorkUnitFetcher struct {
-	workUnits      []workunit.WorkUnitWithAuthor
+	workUnits      []storage.WorkUnitWithAuthor
 	nextPageToken  string
 	totalQueueSize int64
 	err            error
@@ -110,7 +110,7 @@ type mockWorkUnitFetcher struct {
 	lastPageToken  string
 }
 
-func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*workunit.ActiveWorkUnitsResult, error) {
+func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
 	m.lastQueueNames = queueNames
 	m.lastPageSize = pageSize
 	m.lastPageToken = pageToken
@@ -118,11 +118,11 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 		return nil, m.err
 	}
 	if len(queueNames) == 0 {
-		return &workunit.ActiveWorkUnitsResult{
-			WorkUnits: []workunit.WorkUnitWithAuthor{},
+		return &storage.ActiveWorkUnitsResult{
+			WorkUnits: []storage.WorkUnitWithAuthor{},
 		}, nil
 	}
-	return &workunit.ActiveWorkUnitsResult{
+	return &storage.ActiveWorkUnitsResult{
 		WorkUnits:      m.workUnits,
 		NextPageToken:  m.nextPageToken,
 		TotalQueueSize: m.totalQueueSize,
@@ -151,7 +151,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			req:        baseReq,
 			setupCache: newTestKueueCache,
 			fetcher: &mockWorkUnitFetcher{
-				workUnits: []workunit.WorkUnitWithAuthor{
+				workUnits: []storage.WorkUnitWithAuthor{
 					{
 						WorkUnit: prototest.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
 							wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
@@ -232,7 +232,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				PageToken: "invalid-token",
 			},
 			setupCache: newTestKueueCache,
-			fetcher:    &mockWorkUnitFetcher{err: fmt.Errorf("decoding error: %w", workunit.ErrInvalidPageToken)},
+			fetcher:    &mockWorkUnitFetcher{err: fmt.Errorf("decoding error: %w", storage.ErrInvalidPageToken)},
 			wantCode:   codes.InvalidArgument,
 		},
 		{

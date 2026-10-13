@@ -69,6 +69,7 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 		tx := &storage.Transaction{
 			WorkUnits:      s.WorkUnitRepository.WithTx(spannerTx),
 			Experiments:    s.ExperimentRepository.WithTx(spannerTx),
+			XIDs:           s.XIDRepository.WithTx(spannerTx),
 			StatusMessages: s.StatusMessageRepository.WithTx(spannerTx),
 			StatusHistory:  s.StatusHistoryRepository.WithTx(spannerTx),
 			PauseState:     s.pauseStateRepository.WithTx(spannerTx),

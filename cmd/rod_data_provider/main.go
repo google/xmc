@@ -48,6 +48,8 @@ import (
 	"xmanager_cloud/pkg/auth/oauth2"
 )
 
+var _ QueueVelocityFetcher = (*statushistory.Repository)(nil)
+
 func main() {
 	flag.Parse()
 

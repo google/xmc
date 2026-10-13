@@ -24,16 +24,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/statushistory"
+	"xmanager_cloud/internal/storage"
 )
 
 // QueueVelocityFetcher defines interface for fetching velocity metrics from storage.
-var _ QueueVelocityFetcher = (*statushistory.Repository)(nil)
-
 type QueueVelocityFetcher interface {
-	FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]statushistory.QueueMetricRow, error)
-	FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]statushistory.QueueMetricRow, error)
+	FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]storage.QueueMetricRow, error)
+	FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]storage.QueueMetricRow, error)
 }
 
 // BatchGetQueueSecondaryData handles calculation and retrieval of queue velocity metrics.
@@ -52,8 +51,8 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 		windowHours = 1.0
 	}
 
-	var rawVelocity []statushistory.QueueMetricRow
-	var rawPending []statushistory.QueueMetricRow
+	var rawVelocity []storage.QueueMetricRow
+	var rawPending []storage.QueueMetricRow
 	var queueMapping map[string][]string
 
 	if s.velocityStore != nil && len(req.GetQueueNames()) > 0 {
@@ -95,7 +94,7 @@ type aggregatedQueueMetric struct {
 	resourceUnitsMap map[string]int64
 }
 
-func aggregateQueueMetricRows(rows []statushistory.QueueMetricRow) map[string]aggregatedQueueMetric {
+func aggregateQueueMetricRows(rows []storage.QueueMetricRow) map[string]aggregatedQueueMetric {
 	aggregated := make(map[string]aggregatedQueueMetric)
 	for _, r := range rows {
 		curr, ok := aggregated[r.QueueName]
@@ -171,13 +170,13 @@ func buildQueuePredictabilities(preset spb.RangePreset, windowHours float64, res
 	for _, rType := range sortedTypes {
 		units := res.resourceUnitsMap[rType]
 		velVal := float64(units)
-		if strings.EqualFold(rType, statushistory.ResourceTypeCPU) {
+		if strings.EqualFold(rType, constants.ResourceTypeCPU) {
 			velVal /= 1000.0
 		}
 
 		pUnits := pendingRes.resourceUnitsMap[rType]
 		pVal := float64(pUnits)
-		if strings.EqualFold(rType, statushistory.ResourceTypeCPU) {
+		if strings.EqualFold(rType, constants.ResourceTypeCPU) {
 			pVal /= 1000.0
 		}
 
@@ -199,7 +198,7 @@ func buildQueuePredictabilities(preset spb.RangePreset, windowHours float64, res
 	return predictabilities
 }
 
-func fetchBatchVelocity(ctx context.Context, store QueueVelocityFetcher, queueNames []string, windowDuration time.Duration) ([]statushistory.QueueMetricRow, error) {
+func fetchBatchVelocity(ctx context.Context, store QueueVelocityFetcher, queueNames []string, windowDuration time.Duration) ([]storage.QueueMetricRow, error) {
 	batchResults, err := store.FetchBatchQueueVelocity(ctx, queueNames, windowDuration)
 	if err == nil {
 		return batchResults, nil
@@ -221,7 +220,7 @@ func fetchBatchVelocity(ctx context.Context, store QueueVelocityFetcher, queueNa
 	return nil, status.Errorf(codes.Internal, "failed to fetch batch queue velocity: %v", err)
 }
 
-func fetchBatchPendingMetrics(ctx context.Context, store QueueVelocityFetcher, queueNames []string) ([]statushistory.QueueMetricRow, error) {
+func fetchBatchPendingMetrics(ctx context.Context, store QueueVelocityFetcher, queueNames []string) ([]storage.QueueMetricRow, error) {
 	batchResults, err := store.FetchBatchPendingQueueMetrics(ctx, queueNames)
 	if err == nil {
 		return batchResults, nil

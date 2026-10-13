@@ -22,7 +22,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 )
 
 const defaultTargetPoints = 1000

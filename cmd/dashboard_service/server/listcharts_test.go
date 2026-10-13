@@ -25,8 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	spb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -38,9 +37,9 @@ func TestListCharts(t *testing.T) {
 		var gotParent, gotPageToken string
 		var gotPageSize int32
 		repo := &mockRepository{
-			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
+			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Chart, string, error) {
 				gotParent, gotPageSize, gotPageToken = parent, pageSize, pageToken
-				return []*dpb.Chart{
+				return []*spb.Chart{
 					{Name: "charts/1", Title: "Loss", Xid: 42},
 					{Name: "charts/2", Title: "Accuracy", Xid: 42},
 				}, "next-tok", nil
@@ -76,9 +75,9 @@ func TestListCharts(t *testing.T) {
 	t.Run("work unit parent is forwarded verbatim", func(t *testing.T) {
 		var gotParent string
 		repo := &mockRepository{
-			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
+			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Chart, string, error) {
 				gotParent = parent
-				return []*dpb.Chart{{Name: "experiments/42/workUnits/7/charts/loss"}}, "", nil
+				return []*spb.Chart{{Name: "experiments/42/workUnits/7/charts/loss"}}, "", nil
 			},
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
@@ -141,8 +140,8 @@ func TestListCharts(t *testing.T) {
 
 	t.Run("dashboard parent prunes charts the caller cannot read", func(t *testing.T) {
 		repo := &mockRepository{
-			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
-				return []*dpb.Chart{
+			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Chart, string, error) {
+				return []*spb.Chart{
 					{Name: "charts/readable", Xid: 11},
 					{Name: "charts/forbidden", Xid: 22},
 				}, "next-tok", nil
@@ -170,8 +169,8 @@ func TestListCharts(t *testing.T) {
 
 	t.Run("dashboard parent propagates XID service failure as Internal", func(t *testing.T) {
 		repo := &mockRepository{
-			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
-				return []*dpb.Chart{{Name: "charts/1", Xid: 11}}, "", nil
+			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Chart, string, error) {
+				return []*spb.Chart{{Name: "charts/1", Xid: 11}}, "", nil
 			},
 		}
 		xidMock := &mockXidClient{
@@ -203,7 +202,7 @@ func TestListCharts(t *testing.T) {
 
 	t.Run("empty result returns non-nil slice and empty page token", func(t *testing.T) {
 		repo := &mockRepository{
-			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
+			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Chart, string, error) {
 				return nil, "", nil
 			},
 		}
@@ -238,7 +237,7 @@ func TestListCharts(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				var gotPageSize int32
 				repo := &mockRepository{
-					listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
+					listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Chart, string, error) {
 						gotPageSize = pageSize
 						return nil, "", nil
 					},
@@ -329,7 +328,7 @@ func TestListCharts(t *testing.T) {
 
 	t.Run("repo error returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
-			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
+			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Chart, string, error) {
 				return nil, "", errors.New("storage query failure")
 			},
 		}

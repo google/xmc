@@ -21,9 +21,9 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
 
-	fepb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	fepb "xmanager_cloud/api/filter"
 	aipfilter "xmanager_cloud/api/filter/go/filter"
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/query_generator/querytools"
 	storagedata "xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"

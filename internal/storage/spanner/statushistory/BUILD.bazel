@@ -25,6 +25,7 @@ go_library(
         "//internal/common/tputopology",
         "//internal/kubernetes/common/constants",
         "//internal/logging",
+        "//internal/storage",
         "//internal/storage/spanner/data",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//iterator",
@@ -37,6 +38,7 @@ go_test(
     embed = [":statushistory"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//internal/storage",
         "//internal/storage/spanner/data",
         "//internal/storage/spanner/emulator",
         "@com_google_cloud_go_spanner//:spanner",

@@ -173,10 +173,12 @@ func TestUpdateXidEntry_Failures(t *testing.T) {
 			wantErr:     grpcerr.ErrInternal,
 		},
 		{
-			name:        "StorageFailure",
-			mockAuth:    &auth.MockAuth{IsAuthed: true},
-			mockStorage: &storage.MockStorage{UpdateErr: errors.New("storage error")},
-			wantErr:     grpcerr.ErrInternal,
+			name:     "StorageFailure",
+			mockAuth: &auth.MockAuth{IsAuthed: true},
+			mockStorage: &storage.MockStorage{
+				XidTxRepository: &storage.MockXidTxRepository{UpdateErr: errors.New("storage error")},
+			},
+			wantErr: grpcerr.ErrInternal,
 		},
 		{
 			name:        "PermissionDenied",
@@ -185,10 +187,12 @@ func TestUpdateXidEntry_Failures(t *testing.T) {
 			wantErr:     grpcerr.ErrPermissionDenied,
 		},
 		{
-			name:        "PermissionDeniedDuringStorage",
-			mockAuth:    &auth.MockAuth{IsAuthed: true},
-			mockStorage: &storage.MockStorage{UpdateErr: grpcerr.ErrPermissionDenied},
-			wantErr:     grpcerr.ErrInternal,
+			name:     "PermissionDeniedDuringStorage",
+			mockAuth: &auth.MockAuth{IsAuthed: true},
+			mockStorage: &storage.MockStorage{
+				XidTxRepository: &storage.MockXidTxRepository{UpdateErr: grpcerr.ErrPermissionDenied},
+			},
+			wantErr: grpcerr.ErrInternal,
 		},
 	}
 
@@ -197,7 +201,15 @@ func TestUpdateXidEntry_Failures(t *testing.T) {
 			ctx := context.Background()
 			server := newTestServer(t, withAuthorizer(tc.mockAuth), withStorage(tc.mockStorage))
 			_, err := server.UpdateXidEntry(ctx, &apipb.UpdateXidEntryRequest{
-				XidEntry: &msgpb.XidEntry{Name: proto.String("xids/1")},
+				XidEntry: &msgpb.XidEntry{
+					Name: proto.String("xids/1"),
+					Acls: &msgpb.XidAcls{
+						Owners: []*msgpb.XidAcls_Role{
+							{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}},
+						},
+					},
+				},
+				UpdateMask: &fmpb.FieldMask{Paths: []string{"acls"}},
 			})
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("UpdateXidEntry() returned error %v, want %v", err, tc.wantErr)

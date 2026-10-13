@@ -26,7 +26,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	spb "xmanager_cloud/health_service/proto/api_go_proto"
+	spb "xmanager_cloud/api/protos/health"
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/internal/storage"
