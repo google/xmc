@@ -16,6 +16,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 MANIFESTS_DIR="${SCRIPT_DIR}/manifests"
 
 PROJECT_ID="${PROJECT_ID:-xmc-dev}"
@@ -32,8 +33,6 @@ worker_kubectl() {
 }
 
 echo "--> 1. Deploying in-cluster k3s MultiKueue worker StatefulSet..."
-# Clean up legacy Deployment if upgrading from an older revision.
-kubectl delete deployment multikueue-worker -n kueue-system --ignore-not-found
 kubectl apply -f "${MANIFESTS_DIR}/multikueue-worker.yaml"
 kubectl rollout status statefulset/multikueue-worker -n kueue-system --timeout=180s
 
@@ -57,7 +56,9 @@ worker_kubectl wait --for=condition=Available deployment/jobset-controller-manag
 worker_kubectl wait --for=condition=Available deployment/kueue-controller-manager -n kueue-system --timeout=180s
 
 echo "--> 4. Applying worker WorkloadPriorityClasses and queues on k3s worker..."
-worker_kubectl apply -f - < "${MANIFESTS_DIR}/worker-queues.yaml"
+awk 'FNR==1 && NR!=1 {print "---"} {print}' \
+  "${REPO_ROOT}/deploy/helm/templates/wpc/"*.yaml \
+  "${MANIFESTS_DIR}/worker-queues.yaml" | worker_kubectl apply -f -
 
 echo "--> 5. Syncing worker kubeconfig Secret into management cluster..."
 WORKER_KUBECONFIG="$(mktemp)"

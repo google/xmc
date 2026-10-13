@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 from collections.abc import Sequence
 from typing import Any
@@ -31,9 +30,6 @@ DEFAULT_WORKER_CLUSTER: str = "xmc-nightly-worker-1"
 verifier_cli.flags.DEFINE_string(
     "expected_worker_cluster", DEFAULT_WORKER_CLUSTER, "Expected worker cluster."
 )
-verifier_cli.flags.DEFINE_boolean(
-    "require_k8s_assertions", False, "Require kubectl context for K8s CR assertions."
-)
 
 
 def _run_kubectl(*args: str) -> subprocess.CompletedProcess[str]:
@@ -45,20 +41,8 @@ def _verify_k8s_multikueue_crs(
     queue: str = DEFAULT_QUEUE,
     worker_cluster: str = DEFAULT_WORKER_CLUSTER,
     expected_count: int = DEFAULT_WORK_UNITS,
-    require_k8s: bool = False,
 ) -> None:
     """Verifies MultiKueueCluster, AdmissionCheck, and Workload.status.clusterName via kubectl."""
-    ctx_ok = False
-    try:
-        ctx = _run_kubectl("config", "current-context")
-        ctx_ok = ctx.returncode == 0 and bool(ctx.stdout.strip())
-    except FileNotFoundError:
-        pass
-    if not ctx_ok:
-        if require_k8s or os.environ.get("CI") == "true":
-            raise AssertionError("kubectl current-context unavailable for MultiKueue K8s checks")
-        print("WARNING: Skipping K8s MultiKueue CR assertions (kubectl context unavailable).")
-        return
     jp = 'jsonpath={.status.conditions[?(@.type=="Active")].status}'
     for kind, name in (
         ("multikueuecluster", worker_cluster),
@@ -88,10 +72,9 @@ def _assert_multikueue_work_units(stub: Any, xid: str) -> None:
     f = verifier_cli.FLAGS
     q = verifier_cli.get_flag(f, "expected_queue", DEFAULT_QUEUE)
     c = verifier_cli.get_flag(f, "expected_worker_cluster", DEFAULT_WORKER_CLUSTER)
-    req_k8s = bool(verifier_cli.get_flag(f, "require_k8s_assertions", False))
     count = verifier_cli.resolve_expected_work_units(DEFAULT_WORK_UNITS)
     xmc_entities_validator.validate_multikueue_execution_metadata(stub, xid, c)
-    _verify_k8s_multikueue_crs(xid, q, c, expected_count=count, require_k8s=req_k8s)
+    _verify_k8s_multikueue_crs(xid, q, c, expected_count=count)
 
 
 def main(argv: Sequence[str]) -> None:

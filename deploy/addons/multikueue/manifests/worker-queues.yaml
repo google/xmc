@@ -13,69 +13,6 @@
 # limitations under the License.
 
 apiVersion: kueue.x-k8s.io/v1beta2
-kind: WorkloadPriorityClass
-metadata:
-  name: exp-low-wu-low
-value: 110
-description: "Experiment Priority: Low, WorkUnit Priority: Low"
----
-apiVersion: kueue.x-k8s.io/v1beta2
-kind: WorkloadPriorityClass
-metadata:
-  name: exp-low-wu-medium
-value: 150
-description: "Experiment Priority: Low, WorkUnit Priority: Medium"
----
-apiVersion: kueue.x-k8s.io/v1beta2
-kind: WorkloadPriorityClass
-metadata:
-  name: exp-low-wu-high
-value: 190
-description: "Experiment Priority: Low, WorkUnit Priority: High"
----
-apiVersion: kueue.x-k8s.io/v1beta2
-kind: WorkloadPriorityClass
-metadata:
-  name: exp-medium-wu-low
-value: 510
-description: "Experiment Priority: Medium, WorkUnit Priority: Low"
----
-apiVersion: kueue.x-k8s.io/v1beta2
-kind: WorkloadPriorityClass
-metadata:
-  name: exp-medium-wu-medium
-value: 550
-description: "Experiment Priority: Medium, WorkUnit Priority: Medium"
----
-apiVersion: kueue.x-k8s.io/v1beta2
-kind: WorkloadPriorityClass
-metadata:
-  name: exp-medium-wu-high
-value: 590
-description: "Experiment Priority: Medium, WorkUnit Priority: High"
----
-apiVersion: kueue.x-k8s.io/v1beta2
-kind: WorkloadPriorityClass
-metadata:
-  name: exp-high-wu-low
-value: 910
-description: "Experiment Priority: High, WorkUnit Priority: Low"
----
-apiVersion: kueue.x-k8s.io/v1beta2
-kind: WorkloadPriorityClass
-metadata:
-  name: exp-high-wu-medium
-value: 950
-description: "Experiment Priority: High, WorkUnit Priority: Medium"
----
-apiVersion: kueue.x-k8s.io/v1beta2
-kind: WorkloadPriorityClass
-metadata:
-  name: exp-high-wu-high
-value: 990
-description: "Experiment Priority: High, WorkUnit Priority: High"
----
-apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:
   name: cpu-flavor

@@ -1272,8 +1272,7 @@ def validate_dashboard_chart_data(
 
 
 def _cluster_name(meta: Any, field: str) -> str:
-    cluster = getattr(meta, field, None)
-    return (getattr(cluster, "cluster_name", "") or "").strip() if cluster is not None else ""
+    return (getattr(getattr(meta, field, None), "cluster_name", "") or "").strip()
 
 
 def _extract_work_unit_execution_metadata(
@@ -1283,10 +1282,14 @@ def _extract_work_unit_execution_metadata(
     has_exec = getattr(wu, "HasField", lambda f: bool(getattr(wu, f, None)))(
         "current_work_unit_execution"
     )
-    req = _make_req("GetCurrentWorkUnitExecutionRequest", name=wu.name)
-    exec_pb = wu.current_work_unit_execution if has_exec else stub.GetCurrentWorkUnitExecution(req)
-    meta = getattr(exec_pb, "metadata", None) if exec_pb is not None else None
-    if meta is None:
+    exec_pb = (
+        wu.current_work_unit_execution
+        if has_exec
+        else stub.GetCurrentWorkUnitExecution(
+            _make_req("GetCurrentWorkUnitExecutionRequest", name=wu.name)
+        )
+    )
+    if (meta := getattr(exec_pb, "metadata", None)) is None:
         raise AssertionError(f"WorkUnit '{wu.name}' has no WorkUnitExecution metadata.")
     mk = (getattr(meta, "multi_kueue_cluster_name", "") or "").strip()
     ex = _cluster_name(meta, "executing_cluster")
@@ -1315,7 +1318,6 @@ def validate_multikueue_execution_metadata(
     stub: Any, xid: str, expected_worker_cluster: str | None = None
 ) -> list[dict[str, str]]:
     """Asserts that every WorkUnit in the experiment recorded MultiKueue execution metadata."""
-    req = _make_req("ListWorkUnitsRequest", parent=f"experiments/{xid}")
-    if not (wus := stub.ListWorkUnits(req).work_units):
+    if not (wus := _fetch_raw_work_units(stub, f"experiments/{xid}")):
         raise AssertionError(f"No WorkUnits found for experiment {xid}")
     return [_extract_work_unit_execution_metadata(stub, w, expected_worker_cluster) for w in wus]

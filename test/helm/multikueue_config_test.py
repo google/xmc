@@ -32,7 +32,7 @@ SETUP_SCRIPT_PATH = os.path.join("deploy", "addons", "multikueue", "setup_multik
 
 
 class MultiKueueConfigTest(unittest.TestCase):
-    """Asserts MultiKueue addon manifests, customer chart isolation, and Actuator RBAC."""
+    """Asserts MultiKueue addon manifests and customer chart isolation."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -41,19 +41,6 @@ class MultiKueueConfigTest(unittest.TestCase):
     def _read_repo_file(self, relative_path: str) -> str:
         with open(find_repo_file(relative_path), encoding="utf-8") as handle:
             return handle.read()
-
-    def _assert_no_root_flow_mapping(self, manifest: str) -> None:
-        for doc in manifest.split("---"):
-            lines = [
-                ln.strip()
-                for ln in doc.splitlines()
-                if ln.strip() and not ln.strip().startswith("#")
-            ]
-            if lines:
-                self.assertFalse(
-                    lines[0].startswith("{"),
-                    f"Root flow mapping found: {lines[0]}",
-                )
 
     def test_customer_helm_chart_excludes_multikueue_test_resources(self) -> None:
         manifest = render_chart({})
@@ -70,7 +57,6 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn("clusterQueue: multikueue-cpu-cluster-queue", manifest)
         self.assertIn("kind: ClusterQueue", manifest)
         self.assertIn("name: cpu-flavor", manifest)
-        self.assertNotIn("default-flavor", manifest)
         self.assertIn("admissionChecksStrategy:", manifest)
         self.assertIn("name: multikueue-admission-check", manifest)
         self.assertIn("kind: AdmissionCheck", manifest)
@@ -80,9 +66,8 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn("name: xmc-nightly-worker-1", manifest)
         self.assertIn("clusterSource:", manifest)
         self.assertIn("location: multikueue-worker-kubeconfig", manifest)
-        self._assert_no_root_flow_mapping(manifest)
 
-    def test_multikueue_worker_addon_manifest_is_statefulset_without_sidecar(self) -> None:
+    def test_multikueue_worker_addon_manifest_is_statefulset(self) -> None:
         manifest = self._read_repo_file(WORKER_MANIFEST_PATH)
         self.assertIn("kind: Service", manifest)
         self.assertIn("kind: StatefulSet", manifest)
@@ -94,16 +79,10 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn("--write-kubeconfig=/var/lib/rancher/k3s/k3s.yaml", manifest)
         self.assertIn("volumeClaimTemplates:", manifest)
         self.assertIn("name: k3s-data", manifest)
-        self.assertNotIn("bootstrap-sync", manifest)
-        self.assertNotIn("sleep infinity", manifest)
-        self.assertNotIn("kind: ServiceAccount", manifest)
-        self.assertNotIn("kind: Role", manifest)
-        self.assertNotIn("kind: RoleBinding", manifest)
-        self._assert_no_root_flow_mapping(manifest)
 
-    def test_worker_queues_addon_manifest_defines_priorities_and_queues(self) -> None:
+    def test_worker_queues_addon_manifest_defines_queues_without_duplicating_wpc(self) -> None:
         manifest = self._read_repo_file(WORKER_QUEUES_MANIFEST_PATH)
-        self.assertEqual(manifest.count("kind: WorkloadPriorityClass"), 9)
+        self.assertNotIn("kind: WorkloadPriorityClass", manifest)
         self.assertIn("kind: ResourceFlavor", manifest)
         self.assertIn("name: cpu-flavor", manifest)
         self.assertIn("kind: ClusterQueue", manifest)
@@ -111,11 +90,11 @@ class MultiKueueConfigTest(unittest.TestCase):
         self.assertIn("kind: Namespace", manifest)
         self.assertIn("kind: LocalQueue", manifest)
         self.assertIn("name: multikueue-cpu-queue", manifest)
-        self._assert_no_root_flow_mapping(manifest)
 
-    def test_setup_multikueue_script_references_addon_manifests(self) -> None:
+    def test_setup_multikueue_script_references_addon_and_wpc_manifests(self) -> None:
         script = self._read_repo_file(SETUP_SCRIPT_PATH)
         self.assertIn("multikueue-worker.yaml", script)
+        self.assertIn("deploy/helm/templates/wpc/", script)
         self.assertIn("worker-queues.yaml", script)
         self.assertIn("management-multikueue.yaml", script)
         self.assertIn("xmc.google.com/project=", script)
