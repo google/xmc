@@ -154,3 +154,7 @@ use_repo(
     "sh_helm_helm_v3",
     "xyz_gomodules_jsonpatch_v2",
 )
+
+k8s_crd_manifests = use_repo_rule("//test/e2e/manifests:crd_manifests.bzl", "k8s_crd_manifests")
+
+k8s_crd_manifests(name = "k8s_crd_manifests")

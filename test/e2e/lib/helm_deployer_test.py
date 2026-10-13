@@ -102,19 +102,27 @@ class TestHelmDeployer(unittest.TestCase):
                 "--timeout=180s",
             ]
         )
-        mock_run.assert_any_call(
-            [
-                "kubectl",
-                "--context",
-                context,
-                "rollout",
-                "status",
-                "deployment/gateway-proxy",
-                "-n",
-                "xmc",
-                "--timeout=180s",
-            ]
-        )
+        for deploy_name in (
+            "xid-service-deployment",
+            "experiment-state-server-deployment",
+            "actuator-deployment",
+            "reconciler-deployment",
+            "ui-deployment",
+            "gateway-proxy",
+        ):
+            mock_run.assert_any_call(
+                [
+                    "kubectl",
+                    "--context",
+                    context,
+                    "rollout",
+                    "status",
+                    f"deployment/{deploy_name}",
+                    "-n",
+                    "xmc",
+                    "--timeout=180s",
+                ]
+            )
 
     @patch("test.e2e.lib.helm_deployer.run_cmd")
     def test_wait_for_rollouts_failure_captures_diagnostics(self, mock_run):
@@ -131,10 +139,24 @@ class TestHelmDeployer(unittest.TestCase):
         diag_file = os.path.join(self.cfg.screenshots_dir, "k8s_diagnostics.log")
         self.assertTrue(os.path.isfile(diag_file))
 
-    def test_prepare_helm_chart_prunes_unsupported_resources(self):
+    def test_prepare_helm_chart_prunes_unsupported_resources_and_keeps_kueue_dev_and_wpc(self):
         src_helm = os.path.join(self.cfg.temp_dir, "workspace_helm")
         os.makedirs(os.path.join(src_helm, "templates", "certs"), exist_ok=True)
+        os.makedirs(os.path.join(src_helm, "templates", "kueue-dev"), exist_ok=True)
+        os.makedirs(os.path.join(src_helm, "templates", "wpc"), exist_ok=True)
         os.makedirs(os.path.join(src_helm, "templates", "ess"), exist_ok=True)
+        with open(
+            os.path.join(src_helm, "templates", "kueue-dev", "cpu-queue.yaml"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write("kind: ClusterQueue\n")
+        with open(
+            os.path.join(src_helm, "templates", "wpc", "exp_medium_wu_medium.yaml"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write("kind: WorkloadPriorityClass\n")
         with open(
             os.path.join(src_helm, "templates", "ess", "gateway.yaml"), "w", encoding="utf-8"
         ) as f:
@@ -164,24 +186,112 @@ class TestHelmDeployer(unittest.TestCase):
                 os.path.join(self.deployer.helm_dir, "templates", "ess", "deployment.yaml")
             )
         )
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(self.deployer.helm_dir, "templates", "kueue-dev", "cpu-queue.yaml")
+            )
+        )
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(
+                    self.deployer.helm_dir, "templates", "wpc", "exp_medium_wu_medium.yaml"
+                )
+            )
+        )
         self.assertFalse(os.path.exists(os.path.join(self.deployer.helm_dir, "templates", "certs")))
         self.assertFalse(
             os.path.exists(os.path.join(self.deployer.helm_dir, "templates", "ess", "gateway.yaml"))
         )
 
+    @patch("test.e2e.lib.helm_deployer.run_cmd")
+    def test_resolve_crds_manifest_returns_existing_bazel_bin_file(self, mock_run):
+        manifest_dir = os.path.join(self.tmp_dir.name, "bazel-bin", "test", "e2e", "manifests")
+        os.makedirs(manifest_dir, exist_ok=True)
+        manifest_path = os.path.join(manifest_dir, "jobset_kueue_crds.yaml")
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            f.write("kind: CustomResourceDefinition\n")
+
+        self.deployer.cfg.workspace_root = self.tmp_dir.name
+        resolved = self.deployer._resolve_crds_manifest()
+
+        self.assertEqual(resolved, manifest_path)
+        mock_run.assert_not_called()
+
+    @patch("test.e2e.lib.helm_deployer.run_cmd")
+    def test_resolve_crds_manifest_builds_when_absent(self, mock_run):
+        mock_run.return_value = unittest.mock.MagicMock(
+            stdout="Starting local Bazel server...\n/custom/bazel-bin\n"
+        )
+        self.deployer.cfg.workspace_root = self.tmp_dir.name
+
+        resolved = self.deployer._resolve_crds_manifest()
+
+        self.assertEqual(
+            resolved,
+            os.path.join("/custom/bazel-bin", "test", "e2e", "manifests", "jobset_kueue_crds.yaml"),
+        )
+        mock_run.assert_any_call(
+            ["bazel", "build", "//test/e2e/manifests:jobset_kueue_crds"],
+            cwd=self.tmp_dir.name,
+        )
+
+    @patch("test.e2e.lib.helm_deployer.run_cmd")
+    def test_resolve_crds_manifest_raises_on_empty_bazel_bin(self, mock_run):
+        mock_run.return_value = unittest.mock.MagicMock(stdout="   \n")
+        self.deployer.cfg.workspace_root = self.tmp_dir.name
+
+        with self.assertRaisesRegex(RuntimeError, "Failed to resolve bazel-bin"):
+            self.deployer._resolve_crds_manifest()
+
+    @patch.object(HelmDeployer, "_resolve_crds_manifest", return_value="/path/to/crds.yaml")
+    @patch("test.e2e.lib.helm_deployer.run_cmd")
+    def test_apply_crds_uses_server_side_apply_and_waits_for_established(
+        self, mock_run, mock_resolve
+    ):
+        self.deployer._apply_crds()
+
+        mock_resolve.assert_called_once()
+        self.assertEqual(mock_run.call_count, 2)
+        mock_run.assert_any_call(
+            [
+                "kubectl",
+                "--context",
+                "kind-test-cluster",
+                "apply",
+                "--server-side",
+                "--force-conflicts",
+                "-f",
+                "/path/to/crds.yaml",
+            ]
+        )
+        mock_run.assert_any_call(
+            [
+                "kubectl",
+                "--context",
+                "kind-test-cluster",
+                "wait",
+                "--for=condition=established",
+                "--timeout=60s",
+                "-f",
+                "/path/to/crds.yaml",
+            ]
+        )
+
     @patch.object(HelmDeployer, "_prepare_helm_chart")
     @patch.object(HelmDeployer, "_patch_image_pull_policy")
     @patch.object(HelmDeployer, "_generate_values_file")
+    @patch.object(HelmDeployer, "_apply_crds")
     @patch.object(HelmDeployer, "_wait_for_rollouts")
     @patch("test.e2e.lib.helm_deployer.run_cmd")
     def test_deploy_orchestrates_release(
-        self, mock_run, mock_wait, mock_gen_vals, mock_patch, mock_prep
+        self, mock_run, mock_wait, mock_apply_crds, mock_gen_vals, mock_patch, mock_prep
     ):
         self.deployer.deploy()
 
         mock_prep.assert_called_once()
         mock_patch.assert_called_once()
         mock_gen_vals.assert_called_once()
+        mock_apply_crds.assert_called_once()
         mock_wait.assert_called_once()
 
         mock_run.assert_any_call(

@@ -213,10 +213,10 @@ class KindClusterManager:
         )
 
     def _apply_manifests(self) -> None:
-        """Applies dummy CRDs, Redis, Dex OIDC, and Gateway Proxy manifests."""
-        logger.info("Applying dummy CRDs, Redis, Dex, and Gateway Proxy...")
+        """Applies Redis, Dex OIDC, and Gateway Proxy manifests."""
+        logger.info("Applying Redis, Dex, and Gateway Proxy...")
         manifests_dir = os.path.join(self.cfg.workspace_root, "test", "e2e", "manifests")
-        manifests = ["dummy_crds.yaml", "redis.yaml", "dex.yaml", "gateway_proxy.yaml"]
+        manifests = ["redis.yaml", "dex.yaml", "gateway_proxy.yaml"]
         cmd = ["kubectl", "apply"]
         for manifest in manifests:
             cmd.extend(["-f", os.path.join(manifests_dir, manifest)])

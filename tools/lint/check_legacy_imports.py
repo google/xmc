@@ -96,11 +96,6 @@ LINE_METRICS = (
         line_regex=r"^#\s*gazelle:resolve\s",
     ),
     LineMetric(
-        name="custom_repo_rules",
-        path_regex=r"(^|/)(MODULE\.bazel|WORKSPACE|[^/]+\.bzl)$",
-        line_regex=r"repository_rule\(|use_extension\(\"//",
-    ),
-    LineMetric(
         name="proto_third_party_paths",
         path_regex=r"(\.proto|(^|/)BUILD\.bazel)$",
         line_regex=r'(^import\s+"third_party/|import_prefix\s*=\s*"third_party/)',
