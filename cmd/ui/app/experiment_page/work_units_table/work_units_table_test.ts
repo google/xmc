@@ -13,6 +13,7 @@
 // limitations under the License.
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
 import { MatButtonHarness } from '@angular/material/button/testing';
+import { MatSelectHarness } from '@angular/material/select/testing';
 import { MatTooltipHarness } from '@angular/material/tooltip/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
@@ -501,13 +502,35 @@ describe('WorkUnitsTable Component', () => {
       );
     });
 
-    it('should keep the default message when unfiltered and empty', async () => {
+    it('should keep the selected page size when the sort changes', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+      const pageSizeSelect = await getHarness(MatSelectHarness);
+      await pageSizeSelect.open();
+      await pageSizeSelect.clickOptions({ text: '25' });
+
+      await (await getStatusSortHeader(harness)).click();
+
+      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, pageSize: 25, orderBy: 'state asc' });
+    });
+
+    it('should show only the empty message when the response has no work units', async () => {
       state.workUnitsService.searchWorkUnits.and.returnValue(of(EMPTY_WORK_UNITS_RESPONSE));
       bootstrap(WorkUnitsTable, { xid: '1' });
       const harness = await getHarness(WorkUnitsTableHarness);
 
       expect(await harness.hasNoWorkUnitsMessage()).toBeTrue();
       expect(await harness.getNoWorkUnitsMessageText()).toBe('This experiment has no work units.');
+      expect(await harness.hasErrorMessage()).toBeFalse();
+    });
+
+    it('should show only the error message when the fetch fails', async () => {
+      state.workUnitsService.searchWorkUnits.and.returnValue(throwError(() => new Error('boom')));
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      expect(await harness.hasErrorMessage()).toBeTrue();
+      expect(await harness.hasNoWorkUnitsMessage()).toBeFalse();
     });
   });
 });
