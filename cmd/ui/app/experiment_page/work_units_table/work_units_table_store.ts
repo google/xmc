@@ -160,15 +160,8 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
     trigger$.pipe(
       tap(() => this.patchState({ isLoading: true })),
       switchMap(() => {
-        const { xid, pagination, sort } = this.get();
-        const orderBy = toOrderBy(sort);
-        const request: ListWorkUnitsRequest = {
-          parent: `experiments/${xid}`,
-          pageSize: pagination.pageSize,
-          pageToken: pagination.currentPageToken,
-          ...(orderBy && { orderBy }),
-        };
-        return this.workUnitsService.searchWorkUnits(request).pipe(
+        const { pagination } = this.get();
+        return this.workUnitsService.searchWorkUnits(this.buildListRequest()).pipe(
           tap((response) =>
             this.patchState({
               pagination: {
@@ -194,4 +187,16 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
       }),
     ),
   );
+
+  /** Builds the list request for the current page and sort. */
+  private buildListRequest(): ListWorkUnitsRequest {
+    const { xid, pagination, sort } = this.get();
+    const orderBy = toOrderBy(sort);
+    return {
+      parent: `experiments/${xid}`,
+      pageSize: pagination.pageSize,
+      pageToken: pagination.currentPageToken,
+      ...(orderBy && { orderBy }),
+    };
+  }
 }
