@@ -220,7 +220,7 @@ func checkSourceMutation(operation, canonicalName string, owner *SourceOwner, sr
 	if err := checkSourceOwnership(operation, canonicalName, owner, *src); err != nil {
 		return err
 	}
-	if owner.isOwnerObject(*src) && src.Generation < owner.Generation {
+	if owner.isOlderGeneration(*src) {
 		return staleGenerationError(operation, canonicalName, owner, *src)
 	}
 	return nil
@@ -236,7 +236,7 @@ func nonIntentOwner(existing *SourceOwner, src *RequestSource) *SourceOwner {
 		return existing
 	}
 	next := ownerOf(*src)
-	if existing.isOwnerObject(*src) && existing.Generation > 0 {
+	if existing != nil && existing.UID == src.UID && existing.Generation > 0 {
 		next.Generation = existing.Generation
 	}
 	return next
