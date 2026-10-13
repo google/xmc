@@ -40,6 +40,7 @@ func TestNetworkHealthProber_ProbeHTTP_And_TCP(t *testing.T) {
 		WithHealthHTTPClient(ts.Client()),
 		WithHealthDialer(&net.Dialer{}),
 		WithHealthProbeTimeout(2*time.Second),
+		withProbeDialControl(allowAllProbeDials),
 	)
 	ctx := context.Background()
 
@@ -190,7 +191,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-func TestNetworkHealthProber_DefaultProberHTTP_TCP(t *testing.T) {
+func TestNetworkHealthProber_DefaultProberBlocksLoopback(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
 	defer ts.Close()
 
@@ -199,12 +200,13 @@ func TestNetworkHealthProber_DefaultProberHTTP_TCP(t *testing.T) {
 		WithHealthHTTPClient(nil),
 		WithHealthDialer(nil),
 		WithHealthProbeTimeout(0),
+		withProbeDialControl(nil),
 	)
 	ctx := context.Background()
 
 	resHTTP, err := p.ProbeHTTP(ctx, ts.URL, 0)
-	if err != nil || !resHTTP.Healthy {
-		t.Errorf("expected healthy default ProbeHTTP: res=%+v, err=%v", resHTTP, err)
+	if err != nil || resHTTP.Healthy || !strings.Contains(resHTTP.Message, errBlockedProbeAddress.Error()) {
+		t.Errorf("expected default ProbeHTTP to block loopback: res=%+v, err=%v", resHTTP, err)
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -213,8 +215,19 @@ func TestNetworkHealthProber_DefaultProberHTTP_TCP(t *testing.T) {
 	defer ln.Close()
 
 	resTCP, err := p.ProbeTCP(ctx, ln.Addr().String(), 0)
-	if err != nil || !resTCP.Healthy {
-		t.Errorf("expected healthy default ProbeTCP: res=%+v, err=%v", resTCP, err)
+	if err != nil || resTCP.Healthy || !strings.Contains(resTCP.Message, errBlockedProbeAddress.Error()) {
+		t.Errorf("expected default ProbeTCP to block loopback: res=%+v, err=%v", resTCP, err)
+	}
+}
+
+func TestNetworkHealthProber_UninitializedProberRefusesToDial(t *testing.T) {
+	p := &NetworkHealthProber{}
+	ctx := context.Background()
+	if _, err := p.ProbeHTTP(ctx, "http://example.com", time.Second); !errors.Is(err, errNetworkHealthProberUninitialized) {
+		t.Errorf("ProbeHTTP() error = %v, want %v", err, errNetworkHealthProberUninitialized)
+	}
+	if _, err := p.ProbeTCP(ctx, "example.com:80", time.Second); !errors.Is(err, errNetworkHealthProberUninitialized) {
+		t.Errorf("ProbeTCP() error = %v, want %v", err, errNetworkHealthProberUninitialized)
 	}
 }
 

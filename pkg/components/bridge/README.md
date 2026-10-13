@@ -348,6 +348,9 @@ Production-grade controller reliability, conflict elimination, and Cloud Spanner
 - **Deterministic 4-Tier Image Resolution**: Prioritizes explicit container images over repository overrides and baseline release tags.
 - **Graceful Connection Draining**: Enforces preStop sleep buffers to ensure zero-downtime rolling updates and teardowns.
 - **Active Network Health Probing**: Verifies runtime data-plane health across HTTP/HTTPS endpoints and raw TCP sockets with bounded body drains.
+  - **Destination guard**: probe targets come from `spec.parameters` and 3P operator `.status`, so `NetworkHealthProber` checks every resolved IP at connect time and refuses loopback, link-local (`169.254.0.0/16`, `fe80::/10`), unspecified, `0.0.0.0/8`, multicast, and GCE metadata (`169.254.169.254`, `fd00:ec2::254`) addresses. Private ranges such as `10.0.0.0/8` stay allowed for in-cluster services. The guard cannot be disabled by configuration.
+  - **No redirects**: HTTP probes do not follow redirects and bypass `HTTP_PROXY`. A `3xx` response is the final result and counts as healthy, like any other `2xx`/`3xx` status.
+  - `wrapperRef.endpointJsonPath` and `wrapperRef.connectionSecretJsonPath` must match `^\$\.status\..+` (CRD schema and linter).
 - **3P Access Coordinate Publishing**: Translates third-party service coordinates into standard CMS client access environment variables.
 - **Server-Side Apply Status Mutation**: Applies atomic SSA patches (`fieldManager=xmc-bridge`) to eliminate multi-controller status conflicts.
 - **Hybrid CMS Heartbeat Throttling**: Bypasses Cloud Spanner write amplification by throttling routine probe writes to 5-minute heartbeats or state changes.

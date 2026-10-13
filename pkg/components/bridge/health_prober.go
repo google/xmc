@@ -32,9 +32,14 @@ const (
 	defaultHealthProbeTimeout = 5 * time.Second
 )
 
+// errNetworkHealthProberUninitialized reports a NetworkHealthProber not built by NewNetworkHealthProber,
+// which would otherwise dial without the address guard.
+var errNetworkHealthProberUninitialized = errors.New("network health prober must be created with NewNetworkHealthProber")
+
 // HealthProbeResult contains health probe telemetry and outcome.
 type HealthProbeResult struct {
 	// Healthy indicates whether the network probe succeeded (HTTP 2xx/3xx or TCP connection established).
+	// Redirects are not followed, so a 3xx status is the final response.
 	Healthy bool `json:"healthy"`
 	// StatusCode is the HTTP response status code (if an HTTP probe was executed).
 	StatusCode int `json:"statusCode,omitempty"`
@@ -55,10 +60,16 @@ type HealthProber interface {
 }
 
 // NetworkHealthProber implements HealthProber for HTTP and TCP network connectivity.
+//
+// Probe targets come from Component specs and 3P operator status, so every dial is checked by
+// rejectBlockedProbeAddress (loopback, link-local, metadata server, and similar addresses are
+// refused) and HTTP redirects are never followed. A 3xx response is reported as the final result
+// and, as before, counts as healthy because the endpoint is serving.
 type NetworkHealthProber struct {
 	httpClient   *http.Client
 	dialer       *net.Dialer
 	probeTimeout time.Duration
+	dialControl  probeDialControl
 }
 
 var _ HealthProber = (*NetworkHealthProber)(nil)
@@ -93,18 +104,31 @@ func WithHealthProbeTimeout(t time.Duration) HealthProberOption {
 	}
 }
 
+// withProbeDialControl replaces the dial guard; tests use it to reach loopback test servers.
+func withProbeDialControl(control probeDialControl) HealthProberOption {
+	return func(p *NetworkHealthProber) {
+		if p != nil && control != nil {
+			p.dialControl = control
+		}
+	}
+}
+
 // NewNetworkHealthProber creates a new NetworkHealthProber instance with optional configurations.
+// The dial guard and redirect policy are applied to custom dialers and HTTP clients as well.
 func NewNetworkHealthProber(opts ...HealthProberOption) *NetworkHealthProber {
 	p := &NetworkHealthProber{
 		httpClient:   &http.Client{},
 		dialer:       &net.Dialer{},
 		probeTimeout: defaultHealthProbeTimeout,
+		dialControl:  rejectBlockedProbeAddress,
 	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(p)
 		}
 	}
+	p.dialer = guardDialer(p.dialer, p.dialControl)
+	p.httpClient = guardHTTPClient(p.httpClient, p.dialer)
 	return p
 }
 
@@ -152,7 +176,7 @@ func (p *NetworkHealthProber) ProbeHTTP(ctx context.Context, targetURL string, t
 	}
 	client := p.httpClient
 	if client == nil {
-		client = http.DefaultClient
+		return nil, errNetworkHealthProberUninitialized
 	}
 	start := time.Now()
 	resp, err := client.Do(req)
@@ -207,7 +231,7 @@ func (p *NetworkHealthProber) ProbeTCP(ctx context.Context, address string, time
 
 	dialer := p.dialer
 	if dialer == nil {
-		dialer = &net.Dialer{}
+		return nil, errNetworkHealthProberUninitialized
 	}
 	start := time.Now()
 	conn, err := dialer.DialContext(probeCtx, "tcp", trimmed)

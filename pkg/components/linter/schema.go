@@ -119,6 +119,8 @@ func (l *Linter) validate3PWrapper(c *ComponentManifest, line int, res *Validati
 	}
 	validateWrapperStatusPath(c.FilePath, line, "observedGenerationPath", w.ObservedGenerationPath, res)
 	validateWrapperStatusPath(c.FilePath, line, "readyConditionPath", w.ReadyConditionPath, res)
+	validateWrapperStatusPath(c.FilePath, line, "endpointJsonPath", w.EndpointJsonPath, res)
+	validateWrapperStatusPath(c.FilePath, line, "connectionSecretJsonPath", w.ConnectionSecretJsonPath, res)
 }
 
 func has3PEndpointParameters(params map[string]string) bool {

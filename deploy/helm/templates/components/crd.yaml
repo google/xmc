@@ -169,9 +169,11 @@ spec:
                       description: "Expected value for the ready condition field to indicate readiness."
                     endpointJsonPath:
                       type: string
+                      pattern: '^\$\.status\..+'
                       description: "JSONPath to extract endpoint coordinates."
                     connectionSecretJsonPath:
                       type: string
+                      pattern: '^\$\.status\..+'
                       description: "JSONPath to extract connection secret details."
                 dependencies:
                   type: array

@@ -488,6 +488,29 @@ spec:
 			wantRules: []string{"INVALID_WRAPPER_REF"},
 		},
 		{
+			name:  "3P wrapper with endpointJsonPath or connectionSecretJsonPath outside status is rejected",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: invalid-endpoint-paths
+spec:
+  componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
+  wrapperRef:
+    group: redpanda.vectorized.io
+    version: v1alpha1
+    kind: Cluster
+    name: redpanda
+    endpointJsonPath: "http://169.254.169.254/computeMetadata/v1/"
+    connectionSecretJsonPath: "$.spec.secretName"
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"INVALID_WRAPPER_REF"},
+		},
+		{
 			name:  "component with non-string parameter value is rejected",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{

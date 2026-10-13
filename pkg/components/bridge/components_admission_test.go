@@ -382,6 +382,10 @@ func verifyCRDSchemaAndCELRules(ctx context.Context, t *testing.T, compClient dy
 		}
 		return m
 	}
+	withPath := func(m map[string]any, field, path string) map[string]any {
+		m[field] = path
+		return m
+	}
 	tests := []struct {
 		name        string
 		crName      string
@@ -396,6 +400,9 @@ func verifyCRDSchemaAndCELRules(ctx context.Context, t *testing.T, compClient dy
 		{"accepts operatorless 3P wrapper with parameters only", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "deletionProtection": false, "parameters": map[string]any{"host": "clickhouse.xmc.svc.cluster.local"}}, false, ""},
 		{"rejects wrapperRef observedGenerationPath outside status", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("$.metadata.generation", "")}, true, "observedGenerationPath"},
 		{"rejects wrapperRef readyConditionPath outside status", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("", "$.spec.ready")}, true, "readyConditionPath"},
+		{"rejects wrapperRef endpointJsonPath literal URL", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": withPath(wrapperRef("", ""), "endpointJsonPath", "http://169.254.169.254/computeMetadata/v1/")}, true, "endpointJsonPath"},
+		{"rejects wrapperRef connectionSecretJsonPath outside status", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": withPath(wrapperRef("", ""), "connectionSecretJsonPath", "$.spec.secretName")}, true, "connectionSecretJsonPath"},
+		{"accepts wrapperRef endpoint and secret JSONPaths under status", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "deletionProtection": false, "wrapperRef": withPath(withPath(wrapperRef("", ""), "endpointJsonPath", "$.status.endpoint"), "connectionSecretJsonPath", "$.status.connectionSecret")}, false, ""},
 		{"accepts valid 3P wrapper with status JSONPaths and applies schema defaults", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("$.status.observedGeneration", "$.status.conditions[?(@.type=='Ready')].status")}, false, ""},
 		{"accepts metadata.name of 45 characters", strings.Repeat("a", 45), map[string]any{"enabled": true, "deletionProtection": false}, false, ""},
 		{"rejects metadata.name exceeding 45 characters", strings.Repeat("a", 46), map[string]any{"enabled": true, "deletionProtection": false}, true, "metadata.name must be at most 45 characters"},
