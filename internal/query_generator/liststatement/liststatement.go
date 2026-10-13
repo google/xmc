@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	fepb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	fepb "xmanager_cloud/api/filter"
 	aipfilter "xmanager_cloud/api/filter/go/filter"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"

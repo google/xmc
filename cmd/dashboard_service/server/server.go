@@ -24,8 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
@@ -49,7 +48,7 @@ type DashboardRepository interface {
 
 // ChartDataEngine defines the interface for fetching analytics chart data.
 type ChartDataEngine interface {
-	FetchChartData(ctx context.Context, chart *dpb.Chart, req *spb.GetChartDataRequest) (*dpb.ChartData, error)
+	FetchChartData(ctx context.Context, chart *dpb.Chart, req *dpb.GetChartDataRequest) (*dpb.ChartData, error)
 }
 
 // Config holds configuration for the dashboard service server.
@@ -64,7 +63,7 @@ type Config struct {
 
 // Server implements the generated pb.DashboardServiceServer interface.
 type Server struct {
-	spb.UnimplementedDashboardServiceServer
+	dpb.UnimplementedDashboardServiceServer
 
 	cfg        *Config
 	repo       DashboardRepository
@@ -73,7 +72,7 @@ type Server struct {
 	dataEngine ChartDataEngine
 }
 
-var _ spb.DashboardServiceServer = (*Server)(nil)
+var _ dpb.DashboardServiceServer = (*Server)(nil)
 
 // NewServer creates a new instance of Server.
 func NewServer(cfg *Config, repo DashboardRepository, auth auth.AuthorizerInterface, xidClient xidapipb.XidServiceClient, de ChartDataEngine) *Server {
@@ -287,7 +286,7 @@ func (s *Server) authorizeExperiment(ctx context.Context, user string, xid int64
 }
 
 // GetChartData retrieves chart data after validating experiment-level read permissions via XID service.
-func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest) (*dpb.ChartData, error) {
+func (s *Server) GetChartData(ctx context.Context, req *dpb.GetChartDataRequest) (*dpb.ChartData, error) {
 	if err := validator.ValidateGetChartDataRequest(req); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid get chart data request: %v", err)
 	}

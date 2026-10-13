@@ -39,8 +39,8 @@ import (
 	"google.golang.org/grpc/reflection"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
+	spb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/cmd/dashboard_service/server"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/internal/auth"
 	commonhealth "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/dashboard/dataengine"

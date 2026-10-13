@@ -24,8 +24,8 @@ import (
 	"sync"
 	"testing"
 
+	dashboard_apipb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
-	dashboard_apipb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"

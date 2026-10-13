@@ -23,8 +23,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/singleflight"
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/logging"
 )
 
@@ -372,7 +371,7 @@ func (p *Provider) dialTimeout() time.Duration {
 //
 // Implementing the same contract as DataEngine lets the dashboard server hold the Provider
 // directly, so a request arriving after ClickHouse recovers is served rather than rejected.
-func (p *Provider) FetchChartData(ctx context.Context, chart *dpb.Chart, req *spb.GetChartDataRequest) (*dpb.ChartData, error) {
+func (p *Provider) FetchChartData(ctx context.Context, chart *dpb.Chart, req *dpb.GetChartDataRequest) (*dpb.ChartData, error) {
 	engine, err := p.Engine(ctx)
 	if err != nil {
 		return nil, err
