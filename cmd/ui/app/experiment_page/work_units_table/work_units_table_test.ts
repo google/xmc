@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { TestBed } from '@angular/core/testing';
 import { MatButtonHarness } from '@angular/material/button/testing';
 import { MatTooltipHarness } from '@angular/material/tooltip/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
@@ -154,6 +155,21 @@ describe('WorkUnitsTable Component', () => {
       pageSize: 10,
       pageToken: 'page2',
     });
+  });
+
+  it('should reload from the first page when the experiment id changes', () => {
+    const lastRequest = () => state.workUnitsService.searchWorkUnits.calls.mostRecent().args[0];
+    const fixture = TestBed.createComponent(WorkUnitsTable);
+    fixture.componentRef.setInput('xid', '1');
+    fixture.detectChanges();
+    expect(lastRequest()).toEqual({ parent: 'experiments/1', pageSize: 10, pageToken: '' });
+    fixture.componentInstance.nextPage();
+    expect(lastRequest().pageToken).toBe('page2');
+
+    fixture.componentRef.setInput('xid', '2');
+    fixture.detectChanges();
+
+    expect(lastRequest()).toEqual({ parent: 'experiments/2', pageSize: 10, pageToken: '' });
   });
 
   describe('Loading states', () => {

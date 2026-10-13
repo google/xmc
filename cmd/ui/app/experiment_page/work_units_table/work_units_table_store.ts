@@ -77,9 +77,14 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
     (state) => state.pagination.previousTokens.length > 0,
   );
 
+  /**
+   * Sets the experiment id and returns to the first page, since page tokens belong to the
+   * previous experiment. It does not fetch data.
+   */
   readonly setXid = this.updater((state, xid: string) => ({
     ...state,
     xid,
+    pagination: getInitialPaginationState(state.pagination.pageSize),
   }));
 
   /** Sets the page size. It does not fetch data. */
