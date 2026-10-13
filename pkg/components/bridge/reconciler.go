@@ -250,18 +250,7 @@ func resolveComponentRef(in ReconcileComponentInput) ComponentRef {
 func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
 	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec})
 	if err != nil {
-		if dependencyNotRegisteredMessage(err) != "" {
-			setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
-			return fmt.Errorf("failed to apply component intent to CMS: %w", err)
-		}
-		if msg := dependencyCycleMessage(err); msg != "" {
-			if _, syncErr := r.reportGated(ctx, in, canonicalName, res, ReasonDependencyCycle, msg, ConditionStatusTrue); syncErr != nil {
-				return errors.Join(fmt.Errorf("failed to apply component intent to CMS: %w", err), syncErr)
-			}
-			return fmt.Errorf("failed to apply component intent to CMS: %w", err)
-		}
-		recordCMSSyncFailure(res, in, err)
-		return fmt.Errorf("failed to apply component intent to CMS: %w", err)
+		return r.handleIntentError(ctx, in, canonicalName, res, err)
 	}
 	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 	if setResp != nil && setResp.GetComponent() != nil && setResp.GetComponent().GetStatus() != nil {
@@ -269,6 +258,26 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	}
 	logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "state", res.State.String())
 	return nil
+}
+
+// handleIntentError classifies a SetComponentIntent failure: an unregistered dependency keeps
+// Synced=True (CMS is reachable), a dependency cycle gates the component, and any other error
+// records a CMS sync failure. It always returns the wrapped intent error.
+func (r *Reconciler) handleIntentError(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, err error) error {
+	intentErr := fmt.Errorf("failed to apply component intent to CMS: %w", err)
+	if dependencyNotRegisteredMessage(err) != "" {
+		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
+		return intentErr
+	}
+	msg := dependencyCycleMessage(err)
+	if msg == "" {
+		recordCMSSyncFailure(res, in, err)
+		return intentErr
+	}
+	if _, syncErr := r.reportGated(ctx, in, canonicalName, res, ReasonDependencyCycle, msg, ConditionStatusTrue); syncErr != nil {
+		return errors.Join(intentErr, syncErr)
+	}
+	return intentErr
 }
 
 // unreadyDependenciesMessage returns "waiting on dependencies: ..." naming every unready dependency,
