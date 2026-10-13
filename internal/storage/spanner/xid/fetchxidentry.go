@@ -23,9 +23,9 @@ import (
 	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/data"
+	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
-	"xmanager_cloud/internal/storage/spanner/utils"
+	spannerutils "xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/internal/validator"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -34,6 +34,24 @@ import (
 func (r *Repository) FetchXidEntry(ctx context.Context, xid int64) (*xidpb.XidEntry, error) {
 	ctx = logging.WithXIDName(ctx, validator.ConstructXIDName(xid))
 	return r.FetchXidEntryTransaction(ctx, xid, r.client.Single())
+}
+
+// FetchXidEntry retrieves a single XidEntry from storage within the active read-write transaction.
+func (r *TxRepository) FetchXidEntry(ctx context.Context, xid int64) (*xidpb.XidEntry, error) {
+	ctx = logging.WithXIDName(ctx, validator.ConstructXIDName(xid))
+	return r.FetchXidEntryTransaction(ctx, xid, r.tx)
+}
+
+// UpdateXidEntry buffers an XidEntry update mutation in the active read-write transaction.
+func (r *TxRepository) UpdateXidEntry(_ context.Context, xid int64, entry *xidpb.XidEntry) error {
+	if r.tx == nil {
+		return fmt.Errorf("spanner transaction must not be nil: %w", grpcerr.ErrFailedPrecondition)
+	}
+	if entry == nil {
+		return fmt.Errorf("entry must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	m := spannerdata.XIDEntryToMutation(xid, entry)
+	return r.tx.BufferWrite([]*spanner.Mutation{m})
 }
 
 // FetchXidEntryTransaction retrieves a single XidEntry from storage in a transaction.

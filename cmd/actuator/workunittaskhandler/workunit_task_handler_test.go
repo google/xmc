@@ -34,10 +34,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/ptr"
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/cmd/actuator/pausescheduling"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/security/securitytest"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
 const testAudience = "test-audience"

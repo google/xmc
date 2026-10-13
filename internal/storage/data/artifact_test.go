@@ -321,3 +321,98 @@ func TestArtifactRequiresXIDUpdate(t *testing.T) {
 		})
 	}
 }
+
+func TestArtifactSearchableContent(t *testing.T) {
+	testCases := []struct {
+		name    string
+		payload *pb.ArtifactPayload
+		want    string
+	}{
+		{name: "nil payload", payload: nil, want: ""},
+		{name: "empty payload", payload: &pb.ArtifactPayload{}, want: ""},
+		{
+			name:    "managed xprof",
+			payload: &pb.ArtifactPayload{Type: &pb.ArtifactPayload_ManagedXprof{ManagedXprof: &pb.ManagedXprofArtifact{DisplayName: "dn", RunGroup: "rg"}}},
+			want:    "dn rg",
+		},
+		{
+			name:    "managed xprof nil message",
+			payload: &pb.ArtifactPayload{Type: &pb.ArtifactPayload_ManagedXprof{}},
+			want:    "",
+		},
+		{
+			name:    "code source skips empty fields",
+			payload: &pb.ArtifactPayload{Type: &pb.ArtifactPayload_CodeSource{CodeSource: &pb.CodeSourceArtifact{Title: "t", CodeBlock: "cb", CodeUrl: "u"}}},
+			want:    "t cb u",
+		},
+		{
+			name:    "text",
+			payload: &pb.ArtifactPayload{Type: &pb.ArtifactPayload_Text{Text: &pb.TextArtifact{Title: "t", Text: "body"}}},
+			want:    "t body",
+		},
+		{
+			name:    "url",
+			payload: &pb.ArtifactPayload{Type: &pb.ArtifactPayload_Url{Url: &pb.UrlArtifact{Url: "http://x", DisplayName: "X"}}},
+			want:    "http://x X",
+		},
+		{
+			name:    "chart",
+			payload: &pb.ArtifactPayload{Type: &pb.ArtifactPayload_Chart{Chart: &pb.ChartArtifact{Title: "c", MetricNames: []string{"acc", "loss"}}}},
+			want:    "c acc loss",
+		},
+		{
+			name:    "chart without title",
+			payload: &pb.ArtifactPayload{Type: &pb.ArtifactPayload_Chart{Chart: &pb.ChartArtifact{MetricNames: []string{"acc"}}}},
+			want:    "acc",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ArtifactSearchableContent(tc.payload); got != tc.want {
+				t.Errorf("ArtifactSearchableContent() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestArtifactPriority(t *testing.T) {
+	testCases := []struct {
+		name string
+		art  *pb.Artifact
+		want int64
+	}{
+		{name: "nil artifact", art: nil, want: 0},
+		{name: "top-level priority wins", art: &pb.Artifact{Priority: 5, Url: &pb.Url{Priority: 9}}, want: 5},
+		{name: "falls back to url priority", art: &pb.Artifact{Url: &pb.Url{Priority: 9}}, want: 9},
+		{name: "unset defaults to zero", art: &pb.Artifact{}, want: 0},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ArtifactPriority(tc.art); got != tc.want {
+				t.Errorf("ArtifactPriority() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestArtifactTags(t *testing.T) {
+	testCases := []struct {
+		name string
+		art  *pb.Artifact
+		want []string
+	}{
+		{name: "nil tags default to empty slice", art: &pb.Artifact{}, want: []string{}},
+		{name: "tags preserved", art: &pb.Artifact{Tags: []string{"a", "b"}}, want: []string{"a", "b"}},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ArtifactTags(tc.art)
+			if got == nil {
+				t.Fatalf("ArtifactTags() = nil, want non-nil slice")
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("ArtifactTags() returned unexpected diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

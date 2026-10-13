@@ -18,6 +18,9 @@ go_library(
     name = "shared",
     srcs = [
         "batcher.go",
+        "batcher_retry.go",
+        "batcher_work_unit_not_found.go",
+        "storage_errors.go",
     ],
     importpath = "xmanager_cloud/cmd/reconciler/shared",
     visibility = ["//visibility:public"],
@@ -29,14 +32,18 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promauto",
         "@io_k8s_sigs_controller_runtime//pkg/metrics",
-        "@org_golang_google_grpc//status:go_default_library",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )
 
 go_test(
     name = "shared_test",
     srcs = [
+        "batcher_retry_test.go",
         "batcher_test.go",
+        "batcher_work_unit_not_found_test.go",
+        "storage_errors_test.go",
     ],
     embed = [":shared"],
     deps = [
@@ -47,6 +54,8 @@ go_test(
         "@com_github_google_go_cmp//cmp/cmpopts",
         "@com_github_prometheus_client_golang//prometheus/testutil",
         "@com_github_prometheus_client_model//go",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

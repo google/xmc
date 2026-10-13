@@ -15,7 +15,6 @@ package spannerdata
 
 import (
 	"fmt"
-	"strings"
 
 	"cloud.google.com/go/spanner"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -132,23 +131,23 @@ func ArtifactProtoToInsertMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 		artifactschema.ArtifactTableName,
 		artifactschema.ArtifactColumns,
 		[]any{
-			xid,                               // Xid
-			workUnitID,                        // WorkUnitId
-			aid,                               // ArtifactId
-			art.Url.Url,                       // Url
-			art.Url.Icon,                      // Icon
-			art.Url.DisplayName,               // DisplayName
-			getPriority(art),                  // Priority
-			getTags(art),                      // Tags
-			art.Notes,                         // Notes
-			art.LifecyclePhase,                // LifecyclePhase
-			art.DataType,                      // DataType
-			art.MimeType,                      // MimeType
-			art.AdditionalInfo,                // AdditionalInfo
-			art.Payload,                       // Payload
-			getSearchableContent(art.Payload), // SearchableContent
-			art.CreateTime.AsTime(),           // CreateTime
-			art.UpdateTime.AsTime(),           // UpdateTime
+			xid,                        // Xid
+			workUnitID,                 // WorkUnitId
+			aid,                        // ArtifactId
+			art.Url.Url,                // Url
+			art.Url.Icon,               // Icon
+			art.Url.DisplayName,        // DisplayName
+			data.ArtifactPriority(art), // Priority
+			data.ArtifactTags(art),     // Tags
+			art.Notes,                  // Notes
+			art.LifecyclePhase,         // LifecyclePhase
+			art.DataType,               // DataType
+			art.MimeType,               // MimeType
+			art.AdditionalInfo,         // AdditionalInfo
+			art.Payload,                // Payload
+			data.ArtifactSearchableContent(art.Payload), // SearchableContent
+			art.CreateTime.AsTime(),                     // CreateTime
+			art.UpdateTime.AsTime(),                     // UpdateTime
 		},
 	), nil
 }
@@ -170,105 +169,22 @@ func ArtifactProtoToUpdateMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 		artifactschema.ArtifactTableName,
 		artifactschema.ArtifactUpdateColumns,
 		[]any{
-			data.ReverseBits(xid),             // BitReversedXid
-			workUnitID,                        // WorkUnitId
-			aid,                               // ArtifactId
-			art.Url.Url,                       // Url
-			art.Url.Icon,                      // Icon
-			art.Url.DisplayName,               // DisplayName
-			getPriority(art),                  // Priority
-			getTags(art),                      // Tags
-			art.Notes,                         // Notes
-			art.LifecyclePhase,                // LifecyclePhase
-			art.DataType,                      // DataType
-			art.MimeType,                      // MimeType
-			art.AdditionalInfo,                // AdditionalInfo
-			art.Payload,                       // Payload
-			getSearchableContent(art.Payload), // SearchableContent
-			art.UpdateTime.AsTime(),           // UpdateTime
+			data.ReverseBits(xid),      // BitReversedXid
+			workUnitID,                 // WorkUnitId
+			aid,                        // ArtifactId
+			art.Url.Url,                // Url
+			art.Url.Icon,               // Icon
+			art.Url.DisplayName,        // DisplayName
+			data.ArtifactPriority(art), // Priority
+			data.ArtifactTags(art),     // Tags
+			art.Notes,                  // Notes
+			art.LifecyclePhase,         // LifecyclePhase
+			art.DataType,               // DataType
+			art.MimeType,               // MimeType
+			art.AdditionalInfo,         // AdditionalInfo
+			art.Payload,                // Payload
+			data.ArtifactSearchableContent(art.Payload), // SearchableContent
+			art.UpdateTime.AsTime(),                     // UpdateTime
 		},
 	), nil
-}
-
-func getSearchableContent(payload *pb.ArtifactPayload) string {
-	if payload == nil {
-		return ""
-	}
-
-	var parts []string
-
-	switch p := payload.Type.(type) {
-	case *pb.ArtifactPayload_ManagedXprof:
-		if p.ManagedXprof == nil {
-			break
-		}
-		if p.ManagedXprof.DisplayName != "" {
-			parts = append(parts, p.ManagedXprof.DisplayName)
-		}
-		if p.ManagedXprof.RunGroup != "" {
-			parts = append(parts, p.ManagedXprof.RunGroup)
-		}
-	case *pb.ArtifactPayload_CodeSource:
-		if p.CodeSource == nil {
-			break
-		}
-		if p.CodeSource.Title != "" {
-			parts = append(parts, p.CodeSource.Title)
-		}
-		if p.CodeSource.Description != "" {
-			parts = append(parts, p.CodeSource.Description)
-		}
-		if p.CodeSource.CodeBlock != "" {
-			parts = append(parts, p.CodeSource.CodeBlock)
-		}
-		if p.CodeSource.CodeUrl != "" {
-			parts = append(parts, p.CodeSource.CodeUrl)
-		}
-	case *pb.ArtifactPayload_Text:
-		if p.Text == nil {
-			break
-		}
-		if p.Text.Title != "" {
-			parts = append(parts, p.Text.Title)
-		}
-		if p.Text.Text != "" {
-			parts = append(parts, p.Text.Text)
-		}
-	case *pb.ArtifactPayload_Url:
-		if p.Url == nil {
-			break
-		}
-		if p.Url.Url != "" {
-			parts = append(parts, p.Url.Url)
-		}
-		if p.Url.DisplayName != "" {
-			parts = append(parts, p.Url.DisplayName)
-		}
-	case *pb.ArtifactPayload_Chart:
-		if p.Chart == nil {
-			break
-		}
-		if p.Chart.Title != "" {
-			parts = append(parts, p.Chart.Title)
-		}
-		if len(p.Chart.MetricNames) > 0 {
-			parts = append(parts, p.Chart.MetricNames...)
-		}
-	}
-
-	return strings.Join(parts, " ")
-}
-
-func getPriority(art *pb.Artifact) int64 {
-	if art.GetPriority() != 0 {
-		return int64(art.GetPriority())
-	}
-	return int64(art.GetUrl().GetPriority())
-}
-
-func getTags(art *pb.Artifact) []string {
-	if art.GetTags() == nil {
-		return []string{}
-	}
-	return art.GetTags()
 }

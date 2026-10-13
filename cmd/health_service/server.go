@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	spb "xmanager_cloud/health_service/proto/api_go_proto"
+	spb "xmanager_cloud/api/protos/health"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/summary"
 
@@ -294,6 +294,22 @@ func (s *server) GetUserInfo(ctx context.Context, req *spb.GetUserInfoRequest) (
 		UserEmail:  email,
 		Privileges: privileges,
 	}, nil
+}
+
+// GetSchedulingStatus returns the current global workload scheduling pause state.
+func (s *server) GetSchedulingStatus(ctx context.Context, _ *spb.GetSchedulingStatusRequest) (*spb.GetSchedulingStatusResponse, error) {
+	if !s.cfg.FeatureFlags.PauseSchedulingEnabled {
+		return &spb.GetSchedulingStatusResponse{IsSchedulingPaused: false}, nil
+	}
+	paused, err := s.pauseScheduler.IsPausedCached(ctx)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, status.FromContextError(ctxErr).Err()
+		}
+		logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
+		return nil, status.Error(codes.Internal, schedulingPauseUnavailableError)
+	}
+	return &spb.GetSchedulingStatusResponse{IsSchedulingPaused: paused}, nil
 }
 
 // PauseScheduling handles administrative requests to pause actuator scheduling.

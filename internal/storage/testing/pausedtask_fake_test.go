@@ -25,11 +25,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
 var baseTime = time.Date(2026, 9, 10, 10, 0, 0, 0, time.UTC)

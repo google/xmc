@@ -43,7 +43,7 @@ import (
 
 	run "google.golang.org/api/run/v2"
 
-	spb "xmanager_cloud/health_service/proto/api_go_proto"
+	spb "xmanager_cloud/api/protos/health"
 )
 
 type grpcServerDeps struct {
@@ -223,6 +223,7 @@ func initPauseScheduler(cfg *Config, lazyStorage LazyStorageProvider, taskQueueP
 		TaskQueuePublisher:  taskQueuePublisher,
 		BatchSize:           cfg.SchedulingResumeBatchSize,
 		MaxBacklogThreshold: cfg.SchedulingResumeMaxBacklog,
+		CacheTTL:            cfg.CacheTTL,
 	})
 }
 

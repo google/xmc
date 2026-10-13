@@ -21,8 +21,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -43,7 +42,7 @@ func nameInlineCharts(charts []*dpb.Chart) []string {
 // A dashboard and the charts it is created with are written in a single transaction. Creating them
 // through separate RPCs cannot be made atomic by the client: a dashboard whose chart writes failed
 // renders empty, and charts whose dashboard write failed are unreachable rows nothing links to.
-func (s *Server) CreateDashboard(ctx context.Context, req *spb.CreateDashboardRequest) (*dpb.Dashboard, error) {
+func (s *Server) CreateDashboard(ctx context.Context, req *dpb.CreateDashboardRequest) (*dpb.Dashboard, error) {
 	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)

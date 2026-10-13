@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	spb "xmanager_cloud/health_service/proto/api_go_proto"
+	spb "xmanager_cloud/api/protos/health"
 	health "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/summary"

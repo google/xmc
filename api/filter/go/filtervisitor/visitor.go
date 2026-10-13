@@ -16,7 +16,7 @@ package filtervisitor
 
 import (
 	"errors"
-	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter"
 )
 
 type PrimType struct {

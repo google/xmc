@@ -22,8 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	spb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/auth"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -34,8 +33,8 @@ func TestDeleteDashboard(t *testing.T) {
 	t.Run("successful deletion by owner", func(t *testing.T) {
 		deletedID := ""
 		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return &dpb.Dashboard{
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*spb.Dashboard, error) {
+				return &spb.Dashboard{
 					Name:  "dashboards/" + dashboardId,
 					Owner: "owner@example.com",
 				}, nil
@@ -103,7 +102,7 @@ func TestDeleteDashboard(t *testing.T) {
 
 	t.Run("dashboard not found on fetch returns NotFound", func(t *testing.T) {
 		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*spb.Dashboard, error) {
 				return nil, status.Error(codes.NotFound, "not found")
 			},
 		}
@@ -117,7 +116,7 @@ func TestDeleteDashboard(t *testing.T) {
 
 	t.Run("storage error on fetch returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*spb.Dashboard, error) {
 				return nil, errors.New("read error")
 			},
 		}
@@ -131,8 +130,8 @@ func TestDeleteDashboard(t *testing.T) {
 
 	t.Run("non-owner attempting deletion rejected with PermissionDenied", func(t *testing.T) {
 		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return &dpb.Dashboard{Name: "dashboards/" + dashboardId, Owner: "other@example.com"}, nil
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*spb.Dashboard, error) {
+				return &spb.Dashboard{Name: "dashboards/" + dashboardId, Owner: "other@example.com"}, nil
 			},
 		}
 		authMock := &mockAuthorizer{
@@ -150,8 +149,8 @@ func TestDeleteDashboard(t *testing.T) {
 
 	t.Run("authorization check error returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return &dpb.Dashboard{Name: "dashboards/" + dashboardId, Owner: "other@example.com"}, nil
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*spb.Dashboard, error) {
+				return &spb.Dashboard{Name: "dashboards/" + dashboardId, Owner: "other@example.com"}, nil
 			},
 		}
 		authMock := &mockAuthorizer{
@@ -169,8 +168,8 @@ func TestDeleteDashboard(t *testing.T) {
 
 	t.Run("repo delete error returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return &dpb.Dashboard{Name: "dashboards/" + dashboardId, Owner: "owner@example.com"}, nil
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*spb.Dashboard, error) {
+				return &spb.Dashboard{Name: "dashboards/" + dashboardId, Owner: "owner@example.com"}, nil
 			},
 			deleteDashboardFn: func(ctx context.Context, dashboardId string) error {
 				return errors.New("delete failed")
@@ -186,8 +185,8 @@ func TestDeleteDashboard(t *testing.T) {
 
 	t.Run("repo delete returns not found returns NotFound", func(t *testing.T) {
 		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return &dpb.Dashboard{Name: "dashboards/" + dashboardId, Owner: "owner@example.com"}, nil
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*spb.Dashboard, error) {
+				return &spb.Dashboard{Name: "dashboards/" + dashboardId, Owner: "owner@example.com"}, nil
 			},
 			deleteDashboardFn: func(ctx context.Context, dashboardId string) error {
 				return status.Error(codes.NotFound, "not found")

@@ -56,4 +56,16 @@ describe('MockHealthService', () => {
     expect(response.userEmail).toBe('mock-user@google.com');
     expect(response.privileges).toContain('PRIVILEGE_ACCESS_ADMIN_PANEL');
   });
+
+  it('should reflect pause and resume in getSchedulingStatus', async () => {
+    const service = mockState.service as MockHealthService;
+
+    expect((await firstValueFrom(service.getSchedulingStatus())).isSchedulingPaused).toBeFalse();
+
+    await firstValueFrom(service.pauseScheduling());
+    expect((await firstValueFrom(service.getSchedulingStatus())).isSchedulingPaused).toBeTrue();
+
+    await firstValueFrom(service.resumeScheduling());
+    expect((await firstValueFrom(service.getSchedulingStatus())).isSchedulingPaused).toBeFalse();
+  });
 });

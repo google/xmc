@@ -24,6 +24,7 @@ import {
   ReloaderControl,
 } from '../common/components/autoreloader/autoreloader_service';
 import { PageSizeSelector } from '../common/components/page_size_selector/page_size_selector';
+import { SchedulingPausedBanner } from '../common/components/scheduling_paused_banner/scheduling_paused_banner';
 import { ExperimentsListPageStore } from './experiments_list_page_store';
 import { ExperimentsTable } from './experiments_table/experiments_table';
 import { queryParamsToExperimentFilters } from './utils/query_params';
@@ -37,7 +38,14 @@ import { queryParamsToExperimentFilters } from './utils/query_params';
   templateUrl: './experiments_list_page.ng.html',
   styleUrl: './experiments_list_page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatCardModule, MatIconModule, MatButtonModule, ExperimentsTable, PageSizeSelector],
+  imports: [
+    MatCardModule,
+    MatIconModule,
+    MatButtonModule,
+    ExperimentsTable,
+    PageSizeSelector,
+    SchedulingPausedBanner,
+  ],
   providers: [ExperimentsListPageStore],
 })
 export class ExperimentsListPage implements OnInit, OnDestroy {
@@ -52,6 +60,7 @@ export class ExperimentsListPage implements OnInit, OnDestroy {
 
   readonly pageResult = this.componentStore.pageResult;
   readonly isLoading = this.componentStore.isLoading;
+  readonly isSchedulingPaused = this.componentStore.isSchedulingPaused;
 
   readonly pageIndex = this.componentStore.pageIndex;
   readonly pageSize = this.componentStore.pageSize;
@@ -59,6 +68,7 @@ export class ExperimentsListPage implements OnInit, OnDestroy {
   readonly hasPreviousPage = this.componentStore.hasPreviousPage;
 
   ngOnInit() {
+    this.componentStore.fetchSchedulingStatus();
     this.subscriptions.add(
       this.route.queryParams.subscribe((queryParams) => {
         this.componentStore.setFilter(queryParamsToExperimentFilters(queryParams));
@@ -68,6 +78,7 @@ export class ExperimentsListPage implements OnInit, OnDestroy {
     this.subscriptions.add(
       this.reloader.reloader$.subscribe(() => {
         this.componentStore.fetchPage();
+        this.componentStore.fetchSchedulingStatus();
       }),
     );
     this.reloader.start();

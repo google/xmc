@@ -15,12 +15,16 @@ package workunit_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -711,6 +715,49 @@ func TestUpdateWorkUnitExecutions_NonExistentWorkUnit(t *testing.T) {
 	_, err = workunit.NewUpdater(storageClient).UpdateWorkUnitExecutions(ctx, 345, updates)
 	if err == nil {
 		t.Errorf("UpdateWorkUnitExecutions for non-existent work unit succeeded, want error")
+	}
+}
+
+func TestUpdateWorkUnitExecutions_MultipleNonExistentWorkUnits(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storageClient, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
+	}
+
+	xid := int64(346)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+	createdWu := spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 1)
+	completed := func(wid int64) *storage.WorkUnitExecutionUpdate {
+		return &storage.WorkUnitExecutionUpdate{
+			WID: wid,
+			EID: 1,
+			WorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_COMPLETED, StateUpdateTime: timestamppb.New(time.Now())},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
+		}
+	}
+
+	_, err = workunit.NewUpdater(storageClient).UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{completed(999), completed(1), completed(998), completed(999)})
+
+	var notFound *storage.WorkUnitNotFoundError
+	if !errors.As(err, &notFound) {
+		t.Fatalf("UpdateWorkUnitExecutions() error = %v, want *storage.WorkUnitNotFoundError", err)
+	}
+	if diff := cmp.Diff(&storage.WorkUnitNotFoundError{XID: xid, WIDs: []int64{998, 999}}, notFound); diff != "" {
+		t.Errorf("WorkUnitNotFoundError mismatch (-want +got):\n%s", diff)
+	}
+	if got := status.Code(err); got != codes.NotFound {
+		t.Errorf("status.Code(err) = %v, want %v", got, codes.NotFound)
+	}
+	gotWu, err := storageClient.FetchWorkUnit(ctx, xid, 1)
+	if err != nil {
+		t.Fatalf("FetchWorkUnit(1) failed: %v", err)
+	}
+	if got, want := gotWu.CurrentWorkUnitExecution.Status.State, createdWu.CurrentWorkUnitExecution.Status.State; got != want {
+		t.Errorf("work unit 1 state = %v, want unchanged %v (no partial writes)", got, want)
 	}
 }
 
@@ -1648,5 +1695,49 @@ func TestUpdateWorkUnitExecutionsInTx(t *testing.T) {
 	}
 	if got := spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_COMPLETED); got != 1 {
 		t.Errorf("experiment COMPLETED count = %d, want 1", got)
+	}
+}
+
+func TestUpdateWorkUnitExecutionsInTx_MissingWorkUnit(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storageClient, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
+	}
+
+	const xid = 129
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+	createdWu := spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 1)
+	updates := []*storage.WorkUnitExecutionUpdate{
+		{
+			WID: 1,
+			EID: 1,
+			WorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_COMPLETED, StateUpdateTime: timestamppb.New(time.Now())},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
+		},
+		{WID: 7, EID: 1, WorkUnitExecution: &essmsgpb.WorkUnitExecution{}},
+	}
+
+	err = storageClient.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+		_, err := workunit.UpdateWorkUnitExecutionsInTx(ctx, tx, xid, updates)
+		return err
+	})
+
+	var notFound *storage.WorkUnitNotFoundError
+	if !errors.As(err, &notFound) {
+		t.Fatalf("RunInTransaction() error = %v, want *storage.WorkUnitNotFoundError", err)
+	}
+	if diff := cmp.Diff(&storage.WorkUnitNotFoundError{XID: xid, WIDs: []int64{7}}, notFound); diff != "" {
+		t.Errorf("WorkUnitNotFoundError mismatch (-want +got):\n%s", diff)
+	}
+	gotWu, err := storageClient.FetchWorkUnit(ctx, xid, 1)
+	if err != nil {
+		t.Fatalf("FetchWorkUnit(1) failed: %v", err)
+	}
+	if got, want := gotWu.GetCurrentWorkUnitExecution().GetStatus().GetState(), createdWu.GetCurrentWorkUnitExecution().GetStatus().GetState(); got != want {
+		t.Errorf("work unit 1 state = %v, want unchanged %v (no partial writes)", got, want)
 	}
 }

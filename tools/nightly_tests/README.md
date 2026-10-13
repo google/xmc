@@ -38,6 +38,7 @@ The Nightly Examples E2E workflow ([`.github/workflows/nightly-examples-e2e.yml`
   - `validate_clickhouse_metrics`: Queries ClickHouse HTTP SQL (`SELECT metric_name, count(), ... FROM metrics`) to assert metric ingestion and finite float values.
   - `validate_dashboard` / `validate_dashboard_chart_data`: Queries Dashboard Service REST/gRPC endpoints to assert dashboard creation, constituent chart definitions, and `GetChartData` time-series hydration.
   - `stop_work_units`: Issues `BatchStopWorkUnits` cleanup for non-completing (`wait_for_completion=False`) workloads.
+- [`ui_entities_validator.py`](ui_entities_validator.py) & [`resource_observability_dashboard_ui_verify.py`](resource_observability_dashboard_ui_verify.py): Provide authenticated Playwright browser sessions (`XMCUIBrowserSession`), route navigation and runtime error gates (`navigate_to_route`, `assert_no_runtime_errors`), and interactive UI E2E verification for the Resource Observability Dashboard (`/resources`).
 
 ---
 
@@ -208,6 +209,12 @@ To trigger a targeted E2E run on your feature branch in GitHub Actions without r
 BRANCH_NAME="feat/my-new-example"
 EXAMPLE_ID="my_new_example"
 gh workflow run nightly-examples-e2e.yml --ref "${BRANCH_NAME}" -f examples_filter="${EXAMPLE_ID}"
+```
+
+To build and launch the example workloads without running verification assertions (`skip_verification=true`):
+
+```bash
+gh workflow run nightly-examples-e2e.yml --ref "${BRANCH_NAME}" -f examples_filter="${EXAMPLE_ID}" -f skip_verification=true
 ```
 
 ---

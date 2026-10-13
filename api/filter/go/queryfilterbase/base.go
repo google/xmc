@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	fpb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	fpb "xmanager_cloud/api/filter"
 	"xmanager_cloud/api/filter/go/filtervisitor"
 	"xmanager_cloud/internal/safesql"
 )

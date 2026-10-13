@@ -44,6 +44,13 @@ service HealthService {
     };
   }
 
+  // Gets the global workload scheduling pause status.
+  rpc GetSchedulingStatus(GetSchedulingStatusRequest) returns (GetSchedulingStatusResponse) {
+    option (google.api.http) = {
+      get: "/v1/health/scheduling"
+    };
+  }
+
   // Pauses Actuator scheduling operations.
   rpc PauseScheduling(PauseSchedulingRequest) returns (PauseSchedulingResponse) {
     option (google.api.http) = {
@@ -128,6 +135,12 @@ enum Privilege {
 message UserInfoResponse {
   string user_email = 1;
   repeated Privilege privileges = 2;
+}
+
+message GetSchedulingStatusRequest {}
+
+message GetSchedulingStatusResponse {
+  bool is_scheduling_paused = 1;
 }
 
 message PauseSchedulingRequest {}

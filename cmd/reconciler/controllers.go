@@ -46,6 +46,22 @@ func newMLRunCreator(ctx context.Context, projectID, environment, location strin
 	return client
 }
 
+// jobSetStorage combines storage.Storage (read primitives) with *workunit.Updater
+// (UpdateWorkUnitExecutions) to satisfy jobset.ReconcilerStorage.
+type jobSetStorage struct {
+	storage.Storage
+	*workunit.Updater
+}
+
+// newJobSetStorage returns a jobset.ReconcilerStorage backed by s and u, or a
+// nil interface when s is nil so the reconciler's r.Storage == nil guard holds.
+func newJobSetStorage(s storage.Storage, u *workunit.Updater) jobset.ReconcilerStorage {
+	if s == nil {
+		return nil
+	}
+	return jobSetStorage{Storage: s, Updater: u}
+}
+
 type controllerRegistrationParams struct {
 	mgr         ctrl.Manager
 	cfg         Config
@@ -78,13 +94,14 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		return nil, fmt.Errorf("unable to setup clusterqueue controller: %w", err)
 	}
 
+	updater := workunit.NewUpdater(p.storage)
 	batcher := shared.NewUpdateBatcher(
 		ctx,
 		&shared.BatcherConfig{
 			TickDuration:           p.cfg.BatcherTickDuration,
 			MaxParallelExperiments: p.cfg.MaxParallelExperiments,
 		},
-		workunit.NewUpdater(p.storage),
+		updater,
 	)
 
 	jobsetReconciler, err := jobset.NewReconciler(jobset.Params{
@@ -96,7 +113,7 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		Batcher:                  batcher,
 		MaxConcurrentReconciles:  p.cfg.MaxConcurrentReconciles,
 		StartupPodErrorCheckTime: p.cfg.StartupPodErrorCheckTime,
-		Storage:                  p.storage,
+		Storage:                  newJobSetStorage(p.storage, updater),
 		MLRunClient:              p.mlRunClient,
 	})
 	if err != nil {

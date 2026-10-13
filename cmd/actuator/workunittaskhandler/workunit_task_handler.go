@@ -32,11 +32,11 @@ import (
 	"google.golang.org/api/idtoken"
 	"google.golang.org/protobuf/encoding/protojson"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/cmd/actuator/pausescheduling"
 	"xmanager_cloud/internal/common/interfaces"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
 var (
