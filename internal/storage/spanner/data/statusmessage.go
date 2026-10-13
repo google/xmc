@@ -20,7 +20,6 @@ import (
 	"cloud.google.com/go/spanner"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -125,7 +124,10 @@ func StatusMessageProtoToInsertMutation(msg *essmsgpb.StructuredMessage, message
 		executionID = spanner.NullInt64{Valid: true, Int64: *eid}
 	}
 
-	createTime := data.StatusMessageCreateTime(msg.GetCreateTime(), time.Now())
+	createTime := time.Now()
+	if msg.GetCreateTime() != nil {
+		createTime = msg.GetCreateTime().AsTime()
+	}
 
 	return spanner.Insert(
 		"StatusMessages",
