@@ -56,9 +56,6 @@ func TestComponentsAdmissionAndControllerSuite(t *testing.T) {
 	t.Run("DeletionVAPFollowsEnableComponentsFlag", func(t *testing.T) {
 		verifyDeletionVAPFollowsEnableFlag(t)
 	})
-	t.Run("CRDIgnoresEnableComponentsFlag", func(t *testing.T) {
-		verifyCRDIgnoresEnableFlag(t)
-	})
 	t.Run("CRDOpenAPIAndCELSchemaValidations", func(t *testing.T) {
 		verifyCRDSchemaAndCELRules(ctx, t, clients.adminDynamic.Resource(ComponentGVR).Namespace("default"))
 	})
@@ -195,21 +192,33 @@ func verifyDeletionVAPFollowsEnableFlag(t *testing.T) {
 	}
 }
 
-// verifyCRDIgnoresEnableFlag asserts the Component CRD renders whatever componentsDeployment.enabled
-// is set to.
-func verifyCRDIgnoresEnableFlag(t *testing.T) {
-	t.Helper()
-	for _, enabled := range []bool{false, true} {
-		var doc map[string]any
-		if err := yaml.Unmarshal(renderHelmManifestTemplate(t, "crd.yaml", enabled), &doc); err != nil || doc["kind"] == nil {
-			t.Errorf("expected crd.yaml with componentsDeployment.enabled=%v to render K8s object, got %v (err=%v)", enabled, doc, err)
-		}
+// TestCRDIgnoresEnableComponentsFlag asserts the Component CRD renders whatever
+// componentsDeployment.enabled is set to. It is a pure template check, so it runs outside the
+// envtest suite.
+func TestCRDIgnoresEnableComponentsFlag(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		enabled bool
+	}{
+		{name: "components disabled", enabled: false},
+		{name: "components enabled", enabled: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var doc map[string]any
+			if err := yaml.Unmarshal(renderHelmManifestTemplate(t, "crd.yaml", tt.enabled), &doc); err != nil || doc["kind"] == nil {
+				t.Errorf("expected crd.yaml with componentsDeployment.enabled=%v to render K8s object, got %v (err=%v)", tt.enabled, doc, err)
+			}
+		})
 	}
 }
 
 // TestCRDLifecycleAnnotations asserts the CRD survives helm uninstall, a componentsDeployment.enabled
 // flip and an Argo CD prune, because deleting the CRD deletes every Component CR.
 func TestCRDLifecycleAnnotations(t *testing.T) {
+	t.Parallel()
 	var crd struct {
 		Metadata struct {
 			Annotations map[string]string `json:"annotations"`

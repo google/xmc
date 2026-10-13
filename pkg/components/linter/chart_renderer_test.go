@@ -665,6 +665,18 @@ func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 				t.Errorf("%s: umbrella %s rendered = %v, want %v", tt.name, f, got, tt.wantGateway)
 			}
 		}
+		verifyUmbrellaCRDKept(t, tt.name, rendered["xmanager-cloud/templates/components/crd.yaml"])
+	}
+}
+
+// verifyUmbrellaCRDKept asserts the full Helm engine renders the Component CRD with its keep policy,
+// whatever componentsDeployment.enabled is set to.
+func verifyUmbrellaCRDKept(t *testing.T, name, crd string) {
+	t.Helper()
+	for _, want := range []string{"kind: CustomResourceDefinition", "helm.sh/resource-policy: keep"} {
+		if !strings.Contains(crd, want) {
+			t.Errorf("%s: umbrella components/crd.yaml missing %q", name, want)
+		}
 	}
 }
 
