@@ -230,7 +230,6 @@ func queryComponentWithActiveDependencies(ctx context.Context, queryable spanner
 	if len(rec.Dependencies) == 0 {
 		rec.Dependencies = nil
 	}
-	rec.Etag = generateEtag(rec)
 	return rec, nil
 }
 
