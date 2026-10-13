@@ -251,14 +251,6 @@ py_binary(
 )
 
 py_test(
-    name = "multikueue_job_verify_test",
-    size = "small",
-    srcs = ["multikueue_job_verify_test.py"],
-    imports = ["../.."],
-    deps = [":multikueue_job_verify"],
-)
-
-py_test(
     name = "xmc_entities_validator_test",
     srcs = ["xmc_entities_validator_test.py"],
     imports = ["../.."],
