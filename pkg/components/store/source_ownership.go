@@ -81,9 +81,10 @@ func (o *SourceOwner) records(src RequestSource) bool {
 	return o != nil && *o == *ownerOf(src)
 }
 
-// isOwnerObject reports whether src comes from the owner object o itself (same UID).
-func (o *SourceOwner) isOwnerObject(src RequestSource) bool {
-	return o != nil && o.UID == src.UID
+// isOlderGeneration reports whether src is an older generation of the owner object o (same UID). A
+// nil o has no generations.
+func (o *SourceOwner) isOlderGeneration(src RequestSource) bool {
+	return o != nil && o.UID == src.UID && src.Generation < o.Generation
 }
 
 // cloneSourceOwner returns a copy of o, or nil for a nil o.

@@ -78,26 +78,27 @@ func TestValidateRequestSource(t *testing.T) {
 func TestSourceOwnerRelations(t *testing.T) {
 	owner := ownerOf(baseRequestSource)
 	tests := []struct {
-		name            string
-		owner           *SourceOwner
-		src             RequestSource
-		wantRecords     bool
-		wantOwnerObject bool
+		name                string
+		owner               *SourceOwner
+		src                 RequestSource
+		wantRecords         bool
+		wantOlderGeneration bool
 	}{
-		{name: "nil owner", src: baseRequestSource},
-		{name: "same source", owner: owner, src: baseRequestSource, wantRecords: true, wantOwnerObject: true},
-		{name: "same source with a CAS guard", owner: owner, src: modifiedSource(func(s *RequestSource) { s.ExpectedOwnerUID = "uid-z" }), wantRecords: true, wantOwnerObject: true},
-		{name: "owner object at a newer generation", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Generation = 4 }), wantOwnerObject: true},
-		{name: "owner object at a new epoch", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Epoch = 2 }), wantOwnerObject: true},
-		{name: "another object", owner: owner, src: modifiedSource(func(s *RequestSource) { s.UID = "uid-b" })},
+		{name: "nil owner", src: modifiedSource(func(s *RequestSource) { s.Generation = 1 })},
+		{name: "same source", owner: owner, src: baseRequestSource, wantRecords: true},
+		{name: "same source with a CAS guard", owner: owner, src: modifiedSource(func(s *RequestSource) { s.ExpectedOwnerUID = "uid-z" }), wantRecords: true},
+		{name: "owner object at an older generation", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Generation = 1 }), wantOlderGeneration: true},
+		{name: "owner object at a newer generation", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Generation = 4 })},
+		{name: "owner object at a new epoch", owner: owner, src: modifiedSource(func(s *RequestSource) { s.Epoch = 2 })},
+		{name: "another object at an older generation", owner: owner, src: modifiedSource(func(s *RequestSource) { s.UID, s.Generation = "uid-b", 1 })},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.owner.records(tt.src); got != tt.wantRecords {
 				t.Errorf("records() = %t, want %t", got, tt.wantRecords)
 			}
-			if got := tt.owner.isOwnerObject(tt.src); got != tt.wantOwnerObject {
-				t.Errorf("isOwnerObject() = %t, want %t", got, tt.wantOwnerObject)
+			if got := tt.owner.isOlderGeneration(tt.src); got != tt.wantOlderGeneration {
+				t.Errorf("isOlderGeneration() = %t, want %t", got, tt.wantOlderGeneration)
 			}
 		})
 	}

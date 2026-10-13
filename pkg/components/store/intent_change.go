@@ -86,7 +86,7 @@ func planSourcedIntent(canonicalName string, rec *ComponentRecord, changed bool,
 		return intentPlan{}, err
 	}
 	plan := intentPlan{write: writeNothing, generation: rec.Generation}
-	olderGeneration := rec.Owner.isOwnerObject(src) && src.Generation < rec.Owner.Generation
+	olderGeneration := rec.Owner.isOlderGeneration(src)
 	switch {
 	case olderGeneration && changed:
 		return intentPlan{}, staleGenerationError(operationSetComponentIntent, canonicalName, rec.Owner, src)
