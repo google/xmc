@@ -17,7 +17,6 @@ package workunit
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strconv"
 
@@ -26,6 +25,7 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/safesql"
+	"xmanager_cloud/internal/storage"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
 	"xmanager_cloud/internal/storage/spanner/utils"
@@ -38,8 +38,8 @@ const (
 )
 
 var (
-	// ErrInvalidPageToken is returned when the page token cannot be decoded or is invalid.
-	ErrInvalidPageToken = errors.New("invalid page_token")
+	// ErrInvalidPageToken is an alias of storage.ErrInvalidPageToken, kept to avoid churn in Spanner callers.
+	ErrInvalidPageToken = storage.ErrInvalidPageToken
 )
 
 var fetchActiveWorkUnitPKsSQL = safesql.New(
@@ -59,18 +59,11 @@ var countActiveWorkUnitsSQL = safesql.New(
 	  AND wu.IsPendingOrRunningJob IS NOT NULL`,
 )
 
-// WorkUnitWithAuthor wraps a WorkUnit proto with author metadata.
-type WorkUnitWithAuthor struct {
-	WorkUnit *essmsgpb.WorkUnit
-	Author   string
-}
+// WorkUnitWithAuthor is an alias of storage.WorkUnitWithAuthor, kept to avoid churn in Spanner callers.
+type WorkUnitWithAuthor = storage.WorkUnitWithAuthor
 
-// ActiveWorkUnitsResult holds the result of querying active work units.
-type ActiveWorkUnitsResult struct {
-	WorkUnits      []WorkUnitWithAuthor
-	NextPageToken  string
-	TotalQueueSize int64
-}
+// ActiveWorkUnitsResult is an alias of storage.ActiveWorkUnitsResult, kept to avoid churn in Spanner callers.
+type ActiveWorkUnitsResult = storage.ActiveWorkUnitsResult
 
 type workUnitPK struct {
 	BitReversedXid int64

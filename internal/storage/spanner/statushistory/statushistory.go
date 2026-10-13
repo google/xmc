@@ -26,6 +26,7 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/common/resourceaccumulator"
 	"xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/storage"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 )
 
@@ -45,13 +46,8 @@ type WorkUnitStatusHistoryItem struct {
 // ResourceTypeCPU represents the standard CPU resource identifier string.
 const ResourceTypeCPU = constants.ResourceTypeCPU
 
-// QueueMetricRow represents a single raw row returned by the Spanner velocity or pending metrics query.
-type QueueMetricRow struct {
-	QueueName    string
-	Count        int64
-	TotalUnits   int64
-	ResourceType string
-}
+// QueueMetricRow is an alias of storage.QueueMetricRow, kept to avoid churn in Spanner callers.
+type QueueMetricRow = storage.QueueMetricRow
 
 // ExtractAllResourcesFromExecutable extracts all compute resource types and unit counts from an Executable.
 func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int64 {

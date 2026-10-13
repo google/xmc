@@ -21,12 +21,12 @@ import (
 	"google.golang.org/grpc/status"
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
-	"xmanager_cloud/internal/storage/spanner/workunit"
+	"xmanager_cloud/internal/storage"
 )
 
 // WorkUnitFetcher defines storage operations required to fetch active jobs by queue name.
 type WorkUnitFetcher interface {
-	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*workunit.ActiveWorkUnitsResult, error)
+	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error)
 }
 
 type server struct {
