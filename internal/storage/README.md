@@ -35,6 +35,7 @@ Inside `RunInTransaction`, the callback receives a `*storage.Transaction` holdin
 type Transaction struct {
     WorkUnits      WorkUnitTxRepository
     Experiments    ExperimentTxRepository
+    XIDs           XidTxRepository
     StatusMessages StatusMessageTxRepository
     StatusHistory  StatusHistoryTxRepository
     PauseState     PauseStateTxRepository
