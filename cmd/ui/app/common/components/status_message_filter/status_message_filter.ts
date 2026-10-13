@@ -12,22 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { CommonModule } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  inject,
-  input,
-  output,
-  signal,
-} from '@angular/core';
-import { MatBadgeModule } from '@angular/material/badge';
-import { MatButtonModule } from '@angular/material/button';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatIconModule } from '@angular/material/icon';
-import { MatMenuModule } from '@angular/material/menu';
-import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { StructuredMessage } from 'app/protos/experiment_state_server';
 import {
@@ -37,19 +24,11 @@ import {
   StatusMessageFilterService,
 } from 'app/service/status_message_filter_service';
 
-/** One selectable option (value sent to the parent, label shown) in the optional Status block. */
-export interface StateFilterOption {
-  readonly value: string;
-  readonly label: string;
-}
-
 /**
- * Filters menu for status messages.
+ * "Display Status Messages" section of a filter menu: chooses which status messages are shown.
  *
- * By default it only filters which status messages are displayed. When the parent sets
- * `stateOptions`, the menu also shows a Status block above the status message filters; its
- * selection is emitted once, when the menu closes, so several states can be picked with a single
- * request. The parent owns what the selection filters.
+ * Meant to be projected into an `xmc-filter-menu`. Changes apply immediately through
+ * `StatusMessageFilterService`.
  */
 @Component({
   selector: 'xmc-status-message-filter',
@@ -57,16 +36,7 @@ export interface StateFilterOption {
   templateUrl: './status_message_filter.ng.html',
   styleUrl: './status_message_filter.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    CommonModule,
-    MatBadgeModule,
-    MatButtonModule,
-    MatIconModule,
-    MatMenuModule,
-    MatTooltipModule,
-    MatCardModule,
-    MatCheckboxModule,
-  ],
+  imports: [CommonModule, MatCardModule, MatCheckboxModule],
 })
 export class StatusMessageFilter {
   protected readonly filterService = inject(StatusMessageFilterService);
@@ -74,65 +44,6 @@ export class StatusMessageFilter {
 
   protected readonly allSeverities = ALL_SEVERITIES;
   protected readonly allSources = ALL_SOURCES;
-
-  /** Options of the Status block; the block is hidden when undefined. */
-  readonly stateOptions = input<readonly StateFilterOption[]>();
-  /** Applied state selection; empty means no status filter. */
-  readonly selectedStates = input<readonly string[]>([]);
-  /** Emits the new selection, in option order, when the menu closes with a changed selection. */
-  readonly selectedStatesChange = output<readonly string[]>();
-
-  /** Selection being edited while the menu is open. */
-  private readonly pendingStates = signal<ReadonlySet<string>>(new Set());
-
-  protected readonly activeStateCount = computed(() => this.selectedStates().length);
-  /** Screen-reader text for the badge, which MatBadge otherwise hides from assistive tech. */
-  protected readonly badgeDescription = computed(() => {
-    const count = this.activeStateCount();
-    return count === 1 ? '1 status filter applied' : `${count} status filters applied`;
-  });
-  protected readonly triggerLabel = computed(() =>
-    this.stateOptions() ? 'Filters' : 'Filter status messages',
-  );
-  /**
-   * Rows of the two-column Status grid, so options fill the first column top to bottom.
-   * Undefined without options, since `repeat(0, auto)` is invalid CSS.
-   */
-  protected readonly stateGridRows = computed(() => {
-    const length = this.stateOptions()?.length ?? 0;
-    return length > 0 ? `repeat(${Math.ceil(length / 2)}, auto)` : undefined;
-  });
-
-  protected isStatePending(value: string): boolean {
-    return this.pendingStates().has(value);
-  }
-
-  protected onMenuOpened() {
-    this.pendingStates.set(new Set(this.selectedStates()));
-  }
-
-  protected toggleState(value: string, isChecked: boolean) {
-    const next = new Set(this.pendingStates());
-    if (isChecked) {
-      next.add(value);
-    } else {
-      next.delete(value);
-    }
-    this.pendingStates.set(next);
-  }
-
-  protected onMenuClosed() {
-    const options = this.stateOptions();
-    if (!options) {
-      return;
-    }
-    const pending = this.pendingStates();
-    const next = options.map((option) => option.value).filter((value) => pending.has(value));
-    if (haveSameStates(next, this.selectedStates())) {
-      return;
-    }
-    this.selectedStatesChange.emit(next);
-  }
 
   toggleSeverity(severity: StructuredMessage.Severity, isChecked: boolean) {
     const current = new Set(this.filterService.severitiesSubject.value);
@@ -157,13 +68,4 @@ export class StatusMessageFilter {
   protected formatSeverity(severity: StructuredMessage.Severity): string {
     return severity.charAt(0) + severity.slice(1).toLowerCase();
   }
-}
-
-/** Returns true when both selections contain the same states, ignoring order. */
-function haveSameStates(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  const bSet = new Set(b);
-  return a.every((state) => bSet.has(state));
 }

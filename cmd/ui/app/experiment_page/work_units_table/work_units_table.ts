@@ -30,6 +30,7 @@ import { MatTableModule } from '@angular/material/table';
 import { MatTooltip } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
 
+import { FilterMenu } from 'app/common/components/filter_menu/filter_menu';
 import { LoadingBar } from 'app/common/components/loading_bar/loading_bar';
 import { PageSizeSelector } from 'app/common/components/page_size_selector/page_size_selector';
 import { StatusChip, StatusOption } from 'app/common/components/status_chip/status_chip';
@@ -37,15 +38,13 @@ import {
   getStatusMessages,
   StatusMessage,
 } from 'app/common/components/status_message/status_message';
-import {
-  StateFilterOption,
-  StatusMessageFilter,
-} from 'app/common/components/status_message_filter/status_message_filter';
+import { StatusMessageFilter } from 'app/common/components/status_message_filter/status_message_filter';
 import { Tag } from 'app/common/components/tag/tag';
 import { ProcessedUrl, processUrls } from 'app/common/url/url_processor';
 import { StructuredMessage, WorkUnit, WorkUnitStatus } from 'app/protos/experiment_state_server';
 import { StatusMessageFilterService } from 'app/service/status_message_filter_service';
 
+import { WorkUnitStateFilter } from './work_unit_state_filter/work_unit_state_filter';
 import { WorkUnitsTableStore } from './work_units_table_store';
 
 enum WorkUnitColumn {
@@ -61,29 +60,6 @@ enum WorkUnitColumn {
 const MAX_URLS_DISPLAYED = 5;
 
 const GKE_DASHBOARD_DISPLAY_NAME = 'GKE Dashboard';
-
-/**
- * Status filter labels keyed by work unit state, in proto enum order (UNSPECIFIED excluded).
- * The spec asserts the full list, since the OSS proto stub types states as plain strings.
- */
-const STATE_FILTER_LABELS: Readonly<Record<string, string>> = {
-  INITIALIZING: 'Initializing',
-  SCHEDULING: 'Scheduling',
-  STARTING: 'Starting',
-  RUNNING: 'Running',
-  PARTIALLY_FAILED: 'Partially Failed',
-  STOPPING: 'Stopping',
-  RESTARTING: 'Restarting',
-  STOPPED: 'Stopped',
-  DESCHEDULING: 'Descheduling',
-  COMPLETED: 'Completed',
-  FAILED: 'Failed',
-  SCHEDULING_PAUSED: 'Scheduling Paused',
-};
-
-const STATE_FILTER_OPTIONS: readonly StateFilterOption[] = Object.entries(STATE_FILTER_LABELS).map(
-  ([value, label]) => ({ value, label }),
-);
 
 /** Interface for WorkUnit data prepared for template rendering. */
 interface WorkUnitView extends WorkUnit {
@@ -116,6 +92,8 @@ interface WorkUnitView extends WorkUnit {
     Tag,
     PageSizeSelector,
     MatTooltip,
+    FilterMenu,
+    WorkUnitStateFilter,
     StatusMessageFilter,
     MatSortModule,
   ],
@@ -181,7 +159,6 @@ export class WorkUnitsTable implements OnInit {
     () => this.isFetching() && this.workUnitViews() !== undefined,
   );
 
-  protected readonly stateFilterOptions = STATE_FILTER_OPTIONS;
   protected readonly selectedStates: Signal<readonly string[]> = this.store.selectedStates;
   protected readonly sort: Signal<Sort> = this.store.sort;
   protected readonly hasFilter: Signal<boolean> = this.store.hasFilter;

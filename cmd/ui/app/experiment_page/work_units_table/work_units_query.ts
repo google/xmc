@@ -22,12 +22,15 @@ export interface AipSort {
   readonly direction: 'asc' | 'desc' | '';
 }
 
-/** Builds an AIP-160 filter matching any of `values` on `field`, or undefined for none. */
+/**
+ * Builds an AIP-160 filter matching any of `values` on `field`, or undefined for none. The
+ * expression is parenthesized so it stays correct when combined with other clauses.
+ */
 export function buildAnyOfFilter(field: string, values: readonly string[]): string | undefined {
   if (values.length === 0) {
     return undefined;
   }
-  return values.map((value) => `${field} = "${value}"`).join(' OR ');
+  return `(${values.map((value) => `${field} = "${value}"`).join(' OR ')})`;
 }
 
 /** Converts a sort into an AIP-132 orderBy, or undefined when the sort is cleared. */

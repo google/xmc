@@ -327,7 +327,7 @@ describe('WorkUnitsTable Component', () => {
 
       await harness.toggleStates('Failed');
 
-      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, filter: 'state = "FAILED"' });
+      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, filter: '(state = "FAILED")' });
       expect(await harness.getPageLabel()).toBe('Page 1');
     });
 
@@ -361,7 +361,7 @@ describe('WorkUnitsTable Component', () => {
       // The emitted selection follows option (proto) order: STOPPED precedes FAILED.
       expect(lastRequest()).toEqual({
         ...DEFAULT_REQUEST,
-        filter: 'state = "STOPPED" OR state = "FAILED"',
+        filter: '(state = "STOPPED" OR state = "FAILED")',
       });
 
       await harness.toggleStates('Failed', 'Stopped');
@@ -378,7 +378,7 @@ describe('WorkUnitsTable Component', () => {
       expect(state.workUnitsService.searchWorkUnits.calls.count()).toBe(callsBefore + 1);
       expect(lastRequest()).toEqual({
         ...DEFAULT_REQUEST,
-        filter: 'state = "RUNNING" OR state = "STOPPED" OR state = "FAILED"',
+        filter: '(state = "RUNNING" OR state = "STOPPED" OR state = "FAILED")',
       });
     });
 
@@ -401,7 +401,7 @@ describe('WorkUnitsTable Component', () => {
 
       await harness.toggleStates('Partially Failed');
 
-      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, filter: 'state = "PARTIALLY_FAILED"' });
+      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, filter: '(state = "PARTIALLY_FAILED")' });
     });
 
     it('should show the number of selected states on the filter badge', async () => {
@@ -434,7 +434,7 @@ describe('WorkUnitsTable Component', () => {
 
       expect(lastRequest()).toEqual({
         ...DEFAULT_REQUEST,
-        filter: 'state = "FAILED"',
+        filter: '(state = "FAILED")',
         orderBy: 'state asc',
       });
     });
@@ -500,7 +500,7 @@ describe('WorkUnitsTable Component', () => {
       expect(lastRequest()).toEqual({
         ...DEFAULT_REQUEST,
         pageToken: 'page2',
-        filter: 'state = "FAILED"',
+        filter: '(state = "FAILED")',
       });
     });
 

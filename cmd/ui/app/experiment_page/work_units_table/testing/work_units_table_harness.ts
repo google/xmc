@@ -27,7 +27,7 @@ import { MatTooltipHarness } from '@angular/material/tooltip/testing';
 
 import { LoadingBarHarness } from 'app/common/components/loading_bar/testing/loading_bar_harness';
 
-const FILTER_ANCESTOR = 'xmc-status-message-filter';
+const FILTER_ANCESTOR = 'xmc-filter-menu';
 const STATE_OPTION_SELECTOR = '.state-filter-option';
 
 /** Harness for interacting with <xmc-work-units-table> in tests. */

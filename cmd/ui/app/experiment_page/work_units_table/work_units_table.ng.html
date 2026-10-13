@@ -75,11 +75,14 @@ limitations under the License.
 
     <ng-container [matColumnDef]="WorkUnitColumn.URLS">
       <th mat-header-cell *matHeaderCellDef>
-        <xmc-status-message-filter
-          [stateOptions]="stateFilterOptions"
-          [selectedStates]="selectedStates()"
-          (selectedStatesChange)="onStateFilterChange($event)"
-        />
+        <xmc-filter-menu label="Filters" [activeFilterCount]="selectedStates().length">
+          <xmc-work-unit-state-filter
+            [selectedStates]="selectedStates()"
+            (selectedStatesChange)="onStateFilterChange($event)"
+          />
+          <div class="filter-section-divider"></div>
+          <xmc-status-message-filter />
+        </xmc-filter-menu>
       </th>
       <td mat-cell *matCellDef="let workUnit">
         @if (workUnit.runProfileUrl) {

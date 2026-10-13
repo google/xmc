@@ -84,3 +84,9 @@ tr.detail-row td .status-messages-box {
   padding: 16px;
   text-align: center;
 }
+
+// Separates the Status and status message sections of the filter menu.
+.filter-section-divider {
+  margin: 0 1rem;
+  border-top: 1px solid var(--mat-sys-outline-variant);
+}

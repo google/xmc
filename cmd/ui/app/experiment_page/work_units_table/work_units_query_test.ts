@@ -19,13 +19,13 @@ describe('work_units_query', () => {
       expect(buildAnyOfFilter('state', [])).toBeUndefined();
     });
 
-    it('builds an equality restriction for a single value', () => {
-      expect(buildAnyOfFilter('state', ['FAILED'])).toBe('state = "FAILED"');
+    it('builds a parenthesized equality restriction for a single value', () => {
+      expect(buildAnyOfFilter('state', ['FAILED'])).toBe('(state = "FAILED")');
     });
 
-    it('joins multiple values with OR', () => {
+    it('joins multiple values with OR inside parentheses', () => {
       expect(buildAnyOfFilter('state', ['FAILED', 'STOPPED'])).toBe(
-        'state = "FAILED" OR state = "STOPPED"',
+        '(state = "FAILED" OR state = "STOPPED")',
       );
     });
   });

@@ -13,65 +13,30 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
-<button
-  type="button"
-  mat-icon-button
-  matBadgeSize="small"
-  [attr.aria-label]="triggerLabel()"
-  [matTooltip]="triggerLabel()"
-  [matMenuTriggerFor]="filterMenu"
-  [matBadge]="activeStateCount()"
-  [matBadgeHidden]="activeStateCount() === 0"
-  [matBadgeDescription]="badgeDescription()"
-  (menuOpened)="onMenuOpened()"
->
-  <mat-icon>filter_list</mat-icon>
-</button>
-<mat-menu #filterMenu="matMenu" class="filter-menu" (closed)="onMenuClosed()">
-  @if (stateOptions(); as options) {
-    <div class="filter-menu-title">Status</div>
-    <mat-card-content class="filter-menu-content state-filter-content">
-      <div class="state-filter-grid" [style.grid-template-rows]="stateGridRows()">
-        @for (option of options; track option.value) {
-          <mat-checkbox
-            class="state-filter-option"
-            [checked]="isStatePending(option.value)"
-            (change)="toggleState(option.value, $event.checked)"
-            (click)="$event.stopPropagation()"
-          >
-            {{ option.label }}
-          </mat-checkbox>
-        }
-      </div>
-      <div class="filter-hint">None selected = all</div>
-    </mat-card-content>
-    <div class="filter-section-divider"></div>
-  }
-  <div class="filter-menu-title">Display Status Messages</div>
-  <mat-card-content class="filter-menu-content">
-    <div class="filter-column">
-      <div class="filter-column-title">Severity</div>
-      @for (severity of allSeverities; track severity) {
-        <mat-checkbox
-          [checked]="(filterService.severities$ | async)?.has(severity)"
-          (change)="toggleSeverity(severity, $event.checked)"
-          (click)="$event.stopPropagation()"
-        >
-          {{ formatSeverity(severity) }}
-        </mat-checkbox>
-      }
-    </div>
-    <div class="filter-column">
-      <div class="filter-column-title">Source</div>
-      @for (source of allSources; track source) {
-        <mat-checkbox
-          [checked]="(filterService.sources$ | async)?.has(source)"
-          (change)="toggleSource(source, $event.checked)"
-          (click)="$event.stopPropagation()"
-        >
-          {{ formatSource(source) }}
-        </mat-checkbox>
-      }
-    </div>
-  </mat-card-content>
-</mat-menu>
+<div class="filter-menu-title">Display Status Messages</div>
+<mat-card-content class="filter-menu-content">
+  <div class="filter-column">
+    <div class="filter-column-title">Severity</div>
+    @for (severity of allSeverities; track severity) {
+      <mat-checkbox
+        [checked]="(filterService.severities$ | async)?.has(severity)"
+        (change)="toggleSeverity(severity, $event.checked)"
+        (click)="$event.stopPropagation()"
+      >
+        {{ formatSeverity(severity) }}
+      </mat-checkbox>
+    }
+  </div>
+  <div class="filter-column">
+    <div class="filter-column-title">Source</div>
+    @for (source of allSources; track source) {
+      <mat-checkbox
+        [checked]="(filterService.sources$ | async)?.has(source)"
+        (change)="toggleSource(source, $event.checked)"
+        (click)="$event.stopPropagation()"
+      >
+        {{ formatSource(source) }}
+      </mat-checkbox>
+    }
+  </div>
+</mat-card-content>
