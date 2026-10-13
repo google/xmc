@@ -118,8 +118,9 @@ func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Reque
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	res, err := c.runReconciler(ctx, item, NewDependencySnapshot(items))
-	if err := errors.Join(err, PersistReconcileResult(ctx, c.writer, req.Namespace, item, res)); err != nil {
+	res, passErr := c.runReconciler(ctx, item, NewDependencySnapshot(items))
+	persistErr := PersistReconcileResult(ctx, c.writer, req.Namespace, item, res)
+	if err := joinPassErrors(passErr, persistErr); err != nil {
 		return reconcile.Result{}, err
 	}
 	if res == nil {
@@ -135,6 +136,18 @@ func (c *ComponentController) runReconciler(ctx context.Context, item *unstructu
 	ctx, cancel := context.WithTimeout(ctx, c.opts.ReconcileTimeout)
 	defer cancel()
 	return c.reconciler.ReconcileWithDependencies(ctx, item, deps)
+}
+
+// joinPassErrors returns the error of a Reconciler pass and the error of persisting its result,
+// joined only when both are set, so that a single failure is returned unwrapped.
+func joinPassErrors(passErr, persistErr error) error {
+	if passErr == nil {
+		return persistErr
+	}
+	if persistErr == nil {
+		return passErr
+	}
+	return errors.Join(passErr, persistErr)
 }
 
 // mapDependents returns a request for every other Component in obj's namespace that lists obj in
@@ -192,7 +205,7 @@ func dependencyReadinessChanged() predicate.Predicate {
 // or "" if it can.
 func dependencyUnreadyReason(obj client.Object) string {
 	u, ok := obj.(*unstructured.Unstructured)
-	if !ok {
+	if !ok || u == nil {
 		return "not a Component"
 	}
 	_, _, enabled := ParseSpecFromUnstructured(u.Object["spec"])

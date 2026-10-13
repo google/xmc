@@ -255,6 +255,42 @@ func TestComponentControllerMapDependents(t *testing.T) {
 	}
 }
 
+func TestJoinPassErrors(t *testing.T) {
+	passErr := errors.New("pass failed")
+	persistErr := errors.New("persist failed")
+	tests := []struct {
+		name                string
+		passErr, persistErr error
+		wantIdentical       error
+		wantIs              []error
+	}{
+		{name: "both nil"},
+		{name: "pass error only is returned unwrapped", passErr: passErr, wantIdentical: passErr},
+		{name: "persist error only is returned unwrapped", persistErr: persistErr, wantIdentical: persistErr},
+		{name: "both errors are joined", passErr: passErr, persistErr: persistErr, wantIs: []error{passErr, persistErr}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := joinPassErrors(tt.passErr, tt.persistErr)
+
+			if tt.wantIs == nil && got != tt.wantIdentical {
+				t.Errorf("joinPassErrors() = %v, want exactly %v", got, tt.wantIdentical)
+			}
+			for _, want := range tt.wantIs {
+				if !errors.Is(got, want) {
+					t.Errorf("joinPassErrors() = %v, want it to wrap %v", got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestDependencyUnreadyReasonTypedNil(t *testing.T) {
+	if got := dependencyUnreadyReason((*unstructured.Unstructured)(nil)); got != "not a Component" {
+		t.Errorf("dependencyUnreadyReason(typed nil) = %q, want %q", got, "not a Component")
+	}
+}
+
 func TestDependencyReadinessChanged(t *testing.T) {
 	ready := func(generation int64, ltt string) *unstructured.Unstructured {
 		u := controllerTestComponent("db", map[string]any{"enabled": true})
