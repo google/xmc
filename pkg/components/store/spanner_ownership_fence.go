@@ -125,10 +125,14 @@ func readFence(ctx context.Context, txn *spanner.ReadWriteTransaction) (*Cluster
 func scanFenceColumns(row *spanner.Row) (*ClusterIdentity, error) {
 	var uid, name spanner.NullString
 	var epoch spanner.NullInt64
-	for col, dst := range map[string]any{"FenceClusterUid": &uid, "FenceClusterName": &name, "FenceEpoch": &epoch} {
-		if err := row.ColumnByName(col, dst); err != nil {
-			return nil, fmt.Errorf("failed to decode the ownership fence: %w", err)
-		}
+	if err := row.ColumnByName("FenceClusterUid", &uid); err != nil {
+		return nil, fmt.Errorf("failed to decode the ownership fence: %w", err)
+	}
+	if err := row.ColumnByName("FenceClusterName", &name); err != nil {
+		return nil, fmt.Errorf("failed to decode the ownership fence: %w", err)
+	}
+	if err := row.ColumnByName("FenceEpoch", &epoch); err != nil {
+		return nil, fmt.Errorf("failed to decode the ownership fence: %w", err)
 	}
 	if !uid.Valid {
 		return nil, nil

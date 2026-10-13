@@ -300,8 +300,8 @@ func TestSetSourcedComponentIntent_FenceParity(t *testing.T) {
 	}
 }
 
-// TestSpannerStore_SetSourcedComponentIntent_FencedReplay checks that the read-only fast path does
-// not answer an unchanged intent from a fenced cluster; the read-write transaction rejects it.
+// TestSpannerStore_SetSourcedComponentIntent_FencedReplay checks that the read-only fast path
+// rejects an unchanged intent from a fenced cluster itself, without a read-write transaction.
 func TestSpannerStore_SetSourcedComponentIntent_FencedReplay(t *testing.T) {
 	ctx := context.Background()
 	s, _ := setupTestStore(ctx, t)
@@ -315,8 +315,8 @@ func TestSpannerStore_SetSourcedComponentIntent_FencedReplay(t *testing.T) {
 
 	_, err := s.SetSourcedComponentIntent(ctx, "fence-replay", intentSpec("v1.0.0"), nil, ownerSource)
 	assertReason(t, err, store.ReasonClusterFenced)
-	if fallbacks != 1 {
-		t.Errorf("read-write fallbacks = %d, want 1", fallbacks)
+	if fallbacks != 0 {
+		t.Errorf("read-write fallbacks = %d, want 0", fallbacks)
 	}
 }
 

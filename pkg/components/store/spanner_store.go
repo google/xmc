@@ -168,8 +168,8 @@ func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, spec
 }
 
 // SetSourcedComponentIntent applies an intent sent by src within Spanner, with the same read-only
-// fast path as SetComponentIntent. Recording a new owner, and every rejection, is decided by the
-// read-write transaction.
+// fast path as SetComponentIntent. Recording a new owner, and every rejection except a fence
+// rejection seen by the fast-path read, is decided by the read-write transaction.
 func (s *SpannerStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src RequestSource) (*ComponentRecord, error) {
 	if err := ValidateRequestSource(src); err != nil {
 		return nil, err
@@ -185,7 +185,11 @@ func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *compone
 	}
 
 	deps := ExtractDependencies(spec, labels)
-	if rec, ok := s.readUnchangedIntent(ctx, canonicalName, spec, labels, deps, desiredGen, src); ok {
+	rec, ok, err := s.readUnchangedIntent(ctx, canonicalName, spec, labels, deps, desiredGen, src)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
 		return rec, nil
 	}
 	if s.beforeIntentWrite != nil {
@@ -196,24 +200,26 @@ func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *compone
 
 // readUnchangedIntent reads the active record of canonicalName, its active dependencies and the
 // ownership fence with a single strong read. It returns the record and true only when the intent
-// writes nothing at that read; on any other outcome, including read errors and rejections, it
+// writes nothing at that read. A fence rejection is returned as the error: the strong read sees
+// the latest committed fence, so it is authoritative and fenced clusters replaying intents cost no
+// read-write transaction. On any other outcome, including read errors and other rejections, it
 // returns false so that the read-write transaction decides authoritatively.
-func (s *SpannerStore) readUnchangedIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *RequestSource) (*ComponentRecord, bool) {
+func (s *SpannerStore) readUnchangedIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *RequestSource) (*ComponentRecord, bool, error) {
 	rec, fence, err := queryComponentWithActiveDependencies(ctx, s.client.Single(), canonicalName)
 	if err != nil {
 		logFastPathReadError(ctx, canonicalName, err)
-		return nil, false
+		return nil, false, nil
 	}
-	if checkClusterFence(setIntentOperation, fence, src) != nil {
-		return nil, false
+	if err := checkClusterFence(setIntentOperation, fence, src); err != nil {
+		return nil, false, err
 	}
 	// The read returns only registered, non-deleted dependencies, so a deregistered dependency
 	// makes the intent's dependencies differ and the plan a write; the read-write fallback then
 	// rejects it authoritatively.
 	if plan, err := planIntent(canonicalName, rec, spec, labels, deps, desiredGen, src); err != nil || plan.write != writeNothing {
-		return nil, false
+		return nil, false, nil
 	}
-	return cloneRecord(rec), true
+	return cloneRecord(rec), true, nil
 }
 
 // logFastPathReadError logs a failed fast-path read before the read-write fallback. A missing
