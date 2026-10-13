@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "workunitexecutionschema",
     srcs = ["workunitexecutionschema.go"],
-    importpath = "xmanager_cloud/storage/spanner/schema/workunitexecutionschema",
+    importpath = "xmanager_cloud/internal/storage/spanner/schema/workunitexecutionschema",
     deps = [
         "//api/filter/go/filtervisitor",
         "//internal/query_generator/querytools",

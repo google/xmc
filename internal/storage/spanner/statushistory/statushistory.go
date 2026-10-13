@@ -25,8 +25,9 @@ import (
 	"google.golang.org/api/iterator"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/common/resourceaccumulator"
-	"xmanager_cloud/kubernetes/common/constants"
-	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
+	"xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/storage"
+	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 )
 
 // WorkUnitStatusHistoryItem represents a single WorkUnitStatusHistory record for Spanner queries and UNNEST mocks.
@@ -44,14 +45,6 @@ type WorkUnitStatusHistoryItem struct {
 
 // ResourceTypeCPU represents the standard CPU resource identifier string.
 const ResourceTypeCPU = constants.ResourceTypeCPU
-
-// QueueMetricRow represents a single raw row returned by the Spanner velocity or pending metrics query.
-type QueueMetricRow struct {
-	QueueName    string
-	Count        int64
-	TotalUnits   int64
-	ResourceType string
-}
 
 // ExtractAllResourcesFromExecutable extracts all compute resource types and unit counts from an Executable.
 func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int64 {
@@ -127,16 +120,16 @@ func (r *TxRepository) SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, x
 }
 
 // FetchBatchQueueVelocity queries the WorkUnitStatusHistory table for multiple queues and returns raw rows.
-func (r *Repository) FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
+func (r *Repository) FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]storage.QueueMetricRow, error) {
 	return FetchBatchQueueVelocity(ctx, r.client, queueNames, window)
 }
 
 // FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table for pending work units and returns raw rows.
-func (r *Repository) FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]QueueMetricRow, error) {
+func (r *Repository) FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]storage.QueueMetricRow, error) {
 	return FetchBatchPendingQueueMetrics(ctx, r.client, queueNames)
 }
 
-func runQueueMetricQuery(ctx context.Context, client *spanner.Client, stmt spanner.Statement, countCol string) ([]QueueMetricRow, error) {
+func runQueueMetricQuery(ctx context.Context, client *spanner.Client, stmt spanner.Statement, countCol string) ([]storage.QueueMetricRow, error) {
 	if client == nil {
 		return nil, nil
 	}
@@ -144,7 +137,7 @@ func runQueueMetricQuery(ctx context.Context, client *spanner.Client, stmt spann
 	iter := client.Single().Query(ctx, stmt)
 	defer iter.Stop()
 
-	var rows []QueueMetricRow
+	var rows []storage.QueueMetricRow
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -157,7 +150,7 @@ func runQueueMetricQuery(ctx context.Context, client *spanner.Client, stmt spann
 			return nil, fmt.Errorf("failed to iterate queue metric rows: %w", err)
 		}
 
-		var row QueueMetricRow
+		var row storage.QueueMetricRow
 		if err := r.ColumnByName("QueueName", &row.QueueName); err != nil {
 			return nil, fmt.Errorf("failed to read QueueName column: %w", err)
 		}
@@ -177,7 +170,7 @@ func runQueueMetricQuery(ctx context.Context, client *spanner.Client, stmt spann
 }
 
 // FetchBatchQueueVelocity queries the WorkUnitStatusHistory table for multiple queues in a single Spanner query.
-func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
+func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration) ([]storage.QueueMetricRow, error) {
 	if len(queueNames) == 0 || client == nil {
 		return nil, nil
 	}
@@ -217,7 +210,7 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 }
 
 // FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table for pending work units across multiple queues.
-func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueNames []string) ([]QueueMetricRow, error) {
+func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueNames []string) ([]storage.QueueMetricRow, error) {
 	if len(queueNames) == 0 || client == nil {
 		return nil, nil
 	}

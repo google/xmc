@@ -22,7 +22,7 @@ import (
 	"regexp"
 	"time"
 
-	"golang/prometheus/client/prometheus/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,14 +35,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	"xmanager_cloud/kubernetes/common/labels"
-	"xmanager_cloud/kubernetes/reconciler/shared/shared"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/cmd/reconciler/shared"
+	"xmanager_cloud/internal/kubernetes/common/labels"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/validator"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	timestamppb "protobuf/timestamp_go_proto"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	actuatorpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 

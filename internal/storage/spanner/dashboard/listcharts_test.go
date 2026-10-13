@@ -421,9 +421,3 @@ func TestListCharts_ParentDashboard_Pagination(t *testing.T) {
 		t.Errorf("ListCharts page 2 token should be empty, got %q", token2)
 	}
 }
-
-func TestExtractChartCursor_Nil(t *testing.T) {
-	if _, err := ExtractChartCursor(nil); err == nil {
-		t.Errorf("ExtractChartCursor(nil) expected error, got nil")
-	}
-}

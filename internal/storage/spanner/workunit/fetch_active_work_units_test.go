@@ -20,9 +20,9 @@ import (
 	"errors"
 	"testing"
 
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/internal/storage/spanner/workunit"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestFetchActiveWorkUnitsByQueues_Uninitialized(t *testing.T) {
@@ -65,7 +65,7 @@ func TestFetchActiveWorkUnitsByQueues_Uninitialized(t *testing.T) {
 func TestFetchActiveWorkUnitsByQueues_InvalidPageToken(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := spanner.NewStorage(essClient)
+	store, err := spanner.NewStorage(essClient)
 	if err != nil {
 		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
@@ -78,11 +78,11 @@ func TestFetchActiveWorkUnitsByQueues_InvalidPageToken(t *testing.T) {
 
 	for _, token := range invalidTokens {
 		t.Run("token="+token, func(t *testing.T) {
-			_, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{"gpu-queue"}, 10, token)
+			_, err := store.FetchActiveWorkUnitsByQueues(ctx, []string{"gpu-queue"}, 10, token)
 			if err == nil {
 				t.Fatalf("FetchActiveWorkUnitsByQueues() expected error for token %q, got nil", token)
 			}
-			if !errors.Is(err, workunit.ErrInvalidPageToken) {
+			if !errors.Is(err, storage.ErrInvalidPageToken) {
 				t.Errorf("FetchActiveWorkUnitsByQueues() error = %v, want errors.Is(ErrInvalidPageToken)", err)
 			}
 		})

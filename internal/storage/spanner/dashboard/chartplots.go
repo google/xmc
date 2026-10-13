@@ -17,30 +17,24 @@ package dashboard
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
 
-	fepb "api/filter/filter_expression_go_proto"
-	aipfilter "api/filter/go/filter"
+	fepb "xmanager_cloud/api/filter/filter_expression_go_proto"
+	aipfilter "xmanager_cloud/api/filter/go/filter"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	"xmanager_cloud/internal/storage/spanner/dashboard/data"
-	"xmanager_cloud/query_generator/querytools"
-	"xmanager_cloud/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/query_generator/querytools"
+	storagedata "xmanager_cloud/internal/storage/data"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
 )
 
 // hydrateChartPlots populates the PlotSpec list of every chart in charts using a single batched
 // query, so that list reads return the same fully populated protos as GetChart.
 func (r *Repository) hydrateChartPlots(ctx context.Context, txn *spanner.ReadOnlyTransaction, charts []*dpb.Chart) error {
-	chartIDs := make([]string, 0, len(charts))
-	for _, chart := range charts {
-		_, _, chartID, err := validator.ValidateChartName(chart.GetName())
-		if err != nil {
-			return fmt.Errorf("failed to extract chart ID from %q: %w", chart.GetName(), err)
-		}
-		chartIDs = append(chartIDs, chartID)
+	chartIDs, err := storagedata.ExtractChartIDs(charts)
+	if err != nil {
+		return err
 	}
 
 	plotsByChartID, err := r.fetchPlotsByChartIDs(ctx, txn, chartIDs)
@@ -48,9 +42,7 @@ func (r *Repository) hydrateChartPlots(ctx context.Context, txn *spanner.ReadOnl
 		return err
 	}
 
-	for i, chart := range charts {
-		chart.Plots = plotsByChartID[chartIDs[i]]
-	}
+	storagedata.AssignChartPlots(charts, chartIDs, plotsByChartID)
 	return nil
 }
 
@@ -83,7 +75,7 @@ func (r *Repository) fetchPlotsByChartIDs(ctx context.Context, txn *spanner.Read
 		if err := row.Columns(&chartID, &plotSpecBytes); err != nil {
 			return nil, err
 		}
-		plotSpec, err := data.UnmarshalPlotSpec(chartID, plotSpecBytes)
+		plotSpec, err := storagedata.UnmarshalPlotSpec(chartID, plotSpecBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -94,16 +86,11 @@ func (r *Repository) fetchPlotsByChartIDs(ctx context.Context, txn *spanner.Read
 
 // buildChartPlotsStatement generates the batched ChartPlots query for the given chart IDs.
 func (r *Repository) buildChartPlotsStatement(chartIDs []string) (*spanner.Statement, error) {
-	clauses := make([]string, 0, len(chartIDs))
-	for _, chartID := range chartIDs {
-		clauses = append(clauses, fmt.Sprintf("chart_id = %q", chartID))
-	}
-
 	filterExp, err := aipfilter.ParseExpressionWithOptions(fepb.ExpressionParserOptions_builder{
 		RejectLegacyOperatorPrecedence: true,
 		EnableSimpleQuotedStrings:      true,
 		EnforceValidStrings:            true,
-	}.Build(), strings.Join(clauses, " OR "))
+	}.Build(), storagedata.BuildChartPlotsFilter(chartIDs))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse filter for chart plots: %w", err)
 	}

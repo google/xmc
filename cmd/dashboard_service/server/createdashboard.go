@@ -23,7 +23,7 @@ import (
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // nameInlineCharts gives every chart created alongside a dashboard its server-assigned identity and

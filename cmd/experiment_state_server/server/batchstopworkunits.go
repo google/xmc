@@ -20,14 +20,14 @@ import (
 	"math"
 
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/task_queue/client"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/task_queue"
+	"xmanager_cloud/internal/validator"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	timestamppb "protobuf/timestamp_go_proto"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -95,7 +95,7 @@ func (h *WorkUnitHandler) BatchStopWorkUnits(ctx context.Context, req *apipb.Bat
 	// 6. Update the work unit execution statuses to STOPPING for all work units that were
 	// successfully processed.
 	if len(execUpdates) > 0 {
-		if _, err := h.storage.UpdateWorkUnitExecutions(ctx, xid, execUpdates); err != nil {
+		if _, err := h.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, execUpdates); err != nil {
 			logging.Error(ctx, "Failed to batch update work unit statuses", "error", err)
 			multiErr = errors.Join(multiErr, fmt.Errorf("failed to batch update work unit statuses: %w (%v)", grpcerr.ErrInternal, err))
 		}

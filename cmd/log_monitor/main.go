@@ -25,9 +25,9 @@ import (
 	"sync"
 	"syscall"
 
-	"golang/cloud_google_com/go/pubsub/v/v1/pubsub"
-	"xmanager_cloud/common/health"
-	"xmanager_cloud/logging/logging"
+	"cloud.google.com/go/pubsub"
+	"xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/logging"
 )
 
 func main() {

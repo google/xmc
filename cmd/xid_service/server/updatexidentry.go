@@ -18,11 +18,12 @@ import (
 	"errors"
 	"fmt"
 
-	"xmanager_cloud/auth/auth"
+	xidpkg "xmanager_cloud/cmd/xid_service/xid"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/validator"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -67,7 +68,7 @@ func (s *XIDServer) UpdateXidEntry(ctx context.Context, in *apipb.UpdateXidEntry
 	}
 
 	// 4. Update the XidEntry in the storage layer.
-	updatedEntry, err := s.storage.UpdateXidEntry(ctx, &storage.XidEntryUpdate{
+	updatedEntry, err := xidpkg.UpdateXidEntry(ctx, s.storage, &storage.XidEntryUpdate{
 		XID:        xid,
 		Creator:    email,
 		XidEntry:   in.XidEntry,

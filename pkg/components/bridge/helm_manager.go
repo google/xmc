@@ -29,7 +29,7 @@ import (
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/cli"
 
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 const (

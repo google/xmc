@@ -22,15 +22,16 @@ import (
 	"sync"
 	"time"
 
-	"golang/cloud_google_com/go/pubsub/v/v1/pubsub"
+	"cloud.google.com/go/pubsub"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	timestamppb "protobuf/timestamp_go_proto"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/kubernetes/common/labels"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/kubernetes/common/labels"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/workunit"
 )
 
 const (
@@ -84,9 +85,13 @@ type pendingUpdate struct {
 	update *storage.WorkUnitExecutionUpdate
 }
 
+type workUnitExecutionUpdater interface {
+	UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error)
+}
+
 // LogProcessor processes logs from Pub/Sub.
 type LogProcessor struct {
-	storageClient        storage.Storage
+	workUnitUpdater      workUnitExecutionUpdater
 	logKeyword           string
 	maxConcurrentUpdates int
 }
@@ -94,7 +99,7 @@ type LogProcessor struct {
 // NewLogProcessor creates a new LogProcessor.
 func NewLogProcessor(storageClient storage.Storage, logKeyword string, maxConcurrentUpdates int) *LogProcessor {
 	return &LogProcessor{
-		storageClient:        storageClient,
+		workUnitUpdater:      workunit.NewUpdater(storageClient),
 		logKeyword:           logKeyword,
 		maxConcurrentUpdates: maxConcurrentUpdates,
 	}
@@ -156,7 +161,7 @@ func (lp *LogProcessor) processUpdatesForExperiment(ctx context.Context, xid int
 	}
 
 	logging.Info(ctx, "Grouped updates", "updates", wuUpdates)
-	if _, err := lp.storageClient.UpdateWorkUnitExecutions(ctx, xid, wuUpdates); err != nil {
+	if _, err := lp.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, wuUpdates); err != nil {
 		logging.Error(ctx, "Failed to update work unit executions", "error", err)
 
 		shouldAck := false

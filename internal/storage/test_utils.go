@@ -20,19 +20,59 @@ import (
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"google.golang.org/protobuf/proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/grpcerr"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
+
+// MockXidTxRepository is an in-memory mock implementation of XidTxRepository for unit testing.
+type MockXidTxRepository struct {
+	Entries      map[int64]*msgpb.XidEntry
+	FetchErr     error
+	UpdateErr    error
+	UpdatedEntry *msgpb.XidEntry
+	UpdateCalls  int
+}
+
+// FetchXidEntry retrieves an XidEntry from the mock repository.
+func (m *MockXidTxRepository) FetchXidEntry(_ context.Context, xid int64) (*msgpb.XidEntry, error) {
+	if m.FetchErr != nil {
+		return nil, m.FetchErr
+	}
+	if m.Entries != nil {
+		entry, ok := m.Entries[xid]
+		if !ok {
+			return nil, grpcerr.ErrNotFound
+		}
+		return proto.Clone(entry).(*msgpb.XidEntry), nil
+	}
+	return &msgpb.XidEntry{
+		Name: proto.String("xids/1"),
+		Acls: &msgpb.XidAcls{
+			Owners: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}},
+		},
+	}, nil
+}
+
+// UpdateXidEntry persists an XidEntry in the mock repository.
+func (m *MockXidTxRepository) UpdateXidEntry(_ context.Context, _ int64, entry *msgpb.XidEntry) error {
+	m.UpdateCalls++
+	if m.UpdateErr != nil {
+		return m.UpdateErr
+	}
+	m.UpdatedEntry = proto.Clone(entry).(*msgpb.XidEntry)
+	return nil
+}
 
 // MockStorage is a mock implementation of Storage for testing.
 type MockStorage struct {
 	Storage
 	CreateErr error
 	FetchErr  error
-	UpdateErr error
 	ListErr   error
 
 	ListXidEntriesResp          []*msgpb.XidEntry
 	ListXidEntriesNextPageToken string
+	XidTxRepository             XidTxRepository
 
 	CreateArtifactErr  error
 	Artifact           *essmsgpb.Artifact
@@ -43,36 +83,37 @@ type MockStorage struct {
 	UpdateArtifactResp *essmsgpb.Artifact
 	DeleteArtifactErr  error
 
-	FetchExperimentErr               error
-	Experiment                       *essmsgpb.Experiment
-	FetchExperimentStatusErr         error
-	ExperimentStatus                 *essmsgpb.ExperimentStatus
-	FetchWorkUnitErr                 error
-	WorkUnit                         *essmsgpb.WorkUnit
-	FetchCurrentWorkUnitExecutionErr error
-	WorkUnitExecution                *essmsgpb.WorkUnitExecution
-	CreateExperimentErr              error
-	CreateWorkUnitErr                error
-	AddWorkUnitOperationErr          error
-	LROOp                            *lropb.Operation
-	UpdateWorkUnitExecutionsErr      error
-	ListWorkUnitsResp                []*essmsgpb.WorkUnit
-	ListWorkUnitsErr                 error
-	UpdateExperimentLaunchStateErr   error
-	ListWorkUnitExecutionsErr        error
-	ListWorkUnitExecutionsResp       []*essmsgpb.WorkUnitExecution
-	ListExperimentsResp              []*essmsgpb.Experiment
-	NextPageToken                    string
-	ListExperimentsErr               error
-	UpdateExperimentErr              error
-	UpdateWorkUnitErr                error
-	UpdateWorkUnitRespOriginal       *essmsgpb.WorkUnit
-	UpdateWorkUnitRespReturned       *essmsgpb.WorkUnit
-	UpdateWorkUnitOperationErr       error
-	UpdateWorkUnitOperationCalls     int
-	GotOperationUpdate               *OperationUpdate
-	ListStatusMessagesResp           []*essmsgpb.StatusMessage
-	ListStatusMessagesErr            error
+	FetchExperimentErr                error
+	Experiment                        *essmsgpb.Experiment
+	FetchExperimentStatusErr          error
+	ExperimentStatus                  *essmsgpb.ExperimentStatus
+	FetchWorkUnitErr                  error
+	WorkUnit                          *essmsgpb.WorkUnit
+	FetchCurrentWorkUnitExecutionErr  error
+	WorkUnitExecution                 *essmsgpb.WorkUnitExecution
+	CreateExperimentErr               error
+	CreateWorkUnitErr                 error
+	AddWorkUnitOperationErr           error
+	LROOp                             *lropb.Operation
+	UpdateCurrentWorkUnitExecutionErr error
+	UpdatedWorkUnitExecutions         map[int64]*essmsgpb.WorkUnitExecution
+	ListWorkUnitsResp                 []*essmsgpb.WorkUnit
+	ListWorkUnitsErr                  error
+	UpdateExperimentLaunchStateErr    error
+	ListWorkUnitExecutionsErr         error
+	ListWorkUnitExecutionsResp        []*essmsgpb.WorkUnitExecution
+	ListExperimentsResp               []*essmsgpb.Experiment
+	NextPageToken                     string
+	ListExperimentsErr                error
+	UpdateExperimentErr               error
+	UpdateWorkUnitErr                 error
+	UpdateWorkUnitRespOriginal        *essmsgpb.WorkUnit
+	UpdateWorkUnitRespReturned        *essmsgpb.WorkUnit
+	UpdateWorkUnitOperationErr        error
+	UpdateWorkUnitOperationCalls      int
+	GotOperationUpdate                *OperationUpdate
+	ListStatusMessagesResp            []*essmsgpb.StatusMessage
+	ListStatusMessagesErr             error
 
 	RunInTransactionErr error
 	// RunInTransactionAttempts is how many times RunInTransaction invokes fn, simulating
@@ -83,13 +124,9 @@ type MockStorage struct {
 
 	PauseStateRepository PauseStateRepository
 	PausedTaskRepository PausedTaskRepository
-	// Transaction optionally overrides Transaction.PauseState and Transaction.PausedTasks
-	// passed to RunInTransaction callbacks; other fields are ignored.
+	// Transaction optionally overrides Transaction.XIDs, Transaction.PauseState, and
+	// Transaction.PausedTasks passed to RunInTransaction callbacks; other fields are ignored.
 	Transaction *Transaction
-	// GotWorkUnitExecutionsXID and GotWorkUnitExecutionUpdates record the arguments of every
-	// UpdateWorkUnitExecutions call.
-	GotWorkUnitExecutionsXID    int64
-	GotWorkUnitExecutionUpdates []*WorkUnitExecutionUpdate
 }
 
 // CreateXidEntry mocks XID entry creation.
@@ -105,11 +142,6 @@ func (s *MockStorage) FetchXidEntry(ctx context.Context, xid int64) (*msgpb.XidE
 		}}, nil
 	}
 	return nil, s.FetchErr
-}
-
-// UpdateXidEntry mocks XID entry updating.
-func (s *MockStorage) UpdateXidEntry(ctx context.Context, update *XidEntryUpdate) (*msgpb.XidEntry, error) {
-	return nil, s.UpdateErr
 }
 
 // ListXidEntries mocks XID entry listing.
@@ -195,11 +227,24 @@ func (s *MockStorage) AddWorkUnitOperation(ctx context.Context, xid int64, wid i
 	return s.LROOp, nil
 }
 
-// UpdateWorkUnitExecutions mocks updating work unit executions and records the updates.
-func (s *MockStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
-	s.GotWorkUnitExecutionsXID = xid
-	s.GotWorkUnitExecutionUpdates = append(s.GotWorkUnitExecutionUpdates, updates...)
-	return nil, s.UpdateWorkUnitExecutionsErr
+// FetchUpdatingWorkUnits mocks fetching a batch of work units for update within a transaction.
+func (s *MockStorage) FetchUpdatingWorkUnits(ctx context.Context, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnit, error) {
+	if s.FetchWorkUnitErr != nil {
+		return nil, s.FetchWorkUnitErr
+	}
+	if s.WorkUnit == nil {
+		return nil, nil
+	}
+	res := make(map[int64]*essmsgpb.WorkUnit, len(wids))
+	for _, wid := range wids {
+		res[wid] = proto.Clone(s.WorkUnit).(*essmsgpb.WorkUnit)
+	}
+	return res, nil
+}
+
+// ListWorkUnitMessagesBySeverity mocks listing work unit status messages by severity within a transaction.
+func (s *MockStorage) ListWorkUnitMessagesBySeverity(ctx context.Context, xid int64, severity essmsgpb.StructuredMessage_Severity) ([]*essmsgpb.StructuredMessage, error) {
+	return nil, nil
 }
 
 // RunInTransaction mocks running a function within a transaction context.
@@ -209,15 +254,23 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 	}
 	pauseStateTx, _ := s.PauseStateRepository.(PauseStateTxRepository)
 	pausedTaskTx, _ := s.PausedTaskRepository.(PausedTaskTxRepository)
+	xidsTx := s.XidTxRepository
+	if xidsTx == nil {
+		xidsTx = &MockXidTxRepository{FetchErr: s.FetchErr}
+	}
 	tx := &Transaction{
 		WorkUnits:      s,
 		Experiments:    s,
+		XIDs:           xidsTx,
 		StatusMessages: s,
 		StatusHistory:  s,
 		PauseState:     pauseStateTx,
 		PausedTasks:    pausedTaskTx,
 	}
 	if s.Transaction != nil {
+		if s.Transaction.XIDs != nil {
+			tx.XIDs = s.Transaction.XIDs
+		}
 		if s.Transaction.PauseState != nil {
 			tx.PauseState = s.Transaction.PauseState
 		}
@@ -250,6 +303,13 @@ func (s *MockStorage) SaveWorkUnitExecution(ctx context.Context, execution *essm
 
 // UpdateCurrentWorkUnitExecution mocks updating the current work unit execution.
 func (s *MockStorage) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error {
+	if s.UpdateCurrentWorkUnitExecutionErr != nil {
+		return s.UpdateCurrentWorkUnitExecutionErr
+	}
+	if s.UpdatedWorkUnitExecutions == nil {
+		s.UpdatedWorkUnitExecutions = make(map[int64]*essmsgpb.WorkUnitExecution)
+	}
+	s.UpdatedWorkUnitExecutions[wid] = proto.Clone(execution).(*essmsgpb.WorkUnitExecution)
 	return nil
 }
 

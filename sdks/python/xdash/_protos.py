@@ -13,15 +13,9 @@
 # limitations under the License.
 """Internal helper for resolving generated Dashboard Service protobuf modules."""
 
-try:
-    from xmanager_cloud.dashboard_service.proto import (  # type: ignore[attr-defined, no-redef]
-        dashboard_service_pb2,
-        messages_pb2,
-    )
-except ImportError:
-    from third_party.xmanager_cloud.dashboard_service.proto import (  # type: ignore[attr-defined, no-redef]
-        dashboard_service_pb2,
-        messages_pb2,
-    )
+from xmanager_cloud.dashboard_service.proto import (  # type: ignore[attr-defined]
+    dashboard_service_pb2,
+    messages_pb2,
+)
 
 __all__ = ["messages_pb2", "dashboard_service_pb2"]

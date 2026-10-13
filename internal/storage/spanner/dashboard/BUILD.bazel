@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-compat_go_library(
+go_library(
     name = "dashboard",
     srcs = [
         "chartplots.go",
@@ -42,6 +42,7 @@ compat_go_library(
         "//internal/query_generator/liststatement",
         "//internal/query_generator/normalizer",
         "//internal/query_generator/querytools",
+        "//internal/storage/data",
         "//internal/storage/spanner/dashboard/data",
         "//internal/storage/spanner/schema/dashboardschema",
         "//internal/validator",
@@ -49,13 +50,12 @@ compat_go_library(
         "@org_golang_google_api//iterator",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )
 
-compat_go_test(
+go_test(
     name = "dashboard_test",
     srcs = [
         "chartplots_test.go",
@@ -79,11 +79,10 @@ compat_go_test(
     deps = [
         "//api/protos/dashboard:messages_go_proto",
         "//internal/grpcerr",
-        "//internal/storage/spanner/dashboard/data",
+        "//internal/storage/data",
         "//internal/storage/spanner/emulator",
         "//internal/storage/spanner/schema/dashboardschema",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",
-        "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )

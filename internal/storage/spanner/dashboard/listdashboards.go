@@ -22,13 +22,12 @@ import (
 	"cloud.google.com/go/spanner"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/logging"
+	ls "xmanager_cloud/internal/query_generator/liststatement"
+	"xmanager_cloud/internal/query_generator/normalizer"
+	storagedata "xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
-	"xmanager_cloud/logging/logging"
-	ls "xmanager_cloud/query_generator/liststatement"
-	"xmanager_cloud/query_generator/normalizer/normalizer"
-	"xmanager_cloud/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
 )
 
 // hydrateChartIDs fills in the chart IDs of the given dashboards from their DashboardCharts rows
@@ -38,25 +37,17 @@ import (
 // dashboard as empty. The whole page is read in one pass over the child table rather than one read
 // per dashboard, which keeps the cost of a listing independent of the page size.
 func hydrateChartIDs(ctx context.Context, txn *spanner.ReadOnlyTransaction, dashboards []*dpb.Dashboard) ([]*dpb.Dashboard, error) {
-	if len(dashboards) == 0 {
+	byID, dashIDs, err := storagedata.IndexDashboardsByID(dashboards)
+	if err != nil {
+		return nil, err
+	}
+	if len(dashIDs) == 0 {
 		return dashboards, nil
 	}
 
-	byID := make(map[string]*dpb.Dashboard, len(dashboards))
-	keys := make([]spanner.KeySet, 0, len(dashboards))
-	for _, dash := range dashboards {
-		if dash == nil {
-			continue
-		}
-		dashID, err := validator.ValidateDashboardName(dash.GetName())
-		if err != nil {
-			return nil, fmt.Errorf("invalid dashboard name %q: %w", dash.GetName(), err)
-		}
-		byID[dashID] = dash
+	keys := make([]spanner.KeySet, 0, len(dashIDs))
+	for _, dashID := range dashIDs {
 		keys = append(keys, spanner.Key{dashID}.AsPrefix())
-	}
-	if len(keys) == 0 {
-		return dashboards, nil
 	}
 
 	iter := txn.Read(ctx, dashboardschema.DashboardChartsTableName, spanner.KeySets(keys...), []string{"DashboardId", "ChartId"})
@@ -74,13 +65,7 @@ func hydrateChartIDs(ctx context.Context, txn *spanner.ReadOnlyTransaction, dash
 		return nil, err
 	}
 
-	// Sort so that a listing serves chart IDs in the same canonical order GetDashboard does, rather
-	// than in whatever order the child table read happened to return them.
-	for dashID, chartIDs := range linked {
-		if dash, ok := byID[dashID]; ok {
-			dash.ChartIds = data.SortChartIDs(chartIDs)
-		}
-	}
+	storagedata.AssignDashboardChartIDs(byID, linked)
 	return dashboards, nil
 }
 
@@ -142,7 +127,7 @@ func (r *Repository) ListDashboards(ctx context.Context, pageSize int32, pageTok
 	}
 
 	// 5. Apply pagination cursor.
-	dashboards, nextPageToken, err := ls.ApplyPagination(dashboards, pageSize, ExtractDashboardCursor)
+	dashboards, nextPageToken, err := ls.ApplyPagination(dashboards, pageSize, storagedata.ExtractDashboardCursor)
 	if err != nil {
 		return nil, "", err
 	}
@@ -156,33 +141,4 @@ func (r *Repository) ListDashboards(ctx context.Context, pageSize int32, pageTok
 
 	logging.Info(ctx, "Listed dashboards", "count", len(dashboards), "nextPageToken", nextPageToken)
 	return dashboards, nextPageToken, nil
-}
-
-// ExtractDashboardCursor extracts pagination cursor values from a Dashboard proto.
-func ExtractDashboardCursor(dash *dpb.Dashboard) (map[string]any, error) {
-	if dash == nil {
-		return nil, fmt.Errorf("dashboard must not be nil: %w", grpcerr.ErrInvalidArgument)
-	}
-
-	dashID, err := validator.ValidateDashboardName(dash.GetName())
-	if err != nil {
-		return nil, fmt.Errorf("invalid dashboard name in cursor: %w", err)
-	}
-
-	cursor := map[string]any{
-		"dashboard_id": dashID,
-	}
-
-	if dash.GetCreateTime() != nil {
-		cursor["created"] = dash.GetCreateTime().AsTime()
-	} else {
-		cursor["created"] = time.Time{}
-	}
-	if dash.GetUpdateTime() != nil {
-		cursor["updated"] = dash.GetUpdateTime().AsTime()
-	} else {
-		cursor["updated"] = time.Time{}
-	}
-
-	return cursor, nil
 }

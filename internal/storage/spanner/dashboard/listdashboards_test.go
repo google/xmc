@@ -19,11 +19,9 @@ import (
 	"fmt"
 	"slices"
 	"testing"
-	"time"
 
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	"xmanager_cloud/internal/storage/spanner/dashboard/data"
+	storagedata "xmanager_cloud/internal/storage/data"
 )
 
 func TestListDashboards_Empty(t *testing.T) {
@@ -229,7 +227,7 @@ func TestListDashboards_HydratesChartIDs(t *testing.T) {
 
 	// The IDs are created out of order on purpose: a listing must serve them in the same canonical
 	// order GetDashboard does, not in whatever order the chart links came back from Spanner.
-	wantChartIDs := data.SortChartIDs(chartIDs)
+	wantChartIDs := storagedata.SortChartIDs(chartIDs)
 	if !slices.Equal(dashboards[0].GetChartIds(), wantChartIDs) {
 		t.Errorf("ChartIds for %q = %v, want %v", dashboards[0].GetName(), dashboards[0].GetChartIds(), wantChartIDs)
 	}
@@ -264,77 +262,4 @@ func TestListDashboards_HydratesOnlyThePageReturned(t *testing.T) {
 			t.Errorf("ChartIds for %q = %v, want [%q]", dash.GetName(), dash.GetChartIds(), want)
 		}
 	}
-}
-
-func TestExtractDashboardCursor(t *testing.T) {
-	t.Run("nil dashboard", func(t *testing.T) {
-		_, err := ExtractDashboardCursor(nil)
-		if err == nil {
-			t.Errorf("ExtractDashboardCursor(nil) succeeded, want error")
-		}
-	})
-
-	t.Run("empty fields populated with zero values", func(t *testing.T) {
-		dash := &dpb.Dashboard{
-			Name: "dashboards/d1",
-		}
-		cursor, err := ExtractDashboardCursor(dash)
-		if err != nil {
-			t.Fatalf("ExtractDashboardCursor failed: %v", err)
-		}
-		if cursor["dashboard_id"] != "d1" {
-			t.Errorf("dashboard_id = %v, want 'd1'", cursor["dashboard_id"])
-		}
-		if _, ok := cursor["title"]; ok {
-			t.Errorf("title should not be present in cursor")
-		}
-		if _, ok := cursor["owner"]; ok {
-			t.Errorf("owner should not be present in cursor")
-		}
-		if cursor["created"] != (time.Time{}) {
-			t.Errorf("created = %v, want zero time", cursor["created"])
-		}
-		if cursor["updated"] != (time.Time{}) {
-			t.Errorf("updated = %v, want zero time", cursor["updated"])
-		}
-	})
-
-	t.Run("populated fields", func(t *testing.T) {
-		now := time.Now().Truncate(time.Microsecond)
-		dash := &dpb.Dashboard{
-			Name:       "dashboards/d2",
-			Title:      "My Dashboard",
-			Owner:      "user@example.com",
-			CreateTime: timestamppb.New(now),
-			UpdateTime: timestamppb.New(now),
-		}
-		cursor, err := ExtractDashboardCursor(dash)
-		if err != nil {
-			t.Fatalf("ExtractDashboardCursor failed: %v", err)
-		}
-		if cursor["dashboard_id"] != "d2" {
-			t.Errorf("dashboard_id = %v, want 'd2'", cursor["dashboard_id"])
-		}
-		if _, ok := cursor["title"]; ok {
-			t.Errorf("title should not be present in cursor")
-		}
-		if _, ok := cursor["owner"]; ok {
-			t.Errorf("owner should not be present in cursor")
-		}
-		if cursor["created"] != now.UTC() {
-			t.Errorf("created = %v, want %v", cursor["created"], now.UTC())
-		}
-		if cursor["updated"] != now.UTC() {
-			t.Errorf("updated = %v, want %v", cursor["updated"], now.UTC())
-		}
-	})
-
-	t.Run("invalid dashboard name returns error", func(t *testing.T) {
-		dash := &dpb.Dashboard{
-			Name: "invalid-name",
-		}
-		if _, err := ExtractDashboardCursor(dash); err == nil {
-			t.Errorf("ExtractDashboardCursor with invalid name succeeded, want error")
-		}
-	})
 }

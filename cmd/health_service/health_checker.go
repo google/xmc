@@ -21,9 +21,9 @@ import (
 	"sync"
 	"time"
 
-	health "xmanager_cloud/common/health"
-	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
-	"xmanager_cloud/logging/logging"
+	spb "xmanager_cloud/health_service/proto/api_go_proto"
+	health "xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/summary"
 
 	run "google.golang.org/api/run/v2"

@@ -18,11 +18,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"golang/go_sync/errgroup/errgroup"
+	"golang.org/x/sync/errgroup"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"xmanager_cloud/common/health"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
+	"xmanager_cloud/cmd/actuator/k8s_client"
+	"xmanager_cloud/internal/common/health"
 )
 
 func activeHealthChecker(k8s *k8sclient.Client, spClient health.SpannerHealthClient) func(req *http.Request) error {

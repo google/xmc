@@ -22,27 +22,26 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"golang/grpc/credentials/insecure/insecure"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
-	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
-	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/spanner/spanner"
-	"xmanager_cloud/storage/storage"
-	tq "xmanager_cloud/task_queue/client"
-	"xmanager_cloud/validator/validator"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	tq "xmanager_cloud/internal/task_queue"
+	"xmanager_cloud/internal/validator"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 
-	"golang/grpc/grpc"
+	"google.golang.org/grpc"
 )
 
 func TestCreateArtifact_HappyPath(t *testing.T) {
@@ -235,7 +234,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 		name          string
 		req           *apipb.CreateArtifactRequest
 		authenticator auth.AuthorizerInterface
-		xidClient     xidgrpcpb.XidServiceClient
+		xidClient     xidapipb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -352,7 +351,7 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create gRPC client for XID service: %v", err)
 	}
-	xidClient := xidgrpcpb.NewXidServiceClient(conn)
+	xidClient := xidapipb.NewXidServiceClient(conn)
 	taskQueueClient := &tq.FakeClient{}
 
 	chartArtifact := &msgpb.Artifact{

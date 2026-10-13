@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 )
 
 // filterAuthorizedCharts drops the charts whose experiment the caller cannot read. A dashboard may

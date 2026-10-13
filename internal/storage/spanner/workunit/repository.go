@@ -22,11 +22,11 @@ import (
 	"cloud.google.com/go/spanner"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/storage"
+	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/experiment"
-	"xmanager_cloud/query_generator/querytools"
-	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
-	"xmanager_cloud/storage/spanner/schema/workunitschema"
+	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
 )
 
 type spannerTransaction interface {
@@ -36,14 +36,17 @@ type spannerTransaction interface {
 
 // ExperimentTxStore defines transactional experiment operations required by WorkUnit repository.
 // TODO(b/517479143): Remove ExperimentTxStore and the experimentRepo dependency from WorkUnit
-// repository once CreateWorkUnit and UpdateWorkUnitExecutions orchestration are moved out of Spanner.
+// repository once CreateWorkUnit orchestration is moved out of Spanner.
 type ExperimentTxStore interface {
 	FetchExperimentTransaction(ctx context.Context, xid int64, tx experiment.SpannerTransaction) (*essmsgpb.Experiment, error)
 	WithTx(tx *spanner.ReadWriteTransaction) *experiment.TxRepository
 	UpdateExperimentResources(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error
 }
 
-var _ storage.WorkUnitStore = (*Repository)(nil)
+var (
+	_ storage.WorkUnitStore        = (*Repository)(nil)
+	_ storage.WorkUnitTxRepository = (*TxRepository)(nil)
+)
 
 // Repository manages persistence for work unit entities in Cloud Spanner.
 type Repository struct {

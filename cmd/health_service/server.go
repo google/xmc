@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
-	"xmanager_cloud/logging/logging"
+	spb "xmanager_cloud/health_service/proto/api_go_proto"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/summary"
 
 	"golang.org/x/sync/singleflight"

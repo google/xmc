@@ -17,30 +17,28 @@ package dashboard
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/spanner"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	"xmanager_cloud/internal/logging"
+	ls "xmanager_cloud/internal/query_generator/liststatement"
+	"xmanager_cloud/internal/query_generator/normalizer"
+	storagedata "xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
-	"xmanager_cloud/logging/logging"
-	ls "xmanager_cloud/query_generator/liststatement"
-	"xmanager_cloud/query_generator/normalizer/normalizer"
-	"xmanager_cloud/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
 )
 
 // ListCharts returns a paginated list of Chart protos based on parent, filter, order, and cursor token.
 func (r *Repository) ListCharts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
 	logging.Info(ctx, "List charts", "parent", parent, "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy)
 
-	parentFilter, err := r.buildParentFilter(parent)
+	filter, err := storagedata.BuildListChartsFilter(parent, filter)
 	if err != nil {
 		return nil, "", err
 	}
 
-	filter = combineFilters(parentFilter, filter)
 	normalizedFilter := filter
 	if filter != "" {
 		normalizedFilter, err = normalizer.Normalize(filter, r.chartsQueryGen.Tables()[0])
@@ -86,7 +84,7 @@ func (r *Repository) ListCharts(ctx context.Context, parent string, pageSize int
 	}
 
 	// Paginate before hydrating so the over-fetched probe row never costs a plot lookup.
-	page, nextPageToken, err := ls.ApplyPagination(charts, pageSize, ExtractChartCursor)
+	page, nextPageToken, err := ls.ApplyPagination(charts, pageSize, storagedata.ExtractChartCursor)
 	if err != nil {
 		return nil, "", err
 	}
@@ -94,50 +92,4 @@ func (r *Repository) ListCharts(ctx context.Context, parent string, pageSize int
 		return nil, "", fmt.Errorf("failed to hydrate chart plots: %w", err)
 	}
 	return page, nextPageToken, nil
-}
-
-// ExtractChartCursor extracts pagination cursor values from a Chart proto.
-func ExtractChartCursor(chart *dpb.Chart) (map[string]any, error) {
-	if chart == nil {
-		return nil, fmt.Errorf("chart cannot be nil")
-	}
-	_, _, chartID, err := validator.ValidateChartName(chart.GetName())
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract chart ID from %q: %w", chart.GetName(), err)
-	}
-	return map[string]any{
-		"chart_id": chartID,
-	}, nil
-}
-
-func combineFilters(parentFilter, filter string) string {
-	if parentFilter == "" {
-		return filter
-	}
-	if filter == "" {
-		return parentFilter
-	}
-	return fmt.Sprintf("(%s) AND (%s)", parentFilter, filter)
-}
-
-// buildParentFilter translates a chart collection parent into a filter expression. The only two
-// parents ListCharts serves are "dashboards/{dashboard_id}" and "experiments/{xid}/workUnits/{wid}",
-// so an experiment name on its own is rejected rather than widened to every work unit under it.
-func (r *Repository) buildParentFilter(parent string) (string, error) {
-	if parent == "" {
-		return "", nil
-	}
-	if strings.HasPrefix(parent, "dashboards/") || (!strings.HasPrefix(parent, "experiments/") && !strings.Contains(parent, "/")) {
-		trimmed := strings.TrimPrefix(parent, "dashboards/")
-		withPrefix := "dashboards/" + trimmed
-		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", trimmed, withPrefix), nil
-	}
-	if strings.HasPrefix(parent, "experiments/") {
-		xid, wid, err := validator.ValidateWorkUnitName(parent)
-		if err != nil {
-			return "", fmt.Errorf("failed to validate work unit parent name: %w", err)
-		}
-		return fmt.Sprintf("xid = %d AND wid = %d", xid, wid), nil
-	}
-	return "", fmt.Errorf("unsupported parent format: %q", parent)
 }

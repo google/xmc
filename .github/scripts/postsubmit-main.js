@@ -34,11 +34,6 @@ function buildJobResults(needsContext = {}) {
       jobId: 'unit-tests',
       result: safeContext['unit-tests']?.result || 'unknown',
     },
-    {
-      name: 'KinD & Playwright Headless E2E',
-      jobId: 'e2e-tests',
-      result: safeContext['e2e-tests']?.result || 'unknown',
-    },
   ];
 }
 

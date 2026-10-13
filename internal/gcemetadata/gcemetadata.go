@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"os"
 
-	"golang/cloud_google_com/go/compute/metadata/v/v0/metadata"
-	"xmanager_cloud/logging/logging"
+	"cloud.google.com/go/compute/metadata"
+	"xmanager_cloud/internal/logging"
 )
 
 // Metadata holds cluster metadata such as project ID, location, and cluster name.

@@ -21,7 +21,7 @@ package(default_visibility = ["//visibility:public"])
 proto_library(
     name = "rod_api_proto",
     srcs = ["api.proto"],
-    import_prefix = "third_party/xmanager_cloud/rod_service/proto",
+    import_prefix = "xmanager_cloud/rod_service/proto",
     strip_import_prefix = "/api/protos/rod",
     deps = [
         "//api/protos/experiment:experiment_messages_proto",

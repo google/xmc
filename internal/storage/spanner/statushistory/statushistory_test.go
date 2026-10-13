@@ -21,12 +21,13 @@ import (
 
 	"cloud.google.com/go/spanner"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage"
+	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/emulator"
-	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 )
 
 func TestQueueMetricRow(t *testing.T) {
-	row := QueueMetricRow{
+	row := storage.QueueMetricRow{
 		QueueName:    "cq-gpu",
 		Count:        12,
 		TotalUnits:   96,
@@ -60,7 +61,7 @@ func TestFetchBatchQueueMetrics_NilClient(t *testing.T) {
 	}
 }
 
-func sortQueueMetricRows(rows []QueueMetricRow) {
+func sortQueueMetricRows(rows []storage.QueueMetricRow) {
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].QueueName != rows[j].QueueName {
 			return rows[i].QueueName < rows[j].QueueName
@@ -69,7 +70,7 @@ func sortQueueMetricRows(rows []QueueMetricRow) {
 	})
 }
 
-func compareQueueMetricRows(t *testing.T, got, want []QueueMetricRow) {
+func compareQueueMetricRows(t *testing.T, got, want []storage.QueueMetricRow) {
 	t.Helper()
 	if len(got) != len(want) {
 		t.Fatalf("got %d rows, want %d rows. Got: %+v, Want: %+v", len(got), len(want), got, want)
@@ -135,7 +136,7 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 		queueNames []string
 		window     time.Duration
 		mockItems  []WorkUnitStatusHistoryItem
-		want       []QueueMetricRow
+		want       []storage.QueueMetricRow
 	}{
 		{
 			name:       "TransitionStateFiltering",
@@ -146,7 +147,7 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 				newMockItem(102, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 20),
 				newMockItem(103, "q1", -2*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 30),
 			},
-			want: []QueueMetricRow{
+			want: []storage.QueueMetricRow{
 				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
 			},
 		},
@@ -158,7 +159,7 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 10),
 				newMockItem(102, "q1", -45*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 20),
 			},
-			want: []QueueMetricRow{
+			want: []storage.QueueMetricRow{
 				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
 			},
 		},
@@ -170,7 +171,7 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 10),
 				newMockItem(201, "q2", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 20),
 			},
-			want: []QueueMetricRow{
+			want: []storage.QueueMetricRow{
 				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
 			},
 		},
@@ -183,7 +184,7 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 				newMockItem(102, "q1", -8*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 20),
 				newMockItem(103, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_RUNNING, "GPU", 4),
 			},
-			want: []QueueMetricRow{
+			want: []storage.QueueMetricRow{
 				{QueueName: "q1", Count: 3, TotalUnits: 30, ResourceType: ResourceTypeCPU},
 				{QueueName: "q1", Count: 3, TotalUnits: 4, ResourceType: "GPU"},
 			},
@@ -219,7 +220,7 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 		name       string
 		queueNames []string
 		mockItems  []WorkUnitStatusHistoryItem
-		want       []QueueMetricRow
+		want       []storage.QueueMetricRow
 	}{
 		{
 			name:       "TransitionStateFiltering",
@@ -228,7 +229,7 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 10),
 				newMockItem(102, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 20),
 			},
-			want: []QueueMetricRow{
+			want: []storage.QueueMetricRow{
 				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
 			},
 		},
@@ -248,7 +249,7 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 10),
 				newMockItem(201, "q2", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 20),
 			},
-			want: []QueueMetricRow{
+			want: []storage.QueueMetricRow{
 				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
 			},
 		},
@@ -260,7 +261,7 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 				newMockItem(102, "q1", -8*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 20),
 				newMockItem(103, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, "GPU", 4),
 			},
-			want: []QueueMetricRow{
+			want: []storage.QueueMetricRow{
 				{QueueName: "q1", Count: 3, TotalUnits: 30, ResourceType: ResourceTypeCPU},
 				{QueueName: "q1", Count: 3, TotalUnits: 4, ResourceType: "GPU"},
 			},

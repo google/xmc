@@ -29,6 +29,9 @@ spec:
         - path:
             type: PathPrefix
             value: /v1/clusterqueues
+        - path:
+            type: Exact
+            value: /v1/clusterqueues:batchGetSecondaryData
       backendRefs:
         - name: rod-data-provider-service
           port: 8080

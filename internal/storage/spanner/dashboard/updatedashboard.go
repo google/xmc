@@ -20,15 +20,15 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
-	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/logging"
+	storagedata "xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/spanner/schema/dashboardschema"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/internal/validator"
 )
 
 // UpdateDashboard updates an existing dashboard in Spanner and returns the updated proto.
@@ -54,20 +54,17 @@ func (r *Repository) UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboa
 			return err
 		}
 
-		merged, err := data.MergeDashboards(existing, dashboard, updateMask)
+		plan, err := storagedata.PrepareDashboardUpdate(existing, dashboard, updateMask)
 		if err != nil {
 			return err
 		}
-		// Sort chart IDs canonically to ensure consistent ordering with Spanner storage reads and accurate proto.Equal no-op detection.
-		merged.ChartIds = data.SortChartIDs(merged.GetChartIds())
 
-		updatedDashboard = merged
-		if proto.Equal(existing, merged) {
+		updatedDashboard = plan.Merged
+		if !plan.Changed {
 			return nil
 		}
 
-		updateChartIDs := !data.ChartIDsEqual(existing.GetChartIds(), merged.GetChartIds())
-		mutations, err := data.DashboardProtoToUpdateMutations(merged, updateChartIDs)
+		mutations, err := data.DashboardProtoToUpdateMutations(plan.Merged, plan.UpdateChartIDs)
 		if err != nil {
 			return err
 		}

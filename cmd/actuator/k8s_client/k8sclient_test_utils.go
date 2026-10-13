@@ -19,12 +19,12 @@ import (
 	"testing"
 	"time"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/unstructured/unstructured"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
-	dynamicfake "golang/k8s_io/client_go/v/v0_23/dynamic/fake/fake"
-	kubernetesfake "golang/k8s_io/client_go/v/v0_23/kubernetes/fake/fake"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	kubernetesfake "k8s.io/client-go/kubernetes/fake"
 	preconditionsvalidator "xmanager_cloud/cmd/actuator/k8s_client/preconditions_validator"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )

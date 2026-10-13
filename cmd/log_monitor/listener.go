@@ -19,9 +19,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang/cloud_google_com/go/pubsub/v/v1/pubsub"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/storage"
+	"cloud.google.com/go/pubsub"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage"
 )
 
 // LogBatchProcessor processes a batch of Pub/Sub messages.

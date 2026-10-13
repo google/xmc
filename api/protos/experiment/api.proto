@@ -22,13 +22,13 @@ import "google/api/resource.proto";
 import "google/longrunning/operations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
-import "third_party/xmanager_cloud/experiment_state_server/proto/artifact.proto";
-import "third_party/xmanager_cloud/experiment_state_server/proto/experiment.proto";
-import "third_party/xmanager_cloud/experiment_state_server/proto/status.proto";
-import "third_party/xmanager_cloud/experiment_state_server/proto/status_message.proto";
-import "third_party/xmanager_cloud/experiment_state_server/proto/structured_message.proto";
-import "third_party/xmanager_cloud/experiment_state_server/proto/work_unit.proto";
-import "third_party/xmanager_cloud/experiment_state_server/proto/work_unit_execution.proto";
+import "xmanager_cloud/experiment_state_server/proto/artifact.proto";
+import "xmanager_cloud/experiment_state_server/proto/experiment.proto";
+import "xmanager_cloud/experiment_state_server/proto/status.proto";
+import "xmanager_cloud/experiment_state_server/proto/status_message.proto";
+import "xmanager_cloud/experiment_state_server/proto/structured_message.proto";
+import "xmanager_cloud/experiment_state_server/proto/work_unit.proto";
+import "xmanager_cloud/experiment_state_server/proto/work_unit_execution.proto";
 
 // ExperimentStateService provides APIs for managing the lifecycle of
 // experiments, work units, and their associated artifacts.
