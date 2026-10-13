@@ -11,18 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+import { getHarness } from '@angular/cdk/testing/catalyst/async';
 import { MatBadgeHarness } from '@angular/material/badge/testing';
-import {
-  CheckboxHarnessFilters,
-  MatCheckboxHarness,
-} from '@angular/material/checkbox/testing';
+import { CheckboxHarnessFilters, MatCheckboxHarness } from '@angular/material/checkbox/testing';
 import { MatMenuHarness } from '@angular/material/menu/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
 import { StructuredMessage } from 'app/protos/experiment_state_server';
 import { StatusMessageFilterService } from 'app/service/status_message_filter_service';
-import { bootstrap, cleanState, getHarness, setupModule } from 'app/testing/test';
+import { bootstrap, cleanState, setupModule } from 'app/testing/test';
 
 import { StateFilterOption, StatusMessageFilter } from './status_message_filter';
 

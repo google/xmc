@@ -37,7 +37,9 @@ export class WorkUnitsTableHarness extends ComponentHarness {
   private readonly _loadingBar = this.locatorForOptional(LoadingBarHarness);
   private readonly _table = this.locatorForOptional(MatTableHarness);
   private readonly _sort = this.locatorFor(MatSortHarness);
-  private readonly _filterMenu = this.locatorFor(MatMenuHarness.with({ ancestor: FILTER_ANCESTOR }));
+  private readonly _filterMenu = this.locatorFor(
+    MatMenuHarness.with({ ancestor: FILTER_ANCESTOR }),
+  );
   private readonly _filterBadge = this.locatorForOptional(
     MatBadgeHarness.with({ ancestor: FILTER_ANCESTOR }),
   );

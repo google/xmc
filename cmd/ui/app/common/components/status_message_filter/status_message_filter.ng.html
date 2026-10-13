@@ -16,13 +16,13 @@ limitations under the License.
 <button
   type="button"
   mat-icon-button
+  matBadgeSize="small"
   [attr.aria-label]="triggerLabel()"
   [matTooltip]="triggerLabel()"
   [matMenuTriggerFor]="filterMenu"
   [matBadge]="activeStateCount()"
   [matBadgeHidden]="activeStateCount() === 0"
   [matBadgeDescription]="badgeDescription()"
-  matBadgeSize="small"
   (menuOpened)="onMenuOpened()"
 >
   <mat-icon>filter_list</mat-icon>
