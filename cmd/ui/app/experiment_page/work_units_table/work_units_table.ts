@@ -26,6 +26,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule } from '@angular/material/paginator';
+import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltip } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
@@ -91,6 +92,7 @@ interface WorkUnitView extends WorkUnit {
     PageSizeSelector,
     MatTooltip,
     StatusMessageFilter,
+    MatSortModule,
   ],
   providers: [WorkUnitsTableStore],
 })
@@ -154,6 +156,8 @@ export class WorkUnitsTable {
     () => this.isFetching() && this.workUnitViews() !== undefined,
   );
 
+  protected readonly sort: Signal<Sort> = this.store.sort;
+
   constructor() {
     // The experiment page reuses this component across experiments, so reload whenever the
     // experiment id changes instead of only on init. Only `xid` is tracked.
@@ -167,6 +171,11 @@ export class WorkUnitsTable {
   }
 
   refresh() {
+    this.store.fetchPage();
+  }
+
+  protected onSortChange(sort: Sort) {
+    this.store.setSort(sort);
     this.store.fetchPage();
   }
 

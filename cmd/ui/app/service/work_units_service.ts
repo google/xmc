@@ -30,11 +30,11 @@ export class WorkUnitsService {
 
   searchWorkUnits(request: api.ListWorkUnitsRequest): Observable<api.ListWorkUnitsResponse> {
     const url = `${XMC_API_DOMAIN}/${request.parent}/workUnits`;
-    const { pageSize, pageToken } = request;
+    const { pageSize, pageToken, orderBy } = request;
 
     const params = new HttpParams({
       fromObject: Object.fromEntries(
-        Object.entries({ pageSize, pageToken }).filter(([_, v]) => Boolean(v)),
+        Object.entries({ pageSize, pageToken, orderBy }).filter(([_, v]) => Boolean(v)),
       ),
     });
     return this.http.get<api.ListWorkUnitsResponse>(url, { params, withCredentials: true });

@@ -25,6 +25,8 @@ import { ListWorkUnitsRequest, WorkUnit } from 'app/protos/experiment_state_serv
 import { SnackbarService } from 'app/service/snackbar_service';
 import { WorkUnitsService } from 'app/service/work_units_service';
 
+import { AipSort, toOrderBy } from './work_units_query';
+
 /** Interface for the state of the WorkUnitsTable. */
 interface WorkUnitsTableState {
   xid: string | null;
@@ -32,6 +34,7 @@ interface WorkUnitsTableState {
   pagination: PaginationState;
   isLoading: boolean;
   error: string | null;
+  sort: AipSort;
 }
 
 /** Initial state for the WorkUnitsTableStore. */
@@ -41,6 +44,7 @@ const INITIAL_STATE: WorkUnitsTableState = {
   pagination: getInitialPaginationState(10),
   isLoading: false,
   error: null,
+  sort: { active: '', direction: '' },
 };
 
 /**
@@ -77,6 +81,8 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
     (state) => state.pagination.previousTokens.length > 0,
   );
 
+  readonly sort: Signal<AipSort> = this.selectSignal((state) => state.sort);
+
   /**
    * Sets the experiment id and returns to the first page, since page tokens belong to the
    * previous experiment. It does not fetch data.
@@ -89,6 +95,13 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
 
   /** Sets the page size. It does not fetch data. */
   readonly setPageSize = this.updater((state, pageSize: number) => setPageSize(state, pageSize));
+
+  /** Sets the sort and returns to the first page. It does not fetch data. */
+  readonly setSort = this.updater((state, sort: AipSort) => ({
+    ...state,
+    sort,
+    pagination: getInitialPaginationState(state.pagination.pageSize),
+  }));
 
   /**
    * This updater will update page tokens:
@@ -152,13 +165,8 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
     trigger$.pipe(
       tap(() => this.patchState({ isLoading: true })),
       switchMap(() => {
-        const { xid, pagination } = this.get();
-        const request: ListWorkUnitsRequest = {
-          parent: `experiments/${xid}`,
-          pageSize: pagination.pageSize,
-          pageToken: pagination.currentPageToken,
-        };
-        return this.workUnitsService.searchWorkUnits(request).pipe(
+        const { pagination } = this.get();
+        return this.workUnitsService.searchWorkUnits(this.buildListRequest()).pipe(
           tap((response) =>
             this.patchState({
               pagination: {
@@ -184,4 +192,16 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
       }),
     ),
   );
+
+  /** Builds the list request for the current page and sort. */
+  private buildListRequest(): ListWorkUnitsRequest {
+    const { xid, pagination, sort } = this.get();
+    const orderBy = toOrderBy(sort);
+    return {
+      parent: `experiments/${xid}`,
+      pageSize: pagination.pageSize,
+      pageToken: pagination.currentPageToken,
+      ...(orderBy && { orderBy }),
+    };
+  }
 }

@@ -112,10 +112,14 @@ func ExtractWorkUnitCursor(wu *essmsgpb.WorkUnit) (map[string]any, error) {
 		return nil, fmt.Errorf("failed to validate work unit name %q: %w", wu.GetName(), err)
 	}
 
+	execution := wu.GetCurrentWorkUnitExecution()
 	cursor := map[string]any{
 		"xid":              xid,
 		"bit_reversed_xid": spannerutils.ReverseBits(xid),
 		"work_unit_id":     wid,
+		"state":            execution.GetStatus().GetState().String(),
+		// Nil until the execution completes; matches the NULL column for cursor comparisons.
+		"execution_completed": nil,
 	}
 
 	if wu.CreateTime != nil {
@@ -123,6 +127,9 @@ func ExtractWorkUnitCursor(wu *essmsgpb.WorkUnit) (map[string]any, error) {
 	}
 	if wu.UpdateTime != nil {
 		cursor["updated"] = wu.UpdateTime.AsTime()
+	}
+	if completeTime := execution.GetCompleteTime(); completeTime != nil {
+		cursor["execution_completed"] = completeTime.AsTime()
 	}
 
 	return cursor, nil
