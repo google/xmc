@@ -187,7 +187,7 @@ func TestComponentsRBAC_LeastPrivilegeEnvtest(t *testing.T) {
 	if _, err := adminKube.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "xmc"}}, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("failed to create xmc namespace: %v", err)
 	}
-	applyBridgeRBACManifests(ctx, t, adminKube, "xmc", false)
+	applyBridgeRBACManifests(ctx, t, adminKube, "xmc")
 
 	bridgeCfg := rest.CopyConfig(adminCfg)
 	bridgeCfg.Impersonate = rest.ImpersonationConfig{
@@ -203,32 +203,94 @@ func TestComponentsRBAC_LeastPrivilegeEnvtest(t *testing.T) {
 		t.Fatalf("impersonated dynamic.NewForConfig failed: %v", err)
 	}
 
-	if _, err := bridgeKube.CoreV1().Namespaces().Get(ctx, "kube-system", metav1.GetOptions{}); err != nil {
-		t.Errorf("expected xmc-bridge-sa to GET kube-system namespace, got: %v", err)
+	isAllowed := func(err error) bool { return err == nil }
+	tests := []struct {
+		name string
+		call func(context.Context) error
+		want func(error) bool
+	}{
+		{
+			name: "GET kube-system namespace is allowed",
+			call: func(ctx context.Context) error {
+				_, err := bridgeKube.CoreV1().Namespaces().Get(ctx, "kube-system", metav1.GetOptions{})
+				return err
+			},
+			want: isAllowed,
+		},
+		{
+			name: "GET default namespace is Forbidden",
+			call: func(ctx context.Context) error {
+				_, err := bridgeKube.CoreV1().Namespaces().Get(ctx, "default", metav1.GetOptions{})
+				return err
+			},
+			want: apierrors.IsForbidden,
+		},
+		{
+			name: "LIST components in release namespace is allowed",
+			call: func(ctx context.Context) error {
+				_, err := bridgeDyn.Resource(ComponentGVR).Namespace("xmc").List(ctx, metav1.ListOptions{})
+				return err
+			},
+			want: isAllowed,
+		},
+		{
+			name: "LIST components in default namespace is Forbidden under Role scope",
+			call: func(ctx context.Context) error {
+				_, err := bridgeDyn.Resource(ComponentGVR).Namespace("default").List(ctx, metav1.ListOptions{})
+				return err
+			},
+			want: apierrors.IsForbidden,
+		},
+		{
+			name: "LIST validatingadmissionpolicies is Forbidden (no wildcard read)",
+			call: func(ctx context.Context) error {
+				_, err := bridgeKube.AdmissionregistrationV1().ValidatingAdmissionPolicies().List(ctx, metav1.ListOptions{})
+				return err
+			},
+			want: apierrors.IsForbidden,
+		},
+		{
+			name: "DELETE allowlisted ingestion-gateway-components-reader Role passes RBAC (NotFound)",
+			call: func(ctx context.Context) error {
+				return bridgeKube.RbacV1().Roles("xmc").Delete(ctx, "ingestion-gateway-components-reader", metav1.DeleteOptions{})
+			},
+			want: apierrors.IsNotFound,
+		},
+		{
+			name: "DELETE non-allowlisted xmc-bridge-role Role is Forbidden",
+			call: func(ctx context.Context) error {
+				return bridgeKube.RbacV1().Roles("xmc").Delete(ctx, "xmc-bridge-role", metav1.DeleteOptions{})
+			},
+			want: apierrors.IsForbidden,
+		},
 	}
-	if _, err := bridgeKube.CoreV1().Namespaces().Get(ctx, "default", metav1.GetOptions{}); !apierrors.IsForbidden(err) {
-		t.Errorf("expected xmc-bridge-sa GET default namespace to be Forbidden, got: %v", err)
-	}
-	if _, err := bridgeDyn.Resource(ComponentGVR).Namespace("xmc").List(ctx, metav1.ListOptions{}); err != nil {
-		t.Errorf("expected xmc-bridge-sa to LIST components in xmc, got: %v", err)
-	}
-	if _, err := bridgeDyn.Resource(ComponentGVR).Namespace("default").List(ctx, metav1.ListOptions{}); !apierrors.IsForbidden(err) {
-		t.Errorf("expected xmc-bridge-sa LIST components in default to be Forbidden under Role scope, got: %v", err)
-	}
-	if _, err := bridgeKube.AdmissionregistrationV1().ValidatingAdmissionPolicies().List(ctx, metav1.ListOptions{}); !apierrors.IsForbidden(err) {
-		t.Errorf("expected xmc-bridge-sa LIST validatingadmissionpolicies to be Forbidden (no wildcard read), got: %v", err)
-	}
-	if err := bridgeKube.RbacV1().Roles("xmc").Delete(ctx, "ingestion-gateway-components-reader", metav1.DeleteOptions{}); !apierrors.IsNotFound(err) {
-		t.Errorf("expected DELETE on allowlisted ingestion-gateway-components-reader Role to pass RBAC (NotFound), got: %v", err)
-	}
-	if err := bridgeKube.RbacV1().Roles("xmc").Delete(ctx, "xmc-bridge-role", metav1.DeleteOptions{}); !apierrors.IsForbidden(err) {
-		t.Errorf("expected DELETE on non-allowlisted Role xmc-bridge-role to be Forbidden, got: %v", err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.call(ctx); !tc.want(err) {
+				t.Errorf("unexpected result for xmc-bridge-sa: %v", err)
+			}
+		})
 	}
 }
 
-func applyBridgeRBACManifests(ctx context.Context, t *testing.T, kubeClient kubernetes.Interface, ns string, clusterScope bool) {
+func TestComponentsRBAC_ClusterScopeRendering(t *testing.T) {
+	rendered := string(renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), "custom-ns", true, true))
+	for _, want := range []string{
+		"kind: ClusterRole\nmetadata:\n  name: xmc-bridge-role",
+		"kind: ClusterRoleBinding\nmetadata:\n  name: xmc-bridge-rolebinding",
+		"roleRef:\n  kind: ClusterRole\n  name: xmc-bridge-role",
+		// Leader election stays namespaced even under clusterScope.
+		"kind: Role\nmetadata:\n  name: xmc-bridge-leader-election",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("expected clusterScope=true rbac.yaml render to contain %q, got:\n%s", want, rendered)
+		}
+	}
+}
+
+func applyBridgeRBACManifests(ctx context.Context, t *testing.T, kubeClient kubernetes.Interface, ns string) {
 	t.Helper()
-	rendered := renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), ns, true, clusterScope)
+	rendered := renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), ns, true, false)
 	dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(rendered), 4096)
 	for {
 		var raw map[string]any
