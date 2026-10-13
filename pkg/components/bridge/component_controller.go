@@ -97,7 +97,7 @@ func (c *ComponentController) newControllerBuilder(mgr manager.Manager) *builder
 func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	item := newComponentObject()
 	if err := c.client.Get(ctx, req.NamespacedName, item); err != nil {
-		if apierrors.IsNotFound(err) && c.reconciler != nil {
+		if apierrors.IsNotFound(err) {
 			c.reconciler.ForgetComponent(req.Namespace, req.Name)
 		}
 		return reconcile.Result{}, client.IgnoreNotFound(err)
