@@ -24,9 +24,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )

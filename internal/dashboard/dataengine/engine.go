@@ -18,8 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 )
 
 const defaultMetricsTable = "xmc_metrics"
@@ -72,7 +71,7 @@ func (e *DataEngine) Ping(ctx context.Context) error {
 }
 
 // FetchChartData compiles and executes queries for all plots within a Chart.
-func (e *DataEngine) FetchChartData(ctx context.Context, chart *dpb.Chart, req *spb.GetChartDataRequest) (*dpb.ChartData, error) {
+func (e *DataEngine) FetchChartData(ctx context.Context, chart *dpb.Chart, req *dpb.GetChartDataRequest) (*dpb.ChartData, error) {
 	// The engine is optional at startup, so a caller can end up holding a nil one. Report that as an
 	// error rather than letting the plot fetchers take down the process on a nil dereference.
 	if e == nil {

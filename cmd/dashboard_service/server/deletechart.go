@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	spb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/validator"
 )
 

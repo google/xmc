@@ -32,13 +32,13 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	preconditionsvalidator "xmanager_cloud/cmd/actuator/k8s_client/preconditions_validator"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
 // ActuatorRuntimeConfig holds runtime configuration for Actuator.

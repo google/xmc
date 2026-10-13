@@ -19,13 +19,13 @@ import (
 	"context"
 	"fmt"
 
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/workunit"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 

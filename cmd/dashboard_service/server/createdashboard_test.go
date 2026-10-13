@@ -25,8 +25,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
@@ -56,7 +55,7 @@ func TestCreateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.CreateDashboardRequest{
+		req := &dpb.CreateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
 				Title:       "My Dashboard",
 				Description: "Test Description",
@@ -94,7 +93,7 @@ func TestCreateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.CreateDashboardRequest{
+		req := &dpb.CreateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
 				Title:    "Dashboard with Charts",
 				ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
@@ -130,7 +129,7 @@ func TestCreateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.CreateDashboardRequest{
+		req := &dpb.CreateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Title: "Comparison"},
 			Charts: []*dpb.Chart{
 				{Title: "Baseline", Xid: 4321, Wid: 1},
@@ -167,7 +166,7 @@ func TestCreateDashboard(t *testing.T) {
 		repo := &mockRepository{getChartFn: existingChartFn(4321)}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
-		req := &spb.CreateDashboardRequest{
+		req := &dpb.CreateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
 				Title:    "Comparison",
 				ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479"},
@@ -202,7 +201,7 @@ func TestCreateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidClient, nil)
 
-		req := &spb.CreateDashboardRequest{
+		req := &dpb.CreateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Title: "Comparison"},
 			Charts: []*dpb.Chart{
 				{Title: "Baseline", Xid: 4321, Wid: 1},
@@ -235,7 +234,7 @@ func TestCreateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidClient, nil)
 
-		req := &spb.CreateDashboardRequest{
+		req := &dpb.CreateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
 				Title:    "Comparison",
 				ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479"},
@@ -261,7 +260,7 @@ func TestCreateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
-		req := &spb.CreateDashboardRequest{
+		req := &dpb.CreateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
 				Title:    "Comparison",
 				ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479"},
@@ -286,7 +285,7 @@ func TestCreateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.CreateDashboardRequest{
+		req := &dpb.CreateDashboardRequest{
 			DashboardId: "custom-id-123",
 			Dashboard: &dpb.Dashboard{
 				Title: "Custom Dashboard",
@@ -311,7 +310,7 @@ func TestCreateDashboard(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.CreateDashboardRequest{
+		req := &dpb.CreateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Title: "My Dash"},
 		}
 
@@ -328,36 +327,36 @@ func TestCreateDashboard(t *testing.T) {
 
 		tests := []struct {
 			name string
-			req  *spb.CreateDashboardRequest
+			req  *dpb.CreateDashboardRequest
 		}{
 			{name: "nil request", req: nil},
-			{name: "nil dashboard", req: &spb.CreateDashboardRequest{}},
-			{name: "empty title", req: &spb.CreateDashboardRequest{Dashboard: &dpb.Dashboard{Title: ""}}},
-			{name: "invalid dashboard ID", req: &spb.CreateDashboardRequest{
+			{name: "nil dashboard", req: &dpb.CreateDashboardRequest{}},
+			{name: "empty title", req: &dpb.CreateDashboardRequest{Dashboard: &dpb.Dashboard{Title: ""}}},
+			{name: "invalid dashboard ID", req: &dpb.CreateDashboardRequest{
 				DashboardId: "invalid/id",
 				Dashboard:   &dpb.Dashboard{Title: "Title"},
 			}},
-			{name: "duplicate chart IDs", req: &spb.CreateDashboardRequest{
+			{name: "duplicate chart IDs", req: &dpb.CreateDashboardRequest{
 				Dashboard: &dpb.Dashboard{
 					Title:    "Title",
 					ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
 			}},
-			{name: "resource name chart ID rejected", req: &spb.CreateDashboardRequest{
+			{name: "resource name chart ID rejected", req: &dpb.CreateDashboardRequest{
 				Dashboard: &dpb.Dashboard{
 					Title:    "Title",
 					ChartIds: []string{"charts/f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
 			}},
-			{name: "inline chart without title", req: &spb.CreateDashboardRequest{
+			{name: "inline chart without title", req: &dpb.CreateDashboardRequest{
 				Dashboard: &dpb.Dashboard{Title: "Title"},
 				Charts:    []*dpb.Chart{{Xid: 4321, Wid: 1}},
 			}},
-			{name: "inline chart without xid", req: &spb.CreateDashboardRequest{
+			{name: "inline chart without xid", req: &dpb.CreateDashboardRequest{
 				Dashboard: &dpb.Dashboard{Title: "Title"},
 				Charts:    []*dpb.Chart{{Title: "Baseline", Wid: 1}},
 			}},
-			{name: "inline chart without wid", req: &spb.CreateDashboardRequest{
+			{name: "inline chart without wid", req: &dpb.CreateDashboardRequest{
 				Dashboard: &dpb.Dashboard{Title: "Title"},
 				Charts:    []*dpb.Chart{{Title: "Baseline", Xid: 4321}},
 			}},
@@ -382,7 +381,7 @@ func TestCreateDashboard(t *testing.T) {
 		authMock := &mockAuthorizer{}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.CreateDashboardRequest{
+		req := &dpb.CreateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Title: "My Dash"},
 		}
 
@@ -401,7 +400,7 @@ func TestCreateDashboard(t *testing.T) {
 		authMock := &mockAuthorizer{}
 		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
-		req := &spb.CreateDashboardRequest{
+		req := &dpb.CreateDashboardRequest{
 			DashboardId: "duplicate-id",
 			Dashboard:   &dpb.Dashboard{Title: "My Dash"},
 		}

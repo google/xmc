@@ -20,8 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -43,7 +42,7 @@ const (
 )
 
 // ListCharts retrieves a paginated list of charts under a dashboard or work unit parent (AIP-132).
-func (s *Server) ListCharts(ctx context.Context, req *spb.ListChartsRequest) (*spb.ListChartsResponse, error) {
+func (s *Server) ListCharts(ctx context.Context, req *dpb.ListChartsRequest) (*dpb.ListChartsResponse, error) {
 	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)
@@ -72,7 +71,7 @@ func (s *Server) ListCharts(ctx context.Context, req *spb.ListChartsRequest) (*s
 	if err != nil {
 		return nil, err
 	}
-	return &spb.ListChartsResponse{Charts: charts, NextPageToken: nextPageToken}, nil
+	return &dpb.ListChartsResponse{Charts: charts, NextPageToken: nextPageToken}, nil
 }
 
 // resolveChartParent classifies the parent and enforces experiment READER access up front when it

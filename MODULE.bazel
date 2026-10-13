@@ -76,6 +76,11 @@ go_deps.module(
     sum = "h1:wiat9QAhnDQjA7wk1kh/TqHz2I1uUA7M7t9SAl/JNXg=",
     version = "v1.54.2",
 )
+go_deps.module(
+    path = "google.golang.org/grpc/cmd/protoc-gen-go-grpc",
+    sum = "h1:F29+wU6Ee6qgu9TddPgooOdaqsxTMunOoj8KA5yuS5A=",
+    version = "v1.5.1",
+)
 go_deps.gazelle_override(
     build_file_generation = "on",
     directives = [
@@ -139,6 +144,7 @@ use_repo(
     "org_golang_google_genproto_googleapis_api",
     "org_golang_google_genproto_googleapis_rpc",
     "org_golang_google_grpc",
+    "org_golang_google_grpc_cmd_protoc_gen_go_grpc",
     "org_golang_google_protobuf",
     "org_golang_x_mod",
     "org_golang_x_oauth2",

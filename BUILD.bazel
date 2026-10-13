@@ -27,16 +27,12 @@ nogo(
 )
 
 # Proto stubs target package mappings (matching how Go codebase imports our proto stubs)
-# gazelle:resolve go xmanager_cloud/api/filter/filter_expression_go_proto //api/filter:filter_expression_go_proto
 # gazelle:resolve go xmanager_cloud/experiment_state_server/proto/messages_go_proto //api/protos/experiment:messages_go_proto
 # gazelle:resolve go xmanager_cloud/experiment_state_server/proto/api_go_proto //api/protos/experiment:api_go_proto
 # gazelle:resolve go xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto //api/protos/experiment:api_go_proto
-# gazelle:resolve go xmanager_cloud/health_service/proto/api_go_proto //api/protos/health:api_go_proto
-# gazelle:resolve go xmanager_cloud/health_service/proto/api_go_grpc_proto //api/protos/health:api_go_proto
 # gazelle:resolve go xmanager_cloud/xid_service/proto/messages_go_proto //api/protos/xid:messages_go_proto
 # gazelle:resolve go xmanager_cloud/xid_service/proto/api_go_proto //api/protos/xid:api_go_proto
 # gazelle:resolve go xmanager_cloud/xid_service/proto/api_go_grpc_proto //api/protos/xid:api_go_proto
-# gazelle:resolve go xmanager_cloud/task_queue/proto/task_go_proto //api/protos/task_queue:task_go_proto
 
 gazelle(name = "gazelle")
 

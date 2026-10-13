@@ -19,6 +19,7 @@ go_library(
     srcs = [
         "artifact.go",
         "bits.go",
+        "dashboard.go",
         "experiment.go",
         "operation.go",
         "workunit.go",
@@ -28,6 +29,7 @@ go_library(
     importpath = "xmanager_cloud/internal/storage/data",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//api/protos/dashboard",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:messages_go_proto",
         "//internal/grpcerr",
@@ -44,6 +46,7 @@ go_test(
     srcs = [
         "artifact_test.go",
         "bits_test.go",
+        "dashboard_test.go",
         "experiment_test.go",
         "operation_test.go",
         "workunit_test.go",
@@ -52,8 +55,10 @@ go_test(
     ],
     embed = [":data"],
     deps = [
+        "//api/protos/dashboard",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:messages_go_proto",
+        "//internal/grpcerr",
         "//internal/prototest",
         "@com_github_google_go_cmp//cmp",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
