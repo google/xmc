@@ -12,7 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
+import { MatBadgeModule } from '@angular/material/badge';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatCheckboxModule } from '@angular/material/checkbox';
@@ -28,8 +37,18 @@ import {
   StatusMessageFilterService,
 } from 'app/service/status_message_filter_service';
 
+/** One selectable work unit state in the optional Status block. */
+export interface StateFilterOption {
+  readonly value: string;
+  readonly label: string;
+}
+
 /**
  * Filter component for status messages.
+ *
+ * When `stateOptions` is set, the menu also shows a Status block above the status message
+ * filters. Its selection is applied once, when the menu closes, so several states can be picked
+ * with a single request.
  */
 @Component({
   selector: 'xmc-status-message-filter',
@@ -39,6 +58,7 @@ import {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
+    MatBadgeModule,
     MatButtonModule,
     MatIconModule,
     MatMenuModule,
@@ -53,6 +73,52 @@ export class StatusMessageFilter {
 
   protected readonly allSeverities = ALL_SEVERITIES;
   protected readonly allSources = ALL_SOURCES;
+
+  /** Options of the Status block; the block is hidden when undefined. */
+  readonly stateOptions = input<readonly StateFilterOption[]>();
+  /** Applied state selection; empty means no status filter. */
+  readonly selectedStates = input<readonly string[]>([]);
+  /** Emits the new selection, in option order, when the menu closes with a changed selection. */
+  readonly selectedStatesChange = output<readonly string[]>();
+
+  /** Selection being edited while the menu is open. */
+  private readonly pendingStates = signal<ReadonlySet<string>>(new Set());
+
+  protected readonly activeStateCount = computed(() => this.selectedStates().length);
+  protected readonly triggerLabel = computed(() =>
+    this.stateOptions() ? 'Filters' : 'Filter status messages',
+  );
+
+  protected isStatePending(value: string): boolean {
+    return this.pendingStates().has(value);
+  }
+
+  protected onMenuOpened() {
+    this.pendingStates.set(new Set(this.selectedStates()));
+  }
+
+  protected toggleState(value: string, isChecked: boolean) {
+    const next = new Set(this.pendingStates());
+    if (isChecked) {
+      next.add(value);
+    } else {
+      next.delete(value);
+    }
+    this.pendingStates.set(next);
+  }
+
+  protected onMenuClosed() {
+    const options = this.stateOptions();
+    if (!options) {
+      return;
+    }
+    const pending = this.pendingStates();
+    const next = options.map((option) => option.value).filter((value) => pending.has(value));
+    if (haveSameStates(next, this.selectedStates())) {
+      return;
+    }
+    this.selectedStatesChange.emit(next);
+  }
 
   toggleSeverity(severity: StructuredMessage.Severity, isChecked: boolean) {
     const current = new Set(this.filterService.severitiesSubject.value);
@@ -77,4 +143,13 @@ export class StatusMessageFilter {
   protected formatSeverity(severity: StructuredMessage.Severity): string {
     return severity.charAt(0) + severity.slice(1).toLowerCase();
   }
+}
+
+/** Returns true when both selections contain the same states, ignoring order. */
+function haveSameStates(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  const bSet = new Set(b);
+  return a.every((state) => bSet.has(state));
 }

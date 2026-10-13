@@ -80,28 +80,34 @@ describe('WorkUnitsService', () => {
       await responsePromise;
     });
 
-    it('should forward orderBy in query params', async () => {
+    it('should forward filter and orderBy in query params', async () => {
       const responsePromise = firstValueFrom(
-        state.service.searchWorkUnits({ parent: 'experiments/1', orderBy: 'state desc' }),
+        state.service.searchWorkUnits({
+          parent: 'experiments/1',
+          filter: 'state = "FAILED" OR state = "STOPPED"',
+          orderBy: 'state desc',
+        }),
       );
 
       const req = state.httpMock.expectOne((req: HttpRequest<unknown>) =>
         req.url.includes('/experiments/1/workUnits'),
       );
+      expect(req.request.params.get('filter')).toBe('state = "FAILED" OR state = "STOPPED"');
       expect(req.request.params.get('orderBy')).toBe('state desc');
       req.flush({});
 
       await responsePromise;
     });
 
-    it('should omit an empty orderBy from query params', async () => {
+    it('should omit empty filter and orderBy from query params', async () => {
       const responsePromise = firstValueFrom(
-        state.service.searchWorkUnits({ parent: 'experiments/1', orderBy: '' }),
+        state.service.searchWorkUnits({ parent: 'experiments/1', filter: '', orderBy: '' }),
       );
 
       const req = state.httpMock.expectOne((req: HttpRequest<unknown>) =>
         req.url.includes('/experiments/1/workUnits'),
       );
+      expect(req.request.params.has('filter')).toBeFalse();
       expect(req.request.params.has('orderBy')).toBeFalse();
       req.flush({});
 

@@ -75,7 +75,11 @@ limitations under the License.
 
     <ng-container [matColumnDef]="WorkUnitColumn.URLS">
       <th mat-header-cell *matHeaderCellDef>
-        <xmc-status-message-filter />
+        <xmc-status-message-filter
+          [stateOptions]="stateFilterOptions"
+          [selectedStates]="selectedStates()"
+          (selectedStatesChange)="onStateFilterChange($event)"
+        />
       </th>
       <td mat-cell *matCellDef="let workUnit">
         @if (workUnit.runProfileUrl) {
@@ -145,7 +149,13 @@ limitations under the License.
         @if (error(); as errorMessage) {
           <div class="error-message">Failed to fetch work units: {{ errorMessage }}</div>
         } @else {
-          <div class="no-work-units-message">This experiment has no work units.</div>
+          <div class="no-work-units-message">
+            @if (hasFilter()) {
+              No work units match the selected status.
+            } @else {
+              This experiment has no work units.
+            }
+          </div>
         }
       </td>
     </tr>

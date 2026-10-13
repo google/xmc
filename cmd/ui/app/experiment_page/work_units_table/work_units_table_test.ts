@@ -268,7 +268,7 @@ describe('WorkUnitsTable Component', () => {
     });
   });
 
-  describe('Sorting', () => {
+  describe('Sorting and filtering', () => {
     const DEFAULT_REQUEST = { parent: 'experiments/1', pageSize: 10, pageToken: '' };
 
     function lastRequest() {
@@ -319,14 +319,123 @@ describe('WorkUnitsTable Component', () => {
       expect(await harness.getPageLabel()).toBe('Page 1');
     });
 
-    it('should keep the sort on refresh', async () => {
+    it('should reset to the first page when the status filter changes', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+      await goToSecondPage(harness);
+
+      await harness.toggleStates('Failed');
+
+      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, filter: 'state = "FAILED"' });
+      expect(await harness.getPageLabel()).toBe('Page 1');
+    });
+
+    it('should offer every work unit state except UNSPECIFIED, in proto order', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      const options = await harness.getStateFilterOptions();
+      const labels = await Promise.all(options.map((o) => o.getLabelText()));
+      expect(labels).toEqual([
+        'Initializing',
+        'Scheduling',
+        'Starting',
+        'Running',
+        'Partially Failed',
+        'Stopping',
+        'Restarting',
+        'Stopped',
+        'Descheduling',
+        'Completed',
+        'Failed',
+        'Scheduling Paused',
+      ]);
+    });
+
+    it('should filter by any of the selected states and clear the filter', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      await harness.toggleStates('Failed', 'Stopped');
+      // The emitted selection follows option (proto) order: STOPPED precedes FAILED.
+      expect(lastRequest()).toEqual({
+        ...DEFAULT_REQUEST,
+        filter: 'state = "STOPPED" OR state = "FAILED"',
+      });
+
+      await harness.toggleStates('Failed', 'Stopped');
+      expect(lastRequest()).toEqual(DEFAULT_REQUEST);
+    });
+
+    it('should send a single request when the menu closes', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+      const callsBefore = state.workUnitsService.searchWorkUnits.calls.count();
+
+      await harness.toggleStates('Running', 'Stopped', 'Failed');
+
+      expect(state.workUnitsService.searchWorkUnits.calls.count()).toBe(callsBefore + 1);
+      expect(lastRequest()).toEqual({
+        ...DEFAULT_REQUEST,
+        filter: 'state = "RUNNING" OR state = "STOPPED" OR state = "FAILED"',
+      });
+    });
+
+    it('should not send a request when the selection is unchanged on close', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+      const callsBefore = state.workUnitsService.searchWorkUnits.calls.count();
+
+      const menu = await harness.getFilterMenu();
+      await menu.open();
+      await menu.close();
+      await harness.toggleStates('Failed', 'Failed');
+
+      expect(state.workUnitsService.searchWorkUnits.calls.count()).toBe(callsBefore);
+    });
+
+    it('should filter by PARTIALLY_FAILED', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      await harness.toggleStates('Partially Failed');
+
+      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, filter: 'state = "PARTIALLY_FAILED"' });
+    });
+
+    it('should show the number of selected states on the filter badge', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+      expect(await harness.getFilterBadgeText()).toBeNull();
+
+      await harness.toggleStates('Failed', 'Stopped');
+      expect(await harness.getFilterBadgeText()).toBe('2');
+
+      await harness.toggleStates('Failed', 'Stopped');
+      expect(await harness.getFilterBadgeText()).toBeNull();
+    });
+
+    it('should label the filter trigger as Filters', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      const trigger = await (await harness.getFilterMenu()).host();
+      expect(await trigger.getAttribute('aria-label')).toBe('Filters');
+    });
+
+    it('should keep the filter and sort on refresh', async () => {
       const comp = bootstrap(WorkUnitsTable, { xid: '1' });
       const harness = await getHarness(WorkUnitsTableHarness);
       await (await getStatusSortHeader(harness)).click();
+      await harness.toggleStates('Failed');
 
       comp.refresh();
 
-      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, orderBy: 'state asc' });
+      expect(lastRequest()).toEqual({
+        ...DEFAULT_REQUEST,
+        filter: 'state = "FAILED"',
+        orderBy: 'state asc',
+      });
     });
 
     it('should restore the active sort header after a failed fetch recovers', async () => {
@@ -346,6 +455,23 @@ describe('WorkUnitsTable Component', () => {
       expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, orderBy: 'state asc' });
     });
 
+    it('should keep the header and filters usable after a failed fetch', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      state.workUnitsService.searchWorkUnits.and.returnValue(throwError(() => new Error('boom')));
+      await harness.toggleStates('Failed');
+      expect(await harness.hasErrorMessage()).toBeTrue();
+      expect((await (await harness.getSort()).getSortHeaders()).length).toBe(4);
+
+      state.workUnitsService.searchWorkUnits.and.returnValue(of(MOCK_WORK_UNITS_RESPONSE));
+      await harness.toggleStates('Failed');
+
+      expect(lastRequest()).toEqual(DEFAULT_REQUEST);
+      expect(await harness.hasErrorMessage()).toBeFalse();
+      expect((await harness.getDataRows()).length).toBe(3);
+    });
+
     it('should keep the sort headers usable after a failed fetch', async () => {
       bootstrap(WorkUnitsTable, { xid: '1' });
       const harness = await getHarness(WorkUnitsTableHarness);
@@ -361,6 +487,27 @@ describe('WorkUnitsTable Component', () => {
       expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, orderBy: 'state desc' });
       expect(await harness.hasErrorMessage()).toBeFalse();
       expect((await harness.getDataRows()).length).toBe(3);
+    });
+
+    it('should show a filter-specific message when no work units match', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+      state.workUnitsService.searchWorkUnits.and.returnValue(of(EMPTY_WORK_UNITS_RESPONSE));
+
+      await harness.toggleStates('Failed');
+
+      expect(await harness.getNoWorkUnitsMessageText()).toBe(
+        'No work units match the selected status.',
+      );
+    });
+
+    it('should keep the default message when unfiltered and empty', async () => {
+      state.workUnitsService.searchWorkUnits.and.returnValue(of(EMPTY_WORK_UNITS_RESPONSE));
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      expect(await harness.hasNoWorkUnitsMessage()).toBeTrue();
+      expect(await harness.getNoWorkUnitsMessageText()).toBe('This experiment has no work units.');
     });
   });
 });

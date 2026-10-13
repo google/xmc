@@ -37,7 +37,10 @@ import {
   getStatusMessages,
   StatusMessage,
 } from 'app/common/components/status_message/status_message';
-import { StatusMessageFilter } from 'app/common/components/status_message_filter/status_message_filter';
+import {
+  StateFilterOption,
+  StatusMessageFilter,
+} from 'app/common/components/status_message_filter/status_message_filter';
 import { Tag } from 'app/common/components/tag/tag';
 import { ProcessedUrl, processUrls } from 'app/common/url/url_processor';
 import { StructuredMessage, WorkUnit, WorkUnitStatus } from 'app/protos/experiment_state_server';
@@ -58,6 +61,29 @@ enum WorkUnitColumn {
 const MAX_URLS_DISPLAYED = 5;
 
 const GKE_DASHBOARD_DISPLAY_NAME = 'GKE Dashboard';
+
+/**
+ * Status filter labels keyed by work unit state, in proto enum order (UNSPECIFIED excluded).
+ * The spec asserts the full list, since the OSS proto stub types states as plain strings.
+ */
+const STATE_FILTER_LABELS: Readonly<Record<string, string>> = {
+  INITIALIZING: 'Initializing',
+  SCHEDULING: 'Scheduling',
+  STARTING: 'Starting',
+  RUNNING: 'Running',
+  PARTIALLY_FAILED: 'Partially Failed',
+  STOPPING: 'Stopping',
+  RESTARTING: 'Restarting',
+  STOPPED: 'Stopped',
+  DESCHEDULING: 'Descheduling',
+  COMPLETED: 'Completed',
+  FAILED: 'Failed',
+  SCHEDULING_PAUSED: 'Scheduling Paused',
+};
+
+const STATE_FILTER_OPTIONS: readonly StateFilterOption[] = Object.entries(STATE_FILTER_LABELS).map(
+  ([value, label]) => ({ value, label }),
+);
 
 /** Interface for WorkUnit data prepared for template rendering. */
 interface WorkUnitView extends WorkUnit {
@@ -155,7 +181,10 @@ export class WorkUnitsTable implements OnInit {
     () => this.isFetching() && this.workUnitViews() !== undefined,
   );
 
+  protected readonly stateFilterOptions = STATE_FILTER_OPTIONS;
+  protected readonly selectedStates: Signal<readonly string[]> = this.store.selectedStates;
   protected readonly sort: Signal<Sort> = this.store.sort;
+  protected readonly hasFilter: Signal<boolean> = this.store.hasFilter;
 
   ngOnInit() {
     this.store.setXid(this.xid());
@@ -168,6 +197,11 @@ export class WorkUnitsTable implements OnInit {
 
   protected onSortChange(sort: Sort) {
     this.store.setSort(sort);
+    this.store.fetchPage();
+  }
+
+  protected onStateFilterChange(states: readonly string[]) {
+    this.store.setSelectedStates(states);
     this.store.fetchPage();
   }
 
