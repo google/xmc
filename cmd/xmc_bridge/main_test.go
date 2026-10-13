@@ -67,6 +67,11 @@ func TestParseConfig(t *testing.T) {
 			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--probe-timeout=-1s"},
 			wantErr: true,
 		},
+		{
+			name:    "invalid reconcile timeout",
+			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--reconcile-timeout=0s"},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -185,6 +190,7 @@ func TestParseConfig_EnvVars(t *testing.T) {
 	t.Setenv("HELM_RELEASE_NAME", "custom-release")
 	t.Setenv("PROBE_INTERVAL", "15s")
 	t.Setenv("PROBE_TIMEOUT", "8s")
+	t.Setenv("RECONCILE_TIMEOUT", "90s")
 	t.Setenv("KUBECONFIG", "/custom/kubeconfig")
 
 	cfg, err := ParseConfig([]string{})
@@ -205,6 +211,9 @@ func TestParseConfig_EnvVars(t *testing.T) {
 	}
 	if cfg.ProbeTimeout != 8*time.Second {
 		t.Errorf("cfg.ProbeTimeout = %v, want 8s", cfg.ProbeTimeout)
+	}
+	if cfg.ReconcileTimeout != 90*time.Second {
+		t.Errorf("cfg.ReconcileTimeout = %v, want 90s", cfg.ReconcileTimeout)
 	}
 	if cfg.Kubeconfig != "/custom/kubeconfig" {
 		t.Errorf("cfg.Kubeconfig = %q, want /custom/kubeconfig", cfg.Kubeconfig)
@@ -231,4 +240,28 @@ func TestParseConfig_InvalidEnvDuration(t *testing.T) {
 			t.Error("expected error for invalid PROBE_TIMEOUT, got nil")
 		}
 	})
+
+	t.Run("invalid RECONCILE_TIMEOUT", func(t *testing.T) {
+		t.Setenv("RECONCILE_TIMEOUT", "not-a-duration")
+		_, err := ParseConfig([]string{})
+		if err == nil {
+			t.Error("expected error for invalid RECONCILE_TIMEOUT, got nil")
+		}
+	})
+}
+
+func TestParseConfig_Defaults(t *testing.T) {
+	t.Setenv("PROBE_TIMEOUT", "")
+	t.Setenv("RECONCILE_TIMEOUT", "")
+
+	cfg, err := ParseConfig([]string{"--cms-address=cms:50051", "--namespace=xmc", "--release-name=xmanager-cloud"})
+	if err != nil {
+		t.Fatalf("ParseConfig() unexpected error: %v", err)
+	}
+	if cfg.ProbeTimeout != 2*time.Second {
+		t.Errorf("cfg.ProbeTimeout = %v, want 2s", cfg.ProbeTimeout)
+	}
+	if cfg.ReconcileTimeout != 60*time.Second {
+		t.Errorf("cfg.ReconcileTimeout = %v, want 60s", cfg.ReconcileTimeout)
+	}
 }

@@ -46,6 +46,7 @@ componentsDeployment:
   chartPath: ""
   probeInterval: "5s"
   probeTimeout: "2s"
+  reconcileTimeout: "60s"
   rbac:
     clusterScope: false
 
