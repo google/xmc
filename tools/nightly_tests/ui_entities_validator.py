@@ -113,26 +113,27 @@ class XMCUIBrowserSession:
             if v
         ]
 
-    def _is_same_origin(self, url: str) -> bool:
-        """Checks whether a request or response URL matches the configured UI origin."""
-        p = urllib.parse.urlparse(url)
-        ports = {"https": 443, "http": 80}
-        b_port = self.port or ports.get(self.scheme)
-        r_port = p.port or ports.get(p.scheme)
-        return p.hostname == self.domain_host and p.scheme == self.scheme and r_port == b_port
-
     def _configure_page_interception(self) -> None:
         """Configures domain-scoped Bearer header injection and diagnostic event listeners."""
         if self.auth_token:
             token = self.auth_token
+            host = self.domain_host
+            scheme = self.scheme
+            base_port = self.port or (
+                443 if scheme == "https" else (80 if scheme == "http" else None)
+            )
 
             def _handle_route(route: Any) -> None:
-                if self._is_same_origin(route.request.url):
+                parsed = urllib.parse.urlparse(route.request.url)
+                req_port = parsed.port or (
+                    443 if parsed.scheme == "https" else (80 if parsed.scheme == "http" else None)
+                )
+                if parsed.hostname == host and parsed.scheme == scheme and req_port == base_port:
                     route.continue_(
                         headers={**route.request.headers, "authorization": f"Bearer {token}"}
                     )
-                    return
-                route.continue_()
+                else:
+                    route.continue_()
 
             self._page.route("**/*", _handle_route)
 
@@ -145,7 +146,10 @@ class XMCUIBrowserSession:
                     urllib.parse.urlsplit(response.url)._replace(query="", fragment="").geturl()
                 )
                 print(f"  [Network Response] {response.status} {safe_url}")
-                if response.status >= 400 and self._is_same_origin(response.url):
+                if (
+                    response.status >= 400
+                    and urllib.parse.urlparse(response.url).hostname == self.domain_host
+                ):
                     self.http_errors.append(f"{response.status} {safe_url}")
 
         self._page.on("response", _log_response)
@@ -277,16 +281,12 @@ class XMCUIBrowserSession:
             or self.page.locator("xmc-home-page, .guest-page-container").count() != 0
         ):
             err_shot = self.take_screenshot(f"ui_AUTHENTICATION_REQUIRED_{err_tag}.png")
-            raise UIVerificationError(
-                f"❌ AUTHENTICATION REQUIRED: Landed on unauthorized or guest page "
-                f"(url={self.page.url}). Screenshot -> {err_shot}"
-            )
+            raise UIVerificationError(f"❌ AUTHENTICATION REQUIRED: {err_shot}")
 
         if current_path != expected_path:
             err_shot = self.take_screenshot(f"ui_REDIRECT_{err_tag}.png")
             raise UIVerificationError(
-                f"❌ UNEXPECTED REDIRECT: Expected path '{expected_path}' but landed on '{current_path}' "
-                f"(url={self.page.url}). Screenshot -> {err_shot}"
+                f"UNEXPECTED REDIRECT ({expected_path}->{current_path}): {err_shot}"
             )
 
     def assert_no_runtime_errors(
@@ -299,17 +299,14 @@ class XMCUIBrowserSession:
         if self.page_errors or errs or banner:
             shot = self.take_screenshot(f"ui_RUNTIME_ERROR_{context_label}.png")
             raise UIVerificationError(
-                f"❌ RUNTIME ERROR ({context_label}): page_errors={self.page_errors}, http_errors={errs}, error_banner='{banner}'. Screenshot -> {shot}"
+                f"❌ RUNTIME ERROR: {self.page_errors} {errs} '{banner}' -> {shot}"
             )
 
     def navigate_to_experiment(self, xid: str | int, timeout_ms: int = 60000) -> None:
         """Navigates to `/experiments/<xid>` and verifies that authentication succeeded."""
+        shot = f"ui_step1_landing_xid_{xid}.png"
         self.navigate_to_route(
-            f"/experiments/{xid}",
-            "xmc-experiment-page",
-            f"ui_step1_landing_xid_{xid}.png",
-            timeout_ms,
-            f"xid_{xid}",
+            f"/experiments/{xid}", "xmc-experiment-page", shot, timeout_ms, f"xid_{xid}"
         )
 
     def assert_experiment_header(

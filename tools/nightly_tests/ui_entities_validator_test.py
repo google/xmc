@@ -564,6 +564,20 @@ class UIEntitiesValidatorTest(unittest.TestCase):
             timeout=60000,
         )
 
+        mock_page.url = "https://xmc.example.com/unexpected"
+        with self.assertRaises(ui_entities_validator.UIVerificationError) as redir_ctx:
+            session.navigate_to_route("resources", "xmc-resource-dashboard", "rod_landing.png")
+        self.assertIn("UNEXPECTED REDIRECT", str(redir_ctx.exception))
+
+        mock_page.url = "https://xmc.example.com/resources"
+        mock_page.locator.side_effect = lambda sel: mock.MagicMock(
+            count=mock.MagicMock(return_value=1),
+            inner_text=mock.MagicMock(return_value="Access Denied"),
+        )
+        with self.assertRaises(ui_entities_validator.UIVerificationError) as auth_ctx:
+            session.navigate_to_route("resources", "xmc-resource-dashboard", "rod_landing.png")
+        self.assertIn("AUTHENTICATION REQUIRED", str(auth_ctx.exception))
+
     def test_assert_no_runtime_errors_pass_and_failures(self) -> None:
         session = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
         _, _, _, mock_page = self._create_mock_playwright()

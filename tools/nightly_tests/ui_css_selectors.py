@@ -14,24 +14,21 @@
 
 """CSS selector constants for XMC Playwright UI E2E verifiers."""
 
-DASHBOARD_ROOT_SEL = "xmc-resource-dashboard"
-QUEUE_CARD_SEL = "xmc-rod-queue-card .queue-card"
-QUEUE_TITLE_SEL = "xmc-rod-queue-card .queue-title"
-FLAVOR_NAME_SEL = ".capacity-box .flavor-main-name"
+DASHBOARD_ROOT_SEL, WIP_BANNER_SEL = "xmc-resource-dashboard", "xmc-wip-banner"
+QUEUE_CARD_SEL, RESOURCE_OPTION_SEL = "xmc-rod-queue-card .queue-card", "mat-option"
+QUEUE_TITLE_SEL, JOB_POSITION_CELL_SEL = "xmc-rod-queue-card .queue-title", ".position-cell"
+FLAVOR_NAME_SEL, JOB_WORKUNIT_CELL_SEL = ".capacity-box .flavor-main-name", ".workunit-cell"
 JOBS_PANE_QUEUE_NAME_SEL = "xmc-queue-jobs-table .target-queue-name"
+SMART_FINDER_ROOT_SEL = "xmc-smart-resource-finder"
 JOBS_CONTENT_SEL = "xmc-queue-jobs-table .jobs-mat-table, xmc-queue-jobs-table .jobs-empty-state"
 JOBS_TABLE_ROW_SEL = "xmc-queue-jobs-table table.jobs-mat-table tr.mat-mdc-row"
-JOB_POSITION_CELL_SEL = ".position-cell"
-JOB_WORKUNIT_CELL_SEL = ".workunit-cell"
+JOBS_NEXT_PAGE_BTN_SEL = "button.mat-mdc-paginator-navigation-next:not([disabled])"
 PREDICTABILITY_EMPTY_SEL = ".predictability-empty-state"
-PREDICTABILITY_CONTENT_SEL = ".predictability-stats-grid, .predictability-spinner-container"
 PREDICTABILITY_STATS_GRID_SEL = ".predictability-stats-grid"
+PREDICTABILITY_CONTENT_SEL = ".predictability-stats-grid, .predictability-spinner-container"
 PREDICTABILITY_METRIC_VAL_SEL = ".predictability-stats-grid .cell-value"
 RESOURCE_SELECT_SEL = "xmc-smart-resource-finder mat-select.query-select-box"
-RESOURCE_OPTION_SEL = "mat-option"
 VELOCITY_PILL_SEL_TMPL = 'xmc-rod-queue-list button.toggle-pill:has-text("{tf}")'
 ACTIVE_PILL_SEL_TMPL = 'xmc-rod-queue-list button.toggle-pill.active-toggle:has-text("{tf}")'
 AVAILABILITY_TAB_SEL = 'xmc-rod-subnav-tabs button.subnav-tab:has-text("Resource availability")'
 SMART_FINDER_TAB_SEL = 'xmc-rod-subnav-tabs button.subnav-tab:has-text("Smart resource finder")'
-WIP_BANNER_SEL = "xmc-wip-banner"
-SMART_FINDER_ROOT_SEL = "xmc-smart-resource-finder"
