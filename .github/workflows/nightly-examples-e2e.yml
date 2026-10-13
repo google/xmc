@@ -35,6 +35,37 @@ on:
         required: false
         default: ''
         type: string
+      skip_verification:
+        description: 'Only build/launch example workloads without running verification assertions'
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      queue_name:
+        description: 'Target Kueue ClusterQueue name (default: cpu-queue)'
+        required: false
+        default: 'cpu-queue'
+        type: string
+      timeout_minutes:
+        description: 'Timeout in minutes per example workload (default: 30)'
+        required: false
+        default: 30
+        type: number
+      examples_filter:
+        description: 'Comma-separated example IDs to run (leave empty to run all)'
+        required: false
+        default: ''
+        type: string
+      skip_verification:
+        description: 'Only build/launch example workloads without running verification assertions'
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      launched_xids:
+        description: 'A JSON string map of launched Example IDs to their XIDs / Dashboard IDs'
+        value: ${{ jobs.aggregate-results.outputs.launched_xids }}
 
 permissions:
   contents: read
@@ -376,7 +407,7 @@ jobs:
 
       - name: 'Run Workload Verification Assertions'
         id: verify-example
-        if: steps.filter-check.outputs.should_run == 'true' && steps.launch-example.outcome == 'success'
+        if: steps.filter-check.outputs.should_run == 'true' && steps.launch-example.outcome == 'success' && !inputs.skip_verification
         env:
           ACTOR: '${{ github.actor }}'
           EXAMPLE_NAME: '${{ matrix.example.name }}'
@@ -430,6 +461,7 @@ jobs:
           SHOULD_RUN: '${{ steps.filter-check.outputs.should_run }}'
           LAUNCH_OUTCOME: '${{ steps.launch-example.outcome }}'
           VERIFY_OUTCOME: '${{ steps.verify-example.outcome }}'
+          SKIP_VERIFICATION: '${{ inputs.skip_verification }}'
         run: |
           pkill -f "kubectl port-forward" 2>/dev/null || true
           mkdir -p "${GITHUB_WORKSPACE}/results"
@@ -441,7 +473,11 @@ jobs:
           elif [ "${LAUNCH_OUTCOME}" = "success" ] && [ "${VERIFY_OUTCOME}" = "success" ]; then
             STATUS="PASSED"
           elif [ "${LAUNCH_OUTCOME}" = "success" ]; then
-            STATUS="VERIFY_FAILED"
+            if [ "${SKIP_VERIFICATION}" = "true" ] || [ "${VERIFY_OUTCOME}" = "skipped" ]; then
+              STATUS="PASSED"
+            else
+              STATUS="VERIFY_FAILED"
+            fi
           fi
           echo "{\"id\": \"${EXAMPLE_ID}\", \"name\": \"${EXAMPLE_NAME}\", \"status\": \"${STATUS}\", \"launch_status\": \"${LAUNCH_OUTCOME}\", \"verify_status\": \"${VERIFY_OUTCOME}\", \"xid\": \"${XID}\"}" > "${GITHUB_WORKSPACE}/results/${EXAMPLE_ID}.json"
 
@@ -473,6 +509,8 @@ jobs:
     needs: [run-and-verify-examples]
     if: always()
     runs-on: 'arc-runner-set'
+    outputs:
+      launched_xids: ${{ steps.aggregate.outputs.launched_xids }}
     permissions:
       contents: read
 
@@ -490,6 +528,7 @@ jobs:
           merge-multiple: true
 
       - name: 'Aggregate Example Workload Results'
+        id: aggregate
         if: always()
         run: node .github/scripts/aggregate-example-results.js
 
