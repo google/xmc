@@ -49,7 +49,7 @@ type MLRunCreator interface {
 
 // syncMLRun resolves ManagedXprof metadata for a JobSet and ensures its MLRun
 // tracking record is created or reused when ManagedXprof is enabled.
-func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, currentExecution ...*spb.WorkUnitExecution) string {
+func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64) string {
 	mlRunStart := time.Now()
 	mxEnvs := getManagedXprofEnvs(jobSet)
 	displayName, runGroup, gcsPath := mxEnvs.DisplayName, mxEnvs.RunGroup, mxEnvs.GCSPath
@@ -63,7 +63,7 @@ func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, xid
 	mlRunURL, skipMLRunCreation := r.checkWorkUnitStatusAndMLRun(ctx, xid, wid, eid)
 	if !skipMLRunCreation && mlRunURL == "" {
 		logging.Info(ctx, "Begin to create MLRun URL.")
-		mlRunURL = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath, currentExecution...)
+		mlRunURL = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
 	}
 	mlRunSyncDuration.Observe(time.Since(mlRunStart).Seconds())
 	return mlRunURL
@@ -98,7 +98,7 @@ func buildCreateMLRunOptions(jobSet *v1alpha2.JobSet, clusterPath, runGroup stri
 //
 // Extracted to separate MLRun control-plane invocation and error handling from the
 // core JobSet status synchronization workflow.
-func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, displayName, runGroup, gcsPath string, currentExecution ...*spb.WorkUnitExecution) string {
+func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, displayName, runGroup, gcsPath string) string {
 	if r.MLRunClient == nil || jobSet == nil {
 		return ""
 	}
@@ -106,19 +106,8 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		logging.Warn(ctx, "JobSet creation timestamp is uninitialized when constructing MLRun ID", "jobset", jobSet.Name)
 	}
 
-	var exec *spb.WorkUnitExecution
-	if len(currentExecution) > 0 {
-		exec = currentExecution[0]
-	} else if isMultiKueueManaged(jobSet) {
-		exec = r.fetchCurrentExecution(ctx, xid, wid)
-	}
-	if isMultiKueueManaged(jobSet) && !hasCompleteClusterInfo(exec.GetMetadata().GetExecutingCluster()) {
-		logging.Debug(ctx, "Deferring MLRun creation for MultiKueue JobSet until executing cluster is resolved", "jobset", jobSet.Name)
-		return ""
-	}
-	targetProject, targetLocation, targetCluster := r.resolveTargetCluster(exec)
-	mlRunID := ConstructMLRunID(targetCluster, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
-	clusterPath := resolveClusterPath(targetCluster, targetProject, targetLocation)
+	mlRunID := ConstructMLRunID(r.ClusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
+	clusterPath := resolveClusterPath(r.ClusterName, r.Project, r.Location)
 	labels := buildMLRunLabels(xid, wid)
 	artifacts := map[string]string{"gcs_path": gcsPath}
 	opts := buildCreateMLRunOptions(jobSet, clusterPath, runGroup, labels, artifacts)

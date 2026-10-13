@@ -154,7 +154,6 @@ func buildJobMetadata(job *esspb.KubernetesJob, jobLabels map[string]string, job
 		labels = make(map[string]string)
 	}
 	mergeEntriesPreservingExisting(labels, job.GetLabels())
-	delete(labels, kueueQueueLabel)
 
 	return jobMetadata{
 		labels:         labels,

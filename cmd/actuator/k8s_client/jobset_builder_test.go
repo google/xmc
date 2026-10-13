@@ -57,6 +57,7 @@ func TestConstructJobSet(t *testing.T) {
 		constants.WorkUnitIDLabel:   "456",
 		constants.ExecutionIDLabel:  "1",
 		constants.ManagedByLabel:    constants.XmcLabelValue,
+		kueueQueueLabel:             "test-namespace",
 	}
 	jobAnnotations := map[string]string{
 		"anno1":                    "val1",
@@ -273,6 +274,7 @@ func TestConstructJobSet_PerJobCustomLabels(t *testing.T) {
 		constants.ExperimentIDLabel: "123",
 		constants.WorkUnitIDLabel:   "456",
 		constants.ExecutionIDLabel:  "1",
+		"kueue.x-k8s.io/queue-name": testNamespace,
 	}
 	for labelKey, wantValue := range expectedLabels {
 		if got := rj.Template.ObjectMeta.Labels[labelKey]; got != wantValue {
@@ -281,16 +283,6 @@ func TestConstructJobSet_PerJobCustomLabels(t *testing.T) {
 		if got := podLabels[labelKey]; got != wantValue {
 			t.Errorf("PodTemplateSpec label %s = %q, want %q", labelKey, got, wantValue)
 		}
-	}
-
-	if got := jobSet.ObjectMeta.Labels[kueueQueueLabel]; got != testNamespace {
-		t.Errorf("JobSet.ObjectMeta.Labels[%s] = %q, want %q", kueueQueueLabel, got, testNamespace)
-	}
-	if _, exists := rj.Template.ObjectMeta.Labels[kueueQueueLabel]; exists {
-		t.Errorf("JobTemplateSpec.ObjectMeta.Labels[%s] should not be set on child Job template", kueueQueueLabel)
-	}
-	if _, exists := podLabels[kueueQueueLabel]; exists {
-		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[%s] should not be set on child Pod template", kueueQueueLabel)
 	}
 }
 

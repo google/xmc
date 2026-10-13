@@ -49,15 +49,7 @@ type StartupPodCheckResult struct {
 	StartupWarningMsg string
 }
 
-func isMultiKueueManaged(jobSet *v1alpha2.JobSet) bool {
-	return jobSet != nil && jobSet.Spec.ManagedBy != nil && *jobSet.Spec.ManagedBy == constants.KueueMultiKueueControllerName
-}
-
 func (r *Reconciler) handleStartupPodChecks(ctx context.Context, jobSet *v1alpha2.JobSet) StartupPodCheckResult {
-	if isMultiKueueManaged(jobSet) {
-		logging.Debug(ctx, "Skipping local startup pod check for MultiKueue-managed JobSet")
-		return StartupPodCheckResult{}
-	}
 	age := calculateJobsetStartAge(jobSet)
 	if age < r.StartupPodErrorCheckTime {
 		logging.Debug(ctx, "Skipping startup pod error check for JobSet, age is less than StartupPodErrorCheckTime", "age", age)

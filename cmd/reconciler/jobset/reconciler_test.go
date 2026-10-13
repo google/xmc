@@ -756,36 +756,3 @@ func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
 		}
 	}
 }
-
-func TestFetchCurrentExecutionAndResolveTargetCluster(t *testing.T) {
-	exec := &spb.WorkUnitExecution{
-		Name: "experiments/123/workUnits/1/executions/2",
-		Metadata: &spb.WorkUnitExecutionMetadata{
-			ExecutingCluster: &spb.ClusterInfo{
-				Project:     "worker-proj",
-				Location:    "us-east1",
-				ClusterName: "worker-cluster",
-			},
-		},
-	}
-	r := &Reconciler{
-		Project:     "mgmt-p",
-		Location:    "mgmt-l",
-		ClusterName: "mgmt-c",
-		Storage:     &mockStorageUpdater{fetchRes: exec},
-	}
-	got := r.fetchCurrentExecution(t.Context(), 123, 1)
-	if got.GetName() != exec.GetName() {
-		t.Errorf("fetchCurrentExecution() = %v, want %v", got, exec)
-	}
-	if p, l, c := r.resolveTargetCluster(got); p != "worker-proj" || l != "us-east1" || c != "worker-cluster" {
-		t.Errorf("resolveTargetCluster(got) = (%q, %q, %q), want (worker-proj, us-east1, worker-cluster)", p, l, c)
-	}
-	if p, l, c := r.resolveTargetCluster(nil); p != "mgmt-p" || l != "mgmt-l" || c != "mgmt-c" {
-		t.Errorf("resolveTargetCluster(nil) = (%q, %q, %q), want (mgmt-p, mgmt-l, mgmt-c)", p, l, c)
-	}
-	rNilStorage := &Reconciler{}
-	if got := rNilStorage.fetchCurrentExecution(t.Context(), 123, 1); got != nil {
-		t.Errorf("fetchCurrentExecution() with nil Storage = %v, want nil", got)
-	}
-}

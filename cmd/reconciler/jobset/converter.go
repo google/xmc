@@ -398,20 +398,3 @@ func setMLRunURL(update *storagepkg.WorkUnitExecutionUpdate, mlRunURL string) {
 		update.UpdateMask.Paths = append(update.UpdateMask.Paths, "metadata.mlrun_url")
 	}
 }
-
-func hasCompleteClusterInfo(c *spb.ClusterInfo) bool {
-	return c != nil && c.GetProject() != "" && c.GetLocation() != "" && c.GetClusterName() != ""
-}
-
-func applyExecutingClusterOverride(ctx context.Context, jobSet *v1alpha2.JobSet, update *storagepkg.WorkUnitExecutionUpdate, currentExecution *spb.WorkUnitExecution) {
-	execCluster := currentExecution.GetMetadata().GetExecutingCluster()
-	if update == nil || !hasCompleteClusterInfo(execCluster) {
-		return
-	}
-	if sysMsg := update.WorkUnitExecution.GetStatus().GetSystemMessage(); sysMsg != nil {
-		state := update.WorkUnitExecution.GetStatus().GetState()
-		sysMsg.UserFacingUrl = &spb.Url{
-			Url: buildDebugLink(ctx, jobSet, state, execCluster.GetProject(), execCluster.GetLocation(), execCluster.GetClusterName()),
-		}
-	}
-}

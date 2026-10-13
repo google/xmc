@@ -258,14 +258,9 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 		result, podErrorMsg, startupWarningMsg = checkRes.Result, checkRes.PodErrorMsg, checkRes.StartupWarningMsg
 	}
 
-	var currentExecution *spb.WorkUnitExecution
-	if isMultiKueueManaged(jobSet) {
-		currentExecution = r.fetchCurrentExecution(ctx, xid, wid)
-	}
-	mlRunURL := r.syncMLRun(ctx, jobSet, xid, wid, eid, currentExecution)
+	mlRunURL := r.syncMLRun(ctx, jobSet, xid, wid, eid)
 
 	update := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
-	applyExecutingClusterOverride(ctx, jobSet, update, currentExecution)
 	setMLRunURL(update, mlRunURL)
 	logging.Debug(ctx, "Successfully converted JobSet", "namespace", jobSet.Namespace)
 
@@ -275,25 +270,6 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
 
 	return result, nil
-}
-
-func (r *Reconciler) fetchCurrentExecution(ctx context.Context, xid, wid int64) *spb.WorkUnitExecution {
-	if r.Storage == nil {
-		return nil
-	}
-	execution, err := r.Storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
-	if err != nil {
-		logging.Error(ctx, "Failed to fetch current WorkUnitExecution from ESS", "error", err)
-		return nil
-	}
-	return execution
-}
-
-func (r *Reconciler) resolveTargetCluster(execution *spb.WorkUnitExecution) (string, string, string) {
-	if execCluster := execution.GetMetadata().GetExecutingCluster(); hasCompleteClusterInfo(execCluster) {
-		return execCluster.GetProject(), execCluster.GetLocation(), execCluster.GetClusterName()
-	}
-	return r.Project, r.Location, r.ClusterName
 }
 
 // SetupWithManager sets up the controller with the Manager.
