@@ -13,9 +13,7 @@
 -- limitations under the License.
 
 -- Canonical PostgreSQL ESS schema, mirroring internal/storage/spanner/schema/ess-schema.sql.
--- Protobuf messages are stored as BYTEA and protobuf enums as BIGINT. Proto-derived columns
--- (e.g. ActiveState, QueueName) are plain columns populated on write because PostgreSQL cannot
--- parse protobuf wire format.
+-- Protos are BYTEA and proto enums BIGINT; proto-derived columns are populated on write.
 
 -- array_to_string is STABLE; generated columns require an IMMUTABLE wrapper.
 CREATE OR REPLACE FUNCTION immutable_array_to_string(arr TEXT[], sep TEXT) RETURNS TEXT
@@ -28,20 +26,15 @@ CREATE TABLE Experiments (
   Title_Tokens TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, coalesce(Title, ''))) STORED,
   Creator TEXT NOT NULL,
   Creator_Tokens TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, coalesce(Creator, ''))) STORED,
-  -- Higher values indicate higher priority.
-  Priority BIGINT NOT NULL,
-  -- Repeated cloud.xmanager.v1.Url.
-  Urls BYTEA[] NOT NULL,
+  Priority BIGINT NOT NULL, -- Higher values indicate higher priority.
+  Urls BYTEA[] NOT NULL, -- cloud.xmanager.v1.Url
   Tags TEXT[] NOT NULL,
   Tags_Tokens TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, coalesce(immutable_array_to_string(Tags, ' '), ''))) STORED,
   Notes TEXT NOT NULL,
-  -- Repeated cloud.xmanager.v1.ResourceSet, denormalized from WorkUnits.
-  Resources BYTEA[] NOT NULL,
-  -- cloud.xmanager.v1.ExperimentStatus.
-  Status BYTEA NOT NULL,
-  -- ExperimentStatus.ActiveState / LaunchState enum values, populated on write from Status.
-  ActiveState BIGINT NOT NULL,
-  LaunchState BIGINT NOT NULL,
+  Resources BYTEA[] NOT NULL, -- cloud.xmanager.v1.ResourceSet, denormalized from WorkUnits.
+  Status BYTEA NOT NULL, -- cloud.xmanager.v1.ExperimentStatus
+  ActiveState BIGINT NOT NULL, -- ExperimentStatus.ActiveState, populated on write from Status.
+  LaunchState BIGINT NOT NULL, -- ExperimentStatus.LaunchState, populated on write from Status.
   CreateTime TIMESTAMPTZ NOT NULL,
   UpdateTime TIMESTAMPTZ NOT NULL,
   CompleteTime TIMESTAMPTZ,
@@ -49,7 +42,6 @@ CREATE TABLE Experiments (
 );
 
 CREATE INDEX ExperimentsByCreator ON Experiments (Creator);
-
 CREATE INDEX ExperimentsSearchIndex ON Experiments USING GIN (Title_Tokens, Tags_Tokens, Creator_Tokens);
 
 -- WorkUnitId is nullable (experiment-level artifacts), so it is kept outside the primary key.
@@ -62,23 +54,18 @@ CREATE TABLE Artifacts (
   Icon TEXT NOT NULL,
   DisplayName TEXT NOT NULL,
   DisplayName_Tokens TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, coalesce(DisplayName, ''))) STORED,
-  -- Lower numbers indicate higher UI priority.
-  Priority BIGINT NOT NULL,
+  Priority BIGINT NOT NULL, -- Lower numbers indicate higher UI priority.
   Tags TEXT[] NOT NULL,
   Tags_Tokens TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, coalesce(immutable_array_to_string(Tags, ' '), ''))) STORED,
   Notes TEXT NOT NULL,
   Notes_Tokens TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, coalesce(Notes, ''))) STORED,
-  -- Artifact.LifecyclePhase / Artifact.DataType enum values.
-  LifecyclePhase BIGINT NOT NULL,
-  DataType BIGINT NOT NULL,
+  LifecyclePhase BIGINT NOT NULL, -- Artifact.LifecyclePhase
+  DataType BIGINT NOT NULL, -- Artifact.DataType
   MimeType TEXT NOT NULL,
   MimeType_Tokens TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, coalesce(MimeType, ''))) STORED,
-  -- cloud.xmanager.v1.Artifact.AdditionalInfo.
-  AdditionalInfo BYTEA,
-  -- cloud.xmanager.v1.ArtifactPayload.
-  Payload BYTEA,
-  -- Populated on write from Payload for payload_type filtering.
-  PayloadType TEXT NOT NULL DEFAULT '',
+  AdditionalInfo BYTEA, -- cloud.xmanager.v1.Artifact.AdditionalInfo
+  Payload BYTEA, -- cloud.xmanager.v1.ArtifactPayload
+  PayloadType TEXT NOT NULL DEFAULT '', -- Populated on write from Payload for payload_type filtering.
   SearchableContent TEXT,
   SearchableContent_Tokens TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, coalesce(SearchableContent, ''))) STORED,
   CreateTime TIMESTAMPTZ NOT NULL,
@@ -88,48 +75,32 @@ CREATE TABLE Artifacts (
 );
 
 CREATE UNIQUE INDEX ArtifactsByArtifactId ON Artifacts (ArtifactId);
-
 CREATE INDEX ArtifactsByXidAndWorkUnitId ON Artifacts (Xid, WorkUnitId, ArtifactId);
-
 CREATE INDEX ArtifactsSearchIndex ON Artifacts USING GIN (Url_Tokens, DisplayName_Tokens, Tags_Tokens, Notes_Tokens, MimeType_Tokens, SearchableContent_Tokens);
 
 -- Table that holds the core work units data.
 CREATE TABLE WorkUnits (
   Xid BIGINT NOT NULL,
   WorkUnitId BIGINT NOT NULL,
-  -- WorkUnit.WorkUnitType enum value.
-  WorkUnitType BIGINT NOT NULL,
-  -- Higher values indicate higher priority.
-  Priority BIGINT NOT NULL,
-  -- Repeated cloud.xmanager.v1.Url.
-  Urls BYTEA[] NOT NULL,
+  WorkUnitType BIGINT NOT NULL, -- WorkUnit.WorkUnitType
+  Priority BIGINT NOT NULL, -- Higher values indicate higher priority.
+  Urls BYTEA[] NOT NULL, -- cloud.xmanager.v1.Url
   Tags TEXT[] NOT NULL,
   Notes TEXT NOT NULL,
-  -- cloud.xmanager.v1.Executable.
-  Executable BYTEA NOT NULL,
+  Executable BYTEA NOT NULL, -- cloud.xmanager.v1.Executable
   ExecutionCreateTime TIMESTAMPTZ NOT NULL,
   ExecutionUpdateTime TIMESTAMPTZ NOT NULL,
   ExecutionCompleteTime TIMESTAMPTZ,
   ExecutionId BIGINT NOT NULL,
-  -- cloud.xmanager.v1.WorkUnitExecutionMetadata.
-  ExecutionMetadata BYTEA NOT NULL,
-  -- cloud.xmanager.v1.WorkUnitStatus.
-  WorkUnitStatus BYTEA NOT NULL,
-  -- Populated on write from Executable.scheduling_constraints.queue_name.
-  QueueName TEXT NOT NULL,
-  -- WorkUnitStatus.WorkUnitState enum value, populated on write from WorkUnitStatus.state.
-  ExecutionState BIGINT NOT NULL,
-  -- Max StructuredMessage.Severity of the system/user status messages, populated on write.
-  ExecutionStatusMessageSeverity BIGINT,
-  -- Queue position for ROD sorting, populated on write (defaults to max BIGINT when unknown).
-  PositionInQueue BIGINT NOT NULL DEFAULT 9223372036854775807,
+  ExecutionMetadata BYTEA NOT NULL, -- cloud.xmanager.v1.WorkUnitExecutionMetadata
+  WorkUnitStatus BYTEA NOT NULL, -- cloud.xmanager.v1.WorkUnitStatus
+  QueueName TEXT NOT NULL, -- Populated on write from Executable.scheduling_constraints.queue_name.
+  ExecutionState BIGINT NOT NULL, -- WorkUnitStatus.WorkUnitState, populated on write from WorkUnitStatus.state.
+  ExecutionStatusMessageSeverity BIGINT, -- Max severity of the system/user status messages, populated on write.
+  PositionInQueue BIGINT NOT NULL DEFAULT 9223372036854775807, -- ROD queue position, populated on write.
   -- 1=INITIALIZING, 2=SCHEDULING, 3=STARTING, 4=RUNNING.
-  IsPendingOrRunningJob BOOLEAN GENERATED ALWAYS AS (
-    CASE WHEN ExecutionState IN (1, 2, 3, 4) THEN TRUE ELSE NULL END
-  ) STORED,
-  SortPhase BIGINT GENERATED ALWAYS AS (
-    CASE WHEN ExecutionState IN (1, 3, 4) THEN 1 WHEN ExecutionState IN (2) THEN 0 ELSE -1 END
-  ) STORED,
+  IsPendingOrRunningJob BOOLEAN GENERATED ALWAYS AS (CASE WHEN ExecutionState IN (1, 2, 3, 4) THEN TRUE ELSE NULL END) STORED,
+  SortPhase BIGINT GENERATED ALWAYS AS (CASE WHEN ExecutionState IN (1, 3, 4) THEN 1 WHEN ExecutionState IN (2) THEN 0 ELSE -1 END) STORED,
   CreateTime TIMESTAMPTZ NOT NULL,
   UpdateTime TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (Xid, WorkUnitId),
@@ -137,15 +108,9 @@ CREATE TABLE WorkUnits (
 );
 
 CREATE INDEX WorkUnitsByQueueName ON WorkUnits (QueueName);
-
 -- Partial index for active work unit queries by position.
-CREATE INDEX WorkUnitsByQueueAndPosition ON WorkUnits (
-  QueueName,
-  SortPhase DESC,
-  PositionInQueue ASC,
-  CreateTime ASC,
-  WorkUnitId ASC
-) INCLUDE (IsPendingOrRunningJob, Xid) WHERE IsPendingOrRunningJob IS NOT NULL;
+CREATE INDEX WorkUnitsByQueueAndPosition ON WorkUnits (QueueName, SortPhase DESC, PositionInQueue ASC, CreateTime ASC, WorkUnitId ASC)
+  INCLUDE (IsPendingOrRunningJob, Xid) WHERE IsPendingOrRunningJob IS NOT NULL;
 
 -- Table that holds the list of operations.
 CREATE TABLE Operations (
@@ -153,12 +118,9 @@ CREATE TABLE Operations (
   WorkUnitId BIGINT NOT NULL,
   OperationId TEXT NOT NULL DEFAULT (gen_random_uuid()::text),
   Done BOOLEAN NOT NULL,
-  -- google.rpc.Status, set if the operation failed.
-  Status BYTEA,
-  -- cloud.xmanager.v1.WorkUnit, set if the operation succeeded.
-  Response BYTEA,
-  -- cloud.xmanager.v1.OperationMetadata.
-  OperationMetadata BYTEA NOT NULL,
+  Status BYTEA, -- google.rpc.Status, set if the operation failed.
+  Response BYTEA, -- cloud.xmanager.v1.WorkUnit, set if the operation succeeded.
+  OperationMetadata BYTEA NOT NULL, -- cloud.xmanager.v1.OperationMetadata
   CreateTime TIMESTAMPTZ NOT NULL,
   UpdateTime TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (Xid, WorkUnitId, OperationId),
@@ -170,10 +132,8 @@ CREATE TABLE WorkUnitExecutions (
   Xid BIGINT NOT NULL,
   WorkUnitId BIGINT NOT NULL,
   ExecutionId BIGINT NOT NULL,
-  -- cloud.xmanager.v1.WorkUnitExecutionMetadata.
-  ExecutionMetadata BYTEA NOT NULL,
-  -- cloud.xmanager.v1.WorkUnitStatus.
-  WorkUnitStatus BYTEA NOT NULL,
+  ExecutionMetadata BYTEA NOT NULL, -- cloud.xmanager.v1.WorkUnitExecutionMetadata
+  WorkUnitStatus BYTEA NOT NULL, -- cloud.xmanager.v1.WorkUnitStatus
   CreateTime TIMESTAMPTZ NOT NULL,
   UpdateTime TIMESTAMPTZ NOT NULL,
   CompleteTime TIMESTAMPTZ,
@@ -186,20 +146,15 @@ CREATE TABLE WorkUnitExecutions (
 CREATE TABLE StatusMessages (
   Xid BIGINT NOT NULL,
   WorkUnitId BIGINT,
-  -- Avoids collisions between messages created at the same time.
-  MessageId BIGINT NOT NULL,
+  MessageId BIGINT NOT NULL, -- Avoids collisions between messages created at the same time.
   ExecutionId BIGINT,
-  -- StructuredMessage.Severity / StructuredMessage.Source enum values.
-  Severity BIGINT NOT NULL,
-  Source BIGINT NOT NULL,
+  Severity BIGINT NOT NULL, -- StructuredMessage.Severity
+  Source BIGINT NOT NULL, -- StructuredMessage.Source
   UserFacingText TEXT NOT NULL,
-  -- cloud.xmanager.v1.Url.
-  UserFacingUrl BYTEA,
+  UserFacingUrl BYTEA, -- cloud.xmanager.v1.Url
   CreateTime TIMESTAMPTZ NOT NULL,
-  -- cloud.xmanager.v1.StructuredMessage replaced by this one.
-  PreviousMessage BYTEA,
-  -- cloud.xmanager.v1.AuxiliaryInfo.
-  AuxiliaryInfo BYTEA,
+  PreviousMessage BYTEA, -- cloud.xmanager.v1.StructuredMessage replaced by this one.
+  AuxiliaryInfo BYTEA, -- cloud.xmanager.v1.AuxiliaryInfo
   -- 40=ERROR, 50=FATAL. UTC conversion keeps the expression IMMUTABLE.
   ExpirationTime TIMESTAMPTZ GENERATED ALWAYS AS (((CreateTime AT TIME ZONE 'UTC') + CASE WHEN Severity IN (40, 50) THEN INTERVAL '180 days' ELSE INTERVAL '30 days' END) AT TIME ZONE 'UTC') STORED,
   PRIMARY KEY (Xid, CreateTime, MessageId),
@@ -339,13 +294,10 @@ CREATE TABLE WorkUnitStatusHistory (
   WorkUnitId BIGINT NOT NULL,
   HistoryId BIGINT NOT NULL,
   ExecutionId BIGINT,
-  -- Should match the kueue ClusterQueue.
-  QueueName TEXT,
-  -- WorkUnitStatus.WorkUnitState enum values.
-  PreviousState BIGINT,
-  NewState BIGINT NOT NULL,
-  -- Compute resource type requested (e.g. nvidia-tesla-h100, TPU, CPU).
-  ResourceType TEXT,
+  QueueName TEXT, -- Should match the kueue ClusterQueue.
+  PreviousState BIGINT, -- WorkUnitStatus.WorkUnitState
+  NewState BIGINT NOT NULL, -- WorkUnitStatus.WorkUnitState
+  ResourceType TEXT, -- Compute resource type requested (e.g. nvidia-tesla-h100, TPU, CPU).
   ResourceUnits BIGINT,
   CreateTime TIMESTAMPTZ NOT NULL,
   -- 30-day retention. UTC conversion keeps the expression IMMUTABLE.
@@ -354,4 +306,5 @@ CREATE TABLE WorkUnitStatusHistory (
 );
 
 -- Sliding-window queue velocity and turnover rate queries.
-CREATE INDEX WorkUnitStatusHistoryByQueueAndCreateTime ON WorkUnitStatusHistory (QueueName, CreateTime DESC, NewState, PreviousState) INCLUDE (ResourceType, ResourceUnits, Xid, WorkUnitId, ExecutionId);
+CREATE INDEX WorkUnitStatusHistoryByQueueAndCreateTime ON WorkUnitStatusHistory (QueueName, CreateTime DESC, NewState, PreviousState)
+  INCLUDE (ResourceType, ResourceUnits, Xid, WorkUnitId, ExecutionId);
