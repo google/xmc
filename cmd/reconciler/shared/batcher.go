@@ -170,7 +170,40 @@ func (b *UpdateBatcher) Add(ctx context.Context, xid int64, update storagepkg.Wo
 	if _, exists := b.Updates[xid][update.WID]; !exists {
 		b.Updates[xid][update.WID] = make(map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
 	}
+	// Storage skips updates whose EID is not the current execution, so letting a
+	// stale (lower-EID) update replace a pending newer one would silently drop the
+	// newer execution's update.
+	if pending, exists := b.Updates[xid][update.WID][source]; exists && update.EID < pending.EID {
+		return
+	}
 	b.Updates[xid][update.WID][source] = update
+}
+
+// Remove evicts any pending update for (xid, wid, source) whose EID is <= eid.
+// Used after a terminal status is persisted synchronously on deletion so a
+// stale pending update cannot flush later without triggering a second Spanner
+// write.
+func (b *UpdateBatcher) Remove(xid, wid, eid int64, source UpdateSource) {
+	b.UpdatesMu.Lock()
+	defer b.UpdatesMu.Unlock()
+	byWID, ok := b.Updates[xid]
+	if !ok {
+		return
+	}
+	bySource, ok := byWID[wid]
+	if !ok {
+		return
+	}
+	if pending, ok := bySource[source]; !ok || pending.EID > eid {
+		return
+	}
+	delete(bySource, source)
+	if len(bySource) == 0 {
+		delete(byWID, wid)
+	}
+	if len(byWID) == 0 {
+		delete(b.Updates, xid)
+	}
 }
 
 // BatchProcessor runs the background processing loop.
