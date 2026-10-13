@@ -100,12 +100,17 @@ func TestDeclareClusterEpoch_TakeoverParity(t *testing.T) {
 			if _, err := s.DeclareClusterEpoch(ctx, prod); err != nil {
 				t.Fatalf("DeclareClusterEpoch(prod) error = %v", err)
 			}
+			before, err := s.GetComponent(ctx, "fence-owned")
+			if err != nil {
+				t.Fatalf("GetComponent(fence-owned) error = %v", err)
+			}
 
 			res, err := s.DeclareClusterEpoch(ctx, dr)
 			if diff := cmp.Diff(&store.DeclarationResult{Outcome: store.DeclarationTakeover, Active: dr, RecordsReassigned: 1}, res); err != nil || diff != "" {
 				t.Fatalf("DeclareClusterEpoch(dr) error = %v, result mismatch (-want +got):\n%s", err, diff)
 			}
 			assertStoredOwner(ctx, t, s, "fence-owned", &store.SourceOwner{Generation: 3, Namespace: "xmc", ClusterUID: drClusterUID, Epoch: 5})
+			assertOwnerOnlyWrite(ctx, t, s, before)
 			assertStoredOwner(ctx, t, s, "fence-legacy", nil)
 			_, err = s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 5})
 			assertFenceRejected(t, err, store.ReasonClusterFenced, dr)
@@ -153,6 +158,25 @@ func errorInfoReason(err error) string {
 		}
 	}
 	return ""
+}
+
+// assertOwnerOnlyWrite checks that the stored record of before changed only its owner: the
+// generation, UpdateTime and etag stay, since the owner is not part of the Component resource.
+func assertOwnerOnlyWrite(ctx context.Context, t *testing.T, s store.Store, before *store.ComponentRecord) {
+	t.Helper()
+	after, err := s.GetComponent(ctx, before.Name)
+	if err != nil {
+		t.Fatalf("GetComponent(%s) error = %v", before.Name, err)
+	}
+	type versioned struct {
+		Generation int64
+		UpdateTime int64
+		Etag       string
+	}
+	want := versioned{before.Generation, before.UpdateTime.UnixNano(), before.Etag}
+	if diff := cmp.Diff(want, versioned{after.Generation, after.UpdateTime.UnixNano(), after.Etag}); diff != "" {
+		t.Errorf("takeover changed the version of %s (-before +after):\n%s", before.Name, diff)
+	}
 }
 
 // assertStoredOwner checks the recorded owner of name.
