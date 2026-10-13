@@ -21,6 +21,8 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/grpc/codes"
+
+	"xmanager_cloud/internal/logging"
 )
 
 const (
@@ -58,6 +60,9 @@ func (s *SpannerStore) DeclareClusterEpoch(ctx context.Context, cluster ClusterI
 		return nil, recordSourceConflictError(err)
 	}
 	stale, staleErr := queryStaleOwnerCount(ctx, s.client.Single(), time.Now().UTC())
+	if staleErr != nil {
+		logging.Warn(ctx, "Failed to count stale component owners; keeping the previous xmc_cms_component_owner_stale value", "error", staleErr)
+	}
 	recordClusterDeclarationMetrics(res.Active.Epoch, stale, staleErr == nil)
 	return res, nil
 }

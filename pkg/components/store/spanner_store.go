@@ -290,7 +290,7 @@ func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, sp
 		finalRec.UpdateTime = commitTimestamp
 		finalRec.Etag = generateEtag(finalRec)
 	}
-	if src != nil {
+	if src != nil && plan.write != writeNothing {
 		finalRec.SourceLastSeenTime = commitTimestamp
 	}
 	if plan.write != writeNothing {
@@ -845,6 +845,9 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 
 	if finalRec != nil && !unchanged {
 		finalRec.UpdateTime = commitTimestamp
+		if reqSrc != nil {
+			finalRec.SourceLastSeenTime = commitTimestamp
+		}
 		finalRec.Etag = generateEtag(finalRec)
 	}
 

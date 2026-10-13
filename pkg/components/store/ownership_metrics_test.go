@@ -24,6 +24,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"xmanager_cloud/pkg/components/store"
+
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
 
 var (
@@ -95,6 +97,54 @@ func TestOwnershipMetrics_Parity(t *testing.T) {
 	}
 }
 
+func TestSourceLastSeenTime_Parity(t *testing.T) {
+	src := store.RequestSource{UID: "uid-seen", Generation: 1, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 2}
+	for _, backend := range intentStoreBackends() {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := backend.newStore(t)
+			if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 2}); err != nil {
+				t.Fatalf("DeclareClusterEpoch() error = %v", err)
+			}
+			created, err := s.SetSourcedComponentIntent(ctx, "seen-comp", intentSpec("v1.0.0"), nil, src)
+			if err != nil {
+				t.Fatalf("SetSourcedComponentIntent(create) error = %v", err)
+			}
+			stored := getSourceLastSeenTime(ctx, t, s, "seen-comp")
+			if stored.IsZero() || !created.SourceLastSeenTime.Equal(stored) {
+				t.Errorf("created SourceLastSeenTime = %v, stored = %v, want equal and non-zero", created.SourceLastSeenTime, stored)
+			}
+
+			// An unchanged replay writes nothing, so it reports the stored timestamp.
+			replay, err := s.SetSourcedComponentIntent(ctx, "seen-comp", intentSpec("v1.0.0"), nil, src)
+			if err != nil {
+				t.Fatalf("SetSourcedComponentIntent(replay) error = %v", err)
+			}
+			if !replay.SourceLastSeenTime.Equal(stored) {
+				t.Errorf("replay SourceLastSeenTime = %v, want stored %v", replay.SourceLastSeenTime, stored)
+			}
+
+			// A sourced UpdateObservedGeneration records the owner and reports the new timestamp.
+			updated, err := s.UpdateObservedGeneration(ctx, "seen-comp", created.Generation, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready=True", src)
+			if err != nil {
+				t.Fatalf("UpdateObservedGeneration() error = %v", err)
+			}
+			if after := getSourceLastSeenTime(ctx, t, s, "seen-comp"); !updated.SourceLastSeenTime.Equal(after) || after.Before(stored) {
+				t.Errorf("UpdateObservedGeneration SourceLastSeenTime = %v, stored = %v, want equal and not before %v", updated.SourceLastSeenTime, after, stored)
+			}
+		})
+	}
+}
+
+func getSourceLastSeenTime(ctx context.Context, t *testing.T, s store.Store, name string) time.Time {
+	t.Helper()
+	rec, err := s.GetComponent(ctx, name)
+	if err != nil {
+		t.Fatalf("GetComponent(%q) error = %v", name, err)
+	}
+	return rec.SourceLastSeenTime
+}
+
 func verifyFenceAndConflictMetrics(ctx context.Context, t *testing.T, s store.Store, prod, dr store.ClusterIdentity) {
 	t.Helper()
 	if _, err := s.DeclareClusterEpoch(ctx, prod); err != nil {
@@ -121,13 +171,6 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 		t.Fatalf("SetSourcedComponentIntent(initial) error = %v", err)
 	}
 	assertAdoptionIncremented(t, beforeAdoptions, store.AdoptionReasonInitial)
-	got, err := s.GetComponent(ctx, "metrics-comp")
-	if err != nil {
-		t.Fatalf("GetComponent(metrics-comp) error = %v", err)
-	}
-	if got.SourceLastSeenTime.IsZero() {
-		t.Errorf("GetComponent(metrics-comp).SourceLastSeenTime is zero, want the commit time of the sourced write")
-	}
 
 	// Unchanged replay does not increment adoptions.
 	beforeAdoptions = adoptionCounts()
