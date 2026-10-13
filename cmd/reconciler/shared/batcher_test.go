@@ -56,6 +56,22 @@ func (m *mockStorageUpdater) clearCalls() {
 	m.calls = make(map[int64][]*storagepkg.WorkUnitExecutionUpdate)
 }
 
+type workUnitState = essmsgpb.WorkUnitStatus_WorkUnitState
+type workUnitExecution = essmsgpb.WorkUnitExecution
+
+const (
+	stateRunning   = essmsgpb.WorkUnitStatus_RUNNING
+	stateCompleted = essmsgpb.WorkUnitStatus_COMPLETED
+)
+
+func testUpdate(wid, eid int64, state workUnitState) storagepkg.WorkUnitExecutionUpdate {
+	return storagepkg.WorkUnitExecutionUpdate{
+		WID:               wid,
+		EID:               eid,
+		WorkUnitExecution: &essmsgpb.WorkUnitExecution{Status: &essmsgpb.WorkUnitStatus{State: state}},
+	}
+}
+
 func TestNewUpdateBatcher(t *testing.T) {
 	tests := []struct {
 		name                 string
@@ -361,8 +377,8 @@ func TestProcessBatches_Metrics(t *testing.T) {
 		mockStorage := &mockStorageUpdater{}
 		batcher := NewUpdateBatcher(t.Context(), &BatcherConfig{TickDuration: 1 * time.Millisecond}, mockStorage)
 
-		// Call processExperimentUpdates with an empty widMap
-		batcher.processExperimentUpdates(ctx, 999, make(map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate))
+		// Call processExperimentUpdates with an empty batch
+		batcher.processExperimentUpdates(ctx, 999, nil, nil)
 
 		xidStr := "999"
 		if got := testutil.ToFloat64(updatesProcessedTotal.WithLabelValues(xidStr)); got != 0 {

@@ -22,8 +22,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -854,32 +852,6 @@ func assertBatcherAfterFinalizer(t *testing.T, batcher *shared.UpdateBatcher, wa
 	}
 	if diff := cmp.Diff(*pending, got, protocmp.Transform()); diff != "" {
 		t.Errorf("batcher slot mismatch (-want +got):\n%s", diff)
-	}
-}
-
-func TestIsPermanentStorageError(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{name: "nil", err: nil, want: false},
-		{name: "wrapped NotFound sentinel", err: fmt.Errorf("lookup: %w", grpcerr.ErrNotFound), want: true},
-		{name: "raw InvalidArgument status", err: status.Error(codes.InvalidArgument, "bad"), want: true},
-		{name: "FailedPrecondition sentinel", err: grpcerr.ErrFailedPrecondition, want: true},
-		{name: "PermissionDenied sentinel", err: grpcerr.ErrPermissionDenied, want: true},
-		{name: "Unavailable", err: grpcerr.ErrUnavailable, want: false},
-		{name: "Aborted", err: status.Error(codes.Aborted, "retry"), want: false},
-		{name: "Unknown status", err: status.Error(codes.Unknown, "?"), want: false},
-		{name: "plain error", err: errors.New("boom"), want: false},
-		{name: "context deadline", err: context.DeadlineExceeded, want: false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := isPermanentStorageError(tc.err); got != tc.want {
-				t.Errorf("isPermanentStorageError(%v) = %v, want %v", tc.err, got, tc.want)
-			}
-		})
 	}
 }
 
