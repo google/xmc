@@ -16,7 +16,7 @@ import { MatButtonHarness } from '@angular/material/button/testing';
 import { MatTooltipHarness } from '@angular/material/tooltip/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { BehaviorSubject, NEVER, of } from 'rxjs';
+import { BehaviorSubject, NEVER, of, throwError } from 'rxjs';
 
 import { ListWorkUnitsResponse, StructuredMessage } from 'app/protos/experiment_state_server';
 import { SnackbarService } from 'app/service/snackbar_service';
@@ -265,6 +265,102 @@ describe('WorkUnitsTable Component', () => {
 
       const links = getEls('a.tag');
       expect(links.length).toBe(0);
+    });
+  });
+
+  describe('Sorting', () => {
+    const DEFAULT_REQUEST = { parent: 'experiments/1', pageSize: 10, pageToken: '' };
+
+    function lastRequest() {
+      return state.workUnitsService.searchWorkUnits.calls.mostRecent().args[0];
+    }
+
+    async function getStatusSortHeader(harness: WorkUnitsTableHarness) {
+      const [header] = await (await harness.getSort()).getSortHeaders({ label: 'Status' });
+      return header;
+    }
+
+    async function goToSecondPage(harness: WorkUnitsTableHarness) {
+      await (await getHarness(MatButtonHarness.with({ text: 'chevron_right' }))).click();
+      expect(await harness.getPageLabel()).toBe('Page 2');
+    }
+
+    it('should cycle the Status sort through asc, desc and cleared', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      await (await getStatusSortHeader(harness)).click();
+      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, orderBy: 'state asc' });
+
+      await (await getStatusSortHeader(harness)).click();
+      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, orderBy: 'state desc' });
+
+      await (await getStatusSortHeader(harness)).click();
+      expect(lastRequest()).toEqual(DEFAULT_REQUEST);
+    });
+
+    it('should expose sort headers for ID, Status, Created and Completed only', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      const headers = await (await harness.getSort()).getSortHeaders();
+      const labels = await Promise.all(headers.map((h) => h.getLabel()));
+      expect(labels).toEqual(['ID', 'Status', 'Created', 'Completed']);
+    });
+
+    it('should reset to the first page when the sort changes', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+      await goToSecondPage(harness);
+
+      await (await getStatusSortHeader(harness)).click();
+
+      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, orderBy: 'state asc' });
+      expect(await harness.getPageLabel()).toBe('Page 1');
+    });
+
+    it('should keep the sort on refresh', async () => {
+      const comp = bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+      await (await getStatusSortHeader(harness)).click();
+
+      comp.refresh();
+
+      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, orderBy: 'state asc' });
+    });
+
+    it('should restore the active sort header after a failed fetch recovers', async () => {
+      const comp = bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      state.workUnitsService.searchWorkUnits.and.returnValue(throwError(() => new Error('boom')));
+      await (await getStatusSortHeader(harness)).click();
+      expect(await harness.hasErrorMessage()).toBeTrue();
+
+      state.workUnitsService.searchWorkUnits.and.returnValue(of(MOCK_WORK_UNITS_RESPONSE));
+      comp.refresh();
+
+      const activeHeader = await (await harness.getSort()).getActiveHeader();
+      expect(await activeHeader?.getLabel()).toBe('Status');
+      expect(await activeHeader?.getSortDirection()).toBe('asc');
+      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, orderBy: 'state asc' });
+    });
+
+    it('should keep the sort headers usable after a failed fetch', async () => {
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+
+      state.workUnitsService.searchWorkUnits.and.returnValue(throwError(() => new Error('boom')));
+      await (await getStatusSortHeader(harness)).click();
+      expect(await harness.hasErrorMessage()).toBeTrue();
+      expect((await (await harness.getSort()).getSortHeaders()).length).toBe(4);
+
+      state.workUnitsService.searchWorkUnits.and.returnValue(of(MOCK_WORK_UNITS_RESPONSE));
+      await (await getStatusSortHeader(harness)).click();
+
+      expect(lastRequest()).toEqual({ ...DEFAULT_REQUEST, orderBy: 'state desc' });
+      expect(await harness.hasErrorMessage()).toBeFalse();
+      expect((await harness.getDataRows()).length).toBe(3);
     });
   });
 });

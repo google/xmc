@@ -80,6 +80,34 @@ describe('WorkUnitsService', () => {
       await responsePromise;
     });
 
+    it('should forward orderBy in query params', async () => {
+      const responsePromise = firstValueFrom(
+        state.service.searchWorkUnits({ parent: 'experiments/1', orderBy: 'state desc' }),
+      );
+
+      const req = state.httpMock.expectOne((req: HttpRequest<unknown>) =>
+        req.url.includes('/experiments/1/workUnits'),
+      );
+      expect(req.request.params.get('orderBy')).toBe('state desc');
+      req.flush({});
+
+      await responsePromise;
+    });
+
+    it('should omit an empty orderBy from query params', async () => {
+      const responsePromise = firstValueFrom(
+        state.service.searchWorkUnits({ parent: 'experiments/1', orderBy: '' }),
+      );
+
+      const req = state.httpMock.expectOne((req: HttpRequest<unknown>) =>
+        req.url.includes('/experiments/1/workUnits'),
+      );
+      expect(req.request.params.has('orderBy')).toBeFalse();
+      req.flush({});
+
+      await responsePromise;
+    });
+
     it('should fetch a single work unit', async () => {
       const responsePromise = firstValueFrom(
         state.service.getWorkUnit({ name: 'experiments/1/workUnits/1' }),

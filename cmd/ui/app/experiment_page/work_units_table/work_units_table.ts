@@ -25,6 +25,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule } from '@angular/material/paginator';
+import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltip } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
@@ -90,6 +91,7 @@ interface WorkUnitView extends WorkUnit {
     PageSizeSelector,
     MatTooltip,
     StatusMessageFilter,
+    MatSortModule,
   ],
   providers: [WorkUnitsTableStore],
 })
@@ -153,12 +155,19 @@ export class WorkUnitsTable implements OnInit {
     () => this.isFetching() && this.workUnitViews() !== undefined,
   );
 
+  protected readonly sort: Signal<Sort> = this.store.sort;
+
   ngOnInit() {
     this.store.setXid(this.xid());
     this.store.fetchPage();
   }
 
   refresh() {
+    this.store.fetchPage();
+  }
+
+  protected onSortChange(sort: Sort) {
+    this.store.setSort(sort);
     this.store.fetchPage();
   }
 

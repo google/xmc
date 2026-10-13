@@ -205,6 +205,8 @@ var (
 				Type:         filtervisitor.Timestamp,
 				Selectable:   true,
 				Indexed:      false,
+				// NULL until the current execution completes.
+				Nullable: true,
 			},
 			executionIDTableField: {
 				Name:         executionIDTableField,
@@ -297,5 +299,8 @@ var (
 		{TableField: createdTableField},
 		{TableField: updatedTableField},
 		{TableField: xidTableField},
+		{TableField: workUnitIDTableField},
+		{TableField: executionStateTableField},
+		{TableField: executionCompleteTimeTableField},
 	}
 )
