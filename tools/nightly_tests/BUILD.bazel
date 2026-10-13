@@ -32,7 +32,6 @@ exports_files([
     "metrics_dashboard_job_verify.py",
     "metrics_job_verify.py",
     "multikueue_job_verify.py",
-    "multikueue_job_verify_test.py",
     "multipod_job_verify.py",
     "pathways_job_verify.py",
     "per_job_node_selector_verify.py",

@@ -1269,3 +1269,46 @@ def validate_dashboard_chart_data(
         )
     print(f"  [i] Dashboard check skipped/notice: {last_error}")
     return {"skipped": True}
+
+
+def _validate_cluster_info(cluster: Any, field: str, wu_name: str) -> str:
+    """Validates that a ClusterInfo message has non-empty cluster_name, project, and location."""
+    name = getattr(cluster, "cluster_name", "")
+    proj, loc = getattr(cluster, "project", ""), getattr(cluster, "location", "")
+    if not (name and proj and loc):
+        raise AssertionError(f"WorkUnit '{wu_name}' missing {field}: {cluster}")
+    return str(name)
+
+
+def _validate_single_wu_multikueue_metadata(stub: Any, wu: Any, expected: str) -> dict[str, str]:
+    """Validates MultiKueue execution metadata and cluster info for a single WorkUnit."""
+    has_exec = getattr(wu, "HasField", lambda f: bool(getattr(wu, f, None)))
+    req = _make_req("GetCurrentWorkUnitExecutionRequest", name=wu.name)
+    exec_pb = (
+        wu.current_work_unit_execution
+        if has_exec("current_work_unit_execution")
+        else stub.GetCurrentWorkUnitExecution(req)
+    )
+    meta = getattr(exec_pb, "metadata", None)
+    multikueue = getattr(meta, "multi_kueue_cluster_name", "")
+    executing = _validate_cluster_info(
+        getattr(meta, "executing_cluster", None), "executing_cluster", wu.name
+    )
+    management = _validate_cluster_info(
+        getattr(meta, "management_cluster", None), "management_cluster", wu.name
+    )
+    if multikueue != expected or executing != expected or executing == management:
+        raise AssertionError(f"WorkUnit '{wu.name}' invalid MultiKueue metadata: {meta}")
+    return {"work_unit": str(wu.name), "executing": executing, "management": management}
+
+
+def validate_multikueue_execution_metadata(
+    stub: Any, xid: str, expected_worker_cluster: str
+) -> list[dict[str, str]]:
+    """Asserts that all WorkUnits in the experiment recorded valid MultiKueue execution metadata."""
+    if not (work_units := _fetch_raw_work_units(stub, f"experiments/{xid}")):
+        raise AssertionError(f"No WorkUnits found for experiment {xid}.")
+    return [
+        _validate_single_wu_multikueue_metadata(stub, wu, expected_worker_cluster)
+        for wu in work_units
+    ]
