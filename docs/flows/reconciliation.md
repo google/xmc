@@ -294,8 +294,10 @@ sequenceDiagram
     Storage-->>Batcher: map[WID] WorkUnitExecution (or error)
     alt Transient error
         Batcher->>Batcher: Queue each update for retry with backoff
+    else Permanent error, single work unit
+        Batcher->>Batcher: Drop the work unit's updates (reason=permanent)
     else Permanent error, more than one work unit
-        loop First 32 work units, one work unit (all its updates) per call
+        loop Up to 32 work units (requeued first), one work unit per call
             Batcher->>Storage: UpdateWorkUnitExecutions(xid, updates of one WID)
             Note over Batcher: Transient error or cancelled: requeue it and the rest, stop
             Note over Batcher: 3 work units failing permanently in a row: drop the rest, stop

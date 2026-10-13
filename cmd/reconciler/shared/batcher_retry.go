@@ -245,7 +245,9 @@ func countWorkUnits(batch []batchEntry) int {
 	return count
 }
 
-// groupByWorkUnit splits a batch sorted by WID into contiguous per-WID groups.
+// groupByWorkUnit splits a batch sorted by WID into per-WID groups, ordered by
+// descending max retry attempt (preserving ascending WID on ties) so previously
+// requeued overflow work units are isolated ahead of fresh ones.
 func groupByWorkUnit(batch []batchEntry) [][]batchEntry {
 	var groups [][]batchEntry
 	for i, entry := range batch {
@@ -254,7 +256,18 @@ func groupByWorkUnit(batch []batchEntry) [][]batchEntry {
 		}
 		groups[len(groups)-1] = append(groups[len(groups)-1], entry)
 	}
+	slices.SortStableFunc(groups, func(a, b []batchEntry) int {
+		return cmp.Compare(maxGroupAttempt(b), maxGroupAttempt(a))
+	})
 	return groups
+}
+
+func maxGroupAttempt(group []batchEntry) int {
+	maxAttempt := 0
+	for _, entry := range group {
+		maxAttempt = max(maxAttempt, entry.attempt)
+	}
+	return maxAttempt
 }
 
 // isolatePermanentFailure resends each work unit's updates in one call, at most
