@@ -17,7 +17,6 @@ package workunit
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strconv"
 
@@ -26,6 +25,7 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/safesql"
+	"xmanager_cloud/internal/storage"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
 	"xmanager_cloud/internal/storage/spanner/utils"
@@ -35,11 +35,6 @@ import (
 const (
 	defaultPageSize = int32(100)
 	maxPageSize     = int32(1000)
-)
-
-var (
-	// ErrInvalidPageToken is returned when the page token cannot be decoded or is invalid.
-	ErrInvalidPageToken = errors.New("invalid page_token")
 )
 
 var fetchActiveWorkUnitPKsSQL = safesql.New(
@@ -59,19 +54,6 @@ var countActiveWorkUnitsSQL = safesql.New(
 	  AND wu.IsPendingOrRunningJob IS NOT NULL`,
 )
 
-// WorkUnitWithAuthor wraps a WorkUnit proto with author metadata.
-type WorkUnitWithAuthor struct {
-	WorkUnit *essmsgpb.WorkUnit
-	Author   string
-}
-
-// ActiveWorkUnitsResult holds the result of querying active work units.
-type ActiveWorkUnitsResult struct {
-	WorkUnits      []WorkUnitWithAuthor
-	NextPageToken  string
-	TotalQueueSize int64
-}
-
 type workUnitPK struct {
 	BitReversedXid int64
 	WorkUnitId     int64
@@ -86,15 +68,15 @@ func decodePageToken(token string) (int64, error) {
 	if err != nil {
 		bytes, err = base64.RawURLEncoding.DecodeString(token)
 		if err != nil {
-			return 0, fmt.Errorf("%w: %v", ErrInvalidPageToken, err)
+			return 0, fmt.Errorf("%w: %v", storage.ErrInvalidPageToken, err)
 		}
 	}
 	offset, err := strconv.ParseInt(string(bytes), 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("%w: %v", ErrInvalidPageToken, err)
+		return 0, fmt.Errorf("%w: %v", storage.ErrInvalidPageToken, err)
 	}
 	if offset < 0 {
-		return 0, fmt.Errorf("%w: offset cannot be negative", ErrInvalidPageToken)
+		return 0, fmt.Errorf("%w: offset cannot be negative", storage.ErrInvalidPageToken)
 	}
 	return offset, nil
 }
@@ -146,7 +128,7 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 	return orderedPKs, nil
 }
 
-func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]WorkUnitWithAuthor, error) {
+func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]storage.WorkUnitWithAuthor, error) {
 	type workUnitKey struct {
 		bitReversedXid int64
 		workUnitId     int64
@@ -179,7 +161,7 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 		}
 	}
 
-	workUnits := make([]WorkUnitWithAuthor, 0, len(orderedPKs))
+	workUnits := make([]storage.WorkUnitWithAuthor, 0, len(orderedPKs))
 	for _, pk := range orderedPKs {
 		key := workUnitKey{
 			bitReversedXid: pk.BitReversedXid,
@@ -189,7 +171,7 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 		if !ok {
 			return nil, fmt.Errorf("work unit with PK (BitReversedXid: %d, WorkUnitId: %d) missing from batch read result", pk.BitReversedXid, pk.WorkUnitId)
 		}
-		workUnits = append(workUnits, WorkUnitWithAuthor{
+		workUnits = append(workUnits, storage.WorkUnitWithAuthor{
 			WorkUnit: wu,
 			Author:   pk.Creator,
 		})
@@ -199,7 +181,7 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 }
 
 // FetchActiveWorkUnitsByQueues queries Spanner for active and pending work units assigned to the given queues.
-func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error) {
+func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -209,8 +191,8 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	}
 
 	if len(queueNames) == 0 {
-		return &ActiveWorkUnitsResult{
-			WorkUnits:     []WorkUnitWithAuthor{},
+		return &storage.ActiveWorkUnitsResult{
+			WorkUnits:     []storage.WorkUnitWithAuthor{},
 			NextPageToken: "",
 		}, nil
 	}
@@ -245,8 +227,8 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	}
 
 	if len(orderedPKs) == 0 {
-		return &ActiveWorkUnitsResult{
-			WorkUnits:      []WorkUnitWithAuthor{},
+		return &storage.ActiveWorkUnitsResult{
+			WorkUnits:      []storage.WorkUnitWithAuthor{},
 			NextPageToken:  "",
 			TotalQueueSize: totalQueueSize,
 		}, nil
@@ -270,7 +252,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 		return nil, err
 	}
 
-	return &ActiveWorkUnitsResult{
+	return &storage.ActiveWorkUnitsResult{
 		WorkUnits:      workUnits,
 		NextPageToken:  nextPageToken,
 		TotalQueueSize: totalQueueSize,

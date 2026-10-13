@@ -18,6 +18,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
@@ -163,6 +164,36 @@ type WorkUnitStore interface {
 type UpdatedWorkUnits struct {
 	Original *essmsgpb.WorkUnit
 	Updated  *essmsgpb.WorkUnit
+}
+
+// -----------------------
+// Resource Observability Types
+// -----------------------
+
+var (
+	// ErrInvalidPageToken is returned when the page token cannot be decoded or is invalid.
+	ErrInvalidPageToken = errors.New("invalid page_token")
+)
+
+// WorkUnitWithAuthor wraps a WorkUnit proto with author metadata.
+type WorkUnitWithAuthor struct {
+	WorkUnit *essmsgpb.WorkUnit
+	Author   string
+}
+
+// ActiveWorkUnitsResult holds the result of querying active work units.
+type ActiveWorkUnitsResult struct {
+	WorkUnits      []WorkUnitWithAuthor
+	NextPageToken  string
+	TotalQueueSize int64
+}
+
+// QueueMetricRow represents a single raw row returned by the velocity or pending queue metrics query.
+type QueueMetricRow struct {
+	QueueName    string
+	Count        int64
+	TotalUnits   int64
+	ResourceType string
 }
 
 // -----------------------
