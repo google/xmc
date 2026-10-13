@@ -1316,6 +1316,63 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                     poll_interval_sec=0,
                 )
 
+    def test_validate_multikueue_execution_metadata(self) -> None:
+        metadata = SimpleNamespace(
+            multi_kueue_cluster_name="xmc-nightly-worker-1",
+            executing_cluster=SimpleNamespace(cluster_name="xmc-nightly-worker-1"),
+            management_cluster=SimpleNamespace(cluster_name="xmc-v2-nightly"),
+        )
+        wu = SimpleNamespace(
+            name="experiments/50/workUnits/1",
+            current_work_unit_execution=SimpleNamespace(metadata=metadata),
+            HasField=lambda f: False,
+        )
+        stub = mock.MagicMock()
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu])
+        stub.GetCurrentWorkUnitExecution.return_value = SimpleNamespace(metadata=metadata)
+
+        res = xmc_entities_validator.validate_multikueue_execution_metadata(
+            stub, "50", expected_worker_cluster="xmc-nightly-worker-1"
+        )
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0]["multi_kueue_cluster_name"], "xmc-nightly-worker-1")
+        self.assertEqual(res[0]["executing_cluster"], "xmc-nightly-worker-1")
+        self.assertEqual(res[0]["management_cluster"], "xmc-v2-nightly")
+        stub.GetCurrentWorkUnitExecution.assert_called_once()
+
+        with self.assertRaisesRegex(AssertionError, "expected 'wrong-cluster'"):
+            xmc_entities_validator.validate_multikueue_execution_metadata(
+                stub, "50", expected_worker_cluster="wrong-cluster"
+            )
+
+        wu_same_cluster = SimpleNamespace(
+            name="experiments/50/workUnits/2",
+            current_work_unit_execution=SimpleNamespace(
+                metadata=SimpleNamespace(
+                    multi_kueue_cluster_name="xmc-v2-nightly",
+                    executing_cluster=SimpleNamespace(cluster_name="xmc-v2-nightly"),
+                    management_cluster=SimpleNamespace(cluster_name="xmc-v2-nightly"),
+                )
+            ),
+        )
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu_same_cluster])
+        with self.assertRaisesRegex(AssertionError, "must differ from management_cluster"):
+            xmc_entities_validator.validate_multikueue_execution_metadata(stub, "50")
+
+        wu_missing_mgmt = SimpleNamespace(
+            name="experiments/50/workUnits/3",
+            current_work_unit_execution=SimpleNamespace(
+                metadata=SimpleNamespace(
+                    multi_kueue_cluster_name="xmc-nightly-worker-1",
+                    executing_cluster=SimpleNamespace(cluster_name="xmc-nightly-worker-1"),
+                    management_cluster=None,
+                )
+            ),
+        )
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu_missing_mgmt])
+        with self.assertRaisesRegex(AssertionError, "missing MultiKueue metadata"):
+            xmc_entities_validator.validate_multikueue_execution_metadata(stub, "50")
+
 
 if __name__ == "__main__":
     unittest.main()

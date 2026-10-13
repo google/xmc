@@ -212,6 +212,15 @@ jobs:
             expected_queue: ''
             requires_clickhouse: true
             timeout_minutes: 15
+          - id: 'multikueue_job'
+            name: 'MultiKueue Delegated Job'
+            example_path: 'examples/multikueue_job'
+            entrypoint: 'launch.py'
+            args: '--queue=multikueue-cpu-queue --num_work_units=2 --duration=20'
+            verify_module: 'tools.nightly_tests.multikueue_job_verify'
+            expected_queue: 'multikueue-cpu-queue'
+            needs_docker_build: false
+            timeout_minutes: 15
 
     env:
       PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}'

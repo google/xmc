@@ -1269,3 +1269,53 @@ def validate_dashboard_chart_data(
         )
     print(f"  [i] Dashboard check skipped/notice: {last_error}")
     return {"skipped": True}
+
+
+def _cluster_name(meta: Any, field: str) -> str:
+    cluster = getattr(meta, field, None)
+    return (getattr(cluster, "cluster_name", "") or "").strip() if cluster is not None else ""
+
+
+def _extract_work_unit_execution_metadata(
+    stub: Any, wu: Any, exp_cluster: str | None = None
+) -> dict[str, str]:
+    """Extracts and validates MultiKueue cluster metadata for a single WorkUnit."""
+    has_exec = getattr(wu, "HasField", lambda f: bool(getattr(wu, f, None)))(
+        "current_work_unit_execution"
+    )
+    req = _make_req("GetCurrentWorkUnitExecutionRequest", name=wu.name)
+    exec_pb = wu.current_work_unit_execution if has_exec else stub.GetCurrentWorkUnitExecution(req)
+    meta = getattr(exec_pb, "metadata", None) if exec_pb is not None else None
+    if meta is None:
+        raise AssertionError(f"WorkUnit '{wu.name}' has no WorkUnitExecution metadata.")
+    mk = (getattr(meta, "multi_kueue_cluster_name", "") or "").strip()
+    ex = _cluster_name(meta, "executing_cluster")
+    mg = _cluster_name(meta, "management_cluster")
+    if not mk or not ex or not mg:
+        raise AssertionError(
+            f"WorkUnit '{wu.name}' missing MultiKueue metadata ({mk=}, {ex=}, {mg=})."
+        )
+    if exp_cluster and (mk != exp_cluster or ex != exp_cluster):
+        raise AssertionError(
+            f"WorkUnit '{wu.name}' cluster metadata ({mk=}, {ex=}), expected '{exp_cluster}'."
+        )
+    if ex == mg:
+        raise AssertionError(
+            f"WorkUnit '{wu.name}' executing_cluster ('{ex}') must differ from management_cluster."
+        )
+    return {
+        "work_unit": str(wu.name),
+        "multi_kueue_cluster_name": mk,
+        "executing_cluster": ex,
+        "management_cluster": mg,
+    }
+
+
+def validate_multikueue_execution_metadata(
+    stub: Any, xid: str, expected_worker_cluster: str | None = None
+) -> list[dict[str, str]]:
+    """Asserts that every WorkUnit in the experiment recorded MultiKueue execution metadata."""
+    req = _make_req("ListWorkUnitsRequest", parent=f"experiments/{xid}")
+    if not (wus := stub.ListWorkUnits(req).work_units):
+        raise AssertionError(f"No WorkUnits found for experiment {xid}")
+    return [_extract_work_unit_execution_metadata(stub, w, expected_worker_cluster) for w in wus]

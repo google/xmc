@@ -31,6 +31,7 @@ exports_files([
     "managed_xprof_artifact_job_verify.py",
     "metrics_dashboard_job_verify.py",
     "metrics_job_verify.py",
+    "multikueue_job_verify.py",
     "multipod_job_verify.py",
     "pathways_job_verify.py",
     "per_job_node_selector_verify.py",
@@ -231,6 +232,17 @@ py_binary(
     srcs = ["xdash_dashboard_verify.py"],
     imports = ["../.."],
     deps = [
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
+    ],
+)
+
+py_binary(
+    name = "multikueue_job_verify",
+    srcs = ["multikueue_job_verify.py"],
+    imports = ["../.."],
+    deps = [
+        ":xmc_entities_validator_lib",
         "//tools/nightly_tests/verification:verifier_cli",
         "//tools/nightly_tests/verification:workload_verification",
     ],
