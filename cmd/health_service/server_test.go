@@ -1302,20 +1302,6 @@ func TestGetSchedulingStatus(t *testing.T) {
 			wantErrCode: codes.OK,
 		},
 		{
-			name:           "returns false when cfg is nil",
-			cfg:            nil,
-			pauseScheduler: newFakePauseScheduler(storagetest.NewFakePauseStateRepository()),
-			wantResp:       &spb.GetSchedulingStatusResponse{IsSchedulingPaused: false},
-			wantErrCode:    codes.OK,
-		},
-		{
-			name:           "returns false when pauseScheduler is nil",
-			cfg:            enabledCfg,
-			pauseScheduler: nil,
-			wantResp:       &spb.GetSchedulingStatusResponse{IsSchedulingPaused: false},
-			wantErrCode:    codes.OK,
-		},
-		{
 			name: "returns internal error when repository read fails",
 			cfg:  enabledCfg,
 			pauseScheduler: newFakePauseScheduler(
@@ -1343,5 +1329,20 @@ func TestGetSchedulingStatus(t *testing.T) {
 				t.Errorf("GetSchedulingStatus() mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestGetSchedulingStatus_ReturnsCanceledWhenClientCancels(t *testing.T) {
+	cfg := &Config{FeatureFlags: featureflags.Flags{PauseSchedulingEnabled: true}}
+	repo := &storagetest.FakePauseStateRepository{GetErr: context.Canceled}
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{}, nil, newFakePauseScheduler(repo))
+	defer s.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := s.GetSchedulingStatus(ctx, &spb.GetSchedulingStatusRequest{})
+
+	if got := status.Code(err); got != codes.Canceled {
+		t.Errorf("GetSchedulingStatus() code = %v, want %v (err: %v)", got, codes.Canceled, err)
 	}
 }

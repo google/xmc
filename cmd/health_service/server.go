@@ -298,11 +298,14 @@ func (s *server) GetUserInfo(ctx context.Context, req *spb.GetUserInfoRequest) (
 
 // GetSchedulingStatus returns the current global workload scheduling pause state.
 func (s *server) GetSchedulingStatus(ctx context.Context, _ *spb.GetSchedulingStatusRequest) (*spb.GetSchedulingStatusResponse, error) {
-	if s.cfg == nil || !s.cfg.FeatureFlags.PauseSchedulingEnabled || s.pauseScheduler == nil {
+	if !s.cfg.FeatureFlags.PauseSchedulingEnabled {
 		return &spb.GetSchedulingStatusResponse{IsSchedulingPaused: false}, nil
 	}
-	paused, err := s.pauseScheduler.IsPaused(ctx)
+	paused, err := s.pauseScheduler.IsPausedCached(ctx)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, status.FromContextError(ctxErr).Err()
+		}
 		logging.Error(ctx, "Failed to retrieve scheduling pause state", "error", err)
 		return nil, status.Error(codes.Internal, schedulingPauseUnavailableError)
 	}

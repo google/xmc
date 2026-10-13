@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/storage"
@@ -575,6 +577,94 @@ func TestPauseScheduler_IsPaused(t *testing.T) {
 		}
 	})
 
+	t.Run("IsPausedCached caches pause state for CacheTTL while IsPaused always queries repo", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			cacheTTL := 10 * time.Second
+			repo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
+			scheduler := NewPauseScheduler(PauseSchedulerParams{
+				LazyStorage:        newFakeLazyStorage(repo),
+				BroadcastPublisher: broadcast.NewFakeClient(""),
+				TaskQueuePublisher: redisclient.NewFakeClient(),
+				CacheTTL:           cacheTTL,
+			})
+
+			assertIsPausedCached(t, scheduler, true)
+
+			if err := repo.Set(ctx, &storage.PauseSchedulingState{SchedulingPaused: false}); err != nil {
+				t.Fatalf("failed to update fake pause state: %v", err)
+			}
+			repo.GetErr = errors.New("unexpected repo read while cached")
+			assertIsPausedCached(t, scheduler, true)
+
+			repo.GetErr = nil
+			time.Sleep(cacheTTL)
+			assertIsPausedCached(t, scheduler, false)
+
+			if err := repo.Set(ctx, &storage.PauseSchedulingState{SchedulingPaused: true}); err != nil {
+				t.Fatalf("failed to update fake pause state: %v", err)
+			}
+			// IsPausedCached still serves false from the warm cache, whereas IsPaused queries storage directly.
+			assertIsPausedCached(t, scheduler, false)
+			paused, err := scheduler.IsPaused(ctx)
+			if err != nil || !paused {
+				t.Fatalf("IsPaused() = (%v, %v), want (true, nil)", paused, err)
+			}
+			// Direct IsPaused read also refreshes the cache.
+			assertIsPausedCached(t, scheduler, true)
+		})
+	})
+
+	t.Run("updates cache on Pause and Resume", func(t *testing.T) {
+		repo := storagetest.NewFakePauseStateRepository()
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			LazyStorage:        newFakeLazyStorage(repo),
+			BroadcastPublisher: broadcast.NewFakeClient(""),
+			TaskQueuePublisher: redisclient.NewFakeClient(),
+			CacheTTL:           1 * time.Minute,
+		})
+
+		assertIsPausedCached(t, scheduler, false)
+		if err := scheduler.Pause(ctx); err != nil {
+			t.Fatalf("Pause() unexpected error: %v", err)
+		}
+		repo.GetErr = errors.New("unexpected repo read after Pause cache update")
+		assertIsPausedCached(t, scheduler, true)
+
+		repo.GetErr = nil
+		if _, err := scheduler.Resume(ctx); err != nil {
+			t.Fatalf("Resume() unexpected error: %v", err)
+		}
+		repo.GetErr = errors.New("unexpected repo read after Resume cache update")
+		assertIsPausedCached(t, scheduler, false)
+	})
+
+	t.Run("updates cache when Pause or Resume commits to storage even if broadcast fails", func(t *testing.T) {
+		repo := storagetest.NewFakePauseStateRepository()
+		fakePublisher := broadcast.NewFakeClient("")
+		scheduler := NewPauseScheduler(PauseSchedulerParams{
+			LazyStorage:        newFakeLazyStorage(repo),
+			BroadcastPublisher: fakePublisher,
+			TaskQueuePublisher: redisclient.NewFakeClient(),
+			CacheTTL:           1 * time.Minute,
+		})
+
+		assertIsPausedCached(t, scheduler, false)
+		fakePublisher.SetPublishError(errors.New("broadcast stream failure"))
+
+		if err := scheduler.Pause(ctx); err == nil {
+			t.Fatal("expected error from Pause() when broadcast fails, got nil")
+		}
+		repo.GetErr = errors.New("unexpected repo read after Pause cache update")
+		assertIsPausedCached(t, scheduler, true)
+
+		repo.GetErr = nil
+		if _, err := scheduler.Resume(ctx); err == nil {
+			t.Fatal("expected error from Resume() when broadcast fails, got nil")
+		}
+		repo.GetErr = errors.New("unexpected repo read after Resume cache update")
+		assertIsPausedCached(t, scheduler, false)
+	})
+
 	t.Run("returns error when repo fails", func(t *testing.T) {
 		repoErr := errors.New("spanner read failed")
 		failingRepo := &storagetest.FakePauseStateRepository{GetErr: repoErr}
@@ -609,6 +699,17 @@ func TestPauseScheduler_IsPaused(t *testing.T) {
 			t.Fatalf("expected errStorageNotConfigured, got %v", err)
 		}
 	})
+}
+
+func assertIsPausedCached(t *testing.T, scheduler PauseScheduler, want bool) {
+	t.Helper()
+	got, err := scheduler.IsPausedCached(context.Background())
+	if err != nil {
+		t.Fatalf("IsPausedCached() unexpected error: %v", err)
+	}
+	if got != want {
+		t.Errorf("IsPausedCached() = %v, want %v", got, want)
+	}
 }
 
 func TestPauseSchedulerClose(t *testing.T) {
