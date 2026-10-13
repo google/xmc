@@ -223,6 +223,7 @@ func initPauseScheduler(cfg *Config, lazyStorage LazyStorageProvider, taskQueueP
 		TaskQueuePublisher:  taskQueuePublisher,
 		BatchSize:           cfg.SchedulingResumeBatchSize,
 		MaxBacklogThreshold: cfg.SchedulingResumeMaxBacklog,
+		CacheTTL:            cfg.CacheTTL,
 	})
 }
 

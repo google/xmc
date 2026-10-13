@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
+	"time"
 
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/storage"
@@ -28,6 +30,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"golang.org/x/sync/singleflight"
 )
 
 var schedulingPauseEventsTotal = promauto.NewCounterVec(
@@ -85,8 +88,12 @@ type PauseScheduler interface {
 	// It returns the active ResumptionRunID.
 	Resume(ctx context.Context) (string, error)
 
-	// IsPaused returns whether scheduling is currently paused.
+	// IsPaused queries storage directly for whether scheduling is currently paused.
 	IsPaused(ctx context.Context) (bool, error)
+
+	// IsPausedCached returns whether scheduling is currently paused, serving from
+	// the in-memory TTL cache when available.
+	IsPausedCached(ctx context.Context) (bool, error)
 }
 
 // PauseSchedulerParams holds the dependencies and configuration for PauseScheduler.
@@ -96,6 +103,7 @@ type PauseSchedulerParams struct {
 	TaskQueuePublisher  redisclient.Publisher
 	BatchSize           int
 	MaxBacklogThreshold int
+	CacheTTL            time.Duration
 }
 
 type schedulingResumeTrigger struct {
@@ -110,6 +118,11 @@ type pauseScheduler struct {
 	taskQueuePublisher  redisclient.Publisher
 	batchSize           int
 	maxBacklogThreshold int
+	cacheTTL            time.Duration
+	cacheMu             sync.RWMutex
+	cachedPaused        bool
+	cacheExpires        time.Time
+	sfGroup             singleflight.Group
 }
 
 var _ PauseScheduler = (*pauseScheduler)(nil)
@@ -122,6 +135,7 @@ func NewPauseScheduler(params PauseSchedulerParams) PauseScheduler {
 		taskQueuePublisher:  params.TaskQueuePublisher,
 		batchSize:           params.BatchSize,
 		maxBacklogThreshold: params.MaxBacklogThreshold,
+		cacheTTL:            params.CacheTTL,
 	}
 }
 
@@ -188,6 +202,7 @@ func (p *pauseScheduler) Pause(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
+	p.updateCache(true)
 	return p.broadcastPauseEvent(ctx)
 }
 
@@ -217,6 +232,7 @@ func (p *pauseScheduler) Resume(ctx context.Context) (_ string, err error) {
 	if err != nil {
 		return "", err
 	}
+	p.updateCache(false)
 	if !dispatch {
 		return resumptionRunID, nil
 	}
@@ -311,7 +327,7 @@ func (p *pauseScheduler) publishResumeTrigger(ctx context.Context, resumptionRun
 	return nil
 }
 
-// IsPaused returns whether scheduling is currently paused according to repository state.
+// IsPaused queries storage directly for whether scheduling is currently paused.
 func (p *pauseScheduler) IsPaused(ctx context.Context) (bool, error) {
 	st, err := p.storage(ctx)
 	if err != nil {
@@ -321,8 +337,49 @@ func (p *pauseScheduler) IsPaused(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to retrieve pause scheduling state: %w", err)
 	}
-	if state == nil {
-		return false, nil
+	paused := state != nil && state.SchedulingPaused
+	p.updateCache(paused)
+	return paused, nil
+}
+
+// IsPausedCached returns whether scheduling is currently paused, serving from
+// the in-memory TTL cache when available and coalescing concurrent cache misses.
+func (p *pauseScheduler) IsPausedCached(ctx context.Context) (bool, error) {
+	if paused, ok := p.getCachedPaused(); ok {
+		return paused, nil
 	}
-	return state.SchedulingPaused, nil
+	ch := p.sfGroup.DoChan("is_paused", func() (any, error) {
+		detachedCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		return p.IsPaused(detachedCtx)
+	})
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case res := <-ch:
+		paused, _ := res.Val.(bool)
+		return paused, res.Err
+	}
+}
+
+func (p *pauseScheduler) getCachedPaused() (paused bool, ok bool) {
+	if p.cacheTTL <= 0 {
+		return false, false
+	}
+	p.cacheMu.RLock()
+	defer p.cacheMu.RUnlock()
+	if time.Now().Before(p.cacheExpires) {
+		return p.cachedPaused, true
+	}
+	return false, false
+}
+
+func (p *pauseScheduler) updateCache(paused bool) {
+	if p.cacheTTL <= 0 {
+		return
+	}
+	p.cacheMu.Lock()
+	defer p.cacheMu.Unlock()
+	p.cachedPaused = paused
+	p.cacheExpires = time.Now().Add(p.cacheTTL)
 }

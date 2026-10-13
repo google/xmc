@@ -16,13 +16,15 @@ import { MatButtonHarness } from '@angular/material/button/testing';
 import { MatTableHarness } from '@angular/material/table/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Params, provideRouter } from '@angular/router';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, NEVER, of } from 'rxjs';
 
 import { EmptyComponent } from 'app/common/testing_utils/empty_component';
 import { ListExperimentsResponse } from 'app/protos/experiment_state_server';
 import { AUTO_REFRESH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from 'app/service/constants';
 import { ExperimentService } from 'app/service/experiment_service';
-import { bootstrap, cleanState, setupModule, useAutoTick } from 'app/testing/test';
+import { FeatureFlagService } from 'app/service/feature_flag_service';
+import { HealthService } from 'app/service/health_service';
+import { bootstrap, cleanState, hasEl, setupModule, useAutoTick } from 'app/testing/test';
 
 import { ExperimentsListPage } from './experiments_list_page';
 
@@ -50,6 +52,18 @@ describe('ExperimentsListPage Component', () => {
     const experimentService = jasmine.createSpyObj<ExperimentService>('ExperimentService', [
       'searchExperiments',
     ]);
+    const healthService = jasmine.createSpyObj<HealthService>('HealthService', [
+      'getSchedulingStatus',
+    ]);
+    healthService.getSchedulingStatus.and.returnValue(of({ isSchedulingPaused: false }));
+
+    let pauseSchedulingEnabled = false;
+    const featureFlagService = {
+      get isPauseSchedulingEnabled() {
+        return pauseSchedulingEnabled;
+      },
+    };
+
     const queryParams = new BehaviorSubject<Params>({});
     const mockRoute = new ActivatedRoute();
     mockRoute.queryParams = queryParams;
@@ -59,6 +73,8 @@ describe('ExperimentsListPage Component', () => {
       providers: [
         provideRouter([{ path: 'experiments/:xid', component: EmptyComponent }]),
         { provide: ExperimentService, useValue: experimentService },
+        { provide: HealthService, useValue: healthService },
+        { provide: FeatureFlagService, useValue: featureFlagService },
         { provide: ActivatedRoute, useFactory: () => mockRoute },
         {
           provide: AUTO_REFRESH_INTERVAL_MS,
@@ -69,7 +85,11 @@ describe('ExperimentsListPage Component', () => {
 
     return {
       experimentService,
+      healthService,
       queryParams,
+      setPauseSchedulingEnabled: (val: boolean) => {
+        pauseSchedulingEnabled = val;
+      },
     };
   }, beforeEach);
 
@@ -143,5 +163,38 @@ describe('ExperimentsListPage Component', () => {
       pageToken: undefined,
       orderBy: 'created desc',
     });
+  });
+
+  it('should not display the scheduling paused banner when scheduling is not paused', () => {
+    state.setPauseSchedulingEnabled(true);
+    state.healthService.getSchedulingStatus.and.returnValue(of({ isSchedulingPaused: false }));
+    state.experimentService.searchExperiments.and.returnValues(of(MOCK_PAGE_RESULT_1));
+
+    bootstrap(ExperimentsListPage);
+
+    expect(hasEl('xmc-scheduling-paused-banner')).toBeFalse();
+  });
+
+  it('should display the scheduling paused banner when pause scheduling is enabled and active', () => {
+    state.setPauseSchedulingEnabled(true);
+    state.healthService.getSchedulingStatus.and.returnValue(of({ isSchedulingPaused: true }));
+    state.experimentService.searchExperiments.and.returnValues(of(MOCK_PAGE_RESULT_1));
+
+    bootstrap(ExperimentsListPage);
+
+    expect(hasEl('xmc-scheduling-paused-banner')).toBeTrue();
+  });
+
+  it('should render experiments while the scheduling status request is still pending', async () => {
+    state.setPauseSchedulingEnabled(true);
+    state.healthService.getSchedulingStatus.and.returnValue(NEVER);
+    state.experimentService.searchExperiments.and.returnValues(of(MOCK_PAGE_RESULT_1));
+
+    bootstrap(ExperimentsListPage);
+
+    const table = await getHarness(MatTableHarness);
+    const rows = await table.getRows({ selector: ':not(.detail-row)' });
+    expect(rows.length).toBe(MOCK_PAGE_RESULT_1.experiments!.length);
+    expect(hasEl('xmc-scheduling-paused-banner')).toBeFalse();
   });
 });

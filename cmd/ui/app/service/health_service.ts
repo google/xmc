@@ -18,6 +18,7 @@ import { Observable, of } from 'rxjs';
 import { catchError, map, shareReplay } from 'rxjs/operators';
 
 import {
+  GetSchedulingStatusResponse,
   HealthStatusResponse,
   ListConfigEntriesResponse,
   UserInfoResponse,
@@ -47,6 +48,12 @@ export class HealthService {
 
   getHealthConfigs(): Observable<ListConfigEntriesResponse> {
     return this.http.get<ListConfigEntriesResponse>(`${XMC_API_DOMAIN}/health/configs`, {
+      withCredentials: true,
+    });
+  }
+
+  getSchedulingStatus(): Observable<GetSchedulingStatusResponse> {
+    return this.http.get<GetSchedulingStatusResponse>(`${XMC_API_DOMAIN}/health/scheduling`, {
       withCredentials: true,
     });
   }
