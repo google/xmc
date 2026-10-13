@@ -58,6 +58,20 @@ func findRepoRoot() (string, error) {
 	return "", os.ErrNotExist
 }
 
+// helmTemplateFuncs returns the subset of Helm template functions used by the rendered chart templates.
+func helmTemplateFuncs() template.FuncMap {
+	return template.FuncMap{
+		// toJson mirrors Helm's toJson, which renders an empty string on marshal errors.
+		"toJson": func(v any) string {
+			b, err := json.Marshal(v)
+			if err != nil {
+				return ""
+			}
+			return string(b)
+		},
+	}
+}
+
 func renderChartTemplateWithValues(t *testing.T, relTemplatePath string, releaseNS string, enabled, clusterScope bool) []byte {
 	t.Helper()
 	repoRoot, err := findRepoRoot()
@@ -72,16 +86,22 @@ func renderChartTemplateWithValues(t *testing.T, relTemplatePath string, release
 	if err := yaml.Unmarshal(valuesRaw, &values); err != nil {
 		t.Fatalf("failed to unmarshal values.yaml: %v", err)
 	}
-	compDeploy, _ := values["componentsDeployment"].(map[string]any)
+	compDeploy, ok := values["componentsDeployment"].(map[string]any)
+	if !ok {
+		t.Fatalf("values.yaml: componentsDeployment is missing or not a map: %T", values["componentsDeployment"])
+	}
 	compDeploy["enabled"] = enabled
-	rbacCfg, _ := compDeploy["rbac"].(map[string]any)
+	rbacCfg, ok := compDeploy["rbac"].(map[string]any)
+	if !ok {
+		t.Fatalf("values.yaml: componentsDeployment.rbac is missing or not a map: %T", compDeploy["rbac"])
+	}
 	rbacCfg["clusterScope"] = clusterScope
 
 	tmplRaw, err := os.ReadFile(filepath.Join(repoRoot, "deploy", "helm", "templates", relTemplatePath))
 	if err != nil {
 		t.Fatalf("failed to read template %s: %v", relTemplatePath, err)
 	}
-	tmpl, err := template.New(filepath.Base(relTemplatePath)).Parse(string(tmplRaw))
+	tmpl, err := template.New(filepath.Base(relTemplatePath)).Funcs(helmTemplateFuncs()).Parse(string(tmplRaw))
 	if err != nil {
 		t.Fatalf("failed to parse template %s: %v", relTemplatePath, err)
 	}
@@ -225,7 +245,11 @@ func applyBridgeRBACManifests(ctx context.Context, t *testing.T, kubeClient kube
 		if err != nil {
 			t.Fatalf("failed to marshal RBAC document: %v", err)
 		}
-		applySingleRBACDoc(ctx, t, kubeClient, ns, raw["kind"].(string), docBytes)
+		kind, ok := raw["kind"].(string)
+		if !ok {
+			t.Fatalf("RBAC document missing kind or kind is not a string: %v", raw)
+		}
+		applySingleRBACDoc(ctx, t, kubeClient, ns, kind, docBytes)
 	}
 }
 
@@ -270,4 +294,3 @@ func applySingleRBACDoc(ctx context.Context, t *testing.T, kubeClient kubernetes
 		t.Fatalf("unexpected RBAC kind %q", kind)
 	}
 }
-

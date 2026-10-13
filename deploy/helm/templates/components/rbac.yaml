@@ -67,8 +67,8 @@ rules:
     verbs: ["update", "patch", "delete"]
   # Read-only access to configured 3P wrapper custom resources (spec.wrapperRef).
   {{- range .Values.componentsDeployment.rbac.wrapperRules }}
-  - apiGroups: [{{- range $i, $g := .apiGroups }}{{ if $i }}, {{ end }}{{ printf "%q" $g }}{{- end }}]
-    resources: [{{- range $i, $r := .resources }}{{ if $i }}, {{ end }}{{ printf "%q" $r }}{{- end }}]
+  - apiGroups: {{ toJson .apiGroups }}
+    resources: {{ toJson .resources }}
     verbs: ["get", "list", "watch"]
   {{- end }}
 ---
