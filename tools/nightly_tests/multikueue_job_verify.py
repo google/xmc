@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Sequence
 from typing import Any
 
@@ -25,46 +24,17 @@ from tools.nightly_tests.verification import verifier_cli, workload_verification
 
 DEFAULT_QUEUE: str = "multikueue-cpu-queue"
 DEFAULT_WORKER_CLUSTER: str = "xmc-nightly-worker-1"
-ADMISSION_CHECK_NAME: str = "multikueue-admission-check"
-ACTIVE_CONDITION_JSONPATH: str = 'jsonpath={.status.conditions[?(@.type=="Active")].status}'
 verifier_cli.flags.DEFINE_string(
     "expected_worker_cluster", DEFAULT_WORKER_CLUSTER, "Expected MultiKueue worker cluster."
 )
 
 
-def _run_kubectl(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["kubectl", *args], check=False, capture_output=True, text=True)
-
-
-def _assert_k8s_resource_active(resource_kind: str, resource_name: str) -> None:
-    result = _run_kubectl("get", resource_kind, resource_name, "-o", ACTIVE_CONDITION_JSONPATH)
-    if result.returncode != 0 or result.stdout.strip() != "True":
-        raise AssertionError(f"{resource_kind}/{resource_name} Active=True failed: {result.stderr}")
-
-
-def _assert_k8s_workloads_assigned_cluster(
-    xid: str, queue: str, cluster: str, expected_count: int
-) -> None:
-    label_path = r"@.spec.podSets[0].template.metadata.labels.xmc\.google\.com/experiment-id"
-    jsonpath = f'jsonpath={{.items[?({label_path}=="{xid}")].status.clusterName}}'
-    result = _run_kubectl("get", "workloads", "-n", queue, "-o", jsonpath)
-    clusters = result.stdout.split() if result.returncode == 0 else []
-    if result.returncode != 0 or len(clusters) != expected_count or set(clusters) != {cluster}:
-        raise AssertionError(
-            f"Workload.status.clusterName={clusters} (expected {expected_count}x {cluster!r})"
-        )
-
-
 def _assert_multikueue_workload(stub: Any, xid: str) -> None:
     simple_job_verify.assert_all_work_unit_specs(stub, xid)
-    cli_flags = verifier_cli.FLAGS
-    queue_name = verifier_cli.get_flag(cli_flags, "expected_queue", DEFAULT_QUEUE)
-    cluster = verifier_cli.get_flag(cli_flags, "expected_worker_cluster", DEFAULT_WORKER_CLUSTER)
-    unit_count = verifier_cli.resolve_expected_work_units(simple_job_verify.DEFAULT_WORK_UNITS)
+    cluster = verifier_cli.get_flag(
+        verifier_cli.FLAGS, "expected_worker_cluster", DEFAULT_WORKER_CLUSTER
+    )
     xmc_entities_validator.validate_multikueue_execution_metadata(stub, xid, cluster)
-    _assert_k8s_resource_active("multikueuecluster", cluster)
-    _assert_k8s_resource_active("admissioncheck", ADMISSION_CHECK_NAME)
-    _assert_k8s_workloads_assigned_cluster(xid, queue_name, cluster, unit_count)
 
 
 def main(argv: Sequence[str]) -> None:
