@@ -68,6 +68,16 @@ func (m *K8sHelmManager) IsComponentActive(ref ComponentRef) bool {
 	return m.activeState[componentKey(ref.Namespace, ref.Name)]
 }
 
+// isKnownInactiveIncarnation reports whether ref's own CR incarnation is recorded in memory as inactive. Unlike
+// IsComponentActive, it ignores the namespace-level entry hydrated from the values ConfigMap on cold start, which
+// cannot prove that this incarnation's release was already uninstalled.
+func (m *K8sHelmManager) isKnownInactiveIncarnation(ref ComponentRef) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	active, known := m.activeState[componentStateKey(ref)]
+	return known && !active
+}
+
 // HydrateFromCluster populates in-memory active state from the release ConfigMap (<namespace>/xmc-component-values)
 // on controller startup to avoid cold-start state drift.
 func (m *K8sHelmManager) HydrateFromCluster(ctx context.Context) error {

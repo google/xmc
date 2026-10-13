@@ -430,7 +430,7 @@ func (m *K8sHelmManager) uninstallComponent(ctx context.Context, ref ComponentRe
 	if err != nil {
 		return fmt.Errorf("failed to %s Helm values for %q: %w", td.action, ref.Name, err)
 	}
-	if !td.alwaysUninstall && !modified && !m.IsComponentActive(ref) && m.GetUpgradeError(ref) == nil {
+	if !td.alwaysUninstall && !modified && m.isKnownInactiveIncarnation(ref) && m.GetUpgradeError(ref) == nil {
 		return nil
 	}
 	if err := m.uninstallRelease(ctx, ref); err != nil {

@@ -623,3 +623,48 @@ func TestK8sHelmManager_PerCRReleaseIsolation(t *testing.T) {
 	}
 }
 
+// TestK8sHelmManager_Delete1PComponent_ColdStartUninstallsLeakedRelease verifies that a namespace-level disabled entry
+// hydrated from the values ConfigMap on cold start does not suppress uninstalling a CR incarnation's leaked release,
+// while a teardown already recorded for that incarnation keeps later Delete calls idempotent.
+func TestK8sHelmManager_Delete1PComponent_ColdStartUninstallsLeakedRelease(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "55555555-0000-4000-8000-000000000005"}
+	releaseKey := componentKey(ref.Namespace, ComponentReleaseNameForRef(ref))
+
+	first := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	if err := first.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent() failed: %v", err)
+	}
+	if err := first.Delete1PComponent(ctx, ref); err != nil {
+		t.Fatalf("Delete1PComponent() failed: %v", err)
+	}
+	first.Close()
+
+	// Simulate a release that survived the previous controller's teardown (e.g. an interrupted uninstall).
+	runner.installed[releaseKey] = true
+	restarted := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	defer restarted.Close()
+	if err := restarted.HydrateFromCluster(ctx); err != nil {
+		t.Fatalf("HydrateFromCluster() failed: %v", err)
+	}
+	if restarted.IsComponentActive(ref) {
+		t.Fatalf("IsComponentActive() = true after hydrating a disabled ConfigMap entry, want false")
+	}
+
+	if err := restarted.Delete1PComponent(ctx, ref); err != nil {
+		t.Fatalf("Delete1PComponent() after restart failed: %v", err)
+	}
+	if runner.installed[releaseKey] {
+		t.Errorf("expected cold-start Delete1PComponent to uninstall leaked release %q", releaseKey)
+	}
+
+	callsBefore := runner.uninstallCalls
+	if err := restarted.Delete1PComponent(ctx, ref); err != nil {
+		t.Fatalf("repeated Delete1PComponent() failed: %v", err)
+	}
+	if runner.uninstallCalls != callsBefore {
+		t.Errorf("repeated Delete1PComponent() uninstall calls = %d, want %d", runner.uninstallCalls, callsBefore)
+	}
+}
