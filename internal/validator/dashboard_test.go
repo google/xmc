@@ -20,8 +20,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	spb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/grpcerr"
 )
 
@@ -181,7 +180,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 		{
 			name: "valid_request_minimal",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Title: "Valid Dashboard",
 				},
 			},
@@ -191,7 +190,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 			name: "valid_request_with_dashboard_id",
 			req: &spb.CreateDashboardRequest{
 				DashboardId: "my-dash-123",
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Title: "Valid Dashboard",
 				},
 			},
@@ -200,7 +199,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 		{
 			name: "valid_request_with_valid_name",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:  "dashboards/my-dash-123",
 					Title: "Valid Dashboard",
 				},
@@ -210,7 +209,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 		{
 			name: "valid_request_with_chart_ids",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Title:    "Valid Dashboard",
 					ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "c9a646d3-9c61-4cd7-bf10-8e96dc638210"},
 				},
@@ -220,7 +219,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 		{
 			name: "valid_request_with_chart_ids_and_custom_ids",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Title:    "Valid Dashboard",
 					ChartIds: []string{"custom-chart-1", "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
@@ -230,7 +229,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 		{
 			name: "invalid_request_duplicate_chart_ids",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Title:    "Valid Dashboard",
 					ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
@@ -240,7 +239,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 		{
 			name: "invalid_request_resource_name_in_chart_ids",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Title:    "Valid Dashboard",
 					ChartIds: []string{"charts/f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
@@ -262,7 +261,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 		{
 			name: "empty_title",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Title: "",
 				},
 			},
@@ -271,7 +270,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 		{
 			name: "whitespace_title",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Title: "   \t\n  ",
 				},
 			},
@@ -281,7 +280,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 			name: "invalid_dashboard_id_with_slashes",
 			req: &spb.CreateDashboardRequest{
 				DashboardId: "invalid/slash/id",
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Title: "Valid Dashboard",
 				},
 			},
@@ -290,7 +289,7 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 		{
 			name: "invalid_dashboard_name_format",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:  "invalid-name-format",
 					Title: "Valid Dashboard",
 				},
@@ -300,8 +299,8 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 		{
 			name: "valid_request_with_inline_charts",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
-				Charts: []*dpb.Chart{
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts: []*spb.Chart{
 					{Title: "Baseline", Xid: 4321, Wid: 1},
 					{Title: "Tuned", Xid: 8765, Wid: 2},
 				},
@@ -311,40 +310,40 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 		{
 			name: "invalid_request_nil_inline_chart",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
-				Charts:    []*dpb.Chart{nil},
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{nil},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_request_inline_chart_whitespace_title",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
-				Charts:    []*dpb.Chart{{Title: "   ", Xid: 4321, Wid: 1}},
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "   ", Xid: 4321, Wid: 1}},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_request_inline_chart_missing_xid",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
-				Charts:    []*dpb.Chart{{Title: "Baseline", Wid: 1}},
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "Baseline", Wid: 1}},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_request_inline_chart_missing_wid",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
-				Charts:    []*dpb.Chart{{Title: "Baseline", Xid: 4321}},
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "Baseline", Xid: 4321}},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_request_inline_chart_negative_xid",
 			req: &spb.CreateDashboardRequest{
-				Dashboard: &dpb.Dashboard{Title: "Valid Dashboard"},
-				Charts:    []*dpb.Chart{{Title: "Baseline", Xid: -1, Wid: 1}},
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "Baseline", Xid: -1, Wid: 1}},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -457,7 +456,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "valid_full_update",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:        "dashboards/dash-123",
 					Title:       "Updated Title",
 					Description: "Updated Description",
@@ -468,7 +467,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "valid_partial_update_all_allowed_fields_snake_case",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:        "dashboards/dash-123",
 					Title:       "Updated Title",
 					Description: "Updated Description",
@@ -483,7 +482,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "valid_partial_update_chart_ids",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:        "dashboards/dash-123",
 					Title:       "Updated Title",
 					Description: "Updated Description",
@@ -498,7 +497,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "valid_partial_update_camel_case",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:        "dashboards/dash-123",
 					Title:       "Updated Title",
 					Description: "Updated Description",
@@ -513,7 +512,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "valid_partial_update_clear_chart_ids",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:     "dashboards/dash-123",
 					ChartIds: []string{},
 				},
@@ -526,7 +525,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "valid_partial_update_without_title",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:        "dashboards/dash-123",
 					Description: "Only description updated",
 				},
@@ -539,7 +538,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "rejected_legacy_charts_field_mask",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:  "dashboards/dash-123",
 					Title: "Title",
 				},
@@ -552,7 +551,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "update_mask_chart_ids_with_duplicate",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:     "dashboards/dash-123",
 					ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
@@ -565,7 +564,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "update_mask_chart_ids_with_slash",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:     "dashboards/dash-123",
 					ChartIds: []string{"invalid/chart/id"},
 				},
@@ -578,7 +577,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "update_mask_chart_ids_with_resource_name",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:     "dashboards/dash-123",
 					ChartIds: []string{"charts/f47ac10b-58cc-4372-a567-0e02b2c3d479"},
 				},
@@ -591,7 +590,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "full_update_with_duplicate_chart_ids",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:     "dashboards/dash-123",
 					Title:    "Valid Title",
 					ChartIds: []string{"f47ac10b-58cc-4372-a567-0e02b2c3d479", "f47ac10b-58cc-4372-a567-0e02b2c3d479"},
@@ -602,7 +601,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "full_update_with_slash_chart_id",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:     "dashboards/dash-123",
 					Title:    "Valid Title",
 					ChartIds: []string{"invalid/chart/id"},
@@ -613,7 +612,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "full_update_with_resource_name_chart_id",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:     "dashboards/dash-123",
 					Title:    "Valid Title",
 					ChartIds: []string{"charts/f47ac10b-58cc-4372-a567-0e02b2c3d479"},
@@ -636,7 +635,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "empty_dashboard_name",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:  "",
 					Title: "Updated Title",
 				},
@@ -646,7 +645,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "invalid_dashboard_name",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:  "invalid-name",
 					Title: "Updated Title",
 				},
@@ -656,7 +655,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "full_update_empty_title",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:  "dashboards/dash-123",
 					Title: "",
 				},
@@ -666,7 +665,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "unsupported_update_mask_path",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:  "dashboards/dash-123",
 					Title: "Updated Title",
 				},
@@ -679,7 +678,7 @@ func TestValidateUpdateDashboardRequest(t *testing.T) {
 		{
 			name: "update_mask_title_with_empty_title",
 			req: &spb.UpdateDashboardRequest{
-				Dashboard: &dpb.Dashboard{
+				Dashboard: &spb.Dashboard{
 					Name:  "dashboards/dash-123",
 					Title: "   ",
 				},
@@ -1034,7 +1033,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "valid_request_workunit_parent",
 			req: &spb.CreateChartRequest{
 				Parent:  "experiments/1/workUnits/2",
-				Chart:   &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
+				Chart:   &spb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
 				ChartId: "custom-chart-id",
 			},
 			wantErr: nil,
@@ -1043,7 +1042,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "valid_request_with_chart_name_ignored",
 			req: &spb.CreateChartRequest{
 				Parent: "experiments/1/workUnits/2",
-				Chart:  &dpb.Chart{Name: "experiments/1/workUnits/2/charts/c1", Title: "My Chart", Xid: 1, Wid: 2},
+				Chart:  &spb.Chart{Name: "experiments/1/workUnits/2/charts/c1", Title: "My Chart", Xid: 1, Wid: 2},
 			},
 			wantErr: nil,
 		},
@@ -1051,7 +1050,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "zero_chart_xid",
 			req: &spb.CreateChartRequest{
 				Parent: "experiments/1/workUnits/2",
-				Chart:  &dpb.Chart{Title: "My Chart", Xid: 0, Wid: 2},
+				Chart:  &spb.Chart{Title: "My Chart", Xid: 0, Wid: 2},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -1059,7 +1058,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "zero_chart_wid",
 			req: &spb.CreateChartRequest{
 				Parent: "experiments/1/workUnits/2",
-				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 0},
+				Chart:  &spb.Chart{Title: "My Chart", Xid: 1, Wid: 0},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -1067,7 +1066,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "mismatched_chart_xid",
 			req: &spb.CreateChartRequest{
 				Parent: "experiments/1/workUnits/2",
-				Chart:  &dpb.Chart{Title: "My Chart", Xid: 999, Wid: 2},
+				Chart:  &spb.Chart{Title: "My Chart", Xid: 999, Wid: 2},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -1075,7 +1074,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "mismatched_chart_wid",
 			req: &spb.CreateChartRequest{
 				Parent: "experiments/1/workUnits/2",
-				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 999},
+				Chart:  &spb.Chart{Title: "My Chart", Xid: 1, Wid: 999},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -1083,7 +1082,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "invalid_chart_id_with_slash",
 			req: &spb.CreateChartRequest{
 				Parent:  "experiments/1/workUnits/2",
-				Chart:   &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
+				Chart:   &spb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
 				ChartId: "invalid/id",
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
@@ -1092,7 +1091,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "empty_chart_title",
 			req: &spb.CreateChartRequest{
 				Parent: "experiments/1/workUnits/2",
-				Chart:  &dpb.Chart{Title: "   ", Xid: 1, Wid: 2},
+				Chart:  &spb.Chart{Title: "   ", Xid: 1, Wid: 2},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -1105,7 +1104,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "empty_parent",
 			req: &spb.CreateChartRequest{
 				Parent: "",
-				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
+				Chart:  &spb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -1113,7 +1112,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "invalid_parent",
 			req: &spb.CreateChartRequest{
 				Parent: "invalid-parent",
-				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
+				Chart:  &spb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -1121,7 +1120,7 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			name: "dashboard_parent_rejected",
 			req: &spb.CreateChartRequest{
 				Parent: "dashboards/dash-1",
-				Chart:  &dpb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
+				Chart:  &spb.Chart{Title: "My Chart", Xid: 1, Wid: 2},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -1236,7 +1235,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "valid_full_update",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:        "charts/chart-1",
 					Title:       "Updated Chart",
 					Description: "Updated Description",
@@ -1247,14 +1246,14 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "valid_partial_update_all_allowed_fields",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:        "charts/chart-1",
 					Title:       "Updated Title",
 					Description: "Updated Description",
-					Plots: []*dpb.PlotSpec{
-						{PlotId: "p1", Title: "Plot 1", Type: dpb.PlotType_SCATTER},
+					Plots: []*spb.PlotSpec{
+						{PlotId: "p1", Title: "Plot 1", Type: spb.PlotType_SCATTER},
 					},
-					PlotLayout: &dpb.LayoutSpec{Type: dpb.LayoutSpec_GRID, Columns: 2},
+					PlotLayout: &spb.LayoutSpec{Type: spb.LayoutSpec_GRID, Columns: 2},
 				},
 				UpdateMask: &fieldmaskpb.FieldMask{
 					Paths: []string{"title", "description", "plots", "plot_layout", "plotLayout"},
@@ -1265,7 +1264,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "valid_partial_update_without_title",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:        "charts/chart-1",
 					Description: "Only description updated",
 				},
@@ -1290,7 +1289,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "empty_chart_name",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:  "",
 					Title: "Updated Chart",
 				},
@@ -1300,7 +1299,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "invalid_chart_name",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:  "invalid-name",
 					Title: "Updated Chart",
 				},
@@ -1310,7 +1309,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "rejected_dashboard_chart_name",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:  "dashboards/dash-1/charts/chart-1",
 					Title: "Updated Chart",
 				},
@@ -1320,7 +1319,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "rejected_work_unit_chart_name",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:  "experiments/100/workUnits/1/charts/chart-1",
 					Title: "Updated Chart",
 				},
@@ -1330,7 +1329,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "full_update_empty_title",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "",
 				},
@@ -1340,7 +1339,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "full_update_whitespace_title",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "   \t\n  ",
 				},
@@ -1350,7 +1349,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "unsupported_update_mask_path",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Updated Title",
 				},
@@ -1363,7 +1362,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "update_mask_title_with_empty_title",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "   ",
 				},
@@ -1376,7 +1375,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "unsupported_update_mask_path_wid",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Updated Title",
 				},
@@ -1389,7 +1388,7 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 		{
 			name: "unsupported_update_mask_path_xid",
 			req: &spb.UpdateChartRequest{
-				Chart: &dpb.Chart{
+				Chart: &spb.Chart{
 					Name:  "charts/chart-1",
 					Title: "Updated Title",
 				},

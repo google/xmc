@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package xid provides XID ancestor chain traversal and UpdateXidEntry transaction orchestration.
 package xid
 
 import (
@@ -20,29 +21,38 @@ import (
 	"fmt"
 	"time"
 
-	"cloud.google.com/go/spanner"
-	"github.com/google/go-cmp/cmp"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/kylelemons/godebug/diff"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
-	"xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
-	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/internal/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
+// AncestorFetcher retrieves an XidEntry by its numerical ID.
+type AncestorFetcher func(ctx context.Context, xid int64) (*xidmsgpb.XidEntry, error)
+
+// AncestorPredicate evaluates an XidEntry in an ancestor chain.
+// Returning matched=true stops the walk early and returns true.
+type AncestorPredicate func(ctx context.Context, entry *xidmsgpb.XidEntry) (matched bool, err error)
+
 // UpdateXidEntry updates an XidEntry with the given update mask.
-// TODO(b/517479143): Refactor UpdateXidEntry to move parent iteration and entry merging out of the repository layer.
-func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntryUpdate) (*xidmsgpb.XidEntry, error) {
+func UpdateXidEntry(ctx context.Context, runner storage.TransactionRunner, update *storage.XidEntryUpdate) (*xidmsgpb.XidEntry, error) {
+	if runner == nil {
+		return nil, fmt.Errorf("transaction runner must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
 	if update == nil {
-		return nil, fmt.Errorf("update must not be nil")
+		return nil, fmt.Errorf("update must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	if update.XidEntry == nil {
+		return nil, fmt.Errorf("update.XidEntry must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	if update.UpdateMask == nil {
+		return nil, fmt.Errorf("update.UpdateMask must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	ctx = logging.WithXIDName(ctx, validator.ConstructXIDName(update.XID))
 	logging.Info(ctx, "UpdateXidEntry", "update", update.XidEntry)
@@ -50,25 +60,18 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 	var originalEntry *xidmsgpb.XidEntry
 	var updatedEntry *xidmsgpb.XidEntry
 	var mutated bool
-	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+	err := runner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+		originalEntry = nil
+		updatedEntry = nil
 		mutated = false
-
-		// 1. Read the existing XidEntry from storage.
-		row, err := txn.ReadRow(ctx, xidschema.XIDTableName, spanner.Key{spannerutils.ReverseBits(update.XID)}, xidschema.FetchedXIDColumns)
-		if err != nil {
-			if status.Code(err) == codes.NotFound {
-				return fmt.Errorf("XID %d not found: %w", update.XID, grpcerr.ErrNotFound)
-			}
-
-			logging.Error(ctx, "failed to read Xid row", "error", err)
-			return fmt.Errorf("failed to read Xid row: %w", err)
+		if tx == nil || tx.XIDs == nil {
+			return fmt.Errorf("transaction XID repository is not initialized: %w", grpcerr.ErrInternal)
 		}
 
-		// 1.1. Convert the Spanner row to an XidEntry proto message.
-		xidEntry, err := spannerdata.XIDRowToProto(row)
+		// 1. Read the existing XidEntry from storage.
+		xidEntry, err := tx.XIDs.FetchXidEntry(ctx, update.XID)
 		if err != nil {
-			logging.Error(ctx, "failed to extract XidEntry", "error", err)
-			return fmt.Errorf("failed to extract XidEntry: %w", err)
+			return err
 		}
 		originalEntry = proto.Clone(xidEntry).(*xidmsgpb.XidEntry)
 
@@ -79,7 +82,7 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 		}
 
 		// 2.1. Check if the XidEntry has owners.
-		hasOwners, err := r.xidEntryHasOwners(ctx, txn, updatedEntry)
+		hasOwners, err := xidEntryHasOwners(ctx, tx.XIDs.FetchXidEntry, updatedEntry)
 		if err != nil {
 			return err
 		}
@@ -92,10 +95,11 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 		now := time.Now()
 		updatedEntry.UpdateTime = timestamppb.New(now)
 
-		// 4. Construct the Spanner mutation for the update.
-		m := spannerdata.XIDEntryToMutation(update.XID, updatedEntry)
+		// 4. Persist the updated XidEntry in the transaction.
+		if err := tx.XIDs.UpdateXidEntry(ctx, update.XID, updatedEntry); err != nil {
+			return err
+		}
 		mutated = true
-		txn.BufferWrite([]*spanner.Mutation{m})
 
 		return nil
 	})
@@ -104,7 +108,7 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 	}
 
 	if mutated {
-		protoDiff := cmp.Diff(originalEntry, updatedEntry, protocmp.Transform())
+		protoDiff := diff.Diff(prototext.Format(originalEntry), prototext.Format(updatedEntry))
 		logging.Info(ctx, fmt.Sprintf("XidEntry updated successfully: %s", protoDiff), "updatedXidEntry", updatedEntry)
 	} else {
 		logging.Info(ctx, "XidEntry not updated; no changes detected", "updatedXidEntry", updatedEntry)
@@ -113,8 +117,28 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 	return updatedEntry, nil
 }
 
-func (r *Repository) xidEntryHasOwners(ctx context.Context, txn spannerTransaction, xidEntry *xidmsgpb.XidEntry) (bool, error) {
-	hasOwners := len(xidEntry.GetAcls().GetOwners()) > 0
+func xidEntryHasOwners(ctx context.Context, fetch AncestorFetcher, xidEntry *xidmsgpb.XidEntry) (bool, error) {
+	return WalkAncestors(ctx, xidEntry, fetch, func(_ context.Context, entry *xidmsgpb.XidEntry) (bool, error) {
+		return len(entry.GetAcls().GetOwners()) > 0, nil
+	})
+}
+
+// WalkAncestors walks the XID ancestor chain starting at xidEntry until predicate returns true,
+// the root entry (empty parent_xid) is reached, or an error occurs.
+func WalkAncestors(ctx context.Context, xidEntry *xidmsgpb.XidEntry, fetch AncestorFetcher, predicate AncestorPredicate) (bool, error) {
+	if xidEntry == nil {
+		return false, fmt.Errorf("xidEntry must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	if fetch == nil {
+		return false, fmt.Errorf("fetch must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	if predicate == nil {
+		return false, fmt.Errorf("predicate must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	hasOwners, err := predicate(ctx, xidEntry)
+	if err != nil {
+		return false, err
+	}
 
 	visited := make(map[string]bool)
 	visited[xidEntry.GetName()] = true
@@ -140,18 +164,24 @@ func (r *Repository) xidEntryHasOwners(ctx context.Context, txn spannerTransacti
 		}
 
 		// 2.2. Get the parent XID from the storage layer.
-		parentXIDEntry, err := r.FetchXidEntryTransaction(ctx, parentXID, txn)
+		parentXIDEntry, err := fetch(ctx, parentXID)
 		if err != nil {
 			if errors.Is(err, grpcerr.ErrNotFound) {
 				logging.Warn(ctx, "Parent XID not found", "parentXID", parentXID, "error", err)
 				return false, fmt.Errorf("parent XID %d not found: %w", parentXID, grpcerr.ErrNotFound)
 			}
 
-			logging.Error(ctx, "Storage layer returned a non-gRPC error for GetXid()", "parentXID", parentXID, "error", err)
+			logging.Error(ctx, "Storage layer returned a non-gRPC error for FetchXidEntry", "parentXID", parentXID, "error", err)
 			return false, fmt.Errorf("an internal error occurred while retrieving the XID: %w", grpcerr.ErrInternal)
 		}
+		if parentXIDEntry == nil {
+			return false, fmt.Errorf("fetched parent XID %d entry is nil: %w", parentXID, grpcerr.ErrInternal)
+		}
 
-		hasOwners = len(parentXIDEntry.GetAcls().GetOwners()) > 0
+		hasOwners, err = predicate(ctx, parentXIDEntry)
+		if err != nil {
+			return false, err
+		}
 		parentXIDName = parentXIDEntry.GetParentXid()
 	}
 

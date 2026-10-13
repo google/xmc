@@ -28,8 +28,7 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -78,7 +77,7 @@ func TestUpdateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, xidMock, nil)
 
-		req := &spb.UpdateChartRequest{
+		req := &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{
 				Name:        "charts/chart-1",
 				Title:       "New Title",
@@ -167,7 +166,7 @@ func TestUpdateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, authMock, xidMock, nil)
 
-		req := &spb.UpdateChartRequest{
+		req := &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{
 				Name:        "charts/chart-1",
 				Description: "Updated Only Description",
@@ -208,7 +207,7 @@ func TestUpdateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, &mockRepository{}, authMock, &mockXidClient{}, nil)
 
-		_, err := s.UpdateChart(ctx, &spb.UpdateChartRequest{
+		_, err := s.UpdateChart(ctx, &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{Name: "charts/chart-1", Title: "Title"},
 		})
 		if status.Code(err) != codes.Unauthenticated {
@@ -221,21 +220,21 @@ func TestUpdateChart(t *testing.T) {
 
 		tests := []struct {
 			name string
-			req  *spb.UpdateChartRequest
+			req  *dpb.UpdateChartRequest
 		}{
 			{name: "nil request", req: nil},
-			{name: "nil chart", req: &spb.UpdateChartRequest{}},
-			{name: "empty name", req: &spb.UpdateChartRequest{Chart: &dpb.Chart{Title: "Title"}}},
-			{name: "invalid name format", req: &spb.UpdateChartRequest{Chart: &dpb.Chart{Name: "invalid", Title: "Title"}}},
-			{name: "hierarchical work unit name rejected", req: &spb.UpdateChartRequest{Chart: &dpb.Chart{Name: "experiments/1/workUnits/2/charts/c1", Title: "Title"}}},
-			{name: "hierarchical dashboard name rejected", req: &spb.UpdateChartRequest{Chart: &dpb.Chart{Name: "dashboards/d1/charts/c1", Title: "Title"}}},
-			{name: "full update with empty title", req: &spb.UpdateChartRequest{Chart: &dpb.Chart{Name: "charts/c1", Title: ""}}},
-			{name: "full update with whitespace title", req: &spb.UpdateChartRequest{Chart: &dpb.Chart{Name: "charts/c1", Title: "   "}}},
-			{name: "invalid update mask path", req: &spb.UpdateChartRequest{
+			{name: "nil chart", req: &dpb.UpdateChartRequest{}},
+			{name: "empty name", req: &dpb.UpdateChartRequest{Chart: &dpb.Chart{Title: "Title"}}},
+			{name: "invalid name format", req: &dpb.UpdateChartRequest{Chart: &dpb.Chart{Name: "invalid", Title: "Title"}}},
+			{name: "hierarchical work unit name rejected", req: &dpb.UpdateChartRequest{Chart: &dpb.Chart{Name: "experiments/1/workUnits/2/charts/c1", Title: "Title"}}},
+			{name: "hierarchical dashboard name rejected", req: &dpb.UpdateChartRequest{Chart: &dpb.Chart{Name: "dashboards/d1/charts/c1", Title: "Title"}}},
+			{name: "full update with empty title", req: &dpb.UpdateChartRequest{Chart: &dpb.Chart{Name: "charts/c1", Title: ""}}},
+			{name: "full update with whitespace title", req: &dpb.UpdateChartRequest{Chart: &dpb.Chart{Name: "charts/c1", Title: "   "}}},
+			{name: "invalid update mask path", req: &dpb.UpdateChartRequest{
 				Chart:      &dpb.Chart{Name: "charts/c1", Title: "Title"},
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"name"}},
 			}},
-			{name: "update mask title with empty title", req: &spb.UpdateChartRequest{
+			{name: "update mask title with empty title", req: &dpb.UpdateChartRequest{
 				Chart:      &dpb.Chart{Name: "charts/c1", Title: " "},
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"title"}},
 			}},
@@ -259,7 +258,7 @@ func TestUpdateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
-		_, err := s.UpdateChart(ctx, &spb.UpdateChartRequest{
+		_, err := s.UpdateChart(ctx, &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{Name: "charts/nonexistent", Title: "Title"},
 		})
 		if status.Code(err) != codes.NotFound {
@@ -275,7 +274,7 @@ func TestUpdateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
-		_, err := s.UpdateChart(ctx, &spb.UpdateChartRequest{
+		_, err := s.UpdateChart(ctx, &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{Name: "charts/chart-1", Title: "Title"},
 		})
 		if status.Code(err) != codes.Internal {
@@ -291,7 +290,7 @@ func TestUpdateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
-		_, err := s.UpdateChart(ctx, &spb.UpdateChartRequest{
+		_, err := s.UpdateChart(ctx, &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{Name: "charts/chart-1", Title: "Title"},
 		})
 		if status.Code(err) != codes.Internal {
@@ -307,7 +306,7 @@ func TestUpdateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
-		_, err := s.UpdateChart(ctx, &spb.UpdateChartRequest{
+		_, err := s.UpdateChart(ctx, &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{Name: "charts/chart-1", Title: "Title"},
 		})
 		if status.Code(err) != codes.FailedPrecondition {
@@ -328,7 +327,7 @@ func TestUpdateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
 
-		_, err := s.UpdateChart(ctx, &spb.UpdateChartRequest{
+		_, err := s.UpdateChart(ctx, &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{Name: "charts/chart-1", Title: "Title"},
 		})
 		if status.Code(err) != codes.PermissionDenied {
@@ -349,7 +348,7 @@ func TestUpdateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
 
-		_, err := s.UpdateChart(ctx, &spb.UpdateChartRequest{
+		_, err := s.UpdateChart(ctx, &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{Name: "charts/chart-1", Title: "Title"},
 		})
 		if status.Code(err) != codes.Internal {
@@ -362,7 +361,7 @@ func TestUpdateChart(t *testing.T) {
 			auth:      &mockAuthorizer{},
 			xidClient: &mockXidClient{},
 		}
-		_, err := s.UpdateChart(ctx, &spb.UpdateChartRequest{
+		_, err := s.UpdateChart(ctx, &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{Name: "charts/chart-1", Title: "Title"},
 		})
 		if status.Code(err) != codes.FailedPrecondition {
@@ -386,7 +385,7 @@ func TestUpdateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
 
-		_, err := s.UpdateChart(ctx, &spb.UpdateChartRequest{
+		_, err := s.UpdateChart(ctx, &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{Name: "charts/chart-1", Title: "Title"},
 		})
 		if status.Code(err) != codes.Internal {
@@ -410,7 +409,7 @@ func TestUpdateChart(t *testing.T) {
 		}
 		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
 
-		_, err := s.UpdateChart(ctx, &spb.UpdateChartRequest{
+		_, err := s.UpdateChart(ctx, &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{Name: "charts/chart-1", Title: "Title"},
 		})
 		if status.Code(err) != codes.NotFound {
@@ -445,7 +444,7 @@ func TestUpdateChart(t *testing.T) {
 		)
 		inCtx := metadata.NewIncomingContext(ctx, inMD)
 
-		_, err := s.UpdateChart(inCtx, &spb.UpdateChartRequest{
+		_, err := s.UpdateChart(inCtx, &dpb.UpdateChartRequest{
 			Chart: &dpb.Chart{Name: "charts/chart-1", Title: "Title"},
 		})
 		if err != nil {

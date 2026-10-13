@@ -20,8 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -29,7 +28,7 @@ import (
 // (AIP-131). The dashboard carries only chart IDs, not chart bodies, so there is nothing here to
 // authorize per experiment; READER is enforced when those charts are fetched via GetChart or
 // ListCharts.
-func (s *Server) GetDashboard(ctx context.Context, req *spb.GetDashboardRequest) (*dpb.Dashboard, error) {
+func (s *Server) GetDashboard(ctx context.Context, req *dpb.GetDashboardRequest) (*dpb.Dashboard, error) {
 	if _, _, err := s.auth.AuthenticateUserFromContext(ctx); err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)
 	}

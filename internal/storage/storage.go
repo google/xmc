@@ -18,6 +18,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
@@ -166,6 +167,36 @@ type UpdatedWorkUnits struct {
 }
 
 // -----------------------
+// Resource Observability Types
+// -----------------------
+
+var (
+	// ErrInvalidPageToken is returned when the page token cannot be decoded or is invalid.
+	ErrInvalidPageToken = errors.New("invalid page_token")
+)
+
+// WorkUnitWithAuthor wraps a WorkUnit proto with author metadata.
+type WorkUnitWithAuthor struct {
+	WorkUnit *essmsgpb.WorkUnit
+	Author   string
+}
+
+// ActiveWorkUnitsResult holds the result of querying active work units.
+type ActiveWorkUnitsResult struct {
+	WorkUnits      []WorkUnitWithAuthor
+	NextPageToken  string
+	TotalQueueSize int64
+}
+
+// QueueMetricRow represents a single raw row returned by the velocity or pending queue metrics query.
+type QueueMetricRow struct {
+	QueueName    string
+	Count        int64
+	TotalUnits   int64
+	ResourceType string
+}
+
+// -----------------------
 // StatusMessage Methods
 // -----------------------
 
@@ -239,9 +270,6 @@ type XidEntryStore interface {
 	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
 	// It uses cursor pagination.
 	ListXidEntries(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*xidmsgpb.XidEntry, string, error)
-
-	// UpdateXidEntry updates an XidEntry with the given update mask.
-	UpdateXidEntry(ctx context.Context, update *XidEntryUpdate) (*xidmsgpb.XidEntry, error)
 }
 
 // -----------------------
@@ -312,6 +340,14 @@ type ExperimentTxRepository interface {
 	UpdateExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error
 }
 
+// XidTxRepository defines XID entry operations scoped to a read-write transaction.
+type XidTxRepository interface {
+	// FetchXidEntry retrieves an XidEntry by its unique ID within the transaction.
+	FetchXidEntry(ctx context.Context, xid int64) (*xidmsgpb.XidEntry, error)
+	// UpdateXidEntry persists an updated XidEntry within the transaction.
+	UpdateXidEntry(ctx context.Context, xid int64, entry *xidmsgpb.XidEntry) error
+}
+
 // StatusMessageTxRepository defines status message operations scoped to a read-write transaction.
 type StatusMessageTxRepository interface {
 	// SaveStatusMessageHistoryIfChanged records a status message history within the transaction if the message changed.
@@ -328,6 +364,7 @@ type StatusHistoryTxRepository interface {
 type Transaction struct {
 	WorkUnits      WorkUnitTxRepository
 	Experiments    ExperimentTxRepository
+	XIDs           XidTxRepository
 	StatusMessages StatusMessageTxRepository
 	StatusHistory  StatusHistoryTxRepository
 	PauseState     PauseStateTxRepository

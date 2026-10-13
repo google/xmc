@@ -37,11 +37,11 @@ import (
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 
 	// TODO - (internal issue): Consider using a mock instead of the emulator.
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	spanner_lib "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/validator"
-	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 
 const (
