@@ -130,7 +130,7 @@ test('aggregateResults builds 2-column property table for single test result (fa
   assert.ok(summaryMarkdown.includes('### ❌ Overall Status: FAILED'));
   assert.ok(summaryMarkdown.includes('| **Status** | ❌ FAILED |'));
   assert.ok(summaryMarkdown.includes('| **Launch Step** | `failure` |'));
-  assert.ok(summaryMarkdown.includes('| **Verify Step** | `skipped` |'));
+  assert.ok(summaryMarkdown.includes('| **Verify Step** | `⏭️ Skipped` |'));
   assert.ok(summaryMarkdown.includes('| **Experiment / Identifier** | `N/A` |'));
 });
 
@@ -186,7 +186,7 @@ test('aggregateResults builds 6-column matrix table for multiple test results (a
   );
   assert.ok(
     summaryMarkdown.includes(
-      '| `skipped_job` | Skipped Job | ⏭️ SKIPPED | `skipped` | `skipped` | `skipped` |'
+      '| `skipped_job` | Skipped Job | ⏭️ SKIPPED | `skipped` | `⏭️ Skipped` | `skipped` |'
     )
   );
 });
@@ -359,3 +359,29 @@ test('aggregateResults handles null, undefined, missing id, and invalid entries 
   assert.strictEqual('undefined' in xidMap, false);
 });
 
+
+test('aggregateResults handles launch-only mode (verify skipped but status passed)', () => {
+  const results = [
+    {
+      id: 'simple_job',
+      name: 'Simple Multi-Unit Job',
+      status: 'PASSED',
+      launch_status: 'success',
+      verify_status: 'skipped',
+      xid: '8008'
+    }
+  ];
+
+  const { xidMap, summaryMarkdown, allPassed } = aggregateResults(results);
+
+  assert.strictEqual(allPassed, true);
+  assert.deepStrictEqual(xidMap, {
+    simple_job: '8008'
+  });
+  assert.ok(summaryMarkdown.includes('## 🌟 Nightly Examples Test Summary'));
+  assert.ok(summaryMarkdown.includes('### ✅ Overall Status: PASSED'));
+  assert.ok(summaryMarkdown.includes('| **Status** | ✅ PASSED |'));
+  assert.ok(summaryMarkdown.includes('| **Launch Step** | `success` |'));
+  assert.ok(summaryMarkdown.includes('| **Verify Step** | `⏭️ Skipped` |'));
+  assert.ok(summaryMarkdown.includes('| **Experiment / Identifier** | `8008` |'));
+});
