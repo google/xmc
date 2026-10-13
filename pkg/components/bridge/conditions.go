@@ -16,6 +16,7 @@ package bridge
 
 import (
 	"maps"
+	"slices"
 	"time"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -162,14 +163,11 @@ func reconcilingReason(readyReason string) string {
 	}
 }
 
+// deleteCondition removes every condition of condType from conditions.
 func deleteCondition(conditions *[]Condition, condType string) {
-	s := *conditions
-	for i := range s {
-		if s[i].Type == condType {
-			*conditions = append(s[:i], s[i+1:]...)
-			return
-		}
-	}
+	*conditions = slices.DeleteFunc(*conditions, func(c Condition) bool {
+		return c.Type == condType
+	})
 }
 
 // setSynced records the Synced condition on res.
