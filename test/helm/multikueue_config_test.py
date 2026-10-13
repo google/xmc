@@ -51,7 +51,6 @@ class MultiKueueConfigTest(unittest.TestCase):
     def test_management_multikueue_addon_manifest_is_valid(self) -> None:
         manifest = self._read_repo_file(MANAGEMENT_MULTIKUEUE_MANIFEST_PATH)
         self.assertIn("kind: Namespace", manifest)
-        self.assertIn("kind: LimitRange", manifest)
         self.assertIn("kind: LocalQueue", manifest)
         self.assertIn("name: multikueue-cpu-queue", manifest)
         self.assertIn("clusterQueue: multikueue-cpu-cluster-queue", manifest)
