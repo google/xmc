@@ -13,7 +13,7 @@
 -- limitations under the License.
 
 -- Ownership fence: the single cluster allowed to write Component intents, at its epoch.
--- FenceId is always 1; it reserves room for partitioned fences.
+-- FenceId is always 1 (Check_FenceId_Is_One); partitioned fences would relax the check later.
 CREATE TABLE ComponentOwnershipFence (
   FenceId INT64 NOT NULL,
   ActiveClusterUid STRING(64) NOT NULL,
