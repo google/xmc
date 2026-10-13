@@ -46,9 +46,10 @@ func NewUpdater(txRunner storage.TransactionRunner) *Updater {
 	return &Updater{txRunner: txRunner}
 }
 
-// UpdateWorkUnitExecutions updates the executions of a work unit.
 // UpdateWorkUnitExecutions updates the executions of a work unit. It returns the canonical
 // executions, either the updated executions or the original executions if no update was done.
+// If any referenced work unit does not exist, nothing is written and the error wraps a
+// *storage.WorkUnitNotFoundError listing every missing WID.
 func (u *Updater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	logging.Info(ctx, "Update work unit executions", "updates", updates)
@@ -162,13 +163,14 @@ func updateWorkUnitExecutionsInTxn(ctx context.Context, tx *storage.Transaction,
 func processExecutionUpdates(ctx context.Context, tx *storage.Transaction, xid int64, workUnits map[int64]*essmsgpb.WorkUnit, updatedExecutions map[int64]*essmsgpb.WorkUnitExecution, updates []*storage.WorkUnitExecutionUpdate) ([]*state.WorkUnitStateDelta, error) {
 	// 2. Process each update. The updates should be idempotent to the processing order, but if we
 	// have duplicates, we don't want to end up with a mutation ordering dependency issue. So we
-	// process them all and then update the database in one go.
+	// process them all and then update the database in one go. Every referenced work unit must
+	// exist; otherwise the whole write fails and reports all missing work units at once.
+	if missing := missingWorkUnitIDs(updates, updatedExecutions); len(missing) > 0 {
+		return nil, &storage.WorkUnitNotFoundError{XID: xid, WIDs: missing}
+	}
 	var executionDeltas []*state.WorkUnitStateDelta
 	for _, update := range updates {
 		currentWorkUnitExecution := updatedExecutions[update.WID]
-		if currentWorkUnitExecution == nil {
-			return nil, fmt.Errorf("work unit execution %d not found: %w", update.WID, grpcerr.ErrNotFound)
-		}
 
 		ctx := logging.WithWorkUnitExecutionName(ctx, currentWorkUnitExecution.GetName())
 
@@ -258,7 +260,7 @@ func updateExperimentFromExecutions(ctx context.Context, tx *storage.Transaction
 		return nil, fmt.Errorf("failed to fetch experiment: %w", err)
 	}
 	if exp == nil {
-		return nil, fmt.Errorf("experiment %d not found", xid)
+		return nil, fmt.Errorf("experiment %d not found: %w", xid, grpcerr.ErrNotFound)
 	}
 	if exp.Status == nil {
 		exp.Status = &essmsgpb.ExperimentStatus{}
@@ -301,6 +303,19 @@ func updateExperimentFromExecutions(ctx context.Context, tx *storage.Transaction
 	}
 
 	return updatedExp, nil
+}
+
+// missingWorkUnitIDs returns the sorted, deduplicated WIDs referenced by updates
+// that have no row in found.
+func missingWorkUnitIDs(updates []*storage.WorkUnitExecutionUpdate, found map[int64]*essmsgpb.WorkUnitExecution) []int64 {
+	var missing []int64
+	for _, update := range updates {
+		if found[update.WID] == nil {
+			missing = append(missing, update.WID)
+		}
+	}
+	slices.Sort(missing)
+	return slices.Compact(missing)
 }
 
 func updateWorkUnitExecution(ctx context.Context, currentExecution *essmsgpb.WorkUnitExecution, updatedExecution *essmsgpb.WorkUnitExecution, mask *fieldmaskpb.FieldMask, forceStatusMessageUpdate bool, deferToExistingMessage bool) (*essmsgpb.WorkUnitExecution, error) {

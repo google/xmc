@@ -207,19 +207,29 @@ func updatePointers(batch []batchEntry) []*storagepkg.WorkUnitExecutionUpdate {
 	return updates
 }
 
-// handleFlushFailure requeues a transiently failed batch. A permanent failure
-// drops a single-work-unit batch; otherwise up to maxIsolatedWorkUnits work
-// units are resent one work unit at a time so a single bad work unit does not
-// drop the others. Remaining work units are requeued, or dropped if isolation
-// found the failure to be experiment-wide.
+// handleFlushFailure requeues a transiently failed batch. For a permanent
+// failure, updates for work units that storage reported as missing are dropped
+// and the rest resent (see dropMissingWorkUnits); otherwise
+// handlePermanentFailure applies.
 func (b *UpdateBatcher) handleFlushFailure(ctx context.Context, xid int64, batch []batchEntry, err error) {
 	if !IsPermanentStorageError(err) {
 		b.requeue(ctx, xid, batch, err)
 		return
 	}
+	if b.dropMissingWorkUnits(ctx, xid, batch, err) {
+		return
+	}
+	b.handlePermanentFailure(ctx, xid, batch, err)
+}
+
+// handlePermanentFailure drops a single-work-unit batch; otherwise up to
+// maxIsolatedWorkUnits work units are resent one work unit at a time so a
+// single bad work unit does not drop the others. Remaining work units are
+// requeued, or dropped if isolation found the failure to be experiment-wide.
+func (b *UpdateBatcher) handlePermanentFailure(ctx context.Context, xid int64, batch []batchEntry, err error) {
 	groups := groupByWorkUnit(batch)
 	if len(groups) == 1 {
-		b.recordDropped(ctx, xid, batch, dropReasonPermanent, err)
+		b.recordDropped(ctx, xid, batch, dropReasonFor(err, batch[0].update.WID), err)
 		return
 	}
 	isolated := groups[:min(len(groups), maxIsolatedWorkUnits)]
@@ -293,7 +303,7 @@ func (b *UpdateBatcher) isolatePermanentFailure(ctx context.Context, xid int64, 
 			b.requeue(cleanupCtx, xid, slices.Concat(groups[i:]...), err)
 			return false
 		}
-		b.recordDropped(ctx, xid, group, dropReasonPermanent, err)
+		b.recordDropped(ctx, xid, group, dropReasonFor(err, group[0].update.WID), err)
 		consecutivePermanent++
 		if consecutivePermanent >= maxConsecutivePermanentFailures {
 			b.recordDropped(ctx, xid, slices.Concat(groups[i+1:]...), dropReasonPermanent, err)

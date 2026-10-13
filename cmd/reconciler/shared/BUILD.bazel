@@ -19,6 +19,7 @@ go_library(
     srcs = [
         "batcher.go",
         "batcher_retry.go",
+        "batcher_work_unit_not_found.go",
         "storage_errors.go",
     ],
     importpath = "xmanager_cloud/cmd/reconciler/shared",
@@ -41,6 +42,7 @@ go_test(
     srcs = [
         "batcher_retry_test.go",
         "batcher_test.go",
+        "batcher_work_unit_not_found_test.go",
         "storage_errors_test.go",
     ],
     embed = [":shared"],
