@@ -210,6 +210,12 @@ EXAMPLE_ID="my_new_example"
 gh workflow run nightly-examples-e2e.yml --ref "${BRANCH_NAME}" -f examples_filter="${EXAMPLE_ID}"
 ```
 
+To build and launch the example workloads without running verification assertions (`skip_verification=true`):
+
+```bash
+gh workflow run nightly-examples-e2e.yml --ref "${BRANCH_NAME}" -f examples_filter="${EXAMPLE_ID}" -f skip_verification=true
+```
+
 ---
 
 ## 3. Automated Example Coverage Gate & Explicit Opt-Out Policy
