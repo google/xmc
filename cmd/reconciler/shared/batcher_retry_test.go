@@ -422,24 +422,160 @@ func TestRetry_InFlightRemoveAndAddSupersede(t *testing.T) {
 	}
 }
 
-func TestRetry_PermanentErrorsDroppedWithoutRetry(t *testing.T) {
-	for _, wids := range [][]int64{{1}, {1, 2, 3}} {
-		storage := &scriptedStorage{alwaysErr: grpcerr.ErrNotFound}
-		b, clock := newRetryTestBatcher(t, storage)
-		addRunning(t, b, retryTestXID, wids...)
-		b.processBatches(t.Context())
-		clock.advance(time.Minute)
-		b.processBatches(t.Context())
+func TestRetry_PermanentSingleUpdateDroppedWithoutRetry(t *testing.T) {
+	storage := &scriptedStorage{alwaysErr: grpcerr.ErrNotFound}
+	b, clock := newRetryTestBatcher(t, storage)
+	addRunning(t, b, retryTestXID, 1)
+	b.processBatches(t.Context())
+	clock.advance(time.Minute)
+	b.processBatches(t.Context())
 
-		if got := storage.callCount(); got != 1 {
-			t.Errorf("wids=%v: storage calls = %d, want 1", wids, got)
-		}
-		if got := droppedCount(dropReasonPermanent); got != float64(len(wids)) {
-			t.Errorf("wids=%v: dropped{permanent} = %v, want %d", wids, got, len(wids))
-		}
-		if got := queuedRetries(b); got != 0 {
-			t.Errorf("wids=%v: queued retries = %d, want 0", wids, got)
-		}
+	if got := storage.callCount(); got != 1 {
+		t.Errorf("storage calls = %d, want 1 (no retry)", got)
+	}
+	if got := droppedCount(dropReasonPermanent); got != 1 {
+		t.Errorf("dropped{permanent} = %v, want 1", got)
+	}
+	if got := queuedRetries(b); got != 0 {
+		t.Errorf("queued retries = %d, want 0", got)
+	}
+}
+
+func TestRetry_PermanentMultiWorkUnitIsolation(t *testing.T) {
+	tests := []struct {
+		name         string
+		numWorkUnits int
+		// multiSourceWID, if set, also gets Workload and KueueSync updates.
+		multiSourceWID int64
+		storage        *scriptedStorage
+		cancelCtx      bool
+		wantCalls      int
+		wantDropped    float64
+		wantQueue      int
+	}{
+		{
+			name:         "bad work unit dropped, others persisted",
+			numWorkUnits: 3,
+			storage:      &scriptedStorage{errForWID: map[int64]error{2: grpcerr.ErrNotFound}},
+			wantCalls:    4, // batch + 3 work units
+			wantDropped:  1,
+		},
+		{
+			name:           "all updates of a bad work unit go in one call",
+			numWorkUnits:   4,
+			multiSourceWID: 1,
+			storage:        &scriptedStorage{errForWID: map[int64]error{1: grpcerr.ErrNotFound}},
+			wantCalls:      1 + 4,
+			wantDropped:    3, // Jobset, Workload, and KueueSync updates of WID 1
+		},
+		{
+			name:         "consecutive permanent work units stop isolation",
+			numWorkUnits: 5,
+			storage:      &scriptedStorage{alwaysErr: grpcerr.ErrNotFound},
+			wantCalls:    1 + maxConsecutivePermanentFailures,
+			wantDropped:  5,
+		},
+		{
+			name:         "experiment-wide failure drops the overflow",
+			numWorkUnits: maxIsolatedWorkUnits + 8,
+			storage:      &scriptedStorage{alwaysErr: grpcerr.ErrNotFound},
+			wantCalls:    1 + maxConsecutivePermanentFailures,
+			wantDropped:  maxIsolatedWorkUnits + 8,
+		},
+		{
+			name:         "non-consecutive permanent failures reset streak",
+			numWorkUnits: 5,
+			storage:      &scriptedStorage{errForWID: map[int64]error{1: grpcerr.ErrNotFound, 2: grpcerr.ErrNotFound, 4: grpcerr.ErrNotFound}},
+			wantCalls:    1 + 5,
+			wantDropped:  3,
+		},
+		{
+			name:         "transient failure aborts and requeues the rest",
+			numWorkUnits: 3,
+			storage:      &scriptedStorage{errs: []error{grpcerr.ErrNotFound, nil, grpcerr.ErrUnavailable}},
+			wantCalls:    3, // batch + WID 1 (succeeds) + WID 2 (transient error)
+			wantQueue:    2, // WID 2 and WID 3 requeued; WID 1 already persisted
+		},
+		{
+			name:         "fan-out capped, overflow requeued",
+			numWorkUnits: maxIsolatedWorkUnits + 8,
+			storage:      &scriptedStorage{errs: []error{grpcerr.ErrNotFound}},
+			wantCalls:    1 + maxIsolatedWorkUnits,
+			wantQueue:    8,
+		},
+		{
+			name:         "cancelled context requeues without isolated calls",
+			numWorkUnits: 3,
+			storage:      &scriptedStorage{errs: []error{grpcerr.ErrNotFound}},
+			cancelCtx:    true,
+			wantCalls:    1,
+			wantQueue:    3,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b, _ := newRetryTestBatcher(t, tc.storage)
+			for wid := range tc.numWorkUnits {
+				addRunning(t, b, retryTestXID, int64(wid+1))
+			}
+			if tc.multiSourceWID != 0 {
+				for _, source := range []UpdateSource{WorkloadSource, KueueSyncSource} {
+					b.Add(t.Context(), retryTestXID, testUpdate(tc.multiSourceWID, 1, stateRunning), source)
+				}
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tc.cancelCtx {
+				cancel()
+			}
+
+			b.processBatches(ctx)
+
+			if got := tc.storage.callCount(); got != tc.wantCalls {
+				t.Errorf("storage calls = %d, want %d", got, tc.wantCalls)
+			}
+			if got := droppedCount(dropReasonPermanent); got != tc.wantDropped {
+				t.Errorf("dropped{permanent} = %v, want %v", got, tc.wantDropped)
+			}
+			if got := queuedRetries(b); got != tc.wantQueue {
+				t.Errorf("queued retries = %d, want %d", got, tc.wantQueue)
+			}
+		})
+	}
+}
+
+func TestRetry_IsolationPrioritizesRequeuedOverflow(t *testing.T) {
+	badWID := int64(maxIsolatedWorkUnits + 8)
+	storage := &scriptedStorage{errForWID: map[int64]error{badWID: grpcerr.ErrInvalidArgument}}
+	b, _ := newRetryTestBatcher(t, storage)
+	for wid := range badWID {
+		addRunning(t, b, retryTestXID, wid+1)
+	}
+
+	// Tick 1: batch of 40 fails; WID 1..32 isolated and succeed, WID 33..40 requeued (attempt=1).
+	b.processBatches(t.Context())
+	if got := queuedRetries(b); got != 8 {
+		t.Fatalf("after tick 1: queued retries = %d, want 8", got)
+	}
+
+	// Tick 2: WID 1..32 emit fresh updates (attempt=0). Requeued WID 33..40 (attempt=1)
+	// must be isolated first so WID 33..39 persist and WID 40 is dropped.
+	for wid := range int64(maxIsolatedWorkUnits) {
+		addRunning(t, b, retryTestXID, wid+1)
+	}
+	b.processBatches(t.Context())
+
+	if got := droppedCount(dropReasonPermanent); got != 1 {
+		t.Errorf("after tick 2: dropped{permanent} = %v, want 1 (WID %d)", got, badWID)
+	}
+	if got := queuedRetries(b); got != 8 {
+		t.Errorf("after tick 2: queued retries = %d, want 8 (fresh WID 25..32 overflow)", got)
+	}
+	b.UpdatesMu.Lock()
+	_, badStillQueued := b.retries[slotKey{xid: retryTestXID, wid: badWID, source: JobsetSource}]
+	b.UpdatesMu.Unlock()
+	if badStillQueued {
+		t.Errorf("WID %d still queued in retries after tick 2, want isolated and dropped", badWID)
 	}
 }
 
