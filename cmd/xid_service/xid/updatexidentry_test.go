@@ -337,6 +337,7 @@ func TestWalkAncestors(t *testing.T) {
 		start     *xidpb.XidEntry
 		entries   map[int64]*xidpb.XidEntry
 		fetchErr  error
+		nilFetch  bool
 		predicate xid.AncestorPredicate
 		want      bool
 		wantErr   error
@@ -409,6 +410,32 @@ func TestWalkAncestors(t *testing.T) {
 			wantErr: grpcerr.ErrPermissionDenied,
 		},
 		{
+			name: "nil fetch returns ErrInvalidArgument",
+			start: &xidpb.XidEntry{
+				Name: proto.String("xids/1"),
+			},
+			nilFetch:  true,
+			predicate: hasOwnersPredicate,
+			wantErr:   grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "nil predicate returns ErrInvalidArgument",
+			start: &xidpb.XidEntry{
+				Name: proto.String("xids/1"),
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "nil parent entry returns ErrInternal",
+			start: &xidpb.XidEntry{
+				Name:      proto.String("xids/1"),
+				ParentXid: proto.String("xids/2"),
+			},
+			entries:   map[int64]*xidpb.XidEntry{2: nil},
+			predicate: hasOwnersPredicate,
+			wantErr:   grpcerr.ErrInternal,
+		},
+		{
 			name: "match on grandparent",
 			start: &xidpb.XidEntry{
 				Name:      proto.String("xids/1"),
@@ -431,7 +458,7 @@ func TestWalkAncestors(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			fetcher := func(_ context.Context, id int64) (*xidpb.XidEntry, error) {
+			var fetcher xid.AncestorFetcher = func(_ context.Context, id int64) (*xidpb.XidEntry, error) {
 				if tc.fetchErr != nil {
 					return nil, tc.fetchErr
 				}
@@ -440,6 +467,9 @@ func TestWalkAncestors(t *testing.T) {
 					return nil, grpcerr.ErrNotFound
 				}
 				return entry, nil
+			}
+			if tc.nilFetch {
+				fetcher = nil
 			}
 
 			got, err := xid.WalkAncestors(context.Background(), tc.start, fetcher, tc.predicate)
@@ -454,6 +484,37 @@ func TestWalkAncestors(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("WalkAncestors() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUpdateXidEntry_NilUpdateFields(t *testing.T) {
+	tests := []struct {
+		name   string
+		update *storage.XidEntryUpdate
+	}{
+		{
+			name: "nil XidEntry",
+			update: &storage.XidEntryUpdate{
+				XID:        1,
+				UpdateMask: &fmpb.FieldMask{Paths: []string{"acls"}},
+			},
+		},
+		{
+			name: "nil UpdateMask",
+			update: &storage.XidEntryUpdate{
+				XID:      1,
+				XidEntry: &xidpb.XidEntry{Acls: &xidpb.XidAcls{}},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := xid.UpdateXidEntry(context.Background(), &storage.MockStorage{}, tc.update)
+			if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+				t.Errorf("UpdateXidEntry() error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 			}
 		})
 	}

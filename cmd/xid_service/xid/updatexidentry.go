@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/kylelemons/godebug/diff"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
@@ -47,6 +47,12 @@ func UpdateXidEntry(ctx context.Context, runner storage.TransactionRunner, updat
 	}
 	if update == nil {
 		return nil, fmt.Errorf("update must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	if update.XidEntry == nil {
+		return nil, fmt.Errorf("update.XidEntry must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	if update.UpdateMask == nil {
+		return nil, fmt.Errorf("update.UpdateMask must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	ctx = logging.WithXIDName(ctx, validator.ConstructXIDName(update.XID))
 	logging.Info(ctx, "UpdateXidEntry", "update", update.XidEntry)
@@ -102,7 +108,7 @@ func UpdateXidEntry(ctx context.Context, runner storage.TransactionRunner, updat
 	}
 
 	if mutated {
-		protoDiff := cmp.Diff(originalEntry, updatedEntry, protocmp.Transform())
+		protoDiff := diff.Diff(prototext.Format(originalEntry), prototext.Format(updatedEntry))
 		logging.Info(ctx, fmt.Sprintf("XidEntry updated successfully: %s", protoDiff), "updatedXidEntry", updatedEntry)
 	} else {
 		logging.Info(ctx, "XidEntry not updated; no changes detected", "updatedXidEntry", updatedEntry)
@@ -122,6 +128,12 @@ func xidEntryHasOwners(ctx context.Context, fetch AncestorFetcher, xidEntry *xid
 func WalkAncestors(ctx context.Context, xidEntry *xidmsgpb.XidEntry, fetch AncestorFetcher, predicate AncestorPredicate) (bool, error) {
 	if xidEntry == nil {
 		return false, fmt.Errorf("xidEntry must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	if fetch == nil {
+		return false, fmt.Errorf("fetch must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	if predicate == nil {
+		return false, fmt.Errorf("predicate must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	hasOwners, err := predicate(ctx, xidEntry)
 	if err != nil {
@@ -161,6 +173,9 @@ func WalkAncestors(ctx context.Context, xidEntry *xidmsgpb.XidEntry, fetch Ances
 
 			logging.Error(ctx, "Storage layer returned a non-gRPC error for FetchXidEntry", "parentXID", parentXID, "error", err)
 			return false, fmt.Errorf("an internal error occurred while retrieving the XID: %w", grpcerr.ErrInternal)
+		}
+		if parentXIDEntry == nil {
+			return false, fmt.Errorf("fetched parent XID %d entry is nil: %w", parentXID, grpcerr.ErrInternal)
 		}
 
 		hasOwners, err = predicate(ctx, parentXIDEntry)
