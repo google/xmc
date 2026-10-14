@@ -22,6 +22,7 @@ const {
   loadResultsFromDir,
   formatStatusBadge,
   aggregateResults,
+  resolveFailureAnnotation,
   run
 } = require('./aggregate-example-results');
 
@@ -64,7 +65,7 @@ test('loadResultsFromDir loads and parses all JSON files in sorted order', () =>
   }
 });
 
-test('loadResultsFromDir gracefully handles malformed JSON files', () => {
+test('loadResultsFromDir pushes synthetic FAILED entry for malformed JSON files', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xmc-results-test-'));
   try {
     fs.writeFileSync(path.join(tmpDir, 'bad.json'), 'invalid json {[');
@@ -74,8 +75,16 @@ test('loadResultsFromDir gracefully handles malformed JSON files', () => {
     );
 
     const results = loadResultsFromDir(tmpDir);
-    assert.strictEqual(results.length, 1);
-    assert.strictEqual(results[0].id, 'good');
+    assert.strictEqual(results.length, 2);
+    assert.deepStrictEqual(results[0], {
+      id: 'bad',
+      name: 'bad.json',
+      status: 'FAILED',
+      launch_status: 'parse_error',
+      verify_status: 'N/A',
+      xid: 'N/A',
+    });
+    assert.strictEqual(results[1].id, 'good');
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -336,11 +345,40 @@ test('CLI execution exits with code 1 and error annotation when workloads fail',
 
     assert.strictEqual(proc.status, 1);
     assert.ok(
-      proc.stderr.includes('::error::One or more example workloads failed launch or verification.')
+      proc.stderr.includes(
+        '::error::One or more example workloads failed launch or verification: job1 (VERIFY_FAILED)'
+      )
     );
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('aggregateResults treats all-SKIPPED results as failure', () => {
+  const results = [
+    { id: 'job1', name: 'Job 1', status: 'SKIPPED', xid: 'skipped' },
+    { id: 'job2', name: 'Job 2', status: 'SKIPPED', xid: 'skipped' }
+  ];
+  const { allPassed, summaryMarkdown } = aggregateResults(results);
+  assert.strictEqual(allPassed, false);
+  assert.ok(summaryMarkdown.includes('### ⚠️ Overall Status: SOME WORKLOADS FAILED'));
+  assert.strictEqual(
+    resolveFailureAnnotation(results),
+    '::error::No example workloads passed (all workloads were skipped).'
+  );
+});
+
+test('aggregateResults treats non-success matrixResult as failure even if uploaded results passed', () => {
+  const results = [
+    { id: 'job1', name: 'Job 1', status: 'PASSED', xid: '100' }
+  ];
+  const { allPassed, summaryMarkdown } = aggregateResults(results, { matrixResult: 'failure' });
+  assert.strictEqual(allPassed, false);
+  assert.ok(summaryMarkdown.includes('### ❌ Overall Status: FAILED'));
+  assert.strictEqual(
+    resolveFailureAnnotation(results, 'failure'),
+    '::error::One or more example workloads failed launch or verification (matrix status: failure).'
+  );
 });
 
 test('CLI execution exits with code 1 and error annotation when results directory is empty', () => {

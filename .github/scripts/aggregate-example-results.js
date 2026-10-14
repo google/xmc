@@ -21,6 +21,34 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 /**
+ * Parses a single JSON result file, returning a synthetic FAILED result object
+ * if the file is unreadable or contains malformed JSON.
+ *
+ * @param {string} filePath - Path to the result JSON file.
+ * @returns {object} Parsed result object or synthetic FAILED result entry.
+ */
+function parseResultFile(filePath) {
+  const fallbackId = path.basename(filePath, '.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    throw new Error('Result JSON is not an object');
+  } catch (err) {
+    console.error(`Error reading or parsing ${filePath}: ${err.message}`);
+    return {
+      id: fallbackId,
+      name: path.basename(filePath),
+      status: 'FAILED',
+      launch_status: 'parse_error',
+      verify_status: 'N/A',
+      xid: 'N/A',
+    };
+  }
+}
+
+/**
  * Reads all JSON result files from a directory and parses them.
  *
  * @param {string} resultsDir - Directory containing result JSON files.
@@ -31,21 +59,10 @@ function loadResultsFromDir(resultsDir) {
     return [];
   }
 
-  const files = fs.readdirSync(resultsDir)
+  return fs.readdirSync(resultsDir)
     .filter(file => file.endsWith('.json'))
-    .sort();
-
-  const results = [];
-  for (const file of files) {
-    const filePath = path.join(resultsDir, file);
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      results.push(JSON.parse(content));
-    } catch (err) {
-      console.error(`Error reading or parsing ${filePath}: ${err.message}`);
-    }
-  }
-  return results;
+    .sort()
+    .map(file => parseResultFile(path.join(resultsDir, file)));
 }
 
 /**
@@ -66,88 +83,131 @@ function formatStatusBadge(status) {
 }
 
 /**
+ * Resolves the markdown status header line based on result counts and pass state.
+ *
+ * @param {Array<object>} results
+ * @param {boolean} allPassed
+ * @returns {string}
+ */
+function resolveStatusHeader(results, allPassed) {
+  if (results.length === 0) {
+    return '### ⚠️ Overall Status: NO RESULTS FOUND\n';
+  }
+  if (results.length > 1) {
+    return allPassed
+      ? '### ✅ Overall Status: ALL PASSED\n'
+      : '### ⚠️ Overall Status: SOME WORKLOADS FAILED\n';
+  }
+  return allPassed
+    ? '### ✅ Overall Status: PASSED\n'
+    : '### ❌ Overall Status: FAILED\n';
+}
+
+/**
+ * Formats a 6-column markdown table for multiple workload results.
+ *
+ * @param {Array<object>} results
+ * @returns {Array<string>}
+ */
+function formatMultiResultTable(results) {
+  const rows = [
+    '| Example ID | Name | Status | Launch | Verify | Experiment / Identifier |',
+    '| --- | --- | --- | --- | --- | --- |',
+  ];
+  for (const r of results) {
+    const id = r.id || '';
+    const name = r.name || '';
+    const statusBadge = formatStatusBadge(r.status);
+    const launchStatus = r.launch_status || 'N/A';
+    const verifyStatus = r.verify_status?.toLowerCase() === 'skipped' ? '⏭️ Skipped' : r.verify_status || 'N/A';
+    const xid = r.xid || 'N/A';
+    rows.push(`| \`${id}\` | ${name} | ${statusBadge} | \`${launchStatus}\` | \`${verifyStatus}\` | \`${xid}\` |`);
+  }
+  return rows;
+}
+
+/**
+ * Formats a 2-column property table for a single workload result.
+ *
+ * @param {object} r
+ * @returns {Array<string>}
+ */
+function formatSingleResultTable(r) {
+  const id = r.id || 'N/A';
+  const name = r.name || 'N/A';
+  const statusBadge = formatStatusBadge(r.status);
+  const launchStatus = r.launch_status || 'N/A';
+  const verifyStatus = r.verify_status?.toLowerCase() === 'skipped' ? '⏭️ Skipped' : r.verify_status || 'N/A';
+  const xid = r.xid || 'N/A';
+  return [
+    '| Property | Value |',
+    '| --- | --- |',
+    `| **Example ID** | \`${id}\` |`,
+    `| **Name** | ${name} |`,
+    `| **Status** | ${statusBadge} |`,
+    `| **Launch Step** | \`${launchStatus}\` |`,
+    `| **Verify Step** | \`${verifyStatus}\` |`,
+    `| **Experiment / Identifier** | \`${xid}\` |`,
+  ];
+}
+
+/**
  * Aggregates result objects into an XID mapping and markdown summary.
  * Formats a clean single-workload summary or a multi-workload matrix table.
  *
  * @param {Array<object>} rawResults - Array of result objects.
  * @param {object} [options]
  * @param {string} [options.title] - Optional custom markdown title.
+ * @param {string} [options.matrixResult] - Upstream matrix job result (e.g. 'success', 'failure').
  * @returns {{ xidMap: Record<string, string>, summaryMarkdown: string, allPassed: boolean }}
  */
-function aggregateResults(rawResults, { title } = {}) {
+function aggregateResults(rawResults, { title, matrixResult } = {}) {
   const results = (rawResults || []).filter(Boolean);
   const xidMap = {};
-  let allPassed = results.length > 0;
-
   for (const r of results) {
     if (r.id && r.xid && r.xid !== 'skipped' && r.xid !== 'N/A') {
       xidMap[r.id] = r.xid;
     }
-    if (r.status !== 'PASSED' && r.status !== 'SKIPPED') {
-      allPassed = false;
-    }
   }
+
+  const hasPassed = results.some(r => r.status === 'PASSED');
+  const hasFailed = results.some(r => r.status !== 'PASSED' && r.status !== 'SKIPPED');
+  const matrixSucceeded = !matrixResult || matrixResult === 'success';
+  const allPassed = results.length > 0 && hasPassed && !hasFailed && matrixSucceeded;
 
   const defaultTitle = '## 🌟 Nightly Examples Test Summary\n';
-  const isMultiple = results.length > 1;
+  const statusHeader = resolveStatusHeader(results, allPassed);
+  const bodyLines = results.length === 0
+    ? ['_No example test results found._']
+    : results.length > 1
+      ? formatMultiResultTable(results)
+      : formatSingleResultTable(results[0]);
 
-  let statusHeader;
-  if (results.length === 0) {
-    statusHeader = '### ⚠️ Overall Status: NO RESULTS FOUND\n';
-  } else if (isMultiple) {
-    statusHeader = allPassed
-      ? '### ✅ Overall Status: ALL PASSED\n'
-      : '### ⚠️ Overall Status: SOME WORKLOADS FAILED\n';
-  } else {
-    statusHeader = allPassed
-      ? '### ✅ Overall Status: PASSED\n'
-      : '### ❌ Overall Status: FAILED\n';
-  }
-
-  const summaryLines = [
-    title || defaultTitle,
-    statusHeader
-  ];
-
-  if (results.length === 0) {
-    summaryLines.push('_No example test results found._');
-  } else if (isMultiple) {
-    summaryLines.push('| Example ID | Name | Status | Launch | Verify | Experiment / Identifier |');
-    summaryLines.push('| --- | --- | --- | --- | --- | --- |');
-
-    for (const r of results) {
-      const id = r.id || '';
-      const name = r.name || '';
-      const statusBadge = formatStatusBadge(r.status);
-      const launchStatus = r.launch_status || 'N/A';
-      const verifyStatus = r.verify_status?.toLowerCase() === 'skipped' ? '⏭️ Skipped' : r.verify_status || 'N/A';
-      const xid = r.xid || 'N/A';
-
-      summaryLines.push(
-        `| \`${id}\` | ${name} | ${statusBadge} | \`${launchStatus}\` | \`${verifyStatus}\` | \`${xid}\` |`
-      );
-    }
-  } else {
-    const r = results[0];
-    const id = r.id || 'N/A';
-    const name = r.name || 'N/A';
-    const statusBadge = formatStatusBadge(r.status);
-    const launchStatus = r.launch_status || 'N/A';
-    const verifyStatus = r.verify_status?.toLowerCase() === 'skipped' ? '⏭️ Skipped' : r.verify_status || 'N/A';
-    const xid = r.xid || 'N/A';
-
-    summaryLines.push('| Property | Value |');
-    summaryLines.push('| --- | --- |');
-    summaryLines.push(`| **Example ID** | \`${id}\` |`);
-    summaryLines.push(`| **Name** | ${name} |`);
-    summaryLines.push(`| **Status** | ${statusBadge} |`);
-    summaryLines.push(`| **Launch Step** | \`${launchStatus}\` |`);
-    summaryLines.push(`| **Verify Step** | \`${verifyStatus}\` |`);
-    summaryLines.push(`| **Experiment / Identifier** | \`${xid}\` |`);
-  }
-
-  const summaryMarkdown = summaryLines.join('\n') + '\n';
+  const summaryMarkdown = [title || defaultTitle, statusHeader, ...bodyLines].join('\n') + '\n';
   return { xidMap, summaryMarkdown, allPassed };
+}
+
+/**
+ * Resolves the GitHub Actions error annotation string when aggregation fails.
+ *
+ * @param {Array<object>} results
+ * @param {string} [matrixResult]
+ * @returns {string}
+ */
+function resolveFailureAnnotation(results, matrixResult) {
+  if (results.length === 0) {
+    return '::error::No example workload results found.';
+  }
+  const failedIds = results
+    .filter(r => r && r.status !== 'PASSED' && r.status !== 'SKIPPED')
+    .map(r => `${r.id || 'unknown'} (${r.status || 'FAILED'})`);
+  if (failedIds.length > 0) {
+    return `::error::One or more example workloads failed launch or verification: ${failedIds.join(', ')}`;
+  }
+  if (matrixResult && matrixResult !== 'success') {
+    return `::error::One or more example workloads failed launch or verification (matrix status: ${matrixResult}).`;
+  }
+  return '::error::No example workloads passed (all workloads were skipped).';
 }
 
 /**
@@ -158,16 +218,18 @@ function aggregateResults(rawResults, { title } = {}) {
  * @param {string} [options.stepSummaryPath]
  * @param {string} [options.githubOutputPath]
  * @param {string} [options.title]
- * @returns {{ results: Array<object>, xidMap: Record<string, string>, summaryMarkdown: string, allPassed: boolean }}
+ * @param {string} [options.matrixResult]
+ * @returns {{ results: Array<object>, xidMap: Record<string, string>, summaryMarkdown: string, allPassed: boolean, matrixResult: string | undefined }}
  */
 function run({
   resultsDir = 'results',
   stepSummaryPath = process.env.GITHUB_STEP_SUMMARY,
   githubOutputPath = process.env.GITHUB_OUTPUT,
-  title
+  title,
+  matrixResult = process.env.MATRIX_RESULT,
 } = {}) {
   const results = loadResultsFromDir(resultsDir);
-  const { xidMap, summaryMarkdown, allPassed } = aggregateResults(results, { title });
+  const { xidMap, summaryMarkdown, allPassed } = aggregateResults(results, { title, matrixResult });
 
   if (stepSummaryPath) {
     fs.appendFileSync(stepSummaryPath, summaryMarkdown, 'utf8');
@@ -181,24 +243,22 @@ function run({
     fs.appendFileSync(githubOutputPath, `launched_xids=${xidsJson}\n`, 'utf8');
   }
 
-  return { results, xidMap, summaryMarkdown, allPassed };
+  return { results, xidMap, summaryMarkdown, allPassed, matrixResult };
 }
 
 if (require.main === module) {
-  const { results, allPassed } = run();
+  const { results, allPassed, matrixResult } = run();
   if (!allPassed) {
-    if (results.length === 0) {
-      console.error('::error::No example workload results found.');
-    } else {
-      console.error('::error::One or more example workloads failed launch or verification.');
-    }
+    console.error(resolveFailureAnnotation(results, matrixResult));
     process.exit(1);
   }
 }
 
 module.exports = {
+  parseResultFile,
   loadResultsFromDir,
   formatStatusBadge,
+  resolveFailureAnnotation,
   aggregateResults,
-  run
+  run,
 };

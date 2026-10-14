@@ -250,6 +250,25 @@ function parseNeedsContext(core) {
 }
 
 /**
+ * Resolves the triggerOutcome field from GitHub Actions needsContext,
+ * surfacing build-example-images failures when the image build step fails.
+ *
+ * @param {Object} needsContext
+ * @returns {string}
+ */
+function resolveTriggerOutcome(needsContext) {
+  const buildResult = needsContext?.['build-example-images']?.result;
+  if (buildResult && buildResult !== 'success' && buildResult !== 'skipped') {
+    return `${buildResult} (build-example-images)`;
+  }
+  return (
+    needsContext?.['run-and-verify-demo-workload']?.result ||
+    needsContext?.['run-and-verify-examples']?.result ||
+    'unknown'
+  );
+}
+
+/**
  * Constructs the parameter dictionary for alert issue creation and comment updates.
  * @param {Object} context
  * @param {string[]} activeOwners
@@ -259,6 +278,7 @@ function parseNeedsContext(core) {
  */
 function buildAlertParams(context, activeOwners, associatedPr, needsContext) {
   const { owner, repo } = context.repo;
+  const rawXid = process.env.XID || '';
   return {
     serverUrl: process.env.GITHUB_SERVER_URL || context.serverUrl || 'https://github.com',
     owner,
@@ -267,12 +287,9 @@ function buildAlertParams(context, activeOwners, associatedPr, needsContext) {
     sha: context.sha,
     ref: context.ref,
     eventName: context.eventName,
-    xid: process.env.XID || '',
+    xid: rawXid === '{}' ? '' : rawXid,
     associatedPr,
-    triggerOutcome:
-      needsContext?.['run-and-verify-demo-workload']?.result ||
-      needsContext?.['run-and-verify-examples']?.result ||
-      'unknown',
+    triggerOutcome: resolveTriggerOutcome(needsContext),
     verifyOutcome:
       needsContext?.['run-and-verify-demo-workload']?.result ||
       needsContext?.['aggregate-results']?.result ||

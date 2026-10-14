@@ -441,6 +441,40 @@ describe('buildAlertParams', () => {
     assert.equal(params.triggerOutcome, 'unknown');
     assert.equal(params.verifyOutcome, 'unknown');
   });
+
+  test('reports build-example-images failure instead of skipped trigger outcome', () => {
+    const needsContext = {
+      'build-example-images': { result: 'failure' },
+      'run-and-verify-examples': { result: 'skipped' },
+      'aggregate-results': { result: 'skipped' },
+    };
+    const params = buildAlertParams(baseContext, [], null, needsContext);
+    assert.equal(params.triggerOutcome, 'failure (build-example-images)');
+    assert.equal(params.verifyOutcome, 'skipped');
+  });
+
+  test('does not shadow run-and-verify-examples outcome when build-example-images succeeds', () => {
+    const needsContext = {
+      'build-example-images': { result: 'success' },
+      'run-and-verify-examples': { result: 'failure' },
+      'aggregate-results': { result: 'failure' },
+    };
+    const params = buildAlertParams(baseContext, [], null, needsContext);
+    assert.equal(params.triggerOutcome, 'failure');
+    assert.equal(params.verifyOutcome, 'failure');
+  });
+
+  test('normalizes empty JSON object XID ("{}") to empty string', () => {
+    const origXid = process.env.XID;
+    try {
+      process.env.XID = '{}';
+      const params = buildAlertParams(baseContext, [], null, {});
+      assert.equal(params.xid, '');
+    } finally {
+      if (origXid === undefined) delete process.env.XID;
+      else process.env.XID = origXid;
+    }
+  });
 });
 
 describe('run orchestrator', () => {
