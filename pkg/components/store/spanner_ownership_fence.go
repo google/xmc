@@ -26,8 +26,9 @@ const (
 	fenceTable = "ComponentOwnershipFence"
 	fenceID    = int64(1)
 	// takeOverOwnersSQL moves every active owned component to the declaring cluster and clears its
-	// owner UID so that the cluster's next intent adopts it (R2).
-	takeOverOwnersSQL = `UPDATE Components SET SourceClusterUid = @clusterUid, SourceEpoch = @epoch, SourceUid = NULL WHERE ActiveName IS NOT NULL AND SourceClusterUid IS NOT NULL`
+	// owner UID so that the cluster's next intent adopts it (R2). SourceLastSeenTime is set to the
+	// commit time, which starts the adoption grace period of the owner_stale gauge.
+	takeOverOwnersSQL = `UPDATE Components SET SourceClusterUid = @clusterUid, SourceEpoch = @epoch, SourceUid = NULL, SourceLastSeenTime = PENDING_COMMIT_TIMESTAMP() WHERE ActiveName IS NOT NULL AND SourceClusterUid IS NOT NULL`
 )
 
 // DeclareClusterEpoch declares cluster the writer of sourced intents within Spanner, reading the

@@ -13,13 +13,14 @@
 -- limitations under the License.
 
 -- Ownership fence: the single cluster allowed to write Component intents, at its epoch.
--- FenceId is always 1 (Check_FenceId_Is_One); partitioned fences would relax the check later.
+-- CMS writes only FenceId = 1. There is no singleton CHECK: FenceId is reserved for partitioned
+-- fences.
 CREATE TABLE ComponentOwnershipFence (
   FenceId INT64 NOT NULL,
   ActiveClusterUid STRING(64) NOT NULL,
   ActiveClusterName STRING(63) NOT NULL,
   Epoch INT64 NOT NULL,
   DeclaredTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = true),
-  LastSeenTime TIMESTAMP OPTIONS (allow_commit_timestamp = true),
-  CONSTRAINT Check_FenceId_Is_One CHECK (FenceId = 1),
+  LastSeenTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = true),
+  CONSTRAINT CK_ComponentOwnershipFence_Epoch CHECK (Epoch >= 1),
 ) PRIMARY KEY (FenceId);

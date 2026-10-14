@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"testing"
 
+	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -135,15 +136,76 @@ func TestDeclareClusterEpoch_TakeoverParity(t *testing.T) {
 	}
 }
 
+// TestSpannerStore_DeclareClusterEpoch_TakeoverStartsAdoptionGrace checks that a takeover sets
+// SourceLastSeenTime of the reassigned record to the takeover's commit time (the fence's
+// DeclaredTime), which starts the owner_stale adoption grace period. MemoryStore records no
+// SourceLastSeenTime, so this is Spanner-only.
+func TestSpannerStore_DeclareClusterEpoch_TakeoverStartsAdoptionGrace(t *testing.T) {
+	ctx := context.Background()
+	s, client := setupTestStore(ctx, t)
+	seedOwnedComponent(ctx, t, s, "fence-grace", false)
+	if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 1}); err != nil {
+		t.Fatalf("DeclareClusterEpoch(prod) error = %v", err)
+	}
+	if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: drClusterUID, Name: "dr", Epoch: 2}); err != nil {
+		t.Fatalf("DeclareClusterEpoch(dr) error = %v", err)
+	}
+
+	stmt := spanner.Statement{
+		SQL:    `SELECT c.SourceLastSeenTime, f.DeclaredTime FROM Components c, ComponentOwnershipFence f WHERE c.ActiveName = @name AND f.FenceId = 1`,
+		Params: map[string]any{"name": "fence-grace"},
+	}
+	var lastSeen, declared spanner.NullTime
+	err := client.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
+		return row.Columns(&lastSeen, &declared)
+	})
+	if err != nil {
+		t.Fatalf("query SourceLastSeenTime error = %v", err)
+	}
+	if !lastSeen.Valid || !lastSeen.Time.Equal(declared.Time) {
+		t.Errorf("SourceLastSeenTime = %v, want the takeover commit time %v", lastSeen, declared)
+	}
+}
+
+// TestSpannerStore_OwnershipFenceSchema checks the ComponentOwnershipFence constraints: Epoch must
+// be at least 1, LastSeenTime is required, and FenceId has no singleton CHECK.
+func TestSpannerStore_OwnershipFenceSchema(t *testing.T) {
+	cols := []string{"FenceId", "ActiveClusterUid", "ActiveClusterName", "Epoch", "DeclaredTime", "LastSeenTime"}
+	tests := []struct {
+		name    string
+		vals    []any
+		wantErr bool
+	}{
+		{name: "epoch 0 violates the CHECK", vals: []any{int64(1), prodClusterUID, "prod", int64(0), spanner.CommitTimestamp, spanner.CommitTimestamp}, wantErr: true},
+		{name: "NULL LastSeenTime is rejected", vals: []any{int64(1), prodClusterUID, "prod", int64(1), spanner.CommitTimestamp, nil}, wantErr: true},
+		{name: "FenceId other than 1 is allowed", vals: []any{int64(2), prodClusterUID, "prod", int64(1), spanner.CommitTimestamp, spanner.CommitTimestamp}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			_, client := setupTestStore(ctx, t)
+			_, err := client.Apply(ctx, []*spanner.Mutation{spanner.Insert("ComponentOwnershipFence", cols, tt.vals)})
+			if gotErr := err != nil; gotErr != tt.wantErr {
+				t.Errorf("Insert(%v) error = %v, wantErr %t", tt.vals, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 // assertFenceRejected checks that err is a FailedPrecondition with an ErrorInfo wantReason naming
 // active as the fence holder.
 func assertFenceRejected(t *testing.T, err error, wantReason string, active store.ClusterIdentity) {
 	t.Helper()
 	st := status.Convert(err)
 	want := []any{&errdetails.ErrorInfo{
-		Reason:   wantReason,
-		Domain:   store.ErrorInfoDomain,
-		Metadata: map[string]string{"operation": "DeclareClusterEpoch", "active_cluster_name": active.Name, "active_epoch": fmt.Sprint(active.Epoch)},
+		Reason: wantReason,
+		Domain: store.ErrorInfoDomain,
+		Metadata: map[string]string{
+			"operation":           "DeclareClusterEpoch",
+			"active_cluster_uid":  active.UID,
+			"active_cluster_name": active.Name,
+			"active_epoch":        fmt.Sprint(active.Epoch),
+		},
 	}}
 	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); st.Code() != codes.FailedPrecondition || diff != "" {
 		t.Errorf("DeclareClusterEpoch() error = %v, details mismatch (-want +got):\n%s", err, diff)
