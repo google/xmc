@@ -23,11 +23,11 @@ from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
-from tools.nightly_tests import xmc_entities_validator
 from tools.nightly_tests.verification import (
     endpoint_resolution,
     verifier_cli,
     workload_verification,
+    xmc_entities_validator,
 )
 
 
@@ -73,7 +73,7 @@ class WorkloadVerificationTest(unittest.TestCase):
         mock_stub = mock.MagicMock()
         mock_exp = SimpleNamespace(name="experiments/10", title="Test Exp")
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.validate_experiment",
+            "tools.nightly_tests.verification.xmc_entities_validator.validate_experiment",
             return_value=mock_exp,
         ) as mock_val:
             res = workload_verification.assert_experiment(mock_stub, "10", "Test")
@@ -86,7 +86,7 @@ class WorkloadVerificationTest(unittest.TestCase):
         mock_stub = mock.MagicMock()
         wu_list = [{"id": "1", "worker_name": "w1", "queue": "cpu-queue", "state": "COMPLETED"}]
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.validate_work_units",
+            "tools.nightly_tests.verification.xmc_entities_validator.validate_work_units",
             return_value=wu_list,
         ) as mock_val:
             res = workload_verification.assert_work_units(
@@ -110,7 +110,7 @@ class WorkloadVerificationTest(unittest.TestCase):
         expected_jobs = [{"name": "w1", "replicas": 1}]
         job_results = [{"name": "w1", "replicas": 1, "primary_container": "w1"}]
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.validate_jobsets",
+            "tools.nightly_tests.verification.xmc_entities_validator.validate_jobsets",
             return_value=job_results,
         ) as mock_val:
             res = workload_verification.assert_work_unit_jobsets(mock_stub, "10", expected_jobs)
@@ -134,7 +134,7 @@ class WorkloadVerificationTest(unittest.TestCase):
             }
         ]
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.validate_artifacts",
+            "tools.nightly_tests.verification.xmc_entities_validator.validate_artifacts",
             return_value=art_results,
         ) as mock_val:
             res = workload_verification.assert_work_unit_artifacts(
@@ -181,7 +181,7 @@ class WorkloadVerificationTest(unittest.TestCase):
                 side_effect=lambda _, k, d=None: flag_values.get(k, d),
             ),
             mock.patch(
-                "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+                "tools.nightly_tests.verification.xmc_entities_validator.create_authenticated_stub",
                 return_value=(mock_stub, mock_channel),
             ) as mock_create_stub,
             mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,
@@ -224,7 +224,7 @@ class WorkloadVerificationTest(unittest.TestCase):
                 verifier_cli, "get_flag", side_effect=lambda _, k, d=None: "16" if k == "xid" else d
             ),
             mock.patch(
-                "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+                "tools.nightly_tests.verification.xmc_entities_validator.create_authenticated_stub",
                 return_value=(mock_stub, mock_channel),
             ),
         ):
@@ -249,7 +249,7 @@ class WorkloadVerificationTest(unittest.TestCase):
                 verifier_cli, "get_flag", side_effect=lambda _, k, d=None: "16" if k == "xid" else d
             ),
             mock.patch(
-                "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+                "tools.nightly_tests.verification.xmc_entities_validator.create_authenticated_stub",
                 return_value=(mock_stub, mock_channel),
             ),
             mock.patch("sys.stderr", new_callable=io.StringIO),
@@ -277,7 +277,7 @@ class WorkloadVerificationTest(unittest.TestCase):
                         side_effect=lambda _, k, d=None: "10" if k == "xid" else d,
                     ),
                     mock.patch(
-                        "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+                        "tools.nightly_tests.verification.xmc_entities_validator.create_authenticated_stub",
                         return_value=(mock_stub, mock_channel),
                     ),
                     mock.patch("sys.stderr", new_callable=io.StringIO),
@@ -306,7 +306,7 @@ class WorkloadVerificationTest(unittest.TestCase):
                 return_value="http://127.0.0.1:8123",
             ),
             mock.patch(
-                "tools.nightly_tests.xmc_entities_validator.validate_clickhouse_metrics",
+                "tools.nightly_tests.verification.xmc_entities_validator.validate_clickhouse_metrics",
                 return_value=expected_res,
             ) as mock_val,
         ):
@@ -358,7 +358,7 @@ class WorkloadVerificationTest(unittest.TestCase):
                     ),
                     mock.patch.dict("os.environ", env_vars, clear=True),
                     mock.patch(
-                        "tools.nightly_tests.xmc_entities_validator.validate_dashboard_chart_data",
+                        "tools.nightly_tests.verification.xmc_entities_validator.validate_dashboard_chart_data",
                         return_value=expected_res,
                     ) as mock_val,
                 ):
@@ -383,7 +383,7 @@ class WorkloadVerificationTest(unittest.TestCase):
             "charts": [{"name": "c1", "title": "Loss"}, {"id": "c2", "title": "Acc"}],
         }
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.validate_dashboard",
+            "tools.nightly_tests.verification.xmc_entities_validator.validate_dashboard",
             return_value=[dash_payload],
         ) as mock_val:
             res = workload_verification.assert_dashboard(
@@ -399,7 +399,8 @@ class WorkloadVerificationTest(unittest.TestCase):
             )
         with (
             mock.patch(
-                "tools.nightly_tests.xmc_entities_validator.validate_dashboard", return_value=[]
+                "tools.nightly_tests.verification.xmc_entities_validator.validate_dashboard",
+                return_value=[],
             ),
             self.assertRaisesRegex(AssertionError, "was not returned by endpoint"),
         ):
@@ -418,7 +419,7 @@ class WorkloadVerificationTest(unittest.TestCase):
                 verifier_cli, "get_flag", side_effect=lambda _, k, d=None: flags_map.get(k, d)
             ),
             mock.patch(
-                "tools.nightly_tests.xmc_entities_validator.validate_dashboard",
+                "tools.nightly_tests.verification.xmc_entities_validator.validate_dashboard",
                 return_value=[dash_payload],
             ) as mock_val,
             mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,
@@ -443,7 +444,7 @@ class WorkloadVerificationTest(unittest.TestCase):
                 verifier_cli, "get_flag", side_effect=lambda _, k, d=None: slug_flags.get(k, d)
             ),
             mock.patch(
-                "tools.nightly_tests.xmc_entities_validator.validate_dashboard",
+                "tools.nightly_tests.verification.xmc_entities_validator.validate_dashboard",
                 return_value=[],
             ),
             mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,

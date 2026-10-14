@@ -20,7 +20,7 @@ were correctly created, scheduled to the expected queue, configured with the
 expected JobSet specification, and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.simple_job_verify --xid=16
+    python3 -m tools.nightly_tests.examples_verification.simple_job_verify --xid=16
 """
 
 from __future__ import annotations
@@ -28,8 +28,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import xmc_entities_validator
-from tools.nightly_tests.verification import verifier_cli, workload_verification
+from tools.nightly_tests.verification import (
+    verifier_cli,
+    workload_verification,
+    xmc_entities_validator,
+)
 
 # Domain assertion constants for simple_job workload
 EXPECTED_TITLE_PATTERN: str = "Demo Workload"

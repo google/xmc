@@ -129,7 +129,7 @@ jobs:
     needs: [build-example-images]
     runs-on: 'arc-runner-set'
     environment: xmc-nightly
-    timeout-minutes: ${{ inputs.timeout_minutes || 30 }}
+    timeout-minutes: ${{ fromJSON(format('{0}', inputs.timeout_minutes || 30)) }}
 
     permissions:
       contents: read
@@ -144,7 +144,7 @@ jobs:
             example_path: 'examples/simple_job'
             entrypoint: 'launch.py'
             args: '--queue=${QUEUE_NAME} --num_work_units=3 --duration=60 --gpus=0'
-            verify_module: 'tools.nightly_tests.simple_job_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.simple_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
           - id: 'init_container_job'
@@ -152,7 +152,7 @@ jobs:
             example_path: 'examples/init_container_job'
             entrypoint: 'launch.py'
             args: ''
-            verify_module: 'tools.nightly_tests.init_container_job_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.init_container_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
           - id: 'sidecar'
@@ -160,7 +160,7 @@ jobs:
             example_path: 'examples/sidecar'
             entrypoint: 'launch.py'
             args: ''
-            verify_module: 'tools.nightly_tests.sidecar_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.sidecar_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
           - id: 'multipod_job'
@@ -168,7 +168,7 @@ jobs:
             example_path: 'examples/multipod_job'
             entrypoint: 'launch.py'
             args: ''
-            verify_module: 'tools.nightly_tests.multipod_job_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.multipod_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
           - id: 'metrics_job'
@@ -176,7 +176,7 @@ jobs:
             example_path: 'examples/metrics_job'
             entrypoint: 'launch.py'
             args: ''
-            verify_module: 'tools.nightly_tests.metrics_job_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.metrics_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: true
             timeout_minutes: 15
@@ -185,7 +185,7 @@ jobs:
             example_path: 'examples/managed_xprof_artifact_job'
             entrypoint: 'launch.py'
             args: '--queue_name=${QUEUE_NAME} --total_steps=20'
-            verify_module: 'tools.nightly_tests.managed_xprof_artifact_job_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.managed_xprof_artifact_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
           - id: 'workunit_artifact_job'
@@ -193,7 +193,7 @@ jobs:
             example_path: 'examples/workunit_artifact_job'
             entrypoint: 'launch.py'
             args: '--queue=${QUEUE_NAME}'
-            verify_module: 'tools.nightly_tests.workunit_artifact_job_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.workunit_artifact_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
           - id: 'chart_artifact_job'
@@ -201,7 +201,7 @@ jobs:
             example_path: 'examples/chart_artifact_job'
             entrypoint: 'launch.py'
             args: ''
-            verify_module: 'tools.nightly_tests.chart_artifact_job_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.chart_artifact_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: true
             timeout_minutes: 15
@@ -210,7 +210,7 @@ jobs:
             example_path: 'examples/clickhouse_metrics_job'
             entrypoint: 'launch.py'
             args: ''
-            verify_module: 'tools.nightly_tests.clickhouse_metrics_job_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.clickhouse_metrics_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: true
             timeout_minutes: 15
@@ -219,7 +219,7 @@ jobs:
             example_path: 'examples/metrics_dashboard_job'
             entrypoint: 'launch.py'
             args: ''
-            verify_module: 'tools.nightly_tests.metrics_dashboard_job_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.metrics_dashboard_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: true
             timeout_minutes: 15
@@ -228,7 +228,7 @@ jobs:
             example_path: 'examples/per_job_node_selector'
             entrypoint: 'launch.py'
             args: ''
-            verify_module: 'tools.nightly_tests.per_job_node_selector_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.per_job_node_selector_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
           - id: 'pathways_job'
@@ -236,7 +236,7 @@ jobs:
             example_path: 'examples/pathways_job'
             entrypoint: 'launch.py'
             args: ''
-            verify_module: 'tools.nightly_tests.pathways_job_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.pathways_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             timeout_minutes: 15
           - id: 'xdash_dashboard'
@@ -244,7 +244,7 @@ jobs:
             example_path: 'examples/xdash_dashboard'
             entrypoint: 'create_dashboard.py'
             args: '--endpoint="localhost:50051" --create-experiments'
-            verify_module: 'tools.nightly_tests.xdash_dashboard_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.xdash_dashboard_verify'
             expected_queue: ''
             requires_clickhouse: true
             timeout_minutes: 15
@@ -253,7 +253,7 @@ jobs:
             example_path: 'examples/simple_job'
             entrypoint: 'launch.py'
             args: '--queue=${QUEUE_NAME} --num_work_units=3 --duration=180 --gpus=0'
-            verify_module: 'tools.nightly_tests.resource_observability_dashboard_ui_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.resource_observability_dashboard_ui_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_playwright: true
             timeout_minutes: 15
@@ -262,7 +262,7 @@ jobs:
             example_path: 'examples/simple_job'
             entrypoint: 'launch.py'
             args: '--queue=multikueue-cpu-queue --num_work_units=3 --duration=60 --gpus=0'
-            verify_module: 'tools.nightly_tests.multikueue_job_verify'
+            verify_module: 'tools.nightly_tests.examples_verification.multikueue_job_verify'
             expected_queue: 'multikueue-cpu-queue'
             timeout_minutes: 15
 

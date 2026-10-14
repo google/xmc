@@ -20,7 +20,7 @@ were correctly created, scheduled to the expected queue, configured with distinc
 nodeSelector mappings (head on cpups, workers on gpu-pool), and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.per_job_node_selector_verify --xid=20
+    python3 -m tools.nightly_tests.examples_verification.per_job_node_selector_verify --xid=20
 """
 
 from __future__ import annotations
@@ -28,8 +28,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import xmc_entities_validator
-from tools.nightly_tests.verification import verifier_cli, workload_verification
+from tools.nightly_tests.verification import (
+    verifier_cli,
+    workload_verification,
+    xmc_entities_validator,
+)
 
 EXPECTED_TITLE_PATTERN: str = "Per-Job nodeSelector Validation Experiment"
 EXPECTED_WORKER_NAMES: tuple[str, ...] = ("head",)

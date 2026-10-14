@@ -25,7 +25,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
-from tools.nightly_tests import xmc_entities_validator
+from tools.nightly_tests.verification import xmc_entities_validator
 
 
 class XmcEntitiesValidatorTest(unittest.TestCase):
@@ -616,7 +616,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             ]
         }
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.query_clickhouse_sql",
+            "tools.nightly_tests.verification.xmc_entities_validator.query_clickhouse_sql",
             return_value=mock_response,
         ):
             res = xmc_entities_validator.validate_clickhouse_metrics(
@@ -636,7 +636,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             ]
         }
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.query_clickhouse_sql",
+            "tools.nightly_tests.verification.xmc_entities_validator.query_clickhouse_sql",
             return_value=mock_response,
         ):
             with self.assertRaises(AssertionError) as ctx:
@@ -660,7 +660,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             },
         ]
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.query_clickhouse_sql",
+            "tools.nightly_tests.verification.xmc_entities_validator.query_clickhouse_sql",
             side_effect=responses,
         ):
             res = xmc_entities_validator.validate_clickhouse_metrics(
@@ -675,7 +675,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
 
     def test_validate_clickhouse_metrics_non_strict_returns_skipped_on_timeout(self) -> None:
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.query_clickhouse_sql",
+            "tools.nightly_tests.verification.xmc_entities_validator.query_clickhouse_sql",
             return_value=None,
         ):
             res = xmc_entities_validator.validate_clickhouse_metrics(
@@ -714,7 +714,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             return dash_response
 
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.query_dashboard_http",
+            "tools.nightly_tests.verification.xmc_entities_validator.query_dashboard_http",
             side_effect=mock_query,
         ):
             res = xmc_entities_validator.validate_dashboard_chart_data(
@@ -1238,7 +1238,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
 
     def test_validate_dashboard_chart_data_timeout_includes_duration(self) -> None:
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.query_dashboard_http",
+            "tools.nightly_tests.verification.xmc_entities_validator.query_dashboard_http",
             return_value={"chartIds": []},
         ):
             with self.assertRaises(AssertionError) as ctx:
@@ -1305,7 +1305,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
     def test_validate_dashboard_min_charts_assertion(self) -> None:
         mock_data = {"name": "dashboards/dash_1", "title": "VCC", "chart_ids": ["c1"]}
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.query_dashboard_http",
+            "tools.nightly_tests.verification.xmc_entities_validator.query_dashboard_http",
             return_value=mock_data,
         ):
             with self.assertRaisesRegex(AssertionError, "expected at least 3 constituent charts"):

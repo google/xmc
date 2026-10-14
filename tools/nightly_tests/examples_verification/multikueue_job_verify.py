@@ -19,8 +19,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import simple_job_verify, xmc_entities_validator
-from tools.nightly_tests.verification import verifier_cli, workload_verification
+from tools.nightly_tests.examples_verification import simple_job_verify
+from tools.nightly_tests.verification import (
+    verifier_cli,
+    workload_verification,
+    xmc_entities_validator,
+)
 
 DEFAULT_QUEUE: str = "multikueue-cpu-queue"
 DEFAULT_WORKER_CLUSTER: str = "xmc-nightly-worker-1"

@@ -22,7 +22,7 @@ import unittest
 from typing import Any
 from unittest import mock
 
-from tools.nightly_tests import ui_entities_validator
+from tools.nightly_tests.verification import ui_entities_validator
 
 
 class UIEntitiesValidatorTest(unittest.TestCase):

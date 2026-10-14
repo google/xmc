@@ -13,14 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Validation script for ManagedXprof artifact workload in XMC.
+"""Validation script for sidecar container job workload in XMC.
 
-Asserts that the ManagedXprof WorkUnit Artifact experiment and its WorkUnit were
-correctly created, scheduled to the expected queue, configured with ManagedXprof
-artifact payloads attached during execution lifecycle, and executed to completion.
+Asserts that the Sidecar Container Job experiment and its associated WorkUnit
+were correctly created, configured with sidecar containers, and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.managed_xprof_artifact_job_verify --xid=25
+    python3 -m tools.nightly_tests.examples_verification.sidecar_verify --xid=16
 """
 
 from __future__ import annotations
@@ -30,28 +29,30 @@ from typing import Any
 
 from tools.nightly_tests.verification import verifier_cli, workload_verification
 
-EXPECTED_TITLE_PATTERN: str = "ManagedXprof WorkUnit Artifact Example"
-EXPECTED_WORKER_NAMES: tuple[str, ...] = ("programmatic-xprof-worker",)
-EXPECTED_ARTIFACT_TYPES: tuple[str, ...] = ("managed_xprof",)
+EXPECTED_TITLE_PATTERN: str = "Sidecar"
+EXPECTED_JOB_NAME: str = "sidecar-worker"
+EXPECTED_INIT_CONTAINER: str = "init-setup"
+EXPECTED_SIDECAR: str = "sidecar-service"
+EXPECTED_PRIMARY_SPEC: str = "primary-worker"
 EXPECTED_JOBSET_SPECS: list[dict[str, Any]] = [
     {
-        "name": "programmatic-xprof-worker",
+        "name": EXPECTED_JOB_NAME,
         "replicas": 1,
-        "spec": "programmatic-xprof-worker",
+        "init_containers": [EXPECTED_INIT_CONTAINER],
+        "sidecars": [EXPECTED_SIDECAR],
+        "primary_container": EXPECTED_PRIMARY_SPEC,
     }
 ]
 
 
 def main(argv: Sequence[str]) -> None:
-    """Main verification routine for managed_xprof_artifact_job workload."""
+    """Main verification routine for sidecar workload."""
     workload_verification.verify_standard_workload(
         argv,
-        banner_title="XMC ManagedXprof Artifact Job Verification & Assertions",
-        summary_title="ALL MANAGED XPROF ARTIFACT ASSERTIONS PASSED SUCCESSFULLY!",
+        banner_title="XMC Sidecar Container Job Verification & Assertions",
+        summary_title="ALL SIDECAR JOB ASSERTIONS PASSED SUCCESSFULLY!",
         expected_title_pattern=EXPECTED_TITLE_PATTERN,
         expected_jobs=EXPECTED_JOBSET_SPECS,
-        expected_worker_names=EXPECTED_WORKER_NAMES,
-        expected_artifact_types=EXPECTED_ARTIFACT_TYPES,
     )
 
 
