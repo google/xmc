@@ -16,6 +16,9 @@
  * We should only add colors here if the color doesn't exist in mat-sys color pallette.
  */
 :root {
+  --mat-sys-surface: #ffffff;
+  --mat-sys-surface-container: #ffffff;
+  --mat-card-elevated-container-color: #ffffff;
   --xmc-code-container-color: rgb(229 231 235 / var(--tw-bg-opacity, 1));
   --xmc-border-color: #dadce0;
   --xmc-tag-container-color: #385155;

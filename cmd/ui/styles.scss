@@ -16,6 +16,9 @@
 @use 'custom_colors' as *;
 
 html {
+  --mat-sys-surface: #ffffff;
+  --mat-sys-surface-container: #ffffff;
+  --mat-card-elevated-container-color: #ffffff;
   background-color: var(--mat-sys-surface, #ffffff);
   color: var(--mat-sys-on-surface, #202124);
 }
@@ -52,6 +55,11 @@ mat-card.mat-mdc-card,
 
 xmc-tag {
   margin-right: 4px;
+}
+
+.mdc-text-field--outlined .mat-mdc-form-field-infix,
+.mdc-text-field--no-label .mat-mdc-form-field-infix {
+  align-self: center;
 }
 
 @keyframes shimmer-loading {
