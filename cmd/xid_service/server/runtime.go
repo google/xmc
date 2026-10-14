@@ -24,13 +24,13 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/cloudidentity/v1beta1"
 	"google.golang.org/api/option"
+	apipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/xid_service/config"
 	authz "xmanager_cloud/internal/auth"
 	commonhealth "xmanager_cloud/internal/common/health"
 	ss "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
-	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 var _ apipb.XidServiceServer = (*RuntimeServer)(nil)

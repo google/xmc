@@ -20,8 +20,8 @@ import (
 	"time"
 
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
+	xidpb "xmanager_cloud/api/protos/xid"
 )
 
 func BlankExperimentProto(xid int64) *essmsgpb.Experiment {

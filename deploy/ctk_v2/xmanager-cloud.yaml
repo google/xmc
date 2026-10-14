@@ -316,6 +316,12 @@ deployment_groups:
       service_account_email: $(log_monitor_service_account.service_account_email)
       k8s_service_account_name: log-monitor-service-account
 
+  - id: xmc_wi_binding_xmc_bridge
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: xmc-bridge-sa
+
   - id: compute_cluster
     source: modules/scheduler/gke-cluster
     use: [network, workload_service_account]

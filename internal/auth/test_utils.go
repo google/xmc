@@ -26,7 +26,7 @@ import (
 
 	"google.golang.org/api/cloudidentity/v1beta1"
 	"google.golang.org/api/option"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	xpb "xmanager_cloud/api/protos/xid"
 )
 
 // MockAPIResponse is a struct that holds the responses for the mock Cloud Identity API.

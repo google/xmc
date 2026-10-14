@@ -22,8 +22,8 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 
+	apipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/validator"
-	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 const (

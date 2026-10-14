@@ -22,6 +22,7 @@ import "xmanager_cloud/experiment_state_server/proto/url.proto";
 import "xmanager_cloud/xid_service/proto/messages.proto";
 import "xmanager_cloud/dashboard_service/proto/messages.proto";
 
+option go_package = "xmanager_cloud/api/protos/experiment";
 option java_multiple_files = true;
 
 // An Artifact represents a link to a resource created by, or associated with,

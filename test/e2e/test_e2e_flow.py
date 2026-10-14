@@ -21,7 +21,10 @@ Dex OIDC authentication, Spanner repository storage, and the Angular UI.
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
+import os
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -179,6 +182,7 @@ def _verify_work_unit_terminal_states(page: Page, experiment_name: str) -> dict[
         page, experiment_name, build_work_unit_payload(command=EARLY_EXIT_COMMAND)
     )
     _verify_admitted_jobset(succeeding)
+    _verify_admitted_jobset(failing)
     _wait_for_work_unit_state(page, succeeding, "COMPLETED")
     _wait_for_work_unit_state(page, failing, "FAILED")
     return {succeeding: "COMPLETED", failing: "FAILED"}
@@ -679,6 +683,54 @@ def _run_isolated_stage(browser: Any, stage_name: str, test_func: Any, *args: An
             raise
 
 
+def verify_cms_bridge_reconciliation() -> None:
+    """Verifies that xmc-bridge authenticates to CMS over gRPC and reconciles a Component CR."""
+    kube_context = os.environ.get("KUBE_CONTEXT", "").strip()
+    if not kube_context:
+        return
+    logger.info("=== [6/6] Verifying Authenticated xmc-bridge -> CMS Reconciliation ===")
+    manifest = json.dumps(
+        {
+            "apiVersion": "xmc.dev/v1alpha1",
+            "kind": "Component",
+            "metadata": {"name": "e2e-cms-auth-check", "namespace": "xmc"},
+            "spec": {
+                "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
+                "componentClass": "database",
+                "version": "v1.0.0",
+                "enabled": False,
+                "deletionProtection": False,
+            },
+        }
+    )
+    kubectl_base = ["kubectl", "--context", kube_context]
+    subprocess.run([*kubectl_base, "apply", "-f", "-"], input=manifest, text=True, check=True)
+    get_cmd = [*kubectl_base, "get", "component", "e2e-cms-auth-check", "-n", "xmc", "-o", "yaml"]
+    try:
+        deadline, last_yaml = time.time() + 30.0, ""
+        while time.time() < deadline:
+            res = subprocess.run(get_cmd, capture_output=True, text=True, check=False)
+            last_yaml = res.stdout
+            if "state: COMPONENT_STATE_DISABLED" in last_yaml:
+                logger.info("✓ xmc-bridge authenticated to CMS and reconciled Component CR.")
+                return
+            time.sleep(1.0)
+        raise RuntimeError(
+            f"Timed out waiting for xmc-bridge to reconcile Component via CMS:\n{last_yaml}"
+        )
+    finally:
+        del_cmd = [
+            *kubectl_base,
+            "delete",
+            "component",
+            "e2e-cms-auth-check",
+            "-n",
+            "xmc",
+            "--ignore-not-found=true",
+        ]
+        subprocess.run(del_cmd, check=False)
+
+
 def main() -> None:
     """Executes the Playwright test suite against the local KinD cluster."""
     screenshots_dir = get_screenshots_dir()
@@ -693,7 +745,7 @@ def main() -> None:
             # 1. Admin Flow in an isolated context
             admin_resources: AdminResources = _run_isolated_stage(
                 browser,
-                "[1/5] Running Admin Flow",
+                "[1/6] Running Admin Flow",
                 test_admin_flow_and_experiment_lifecycle,
                 screenshots_dir,
                 auth,
@@ -702,7 +754,7 @@ def main() -> None:
             # 2. Work Unit Lifecycle & Preemption Flow in an isolated context
             _run_isolated_stage(
                 browser,
-                "[2/5] Running Work Unit Lifecycle & Preemption Flow",
+                "[2/6] Running Work Unit Lifecycle & Preemption Flow",
                 test_work_unit_lifecycle_and_preemption,
                 screenshots_dir,
                 auth,
@@ -712,7 +764,7 @@ def main() -> None:
             # 3. Viewer Flow in an isolated context
             _run_isolated_stage(
                 browser,
-                "[3/5] Running Viewer Flow",
+                "[3/6] Running Viewer Flow",
                 test_viewer_permission_boundaries_and_isolation,
                 screenshots_dir,
                 auth,
@@ -722,7 +774,7 @@ def main() -> None:
             # 4. Token Expiration & Unauthenticated Boundary Flow in an isolated context
             _run_isolated_stage(
                 browser,
-                "[4/5] Running Token Expiration & Unauthenticated Flow",
+                "[4/6] Running Token Expiration & Unauthenticated Flow",
                 test_token_expiration_and_unauthenticated_boundary,
                 screenshots_dir,
             )
@@ -730,11 +782,14 @@ def main() -> None:
             # 5. Unauthorized Persona Boundary Flow in an isolated context
             _run_isolated_stage(
                 browser,
-                "[5/5] Running Unauthorized Persona Boundary Flow",
+                "[5/6] Running Unauthorized Persona Boundary Flow",
                 test_unauthorized_persona_boundary,
                 screenshots_dir,
                 auth,
             )
+
+            # 6. CMS gRPC Authentication & xmc-bridge Reconciliation Flow
+            verify_cms_bridge_reconciliation()
 
             logger.info("==================================================")
             logger.info("🎉 ALL E2E PLAYWRIGHT TESTS PASSED SUCCESSFULLY! 🎉")

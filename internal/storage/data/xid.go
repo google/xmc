@@ -18,8 +18,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	pb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
-	pb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // MergeXIDEntries merges an updated XidEntry proto message into a current XidEntry proto message

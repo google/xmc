@@ -23,7 +23,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/common/resourceaccumulator"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/storage"

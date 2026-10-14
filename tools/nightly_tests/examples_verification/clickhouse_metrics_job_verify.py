@@ -27,7 +27,7 @@ Note:
     (tools/nightly_tests/clickhouse_metrics_job_verify.py).
 
 Usage:
-    python3 -m tools.nightly_tests.clickhouse_metrics_job_verify --xid=22
+    python3 -m tools.nightly_tests.examples_verification.clickhouse_metrics_job_verify --xid=22
 """
 
 from __future__ import annotations

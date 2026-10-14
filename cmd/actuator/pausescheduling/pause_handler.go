@@ -23,8 +23,8 @@ import (
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
@@ -188,6 +188,8 @@ func resolveExecutionTarget(payload *actuatortaskpb.ActuatorPayload) string {
 	return payload.GetTarget()
 }
 
+const schedulingPausedSystemMessage = "Scheduling has been paused by administrators. This work unit will be scheduled once scheduling is resumed."
+
 // markExecutionSchedulingPaused sets the target execution's state to SCHEDULING_PAUSED within the
 // transaction.
 func markExecutionSchedulingPaused(ctx context.Context, tx *storage.Transaction, payload *actuatortaskpb.ActuatorPayload) error {
@@ -197,6 +199,7 @@ func markExecutionSchedulingPaused(ctx context.Context, tx *storage.Transaction,
 		return fmt.Errorf("failed to validate execution target %q: %w", targetToUpdate, err)
 	}
 
+	now := timestamppb.Now()
 	execUpdate := &storage.WorkUnitExecutionUpdate{
 		WID: wid,
 		EID: eid,
@@ -204,10 +207,17 @@ func markExecutionSchedulingPaused(ctx context.Context, tx *storage.Transaction,
 			Name: targetToUpdate,
 			Status: &essmsgpb.WorkUnitStatus{
 				State:           essmsgpb.WorkUnitStatus_SCHEDULING_PAUSED,
-				StateUpdateTime: timestamppb.Now(),
+				StateUpdateTime: now,
+				SystemMessage: &essmsgpb.StructuredMessage{
+					Severity:       essmsgpb.StructuredMessage_INFO,
+					Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+					Parent:         validator.ConstructWorkUnitName(xid, wid),
+					UserFacingText: schedulingPausedSystemMessage,
+					CreateTime:     now,
+				},
 			},
 		},
-		UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state"}},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state", "status.system_message"}},
 	}
 
 	if _, err := workunit.UpdateWorkUnitExecutionsInTx(ctx, tx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate}); err != nil {

@@ -23,13 +23,12 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
 
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	msgpb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 )
 
 // GetExperimentStatus orchestrates the retrieval of a single experiment's status by its ID.
-func (h *ExperimentHandler) GetExperimentStatus(ctx context.Context, req *apipb.GetExperimentStatusRequest) (*msgpb.ExperimentStatus, error) {
+func (h *ExperimentHandler) GetExperimentStatus(ctx context.Context, req *msgpb.GetExperimentStatusRequest) (*msgpb.ExperimentStatus, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch experiment status", "request", req)
 

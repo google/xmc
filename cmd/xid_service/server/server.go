@@ -20,10 +20,10 @@ package server
 import (
 	"fmt"
 
+	apipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/xid_service/config"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/storage"
-	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 var _ apipb.XidServiceServer = (*XIDServer)(nil)

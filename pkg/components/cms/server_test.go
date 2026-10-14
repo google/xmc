@@ -89,7 +89,7 @@ func TestCMSServer_StoreAccessor(t *testing.T) {
 
 func TestCMSServer_Scaffold_Handlers(t *testing.T) {
 	ctx := context.Background()
-	server := NewServer(&stubStore{})
+	server := NewServer(&stubStore{}, WithAuthorizer(NewDisabledAuthorizer()))
 
 	validSpec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
 
@@ -390,7 +390,7 @@ func TestCMSServer_Scaffold_Handlers(t *testing.T) {
 
 func TestCMSServer_UninitializedStore(t *testing.T) {
 	ctx := context.Background()
-	uninitializedServer := NewServer(nil)
+	uninitializedServer := NewServer(nil, WithAuthorizer(NewDisabledAuthorizer()))
 
 	tests := []struct {
 		name string
@@ -467,7 +467,7 @@ func TestCMSServer_UninitializedStore(t *testing.T) {
 func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
-	server := NewServer(ms)
+	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	spec := &componentspb.ComponentSpec{
 		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -600,7 +600,7 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ms := store.NewMemoryStore()
-			server := NewServer(ms)
+			server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 			if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "redpanda", Spec: specWithDeps()}); err != nil {
 				t.Fatalf("SetComponentIntent(redpanda) unexpected error: %v", err)
 			}
@@ -636,7 +636,7 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 func TestCMSServer_UpdateObservedGeneration_MemoryStore(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
-	server := NewServer(ms)
+	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	spec := &componentspb.ComponentSpec{
 		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -732,7 +732,7 @@ func TestCMSServer_UpdateObservedGeneration_MemoryStore(t *testing.T) {
 func TestCMSServer_SetComponentIntent_UpdateMask(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
-	server := NewServer(ms)
+	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	// Create initial component
 	initialSpec := &componentspb.ComponentSpec{
@@ -790,7 +790,7 @@ func TestCMSServer_SetComponentIntent_UpdateMask(t *testing.T) {
 func TestCMSServer_PrepareDeactivation_MemoryStore(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
-	server := NewServer(ms)
+	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	// Create root component
 	specRoot := &componentspb.ComponentSpec{
@@ -920,7 +920,7 @@ func TestCMSServer_PrepareDeactivation_MemoryStore(t *testing.T) {
 func TestCMSServer_CompleteDeactivation_MemoryStore(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
-	server := NewServer(ms)
+	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	spec := &componentspb.ComponentSpec{
 		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -1024,7 +1024,7 @@ func TestCMSServer_CompleteDeactivation_MemoryStore(t *testing.T) {
 func TestCMSServer_ExecuteDeletion_MemoryStore(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
-	server := NewServer(ms)
+	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	// Create protected component
 	spec := &componentspb.ComponentSpec{
@@ -1139,7 +1139,7 @@ func TestCMSServer_ExecuteDeletion_MemoryStore(t *testing.T) {
 func TestCMSServer_ResolveComponentSnapshot_MemoryStore(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
-	server := NewServer(ms)
+	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	spec := &componentspb.ComponentSpec{
 		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -1202,7 +1202,7 @@ func TestCMSServer_ResolveComponentSnapshot_MemoryStore(t *testing.T) {
 func TestCMSServer_ValidateComponentRequirement_MemoryStore(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
-	server := NewServer(ms)
+	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	spec := &componentspb.ComponentSpec{
 		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -1270,7 +1270,7 @@ func TestCMSServer_ValidateComponentRequirement_MemoryStore(t *testing.T) {
 func TestCMSServer_GetPlatformHealth_MemoryStore(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
-	server := NewServer(ms)
+	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	for i := 0; i < 3; i++ {
 		name := fmt.Sprintf("cms-health-%d", i)

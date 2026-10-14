@@ -28,9 +28,8 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
+	xidapipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 type (
@@ -131,8 +130,8 @@ func (m *mockRepository) UpdateChart(ctx context.Context, chart *dpb.Chart, upda
 
 type mockAuthorizer struct {
 	authenticateFn          func(ctx context.Context) (string, string, error)
-	isUserAuthorizedFn      func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error)
-	isUserAuthorizedChartFn func(ctx context.Context, user string, acls *xpb.XidAcls) (bool, error)
+	isUserAuthorizedFn      func(ctx context.Context, user string, acls *xidapipb.XidAcls, role auth.Role) (bool, error)
+	isUserAuthorizedChartFn func(ctx context.Context, user string, acls *xidapipb.XidAcls) (bool, error)
 }
 
 func (m *mockAuthorizer) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
@@ -142,14 +141,14 @@ func (m *mockAuthorizer) AuthenticateUserFromContext(ctx context.Context) (strin
 	return "user@example.com", "user-id-123", nil
 }
 
-func (m *mockAuthorizer) IsUserAuthorized(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
+func (m *mockAuthorizer) IsUserAuthorized(ctx context.Context, user string, acls *xidapipb.XidAcls, role auth.Role) (bool, error) {
 	if m.isUserAuthorizedFn != nil {
 		return m.isUserAuthorizedFn(ctx, user, acls, role)
 	}
 	return true, nil
 }
 
-func (m *mockAuthorizer) IsUserAuthorizedForChart(ctx context.Context, user string, acls *xpb.XidAcls) (bool, error) {
+func (m *mockAuthorizer) IsUserAuthorizedForChart(ctx context.Context, user string, acls *xidapipb.XidAcls) (bool, error) {
 	if m.isUserAuthorizedChartFn != nil {
 		return m.isUserAuthorizedChartFn(ctx, user, acls)
 	}
@@ -410,7 +409,7 @@ func TestGetChartData(t *testing.T) {
 		if resp.GetName() != "dashboards/123/charts/456" {
 			t.Errorf("GetChartData().Name = %q, want %q", resp.GetName(), "dashboards/123/charts/456")
 		}
-		if capturedReq == nil || capturedReq.GetName() != "xids/100" || capturedReq.GetUser() != "user@example.com" || capturedReq.GetRoleType() != xpb.XidAcls_READER {
+		if capturedReq == nil || capturedReq.GetName() != "xids/100" || capturedReq.GetUser() != "user@example.com" || capturedReq.GetRoleType() != xidapipb.XidAcls_READER {
 			t.Errorf("CheckUserAuthorization called with unexpected request: %v", capturedReq)
 		}
 	})
@@ -691,7 +690,7 @@ func TestAuthorizeExperiment(t *testing.T) {
 		if err != nil {
 			t.Fatalf("authorizeExperimentWrite returned unexpected error: %v", err)
 		}
-		if capturedReq == nil || capturedReq.GetName() != "xids/123" || capturedReq.GetUser() != "writer@example.com" || capturedReq.GetRoleType() != xpb.XidAcls_WRITER {
+		if capturedReq == nil || capturedReq.GetName() != "xids/123" || capturedReq.GetUser() != "writer@example.com" || capturedReq.GetRoleType() != xidapipb.XidAcls_WRITER {
 			t.Errorf("authorizeExperimentWrite called with unexpected request: %v", capturedReq)
 		}
 	})

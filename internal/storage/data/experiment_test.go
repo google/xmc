@@ -20,8 +20,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	pb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 )
 
 func TestMergeExperiments(t *testing.T) {

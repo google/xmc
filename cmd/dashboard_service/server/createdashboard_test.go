@@ -26,7 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
+	xidapipb "xmanager_cloud/api/protos/xid"
 )
 
 // existingChartFn answers GetChart with a chart belonging to the given experiment, so that chart

@@ -21,7 +21,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"

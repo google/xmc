@@ -21,8 +21,10 @@ import unittest
 from typing import Any
 from unittest import mock
 
-from tools.nightly_tests import (
+from tools.nightly_tests.examples_verification import (
     resource_observability_dashboard_ui_verify as rod_verify,
+)
+from tools.nightly_tests.verification import (
     ui_css_selectors as sel,
     ui_entities_validator,
 )

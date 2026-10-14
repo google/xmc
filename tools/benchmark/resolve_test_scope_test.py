@@ -307,7 +307,7 @@ class TestResolveTestScope(unittest.TestCase):
             self.assertEqual(pkg_direct, "//internal/storage/spanner/migrations")
 
             # File at root
-            pkg_root = find_enclosing_bazel_package("compat.bzl", cwd=base)
+            pkg_root = find_enclosing_bazel_package("oci.bzl", cwd=base)
             self.assertEqual(pkg_root, "//")
 
     def test_find_enclosing_bazel_package_robustness(self):
@@ -388,12 +388,6 @@ class TestResolveTestScope(unittest.TestCase):
                 "//internal/storage/spanner/migrations:migrations_test",
                 str(scope["bazel_targets"]),
             )
-
-    def test_resolve_test_scope_core_infra_compat_bzl(self):
-        scope = resolve_test_scope(["compat.bzl"], use_rdeps=False)
-        self.assertTrue(scope["run_backend"])
-        self.assertTrue(scope["run_ui"])
-        self.assertEqual(scope["backend_mode"], "all")
 
     @patch("tools.benchmark.resolve_test_scope.discover_bazel_rdeps_targets")
     def test_resolve_test_scope_deploy_code_file(self, mock_rdeps):

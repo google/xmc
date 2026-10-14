@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -135,10 +136,29 @@ class ControllerInstallerTest(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 3)
         mock_run.assert_called_with(
             _kubectl("get", "crd/workloads.kueue.x-k8s.io", "-o", "jsonpath={.caBundle}"),
-            check=False,
             capture_output=True,
         )
         self.assertEqual(mock_sleep.call_count, 2)
+
+    @mock.patch("test.e2e.lib.polling.time.sleep")
+    @mock.patch("test.e2e.lib.controller_installer.run_cmd")
+    def test_wait_for_ca_bundle_logs_and_retries_failing_kubectl(
+        self, mock_run: mock.MagicMock, mock_sleep: mock.MagicMock
+    ) -> None:
+        """The CA bundle wait logs a failing kubectl with its stderr and polls again."""
+        query = _kubectl("get", "crd/workloads.kueue.x-k8s.io", "-o", "jsonpath={.caBundle}")
+        mock_run.side_effect = [
+            subprocess.CalledProcessError(1, query, stderr="Error from server (NotFound)"),
+            mock.MagicMock(stdout="Y2EtYnVuZGxl"),
+        ]
+
+        with self.assertLogs(level="WARNING") as logs:
+            self.installer._wait_for_ca_bundle("crd/workloads.kueue.x-k8s.io", "{.caBundle}")
+
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("Error from server (NotFound)", logs.output[0])
+        self.assertEqual(mock_run.call_count, 2)
+        mock_sleep.assert_called_once()
 
     @mock.patch("test.e2e.lib.controller_installer.run_cmd")
     def test_resolve_manifest_returns_existing_bazel_bin_file(

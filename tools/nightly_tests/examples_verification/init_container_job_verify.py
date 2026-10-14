@@ -19,7 +19,7 @@ Asserts that the Init Container Job experiment and its associated WorkUnit
 were correctly created, configured with init containers, and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.init_container_job_verify --xid=16
+    python3 -m tools.nightly_tests.examples_verification.init_container_job_verify --xid=16
 """
 
 from __future__ import annotations

@@ -40,9 +40,9 @@ go_library(
         "@com_google_cloud_go_pubsub//:pubsub",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//option",
-        "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",
-        "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
-        "@org_golang_x_sync//errgroup:go_default_library",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
@@ -76,10 +76,10 @@ go_test(
         "@com_google_cloud_go_pubsub//:pubsub",
         "@com_google_cloud_go_pubsub//pstest",
         "@org_golang_google_api//option",
-        "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//credentials/insecure:go_default_library",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_protobuf//testing/protocmp",
-        "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",
-        "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

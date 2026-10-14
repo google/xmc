@@ -20,6 +20,7 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	spb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/actuator/k8s_client"
 	"xmanager_cloud/cmd/reconciler/clusterqueue"
 	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
@@ -27,7 +28,6 @@ import (
 	"xmanager_cloud/cmd/reconciler/kueue_sync"
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/cmd/reconciler/workload"
-	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/workunit"

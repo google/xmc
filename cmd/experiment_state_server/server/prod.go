@@ -27,10 +27,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	dashboard_pb "xmanager_cloud/api/protos/dashboard"
+	apipb "xmanager_cloud/api/protos/experiment"
+	xidgrpcpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/cmd/experiment_state_server/resumption"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	authz "xmanager_cloud/internal/auth"
 	commonhealth "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/logging"
@@ -40,7 +41,6 @@ import (
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 var _ apipb.ExperimentStateServiceServer = (*ProdServer)(nil)
@@ -49,6 +49,7 @@ var _ apipb.ExperimentStateServiceServer = (*ProdServer)(nil)
 type ProdServer struct {
 	*Server
 	spannerClient   *spanner.Client
+	authorizer      authz.AuthorizerInterface
 	xidClient       xidgrpcpb.XidServiceClient
 	taskQueueClient *tq.Client
 	bgTaskWG        *sync.WaitGroup
@@ -69,6 +70,14 @@ func (p *ProdServer) SpannerClient() *spanner.Client {
 		return nil
 	}
 	return p.spannerClient
+}
+
+// Authorizer returns the initialized AuthorizerInterface.
+func (p *ProdServer) Authorizer() authz.AuthorizerInterface {
+	if p == nil {
+		return nil
+	}
+	return p.authorizer
 }
 
 // Close closes all underlying production client connections.
@@ -278,6 +287,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 	return &ProdServer{
 		Server:          srv,
 		spannerClient:   spannerClient,
+		authorizer:      auth,
 		xidClient:       xidClient,
 		taskQueueClient: taskQueueClient,
 		bgTaskWG:        &bgTaskWG,

@@ -22,13 +22,13 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	xidpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/xid_service/xid"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/validator"
-	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestUpdateXidEntry(t *testing.T) {

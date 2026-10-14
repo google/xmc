@@ -23,8 +23,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	apipb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -35,7 +34,7 @@ func TestListExperiments_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)
 
-	var exps []*msgpb.Experiment
+	var exps []*apipb.Experiment
 	for i := 0; i < 3; i++ {
 		exps = append(exps, mustCreateExperiment(ctx, t, server, nil))
 	}
@@ -91,7 +90,7 @@ func TestSearchExperiments_HappyPath(t *testing.T) {
 
 	time.Sleep(experimentSearchStaleness + 10*time.Millisecond)
 
-	var exps []*msgpb.Experiment
+	var exps []*apipb.Experiment
 	for i := 0; i < 3; i++ {
 		exps = append(exps, mustCreateExperiment(ctx, t, server, nil))
 	}

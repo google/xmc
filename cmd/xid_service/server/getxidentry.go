@@ -18,16 +18,15 @@ import (
 	"errors"
 	"fmt"
 
+	msgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
-	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // GetXidEntry handles the RPC for retrieving a single XidEntry.
-func (s *XIDServer) GetXidEntry(ctx context.Context, in *apipb.GetXidEntryRequest) (*msgpb.XidEntry, error) {
+func (s *XIDServer) GetXidEntry(ctx context.Context, in *msgpb.GetXidEntryRequest) (*msgpb.XidEntry, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch XID entry", "name", in.GetName())
 
