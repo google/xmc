@@ -53,7 +53,7 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 | Condition Type | Status | Meaning |
 | :--- | :--- | :--- |
 | `Ready` | `True` / `False` / `Unknown` | Operational health and readiness of the underlying component (`Unknown` with reason `InitialSyncPending` if CMS fails before initial health evaluation). |
-| `Synced` | `True` / `False` | Control-plane synchronization with CMS (`CMSSynced` or `CMSSyncFailed`). Transient CMS errors set `Synced=False` and keep `status.access`; already-actuated workloads keep being health-probed, so `Ready` reflects the latest local probe, and `Ready=True` is kept only while `spec.enabled`. |
+| `Synced` | `True` / `False` | Control-plane synchronization with CMS (`CMSSynced` or `CMSSyncFailed`). Transient CMS errors set `Synced=False` and keep `status.access`; already-actuated workloads keep being health-probed, so `Ready` reflects the latest local probe, and `Ready=True` is kept only while `spec.enabled`. A CMS policy rejection (a dependency cycle, a dependency that is not registered yet, or a deactivation blocked by enabled dependents) keeps `Synced=True`, because the CMS write path is healthy; `Ready` reports the block instead. |
 | `Degraded` | `True` / `False` | Presence of active probe failures, crash loops, or provisioning errors. |
 | `DeactivationBlocked` | `True` | `spec.enabled: false` blocked because enabled components depend on this one; the workload keeps running. |
 | `DependenciesReady` | `True` / `False` | Informational, on actuated enabled components with `spec.dependencies`. `False` means Helm upgrades are held (see `HelmUpgradePending`). |
