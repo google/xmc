@@ -313,7 +313,7 @@ func TestReconcileComponent_SourceNamespaceConflictAndStaleGeneration(t *testing
 func TestReconcileDeletion_OwnershipAndFencedCleanup(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
-	cmsClient := NewCMSClientAdapter(cmsserver.NewServer(ms))
+	cmsClient := NewCMSClientAdapter(cmsserver.NewServer(ms, cmsserver.WithAuthorizer(cmsserver.NewDisabledAuthorizer())))
 	cluster := &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary", Epoch: 1}
 	fence, err := NewClusterFence(cmsClient, cluster, ClusterFenceOptions{})
 	if err != nil {
