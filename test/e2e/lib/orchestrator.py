@@ -141,7 +141,15 @@ class E2EOrchestrator:
         with phase_scope(Phase.HELM_DEPLOY):
             self.helm.deploy()
         with phase_scope(Phase.TESTS):
+            self._execute_tests()
+
+    def _execute_tests(self) -> None:
+        """Runs the Playwright suite, capturing cluster diagnostics before teardown on failure."""
+        try:
             self.tester.execute()
+        except Exception:
+            self.helm.capture_diagnostics()
+            raise
 
     def _build_images(self) -> list[str]:
         """Builds the container images and records that they were built."""

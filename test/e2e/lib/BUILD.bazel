@@ -22,6 +22,7 @@ py_library(
         "cancellation.py",
         "command.py",
         "config.py",
+        "controller_installer.py",
         "dev_token.py",
         "dex_authenticator.py",
         "helm_deployer.py",
@@ -32,6 +33,7 @@ py_library(
         "orchestrator.py",
         "outcome.py",
         "phases.py",
+        "polling.py",
         "spanner.py",
         "spanner_retry.py",
         "step_summary.py",
@@ -86,6 +88,18 @@ py_test(
 py_test(
     name = "helm_deployer_test",
     srcs = ["helm_deployer_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "controller_installer_test",
+    srcs = ["controller_installer_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "polling_test",
+    srcs = ["polling_test.py"],
     deps = [":orchestration_lib"],
 )
 

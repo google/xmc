@@ -12,17 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Pinned upstream controller release manifests (see MODULE.bazel) that the E2E harness
+# installs into the KinD cluster before the XMC Helm release.
 genrule(
-    name = "jobset_kueue_crds",
-    srcs = [
-        "@k8s_crd_manifests//:jobset.x-k8s.io_jobsets.yaml",
-        "@k8s_crd_manifests//:kueue.x-k8s.io_clusterqueues.yaml",
-        "@k8s_crd_manifests//:kueue.x-k8s.io_localqueues.yaml",
-        "@k8s_crd_manifests//:kueue.x-k8s.io_resourceflavors.yaml",
-        "@k8s_crd_manifests//:kueue.x-k8s.io_workloadpriorityclasses.yaml",
-        "@k8s_crd_manifests//:kueue.x-k8s.io_workloads.yaml",
-    ],
-    outs = ["jobset_kueue_crds.yaml"],
-    cmd = "awk 'FNR==1 && NR!=1 {print \"---\"} {print}' $(SRCS) > $@",
+    name = "jobset_manifests",
+    srcs = ["@jobset_v0_12_0_manifests//file"],
+    outs = ["jobset_manifests.yaml"],
+    cmd = "cp $< $@",
+    visibility = ["//test/e2e:__subpackages__"],
+)
+
+genrule(
+    name = "kueue_manifests",
+    srcs = ["@kueue_v0_18_2_manifests//file"],
+    outs = ["kueue_manifests.yaml"],
+    cmd = "cp $< $@",
     visibility = ["//test/e2e:__subpackages__"],
 )
