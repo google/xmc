@@ -35,12 +35,11 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	xidconfig "xmanager_cloud/cmd/xid_service/config"
 	xidserver "xmanager_cloud/cmd/xid_service/server"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	authz "xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -244,7 +243,7 @@ func mustCreateExperiment(ctx context.Context, t *testing.T, server *Server, exp
 			},
 		}
 	}
-	createdExp, err := server.CreateExperiment(ctx, &apipb.CreateExperimentRequest{Experiment: exp})
+	createdExp, err := server.CreateExperiment(ctx, &essmsgpb.CreateExperimentRequest{Experiment: exp})
 	if err != nil {
 		t.Fatalf("CreateExperiment() returned an unexpected error: %v", err)
 	}
@@ -284,7 +283,7 @@ func mustCreateWorkUnit(ctx context.Context, t *testing.T, server *Server, paren
 			},
 		}
 	}
-	op, err := server.CreateWorkUnit(ctx, &apipb.CreateWorkUnitRequest{
+	op, err := server.CreateWorkUnit(ctx, &essmsgpb.CreateWorkUnitRequest{
 		Parent:     parent,
 		WorkUnitId: workUnitID,
 		WorkUnit:   workUnit,
@@ -317,7 +316,7 @@ func mustCreateArtifact(ctx context.Context, t *testing.T, server *Server, paren
 			},
 		}
 	}
-	createdArtifact, err := server.CreateArtifact(ctx, &apipb.CreateArtifactRequest{
+	createdArtifact, err := server.CreateArtifact(ctx, &essmsgpb.CreateArtifactRequest{
 		Parent:   parent,
 		Artifact: artifact,
 	})

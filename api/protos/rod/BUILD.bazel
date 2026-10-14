@@ -37,7 +37,7 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_grpc_v2",
         "//api/protos/experiment:go_grpc_gateway",
     ],
-    importpath = "xmanager_cloud/rod_service/proto/api_go_proto",
+    importpath = "xmanager_cloud/api/protos/rod",
     proto = ":rod_api_proto",
     deps = [
         "//api/protos/experiment:messages_go_proto",

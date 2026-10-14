@@ -15,8 +15,8 @@
 package main
 
 import (
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	spb "xmanager_cloud/api/protos/rod"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/common/resourceaccumulator"
 )
 

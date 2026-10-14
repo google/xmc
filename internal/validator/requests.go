@@ -20,9 +20,8 @@ import (
 	"strconv"
 	"strings"
 
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	xidmessagespb "xmanager_cloud/api/protos/xid"
-	essapipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
 )
@@ -109,7 +108,7 @@ func validateRootACLs(acls *xidmessagespb.XidAcls) error {
 }
 
 // ValidateCreateExperimentRequest validates the given CreateExperimentRequest.
-func ValidateCreateExperimentRequest(in *essapipb.CreateExperimentRequest) error {
+func ValidateCreateExperimentRequest(in *essmsgpb.CreateExperimentRequest) error {
 	if in == nil {
 		return fmt.Errorf("request cannot be nil: %w", grpcerr.ErrInvalidArgument)
 	}
@@ -165,7 +164,7 @@ func validateExperimentMetadata(exp *essmsgpb.Experiment) error {
 }
 
 // ValidateUpdateExperimentRequest validates updates in UpdateExperimentRequest.
-func ValidateUpdateExperimentRequest(req *essapipb.UpdateExperimentRequest) error {
+func ValidateUpdateExperimentRequest(req *essmsgpb.UpdateExperimentRequest) error {
 	for _, path := range req.GetUpdateMask().GetPaths() {
 		if path == "title" {
 			if strings.TrimSpace(req.GetExperiment().GetTitle()) == "" {
@@ -268,7 +267,7 @@ func FillXidEntryNullValues(xidEntry *xidmessagespb.XidEntry) *xidmessagespb.Xid
 }
 
 // ValidateCreateWorkUnitRequest validates the given CreateWorkUnitRequest.
-func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
+func ValidateCreateWorkUnitRequest(in *essmsgpb.CreateWorkUnitRequest) error {
 	if in == nil {
 		return fmt.Errorf("request cannot be nil: %w", grpcerr.ErrInvalidArgument)
 	}
@@ -464,7 +463,7 @@ func validateJobDependencyOrder(dep *essmsgpb.KubernetesJob_DependencyOrder, job
 }
 
 // ValidateCreateArtifactRequest validates the given CreateArtifactRequest.
-func ValidateCreateArtifactRequest(in *essapipb.CreateArtifactRequest) error {
+func ValidateCreateArtifactRequest(in *essmsgpb.CreateArtifactRequest) error {
 	if in == nil {
 		return fmt.Errorf("request cannot be nil: %w", grpcerr.ErrInvalidArgument)
 	}

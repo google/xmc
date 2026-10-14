@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	clientgotesting "k8s.io/client-go/testing"
-	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	esspb "xmanager_cloud/api/protos/experiment"
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/prototest"
 )

@@ -17,9 +17,8 @@ import (
 	"context"
 	"fmt"
 
+	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
@@ -28,7 +27,7 @@ import (
 )
 
 // UpdateExperiment updates an experiment's data.
-func (h *ExperimentHandler) UpdateExperiment(ctx context.Context, req *apipb.UpdateExperimentRequest) (*msgpb.Experiment, error) {
+func (h *ExperimentHandler) UpdateExperiment(ctx context.Context, req *msgpb.UpdateExperimentRequest) (*msgpb.Experiment, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Update experiment", "request", req)
 

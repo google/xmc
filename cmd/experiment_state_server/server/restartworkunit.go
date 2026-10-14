@@ -18,16 +18,15 @@ import (
 	"fmt"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
 )
 
 // RestartWorkUnit sends a request to restart a work unit.
-func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *apipb.RestartWorkUnitRequest) (*lropb.Operation, error) {
+func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *msgpb.RestartWorkUnitRequest) (*lropb.Operation, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Enqueue restart work unit", "request", req)
 

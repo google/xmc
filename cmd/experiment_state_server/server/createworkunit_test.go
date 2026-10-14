@@ -26,11 +26,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	tpb "xmanager_cloud/api/protos/task_queue"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/security/securitytest"
@@ -161,7 +160,7 @@ func TestCreateWorkUnit_ZeroWorkUnitID(t *testing.T) {
 		WorkUnitType: msgpb.WorkUnit_STANDARD,
 		Executable:   testExecutable,
 	}
-	req := &apipb.CreateWorkUnitRequest{
+	req := &msgpb.CreateWorkUnitRequest{
 		Parent:     createdExp.GetName(),
 		WorkUnitId: 0,
 		WorkUnit:   workUnit,
@@ -249,10 +248,10 @@ func (e *incompatibleEnv) IsCompatibleWithWorkUnit(workUnit *msgpb.WorkUnit) (bo
 func (e *incompatibleEnv) InjectOnJobSetCreation(ctx context.Context, workUnit *msgpb.WorkUnit, jobSet *jobsetv1alpha2.JobSet) (*jobsetv1alpha2.JobSet, error) {
 	return jobSet, nil
 }
-func (e *incompatibleEnv) InjectOnExperimentCreation(ctx context.Context, essServer apipb.ExperimentStateServiceServer, experiment *msgpb.Experiment) (*msgpb.Experiment, error) {
+func (e *incompatibleEnv) InjectOnExperimentCreation(ctx context.Context, essServer msgpb.ExperimentStateServiceServer, experiment *msgpb.Experiment) (*msgpb.Experiment, error) {
 	return experiment, nil
 }
-func (e *incompatibleEnv) InjectOnWorkUnitCreation(ctx context.Context, essServer apipb.ExperimentStateServiceServer, workUnit *msgpb.WorkUnit) (*msgpb.WorkUnit, error) {
+func (e *incompatibleEnv) InjectOnWorkUnitCreation(ctx context.Context, essServer msgpb.ExperimentStateServiceServer, workUnit *msgpb.WorkUnit) (*msgpb.WorkUnit, error) {
 	return workUnit, nil
 }
 
@@ -267,7 +266,7 @@ func TestCreateWorkUnit_IncompatibleWorkUnit(t *testing.T) {
 		WorkUnitType: msgpb.WorkUnit_STANDARD,
 		Executable:   testExecutable,
 	}
-	req := &apipb.CreateWorkUnitRequest{
+	req := &msgpb.CreateWorkUnitRequest{
 		Parent:     "experiments/123",
 		WorkUnitId: 1,
 		WorkUnit:   goodWorkUnit,
@@ -306,12 +305,12 @@ func TestCreateWorkUnit_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.CreateWorkUnitRequest
+		req     *msgpb.CreateWorkUnitRequest
 		wantErr error
 	}{
 		{
 			name: "invalid_parent_name",
-			req: &apipb.CreateWorkUnitRequest{
+			req: &msgpb.CreateWorkUnitRequest{
 				Parent:     "invalid-parent-name",
 				WorkUnitId: 1,
 				WorkUnit:   &msgpb.WorkUnit{},
@@ -320,7 +319,7 @@ func TestCreateWorkUnit_BadPaths(t *testing.T) {
 		},
 		{
 			name: "missing_work_unit",
-			req: &apipb.CreateWorkUnitRequest{
+			req: &msgpb.CreateWorkUnitRequest{
 				Parent:     createdExp.GetName(),
 				WorkUnitId: 1,
 				WorkUnit:   nil,
@@ -348,7 +347,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 		WorkUnitType: msgpb.WorkUnit_STANDARD,
 		Executable:   testExecutable,
 	}
-	goodReq := &apipb.CreateWorkUnitRequest{
+	goodReq := &msgpb.CreateWorkUnitRequest{
 		Parent:     "experiments/123",
 		WorkUnitId: 1,
 		WorkUnit:   goodWorkUnit,
@@ -356,7 +355,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 
 	testCases := []struct {
 		name          string
-		req           *apipb.CreateWorkUnitRequest
+		req           *msgpb.CreateWorkUnitRequest
 		authenticator auth.AuthorizerInterface
 		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
@@ -391,7 +390,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
-			req: &apipb.CreateWorkUnitRequest{
+			req: &msgpb.CreateWorkUnitRequest{
 				Parent:     "experiments/123",
 				WorkUnitId: 1,
 				WorkUnit:   nil,
@@ -448,7 +447,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 			if tc.req != nil {
 				req = tc.req
 			}
-			_, err := server.CreateWorkUnit(ctx, proto.Clone(req).(*apipb.CreateWorkUnitRequest))
+			_, err := server.CreateWorkUnit(ctx, proto.Clone(req).(*msgpb.CreateWorkUnitRequest))
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("CreateWorkUnit() = error %v, want %v", err, tc.wantErr)
 			}
@@ -464,7 +463,7 @@ func TestCreateWorkUnit_TaskEnqueueFails(t *testing.T) {
 		WorkUnitType: msgpb.WorkUnit_STANDARD,
 		Executable:   testExecutable,
 	}
-	goodReq := &apipb.CreateWorkUnitRequest{
+	goodReq := &msgpb.CreateWorkUnitRequest{
 		Parent:     "experiments/123",
 		WorkUnitId: 1,
 		WorkUnit:   goodWorkUnit,
@@ -483,7 +482,7 @@ func TestCreateWorkUnit_TaskEnqueueFails(t *testing.T) {
 		withWorkUnitActuator(taskQueueClient),
 	)
 
-	_, err := server.CreateWorkUnit(ctx, proto.Clone(goodReq).(*apipb.CreateWorkUnitRequest))
+	_, err := server.CreateWorkUnit(ctx, proto.Clone(goodReq).(*msgpb.CreateWorkUnitRequest))
 	if !errors.Is(err, grpcerr.ErrInternal) {
 		t.Errorf("CreateWorkUnit() = error %v, want %v", err, grpcerr.ErrInternal)
 	}

@@ -26,9 +26,8 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 
+	apipb "xmanager_cloud/api/protos/experiment"
 	xidapipb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
 func TestGetExperimentStatus_HappyPath(t *testing.T) {
@@ -36,7 +35,7 @@ func TestGetExperimentStatus_HappyPath(t *testing.T) {
 	server, _ := createExperimentStateServer(ctx, t)
 
 	// Create an experiment first to test GetExperimentStatus
-	exp := &msgpb.Experiment{
+	exp := &apipb.Experiment{
 		Title: "test experiment",
 		Acls: &xidapipb.XidAcls{
 			Owners: []*xidapipb.XidAcls_Role{{Principal: &xidapipb.XidAcls_Role_User{User: "test@example.com"}}},
@@ -165,13 +164,13 @@ func TestGetExperimentStatus_DependencyFailures(t *testing.T) {
 func TestGetExperimentStatus_DriftWarningPropagation(t *testing.T) {
 	ctx := context.Background()
 	req := &apipb.GetExperimentStatusRequest{Name: "experiments/123"}
-	driftMsg := &msgpb.StructuredMessage{
-		Severity:       msgpb.StructuredMessage_WARNING,
-		Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
+	driftMsg := &apipb.StructuredMessage{
+		Severity:       apipb.StructuredMessage_WARNING,
+		Source:         apipb.StructuredMessage_XMANAGER_BACKEND,
 		UserFacingText: "Component snapshot drift detected",
 	}
 	mockStorage := &storage.MockStorage{
-		ExperimentStatus: &msgpb.ExperimentStatus{
+		ExperimentStatus: &apipb.ExperimentStatus{
 			StructuredStatusMessage: driftMsg,
 		},
 	}

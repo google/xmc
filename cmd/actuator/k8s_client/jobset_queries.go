@@ -20,7 +20,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	esspb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
 )
 

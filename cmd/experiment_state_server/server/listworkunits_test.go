@@ -23,10 +23,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	apipb "xmanager_cloud/api/protos/experiment"
 	xidapipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -78,7 +77,7 @@ func TestListWorkUnits_HappyPath(t *testing.T) {
 
 	cmpOpts := []cmp.Option{
 		protocmp.Transform(),
-		protocmp.IgnoreFields(&msgpb.WorkUnit{}, "create_time", "update_time", "current_work_unit_execution"),
+		protocmp.IgnoreFields(&apipb.WorkUnit{}, "create_time", "update_time", "current_work_unit_execution"),
 	}
 
 	// Check all experiments are returned in order.
@@ -139,7 +138,7 @@ func TestSearchWorkUnits_HappyPath(t *testing.T) {
 
 	cmpOpts := []cmp.Option{
 		protocmp.Transform(),
-		protocmp.IgnoreFields(&msgpb.WorkUnit{}, "create_time", "update_time", "current_work_unit_execution"),
+		protocmp.IgnoreFields(&apipb.WorkUnit{}, "create_time", "update_time", "current_work_unit_execution"),
 	}
 
 	// Check all experiments are returned in order.

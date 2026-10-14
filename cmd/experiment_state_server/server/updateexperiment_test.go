@@ -22,9 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -113,7 +112,7 @@ func TestUpdateExperiment_HappyPath(t *testing.T) {
 
 			tc.updateExp.Name = createdExp.GetName()
 
-			req := &apipb.UpdateExperimentRequest{
+			req := &msgpb.UpdateExperimentRequest{
 				Experiment: tc.updateExp,
 				UpdateMask: tc.updateMask,
 			}
@@ -146,7 +145,7 @@ func TestUpdateExperiment_HappyPath(t *testing.T) {
 			}
 
 			// Verify with GetExperiment that update persisted and non-updated fields are unchanged.
-			getReq := &apipb.GetExperimentRequest{Name: createdExp.GetName()}
+			getReq := &msgpb.GetExperimentRequest{Name: createdExp.GetName()}
 			gotGet, err := server.GetExperiment(ctx, getReq)
 			if err != nil {
 				t.Fatalf("GetExperiment() returned an unexpected error: %v", err)
@@ -171,12 +170,12 @@ func TestUpdateExperiment_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.UpdateExperimentRequest
+		req     *msgpb.UpdateExperimentRequest
 		wantErr error
 	}{
 		{
 			name: "invalid_name",
-			req: &apipb.UpdateExperimentRequest{
+			req: &msgpb.UpdateExperimentRequest{
 				Experiment: &msgpb.Experiment{Name: "invalid-name"},
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"title"}},
 			},
@@ -184,7 +183,7 @@ func TestUpdateExperiment_BadPaths(t *testing.T) {
 		},
 		{
 			name: "empty_mask",
-			req: &apipb.UpdateExperimentRequest{
+			req: &msgpb.UpdateExperimentRequest{
 				Experiment: &msgpb.Experiment{Name: "experiments/123"},
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{}},
 			},
@@ -205,11 +204,11 @@ func TestUpdateExperiment_BadPaths(t *testing.T) {
 func TestUpdateExperiment_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
-	goodReq := &apipb.UpdateExperimentRequest{
+	goodReq := &msgpb.UpdateExperimentRequest{
 		Experiment: &msgpb.Experiment{Name: "experiments/123", Title: "new title"},
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"title"}},
 	}
-	goodReqWithAcls := &apipb.UpdateExperimentRequest{
+	goodReqWithAcls := &msgpb.UpdateExperimentRequest{
 		Experiment: &msgpb.Experiment{
 			Name: "experiments/123",
 			Acls: &xidmsgpb.XidAcls{},
@@ -220,7 +219,7 @@ func TestUpdateExperiment_DependencyFailures(t *testing.T) {
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		req           *apipb.UpdateExperimentRequest
+		req           *msgpb.UpdateExperimentRequest
 		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error

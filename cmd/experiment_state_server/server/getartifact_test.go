@@ -22,9 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
@@ -53,7 +52,7 @@ func TestGetArtifact_HappyPath(t *testing.T) {
 	}
 	createdArtifact := mustCreateArtifact(ctx, t, server, exp.GetName(), artifact)
 
-	req := &apipb.GetArtifactRequest{Name: createdArtifact.GetName()}
+	req := &msgpb.GetArtifactRequest{Name: createdArtifact.GetName()}
 	got, err := server.GetArtifact(ctx, req)
 	if err != nil {
 		t.Fatalf("GetArtifact(name=%q) returned an unexpected error: %v", req.GetName(), err)
@@ -73,12 +72,12 @@ func TestGetArtifact_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.GetArtifactRequest
+		req     *msgpb.GetArtifactRequest
 		wantErr error
 	}{
 		{
 			name:    "invalid_name",
-			req:     &apipb.GetArtifactRequest{Name: "invalid-name"},
+			req:     &msgpb.GetArtifactRequest{Name: "invalid-name"},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
@@ -96,7 +95,7 @@ func TestGetArtifact_BadPaths(t *testing.T) {
 func TestGetArtifact_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
-	goodReq := &apipb.GetArtifactRequest{Name: "artifacts/123"}
+	goodReq := &msgpb.GetArtifactRequest{Name: "artifacts/123"}
 
 	testCases := []struct {
 		name          string

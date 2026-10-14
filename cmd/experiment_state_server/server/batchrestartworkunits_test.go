@@ -23,10 +23,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
@@ -62,7 +61,7 @@ func TestBatchRestartWorkUnits_HappyPath(t *testing.T) {
 	_ = mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), workUnitID2, workUnit2)
 	taskQueueClient.EnqueuedTasks = nil // Clear state from CreateWorkUnit
 
-	op, err := server.BatchRestartWorkUnits(ctx, &apipb.BatchRestartWorkUnitsRequest{Parent: createdExp.GetName()})
+	op, err := server.BatchRestartWorkUnits(ctx, &msgpb.BatchRestartWorkUnitsRequest{Parent: createdExp.GetName()})
 	if err != nil {
 		t.Fatalf("BatchRestartWorkUnits() returned an unexpected error: %v", err)
 	}
@@ -201,7 +200,7 @@ func TestBatchRestartWorkUnits_FilterReturnsNoWorkUnits(t *testing.T) {
 	_ = mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), workUnitID1, workUnit1)
 	taskQueueClient.EnqueuedTasks = nil // Clear state from CreateWorkUnit
 
-	op, err := server.BatchRestartWorkUnits(ctx, &apipb.BatchRestartWorkUnitsRequest{Parent: createdExp.GetName(), Filter: "tags:\"b\""})
+	op, err := server.BatchRestartWorkUnits(ctx, &msgpb.BatchRestartWorkUnitsRequest{Parent: createdExp.GetName(), Filter: "tags:\"b\""})
 	if err != nil {
 		t.Fatalf("BatchRestartWorkUnits() returned an unexpected error: %v", err)
 	}
@@ -245,7 +244,7 @@ func TestBatchRestartWorkUnits_Filter(t *testing.T) {
 	_ = mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), workUnitID3, workUnit3)
 	taskQueueClient.EnqueuedTasks = nil // Clear state from CreateWorkUnit
 
-	_, err := server.BatchRestartWorkUnits(ctx, &apipb.BatchRestartWorkUnitsRequest{Parent: createdExp.GetName(), Filter: "tags:\"a\""})
+	_, err := server.BatchRestartWorkUnits(ctx, &msgpb.BatchRestartWorkUnitsRequest{Parent: createdExp.GetName(), Filter: "tags:\"a\""})
 	if err != nil {
 		t.Fatalf("BatchRestartWorkUnits() returned an unexpected error: %v", err)
 	}
@@ -275,12 +274,12 @@ func TestBatchRestartWorkUnits_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.BatchRestartWorkUnitsRequest
+		req     *msgpb.BatchRestartWorkUnitsRequest
 		wantErr error
 	}{
 		{
 			name:    "invalid_parent_name",
-			req:     &apipb.BatchRestartWorkUnitsRequest{Parent: "invalid-name"},
+			req:     &msgpb.BatchRestartWorkUnitsRequest{Parent: "invalid-name"},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
@@ -298,7 +297,7 @@ func TestBatchRestartWorkUnits_BadPaths(t *testing.T) {
 func TestBatchRestartWorkUnits_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
-	goodReq := &apipb.BatchRestartWorkUnitsRequest{Parent: "experiments/123"}
+	goodReq := &msgpb.BatchRestartWorkUnitsRequest{Parent: "experiments/123"}
 	workUnit := &msgpb.WorkUnit{
 		Name:                     "experiments/123/workUnits/456",
 		WorkUnitType:             msgpb.WorkUnit_STANDARD,
@@ -407,7 +406,7 @@ func TestBatchRestartWorkUnits_DependencyFailures(t *testing.T) {
 func TestBatchRestartWorkUnits_TaskEnqueueFails(t *testing.T) {
 	ctx := context.Background()
 
-	goodReq := &apipb.BatchRestartWorkUnitsRequest{Parent: "experiments/123"}
+	goodReq := &msgpb.BatchRestartWorkUnitsRequest{Parent: "experiments/123"}
 	workUnit := &msgpb.WorkUnit{
 		Name:                     "experiments/123/workUnits/456",
 		WorkUnitType:             msgpb.WorkUnit_STANDARD,
@@ -475,7 +474,7 @@ func TestBatchRestartWorkUnits_PartialFailure(t *testing.T) {
 		return nil
 	}
 
-	_, err := server.BatchRestartWorkUnits(ctx, &apipb.BatchRestartWorkUnitsRequest{Parent: createdExp.GetName()})
+	_, err := server.BatchRestartWorkUnits(ctx, &msgpb.BatchRestartWorkUnitsRequest{Parent: createdExp.GetName()})
 	if err == nil {
 		t.Fatalf("BatchRestartWorkUnits() with partial failure should return an error, but returned nil")
 	}
@@ -520,7 +519,7 @@ func TestBatchRestartWorkUnits_NoCurrentExecutionFails(t *testing.T) {
 	}
 	server := newTestServer(t, withStorage(mockStorage), withXidClient(mockXid))
 
-	_, err := server.BatchRestartWorkUnits(ctx, &apipb.BatchRestartWorkUnitsRequest{Parent: "experiments/1"})
+	_, err := server.BatchRestartWorkUnits(ctx, &msgpb.BatchRestartWorkUnitsRequest{Parent: "experiments/1"})
 	if err == nil {
 		t.Fatal("BatchRestartWorkUnits() with work unit having no current execution want error, got nil")
 	}

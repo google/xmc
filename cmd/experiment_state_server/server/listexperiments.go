@@ -22,9 +22,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	apipb "xmanager_cloud/api/protos/experiment"
 	xidpb "xmanager_cloud/api/protos/xid"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/data"
@@ -101,7 +100,7 @@ func (h *ExperimentHandler) listExperimentsWithStaleness(ctx context.Context, re
 	}, nil
 }
 
-func (h *ExperimentHandler) fetchACLsForExperiments(ctx context.Context, experiments []*essmsgpb.Experiment, pageSize int32) error {
+func (h *ExperimentHandler) fetchACLsForExperiments(ctx context.Context, experiments []*apipb.Experiment, pageSize int32) error {
 	if len(experiments) == 0 {
 		logging.Warn(ctx, "No experiments fetched, skipping ACL population")
 		return nil
