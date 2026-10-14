@@ -39,14 +39,14 @@ echo "--> [3/4] Upgrading pip and installing grpcio, protobuf & googleapis-commo
 # venv's; site.getsitepackages() can report the base prefix instead.
 SITE_PACKAGES="$("${PYTHON_BIN}" -c "import sysconfig; print(sysconfig.get_path('purelib'))")"
 echo "--> Copying generated protobuf modules to virtual environment site-packages: ${SITE_PACKAGES}..."
-VIRTUAL_IMPORTS="${REPO_ROOT}/bazel-bin/api/protos/dashboard/_virtual_imports"
-rm -rf "${SITE_PACKAGES}/third_party"
-mkdir -p "${SITE_PACKAGES}/third_party"
+VIRTUAL_IMPORTS="$(bazel info bazel-bin)/api/protos/dashboard/_virtual_imports"
+rm -rf "${SITE_PACKAGES}/xmanager_cloud/dashboard_service/proto"
+mkdir -p "${SITE_PACKAGES}/xmanager_cloud"
 # chmod after *each* copy, not once at the end: Bazel leaves its outputs read-only, so
 # the second copy would otherwise fail to write into the tree the first one laid down.
 for proto_target in dashboard_messages_proto dashboard_service_proto; do
-  cp -R "${VIRTUAL_IMPORTS}/${proto_target}/third_party/." "${SITE_PACKAGES}/third_party/"
-  chmod -R u+w "${SITE_PACKAGES}/third_party"
+  cp -R "${VIRTUAL_IMPORTS}/${proto_target}/xmanager_cloud/." "${SITE_PACKAGES}/xmanager_cloud/"
+  chmod -R u+w "${SITE_PACKAGES}/xmanager_cloud"
 done
 
 echo "--> [4/4] Installing xdash SDK in editable mode..."

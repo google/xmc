@@ -37,15 +37,15 @@ echo "--> [3/5] Installing grpcio and runtime dependencies..."
 # venv's; site.getsitepackages() can report the base prefix instead.
 SITE_PACKAGES="$("${PYTHON_BIN}" -c "import sysconfig; print(sysconfig.get_path('purelib'))")"
 echo "--> [4/5] Copying generated protobuf modules to virtual environment site-packages: ${SITE_PACKAGES}..."
-VIRTUAL_IMPORTS="${REPO_ROOT}/bazel-bin/api/protos/dashboard/_virtual_imports"
-rm -rf "${SITE_PACKAGES}/third_party"
-mkdir -p "${SITE_PACKAGES}/third_party"
+VIRTUAL_IMPORTS="$(bazel info bazel-bin)/api/protos/dashboard/_virtual_imports"
+rm -rf "${SITE_PACKAGES}/xmanager_cloud/dashboard_service/proto"
+mkdir -p "${SITE_PACKAGES}/xmanager_cloud"
 # chmod after *each* copy: Bazel leaves outputs read-only, so subsequent copies
 # would otherwise fail to write into existing trees.
 for proto_target in dashboard_messages_proto dashboard_service_proto; do
-  if [ -d "${VIRTUAL_IMPORTS}/${proto_target}/third_party" ]; then
-    cp -R "${VIRTUAL_IMPORTS}/${proto_target}/third_party/." "${SITE_PACKAGES}/third_party/"
-    chmod -R u+w "${SITE_PACKAGES}/third_party"
+  if [ -d "${VIRTUAL_IMPORTS}/${proto_target}/xmanager_cloud" ]; then
+    cp -R "${VIRTUAL_IMPORTS}/${proto_target}/xmanager_cloud/." "${SITE_PACKAGES}/xmanager_cloud/"
+    chmod -R u+w "${SITE_PACKAGES}/xmanager_cloud"
   fi
 done
 

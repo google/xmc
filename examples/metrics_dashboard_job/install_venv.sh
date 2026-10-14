@@ -43,14 +43,14 @@ echo "--> [4/5] Copying generated protobuf modules into site-packages: ${SITE_PA
 VIRTUAL_IMPORTS="$(bazel info bazel-bin)/api/protos/dashboard/_virtual_imports"
 # Cleared so a re-run after a proto change cannot leave orphaned modules behind. Scoped to
 # the exact tree these two targets write (see import_prefix in api/protos/dashboard/BUILD.bazel)
-# rather than all of third_party/, which is a generic package name others may also install into.
-rm -rf "${SITE_PACKAGES}/third_party/xmanager_cloud/dashboard_service/proto"
-mkdir -p "${SITE_PACKAGES}/third_party"
+# rather than all of xmanager_cloud/, which install_xmanager.py also populates.
+rm -rf "${SITE_PACKAGES}/xmanager_cloud/dashboard_service/proto"
+mkdir -p "${SITE_PACKAGES}/xmanager_cloud"
 # chmod after *each* copy: Bazel leaves outputs read-only, so subsequent copies
 # would otherwise fail to write into existing trees.
 for proto_target in dashboard_messages_proto dashboard_service_proto; do
-  cp -R "${VIRTUAL_IMPORTS}/${proto_target}/third_party/." "${SITE_PACKAGES}/third_party/"
-  chmod -R u+w "${SITE_PACKAGES}/third_party"
+  cp -R "${VIRTUAL_IMPORTS}/${proto_target}/xmanager_cloud/." "${SITE_PACKAGES}/xmanager_cloud/"
+  chmod -R u+w "${SITE_PACKAGES}/xmanager_cloud"
 done
 
 # Editable installs, so a change to either SDK is picked up without reinstalling. xdash
