@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Test-only package exports for external black-box tests in package store_test.
+// Production targets: spanner_store.go and memory_store.go.
+// Test type: standard Go export_test.go bridge (compiled only into store_test) exposing unexported
+// hooks and raw row inspection helpers without polluting the public Store API.
 package store
 
 // SetBeforeIntentWriteForTest installs hook to run each time SetComponentIntent misses the

@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Spanner emulator tests for SpannerStore.SetComponentIntent read-only fast path vs read-write
+// transaction fallback.
+// Production target: spanner_store.go (SetComponentIntent and readIdenticalActiveIntent).
+// Test type: hermetic Spanner emulator test in package store_test. Kept in a dedicated file to
+// avoid further growing spanner_store_test.go (~1,400 lines) and to isolate fast-path fallback
+// counting via SetBeforeIntentWriteForTest.
 package store_test
 
 import (
