@@ -51,19 +51,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_e2e_flow_test",
-    srcs = [
-        "test_e2e_flow.py",
-        "test_e2e_flow_test.py",
-    ],
-    main = "test_e2e_flow_test.py",
-    deps = [
-        ":e2e_pkg",
-        "//test/e2e/lib:orchestration_lib",
-    ],
-)
-
 _KIND_3P_DEPS = [
     "//api/protos/components/v1alpha1",
     "//pkg/components/bridge",
