@@ -150,7 +150,7 @@ func startControllerEnv(t *testing.T, cfg *rest.Config, namespace string) *contr
 		t.Fatalf("manager.New() failed: %v", err)
 	}
 	writer := dynamic.NewForConfigOrDie(cfg)
-	r, err := NewReconciler(NewCMSClientAdapter(cms.NewServer(store.NewMemoryStore())), nil, nil)
+	r, err := NewReconciler(NewCMSClientAdapter(cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(cms.NewDisabledAuthorizer()))), nil, nil)
 	if err != nil {
 		t.Fatalf("NewReconciler() failed: %v", err)
 	}
