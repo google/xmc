@@ -19,9 +19,6 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "filtervisitor",
     srcs = ["visitor.go"],
-    importpath = "xmanager_cloud/api/filter/go/filtervisitor",  # keep
-    deps = [
-        # keep
-        "//api/filter:filter_expression_go_proto",
-    ],
+    importpath = "xmanager_cloud/api/filter/go/filtervisitor",
+    deps = ["//api/filter"],
 )

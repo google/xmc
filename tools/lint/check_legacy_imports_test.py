@@ -150,6 +150,17 @@ class CollectMetricsTest(unittest.TestCase):
             },
         )
 
+    def test_detects_m_opts_and_shell_virtual_imports(self):
+        (self.root / "api/BUILD.bazel").write_text(
+            '    "Mxmanager_cloud/x.proto=xmanager_cloud/api/protos/x",\n'
+        )
+        (self.root / "install_venv.sh").write_text(
+            'cp -R "${B}/_virtual_imports/t/third_party/." "${S}/"\n'
+        )
+        metrics = cli.collect_metrics(self.root, ["api/BUILD.bazel", "install_venv.sh"])
+        self.assertEqual(metrics["proto_third_party_paths"], 1)
+        self.assertEqual(metrics["python_legacy_paths"], 1)
+
     def test_missing_tracked_file_is_ignored(self):
         metrics = cli.collect_metrics(self.root, ["deleted/x.go"])
         self.assertEqual(sum(metrics.values()), 0)

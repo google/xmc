@@ -19,9 +19,9 @@ import (
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"google.golang.org/protobuf/proto"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
+	msgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
-	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // MockXidTxRepository is an in-memory mock implementation of XidTxRepository for unit testing.

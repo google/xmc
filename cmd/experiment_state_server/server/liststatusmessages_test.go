@@ -20,11 +20,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	apipb "xmanager_cloud/api/protos/experiment"
+	xidapipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 func TestListStatusMessages(t *testing.T) {
@@ -151,22 +150,22 @@ func TestSearchStatusMessages(t *testing.T) {
 	}
 }
 
-func mockStatusMessages() []*essmsgpb.StatusMessage {
-	return []*essmsgpb.StatusMessage{
+func mockStatusMessages() []*apipb.StatusMessage {
+	return []*apipb.StatusMessage{
 		{
 			Name: "experiments/123/statusMessages/1",
-			Content: &essmsgpb.StructuredMessage{
+			Content: &apipb.StructuredMessage{
 				UserFacingText: "Dummy status message 1",
-				Severity:       essmsgpb.StructuredMessage_INFO,
-				Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+				Severity:       apipb.StructuredMessage_INFO,
+				Source:         apipb.StructuredMessage_XMANAGER_BACKEND,
 			},
 		},
 		{
 			Name: "experiments/123/statusMessages/2",
-			Content: &essmsgpb.StructuredMessage{
+			Content: &apipb.StructuredMessage{
 				UserFacingText: "Dummy status message 2",
-				Severity:       essmsgpb.StructuredMessage_WARNING,
-				Source:         essmsgpb.StructuredMessage_APPLICATION,
+				Severity:       apipb.StructuredMessage_WARNING,
+				Source:         apipb.StructuredMessage_APPLICATION,
 			},
 		},
 	}

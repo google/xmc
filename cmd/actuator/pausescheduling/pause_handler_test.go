@@ -24,8 +24,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -276,6 +276,15 @@ func TestHandlePause(t *testing.T) {
 					Name: "experiments/100/workUnits/200",
 					CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
 						Name: execName,
+						Status: &essmsgpb.WorkUnitStatus{
+							State: essmsgpb.WorkUnitStatus_INITIALIZING,
+							SystemMessage: &essmsgpb.StructuredMessage{
+								Severity:       essmsgpb.StructuredMessage_DEBUG,
+								Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+								Parent:         "experiments/100/workUnits/200",
+								UserFacingText: "Work unit execution is being initialized.",
+							},
+						},
 					},
 				},
 				Experiment:                        &essmsgpb.Experiment{Name: "experiments/100"},
@@ -364,6 +373,20 @@ func verifyStatusUpdate(t *testing.T, got *storage.MockStorage, wantTarget strin
 	}
 	if exec.GetStatus().GetStateUpdateTime() == nil {
 		t.Errorf("status state_update_time must be set when updating status.state")
+	}
+	sysMsg := exec.GetStatus().GetSystemMessage()
+	if sysMsg.GetCreateTime() == nil {
+		t.Fatalf("system_message.create_time must be set when transitioning to SCHEDULING_PAUSED")
+	}
+	wantMsg := &essmsgpb.StructuredMessage{
+		Severity:       essmsgpb.StructuredMessage_INFO,
+		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+		Parent:         "experiments/100/workUnits/200",
+		UserFacingText: schedulingPausedSystemMessage,
+		CreateTime:     sysMsg.GetCreateTime(),
+	}
+	if !proto.Equal(sysMsg, wantMsg) {
+		t.Errorf("status.system_message = %v, want %v", sysMsg, wantMsg)
 	}
 }
 

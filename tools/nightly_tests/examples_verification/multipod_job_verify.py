@@ -20,7 +20,7 @@ correctly created, scheduled to the expected queue, configured with multiple
 distinct pod roles inside the JobSet, and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.multipod_job_verify --xid=19
+    python3 -m tools.nightly_tests.examples_verification.multipod_job_verify --xid=19
 """
 
 from __future__ import annotations

@@ -18,7 +18,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	pb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/validator"
 )

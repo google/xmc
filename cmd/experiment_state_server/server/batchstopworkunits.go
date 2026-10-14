@@ -28,13 +28,12 @@ import (
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	msgpb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 )
 
 // BatchStopWorkUnits sends a request to stop multiple work units based on a filter.
-func (h *WorkUnitHandler) BatchStopWorkUnits(ctx context.Context, req *apipb.BatchStopWorkUnitsRequest) (*lropb.Operation, error) {
+func (h *WorkUnitHandler) BatchStopWorkUnits(ctx context.Context, req *msgpb.BatchStopWorkUnitsRequest) (*lropb.Operation, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Batch stop work units", "request", req)
 

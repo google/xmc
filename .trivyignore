@@ -14,3 +14,6 @@
 
 # KSV-0014: Redpanda and ClickHouse containers require writable runtime paths for dynamic configuration generation and server initialization.
 KSV-0014
+
+# KSV-0017: The nightly/test in-cluster k3s MultiKueue worker addon requires privileged execution to run a nested kubelet and containerd.
+KSV-0017

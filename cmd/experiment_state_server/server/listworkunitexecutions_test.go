@@ -20,13 +20,11 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/proto"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	msgpb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestListWorkUnitExecutions_HappyPath(t *testing.T) {
@@ -49,7 +47,7 @@ func TestListWorkUnitExecutions_HappyPath(t *testing.T) {
 	workUnitName := fmt.Sprintf("%s/workUnits/%d", createdExp.GetName(), workUnitID)
 	_ = mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), workUnitID, workUnit)
 
-	req := &apipb.ListWorkUnitExecutionsRequest{Parent: workUnitName}
+	req := &msgpb.ListWorkUnitExecutionsRequest{Parent: workUnitName}
 	resp, err := server.ListWorkUnitExecutions(ctx, req)
 	if err != nil {
 		t.Fatalf("ListWorkUnitExecutions() returned an unexpected error: %v", err)
@@ -60,7 +58,7 @@ func TestListWorkUnitExecutions_HappyPath(t *testing.T) {
 	}
 
 	// Restart work unit to create a historical execution.
-	_, err = server.RestartWorkUnit(ctx, &apipb.RestartWorkUnitRequest{Name: workUnitName})
+	_, err = server.RestartWorkUnit(ctx, &msgpb.RestartWorkUnitRequest{Name: workUnitName})
 	if err != nil {
 		t.Fatalf("RestartWorkUnit() returned an unexpected error: %v", err)
 	}
@@ -75,7 +73,7 @@ func TestListWorkUnitExecutions_HappyPath(t *testing.T) {
 	}
 
 	// Restart work unit again.
-	_, err = server.RestartWorkUnit(ctx, &apipb.RestartWorkUnitRequest{Name: workUnitName})
+	_, err = server.RestartWorkUnit(ctx, &msgpb.RestartWorkUnitRequest{Name: workUnitName})
 	if err != nil {
 		t.Fatalf("RestartWorkUnit() returned an unexpected error: %v", err)
 	}
@@ -96,12 +94,12 @@ func TestListWorkUnitExecutions_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.ListWorkUnitExecutionsRequest
+		req     *msgpb.ListWorkUnitExecutionsRequest
 		wantErr error
 	}{
 		{
 			name:    "invalid_parent",
-			req:     &apipb.ListWorkUnitExecutionsRequest{Parent: "invalid-parent"},
+			req:     &msgpb.ListWorkUnitExecutionsRequest{Parent: "invalid-parent"},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
@@ -119,12 +117,12 @@ func TestListWorkUnitExecutions_BadPaths(t *testing.T) {
 func TestListWorkUnitExecutions_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
-	goodReq := &apipb.ListWorkUnitExecutionsRequest{Parent: "experiments/123/workUnits/456"}
+	goodReq := &msgpb.ListWorkUnitExecutionsRequest{Parent: "experiments/123/workUnits/456"}
 
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		xidClient     xidgrpcpb.XidServiceClient
+		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{

@@ -21,13 +21,13 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	xidpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
 	spannerutils "xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/internal/validator"
-	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // FetchXidEntry retrieves a single XidEntry from storage by its unique numerical ID.

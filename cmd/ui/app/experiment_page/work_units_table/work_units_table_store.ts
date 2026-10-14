@@ -25,7 +25,7 @@ import { ListWorkUnitsRequest, WorkUnit } from 'app/protos/experiment_state_serv
 import { SnackbarService } from 'app/service/snackbar_service';
 import { WorkUnitsService } from 'app/service/work_units_service';
 
-import { AipSort, toOrderBy } from './work_units_query';
+import { AipSort, buildAnyOfFilter, toOrderBy } from './work_units_query';
 
 /** Interface for the state of the WorkUnitsTable. */
 interface WorkUnitsTableState {
@@ -34,6 +34,8 @@ interface WorkUnitsTableState {
   pagination: PaginationState;
   isLoading: boolean;
   error: string | null;
+  /** Work unit state enum names (e.g. 'FAILED'); empty means no status filter. */
+  selectedStates: readonly string[];
   sort: AipSort;
 }
 
@@ -44,6 +46,7 @@ const INITIAL_STATE: WorkUnitsTableState = {
   pagination: getInitialPaginationState(10),
   isLoading: false,
   error: null,
+  selectedStates: [],
   sort: { active: '', direction: '' },
 };
 
@@ -81,15 +84,41 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
     (state) => state.pagination.previousTokens.length > 0,
   );
 
+  readonly selectedStates: Signal<readonly string[]> = this.selectSignal(
+    (state) => state.selectedStates,
+  );
+
   readonly sort: Signal<AipSort> = this.selectSignal((state) => state.sort);
 
+  readonly hasFilter: Signal<boolean> = this.selectSignal(
+    (state) => state.selectedStates.length > 0,
+  );
+
+  /**
+   * Sets the experiment id and starts that experiment from a clean view: first page, default sort,
+   * no status filter, and no rows or error from the previous experiment, so the table shows the
+   * initial loading state instead of stale data and a view chosen for one experiment does not
+   * silently apply to another. It does not fetch data.
+   */
   readonly setXid = this.updater((state, xid: string) => ({
     ...state,
     xid,
+    pagination: getInitialPaginationState(state.pagination.pageSize),
+    sort: INITIAL_STATE.sort,
+    selectedStates: [],
+    workUnits: undefined,
+    error: null,
   }));
 
   /** Sets the page size. It does not fetch data. */
   readonly setPageSize = this.updater((state, pageSize: number) => setPageSize(state, pageSize));
+
+  /** Sets the status filter and returns to the first page. It does not fetch data. */
+  readonly setSelectedStates = this.updater((state, selectedStates: readonly string[]) => ({
+    ...state,
+    selectedStates,
+    pagination: getInitialPaginationState(state.pagination.pageSize),
+  }));
 
   /** Sets the sort and returns to the first page. It does not fetch data. */
   readonly setSort = this.updater((state, sort: AipSort) => ({
@@ -188,14 +217,16 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
     ),
   );
 
-  /** Builds the list request for the current page and sort. */
+  /** Builds the list request for the current page, status filter and sort. */
   private buildListRequest(): ListWorkUnitsRequest {
-    const { xid, pagination, sort } = this.get();
+    const { xid, pagination, selectedStates, sort } = this.get();
+    const filter = buildAnyOfFilter('state', selectedStates);
     const orderBy = toOrderBy(sort);
     return {
       parent: `experiments/${xid}`,
       pageSize: pagination.pageSize,
       pageToken: pagination.currentPageToken,
+      ...(filter && { filter }),
       ...(orderBy && { orderBy }),
     };
   }

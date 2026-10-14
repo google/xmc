@@ -20,15 +20,14 @@ import (
 	"strings"
 
 	"google.golang.org/protobuf/proto"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	msgpb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
-func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRequest) (*msgpb.Artifact, error) {
+func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *msgpb.CreateArtifactRequest) (*msgpb.Artifact, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Create artifact", "request", req)
 

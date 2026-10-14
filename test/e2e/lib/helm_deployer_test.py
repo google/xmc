@@ -70,7 +70,7 @@ class TestHelmDeployer(unittest.TestCase):
             "    - imagePullPolicy: IfNotPresent\n",
         )
 
-    def test_generate_values_file(self):
+    def test_generate_values_file(self) -> None:
         self.deployer._generate_values_file()
 
         self.assertTrue(os.path.isfile(self.deployer.values_file))
@@ -85,9 +85,11 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn('allowedEmails: "admin@xmc.local,viewer@xmc.local"', values)
         self.assertIn('username: "admin@xmc.local"', values)
         self.assertIn('password: "password123"', values)
+        self.assertIn('xmc_bridge_custom_image: "xmc_bridge_image:latest"', values)
+        self.assertIn("componentsDeployment:\n  enabled: true", values)
 
     @patch("test.e2e.lib.helm_deployer.run_cmd")
-    def test_wait_for_rollouts_success(self, mock_run):
+    def test_wait_for_rollouts_success(self, mock_run) -> None:
         self.deployer._wait_for_rollouts()
 
         context = f"kind-{self.cfg.cluster_name}"
@@ -109,6 +111,7 @@ class TestHelmDeployer(unittest.TestCase):
             "experiment-state-server-deployment",
             "actuator-deployment",
             "reconciler-deployment",
+            "xmc-bridge-deployment",
             "ui-deployment",
             "gateway-proxy",
         ):

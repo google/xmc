@@ -23,11 +23,10 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	msgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
-	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // The tables can be up to 15 seconds stale! So sometimes.... the tables don't exist. :(
@@ -44,7 +43,7 @@ func createListTestData(ctx context.Context, t *testing.T, server *XIDServer) []
 	endpoints := []string{"E1", "E2", "E1", "E2", "E1"}
 	entries := make([]*msgpb.XidEntry, len(endpoints))
 	for i, endpoint := range endpoints {
-		req := &apipb.CreateXidEntryRequest{
+		req := &msgpb.CreateXidEntryRequest{
 			XidEntry: &msgpb.XidEntry{
 				Origin: &msgpb.OriginatingSystem{
 					Endpoint: proto.String(endpoint),
@@ -72,7 +71,7 @@ func TestListXidEntries_HappyPath(t *testing.T) {
 	entries := createListTestData(ctx, t, server)
 
 	// Test case: filter by endpoint=E1, order by created desc, page size 2
-	req1 := &apipb.ListXidEntriesRequest{
+	req1 := &msgpb.ListXidEntriesRequest{
 		PageSize: proto.Int32(2),
 		Filter:   proto.String(`endpoint="E1"`),
 		OrderBy:  proto.String("created desc"),
@@ -94,7 +93,7 @@ func TestListXidEntries_HappyPath(t *testing.T) {
 	}
 
 	// Test case: second page
-	req2 := &apipb.ListXidEntriesRequest{
+	req2 := &msgpb.ListXidEntriesRequest{
 		PageSize:  proto.Int32(2),
 		PageToken: proto.String(resp1.GetNextPageToken()),
 		Filter:    proto.String(`endpoint="E1"`),
@@ -119,17 +118,17 @@ func TestListXidEntries_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.ListXidEntriesRequest
+		req     *msgpb.ListXidEntriesRequest
 		wantErr error
 	}{
 		{
 			name:    "negative_page_size",
-			req:     &apipb.ListXidEntriesRequest{PageSize: proto.Int32(-1)},
+			req:     &msgpb.ListXidEntriesRequest{PageSize: proto.Int32(-1)},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "invalid_filter",
-			req:     &apipb.ListXidEntriesRequest{Filter: proto.String("invalid-filter syntax")},
+			req:     &msgpb.ListXidEntriesRequest{Filter: proto.String("invalid-filter syntax")},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
@@ -152,7 +151,7 @@ func TestSearchXidEntries_HappyPath(t *testing.T) {
 	time.Sleep(expectedSearchDelay)
 
 	// Test case: filter by endpoint=E2, order by created asc, page size 1
-	req1 := &apipb.ListXidEntriesRequest{
+	req1 := &msgpb.ListXidEntriesRequest{
 		PageSize: proto.Int32(1),
 		Filter:   proto.String(`endpoint="E2"`),
 		OrderBy:  proto.String("created asc"),
@@ -174,7 +173,7 @@ func TestSearchXidEntries_HappyPath(t *testing.T) {
 	}
 
 	// Test case: second page
-	req2 := &apipb.ListXidEntriesRequest{
+	req2 := &msgpb.ListXidEntriesRequest{
 		PageSize:  proto.Int32(1),
 		PageToken: proto.String(resp1.GetNextPageToken()),
 		Filter:    proto.String(`endpoint="E2"`),
@@ -199,12 +198,12 @@ func TestSearchXidEntries_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.ListXidEntriesRequest
+		req     *msgpb.ListXidEntriesRequest
 		wantErr error
 	}{
 		{
 			name:    "negative_page_size",
-			req:     &apipb.ListXidEntriesRequest{PageSize: proto.Int32(-1)},
+			req:     &msgpb.ListXidEntriesRequest{PageSize: proto.Int32(-1)},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
@@ -250,7 +249,7 @@ func TestListXidEntries_Failures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			server := newTestServer(t, withAuthorizer(tc.mockAuth), withStorage(tc.mockStorage))
-			_, err := server.ListXidEntries(ctx, &apipb.ListXidEntriesRequest{})
+			_, err := server.ListXidEntries(ctx, &msgpb.ListXidEntriesRequest{})
 			if status.Code(err) != status.Code(tc.wantErr) {
 				t.Errorf("ListXidEntries() returned error %v, want code %v", err, status.Code(tc.wantErr))
 			}
@@ -261,7 +260,7 @@ func TestListXidEntries_Failures(t *testing.T) {
 func TestSearchXidEntries_AuthFailure(t *testing.T) {
 	ctx := context.Background()
 	server := newTestServer(t, withAuthorizer(&auth.MockAuth{AuthnErr: grpcerr.ErrPermissionDenied}), withStorage(&storage.MockStorage{}))
-	_, err := server.SearchXidEntries(ctx, &apipb.ListXidEntriesRequest{})
+	_, err := server.SearchXidEntries(ctx, &msgpb.ListXidEntriesRequest{})
 	if !errors.Is(err, grpcerr.ErrPermissionDenied) {
 		t.Errorf("SearchXidEntries() returned error %v, want %v", err, grpcerr.ErrPermissionDenied)
 	}

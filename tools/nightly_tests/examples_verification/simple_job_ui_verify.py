@@ -20,10 +20,10 @@ from collections.abc import Sequence
 
 from absl import flags
 
-from tools.nightly_tests import ui_entities_validator
 from tools.nightly_tests.verification import (
     endpoint_resolution,
     ess_session,
+    ui_entities_validator,
     verification_report,
     verifier_cli,
 )

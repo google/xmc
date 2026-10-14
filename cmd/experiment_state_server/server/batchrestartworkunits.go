@@ -25,13 +25,12 @@ import (
 	"xmanager_cloud/internal/validator"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	msgpb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 )
 
 // BatchRestartWorkUnits sends a request to restart a work unit.
-func (h *WorkUnitHandler) BatchRestartWorkUnits(ctx context.Context, req *apipb.BatchRestartWorkUnitsRequest) (*lropb.Operation, error) {
+func (h *WorkUnitHandler) BatchRestartWorkUnits(ctx context.Context, req *msgpb.BatchRestartWorkUnitsRequest) (*lropb.Operation, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Batch restart work units", "request", req)
 

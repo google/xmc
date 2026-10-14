@@ -43,11 +43,11 @@ go_library(
         "@io_k8s_apimachinery//pkg/api/errors",
         "@org_golang_google_api//cloudidentity/v1beta1",
         "@org_golang_google_api//option",
-        "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//credentials/insecure:go_default_library",
-        "@org_golang_google_grpc//health:go_default_library",
-        "@org_golang_google_grpc//health/grpc_health_v1:go_default_library",
-        "@org_golang_google_grpc//reflection:go_default_library",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//reflection",
     ],
 )
 
@@ -86,7 +86,7 @@ go_test(
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@io_k8s_apimachinery//pkg/runtime/schema",
-        "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//metadata:go_default_library",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
     ],
 )

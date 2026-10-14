@@ -23,16 +23,14 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	apipb "xmanager_cloud/api/protos/experiment"
+	xidapipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestListWorkUnits_HappyPath(t *testing.T) {
@@ -79,7 +77,7 @@ func TestListWorkUnits_HappyPath(t *testing.T) {
 
 	cmpOpts := []cmp.Option{
 		protocmp.Transform(),
-		protocmp.IgnoreFields(&msgpb.WorkUnit{}, "create_time", "update_time", "current_work_unit_execution"),
+		protocmp.IgnoreFields(&apipb.WorkUnit{}, "create_time", "update_time", "current_work_unit_execution"),
 	}
 
 	// Check all experiments are returned in order.
@@ -140,7 +138,7 @@ func TestSearchWorkUnits_HappyPath(t *testing.T) {
 
 	cmpOpts := []cmp.Option{
 		protocmp.Transform(),
-		protocmp.IgnoreFields(&msgpb.WorkUnit{}, "create_time", "update_time", "current_work_unit_execution"),
+		protocmp.IgnoreFields(&apipb.WorkUnit{}, "create_time", "update_time", "current_work_unit_execution"),
 	}
 
 	// Check all experiments are returned in order.
@@ -289,7 +287,7 @@ func createExperimentStateServerWithMockXid(ctx context.Context, t *testing.T) (
 	}
 
 	xidClient := &mockXidClient{
-		createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/1")},
+		createXidEntryResp: &xidapipb.XidEntry{Name: proto.String("xids/1")},
 	}
 	server := newTestServer(t,
 		withStorage(storage),

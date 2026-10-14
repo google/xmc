@@ -23,14 +23,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	msgpb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestUpdateExperimentLaunchState_HappyPath(t *testing.T) {
@@ -48,7 +46,7 @@ func TestUpdateExperimentLaunchState_HappyPath(t *testing.T) {
 		t.Run(state.String(), func(t *testing.T) {
 			createdExp := mustCreateExperiment(ctx, t, server, exp)
 
-			req := &apipb.UpdateExperimentLaunchStateRequest{
+			req := &msgpb.UpdateExperimentLaunchStateRequest{
 				Name:        createdExp.GetName(),
 				LaunchState: state,
 			}
@@ -70,12 +68,12 @@ func TestUpdateExperimentLaunchState_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.UpdateExperimentLaunchStateRequest
+		req     *msgpb.UpdateExperimentLaunchStateRequest
 		wantErr error
 	}{
 		{
 			name: "invalid_name",
-			req: &apipb.UpdateExperimentLaunchStateRequest{
+			req: &msgpb.UpdateExperimentLaunchStateRequest{
 				Name:        "invalid-name",
 				LaunchState: msgpb.ExperimentStatus_COMPLETED,
 			},
@@ -83,7 +81,7 @@ func TestUpdateExperimentLaunchState_BadPaths(t *testing.T) {
 		},
 		{
 			name: "invalid_launch_state",
-			req: &apipb.UpdateExperimentLaunchStateRequest{
+			req: &msgpb.UpdateExperimentLaunchStateRequest{
 				Name:        "experiments/123",
 				LaunchState: msgpb.ExperimentStatus_LAUNCH_STATE_UNSPECIFIED,
 			},
@@ -104,12 +102,12 @@ func TestUpdateExperimentLaunchState_BadPaths(t *testing.T) {
 func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
-	goodReq := &apipb.UpdateExperimentLaunchStateRequest{Name: "experiments/123", LaunchState: msgpb.ExperimentStatus_COMPLETED}
+	goodReq := &msgpb.UpdateExperimentLaunchStateRequest{Name: "experiments/123", LaunchState: msgpb.ExperimentStatus_COMPLETED}
 
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		xidClient     xidapipb.XidServiceClient
+		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -123,7 +121,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 		{
 			name: "xid_get_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 				getXidEntryErr:             fmt.Errorf("XID get failed"),
 			},
 			storage: &storage.MockStorage{},
@@ -132,7 +130,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 		{
 			name: "xid_get_permission_denied",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
 			wantErr: grpcerr.ErrPermissionDenied,
@@ -140,7 +138,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_update_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 				getXidEntryResp:            &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 			},
 			storage: &storage.MockStorage{
@@ -151,7 +149,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_update_not_found",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 				getXidEntryResp:            &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 			},
 			storage: &storage.MockStorage{
@@ -255,7 +253,7 @@ func TestUpdateExperimentLaunchState_ActiveState(t *testing.T) {
 			}
 
 			// Initially all 2 WUs are pending -> exp should be active.
-			gotExp, err := server.GetExperiment(ctx, &apipb.GetExperimentRequest{Name: createdExp.GetName()})
+			gotExp, err := server.GetExperiment(ctx, &msgpb.GetExperimentRequest{Name: createdExp.GetName()})
 			if err != nil {
 				t.Fatalf("GetExperiment() returned an unexpected error: %v", err)
 			}
@@ -285,7 +283,7 @@ func TestUpdateExperimentLaunchState_ActiveState(t *testing.T) {
 				t.Fatalf("UpdateWorkUnitExecutions() returned an unexpected error: %v", err)
 			}
 
-			_, err = server.UpdateExperimentLaunchState(ctx, &apipb.UpdateExperimentLaunchStateRequest{
+			_, err = server.UpdateExperimentLaunchState(ctx, &msgpb.UpdateExperimentLaunchStateRequest{
 				Name:        createdExp.GetName(),
 				LaunchState: msgpb.ExperimentStatus_COMPLETED,
 			})
@@ -293,7 +291,7 @@ func TestUpdateExperimentLaunchState_ActiveState(t *testing.T) {
 				t.Fatalf("UpdateExperimentLaunchState() returned an unexpected error: %v", err)
 			}
 
-			gotExp, err = server.GetExperiment(ctx, &apipb.GetExperimentRequest{Name: createdExp.GetName()})
+			gotExp, err = server.GetExperiment(ctx, &msgpb.GetExperimentRequest{Name: createdExp.GetName()})
 			if err != nil {
 				t.Fatalf("GetExperiment() returned an unexpected error: %v", err)
 			}
@@ -377,7 +375,7 @@ func TestUpdateExperimentLaunchState_ActiveStateUpdatesPostLaunching(t *testing.
 			}
 
 			// Initially all 2 WUs are pending -> exp should be active.
-			gotExp, err := server.GetExperiment(ctx, &apipb.GetExperimentRequest{Name: createdExp.GetName()})
+			gotExp, err := server.GetExperiment(ctx, &msgpb.GetExperimentRequest{Name: createdExp.GetName()})
 			if err != nil {
 				t.Fatalf("GetExperiment() returned an unexpected error: %v", err)
 			}
@@ -385,7 +383,7 @@ func TestUpdateExperimentLaunchState_ActiveStateUpdatesPostLaunching(t *testing.
 				t.Errorf("Experiment should be active when work units are pending, got inactive")
 			}
 
-			_, err = server.UpdateExperimentLaunchState(ctx, &apipb.UpdateExperimentLaunchStateRequest{
+			_, err = server.UpdateExperimentLaunchState(ctx, &msgpb.UpdateExperimentLaunchStateRequest{
 				Name:        createdExp.GetName(),
 				LaunchState: msgpb.ExperimentStatus_COMPLETED,
 			})
@@ -415,7 +413,7 @@ func TestUpdateExperimentLaunchState_ActiveStateUpdatesPostLaunching(t *testing.
 				t.Fatalf("UpdateWorkUnitExecutions() returned an unexpected error: %v", err)
 			}
 
-			gotExp, err = server.GetExperiment(ctx, &apipb.GetExperimentRequest{Name: createdExp.GetName()})
+			gotExp, err = server.GetExperiment(ctx, &msgpb.GetExperimentRequest{Name: createdExp.GetName()})
 			if err != nil {
 				t.Fatalf("GetExperiment() returned an unexpected error: %v", err)
 			}
@@ -439,7 +437,7 @@ func TestUpdateExperimentLaunchState_InvalidTransition(t *testing.T) {
 	createdExp := mustCreateExperiment(ctx, t, server, exp)
 
 	// Transition to COMPLETED successfully.
-	_, err := server.UpdateExperimentLaunchState(ctx, &apipb.UpdateExperimentLaunchStateRequest{
+	_, err := server.UpdateExperimentLaunchState(ctx, &msgpb.UpdateExperimentLaunchStateRequest{
 		Name:        createdExp.GetName(),
 		LaunchState: msgpb.ExperimentStatus_COMPLETED,
 	})
@@ -448,7 +446,7 @@ func TestUpdateExperimentLaunchState_InvalidTransition(t *testing.T) {
 	}
 
 	// Try to transition from COMPLETED to FAILED, which should fail.
-	_, err = server.UpdateExperimentLaunchState(ctx, &apipb.UpdateExperimentLaunchStateRequest{
+	_, err = server.UpdateExperimentLaunchState(ctx, &msgpb.UpdateExperimentLaunchStateRequest{
 		Name:        createdExp.GetName(),
 		LaunchState: msgpb.ExperimentStatus_FAILED,
 	})

@@ -55,6 +55,14 @@ spec:
         envFrom:
         - configMapRef:
             name: xmc-bridge-config
+        env:
+        - name: IAP_EXPECTED_GRPC_AUDIENCE
+          value: {{ dig "experimentStateServer" "iap" "grpcAudience" "" .Values.AsMap | quote }}
+{{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
+        volumeMounts:
+        - name: gcp-secrets-volume
+          mountPath: "/etc/gcp-secrets"
+          readOnly: true
         resources:
           requests:
             cpu: 100m
@@ -62,4 +70,6 @@ spec:
           limits:
             cpu: 500m
             memory: 512Mi
+      volumes:
+{{- include "xmanager-cloud.gcpSecretsVolume" . | nindent 6 }}
 {{- end }}

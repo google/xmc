@@ -24,8 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	spb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	epb "xmanager_cloud/api/protos/experiment"
 )
 
 const (
@@ -470,13 +469,13 @@ func tpuNodesPerSlice(topology string) (int, error) {
 }
 
 // InjectOnExperimentCreation injects the environment on experiment creation.
-func (g *GKE) InjectOnExperimentCreation(ctx context.Context, essServer spb.ExperimentStateServiceServer, experiment *epb.Experiment) (*epb.Experiment, error) {
+func (g *GKE) InjectOnExperimentCreation(ctx context.Context, essServer epb.ExperimentStateServiceServer, experiment *epb.Experiment) (*epb.Experiment, error) {
 	experiment.Urls = append(experiment.GetUrls(), experimentURLs...)
 	return experiment, nil
 }
 
 // InjectOnWorkUnitCreation injects the environment on work unit creation.
-func (g *GKE) InjectOnWorkUnitCreation(ctx context.Context, essServer spb.ExperimentStateServiceServer, workUnit *epb.WorkUnit) (*epb.WorkUnit, error) {
+func (g *GKE) InjectOnWorkUnitCreation(ctx context.Context, essServer epb.ExperimentStateServiceServer, workUnit *epb.WorkUnit) (*epb.WorkUnit, error) {
 	workUnit.Urls = append(workUnit.GetUrls(), workUnitURLs...)
 	return workUnit, nil
 }
