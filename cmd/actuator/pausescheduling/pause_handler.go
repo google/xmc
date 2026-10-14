@@ -188,7 +188,7 @@ func resolveExecutionTarget(payload *actuatortaskpb.ActuatorPayload) string {
 	return payload.GetTarget()
 }
 
-const schedulingPausedSystemMessage = "Work unit scheduling is paused. Execution will resume once scheduling is unpaused."
+const schedulingPausedSystemMessage = "Scheduling has been paused by administrators. This work unit will be scheduled once scheduling is resumed."
 
 // markExecutionSchedulingPaused sets the target execution's state to SCHEDULING_PAUSED within the
 // transaction.
