@@ -40,6 +40,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	spb "xmanager_cloud/api/protos/dashboard"
+	xidapipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/dashboard_service/server"
 	"xmanager_cloud/internal/auth"
 	commonhealth "xmanager_cloud/internal/common/health"
@@ -50,7 +51,6 @@ import (
 	"xmanager_cloud/pkg/clickhouse"
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
 	"xmanager_cloud/pkg/components/crreader"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 // readinessTimeout bounds one /readyz evaluation.

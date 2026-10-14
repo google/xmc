@@ -24,14 +24,13 @@ import (
 	"google.golang.org/grpc/status"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	ee "xmanager_cloud/internal/toollibs/execution_environments"
 	"xmanager_cloud/internal/validator"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func propagateIAPJWT(ctx context.Context) context.Context {
@@ -66,7 +65,7 @@ func (b *baseHandler) getXid(ctx context.Context, name string) (*xidmsgpb.XidEnt
 	if b.xidClient == nil {
 		return nil, fmt.Errorf("xidClient is nil: %w", grpcerr.ErrInternal)
 	}
-	req := &xidapipb.GetXidEntryRequest{
+	req := &xidmsgpb.GetXidEntryRequest{
 		Name: &name,
 	}
 
@@ -81,7 +80,7 @@ func (b *baseHandler) checkUserAuthorization(ctx context.Context, name string, u
 	if b.xidClient == nil {
 		return false, fmt.Errorf("xidClient is nil: %w", grpcerr.ErrInternal)
 	}
-	req := &xidapipb.CheckUserAuthorizationRequest{
+	req := &xidmsgpb.CheckUserAuthorizationRequest{
 		Name:     &name,
 		User:     &user,
 		RoleType: roleType,
@@ -213,7 +212,7 @@ func newExperimentStatus(name string) *msgpb.ExperimentStatus {
 }
 
 func (b *baseHandler) createXid(ctx context.Context, creator, endpoint string, acls *xidmsgpb.XidAcls, parentXID string) (*xidmsgpb.XidEntry, error) {
-	req := &xidapipb.CreateXidEntryRequest{
+	req := &xidmsgpb.CreateXidEntryRequest{
 		XidEntry: &xidmsgpb.XidEntry{
 			Creator: &creator,
 			Origin: &xidmsgpb.OriginatingSystem{

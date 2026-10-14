@@ -25,16 +25,15 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	xidmessagespb "xmanager_cloud/api/protos/xid"
 	essapipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmessagespb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestValidateCreateXidRequest(t *testing.T) {
-	validReq := &xidapipb.CreateXidEntryRequest{
+	validReq := &xidmessagespb.CreateXidEntryRequest{
 		XidEntry: &xidmessagespb.XidEntry{
 			Acls: &xidmessagespb.XidAcls{
 				Owners: []*xidmessagespb.XidAcls_Role{
@@ -47,7 +46,7 @@ func TestValidateCreateXidRequest(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		req     *xidapipb.CreateXidEntryRequest
+		req     *xidmessagespb.CreateXidEntryRequest
 		wantErr error
 	}{
 		{
@@ -57,54 +56,54 @@ func TestValidateCreateXidRequest(t *testing.T) {
 		},
 		{
 			name:    "nil_xid_entry",
-			req:     &xidapipb.CreateXidEntryRequest{},
+			req:     &xidmessagespb.CreateXidEntryRequest{},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "xid_entry_name_not_empty",
-			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+			req: prototest.Modify(validReq, func(r *xidmessagespb.CreateXidEntryRequest) {
 				r.XidEntry.Name = proto.String("xids/123")
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_acls",
-			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+			req: prototest.Modify(validReq, func(r *xidmessagespb.CreateXidEntryRequest) {
 				r.XidEntry.Acls = nil
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "empty_acls",
-			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+			req: prototest.Modify(validReq, func(r *xidmessagespb.CreateXidEntryRequest) {
 				r.XidEntry.Acls = &xidmessagespb.XidAcls{}
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "nil_origin",
-			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+			req: prototest.Modify(validReq, func(r *xidmessagespb.CreateXidEntryRequest) {
 				r.XidEntry.Origin = nil
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_owner_role",
-			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+			req: prototest.Modify(validReq, func(r *xidmessagespb.CreateXidEntryRequest) {
 				r.XidEntry.Acls.Owners = []*xidmessagespb.XidAcls_Role{{}}
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_writer_role",
-			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+			req: prototest.Modify(validReq, func(r *xidmessagespb.CreateXidEntryRequest) {
 				r.XidEntry.Acls.Writers = []*xidmessagespb.XidAcls_Role{{}}
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_reader_role",
-			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+			req: prototest.Modify(validReq, func(r *xidmessagespb.CreateXidEntryRequest) {
 				r.XidEntry.Acls.Readers = []*xidmessagespb.XidAcls_Role{{}}
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
@@ -116,14 +115,14 @@ func TestValidateCreateXidRequest(t *testing.T) {
 		},
 		{
 			name: "valid_parent_xid",
-			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+			req: prototest.Modify(validReq, func(r *xidmessagespb.CreateXidEntryRequest) {
 				r.XidEntry.ParentXid = proto.String("xids/123")
 			}),
 			wantErr: nil,
 		},
 		{
 			name: "valid_parent_xid_nil_acls",
-			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+			req: prototest.Modify(validReq, func(r *xidmessagespb.CreateXidEntryRequest) {
 				r.XidEntry.ParentXid = proto.String("xids/123")
 				r.XidEntry.Acls = nil
 			}),
@@ -131,7 +130,7 @@ func TestValidateCreateXidRequest(t *testing.T) {
 		},
 		{
 			name: "invalid_parent_xid",
-			req: prototest.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+			req: prototest.Modify(validReq, func(r *xidmessagespb.CreateXidEntryRequest) {
 				r.XidEntry.ParentXid = proto.String("invalid/123")
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,

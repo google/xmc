@@ -20,11 +20,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	xidapipb "xmanager_cloud/api/protos/xid"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 func TestListStatusMessages(t *testing.T) {

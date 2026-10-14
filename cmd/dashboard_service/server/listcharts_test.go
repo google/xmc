@@ -26,8 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	spb "xmanager_cloud/api/protos/dashboard"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	xidapipb "xmanager_cloud/api/protos/xid"
 )
 
 func TestListCharts(t *testing.T) {
@@ -96,7 +95,7 @@ func TestListCharts(t *testing.T) {
 
 	t.Run("work unit parent requires experiment READER access", func(t *testing.T) {
 		var gotXidName, gotUser string
-		var gotRole xpb.XidAcls_RoleType
+		var gotRole xidapipb.XidAcls_RoleType
 		xidMock := &mockXidClient{
 			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
 				gotXidName, gotUser, gotRole = in.GetName(), in.GetUser(), in.GetRoleType()
@@ -115,7 +114,7 @@ func TestListCharts(t *testing.T) {
 		if gotUser != "user@example.com" {
 			t.Errorf("Expected authenticated user 'user@example.com', got %q", gotUser)
 		}
-		if gotRole != xpb.XidAcls_READER {
+		if gotRole != xidapipb.XidAcls_READER {
 			t.Errorf("Expected role READER, got %v", gotRole)
 		}
 	})

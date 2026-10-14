@@ -29,10 +29,9 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
 
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestCreateExperiment_HappyPath(t *testing.T) {
@@ -205,7 +204,7 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		xidClient     xidapipb.XidServiceClient
+		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -228,7 +227,7 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 			name: "storage_creation_fails",
 			xidClient: &mockXidClient{
 				createXidEntryResp:         &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				CreateExperimentErr: fmt.Errorf("Storage creation failed"),

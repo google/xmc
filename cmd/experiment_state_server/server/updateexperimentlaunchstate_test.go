@@ -23,14 +23,13 @@ import (
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestUpdateExperimentLaunchState_HappyPath(t *testing.T) {
@@ -109,7 +108,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		xidClient     xidapipb.XidServiceClient
+		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -123,7 +122,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 		{
 			name: "xid_get_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 				getXidEntryErr:             fmt.Errorf("XID get failed"),
 			},
 			storage: &storage.MockStorage{},
@@ -132,7 +131,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 		{
 			name: "xid_get_permission_denied",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
 			wantErr: grpcerr.ErrPermissionDenied,
@@ -140,7 +139,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_update_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 				getXidEntryResp:            &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 			},
 			storage: &storage.MockStorage{
@@ -151,7 +150,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_update_not_found",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 				getXidEntryResp:            &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 			},
 			storage: &storage.MockStorage{

@@ -32,10 +32,9 @@ import (
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestBatchStopWorkUnits_HappyPath(t *testing.T) {
@@ -242,7 +241,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		xidClient     xidapipb.XidServiceClient
+		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -264,7 +263,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 		{
 			name: "xid_check_user_authorization_unauthorized",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
 			wantErr: grpcerr.ErrPermissionDenied,
@@ -272,7 +271,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_list_work_units_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				ListWorkUnitsErr: fmt.Errorf("storage list work units failed"),
@@ -282,7 +281,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_add_operation_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				ListWorkUnitsResp:       []*msgpb.WorkUnit{workUnit},
@@ -293,7 +292,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_update_work_unit_executions_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				ListWorkUnitsResp:                 []*msgpb.WorkUnit{workUnit},
@@ -339,7 +338,7 @@ func TestBatchStopWorkUnits_TaskEnqueueFails(t *testing.T) {
 	}
 
 	xidClient := &mockXidClient{
-		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+		checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
 	storage := &storage.MockStorage{
 		ListWorkUnitsResp: []*msgpb.WorkUnit{workUnit},

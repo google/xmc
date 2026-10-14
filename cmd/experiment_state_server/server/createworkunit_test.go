@@ -27,6 +27,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	tpb "xmanager_cloud/api/protos/task_queue"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -38,8 +39,6 @@ import (
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/internal/toollibs/execution_environments"
 	"xmanager_cloud/internal/validator"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestCreateWorkUnit_HappyPath(t *testing.T) {
@@ -275,7 +274,7 @@ func TestCreateWorkUnit_IncompatibleWorkUnit(t *testing.T) {
 	}
 
 	xidClient := &mockXidClient{
-		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+		checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
 
 	server := newTestServer(t,
@@ -359,7 +358,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 		name          string
 		req           *apipb.CreateWorkUnitRequest
 		authenticator auth.AuthorizerInterface
-		xidClient     xidapipb.XidServiceClient
+		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -381,7 +380,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 		{
 			name: "xid_check_user_authorization_unauthorized",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
 			wantErr: grpcerr.ErrPermissionDenied,
@@ -389,7 +388,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 		{
 			name: "unauthorized_user_with_malformed_payload_returns_permission_denied",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
 			req: &apipb.CreateWorkUnitRequest{
@@ -402,7 +401,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_create_work_unit_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				CreateWorkUnitErr: fmt.Errorf("Storage create work unit failed"),
@@ -412,7 +411,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_create_work_unit_already_exists",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				CreateWorkUnitErr: grpcerr.ErrAlreadyExists,
@@ -422,7 +421,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_add_operation_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				AddWorkUnitOperationErr: fmt.Errorf("Storage add operation failed"),
@@ -472,7 +471,7 @@ func TestCreateWorkUnit_TaskEnqueueFails(t *testing.T) {
 	}
 
 	xidClient := &mockXidClient{
-		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+		checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
 	taskQueueClient := &tq.FakeClient{
 		EnqueueErr: fmt.Errorf("Task enqueue failed"),

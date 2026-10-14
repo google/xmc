@@ -30,10 +30,9 @@ import (
 	"xmanager_cloud/internal/validator"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	xidapipb "xmanager_cloud/api/protos/xid"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestStopWorkUnit_HappyPath(t *testing.T) {
@@ -42,8 +41,8 @@ func TestStopWorkUnit_HappyPath(t *testing.T) {
 
 	exp := &msgpb.Experiment{
 		Title: "test experiment for stopworkunit",
-		Acls: &xidmsgpb.XidAcls{
-			Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
+		Acls: &xidapipb.XidAcls{
+			Owners: []*xidapipb.XidAcls_Role{{Principal: &xidapipb.XidAcls_Role_User{User: "test@example.com"}}},
 		},
 	}
 	createdExp := mustCreateExperiment(ctx, t, server, exp)
@@ -122,8 +121,8 @@ func TestStopWorkUnit_SchedulingPausedTransitionsDirectlyToStopped(t *testing.T)
 
 	exp := &msgpb.Experiment{
 		Title: "test experiment for stopworkunit from scheduling paused",
-		Acls: &xidmsgpb.XidAcls{
-			Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
+		Acls: &xidapipb.XidAcls{
+			Owners: []*xidapipb.XidAcls_Role{{Principal: &xidapipb.XidAcls_Role_User{User: "test@example.com"}}},
 		},
 	}
 	createdExp := mustCreateExperiment(ctx, t, server, exp)

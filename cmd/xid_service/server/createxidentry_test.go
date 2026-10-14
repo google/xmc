@@ -21,20 +21,19 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	msgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
-	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestCreateXidEntry_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	server := createXidServer(ctx, t)
 
-	parentReq := &apipb.CreateXidEntryRequest{
+	parentReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Acls: &msgpb.XidAcls{
 				Owners: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}},
@@ -49,7 +48,7 @@ func TestCreateXidEntry_HappyPath(t *testing.T) {
 		t.Fatalf("CreateXidEntry() for parent returned an unexpected error: %v", err)
 	}
 
-	req := &apipb.CreateXidEntryRequest{
+	req := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Acls: &msgpb.XidAcls{
 				Writers: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}},
@@ -96,7 +95,7 @@ func TestCreateXidEntry_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	server := createXidServer(ctx, t)
 
-	baseReq := &apipb.CreateXidEntryRequest{
+	baseReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Acls: &msgpb.XidAcls{
 				Writers: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}},
@@ -109,33 +108,33 @@ func TestCreateXidEntry_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.CreateXidEntryRequest
+		req     *msgpb.CreateXidEntryRequest
 		wantErr error
 	}{
 		{
 			name: "missing_xid_entry",
-			req: prototest.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.CreateXidEntryRequest) {
 				r.XidEntry = nil
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "missing_acls",
-			req: prototest.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.CreateXidEntryRequest) {
 				r.XidEntry.Acls = nil
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "missing_origin",
-			req: prototest.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.CreateXidEntryRequest) {
 				r.XidEntry.Origin = nil
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent_xid",
-			req: prototest.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
+			req: prototest.Modify(baseReq, func(r *msgpb.CreateXidEntryRequest) {
 				r.XidEntry.ParentXid = proto.String("xids/invalid")
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
@@ -177,7 +176,7 @@ func TestCreateXidEntry_Failures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			server := newTestServer(t, withAuthorizer(tc.mockAuth), withStorage(tc.mockStorage))
-			_, err := server.CreateXidEntry(ctx, &apipb.CreateXidEntryRequest{
+			_, err := server.CreateXidEntry(ctx, &msgpb.CreateXidEntryRequest{
 				XidEntry: &msgpb.XidEntry{
 					Acls:   &msgpb.XidAcls{Owners: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}}},
 					Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},

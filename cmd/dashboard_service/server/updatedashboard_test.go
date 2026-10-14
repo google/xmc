@@ -24,8 +24,8 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
+	xpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestUpdateDashboard(t *testing.T) {
