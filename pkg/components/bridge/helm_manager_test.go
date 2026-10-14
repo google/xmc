@@ -20,6 +20,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -697,5 +698,109 @@ func TestK8sHelmManager_EnsureRetiresStaleIncarnation(t *testing.T) {
 	}
 	if runner.installed[releaseKey] {
 		t.Errorf("expected Delete1PComponent(liveRef) to uninstall %q despite the stale incarnation", releaseKey)
+	}
+}
+
+// seedIncarnationState records state of every per-incarnation kind under key, as left behind by an incarnation whose
+// teardown never ran.
+func seedIncarnationState(m *K8sHelmManager, key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.activeState[key] = true
+	m.actuatedGenerations[key] = 3
+	m.upgradeErrs[key] = errors.New("stale upgrade failure")
+	m.pendingUpgrades[key] = 7
+	m.healthVerifiedAt[key] = time.Now()
+	m.repairNeeded[key] = true
+	m.repairBackoff[key] = repairAttempt{}
+}
+
+// incarnationStateKeys returns the keys under namespace/name (base or UID-scoped) that still hold any state.
+func incarnationStateKeys(m *K8sHelmManager, namespace, name string) []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	base := componentKey(namespace, name)
+	keys := m.incarnationKeysLocked(base + "@")
+	if _, ok := m.activeState[base]; ok {
+		keys = append(keys, base)
+	}
+	return keys
+}
+
+// TestK8sHelmManager_EnsureEvictsSupersededAndBaseKeys verifies that adopting a release with a new CR incarnation
+// evicts every kind of state held by superseded incarnations and the hydrated namespace-level entry.
+func TestK8sHelmManager_EnsureEvictsSupersededAndBaseKeys(t *testing.T) {
+	ctx := context.Background()
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
+	defer mgr.Close()
+	ghost := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "88888888-0000-4000-8000-000000000008"}
+	live := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "99999999-0000-4000-8000-000000000009"}
+	other := ComponentRef{Namespace: "xmc", Name: "ingestion-v2", UID: "aaaaaaaa-0000-4000-8000-00000000000a"}
+	seedIncarnationState(mgr, componentStateKey(ghost))
+	seedIncarnationState(mgr, componentStateKey(other))
+	mgr.mu.Lock()
+	mgr.activeState[componentKey(live.Namespace, live.Name)] = false
+	mgr.mu.Unlock()
+
+	if err := mgr.Ensure1PComponent(ctx, live, HelmComponentOptions{Ref: live, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent(live) failed: %v", err)
+	}
+
+	want := []string{componentStateKey(live)}
+	if got := incarnationStateKeys(mgr, live.Namespace, live.Name); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("state keys after adoption = %v, want %v", got, want)
+	}
+	if got := incarnationStateKeys(mgr, other.Namespace, other.Name); len(got) != 1 {
+		t.Errorf("state keys of unrelated component %q = %v, want its single incarnation kept", other.Name, got)
+	}
+}
+
+// TestK8sHelmManager_ForgetComponentEvictsAllIncarnations verifies that ForgetComponent drops the state of every
+// incarnation, the base keys and the chart path override, leaving other components untouched.
+func TestK8sHelmManager_ForgetComponentEvictsAllIncarnations(t *testing.T) {
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
+	defer mgr.Close()
+	ghost := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "bbbbbbbb-0000-4000-8000-00000000000b"}
+	live := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "cccccccc-0000-4000-8000-00000000000c"}
+	base := componentKey(live.Namespace, live.Name)
+	keep := ComponentRef{Namespace: "xmc", Name: "ingestion-v2", UID: "dddddddd-0000-4000-8000-00000000000d"}
+	for _, key := range []string{componentStateKey(ghost), componentStateKey(live), base, componentStateKey(keep)} {
+		seedIncarnationState(mgr, key)
+	}
+	mgr.recordChartPathOverride(live, "/charts/ingestion")
+
+	mgr.ForgetComponent(live.Namespace, live.Name)
+
+	if got := incarnationStateKeys(mgr, live.Namespace, live.Name); len(got) != 0 {
+		t.Errorf("state keys after ForgetComponent = %v, want none", got)
+	}
+	mgr.mu.RLock()
+	_, hasChartPath := mgr.componentChartPaths[base]
+	_, hasBaseErr := mgr.upgradeErrs[base]
+	mgr.mu.RUnlock()
+	if hasChartPath || hasBaseErr {
+		t.Errorf("ForgetComponent kept base state: chartPath=%v upgradeErr=%v, want neither", hasChartPath, hasBaseErr)
+	}
+	if got := incarnationStateKeys(mgr, keep.Namespace, keep.Name); len(got) != 1 {
+		t.Errorf("state keys of unrelated component %q = %v, want its single incarnation kept", keep.Name, got)
+	}
+}
+
+// TestReconciler_ForgetComponentForwardsToHelmManager verifies that forgetting a deleted CR also evicts the Helm
+// manager's per-incarnation state.
+func TestReconciler_ForgetComponentForwardsToHelmManager(t *testing.T) {
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
+	defer mgr.Close()
+	r, err := NewReconciler(&mockCMS{}, &mockProber{healthy: true}, mgr)
+	if err != nil {
+		t.Fatalf("NewReconciler() failed: %v", err)
+	}
+	ghost := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "eeeeeeee-0000-4000-8000-00000000000e"}
+	seedIncarnationState(mgr, componentStateKey(ghost))
+
+	r.ForgetComponent(ghost.Namespace, ghost.Name)
+
+	if got := incarnationStateKeys(mgr, ghost.Namespace, ghost.Name); len(got) != 0 {
+		t.Errorf("Helm manager state keys after Reconciler.ForgetComponent = %v, want none", got)
 	}
 }

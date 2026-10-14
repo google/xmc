@@ -168,9 +168,10 @@ func (m *K8sHelmManager) dropIncarnationStateLocked(key string) {
 	m.clearRepairLocked(key)
 }
 
-// retireOtherIncarnationsLocked drops the state of every incarnation of ref's component other than ref itself.
-// Kubernetes keeps at most one live CR per namespace/name, so once ref is actuated any other incarnation is stale
-// (e.g. its teardown never ran) and must neither block ref's teardown nor run a queued upgrade. Callers must hold m.mu.
+// retireOtherIncarnationsLocked drops the state of every incarnation of ref's component other than ref itself, and
+// the namespace-level activation entry hydrated from the values ConfigMap. Kubernetes keeps at most one live CR per
+// namespace/name, so once ref is actuated any other incarnation is stale (e.g. its teardown never ran) and must
+// neither block ref's teardown nor run a queued upgrade. Callers must hold m.mu.
 func (m *K8sHelmManager) retireOtherIncarnationsLocked(ref ComponentRef) {
 	if ref.UID == "" {
 		return
@@ -182,21 +183,58 @@ func (m *K8sHelmManager) retireOtherIncarnationsLocked(ref ComponentRef) {
 			m.dropIncarnationStateLocked(key)
 		}
 	}
+	delete(m.activeState, componentKey(ref.Namespace, ref.Name))
 }
 
-// incarnationKeysLocked returns the UID-scoped keys with the given namespace/name@ prefix that hold activation or
-// pending upgrade state. Callers must hold m.mu.
+// ForgetComponent evicts all in-memory state of every incarnation of the namespace/name component, including its
+// namespace-level activation entry and chart path override. The bridge calls it once the Component CR is gone, so
+// state of incarnations whose teardown never ran (ghost incarnations) does not leak. The Helm release and the values
+// ConfigMap are left untouched.
+func (m *K8sHelmManager) ForgetComponent(namespace, name string) {
+	if m == nil || namespace == "" || name == "" {
+		return
+	}
+	baseKey := componentKey(namespace, name)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, key := range m.incarnationKeysLocked(baseKey + "@") {
+		m.dropIncarnationStateLocked(key)
+	}
+	m.dropIncarnationStateLocked(baseKey)
+	delete(m.componentChartPaths, baseKey)
+}
+
+// incarnationKeysLocked returns the distinct UID-scoped keys with the given namespace/name@ prefix that hold any
+// per-incarnation state. Callers must hold m.mu.
 func (m *K8sHelmManager) incarnationKeysLocked(prefix string) []string {
+	seen := make(map[string]bool)
 	var keys []string
-	for key := range m.activeState {
-		if strings.HasPrefix(key, prefix) {
+	add := func(key string) {
+		if !seen[key] && strings.HasPrefix(key, prefix) {
+			seen[key] = true
 			keys = append(keys, key)
 		}
 	}
+	for key := range m.activeState {
+		add(key)
+	}
+	for key := range m.actuatedGenerations {
+		add(key)
+	}
+	for key := range m.upgradeErrs {
+		add(key)
+	}
 	for key := range m.pendingUpgrades {
-		if _, seen := m.activeState[key]; !seen && strings.HasPrefix(key, prefix) {
-			keys = append(keys, key)
-		}
+		add(key)
+	}
+	for key := range m.healthVerifiedAt {
+		add(key)
+	}
+	for key := range m.repairNeeded {
+		add(key)
+	}
+	for key := range m.repairBackoff {
+		add(key)
 	}
 	return keys
 }

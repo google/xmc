@@ -154,12 +154,22 @@ func (r *Reconciler) ClusterFence() *ClusterFence {
 	return r.fence
 }
 
-// ForgetComponent evicts any in-memory CMS sync or deactivation-block state tracked for the component.
+// componentStateForgetter is implemented by HelmManagers that track per-incarnation release state in memory.
+type componentStateForgetter interface {
+	// ForgetComponent evicts the in-memory state of every incarnation of the namespace/name component.
+	ForgetComponent(namespace, name string)
+}
+
+// ForgetComponent evicts any in-memory CMS sync, deactivation-block or Helm release state tracked for the component
+// once its custom resource is gone.
 func (r *Reconciler) ForgetComponent(namespace, name string) {
 	if r == nil {
 		return
 	}
 	r.syncTracker.forget(componentKey(namespace, naming.CanonicalComponentName(name)))
+	if f, ok := r.helmManager.(componentStateForgetter); ok {
+		f.ForgetComponent(namespace, name)
+	}
 }
 
 // ReconcileComponentInput bundles parameters for a component reconciliation pass.

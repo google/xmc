@@ -64,6 +64,8 @@ spec:
           x-kubernetes-validations:
             - rule: "!has(self.metadata.name) || self.metadata.name.size() <= 45"
               message: "metadata.name must be at most 45 characters so the component Helm release name (xmc-cmp-<name>) stays within Helm's 53-character limit."
+            - rule: "!has(self.metadata.name) || !self.metadata.name.startsWith('xmc-cmp-')"
+              message: "metadata.name must not start with 'xmc-cmp-', which is reserved for component Helm release names."
             - rule: "!has(self.spec.deletionPolicy) || self.spec.deletionPolicy in ['Orphan', 'Delete']"
               message: "deletionPolicy must be either 'Orphan' or 'Delete'."
             - rule: "!has(self.spec.lifecycleControl) || !has(self.spec.lifecycleControl.drainTimeoutSeconds) || self.spec.lifecycleControl.drainTimeoutSeconds >= 0"

@@ -303,6 +303,8 @@ func verifyCRDSchemaAndCELRules(ctx context.Context, t *testing.T, compClient dy
 		{"accepts valid 3P wrapper with status JSONPaths and applies schema defaults", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("$.status.observedGeneration", "$.status.conditions[?(@.type=='Ready')].status")}, false, ""},
 		{"accepts metadata.name of 45 characters", strings.Repeat("a", 45), map[string]any{"enabled": true, "deletionProtection": false}, false, ""},
 		{"rejects metadata.name exceeding 45 characters", strings.Repeat("a", 46), map[string]any{"enabled": true, "deletionProtection": false}, true, "metadata.name must be at most 45 characters"},
+		{"rejects metadata.name with the reserved xmc-cmp- release prefix", "xmc-cmp-foo", map[string]any{"enabled": true, "deletionProtection": false}, true, "must not start with 'xmc-cmp-'"},
+		{"accepts metadata.name containing xmc-cmp- after the start", "foo-xmc-cmp-bar", map[string]any{"enabled": true, "deletionProtection": false}, false, ""},
 	}
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
