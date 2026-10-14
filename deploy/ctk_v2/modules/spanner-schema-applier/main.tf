@@ -31,7 +31,7 @@ resource "null_resource" "apply_schema" {
       curr_dir="$PWD"
       workspace_root=""
       while [[ "$curr_dir" != "/" ]]; do
-        if [[ -f "$curr_dir/WORKSPACE" ]]; then
+        if [[ -f "$curr_dir/MODULE.bazel" ]]; then
           workspace_root="$curr_dir"
           break
         fi
@@ -39,7 +39,7 @@ resource "null_resource" "apply_schema" {
       done
 
       if [[ -z "$workspace_root" ]]; then
-        echo "Error: Could not find WORKSPACE file in parent directories" >&2
+        echo "Error: Could not find MODULE.bazel file in parent directories" >&2
         exit 1
       fi
 
