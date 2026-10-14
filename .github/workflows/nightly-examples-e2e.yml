@@ -129,7 +129,7 @@ jobs:
     needs: [build-example-images]
     runs-on: 'arc-runner-set'
     environment: xmc-nightly
-    timeout-minutes: ${{ inputs.timeout_minutes || 30 }}
+    timeout-minutes: ${{ fromJSON(format('{0}', inputs.timeout_minutes || 30)) }}
 
     permissions:
       contents: read
