@@ -56,7 +56,7 @@ All sources are merged into a single canonical, deduplicated, sorted set that is
 
 **Legacy inflated generations**: records written before intents were idempotent may have a CMS generation above the CR generation. They keep the higher number, and later CR edits bump from it. This affects only pre-fix development data because Components have not launched; recreate affected records to realign CMS and CR generations.
 
-**Error contract**: machine-readable store rejections carry a `google.rpc.ErrorInfo` with domain `components.xmc.dev` (`store.ErrorInfoDomain`, built by `errorWithInfo` in `pkg/components/store/error_info.go`); callers branch on its `reason`, never on the message. They all use code `FailedPrecondition`, never `Aborted`, which the Spanner client retries when a read-write transaction body returns it. The bridge still matches the legacy `DependencyNotFoundMessagePrefix` until it switches to the reason.
+**Error contract**: machine-readable store rejections carry a `google.rpc.ErrorInfo` with domain `components.xmc.dev` (`store.ErrorInfoDomain`, built by `errorWithInfo` in `pkg/components/store/error_info.go`); callers branch on its `reason`, never on the message. They all use code `FailedPrecondition`, never `Aborted`, which the Spanner client retries when a read-write transaction body returns it. Every reason carries `operation`, the RPC name, in its metadata: `DEPENDENCY_NOT_REGISTERED` and `DEPENDENCY_CYCLE` (`SetComponentIntent`), and `ACTIVE_DEPENDENTS_EXIST` (`PrepareDeactivation`, non-cascading `ExecuteDeletion`). The bridge still matches the legacy `DependencyNotFoundMessagePrefix` and the cycle message until it switches to the reasons.
 
 Key functions:
 - `ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string`: Extracts unique canonical dependency names from all sources above.
@@ -86,7 +86,7 @@ When a traversal encounters a **Gray** node, a back-edge indicating a dependency
 - `ValidateProspectiveDependencies(existing []*ComponentRecord, targetName string, newDeps []string) error`
 - `ValidateProspectiveDependenciesFromMap(components map[string]*ComponentRecord, targetName string, newDeps []string) error`
 
-If a prospective update would introduce a self-cycle or transitive cycle, the operation is rejected immediately with gRPC `codes.FailedPrecondition` and `ErrDependencyCycle`.
+If a prospective update would introduce a self-cycle or transitive cycle, the operation is rejected immediately with gRPC `codes.FailedPrecondition`, a `dependency cycle detected: a -> b -> a` message, and an ErrorInfo with reason `DEPENDENCY_CYCLE` (`store.ReasonDependencyCycle`) and metadata `operation` (`SetComponentIntent`), `component`, and `cycle` (the canonical names on the cycle, comma-separated).
 
 ---
 
@@ -96,7 +96,7 @@ Components cannot be deactivated or deleted arbitrarily if other active componen
 
 #### Deactivation Safety & Cascading
 - `EvaluateDeactivationSafety(components map[string]*ComponentRecord, targetName string, requestCascade bool, defaultDrain time.Duration) (*PrepareDeactivationResult, error)`
-  - **Blocking Mode (`requestCascade = false`)**: If non-deleted, non-disabled dependents exist, deactivation is blocked with `ErrHasActiveDependents` (`codes.FailedPrecondition`) and returns the list of blocking dependents.
+  - **Blocking Mode (`requestCascade = false`)**: If non-deleted, non-disabled dependents exist, deactivation is blocked with `codes.FailedPrecondition` and an ErrorInfo with reason `ACTIVE_DEPENDENTS_EXIST` (`store.ReasonActiveDependentsExist`) and metadata `operation` (`PrepareDeactivation`), `component`, and `dependents` (comma-separated canonical names), and returns the list of blocking dependents. `ValidateDeletionSafety` rejects a non-cascading (`DELETION_POLICY_ORPHAN`) `ExecuteDeletion` with active dependents the same way, with `operation` `ExecuteDeletion`.
   - **Cascading Mode (`requestCascade = true`)**: Identifies all active transitive dependents in reverse topological order, transitioning both the target and its dependents to `COMPONENT_STATE_DISABLING`.
 
 #### GitOps Bridge Enforcement

@@ -643,10 +643,11 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 			wantCode: codes.InvalidArgument,
 		},
 		{
-			name:          "cycle via spec.dependencies is rejected",
+			name:          "cycle via spec.dependencies carries the DEPENDENCY_CYCLE ErrorInfo",
 			seedDependent: true,
 			req:           &componentspb.SetComponentIntentRequest{Name: "redpanda", Spec: specWithDeps("components/ingestion-gateway")},
 			wantCode:      codes.FailedPrecondition,
+			wantReason:    store.ReasonDependencyCycle,
 		},
 		{
 			name:       "unregistered dependency carries the DEPENDENCY_NOT_REGISTERED ErrorInfo",

@@ -563,9 +563,6 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 
 		res, err := EvaluateDeactivationSafety(catalog, canonicalName, requestCascade, minDrainTimeout)
 		if err != nil {
-			if status.Code(err) == codes.FailedPrecondition && res != nil && len(res.BlockingDependents) > 0 {
-				return status.Errorf(codes.FailedPrecondition, "component %s has active dependents: %v", canonicalName, res.BlockingDependents)
-			}
 			return err
 		}
 		result = res

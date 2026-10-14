@@ -29,15 +29,14 @@ import (
 	"xmanager_cloud/pkg/components/naming"
 )
 
-// Sentinel errors for component store operations.
+// Sentinel errors for component store operations. Rejections that carry a google.rpc.ErrorInfo
+// (see error_info.go) have no sentinel: callers match their reason.
 var (
 	ErrComponentNotFound      = status.Error(codes.NotFound, "component not found")
 	ErrComponentAlreadyExists = status.Error(codes.AlreadyExists, "component already exists")
 	ErrDeletionProtected      = status.Error(codes.FailedPrecondition, "component deletion protection is enabled")
-	ErrHasActiveDependents    = status.Error(codes.FailedPrecondition, "component has active dependents")
 	ErrInvalidGeneration      = status.Error(codes.InvalidArgument, "invalid generation")
 	ErrInvalidStateTransition = status.Error(codes.FailedPrecondition, "invalid state transition")
-	ErrDependencyCycle        = status.Error(codes.FailedPrecondition, "dependency cycle detected")
 )
 
 // ComponentRecord represents a component catalog entity stored in the Component Store.

@@ -15,9 +15,11 @@
 package store
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
+	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -91,7 +93,7 @@ func EvaluateDeactivationSafety(components map[string]*ComponentRecord, targetNa
 			IsSafeToDeactivate: false,
 			BlockingDependents: activeDependents,
 			RejectionReason:    "component has active dependents",
-		}, ErrHasActiveDependents
+		}, activeDependentsError("PrepareDeactivation", canonicalName, activeDependents)
 	}
 
 	drainTimeout := CalculateDrainTimeout(targetRec, cascadedRecs, nil)
@@ -184,7 +186,15 @@ func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName s
 
 	activeDependents, _ := findActiveDependents(components, canonicalName)
 	if len(activeDependents) > 0 {
-		return ErrHasActiveDependents
+		return activeDependentsError("ExecuteDeletion", canonicalName, activeDependents)
 	}
 	return nil
+}
+
+// activeDependentsError returns the FailedPrecondition ACTIVE_DEPENDENTS_EXIST rejection of
+// operation on canonicalName, which the active dependents still depend on.
+func activeDependentsError(operation, canonicalName string, dependents []string) error {
+	return errorWithInfo(codes.FailedPrecondition, ReasonActiveDependentsExist,
+		map[string]string{"operation": operation, "component": canonicalName, "dependents": strings.Join(dependents, ",")},
+		fmt.Sprintf("component %s has active dependents: %v", canonicalName, dependents))
 }

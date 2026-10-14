@@ -30,6 +30,14 @@ const (
 	// ReasonDependencyNotRegistered rejects an intent that declares a dependency that is not
 	// registered (or is soft-deleted). The caller waits for the dependency and retries.
 	ReasonDependencyNotRegistered = "DEPENDENCY_NOT_REGISTERED"
+	// ReasonDependencyCycle rejects an intent whose dependencies would form a dependency cycle.
+	// Metadata "cycle" lists the canonical names on the cycle, comma-separated.
+	ReasonDependencyCycle = "DEPENDENCY_CYCLE"
+	// ReasonActiveDependentsExist rejects a PrepareDeactivation or a non-cascading ExecuteDeletion
+	// of a component that active (neither disabled nor deleted) components still depend on,
+	// directly or transitively. Metadata "dependents" lists their
+	// canonical names, comma-separated.
+	ReasonActiveDependentsExist = "ACTIVE_DEPENDENTS_EXIST"
 )
 
 // errorWithInfo returns a status error with code and msg carrying a google.rpc.ErrorInfo with
