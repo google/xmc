@@ -700,6 +700,7 @@ def verify_cms_bridge_reconciliation() -> None:
                 "version": "v1.0.0",
                 "enabled": False,
                 "deletionProtection": False,
+                "parameters": {"authCheck": "true"},
             },
         }
     )
