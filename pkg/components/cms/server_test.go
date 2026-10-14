@@ -647,7 +647,7 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			ms := store.NewMemoryStore()
-			server := NewServer(ms)
+			server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 			if tt.seed {
 				if _, err := server.SetComponentIntent(ctx, baseReq); err != nil {
 					t.Fatalf("seed SetComponentIntent() error = %v", err)
