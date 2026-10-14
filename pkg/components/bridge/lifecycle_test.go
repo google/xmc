@@ -203,7 +203,7 @@ func TestReconcileComponent_GatedDependentBlocksDeactivationInCMS(t *testing.T) 
 	got := summarizeGate(disabled, &mockCMS{}, &mockHelm{})
 	want := gateOutcome{
 		State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-		ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonDeactivationBlocked, StalledStatus: ConditionStatusTrue,
+		ReadyStatus: ConditionStatusTrue, ReadyReason: ReasonComponentHealthy, StalledStatus: ConditionStatusTrue,
 		DeactivationBlocked: ConditionStatusTrue,
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -231,10 +231,12 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 		o.SetCalls = 1
 		return o
 	}
+	// blocked keeps the running workload Ready (its health is unchanged) and surfaces the block
+	// through Stalled=True (DeactivationBlocked) and DeactivationBlocked=True.
 	blocked := func(prepareCalls int) gateOutcome {
 		return gateOutcome{
 			State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonDeactivationBlocked, StalledStatus: ConditionStatusTrue,
+			ReadyStatus: ConditionStatusTrue, ReadyReason: ReasonComponentHealthy, StalledStatus: ConditionStatusTrue,
 			DeactivationBlocked: ConditionStatusTrue, SetCalls: 1, PrepareCalls: prepareCalls,
 		}
 	}
@@ -245,14 +247,15 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 		return o
 	}
 	tests := []struct {
-		name     string
-		cms      *mockCMS
-		helm     *mockHelm
-		spec     *componentspb.ComponentSpec
-		existing []Condition
-		want     gateOutcome
-		wantMsg  string
-		wantErr  bool
+		name           string
+		cms            *mockCMS
+		helm           *mockHelm
+		spec           *componentspb.ComponentSpec
+		existing       []Condition
+		want           gateOutcome
+		wantMsg        string
+		wantStalledMsg string
+		wantErr        bool
 	}{
 		{
 			name: "no active dependents deletes workload and completes handshake",
@@ -262,22 +265,22 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 		{
 			name: "active dependent blocks deactivation and keeps workload",
 			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
-			want: blocked(1), wantMsg: blockedMsg,
+			want: blocked(1), wantStalledMsg: blockedMsg,
 		},
 		{
 			name: "active dependent blocks 3P wrapper deactivation",
 			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{}, spec: spec3P, existing: wasReady,
-			want: blocked(1), wantMsg: blockedMsg,
+			want: blocked(1), wantStalledMsg: blockedMsg,
 		},
 		{
 			name: "recent block skips the CMS recheck",
 			cms:  &mockCMS{}, helm: &mockHelm{active: true}, spec: spec1P, existing: blockedAt(2, 5*time.Second),
-			want: blocked(0), wantMsg: blockedMsg,
+			want: blocked(0), wantStalledMsg: blockedMsg,
 		},
 		{
 			name: "block older than the recheck interval is rechecked",
 			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{active: true}, spec: spec1P, existing: blockedAt(2, time.Minute),
-			want: blocked(1), wantMsg: blockedMsg,
+			want: blocked(1), wantStalledMsg: blockedMsg,
 		},
 		{
 			name: "block at an older generation is rechecked",
@@ -379,6 +382,12 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 				t.Errorf("ReconcileComponent() outcome mismatch (-want +got):\n%s", diff)
 			}
 			checkReadyMessage(t, res, tt.wantMsg)
+			if c := findCondition(res.Conditions, ConditionTypeStalled); tt.wantStalledMsg != "" && (c == nil || c.Reason != ReasonDeactivationBlocked || c.Message != tt.wantStalledMsg) {
+				t.Errorf("Stalled condition = %+v, want reason %s and message %q", c, ReasonDeactivationBlocked, tt.wantStalledMsg)
+			}
+			if wantObsGen := int64(2); err == nil && res.ObservedGeneration != wantObsGen {
+				t.Errorf("ObservedGeneration = %d, want %d (stamped for every evaluated outcome)", res.ObservedGeneration, wantObsGen)
+			}
 		})
 	}
 }

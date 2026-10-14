@@ -1734,12 +1734,12 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 			wantAccessKept: true,
 		},
 		{
-			name:           "CMS-detected dependency cycle in SetComponentIntent reports DependencyCycle and Synced=True while preserving access",
+			name:           "CMS-detected dependency cycle in SetComponentIntent reports DependencyCycle and Synced=True, preserving access and stamping observedGeneration",
 			cms:            &mockCMS{setErr: status.Error(codes.FailedPrecondition, "dependency cycle detected: ch -> b -> ch")},
 			in:             ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, ExistingObservedGeneration: 1, Spec: spec3P, Enabled: true, ExistingConditions: prevReady, ExistingAccess: prevAccess},
 			wantErr:        true,
 			wantState:      componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantObsGen:     1,
+			wantObsGen:     2,
 			wantReady:      ConditionStatusFalse,
 			wantReadyRsn:   ReasonDependencyCycle,
 			wantSynced:     ConditionStatusTrue,
@@ -1747,13 +1747,28 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 			wantAccessKept: true,
 		},
 		{
-			name:           "blocked deactivation preserves status.access while workload remains active",
+			name: "transient CMS failure on a previously stalled component keeps observedGeneration",
+			cms:  &mockCMS{setErr: status.Error(codes.Unavailable, "cms down")},
+			in: ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, ExistingObservedGeneration: 1, Spec: spec3P, Enabled: true, ExistingConditions: []Condition{
+				{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonDependencyCycle},
+				{Type: ConditionTypeStalled, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonDependencyCycle},
+			}},
+			wantErr:       true,
+			wantState:     componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantObsGen:    1,
+			wantReady:     ConditionStatusFalse,
+			wantReadyRsn:  ReasonDependencyCycle,
+			wantSynced:    ConditionStatusFalse,
+			wantSyncedRsn: ReasonCMSSyncFailed,
+		},
+		{
+			name:           "blocked deactivation keeps Ready=True and status.access while workload remains active",
 			cms:            &mockCMS{prepareErr: status.Error(codes.FailedPrecondition, "active dependents")},
 			in:             ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, ExistingObservedGeneration: 1, Spec: spec3P, Enabled: false, ExistingConditions: prevReady, ExistingAccess: prevAccess},
 			wantState:      componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantObsGen:     2,
-			wantReady:      ConditionStatusFalse,
-			wantReadyRsn:   ReasonDeactivationBlocked,
+			wantReady:      ConditionStatusTrue,
+			wantReadyRsn:   ReasonComponentHealthy,
 			wantSynced:     ConditionStatusTrue,
 			wantSyncedRsn:  ReasonCMSSynced,
 			wantAccessKept: true,
@@ -1824,6 +1839,38 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 			}
 			if tt.wantObsCall && tt.cms.lastObsReq == nil {
 				t.Error("expected UpdateObservedGeneration to be called on CMS recovery, got nil")
+			}
+		})
+	}
+}
+
+func TestGenerationEvaluated(t *testing.T) {
+	const gen = 3
+	errPass := errors.New("pass failed")
+	stalledAt := func(g int64) Condition {
+		return Condition{Type: ConditionTypeStalled, Status: ConditionStatusTrue, ObservedGeneration: g, Reason: ReasonContractBroken}
+	}
+	synced := func(s string) Condition {
+		return Condition{Type: ConditionTypeSynced, Status: s, ObservedGeneration: gen}
+	}
+	tests := []struct {
+		name string
+		res  *ReconcileResult
+		err  error
+		want bool
+	}{
+		{name: "nil result", res: nil, want: false},
+		{name: "successful pass", res: &ReconcileResult{}, want: true},
+		{name: "transient error without Stalled", res: &ReconcileResult{Conditions: []Condition{synced(ConditionStatusTrue)}}, err: errPass, want: false},
+		{name: "Stalled at this generation with CMS synced", res: &ReconcileResult{Conditions: []Condition{stalledAt(gen), synced(ConditionStatusTrue)}}, err: errPass, want: true},
+		{name: "Stalled at this generation with CMS sync failed", res: &ReconcileResult{Conditions: []Condition{stalledAt(gen), synced(ConditionStatusFalse)}}, err: errPass, want: false},
+		{name: "Stalled at an older generation", res: &ReconcileResult{Conditions: []Condition{stalledAt(gen - 1), synced(ConditionStatusTrue)}}, err: errPass, want: false},
+		{name: "Stalled without Synced", res: &ReconcileResult{Conditions: []Condition{stalledAt(gen)}}, err: errPass, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := generationEvaluated(tt.res, gen, tt.err); got != tt.want {
+				t.Errorf("generationEvaluated() = %v, want %v", got, tt.want)
 			}
 		})
 	}

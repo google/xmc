@@ -178,7 +178,22 @@ func (r *Reconciler) reportDeactivationBlocked(ctx context.Context, in Reconcile
 	if wasTornDown(in) {
 		return r.reportGated(ctx, in, canonicalName, res, ReasonDeactivationIncomplete, "workload already removed; "+msg)
 	}
-	return r.reportGated(ctx, in, canonicalName, res, ReasonDeactivationBlocked, msg)
+	return r.reportBlockedWorkload(ctx, in, canonicalName, res, msg)
+}
+
+// reportBlockedWorkload reports a component whose deactivation is blocked by active dependents. Its
+// workload keeps running and serving them, so Ready follows the workload's local health (normally
+// True) while Stalled=True (DeactivationBlocked) surfaces the block.
+func (r *Reconciler) reportBlockedWorkload(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, msg string) (*ReconcileResult, error) {
+	r.evaluateLocalHealth(ctx, in, canonicalName, res)
+	readyStatus := ConditionStatusUnknown
+	if ready := findCondition(res.Conditions, ConditionTypeReady); ready != nil {
+		readyStatus = ready.Status
+	}
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	deleteCondition(&res.Conditions, ConditionTypeReconciling)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeStalled, ConditionStatusTrue, in.Generation, ReasonDeactivationBlocked, msg)
+	return res, r.syncReadyToCMS(ctx, in, canonicalName, res, readyStatus)
 }
 
 // wasTornDown reports whether a previous pass removed the workload without completing deactivation.

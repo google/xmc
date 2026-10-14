@@ -128,10 +128,28 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	in.Spec.Dependencies = dropSelfDependency(ctx, in.Spec.GetDependencies(), canonicalName)
 	res := &ReconcileResult{ObservedGeneration: in.ExistingObservedGeneration, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
 	res, err := r.reconcilePass(ctx, in, canonicalName, res)
-	if err == nil && res != nil {
+	if generationEvaluated(res, in.Generation, err) {
 		res.ObservedGeneration = in.Generation
 	}
 	return res, err
+}
+
+// generationEvaluated reports whether a pass evaluated generation, so that status.observedGeneration
+// may be stamped as kstatus expects: the pass completed without error, or it ended Stalled at this
+// generation with CMS synced (e.g. a CMS-reported dependency cycle or a broken wrapper contract).
+// Transient errors leave no Stalled condition at this generation or report Synced=False, so
+// status.observedGeneration keeps its previous value.
+func generationEvaluated(res *ReconcileResult, generation int64, err error) bool {
+	if res == nil {
+		return false
+	}
+	if err == nil {
+		return true
+	}
+	stalled := findCondition(res.Conditions, ConditionTypeStalled)
+	synced := findCondition(res.Conditions, ConditionTypeSynced)
+	return stalled != nil && stalled.Status == ConditionStatusTrue && stalled.ObservedGeneration == generation &&
+		synced != nil && synced.Status == ConditionStatusTrue
 }
 
 func (r *Reconciler) reconcilePass(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
@@ -304,14 +322,20 @@ func (r *Reconciler) refreshLocalHealth(ctx context.Context, in ReconcileCompone
 	}
 	local := in
 	local.Generation = prev.ObservedGeneration
-	local.skipCMSSync = true
-	// Local failures are recorded in Ready; the pass already returns the CMS error.
-	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
-		_, _ = r.reconcile3PWrapper(ctx, local, canonicalName, res)
-	} else {
-		_, _ = r.evaluateHealth(ctx, local, canonicalName, res)
-	}
+	r.evaluateLocalHealth(ctx, local, canonicalName, res)
 	setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, cmsErr.Error())
+}
+
+// evaluateLocalHealth probes the running workload (3P wrapper status or 1P health) and records
+// Ready and access on res without calling CMS or changing the workload. Local failures are recorded
+// in Ready, so callers that report their own outcome ignore the probe's error.
+func (r *Reconciler) evaluateLocalHealth(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) {
+	in.skipCMSSync = true
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
+		_, _ = r.reconcile3PWrapper(ctx, in, canonicalName, res)
+		return
+	}
+	_, _ = r.evaluateHealth(ctx, in, canonicalName, res)
 }
 
 // unreadyDependenciesMessage returns "waiting on dependencies: ..." naming every unready dependency,
@@ -364,7 +388,7 @@ func setDependenciesReadyCondition(res *ReconcileResult, in ReconcileComponentIn
 // generation changes, so details would go stale). NotFound is tolerated: it may not be registered yet.
 func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, msg string) (*ReconcileResult, error) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-	if r.isActuated(in) || reason == ReasonDeactivationBlocked || reason == ReasonHelmUpgradePending {
+	if r.isActuated(in) || reason == ReasonHelmUpgradePending {
 		preserveExistingAccess(res, in.ExistingAccess)
 	}
 	setReadiness(res, in, ConditionStatusFalse, reason, msg)
@@ -434,7 +458,8 @@ func isReadyAtGeneration(existing []Condition, generation int64) bool {
 
 // evaluateHealth probes the runtime health of an active component (in.Enabled == true), sets the Ready and
 // Reconciling/Stalled conditions, updates state to COMPONENT_STATE_ENABLED (or PENDING_RECONCILIATION), and reports to CMS.
-// Note: Disabled components (in.Enabled == false) are processed exclusively by reconcileDisabled and do not reach evaluateHealth.
+// Note: Disabled components (in.Enabled == false) reach evaluateHealth only through evaluateLocalHealth,
+// while their deactivation is blocked and the workload keeps running.
 func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	isHealthy, reason, healthMsg := r.probeComponentHealth(ctx, in)
 	res.Access = &AccessStatus{EnvVars: make(map[string]string)}
