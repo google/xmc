@@ -358,7 +358,7 @@ test('CLI execution exits with code 1 and error annotation when results director
 
     assert.strictEqual(proc.status, 1);
     assert.ok(
-      proc.stderr.includes('::error::No example workload results found or one or more workloads failed.')
+      proc.stderr.includes('::error::No example workload results found.')
     );
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

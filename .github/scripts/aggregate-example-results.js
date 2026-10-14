@@ -188,7 +188,7 @@ if (require.main === module) {
   const { results, allPassed } = run();
   if (!allPassed) {
     if (results.length === 0) {
-      console.error('::error::No example workload results found or one or more workloads failed.');
+      console.error('::error::No example workload results found.');
     } else {
       console.error('::error::One or more example workloads failed launch or verification.');
     }
