@@ -211,19 +211,14 @@ func optionalRequestSource(srcs []RequestSource) (*RequestSource, error) {
 }
 
 // checkSourceMutation checks whether src may mutate the active record canonicalName owned by owner
-// in operation. A nil src bypasses ownership checks; otherwise src must pass checkSourceOwnership
-// and, when coming from the owner object itself, must not carry an older generation.
+// in operation. A nil src bypasses ownership checks; otherwise src must pass checkSourceOwnership.
+// The owner object itself is always allowed at any generation: only SetComponentIntent returns
+// STALE_GENERATION (R3), so informer lag never blocks an observation, deactivation or deletion.
 func checkSourceMutation(operation, canonicalName string, owner *SourceOwner, src *RequestSource) error {
 	if src == nil {
 		return nil
 	}
-	if err := checkSourceOwnership(operation, canonicalName, owner, *src); err != nil {
-		return err
-	}
-	if owner.isOlderGeneration(*src) {
-		return staleGenerationError(operation, canonicalName, owner, *src)
-	}
-	return nil
+	return checkSourceOwnership(operation, canonicalName, owner, *src)
 }
 
 // nonIntentOwner returns the owner recorded by a non-intent mutation (UpdateObservedGeneration,

@@ -391,7 +391,8 @@ func assertOperationOwnershipRejected(ctx context.Context, t *testing.T, s store
 
 // TestSourcedObservationAndDeactivation_Parity checks on both MemoryStore and SpannerStore that
 // UpdateObservedGeneration, PrepareDeactivation, and CompleteDeactivation enforce the cluster
-// fence and source ownership when a RequestSource is supplied, while unsourced calls still work.
+// fence and source ownership when a RequestSource is supplied, while unsourced calls still work and
+// the owner object is never rejected as STALE_GENERATION, even at an older CR generation.
 func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 	activeCluster := store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 2}
 	ownerOnProd := store.RequestSource{UID: "uid-a", Generation: 3, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 2}
@@ -428,15 +429,24 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 				{fencedCluster, store.ReasonClusterFenced},
 				{otherNamespace, store.ReasonSourceNamespaceConflict},
 				{otherUID, store.ReasonSourceIncarnationMismatch},
-				{olderGen, store.ReasonStaleGeneration},
 			} {
 				_, err := s.UpdateObservedGeneration(ctx, name, 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready=True", tc.src)
 				assertReason(t, err, tc.wantReason)
 			}
 
+			// The owner object at an older CR generation (informer lag) is never STALE_GENERATION on
+			// a non-intent RPC, and keeps the recorded intent owner generation (3).
+			obsRec, err := s.UpdateObservedGeneration(ctx, name, 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready=True", olderGen)
+			if err != nil {
+				t.Fatalf("UpdateObservedGeneration(older owner generation) error = %v", err)
+			}
+			if !cmp.Equal(obsRec.Owner, ownerFor(ownerOnProd)) {
+				t.Fatalf("UpdateObservedGeneration(older owner generation) owner = %+v, want %+v", obsRec.Owner, ownerOnProd)
+			}
+
 			// Owner updates observed generation at newer CR generation (e.g., while a spec upgrade is held on dependencies)
 			// without advancing the recorded intent owner generation past ownerOnProd.Generation (3).
-			obsRec, err := s.UpdateObservedGeneration(ctx, name, 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready=True", newerGen)
+			obsRec, err = s.UpdateObservedGeneration(ctx, name, 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready=True", newerGen)
 			if err != nil {
 				t.Fatalf("UpdateObservedGeneration(owner) error = %v", err)
 			}
@@ -452,7 +462,6 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 				{fencedCluster, store.ReasonClusterFenced},
 				{otherNamespace, store.ReasonSourceNamespaceConflict},
 				{otherUID, store.ReasonSourceIncarnationMismatch},
-				{olderGen, store.ReasonStaleGeneration}, // generation 2 < recorded generation 3
 			} {
 				_, err := s.PrepareDeactivation(ctx, name, false, tc.src)
 				assertReason(t, err, tc.wantReason)
@@ -461,9 +470,10 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 				t.Fatalf("state after rejected PrepareDeactivation = %v, want ENABLED", got.State)
 			}
 
-			// PrepareDeactivation from owner transitions to DISABLING while keeping committed intent generation 3.
-			if _, err := s.PrepareDeactivation(ctx, name, false, newerGen); err != nil {
-				t.Fatalf("PrepareDeactivation(owner) error = %v", err)
+			// PrepareDeactivation from the owner at an older CR generation (generation 2 < recorded
+			// generation 3) is allowed and transitions to DISABLING while keeping intent generation 3.
+			if _, err := s.PrepareDeactivation(ctx, name, false, olderGen); err != nil {
+				t.Fatalf("PrepareDeactivation(older owner generation) error = %v", err)
 			}
 
 			// Rejections on CompleteDeactivation leave the component DISABLING.
@@ -474,7 +484,6 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 				{fencedCluster, store.ReasonClusterFenced},
 				{otherNamespace, store.ReasonSourceNamespaceConflict},
 				{otherUID, store.ReasonSourceIncarnationMismatch},
-				{olderGen, store.ReasonStaleGeneration},
 			} {
 				err := s.CompleteDeactivation(ctx, name, false, tc.src)
 				assertReason(t, err, tc.wantReason)
