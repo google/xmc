@@ -162,14 +162,20 @@ ui:
             vf.write(values_content)
 
     def capture_diagnostics(self) -> None:
-        """Captures pod status, cluster events, and container logs after a failure."""
+        """Captures pod status, cluster events, and container logs after a failure.
+
+        Best effort: capture failures are logged and never mask the failure being diagnosed.
+        """
         logger.error("Capturing cluster diagnostics after failure...")
         diag_file = os.path.join(self.cfg.screenshots_dir, "k8s_diagnostics.log")
-        os.makedirs(self.cfg.screenshots_dir, exist_ok=True)
-        with open(diag_file, "w", encoding="utf-8") as df:
-            for ns in _DIAGNOSTIC_NAMESPACES:
-                self._write_namespace_diagnostics(df, ns)
-        logger.info("Diagnostics saved to %s", diag_file)
+        try:
+            os.makedirs(self.cfg.screenshots_dir, exist_ok=True)
+            with open(diag_file, "w", encoding="utf-8") as df:
+                for ns in _DIAGNOSTIC_NAMESPACES:
+                    self._write_namespace_diagnostics(df, ns)
+            logger.info("Diagnostics saved to %s", diag_file)
+        except Exception as e:
+            logger.warning("Failed to capture cluster diagnostics: %s", e)
 
     def _write_namespace_diagnostics(self, df: TextIO, ns: str) -> None:
         """Writes the pods, events, and recent container logs of a namespace to df."""
