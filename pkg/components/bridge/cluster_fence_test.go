@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -101,81 +102,242 @@ const (
 	testStandbyClusterUID = "22222222-2222-2222-2222-222222222222"
 )
 
-// countingDeclareCMS counts successful DeclareClusterEpoch calls to the wrapped CMSClient.
-type countingDeclareCMS struct {
-	CMSClient
-	declared atomic.Int32
-}
+func TestReconciler_ClusterFenceColdStandby(t *testing.T) {
+	ctx := context.Background()
+	cmsStore := store.NewMemoryStore()
+	cmsClient := NewCMSClientAdapter(cms.NewServer(cmsStore, cms.WithAuthorizer(cms.NewDisabledAuthorizer())))
 
-func (c *countingDeclareCMS) DeclareClusterEpoch(ctx context.Context, in *componentspb.DeclareClusterEpochRequest, opts ...grpc.CallOption) (*componentspb.DeclareClusterEpochResponse, error) {
-	resp, err := c.CMSClient.DeclareClusterEpoch(ctx, in, opts...)
-	if err == nil {
-		c.declared.Add(1)
+	// Primary cluster claims epoch 2.
+	if _, err := cmsClient.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{
+		Cluster: &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary-cluster", Epoch: 2},
+	}); err != nil {
+		t.Fatalf("primary DeclareClusterEpoch() failed: %v", err)
 	}
-	return resp, err
+
+	tests := []struct {
+		name         string
+		identity     *componentspb.ClusterIdentity
+		enabled      bool
+		wantConflict string
+	}{
+		{
+			name:         "fenced standby cluster on enabled component",
+			identity:     &componentspb.ClusterIdentity{Uid: testStandbyClusterUID, Name: "standby-cluster", Epoch: 2},
+			enabled:      true,
+			wantConflict: ReasonClusterFenced,
+		},
+		{
+			name:         "fenced standby cluster on disabled component",
+			identity:     &componentspb.ClusterIdentity{Uid: testStandbyClusterUID, Name: "standby-cluster", Epoch: 2},
+			enabled:      false,
+			wantConflict: ReasonClusterFenced,
+		},
+		{
+			name:         "regressed epoch on primary cluster",
+			identity:     &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary-cluster", Epoch: 1},
+			enabled:      true,
+			wantConflict: ReasonClusterEpochRegressed,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			helm := &mockHelm{}
+			fence, err := NewClusterFence(cmsClient, tc.identity, ClusterFenceOptions{})
+			if err != nil {
+				t.Fatalf("NewClusterFence() failed: %v", err)
+			}
+			r, err := NewReconciler(cmsClient, &mockProber{healthy: true}, helm, WithClusterFence(fence))
+			if err != nil {
+				t.Fatalf("NewReconciler() failed: %v", err)
+			}
+			res, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+				Namespace:      "xmc",
+				Name:           "redpanda",
+				Generation:     3,
+				Enabled:        tc.enabled,
+				ExistingAccess: &AccessStatus{EnvVars: map[string]string{"PORT": "9092"}},
+				Spec: &componentspb.ComponentSpec{
+					Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+					Version: "1.0.0",
+				},
+			})
+			if err != nil {
+				t.Fatalf("ReconcileComponent() unexpected error: %v", err)
+			}
+			if helm.ensureCalls != 0 || helm.deleteCalled {
+				t.Errorf("Helm actuation while fenced: ensureCalls=%d deleteCalled=%v, want 0/false", helm.ensureCalls, helm.deleteCalled)
+			}
+			recs, err := cmsStore.ListComponents(ctx)
+			if err != nil || len(recs) != 0 {
+				t.Errorf("CMS records created while fenced = %v (err=%v), want none", recs, err)
+			}
+			if res.ObservedGeneration != 3 {
+				t.Errorf("ObservedGeneration = %d, want 3", res.ObservedGeneration)
+			}
+			if res.Access != nil {
+				t.Errorf("Access = %+v, want nil when fenced", res.Access)
+			}
+			if res.RequeueAfter != conflictRecheckInterval {
+				t.Errorf("RequeueAfter = %v, want %v", res.RequeueAfter, conflictRecheckInterval)
+			}
+			assertSourceConflictConditions(t, res.Conditions, tc.wantConflict)
+		})
+	}
 }
 
-// TestClusterFence_StartDeclaresToCMS checks that a started fence declares its identity to a real
-// CMS, so a second cluster at the same epoch is fenced out, and that a fenced fence's Declare
-// returns the CMS FailedPrecondition rejection.
-func TestClusterFence_StartDeclaresToCMS(t *testing.T) {
+func TestReconciler_ClusterFenceTransientError(t *testing.T) {
+	ctx := context.Background()
+	cmsMock := &mockCMS{declareErr: status.Error(codes.Unavailable, "cms unreachable")}
+	fence, err := NewClusterFence(cmsMock, &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "prod", Epoch: 1}, ClusterFenceOptions{})
+	if err != nil {
+		t.Fatalf("NewClusterFence() failed: %v", err)
+	}
+	r, err := NewReconciler(cmsMock, &mockProber{healthy: true}, &mockHelm{}, WithClusterFence(fence))
+	if err != nil {
+		t.Fatalf("NewReconciler() failed: %v", err)
+	}
+	res, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+		Namespace:      "xmc",
+		Name:           "redpanda",
+		Generation:     2,
+		Enabled:        true,
+		ExistingAccess: &AccessStatus{EnvVars: map[string]string{"PORT": "9092"}},
+		ExistingConditions: []Condition{{
+			Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy,
+		}},
+		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "1.0.0"},
+	})
+	if err == nil {
+		t.Fatal("ReconcileComponent() = nil, want transient declaration error")
+	}
+	if synced := findCondition(res.Conditions, ConditionTypeSynced); synced == nil || synced.Status != ConditionStatusFalse || synced.Reason != ReasonCMSSyncFailed {
+		t.Errorf("Synced condition = %+v, want False/CMSSyncFailed", synced)
+	}
+	if ready := findCondition(res.Conditions, ConditionTypeReady); ready == nil || ready.Status != ConditionStatusTrue {
+		t.Errorf("Ready condition = %+v, want preserved True", ready)
+	}
+	if res.Access == nil || res.Access.EnvVars["PORT"] != "9092" {
+		t.Errorf("Access = %+v, want preserved PORT=9092", res.Access)
+	}
+
+	cmsMock.declareErr = nil
+	if err := fence.Declare(ctx); err != nil {
+		t.Fatalf("fence.Declare() after transient recovery error = %v", err)
+	}
+	select {
+	case <-fence.Changes():
+	default:
+		t.Error("expected notification on fence.Changes() when initial Declare recovers from transient error")
+	}
+}
+
+func TestClusterFence_StartAndTransitionNotification(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cmsClient := &countingDeclareCMS{CMSClient: NewCMSClientAdapter(cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(cms.NewDisabledAuthorizer())))}
 
-	primary, err := NewClusterFence(cmsClient, &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary", Epoch: 2},
-		ClusterFenceOptions{HeartbeatInterval: 20 * time.Millisecond})
-	if err != nil {
-		t.Fatalf("NewClusterFence(primary) failed: %v", err)
+	cmsStore := store.NewMemoryStore()
+	cmsClient := NewCMSClientAdapter(cms.NewServer(cmsStore, cms.WithAuthorizer(cms.NewDisabledAuthorizer())))
+	if _, err := cmsClient.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{
+		Cluster: &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary", Epoch: 2},
+	}); err != nil {
+		t.Fatalf("primary DeclareClusterEpoch() failed: %v", err)
 	}
-	if !primary.NeedLeaderElection() {
+
+	fence, err := NewClusterFence(cmsClient, &componentspb.ClusterIdentity{
+		Uid: testStandbyClusterUID, Name: "standby", Epoch: 2,
+	}, ClusterFenceOptions{HeartbeatInterval: 20 * time.Millisecond, RetryInterval: 10 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("NewClusterFence() failed: %v", err)
+	}
+	if !fence.NeedLeaderElection() {
 		t.Error("NeedLeaderElection() = false, want true")
 	}
+
 	done := make(chan error, 1)
-	go func() { done <- primary.Start(ctx) }()
+	go func() { done <- fence.Start(ctx) }()
 
-	// Wait for the primary's first heartbeat: the first fence row goes to whichever cluster
-	// declares first.
-	deadline := time.Now().Add(5 * time.Second)
-	for cmsClient.declared.Load() == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("primary Start() did not declare to CMS within 5s")
-		}
-		time.Sleep(5 * time.Millisecond)
+	select {
+	case <-fence.Changes():
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for initial fenced notification on Changes()")
 	}
-
-	standby, err := NewClusterFence(cmsClient, &componentspb.ClusterIdentity{Uid: testStandbyClusterUID, Name: "standby", Epoch: 2}, ClusterFenceOptions{})
-	if err != nil {
-		t.Fatalf("NewClusterFence(standby) failed: %v", err)
-	}
-	if err := standby.Declare(ctx); status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("standby Declare() = %v, want FailedPrecondition while the primary holds the fence", err)
+	reason, _, err := fence.Check(ctx)
+	if err != nil || reason != ReasonClusterFenced {
+		t.Fatalf("fence.Check() = (%q, %v), want (%q, nil)", reason, err, ReasonClusterFenced)
 	}
 
 	cancel()
 	if err := <-done; err != nil {
-		t.Fatalf("primary.Start() returned error: %v", err)
+		t.Fatalf("fence.Start() returned error: %v", err)
 	}
 }
 
-func TestClusterFence_DeclareSendsIdentity(t *testing.T) {
-	cmsMock := &mockCMS{}
-	identity := &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "prod", Epoch: 3}
-	fence, err := NewClusterFence(cmsMock, identity, ClusterFenceOptions{})
+func fenceRejection(t *testing.T, reason string) error {
+	t.Helper()
+	st, err := status.New(codes.FailedPrecondition, "rejected by test fence").WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: store.ErrorInfoDomain})
 	if err != nil {
-		t.Fatalf("NewClusterFence() failed: %v", err)
+		t.Fatalf("status.WithDetails() failed: %v", err)
 	}
-	if err := fence.Declare(context.Background()); err != nil {
-		t.Fatalf("Declare() = %v, want nil", err)
-	}
-	got := cmsMock.lastDeclareReq.GetCluster()
-	if got.GetUid() != identity.GetUid() || got.GetName() != identity.GetName() || got.GetEpoch() != identity.GetEpoch() {
-		t.Errorf("declared identity = %+v, want %+v", got, identity)
-	}
+	return st.Err()
+}
 
-	cmsMock.declareErr = status.Error(codes.Unavailable, "cms unreachable")
-	if err := fence.Declare(context.Background()); status.Code(err) != codes.Unavailable {
-		t.Errorf("Declare() with CMS down = %v, want wrapped Unavailable", err)
+func TestFenceConflictFromError_WrappedKeepsCMSMessage(t *testing.T) {
+	err := fmt.Errorf("failed to declare: %w", fenceRejection(t, store.ReasonClusterFenced))
+	reason, msg, fenced := fenceConflictFromError(err)
+	if !fenced || reason != ReasonClusterFenced || msg != "rejected by test fence" {
+		t.Errorf("fenceConflictFromError() = (%q, %q, %t), want (%q, %q, true)", reason, msg, fenced, ReasonClusterFenced, "rejected by test fence")
+	}
+}
+
+func TestClusterFence_TransitionNotifications(t *testing.T) {
+	ctx := context.Background()
+	fenced := fenceRejection(t, store.ReasonClusterFenced)
+	regressed := fenceRejection(t, store.ReasonClusterEpochRegressed)
+	tests := []struct {
+		name          string
+		first, second error
+		wantReason    string
+		wantNotify    bool
+	}{
+		{name: "active to fenced", first: nil, second: fenced, wantReason: ReasonClusterFenced, wantNotify: true},
+		{name: "fenced to active", first: fenced, second: nil, wantReason: "", wantNotify: true},
+		{name: "fenced to regressed", first: fenced, second: regressed, wantReason: ReasonClusterEpochRegressed, wantNotify: true},
+		{name: "active unchanged", first: nil, second: nil, wantReason: "", wantNotify: false},
+		{name: "fenced unchanged", first: fenced, second: fenced, wantReason: ReasonClusterFenced, wantNotify: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cmsMock := &mockCMS{declareErr: tc.first}
+			fence, err := NewClusterFence(cmsMock, &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "prod", Epoch: 1}, ClusterFenceOptions{})
+			if err != nil {
+				t.Fatalf("NewClusterFence() failed: %v", err)
+			}
+			if err := fence.Declare(ctx); err != nil {
+				t.Fatalf("first Declare() = %v, want nil", err)
+			}
+			select {
+			case <-fence.Changes():
+			default:
+			}
+
+			cmsMock.declareErr = tc.second
+			if err := fence.Declare(ctx); err != nil {
+				t.Fatalf("second Declare() = %v, want nil", err)
+			}
+			gotNotify := false
+			select {
+			case <-fence.Changes():
+				gotNotify = true
+			default:
+			}
+			if gotNotify != tc.wantNotify {
+				t.Errorf("Changes() notified = %v, want %v", gotNotify, tc.wantNotify)
+			}
+			if reason, _, err := fence.Check(ctx); err != nil || reason != tc.wantReason {
+				t.Errorf("Check() = (%q, %v), want (%q, nil)", reason, err, tc.wantReason)
+			}
+		})
 	}
 }
 
@@ -221,6 +383,13 @@ func TestClusterFence_StartBoundsHungDeclare(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
+	// Check must answer from the last applied status without waiting on the in-flight CMS call.
+	checkCtx, checkCancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer checkCancel()
+	if reason, _, err := fence.Check(checkCtx); err != nil || reason != "" {
+		t.Errorf("Check() during hung heartbeat = (%q, %v), want (\"\", nil)", reason, err)
+	}
+
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatalf("fence.Start() returned error: %v", err)
@@ -254,5 +423,84 @@ func TestClusterFence_RetryDelay(t *testing.T) {
 				t.Errorf("retryDelay(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+// scriptedDeclareCMS hands each DeclareClusterEpoch call's reply channel to the test via calls
+// and blocks until the test replies on it.
+type scriptedDeclareCMS struct {
+	mockCMS
+	calls chan chan error
+}
+
+func (s *scriptedDeclareCMS) DeclareClusterEpoch(ctx context.Context, in *componentspb.DeclareClusterEpochRequest, _ ...grpc.CallOption) (*componentspb.DeclareClusterEpochResponse, error) {
+	reply := make(chan error)
+	s.calls <- reply
+	if err := <-reply; err != nil {
+		return nil, err
+	}
+	return &componentspb.DeclareClusterEpochResponse{ActiveCluster: in.GetCluster()}, nil
+}
+
+func TestClusterFence_StaleDeclarationDoesNotOverwriteNewer(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name       string
+		staleReply error
+	}{
+		{name: "stale success", staleReply: nil},
+		{name: "stale transient error", staleReply: status.Error(codes.Unavailable, "cms unreachable")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cmsScripted := &scriptedDeclareCMS{calls: make(chan chan error)}
+			fence, err := NewClusterFence(cmsScripted, &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "prod", Epoch: 1}, ClusterFenceOptions{})
+			if err != nil {
+				t.Fatalf("NewClusterFence() failed: %v", err)
+			}
+
+			staleDone := make(chan error, 1)
+			go func() { staleDone <- fence.Declare(ctx) }()
+			staleReply := <-cmsScripted.calls
+			newerDone := make(chan error, 1)
+			go func() { newerDone <- fence.Declare(ctx) }()
+			newerReply := <-cmsScripted.calls
+
+			// The newer declaration observes the fence and applies first; the older one finishes later.
+			newerReply <- fenceRejection(t, store.ReasonClusterFenced)
+			if err := <-newerDone; err != nil {
+				t.Fatalf("newer Declare() = %v, want nil", err)
+			}
+			staleReply <- tc.staleReply
+			if err := <-staleDone; err != nil {
+				t.Fatalf("stale Declare() = %v, want nil (obsolete outcome ignored)", err)
+			}
+			if reason, _, err := fence.Check(ctx); err != nil || reason != ReasonClusterFenced {
+				t.Errorf("Check() = (%q, %v), want (%q, nil): stale result must not overwrite newer status", reason, err, ReasonClusterFenced)
+			}
+		})
+	}
+}
+
+func assertSourceConflictConditions(t *testing.T, conds []Condition, wantConflictReason string) {
+	t.Helper()
+	sc := findCondition(conds, ConditionTypeSourceConflict)
+	if sc == nil || sc.Status != ConditionStatusTrue || sc.Reason != wantConflictReason {
+		t.Errorf("SourceConflict = %+v, want True/%s", sc, wantConflictReason)
+	}
+	ready := findCondition(conds, ConditionTypeReady)
+	if ready == nil || ready.Status != ConditionStatusFalse || ready.Reason != ReasonSourceConflict {
+		t.Errorf("Ready = %+v, want False/%s", ready, ReasonSourceConflict)
+	}
+	stalled := findCondition(conds, ConditionTypeStalled)
+	if stalled == nil || stalled.Status != ConditionStatusTrue || stalled.Reason != ReasonSourceConflict {
+		t.Errorf("Stalled = %+v, want True/%s", stalled, ReasonSourceConflict)
+	}
+	if rec := findCondition(conds, ConditionTypeReconciling); rec != nil {
+		t.Errorf("Reconciling = %+v, want omitted when Stalled=True", rec)
+	}
+	synced := findCondition(conds, ConditionTypeSynced)
+	if synced == nil || synced.Status != ConditionStatusTrue || synced.Reason != ReasonCMSSynced {
+		t.Errorf("Synced = %+v, want True/%s", synced, ReasonCMSSynced)
 	}
 }

@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/naming"
@@ -43,6 +44,8 @@ var componentGVK = ComponentGVR.GroupVersion().WithKind("Component")
 
 // ComponentControllerOptions configures a ComponentController.
 type ComponentControllerOptions struct {
+	// Namespace is the watched namespace; used when enqueuing all Components on a cluster fence change.
+	Namespace string
 	// ProbeInterval is how long after a successful pass a Component is reconciled again, so that
 	// workload health changes, which emit no Component event, are still observed.
 	ProbeInterval time.Duration
@@ -85,11 +88,15 @@ func (c *ComponentController) newControllerBuilder(mgr manager.Manager) *builder
 		predicate.AnnotationChangedPredicate{},
 		deletionStarted(),
 	)
-	return builder.ControllerManagedBy(mgr).
+	b := builder.ControllerManagedBy(mgr).
 		Named(componentControllerName).
 		For(newComponentObject(), builder.WithPredicates(ownChanges)).
 		Watches(newComponentObject(), handler.EnqueueRequestsFromMapFunc(c.mapDependents), builder.WithPredicates(dependencyReadinessChanged())).
 		WithOptions(controller.Options{MaxConcurrentReconciles: c.opts.MaxConcurrentReconciles, RateLimiter: NewComponentRateLimiter()})
+	if fence := c.reconciler.ClusterFence(); fence != nil {
+		b = b.WatchesRawSource(source.Channel(fence.Changes(), handler.EnqueueRequestsFromMapFunc(c.enqueueAllComponents)))
+	}
+	return b
 }
 
 // Reconcile runs one Reconciler pass for the Component named by req, gated on a dependency
@@ -129,8 +136,8 @@ func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Reque
 }
 
 // requeueDelay returns the pass's explicit RequeueAfter when set, which is always honored, longer
-// or shorter than ProbeInterval (e.g. the 30s DeactivationBlocked recheck or the 5m heartbeat of a
-// disabled component); otherwise it returns ProbeInterval.
+// or shorter than ProbeInterval (e.g. the 15m SourceConflict backoff, the 30s DeactivationBlocked
+// recheck or the 5m heartbeat of a disabled component); otherwise it returns ProbeInterval.
 func (c *ComponentController) requeueDelay(res *ReconcileResult) time.Duration {
 	if res != nil && res.RequeueAfter > 0 {
 		return res.RequeueAfter
@@ -179,6 +186,19 @@ func joinPassErrors(passErr, persistErr error) error {
 	return errors.Join(passErr, persistErr)
 }
 
+func (c *ComponentController) enqueueAllComponents(ctx context.Context, _ client.Object) []reconcile.Request {
+	items, err := c.listComponents(ctx, c.opts.Namespace)
+	if err != nil {
+		logging.Error(ctx, "Failed to list Components on cluster fence transition", "namespace", c.opts.Namespace, "error", err)
+		return nil
+	}
+	reqs := make([]reconcile.Request, 0, len(items))
+	for i := range items {
+		reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&items[i])})
+	}
+	return reqs
+}
+
 // mapDependents returns a request for every other Component in obj's namespace that lists obj in
 // spec.dependencies.
 func (c *ComponentController) mapDependents(ctx context.Context, obj client.Object) []reconcile.Request {
@@ -201,7 +221,11 @@ func (c *ComponentController) mapDependents(ctx context.Context, obj client.Obje
 func (c *ComponentController) listComponents(ctx context.Context, namespace string) ([]unstructured.Unstructured, error) {
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(ComponentGVR.GroupVersion().WithKind("ComponentList"))
-	if err := c.client.List(ctx, list, client.InNamespace(namespace)); err != nil {
+	var opts []client.ListOption
+	if namespace != "" {
+		opts = append(opts, client.InNamespace(namespace))
+	}
+	if err := c.client.List(ctx, list, opts...); err != nil {
 		return nil, fmt.Errorf("failed to list Components in namespace %q: %w", namespace, err)
 	}
 	return list.Items, nil

@@ -141,6 +141,22 @@ func (o *intentObserver) SetComponentIntent(ctx context.Context, in *componentsp
 	return o.CMSClient.SetComponentIntent(ctx, in, opts...)
 }
 
+// epochOverrideCMS is a CMSClient that, once epoch is set, declares that epoch instead of the
+// one in each DeclareClusterEpoch request. It simulates an operator raising the bridge's
+// ownership epoch without mutating the ClusterFence's immutable identity.
+type epochOverrideCMS struct {
+	CMSClient
+	epoch atomic.Int64
+}
+
+func (o *epochOverrideCMS) DeclareClusterEpoch(ctx context.Context, in *componentspb.DeclareClusterEpochRequest, opts ...grpc.CallOption) (*componentspb.DeclareClusterEpochResponse, error) {
+	if epoch := o.epoch.Load(); epoch > 0 {
+		id := in.GetCluster()
+		in = &componentspb.DeclareClusterEpochRequest{Cluster: &componentspb.ClusterIdentity{Uid: id.GetUid(), Name: id.GetName(), Epoch: epoch}}
+	}
+	return o.CMSClient.DeclareClusterEpoch(ctx, in, opts...)
+}
+
 // controllerEnv is a running ComponentController over one envtest namespace.
 type controllerEnv struct {
 	namespace string
@@ -151,7 +167,10 @@ type controllerEnv struct {
 	// cms is the CMS client of the controller, backed by store.
 	cms   *intentObserver
 	store store.Store
-	mgr   manager.Manager
+	fence *ClusterFence
+	// fenceCMS is the CMS client of fence; nil when the env runs without a fence.
+	fenceCMS *epochOverrideCMS
+	mgr      manager.Manager
 	// stop stops the manager and waits for it to exit. It is idempotent.
 	stop func()
 }
@@ -173,6 +192,9 @@ func TestComponentControllerEnvtest(t *testing.T) {
 	})
 	t.Run("ComponentReadsAreCacheBacked", func(t *testing.T) {
 		testComponentReadsAreCacheBacked(t, startControllerEnv(t, cfg, "cache"))
+	})
+	t.Run("FencedStandbyAndTakeover", func(t *testing.T) {
+		testFencedStandbyAndTakeover(t, cfg)
 	})
 }
 
@@ -196,6 +218,11 @@ func createEnvtestNamespace(t *testing.T, cfg *rest.Config, namespace string) {
 // stopped or the test ends.
 func runControllerEnv(t *testing.T, cfg *rest.Config, mgrCfg ComponentManagerConfig) *controllerEnv {
 	t.Helper()
+	return runControllerEnvWithStore(t, cfg, mgrCfg, store.NewMemoryStore(), nil)
+}
+
+func runControllerEnvWithStore(t *testing.T, cfg *rest.Config, mgrCfg ComponentManagerConfig, cmsStore store.Store, id *componentspb.ClusterIdentity) *controllerEnv {
+	t.Helper()
 	opts := ComponentManagerOptions(mgrCfg)
 	opts.Controller.SkipNameValidation = ptr.To(true)
 	if mgrCfg.LeaderElection {
@@ -209,13 +236,26 @@ func runControllerEnv(t *testing.T, cfg *rest.Config, mgrCfg ComponentManagerCon
 		t.Fatalf("manager.New() failed: %v", err)
 	}
 	writer := dynamic.NewForConfigOrDie(cfg)
-	cmsStore := store.NewMemoryStore()
 	cmsClient := &intentObserver{CMSClient: NewCMSClientAdapter(cms.NewServer(cmsStore, cms.WithAuthorizer(cms.NewDisabledAuthorizer())))}
-	r, err := NewReconciler(cmsClient, nil, nil)
+	var recOpts []ReconcilerOption
+	var fence *ClusterFence
+	var fenceCMS *epochOverrideCMS
+	if id != nil {
+		fenceCMS = &epochOverrideCMS{CMSClient: cmsClient}
+		fence, err = NewClusterFence(fenceCMS, id, ClusterFenceOptions{HeartbeatInterval: time.Hour})
+		if err != nil {
+			t.Fatalf("NewClusterFence() failed: %v", err)
+		}
+		if err := mgr.Add(fence); err != nil {
+			t.Fatalf("mgr.Add(fence) failed: %v", err)
+		}
+		recOpts = append(recOpts, WithClusterFence(fence))
+	}
+	r, err := NewReconciler(cmsClient, nil, nil, recOpts...)
 	if err != nil {
 		t.Fatalf("NewReconciler() failed: %v", err)
 	}
-	c := NewComponentController(mgr.GetClient(), r, ComponentControllerOptions{ProbeInterval: envtestProbeInterval, ReconcileTimeout: 10 * time.Second})
+	c := NewComponentController(mgr.GetClient(), r, ComponentControllerOptions{Namespace: mgrCfg.Namespace, ProbeInterval: envtestProbeInterval, ReconcileTimeout: 10 * time.Second})
 	counter := &reconcileCounter{inner: c, counts: map[string]int{}}
 	if err := c.newControllerBuilder(mgr).Complete(counter); err != nil {
 		t.Fatalf("failed to set up controller: %v", err)
@@ -236,7 +276,46 @@ func runControllerEnv(t *testing.T, cfg *rest.Config, mgrCfg ComponentManagerCon
 		})
 	}
 	t.Cleanup(stop)
-	return &controllerEnv{namespace: mgrCfg.Namespace, client: writer.Resource(ComponentGVR).Namespace(mgrCfg.Namespace), counter: counter, reads: reads, cms: cmsClient, store: cmsStore, mgr: mgr, stop: stop}
+	return &controllerEnv{namespace: mgrCfg.Namespace, client: writer.Resource(ComponentGVR).Namespace(mgrCfg.Namespace), counter: counter, reads: reads, cms: cmsClient, store: cmsStore, fence: fence, fenceCMS: fenceCMS, mgr: mgr, stop: stop}
+}
+
+func testFencedStandbyAndTakeover(t *testing.T, cfg *rest.Config) {
+	ctx := context.Background()
+	const ns = "fenced"
+	createEnvtestNamespace(t, cfg, ns)
+	cmsStore := store.NewMemoryStore()
+	if _, err := cmsStore.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: testPrimaryClusterUID, Name: "primary", Epoch: 2}); err != nil {
+		t.Fatalf("DeclareClusterEpoch(primary) failed: %v", err)
+	}
+
+	env := runControllerEnvWithStore(t, cfg, ComponentManagerConfig{Namespace: ns}, cmsStore, &componentspb.ClusterIdentity{
+		Uid: testStandbyClusterUID, Name: "standby", Epoch: 2,
+	})
+	env.create(t, "env-fenced-db")
+	env.waitFor(t, "env-fenced-db", "fenced SourceConflict", func(u *unstructured.Unstructured) bool {
+		if u == nil {
+			return false
+		}
+		conds := ParseConditionsFromUnstructured(u.Object["status"])
+		sc := findCondition(conds, ConditionTypeSourceConflict)
+		return readyReason(u) == ReasonSourceConflict && sc != nil && sc.Status == ConditionStatusTrue && sc.Reason == ReasonClusterFenced
+	})
+	env.assertNoCMSRecords(t)
+
+	// Take over the CMS fence by declaring the standby at epoch 3 (without mutating the fence's
+	// immutable identity): re-declaring signals fence.Changes() and reconciles env-fenced-db to
+	// Ready without touching the CR.
+	env.fenceCMS.epoch.Store(3)
+	if err := env.fence.Declare(ctx); err != nil {
+		t.Fatalf("fence.Declare(epoch 3) failed: %v", err)
+	}
+	env.waitFor(t, "env-fenced-db", "Ready with SourceConflict pruned", func(u *unstructured.Unstructured) bool {
+		if u == nil {
+			return false
+		}
+		conds := ParseConditionsFromUnstructured(u.Object["status"])
+		return readyReason(u) == ReasonComponentHealthy && findCondition(conds, ConditionTypeSourceConflict) == nil
+	})
 }
 
 // testComponentReadsAreCacheBacked checks that once the manager's cache has synced, neither

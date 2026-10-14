@@ -27,6 +27,7 @@ const (
 	ConditionTypeSynced              = "Synced"
 	ConditionTypeReconciling         = "Reconciling"
 	ConditionTypeStalled             = "Stalled"
+	ConditionTypeSourceConflict      = "SourceConflict"
 	ConditionTypeDeactivationBlocked = "DeactivationBlocked"
 	ConditionStatusTrue              = "True"
 	ConditionStatusFalse             = "False"
@@ -35,12 +36,18 @@ const (
 	ConditionTypeDependenciesReady = "DependenciesReady"
 )
 
-// Ready, Synced, Reconciling, and Stalled condition reasons reported by component reconciliation.
+// Ready, Synced, Reconciling, Stalled, and SourceConflict condition reasons reported by component reconciliation.
 const (
 	// ReasonCMSSynced indicates the component's intent and observed state are synchronized with CMS.
 	ReasonCMSSynced = "CMSSynced"
 	// ReasonCMSSyncFailed indicates a CMS RPC failed while synchronizing intent or observed state.
 	ReasonCMSSyncFailed = "CMSSyncFailed"
+	// ReasonSourceConflict marks Ready=False and Stalled=True when CMS rejects this CR's ownership or cluster fence.
+	ReasonSourceConflict = "SourceConflict"
+	// ReasonClusterFenced marks SourceConflict=True when another cluster holds the CMS ownership fence.
+	ReasonClusterFenced = "ClusterFenced"
+	// ReasonClusterEpochRegressed marks SourceConflict=True when this cluster declares an epoch lower than the active CMS epoch.
+	ReasonClusterEpochRegressed = "ClusterEpochRegressed"
 	// ReasonInitialSyncPending indicates CMS failed before initial component readiness was evaluated.
 	ReasonInitialSyncPending = "InitialSyncPending"
 	// ReasonProgressing indicates the component is actively reconciling or awaiting workload readiness.
@@ -144,7 +151,8 @@ func isStalledReason(reason string) bool {
 	switch reason {
 	case ReasonDependencyCycle, ReasonDeactivationBlocked, ReasonContractBroken,
 		ReasonInvalidWrapperSpec, "InvalidWrapperRef", "CrossNamespaceForbidden", "CRDNotFound",
-		ReasonInvalidComponentRef, ReasonHelmUpgradeFailed, ReasonHelmReleaseStuck, ReasonHelmRunnerUninitialized:
+		ReasonInvalidComponentRef, ReasonHelmUpgradeFailed, ReasonHelmReleaseStuck, ReasonHelmRunnerUninitialized,
+		ReasonSourceConflict:
 		return true
 	}
 	return false
@@ -173,6 +181,18 @@ func deleteCondition(conditions *[]Condition, condType string) {
 // setSynced records the Synced condition on res.
 func setSynced(res *ReconcileResult, in ReconcileComponentInput, status, reason, msg string) {
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeSynced, status, in.Generation, reason, msg)
+}
+
+// recordSourceConflict records a policy-block SourceConflict=True (with conflictReason) alongside
+// Ready=False (SourceConflict), Stalled=True (SourceConflict), and Synced=True, clearing access
+// and scheduling a slow 15-minute recheck.
+func recordSourceConflict(res *ReconcileResult, in ReconcileComponentInput, conflictReason, msg string) {
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	res.Access = nil
+	res.RequeueAfter = conflictRecheckInterval
+	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeSourceConflict, ConditionStatusTrue, in.Generation, conflictReason, msg)
+	setReadiness(res, in, ConditionStatusFalse, ReasonSourceConflict, msg)
 }
 
 // recordCMSSyncFailure records Synced=False when a CMS RPC fails before workload health is

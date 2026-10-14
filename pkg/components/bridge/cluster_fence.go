@@ -19,23 +19,28 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/pkg/components/store"
 )
 
 const (
 	kubeSystemNamespace        = "kube-system"
 	defaultFenceRetryDelay     = 5 * time.Second
 	defaultFenceDeclareTimeout = 10 * time.Second
+	conflictRecheckInterval    = 15 * time.Minute
 )
 
 // ValidateClusterName validates that name is a valid DNS-1123 label.
@@ -73,13 +78,23 @@ type ClusterFenceOptions struct {
 	DeclareTimeout time.Duration
 }
 
-// ClusterFence declares the cluster's ownership epoch to CMS while leading.
+// ClusterFence declares the cluster's ownership epoch to CMS while leading and tracks whether
+// this cluster holds the active CMS ownership fence or is in fenced cold standby.
 type ClusterFence struct {
 	cms CMSClient
 	// identity is a private copy set once in NewClusterFence and never mutated afterwards, so it
-	// is safe to read concurrently (including from Declare and Start).
+	// is safe to read without holding mu (including from Declare and Start).
 	identity *componentspb.ClusterIdentity
 	opts     ClusterFenceOptions
+	changes  chan event.GenericEvent
+
+	// mu guards the mutable fence status fields below. It is never held across a CMS call.
+	mu                          sync.Mutex
+	declared, declareFailed     bool
+	fencedReason, fencedMessage string
+	// declareSeq numbers declarations in start order; appliedSeq is the newest applied result,
+	// so a slow declaration finishing after a newer one cannot overwrite fresher status.
+	declareSeq, appliedSeq uint64
 }
 
 var _ manager.LeaderElectionRunnable = (*ClusterFence)(nil)
@@ -105,11 +120,14 @@ func NewClusterFence(cms CMSClient, identity *componentspb.ClusterIdentity, opts
 		opts.DeclareTimeout = defaultFenceDeclareTimeout
 	}
 	id := &componentspb.ClusterIdentity{Uid: identity.GetUid(), Name: identity.GetName(), Epoch: identity.GetEpoch()}
-	return &ClusterFence{cms: cms, identity: id, opts: opts}, nil
+	return &ClusterFence{cms: cms, identity: id, opts: opts, changes: make(chan event.GenericEvent, 1)}, nil
 }
 
 // NeedLeaderElection makes the manager start the runnable only once it holds the Lease.
 func (f *ClusterFence) NeedLeaderElection() bool { return true }
+
+// Changes returns a channel signaled whenever the cluster fence status transitions.
+func (f *ClusterFence) Changes() <-chan event.GenericEvent { return f.changes }
 
 // Identity returns a copy of the cluster identity declared by f.
 func (f *ClusterFence) Identity() *componentspb.ClusterIdentity {
@@ -159,12 +177,98 @@ func (f *ClusterFence) declareWithTimeout(ctx context.Context) error {
 	return f.Declare(declareCtx)
 }
 
-// Declare sends DeclareClusterEpoch to CMS. A declaration that CMS rejects because another
-// cluster holds the fence or the epoch regressed returns its FailedPrecondition error, which Start
-// logs and retries at the heartbeat interval.
+// Declare sends DeclareClusterEpoch to CMS and updates the in-memory fence status. The CMS call
+// runs without holding mu, so concurrent Check calls are never blocked behind it.
 func (f *ClusterFence) Declare(ctx context.Context) error {
-	if _, err := f.cms.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: f.Identity()}); err != nil {
+	seq := f.nextDeclareSeq()
+	_, err := f.cms.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: f.Identity()})
+	reason, msg, fenced := fenceConflictFromError(err)
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if seq < f.appliedSeq {
+		// A declaration started later has already applied a fresher result, so this one's outcome
+		// (success or failure) is obsolete.
+		return nil
+	}
+	if err != nil && !fenced {
+		f.declareFailed = true
 		return fmt.Errorf("failed to declare cluster epoch in CMS: %w", err)
 	}
+	f.appliedSeq = seq
+	f.applyStateLocked(reason, msg, !f.declared && f.declareFailed)
 	return nil
+}
+
+// Check returns the current fence conflict reason and message, declaring first if no
+// declaration has succeeded yet.
+func (f *ClusterFence) Check(ctx context.Context) (string, string, error) {
+	if !f.isDeclared() {
+		if err := f.Declare(ctx); err != nil {
+			return "", "", err
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.fencedReason, f.fencedMessage, nil
+}
+
+func (f *ClusterFence) nextDeclareSeq() uint64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.declareSeq++
+	return f.declareSeq
+}
+
+func (f *ClusterFence) isDeclared() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.declared
+}
+
+func (f *ClusterFence) applyStateLocked(reason, msg string, recoveredFromError bool) {
+	changed := (f.declared && f.fencedReason != reason) || (!f.declared && (reason != "" || recoveredFromError))
+	f.declared, f.declareFailed = true, false
+	f.fencedReason, f.fencedMessage = reason, msg
+	if changed {
+		select {
+		case f.changes <- event.GenericEvent{Object: newComponentObject()}:
+		default:
+		}
+	}
+}
+
+func fenceConflictFromError(err error) (string, string, bool) {
+	info, msg := extractErrorInfo(err)
+	if info == nil {
+		return "", "", false
+	}
+	switch info.GetReason() {
+	case store.ReasonClusterFenced:
+		return ReasonClusterFenced, msg, true
+	case store.ReasonClusterEpochRegressed:
+		return ReasonClusterEpochRegressed, msg, true
+	default:
+		return "", "", false
+	}
+}
+
+// extractErrorInfo returns the components-domain ErrorInfo and the CMS status message of a
+// FailedPrecondition status that err is or wraps. It reads the wrapped status itself rather than
+// status.FromError, whose message for a wrapped error is the full wrapped error text.
+func extractErrorInfo(err error) (*errdetails.ErrorInfo, string) {
+	var se interface{ GRPCStatus() *status.Status }
+	if !errors.As(err, &se) {
+		return nil, ""
+	}
+	st := se.GRPCStatus()
+	if st.Code() != codes.FailedPrecondition {
+		return nil, ""
+	}
+	for _, d := range st.Details() {
+		if info, ok := d.(*errdetails.ErrorInfo); ok && info.GetDomain() == store.ErrorInfoDomain {
+			return info, st.Message()
+		}
+	}
+	return nil, ""
 }

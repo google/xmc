@@ -70,18 +70,38 @@ type Reconciler struct {
 	cmsClient   CMSClient
 	prober      StatusDetectorHealthProber
 	helmManager HelmManager
+	fence       *ClusterFence
 	syncTracker cmsSyncTracker
 }
 
+// ReconcilerOption configures optional Reconciler dependencies.
+type ReconcilerOption func(*Reconciler)
+
+// WithClusterFence configures the Reconciler to gate active reconciliations on fence.
+func WithClusterFence(fence *ClusterFence) ReconcilerOption {
+	return func(r *Reconciler) { r.fence = fence }
+}
+
 // NewReconciler constructs a new Reconciler instance.
-// cms is the required gRPC client for CMS communication.
-// prober is an optional health prober for component health checks.
-// helmMgr is an optional HelmManager for provisioning 1P component workloads via Helm releases.
-func NewReconciler(cms CMSClient, prober StatusDetectorHealthProber, helmMgr HelmManager) (*Reconciler, error) {
+func NewReconciler(cms CMSClient, prober StatusDetectorHealthProber, helmMgr HelmManager, opts ...ReconcilerOption) (*Reconciler, error) {
 	if cms == nil {
 		return nil, errors.New("cms client must not be nil")
 	}
-	return &Reconciler{cmsClient: cms, prober: prober, helmManager: helmMgr}, nil
+	r := &Reconciler{cmsClient: cms, prober: prober, helmManager: helmMgr}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(r)
+		}
+	}
+	return r, nil
+}
+
+// ClusterFence returns the ClusterFence configured on r, or nil if none.
+func (r *Reconciler) ClusterFence() *ClusterFence {
+	if r == nil {
+		return nil
+	}
+	return r.fence
 }
 
 // ForgetComponent evicts any in-memory CMS sync or deactivation-block state tracked for the component.
@@ -169,6 +189,9 @@ func (r *Reconciler) reconcilePass(ctx context.Context, in ReconcileComponentInp
 	if in.IsDeleting {
 		return r.reconcileDeletion(ctx, in, canonicalName, res)
 	}
+	if fenced, err := r.reconcileClusterFence(ctx, in, res); fenced || err != nil {
+		return res, err
+	}
 	if !in.Enabled {
 		if err := r.applyDisabledIntent(ctx, in, canonicalName, res); err != nil {
 			return res, err
@@ -176,6 +199,22 @@ func (r *Reconciler) reconcilePass(ctx context.Context, in ReconcileComponentInp
 		return r.reconcileDisabled(ctx, in, canonicalName, res)
 	}
 	return r.reconcileEnabled(ctx, in, canonicalName, res)
+}
+
+func (r *Reconciler) reconcileClusterFence(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) (bool, error) {
+	if r.fence == nil {
+		return false, nil
+	}
+	reason, msg, err := r.fence.Check(ctx)
+	if err != nil {
+		recordCMSSyncFailure(res, in, err)
+		return false, err
+	}
+	if reason == "" {
+		return false, nil
+	}
+	recordSourceConflict(res, in, reason, msg)
+	return true, nil
 }
 
 // reconcileEnabled rejects dependency cycles, registers intent (so CMS knows the dependency edges
