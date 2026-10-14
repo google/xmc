@@ -33,7 +33,7 @@ func TestParseConfig(t *testing.T) {
 	}{
 		{
 			name:    "valid flags",
-			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--probe-interval=10s", "--probe-timeout=5s"},
+			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--probe-interval=10s", "--probe-timeout=5s", "--max-concurrent-reconciles=4"},
 			wantErr: false,
 		},
 		{
@@ -70,6 +70,11 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:    "invalid reconcile timeout",
 			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--reconcile-timeout=0s"},
+			wantErr: true,
+		},
+		{
+			name:    "invalid max concurrent reconciles",
+			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--max-concurrent-reconciles=0"},
 			wantErr: true,
 		},
 	}
@@ -191,6 +196,7 @@ func TestParseConfig_EnvVars(t *testing.T) {
 	t.Setenv("PROBE_INTERVAL", "15s")
 	t.Setenv("PROBE_TIMEOUT", "8s")
 	t.Setenv("RECONCILE_TIMEOUT", "90s")
+	t.Setenv("MAX_CONCURRENT_RECONCILES", "4")
 	t.Setenv("KUBECONFIG", "/custom/kubeconfig")
 
 	cfg, err := ParseConfig([]string{})
@@ -214,6 +220,9 @@ func TestParseConfig_EnvVars(t *testing.T) {
 	}
 	if cfg.ReconcileTimeout != 90*time.Second {
 		t.Errorf("cfg.ReconcileTimeout = %v, want 90s", cfg.ReconcileTimeout)
+	}
+	if cfg.MaxConcurrentReconciles != 4 {
+		t.Errorf("cfg.MaxConcurrentReconciles = %d, want 4", cfg.MaxConcurrentReconciles)
 	}
 	if cfg.Kubeconfig != "/custom/kubeconfig" {
 		t.Errorf("cfg.Kubeconfig = %q, want /custom/kubeconfig", cfg.Kubeconfig)
@@ -246,6 +255,22 @@ func TestParseConfig_InvalidEnvDuration(t *testing.T) {
 		_, err := ParseConfig([]string{})
 		if err == nil {
 			t.Error("expected error for invalid RECONCILE_TIMEOUT, got nil")
+		}
+	})
+
+	t.Run("invalid MAX_CONCURRENT_RECONCILES", func(t *testing.T) {
+		t.Setenv("MAX_CONCURRENT_RECONCILES", "many")
+		_, err := ParseConfig([]string{})
+		if err == nil {
+			t.Error("expected error for invalid MAX_CONCURRENT_RECONCILES, got nil")
+		}
+	})
+
+	t.Run("MAX_CONCURRENT_RECONCILES below 1", func(t *testing.T) {
+		t.Setenv("MAX_CONCURRENT_RECONCILES", "0")
+		_, err := ParseConfig([]string{})
+		if err == nil {
+			t.Error("expected error for MAX_CONCURRENT_RECONCILES=0, got nil")
 		}
 	})
 }

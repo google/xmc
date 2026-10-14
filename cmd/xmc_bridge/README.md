@@ -62,6 +62,7 @@ Configuration can be supplied via environment variables (mounted from `xmc-bridg
 | `--probe-interval` / `PROBE_INTERVAL` | `5s` | Delay after a successful reconcile pass before the same Component is reconciled again, to observe workload health changes that emit no Component event. |
 | `--probe-timeout` / `PROBE_TIMEOUT` | `2s` | Timeout of one workload health probe. |
 | `--reconcile-timeout` / `RECONCILE_TIMEOUT` | `60s` | Timeout of one Component's reconcile pass (CMS calls, actuation and probing); persisting the pass's status is not bounded by it. |
+| `--max-concurrent-reconciles` / `MAX_CONCURRENT_RECONCILES` | `1` | Number of Components reconciled in parallel. Must be at least 1. |
 | `--kubeconfig` / `KUBECONFIG` | `""` | Optional explicit path to kubeconfig file (defaults to in-cluster or `KUBECONFIG` env). |
 
 On startup, `xmc-bridge` invokes `HydrateFromCluster` before entering the reconciliation loop to restore active 1P component states from the `xmc-component-values` ConfigMap, preventing redundant Helm release revision increments and ensuring post-restart deactivations execute cleanly.
@@ -91,6 +92,7 @@ componentsDeployment:
   probeInterval: "5s"                             # Per-Component re-probe delay after a successful pass
   probeTimeout: "2s"                              # Timeout per workload health probe
   reconcileTimeout: "60s"                         # Timeout per Component reconcile pass
+  maxConcurrentReconciles: 1                      # Components reconciled in parallel
 
 xmc_bridge_custom_image: ""                       # Optional custom container image override
 ```

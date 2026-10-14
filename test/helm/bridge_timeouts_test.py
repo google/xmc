@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Checks that the xmc-bridge probe and reconcile timeouts are configured separately."""
+"""Checks the xmc-bridge reconcile tuning values: separate probe and reconcile timeouts, and concurrency."""
 
 import unittest
 
@@ -42,6 +42,31 @@ class BridgeTimeoutsTest(unittest.TestCase):
         )
         self.assertIn('PROBE_TIMEOUT: "3s"', manifest)
         self.assertIn('RECONCILE_TIMEOUT: "120s"', manifest)
+
+    def test_max_concurrent_reconciles_default(self) -> None:
+        manifest = render_template(_CONFIGMAP, {"componentsDeployment.enabled": "true"})
+        self.assertIn('MAX_CONCURRENT_RECONCILES: "1"', manifest)
+
+    def test_max_concurrent_reconciles_override(self) -> None:
+        manifest = render_template(
+            _CONFIGMAP,
+            {
+                "componentsDeployment.enabled": "true",
+                "componentsDeployment.maxConcurrentReconciles": "4",
+            },
+        )
+        self.assertIn('MAX_CONCURRENT_RECONCILES: "4"', manifest)
+
+    def test_max_concurrent_reconciles_explicit_zero_is_not_defaulted(self) -> None:
+        # xmc-bridge rejects 0 at startup; the chart must pass it through rather than render 1.
+        manifest = render_template(
+            _CONFIGMAP,
+            {
+                "componentsDeployment.enabled": "true",
+                "componentsDeployment.maxConcurrentReconciles": "0",
+            },
+        )
+        self.assertIn('MAX_CONCURRENT_RECONCILES: "0"', manifest)
 
 
 if __name__ == "__main__":

@@ -47,6 +47,8 @@ componentsDeployment:
   probeInterval: "5s"
   probeTimeout: "2s"
   reconcileTimeout: "60s"
+  # Number of Components xmc-bridge reconciles in parallel.
+  maxConcurrentReconciles: 1
   rbac:
     clusterScope: false
 
