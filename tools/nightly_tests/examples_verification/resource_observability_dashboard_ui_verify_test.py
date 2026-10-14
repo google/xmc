@@ -61,17 +61,19 @@ class ResourceObservabilityDashboardUIVerifyTest(unittest.TestCase):
 
     def test_wait_for_selector_with_retry_handles_timeout_and_http_errors(self) -> None:
         session = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
-        session._page = mock.MagicMock()
+        mock_page = mock.MagicMock()
+        session._page = mock_page
         session.http_errors = ["500 https://xmc.example.com/v1/clusterqueues:batchGetSecondaryData"]
         session.wait_for_selector_with_retry(sel.QUEUE_CARD_SEL, 5000)
         self.assertEqual(session.http_errors, [])
-        session.page.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
+        mock_page.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
 
         session2 = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
-        session2._page = mock.MagicMock()
-        session2.page.wait_for_selector.side_effect = [RuntimeError("timeout"), None]
+        mock_page2 = mock.MagicMock()
+        session2._page = mock_page2
+        mock_page2.wait_for_selector.side_effect = [RuntimeError("timeout"), None]
         session2.wait_for_selector_with_retry(sel.QUEUE_CARD_SEL, 5000)
-        session2.page.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
+        mock_page2.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
 
     def test_collect_and_verify_work_units_across_paginator_pages(self) -> None:
         session = mock.MagicMock()
