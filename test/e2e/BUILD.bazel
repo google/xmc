@@ -84,6 +84,24 @@ go_test(
 )
 
 go_test(
+    name = "components_lifecycle_test",
+    size = "large",
+    srcs = [
+        "components_lifecycle_e2e_test.go",
+        "kind_3p_harness_test.go",
+    ],
+    data = ["//deploy/helm:chart"],
+    tags = [
+        "e2e",
+        "exclusive",
+        "external",
+        "local",
+        "manual",
+    ],
+    deps = _KIND_3P_DEPS,
+)
+
+go_test(
     name = "clickhouse_3p_test",
     size = "medium",
     srcs = [

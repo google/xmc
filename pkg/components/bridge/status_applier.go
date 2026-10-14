@@ -43,6 +43,9 @@ var ComponentGVR = schema.GroupVersionResource{
 	Resource: "components",
 }
 
+// errNilComponentItem is returned by PersistReconcileResult for a nil Component item.
+var errNilComponentItem = errors.New("component item must not be nil")
+
 // ComponentStatus defines the structured representation of .status in the Component CRD.
 type ComponentStatus struct {
 	ObservedGeneration int64                `json:"observedGeneration"`
@@ -183,6 +186,31 @@ func SyncComponentFinalizers(ctx context.Context, client dynamic.Interface, defa
 		return nil, err
 	}
 	return updated, nil
+}
+
+// PersistReconcileResult persists res for item to the API server: it syncs the deletion protection
+// finalizer with SyncComponentFinalizers and then applies .status with ApplyComponentStatusSSA,
+// unless the finalizer was released for deletion. It is a no-op for a nil res and rejects a nil item.
+// On a finalizer error the status is not written, so the next level-triggered pass retries both.
+// item is read-only: it does not reflect the persisted object, which callers must re-read if needed.
+func PersistReconcileResult(ctx context.Context, client dynamic.Interface, defaultNamespace string, item *unstructured.Unstructured, res *ReconcileResult) error {
+	if res == nil {
+		return nil
+	}
+	if item == nil {
+		return errNilComponentItem
+	}
+	updated, err := SyncComponentFinalizers(ctx, client, defaultNamespace, item.DeepCopy(), res)
+	if err != nil {
+		return fmt.Errorf("failed to sync finalizers: %w", err)
+	}
+	if res.RemoveFinalizer {
+		return nil
+	}
+	if err := ApplyComponentStatusSSA(ctx, client, defaultNamespace, updated, res); err != nil {
+		return fmt.Errorf("failed to apply status: %w", err)
+	}
+	return nil
 }
 
 func applyFinalizerMutation(ctx context.Context, item *unstructured.Unstructured, res *ReconcileResult) bool {

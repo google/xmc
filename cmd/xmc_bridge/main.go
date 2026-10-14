@@ -241,20 +241,12 @@ func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstr
 		logging.Error(ctx, "Reconciler returned nil result without error", "name", name)
 		return
 	}
-	updatedItem, err := c.syncFinalizers(ctx, item, res)
-	if err != nil {
-		// If syncFinalizers fails (e.g. API conflict or network blip), log and return.
-		// Level-triggered reconciliation will automatically pick up the custom resource
-		// on the subsequent pass: if detaching finalizer, the CR remains present in K8s
-		// and deletion will be retried idempotently without leaking resources.
-		logging.Error(ctx, "Error syncing finalizers for component", "name", name, "error", err)
+	// On a persistence error (e.g. API conflict or network blip), log and return. Level-triggered
+	// reconciliation picks the custom resource up on the next pass: if the finalizer was being
+	// detached, the CR remains present in K8s and deletion is retried idempotently.
+	if err := c.persistResult(ctx, item, res); err != nil {
+		logging.Error(ctx, "Error persisting reconcile result for component", "name", name, "error", err)
 		return
-	}
-	if res.RemoveFinalizer {
-		return
-	}
-	if err := c.syncStatus(ctx, updatedItem, res); err != nil {
-		logging.Error(ctx, "Error syncing status for component", "name", name, "error", err)
 	}
 	logging.Debug(ctx, "Item reconciliation pass finished", "name", name, "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
 }
@@ -262,35 +254,17 @@ func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstr
 // handleReconcileFailure handles status and finalizer synchronization when Reconcile returns an error
 // but produced a non-nil ReconcileResult (e.g. Setting Degraded=True status or persisting finalizers).
 func (c *Controller) handleReconcileFailure(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) {
-	if res == nil {
-		return
-	}
-	name := item.GetName()
-	updatedItem, syncErr := c.syncFinalizers(ctx, item, res)
-	if syncErr != nil {
-		logging.Error(ctx, "Error syncing finalizers after reconciliation failure", "name", name, "error", syncErr)
-		return
-	}
-	if res.RemoveFinalizer {
-		return
-	}
-	if err := c.syncStatus(ctx, updatedItem, res); err != nil {
-		logging.Error(ctx, "Error syncing status after reconciliation failure", "name", name, "error", err)
+	if err := c.persistResult(ctx, item, res); err != nil {
+		logging.Error(ctx, "Error persisting reconcile result after reconciliation failure", "name", item.GetName(), "error", err)
 	}
 }
 
-// syncFinalizers attaches the deletion protection finalizer if res.AddFinalizer is true,
-// or removes it if res.RemoveFinalizer is true, updating the custom resource in Kubernetes.
-// If the Kubernetes API update fails, the error is returned so that the controller can retry
-// on the next pass while ensuring the finalizer remains in place to prevent premature deletion.
-func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) (*unstructured.Unstructured, error) {
-	return bridge.SyncComponentFinalizers(ctx, c.dynamicClient, c.namespace, item, res)
-}
-
-// syncStatus serializes the ReconcileResult into the .status map of item and persists it
-// via Kubernetes Server-Side Apply (SSA) on the /status subresource with fieldManager "xmc-bridge".
-func (c *Controller) syncStatus(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
-	return bridge.ApplyComponentStatusSSA(ctx, c.dynamicClient, c.namespace, item, res)
+// persistResult persists res for item with bridge.PersistReconcileResult: the deletion protection
+// finalizer is synced first and .status is then server-side applied with fieldManager "xmc-bridge",
+// unless the finalizer was released. A finalizer error skips the status write so that the finalizer
+// stays in place and the next pass retries both.
+func (c *Controller) persistResult(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
+	return bridge.PersistReconcileResult(ctx, c.dynamicClient, c.namespace, item, res)
 }
 
 // BuildStatus converts a ReconcileResult into a typed ComponentStatus matching the Component CRD status schema,
