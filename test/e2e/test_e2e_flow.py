@@ -44,12 +44,19 @@ from test.e2e.lib.dex_authenticator import DexAuthenticator
 from test.e2e.lib.jobset_verifier import (
     assert_jobset_contract,
     build_work_unit_payload,
-    wait_for_jobset_for_experiment,
+    wait_for_jobset_for_work_unit,
+    wait_for_workload_admitted,
 )
 from test.e2e.lib.ui_diagnostics import (
     get_screenshots_dir,
     save_screenshot,
     setup_logging,
+)
+from test.e2e.lib.work_unit_state import (
+    WorkUnit,
+    wait_for_work_unit_state,
+    work_unit_fetch_error,
+    work_unit_name_from_operation,
 )
 
 DEFAULT_TIMEOUT_MS = 15_000
@@ -68,6 +75,9 @@ VIEWER_PASSWORD = DEFAULT_VIEWER_PASSWORD
 UNAUTHORIZED_USER = DEFAULT_UNAUTHORIZED_USER
 UNAUTHORIZED_PASSWORD = DEFAULT_UNAUTHORIZED_PASSWORD
 
+# The actuator's pod failure policy maps exit code 50, a user's early exit, to FailJob.
+EARLY_EXIT_COMMAND = ("sh", "-c", "exit 50")
+
 logger = logging.getLogger(__name__)
 
 
@@ -84,32 +94,70 @@ class AdminResources:
     artifact_name: str
 
 
-def _create_and_verify_work_unit(page: Page, experiment_name: str) -> None:
-    """Creates a work unit via REST and verifies its JobSet in Kubernetes."""
-    logger.info("Creating work unit under %s...", experiment_name)
-    wu_response = page.request.post(
+def _create_work_unit(page: Page, experiment_name: str, payload: dict[str, Any]) -> str:
+    """Creates a work unit from a CreateWorkUnit payload via REST and returns its name."""
+    response = page.request.post(
         f"{BASE_URL}/v1/{experiment_name}/workUnits",
-        data=build_work_unit_payload(),
+        data=payload,
         headers={"Content-Type": "application/json", "Origin": BASE_URL},
     )
-    if wu_response.status not in (200, 201):
+    if response.status not in (200, 201):
         raise RuntimeError(
-            f"Failed to create work unit via API: {wu_response.status} {wu_response.text()}"
+            f"Failed to create work unit via API: {response.status} {response.text()}"
         )
-    logger.info("✓ Work unit creation operation enqueued: %s", wu_response.json().get("name", ""))
+    work_unit_name = work_unit_name_from_operation(response.json().get("name", ""))
+    logger.info("✓ Created work unit %s.", work_unit_name)
+    return work_unit_name
 
-    jobset = wait_for_jobset_for_experiment(experiment_name)
+
+def _fetch_work_unit(page: Page, work_unit_name: str) -> WorkUnit:
+    """Returns the REST representation of a work unit.
+
+    Raises:
+        TransientProbeError: If the API reports a temporary failure, which polling retries.
+        RuntimeError: If the API reports any other failure.
+    """
+    response = page.request.get(f"{BASE_URL}/v1/{work_unit_name}")
+    if response.status != 200:
+        raise work_unit_fetch_error(work_unit_name, response.status, response.text())
+    return response.json()
+
+
+def _wait_for_work_unit_state(page: Page, work_unit_name: str, state: str) -> None:
+    """Waits until the current execution of a work unit reaches state."""
+    wait_for_work_unit_state(lambda: _fetch_work_unit(page, work_unit_name), state)
+    logger.info("✓ Work unit %s reached %s.", work_unit_name, state)
+
+
+def _verify_admitted_jobset(work_unit_name: str) -> None:
+    """Verifies the JobSet of a work unit and Kueue's admission of its Workload."""
+    jobset = wait_for_jobset_for_work_unit(work_unit_name)
     assert_jobset_contract(jobset)
     logger.info(
-        "✓ Verified JobSet %s in cpu-queue satisfies Non-Restarting JobSets Contract.",
-        jobset.get("metadata", {}).get("name", ""),
+        "✓ JobSet %s satisfies the Non-Restarting JobSets Contract.", jobset["metadata"]["name"]
     )
+    workload = wait_for_workload_admitted(jobset)
+    logger.info("✓ Kueue admitted Workload %s.", workload["metadata"]["name"])
+
+
+def _verify_work_unit_terminal_states(page: Page, experiment_name: str) -> None:
+    """Verifies that a succeeding work unit completes and an early-exiting one fails.
+
+    Both work units are created before either is awaited so that they run concurrently.
+    """
+    succeeding = _create_work_unit(page, experiment_name, build_work_unit_payload())
+    failing = _create_work_unit(
+        page, experiment_name, build_work_unit_payload(command=EARLY_EXIT_COMMAND)
+    )
+    _verify_admitted_jobset(succeeding)
+    _wait_for_work_unit_state(page, succeeding, "COMPLETED")
+    _wait_for_work_unit_state(page, failing, "FAILED")
 
 
 def test_admin_flow_and_experiment_lifecycle(
     page: Page, screenshots_dir: Path, auth: DexAuthenticator
 ) -> AdminResources:
-    """Tests admin authentication, safety banner, and experiment/work unit creation.
+    """Tests admin authentication, safety banner, experiments, and work unit terminal states.
 
     Args:
         page: Active Playwright Page instance.
@@ -120,7 +168,8 @@ def test_admin_flow_and_experiment_lifecycle(
         AdminResources containing the created experiment and artifact names.
 
     Raises:
-        RuntimeError: If experiment or work unit creation API fails.
+        RuntimeError: If an API call fails or a work unit reaches an unexpected terminal state.
+        PollTimeoutError: If a JobSet, Workload, or work unit state does not appear in time.
     """
     logger.info("=== Testing Admin Authentication and Experiment Creation Lifecycle ===")
     auth.authenticate(page, ADMIN_USER, ADMIN_PASSWORD, screenshots_dir)
@@ -149,7 +198,7 @@ def test_admin_flow_and_experiment_lifecycle(
             "writers": [{"user": ADMIN_USER}],
             "readers": [{"user": ADMIN_USER}],
         },
-        "priority": "PRIORITY_MEDIUM",
+        "priority": "NORMAL",
     }
 
     response = page.request.post(
@@ -190,8 +239,8 @@ def test_admin_flow_and_experiment_lifecycle(
     admin_art_name = art_json.get("name", "")
     logger.info("✓ Created admin artifact: %s", admin_art_name)
 
-    # 5. Create a work unit and verify the actuator creates a valid JobSet in cpu-queue
-    _create_and_verify_work_unit(page, experiment_name)
+    # 5. Run work units through the actuator, Kueue, and the reconciler to terminal states
+    _verify_work_unit_terminal_states(page, experiment_name)
 
     # 6. Assert experiment appears in the UI table
     logger.info("Reloading dashboard to verify experiment in table...")
@@ -387,7 +436,7 @@ def test_viewer_permission_boundaries_and_isolation(
             "writers": [{"user": VIEWER_USER}],
             "readers": [{"user": VIEWER_USER}],
         },
-        "priority": "PRIORITY_MEDIUM",
+        "priority": "NORMAL",
     }
     viewer_create_res = page.request.post(
         f"{BASE_URL}/v1/experiments",
