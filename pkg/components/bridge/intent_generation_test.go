@@ -12,6 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// In-process integration tests for Reconciler intent generation and CMS state synchronization.
+// Production targets: reconciler.go (Reconciler.ReconcileComponent) and lifecycle.go
+// (applyComponentIntent).
+// Test type: hermetic in-process integration test (wires Reconciler to an in-process cms.Server +
+// store.MemoryStore via NewCMSClientAdapter, without a Kubernetes cluster). Kept separate from
+// reconciler_test.go and lifecycle_test.go (which use mockCMS) to keep multi-pass bridge <-> CMS
+// generation and ownership scenarios self-contained.
 package bridge
 
 import (

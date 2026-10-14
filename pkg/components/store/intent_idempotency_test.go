@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Cross-backend parity tests for Store.SetComponentIntent idempotency and generation advancement.
+// Production targets: memory_store.go, spanner_store.go, and intent_change.go.
+// Test type: hermetic cross-backend unit/emulator suite (runs every table case against both
+// MemoryStore and SpannerStore backed by the in-process Spanner emulator). Kept in a dedicated file
+// rather than memory_store_test.go or spanner_store_test.go because each case asserts identical
+// behavior across both Store implementations.
 package store_test
 
 import (
