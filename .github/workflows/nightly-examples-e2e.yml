@@ -213,7 +213,7 @@ jobs:
             verify_module: 'tools.nightly_tests.examples_verification.metrics_dashboard_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: true
-            requires_playwright: true
+            verify_ui: true
           - id: 'per_job_node_selector'
             name: 'Per-Job Node Selector Job'
             example_path: 'examples/per_job_node_selector'
@@ -243,7 +243,7 @@ jobs:
             args: '--queue=${QUEUE_NAME} --num_work_units=3 --duration=180 --gpus=0'
             verify_module: 'tools.nightly_tests.examples_verification.resource_observability_dashboard_ui_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
-            requires_playwright: true
+            verify_ui: true
           - id: 'multikueue_job'
             name: 'MultiKueue Delegated Job'
             example_path: 'examples/simple_job'
@@ -312,7 +312,7 @@ jobs:
         if: steps.filter-check.outputs.should_run == 'true'
         env:
           EXAMPLE_PATH: '${{ matrix.example.example_path }}'
-          REQUIRES_PLAYWRIGHT: '${{ matrix.example.requires_playwright }}'
+          VERIFY_UI: '${{ matrix.example.verify_ui }}'
         run: |
           python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv"
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
@@ -321,7 +321,7 @@ jobs:
           if [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt"
           fi
-          if [ "${REQUIRES_PLAYWRIGHT:-}" = "true" ]; then
+          if [ "${VERIFY_UI:-}" = "true" ]; then
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install "playwright==1.51.0"
             "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium --with-deps
           fi
@@ -428,7 +428,7 @@ jobs:
           VERIFY_MODULE: '${{ matrix.example.verify_module }}'
           EXPECTED_QUEUE: '${{ matrix.example.expected_queue }}'
           REQUIRES_CLICKHOUSE: '${{ matrix.example.requires_clickhouse }}'
-          REQUIRES_PLAYWRIGHT: '${{ matrix.example.requires_playwright }}'
+          VERIFY_UI: '${{ matrix.example.verify_ui }}'
           XID: '${{ steps.launch-example.outputs.xid }}'
         run: |
           set -euo pipefail
@@ -446,7 +446,7 @@ jobs:
           if [ "${REQUIRES_CLICKHOUSE:-}" = "true" ]; then
             EXTRA_VERIFY_ARGS+=("--require_clickhouse_metrics=true")
           fi
-          if [ "${REQUIRES_PLAYWRIGHT:-}" = "true" ]; then
+          if [ "${VERIFY_UI:-}" = "true" ]; then
             export XMC_SCREENSHOTS_DIR="/tmp/xmc_screenshots"
             mkdir -p "${XMC_SCREENSHOTS_DIR}"
             EXTRA_VERIFY_ARGS+=("--verify_ui=true" "--ui_base_url=${XMANAGER_UI_URL}")
@@ -472,7 +472,7 @@ jobs:
           echo "================================================================="
 
       - name: 'Upload UI Diagnostic Screenshots'
-        if: failure() && matrix.example.requires_playwright == true
+        if: failure() && matrix.example.verify_ui == true
         uses: 'actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1' # v4.6.1
         with:
           name: ui-screenshots-${{ matrix.example.id }}

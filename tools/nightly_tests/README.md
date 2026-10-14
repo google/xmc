@@ -21,10 +21,10 @@ The Nightly Examples E2E workflow ([`.github/workflows/nightly-examples-e2e.yml`
    Builds and pushes custom container images for examples that include a `Dockerfile` (`examples/<example_name>/Dockerfile`) to Artifact Registry (`us-docker.pkg.dev/${PROJECT_ID}/xmc/<image_name>:latest`).
 2. **Launch & Verify Matrix (`run-and-verify-examples`)**:
    For each matrix entry:
-   - Installs the XMC CLI, Python SDKs (`sdks/python/xmc`, `sdks/python/xdash`), and optional example `requirements.txt`.
+   - Installs the XMC CLI, Python SDKs (`sdks/python/xmc`, `sdks/python/xdash`), optional example `requirements.txt`, and Playwright Chromium when `verify_ui: true` is set.
    - Mints an OIDC identity token (`XMC_AUTH_TOKEN`) and starts health-checked `kubectl port-forward` tunnels to internal services (`dashboard-service:50051` and `clickhouse:8123`) when `requires_clickhouse: true` is set.
    - Executes the example entrypoint script (`launch.py` or `create_dashboard.py`) and extracts the created Experiment XID (or Dashboard ID) from stdout.
-   - Runs the example's verification module via `python3 -m tools.nightly_tests.examples_verification.<example_name>_verify --xid="${XID}" --endpoint="${XMANAGER_ENDPOINT}" --expected_queue="${EXPECTED_QUEUE}"`.
+   - Runs the example's verification module via `python3 -m tools.nightly_tests.examples_verification.<example_name>_verify --xid="${XID}" --endpoint="${XMANAGER_ENDPOINT}" --expected_queue="${EXPECTED_QUEUE}"` (adding `--verify_ui=true --ui_base_url="${XMANAGER_UI_URL}"` when `verify_ui: true` is set).
 3. **Aggregate Results (`aggregate-results`)**:
    Combines per-example JSON status artifacts into a unified workflow summary and alerts repository owners if any scheduled run on `main` fails.
 
