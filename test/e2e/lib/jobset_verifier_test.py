@@ -221,6 +221,7 @@ class JobSetVerifierTest(unittest.TestCase):
         command = mock_run.call_args.args[0]
         self.assertIn("workloads.kueue.x-k8s.io", command)
         self.assertEqual(command[command.index("-n") + 1], "cpu-queue")
+        self.assertNotIn("-l", command)
 
     def test_wait_for_workload_admitted_rejects_jobset_without_uid(self) -> None:
         """wait_for_workload_admitted needs the JobSet UID to find its Workload."""

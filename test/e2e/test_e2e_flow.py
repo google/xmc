@@ -150,6 +150,7 @@ def _verify_work_unit_terminal_states(page: Page, experiment_name: str) -> None:
         page, experiment_name, build_work_unit_payload(command=EARLY_EXIT_COMMAND)
     )
     _verify_admitted_jobset(succeeding)
+    _verify_admitted_jobset(failing)
     _wait_for_work_unit_state(page, succeeding, "COMPLETED")
     _wait_for_work_unit_state(page, failing, "FAILED")
 

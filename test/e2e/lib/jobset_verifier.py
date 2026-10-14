@@ -85,7 +85,8 @@ def _list_resources(
     kube_context: str,
     selector: str = "",
 ) -> list[dict[str, Any]]:
-    """Lists the resources of a kind in a namespace that match a label selector."""
+    """Lists the resources of a kind in a namespace, filtered by a label selector if given."""
+    selector_args = ("-l", selector) if selector else ()
     result = subprocess.run(
         [
             "kubectl",
@@ -95,8 +96,7 @@ def _list_resources(
             resource,
             "-n",
             namespace,
-            "-l",
-            selector,
+            *selector_args,
             "-o",
             "json",
         ],
