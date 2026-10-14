@@ -53,6 +53,9 @@ func ReadClusterUID(ctx context.Context, client kubernetes.Interface) (string, e
 	if err != nil {
 		return "", fmt.Errorf("failed to get %s namespace: %w", kubeSystemNamespace, err)
 	}
+	if ns == nil {
+		return "", fmt.Errorf("%s namespace response is nil", kubeSystemNamespace)
+	}
 	if uid := string(ns.GetUID()); uid != "" {
 		return uid, nil
 	}
