@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Controller-runtime envtest integration suite for ComponentController and NewComponentManagerOptions.
+// Production targets: component_controller.go and component_manager.go.
+// Test type: hermetic Kubernetes control-plane integration test (runs against a real kube-apiserver
+// and etcd started via sigs.k8s.io/controller-runtime/pkg/envtest). Kept separate from the pure
+// unit tests in component_controller_test.go and component_manager_test.go (which use fake clients)
+// to test real informer cache wiring, watch predicates, Lease handoff, and Server-Side Apply.
 package bridge
 
 import (
