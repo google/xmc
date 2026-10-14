@@ -13,7 +13,7 @@ To maintain high cohesion and clear separation of concerns, `tools/nightly_tests
 1. **`verification/` (`//tools/nightly_tests/verification:*`)**:
    Shared, reusable verification primitives, session/API stubs, and UI validators (e.g. `verifier_cli.py`, `workload_verification.py`, `xmc_entities_validator.py`, `ui_entities_validator.py`). Every shared helper is paired with a 1-to-1 `*_test.py` unit test suite.
 2. **`examples_verification/` (`//tools/nightly_tests/examples_verification:*`)**:
-   Concrete end-to-end verification scripts for individual runnable workloads under `examples/` and CUJs (e.g. `simple_job_verify.py`, `clickhouse_metrics_job_verify.py`, `resource_observability_dashboard_ui_verify.py`).
+   Concrete end-to-end verification scripts for individual runnable workloads under `examples/` and CUJs (e.g. `simple_job_verify.py`, `clickhouse_metrics_job_verify.py`, `metrics_dashboard_ui_verify.py`, `resource_observability_dashboard_ui_verify.py`).
 
 The Nightly Examples E2E workflow ([`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml)) runs in three stages:
 

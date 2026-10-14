@@ -213,6 +213,7 @@ jobs:
             verify_module: 'tools.nightly_tests.examples_verification.metrics_dashboard_job_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: true
+            requires_playwright: true
           - id: 'per_job_node_selector'
             name: 'Per-Job Node Selector Job'
             example_path: 'examples/per_job_node_selector'

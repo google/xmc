@@ -24,6 +24,7 @@ exports_files([
     "init_container_job_verify.py",
     "managed_xprof_artifact_job_verify.py",
     "metrics_dashboard_job_verify.py",
+    "metrics_dashboard_ui_verify.py",
     "metrics_job_verify.py",
     "multikueue_job_verify.py",
     "multipod_job_verify.py",
@@ -146,10 +147,25 @@ py_binary(
 )
 
 py_binary(
+    name = "metrics_dashboard_ui_verify",
+    srcs = ["metrics_dashboard_ui_verify.py"],
+    imports = ["../../.."],
+    deps = [
+        "//tools/nightly_tests/verification:endpoint_resolution",
+        "//tools/nightly_tests/verification:ess_session",
+        "//tools/nightly_tests/verification:ui_entities_validator_lib",
+        "//tools/nightly_tests/verification:verification_report",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "@absl_py//absl/flags",
+    ],
+)
+
+py_binary(
     name = "metrics_dashboard_job_verify",
     srcs = ["metrics_dashboard_job_verify.py"],
     imports = ["../../.."],
     deps = [
+        ":metrics_dashboard_ui_verify",
         "//tools/nightly_tests/verification:verifier_cli",
         "//tools/nightly_tests/verification:workload_verification",
     ],
