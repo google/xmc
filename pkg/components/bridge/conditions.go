@@ -15,6 +15,7 @@
 package bridge
 
 import (
+	"errors"
 	"maps"
 	"slices"
 	"time"
@@ -44,6 +45,10 @@ const (
 	ReasonCMSSyncFailed = "CMSSyncFailed"
 	// ReasonSourceConflict marks Ready=False and Stalled=True when CMS rejects this CR's ownership or cluster fence.
 	ReasonSourceConflict = "SourceConflict"
+	// ReasonSourceIncarnationMismatch marks SourceConflict=True when another live CR UID owns the CMS record.
+	ReasonSourceIncarnationMismatch = "SourceIncarnationMismatch"
+	// ReasonSourceNamespaceConflict marks SourceConflict=True when a CR in another namespace owns the CMS record.
+	ReasonSourceNamespaceConflict = "SourceNamespaceConflict"
 	// ReasonClusterFenced marks SourceConflict=True when another cluster holds the CMS ownership fence.
 	ReasonClusterFenced = "ClusterFenced"
 	// ReasonClusterEpochRegressed marks SourceConflict=True when this cluster declares an epoch lower than the active CMS epoch.
@@ -185,14 +190,51 @@ func setSynced(res *ReconcileResult, in ReconcileComponentInput, status, reason,
 
 // recordSourceConflict records a policy-block SourceConflict=True (with conflictReason) alongside
 // Ready=False (SourceConflict), Stalled=True (SourceConflict), and Synced=True, clearing access
-// and scheduling a slow 15-minute recheck.
+// and componentGeneration and scheduling a slow 15-minute recheck.
 func recordSourceConflict(res *ReconcileResult, in ReconcileComponentInput, conflictReason, msg string) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	res.ComponentGeneration = 0
 	res.Access = nil
 	res.RequeueAfter = conflictRecheckInterval
 	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeSourceConflict, ConditionStatusTrue, in.Generation, conflictReason, msg)
 	setReadiness(res, in, ConditionStatusFalse, ReasonSourceConflict, msg)
+}
+
+func hasSourceConflict(res *ReconcileResult) bool {
+	if res == nil {
+		return false
+	}
+	c := findCondition(res.Conditions, ConditionTypeSourceConflict)
+	return c != nil && c.Status == ConditionStatusTrue
+}
+
+func shouldStopReconcile(res *ReconcileResult) bool {
+	return res != nil && (res.StaleIncarnation || hasSourceConflict(res))
+}
+
+// staleComponentRetryDelay is how long the controller waits before reconciling a Component again
+// after CMS proved the cached copy is a stale generation snapshot, so the cache can catch up.
+const staleComponentRetryDelay = time.Second
+
+func handleOwnershipError(res *ReconcileResult, in ReconcileComponentInput, err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, errStaleSnapshot) {
+		res.StaleIncarnation = true
+		res.RequeueAfter = staleComponentRetryDelay
+		return true
+	}
+	if conflictReason, msg := sourceConflictFromError(err); conflictReason != "" {
+		recordSourceConflict(res, in, conflictReason, msg)
+		return true
+	}
+	return false
+}
+
+func componentGenerationChanged(in ReconcileComponentInput, res *ReconcileResult) bool {
+	return in.ComponentGeneration > 0 && res != nil && res.ComponentGeneration != in.ComponentGeneration
 }
 
 // recordCMSSyncFailure records Synced=False when a CMS RPC fails before workload health is

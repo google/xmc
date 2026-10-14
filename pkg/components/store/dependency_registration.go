@@ -21,10 +21,8 @@ import (
 )
 
 // DependencyNotFoundMessagePrefix starts the FailedPrecondition message returned when a component
-// declares a dependency that is not registered. The error also carries a google.rpc.ErrorInfo with
-// ReasonDependencyNotRegistered, which new callers match instead. The GitOps bridge still matches
-// codes.FailedPrecondition plus this prefix to report "waiting on dependencies" instead of an
-// error, so keep it stable until the bridge matches the reason.
+// declares a dependency that is not registered. The message is human-readable only: callers,
+// including the GitOps bridge, match the google.rpc.ErrorInfo reason ReasonDependencyNotRegistered.
 const DependencyNotFoundMessagePrefix = "dependency not found:"
 
 // validateIntentDependencies checks that the dependencies deps of an intent for canonicalName keep

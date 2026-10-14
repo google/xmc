@@ -36,6 +36,7 @@ type mockCMS struct {
 	prepareErr, completeErr error
 	declareErr              error
 	state                   componentspb.ComponentState
+	componentGen            int64
 	lastSetReq              *componentspb.SetComponentIntentRequest
 	lastObsReq              *componentspb.UpdateObservedGenerationRequest
 	lastDeclareReq          *componentspb.DeclareClusterEpochRequest
@@ -55,8 +56,16 @@ func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetCo
 	if s == componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
 		s = componentspb.ComponentState_COMPONENT_STATE_ENABLED
 	}
+	gen := m.componentGen
+	if gen == 0 {
+		gen = max(in.GetSpec().GetGeneration(), 1)
+	}
 	return &componentspb.SetComponentIntentResponse{
-		Component: &componentspb.Component{Name: in.GetName(), Status: &componentspb.ComponentAccessStatus{State: s}},
+		Component: &componentspb.Component{
+			Name:   in.GetName(),
+			Spec:   &componentspb.ComponentSpec{Generation: gen},
+			Status: &componentspb.ComponentAccessStatus{State: s},
+		},
 	}, nil
 }
 

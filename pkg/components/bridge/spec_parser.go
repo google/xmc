@@ -250,6 +250,15 @@ func ParseObservedGenerationFromUnstructured(statusObj any) int64 {
 	return extractInt(statusMap, "observedGeneration")
 }
 
+// ParseComponentGenerationFromUnstructured extracts status.componentGeneration from the unstructured .status map.
+func ParseComponentGenerationFromUnstructured(statusObj any) int64 {
+	statusMap, ok := statusObj.(map[string]any)
+	if !ok || statusMap == nil {
+		return 0
+	}
+	return extractInt(statusMap, "componentGeneration")
+}
+
 // ParseAccessFromUnstructured extracts status.access.envVars from the unstructured .status map.
 func ParseAccessFromUnstructured(statusObj any) *AccessStatus {
 	statusMap, ok := statusObj.(map[string]any)

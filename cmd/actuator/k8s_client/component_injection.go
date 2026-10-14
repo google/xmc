@@ -112,7 +112,8 @@ func parseComponentSnapshotsAnnotation(workUnit *esspb.WorkUnit, jobSet *jobsetv
 	return snapshots, nil
 }
 
-// evaluateComponentPlacement validates enablement, health, and drift for a required component.
+// evaluateComponentPlacement validates enablement, health, CMS sync (a non-zero
+// status.componentGeneration), and drift for a required component.
 func evaluateComponentPlacement(ctx context.Context, compName string, lockedGen int64, comp *unstructured.Unstructured, jobSet *jobsetv1alpha2.JobSet) error {
 	if crreader.IsDisabled(comp) {
 		return apierrors.NewServiceUnavailable(fmt.Sprintf("required component %q is disabled", compName))
@@ -122,21 +123,26 @@ func evaluateComponentPlacement(ctx context.Context, compName string, lockedGen 
 		return apierrors.NewServiceUnavailable(fmt.Sprintf("required component %q is unhealthy: %s", compName, reason))
 	}
 
+	if extractComponentGeneration(comp) <= 0 {
+		return apierrors.NewServiceUnavailable(fmt.Sprintf("required component %q is not synced with CMS: status.componentGeneration is unset", compName))
+	}
+
 	checkAndRecordComponentDrift(ctx, compName, lockedGen, comp, jobSet)
 	return nil
 }
 
-// checkAndRecordComponentDrift records a warning annotation if observed generation does not match locked generation.
+// checkAndRecordComponentDrift records a warning annotation if the CMS component generation in the
+// Component status does not match the locked generation.
 func checkAndRecordComponentDrift(ctx context.Context, compName string, lockedGen int64, comp *unstructured.Unstructured, jobSet *jobsetv1alpha2.JobSet) {
 	if lockedGen <= 0 {
 		return
 	}
-	observedGen := extractObservedGeneration(comp)
-	if observedGen == lockedGen {
+	componentGen := extractComponentGeneration(comp)
+	if componentGen == lockedGen {
 		return
 	}
-	logging.Warn(ctx, "Component generation drift detected", "component", compName, "observedGeneration", observedGen, "lockedGeneration", lockedGen)
-	addDriftWarningAnnotation(jobSet, fmt.Sprintf("component %q generation mismatch: observed %d, locked %d", compName, observedGen, lockedGen))
+	logging.Warn(ctx, "Component generation drift detected", "component", compName, "componentGeneration", componentGen, "lockedGeneration", lockedGen)
+	addDriftWarningAnnotation(jobSet, fmt.Sprintf("component %q generation mismatch: component generation %d, locked %d", compName, componentGen, lockedGen))
 }
 
 // addDriftWarningAnnotation appends or sets the component drift warning annotation on the JobSet.
@@ -231,12 +237,19 @@ func checkConditionHealth(c any) (bool, string) {
 	return true, ""
 }
 
-// extractObservedGeneration retrieves observedGeneration from status, supporting multiple numeric formats including json.Number.
-func extractObservedGeneration(comp *unstructured.Unstructured) int64 {
+// extractComponentGeneration returns status.componentGeneration, the CMS component generation the
+// Component status describes, or 0 when the bridge has not synced the component with CMS yet.
+func extractComponentGeneration(comp *unstructured.Unstructured) int64 {
+	return extractStatusInt(comp, "componentGeneration")
+}
+
+// extractStatusInt retrieves the integer status field, supporting multiple numeric formats
+// including json.Number, or returns 0 when it is absent or not a number.
+func extractStatusInt(comp *unstructured.Unstructured, field string) int64 {
 	if comp == nil || comp.Object == nil {
 		return 0
 	}
-	val, ok, err := unstructured.NestedFieldNoCopy(comp.Object, "status", "observedGeneration")
+	val, ok, err := unstructured.NestedFieldNoCopy(comp.Object, "status", field)
 	if err != nil || !ok {
 		return 0
 	}

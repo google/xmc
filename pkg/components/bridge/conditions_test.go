@@ -162,25 +162,91 @@ func TestCMSSyncTracker_ShouldSyncAndForget(t *testing.T) {
 	})
 }
 
-// TestSyncReadyToCMS_ComponentWithoutReadyAlwaysSyncs guards against a Component recreated under
-// the same name, whose eviction no pass observed, inheriting a stale tracker entry and skipping its
-// first UpdateObservedGeneration for up to the heartbeat interval.
+// TestSyncReadyToCMS_ComponentWithoutReadyAlwaysSyncs guards against a Component without a Ready
+// condition (new, or recreated under the same name) matching an entry recorded for the same
+// incarnation and component generation and skipping its first UpdateObservedGeneration for up to
+// the heartbeat interval.
 func TestSyncReadyToCMS_ComponentWithoutReadyAlwaysSyncs(t *testing.T) {
 	cms := &mockCMS{}
 	r, err := NewReconciler(cms, nil, nil)
 	if err != nil {
 		t.Fatalf("NewReconciler() error = %v", err)
 	}
-	r.syncTracker.recordSync("xmc/clickhouse", componentspb.ComponentState_COMPONENT_STATE_ENABLED, ConditionStatusTrue, 1)
+	enabled := componentspb.ComponentState_COMPONENT_STATE_ENABLED
+	in := ReconcileComponentInput{Namespace: "xmc", Name: "clickhouse", Generation: 1, UID: "uid-1"}
+	key := componentKey(in.Namespace, in.Name)
+	r.syncTracker.recordSync(key, enabled, ConditionStatusTrue, in.Generation)
+	r.syncTracker.recordSource(key, in.UID, 1)
 
-	if _, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
-		Namespace: "xmc", Name: "clickhouse", Generation: 1, Enabled: true,
-		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER},
-	}); err != nil {
-		t.Fatalf("ReconcileComponent() error = %v", err)
+	if err := r.syncObservedToCMS(context.Background(), in, in.Name, &ReconcileResult{State: enabled, ComponentGeneration: 1}, ConditionStatusTrue, false); err != nil {
+		t.Fatalf("syncObservedToCMS() error = %v", err)
 	}
 	if cms.lastObsReq == nil {
 		t.Error("UpdateObservedGeneration was skipped for a Component without a Ready condition")
+	}
+}
+
+func TestCMSSyncTracker_SourceChanged(t *testing.T) {
+	tests := []struct {
+		name       string
+		recorded   bool
+		recUID     string
+		recCompGen int64
+		uid        string
+		compGen    int64
+		want       bool
+	}{
+		{name: "nothing recorded", uid: "uid-1", compGen: 1, want: true},
+		{name: "same incarnation and generation", recorded: true, recUID: "uid-1", recCompGen: 3, uid: "uid-1", compGen: 3, want: false},
+		{name: "recreated incarnation", recorded: true, recUID: "uid-1", recCompGen: 3, uid: "uid-2", compGen: 3, want: true},
+		{name: "component generation advanced", recorded: true, recUID: "uid-1", recCompGen: 3, uid: "uid-1", compGen: 4, want: true},
+		{name: "component generation first known", recorded: true, recUID: "uid-1", uid: "uid-1", compGen: 1, want: true},
+		{name: "component generation still unknown", recorded: true, recUID: "uid-1", uid: "uid-1", want: false},
+		{name: "component generation unknown this pass", recorded: true, recUID: "uid-1", recCompGen: 3, uid: "uid-1", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tracker := cmsSyncTracker{}
+			if tt.recorded {
+				tracker.recordSource("xmc/comp", tt.recUID, tt.recCompGen)
+			}
+			if got := tracker.sourceChanged("xmc/comp", tt.uid, tt.compGen); got != tt.want {
+				t.Errorf("sourceChanged() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSyncObservedToCMS_UnknownComponentGenerationDoesNotRecordSync(t *testing.T) {
+	cms := &mockCMS{}
+	r, err := NewReconciler(cms, nil, nil)
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
+	}
+	enabled := componentspb.ComponentState_COMPONENT_STATE_ENABLED
+	in := ReconcileComponentInput{Namespace: "xmc", Name: "clickhouse", Generation: 1, UID: "uid-1"}
+	key := componentKey(in.Namespace, in.Name)
+
+	// Pass 1: the component generation is unknown, so the RPC is skipped and nothing is recorded.
+	if err := r.syncObservedToCMS(context.Background(), in, in.Name, &ReconcileResult{State: enabled}, ConditionStatusTrue, false); err != nil {
+		t.Fatalf("pass 1: syncObservedToCMS() error = %v", err)
+	}
+	if cms.lastObsReq != nil {
+		t.Errorf("pass 1: unexpected UpdateObservedGeneration call with unknown component generation: %v", cms.lastObsReq)
+	}
+	if !r.syncTracker.shouldSync(key, enabled, ConditionStatusTrue, in.Generation) {
+		t.Error("pass 1: shouldSync() = false after a skipped sync, want true (no sync recorded)")
+	}
+
+	// Pass 2: once the component registers, the first real sync is sent without waiting for the heartbeat.
+	if err := r.syncObservedToCMS(context.Background(), in, in.Name, &ReconcileResult{State: enabled, ComponentGeneration: 1}, ConditionStatusTrue, false); err != nil {
+		t.Fatalf("pass 2: syncObservedToCMS() error = %v", err)
+	}
+	if cms.lastObsReq == nil || cms.lastObsReq.GetObservedGeneration() != 1 {
+		t.Errorf("pass 2: UpdateObservedGeneration request = %v, want observed generation 1", cms.lastObsReq)
+	}
+	if r.syncTracker.shouldSync(key, enabled, ConditionStatusTrue, in.Generation) {
+		t.Error("pass 2: shouldSync() = true after a real sync, want false within the heartbeat interval")
 	}
 }
 

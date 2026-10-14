@@ -73,9 +73,10 @@ For each required component, Actuator validates operational readiness:
 - **Missing Component / Hydration Lag**: If a component CR is not found in the cache, returns `apierrors.NewServiceUnavailable`. The task handler catches this as a retryable error and requeues the task with exponential backoff.
 - **Disabled State**: If `spec.enabled == false` or `status.state` is `COMPONENT_STATE_DISABLED`, `COMPONENT_STATE_DISABLING`, or `COMPONENT_STATE_DELETED`, returns `apierrors.NewServiceUnavailable`.
 - **Unhealthy Conditions**: If conditions report `Ready != "True"` (including missing conditions or `Ready == "False"`), placement is blocked with `apierrors.NewServiceUnavailable`.
+- **Not Synced with CMS**: If `status.componentGeneration` is unset or `0`, the bridge has not committed the component to CMS, so placement is blocked with `apierrors.NewServiceUnavailable`. There is no fallback to `status.observedGeneration`.
 
 ### 4. Generation Drift Detection
-If the component is healthy and enabled, but `status.observedGeneration` differs from the `lockedGeneration` in the snapshot:
+If the component is healthy and enabled, but `status.componentGeneration` differs from the `lockedGeneration` in the snapshot:
 - Placement is **not blocked**.
 - Actuator logs a warning (`"Component generation drift detected"`).
 - Actuator attaches the `xmc.dev/component-drift-warning` annotation to the synthesized JobSet.
