@@ -308,7 +308,11 @@ func BuildStatusMap(res *bridge.ReconcileResult) map[string]any {
 // WorkloadManager, and Reconciler) and starts the Controller main loop.
 func RunBridge(ctx context.Context, cfg *Config) error {
 	logging.Info(ctx, "Connecting to Component Manager Service (CMS)", "address", cfg.CMSAddress)
-	conn, err := grpc.NewClient(cfg.CMSAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(
+		cfg.CMSAddress,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithPerRPCCredentials(bridge.NewCMSTokenCredentials(ctx)),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to connect to CMS at %q: %w", cfg.CMSAddress, err)
 	}
