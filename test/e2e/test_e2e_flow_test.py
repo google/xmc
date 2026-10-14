@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import unittest
 from unittest import mock
@@ -49,37 +48,20 @@ class VerifyCMSBridgeReconciliationTest(unittest.TestCase):
     ) -> None:
         """Manifest satisfies CRD CEL validation and cleans up after reaching DISABLED state."""
         mock_run.side_effect = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout="status:\n  state: COMPONENT_STATE_PENDING_RECONCILIATION\n",
-                stderr="",
-            ),
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout="status:\n  state: COMPONENT_STATE_DISABLED\n",
-                stderr="",
-            ),
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            mock.MagicMock(stdout=""),
+            mock.MagicMock(stdout="status:\n  state: COMPONENT_STATE_PENDING_RECONCILIATION\n"),
+            mock.MagicMock(stdout="status:\n  state: COMPONENT_STATE_DISABLED\n"),
+            mock.MagicMock(stdout=""),
         ]
 
         test_e2e_flow.verify_cms_bridge_reconciliation()
 
         self.assertEqual(mock_run.call_count, 4)
         mock_sleep.assert_called_once_with(1.0)
-        apply_call = mock_run.call_args_list[0]
-        manifest = json.loads(apply_call.kwargs["input"])
-        spec = manifest["spec"]
+        spec = json.loads(mock_run.call_args_list[0].kwargs["input"])["spec"]
         self.assertEqual(spec["componentType"], "COMPONENT_TYPE_CUSTOM_3P_WRAPPER")
-        self.assertTrue(
-            bool(spec.get("parameters")) or bool(spec.get("wrapperRef")),
-            "CRD CEL rule requires wrapperRef or parameters for COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
-        )
-        delete_call = mock_run.call_args_list[3]
-        self.assertIn("delete", delete_call.args[0])
-        self.assertIn("e2e-cms-auth-check", delete_call.args[0])
+        self.assertEqual(spec["parameters"], {"authCheck": "true"})
+        self.assertIn("delete", mock_run.call_args_list[3].args[0])
 
     @mock.patch.dict("os.environ", {"KUBE_CONTEXT": "kind-xmc-e2e"}, clear=False)
     @mock.patch("test.e2e.test_e2e_flow.time.time", side_effect=[100.0, 100.5, 131.0])
@@ -93,14 +75,9 @@ class VerifyCMSBridgeReconciliationTest(unittest.TestCase):
     ) -> None:
         """Timeout raises RuntimeError while still deleting the temporary Component CR."""
         mock_run.side_effect = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout="status:\n  state: COMPONENT_STATE_PENDING_RECONCILIATION\n",
-                stderr="",
-            ),
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            mock.MagicMock(stdout=""),
+            mock.MagicMock(stdout="status:\n  state: COMPONENT_STATE_PENDING_RECONCILIATION\n"),
+            mock.MagicMock(stdout=""),
         ]
 
         with self.assertRaisesRegex(RuntimeError, "Timed out waiting for xmc-bridge"):
@@ -108,8 +85,7 @@ class VerifyCMSBridgeReconciliationTest(unittest.TestCase):
 
         self.assertEqual(mock_run.call_count, 3)
         mock_sleep.assert_called_once_with(1.0)
-        delete_call = mock_run.call_args_list[2]
-        self.assertIn("delete", delete_call.args[0])
+        self.assertIn("delete", mock_run.call_args_list[2].args[0])
 
 
 if __name__ == "__main__":

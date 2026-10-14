@@ -484,22 +484,6 @@ def _run_isolated_stage(browser: Any, stage_name: str, test_func: Any, *args: An
             raise
 
 
-def _poll_component_disabled(kubectl_base: list[str], timeout_sec: float = 30.0) -> None:
-    """Polls kubectl get component until state reaches COMPONENT_STATE_DISABLED."""
-    get_cmd = [*kubectl_base, "get", "component", "e2e-cms-auth-check", "-n", "xmc", "-o", "yaml"]
-    deadline, last_yaml = time.time() + timeout_sec, ""
-    while time.time() < deadline:
-        res = subprocess.run(get_cmd, capture_output=True, text=True, check=False)
-        last_yaml = res.stdout
-        if "state: COMPONENT_STATE_DISABLED" in last_yaml:
-            logger.info("✓ xmc-bridge authenticated to CMS and reconciled Component CR.")
-            return
-        time.sleep(1.0)
-    raise RuntimeError(
-        f"Timed out waiting for xmc-bridge to reconcile Component via CMS:\n{last_yaml}"
-    )
-
-
 def verify_cms_bridge_reconciliation() -> None:
     """Verifies that xmc-bridge authenticates to CMS over gRPC and reconciles a Component CR."""
     kube_context = os.environ.get("KUBE_CONTEXT", "").strip()
@@ -523,8 +507,19 @@ def verify_cms_bridge_reconciliation() -> None:
     )
     kubectl_base = ["kubectl", "--context", kube_context]
     subprocess.run([*kubectl_base, "apply", "-f", "-"], input=manifest, text=True, check=True)
+    get_cmd = [*kubectl_base, "get", "component", "e2e-cms-auth-check", "-n", "xmc", "-o", "yaml"]
     try:
-        _poll_component_disabled(kubectl_base)
+        deadline, last_yaml = time.time() + 30.0, ""
+        while time.time() < deadline:
+            res = subprocess.run(get_cmd, capture_output=True, text=True, check=False)
+            last_yaml = res.stdout
+            if "state: COMPONENT_STATE_DISABLED" in last_yaml:
+                logger.info("✓ xmc-bridge authenticated to CMS and reconciled Component CR.")
+                return
+            time.sleep(1.0)
+        raise RuntimeError(
+            f"Timed out waiting for xmc-bridge to reconcile Component via CMS:\n{last_yaml}"
+        )
     finally:
         del_cmd = [
             *kubectl_base,
