@@ -27,6 +27,7 @@ import { RouterLink } from '@angular/router';
 import { combineLatest, Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
+import { FilterMenu } from 'app/common/components/filter_menu/filter_menu';
 import { LoadingBar } from 'app/common/components/loading_bar/loading_bar';
 import { PriorityChip } from 'app/common/components/priority_chip/priority_chip';
 import { ResourceChip } from 'app/common/components/resource_chip/resource_chip';
@@ -111,6 +112,7 @@ interface TableRow {
     ResourceChip,
     PriorityChip,
     StatusMessage,
+    FilterMenu,
     StatusMessageFilter,
   ],
 })

@@ -11,9 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { toOrderBy } from './work_units_query';
+import { buildAnyOfFilter, toOrderBy } from './work_units_query';
 
 describe('work_units_query', () => {
+  describe('buildAnyOfFilter', () => {
+    it('returns undefined when there are no values', () => {
+      expect(buildAnyOfFilter('state', [])).toBeUndefined();
+    });
+
+    it('builds a parenthesized equality restriction for a single value', () => {
+      expect(buildAnyOfFilter('state', ['FAILED'])).toBe('(state = "FAILED")');
+    });
+
+    it('joins multiple values with OR inside parentheses', () => {
+      expect(buildAnyOfFilter('state', ['FAILED', 'STOPPED'])).toBe(
+        '(state = "FAILED" OR state = "STOPPED")',
+      );
+    });
+  });
+
   describe('toOrderBy', () => {
     it('returns the field and ascending direction', () => {
       expect(toOrderBy({ active: 'state', direction: 'asc' })).toBe('state asc');
