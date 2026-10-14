@@ -488,7 +488,12 @@ def build_bazel_dashboard_protos(repo_root: Path) -> Path:
 
     Returns:
         Path to the Bazel `_virtual_imports` directory for dashboard protos.
+
+    Raises:
+        SystemExit: If the `bazel` binary is not found in PATH.
     """
+    if not shutil.which("bazel"):
+        error_exit("bazel is required to build dashboard protos but was not found in PATH.")
     sys.stdout.write("Compiling Dashboard Service Python protobuf modules with Bazel...\n")
     subprocess.run(
         ["bazel", "build", *DASHBOARD_BAZEL_TARGETS],
@@ -546,9 +551,10 @@ def copy_virtual_imports_to_site_packages(
     dest_pkg = site_packages_dir / "xmanager_cloud"
     dest_service_dir = dest_pkg / "dashboard_service"
     dashboard_proto_dir = dest_service_dir / "proto"
-    if dashboard_proto_dir.exists():
+    if dest_service_dir.exists():
         dest_pkg.chmod(dest_pkg.stat().st_mode | stat.S_IWUSR)
         dest_service_dir.chmod(dest_service_dir.stat().st_mode | stat.S_IWUSR)
+    if dashboard_proto_dir.exists():
         _make_tree_user_writable(dashboard_proto_dir)
         shutil.rmtree(dashboard_proto_dir)
     dest_pkg.mkdir(parents=True, exist_ok=True)

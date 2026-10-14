@@ -219,7 +219,10 @@ class TestInstallXmanager(unittest.TestCase):
         """Test build_bazel_dashboard_protos builds targets and resolves bazel-bin."""
         repo_root = Path("/mock/repo")
         mock_info = mock.Mock(stdout="/mock/bazel-out/k8-fastbuild/bin\n")
-        with mock.patch("subprocess.run", side_effect=[mock.Mock(), mock_info]) as mock_run:
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/bazel"),
+            mock.patch("subprocess.run", side_effect=[mock.Mock(), mock_info]) as mock_run,
+        ):
             result = install_xmanager.build_bazel_dashboard_protos(repo_root)
         self.assertEqual(
             result,
@@ -238,6 +241,11 @@ class TestInstallXmanager(unittest.TestCase):
             text=True,
             check=True,
         )
+
+    def test_build_bazel_dashboard_protos_missing_bazel_exits(self) -> None:
+        """Test build_bazel_dashboard_protos exits when bazel is not in PATH."""
+        with mock.patch("shutil.which", return_value=None), self.assertRaises(SystemExit):
+            install_xmanager.build_bazel_dashboard_protos(Path("/mock/repo"))
 
     def test_copy_virtual_imports_to_site_packages(self) -> None:
         """Test copying read-only Bazel virtual imports and preserving sibling packages."""
