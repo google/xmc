@@ -1625,6 +1625,9 @@ func TestCMSServer_OwnershipMetrics(t *testing.T) {
 	if _, err := server.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: prodCluster}); err != nil {
 		t.Fatalf("DeclareClusterEpoch() unexpected error: %v", err)
 	}
+	if err := CollectOwnershipMetrics(ctx, ms, time.Now().UTC()); err != nil {
+		t.Fatalf("CollectOwnershipMetrics() unexpected error: %v", err)
+	}
 	if got := testutil.ToFloat64(store.ClusterFenceEpochGauge()); got != 4 {
 		t.Errorf("xmc_cms_cluster_fence_epoch = %v, want 4", got)
 	}

@@ -20,11 +20,13 @@ go_library(
     name = "cms",
     srcs = [
         "authorizer.go",
+        "ownership_metrics_collector.go",
         "server.go",
     ],
     importpath = "xmanager_cloud/pkg/components/cms",
     deps = [
         "//api/protos/components/v1alpha1",
+        "//internal/logging",
         "//pkg/components/naming",
         "//pkg/components/semver",
         "//pkg/components/store",
@@ -40,6 +42,7 @@ go_test(
     name = "cms_test",
     srcs = [
         "authorizer_test.go",
+        "ownership_metrics_collector_test.go",
         "server_test.go",
     ],
     embed = [":cms"],

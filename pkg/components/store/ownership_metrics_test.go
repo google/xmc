@@ -115,14 +115,20 @@ func TestSourceLastSeenTime_Parity(t *testing.T) {
 				t.Errorf("created SourceLastSeenTime = %v, stored = %v, want equal and non-zero", created.SourceLastSeenTime, stored)
 			}
 
-			// An unchanged replay writes nothing, so it reports the stored timestamp.
+			// An unchanged replay writes nothing, so it neither refreshes nor reports a new
+			// timestamp: an aged owner stays aged.
+			aged := time.Now().UTC().Add(-store.OwnerStaleThreshold - time.Minute).Truncate(time.Microsecond)
+			if err := store.SetSourceLastSeenTimeForTest(ctx, s, "seen-comp", aged); err != nil {
+				t.Fatalf("SetSourceLastSeenTimeForTest() error = %v", err)
+			}
 			replay, err := s.SetSourcedComponentIntent(ctx, "seen-comp", intentSpec("v1.0.0"), nil, src)
 			if err != nil {
 				t.Fatalf("SetSourcedComponentIntent(replay) error = %v", err)
 			}
-			if !replay.SourceLastSeenTime.Equal(stored) {
-				t.Errorf("replay SourceLastSeenTime = %v, want stored %v", replay.SourceLastSeenTime, stored)
+			if after := getSourceLastSeenTime(ctx, t, s, "seen-comp"); !after.Equal(aged) || !replay.SourceLastSeenTime.Equal(aged) {
+				t.Errorf("replay SourceLastSeenTime returned = %v, stored = %v, want both %v", replay.SourceLastSeenTime, after, aged)
 			}
+			stored = aged
 
 			// A sourced UpdateObservedGeneration records the owner and reports the new timestamp.
 			updated, err := s.UpdateObservedGeneration(ctx, "seen-comp", created.Generation, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready=True", src)
@@ -167,8 +173,13 @@ func verifyFenceAndConflictMetrics(ctx context.Context, t *testing.T, s store.St
 	if _, err := s.DeclareClusterEpoch(ctx, prod); err != nil {
 		t.Fatalf("DeclareClusterEpoch(prod) error = %v", err)
 	}
-	if got := testutil.ToFloat64(store.ClusterFenceEpochGauge()); got != float64(prod.Epoch) {
-		t.Errorf("xmc_cms_cluster_fence_epoch = %v, want %v", got, prod.Epoch)
+	now := time.Now().UTC()
+	g := readOwnershipGauges(ctx, t, s, now)
+	if !g.FenceDeclared || g.FenceEpoch != prod.Epoch {
+		t.Errorf("ReadOwnershipGauges() fence = (declared %v, epoch %v), want (true, %v)", g.FenceDeclared, g.FenceEpoch, prod.Epoch)
+	}
+	if age := now.Sub(g.FenceLastSeenTime); g.FenceLastSeenTime.IsZero() || age < -time.Minute || age > time.Minute {
+		t.Errorf("ReadOwnershipGauges() FenceLastSeenTime = %v, want within a minute of %v", g.FenceLastSeenTime, now)
 	}
 
 	conflicts := []struct {
@@ -262,15 +273,17 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 	}
 	assertAdoptionIncremented(t, beforeAdoptions, store.AdoptionReasonUnsourcedClaim)
 
-	// Fence takeover marks both reassigned components as owner-stale until re-adopted.
+	// A fence takeover reassigns both components and starts a 15-minute adoption grace period:
+	// they are not stale now, but are once the grace period has ended without an adoption.
 	if _, err := s.DeclareClusterEpoch(ctx, dr); err != nil {
 		t.Fatalf("DeclareClusterEpoch(dr takeover) error = %v", err)
 	}
-	if got := testutil.ToFloat64(store.ClusterFenceEpochGauge()); got != float64(dr.Epoch) {
-		t.Errorf("xmc_cms_cluster_fence_epoch after takeover = %v, want %v", got, dr.Epoch)
+	now := time.Now().UTC()
+	if g := readOwnershipGauges(ctx, t, s, now); g.FenceEpoch != dr.Epoch || g.StaleOwners != 0 {
+		t.Errorf("ReadOwnershipGauges() after takeover = (epoch %v, stale %v), want (%v, 0)", g.FenceEpoch, g.StaleOwners, dr.Epoch)
 	}
-	if got := testutil.ToFloat64(store.ComponentOwnerStaleGauge()); got != 2 {
-		t.Errorf("xmc_cms_component_owner_stale after takeover = %v, want 2", got)
+	if g := readOwnershipGauges(ctx, t, s, now.Add(store.OwnerStaleThreshold+time.Minute)); g.StaleOwners != 2 {
+		t.Errorf("ReadOwnershipGauges() after the grace period StaleOwners = %v, want 2", g.StaleOwners)
 	}
 
 	drSrc := store.RequestSource{UID: "uid-dr", Generation: 1, Namespace: "xmc", ClusterUID: drClusterUID, Epoch: 3}
@@ -283,21 +296,40 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 		t.Fatalf("SetSourcedComponentIntent(epoch_takeover 2) error = %v", err)
 	}
 
-	// Refreshing the fence after both components are adopted clears the stale owner gauge,
-	// and backdating one owner's SourceLastSeenTime past OwnerStaleThreshold reports 1 stale owner.
-	if _, err := s.DeclareClusterEpoch(ctx, dr); err != nil {
-		t.Fatalf("DeclareClusterEpoch(dr refresh) error = %v", err)
-	}
-	if got := testutil.ToFloat64(store.ComponentOwnerStaleGauge()); got != 0 {
-		t.Errorf("xmc_cms_component_owner_stale after adoption = %v, want 0", got)
+	// After both adoptions no owner is stale; backdating one owner's SourceLastSeenTime past
+	// OwnerStaleThreshold reports 1 stale owner, with no declaration in between.
+	if g := readOwnershipGauges(ctx, t, s, time.Now().UTC()); g.StaleOwners != 0 {
+		t.Errorf("ReadOwnershipGauges() after adoption StaleOwners = %v, want 0", g.StaleOwners)
 	}
 	if err := store.SetSourceLastSeenTimeForTest(ctx, s, "metrics-comp", time.Now().UTC().Add(-store.OwnerStaleThreshold-time.Minute)); err != nil {
 		t.Fatalf("SetSourceLastSeenTimeForTest() error = %v", err)
 	}
-	if _, err := s.DeclareClusterEpoch(ctx, dr); err != nil {
-		t.Fatalf("DeclareClusterEpoch(dr refresh with aged owner) error = %v", err)
+	if g := readOwnershipGauges(ctx, t, s, time.Now().UTC()); g.StaleOwners != 1 {
+		t.Errorf("ReadOwnershipGauges() with aged owner StaleOwners = %v, want 1", g.StaleOwners)
 	}
-	if got := testutil.ToFloat64(store.ComponentOwnerStaleGauge()); got != 1 {
-		t.Errorf("xmc_cms_component_owner_stale with aged owner = %v, want 1", got)
+}
+
+func TestReadOwnershipGauges_BeforeDeclaration_Parity(t *testing.T) {
+	for _, backend := range intentStoreBackends() {
+		t.Run(backend.name, func(t *testing.T) {
+			g := readOwnershipGauges(context.Background(), t, backend.newStore(t), time.Now().UTC())
+			if diff := cmp.Diff(store.OwnershipGauges{}, g); diff != "" {
+				t.Errorf("ReadOwnershipGauges() before any declaration mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
+}
+
+// readOwnershipGauges returns the ownership gauges of s at now.
+func readOwnershipGauges(ctx context.Context, t *testing.T, s store.Store, now time.Time) store.OwnershipGauges {
+	t.Helper()
+	reader, ok := s.(store.OwnershipGaugeReader)
+	if !ok {
+		t.Fatalf("%T does not implement store.OwnershipGaugeReader", s)
+	}
+	g, err := reader.ReadOwnershipGauges(ctx, now)
+	if err != nil {
+		t.Fatalf("ReadOwnershipGauges() error = %v", err)
+	}
+	return g
 }

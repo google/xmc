@@ -36,6 +36,8 @@ import (
 // Ensure MemoryStore implements Store interface at compile time.
 var _ Store = (*MemoryStore)(nil)
 
+var _ OwnershipGaugeReader = (*MemoryStore)(nil)
+
 // MemoryStore provides a thread-safe in-memory test double and local implementation of Store.
 type MemoryStore struct {
 	mu               sync.RWMutex
@@ -44,6 +46,7 @@ type MemoryStore struct {
 	nextID           int64
 	snapshots        map[string]map[int64]*SnapshotRecord
 	fence            *ClusterIdentity // Ownership fence holder; nil before the first declaration.
+	fenceLastSeen    time.Time        // Time of the last accepted declaration.
 }
 
 // NewMemoryStore creates a new thread-safe in-memory component store.
@@ -145,14 +148,26 @@ func (m *MemoryStore) DeclareClusterEpoch(ctx context.Context, cluster ClusterId
 		for _, rec := range m.componentsByName {
 			if !isDeletedRecord(rec) && rec.Owner != nil {
 				rec.Owner = takenOverOwner(rec.Owner, cluster)
-				rec.SourceLastSeenTime = now // As takeOverOwnersSQL sets it to the commit timestamp.
+				// Starts the adoption grace period of the owner_stale gauge, as in Spanner.
+				rec.SourceLastSeenTime = now
 				res.RecordsReassigned++
 			}
 		}
 	}
 	m.fence = &cluster
-	recordClusterDeclarationMetrics(cluster.Epoch, countStaleOwnedComponents(m.componentsByName, now), true)
+	m.fenceLastSeen = now
 	return res, nil
+}
+
+// ReadOwnershipGauges reads the fence and counts the stale owners in the in-memory store at now.
+func (m *MemoryStore) ReadOwnershipGauges(ctx context.Context, now time.Time) (OwnershipGauges, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	g := OwnershipGauges{StaleOwners: countStaleOwnedComponents(m.componentsByName, now)}
+	if m.fence != nil {
+		g.FenceDeclared, g.FenceEpoch, g.FenceLastSeenTime = true, m.fence.Epoch, m.fenceLastSeen
+	}
+	return g, nil
 }
 
 func validateResourceName(name string) (string, error) {

@@ -179,7 +179,10 @@ func buildCMSAuthorizer(cfg *config.Config, oauthCfg *oauth.Config, userAuth cms
 
 func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, spannerClient *spanner.Client, auth cms.CallerAuthorizer) {
 	logging.Info(ctx, "Initializing Component Manager Service (CMS)...")
-	var cmsStore store.Store
+	var cmsStore interface {
+		store.Store
+		store.OwnershipGaugeReader
+	}
 	if spannerClient != nil {
 		cmsStore = store.NewSpannerStore(spannerClient)
 		logging.Info(ctx, "Using SpannerStore for Component Manager Service")
@@ -187,6 +190,7 @@ func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, s
 		cmsStore = store.NewMemoryStore()
 		logging.Warn(ctx, "Spanner client not initialized; using in-memory MemoryStore fallback for Component Manager Service")
 	}
+	go cms.RunOwnershipMetricsCollector(ctx, cmsStore, cms.OwnershipMetricsInterval)
 	cmsServer := cms.NewServer(cmsStore, cms.WithAuthorizer(auth))
 	componentspb.RegisterComponentManagerServiceServer(s, cmsServer)
 	healthServer.SetServingStatus("cloud.xmanager.components.v1alpha1.ComponentManagerService", healthpb.HealthCheckResponse_SERVING)
