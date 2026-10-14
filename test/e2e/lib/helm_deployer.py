@@ -30,7 +30,16 @@ from test.e2e.lib.controller_installer import ControllerInstaller
 logger = logging.getLogger("xmc_e2e_runner")
 
 # Namespaces whose pods, events, and logs are captured when the deployment or the tests fail.
-_DIAGNOSTIC_NAMESPACES = ("xmc", "dex", "jobset-system", "kueue-system", "cpu-queue")
+_DIAGNOSTIC_NAMESPACES = (
+    "xmc",
+    "dex",
+    "jobset-system",
+    "kueue-system",
+    "cpu-queue",
+    "preemption-queue",
+)
+# Kueue queue of the preemption scenario, relative to the workspace root.
+_PREEMPTION_QUEUE_MANIFEST = os.path.join("test", "e2e", "manifests", "preemption_queue.yaml")
 
 
 class HelmDeployer:
@@ -282,8 +291,24 @@ ui:
             self.capture_diagnostics()
             raise
 
+    def _apply_preemption_queue(self) -> None:
+        """Applies the preemption scenario's queue, capturing diagnostics on failure.
+
+        The queue uses the chart's cpu-flavor. Kueue's webhooks must admit its ClusterQueue.
+        """
+        manifest = os.path.join(self.cfg.workspace_root, _PREEMPTION_QUEUE_MANIFEST)
+        context = f"kind-{self.cfg.cluster_name}"
+        try:
+            run_cmd(["kubectl", "--context", context, "apply", "-f", manifest])
+        except Exception:
+            self.capture_diagnostics()
+            raise
+
     def deploy(self) -> None:
-        """Copies chart, generates values, installs controllers, and runs helm upgrade --install."""
+        """Copies chart, generates values, installs controllers, and runs helm upgrade --install.
+
+        The preemption scenario's queue is applied after the release, which creates its flavor.
+        """
         logger.info("=== [Helm] Deploying XMC Stack ===")
         self._prepare_helm_chart()
         self._patch_image_pull_policy()
@@ -306,4 +331,5 @@ ui:
                 self.values_file,
             ]
         )
+        self._apply_preemption_queue()
         self._wait_for_rollouts()

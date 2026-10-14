@@ -141,7 +141,7 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertTrue(os.path.isfile(diag_file))
         with open(diag_file, encoding="utf-8") as f:
             diagnostics = f.read()
-        for ns in ("xmc", "dex", "jobset-system", "kueue-system", "cpu-queue"):
+        for ns in ("xmc", "dex", "jobset-system", "kueue-system", "cpu-queue", "preemption-queue"):
             self.assertIn(f"=== PODS (ns: {ns}) ===", diagnostics)
             self.assertIn(f"=== EVENTS (ns: {ns}) ===", diagnostics)
         self.assertIn("--- Logs for pod: mock-pod-1 ---", diagnostics)
@@ -231,14 +231,51 @@ class TestHelmDeployer(unittest.TestCase):
 
         mock_capture.assert_called_once_with()
 
+    @patch("test.e2e.lib.helm_deployer.run_cmd")
+    def test_apply_preemption_queue_applies_workspace_manifest(
+        self, mock_run: unittest.mock.MagicMock
+    ) -> None:
+        self.deployer._apply_preemption_queue()
+
+        mock_run.assert_called_once_with(
+            [
+                "kubectl",
+                "--context",
+                "kind-test-cluster",
+                "apply",
+                "-f",
+                "/workspace/test/e2e/manifests/preemption_queue.yaml",
+            ]
+        )
+
+    @patch.object(HelmDeployer, "capture_diagnostics")
+    @patch("test.e2e.lib.helm_deployer.run_cmd")
+    def test_apply_preemption_queue_failure_captures_diagnostics(
+        self, mock_run: unittest.mock.MagicMock, mock_capture: unittest.mock.MagicMock
+    ) -> None:
+        mock_run.side_effect = RuntimeError("admission webhook denied the request")
+
+        with self.assertRaisesRegex(RuntimeError, "admission webhook denied the request"):
+            self.deployer._apply_preemption_queue()
+
+        mock_capture.assert_called_once_with()
+
     @patch.object(HelmDeployer, "_prepare_helm_chart")
     @patch.object(HelmDeployer, "_patch_image_pull_policy")
     @patch.object(HelmDeployer, "_generate_values_file")
     @patch.object(HelmDeployer, "_install_controllers")
+    @patch.object(HelmDeployer, "_apply_preemption_queue")
     @patch.object(HelmDeployer, "_wait_for_rollouts")
     @patch("test.e2e.lib.helm_deployer.run_cmd")
     def test_deploy_orchestrates_release(
-        self, mock_run, mock_wait, mock_install_controllers, mock_gen_vals, mock_patch, mock_prep
+        self,
+        mock_run,
+        mock_wait,
+        mock_apply_queue,
+        mock_install_controllers,
+        mock_gen_vals,
+        mock_patch,
+        mock_prep,
     ):
         self.deployer.deploy()
 
@@ -246,6 +283,7 @@ class TestHelmDeployer(unittest.TestCase):
         mock_patch.assert_called_once()
         mock_gen_vals.assert_called_once()
         mock_install_controllers.assert_called_once()
+        mock_apply_queue.assert_called_once_with()
         mock_wait.assert_called_once()
 
         mock_run.assert_any_call(
