@@ -1,0 +1,9 @@
+# Copyright 2026 Google LLC
+
+exports_files(
+    [
+        "ess-schema.sql",
+        "xid-schema.sql",
+    ],
+    visibility = ["//internal/storage:__subpackages__"],
+)
