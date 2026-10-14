@@ -1813,6 +1813,109 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 	}
 }
 
+func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
+	ctx := context.Background()
+	cmsDown := status.Error(codes.Unavailable, "cms down")
+	spec3P := &componentspb.ComponentSpec{
+		Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+		WrapperRef: &componentspb.WrapperRef{CrdGroup: "clickhouse.altinity.com", CrdVersion: "v1", CrdKind: "ClickHouseInstallation", TargetName: "ch"},
+	}
+	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
+	prevAccess := &AccessStatus{EnvVars: map[string]string{"ENDPOINT": "http://ch.xmc:8123"}}
+	prevReady := []Condition{
+		{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy, Message: "Ready"},
+		{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonComponentHealthy, Message: "Ready"},
+	}
+
+	tests := []struct {
+		name         string
+		prober       *mockProber
+		helm         *mockHelm
+		in           ReconcileComponentInput
+		wantState    componentspb.ComponentState
+		wantReady    string
+		wantReadyRsn string
+		wantReadyGen int64
+		wantAccess   *AccessStatus
+	}{
+		{
+			name:         "actuated 3P wrapper that became unready surfaces the local failure",
+			prober:       &mockProber{status: &ResourceStatus{Found: true, Ready: false, Message: "pods crashing"}},
+			in:           ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true, ExistingConditions: prevReady, ExistingAccess: prevAccess},
+			wantState:    componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantReady:    ConditionStatusFalse,
+			wantReadyRsn: "ResourceNotReady",
+			wantReadyGen: 1,
+		},
+		{
+			name:         "actuated 1P release that failed surfaces the local failure without a Helm upgrade",
+			helm:         &mockHelm{active: true, unhealthyReason: ReasonHelmUpgradeFailed},
+			in:           ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec1P, Enabled: true, ExistingConditions: prevReady, ExistingAccess: prevAccess},
+			wantState:    componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantReady:    ConditionStatusFalse,
+			wantReadyRsn: ReasonHelmUpgradeFailed,
+			wantReadyGen: 1,
+			wantAccess:   prevAccess,
+		},
+		{
+			name:         "healthy actuated 1P release keeps Ready=True and status.access",
+			helm:         &mockHelm{active: true},
+			in:           ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 1, Spec: spec1P, Enabled: true, ExistingConditions: prevReady, ExistingAccess: prevAccess},
+			wantState:    componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantReady:    ConditionStatusTrue,
+			wantReadyRsn: ReasonComponentHealthy,
+			wantReadyGen: 1,
+			wantAccess:   prevAccess,
+		},
+		{
+			name:         "disabled component does not keep Ready=True",
+			prober:       &mockProber{status: &ResourceStatus{Found: true, Ready: true}},
+			in:           ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: false, ExistingConditions: prevReady, ExistingAccess: prevAccess},
+			wantState:    componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantReady:    ConditionStatusUnknown,
+			wantReadyRsn: ReasonCMSSyncFailed,
+			wantReadyGen: 2,
+			wantAccess:   prevAccess,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var helmMgr HelmManager
+			if tt.helm != nil {
+				helmMgr = tt.helm
+			}
+			cms := &mockCMS{setErr: cmsDown}
+			r, _ := NewReconciler(cms, tt.prober, helmMgr)
+			res, err := r.ReconcileComponent(ctx, tt.in)
+			if status.Code(errors.Unwrap(err)) != codes.Unavailable {
+				t.Fatalf("ReconcileComponent() error = %v, want the wrapped CMS Unavailable error", err)
+			}
+			if res.State != tt.wantState {
+				t.Errorf("State = %v, want %v", res.State, tt.wantState)
+			}
+			ready := findCondition(res.Conditions, ConditionTypeReady)
+			if ready == nil || ready.Status != tt.wantReady || ready.Reason != tt.wantReadyRsn || ready.ObservedGeneration != tt.wantReadyGen {
+				t.Errorf("Ready condition = %+v, want %s/%s at generation %d", ready, tt.wantReady, tt.wantReadyRsn, tt.wantReadyGen)
+			}
+			synced := findCondition(res.Conditions, ConditionTypeSynced)
+			if synced == nil || synced.Status != ConditionStatusFalse || synced.Reason != ReasonCMSSyncFailed {
+				t.Errorf("Synced condition = %+v, want False/%s", synced, ReasonCMSSyncFailed)
+			}
+			if tt.wantAccess != nil {
+				if diff := cmp.Diff(tt.wantAccess, res.Access); diff != "" {
+					t.Errorf("Access mismatch (-want +got):\n%s", diff)
+				}
+			}
+			if cms.lastObsReq != nil {
+				t.Errorf("UpdateObservedGeneration called during a CMS outage: %v", cms.lastObsReq)
+			}
+			if tt.helm != nil && tt.helm.ensureCalls != 0 {
+				t.Errorf("Ensure1PComponent calls = %d, want 0", tt.helm.ensureCalls)
+			}
+		})
+	}
+}
+
 func verifyEnvtestContractBreach(ctx context.Context, t *testing.T, dynClient dynamic.Interface, c client.Client) {
 	t.Helper()
 	rayGVR := schema.GroupVersionResource{Group: "ray.io", Version: "v1", Resource: "rayclusters"}

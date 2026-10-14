@@ -102,6 +102,8 @@ type ReconcileComponentInput struct {
 	// Dependencies optionally resolves readiness of Spec.Dependencies. When nil, activation
 	// is not gated on dependency readiness.
 	Dependencies DependencyReadiness
+	// skipCMSSync limits a pass to local health evaluation: syncReadyToCMS does not call CMS.
+	skipCMSSync bool
 }
 
 // ReconcileComponent executes a single reconciliation pass for a Component.
@@ -262,7 +264,8 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 
 // handleIntentError classifies a SetComponentIntent failure: an unregistered dependency keeps
 // Synced=True (CMS is reachable), a dependency cycle gates the component, and any other error
-// records a CMS sync failure. It always returns the wrapped intent error.
+// records a CMS sync failure and refreshes the local health of an actuated workload. It always
+// returns the wrapped intent error.
 func (r *Reconciler) handleIntentError(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, err error) error {
 	intentErr := fmt.Errorf("failed to apply component intent to CMS: %w", err)
 	if dependencyNotRegisteredMessage(err) != "" {
@@ -272,12 +275,34 @@ func (r *Reconciler) handleIntentError(ctx context.Context, in ReconcileComponen
 	msg := dependencyCycleMessage(err)
 	if msg == "" {
 		recordCMSSyncFailure(res, in, err)
+		r.refreshLocalHealth(ctx, in, canonicalName, res, err)
 		return intentErr
 	}
 	if _, syncErr := r.reportGated(ctx, in, canonicalName, res, ReasonDependencyCycle, msg, ConditionStatusTrue); syncErr != nil {
 		return errors.Join(intentErr, syncErr)
 	}
 	return intentErr
+}
+
+// refreshLocalHealth keeps probing the workload of an already-actuated, enabled component while
+// CMS is unreachable, so Ready reflects the latest local probe rather than the value from before
+// the outage. Health is evaluated at the last evaluated generation, because the new spec has not
+// reached CMS; the pass never calls CMS and never changes the workload. Synced stays False.
+func (r *Reconciler) refreshLocalHealth(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, cmsErr error) {
+	prev := findCondition(in.ExistingConditions, ConditionTypeReady)
+	if !in.Enabled || in.IsDeleting || prev == nil || !r.isActuated(in) {
+		return
+	}
+	local := in
+	local.Generation = prev.ObservedGeneration
+	local.skipCMSSync = true
+	// Local failures are recorded in Ready; the pass already returns the CMS error.
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
+		_, _ = r.reconcile3PWrapper(ctx, local, canonicalName, res)
+	} else {
+		_, _ = r.evaluateHealth(ctx, local, canonicalName, res)
+	}
+	setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, cmsErr.Error())
 }
 
 // unreadyDependenciesMessage returns "waiting on dependencies: ..." naming every unready dependency,

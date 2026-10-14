@@ -302,11 +302,11 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 			want:     disabled(gateOutcome{PrepareCalls: 1, CompleteCalls: 1}),
 		},
 		{
-			name: "prepare failure keeps workload and preserves Ready",
+			name: "prepare failure keeps workload and downgrades Ready=True to Unknown",
 			cms:  &mockCMS{prepareErr: status.Error(codes.Unavailable, "cms down")}, helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
 			want: gateOutcome{
 				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-				ReadyStatus: ConditionStatusTrue, ReadyReason: ReasonComponentHealthy, DegradedStatus: ConditionStatusFalse,
+				ReadyStatus: ConditionStatusUnknown, ReadyReason: ReasonCMSSyncFailed, DegradedStatus: ConditionStatusFalse,
 				SetCalls: 1, PrepareCalls: 1,
 			},
 			wantErr: true,
@@ -355,11 +355,11 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 			want: disabled(gateOutcome{PrepareCalls: 1, CompleteCalls: 1, HelmDeleted: true}),
 		},
 		{
-			name: "other intent failure still fails deactivation while preserving Ready",
+			name: "other intent failure still fails deactivation and downgrades Ready=True to Unknown",
 			cms:  &mockCMS{setErr: status.Error(codes.Unavailable, "cms down")}, helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
 			want: gateOutcome{
 				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-				ReadyStatus: ConditionStatusTrue, ReadyReason: ReasonComponentHealthy, DegradedStatus: ConditionStatusFalse,
+				ReadyStatus: ConditionStatusUnknown, ReadyReason: ReasonCMSSyncFailed, DegradedStatus: ConditionStatusFalse,
 				SetCalls: 1,
 			},
 			wantErr: true,

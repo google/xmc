@@ -73,6 +73,9 @@ func (r *Reconciler) updateObservedCMS(ctx context.Context, name string, gen int
 // syncReadyToCMS reports res.State to CMS when shouldSyncToCMS allows it for readyStatus, then
 // restarts the CMS heartbeat by stamping the Ready condition's transition time.
 func (r *Reconciler) syncReadyToCMS(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, readyStatus string) error {
+	if in.skipCMSSync {
+		return nil
+	}
 	if !shouldSyncToCMS(in.ExistingConditions, readyStatus, in.Generation) {
 		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 		return nil

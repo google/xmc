@@ -127,7 +127,9 @@ func setSynced(res *ReconcileResult, in ReconcileComponentInput, status, reason,
 
 // recordCMSSyncFailure records Synced=False when a CMS RPC fails before workload health is
 // evaluated in the current pass, preserving the previous Ready/Degraded conditions and
-// status.access (or reporting Ready=Unknown/InitialSyncPending on first reconcile).
+// status.access (or reporting Ready=Unknown/InitialSyncPending on first reconcile). Ready=True is
+// preserved only while spec.enabled: a disabled component whose deactivation cannot reach CMS
+// reports Ready=Unknown/CMSSyncFailed instead.
 func recordCMSSyncFailure(res *ReconcileResult, in ReconcileComponentInput, err error) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 	setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
@@ -135,6 +137,10 @@ func recordCMSSyncFailure(res *ReconcileResult, in ReconcileComponentInput, err 
 	existingReady := findCondition(in.ExistingConditions, ConditionTypeReady)
 	if existingReady == nil {
 		setReadiness(res, in, ConditionStatusUnknown, ConditionStatusFalse, ReasonInitialSyncPending, err.Error())
+		return
+	}
+	if !in.Enabled && existingReady.Status == ConditionStatusTrue {
+		setReadiness(res, in, ConditionStatusUnknown, ConditionStatusFalse, ReasonCMSSyncFailed, "deactivation is pending until CMS is reachable: "+err.Error())
 		return
 	}
 	if in.Enabled && !in.IsDeleting && existingReady.Status == ConditionStatusTrue {
