@@ -199,32 +199,35 @@ func TestK8sHelmManager_Close(t *testing.T) {
 	}
 }
 
-func TestK8sHelmManager_CloseDrainsPendingUpgrades(t *testing.T) {
+func TestK8sHelmManager_CloseDropsQueuedUpgrades(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewClientset()
 	runner := &mockHelmActionRunner{}
 	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
 		WithActionRunner(runner),
 		WithSyncExecution(false),
-		WithDebounceDuration(100*time.Millisecond),
+		WithDebounceDuration(time.Hour),
 	)
 
-	ref := ComponentRef{Namespace: "xmc", Name: "drained-service"}
+	ref := ComponentRef{Namespace: "xmc", Name: "queued-service"}
 	opts := HelmComponentOptions{Ref: ref, Enabled: true}
 	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
 		t.Fatalf("Ensure1PComponent failed: %v", err)
 	}
 
-	// Immediate Close should drain pending upgrades without context.Canceled error
+	// The upgrade is still queued or debouncing, so Close must drop it instead of starting it.
 	if err := mgr.Close(); err != nil {
 		t.Fatalf("Close failed: %v", err)
 	}
 
-	if err := mgr.GetUpgradeError(ref); err != nil {
-		t.Errorf("expected no upgrade error after drainage, got %v", err)
+	if err := mgr.GetUpgradeError(ref); !errors.Is(err, errManagerStopped) {
+		t.Errorf("GetUpgradeError() = %v, want %v", err, errManagerStopped)
 	}
-	if runner.upgradeCalls != 1 {
-		t.Errorf("expected 1 upgrade call after drainage, got %d", runner.upgradeCalls)
+	if got := runner.recordedOps(); len(got) != 0 {
+		t.Errorf("completed release operations = %v, want none", got)
+	}
+	if mgr.isUpgradePending(ref) {
+		t.Error("isUpgradePending() = true after Close, want false")
 	}
 }
 
@@ -376,7 +379,7 @@ func TestK8sHelmManager_TriggerUpgrade_ChannelSaturation_NoDeadlock(t *testing.T
 	}
 }
 
-func TestK8sHelmManager_DrainRemainingUpgrades_ClosedChannel(t *testing.T) {
+func TestK8sHelmManager_DropQueuedUpgrades_ClosedChannel(t *testing.T) {
 	client := fake.NewClientset()
 	runner := &mockHelmActionRunner{}
 	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
@@ -388,10 +391,10 @@ func TestK8sHelmManager_DrainRemainingUpgrades_ClosedChannel(t *testing.T) {
 	// Explicitly close upgradeChan
 	close(mgr.upgradeChan)
 
-	// drainRemainingUpgrades must safely terminate and not loop indefinitely
+	// dropQueuedUpgrades must safely terminate and not loop indefinitely
 	doneCh := make(chan struct{})
 	go func() {
-		mgr.drainRemainingUpgrades()
+		mgr.dropQueuedUpgrades()
 		close(doneCh)
 	}()
 
@@ -399,7 +402,7 @@ func TestK8sHelmManager_DrainRemainingUpgrades_ClosedChannel(t *testing.T) {
 	case <-doneCh:
 		// Success, terminated cleanly on closed channel
 	case <-time.After(1 * time.Second):
-		t.Fatal("drainRemainingUpgrades hung indefinitely on closed channel")
+		t.Fatal("dropQueuedUpgrades hung indefinitely on closed channel")
 	}
 }
 
@@ -611,17 +614,21 @@ func TestK8sHelmManager_AsyncUpgrade_PendingUntilCompletion(t *testing.T) {
 			ctx := context.Background()
 			ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
 			gate := make(chan struct{})
-			runner := &mockHelmActionRunner{upgradeErr: tt.upgradeErr, upgradeGate: gate}
+			runner := &mockHelmActionRunner{upgradeErr: tt.upgradeErr, upgradeGate: gate, upgradeStarted: make(chan struct{}, 1)}
 			mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner))
 
 			if err := mgr.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true}); err != nil {
 				t.Fatalf("Ensure1PComponent failed: %v", err)
 			}
 			if _, reason, _ := mgr.ComponentHealth(ctx, ref); reason != ReasonHelmUpgradePending {
+				t.Errorf("ComponentHealth() reason while queued = %q, want %q", reason, ReasonHelmUpgradePending)
+			}
+			<-runner.upgradeStarted // Close drops queued upgrades, so wait until this one is in flight.
+			if _, reason, _ := mgr.ComponentHealth(ctx, ref); reason != ReasonHelmUpgradePending {
 				t.Errorf("ComponentHealth() reason while in flight = %q, want %q", reason, ReasonHelmUpgradePending)
 			}
 			close(gate)
-			_ = mgr.Close() // Waits for the worker to finish the upgrade.
+			_ = mgr.Close() // Waits for the worker to finish the in-flight upgrade.
 			if _, reason, _ := mgr.ComponentHealth(ctx, ref); reason != tt.wantReason {
 				t.Errorf("ComponentHealth() reason after completion = %q, want %q", reason, tt.wantReason)
 			}

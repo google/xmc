@@ -120,6 +120,9 @@ type controllerEnv struct {
 	counter   *reconcileCounter
 	// reads counts the Component reads the manager sends to the API server.
 	reads *apiserverReadCounter
+	mgr   manager.Manager
+	// stop stops the manager and waits for it to exit. It is idempotent.
+	stop func()
 }
 
 // TestComponentControllerEnvtest runs the ComponentController in a controller-runtime manager
@@ -143,13 +146,29 @@ func TestComponentControllerEnvtest(t *testing.T) {
 // it until the test ends.
 func startControllerEnv(t *testing.T, cfg *rest.Config, namespace string) *controllerEnv {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
+	createEnvtestNamespace(t, cfg, namespace)
+	return runControllerEnv(t, cfg, ComponentManagerConfig{Namespace: namespace})
+}
+
+func createEnvtestNamespace(t *testing.T, cfg *rest.Config, namespace string) {
+	t.Helper()
 	kubeClient := kubernetes.NewForConfigOrDie(cfg)
-	if _, err := kubeClient.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}, metav1.CreateOptions{}); err != nil {
+	if _, err := kubeClient.CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("failed to create namespace %q: %v", namespace, err)
 	}
-	opts := ComponentManagerOptions(namespace)
+}
+
+// runControllerEnv runs a manager for mgrCfg with a counted ComponentController until it is
+// stopped or the test ends.
+func runControllerEnv(t *testing.T, cfg *rest.Config, mgrCfg ComponentManagerConfig) *controllerEnv {
+	t.Helper()
+	opts := ComponentManagerOptions(mgrCfg)
 	opts.Controller.SkipNameValidation = ptr.To(true)
+	if mgrCfg.LeaderElection {
+		// Longer than every wait of these tests, so a takeover proves that the stopped leader
+		// released the Lease instead of letting it expire.
+		opts.LeaseDuration = ptr.To(60 * time.Second)
+	}
 	reads := &apiserverReadCounter{}
 	mgr, err := manager.New(reads.wrap(cfg), opts)
 	if err != nil {
@@ -165,15 +184,20 @@ func startControllerEnv(t *testing.T, cfg *rest.Config, namespace string) *contr
 	if err := c.newControllerBuilder(mgr).Complete(counter); err != nil {
 		t.Fatalf("failed to set up controller: %v", err)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- mgr.Start(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		if err := <-done; err != nil {
-			t.Errorf("manager stopped with error: %v", err)
-		}
-	})
-	return &controllerEnv{namespace: namespace, client: writer.Resource(ComponentGVR).Namespace(namespace), counter: counter, reads: reads}
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			cancel()
+			if err := <-done; err != nil {
+				t.Errorf("manager stopped with error: %v", err)
+			}
+		})
+	}
+	t.Cleanup(stop)
+	return &controllerEnv{namespace: mgrCfg.Namespace, client: writer.Resource(ComponentGVR).Namespace(mgrCfg.Namespace), counter: counter, reads: reads, mgr: mgr, stop: stop}
 }
 
 // testComponentReadsAreCacheBacked checks that once the manager's cache has synced, neither

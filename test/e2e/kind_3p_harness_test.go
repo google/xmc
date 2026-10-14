@@ -32,6 +32,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr/testr"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
@@ -51,6 +52,7 @@ import (
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -102,6 +104,7 @@ type kindClusterHarness struct {
 
 func setupKindClusterHarness(t *testing.T, requiredImages ...string) *kindClusterHarness {
 	t.Helper()
+	ctrl.SetLogger(testr.New(t))
 	clusterName, kubeconfig := acquireKindCluster(t)
 	for _, img := range requiredImages {
 		preloadImageIntoKind(t, clusterName, img)
@@ -382,10 +385,11 @@ func createTestNamespace(ctx context.Context, t *testing.T, h *kindClusterHarnes
 }
 
 // startNamespaceBridge runs a bridge ComponentController over namespace in its own manager, as the
-// deployed xmc-bridge does for its Release namespace, until the test ends.
+// deployed xmc-bridge does for its Release namespace, until the test ends. Each manager is the
+// namespace's only writer, so it runs without leader election.
 func startNamespaceBridge(t *testing.T, h *kindClusterHarness, namespace string) {
 	t.Helper()
-	opts := bridge.ComponentManagerOptions(namespace)
+	opts := bridge.ComponentManagerOptions(bridge.ComponentManagerConfig{Namespace: namespace})
 	opts.Controller.SkipNameValidation = ptr.To(true) // Every namespace gets an "xmc-bridge-component" controller.
 	mgr, err := manager.New(h.restCfg, opts)
 	if err != nil {

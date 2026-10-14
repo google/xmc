@@ -259,8 +259,9 @@ The reconciler unifies third-party CRD inspection and active health probing in `
 
 Production-grade controller reliability, conflict elimination, and Cloud Spanner write throttling:
 
-- **controller-runtime Controller (`component_controller.go`, `component_rate_limiter.go`)**:
-  - `ComponentController` runs the `Reconciler` per Component in a controller-runtime manager whose cache is limited to one namespace (`ComponentManagerOptions`). The manager's client sets `CacheOptions.Unstructured`, so the Get of the reconciled Component and the Lists behind the dependency snapshot and the dependents watch are served from that cache, not the API server; reads can therefore lag the latest write by one watch event. Results are persisted through a dynamic client with `PersistReconcileResult`.
+- **controller-runtime Controller (`component_controller.go`, `component_manager.go`, `component_rate_limiter.go`)**:
+  - `ComponentController` runs the `Reconciler` per Component in a controller-runtime manager whose cache is limited to one namespace (`ComponentManagerOptions` in `component_manager.go`). The manager's client sets `CacheOptions.Unstructured`, so the Get of the reconciled Component and the Lists behind the dependency snapshot and the dependents watch are served from that cache, not the API server; reads can therefore lag the latest write by one watch event. Results are persisted through a dynamic client with `PersistReconcileResult`.
+  - With `ComponentManagerConfig.LeaderElection`, the manager runs the controller only while it holds the `ComponentLeaseName` (`xmc-bridge`) Lease and releases it on shutdown. `AddComponentHealthChecks` registers a `/healthz` ping and a `/readyz` check that passes once the cache has synced, which followers also reach.
   - A Component is reconciled when its generation, labels or annotations change or its deletion starts; when a Component it depends on is created, deleted, changes generation, or changes readiness as a dependency (`dependencyReadinessChanged`); and `ProbeInterval` after each successful pass.
   - A failed pass persists its status and returns its error, so `NewComponentRateLimiter` retries it with per-Component exponential backoff from 5s to 300s and ±10% jitter.
 - **Server-Side Apply (SSA) Status & Finalizer Helpers (`status_applier.go`)**:

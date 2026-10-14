@@ -77,6 +77,16 @@ func TestParseConfig(t *testing.T) {
 			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--max-concurrent-reconciles=0"},
 			wantErr: true,
 		},
+		{
+			name:    "custom endpoints with metrics disabled",
+			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--metrics-bind-address=0", "--health-probe-bind-address=:9443"},
+			wantErr: false,
+		},
+		{
+			name:    "missing health probe address",
+			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--health-probe-bind-address="},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -223,6 +233,9 @@ func TestParseConfig_EnvVars(t *testing.T) {
 	}
 	if cfg.MaxConcurrentReconciles != 4 {
 		t.Errorf("cfg.MaxConcurrentReconciles = %d, want 4", cfg.MaxConcurrentReconciles)
+	}
+	if cfg.MetricsBindAddress != "127.0.0.1:8080" || cfg.HealthProbeBindAddress != ":8081" {
+		t.Errorf("cfg metrics/health addresses = %q/%q, want defaults 127.0.0.1:8080/:8081", cfg.MetricsBindAddress, cfg.HealthProbeBindAddress)
 	}
 	if cfg.Kubeconfig != "/custom/kubeconfig" {
 		t.Errorf("cfg.Kubeconfig = %q, want /custom/kubeconfig", cfg.Kubeconfig)

@@ -59,6 +59,11 @@ type Config struct {
 	ReconcileTimeout time.Duration
 	// MaxConcurrentReconciles is the number of Components reconciled in parallel.
 	MaxConcurrentReconciles int
+	// MetricsBindAddress is the address of the metrics endpoint; "0" disables it. The endpoint
+	// has no authentication, so it defaults to a loopback address.
+	MetricsBindAddress string
+	// HealthProbeBindAddress is the address of the /healthz and /readyz endpoints.
+	HealthProbeBindAddress string
 	// Kubeconfig is the optional explicit path to a kubeconfig file.
 	Kubeconfig string
 	// ChartPath is the base directory containing per-component Helm charts (e.g. <chart-path>/components/<name>)
@@ -79,8 +84,8 @@ type ComponentCondition = bridge.ComponentCondition
 // args typically receives os.Args[1:]. Default values fall back to corresponding environment
 // variables (CMS_ADDRESS, NAMESPACE, PROBE_INTERVAL, PROBE_TIMEOUT, RECONCILE_TIMEOUT,
 // MAX_CONCURRENT_RECONCILES, KUBECONFIG) if flags are omitted.
-// Returns an error if flag parsing fails, if intervals/timeouts are non-positive or if
-// max-concurrent-reconciles is below 1.
+// Returns an error if flag parsing fails, if intervals/timeouts are non-positive, if
+// max-concurrent-reconciles is below 1 or if health-probe-bind-address is empty.
 func ParseConfig(args []string) (*Config, error) {
 	defaultCMS := os.Getenv("CMS_ADDRESS")
 	defaultNS := os.Getenv("NAMESPACE")
@@ -112,6 +117,8 @@ func ParseConfig(args []string) (*Config, error) {
 	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for an individual component health probe")
 	reconcileTimeout := fs.Duration("reconcile-timeout", defaultReconcileTimeout, "Timeout duration for one Component reconcile pass")
 	maxConcurrentReconciles := fs.Int("max-concurrent-reconciles", defaultMaxConcurrentReconciles, "Number of Components reconciled in parallel")
+	metricsBindAddress := fs.String("metrics-bind-address", "127.0.0.1:8080", "Address of the unauthenticated metrics endpoint; 0 disables it")
+	healthProbeBindAddress := fs.String("health-probe-bind-address", ":8081", "Address of the /healthz and /readyz endpoints")
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig file")
 	chartPath := fs.String("chart-path", defaultChartPath, "Base path to per-component Helm charts (<chart-path>/components/<name>) or a fallback Helm chart directory/tarball")
 
@@ -139,6 +146,9 @@ func ParseConfig(args []string) (*Config, error) {
 	if *maxConcurrentReconciles < 1 {
 		return nil, fmt.Errorf("max-concurrent-reconciles must be at least 1, got %d", *maxConcurrentReconciles)
 	}
+	if *healthProbeBindAddress == "" {
+		return nil, errors.New("health-probe-bind-address must be specified")
+	}
 	return &Config{
 		CMSAddress:              *cmsAddress,
 		Namespace:               *namespace,
@@ -147,6 +157,8 @@ func ParseConfig(args []string) (*Config, error) {
 		ProbeTimeout:            *probeTimeout,
 		ReconcileTimeout:        *reconcileTimeout,
 		MaxConcurrentReconciles: *maxConcurrentReconciles,
+		MetricsBindAddress:      *metricsBindAddress,
+		HealthProbeBindAddress:  *healthProbeBindAddress,
 		Kubeconfig:              *kubeconfig,
 		ChartPath:               *chartPath,
 	}, nil
@@ -250,17 +262,31 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 		helmOpts = append(helmOpts, bridge.WithChartPath(cfg.ChartPath))
 	}
 	helmMgr := bridge.NewK8sHelmManager(k8sClient, cfg.Namespace, cfg.ReleaseName, helmOpts...)
-	defer helmMgr.Close()
-	if err := helmMgr.HydrateFromCluster(ctx); err != nil {
-		logging.Warn(ctx, "Failed to hydrate HelmManager state from cluster ConfigMap on startup", "error", err)
-	}
+	// The leader's runnable drains the Helm worker on a graceful shutdown. This stops the worker on every other
+	// return path too: a follower that never led, an early error, or a lost Lease, where Helm work is cancelled
+	// rather than awaited, so exit waits only for the cancelled Helm actions to return.
+	defer helmMgr.Abort()
 	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), bridgeProber, helmMgr)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}
-	mgr, err := ctrl.NewManager(k8sCfg, bridge.ComponentManagerOptions(cfg.Namespace))
+	mgr, err := ctrl.NewManager(k8sCfg, bridge.ComponentManagerOptions(bridge.ComponentManagerConfig{
+		Namespace:              cfg.Namespace,
+		LeaderElection:         true,
+		MetricsBindAddress:     cfg.MetricsBindAddress,
+		HealthProbeBindAddress: cfg.HealthProbeBindAddress,
+	}))
 	if err != nil {
 		return fmt.Errorf("failed to create controller manager: %w", err)
+	}
+	if err := bridge.AddComponentHealthChecks(ctx, mgr); err != nil {
+		return err
+	}
+	// Helm hydration and the Helm worker's shutdown run only while this process holds the Lease.
+	// A lost Lease stops the manager without a grace period; RunBridge then cancels in-flight Helm work
+	// and returns, and the process exits, so that no Helm write outlives the Lease.
+	if err := mgr.Add(bridge.NewHelmLeaderRunnable(helmMgr)); err != nil {
+		return fmt.Errorf("failed to add Helm manager runnable: %w", err)
 	}
 	controller := bridge.NewComponentController(mgr.GetClient(), dynamicClient, reconciler, bridge.ComponentControllerOptions{
 		ProbeInterval:           cfg.ProbeInterval,
@@ -270,7 +296,7 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err := controller.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to set up Component controller: %w", err)
 	}
-	logging.Info(ctx, "Starting XMC Bridge Controller", "namespace", cfg.Namespace, "probeInterval", cfg.ProbeInterval, "probeTimeout", cfg.ProbeTimeout, "reconcileTimeout", cfg.ReconcileTimeout, "maxConcurrentReconciles", cfg.MaxConcurrentReconciles)
+	logging.Info(ctx, "Starting XMC Bridge Controller; reconciling once elected", "namespace", cfg.Namespace, "lease", bridge.ComponentLeaseName, "probeInterval", cfg.ProbeInterval, "probeTimeout", cfg.ProbeTimeout, "reconcileTimeout", cfg.ReconcileTimeout, "maxConcurrentReconciles", cfg.MaxConcurrentReconciles)
 	return mgr.Start(ctx)
 }
 

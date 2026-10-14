@@ -147,7 +147,8 @@ type mockHelmActionRunner struct {
 	// the next successful Upgrade.
 	releaseStatus release.Status
 	statusCalls   int
-	// upgradeGate, when non-nil, blocks Upgrade until the channel is closed (waited on before taking mu so Status stays callable).
+	// upgradeGate, when non-nil, blocks Upgrade until the channel is closed or the call's context ends (waited on
+	// before taking mu so Status stays callable). An Upgrade whose context ends first records nothing.
 	upgradeGate chan struct{}
 	// upgradeStarted, when non-nil, receives a value as each Upgrade call starts, before it waits on upgradeGate.
 	upgradeStarted chan struct{}
@@ -164,7 +165,11 @@ func (m *mockHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespa
 		m.upgradeStarted <- struct{}{}
 	}
 	if m.upgradeGate != nil {
-		<-m.upgradeGate
+		select {
+		case <-m.upgradeGate:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
