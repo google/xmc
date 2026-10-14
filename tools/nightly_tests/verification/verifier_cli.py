@@ -66,6 +66,10 @@ flags.DEFINE_string(
     None,
     "Expected title pattern for the experiment or dashboard",
 )
+flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI")
+flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token")
+flags.DEFINE_bool("headless", True, "Run browser in headless mode")
+flags.DEFINE_string("screenshots_dir", None, "Target directory for diagnostic screenshots")
 
 
 def get_flag(flags_obj: Any, name: str, default: Any = None) -> Any:

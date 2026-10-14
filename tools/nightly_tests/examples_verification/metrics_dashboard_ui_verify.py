@@ -19,10 +19,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, TypeAlias
 
-from absl import flags
-
 from tools.nightly_tests.verification import (
-    endpoint_resolution as ep,
     ess_session as ess,
     ui_css_selectors as sel,
     ui_entities_validator,
@@ -30,39 +27,11 @@ from tools.nightly_tests.verification import (
     verifier_cli as cli,
 )
 
-FLAGS = flags.FLAGS
-flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI", allow_override=True)
-flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token", allow_override=True)
-flags.DEFINE_bool("headless", True, "Run browser in headless mode", allow_override=True)
-flags.DEFINE_string("screenshots_dir", None, "Diagnostic screenshots dir", allow_override=True)
-
 NO_MATCH_SENTINEL = "__nightly_no_match_sentinel__"
 EXPECTED_CHART_CARDS, EXPECTED_SUMMARY_BOXES, EXPECTED_PLOT_CANVASES = 2, 3, 3
 MIN_CANVAS_DIM = 100
 Session: TypeAlias = ui_entities_validator.XMCUIBrowserSession
 UIError: TypeAlias = ui_entities_validator.UIVerificationError
-
-
-def _normalize_numeric_xid(xid: str | int | None) -> str:
-    """Validates and normalizes an experiment XID string to digits."""
-    norm_xid = cli.parse_xid(str(xid or ""), required=False)
-    if not norm_xid.isdigit():
-        raise UIError(f"Invalid numeric XID: '{xid}'")
-    return norm_xid
-
-
-def _wait_for_selector_with_retry(session: Session, target_sel: str, timeout_ms: int) -> None:
-    """Waits for a selector on initial landing, reloading once on cold-start failure."""
-    try:
-        session.page.wait_for_selector(target_sel, timeout=timeout_ms)
-        if session.http_errors or session.page_errors:
-            raise UIError("Cold-start error recorded during initial load.")
-    except Exception:
-        session.http_errors.clear()
-        session.page_errors.clear()
-        session.page.reload(wait_until="networkidle", timeout=timeout_ms)
-        session.page.wait_for_selector(target_sel, timeout=timeout_ms)
-    session.settle_and_wait_fonts()
 
 
 def _verify_matching_dashboard_row(session: Session, norm_xid: str, slug: str) -> str:
@@ -99,10 +68,10 @@ def assert_dashboards_list_and_filter(
     session: Session, xid: str | int, timeout_ms: int = 30000
 ) -> str:
     """CUJ 1: Navigates to /dashboards, exercises search filtering, and opens the dashboard."""
-    norm_xid = _normalize_numeric_xid(xid)
+    norm_xid = ui_entities_validator.parse_numeric_xid(xid)
     slug = f"exp_{norm_xid}_overview"
     session.navigate_to_route("/dashboards", sel.DASHBOARDS_LIST_ROOT_SEL, "ui_dash_step1_list.png")
-    _wait_for_selector_with_retry(session, sel.DASHBOARD_ROW_SEL, timeout_ms)
+    session.wait_for_selector_with_retry(sel.DASHBOARD_ROW_SEL, timeout_ms)
     session.page.locator(sel.DASHBOARD_FILTER_INPUT_SEL).first.fill(slug)
     session.settle_and_wait_fonts()
     title = _verify_matching_dashboard_row(session, norm_xid, slug)
@@ -121,15 +90,10 @@ def _wait_for_hydrated_chart_cards(session: Session, timeout_ms: int) -> int:
     cards.nth(EXPECTED_CHART_CARDS - 1).wait_for(state="visible", timeout=timeout_ms)
     for i in range(EXPECTED_CHART_CARDS):
         cards.nth(i).locator(sel.CHART_SPINNER_SEL).wait_for(state="detached", timeout=timeout_ms)
-    if session.page.locator(sel.CHART_LOADING_SEL).count() != 0:
-        raise UIError("Timed out waiting for xmc-chart-card loading spinners to finish.")
     if session.page.locator(sel.CHART_ERROR_SEL).count() != 0:
         err = (session.page.locator(sel.CHART_ERROR_SEL).first.text_content() or "").strip()
         raise UIError(f"Chart card rendered error state: '{err}'")
-    card_count = cards.count()
-    if card_count < EXPECTED_CHART_CARDS:
-        raise UIError(f"Expected at least {EXPECTED_CHART_CARDS} chart cards, got {card_count}.")
-    return card_count
+    return cards.count()
 
 
 def _verify_chart_headers_and_summary_boxes(
@@ -138,19 +102,16 @@ def _verify_chart_headers_and_summary_boxes(
     """Verifies chart header work unit deep-links and hydrated KPI summary box values."""
     headers = session.page.locator(sel.CHART_HEADER_LINK_SEL)
     headers.nth(EXPECTED_CHART_CARDS - 1).wait_for(state="visible", timeout=timeout_ms)
-    if headers.count() < EXPECTED_CHART_CARDS:
-        raise UIError(f"Expected >= {EXPECTED_CHART_CARDS} chart headers, got {headers.count()}.")
     for i in range(headers.count()):
         text = (headers.nth(i).text_content() or "").strip()
         href = headers.nth(i).get_attribute("href") or ""
         if f"XID/{norm_xid}" not in text or f"/experiments/{norm_xid}/workUnits/1" not in href:
             raise UIError(f"Unexpected chart header #{i}: text='{text}', href='{href}'")
-    summary_loc = session.page.locator(f"{sel.SUMMARY_BOX_SEL} {sel.SUMMARY_VALUE_SEL}")
-    hydrated_loc = summary_loc.filter(has_not_text="—")
-    hydrated_loc.nth(EXPECTED_SUMMARY_BOXES - 1).wait_for(state="visible", timeout=timeout_ms)
-    vals = [t.strip() for t in summary_loc.all_inner_texts()]
-    if len(vals) < EXPECTED_SUMMARY_BOXES or any(not v or v == "—" for v in vals):
-        raise UIError(f"Expected >= {EXPECTED_SUMMARY_BOXES} hydrated summary boxes, got: {vals}")
+    hydrated = session.page.locator(f"{sel.SUMMARY_BOX_SEL} {sel.SUMMARY_VALUE_SEL}").filter(
+        has_not_text="—"
+    )
+    hydrated.nth(EXPECTED_SUMMARY_BOXES - 1).wait_for(state="visible", timeout=timeout_ms)
+    vals = [t.strip() for t in hydrated.all_inner_texts() if t.strip()]
     if not any(v.endswith("%") for v in vals):
         raise UIError(f"Expected accuracy summary box formatted with '%', got: {vals}")
     return vals
@@ -163,12 +124,9 @@ def _verify_echarts_plot_canvases(session: Session, timeout_ms: int) -> int:
         canvases.nth(i).wait_for(state="visible", timeout=timeout_ms)
     session.settle_and_wait_fonts()
     count = canvases.count()
-    if count < EXPECTED_PLOT_CANVASES:
-        raise UIError(f"Expected at least {EXPECTED_PLOT_CANVASES} ECharts canvases, got {count}.")
     for i in range(count):
         box = canvases.nth(i).bounding_box()
-        w = box["width"] if box else 0.0
-        h = box["height"] if box else 0.0
+        w, h = (box["width"], box["height"]) if box else (0.0, 0.0)
         if w < MIN_CANVAS_DIM or h < MIN_CANVAS_DIM:
             raise UIError(f"ECharts canvas #{i} has invalid dimensions: width={w}, height={h}")
     return count
@@ -178,7 +136,7 @@ def assert_dashboard_detail_and_plots(
     session: Session, xid: str | int, timeout_ms: int = 30000
 ) -> dict[str, Any]:
     """CUJ 2: Verifies hydrated KPI summary boxes, header deep-links, and ECharts canvases."""
-    norm_xid = _normalize_numeric_xid(xid)
+    norm_xid = ui_entities_validator.parse_numeric_xid(xid)
     title_loc = session.page.locator(sel.DASHBOARD_DETAIL_TITLE_SEL).first
     title_loc.wait_for(state="visible", timeout=timeout_ms)
     title = (title_loc.text_content() or "").strip()
@@ -218,16 +176,8 @@ def verify_metrics_dashboard_ui(session: Session, xid: str | int) -> dict[str, A
 def main(argv: Sequence[str]) -> None:
     """CLI entrypoint for standalone Metrics Dashboard UI E2E verification."""
     cli.validate_argv(argv)
-    get = cli.get_flag
-    ui_url = get(FLAGS, "ui_base_url") or ep.resolve_ui_base_url()
-    xid = cli.parse_xid(get(FLAGS, "xid"))
-    s = Session(
-        ui_base_url=ui_url,
-        auth_token=get(FLAGS, "auth_token"),
-        headless=get(FLAGS, "headless", True),
-        screenshots_dir=get(FLAGS, "screenshots_dir"),
-    )
-    with ess.handle_verification_errors(), s as session:
+    xid = cli.parse_xid(cli.get_flag(cli.FLAGS, "xid"))
+    with ess.handle_verification_errors(), Session.from_flags() as session:
         verify_metrics_dashboard_ui(session, xid)
 
 

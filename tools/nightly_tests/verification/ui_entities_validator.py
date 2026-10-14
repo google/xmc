@@ -22,12 +22,22 @@ import urllib.parse
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from tools.nightly_tests.verification import endpoint_resolution, verifier_cli
+
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 
 class UIVerificationError(AssertionError):
     """Raised when an assertion against the Web UI DOM or state fails."""
+
+
+def parse_numeric_xid(xid: str | int | None) -> str:
+    """Validates and normalizes an experiment XID string to digits."""
+    norm_xid = verifier_cli.parse_xid(str(xid or ""), required=False)
+    if not norm_xid.isdigit():
+        raise UIVerificationError(f"Invalid numeric XID: '{xid}'")
+    return norm_xid
 
 
 DEFAULT_SCREENSHOTS_DIR: str = "/tmp/xmc_screenshots"
@@ -89,6 +99,17 @@ class XMCUIBrowserSession:
     def __exit__(self, *args: Any) -> None:
         """Closes the Playwright session upon exiting the context manager."""
         self.close()
+
+    @classmethod
+    def from_flags(cls, flags_obj: Any = verifier_cli.FLAGS) -> XMCUIBrowserSession:
+        """Constructs an XMCUIBrowserSession from CLI flags and environment defaults."""
+        get = verifier_cli.get_flag
+        return cls(
+            ui_base_url=get(flags_obj, "ui_base_url") or endpoint_resolution.resolve_ui_base_url(),
+            auth_token=get(flags_obj, "auth_token"),
+            headless=get(flags_obj, "headless", True),
+            screenshots_dir=get(flags_obj, "screenshots_dir"),
+        )
 
     def _build_auth_cookies(self) -> list[dict[str, Any]]:
         """Builds domain-scoped authentication cookies for the browser context.
@@ -235,6 +256,19 @@ class XMCUIBrowserSession:
         except Exception:
             pass
         self.page.wait_for_timeout(timeout_ms)
+
+    def wait_for_selector_with_retry(self, selector: str, timeout_ms: int = 30000) -> None:
+        """Waits for a selector on initial landing, reloading once on cold-start failure."""
+        try:
+            self.page.wait_for_selector(selector, timeout=timeout_ms)
+            if self.http_errors or self.page_errors:
+                raise UIVerificationError("Cold-start error recorded during initial load.")
+        except Exception:
+            self.http_errors.clear()
+            self.page_errors.clear()
+            self.page.reload(wait_until="networkidle", timeout=timeout_ms)
+            self.page.wait_for_selector(selector, timeout=timeout_ms)
+        self.settle_and_wait_fonts()
 
     def take_screenshot(self, filename: str, full_page: bool = True) -> str:
         """Captures a diagnostic screenshot of the current page state.

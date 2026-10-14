@@ -57,13 +57,8 @@ def _verify_metrics_and_dashboard(_stub: Any, xid: str) -> None:
         dashboard_id=f"exp_{xid}_overview",
         min_hydrated_points=1,
     )
-    if ui_url := verifier_cli.get_flag(verifier_cli.FLAGS, "ui_base_url"):
-        with metrics_dashboard_ui_verify.Session(
-            ui_base_url=ui_url,
-            auth_token=verifier_cli.get_flag(verifier_cli.FLAGS, "auth_token"),
-            headless=verifier_cli.get_flag(verifier_cli.FLAGS, "headless", True),
-            screenshots_dir=verifier_cli.get_flag(verifier_cli.FLAGS, "screenshots_dir"),
-        ) as session:
+    if verifier_cli.get_flag(verifier_cli.FLAGS, "ui_base_url"):
+        with metrics_dashboard_ui_verify.Session.from_flags() as session:
             metrics_dashboard_ui_verify.verify_metrics_dashboard_ui(session, xid)
 
 

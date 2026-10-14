@@ -614,6 +614,22 @@ class UIEntitiesValidatorTest(unittest.TestCase):
             session.assert_no_runtime_errors("banner_err")
         self.assertIn("Backend unreachable", str(ctx.exception))
 
+    def test_parse_numeric_xid_and_from_flags(self) -> None:
+        self.assertEqual(ui_entities_validator.parse_numeric_xid("experiments/42"), "42")
+        with self.assertRaises(ui_entities_validator.UIVerificationError):
+            ui_entities_validator.parse_numeric_xid("invalid-xid")
+        fake_flags = mock.MagicMock(
+            ui_base_url="https://xmc.example.com",
+            auth_token="tok-1",
+            headless=False,
+            screenshots_dir="/tmp/s",
+        )
+        s = ui_entities_validator.XMCUIBrowserSession.from_flags(fake_flags)
+        self.assertEqual(s.ui_base_url, "https://xmc.example.com")
+        self.assertEqual(s.auth_token, "tok-1")
+        self.assertFalse(s.headless)
+        self.assertEqual(s.screenshots_dir, "/tmp/s")
+
 
 if __name__ == "__main__":
     unittest.main()

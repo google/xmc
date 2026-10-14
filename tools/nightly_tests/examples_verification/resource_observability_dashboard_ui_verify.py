@@ -20,10 +20,7 @@ import re
 from collections.abc import Sequence
 from typing import Any, TypeAlias
 
-from absl import flags
-
 from tools.nightly_tests.verification import (
-    endpoint_resolution as ep,
     ess_session as ess,
     ui_css_selectors as sel,
     ui_entities_validator,
@@ -32,11 +29,7 @@ from tools.nightly_tests.verification import (
     xmc_entities_validator,
 )
 
-FLAGS = flags.FLAGS
-flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI", allow_override=True)
-flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token", allow_override=True)
-flags.DEFINE_bool("headless", True, "Run browser in headless mode", allow_override=True)
-flags.DEFINE_string("screenshots_dir", None, "Diagnostic screenshots dir", allow_override=True)
+FLAGS = cli.FLAGS
 
 EXPECTED_CLUSTER_QUEUES = ("cpu-cluster-queue", "gpu-cluster-queue", "tpu-cluster-queue")
 EXPECTED_FIRST_CARD_FLAVOR, EXPECTED_RUNNING_POS = "cpu", "N/A - running"
@@ -49,19 +42,6 @@ def _resolve_cluster_queue(expected_queue: str | None) -> str:
     """Resolves a submit queue or cluster queue name to its rendered cluster queue title."""
     cq = expected_queue or EXPECTED_CLUSTER_QUEUES[0]
     return cq if cq.endswith("-cluster-queue") else cq.replace("-queue", "-cluster-queue")
-
-
-def _wait_for_queue_cards_with_retry(session: Session, timeout_ms: int) -> None:
-    """Waits for queue cards to render, reloading once if initial load hit a cold-start 500."""
-    try:
-        session.page.wait_for_selector(sel.QUEUE_CARD_SEL, timeout=5000)
-        if session.http_errors:
-            raise UIError("Cold-start HTTP error recorded during initial load.")
-    except Exception:
-        session.http_errors.clear()
-        session.page.reload(wait_until="networkidle", timeout=timeout_ms)
-        session.page.wait_for_selector(sel.QUEUE_CARD_SEL, timeout=timeout_ms)
-    session.settle_and_wait_fonts()
 
 
 def _extract_and_verify_queue_titles(session: Session, expected_q: str | None) -> list[str]:
@@ -77,7 +57,7 @@ def _extract_and_verify_queue_titles(session: Session, expected_q: str | None) -
 
 def assert_queue_cards(session: Session, expected_queue: str | None = None) -> list[str]:
     """Asserts that cluster queue cards and quota flavors render on /resources."""
-    _wait_for_queue_cards_with_retry(session, 30000)
+    session.wait_for_selector_with_retry(sel.QUEUE_CARD_SEL, 30000)
     titles = _extract_and_verify_queue_titles(session, expected_queue)
     first_card = session.page.locator(sel.QUEUE_CARD_SEL).first
     flavor = (first_card.locator(sel.FLAVOR_NAME_SEL).first.text_content() or "").strip()
@@ -124,8 +104,7 @@ def _verify_work_units_in_jobs_table(session: Session, cq: str, alt: str, xid: s
     """Polls the Jobs in the Queue table until all 3 work units appear with valid positions."""
     if not xid:
         return
-    if not (norm_xid := cli.parse_xid(str(xid), required=False)).isdigit():
-        raise UIError(f"Invalid numeric XID: '{xid}'")
+    norm_xid = ui_entities_validator.parse_numeric_xid(xid)
     for attempt in range(12):
         pos = _collect_xid_work_unit_positions(session, norm_xid)
         vals = [pos.get(w, "") for w in EXPECTED_WORK_UNITS]
@@ -189,8 +168,6 @@ def assert_smart_resource_finder_and_predictability(
 ) -> str:
     """Exercises Smart Resource Finder controls, predictability metrics, and timeframe toggles."""
     session.page.wait_for_selector(sel.PREDICTABILITY_EMPTY_SEL, timeout=15000)
-    if session.page.locator(sel.PREDICTABILITY_EMPTY_SEL).count() == 0:
-        raise UIError(f"Missing {sel.PREDICTABILITY_EMPTY_SEL}.")
     resource_name = _select_primary_resource(session, 15000)
     for tf in VELOCITY_TIMEFRAMES:
         session.page.locator(sel.VELOCITY_PILL_SEL_TMPL.format(tf=tf)).first.click()
@@ -239,15 +216,8 @@ def main(argv: Sequence[str]) -> None:
     """CLI entrypoint for standalone ROD UI E2E verification."""
     cli.validate_argv(argv)
     get = cli.get_flag
-    ui_url = get(FLAGS, "ui_base_url") or ep.resolve_ui_base_url()
     xid = cli.parse_xid(get(FLAGS, "xid"), required=False) or None
-    s = Session(
-        ui_base_url=ui_url,
-        auth_token=get(FLAGS, "auth_token"),
-        headless=get(FLAGS, "headless", True),
-        screenshots_dir=get(FLAGS, "screenshots_dir"),
-    )
-    with ess.handle_verification_errors(), s as session:
+    with ess.handle_verification_errors(), Session.from_flags(FLAGS) as session:
         try:
             verify_resource_dashboard_ui(session, get(FLAGS, "expected_queue"), xid)
         finally:

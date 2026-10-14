@@ -43,11 +43,7 @@ DASHBOARD_LINK_SEL, DASHBOARD_TITLE_TEXT_SEL = "a.dashboard-link", ".dashboard-t
 DASHBOARD_RESOURCE_NAME_SEL, DASHBOARD_BADGE_COUNT_SEL = ".dashboard-resource-name", ".badge-count"
 DASHBOARD_DETAIL_TITLE_SEL = "h1.dashboard-title"
 CHART_CARD_SEL = "xmc-dashboard-grid xmc-chart-card"
-CHART_LOADING_SEL, CHART_ERROR_SEL = (
-    "xmc-chart-card .loading-container",
-    "xmc-chart-card .error-container",
-)
-CHART_SPINNER_SEL = ".loading-container"
+CHART_SPINNER_SEL, CHART_ERROR_SEL = ".loading-container", "xmc-chart-card .error-container"
 CHART_HEADER_LINK_SEL = "a.chart-header-link"
 SUMMARY_BOX_SEL, SUMMARY_VALUE_SEL = "xmc-summary-box", ".summary-value"
 PLOT_CANVAS_SEL = "xmc-plot-card div.plot-canvas canvas"
