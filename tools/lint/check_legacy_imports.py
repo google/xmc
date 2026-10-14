@@ -98,7 +98,7 @@ LINE_METRICS = (
     LineMetric(
         name="proto_third_party_paths",
         path_regex=r"(\.proto|(^|/)BUILD\.bazel)$",
-        line_regex=r'(^import\s+"third_party/|import_prefix\s*=\s*"third_party/)',
+        line_regex=r'(^import\s+"third_party/|import_prefix\s*=\s*"third_party/|"Mxmanager_cloud/)',
     ),
     LineMetric(
         name="helm_google3_flags",
@@ -116,8 +116,8 @@ LINE_METRICS = (
     ),
     LineMetric(
         name="python_legacy_paths",
-        path_regex=r"\.py$",
-        line_regex=r"third_party[./](xmanager_cloud|javascript)",
+        path_regex=r"\.(py|sh)$",
+        line_regex=r"third_party[./](xmanager_cloud|javascript)|_virtual_imports/.*/third_party",
     ),
 )
 

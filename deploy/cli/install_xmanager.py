@@ -19,6 +19,7 @@ import argparse
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,14 @@ import venv
 from pathlib import Path
 
 MIN_GIT_VERSION = (2, 25)
+DASHBOARD_BAZEL_TARGETS = (
+    "//api/protos/dashboard:dashboard_messages_py_proto",
+    "//api/protos/dashboard:dashboard_service_py_proto",
+)
+DASHBOARD_VIRTUAL_IMPORT_TARGETS = (
+    "dashboard_messages_proto",
+    "dashboard_service_proto",
+)
 
 
 def error_exit(msg: str) -> None:
@@ -168,6 +177,14 @@ def parse_args(
         default=default_venv,
         help="Virtual environment target directory (default: ./venv)",
     )
+    parser.add_argument(
+        "--dashboard-protos-only",
+        action="store_true",
+        help=(
+            "Only compile and install Bazel-generated Dashboard Service "
+            "Python protobuf modules into the virtual environment."
+        ),
+    )
     return parser.parse_args(args)
 
 
@@ -180,7 +197,7 @@ def setup_virtualenv(venv_dir: Path) -> Path:
     Returns:
         Path to python executable inside virtual environment.
     """
-    if not venv_dir.exists():
+    if not (venv_dir / "bin" / "python3").exists() and not (venv_dir / "bin" / "python").exists():
         sys.stdout.write(f"Creating virtual environment at {venv_dir}...\n")
         venv.create(venv_dir, with_pip=True)
 
@@ -435,30 +452,144 @@ def verify_imports(venv_python: Path) -> None:
         )
 
 
-def main(raw_args: list[str] | None = None) -> None:
-    """Main execution function for install_xmanager script.
+def get_venv_site_packages(venv_python: Path) -> Path:
+    """Resolve the purelib site-packages directory for a virtual environment.
+
+    Uses sysconfig.get_path('purelib') against the venv interpreter because
+    site.getsitepackages() can report the base prefix instead.
 
     Args:
-        raw_args: Optional CLI arguments list for parameter overrides.
+        venv_python: Path to virtualenv python executable.
+
+    Returns:
+        Resolved Path to the virtual environment site-packages directory.
     """
-    check_prerequisites()
-    check_git_version()
-
-    args = parse_args(raw_args)
-    venv_dir = Path(args.venv).resolve()
-
-    sys.stdout.write("=== Configuration ===\n")
-    sys.stdout.write(f"Protos Location: {args.protos_loc}\n")
-    sys.stdout.write(
-        "XManager Repo:   https://github.com/google-deepmind/xmanager.git "
-        f"(branch: {args.xmanager_branch})\n"
+    res = subprocess.run(
+        [
+            str(venv_python),
+            "-c",
+            "import sysconfig; print(sysconfig.get_path('purelib'))",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
     )
-    sys.stdout.write(f"Venv Target:     {venv_dir}\n")
-    sys.stdout.write("=====================\n")
+    return Path(res.stdout.strip())
 
-    venv_python = setup_virtualenv(venv_dir)
+
+def build_bazel_dashboard_protos(repo_root: Path) -> Path:
+    """Compile Dashboard Service Python protobuf targets with Bazel.
+
+    Queries `bazel info bazel-bin` rather than assuming `repo_root / bazel-bin`
+    so custom `--symlink_prefix` or `--output_base` configurations work.
+
+    Args:
+        repo_root: Path to the XMC repository root.
+
+    Returns:
+        Path to the Bazel `_virtual_imports` directory for dashboard protos.
+
+    Raises:
+        SystemExit: If the `bazel` binary is not found in PATH.
+    """
+    if not shutil.which("bazel"):
+        error_exit("bazel is required to build dashboard protos but was not found in PATH.")
+    sys.stdout.write("Compiling Dashboard Service Python protobuf modules with Bazel...\n")
+    subprocess.run(
+        ["bazel", "build", *DASHBOARD_BAZEL_TARGETS],
+        cwd=repo_root,
+        check=True,
+    )
+    res = subprocess.run(
+        ["bazel", "info", "bazel-bin"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    bazel_bin = Path(res.stdout.strip())
+    return bazel_bin / "api" / "protos" / "dashboard" / "_virtual_imports"
+
+
+def _make_tree_user_writable(target_dir: Path) -> None:
+    """Grant user write permission recursively across a directory tree.
+
+    Bazel leaves build outputs read-only; adding user write permissions
+    after each copy allows subsequent copies or re-runs to overwrite files.
+
+    Args:
+        target_dir: Root directory to make user-writable.
+    """
+    if not target_dir.exists():
+        return
+    target_dir.chmod(target_dir.stat().st_mode | stat.S_IWUSR)
+    for path in target_dir.rglob("*"):
+        path.chmod(path.stat().st_mode | stat.S_IWUSR)
+
+
+def copy_virtual_imports_to_site_packages(
+    virtual_imports_dir: Path,
+    site_packages_dir: Path,
+) -> None:
+    """Copy Bazel `_virtual_imports` dashboard protos into venv site-packages.
+
+    Clears only `xmanager_cloud/dashboard_service/proto` before copying so
+    re-runs after a proto change cannot leave orphaned modules behind while
+    preserving sibling `xmanager_cloud` packages installed from XManager.
+
+    Args:
+        virtual_imports_dir: Path to Bazel `dashboard/_virtual_imports`.
+        site_packages_dir: Path to the target venv `site-packages` directory.
+
+    Raises:
+        SystemExit: If expected `_virtual_imports` proto directories are missing.
+    """
+    sys.stdout.write(
+        "Copying generated protobuf modules to virtual environment "
+        f"site-packages: {site_packages_dir}...\n"
+    )
+    dest_pkg = site_packages_dir / "xmanager_cloud"
+    dest_service_dir = dest_pkg / "dashboard_service"
+    dashboard_proto_dir = dest_service_dir / "proto"
+    if dest_service_dir.exists():
+        dest_pkg.chmod(dest_pkg.stat().st_mode | stat.S_IWUSR)
+        dest_service_dir.chmod(dest_service_dir.stat().st_mode | stat.S_IWUSR)
+    if dashboard_proto_dir.exists():
+        _make_tree_user_writable(dashboard_proto_dir)
+        shutil.rmtree(dashboard_proto_dir)
+    dest_pkg.mkdir(parents=True, exist_ok=True)
+    dest_pkg.chmod(dest_pkg.stat().st_mode | stat.S_IWUSR)
+
+    for proto_target in DASHBOARD_VIRTUAL_IMPORT_TARGETS:
+        src_service_dir = (
+            virtual_imports_dir / proto_target / "xmanager_cloud" / "dashboard_service"
+        )
+        if not src_service_dir.is_dir():
+            error_exit(f"Bazel virtual imports directory not found: {src_service_dir}")
+        shutil.copytree(src_service_dir, dest_service_dir, dirs_exist_ok=True)
+        _make_tree_user_writable(dest_service_dir)
+
+
+def install_bazel_dashboard_protos(venv_python: Path, repo_root: Path) -> None:
+    """Build and install Bazel Dashboard Service Python protos into a venv.
+
+    Args:
+        venv_python: Path to virtualenv python executable.
+        repo_root: Path to the XMC repository root.
+    """
+    virtual_imports_dir = build_bazel_dashboard_protos(repo_root)
+    site_packages_dir = get_venv_site_packages(venv_python)
+    copy_virtual_imports_to_site_packages(virtual_imports_dir, site_packages_dir)
+
+
+def _run_full_install(args: argparse.Namespace, venv_python: Path) -> None:
+    """Clone XManager, compile all service protos, and install the package.
+
+    Args:
+        args: Parsed CLI arguments.
+        venv_python: Path to virtualenv python executable.
+    """
     install_dependencies(venv_python)
-
     with tempfile.TemporaryDirectory() as temp_dir_str:
         temp_dir = Path(temp_dir_str)
         xmanager_dir = temp_dir / "xmanager"
@@ -478,6 +609,37 @@ def main(raw_args: list[str] | None = None) -> None:
         compile_protos(venv_python, xmanager_dir, googleapis_dir)
         install_xmanager_package(venv_python, xmanager_dir)
         verify_imports(venv_python)
+
+
+def main(raw_args: list[str] | None = None) -> None:
+    """Main execution function for install_xmanager script.
+
+    Args:
+        raw_args: Optional CLI arguments list for parameter overrides.
+    """
+    args = parse_args(raw_args)
+    venv_dir = Path(args.venv).resolve()
+
+    if args.dashboard_protos_only:
+        repo_root = (Path(__file__).resolve().parent / ".." / "..").resolve()
+        venv_python = setup_virtualenv(venv_dir)
+        install_bazel_dashboard_protos(venv_python, repo_root)
+        return
+
+    check_prerequisites()
+    check_git_version()
+
+    sys.stdout.write("=== Configuration ===\n")
+    sys.stdout.write(f"Protos Location: {args.protos_loc}\n")
+    sys.stdout.write(
+        "XManager Repo:   https://github.com/google-deepmind/xmanager.git "
+        f"(branch: {args.xmanager_branch})\n"
+    )
+    sys.stdout.write(f"Venv Target:     {venv_dir}\n")
+    sys.stdout.write("=====================\n")
+
+    venv_python = setup_virtualenv(venv_dir)
+    _run_full_install(args, venv_python)
 
     sys.stdout.write("==================================================\n")
     sys.stdout.write("Installation complete!\n")

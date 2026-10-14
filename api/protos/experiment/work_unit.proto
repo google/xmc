@@ -23,6 +23,7 @@ import "xmanager_cloud/experiment_state_server/proto/resources.proto";
 import "xmanager_cloud/experiment_state_server/proto/url.proto";
 import "xmanager_cloud/experiment_state_server/proto/work_unit_execution.proto";
 
+option go_package = "xmanager_cloud/api/protos/experiment";
 option java_multiple_files = true;
 
 message WorkUnit {

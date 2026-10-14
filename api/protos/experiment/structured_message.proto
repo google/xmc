@@ -19,6 +19,7 @@ import "google/api/field_behavior.proto";
 import "google/protobuf/timestamp.proto";
 import "xmanager_cloud/experiment_state_server/proto/url.proto";
 
+option go_package = "xmanager_cloud/api/protos/experiment";
 option java_multiple_files = true;
 
 message StructuredMessage {
