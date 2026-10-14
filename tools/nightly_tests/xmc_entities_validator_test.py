@@ -1316,31 +1316,35 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                     poll_interval_sec=0,
                 )
 
-    def test_validate_multikueue_execution_metadata(self) -> None:
-        def _make_cluster(
-            name: str, project: str = "test-proj", location: str = "us-central1"
-        ) -> Any:
-            return SimpleNamespace(cluster_name=name, project=project, location=location)
-
-        valid_metadata = SimpleNamespace(
-            multi_kueue_cluster_name="xmc-nightly-worker-1",
-            executing_cluster=_make_cluster("xmc-nightly-worker-1"),
-            management_cluster=_make_cluster("xmc-v2-nightly"),
+    def _make_multikueue_meta(
+        self,
+        worker: str = "xmc-nightly-worker-1",
+        exec_name: str = "xmc-nightly-worker-1",
+        mgmt_name: str = "xmc-v2-nightly",
+        exec_loc: str = "us-central1",
+    ) -> Any:
+        return SimpleNamespace(
+            multi_kueue_cluster_name=worker,
+            executing_cluster=SimpleNamespace(
+                cluster_name=exec_name, project="test-proj", location=exec_loc
+            ),
+            management_cluster=SimpleNamespace(
+                cluster_name=mgmt_name, project="test-proj", location="us-central1"
+            ),
         )
+
+    def test_validate_multikueue_execution_metadata_cached(self) -> None:
         wu = SimpleNamespace(
             name="experiments/50/workUnits/1",
-            current_work_unit_execution=SimpleNamespace(metadata=valid_metadata),
-            HasField=lambda f: False,
+            current_work_unit_execution=SimpleNamespace(metadata=self._make_multikueue_meta()),
         )
         stub = mock.MagicMock()
         stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu])
-        stub.GetCurrentWorkUnitExecution.return_value = SimpleNamespace(metadata=valid_metadata)
-
-        results = xmc_entities_validator.validate_multikueue_execution_metadata(
+        res = xmc_entities_validator.validate_multikueue_execution_metadata(
             stub, "50", expected_worker_cluster="xmc-nightly-worker-1"
         )
         self.assertEqual(
-            results,
+            res,
             [
                 {
                     "work_unit": "experiments/50/workUnits/1",
@@ -1349,50 +1353,89 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 }
             ],
         )
+        stub.GetCurrentWorkUnitExecution.assert_not_called()
+
+    def test_validate_multikueue_execution_metadata_rpc_fallback(self) -> None:
+        wu = SimpleNamespace(
+            name="experiments/50/workUnits/1",
+            current_work_unit_execution=SimpleNamespace(
+                metadata=SimpleNamespace(multi_kueue_cluster_name="")
+            ),
+        )
+        stub = mock.MagicMock()
+        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu])
+        stub.GetCurrentWorkUnitExecution.return_value = SimpleNamespace(
+            metadata=self._make_multikueue_meta()
+        )
+        res = xmc_entities_validator.validate_multikueue_execution_metadata(
+            stub, "50", expected_worker_cluster="xmc-nightly-worker-1"
+        )
+        self.assertEqual(res[0]["executing"], "xmc-nightly-worker-1")
         stub.GetCurrentWorkUnitExecution.assert_called_once()
 
-        with self.assertRaisesRegex(AssertionError, "invalid MultiKueue metadata"):
-            xmc_entities_validator.validate_multikueue_execution_metadata(
-                stub, "50", expected_worker_cluster="wrong-cluster"
-            )
-
-        wu_same_cluster = SimpleNamespace(
-            name="experiments/50/workUnits/2",
-            current_work_unit_execution=SimpleNamespace(
-                metadata=SimpleNamespace(
-                    multi_kueue_cluster_name="xmc-v2-nightly",
-                    executing_cluster=_make_cluster("xmc-v2-nightly"),
-                    management_cluster=_make_cluster("xmc-v2-nightly"),
-                )
+    def test_validate_multikueue_execution_metadata_invalid_cases(self) -> None:
+        cases = [
+            ("wrong_cluster", self._make_multikueue_meta(), "wrong-cluster", "invalid MultiKueue"),
+            (
+                "same_cluster",
+                self._make_multikueue_meta("c1", "c1", "c1"),
+                "c1",
+                "invalid MultiKueue",
             ),
-        )
-        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu_same_cluster])
-        with self.assertRaisesRegex(AssertionError, "invalid MultiKueue metadata"):
-            xmc_entities_validator.validate_multikueue_execution_metadata(
-                stub, "50", expected_worker_cluster="xmc-v2-nightly"
-            )
-
-        wu_missing_location = SimpleNamespace(
-            name="experiments/50/workUnits/3",
-            current_work_unit_execution=SimpleNamespace(
-                metadata=SimpleNamespace(
-                    multi_kueue_cluster_name="xmc-nightly-worker-1",
-                    executing_cluster=_make_cluster("xmc-nightly-worker-1", location=""),
-                    management_cluster=_make_cluster("xmc-v2-nightly"),
-                )
+            (
+                "missing_loc",
+                self._make_multikueue_meta(exec_loc=""),
+                "xmc-nightly-worker-1",
+                "missing executing_cluster",
             ),
-        )
-        stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu_missing_location])
-        with self.assertRaisesRegex(AssertionError, "missing executing_cluster"):
-            xmc_entities_validator.validate_multikueue_execution_metadata(
-                stub, "50", expected_worker_cluster="xmc-nightly-worker-1"
-            )
+        ]
+        for label, meta, expected, err_pat in cases:
+            with self.subTest(case=label), self.assertRaisesRegex(AssertionError, err_pat):
+                wu = SimpleNamespace(
+                    name="experiments/50/workUnits/1",
+                    current_work_unit_execution=SimpleNamespace(metadata=meta),
+                )
+                stub = mock.MagicMock()
+                stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[wu])
+                xmc_entities_validator.validate_multikueue_execution_metadata(stub, "50", expected)
 
+    def test_validate_multikueue_execution_metadata_empty_work_units(self) -> None:
+        stub = mock.MagicMock()
         stub.ListWorkUnits.return_value = SimpleNamespace(work_units=[])
         with self.assertRaisesRegex(AssertionError, "No WorkUnits found for experiment 50"):
             xmc_entities_validator.validate_multikueue_execution_metadata(
                 stub, "50", expected_worker_cluster="xmc-nightly-worker-1"
             )
+
+    def test_validate_multikueue_k8s_delegation_success(self) -> None:
+        responses = [
+            SimpleNamespace(returncode=0, stdout="kueue.x-k8s.io/multikueue", stderr=""),
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout="event/xmc-operation-50-1.1234", stderr=""),
+        ]
+        with mock.patch("subprocess.run", side_effect=responses) as mock_run:
+            xmc_entities_validator.validate_multikueue_k8s_delegation("50", "multikueue-cpu-queue")
+            self.assertEqual(mock_run.call_count, 3)
+
+    def test_validate_multikueue_k8s_delegation_failures(self) -> None:
+        def _ok(out: str) -> Any:
+            return SimpleNamespace(returncode=0, stdout=out, stderr="")
+
+        fail = SimpleNamespace(returncode=1, stdout="", stderr="connection refused")
+        cases = [
+            ("kubectl_err", [fail], "rc=1.*connection refused"),
+            ("bad_managed_by", [_ok("kueue.x-k8s.io/jobset")], "Expected JobSets managedBy"),
+            ("local_pods", [_ok("kueue.x-k8s.io/multikueue"), _ok("pod/p-0")], "Expected 0 local"),
+            (
+                "no_worker",
+                [_ok("kueue.x-k8s.io/multikueue"), _ok(""), _ok("none")],
+                "Missing worker",
+            ),
+        ]
+        for label, side_effect, err_pat in cases:
+            with self.subTest(case=label), mock.patch("subprocess.run", side_effect=side_effect):
+                with self.assertRaisesRegex(AssertionError, err_pat):
+                    xmc_entities_validator.validate_multikueue_k8s_delegation("50")
 
 
 if __name__ == "__main__":

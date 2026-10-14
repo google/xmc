@@ -14,34 +14,24 @@
 
 apiVersion: v1
 kind: Service
-metadata:
-  name: multikueue-worker
-  namespace: kueue-system
-  labels: {app.kubernetes.io/name: multikueue-worker}
+metadata: {name: multikueue-worker, namespace: kueue-system, labels: {app.kubernetes.io/name: multikueue-worker}}
 spec:
   type: ClusterIP
   selector: {app.kubernetes.io/name: multikueue-worker}
-  ports:
-    - {name: https, port: 6443, targetPort: 6443, protocol: TCP}
+  ports: [{name: https, port: 6443, targetPort: 6443, protocol: TCP}]
 ---
 apiVersion: apps/v1
 kind: StatefulSet
-metadata:
-  name: multikueue-worker
-  namespace: kueue-system
-  labels: {app.kubernetes.io/name: multikueue-worker}
+metadata: {name: multikueue-worker, namespace: kueue-system, labels: {app.kubernetes.io/name: multikueue-worker}}
 spec:
   serviceName: multikueue-worker
   replicas: 1
-  selector:
-    matchLabels: {app.kubernetes.io/name: multikueue-worker}
+  selector: {matchLabels: {app.kubernetes.io/name: multikueue-worker}}
   template:
-    metadata:
-      labels: {app.kubernetes.io/name: multikueue-worker}
+    metadata: {labels: {app.kubernetes.io/name: multikueue-worker}}
     spec:
       automountServiceAccountToken: false
-      securityContext:
-        seccompProfile: {type: RuntimeDefault}
+      securityContext: {seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: k3s-server
           image: rancher/k3s:v1.32.3-k3s1
@@ -53,22 +43,13 @@ spec:
             - --tls-san=multikueue-worker.kueue-system.svc.cluster.local
             - --write-kubeconfig=/var/lib/rancher/k3s/k3s.yaml
             - --write-kubeconfig-mode=0644
-          ports:
-            - {containerPort: 6443, name: https, protocol: TCP}
+          ports: [{containerPort: 6443, name: https, protocol: TCP}]
+          # trivy:ignore:KSV-0017 Nightly in-cluster k3s worker requires privileged execution for nested kubelet/containerd.
           securityContext: {privileged: true, readOnlyRootFilesystem: false}
           readinessProbe:
-            exec:
-              command: [kubectl, --kubeconfig=/var/lib/rancher/k3s/k3s.yaml, wait, --for=condition=Ready, node/multikueue-worker-0, --timeout=1s]
+            exec: {command: [kubectl, --kubeconfig=/var/lib/rancher/k3s/k3s.yaml, wait, --for=condition=Ready, node/multikueue-worker-0, --timeout=1s]}
             initialDelaySeconds: 10
             periodSeconds: 5
-          resources:
-            requests: {cpu: 500m, memory: 1536Mi}
-            limits: {cpu: 2000m, memory: 3072Mi}
-          volumeMounts:
-            - {name: k3s-data, mountPath: /var/lib/rancher/k3s}
-            - {name: k3s-kubelet, mountPath: /var/lib/kubelet}
-            - {name: k3s-run, mountPath: /run}
-      volumes:
-        - {name: k3s-data, emptyDir: {}}
-        - {name: k3s-kubelet, emptyDir: {}}
-        - {name: k3s-run, emptyDir: {}}
+          resources: {requests: {cpu: 500m, memory: 1536Mi}, limits: {cpu: 2000m, memory: 3072Mi}}
+          volumeMounts: [{name: k3s-data, mountPath: /var/lib/rancher/k3s}, {name: k3s-kubelet, mountPath: /var/lib/kubelet}, {name: k3s-run, mountPath: /run}]
+      volumes: [{name: k3s-data, emptyDir: {}}, {name: k3s-kubelet, emptyDir: {}}, {name: k3s-run, emptyDir: {}}]

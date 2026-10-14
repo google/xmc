@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -1282,14 +1283,13 @@ def _validate_cluster_info(cluster: Any, field: str, wu_name: str) -> str:
 
 def _validate_single_wu_multikueue_metadata(stub: Any, wu: Any, expected: str) -> dict[str, str]:
     """Validates MultiKueue execution metadata and cluster info for a single WorkUnit."""
-    has_exec = getattr(wu, "HasField", lambda f: bool(getattr(wu, f, None)))
-    req = _make_req("GetCurrentWorkUnitExecutionRequest", name=wu.name)
-    exec_pb = (
-        wu.current_work_unit_execution
-        if has_exec("current_work_unit_execution")
-        else stub.GetCurrentWorkUnitExecution(req)
-    )
-    meta = getattr(exec_pb, "metadata", None)
+    cached_exec = getattr(wu, "current_work_unit_execution", None)
+    cached_meta = getattr(cached_exec, "metadata", None)
+    if getattr(cached_meta, "multi_kueue_cluster_name", ""):
+        meta = cached_meta
+    else:
+        req = _make_req("GetCurrentWorkUnitExecutionRequest", name=wu.name)
+        meta = getattr(stub.GetCurrentWorkUnitExecution(req), "metadata", None)
     multikueue = getattr(meta, "multi_kueue_cluster_name", "")
     executing = _validate_cluster_info(
         getattr(meta, "executing_cluster", None), "executing_cluster", wu.name
@@ -1299,6 +1299,11 @@ def _validate_single_wu_multikueue_metadata(stub: Any, wu: Any, expected: str) -
     )
     if multikueue != expected or executing != expected or executing == management:
         raise AssertionError(f"WorkUnit '{wu.name}' invalid MultiKueue metadata: {meta}")
+    print(
+        f"  [✓] Verified MultiKueue metadata for {wu.name}: "
+        f"executing='{executing}', management='{management}'",
+        flush=True,
+    )
     return {"work_unit": str(wu.name), "executing": executing, "management": management}
 
 
@@ -1312,3 +1317,29 @@ def validate_multikueue_execution_metadata(
         _validate_single_wu_multikueue_metadata(stub, wu, expected_worker_cluster)
         for wu in work_units
     ]
+
+
+def _run_kubectl(args: Sequence[str]) -> str:
+    """Runs kubectl and returns stripped stdout, raising AssertionError with stderr on failure."""
+    res = subprocess.run(["kubectl", *args], capture_output=True, text=True, check=False)
+    if res.returncode != 0:
+        raise AssertionError(
+            f"kubectl {' '.join(args)} failed (rc={res.returncode}): {res.stderr.strip()}"
+        )
+    return res.stdout.strip()
+
+
+def validate_multikueue_k8s_delegation(xid: str, queue: str = "multikueue-cpu-queue") -> None:
+    """Verifies management-cluster JobSet managedBy, zero local pods, and k3s worker execution."""
+    lbl = ["-n", queue, "-l", f"xmc.google.com/experiment-id={xid}"]
+    mgrs = _run_kubectl(["get", "jobsets", *lbl, "-o=jsonpath={.items[*].spec.managedBy}"]).split()
+    if not mgrs or set(mgrs) != {"kueue.x-k8s.io/multikueue"}:
+        raise AssertionError(f"Expected JobSets managedBy multikueue for XID {xid}, got: {mgrs}")
+    if local_pods := _run_kubectl(["get", "pods", *lbl, "-o=name"]):
+        raise AssertionError(f"Expected 0 local pods for XID {xid}, got: {local_pods}")
+    k3s_kc = "--kubeconfig=/var/lib/rancher/k3s/k3s.yaml"
+    k3s_cmd = ["exec", "-n", "kueue-system", "multikueue-worker-0", "--", "kubectl", k3s_kc]
+    worker_out = _run_kubectl([*k3s_cmd, "get", "jobsets,pods,events", "-n", queue])
+    if f"xmc-operation-{xid}-" not in worker_out:
+        raise AssertionError(f"Missing worker execution evidence for XID {xid}:\n{worker_out}")
+    print(f"  [✓] Verified MultiKueue K8s delegation for XID {xid}.", flush=True)

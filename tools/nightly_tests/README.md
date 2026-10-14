@@ -37,6 +37,7 @@ The Nightly Examples E2E workflow ([`.github/workflows/nightly-examples-e2e.yml`
   - `validate_artifacts`: Polls `ListArtifacts` and verifies artifact types (`url`, `chart`, `directory`, `markdown`, etc.) and metric series names.
   - `validate_clickhouse_metrics`: Queries ClickHouse HTTP SQL (`SELECT metric_name, count(), ... FROM metrics`) to assert metric ingestion and finite float values.
   - `validate_dashboard` / `validate_dashboard_chart_data`: Queries Dashboard Service REST/gRPC endpoints to assert dashboard creation, constituent chart definitions, and `GetChartData` time-series hydration.
+  - `validate_multikueue_execution_metadata` / `validate_multikueue_k8s_delegation`: Used by [`multikueue_job_verify.py`](multikueue_job_verify.py) to assert `WorkUnitExecution.metadata` (`multi_kueue_cluster_name`, `executing_cluster`, `management_cluster`), management-cluster `JobSet` `spec.managedBy == "kueue.x-k8s.io/multikueue"` with zero local pods, and `k3s` worker execution evidence.
   - `stop_work_units`: Issues `BatchStopWorkUnits` cleanup for non-completing (`wait_for_completion=False`) workloads.
 - [`ui_entities_validator.py`](ui_entities_validator.py) & [`resource_observability_dashboard_ui_verify.py`](resource_observability_dashboard_ui_verify.py): Provide authenticated Playwright browser sessions (`XMCUIBrowserSession`), route navigation and runtime error gates (`navigate_to_route`, `assert_no_runtime_errors`), and interactive UI E2E verification for the Resource Observability Dashboard (`/resources`).
 

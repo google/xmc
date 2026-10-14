@@ -85,8 +85,8 @@ py_library(
     ],
 )
 
-py_binary(
-    name = "simple_job_verify",
+py_library(
+    name = "simple_job_verify_lib",
     srcs = ["simple_job_verify.py"],
     imports = ["../.."],
     deps = [
@@ -94,6 +94,13 @@ py_binary(
         "//tools/nightly_tests/verification:verifier_cli",
         "//tools/nightly_tests/verification:workload_verification",
     ],
+)
+
+py_binary(
+    name = "simple_job_verify",
+    srcs = ["simple_job_verify.py"],
+    imports = ["../.."],
+    deps = [":simple_job_verify_lib"],
 )
 
 py_binary(
@@ -261,7 +268,7 @@ py_binary(
     srcs = ["multikueue_job_verify.py"],
     imports = ["../.."],
     deps = [
-        ":simple_job_verify",
+        ":simple_job_verify_lib",
         ":xmc_entities_validator_lib",
         "//tools/nightly_tests/verification:verifier_cli",
         "//tools/nightly_tests/verification:workload_verification",

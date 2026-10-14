@@ -24,11 +24,7 @@ spec:
   namespaceSelector: {}
   resourceGroups:
     - coveredResources: [cpu, memory]
-      flavors:
-        - name: cpu-flavor
-          resources:
-            - {name: cpu, nominalQuota: 100000000}
-            - {name: memory, nominalQuota: 100000000Gi}
+      flavors: [{name: cpu-flavor, resources: [{name: cpu, nominalQuota: 100000000}, {name: memory, nominalQuota: 100000000Gi}]}]
 ---
 apiVersion: v1
 kind: Namespace

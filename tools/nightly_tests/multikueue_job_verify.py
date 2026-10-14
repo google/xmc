@@ -34,7 +34,9 @@ def _assert_multikueue_workload(stub: Any, xid: str) -> None:
     cluster = verifier_cli.get_flag(
         verifier_cli.FLAGS, "expected_worker_cluster", DEFAULT_WORKER_CLUSTER
     )
+    queue = verifier_cli.get_flag(verifier_cli.FLAGS, "expected_queue", DEFAULT_QUEUE)
     xmc_entities_validator.validate_multikueue_execution_metadata(stub, xid, cluster)
+    xmc_entities_validator.validate_multikueue_k8s_delegation(xid, queue)
 
 
 def main(argv: Sequence[str]) -> None:
