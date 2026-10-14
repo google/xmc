@@ -565,7 +565,7 @@ func TestCMSServer_SetComponentIntent_UnchangedIntentIsNoop(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			server := NewServer(store.NewMemoryStore())
+			server := NewServer(store.NewMemoryStore(), WithAuthorizer(NewDisabledAuthorizer()))
 			for _, req := range []*componentspb.SetComponentIntentRequest{
 				{Name: "redpanda", Spec: spec("v1.0.0", 1)},
 				{Name: "gateway", Spec: spec("v1.0.0", 3, "redpanda")},

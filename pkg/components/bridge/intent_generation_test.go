@@ -58,7 +58,7 @@ func TestReconcileComponent_IntentCarriesCRGeneration(t *testing.T) {
 func TestReconcileComponent_UnchangedIntentKeepsCMSRecord(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
-	r, err := NewReconciler(NewCMSClientAdapter(cmsserver.NewServer(ms)), nil, nil)
+	r, err := NewReconciler(NewCMSClientAdapter(cmsserver.NewServer(ms, cmsserver.WithAuthorizer(cmsserver.NewDisabledAuthorizer()))), nil, nil)
 	if err != nil {
 		t.Fatalf("NewReconciler() error = %v", err)
 	}
