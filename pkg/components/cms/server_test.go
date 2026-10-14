@@ -789,7 +789,7 @@ func TestCMSServer_DeclareClusterEpoch(t *testing.T) {
 
 func TestCMSServer_SetComponentIntent_FencedCluster(t *testing.T) {
 	ctx := context.Background()
-	server := NewServer(store.NewMemoryStore())
+	server := NewServer(store.NewMemoryStore(), WithAuthorizer(NewDisabledAuthorizer()))
 	prod := &componentspb.ClusterIdentity{Uid: "5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c01", Name: "prod", Epoch: 2}
 	if _, err := server.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: prod}); err != nil {
 		t.Fatalf("DeclareClusterEpoch() error = %v", err)
