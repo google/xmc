@@ -94,9 +94,14 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
     (state) => state.selectedStates.length > 0,
   );
 
+  /**
+   * Sets the experiment id and clears the status filter, since a selection made for one
+   * experiment should not silently narrow another. It does not fetch data.
+   */
   readonly setXid = this.updater((state, xid: string) => ({
     ...state,
     xid,
+    selectedStates: [],
   }));
 
   /** Sets the page size. It does not fetch data. */

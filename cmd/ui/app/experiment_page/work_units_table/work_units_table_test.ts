@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { TestBed } from '@angular/core/testing';
 import { MatButtonHarness } from '@angular/material/button/testing';
 import { MatSelectHarness } from '@angular/material/select/testing';
 import { MatTooltipHarness } from '@angular/material/tooltip/testing';
@@ -27,6 +28,7 @@ import { bootstrap, cleanState, getEls, setupModule } from 'app/testing/test';
 
 import { WorkUnitsTableHarness } from './testing/work_units_table_harness';
 import { WorkUnitsTable } from './work_units_table';
+import { WorkUnitsTableStore } from './work_units_table_store';
 
 const MOCK_WORK_UNITS_RESPONSE: ListWorkUnitsResponse = {
   workUnits: [
@@ -437,6 +439,19 @@ describe('WorkUnitsTable Component', () => {
         filter: '(state = "FAILED")',
         orderBy: 'state asc',
       });
+    });
+
+    it('should clear the status filter when the experiment id is set', () => {
+      const fixture = TestBed.createComponent(WorkUnitsTable);
+      fixture.componentRef.setInput('xid', '1');
+      fixture.detectChanges();
+      const store = fixture.debugElement.injector.get(WorkUnitsTableStore);
+      store.setSelectedStates(['FAILED']);
+
+      store.setXid('2');
+
+      expect(store.selectedStates()).toEqual([]);
+      fixture.destroy();
     });
 
     it('should restore the active sort header after a failed fetch recovers', async () => {
