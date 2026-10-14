@@ -22,16 +22,14 @@ from typing import Any, TypeAlias
 
 from absl import flags
 
-from tools.nightly_tests import (
-    ui_css_selectors as sel,
-    ui_entities_validator,
-    xmc_entities_validator,
-)
 from tools.nightly_tests.verification import (
     endpoint_resolution as ep,
     ess_session as ess,
+    ui_css_selectors as sel,
+    ui_entities_validator,
     verification_report as rep,
     verifier_cli as cli,
+    xmc_entities_validator,
 )
 
 FLAGS = flags.FLAGS

@@ -12,41 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# gazelle:ignore
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
-# gazelle:exclude expression_helper.go
-# gazelle:exclude filter_expression.proto
-# gazelle:exclude filter_expression.pb.go
-
-# Custom genrule to compile the AST proto to Go source with the Go plugin
-genrule(
-    name = "generate_filter_proto_go",
+proto_library(
+    name = "filter_proto",
     srcs = ["filter_expression.proto"],
-    outs = ["filter_expression.pb.go"],
-    cmd = "$(location @com_google_protobuf//:protoc) --plugin=protoc-gen-go=$(location @org_golang_google_protobuf//cmd/protoc-gen-go) -I. --go_out=$(RULEDIR)/../.. --go_opt=paths=source_relative api/filter/filter_expression.proto",
-    tools = [
-        "@com_google_protobuf//:protoc",
-        "@org_golang_google_protobuf//cmd/protoc-gen-go",
-    ],
+)
+
+go_proto_library(
+    name = "filter_go_proto",
+    importpath = "xmanager_cloud/api/filter",
+    proto = ":filter_proto",
 )
 
 go_library(
-    name = "filter_expression_go_proto",
-    srcs = [
-        "expression_helper.go",
-        ":generate_filter_proto_go",
-    ],
-    importpath = "xmanager_cloud/api/filter",  # keep
-    deps = [
-        # keep
-        "@org_golang_google_protobuf//reflect/protoreflect",
-        "@org_golang_google_protobuf//runtime/protoimpl",
-    ],
+    name = "filter",
+    srcs = ["expression_helper.go"],
+    embed = [":filter_go_proto"],
+    importpath = "xmanager_cloud/api/filter",
 )
 
 alias(
-    name = "filter",
-    actual = ":filter_expression_go_proto",
+    name = "filter_expression_go_proto",
+    actual = ":filter",
 )

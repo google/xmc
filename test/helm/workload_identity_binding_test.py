@@ -96,6 +96,7 @@ class WorkloadIdentityBindingTest(unittest.TestCase):
         """Guards the two set comparisons below from passing on an empty rendering."""
         self.assertIn("experiment-server", self.annotated)
         self.assertIn("dashboard-service-account", self.annotated)
+        self.assertIn("xmc-bridge-sa", self.annotated)
 
     def test_every_annotated_service_account_is_bound(self) -> None:
         """An annotation without a binding is what made the dashboard service unauthenticated."""

@@ -20,7 +20,7 @@ were correctly created, scheduled to the expected queue, configured with the
 expected JobSet specification, and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.simple_job_verify --xid=16
+    python3 -m tools.nightly_tests.examples_verification.simple_job_verify --xid=16
 """
 
 from __future__ import annotations
@@ -28,8 +28,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests import xmc_entities_validator
-from tools.nightly_tests.verification import verifier_cli, workload_verification
+from tools.nightly_tests.verification import (
+    verifier_cli,
+    workload_verification,
+    xmc_entities_validator,
+)
 
 # Domain assertion constants for simple_job workload
 EXPECTED_TITLE_PATTERN: str = "Demo Workload"
@@ -67,7 +70,7 @@ def _assert_work_unit_spec(
     )
 
 
-def _assert_all_work_unit_specs(stub: Any, xid: str) -> None:
+def assert_all_work_unit_specs(stub: Any, xid: str) -> None:
     """Fetches raw work units and validates protobuf specifications for all units."""
     expected_work_units = verifier_cli.resolve_expected_work_units(DEFAULT_WORK_UNITS)
     expected_queue = verifier_cli.get_flag(verifier_cli.FLAGS, "expected_queue", DEFAULT_QUEUE)
@@ -97,7 +100,7 @@ def main(argv: Sequence[str]) -> None:
         summary_title="ALL SIMPLE JOB ASSERTIONS PASSED SUCCESSFULLY!",
         expected_title_pattern=EXPECTED_TITLE_PATTERN,
         expected_worker_names=expected_workers,
-        extra_step=_assert_all_work_unit_specs,
+        extra_step=assert_all_work_unit_specs,
     )
 
 

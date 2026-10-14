@@ -119,6 +119,7 @@ jobs:
       rod_deployment_enabled: true
       skip_verification: false
       enable_metrics: true
+      enable_multikueue: true
     secrets:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_REGION: ${{ secrets.GCP_REGION }}

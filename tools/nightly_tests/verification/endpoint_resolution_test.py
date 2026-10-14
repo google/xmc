@@ -133,7 +133,7 @@ class EndpointResolutionTest(unittest.TestCase):
 
     def test_resolve_ui_base_url(self) -> None:
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.resolve_ui_base_url",
+            "tools.nightly_tests.verification.xmc_entities_validator.resolve_ui_base_url",
             return_value="https://xmc-ui.example.com",
         ) as mock_resolve:
             result = endpoint_resolution.resolve_ui_base_url()
