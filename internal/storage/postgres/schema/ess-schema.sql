@@ -341,6 +341,6 @@ CREATE TABLE PausedTasks (
   FOREIGN KEY (Xid, WorkUnitId) REFERENCES WorkUnits (Xid, WorkUnitId) ON DELETE CASCADE
 );
 
--- Replay ordering for pending tasks. ActionProto is not included: B-tree entries are capped at ~2.7KB.
+-- Replay ordering index for pending paused tasks.
 CREATE INDEX PausedTasksUnprocessed ON PausedTasks (Priority DESC, CreateTime)
-  INCLUDE (Target, OperationName, TraceId, IsPending, Xid, WorkUnitId, TaskId) WHERE IsPending IS NOT NULL;
+  INCLUDE (ActionProto, Target, OperationName, TraceId, IsPending, Xid, WorkUnitId, TaskId) WHERE IsPending IS NOT NULL;
