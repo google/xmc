@@ -90,7 +90,7 @@ func newCMSTokenCredentialsWithFactory(ctx context.Context, newIDTokenSource idT
 }
 
 func buildNonProdTokenFunc(oauthCfg *xmcoauth.Config) TokenSourceFunc {
-	if oauthCfg.TokenURL != "" && oauthCfg.ClientID != "" {
+	if !oauthCfg.MockAuth && oauthCfg.TokenURL != "" && oauthCfg.ClientID != "" && oauthCfg.Username != "" && oauthCfg.Password != "" {
 		provider := tq.NewOidcTokenProvider(tq.OidcTokenProviderConfig{
 			TokenURL: oauthCfg.TokenURL, ClientID: oauthCfg.ClientID, ClientSecret: oauthCfg.ClientSecret,
 			Username: oauthCfg.Username, Password: oauthCfg.Password, Scope: "openid email profile",

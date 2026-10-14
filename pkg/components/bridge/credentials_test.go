@@ -104,14 +104,29 @@ func TestNewCMSTokenCredentials(t *testing.T) {
 		}
 	})
 
-	t.Run("non-prod JWT secret mints session token when OIDC token URL is absent", func(t *testing.T) {
+	t.Run("non-prod MOCK_AUTH=true mints session token even with default TOKEN_URL and CLIENT_ID", func(t *testing.T) {
 		t.Setenv("DISABLE_AUTHENTICATION", "false")
 		t.Setenv("MOCK_AUTH", "true")
-		t.Setenv("AUTH_URL", "")
-		t.Setenv("TOKEN_URL", "")
-		t.Setenv("CLIENT_ID", "")
+		t.Setenv("CLIENT_ID", "xmc-client")
+		t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+		t.Setenv("OIDC_USERNAME", "admin@xmc.local")
+		t.Setenv("OIDC_PASSWORD", "password")
+
+		md, err := NewCMSTokenCredentials(ctx).GetRequestMetadata(ctx)
+		if err != nil || !strings.HasPrefix(md["authorization"], "Bearer ") {
+			t.Fatalf("GetRequestMetadata() = (%v, %v), expected Bearer token", md, err)
+		}
+	})
+
+	t.Run("non-prod without OIDC_USERNAME/OIDC_PASSWORD falls back to session token", func(t *testing.T) {
+		t.Setenv("DISABLE_AUTHENTICATION", "false")
+		t.Setenv("MOCK_AUTH", "false")
+		t.Setenv("AUTH_URL", "http://dex.dex.svc.cluster.local:5556/dex/auth")
+		t.Setenv("TOKEN_URL", "http://dex.dex.svc.cluster.local:5556/dex/token")
+		t.Setenv("CLIENT_ID", "xmc-client")
 		t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
 		t.Setenv("OIDC_USERNAME", "")
+		t.Setenv("OIDC_PASSWORD", "")
 
 		md, err := NewCMSTokenCredentials(ctx).GetRequestMetadata(ctx)
 		if err != nil || !strings.HasPrefix(md["authorization"], "Bearer ") {
