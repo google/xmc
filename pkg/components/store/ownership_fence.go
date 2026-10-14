@@ -17,12 +17,9 @@ package store
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
-	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // ClusterIdentity identifies a Kubernetes cluster that writes Component intents: the UID of its
@@ -52,13 +49,14 @@ type DeclarationResult struct {
 }
 
 // ValidateClusterIdentity returns an InvalidArgument error for a cluster whose UID is not a
-// canonical UUID, whose name is not a DNS-1123 label, or whose epoch is not positive.
+// canonical UUID, whose name is not a DNS-1123 label, or whose epoch is not positive. It shares the
+// UID and label checks with ValidateRequestSource.
 func ValidateClusterIdentity(c ClusterIdentity) error {
-	if u, err := uuid.Parse(c.UID); err != nil || u.String() != c.UID {
-		return status.Errorf(codes.InvalidArgument, "cluster uid %q must be a lowercase hyphenated UUID, the kube-system Namespace UID", c.UID)
+	if err := validateClusterUID(c.UID); err != nil {
+		return err
 	}
-	if errs := validation.IsDNS1123Label(c.Name); len(errs) > 0 {
-		return status.Errorf(codes.InvalidArgument, "cluster name %q must be a DNS-1123 label: %s", c.Name, strings.Join(errs, "; "))
+	if err := validateDNS1123Label("cluster name", c.Name); err != nil {
+		return err
 	}
 	if c.Epoch <= 0 {
 		return status.Error(codes.InvalidArgument, "cluster epoch must be positive")
