@@ -232,6 +232,11 @@ not to a health-check stampede against every component.
 
 `ListConfigEntries` exposes effective configuration and is gated by an admin role guard.
 
+When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled, the Health Service also serves the global workload
+scheduling pause controls: `GetSchedulingStatus` (available to all authenticated users so the UI can
+render the scheduling-paused banner) and the admin-guarded `PauseScheduling` / `ResumeScheduling`
+RPCs (see [Work Unit Lifecycle §7](work_unit_lifecycle.md#7-pause-and-resume-workload-scheduling)).
+
 ---
 
 ## 5. Resource Observability (ROD)

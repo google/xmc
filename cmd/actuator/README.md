@@ -39,11 +39,12 @@ graph TD
 ## WorkUnit Task Processing
 
 1. **Redis Task Ingestion**: The actuator continuously polls and dequeues WorkUnit execution payloads (`actuatortaskpb.ActuatorPayload`) from Redis.
-2. **Preconditions Validation**: Verifies that required quotas, namespaces, and node preconditions are satisfied before job scheduling.
-3. **JobSet Synthesis**: Compiles WorkUnit specifications into Kubernetes `JobSet` resources (`sigs.k8s.io/jobset/api/jobset/v1alpha2`).
-4. **Contract Invariant Enforcement**:
+2. **Pause Scheduling Interception (`pausescheduling/`)**: When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled and the local pause cache reports that global scheduling is paused, `Create`, `Restart`, and `Update` actions are intercepted before reaching Kubernetes, persisted into the Spanner `PausedTasks` table, and (`Create`/`Restart`) transitioned to `SCHEDULING_PAUSED`. `Delete` actions bypass the pause so users can always stop work. The local pause cache is seeded from Spanner (`PauseSchedulingState`) on startup, updated via `xmc-pause-stream` Redis broadcasts, and fast-forwarded if a replayed task arrives with a newer `resumption_time` in its metadata.
+3. **Preconditions Validation**: Verifies that required quotas, namespaces, and node preconditions are satisfied before job scheduling.
+4. **JobSet Synthesis**: Compiles WorkUnit specifications into Kubernetes `JobSet` resources (`sigs.k8s.io/jobset/api/jobset/v1alpha2`).
+5. **Contract Invariant Enforcement**:
    - **Non-Restarting JobSets Contract**: Primary container restart policy is strictly enforced (`Never` or `OnFailure` with `MaxRestarts: 0`) to guarantee deterministic execution tracking and prevent runaway restart loops.
-5. **Execution Tracking**: Subscribes to JobSet status updates and reports state transitions back to the Experiment State Server (ESS).
+6. **Execution Tracking**: Subscribes to JobSet status updates and reports state transitions back to the Experiment State Server (ESS).
 
 ---
 

@@ -143,7 +143,9 @@ sequenceDiagram
 
 Stopping is implemented as JobSet **deletion**, not suspension. The work unit enters `STOPPING`
 immediately (step 7) so the UI reflects the user's intent without waiting for the cluster, and
-reaches `STOPPED` once the Reconciler observes the deletion.
+reaches `STOPPED` once the Reconciler observes the deletion. (If the work unit is currently in
+`SCHEDULING_PAUSED`, step 7 transitions it directly to `STOPPED`, because its task is buffered in
+Spanner and no JobSet exists in the cluster to emit a deletion watch event.)
 
 The XMC finalizer (`jobset.xmanager.cloud/finalizer`) is what makes that observation reliable: the
 JobSet cannot vanish before the Reconciler has recorded its terminal state and removed the
@@ -251,7 +253,74 @@ current one marked `ACTIVE`.
 
 ---
 
-## 7. Failure Handling Along the Path
+## 7. Pause and Resume Workload Scheduling
+
+When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled, operators can pause global workload scheduling
+from the Admin Panel (`PauseScheduling` on the Health Service) during cluster maintenance without
+rejecting user submissions.
+
+```mermaid
+sequenceDiagram
+    participant Admin as Operator / Admin UI
+    participant HS as Health Service
+    participant Spanner as Spanner (ESS DB)
+    participant PauseStream as Redis (xmc-pause-stream)
+    participant ResumeStream as Redis (xmc-scheduling-resume-stream)
+    participant Actuator
+    participant ESS as ESS Resumption Worker
+    participant TaskStream as Redis (xmc-tasks-stream)
+
+    Admin->>HS: 1. PauseScheduling
+    HS->>Spanner: 2. Set PauseSchedulingState(paused=true)
+    HS->>PauseStream: 3. Publish SchedulingPaused
+    PauseStream-->>Actuator: 4. Refresh local pause cache from Spanner
+
+    Note over Actuator,Spanner: While paused: Create / Restart / Update tasks<br/>are buffered in PausedTasks; Create & Restart<br/>executions move to SCHEDULING_PAUSED.<br/>Delete tasks bypass pause and execute immediately.
+
+    Admin->>HS: 5. ResumeScheduling
+    HS->>Spanner: 6. Set PauseSchedulingState(paused=false, run_id)
+    HS->>PauseStream: 7. Publish SchedulingResumed(run_id)
+    HS->>ResumeStream: 8. Publish trigger(run_id, batch_size, max_backlog)
+    PauseStream-->>Actuator: 9. Refresh local pause cache (paused=false)
+    ResumeStream-->>ESS: 10. Claim trigger (ess-group) & fence worker_id
+    loop Batch replay (ordered by Priority DESC, CreateTime ASC)
+        ESS->>Spanner: 11. ListPending PausedTasks + live WorkUnit state
+        ESS->>TaskStream: 12. Re-enqueue eligible tasks (or skip obsolete/stopped)
+        ESS->>Spanner: 13. MarkProcessed(replayed | skipped)
+    end
+```
+
+### What happens while paused
+
+- **Client RPCs succeed normally.** `CreateWorkUnit`, `RestartWorkUnit`, `UpdateWorkUnit`, and
+  `StopWorkUnit` commit to Spanner and enqueue to `xmc-tasks-stream` as usual.
+- **Actuator intercepts `Create`, `Restart`, and `Update`.** Instead of calling the Kubernetes API,
+  the Actuator writes a row to `PausedTasks` and (for `Create` and `Restart`) transitions the target
+  execution to `SCHEDULING_PAUSED` in a single Spanner transaction.
+- **`Delete` bypasses the pause.** `StopWorkUnit` and `BatchStopWorkUnits` always execute against
+  Kubernetes immediately, and work units in `SCHEDULING_PAUSED` transition directly to `STOPPED`.
+
+### What happens on resume
+
+1. The Health Service writes `SchedulingPaused = false` with a fresh `ResumptionRunID` to
+   `PauseSchedulingState`, broadcasts `SchedulingResumed` on `xmc-pause-stream`, and publishes a
+   trigger on `xmc-scheduling-resume-stream`.
+2. One ESS replica in the `ess-group` consumer group claims the trigger, records its
+   `ResumptionWorkerID` in `PauseSchedulingState` (fencing any stale worker), and replays pending
+   `PausedTasks` in batches (`schedulingResumeBatchSize`, default `100`) ordered by
+   `Priority DESC, CreateTime ASC`.
+3. Before each batch, the worker checks the `actuator-group` backlog on `xmc-tasks-stream`; if
+   unprocessed tasks reach `schedulingResumeMaxBacklog` (default `500`), it pauses replay for 10s
+   and extends its Redis message claim.
+4. Tasks whose work unit has moved to a newer execution ID, reached a terminal/stopping state
+   (`COMPLETED`, `STOPPED`, `STOPPING`, `FAILED`), or carries a superseded `Update` priority are
+   marked `skipped` rather than re-enqueued. Replayed tasks carry `resumption_time` in their
+   metadata so any Actuator replica whose broadcast listener lagged behind immediately advances its
+   local cache to unpaused.
+
+---
+
+## 8. Failure Handling Along the Path
 
 | Failure | Effect | Recovery |
 | :--- | :--- | :--- |
@@ -265,7 +334,7 @@ current one marked `ACTIVE`.
 
 ---
 
-## 8. Related Reading
+## 9. Related Reading
 
 - [Reconciliation](reconciliation.md) — the other half of the loop.
 - [Execution Model](../architecture/execution_model.md) — states, retry boundaries, priority.
