@@ -22,8 +22,8 @@ import { MatTooltipModule } from '@angular/material/tooltip';
  * Filter icon button that opens a menu with the projected filter sections.
  *
  * It only provides the trigger, its badge and the menu panel; each projected section owns its own
- * filtering. Sections that apply their selection in one step can listen to `opened` and `closed`,
- * either from the parent template or by injecting this component.
+ * filtering. Sections that apply their selection in one step are driven from the parent template
+ * through `opened` and `closed`.
  */
 @Component({
   selector: 'xmc-filter-menu',

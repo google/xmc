@@ -11,10 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { ChangeDetectionStrategy, Component, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-
-import { FilterMenu } from 'app/common/components/filter_menu/filter_menu';
 
 /** One selectable work unit state: the value sent to the parent and the label shown. */
 interface StateFilterOption {
@@ -49,9 +47,9 @@ const STATE_FILTER_OPTIONS: readonly StateFilterOption[] = Object.entries(STATE_
 /**
  * Status section of a filter menu: filters work units by state.
  *
- * Must be projected into an `xmc-filter-menu`. The selection is edited while the menu is open and
- * emitted once, when it closes, so several states can be picked with a single request. The parent
- * owns what the selection filters.
+ * The selection is edited while the menu is open and emitted once, when it closes, so several
+ * states can be picked with a single request. The parent wires the menu's `opened` and `closed`
+ * events to `onMenuOpened()` and `onMenuClosed()`, and owns what the selection filters.
  */
 @Component({
   selector: 'xmc-work-unit-state-filter',
@@ -79,12 +77,6 @@ export class WorkUnitStateFilter {
    */
   private statesAtOpen: readonly string[] = [];
 
-  constructor() {
-    const menu = inject(FilterMenu);
-    menu.opened.subscribe(() => this.onMenuOpened());
-    menu.closed.subscribe(() => this.onMenuClosed());
-  }
-
   protected isStatePending(value: string): boolean {
     return this.pendingStates().has(value);
   }
@@ -99,12 +91,14 @@ export class WorkUnitStateFilter {
     this.pendingStates.set(next);
   }
 
-  private onMenuOpened() {
+  /** Starts editing from the applied selection; call when the enclosing menu opens. */
+  onMenuOpened() {
     this.statesAtOpen = this.selectedStates();
     this.pendingStates.set(new Set(this.statesAtOpen));
   }
 
-  private onMenuClosed() {
+  /** Emits the edited selection if it changed; call when the enclosing menu closes. */
+  onMenuClosed() {
     const pending = this.pendingStates();
     const atOpen = this.statesAtOpen;
     if (pending.size === atOpen.length && atOpen.every((state) => pending.has(state))) {

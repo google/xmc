@@ -30,12 +30,17 @@ function stateOption(filters: CheckboxHarnessFilters = {}) {
   return MatCheckboxHarness.with({ ...filters, selector: '.state-filter-option' });
 }
 
-/** Hosts the filter in a filter menu, as the work units table does. */
+/** Hosts the filter in a filter menu and wires open/close, as the work units table does. */
 function bootstrapFilter(selected: readonly string[] = []): HostContext {
   const context: HostContext = { selected, emitted: [] };
   bootstrapTemplate(
-    `<xmc-filter-menu label="Filters">
+    `<xmc-filter-menu
+      label="Filters"
+      (opened)="stateFilter.onMenuOpened()"
+      (closed)="stateFilter.onMenuClosed()"
+    >
       <xmc-work-unit-state-filter
+        #stateFilter
         [selectedStates]="selected"
         (selectedStatesChange)="emitted.push($event)"
       />

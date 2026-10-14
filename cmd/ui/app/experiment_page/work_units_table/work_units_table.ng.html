@@ -75,8 +75,14 @@ limitations under the License.
 
     <ng-container [matColumnDef]="WorkUnitColumn.URLS">
       <th mat-header-cell *matHeaderCellDef>
-        <xmc-filter-menu label="Filters" [activeFilterCount]="selectedStates().length">
+        <xmc-filter-menu
+          label="Filters"
+          [activeFilterCount]="selectedStates().length"
+          (opened)="stateFilter.onMenuOpened()"
+          (closed)="stateFilter.onMenuClosed()"
+        >
           <xmc-work-unit-state-filter
+            #stateFilter
             [selectedStates]="selectedStates()"
             (selectedStatesChange)="onStateFilterChange($event)"
           />
