@@ -73,12 +73,16 @@ func main() {
 		logging.Fatal(ctx, "failed to load configuration, invoker service account is empty")
 	}
 
-	// 2. Initialize production server.
+	// 2. Initialize production server and OAuth authenticator.
 	prodServer, err := server.NewProd(ctx, &cfg, oauthCfg)
 	if err != nil {
 		logging.Fatal(ctx, "failed to initialize production server", "error", err)
 	}
 	defer prodServer.Close()
+
+	oauthAuth := oauth.NewAuthenticator(oauthCfg)
+	configureAuth(oauthAuth, oauthCfg)
+	defer oauthAuth.Close()
 
 	// 3. Initialize TLS credentials.
 	transportCreds, err := tlsutil.NewServerCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
@@ -104,7 +108,8 @@ func main() {
 
 	spb.RegisterExperimentStateServiceServer(s, prodServer)
 	if cfg.EnableComponents {
-		initCMS(ctx, s, healthServer, prodServer.SpannerClient())
+		cmsAuth := buildCMSAuthorizer(&cfg, oauthCfg, prodServer.Authorizer(), oauthAuth)
+		initCMS(ctx, s, healthServer, prodServer.SpannerClient(), cmsAuth)
 	}
 
 	reflection.Register(s)
@@ -133,10 +138,6 @@ func main() {
 	}
 
 	// 6. Create a master HTTP mux for the gRPC gateway + health checks.
-	oauthAuth := oauth.NewAuthenticator(oauthCfg)
-	configureAuth(oauthAuth, oauthCfg)
-	defer oauthAuth.Close()
-
 	spHealth, xidHealth, tqHealth := prodServer.HealthCheckers()
 	httpMux := setupHTTPMux(ctx, oauthAuth, oauthAuth.Authenticate(gwmux), activeHealthCheck(spHealth, xidHealth, tqHealth), livenessCheck())
 
@@ -165,7 +166,18 @@ func main() {
 	logging.Info(ctx, "Server gracefully stopped")
 }
 
-func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, spannerClient *spanner.Client) {
+func buildCMSAuthorizer(cfg *config.Config, oauthCfg *oauth.Config, userAuth cms.UserAuthenticator, adminChecker cms.AdminChecker) cms.CallerAuthorizer {
+	if (oauthCfg != nil && oauthCfg.DisableAuthentication) || os.Getenv("DISABLE_AUTHENTICATION") == "true" {
+		return cms.NewDisabledAuthorizer()
+	}
+	var checker cms.AdminChecker
+	if oauthCfg == nil || (!oauthCfg.IsNonProdAuth() && oauthCfg.AdminIAMRole != "") || oauthCfg.MockAuth {
+		checker = adminChecker
+	}
+	return cms.NewAuthorizer(cms.AuthorizerConfig{Authenticator: userAuth, AdminChecker: checker, AuthorizedServiceAccounts: []string{cfg.InvokerSA}})
+}
+
+func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, spannerClient *spanner.Client, auth cms.CallerAuthorizer) {
 	logging.Info(ctx, "Initializing Component Manager Service (CMS)...")
 	var cmsStore store.Store
 	if spannerClient != nil {
@@ -175,7 +187,7 @@ func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, s
 		cmsStore = store.NewMemoryStore()
 		logging.Warn(ctx, "Spanner client not initialized; using in-memory MemoryStore fallback for Component Manager Service")
 	}
-	cmsServer := cms.NewServer(cmsStore)
+	cmsServer := cms.NewServer(cmsStore, cms.WithAuthorizer(auth))
 	componentspb.RegisterComponentManagerServiceServer(s, cmsServer)
 	healthServer.SetServingStatus("cloud.xmanager.components.v1alpha1.ComponentManagerService", healthpb.HealthCheckResponse_SERVING)
 	logging.Info(ctx, "Component Manager Service (CMS) registered successfully")

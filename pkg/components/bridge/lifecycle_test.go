@@ -177,7 +177,7 @@ func TestReconciler_ColdStartDeactivation_DeletesPreviouslyActiveComponent(t *te
 // dependency is blocked.
 func TestReconcileComponent_GatedDependentBlocksDeactivationInCMS(t *testing.T) {
 	ctx := context.Background()
-	r, err := NewReconciler(NewCMSClientAdapter(cmsserver.NewServer(store.NewMemoryStore())), nil, nil)
+	r, err := NewReconciler(NewCMSClientAdapter(cmsserver.NewServer(store.NewMemoryStore(), cmsserver.WithAuthorizer(cmsserver.NewDisabledAuthorizer()))), nil, nil)
 	if err != nil {
 		t.Fatalf("NewReconciler() error = %v", err)
 	}
