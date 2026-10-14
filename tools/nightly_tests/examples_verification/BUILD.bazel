@@ -204,5 +204,6 @@ py_test(
     imports = ["../../.."],
     deps = [
         ":resource_observability_dashboard_ui_verify",
+        "//tools/nightly_tests/verification:ui_entities_validator_lib",
     ],
 )
