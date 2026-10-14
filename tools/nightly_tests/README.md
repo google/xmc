@@ -185,7 +185,6 @@ py_binary(
             verify_module: 'tools.nightly_tests.examples_verification.<example_name>_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: false
-            timeout_minutes: 15
 ```
 
 Ensure your example's `entrypoint` script prints `Experiment XID: <xid>` (or `experiments/<xid>` / `dashboards/<id>`) to stdout so the workflow launch step can extract the identifier automatically.
