@@ -45,7 +45,7 @@ mkdir -p "${SITE_PACKAGES}/xmanager_cloud"
 for proto_target in dashboard_messages_proto dashboard_service_proto; do
   if [ -d "${VIRTUAL_IMPORTS}/${proto_target}/xmanager_cloud" ]; then
     cp -R "${VIRTUAL_IMPORTS}/${proto_target}/xmanager_cloud/." "${SITE_PACKAGES}/xmanager_cloud/"
-    chmod -R u+w "${SITE_PACKAGES}/xmanager_cloud"
+    chmod -R u+w "${SITE_PACKAGES}/xmanager_cloud/dashboard_service"
   fi
 done
 

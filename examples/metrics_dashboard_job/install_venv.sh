@@ -50,7 +50,7 @@ mkdir -p "${SITE_PACKAGES}/xmanager_cloud"
 # would otherwise fail to write into existing trees.
 for proto_target in dashboard_messages_proto dashboard_service_proto; do
   cp -R "${VIRTUAL_IMPORTS}/${proto_target}/xmanager_cloud/." "${SITE_PACKAGES}/xmanager_cloud/"
-  chmod -R u+w "${SITE_PACKAGES}/xmanager_cloud"
+  chmod -R u+w "${SITE_PACKAGES}/xmanager_cloud/dashboard_service"
 done
 
 # Editable installs, so a change to either SDK is picked up without reinstalling. xdash

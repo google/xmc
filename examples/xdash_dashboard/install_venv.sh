@@ -46,7 +46,7 @@ mkdir -p "${SITE_PACKAGES}/xmanager_cloud"
 # the second copy would otherwise fail to write into the tree the first one laid down.
 for proto_target in dashboard_messages_proto dashboard_service_proto; do
   cp -R "${VIRTUAL_IMPORTS}/${proto_target}/xmanager_cloud/." "${SITE_PACKAGES}/xmanager_cloud/"
-  chmod -R u+w "${SITE_PACKAGES}/xmanager_cloud"
+  chmod -R u+w "${SITE_PACKAGES}/xmanager_cloud/dashboard_service"
 done
 
 echo "--> [4/4] Installing xdash SDK in editable mode..."

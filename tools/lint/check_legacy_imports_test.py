@@ -108,7 +108,6 @@ class CollectMetricsTest(unittest.TestCase):
             "pkg/BUILD.bazel": (
                 'compat_go_library(name = "a")\ncompat_go_test(name = "b")\n'
                 '    import_prefix = "third_party/x/proto",\n'
-                '    "Mxmanager_cloud/x.proto=xmanager_cloud/api/protos/x",\n'
             ),
             "BUILD.bazel": "# gazelle:resolve go a //b\n# gazelle:prefix xmanager_cloud\n",
             "compat.bzl": "def compat_go_library(name):\n    pass\n",
@@ -122,7 +121,6 @@ class CollectMetricsTest(unittest.TestCase):
             "deploy/helm/templates/e.yaml": "args: ['--notracelog']\ncommand: run -vmodule=x\n",
             "cmd/ui/app/a.ts": "import { X } from 'javascript/closure/format/format';\n",
             "sdks/p.py": "from third_party.xmanager_cloud.x import y\n",
-            "examples/e/install_venv.sh": 'cp -R "${B}/_virtual_imports/t/third_party/." "${S}/"\n',
             "third_party/grpc_gateway.BUILD": "",
             # Self-excluded files must not be counted.
             "tools/lint/check_legacy_imports_test.py": "from third_party.xmanager_cloud import x\n",
@@ -145,12 +143,23 @@ class CollectMetricsTest(unittest.TestCase):
                 "go_legacy_root_imports": 3,
                 "go_unresolved_module_imports": 1,
                 "helm_google3_flags": 6,
-                "proto_third_party_paths": 3,
-                "python_legacy_paths": 2,
+                "proto_third_party_paths": 2,
+                "python_legacy_paths": 1,
                 "third_party_files": 1,
                 "ts_legacy_module_paths": 1,
             },
         )
+
+    def test_detects_m_opts_and_shell_virtual_imports(self):
+        (self.root / "api/BUILD.bazel").write_text(
+            '    "Mxmanager_cloud/x.proto=xmanager_cloud/api/protos/x",\n'
+        )
+        (self.root / "install_venv.sh").write_text(
+            'cp -R "${B}/_virtual_imports/t/third_party/." "${S}/"\n'
+        )
+        metrics = cli.collect_metrics(self.root, ["api/BUILD.bazel", "install_venv.sh"])
+        self.assertEqual(metrics["proto_third_party_paths"], 1)
+        self.assertEqual(metrics["python_legacy_paths"], 1)
 
     def test_missing_tracked_file_is_ignored(self):
         metrics = cli.collect_metrics(self.root, ["deleted/x.go"])
