@@ -41,9 +41,9 @@ go_proto_library(
     proto = ":rod_api_proto",
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//:api",
         "@org_golang_google_genproto_googleapis_api//annotations",
-        "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 

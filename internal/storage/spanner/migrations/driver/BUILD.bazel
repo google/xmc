@@ -42,8 +42,8 @@ go_test(
         "@com_google_cloud_go_spanner//admin/instance/apiv1",
         "@com_google_cloud_go_spanner//admin/instance/apiv1/instancepb",
         "@org_golang_google_protobuf//proto",
-        "@org_golang_google_protobuf//reflect/protodesc:go_default_library",
-        "@org_golang_google_protobuf//types/descriptorpb:go_default_library",
-        "@org_golang_google_protobuf//types/known/emptypb:go_default_library",
+        "@org_golang_google_protobuf//reflect/protodesc",
+        "@org_golang_google_protobuf//types/descriptorpb",
+        "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )
