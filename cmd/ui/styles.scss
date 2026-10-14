@@ -25,6 +25,11 @@ body {
   margin: 0;
 }
 
+button,
+.mat-mdc-button-base {
+  font-family: 'Google Sans', sans-serif;
+}
+
 mat-card.mat-mdc-card,
 .mat-mdc-card {
   background-color: #ffffff;
@@ -81,12 +86,16 @@ xmc-tag {
 
 .rod-term-tooltip {
   white-space: pre-line !important;
-  max-width: 380px !important;
-  font-size: 12.5px !important;
+  max-width: 420px !important;
+  min-width: 280px !important;
+  font-size: 13px !important;
   line-height: 1.5 !important;
-  padding: 12px 14px !important;
-  background-color: #202124 !important;
-  color: #ffffff !important;
-  border-radius: 6px !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+  padding: 16px 20px !important;
+  background-color: #ffffff !important;
+  color: #202124 !important;
+  border: 1px solid #dadce0 !important;
+  border-radius: 8px !important;
+  box-shadow:
+    0 1px 3px 0 rgba(60, 64, 67, 0.3),
+    0 4px 8px 3px rgba(60, 64, 67, 0.15) !important;
 }

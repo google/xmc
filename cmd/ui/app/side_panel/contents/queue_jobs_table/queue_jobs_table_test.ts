@@ -112,7 +112,7 @@ describe('QueueJobsTable Component', () => {
     expect(headerCells).toContain('Status');
     expect(headerCells).toContain('Priority');
     expect(headerCells).toContain('Resources');
-    expect(headerCells).toContain('Work / Aux Unit');
+    expect(headerCells).toContain('Work/Aux Unit');
     expect(headerCells).toContain('Author');
   });
 
