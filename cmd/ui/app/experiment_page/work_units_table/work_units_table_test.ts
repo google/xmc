@@ -29,6 +29,7 @@ import { bootstrap, cleanState, getEls, setupModule } from 'app/testing/test';
 
 import { WorkUnitsTableHarness } from './testing/work_units_table_harness';
 import { WorkUnitsTable } from './work_units_table';
+import { WorkUnitsTableStore } from './work_units_table_store';
 
 const MOCK_WORK_UNITS_RESPONSE: ListWorkUnitsResponse = {
   workUnits: [
@@ -167,6 +168,23 @@ describe('WorkUnitsTable Component', () => {
     expect(lastRequest()).toEqual({ parent: 'experiments/1', pageSize: 10, pageToken: '' });
     fixture.componentInstance.nextPage();
     expect(lastRequest().pageToken).toBe('page2');
+
+    fixture.componentRef.setInput('xid', '2');
+    fixture.detectChanges();
+
+    expect(lastRequest()).toEqual({ parent: 'experiments/2', pageSize: 10, pageToken: '' });
+    fixture.destroy();
+  });
+
+  it('should reset the sort when the experiment id changes', () => {
+    const lastRequest = () => state.workUnitsService.searchWorkUnits.calls.mostRecent().args[0];
+    const fixture = TestBed.createComponent(WorkUnitsTable);
+    fixture.componentRef.setInput('xid', '1');
+    fixture.detectChanges();
+    const store = fixture.debugElement.injector.get(WorkUnitsTableStore);
+    store.setSort({ active: 'state', direction: 'asc' });
+    store.fetchPage();
+    expect(lastRequest().orderBy).toBe('state asc');
 
     fixture.componentRef.setInput('xid', '2');
     fixture.detectChanges();

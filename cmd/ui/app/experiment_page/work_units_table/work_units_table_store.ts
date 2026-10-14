@@ -84,14 +84,15 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
   readonly sort: Signal<AipSort> = this.selectSignal((state) => state.sort);
 
   /**
-   * Sets the experiment id and returns to the first page, since page tokens belong to the
-   * previous experiment. It also clears the previous experiment's rows and error, so the table
-   * shows the initial loading state instead of stale data. It does not fetch data.
+   * Sets the experiment id and starts that experiment from a clean view: first page, default sort,
+   * and no rows or error from the previous experiment, so the table shows the initial loading
+   * state instead of stale data. It does not fetch data.
    */
   readonly setXid = this.updater((state, xid: string) => ({
     ...state,
     xid,
     pagination: getInitialPaginationState(state.pagination.pageSize),
+    sort: INITIAL_STATE.sort,
     workUnits: undefined,
     error: null,
   }));
