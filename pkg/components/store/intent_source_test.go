@@ -37,7 +37,7 @@ import (
 )
 
 // ownerSource is the source that seeds owned rows; cases modify it with sourceWith.
-var ownerSource = store.RequestSource{UID: "uid-a", Generation: 3, Namespace: "xmc", ClusterUID: "cluster-1", Epoch: 1}
+var ownerSource = store.RequestSource{UID: "uid-a", Generation: 3, Namespace: "xmc", ClusterUID: "11111111-1111-4111-8111-111111111111", Epoch: 1}
 
 // sourceWith returns ownerSource changed by mutate.
 func sourceWith(mutate func(*store.RequestSource)) store.RequestSource {
@@ -62,7 +62,9 @@ func TestSetSourcedComponentIntent_OwnerParity(t *testing.T) {
 	otherObject := sourceWith(func(s *store.RequestSource) { s.UID, s.Generation = "uid-b", 1 })
 	casAdopter := sourceWith(func(s *store.RequestSource) { s.UID, s.Generation, s.ExpectedOwnerUID = "uid-b", 1, "uid-a" })
 	otherNamespace := sourceWith(func(s *store.RequestSource) { s.Namespace, s.UID, s.ExpectedOwnerUID = "other", "uid-b", "uid-a" })
-	casFromOtherCluster := sourceWith(func(s *store.RequestSource) { s.UID, s.ExpectedOwnerUID, s.ClusterUID = "uid-b", "uid-a", "cluster-2" })
+	casFromOtherCluster := sourceWith(func(s *store.RequestSource) {
+		s.UID, s.ExpectedOwnerUID, s.ClusterUID = "uid-b", "uid-a", "22222222-2222-4222-8222-222222222222"
+	})
 	withUnregisteredDep := intentSpec("v1.1.0", "intent-source-unregistered")
 	tests := []struct {
 		name       string
@@ -153,6 +155,55 @@ func TestSetSourcedComponentIntent_RecordLifecycle(t *testing.T) {
 			}
 			if diff := cmp.Diff(ownerFor(otherNamespace), recreated.Owner); diff != "" {
 				t.Errorf("recreated Owner mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestSetSourcedComponentIntent_CASGuardWithoutRecord checks on both backends that a CAS guard
+// (expected_owner_uid) on a component without an active record, never created or soft-deleted, is
+// rejected with SOURCE_INCARNATION_MISMATCH and empty owner metadata instead of creating one (R1).
+func TestSetSourcedComponentIntent_CASGuardWithoutRecord(t *testing.T) {
+	casAdopter := sourceWith(func(s *store.RequestSource) { s.UID, s.Generation, s.ExpectedOwnerUID = "uid-b", 1, "uid-a" })
+	wantDetails := []any{&errdetails.ErrorInfo{
+		Reason: store.ReasonSourceIncarnationMismatch,
+		Domain: store.ErrorInfoDomain,
+		Metadata: map[string]string{
+			"operation": "SetComponentIntent", "owner_namespace": "", "owner_uid": "", "owner_cluster_uid": "",
+		},
+	}}
+	tests := []struct {
+		name        string
+		softDeleted bool
+	}{
+		{name: "never created"},
+		{name: "soft-deleted", softDeleted: true},
+	}
+	for _, backend := range intentStoreBackends() {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := backend.newStore(t)
+			for i, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					name := fmt.Sprintf("intent-source-cas-missing-%d", i)
+					if tt.softDeleted {
+						seedOwnedComponent(ctx, t, s, name, false)
+						if err := s.ExecuteDeletion(ctx, name, componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true); err != nil {
+							t.Fatalf("ExecuteDeletion() error = %v", err)
+						}
+					}
+
+					_, err := s.SetSourcedComponentIntent(ctx, name, intentSpec("v1.0.0"), nil, casAdopter)
+					if status.Code(err) != codes.FailedPrecondition {
+						t.Fatalf("SetSourcedComponentIntent() error = %v, want code %v", err, codes.FailedPrecondition)
+					}
+					if diff := cmp.Diff(wantDetails, status.Convert(err).Details(), protocmp.Transform()); diff != "" {
+						t.Errorf("error details mismatch (-want +got):\n%s", diff)
+					}
+					if _, err := s.GetComponent(ctx, name); status.Code(err) != codes.NotFound {
+						t.Errorf("GetComponent() error = %v, want code %v", err, codes.NotFound)
+					}
+				})
 			}
 		})
 	}
@@ -267,7 +318,7 @@ func assertOwnershipRejected(ctx context.Context, t *testing.T, s store.Store, n
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("SetSourcedComponentIntent() error = %v, want code %v", err, codes.FailedPrecondition)
 	}
-	metadata := map[string]string{"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": "cluster-1"}
+	metadata := map[string]string{"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": ownerSource.ClusterUID}
 	if wantReason == store.ReasonStaleGeneration {
 		metadata["owner_generation"] = "3"
 	}

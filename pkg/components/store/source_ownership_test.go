@@ -26,7 +26,7 @@ import (
 )
 
 // baseRequestSource is a valid source that test cases modify.
-var baseRequestSource = RequestSource{UID: "uid-a", Generation: 3, Namespace: "xmc", ClusterUID: "cluster-1", Epoch: 1}
+var baseRequestSource = RequestSource{UID: "uid-a", Generation: 3, Namespace: "xmc", ClusterUID: "11111111-1111-4111-8111-111111111111", Epoch: 1}
 
 // modifiedSource returns baseRequestSource changed by mutate.
 func modifiedSource(mutate func(*RequestSource)) RequestSource {
@@ -57,7 +57,11 @@ func TestValidateRequestSource(t *testing.T) {
 		{name: "zero generation", src: modifiedSource(func(s *RequestSource) { s.Generation = 0 }), wantErr: true},
 		{name: "empty namespace", src: modifiedSource(func(s *RequestSource) { s.Namespace = "" }), wantErr: true},
 		{name: "namespace wider than the column", src: modifiedSource(func(s *RequestSource) { s.Namespace = strings.Repeat("n", 64) }), wantErr: true},
+		{name: "namespace that is not a DNS-1123 label", src: modifiedSource(func(s *RequestSource) { s.Namespace = "XMC_ns" }), wantErr: true},
 		{name: "empty cluster uid", src: modifiedSource(func(s *RequestSource) { s.ClusterUID = "" }), wantErr: true},
+		{name: "cluster uid that is not a UUID", src: modifiedSource(func(s *RequestSource) { s.ClusterUID = "cluster-1" }), wantErr: true},
+		{name: "cluster uid that is an uppercase UUID", src: modifiedSource(func(s *RequestSource) { s.ClusterUID = "5A6B7C8D-1E2F-4A3B-8C4D-5E6F7A8B9C01" }), wantErr: true},
+		{name: "cluster uid that is a braced UUID", src: modifiedSource(func(s *RequestSource) { s.ClusterUID = "{5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c01}" }), wantErr: true},
 		{name: "zero epoch", src: modifiedSource(func(s *RequestSource) { s.Epoch = 0 }), wantErr: true},
 		{name: "valid CAS guard", src: modifiedSource(func(s *RequestSource) { s.ExpectedOwnerUID = "uid-b" })},
 		{name: "CAS guard wider than the column", src: modifiedSource(func(s *RequestSource) { s.ExpectedOwnerUID = strings.Repeat("u", 65) }), wantErr: true},
@@ -105,7 +109,7 @@ func TestSourceOwnerRelations(t *testing.T) {
 }
 
 func TestStaleGenerationError(t *testing.T) {
-	st := status.Convert(staleGenerationError("SetComponentIntent", "redpanda", ownerOf(baseRequestSource), modifiedSource(func(s *RequestSource) { s.Generation = 1 })))
+	st := status.Convert(staleGenerationError("redpanda", ownerOf(baseRequestSource), modifiedSource(func(s *RequestSource) { s.Generation = 1 })))
 
 	if st.Code() != codes.FailedPrecondition {
 		t.Errorf("code = %v, want %v", st.Code(), codes.FailedPrecondition)
@@ -114,7 +118,7 @@ func TestStaleGenerationError(t *testing.T) {
 		Reason: "STALE_GENERATION",
 		Domain: ErrorInfoDomain,
 		Metadata: map[string]string{
-			"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": "cluster-1", "owner_generation": "3",
+			"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": baseRequestSource.ClusterUID, "owner_generation": "3",
 		},
 	}}
 	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
@@ -148,9 +152,11 @@ func TestCheckSourceOwnership(t *testing.T) {
 			wantReason: "SOURCE_INCARNATION_MISMATCH",
 		},
 		{
-			name:       "another cluster naming the owner mismatches (R6)",
-			owner:      owner,
-			src:        modifiedSource(func(s *RequestSource) { s.UID, s.ExpectedOwnerUID, s.ClusterUID = "uid-b", "uid-a", "cluster-2" }),
+			name:  "another cluster naming the owner mismatches (R6)",
+			owner: owner,
+			src: modifiedSource(func(s *RequestSource) {
+				s.UID, s.ExpectedOwnerUID, s.ClusterUID = "uid-b", "uid-a", "22222222-2222-4222-8222-222222222222"
+			}),
 			wantReason: "SOURCE_INCARNATION_MISMATCH",
 		},
 	}
@@ -167,11 +173,28 @@ func TestCheckSourceOwnership(t *testing.T) {
 			want := []any{&errdetails.ErrorInfo{
 				Reason:   tt.wantReason,
 				Domain:   ErrorInfoDomain,
-				Metadata: map[string]string{"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": "cluster-1"},
+				Metadata: map[string]string{"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": baseRequestSource.ClusterUID},
 			}}
 			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); st.Code() != codes.FailedPrecondition || diff != "" {
 				t.Errorf("checkSourceOwnership() code = %v, details mismatch (-want +got):\n%s", st.Code(), diff)
 			}
 		})
+	}
+}
+
+func TestCheckSourceCreation(t *testing.T) {
+	if err := checkSourceCreation("SetComponentIntent", "redpanda", baseRequestSource); err != nil {
+		t.Errorf("checkSourceCreation() without a CAS guard error = %v, want nil (R1 creates)", err)
+	}
+
+	casAdopter := modifiedSource(func(s *RequestSource) { s.UID, s.ExpectedOwnerUID = "uid-b", "uid-a" })
+	st := status.Convert(checkSourceCreation("SetComponentIntent", "redpanda", casAdopter))
+	want := []any{&errdetails.ErrorInfo{
+		Reason:   "SOURCE_INCARNATION_MISMATCH",
+		Domain:   ErrorInfoDomain,
+		Metadata: map[string]string{"operation": "SetComponentIntent", "owner_namespace": "", "owner_uid": "", "owner_cluster_uid": ""},
+	}}
+	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); st.Code() != codes.FailedPrecondition || diff != "" {
+		t.Errorf("checkSourceCreation() with a CAS guard code = %v, details mismatch (-want +got):\n%s", st.Code(), diff)
 	}
 }

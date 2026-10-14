@@ -17,9 +17,12 @@ package store
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // RequestSource identifies the declarative object (Kubernetes CR) that sent a request. The owner
@@ -39,29 +42,44 @@ type SourceOwner struct {
 	Generation, Epoch          int64
 }
 
-// Widths of the SourceUid / SourceClusterUid and SourceNamespace columns of Components.
-const (
-	maxSourceUIDLength       = 64
-	maxSourceNamespaceLength = 63
-)
+// maxSourceUIDLength is the width of the SourceUid column of Components.
+const maxSourceUIDLength = 64
 
-// ValidateRequestSource returns an InvalidArgument error for a source without a valid UID,
-// namespace or cluster UID (or an expected owner UID wider than its column), or with a
-// non-positive generation or epoch.
+// ValidateRequestSource returns an InvalidArgument error for a source without a valid UID (or with
+// an expected owner UID wider than its column), whose namespace is not a DNS-1123 label, whose
+// cluster UID is not a canonical UUID (validateClusterUID), or with a non-positive generation or
+// epoch.
 func ValidateRequestSource(src RequestSource) error {
 	switch {
 	case !fitsColumn(src.UID, maxSourceUIDLength):
 		return status.Errorf(codes.InvalidArgument, "request source uid must have 1 to %d bytes", maxSourceUIDLength)
 	case src.Generation <= 0:
 		return status.Error(codes.InvalidArgument, "request source generation must be positive")
-	case !fitsColumn(src.Namespace, maxSourceNamespaceLength):
-		return status.Errorf(codes.InvalidArgument, "request source namespace must have 1 to %d bytes", maxSourceNamespaceLength)
-	case !fitsColumn(src.ClusterUID, maxSourceUIDLength):
-		return status.Errorf(codes.InvalidArgument, "request source cluster uid must have 1 to %d bytes", maxSourceUIDLength)
 	case src.Epoch <= 0:
 		return status.Error(codes.InvalidArgument, "request source cluster epoch must be positive")
 	case len(src.ExpectedOwnerUID) > maxSourceUIDLength:
 		return status.Errorf(codes.InvalidArgument, "request source expected owner uid must have at most %d bytes", maxSourceUIDLength)
+	}
+	if err := validateDNS1123Label("request source namespace", src.Namespace); err != nil {
+		return err
+	}
+	return validateClusterUID(src.ClusterUID)
+}
+
+// validateClusterUID returns an InvalidArgument error unless uid is a canonical (lowercase,
+// hyphenated) UUID, as the UID of the kube-system Namespace that identifies a cluster is.
+func validateClusterUID(uid string) error {
+	if u, err := uuid.Parse(uid); err != nil || u.String() != uid {
+		return status.Errorf(codes.InvalidArgument, "cluster uid %q must be a lowercase hyphenated UUID, the kube-system Namespace UID", uid)
+	}
+	return nil
+}
+
+// validateDNS1123Label returns an InvalidArgument error naming field unless value is a DNS-1123
+// label, which also bounds it to the 63-byte width of its column.
+func validateDNS1123Label(field, value string) error {
+	if errs := validation.IsDNS1123Label(value); len(errs) > 0 {
+		return status.Errorf(codes.InvalidArgument, "%s %q must be a DNS-1123 label: %s", field, value, strings.Join(errs, "; "))
 	}
 	return nil
 }
@@ -97,13 +115,28 @@ func cloneSourceOwner(o *SourceOwner) *SourceOwner {
 }
 
 // staleGenerationError returns the FailedPrecondition STALE_GENERATION rejection of a changed
-// request of operation from src, an older generation of the owner object.
-func staleGenerationError(operation, canonicalName string, owner *SourceOwner, src RequestSource) error {
-	metadata := ownerMetadata(operation, owner)
+// intent from src, an older generation of the owner object. Only SetComponentIntent orders
+// requests by generation (R3): every other sourced RPC from the owner object is always allowed, so
+// that informer lag never blocks an observation, a deactivation or a deletion.
+func staleGenerationError(canonicalName string, owner *SourceOwner, src RequestSource) error {
+	metadata := ownerMetadata(setIntentOperation, owner)
 	metadata["owner_generation"] = strconv.FormatInt(owner.Generation, 10)
 	return errorWithInfo(codes.FailedPrecondition, ReasonStaleGeneration, metadata, fmt.Sprintf(
 		"component %q is owned by generation %d of source %q, newer than the generation %d of the changed request",
 		canonicalName, owner.Generation, owner.UID, src.Generation))
+}
+
+// checkSourceCreation applies R1 to a request of operation from src for canonicalName, which has
+// no active record. A CAS guard (ExpectedOwnerUID) names an owner that no longer exists, so the
+// request is rejected with SOURCE_INCARNATION_MISMATCH, with empty owner metadata, instead of
+// silently creating a record.
+func checkSourceCreation(operation, canonicalName string, src RequestSource) error {
+	if src.ExpectedOwnerUID == "" {
+		return nil
+	}
+	return errorWithInfo(codes.FailedPrecondition, ReasonSourceIncarnationMismatch, ownerMetadata(operation, &SourceOwner{}), fmt.Sprintf(
+		"component %q has no active record, so source %q cannot take it over from expected owner %q",
+		canonicalName, src.UID, src.ExpectedOwnerUID))
 }
 
 // checkSourceOwnership applies the ownership rules to a request of operation from src for the
@@ -117,7 +150,7 @@ func staleGenerationError(operation, canonicalName string, owner *SourceOwner, s
 //     cluster proves the owner object is gone. A GET cannot prove that for another cluster.
 //   - R6: any other incarnation is rejected: SOURCE_INCARNATION_MISMATCH.
 //
-// R1 (no active record) is the stores' create path.
+// R1 (no active record) is checkSourceCreation.
 func checkSourceOwnership(operation, canonicalName string, owner *SourceOwner, src RequestSource) error {
 	switch {
 	case owner == nil:

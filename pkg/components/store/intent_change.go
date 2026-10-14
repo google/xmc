@@ -47,6 +47,9 @@ func isUnchangedIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, l
 	return proto.Equal(specWithoutGeneration(rec.Spec), specWithoutGeneration(spec))
 }
 
+// setIntentOperation names SetComponentIntent in ErrorInfo metadata of source-ownership rejections.
+const setIntentOperation = operationSetComponentIntent
+
 // intentWrite is what applying an intent writes; for a new component the plan is always writeSpec.
 type intentWrite int
 
@@ -89,7 +92,7 @@ func planSourcedIntent(canonicalName string, rec *ComponentRecord, changed bool,
 	olderGeneration := rec.Owner.isOlderGeneration(src)
 	switch {
 	case olderGeneration && changed:
-		return intentPlan{}, staleGenerationError(operationSetComponentIntent, canonicalName, rec.Owner, src)
+		return intentPlan{}, staleGenerationError(canonicalName, rec.Owner, src)
 	case olderGeneration:
 		// An unchanged replay of an older generation keeps the newer recorded owner.
 	case changed:
@@ -111,10 +114,16 @@ func newIntentGeneration(desiredGen int64, src *RequestSource) int64 {
 
 // planLiveIntent returns the active record of canonicalName in catalog (nil when there is none)
 // and the plan for applying the intent to it; a missing or soft-deleted record is planned as a
-// create. Both stores call it before validating dependencies so source rejections take precedence.
+// create unless checkSourceCreation rejects src. Both stores call it before validating
+// dependencies so source rejections take precedence.
 func planLiveIntent(catalog map[string]*ComponentRecord, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *RequestSource) (*ComponentRecord, intentPlan, error) {
 	rec := catalog[canonicalName]
 	if isDeletedRecord(rec) {
+		if src != nil {
+			if err := checkSourceCreation(setIntentOperation, canonicalName, *src); err != nil {
+				return nil, intentPlan{}, err
+			}
+		}
 		return nil, intentPlan{write: writeSpec, generation: newIntentGeneration(desiredGen, src)}, nil
 	}
 	plan, err := planIntent(canonicalName, rec, spec, labels, deps, desiredGen, src)

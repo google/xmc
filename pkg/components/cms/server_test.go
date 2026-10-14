@@ -604,7 +604,7 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0", Generation: 7},
 		Source: &componentspb.RequestSource{
 			Uid: "uid-a", Generation: 7, Namespace: "xmc",
-			Cluster: &componentspb.ClusterIdentity{Uid: "cluster-1", Epoch: 1},
+			Cluster: &componentspb.ClusterIdentity{Uid: "11111111-1111-4111-8111-111111111111", Epoch: 1},
 		},
 	}
 	tests := []struct {
@@ -620,7 +620,7 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 			name:      "source orders by CMS generation and records the owner",
 			req:       baseReq,
 			wantGen:   1,
-			wantOwner: &store.SourceOwner{UID: "uid-a", Generation: 7, Namespace: "xmc", ClusterUID: "cluster-1", Epoch: 1},
+			wantOwner: &store.SourceOwner{UID: "uid-a", Generation: 7, Namespace: "xmc", ClusterUID: "11111111-1111-4111-8111-111111111111", Epoch: 1},
 		},
 		{name: "no source orders by spec generation", req: prototest.Modify(baseReq, func(r *componentspb.SetComponentIntentRequest) { r.Source = nil }), wantGen: 7},
 		{
@@ -632,6 +632,17 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 			name:     "source without a namespace is rejected in validate_only",
 			req:      prototest.Modify(baseReq, func(r *componentspb.SetComponentIntentRequest) { r.Source.Namespace, r.ValidateOnly = "", true }),
 			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:     "source with a cluster uid that is not a UUID is rejected",
+			req:      prototest.Modify(baseReq, func(r *componentspb.SetComponentIntentRequest) { r.Source.Cluster.Uid = "cluster-1" }),
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:       "expected_owner_uid without an active record carries the SOURCE_INCARNATION_MISMATCH ErrorInfo",
+			req:        prototest.Modify(baseReq, func(r *componentspb.SetComponentIntentRequest) { r.Source.ExpectedOwnerUid = "uid-z" }),
+			wantCode:   codes.FailedPrecondition,
+			wantReason: store.ReasonSourceIncarnationMismatch,
 		},
 		{
 			name: "changed intent from an older owner generation carries the STALE_GENERATION ErrorInfo",
@@ -656,7 +667,7 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 				r.Source.Uid, r.Source.Generation, r.Source.ExpectedOwnerUid = "uid-b", 1, "uid-a"
 			}),
 			wantGen:   1,
-			wantOwner: &store.SourceOwner{UID: "uid-b", Generation: 1, Namespace: "xmc", ClusterUID: "cluster-1", Epoch: 1},
+			wantOwner: &store.SourceOwner{UID: "uid-b", Generation: 1, Namespace: "xmc", ClusterUID: "11111111-1111-4111-8111-111111111111", Epoch: 1},
 		},
 	}
 	for _, tt := range tests {
