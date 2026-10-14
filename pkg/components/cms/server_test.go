@@ -1615,7 +1615,7 @@ func TestCMSServer_GetPlatformHealth_MemoryStore(t *testing.T) {
 func TestCMSServer_OwnershipMetrics(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
-	server := NewServer(ms)
+	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	prodCluster := &componentspb.ClusterIdentity{
 		Uid:   "7d3e2a10-8c4b-4f6e-b1a2-3c4d5e6f7a01",
