@@ -76,8 +76,9 @@ func testBlockedDeactivation(ctx context.Context, t *testing.T, h *kindClusterHa
 }
 
 // assertDeactivationBlocked waits for the bridge to report DeactivationBlocked on the disabled
-// dependency dep, naming its active dependent, while CMS keeps dep undeactivated and the finalizer
-// stays.
+// dependency dep, naming its active dependent. The workload keeps running and serving dependent, so
+// Ready stays True (ComponentHealthy) while Stalled=True (DeactivationBlocked) surfaces the block;
+// CMS keeps dep undeactivated and the finalizer stays.
 func assertDeactivationBlocked(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, dep, dependent string) {
 	t.Helper()
 	blocked := waitForComponent(ctx, t, h, ns, dep, "DeactivationBlocked", func(u *unstructured.Unstructured) bool {
@@ -86,10 +87,10 @@ func assertDeactivationBlocked(ctx context.Context, t *testing.T, h *kindCluster
 	if msg := conditionField(blocked, bridge.ConditionTypeDeactivationBlocked, "message"); !strings.Contains(msg, dependent) {
 		t.Errorf("DeactivationBlocked message = %q, want it to name active dependent %q", msg, dependent)
 	}
-	if reason := conditionField(blocked, bridge.ConditionTypeReady, "reason"); reason != bridge.ReasonDeactivationBlocked {
-		t.Errorf("blocked %s Ready reason = %q, want %q", dep, reason, bridge.ReasonDeactivationBlocked)
-	}
-	// The bridge reports a blocked deactivation as gated, i.e. PENDING_RECONCILIATION.
+	// Ready=True with ComponentHealthy (not DeactivationIncomplete) shows the workload was not torn down.
+	assertCondition(t, blocked, bridge.ConditionTypeReady, bridge.ConditionStatusTrue, bridge.ReasonComponentHealthy)
+	assertCondition(t, blocked, bridge.ConditionTypeStalled, bridge.ConditionStatusTrue, bridge.ReasonDeactivationBlocked)
+	// The deactivation has not completed, so the bridge keeps reporting PENDING_RECONCILIATION.
 	assertCMSComponent(ctx, t, h, blocked, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION)
 	assertCleanupFinalizer(ctx, t, h, ns, dep)
 }
@@ -262,6 +263,15 @@ func conditionField(u *unstructured.Unstructured, condType, field string) string
 		}
 	}
 	return ""
+}
+
+// assertCondition verifies that the status condition condType of u has wantStatus and wantReason.
+func assertCondition(t *testing.T, u *unstructured.Unstructured, condType, wantStatus, wantReason string) {
+	t.Helper()
+	gotStatus, gotReason := conditionField(u, condType, "status"), conditionField(u, condType, "reason")
+	if gotStatus != wantStatus || gotReason != wantReason {
+		t.Errorf("%s %s condition = %s/%s, want %s/%s", u.GetName(), condType, gotStatus, gotReason, wantStatus, wantReason)
+	}
 }
 
 func getComponent(ctx context.Context, t *testing.T, compRes dynamic.ResourceInterface, name string) *unstructured.Unstructured {
