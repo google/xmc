@@ -52,11 +52,12 @@ const (
 	// ReasonClusterFenced rejects a cluster that does not hold the ownership fence. It stays in
 	// standby until it declares an epoch higher than the active one.
 	ReasonClusterFenced = "CLUSTER_FENCED"
-	// ReasonClusterEpochRegressed rejects the active cluster declaring a lower epoch, for example
-	// after a reverted configuration.
+	// ReasonClusterEpochRegressed rejects the active cluster declaring, or sending a sourced intent
+	// at, a lower epoch, for example after a reverted configuration.
 	ReasonClusterEpochRegressed = "CLUSTER_EPOCH_REGRESSED"
-	// ReasonClusterNotDeclared rejects an intent from the fence holder at a newer epoch that it has
-	// not declared yet. The caller declares the epoch and retries.
+	// ReasonClusterNotDeclared rejects a sourced intent before any cluster has declared the fence
+	// (the metadata then has no active_* keys), or from the fence holder at a newer epoch that it
+	// has not declared yet. The caller declares the epoch and retries.
 	ReasonClusterNotDeclared = "CLUSTER_NOT_DECLARED"
 )
 

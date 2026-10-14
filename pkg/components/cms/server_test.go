@@ -613,6 +613,7 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 	}
 	tests := []struct {
 		name       string
+		undeclared bool // Skip declaring the source cluster's fence.
 		seed       bool // Apply baseReq first.
 		req        *componentspb.SetComponentIntentRequest
 		wantCode   codes.Code
@@ -625,6 +626,13 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 			req:       baseReq,
 			wantGen:   1,
 			wantOwner: &store.SourceOwner{UID: "uid-a", Generation: 7, Namespace: "xmc", ClusterUID: "11111111-1111-4111-8111-111111111111", Epoch: 1},
+		},
+		{
+			name:       "source before any fence declaration carries the CLUSTER_NOT_DECLARED ErrorInfo",
+			undeclared: true,
+			req:        baseReq,
+			wantCode:   codes.FailedPrecondition,
+			wantReason: store.ReasonClusterNotDeclared,
 		},
 		{name: "no source orders by spec generation", req: prototest.Modify(baseReq, func(r *componentspb.SetComponentIntentRequest) { r.Source = nil }), wantGen: 7},
 		{
@@ -679,6 +687,11 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 			ctx := context.Background()
 			ms := store.NewMemoryStore()
 			server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
+			if !tt.undeclared {
+				if _, err := ms.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: "11111111-1111-4111-8111-111111111111", Name: "prod", Epoch: 1}); err != nil {
+					t.Fatalf("seed DeclareClusterEpoch() error = %v", err)
+				}
+			}
 			if tt.seed {
 				if _, err := server.SetComponentIntent(ctx, baseReq); err != nil {
 					t.Fatalf("seed SetComponentIntent() error = %v", err)
@@ -752,15 +765,15 @@ func TestCMSServer_DeclareClusterEpoch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			server := NewServer(store.NewMemoryStore(), WithAuthorizer(NewDisabledAuthorizer()))
+			if _, err := server.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: prod}); err != nil {
+				t.Fatalf("seed DeclareClusterEpoch() error = %v", err)
+			}
 			if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
 				Name:   "redpanda",
 				Spec:   &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"},
 				Source: &componentspb.RequestSource{Uid: "uid-a", Generation: 1, Namespace: "xmc", Cluster: prod},
 			}); err != nil {
 				t.Fatalf("seed SetComponentIntent() error = %v", err)
-			}
-			if _, err := server.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: prod}); err != nil {
-				t.Fatalf("seed DeclareClusterEpoch() error = %v", err)
 			}
 
 			got, err := server.DeclareClusterEpoch(ctx, tt.req)

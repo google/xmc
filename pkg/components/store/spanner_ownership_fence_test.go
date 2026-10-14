@@ -248,9 +248,8 @@ func assertStoredOwner(ctx context.Context, t *testing.T, s store.Store, name st
 	}
 }
 
-// TestSetSourcedComponentIntent_FenceParity checks on both backends that, once declared, the fence
-// admits only sourced intents from the active cluster at the fence epoch, while unsourced intents
-// bypass it.
+// TestSetSourcedComponentIntent_FenceParity checks on both backends that the fence admits only
+// sourced intents from the active cluster at the fence epoch, while unsourced intents bypass it.
 func TestSetSourcedComponentIntent_FenceParity(t *testing.T) {
 	prod := store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 2}
 	fromCluster := func(clusterUID string, epoch int64) store.RequestSource {
@@ -259,12 +258,16 @@ func TestSetSourcedComponentIntent_FenceParity(t *testing.T) {
 	tests := []struct {
 		name       string
 		component  string
+		spec       *componentspb.ComponentSpec // Defaults to v1.1.0, a spec change.
 		src        store.RequestSource
 		wantReason string
+		// wantOwnerOnly expects the admitted intent to record only its owner.
+		wantOwnerOnly bool
 	}{
+		{name: "owner at the raised fence epoch records only the owner of an unchanged intent (R3)", component: "fence-owned", spec: intentSpec("v1.0.0"), src: fromCluster(prodClusterUID, 2), wantOwnerOnly: true},
 		{name: "active cluster at the fence epoch writes", component: "fence-owned", src: fromCluster(prodClusterUID, 2)},
 		{name: "active cluster at an undeclared epoch must declare it", component: "fence-owned", src: fromCluster(prodClusterUID, 3), wantReason: store.ReasonClusterNotDeclared},
-		{name: "active cluster at an older epoch is fenced", component: "fence-owned", src: fromCluster(prodClusterUID, 1), wantReason: store.ReasonClusterFenced},
+		{name: "active cluster at an older epoch regressed", component: "fence-owned", src: fromCluster(prodClusterUID, 1), wantReason: store.ReasonClusterEpochRegressed},
 		{name: "another cluster is fenced", component: "fence-owned", src: fromCluster(drClusterUID, 2), wantReason: store.ReasonClusterFenced},
 		{name: "another cluster cannot create a component", component: "fence-new", src: fromCluster(drClusterUID, 2), wantReason: store.ReasonClusterFenced},
 	}
@@ -272,17 +275,25 @@ func TestSetSourcedComponentIntent_FenceParity(t *testing.T) {
 		t.Run(backend.name, func(t *testing.T) {
 			ctx := context.Background()
 			s := backend.newStore(t)
-			seedOwnedComponent(ctx, t, s, "fence-owned", false)
+			seeded := seedOwnedComponent(ctx, t, s, "fence-owned", false)
 			if _, err := s.DeclareClusterEpoch(ctx, prod); err != nil {
 				t.Fatalf("DeclareClusterEpoch() error = %v", err)
 			}
 			// Subtests are intentionally sequential (no t.Parallel) because they share one store.
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
-					_, err := s.SetSourcedComponentIntent(ctx, tt.component, intentSpec("v1.1.0"), nil, tt.src)
+					spec := tt.spec
+					if spec == nil {
+						spec = intentSpec("v1.1.0")
+					}
+					_, err := s.SetSourcedComponentIntent(ctx, tt.component, spec, nil, tt.src)
 					if tt.wantReason == "" {
 						if err != nil {
 							t.Fatalf("SetSourcedComponentIntent() error = %v, want nil", err)
+						}
+						if tt.wantOwnerOnly {
+							assertOwnerOnlyWrite(ctx, t, s, seeded)
+							assertStoredOwner(ctx, t, s, tt.component, ownerFor(tt.src))
 						}
 						return
 					}
@@ -308,7 +319,7 @@ func TestSpannerStore_SetSourcedComponentIntent_FencedReplay(t *testing.T) {
 	ctx := context.Background()
 	s, _ := setupTestStore(ctx, t)
 	seedOwnedComponent(ctx, t, s, "fence-replay", false)
-	if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: drClusterUID, Name: "dr", Epoch: 1}); err != nil {
+	if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: drClusterUID, Name: "dr", Epoch: 2}); err != nil {
 		t.Fatalf("DeclareClusterEpoch() error = %v", err)
 	}
 	fallbacks := 0

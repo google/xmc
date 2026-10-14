@@ -109,8 +109,9 @@ type Store interface {
 	SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error)
 
 	// SetSourcedComponentIntent applies an intent sent by src (validated by ValidateRequestSource),
-	// ordered by src instead of by generation. Once a cluster has declared the ownership fence, src
-	// must come from it at the fence epoch (checkClusterFence: CLUSTER_FENCED, CLUSTER_NOT_DECLARED).
+	// ordered by src instead of by generation. src must come from the cluster that declared the
+	// ownership fence, at the fence epoch (checkClusterFence: CLUSTER_NOT_DECLARED,
+	// CLUSTER_EPOCH_REGRESSED, CLUSTER_FENCED).
 	// A new component starts at generation 1; on an existing one, src must pass checkSourceOwnership
 	// (SOURCE_NAMESPACE_CONFLICT, SOURCE_INCARNATION_MISMATCH) before planSourcedIntent decides
 	// whether the intent is stale (STALE_GENERATION), a no-op, an owner-only write, or a spec write
