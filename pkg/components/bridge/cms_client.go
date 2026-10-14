@@ -146,6 +146,8 @@ type CMSClient interface {
 	PrepareDeactivation(ctx context.Context, in *componentspb.PrepareDeactivationRequest, opts ...grpc.CallOption) (*componentspb.PrepareDeactivationResponse, error)
 	// CompleteDeactivation transitions a DISABLING component to DISABLED.
 	CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error)
+	// DeclareClusterEpoch declares this cluster's ownership epoch to CMS.
+	DeclareClusterEpoch(ctx context.Context, in *componentspb.DeclareClusterEpochRequest, opts ...grpc.CallOption) (*componentspb.DeclareClusterEpochResponse, error)
 }
 
 type serverClientAdapter struct {
@@ -171,6 +173,9 @@ func (a *serverClientAdapter) PrepareDeactivation(ctx context.Context, in *compo
 }
 func (a *serverClientAdapter) CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error) {
 	return a.server.CompleteDeactivation(ctx, in)
+}
+func (a *serverClientAdapter) DeclareClusterEpoch(ctx context.Context, in *componentspb.DeclareClusterEpochRequest, opts ...grpc.CallOption) (*componentspb.DeclareClusterEpochResponse, error) {
+	return a.server.DeclareClusterEpoch(ctx, in)
 }
 
 // updateObservedCMS sends an UpdateObservedGeneration RPC to CMS.

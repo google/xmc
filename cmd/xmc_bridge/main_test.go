@@ -97,6 +97,16 @@ func TestParseConfig(t *testing.T) {
 			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--health-probe-bind-address=0"},
 			wantErr: true,
 		},
+		{
+			name:    "invalid ownership epoch",
+			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--ownership-epoch=0"},
+			wantErr: true,
+		},
+		{
+			name:    "invalid cluster-name DNS label",
+			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--cluster-name=Not_A_DNS_Label"},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -219,6 +229,8 @@ func TestParseConfig_EnvVars(t *testing.T) {
 	t.Setenv("CMS_ADDRESS", "custom-cms:50051")
 	t.Setenv("NAMESPACE", "custom-ns")
 	t.Setenv("HELM_RELEASE_NAME", "custom-release")
+	t.Setenv("CLUSTER_NAME", "prod-us-central1")
+	t.Setenv("COMPONENT_OWNERSHIP_EPOCH", "3")
 	t.Setenv("PROBE_INTERVAL", "15s")
 	t.Setenv("PROBE_TIMEOUT", "8s")
 	t.Setenv("RECONCILE_TIMEOUT", "90s")
@@ -237,6 +249,12 @@ func TestParseConfig_EnvVars(t *testing.T) {
 	}
 	if cfg.ReleaseName != "custom-release" {
 		t.Errorf("cfg.ReleaseName = %q, want custom-release", cfg.ReleaseName)
+	}
+	if cfg.ClusterName != "prod-us-central1" {
+		t.Errorf("cfg.ClusterName = %q, want prod-us-central1", cfg.ClusterName)
+	}
+	if cfg.OwnershipEpoch != 3 {
+		t.Errorf("cfg.OwnershipEpoch = %d, want 3", cfg.OwnershipEpoch)
 	}
 	if cfg.ProbeInterval != 15*time.Second {
 		t.Errorf("cfg.ProbeInterval = %v, want 15s", cfg.ProbeInterval)
@@ -300,6 +318,14 @@ func TestParseConfig_InvalidEnvDuration(t *testing.T) {
 		_, err := ParseConfig([]string{})
 		if err == nil {
 			t.Error("expected error for MAX_CONCURRENT_RECONCILES=0, got nil")
+		}
+	})
+
+	t.Run("invalid COMPONENT_OWNERSHIP_EPOCH", func(t *testing.T) {
+		t.Setenv("COMPONENT_OWNERSHIP_EPOCH", "not-an-int")
+		_, err := ParseConfig([]string{})
+		if err == nil {
+			t.Error("expected error for invalid COMPONENT_OWNERSHIP_EPOCH, got nil")
 		}
 	})
 }

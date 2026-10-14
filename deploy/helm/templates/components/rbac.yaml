@@ -121,4 +121,36 @@ roleRef:
   kind: Role
   name: xmc-bridge-leader-election
   apiGroup: rbac.authorization.k8s.io
+---
+# Cluster identity: xmc-bridge reads the kube-system Namespace UID at startup to identify this
+# cluster when declaring its ownership epoch to CMS. Cluster-scoped names are suffixed with the
+# release namespace so multiple XMC installs in one cluster do not collide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: xmc-bridge-cluster-identity-{{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: xmc-bridge
+    app.kubernetes.io/part-of: xmanager-cloud
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    resourceNames: ["kube-system"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: xmc-bridge-cluster-identity-{{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: xmc-bridge
+    app.kubernetes.io/part-of: xmanager-cloud
+subjects:
+  - kind: ServiceAccount
+    name: xmc-bridge-sa
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: xmc-bridge-cluster-identity-{{ .Release.Namespace }}
+  apiGroup: rbac.authorization.k8s.io
 {{- end }}
