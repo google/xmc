@@ -257,6 +257,14 @@ jobs:
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_playwright: true
             timeout_minutes: 15
+          - id: 'multikueue_job'
+            name: 'MultiKueue Delegated Job'
+            example_path: 'examples/simple_job'
+            entrypoint: 'launch.py'
+            args: '--queue=multikueue-cpu-queue --num_work_units=3 --duration=60 --gpus=0'
+            verify_module: 'tools.nightly_tests.multikueue_job_verify'
+            expected_queue: 'multikueue-cpu-queue'
+            timeout_minutes: 15
 
     env:
       PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}'
