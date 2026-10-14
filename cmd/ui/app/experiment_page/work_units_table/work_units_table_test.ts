@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { TestBed } from '@angular/core/testing';
 import { MatButtonHarness } from '@angular/material/button/testing';
 import { MatSelectHarness } from '@angular/material/select/testing';
@@ -183,7 +184,10 @@ describe('WorkUnitsTable Component', () => {
     fixture.componentRef.setInput('xid', '2');
     fixture.detectChanges();
 
-    const harness = await getHarness(WorkUnitsTableHarness);
+    const harness = await TestbedHarnessEnvironment.harnessForFixture(
+      fixture,
+      WorkUnitsTableHarness,
+    );
     expect(await harness.isLoading()).toBeTrue();
     expect(await harness.hasTable()).toBeFalse();
     fixture.destroy();
