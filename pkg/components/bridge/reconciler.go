@@ -60,7 +60,8 @@ type ReconcileResult struct {
 	Access *AccessStatus
 	// RemoveFinalizer indicates that cleanup finished and the CMS cleanup finalizer may be released.
 	RemoveFinalizer bool
-	// RequeueAfter optionally requests that the controller re-reconcile sooner than ProbeInterval.
+	// RequeueAfter optionally overrides ProbeInterval as the delay before the next pass. It is always
+	// honored, whether shorter or longer than ProbeInterval.
 	RequeueAfter time.Duration
 }
 

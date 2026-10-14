@@ -137,11 +137,21 @@ func TestComponentControllerReconcile(t *testing.T) {
 			wantFinal:    []string{FinalizerCMSCleanup},
 		},
 		{
-			name:         "blocked deactivation shortens RequeueAfter to deactivationRecheckInterval",
+			name:         "blocked deactivation requeues after deactivationRecheckInterval",
 			objs:         []*unstructured.Unstructured{finalizedDisabled("app")},
 			cms:          &mockCMS{prepareErr: status.Error(codes.FailedPrecondition, "active dependents")},
 			target:       "app",
 			wantResult:   reconcile.Result{RequeueAfter: deactivationRecheckInterval},
+			wantWrites:   []string{"apply/status"},
+			wantSetCalls: 1,
+			wantFinal:    []string{FinalizerCMSCleanup},
+		},
+		{
+			name:         "disabled component requeues on the CMS heartbeat, not the probe interval",
+			objs:         []*unstructured.Unstructured{finalizedDisabled("app")},
+			cms:          &mockCMS{},
+			target:       "app",
+			wantResult:   reconcile.Result{RequeueAfter: defaultCMSHeartbeatInterval},
 			wantWrites:   []string{"apply/status"},
 			wantSetCalls: 1,
 			wantFinal:    []string{FinalizerCMSCleanup},
@@ -249,6 +259,28 @@ func TestComponentControllerReconcile(t *testing.T) {
 				if diff := cmp.Diff(tt.wantFinal, getFakeComponent(t, cl, controllerTestNamespace, tt.target).GetFinalizers()); diff != "" {
 					t.Errorf("stored finalizers mismatch (-want +got):\n%s", diff)
 				}
+			}
+		})
+	}
+}
+
+func TestComponentControllerRequeueDelay(t *testing.T) {
+	const probe = 5 * time.Second
+	tests := []struct {
+		name string
+		res  *ReconcileResult
+		want time.Duration
+	}{
+		{name: "nil result uses the probe interval", res: nil, want: probe},
+		{name: "no explicit delay uses the probe interval", res: &ReconcileResult{}, want: probe},
+		{name: "explicit delay longer than the probe interval is honored", res: &ReconcileResult{RequeueAfter: deactivationRecheckInterval}, want: deactivationRecheckInterval},
+		{name: "explicit delay shorter than the probe interval is honored", res: &ReconcileResult{RequeueAfter: time.Second}, want: time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewComponentController(nil, nil, ComponentControllerOptions{ProbeInterval: probe})
+			if got := c.requeueDelay(tt.res); got != tt.want {
+				t.Errorf("requeueDelay(%+v) = %v, want %v", tt.res, got, tt.want)
 			}
 		})
 	}

@@ -412,8 +412,11 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 				t.Errorf("ReconcileComponent() outcome mismatch (-want +got):\n%s", diff)
 			}
 			wantRequeue := time.Duration(0)
-			if tt.want.DeactivationBlocked == ConditionStatusTrue {
+			switch {
+			case tt.want.DeactivationBlocked == ConditionStatusTrue:
 				wantRequeue = deactivationRecheckInterval
+			case tt.want.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED:
+				wantRequeue = defaultCMSHeartbeatInterval
 			}
 			if res.RequeueAfter != wantRequeue {
 				t.Errorf("ReconcileResult.RequeueAfter = %v, want %v", res.RequeueAfter, wantRequeue)

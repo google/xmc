@@ -127,12 +127,14 @@ func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Reque
 	return reconcile.Result{RequeueAfter: c.requeueDelay(res)}, nil
 }
 
+// requeueDelay returns the pass's explicit RequeueAfter when set, which is always honored, longer
+// or shorter than ProbeInterval (e.g. the 30s DeactivationBlocked recheck or the 5m heartbeat of a
+// disabled component); otherwise it returns ProbeInterval.
 func (c *ComponentController) requeueDelay(res *ReconcileResult) time.Duration {
-	delay := c.opts.ProbeInterval
-	if res != nil && res.RequeueAfter > 0 && (delay <= 0 || res.RequeueAfter < delay) {
+	if res != nil && res.RequeueAfter > 0 {
 		return res.RequeueAfter
 	}
-	return delay
+	return c.opts.ProbeInterval
 }
 
 // ensureCleanupFinalizer returns item once FinalizerCMSCleanup is persisted on it, attaching the
