@@ -70,7 +70,7 @@ def _assert_work_unit_spec(
     )
 
 
-def _assert_all_work_unit_specs(stub: Any, xid: str) -> None:
+def assert_all_work_unit_specs(stub: Any, xid: str) -> None:
     """Fetches raw work units and validates protobuf specifications for all units."""
     expected_work_units = verifier_cli.resolve_expected_work_units(DEFAULT_WORK_UNITS)
     expected_queue = verifier_cli.get_flag(verifier_cli.FLAGS, "expected_queue", DEFAULT_QUEUE)
@@ -100,7 +100,7 @@ def main(argv: Sequence[str]) -> None:
         summary_title="ALL SIMPLE JOB ASSERTIONS PASSED SUCCESSFULLY!",
         expected_title_pattern=EXPECTED_TITLE_PATTERN,
         expected_worker_names=expected_workers,
-        extra_step=_assert_all_work_unit_specs,
+        extra_step=assert_all_work_unit_specs,
     )
 
 

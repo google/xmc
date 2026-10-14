@@ -32,6 +32,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,10 +50,31 @@ import (
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/bridge"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
 )
+
+const harnessBridgeSA = "xmc-bridge-sa@xmc-test.iam.gserviceaccount.com"
+
+type staticHarnessAuthenticator struct {
+	email string
+}
+
+func (s staticHarnessAuthenticator) AuthenticateUserFromContext(context.Context) (string, string, error) {
+	if s.email == "" {
+		return "", "", status.Error(codes.Unauthenticated, "missing bearer token")
+	}
+	return s.email, "uid-1", nil
+}
+
+func newHarnessCMSAuthorizer(callerEmail string) *cms.Authorizer {
+	return cms.NewAuthorizer(cms.AuthorizerConfig{
+		Authenticator:             staticHarnessAuthenticator{email: callerEmail},
+		AuthorizedServiceAccounts: []string{harnessBridgeSA},
+	})
+}
 
 var (
 	crdGVR                           = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
@@ -155,7 +178,8 @@ func buildClusterClients(t *testing.T, clusterName, kubeconfig string) *kindClus
 		t.Fatalf("failed to create dynamic client: %v", err)
 	}
 	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(clientset.Discovery()))
-	cmsClient := bridge.NewCMSClientAdapter(cms.NewServer(store.NewMemoryStore()))
+	cmsSrv := cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer(harnessBridgeSA)))
+	cmsClient := bridge.NewCMSClientAdapter(cmsSrv)
 	prober := &kindNodePortProber{clientset: clientset, delegate: bridge.NewNetworkHealthProber(bridge.WithHealthProbeTimeout(5 * time.Second))}
 	reconciler, err := bridge.NewReconciler(cmsClient, bridge.NewBridgeProber(bridge.NewK8sStatusDetector(dynClient, mapper), prober, 5*time.Second), nil)
 	if err != nil {
@@ -642,5 +666,30 @@ func TestKind3PHarnessUnit(t *testing.T) {
 	}}
 	if !isComponentReady(comp) || locateHelmComponentCRDPath(t) == "" {
 		t.Error("expected isComponentReady and locateHelmComponentCRDPath to succeed")
+	}
+	verifyHarnessCMSAuth(t)
+}
+
+func verifyHarnessCMSAuth(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+	req := &componentspb.SetComponentIntentRequest{
+		Name: "components/clickhouse",
+		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, Version: "v1.0.0"},
+	}
+	unauthSrv := cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer("")))
+	if _, err := unauthSrv.SetComponentIntent(ctx, req); status.Code(err) != codes.Unauthenticated {
+		t.Errorf("unauthenticated SetComponentIntent code = %v, want Unauthenticated", status.Code(err))
+	}
+	viewerSrv := cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer("viewer@xmc.local")))
+	if _, err := viewerSrv.SetComponentIntent(ctx, req); status.Code(err) != codes.PermissionDenied {
+		t.Errorf("viewer SetComponentIntent code = %v, want PermissionDenied", status.Code(err))
+	}
+	if _, err := viewerSrv.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{}); err != nil {
+		t.Errorf("viewer GetPlatformHealth unexpected error = %v", err)
+	}
+	bridgeSrv := cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer(harnessBridgeSA)))
+	if _, err := bridgeSrv.SetComponentIntent(ctx, req); err != nil {
+		t.Errorf("bridge SA SetComponentIntent unexpected error = %v", err)
 	}
 }

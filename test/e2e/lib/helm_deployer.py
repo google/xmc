@@ -103,6 +103,12 @@ xid_custom_image: "xid_service_image:latest"
 actuator_custom_image: "actuator_image:latest"
 reconciler_custom_image: "reconciler_image:latest"
 ess_custom_image: "experiment_state_server_image:latest"
+xmc_bridge_custom_image: "xmc_bridge_image:latest"
+
+componentsDeployment:
+  enabled: true
+  probeInterval: "2s"
+  probeTimeout: "2s"
 
 experimentStateServer:
   spannerDatabaseName: "projects/{self.cfg.project_id}/instances/{self.cfg.spanner_instance}/databases/{self.cfg.ess_db}"
@@ -246,6 +252,7 @@ ui:
                 "experiment-state-server-deployment",
                 "actuator-deployment",
                 "reconciler-deployment",
+                "xmc-bridge-deployment",
                 "ui-deployment",
             ]:
                 run_cmd(

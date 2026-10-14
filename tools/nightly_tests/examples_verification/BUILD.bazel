@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -24,6 +25,7 @@ exports_files([
     "managed_xprof_artifact_job_verify.py",
     "metrics_dashboard_job_verify.py",
     "metrics_job_verify.py",
+    "multikueue_job_verify.py",
     "multipod_job_verify.py",
     "pathways_job_verify.py",
     "per_job_node_selector_verify.py",
@@ -36,8 +38,8 @@ exports_files([
     "xdash_dashboard_verify.py",
 ])
 
-py_binary(
-    name = "simple_job_verify",
+py_library(
+    name = "simple_job_verify_lib",
     srcs = ["simple_job_verify.py"],
     imports = ["../../.."],
     deps = [
@@ -45,6 +47,13 @@ py_binary(
         "//tools/nightly_tests/verification:workload_verification",
         "//tools/nightly_tests/verification:xmc_entities_validator_lib",
     ],
+)
+
+py_binary(
+    name = "simple_job_verify",
+    srcs = ["simple_job_verify.py"],
+    imports = ["../../.."],
+    deps = [":simple_job_verify_lib"],
 )
 
 py_binary(
@@ -194,6 +203,18 @@ py_binary(
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
         "//tools/nightly_tests/verification:workload_verification",
+    ],
+)
+
+py_binary(
+    name = "multikueue_job_verify",
+    srcs = ["multikueue_job_verify.py"],
+    imports = ["../../.."],
+    deps = [
+        ":simple_job_verify_lib",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
+        "//tools/nightly_tests/verification:xmc_entities_validator_lib",
     ],
 )
 
