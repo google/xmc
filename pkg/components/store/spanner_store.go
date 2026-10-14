@@ -844,11 +844,14 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 	}
 	recordOwnerAdoption(prevOwner, reqSrc, false)
 
-	if finalRec != nil && !unchanged {
+	if finalRec == nil {
+		return nil, nil
+	}
+	if reqSrc != nil {
+		finalRec.SourceLastSeenTime = commitTimestamp
+	}
+	if !unchanged {
 		finalRec.UpdateTime = commitTimestamp
-		if reqSrc != nil {
-			finalRec.SourceLastSeenTime = commitTimestamp
-		}
 		finalRec.Etag = generateEtag(finalRec)
 	}
 
