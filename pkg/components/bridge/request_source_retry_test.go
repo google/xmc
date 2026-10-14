@@ -12,6 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Production target: lifecycle.go (callWithOwnership and applyIntentResponse).
+//
+// Test type: Hermetic unit test suite in package bridge using a fake
+// sourceCallRecorder to script CMS ErrorInfo responses without a gRPC server
+// or Kubernetes API server.
+//
+// Why separate from lifecycle_test.go: Isolates the RequestSource retry state
+// machine (CLUSTER_NOT_DECLARED auto-declaration, STALE_GENERATION handling,
+// and SOURCE_INCARNATION_MISMATCH live-UID takeover) from the end-to-end
+// Reconciler lifecycle tests in lifecycle_test.go.
 package bridge
 
 import (
