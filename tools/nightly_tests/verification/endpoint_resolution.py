@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 
-from tools.nightly_tests import xmc_entities_validator
+from tools.nightly_tests.verification import xmc_entities_validator
 
 
 def resolve_endpoint(provided_endpoint: str | None = None) -> str:

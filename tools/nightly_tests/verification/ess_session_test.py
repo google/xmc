@@ -31,7 +31,7 @@ class EssSessionTest(unittest.TestCase):
         mock_channel = mock.MagicMock()
 
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+            "tools.nightly_tests.verification.xmc_entities_validator.create_authenticated_stub",
             return_value=(mock_stub, mock_channel),
         ) as mock_create_stub:
             with ess_session.ess_channel_context("ess-server:8080") as (stub, channel):
@@ -50,7 +50,7 @@ class EssSessionTest(unittest.TestCase):
         with (
             mock.patch.dict("os.environ", {"XMANAGER_ENDPOINT": "env-ess:9090"}, clear=True),
             mock.patch(
-                "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+                "tools.nightly_tests.verification.xmc_entities_validator.create_authenticated_stub",
                 return_value=(mock_stub, mock_channel),
             ) as mock_create_stub,
             self.assertRaises(RuntimeError),
@@ -61,7 +61,7 @@ class EssSessionTest(unittest.TestCase):
         mock_channel.close.assert_called_once()
 
         with mock.patch(
-            "tools.nightly_tests.xmc_entities_validator.create_authenticated_stub",
+            "tools.nightly_tests.verification.xmc_entities_validator.create_authenticated_stub",
             return_value=(mock_stub, None),
         ):
             with ess_session.ess_channel_context("ess-server:8080") as (stub, channel):

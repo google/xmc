@@ -27,9 +27,9 @@ from tools.nightly_tests import check_examples_coverage
 
 
 def _seed_repo(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
-    """Creates minimal examples/, tools/nightly_tests/, and .github/workflows/ directories."""
+    """Creates minimal examples/, tools/nightly_tests/examples_verification/, and .github/workflows/ directories."""
     examples_dir = root / "examples"
-    tests_dir = root / "tools" / "nightly_tests"
+    tests_dir = root / "tools" / "nightly_tests" / "examples_verification"
     workflows_dir = root / ".github" / "workflows"
     examples_dir.mkdir(parents=True, exist_ok=True)
     tests_dir.mkdir(parents=True, exist_ok=True)
@@ -47,7 +47,7 @@ def _wire_example(root: pathlib.Path, name: str) -> None:
         encoding="utf-8",
     )
     (workflows_dir / "nightly-examples-e2e.yml").write_text(
-        f"example_path: 'examples/{name}'\nverify_module: 'tools.nightly_tests.{name}_verify'\n",
+        f"example_path: 'examples/{name}'\nverify_module: 'tools.nightly_tests.examples_verification.{name}_verify'\n",
         encoding="utf-8",
     )
 
@@ -146,7 +146,7 @@ class CheckExamplesCoverageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             _wire_example(root, "single_quote_job")
-            build_path = root / "tools" / "nightly_tests" / "BUILD.bazel"
+            build_path = root / "tools" / "nightly_tests" / "examples_verification" / "BUILD.bazel"
             build_path.write_text(
                 "py_binary(name = 'single_quote_job_verify', srcs = ['single_quote_job_verify.py'])\n",
                 encoding="utf-8",
