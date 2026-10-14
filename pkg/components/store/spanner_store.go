@@ -780,8 +780,10 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 	}
 
 	var finalRec *ComponentRecord
+	var unchanged bool
 
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		unchanged = false
 		if err := checkFence(ctx, txn, updateObservedGenerationOperation, reqSrc); err != nil {
 			return err
 		}
@@ -793,36 +795,13 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 			return err
 		}
 
-		rec.ObservedGeneration = &observedGen
-		if access != nil {
-			rec.Status = proto.Clone(access).(*componentspb.ComponentAccessStatus)
-		}
-		if state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
-			rec.State = state
-		}
-		applyStatusUpdates(rec, observedGen, state, statusMsg)
-
-		var accessBytes []byte
-		if rec.Status != nil {
-			bytes, err := proto.Marshal(rec.Status)
-			if err != nil {
-				return fmt.Errorf("failed to marshal access status proto: %w", err)
+		// An unchanged heartbeat writes only the owner columns, refreshing SourceLastSeenTime of a
+		// sourced call, and keeps UpdateTime.
+		unchanged = !applyObservation(rec, observedGen, access, state, statusMsg)
+		if !unchanged {
+			if err := writeObservationTx(txn, rec, observedGen, state); err != nil {
+				return err
 			}
-			accessBytes = bytes
-		}
-
-		updateMap := map[string]any{
-			"ComponentId":        rec.ComponentID,
-			"ObservedGeneration": observedGen,
-			"AccessPayload":      accessBytes,
-			"UpdateTime":         spanner.CommitTimestamp,
-		}
-		if state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
-			updateMap["State"] = int64(state)
-		}
-
-		if err := txn.BufferWrite([]*spanner.Mutation{spanner.UpdateMap("Components", updateMap)}); err != nil {
-			return err
 		}
 		if err := recordNonIntentOwnerTx(txn, rec, reqSrc); err != nil {
 			return err
@@ -836,12 +815,36 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 		return nil, err
 	}
 
-	if finalRec != nil {
+	if finalRec != nil && !unchanged {
 		finalRec.UpdateTime = commitTimestamp
 		finalRec.Etag = generateEtag(finalRec)
 	}
 
 	return cloneRecord(finalRec), nil
+}
+
+// writeObservationTx buffers a write of rec's observed generation, access status and, unless
+// state is UNSPECIFIED, state, with UpdateTime at the commit timestamp.
+func writeObservationTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord, observedGen int64, state componentspb.ComponentState) error {
+	var accessBytes []byte
+	if rec.Status != nil {
+		bytes, err := proto.Marshal(rec.Status)
+		if err != nil {
+			return fmt.Errorf("failed to marshal access status proto: %w", err)
+		}
+		accessBytes = bytes
+	}
+
+	updateMap := map[string]any{
+		"ComponentId":        rec.ComponentID,
+		"ObservedGeneration": observedGen,
+		"AccessPayload":      accessBytes,
+		"UpdateTime":         spanner.CommitTimestamp,
+	}
+	if state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
+		updateMap["State"] = int64(state)
+	}
+	return txn.BufferWrite([]*spanner.Mutation{spanner.UpdateMap("Components", updateMap)})
 }
 
 // ExecuteDeletion deletes a component using the specified deletion policy.

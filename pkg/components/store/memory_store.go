@@ -270,6 +270,25 @@ func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string,
 		return nil, err
 	}
 	rec.Owner = nonIntentOwner(rec.Owner, reqSrc)
+	if !applyObservation(rec, observedGen, access, state, statusMsg) {
+		// An unchanged heartbeat records only the owner: UpdateTime and the snapshot stay.
+		return cloneRecord(rec), nil
+	}
+
+	rec.UpdateTime = time.Now().UTC()
+	rec.Etag = generateEtag(rec)
+	m.recordSnapshotLocked(rec)
+	return cloneRecord(rec), nil
+}
+
+// applyObservation applies an UpdateObservedGeneration of observedGen, access, state and
+// statusMsg to rec, and reports whether it changed the observed generation, state or status.
+func applyObservation(rec *ComponentRecord, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) bool {
+	prevObserved, prevState := rec.ObservedGeneration, rec.State
+	var prevStatus *componentspb.ComponentAccessStatus
+	if rec.Status != nil {
+		prevStatus = proto.Clone(rec.Status).(*componentspb.ComponentAccessStatus)
+	}
 
 	rec.ObservedGeneration = &observedGen
 	if access != nil {
@@ -280,10 +299,7 @@ func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string,
 	}
 	applyStatusUpdates(rec, observedGen, state, statusMsg)
 
-	rec.UpdateTime = time.Now().UTC()
-	rec.Etag = generateEtag(rec)
-	m.recordSnapshotLocked(rec)
-	return cloneRecord(rec), nil
+	return prevObserved == nil || *prevObserved != observedGen || prevState != rec.State || !proto.Equal(prevStatus, rec.Status)
 }
 
 // lookupMutableRecordLocked checks the cluster fence, finds the active record canonicalName, and

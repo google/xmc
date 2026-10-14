@@ -492,7 +492,8 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 				t.Fatalf("state after rejected CompleteDeactivation = %v, want DISABLING", got.State)
 			}
 
-			// CompleteDeactivation with CAS takeover succeeds and adopts ownership at casUID's generation.
+			// CompleteDeactivation with CAS takeover succeeds and adopts ownership with
+			// SourceGeneration 0, as every non-intent adoption does.
 			casUID.ExpectedOwnerUID = newerGen.UID
 			if err := s.CompleteDeactivation(ctx, name, false, casUID); err != nil {
 				t.Fatalf("CompleteDeactivation(CAS) error = %v", err)
@@ -501,8 +502,10 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetComponent() error = %v", err)
 			}
-			if finalRec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED || !cmp.Equal(finalRec.Owner, ownerFor(casUID)) {
-				t.Errorf("final record = (state=%v, owner=%+v), want DISABLED owned by %+v", finalRec.State, finalRec.Owner, casUID)
+			wantOwner := ownerFor(casUID)
+			wantOwner.Generation = 0
+			if finalRec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED || !cmp.Equal(finalRec.Owner, wantOwner) {
+				t.Errorf("final record = (state=%v, owner=%+v), want DISABLED owned by %+v", finalRec.State, finalRec.Owner, wantOwner)
 			}
 		})
 	}

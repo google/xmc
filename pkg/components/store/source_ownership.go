@@ -223,15 +223,17 @@ func checkSourceMutation(operation, canonicalName string, owner *SourceOwner, sr
 
 // nonIntentOwner returns the owner recorded by a non-intent mutation (UpdateObservedGeneration,
 // PrepareDeactivation, CompleteDeactivation) from src on a record currently owned by existing.
-// When existing is already owned by src.UID, existing.Generation (the last committed intent's CR
-// generation) is preserved so an observation or deactivation call never advances SourceGeneration
-// past a gated SetComponentIntent.
+// When existing is already owned by src.UID (R3), existing.Generation (the last committed intent's
+// CR generation) is preserved so an observation or deactivation call never advances
+// SourceGeneration past a gated SetComponentIntent. An adoption (R2 or R5) records Generation 0,
+// so the adopter's next intent is never rejected as STALE_GENERATION.
 func nonIntentOwner(existing *SourceOwner, src *RequestSource) *SourceOwner {
 	if src == nil {
 		return existing
 	}
 	next := ownerOf(*src)
-	if existing != nil && existing.UID == src.UID && existing.Generation > 0 {
+	next.Generation = 0
+	if existing != nil && existing.UID == src.UID {
 		next.Generation = existing.Generation
 	}
 	return next
