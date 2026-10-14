@@ -16,6 +16,7 @@
 """Unit tests for install_xmanager script."""
 
 import io
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -196,6 +197,176 @@ class TestInstallXmanager(unittest.TestCase):
         mock_compile.assert_called_once()
         mock_install.assert_called_once()
         mock_verify.assert_called_once()
+
+    def test_get_venv_site_packages(self) -> None:
+        """Test get_venv_site_packages queries sysconfig purelib."""
+        mock_res = mock.Mock(stdout="/mock/venv/lib/python3.13/site-packages\n")
+        with mock.patch("subprocess.run", return_value=mock_res) as mock_run:
+            result = install_xmanager.get_venv_site_packages(Path("/mock/venv/bin/python3"))
+        self.assertEqual(result, Path("/mock/venv/lib/python3.13/site-packages"))
+        mock_run.assert_called_once_with(
+            [
+                "/mock/venv/bin/python3",
+                "-c",
+                "import sysconfig; print(sysconfig.get_path('purelib'))",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+    def test_build_bazel_dashboard_protos(self) -> None:
+        """Test build_bazel_dashboard_protos builds targets and resolves bazel-bin."""
+        repo_root = Path("/mock/repo")
+        mock_info = mock.Mock(stdout="/mock/bazel-out/k8-fastbuild/bin\n")
+        with mock.patch("subprocess.run", side_effect=[mock.Mock(), mock_info]) as mock_run:
+            result = install_xmanager.build_bazel_dashboard_protos(repo_root)
+        self.assertEqual(
+            result,
+            Path("/mock/bazel-out/k8-fastbuild/bin/api/protos/dashboard/_virtual_imports"),
+        )
+        self.assertEqual(mock_run.call_count, 2)
+        mock_run.assert_any_call(
+            ["bazel", "build", *install_xmanager.DASHBOARD_BAZEL_TARGETS],
+            cwd=repo_root,
+            check=True,
+        )
+        mock_run.assert_any_call(
+            ["bazel", "info", "bazel-bin"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+    def test_copy_virtual_imports_to_site_packages(self) -> None:
+        """Test copying read-only Bazel virtual imports and preserving sibling packages."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            tmp_dir = Path(tmp_str)
+            virtual_imports = tmp_dir / "_virtual_imports"
+            site_packages = tmp_dir / "site-packages"
+
+            for target, filename in (
+                ("dashboard_messages_proto", "messages_pb2.py"),
+                ("dashboard_service_proto", "dashboard_service_pb2.py"),
+            ):
+                proto_dir = (
+                    virtual_imports / target / "xmanager_cloud" / "dashboard_service" / "proto"
+                )
+                proto_dir.mkdir(parents=True)
+                proto_file = proto_dir / filename
+                proto_file.write_text("# generated", encoding="utf-8")
+                proto_file.chmod(stat.S_IRUSR)
+                proto_dir.chmod(stat.S_IRUSR | stat.S_IXUSR)
+
+            sibling_file = (
+                site_packages
+                / "xmanager_cloud"
+                / "experiment_state_server"
+                / "proto"
+                / "api_pb2.py"
+            )
+            sibling_file.parent.mkdir(parents=True)
+            sibling_file.write_text("# sibling", encoding="utf-8")
+
+            stale_dir = site_packages / "xmanager_cloud" / "dashboard_service" / "proto"
+            stale_dir.mkdir(parents=True)
+            stale_file = stale_dir / "obsolete_pb2.py"
+            stale_file.write_text("# stale", encoding="utf-8")
+            stale_file.chmod(stat.S_IRUSR)
+
+            try:
+                install_xmanager.copy_virtual_imports_to_site_packages(
+                    virtual_imports, site_packages
+                )
+
+                dest_proto = site_packages / "xmanager_cloud" / "dashboard_service" / "proto"
+                self.assertFalse((dest_proto / "obsolete_pb2.py").exists())
+                self.assertTrue((dest_proto / "messages_pb2.py").is_file())
+                self.assertTrue((dest_proto / "dashboard_service_pb2.py").is_file())
+                self.assertTrue(sibling_file.is_file())
+                self.assertTrue(
+                    bool((dest_proto / "messages_pb2.py").stat().st_mode & stat.S_IWUSR)
+                )
+            finally:
+                install_xmanager._make_tree_user_writable(virtual_imports)
+
+    def test_copy_virtual_imports_missing_target_exits(self) -> None:
+        """Test copy_virtual_imports_to_site_packages exits when virtual imports are missing."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            tmp_dir = Path(tmp_str)
+            install_xmanager._make_tree_user_writable(tmp_dir / "non_existent")
+            with self.assertRaises(SystemExit):
+                install_xmanager.copy_virtual_imports_to_site_packages(
+                    tmp_dir / "missing", tmp_dir / "site-packages"
+                )
+
+    @mock.patch("install_xmanager.copy_virtual_imports_to_site_packages")
+    @mock.patch("install_xmanager.get_venv_site_packages")
+    @mock.patch("install_xmanager.build_bazel_dashboard_protos")
+    def test_install_bazel_dashboard_protos(
+        self,
+        mock_build: mock.Mock,
+        mock_site: mock.Mock,
+        mock_copy: mock.Mock,
+    ) -> None:
+        """Test install_bazel_dashboard_protos coordinates build and copy."""
+        mock_build.return_value = Path("/mock/virtual_imports")
+        mock_site.return_value = Path("/mock/site-packages")
+        venv_python = Path("/mock/venv/bin/python3")
+        repo_root = Path("/mock/repo")
+
+        install_xmanager.install_bazel_dashboard_protos(venv_python, repo_root)
+
+        mock_build.assert_called_once_with(repo_root)
+        mock_site.assert_called_once_with(venv_python)
+        mock_copy.assert_called_once_with(
+            Path("/mock/virtual_imports"), Path("/mock/site-packages")
+        )
+
+    @mock.patch("venv.create")
+    def test_setup_virtualenv_creates_when_missing_python(
+        self,
+        mock_create: mock.Mock,
+    ) -> None:
+        """Test setup_virtualenv runs venv.create when python binary is absent."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            venv_dir = Path(tmp_str)
+            result = install_xmanager.setup_virtualenv(venv_dir)
+            mock_create.assert_called_once_with(venv_dir, with_pip=True)
+            self.assertEqual(result, venv_dir / "bin" / "python")
+
+    @mock.patch("venv.create")
+    def test_setup_virtualenv_reuses_existing_python3(
+        self,
+        mock_create: mock.Mock,
+    ) -> None:
+        """Test setup_virtualenv skips venv.create when bin/python3 exists."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            venv_dir = Path(tmp_str)
+            python_bin = venv_dir / "bin" / "python3"
+            python_bin.parent.mkdir(parents=True)
+            python_bin.write_text("", encoding="utf-8")
+            result = install_xmanager.setup_virtualenv(venv_dir)
+            mock_create.assert_not_called()
+            self.assertEqual(result, python_bin)
+
+    @mock.patch("install_xmanager.install_bazel_dashboard_protos")
+    @mock.patch("install_xmanager.setup_virtualenv")
+    @mock.patch("install_xmanager.check_prerequisites")
+    def test_main_dashboard_protos_only(
+        self,
+        mock_pre: mock.Mock,
+        mock_venv: mock.Mock,
+        mock_install_dashboard: mock.Mock,
+    ) -> None:
+        """Test main with --dashboard-protos-only skips full clone and installs protos."""
+        mock_venv.return_value = Path("/mock/venv/bin/python3")
+        with tempfile.TemporaryDirectory() as tmp_venv:
+            install_xmanager.main(["--venv", tmp_venv, "--dashboard-protos-only"])
+        mock_venv.assert_called_once()
+        mock_install_dashboard.assert_called_once()
+        mock_pre.assert_not_called()
 
 
 if __name__ == "__main__":

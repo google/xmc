@@ -19,37 +19,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 VENV_DIR="${SCRIPT_DIR}/.venv"
 
-echo "--> [1/5] Installing XManager library and xmanager_cloud proto bindings..."
+echo "--> [1/4] Installing XManager library and xmanager_cloud proto bindings..."
 cd "${REPO_ROOT}"
 python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}"
 
-PYTHON_BIN="${VENV_DIR}/bin/python3"
 PIP_BIN="${VENV_DIR}/bin/pip"
 
-echo "--> [2/5] Compiling Dashboard Service Python protobuf modules with Bazel..."
-bazel build //api/protos/dashboard:dashboard_messages_py_proto //api/protos/dashboard:dashboard_service_py_proto
-
-echo "--> [3/5] Installing clickhouse-connect, grpcio and runtime dependencies..."
+echo "--> [2/4] Installing clickhouse-connect, grpcio and runtime dependencies..."
 "${PIP_BIN}" install --upgrade pip
 "${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
 
-# sysconfig.get_path('purelib') resolves against the running interpreter, which is the
-# venv's; site.getsitepackages() can report the base prefix instead.
-SITE_PACKAGES="$("${PYTHON_BIN}" -c "import sysconfig; print(sysconfig.get_path('purelib'))")"
-echo "--> [4/5] Copying generated protobuf modules to virtual environment site-packages: ${SITE_PACKAGES}..."
-VIRTUAL_IMPORTS="$(bazel info bazel-bin)/api/protos/dashboard/_virtual_imports"
-rm -rf "${SITE_PACKAGES}/xmanager_cloud/dashboard_service/proto"
-mkdir -p "${SITE_PACKAGES}/xmanager_cloud"
-# chmod after *each* copy: Bazel leaves outputs read-only, so subsequent copies
-# would otherwise fail to write into existing trees.
-for proto_target in dashboard_messages_proto dashboard_service_proto; do
-  if [ -d "${VIRTUAL_IMPORTS}/${proto_target}/xmanager_cloud" ]; then
-    cp -R "${VIRTUAL_IMPORTS}/${proto_target}/xmanager_cloud/." "${SITE_PACKAGES}/xmanager_cloud/"
-    chmod -R u+w "${SITE_PACKAGES}/xmanager_cloud/dashboard_service"
-  fi
-done
+echo "--> [3/4] Installing Bazel-generated Dashboard Service Python protobuf modules..."
+python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}" --dashboard-protos-only
 
-echo "--> [5/5] Installing xdash and xmc SDKs in editable mode..."
+echo "--> [4/4] Installing xdash and xmc SDKs in editable mode..."
 "${PIP_BIN}" install -e "${REPO_ROOT}/sdks/python/xdash"
 "${PIP_BIN}" install -e "${REPO_ROOT}/sdks/python/xmc"
 
