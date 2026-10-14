@@ -2389,6 +2389,68 @@ func TestReconcileComponent_DisabledLogLevelAndCMSFailure(t *testing.T) {
 	}
 }
 
+func TestReconcileComponent_DeactivationBlockedLogLevel(t *testing.T) {
+	const blockedMessage = "Component deactivation blocked by active dependents"
+	in := ReconcileComponentInput{
+		Namespace: "xmc", Name: "redpanda", Generation: 2, Enabled: false,
+		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+	}
+	cms := &mockCMS{prepareErr: status.Error(codes.FailedPrecondition, "active dependents remaining: [ingestion]"), componentGen: 1, componentID: 1}
+	newReconciler := func() *Reconciler {
+		r, err := NewReconciler(cms, nil, &mockHelm{})
+		if err != nil {
+			t.Fatalf("NewReconciler() error = %v", err)
+		}
+		return r
+	}
+	assertLevel := func(t *testing.T, logs *recordingHandler, message string, want slog.Level) {
+		t.Helper()
+		if got := logs.singleRecord(t, message); got.level != want {
+			t.Errorf("%q level = %v, want %v", message, got.level, want)
+		}
+	}
+	assertNoInfo := func(t *testing.T, logs *recordingHandler) {
+		t.Helper()
+		logs.mu.Lock()
+		defer logs.mu.Unlock()
+		for message, recs := range logs.records {
+			for _, rec := range recs {
+				if rec.level >= slog.LevelInfo {
+					t.Errorf("steady-state pass logged %q at %v, want Debug", message, rec.level)
+				}
+			}
+		}
+	}
+
+	r := newReconciler()
+	ctx1, logs1 := recordLogs()
+	res1, err := r.ReconcileComponent(ctx1, in)
+	if err != nil {
+		t.Fatalf("first pass error = %v", err)
+	}
+	assertLevel(t, logs1, blockedMessage, slog.LevelInfo)
+
+	// A pass inside the recheck interval reuses the recorded block without calling CMS.
+	in.ExistingConditions = res1.Conditions
+	in.ComponentGeneration, in.ComponentID = res1.ComponentGeneration, res1.ComponentID
+	ctx2, logs2 := recordLogs()
+	if _, err := r.ReconcileComponent(ctx2, in); err != nil {
+		t.Fatalf("cached pass error = %v", err)
+	}
+	if got := len(logs2.recordsFor(blockedMessage)); got != 0 {
+		t.Errorf("%q logged %d times on a cached pass, want 0", blockedMessage, got)
+	}
+	assertNoInfo(t, logs2)
+
+	// A recheck (fresh tracker) that finds the same block logs at Debug only.
+	ctx3, logs3 := recordLogs()
+	if _, err := newReconciler().ReconcileComponent(ctx3, in); err != nil {
+		t.Fatalf("recheck pass error = %v", err)
+	}
+	assertLevel(t, logs3, blockedMessage, slog.LevelDebug)
+	assertNoInfo(t, logs3)
+}
+
 func TestReconcileComponent_LogDetailAttr(t *testing.T) {
 	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
 	healthy := []Condition{

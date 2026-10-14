@@ -701,10 +701,14 @@ func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput
 		preserveExistingAccess(res, in.ExistingAccess)
 	}
 	setReadiness(res, in, ConditionStatusFalse, reason, msg)
+	logAt := logging.Debug
+	if healthConditionsChanged(in.ExistingConditions, res.Conditions, in.Generation) {
+		logAt = logging.Info
+	}
 	if err := r.syncObservedToCMS(ctx, in, canonicalName, res, ConditionStatusFalse, true); err != nil {
 		return res, err
 	}
-	logging.Info(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "detail", msg)
+	logAt(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "detail", msg)
 	return res, nil
 }
 
@@ -788,11 +792,17 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 
 // logHealthEvaluated logs a health evaluation at Info when it changed the Ready, Reconciling, or
 // Stalled condition recorded in the custom resource (see healthConditionsChanged), and at Debug for
-// the unchanged result that every periodic pass over a steady component produces. It logs the final
+// the unchanged result that every periodic pass over a steady component produces. A local-only
+// evaluation (in.skipCMSSync, such as a workload kept running while its deactivation is blocked)
+// compares Ready only, because its caller sets Reconciling and Stalled afterwards. It logs the final
 // Ready condition, which differs from the probe result when reporting to CMS encountered a source conflict.
 func logHealthEvaluated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) {
 	logAt := logging.Debug
-	if healthConditionsChanged(in.ExistingConditions, res.Conditions, in.Generation) {
+	condTypes := healthConditionTypes
+	if in.skipCMSSync {
+		condTypes = []string{ConditionTypeReady}
+	}
+	if conditionsChanged(in.ExistingConditions, res.Conditions, in.Generation, condTypes) {
 		logAt = logging.Info
 	}
 	var healthy bool
@@ -803,11 +813,19 @@ func logHealthEvaluated(ctx context.Context, in ReconcileComponentInput, canonic
 	logAt(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", healthy, "reason", reason)
 }
 
+// healthConditionTypes are the conditions whose change makes a pass log at Info.
+var healthConditionTypes = []string{ConditionTypeReady, ConditionTypeReconciling, ConditionTypeStalled}
+
 // healthConditionsChanged reports whether the Ready, Reconciling, or Stalled condition in current
 // differs from existing in presence, status, or reason, or was last observed in existing at a
 // generation other than generation (a first evaluation, or the first one of a new custom resource generation).
 func healthConditionsChanged(existing, current []Condition, generation int64) bool {
-	for _, condType := range []string{ConditionTypeReady, ConditionTypeReconciling, ConditionTypeStalled} {
+	return conditionsChanged(existing, current, generation, healthConditionTypes)
+}
+
+// conditionsChanged is healthConditionsChanged over the condition types condTypes.
+func conditionsChanged(existing, current []Condition, generation int64, condTypes []string) bool {
+	for _, condType := range condTypes {
 		prev, next := findCondition(existing, condType), findCondition(current, condType)
 		if (prev == nil) != (next == nil) {
 			return true

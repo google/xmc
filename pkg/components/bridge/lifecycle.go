@@ -208,7 +208,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	}
 	if status.Code(err) == codes.FailedPrecondition {
 		msg := fmt.Sprintf("Cannot disable %q: %s", in.Name, status.Convert(err).Message())
-		logging.Info(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
+		logDeactivationBlocked(ctx, in, canonicalName, msg)
 		r.syncTracker.recordDeactivationBlock(key, in.Generation, msg)
 		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg)
 	}
@@ -222,6 +222,17 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	}
 	r.syncTracker.clearDeactivationBlock(key)
 	return r.reportDisabled(ctx, in, canonicalName, res)
+}
+
+// logDeactivationBlocked logs a PrepareDeactivation blocked by active dependents at Info when the
+// block is new (no DeactivationBlocked=True condition with the same message yet), and at Debug for
+// the periodic recheck of a block that has not changed.
+func logDeactivationBlocked(ctx context.Context, in ReconcileComponentInput, canonicalName, msg string) {
+	logAt := logging.Info
+	if prev := findCondition(in.ExistingConditions, ConditionTypeDeactivationBlocked); prev != nil && prev.Status == ConditionStatusTrue && prev.Message == msg {
+		logAt = logging.Debug
+	}
+	logAt(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
 }
 
 // reportDisabled reports the component disabled in res and to CMS. A pass that changes the Ready,
