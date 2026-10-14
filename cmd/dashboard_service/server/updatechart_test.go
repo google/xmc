@@ -29,8 +29,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	xidapipb "xmanager_cloud/api/protos/xid"
 )
 
 func TestUpdateChart(t *testing.T) {
@@ -121,7 +120,7 @@ func TestUpdateChart(t *testing.T) {
 		if !proto.Equal(updatedInRepo, req.GetChart()) {
 			t.Errorf("Repository received %v, want the request chart %v", updatedInRepo, req.GetChart())
 		}
-		if capturedXIDReq == nil || capturedXIDReq.GetName() != "xids/100" || capturedXIDReq.GetUser() != "writer@example.com" || capturedXIDReq.GetRoleType() != xpb.XidAcls_WRITER {
+		if capturedXIDReq == nil || capturedXIDReq.GetName() != "xids/100" || capturedXIDReq.GetUser() != "writer@example.com" || capturedXIDReq.GetRoleType() != xidapipb.XidAcls_WRITER {
 			t.Errorf("CheckUserAuthorization called with unexpected request: %v", capturedXIDReq)
 		}
 	})

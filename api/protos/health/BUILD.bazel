@@ -39,7 +39,7 @@ go_proto_library(
     importpath = "xmanager_cloud/api/protos/health",
     proto = ":health_api_proto",
     deps = [
-        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//:api",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )

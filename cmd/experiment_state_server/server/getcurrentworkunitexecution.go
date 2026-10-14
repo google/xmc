@@ -23,13 +23,12 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
 
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	msgpb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 )
 
 // GetCurrentWorkUnitExecution returns the current execution that was run for a work unit.
-func (h *WorkUnitHandler) GetCurrentWorkUnitExecution(ctx context.Context, req *apipb.GetCurrentWorkUnitExecutionRequest) (*msgpb.WorkUnitExecution, error) {
+func (h *WorkUnitHandler) GetCurrentWorkUnitExecution(ctx context.Context, req *msgpb.GetCurrentWorkUnitExecutionRequest) (*msgpb.WorkUnitExecution, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch current work unit execution", "request", req)
 

@@ -26,7 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
-	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	spb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	storagepkg "xmanager_cloud/internal/storage"
 

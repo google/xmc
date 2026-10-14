@@ -22,8 +22,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 )

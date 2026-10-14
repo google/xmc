@@ -35,19 +35,17 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	xidconfig "xmanager_cloud/cmd/xid_service/config"
 	xidserver "xmanager_cloud/cmd/xid_service/server"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	authz "xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	tq "xmanager_cloud/internal/task_queue"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 var testExecutable = &essmsgpb.Executable{
@@ -115,7 +113,7 @@ func withAuthorizer(a authz.AuthorizerInterface) testServerOpt {
 	}
 }
 
-func withXidClient(x xidapipb.XidServiceClient) testServerOpt {
+func withXidClient(x xidmsgpb.XidServiceClient) testServerOpt {
 	return func(p *Params) {
 		p.XidClient = x
 	}
@@ -172,7 +170,7 @@ func createExperimentStateServer(ctx context.Context, t *testing.T, opts ...test
 	if err != nil {
 		t.Fatalf("Failed to create gRPC client for XID service: %v", err)
 	}
-	xidClient := xidapipb.NewXidServiceClient(conn)
+	xidClient := xidmsgpb.NewXidServiceClient(conn)
 	p := Params{
 		Config:           &cfg,
 		Storage:          storage,
@@ -211,7 +209,7 @@ func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner
 	if err != nil {
 		t.Fatalf("failed to create xid server: %v", err)
 	}
-	xidapipb.RegisterXidServiceServer(s, xidServer)
+	xidmsgpb.RegisterXidServiceServer(s, xidServer)
 
 	reflection.Register(s)
 
@@ -245,7 +243,7 @@ func mustCreateExperiment(ctx context.Context, t *testing.T, server *Server, exp
 			},
 		}
 	}
-	createdExp, err := server.CreateExperiment(ctx, &apipb.CreateExperimentRequest{Experiment: exp})
+	createdExp, err := server.CreateExperiment(ctx, &essmsgpb.CreateExperimentRequest{Experiment: exp})
 	if err != nil {
 		t.Fatalf("CreateExperiment() returned an unexpected error: %v", err)
 	}
@@ -285,7 +283,7 @@ func mustCreateWorkUnit(ctx context.Context, t *testing.T, server *Server, paren
 			},
 		}
 	}
-	op, err := server.CreateWorkUnit(ctx, &apipb.CreateWorkUnitRequest{
+	op, err := server.CreateWorkUnit(ctx, &essmsgpb.CreateWorkUnitRequest{
 		Parent:     parent,
 		WorkUnitId: workUnitID,
 		WorkUnit:   workUnit,
@@ -318,7 +316,7 @@ func mustCreateArtifact(ctx context.Context, t *testing.T, server *Server, paren
 			},
 		}
 	}
-	createdArtifact, err := server.CreateArtifact(ctx, &apipb.CreateArtifactRequest{
+	createdArtifact, err := server.CreateArtifact(ctx, &essmsgpb.CreateArtifactRequest{
 		Parent:   parent,
 		Artifact: artifact,
 	})
@@ -330,27 +328,27 @@ func mustCreateArtifact(ctx context.Context, t *testing.T, server *Server, paren
 
 // mockXidClient is a mock implementation of the XidServiceClient.
 type mockXidClient struct {
-	xidapipb.XidServiceClient
+	xidmsgpb.XidServiceClient
 	getXidEntryErr             error
 	getXidEntryResp            *xidmsgpb.XidEntry
 	createXidEntryErr          error
 	createXidEntryResp         *xidmsgpb.XidEntry
 	checkUserAuthorizationErr  error
-	checkUserAuthorizationResp *xidapipb.CheckUserAuthorizationResponse
+	checkUserAuthorizationResp *xidmsgpb.CheckUserAuthorizationResponse
 	updateXidEntryErr          error
 	updateXidEntryResp         *xidmsgpb.XidEntry
 }
 
-func (m *mockXidClient) GetXidEntry(ctx context.Context, in *xidapipb.GetXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
+func (m *mockXidClient) GetXidEntry(ctx context.Context, in *xidmsgpb.GetXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
 	return m.getXidEntryResp, m.getXidEntryErr
 }
-func (m *mockXidClient) CreateXidEntry(ctx context.Context, in *xidapipb.CreateXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
+func (m *mockXidClient) CreateXidEntry(ctx context.Context, in *xidmsgpb.CreateXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
 	return m.createXidEntryResp, m.createXidEntryErr
 }
-func (m *mockXidClient) CheckUserAuthorization(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+func (m *mockXidClient) CheckUserAuthorization(ctx context.Context, in *xidmsgpb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidmsgpb.CheckUserAuthorizationResponse, error) {
 	return m.checkUserAuthorizationResp, m.checkUserAuthorizationErr
 }
-func (m *mockXidClient) UpdateXidEntry(ctx context.Context, in *xidapipb.UpdateXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
+func (m *mockXidClient) UpdateXidEntry(ctx context.Context, in *xidmsgpb.UpdateXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
 	return m.updateXidEntryResp, m.updateXidEntryErr
 }
 

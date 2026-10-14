@@ -27,10 +27,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	dashboard_pb "xmanager_cloud/api/protos/dashboard"
+	apipb "xmanager_cloud/api/protos/experiment"
+	xidgrpcpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/cmd/experiment_state_server/resumption"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	authz "xmanager_cloud/internal/auth"
 	commonhealth "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/logging"
@@ -40,7 +41,6 @@ import (
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 var _ apipb.ExperimentStateServiceServer = (*ProdServer)(nil)

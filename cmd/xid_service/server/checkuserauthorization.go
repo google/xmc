@@ -18,17 +18,16 @@ import (
 	"errors"
 	"fmt"
 
+	xpb "xmanager_cloud/api/protos/xid"
 	xidpkg "xmanager_cloud/cmd/xid_service/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
-	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // CheckUserAuthorization checks whether a user has access to an XID.
-func (s *XIDServer) CheckUserAuthorization(ctx context.Context, in *apipb.CheckUserAuthorizationRequest) (*apipb.CheckUserAuthorizationResponse, error) {
+func (s *XIDServer) CheckUserAuthorization(ctx context.Context, in *xpb.CheckUserAuthorizationRequest) (*xpb.CheckUserAuthorizationResponse, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Check user authorization", "name", in.Name)
 
@@ -72,7 +71,7 @@ func (s *XIDServer) CheckUserAuthorization(ctx context.Context, in *apipb.CheckU
 	}
 
 	logging.Info(ctx, "Checked user authorization", "name", in.GetName(), "is_authorized", isAuthorized)
-	return &apipb.CheckUserAuthorizationResponse{Authorized: &isAuthorized}, nil
+	return &xpb.CheckUserAuthorizationResponse{Authorized: &isAuthorized}, nil
 }
 
 func xidACLsToRoleType(roleType xpb.XidAcls_RoleType) auth.Role {

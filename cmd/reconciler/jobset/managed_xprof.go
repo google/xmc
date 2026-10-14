@@ -29,8 +29,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	spb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
-	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 )

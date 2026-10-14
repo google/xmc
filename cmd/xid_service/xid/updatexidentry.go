@@ -25,12 +25,12 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/validator"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // AncestorFetcher retrieves an XidEntry by its numerical ID.
