@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { TestBed } from '@angular/core/testing';
 import { MatButtonHarness } from '@angular/material/button/testing';
 import { MatSelectHarness } from '@angular/material/select/testing';
@@ -157,6 +158,57 @@ describe('WorkUnitsTable Component', () => {
       pageSize: 10,
       pageToken: 'page2',
     });
+  });
+
+  it('should reload from the first page when the experiment id changes', () => {
+    const lastRequest = () => state.workUnitsService.searchWorkUnits.calls.mostRecent().args[0];
+    const fixture = TestBed.createComponent(WorkUnitsTable);
+    fixture.componentRef.setInput('xid', '1');
+    fixture.detectChanges();
+    expect(lastRequest()).toEqual({ parent: 'experiments/1', pageSize: 10, pageToken: '' });
+    fixture.componentInstance.nextPage();
+    expect(lastRequest().pageToken).toBe('page2');
+
+    fixture.componentRef.setInput('xid', '2');
+    fixture.detectChanges();
+
+    expect(lastRequest()).toEqual({ parent: 'experiments/2', pageSize: 10, pageToken: '' });
+    fixture.destroy();
+  });
+
+  it('should reset the sort when the experiment id changes', () => {
+    const lastRequest = () => state.workUnitsService.searchWorkUnits.calls.mostRecent().args[0];
+    const fixture = TestBed.createComponent(WorkUnitsTable);
+    fixture.componentRef.setInput('xid', '1');
+    fixture.detectChanges();
+    const store = fixture.debugElement.injector.get(WorkUnitsTableStore);
+    store.setSort({ active: 'state', direction: 'asc' });
+    store.fetchPage();
+    expect(lastRequest().orderBy).toBe('state asc');
+
+    fixture.componentRef.setInput('xid', '2');
+    fixture.detectChanges();
+
+    expect(lastRequest()).toEqual({ parent: 'experiments/2', pageSize: 10, pageToken: '' });
+    fixture.destroy();
+  });
+
+  it('should show the loading state, not the previous rows, when the experiment id changes', async () => {
+    state.workUnitsService.searchWorkUnits.and.returnValues(of(MOCK_WORK_UNITS_RESPONSE), NEVER);
+    const fixture = TestBed.createComponent(WorkUnitsTable);
+    fixture.componentRef.setInput('xid', '1');
+    fixture.detectChanges();
+
+    fixture.componentRef.setInput('xid', '2');
+    fixture.detectChanges();
+
+    const harness = await TestbedHarnessEnvironment.harnessForFixture(
+      fixture,
+      WorkUnitsTableHarness,
+    );
+    expect(await harness.isLoading()).toBeTrue();
+    expect(await harness.hasTable()).toBeFalse();
+    fixture.destroy();
   });
 
   describe('Loading states', () => {

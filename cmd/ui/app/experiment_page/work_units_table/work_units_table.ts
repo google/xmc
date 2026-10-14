@@ -16,10 +16,11 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   inject,
   input,
-  OnInit,
   Signal,
+  untracked,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
@@ -99,7 +100,7 @@ interface WorkUnitView extends WorkUnit {
   ],
   providers: [WorkUnitsTableStore],
 })
-export class WorkUnitsTable implements OnInit {
+export class WorkUnitsTable {
   readonly xid = input.required<string>();
   readonly disableWorkUnitTagLinks = input(true);
   readonly WorkUnitColumn = WorkUnitColumn;
@@ -163,9 +164,16 @@ export class WorkUnitsTable implements OnInit {
   protected readonly sort: Signal<Sort> = this.store.sort;
   protected readonly hasFilter: Signal<boolean> = this.store.hasFilter;
 
-  ngOnInit() {
-    this.store.setXid(this.xid());
-    this.store.fetchPage();
+  constructor() {
+    // The experiment page reuses this component across experiments, so reload whenever the
+    // experiment id changes instead of only on init. Only `xid` is tracked.
+    effect(() => {
+      const xid = this.xid();
+      untracked(() => {
+        this.store.setXid(xid);
+        this.store.fetchPage();
+      });
+    });
   }
 
   refresh() {

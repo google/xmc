@@ -95,13 +95,19 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
   );
 
   /**
-   * Sets the experiment id and clears the status filter, since a selection made for one
-   * experiment should not silently narrow another. It does not fetch data.
+   * Sets the experiment id and starts that experiment from a clean view: first page, default sort,
+   * no status filter, and no rows or error from the previous experiment, so the table shows the
+   * initial loading state instead of stale data and a view chosen for one experiment does not
+   * silently apply to another. It does not fetch data.
    */
   readonly setXid = this.updater((state, xid: string) => ({
     ...state,
     xid,
+    pagination: getInitialPaginationState(state.pagination.pageSize),
+    sort: INITIAL_STATE.sort,
     selectedStates: [],
+    workUnits: undefined,
+    error: null,
   }));
 
   /** Sets the page size. It does not fetch data. */
