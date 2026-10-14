@@ -102,7 +102,7 @@ func resolveRelativePath(name string) (string, error) {
 
 	ws := os.Getenv("BUILD_WORKSPACE_DIRECTORY")
 	if ws == "" {
-		return "", fmt.Errorf("the 'create' command must be run via 'blaze run'")
+		return "", fmt.Errorf("the 'create' command must be run via 'bazel run'")
 	}
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {

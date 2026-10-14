@@ -22,13 +22,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	msgpb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 )
@@ -130,7 +128,7 @@ func TestUpdateWorkUnit_HappyPath(t *testing.T) {
 
 			tc.updateWu.Name = fmt.Sprintf("%s/workUnits/%d", createdExp.GetName(), 1)
 			tc.want.Name = tc.updateWu.Name
-			req := &apipb.UpdateWorkUnitRequest{
+			req := &msgpb.UpdateWorkUnitRequest{
 				WorkUnit:   tc.updateWu,
 				UpdateMask: tc.updateMask,
 			}
@@ -167,7 +165,7 @@ func TestUpdateWorkUnit_EmptyMask(t *testing.T) {
 
 	wuName := fmt.Sprintf("%s/workUnits/%d", createdExp.GetName(), 1)
 
-	req := &apipb.UpdateWorkUnitRequest{
+	req := &msgpb.UpdateWorkUnitRequest{
 		WorkUnit:   &msgpb.WorkUnit{Name: wuName},
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{}},
 	}
@@ -183,19 +181,19 @@ func TestUpdateWorkUnit_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.UpdateWorkUnitRequest
+		req     *msgpb.UpdateWorkUnitRequest
 		wantErr error
 	}{
 		{
 			name: "missing_work_unit",
-			req: &apipb.UpdateWorkUnitRequest{
+			req: &msgpb.UpdateWorkUnitRequest{
 				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"priority"}},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_name",
-			req: &apipb.UpdateWorkUnitRequest{
+			req: &msgpb.UpdateWorkUnitRequest{
 				WorkUnit: &msgpb.WorkUnit{
 					Name: "invalid-name",
 				},
@@ -218,7 +216,7 @@ func TestUpdateWorkUnit_BadPaths(t *testing.T) {
 func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
-	goodReq := &apipb.UpdateWorkUnitRequest{
+	goodReq := &msgpb.UpdateWorkUnitRequest{
 		WorkUnit: &msgpb.WorkUnit{
 			Name:     "experiments/123/workUnits/456",
 			Priority: 200,
@@ -229,7 +227,7 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		xidClient     xidapipb.XidServiceClient
+		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -251,7 +249,7 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 		{
 			name: "xid_check_user_authorization_unauthorized",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
 			wantErr: grpcerr.ErrPermissionDenied,
@@ -259,7 +257,7 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_update_work_unit_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				UpdateWorkUnitErr: fmt.Errorf("Storage update work unit failed"),
@@ -269,7 +267,7 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_update_work_unit_not_found",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				UpdateWorkUnitErr: grpcerr.ErrNotFound,
@@ -279,7 +277,7 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_fetch_experiment_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				UpdateWorkUnitRespOriginal: &msgpb.WorkUnit{Priority: msgpb.Priority_LOW},
@@ -318,7 +316,7 @@ func TestUpdateWorkUnit_EnqueuesTaskOnPriorityChange(t *testing.T) {
 	mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), 1, nil)
 	wuName := fmt.Sprintf("%s/workUnits/%d", createdExp.GetName(), 1)
 
-	req := &apipb.UpdateWorkUnitRequest{
+	req := &msgpb.UpdateWorkUnitRequest{
 		WorkUnit: &msgpb.WorkUnit{
 			Name:     wuName,
 			Priority: 200,
@@ -362,7 +360,7 @@ func TestUpdateWorkUnit_DoesNotEnqueueOnOtherChanges(t *testing.T) {
 	wuName := fmt.Sprintf("%s/workUnits/%d", createdExp.GetName(), 1)
 	taskQueueClient.EnqueuedTasks = nil // Clear requests from CreateWorkUnit
 
-	req := &apipb.UpdateWorkUnitRequest{
+	req := &msgpb.UpdateWorkUnitRequest{
 		WorkUnit: &msgpb.WorkUnit{
 			Name:  wuName,
 			Notes: "new notes",
@@ -392,11 +390,11 @@ func TestUpdateWorkUnit_NoExecutionWithoutActuationSucceeds(t *testing.T) {
 		},
 	}
 	mockXid := &mockXidClient{
-		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+		checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
 	server := newTestServer(t, withStorage(mockStorage), withXidClient(mockXid))
 
-	req := &apipb.UpdateWorkUnitRequest{
+	req := &msgpb.UpdateWorkUnitRequest{
 		WorkUnit: &msgpb.WorkUnit{
 			Name:  "experiments/1/workUnits/1",
 			Notes: "updated notes",

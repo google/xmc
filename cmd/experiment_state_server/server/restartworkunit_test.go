@@ -23,31 +23,29 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	apipb "xmanager_cloud/api/protos/experiment"
+	xidapipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/validator"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestRestartWorkUnit_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	server, taskQueueClient := createExperimentStateServer(ctx, t)
 
-	exp := &msgpb.Experiment{
+	exp := &apipb.Experiment{
 		Title: "test experiment for restartworkunit",
-		Acls: &xidmsgpb.XidAcls{
-			Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
+		Acls: &xidapipb.XidAcls{
+			Owners: []*xidapipb.XidAcls_Role{{Principal: &xidapipb.XidAcls_Role_User{User: "test@example.com"}}},
 		},
 	}
 	createdExp := mustCreateExperiment(ctx, t, server, exp)
 
-	workUnit := &msgpb.WorkUnit{
-		WorkUnitType: msgpb.WorkUnit_STANDARD,
+	workUnit := &apipb.WorkUnit{
+		WorkUnitType: apipb.WorkUnit_STANDARD,
 		Executable:   testExecutable,
 	}
 	workUnitID := int64(1)
@@ -68,15 +66,15 @@ func TestRestartWorkUnit_HappyPath(t *testing.T) {
 	if op.GetError() != nil {
 		t.Errorf("RestartWorkUnit() returned an operation with non-nil error")
 	}
-	var gotMetadata msgpb.OperationMetadata
+	var gotMetadata apipb.OperationMetadata
 	if err := op.GetMetadata().UnmarshalTo(&gotMetadata); err != nil {
 		t.Errorf("Failed to unmarshal operation metadata: %v", err)
 	}
 	if !strings.HasPrefix(gotMetadata.GetTarget(), createdExp.GetName()+"/workUnits/") {
 		t.Errorf("RestartWorkUnit() operation metadata target %q does not start with experiment prefix", gotMetadata.GetTarget())
 	}
-	if gotMetadata.GetActionType() != msgpb.OperationMetadata_RESTART {
-		t.Errorf("RestartWorkUnit() operation metadata action type got %q, want %q", gotMetadata.GetActionType(), msgpb.OperationMetadata_RESTART)
+	if gotMetadata.GetActionType() != apipb.OperationMetadata_RESTART {
+		t.Errorf("RestartWorkUnit() operation metadata action type got %q, want %q", gotMetadata.GetActionType(), apipb.OperationMetadata_RESTART)
 	}
 	if gotMetadata.GetOriginalRequester() != "test@example.com" {
 		t.Errorf("RestartWorkUnit() operation metadata original requester got %q, want %q", gotMetadata.GetOriginalRequester(), "test@example.com")
@@ -122,11 +120,11 @@ func TestRestartWorkUnit_HappyPath(t *testing.T) {
 	newWorkUnitExecution := workUnitExecutions[1]
 	oldWorkUnitExecution := workUnitExecutions[0]
 
-	if newWorkUnitExecution.GetStatus().GetState() != msgpb.WorkUnitStatus_INITIALIZING {
-		t.Errorf("New work unit execution state is %v, want %v", newWorkUnitExecution.GetStatus().GetState(), msgpb.WorkUnitStatus_INITIALIZING)
+	if newWorkUnitExecution.GetStatus().GetState() != apipb.WorkUnitStatus_INITIALIZING {
+		t.Errorf("New work unit execution state is %v, want %v", newWorkUnitExecution.GetStatus().GetState(), apipb.WorkUnitStatus_INITIALIZING)
 	}
-	if oldWorkUnitExecution.GetStatus().GetState() != msgpb.WorkUnitStatus_RESTARTING {
-		t.Errorf("Old work unit execution state is %v, want %v", oldWorkUnitExecution.GetStatus().GetState(), msgpb.WorkUnitStatus_RESTARTING)
+	if oldWorkUnitExecution.GetStatus().GetState() != apipb.WorkUnitStatus_RESTARTING {
+		t.Errorf("Old work unit execution state is %v, want %v", oldWorkUnitExecution.GetStatus().GetState(), apipb.WorkUnitStatus_RESTARTING)
 	}
 
 	// Check that the new work unit execution has a different name and creation time.
@@ -173,11 +171,11 @@ func TestRestartWorkUnit_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
 	goodReq := &apipb.RestartWorkUnitRequest{Name: "experiments/123/workUnits/456"}
-	workUnit := &msgpb.WorkUnit{
+	workUnit := &apipb.WorkUnit{
 		Name:                     "experiments/123/workUnits/456",
-		WorkUnitType:             msgpb.WorkUnit_STANDARD,
+		WorkUnitType:             apipb.WorkUnit_STANDARD,
 		Executable:               testExecutable,
-		CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
+		CurrentWorkUnitExecution: &apipb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
 	}
 
 	testCases := []struct {
@@ -249,7 +247,7 @@ func TestRestartWorkUnit_DependencyFailures(t *testing.T) {
 			},
 			storage: &storage.MockStorage{
 				WorkUnit:                workUnit,
-				Experiment:              &msgpb.Experiment{Name: "experiments/123"},
+				Experiment:              &apipb.Experiment{Name: "experiments/123"},
 				AddWorkUnitOperationErr: fmt.Errorf("storage add operation failed"),
 			},
 			wantErr: grpcerr.ErrInternal,
@@ -284,18 +282,18 @@ func TestRestartWorkUnit_TaskEnqueueFails(t *testing.T) {
 	ctx := context.Background()
 
 	goodReq := &apipb.RestartWorkUnitRequest{Name: "experiments/123/workUnits/456"}
-	workUnit := &msgpb.WorkUnit{
+	workUnit := &apipb.WorkUnit{
 		Name:                     "experiments/123/workUnits/456",
-		WorkUnitType:             msgpb.WorkUnit_STANDARD,
+		WorkUnitType:             apipb.WorkUnit_STANDARD,
 		Executable:               testExecutable,
-		CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
+		CurrentWorkUnitExecution: &apipb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
 	}
 	xidClient := &mockXidClient{
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
 	storage := &storage.MockStorage{
 		WorkUnit:   workUnit,
-		Experiment: &msgpb.Experiment{Name: "experiments/123"},
+		Experiment: &apipb.Experiment{Name: "experiments/123"},
 	}
 	taskQueueClient := &tq.FakeClient{
 		EnqueueErr: fmt.Errorf("task enqueue failed"),

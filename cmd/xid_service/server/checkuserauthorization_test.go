@@ -19,11 +19,10 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/proto"
+	msgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
-	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestCheckUserAuthorization_HappyPath(t *testing.T) {
@@ -32,7 +31,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 
 	// In mock auth, the user is "test@example.com".
 	// Create an entry where user is only a reader.
-	readerEntryReq := &apipb.CreateXidEntryRequest{
+	readerEntryReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
 			Acls: &msgpb.XidAcls{
@@ -48,7 +47,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 	}
 
 	// Create an entry where user is an owner.
-	ownerEntryReq := &apipb.CreateXidEntryRequest{
+	ownerEntryReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
 			Acls: &msgpb.XidAcls{
@@ -62,7 +61,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 	}
 
 	// Create an entry with no parent where user is an owner.
-	noParentOwnerEntryReq := &apipb.CreateXidEntryRequest{
+	noParentOwnerEntryReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
 			Acls: &msgpb.XidAcls{
@@ -76,7 +75,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 	}
 
 	// Create a parent entry where user is an owner.
-	parentOwnerEntryReq := &apipb.CreateXidEntryRequest{
+	parentOwnerEntryReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
 			Acls: &msgpb.XidAcls{
@@ -91,7 +90,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 
 	// Create a child entry where "other@example.com" is owner, but "test@example.com" has no
 	// permissions, and set parent_xid to parentOwnerEntry's name.
-	childEntryReq := &apipb.CreateXidEntryRequest{
+	childEntryReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Origin:    &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
 			ParentXid: proto.String(parentOwnerEntry.GetName()),
@@ -106,7 +105,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 	}
 
 	// Create a parent entry where "other@example.com" is owner.
-	otherOwnerParentEntryReq := &apipb.CreateXidEntryRequest{
+	otherOwnerParentEntryReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
 			Acls: &msgpb.XidAcls{
@@ -121,7 +120,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 
 	// Create a child entry where "other@example.com" is owner, and set parent_xid to
 	// otherOwnerParentEntry's name.
-	otherOwnerChildEntryReq := &apipb.CreateXidEntryRequest{
+	otherOwnerChildEntryReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Origin:    &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
 			ParentXid: proto.String(otherOwnerParentEntry.GetName()),
@@ -137,12 +136,12 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 
 	testCases := []struct {
 		name           string
-		req            *apipb.CheckUserAuthorizationRequest
+		req            *msgpb.CheckUserAuthorizationRequest
 		wantAuthorized bool
 	}{
 		{
 			name: "reader_can_read_reader_xid",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(readerEntry.GetName()),
 				RoleType: msgpb.XidAcls_READER.Enum(),
 			},
@@ -150,7 +149,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 		},
 		{
 			name: "reader_cannot_write_reader_xid",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(readerEntry.GetName()),
 				RoleType: msgpb.XidAcls_WRITER.Enum(),
 			},
@@ -158,7 +157,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 		},
 		{
 			name: "reader_cannot_own_reader_xid",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(readerEntry.GetName()),
 				RoleType: msgpb.XidAcls_OWNER.Enum(),
 			},
@@ -166,7 +165,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 		},
 		{
 			name: "owner_can_read_owner_xid",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(ownerEntry.GetName()),
 				RoleType: msgpb.XidAcls_READER.Enum(),
 			},
@@ -174,7 +173,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 		},
 		{
 			name: "owner_can_write_owner_xid",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(ownerEntry.GetName()),
 				RoleType: msgpb.XidAcls_WRITER.Enum(),
 			},
@@ -182,7 +181,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 		},
 		{
 			name: "owner_can_own_owner_xid",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(ownerEntry.GetName()),
 				RoleType: msgpb.XidAcls_OWNER.Enum(),
 			},
@@ -190,7 +189,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 		},
 		{
 			name: "user_can_read_child_xid_if_owner_of_parent_xid",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(childEntry.GetName()),
 				RoleType: msgpb.XidAcls_READER.Enum(),
 			},
@@ -198,7 +197,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 		},
 		{
 			name: "user_can_write_child_xid_if_owner_of_parent_xid",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(childEntry.GetName()),
 				RoleType: msgpb.XidAcls_WRITER.Enum(),
 			},
@@ -206,7 +205,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 		},
 		{
 			name: "user_can_own_child_xid_if_owner_of_parent_xid",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(childEntry.GetName()),
 				RoleType: msgpb.XidAcls_OWNER.Enum(),
 			},
@@ -214,7 +213,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 		},
 		{
 			name: "user_cannot_read_child_xid_if_not_authorized_on_parent_xid",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(otherOwnerChildEntry.GetName()),
 				RoleType: msgpb.XidAcls_READER.Enum(),
 			},
@@ -222,7 +221,7 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 		},
 		{
 			name: "no_parent_owner_can_read",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(noParentOwnerEntry.GetName()),
 				RoleType: msgpb.XidAcls_READER.Enum(),
 			},
@@ -249,7 +248,7 @@ func TestCheckUserAuthorization_BadPaths(t *testing.T) {
 
 	// In mock auth, the user is "test@example.com".
 	// Create an entry where user is only a reader.
-	readerEntryReq := &apipb.CreateXidEntryRequest{
+	readerEntryReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
 			Acls: &msgpb.XidAcls{
@@ -266,12 +265,12 @@ func TestCheckUserAuthorization_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.CheckUserAuthorizationRequest
+		req     *msgpb.CheckUserAuthorizationRequest
 		wantErr error
 	}{
 		{
 			name: "invalid_name",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String("xids/invalid"),
 				RoleType: msgpb.XidAcls_READER.Enum(),
 			},
@@ -279,7 +278,7 @@ func TestCheckUserAuthorization_BadPaths(t *testing.T) {
 		},
 		{
 			name: "not_found",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String("xids/999999"),
 				RoleType: msgpb.XidAcls_READER.Enum(),
 			},
@@ -287,7 +286,7 @@ func TestCheckUserAuthorization_BadPaths(t *testing.T) {
 		},
 		{
 			name: "unspecified_role",
-			req: &apipb.CheckUserAuthorizationRequest{
+			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(readerEntry.GetName()),
 				RoleType: msgpb.XidAcls_ROLE_TYPE_UNSPECIFIED.Enum(),
 			},
@@ -336,7 +335,7 @@ func TestCheckUserAuthorization_Failures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			server := newTestServer(t, withAuthorizer(tc.mockAuth), withStorage(tc.mockStorage))
-			_, err := server.CheckUserAuthorization(ctx, &apipb.CheckUserAuthorizationRequest{
+			_, err := server.CheckUserAuthorization(ctx, &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String("xids/1"),
 				RoleType: msgpb.XidAcls_READER.Enum(),
 			})

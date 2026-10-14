@@ -31,11 +31,9 @@ import (
 	"xmanager_cloud/internal/validator"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 )
 
 func TestBatchStopWorkUnits_HappyPath(t *testing.T) {
@@ -65,7 +63,7 @@ func TestBatchStopWorkUnits_HappyPath(t *testing.T) {
 	_ = mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), workUnitID2, workUnit2)
 	taskQueueClient.EnqueuedTasks = nil // Clear state from CreateWorkUnit
 
-	op, err := server.BatchStopWorkUnits(ctx, &apipb.BatchStopWorkUnitsRequest{Parent: createdExp.GetName()})
+	op, err := server.BatchStopWorkUnits(ctx, &msgpb.BatchStopWorkUnitsRequest{Parent: createdExp.GetName()})
 	if err != nil {
 		t.Fatalf("BatchStopWorkUnits() returned an unexpected error: %v", err)
 	}
@@ -176,7 +174,7 @@ func TestBatchStopWorkUnits_Filter(t *testing.T) {
 	_ = mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), workUnitID3, workUnit3)
 	taskQueueClient.EnqueuedTasks = nil // Clear state from CreateWorkUnit
 
-	_, err := server.BatchStopWorkUnits(ctx, &apipb.BatchStopWorkUnitsRequest{Parent: createdExp.GetName(), Filter: "tags:\"a\""})
+	_, err := server.BatchStopWorkUnits(ctx, &msgpb.BatchStopWorkUnitsRequest{Parent: createdExp.GetName(), Filter: "tags:\"a\""})
 	if err != nil {
 		t.Fatalf("BatchStopWorkUnits() returned an unexpected error: %v", err)
 	}
@@ -206,12 +204,12 @@ func TestBatchStopWorkUnits_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.BatchStopWorkUnitsRequest
+		req     *msgpb.BatchStopWorkUnitsRequest
 		wantErr error
 	}{
 		{
 			name:    "invalid_parent_name",
-			req:     &apipb.BatchStopWorkUnitsRequest{Parent: "invalid-name"},
+			req:     &msgpb.BatchStopWorkUnitsRequest{Parent: "invalid-name"},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 	}
@@ -229,7 +227,7 @@ func TestBatchStopWorkUnits_BadPaths(t *testing.T) {
 func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
-	goodReq := &apipb.BatchStopWorkUnitsRequest{Parent: "experiments/123"}
+	goodReq := &msgpb.BatchStopWorkUnitsRequest{Parent: "experiments/123"}
 	workUnit := &msgpb.WorkUnit{
 		Name:         "experiments/123/workUnits/456",
 		WorkUnitType: msgpb.WorkUnit_STANDARD,
@@ -242,7 +240,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 	testCases := []struct {
 		name          string
 		authenticator auth.AuthorizerInterface
-		xidClient     xidapipb.XidServiceClient
+		xidClient     xidmsgpb.XidServiceClient
 		storage       storage.Storage
 		wantErr       error
 	}{
@@ -264,7 +262,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 		{
 			name: "xid_check_user_authorization_unauthorized",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)},
 			},
 			storage: &storage.MockStorage{},
 			wantErr: grpcerr.ErrPermissionDenied,
@@ -272,7 +270,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_list_work_units_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				ListWorkUnitsErr: fmt.Errorf("storage list work units failed"),
@@ -282,7 +280,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_add_operation_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				ListWorkUnitsResp:       []*msgpb.WorkUnit{workUnit},
@@ -293,7 +291,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_update_work_unit_executions_fails",
 			xidClient: &mockXidClient{
-				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
 				ListWorkUnitsResp:                 []*msgpb.WorkUnit{workUnit},
@@ -339,7 +337,7 @@ func TestBatchStopWorkUnits_TaskEnqueueFails(t *testing.T) {
 	}
 
 	xidClient := &mockXidClient{
-		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+		checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
 	storage := &storage.MockStorage{
 		ListWorkUnitsResp: []*msgpb.WorkUnit{workUnit},
@@ -356,7 +354,7 @@ func TestBatchStopWorkUnits_TaskEnqueueFails(t *testing.T) {
 		withWorkUnitActuator(taskQueueClient),
 	)
 
-	req := &apipb.BatchStopWorkUnitsRequest{Parent: "experiments/123"}
+	req := &msgpb.BatchStopWorkUnitsRequest{Parent: "experiments/123"}
 	_, err := server.BatchStopWorkUnits(ctx, req)
 	if !errors.Is(err, grpcerr.ErrInternal) {
 		t.Errorf("BatchStopWorkUnits() got error %v, want %v", err, grpcerr.ErrInternal)
@@ -400,7 +398,7 @@ func TestBatchStopWorkUnits_PartialFailure(t *testing.T) {
 		return nil
 	}
 
-	_, err := server.BatchStopWorkUnits(ctx, &apipb.BatchStopWorkUnitsRequest{Parent: createdExp.GetName()})
+	_, err := server.BatchStopWorkUnits(ctx, &msgpb.BatchStopWorkUnitsRequest{Parent: createdExp.GetName()})
 	if err == nil {
 		t.Fatalf("BatchStopWorkUnits() with partial failure should return an error, but returned nil")
 	}
@@ -458,7 +456,7 @@ func TestBatchStopWorkUnits_FilterReturnsNoWorkUnits(t *testing.T) {
 	_ = mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), workUnitID1, workUnit1)
 	taskQueueClient.EnqueuedTasks = nil // Clear state from CreateWorkUnit
 
-	op, err := server.BatchStopWorkUnits(ctx, &apipb.BatchStopWorkUnitsRequest{Parent: createdExp.GetName(), Filter: "tags:\"b\""})
+	op, err := server.BatchStopWorkUnits(ctx, &msgpb.BatchStopWorkUnitsRequest{Parent: createdExp.GetName(), Filter: "tags:\"b\""})
 	if err != nil {
 		t.Fatalf("BatchStopWorkUnits() returned an unexpected error: %v", err)
 	}
@@ -542,7 +540,7 @@ func TestBatchStopWorkUnits_SchedulingPausedTransitionsDirectlyToStopped(t *test
 
 	taskQueueClient.EnqueuedTasks = nil // Clear state before BatchStopWorkUnits
 
-	op, err := server.BatchStopWorkUnits(ctx, &apipb.BatchStopWorkUnitsRequest{Parent: createdExp.GetName()})
+	op, err := server.BatchStopWorkUnits(ctx, &msgpb.BatchStopWorkUnitsRequest{Parent: createdExp.GetName()})
 	if err != nil {
 		t.Fatalf("BatchStopWorkUnits() returned an unexpected error: %v", err)
 	}
@@ -648,7 +646,7 @@ func TestBatchStopWorkUnits_MixedSchedulingPausedAndRunning(t *testing.T) {
 
 	taskQueueClient.EnqueuedTasks = nil // Clear state before BatchStopWorkUnits
 
-	op, err := server.BatchStopWorkUnits(ctx, &apipb.BatchStopWorkUnitsRequest{Parent: createdExp.GetName()})
+	op, err := server.BatchStopWorkUnits(ctx, &msgpb.BatchStopWorkUnitsRequest{Parent: createdExp.GetName()})
 	if err != nil {
 		t.Fatalf("BatchStopWorkUnits() returned an unexpected error: %v", err)
 	}

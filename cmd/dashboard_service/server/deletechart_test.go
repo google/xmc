@@ -26,8 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	spb "xmanager_cloud/api/protos/dashboard"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	xidapipb "xmanager_cloud/api/protos/xid"
 )
 
 func TestDeleteChart(t *testing.T) {
@@ -77,7 +76,7 @@ func TestDeleteChart(t *testing.T) {
 		if deletedChartID != "chart-1" {
 			t.Errorf("Expected deleted chart ID %q, got %q", "chart-1", deletedChartID)
 		}
-		if capturedReq == nil || capturedReq.GetName() != "xids/100" || capturedReq.GetUser() != "writer@example.com" || capturedReq.GetRoleType() != xpb.XidAcls_WRITER {
+		if capturedReq == nil || capturedReq.GetName() != "xids/100" || capturedReq.GetUser() != "writer@example.com" || capturedReq.GetRoleType() != xidapipb.XidAcls_WRITER {
 			t.Errorf("CheckUserAuthorization called with unexpected request: %v", capturedReq)
 		}
 	})

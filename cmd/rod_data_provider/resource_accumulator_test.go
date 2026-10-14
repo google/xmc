@@ -20,8 +20,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	spb "xmanager_cloud/api/protos/rod"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
 func TestExtractRequestedResources(t *testing.T) {

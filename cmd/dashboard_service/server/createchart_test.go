@@ -27,8 +27,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	xidapipb "xmanager_cloud/api/protos/xid"
 )
 
 func TestCreateChart(t *testing.T) {
@@ -297,8 +296,8 @@ func TestCreateChart(t *testing.T) {
 		if capturedReq.GetUser() != "writer@example.com" {
 			t.Errorf("Expected User %q, got %q", "writer@example.com", capturedReq.GetUser())
 		}
-		if capturedReq.GetRoleType() != xpb.XidAcls_WRITER {
-			t.Errorf("Expected RoleType %v, got %v", xpb.XidAcls_WRITER, capturedReq.GetRoleType())
+		if capturedReq.GetRoleType() != xidapipb.XidAcls_WRITER {
+			t.Errorf("Expected RoleType %v, got %v", xidapipb.XidAcls_WRITER, capturedReq.GetRoleType())
 		}
 	})
 

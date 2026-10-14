@@ -24,7 +24,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	anypb "google.golang.org/protobuf/types/known/anypb"
-	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	pb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/operationschema"
 )

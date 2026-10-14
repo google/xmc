@@ -19,8 +19,8 @@ import (
 	"xmanager_cloud/internal/storage/spanner"
 
 	"google.golang.org/protobuf/proto"
+	xidpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/storage/spanner/emulator"
-	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestCreateXidEntry(t *testing.T) {

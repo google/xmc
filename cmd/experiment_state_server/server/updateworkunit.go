@@ -18,18 +18,17 @@ import (
 	"fmt"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	msgpb "xmanager_cloud/api/protos/experiment"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // UpdateWorkUnit updates a work unit's data.
-func (h *WorkUnitHandler) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateWorkUnitRequest) (*msgpb.WorkUnit, error) {
+func (h *WorkUnitHandler) UpdateWorkUnit(ctx context.Context, req *msgpb.UpdateWorkUnitRequest) (*msgpb.WorkUnit, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Update work unit", "request", req)
 

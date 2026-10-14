@@ -30,26 +30,24 @@ import (
 	"xmanager_cloud/internal/validator"
 
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	apipb "xmanager_cloud/api/protos/experiment"
+	xidapipb "xmanager_cloud/api/protos/xid"
 )
 
 func TestStopWorkUnit_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	server, taskQueueClient := createExperimentStateServer(ctx, t)
 
-	exp := &msgpb.Experiment{
+	exp := &apipb.Experiment{
 		Title: "test experiment for stopworkunit",
-		Acls: &xidmsgpb.XidAcls{
-			Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
+		Acls: &xidapipb.XidAcls{
+			Owners: []*xidapipb.XidAcls_Role{{Principal: &xidapipb.XidAcls_Role_User{User: "test@example.com"}}},
 		},
 	}
 	createdExp := mustCreateExperiment(ctx, t, server, exp)
 
-	workUnit := &msgpb.WorkUnit{
-		WorkUnitType: msgpb.WorkUnit_STANDARD,
+	workUnit := &apipb.WorkUnit{
+		WorkUnitType: apipb.WorkUnit_STANDARD,
 		Executable:   testExecutable,
 	}
 	workUnitID := int64(1)
@@ -70,15 +68,15 @@ func TestStopWorkUnit_HappyPath(t *testing.T) {
 	if op.GetError() != nil {
 		t.Errorf("StopWorkUnit() returned an operation with non-nil error")
 	}
-	var gotMetadata msgpb.OperationMetadata
+	var gotMetadata apipb.OperationMetadata
 	if err := op.GetMetadata().UnmarshalTo(&gotMetadata); err != nil {
 		t.Errorf("Failed to unmarshal operation metadata: %v", err)
 	}
 	if !strings.HasPrefix(gotMetadata.GetTarget(), createdExp.GetName()+"/workUnits/") {
 		t.Errorf("StopWorkUnit() operation metadata target %q does not start with experiment prefix", gotMetadata.GetTarget())
 	}
-	if gotMetadata.GetActionType() != msgpb.OperationMetadata_STOP {
-		t.Errorf("StopWorkUnit() operation metadata action type got %q, want %q", gotMetadata.GetActionType(), msgpb.OperationMetadata_STOP)
+	if gotMetadata.GetActionType() != apipb.OperationMetadata_STOP {
+		t.Errorf("StopWorkUnit() operation metadata action type got %q, want %q", gotMetadata.GetActionType(), apipb.OperationMetadata_STOP)
 	}
 	if gotMetadata.GetOriginalRequester() != "test@example.com" {
 		t.Errorf("StopWorkUnit() operation metadata original requester got %q, want %q", gotMetadata.GetOriginalRequester(), "test@example.com")
@@ -111,8 +109,8 @@ func TestStopWorkUnit_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchCurrentWorkUnitExecution() returned an unexpected error: %v", err)
 	}
-	if workUnitExecution.GetStatus().GetState() != msgpb.WorkUnitStatus_STOPPING {
-		t.Errorf("Work unit execution state got %v, want %v", workUnitExecution.GetStatus().GetState(), msgpb.WorkUnitStatus_STOPPING)
+	if workUnitExecution.GetStatus().GetState() != apipb.WorkUnitStatus_STOPPING {
+		t.Errorf("Work unit execution state got %v, want %v", workUnitExecution.GetStatus().GetState(), apipb.WorkUnitStatus_STOPPING)
 	}
 }
 
@@ -120,16 +118,16 @@ func TestStopWorkUnit_SchedulingPausedTransitionsDirectlyToStopped(t *testing.T)
 	ctx := context.Background()
 	server, taskQueueClient := createExperimentStateServer(ctx, t)
 
-	exp := &msgpb.Experiment{
+	exp := &apipb.Experiment{
 		Title: "test experiment for stopworkunit from scheduling paused",
-		Acls: &xidmsgpb.XidAcls{
-			Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
+		Acls: &xidapipb.XidAcls{
+			Owners: []*xidapipb.XidAcls_Role{{Principal: &xidapipb.XidAcls_Role_User{User: "test@example.com"}}},
 		},
 	}
 	createdExp := mustCreateExperiment(ctx, t, server, exp)
 
-	workUnit := &msgpb.WorkUnit{
-		WorkUnitType: msgpb.WorkUnit_STANDARD,
+	workUnit := &apipb.WorkUnit{
+		WorkUnitType: apipb.WorkUnit_STANDARD,
 		Executable:   testExecutable,
 	}
 	workUnitID := int64(1)
@@ -154,9 +152,9 @@ func TestStopWorkUnit_SchedulingPausedTransitionsDirectlyToStopped(t *testing.T)
 		{
 			WID: workUnitID,
 			EID: eid,
-			WorkUnitExecution: &msgpb.WorkUnitExecution{
-				Status: &msgpb.WorkUnitStatus{
-					State:           msgpb.WorkUnitStatus_SCHEDULING_PAUSED,
+			WorkUnitExecution: &apipb.WorkUnitExecution{
+				Status: &apipb.WorkUnitStatus{
+					State:           apipb.WorkUnitStatus_SCHEDULING_PAUSED,
 					StateUpdateTime: initialExec.GetStatus().GetStateUpdateTime(),
 				},
 			},
@@ -179,8 +177,8 @@ func TestStopWorkUnit_SchedulingPausedTransitionsDirectlyToStopped(t *testing.T)
 	if err != nil {
 		t.Fatalf("FetchCurrentWorkUnitExecution() returned an unexpected error: %v", err)
 	}
-	if workUnitExecution.GetStatus().GetState() != msgpb.WorkUnitStatus_STOPPED {
-		t.Errorf("Work unit execution state got %v, want %v", workUnitExecution.GetStatus().GetState(), msgpb.WorkUnitStatus_STOPPED)
+	if workUnitExecution.GetStatus().GetState() != apipb.WorkUnitStatus_STOPPED {
+		t.Errorf("Work unit execution state got %v, want %v", workUnitExecution.GetStatus().GetState(), apipb.WorkUnitStatus_STOPPED)
 	}
 }
 
@@ -214,11 +212,11 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
 
 	goodReq := &apipb.StopWorkUnitRequest{Name: "experiments/123/workUnits/456"}
-	workUnit := &msgpb.WorkUnit{
+	workUnit := &apipb.WorkUnit{
 		Name:                     "experiments/123/workUnits/456",
-		WorkUnitType:             msgpb.WorkUnit_STANDARD,
+		WorkUnitType:             apipb.WorkUnit_STANDARD,
 		Executable:               testExecutable,
-		CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
+		CurrentWorkUnitExecution: &apipb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
 	}
 
 	testCases := []struct {
@@ -278,7 +276,7 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 			},
 			storage: &storage.MockStorage{
 				WorkUnit:                workUnit,
-				Experiment:              &msgpb.Experiment{Name: "experiments/123"},
+				Experiment:              &apipb.Experiment{Name: "experiments/123"},
 				AddWorkUnitOperationErr: fmt.Errorf("Storage add operation failed"),
 			},
 			wantErr: grpcerr.ErrInternal,
@@ -290,7 +288,7 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 			},
 			storage: &storage.MockStorage{
 				WorkUnit:                          workUnit,
-				Experiment:                        &msgpb.Experiment{Name: "experiments/123"},
+				Experiment:                        &apipb.Experiment{Name: "experiments/123"},
 				UpdateCurrentWorkUnitExecutionErr: fmt.Errorf("Storage update work unit executions failed"),
 			},
 			wantErr: grpcerr.ErrInternal,
@@ -321,11 +319,11 @@ func TestStopWorkUnit_DependencyFailures(t *testing.T) {
 func TestStopWorkUnit_TaskEnqueueFails(t *testing.T) {
 	ctx := context.Background()
 
-	workUnit := &msgpb.WorkUnit{
+	workUnit := &apipb.WorkUnit{
 		Name:                     "experiments/123/workUnits/456",
-		WorkUnitType:             msgpb.WorkUnit_STANDARD,
+		WorkUnitType:             apipb.WorkUnit_STANDARD,
 		Executable:               testExecutable,
-		CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
+		CurrentWorkUnitExecution: &apipb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
 	}
 
 	xidClient := &mockXidClient{
@@ -333,7 +331,7 @@ func TestStopWorkUnit_TaskEnqueueFails(t *testing.T) {
 	}
 	storage := &storage.MockStorage{
 		WorkUnit:   workUnit,
-		Experiment: &msgpb.Experiment{Name: "experiments/123"},
+		Experiment: &apipb.Experiment{Name: "experiments/123"},
 	}
 	taskQueueClient := &tq.FakeClient{
 		EnqueueErr: fmt.Errorf("task enqueue failed"),

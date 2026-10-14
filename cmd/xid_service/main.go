@@ -27,11 +27,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
+	apipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/xid_service/config"
 	"xmanager_cloud/cmd/xid_service/server"
 	"xmanager_cloud/internal/logging"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
-	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 func main() {

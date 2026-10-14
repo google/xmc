@@ -45,7 +45,7 @@ go_proto_compiler(
     suffix = "_grpc.pb.go",
     visibility = ["//visibility:private"],
     deps = [
-        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],
@@ -60,10 +60,10 @@ go_proto_compiler(
     deps = [
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//utilities",
-        "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//grpclog:go_default_library",
-        "@org_golang_google_grpc//metadata:go_default_library",
-        "@org_golang_google_protobuf//proto:go_default_library",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//grpclog",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -136,7 +136,7 @@ go_proto_library(
     importpath = "xmanager_cloud/api/protos/dashboard",
     proto = ":cloud_xmanager_v1_proto",
     deps = [
-        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//:api",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_protobuf//types/known/emptypb",
         "@org_golang_google_protobuf//types/known/fieldmaskpb",

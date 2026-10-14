@@ -18,10 +18,10 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	pb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/validator"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // ExperimentRequiresXIDUpdate checks if an experiment update mask requires an XID update, and returns

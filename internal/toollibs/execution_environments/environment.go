@@ -20,8 +20,7 @@ import (
 	"fmt"
 
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	spb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	epb "xmanager_cloud/api/protos/experiment"
 )
 
 const (
@@ -46,9 +45,9 @@ type Environment interface {
 	// InjectOnJobSetCreation injects the environment on job set creation based on the work unit.
 	InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit, jobset *jobsetv1alpha2.JobSet) (*jobsetv1alpha2.JobSet, error)
 	// InjectOnExperimentCreation injects the environment on experiment creation.
-	InjectOnExperimentCreation(ctx context.Context, essServer spb.ExperimentStateServiceServer, experiment *epb.Experiment) (*epb.Experiment, error)
+	InjectOnExperimentCreation(ctx context.Context, essServer epb.ExperimentStateServiceServer, experiment *epb.Experiment) (*epb.Experiment, error)
 	// InjectOnWorkUnitCreation injects the environment on work unit creation.
-	InjectOnWorkUnitCreation(ctx context.Context, essServer spb.ExperimentStateServiceServer, workUnit *epb.WorkUnit) (*epb.WorkUnit, error)
+	InjectOnWorkUnitCreation(ctx context.Context, essServer epb.ExperimentStateServiceServer, workUnit *epb.WorkUnit) (*epb.WorkUnit, error)
 }
 
 var executionEnvironments = make(map[string]Environment)
