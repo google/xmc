@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Helm chart template contract test for xmc-bridge single-writer leader election and probes.
+// Production targets: deploy/helm/templates/components-bridge/deployment.yaml and rbac.yaml
+// (paired with the runtime options in component_manager.go).
+// Test type: hermetic static manifest test (reads the Helm template runfiles directly without
+// a cluster). Kept alongside components_rbac_test.go in package bridge so bridge runtime changes
+// and their required Deployment/Lease RBAC manifest invariants are verified together.
 package bridge
 
 import (
