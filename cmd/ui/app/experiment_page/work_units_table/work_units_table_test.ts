@@ -171,6 +171,22 @@ describe('WorkUnitsTable Component', () => {
     fixture.detectChanges();
 
     expect(lastRequest()).toEqual({ parent: 'experiments/2', pageSize: 10, pageToken: '' });
+    fixture.destroy();
+  });
+
+  it('should show the loading state, not the previous rows, when the experiment id changes', async () => {
+    state.workUnitsService.searchWorkUnits.and.returnValues(of(MOCK_WORK_UNITS_RESPONSE), NEVER);
+    const fixture = TestBed.createComponent(WorkUnitsTable);
+    fixture.componentRef.setInput('xid', '1');
+    fixture.detectChanges();
+
+    fixture.componentRef.setInput('xid', '2');
+    fixture.detectChanges();
+
+    const harness = await getHarness(WorkUnitsTableHarness);
+    expect(await harness.isLoading()).toBeTrue();
+    expect(await harness.hasTable()).toBeFalse();
+    fixture.destroy();
   });
 
   describe('Loading states', () => {
