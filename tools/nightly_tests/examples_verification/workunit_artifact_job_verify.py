@@ -13,13 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Validation script for sidecar container job workload in XMC.
+"""Validation script for WorkUnit artifact lifecycle workload in XMC.
 
-Asserts that the Sidecar Container Job experiment and its associated WorkUnit
-were correctly created, configured with sidecar containers, and executed to completion.
+Asserts that the WorkUnit Artifact Lifecycle experiment and its WorkUnit were
+correctly created, scheduled to the expected queue, configured with INPUT
+(`code_source`), EXECUTION (`text`), and OUTPUT (`url`) artifact payloads, and
+executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.sidecar_verify --xid=16
+    python3 -m tools.nightly_tests.examples_verification.workunit_artifact_job_verify --xid=26
 """
 
 from __future__ import annotations
@@ -29,30 +31,27 @@ from typing import Any
 
 from tools.nightly_tests.verification import verifier_cli, workload_verification
 
-EXPECTED_TITLE_PATTERN: str = "Sidecar"
-EXPECTED_JOB_NAME: str = "sidecar-worker"
-EXPECTED_INIT_CONTAINER: str = "init-setup"
-EXPECTED_SIDECAR: str = "sidecar-service"
-EXPECTED_PRIMARY_SPEC: str = "primary-worker"
+EXPECTED_TITLE_PATTERN: str = "WorkUnit Artifact Lifecycle Example"
+EXPECTED_WORKER_NAMES: tuple[str, ...] = ("artifact-demo-worker",)
+EXPECTED_ARTIFACT_TYPES: tuple[str, ...] = ("code_source", "text", "url")
 EXPECTED_JOBSET_SPECS: list[dict[str, Any]] = [
     {
-        "name": EXPECTED_JOB_NAME,
+        "name": "artifact-demo-worker",
         "replicas": 1,
-        "init_containers": [EXPECTED_INIT_CONTAINER],
-        "sidecars": [EXPECTED_SIDECAR],
-        "primary_container": EXPECTED_PRIMARY_SPEC,
     }
 ]
 
 
 def main(argv: Sequence[str]) -> None:
-    """Main verification routine for sidecar workload."""
+    """Main verification routine for workunit_artifact_job workload."""
     workload_verification.verify_standard_workload(
         argv,
-        banner_title="XMC Sidecar Container Job Verification & Assertions",
-        summary_title="ALL SIDECAR JOB ASSERTIONS PASSED SUCCESSFULLY!",
+        banner_title="XMC WorkUnit Artifact Lifecycle Job Verification & Assertions",
+        summary_title="ALL WORKUNIT ARTIFACT LIFECYCLE ASSERTIONS PASSED SUCCESSFULLY!",
         expected_title_pattern=EXPECTED_TITLE_PATTERN,
         expected_jobs=EXPECTED_JOBSET_SPECS,
+        expected_worker_names=EXPECTED_WORKER_NAMES,
+        expected_artifact_types=EXPECTED_ARTIFACT_TYPES,
     )
 
 

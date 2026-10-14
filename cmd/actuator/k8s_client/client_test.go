@@ -34,7 +34,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/rest"
 	clientgotesting "k8s.io/client-go/testing"
-	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	esspb "xmanager_cloud/api/protos/experiment"
 
 	// TODO - (internal issue): Consider using a mock instead of the emulator.
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"

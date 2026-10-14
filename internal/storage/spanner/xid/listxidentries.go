@@ -27,9 +27,9 @@ import (
 	"xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 
+	xidpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
-	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 // ListXidEntries returns a paginated list of XidEntry protos based on the provided filter and order.

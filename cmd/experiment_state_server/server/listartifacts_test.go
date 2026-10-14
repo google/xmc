@@ -23,8 +23,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	apipb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -36,7 +35,7 @@ func TestListArtifacts_HappyPath(t *testing.T) {
 	server, _ := createExperimentStateServer(ctx, t)
 	exp := mustCreateExperiment(ctx, t, server, nil)
 
-	var artifacts []*msgpb.Artifact
+	var artifacts []*apipb.Artifact
 	for i := 0; i < 3; i++ {
 		artifacts = append(artifacts, mustCreateArtifact(ctx, t, server, exp.GetName(), nil))
 	}
@@ -96,7 +95,7 @@ func TestSearchArtifacts_HappyPath(t *testing.T) {
 	// nolint:sleep // Requires Spanner read staleness duration
 	time.Sleep(15*time.Second + 10*time.Millisecond)
 
-	var artifacts []*msgpb.Artifact
+	var artifacts []*apipb.Artifact
 	for i := 0; i < 3; i++ {
 		artifacts = append(artifacts, mustCreateArtifact(ctx, t, server, exp.GetName(), nil))
 	}

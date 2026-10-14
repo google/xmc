@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# gazelle:ignore
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@rules_proto//proto:defs.bzl", "proto_library")
@@ -21,8 +22,6 @@ package(default_visibility = ["//visibility:public"])
 proto_library(
     name = "health_api_proto",
     srcs = ["api.proto"],
-    import_prefix = "xmanager_cloud/health_service/proto",
-    strip_import_prefix = "/api/protos/health",
     deps = [
         "@com_google_googleapis//google/api:annotations_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -39,7 +38,7 @@ go_proto_library(
     importpath = "xmanager_cloud/api/protos/health",
     proto = ":health_api_proto",
     deps = [
-        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//:api",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )

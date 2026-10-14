@@ -43,7 +43,7 @@ For complete architectural details, prerequisites, and CLI options, see the [Dev
 
 ## Protocol Buffers & gRPC Stubs
 
-All proto files are located inside the [api/protos](../api/protos) directory. They share the `cloud.xmanager.v1` package name and are built with modern **Bazel** rules, translating internal-style import paths (e.g. `third_party/xmanager_cloud/...`) automatically.
+All proto files are located inside the [api/protos](../api/protos) directory. They share the `cloud.xmanager.v1` package name and are built with **Bazel** (`rules_proto` and `rules_go`).
 
 ### Build Commands
 

@@ -16,7 +16,7 @@ syntax = "proto3";
 
 package cloud.xmanager.v1;
 
-option go_package = "xmanager_cloud/dashboard_service/proto/service_go_proto";
+option go_package = "xmanager_cloud/api/protos/dashboard";
 
 import "google/api/annotations.proto";
 import "google/api/client.proto";

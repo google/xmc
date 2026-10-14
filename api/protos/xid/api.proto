@@ -15,6 +15,8 @@ edition = "2023";
 
 package cloud.xmanager.v1;
 
+option go_package = "xmanager_cloud/api/protos/xid";
+
 import "google/api/annotations.proto";
 import "google/api/client.proto";
 import "google/api/field_behavior.proto";

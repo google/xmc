@@ -15,6 +15,7 @@
 """Unit tests for HelmDeployer."""
 
 import os
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -69,7 +70,7 @@ class TestHelmDeployer(unittest.TestCase):
             "    - imagePullPolicy: IfNotPresent\n",
         )
 
-    def test_generate_values_file(self):
+    def test_generate_values_file(self) -> None:
         self.deployer._generate_values_file()
 
         self.assertTrue(os.path.isfile(self.deployer.values_file))
@@ -84,9 +85,11 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn('allowedEmails: "admin@xmc.local,viewer@xmc.local"', values)
         self.assertIn('username: "admin@xmc.local"', values)
         self.assertIn('password: "password123"', values)
+        self.assertIn('xmc_bridge_custom_image: "xmc_bridge_image:latest"', values)
+        self.assertIn("componentsDeployment:\n  enabled: true", values)
 
     @patch("test.e2e.lib.helm_deployer.run_cmd")
-    def test_wait_for_rollouts_success(self, mock_run):
+    def test_wait_for_rollouts_success(self, mock_run) -> None:
         self.deployer._wait_for_rollouts()
 
         context = f"kind-{self.cfg.cluster_name}"
@@ -108,6 +111,7 @@ class TestHelmDeployer(unittest.TestCase):
             "experiment-state-server-deployment",
             "actuator-deployment",
             "reconciler-deployment",
+            "xmc-bridge-deployment",
             "ui-deployment",
             "gateway-proxy",
         ):
@@ -145,6 +149,25 @@ class TestHelmDeployer(unittest.TestCase):
             self.assertIn(f"=== PODS (ns: {ns}) ===", diagnostics)
             self.assertIn(f"=== EVENTS (ns: {ns}) ===", diagnostics)
         self.assertIn("--- Logs for pod: mock-pod-1 ---", diagnostics)
+
+    @patch("test.e2e.lib.helm_deployer.run_cmd")
+    def test_capture_diagnostics_logs_and_swallows_kubectl_failures(
+        self, mock_run: unittest.mock.MagicMock
+    ) -> None:
+        """A missing or hung kubectl is logged instead of escaping the failure handler."""
+        for error in (
+            FileNotFoundError("kubectl"),
+            subprocess.TimeoutExpired(cmd="kubectl", timeout=900),
+        ):
+            with self.subTest(error=type(error).__name__):
+                mock_run.side_effect = error
+
+                with self.assertLogs(level="WARNING") as logs:
+                    self.deployer.capture_diagnostics()
+
+                self.assertIn(
+                    "WARNING:xmc_e2e_runner:Failed to capture cluster diagnostics", logs.output[-1]
+                )
 
     def test_prepare_helm_chart_prunes_unsupported_resources_and_keeps_kueue_dev_and_wpc(self):
         src_helm = os.path.join(self.cfg.temp_dir, "workspace_helm")
@@ -230,6 +253,27 @@ class TestHelmDeployer(unittest.TestCase):
             self.deployer._install_controllers()
 
         mock_capture.assert_called_once_with()
+
+    @patch("test.e2e.lib.helm_deployer.run_cmd")
+    @patch("test.e2e.lib.helm_deployer.ControllerInstaller")
+    def test_install_controllers_failure_is_not_masked_by_failing_diagnostics(
+        self, mock_installer_cls: unittest.mock.MagicMock, _mock_run: unittest.mock.MagicMock
+    ) -> None:
+        """A diagnostics failure is logged while the original install error propagates."""
+        mock_installer_cls.return_value.install_all.side_effect = RuntimeError("webhook down")
+        # A regular file in place of the diagnostics directory makes writing the log fail.
+        with open(self.screenshots_dir, "w", encoding="utf-8"):
+            pass
+
+        with (
+            self.assertLogs(level="WARNING") as logs,
+            self.assertRaisesRegex(RuntimeError, "webhook down"),
+        ):
+            self.deployer._install_controllers()
+
+        self.assertIn(
+            "WARNING:xmc_e2e_runner:Failed to capture cluster diagnostics", logs.output[-1]
+        )
 
     @patch.object(HelmDeployer, "_prepare_helm_chart")
     @patch.object(HelmDeployer, "_patch_image_pull_policy")

@@ -16,9 +16,9 @@ load("@rules_buf//buf:defs.bzl", "buf_breaking_test")
 load("@rules_proto//proto:defs.bzl", "proto_descriptor_set")
 
 # Every //api proto_library. The `cloud_xmanager_v1_proto` targets duplicate
-# sources of the targets below and are left out;
-# api/filter/filter_expression.proto has no proto_library and is not covered.
+# sources of the targets below and are left out.
 _PROTOS = [
+    "//api/filter:filter_proto",
     "//api/protos/components/v1alpha1:components_proto",
     "//api/protos/dashboard:dashboard_messages_proto",
     "//api/protos/dashboard:dashboard_service_proto",

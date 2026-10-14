@@ -34,6 +34,7 @@ def _get_service_specs() -> list[tuple[str, str, str]]:
         "xid_service",
         "actuator",
         "reconciler",
+        "xmc_bridge",
     ]
     specs = [
         (f"cmd/{name}", f"{name}_image_tarball", f"{name}_image:latest")

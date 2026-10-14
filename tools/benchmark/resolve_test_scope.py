@@ -46,7 +46,6 @@ CORE_INFRA_FILES: set[str] = {
     "MODULE.bazel",
     "MODULE.bazel.lock",
     "BUILD.bazel",
-    "compat.bzl",
     ".bazelrc",
     ".bazelversion",
     ".github/workflows/unit-tests.yml",

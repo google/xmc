@@ -21,18 +21,17 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	msgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
-	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
-	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestGetXidEntry_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	server := createXidServer(ctx, t)
 
-	parentReq := &apipb.CreateXidEntryRequest{
+	parentReq := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Acls: &msgpb.XidAcls{
 				Owners: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}},
@@ -45,7 +44,7 @@ func TestGetXidEntry_HappyPath(t *testing.T) {
 		t.Fatalf("CreateXidEntry() for parent returned an unexpected error: %v", err)
 	}
 
-	createXidEntryRequest := &apipb.CreateXidEntryRequest{
+	createXidEntryRequest := &msgpb.CreateXidEntryRequest{
 		XidEntry: &msgpb.XidEntry{
 			Creator: proto.String("test@example.com"),
 			Acls: &msgpb.XidAcls{
@@ -61,7 +60,7 @@ func TestGetXidEntry_HappyPath(t *testing.T) {
 		t.Fatalf("CreateXidEntry() returned an unexpected error: %v", err)
 	}
 
-	gotXidEntry, err := server.GetXidEntry(ctx, &apipb.GetXidEntryRequest{Name: createXidEntry.Name})
+	gotXidEntry, err := server.GetXidEntry(ctx, &msgpb.GetXidEntryRequest{Name: createXidEntry.Name})
 	if err != nil {
 		t.Fatalf("GetXidEntry() returned an unexpected error: %v", err)
 	}
@@ -79,22 +78,22 @@ func TestGetXidEntry_BadPaths(t *testing.T) {
 
 	testCases := []struct {
 		name    string
-		req     *apipb.GetXidEntryRequest
+		req     *msgpb.GetXidEntryRequest
 		wantErr error
 	}{
 		{
 			name:    "invalid_name",
-			req:     &apipb.GetXidEntryRequest{Name: proto.String("xids/invalid")},
+			req:     &msgpb.GetXidEntryRequest{Name: proto.String("xids/invalid")},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "non_numeric_name",
-			req:     &apipb.GetXidEntryRequest{Name: proto.String("xids/123abc")},
+			req:     &msgpb.GetXidEntryRequest{Name: proto.String("xids/123abc")},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:    "not_found",
-			req:     &apipb.GetXidEntryRequest{Name: proto.String("xids/999999999")},
+			req:     &msgpb.GetXidEntryRequest{Name: proto.String("xids/999999999")},
 			wantErr: grpcerr.ErrNotFound,
 		},
 	}
@@ -146,7 +145,7 @@ func TestGetXidEntry_Failures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			server := newTestServer(t, withAuthorizer(tc.mockAuth), withStorage(tc.mockStorage))
-			_, err := server.GetXidEntry(ctx, &apipb.GetXidEntryRequest{Name: proto.String("xids/1")})
+			_, err := server.GetXidEntry(ctx, &msgpb.GetXidEntryRequest{Name: proto.String("xids/1")})
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("GetXidEntry() returned error %v, want %v", err, tc.wantErr)
 			}

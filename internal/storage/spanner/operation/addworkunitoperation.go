@@ -24,7 +24,7 @@ import (
 	"github.com/google/uuid"
 	anypb "google.golang.org/protobuf/types/known/anypb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/validator"

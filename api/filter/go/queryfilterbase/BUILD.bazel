@@ -19,10 +19,9 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "queryfilterbase",
     srcs = ["base.go"],
-    importpath = "xmanager_cloud/api/filter/go/queryfilterbase",  # keep
+    importpath = "xmanager_cloud/api/filter/go/queryfilterbase",
     deps = [
-        # keep
-        "//api/filter:filter_expression_go_proto",
+        "//api/filter",
         "//api/filter/go/filtervisitor",
         "//internal/safesql",
     ],

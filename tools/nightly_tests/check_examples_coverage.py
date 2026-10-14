@@ -17,10 +17,10 @@
 
 Scans `examples/` subdirectories and verifies that every example is either:
 1. Fully wired into the Nightly Examples E2E suite:
-   - `tools/nightly_tests/<name>_verify.py` exists,
-   - `tools/nightly_tests/BUILD.bazel` defines `py_binary` `<name>_verify`,
+   - `tools/nightly_tests/examples_verification/<name>_verify.py` exists,
+   - `tools/nightly_tests/examples_verification/BUILD.bazel` defines `py_binary` `<name>_verify`,
    - `.github/workflows/nightly-examples-e2e.yml` includes `examples/<name>` and
-     `tools.nightly_tests.<name>_verify`; OR
+     `tools.nightly_tests.examples_verification.<name>_verify`; OR
 2. Explicitly opted out in `EXEMPT_EXAMPLES`.
 """
 
@@ -64,22 +64,24 @@ class CoverageReport:
 
 def collect_missing_wiring(
     name: str,
-    tests_dir: pathlib.Path,
+    examples_verification_dir: pathlib.Path,
     build_text: str,
     workflow_text: str,
 ) -> list[str]:
     """Returns which of the 3 nightly verification wiring entries are missing for `name`."""
     missing: list[str] = []
-    if not (tests_dir / f"{name}_verify.py").is_file():
-        missing.append(f"tools/nightly_tests/{name}_verify.py")
+    if not (examples_verification_dir / f"{name}_verify.py").is_file():
+        missing.append(f"tools/nightly_tests/examples_verification/{name}_verify.py")
     if not re.search(rf'name\s*=\s*["\']{re.escape(name)}_verify["\']', build_text):
-        missing.append(f"py_binary '{name}_verify' in tools/nightly_tests/BUILD.bazel")
+        missing.append(
+            f"py_binary '{name}_verify' in tools/nightly_tests/examples_verification/BUILD.bazel"
+        )
     if (
         f"examples/{name}" not in workflow_text
-        or f"tools.nightly_tests.{name}_verify" not in workflow_text
+        or f"tools.nightly_tests.examples_verification.{name}_verify" not in workflow_text
     ):
         missing.append(
-            f"matrix entry ('examples/{name}' & 'tools.nightly_tests.{name}_verify') "
+            f"matrix entry ('examples/{name}' & 'tools.nightly_tests.examples_verification.{name}_verify') "
             "in .github/workflows/nightly-examples-e2e.yml"
         )
     return missing
@@ -87,13 +89,13 @@ def collect_missing_wiring(
 
 def evaluate_single_example(
     name: str,
-    tests_dir: pathlib.Path,
+    examples_verification_dir: pathlib.Path,
     build_text: str,
     workflow_text: str,
     exempt_examples: Collection[str],
 ) -> str | None:
     """Returns a violation message for `examples/<name>`, or `None` if compliant."""
-    missing = collect_missing_wiring(name, tests_dir, build_text, workflow_text)
+    missing = collect_missing_wiring(name, examples_verification_dir, build_text, workflow_text)
     if not missing:
         if name in exempt_examples:
             return (
@@ -127,12 +129,12 @@ def _list_example_dirs(examples_dir: pathlib.Path) -> list[pathlib.Path]:
 
 def _read_repo_texts(repo_root: pathlib.Path) -> tuple[pathlib.Path, str, str]:
     """Loads `BUILD.bazel` and `nightly-examples-e2e.yml` text from `repo_root`."""
-    tests_dir = repo_root / "tools" / "nightly_tests"
-    build_path = tests_dir / "BUILD.bazel"
+    examples_verification_dir = repo_root / "tools" / "nightly_tests" / "examples_verification"
+    build_path = examples_verification_dir / "BUILD.bazel"
     workflow_path = repo_root / ".github" / "workflows" / "nightly-examples-e2e.yml"
     build_text = build_path.read_text(encoding="utf-8") if build_path.is_file() else ""
     workflow_text = workflow_path.read_text(encoding="utf-8") if workflow_path.is_file() else ""
-    return tests_dir, build_text, workflow_text
+    return examples_verification_dir, build_text, workflow_text
 
 
 def audit_examples_coverage(
@@ -151,12 +153,12 @@ def audit_examples_coverage(
         f"EXEMPT_EXAMPLES contains stale exemption for non-existent example '{name}'."
         for name in sorted(registry - existing_names)
     ]
-    tests_dir, build_text, workflow_text = _read_repo_texts(repo_root)
+    examples_verification_dir, build_text, workflow_text = _read_repo_texts(repo_root)
     covered, exempt = [], []
     for example_dir in example_dirs:
         name = example_dir.name
         if violation := evaluate_single_example(
-            name, tests_dir, build_text, workflow_text, registry
+            name, examples_verification_dir, build_text, workflow_text, registry
         ):
             violations.append(violation)
         elif name in registry:

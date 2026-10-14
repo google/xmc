@@ -23,13 +23,12 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
 
-	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
-	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	msgpb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 )
 
 // GetWorkUnit orchestrates the retrieval of a single work unit by its ID.
-func (h *WorkUnitHandler) GetWorkUnit(ctx context.Context, req *apipb.GetWorkUnitRequest) (*msgpb.WorkUnit, error) {
+func (h *WorkUnitHandler) GetWorkUnit(ctx context.Context, req *msgpb.GetWorkUnitRequest) (*msgpb.WorkUnit, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch work unit", "request", req)
 

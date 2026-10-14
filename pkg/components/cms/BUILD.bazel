@@ -18,7 +18,10 @@ package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "cms",
-    srcs = ["server.go"],
+    srcs = [
+        "authorizer.go",
+        "server.go",
+    ],
     importpath = "xmanager_cloud/pkg/components/cms",
     deps = [
         "//api/protos/components/v1alpha1",
@@ -35,7 +38,10 @@ go_library(
 
 go_test(
     name = "cms_test",
-    srcs = ["server_test.go"],
+    srcs = [
+        "authorizer_test.go",
+        "server_test.go",
+    ],
     embed = [":cms"],
     deps = [
         "//api/protos/components/v1alpha1",

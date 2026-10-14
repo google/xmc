@@ -1,0 +1,54 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: v1
+kind: Namespace
+metadata: {name: multikueue-cpu-queue}
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata: {name: cpu-flavor}
+spec: {nodeLabels: {}}
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata: {name: multikueue-cpu-queue, namespace: multikueue-cpu-queue}
+spec: {clusterQueue: multikueue-cpu-cluster-queue}
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata: {name: multikueue-cpu-cluster-queue}
+spec:
+  namespaceSelector: {}
+  admissionChecksStrategy: {admissionChecks: [{name: multikueue-admission-check}]}
+  resourceGroups:
+    - coveredResources: [cpu, memory]
+      flavors: [{name: cpu-flavor, resources: [{name: cpu, nominalQuota: 100000000}, {name: memory, nominalQuota: 100000000Gi}]}]
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: AdmissionCheck
+metadata: {name: multikueue-admission-check}
+spec: {controllerName: kueue.x-k8s.io/multikueue, parameters: {apiGroup: kueue.x-k8s.io, kind: MultiKueueConfig, name: multikueue-config}}
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: MultiKueueConfig
+metadata: {name: multikueue-config}
+spec: {clusters: [xmc-nightly-worker-1]}
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: MultiKueueCluster
+metadata:
+  name: xmc-nightly-worker-1
+  labels: {xmc.google.com/project: xmc-dev, xmc.google.com/location: us-central1, xmc.google.com/cluster-name: xmc-nightly-worker-1}
+spec: {clusterSource: {kubeConfig: {locationType: Secret, location: multikueue-worker-kubeconfig}}}
