@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/store"
 )
 
 type fakeUserAuthenticator struct {
@@ -171,11 +172,12 @@ func TestServer_AuthorizationEnforcement(t *testing.T) {
 		_, e6 := srv.ResolveComponentSnapshot(ctx, &componentspb.ResolveComponentSnapshotRequest{Name: "comp-1"})
 		_, e7 := srv.ValidateComponentRequirement(ctx, &componentspb.ValidateComponentRequirementRequest{Name: "comp-1"})
 		_, e8 := srv.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{})
-		return []codes.Code{status.Code(e1), status.Code(e2), status.Code(e3), status.Code(e4), status.Code(e5)},
+		_, e9 := srv.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: &componentspb.ClusterIdentity{Uid: "5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c01", Name: "prod", Epoch: 1}})
+		return []codes.Code{status.Code(e1), status.Code(e2), status.Code(e3), status.Code(e4), status.Code(e5), status.Code(e9)},
 			[]codes.Code{status.Code(e6), status.Code(e7), status.Code(e8)}
 	}
 
-	t.Run("nil authorizer fails closed on all 8 RPCs", func(t *testing.T) {
+	t.Run("nil authorizer fails closed on all 9 RPCs", func(t *testing.T) {
 		mutCodes, readCodes := invokeAll(NewServer(&stubStore{}))
 		for i, c := range append(mutCodes, readCodes...) {
 			if c != codes.Unauthenticated {
@@ -199,7 +201,7 @@ func TestServer_AuthorizationEnforcement(t *testing.T) {
 		}
 	})
 
-	t.Run("authorized service account allowed on all 8 RPCs", func(t *testing.T) {
+	t.Run("authorized service account allowed on all 9 RPCs", func(t *testing.T) {
 		auth := NewAuthorizer(AuthorizerConfig{Authenticator: &fakeUserAuthenticator{email: bridgeSA}, AuthorizedServiceAccounts: []string{bridgeSA}})
 		mutCodes, readCodes := invokeAll(NewServer(&stubStore{}, WithAuthorizer(auth)))
 		for i, c := range append(mutCodes, readCodes...) {
@@ -208,4 +210,30 @@ func TestServer_AuthorizationEnforcement(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestServer_DeclareClusterEpochAuthorization checks that a caller who may not mutate component
+// state cannot declare a cluster epoch, and that the denied call leaves no fence behind.
+func TestServer_DeclareClusterEpochAuthorization(t *testing.T) {
+	ctx := context.Background()
+	const bridgeSA = "xmc-bridge@proj.iam.gserviceaccount.com"
+	ms := store.NewMemoryStore()
+	newServer := func(caller string) *Server {
+		return NewServer(ms, WithAuthorizer(NewAuthorizer(AuthorizerConfig{
+			Authenticator:             &fakeUserAuthenticator{email: caller},
+			AuthorizedServiceAccounts: []string{bridgeSA},
+		})))
+	}
+	req := &componentspb.DeclareClusterEpochRequest{Cluster: &componentspb.ClusterIdentity{Uid: "5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c01", Name: "prod", Epoch: 1}}
+
+	if _, err := newServer("viewer@example.com").DeclareClusterEpoch(ctx, req); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("DeclareClusterEpoch() as viewer error = %v, want code %v", err, codes.PermissionDenied)
+	}
+	got, err := newServer(bridgeSA).DeclareClusterEpoch(ctx, req)
+	if err != nil {
+		t.Fatalf("DeclareClusterEpoch() as bridge error = %v, want nil", err)
+	}
+	if got.GetOutcome() != componentspb.DeclareClusterEpochResponse_OUTCOME_CREATED {
+		t.Errorf("DeclareClusterEpoch() as bridge outcome = %v, want %v", got.GetOutcome(), componentspb.DeclareClusterEpochResponse_OUTCOME_CREATED)
+	}
 }

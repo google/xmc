@@ -103,13 +103,19 @@ func validateNamedRequest[T namedRequest](s *Server, req T) (string, error) {
 }
 
 func validateMutatingRequest[T namedRequest](ctx context.Context, s *Server, req T) (string, error) {
-	if s.auth == nil {
-		return "", status.Error(codes.Unauthenticated, "CMS authorizer is not configured")
-	}
-	if _, err := s.auth.AuthorizeMutating(ctx); err != nil {
+	if err := s.authorizeMutating(ctx); err != nil {
 		return "", err
 	}
 	return validateNamedRequest(s, req)
+}
+
+// authorizeMutating fails closed unless the caller may mutate component state.
+func (s *Server) authorizeMutating(ctx context.Context) error {
+	if s.auth == nil {
+		return status.Error(codes.Unauthenticated, "CMS authorizer is not configured")
+	}
+	_, err := s.auth.AuthorizeMutating(ctx)
+	return err
 }
 
 func validateReadRequest[T namedRequest](ctx context.Context, s *Server, req T) (string, error) {
@@ -427,6 +433,11 @@ func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPla
 
 // DeclareClusterEpoch declares the calling cluster the writer of Component intents at its epoch.
 func (s *Server) DeclareClusterEpoch(ctx context.Context, req *componentspb.DeclareClusterEpochRequest) (*componentspb.DeclareClusterEpochResponse, error) {
+	// A declaration can take over every component a cluster owns, so it needs the same
+	// authorization as the other mutating RPCs.
+	if err := s.authorizeMutating(ctx); err != nil {
+		return nil, err
+	}
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
