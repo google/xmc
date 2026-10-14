@@ -53,15 +53,19 @@ def poll_until(
         The first value returned by probe that is not None.
 
     Raises:
-        PollTimeoutError: If probe returns None or fails transiently until the deadline.
+        PollTimeoutError: If probe returns None or fails transiently until the deadline. A
+            transient failure of the last attempt is chained as its cause.
     """
     deadline = time.monotonic() + timeout_seconds
+    last_error: Exception | None = None
     while True:
         try:
             result = probe()
             if result is not None:
                 return result
+            last_error = None
         except (subprocess.SubprocessError, json.JSONDecodeError) as exc:
+            last_error = exc
             logger.warning(
                 "Transient error while waiting for %s (will retry): %s (stderr: %s)",
                 description,
@@ -69,5 +73,7 @@ def poll_until(
                 getattr(exc, "stderr", None),
             )
         if time.monotonic() >= deadline:
-            raise PollTimeoutError(f"Timed out after {timeout_seconds}s waiting for {description}")
+            raise PollTimeoutError(
+                f"Timed out after {timeout_seconds}s waiting for {description}"
+            ) from last_error
         time.sleep(interval_seconds)

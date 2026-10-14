@@ -57,6 +57,34 @@ class PollUntilTest(unittest.TestCase):
         self.assertEqual(mock_sleep.call_count, 3)
 
     @mock.patch("test.e2e.lib.polling.time.monotonic")
+    def test_chains_transient_error_of_last_attempt(
+        self, mock_monotonic: mock.MagicMock, mock_sleep: mock.MagicMock
+    ) -> None:
+        """A timeout keeps the transient failure of the last attempt as its cause."""
+        mock_monotonic.side_effect = [0.0, 10.0]
+        error = subprocess.CalledProcessError(returncode=1, cmd=["kubectl"], stderr="refused")
+        probe = mock.Mock(side_effect=error)
+
+        with self.assertRaises(PollTimeoutError) as ctx:
+            poll_until(probe, "readiness", timeout_seconds=5.0)
+
+        self.assertIs(ctx.exception.__cause__, error)
+
+    @mock.patch("test.e2e.lib.polling.time.monotonic")
+    def test_does_not_chain_transient_error_of_earlier_attempt(
+        self, mock_monotonic: mock.MagicMock, mock_sleep: mock.MagicMock
+    ) -> None:
+        """A timeout after a last attempt that ran but found nothing has no cause."""
+        mock_monotonic.side_effect = [0.0, 1.0, 10.0]
+        error = subprocess.CalledProcessError(returncode=1, cmd=["kubectl"], stderr="refused")
+        probe = mock.Mock(side_effect=[error, None])
+
+        with self.assertRaises(PollTimeoutError) as ctx:
+            poll_until(probe, "readiness", timeout_seconds=5.0)
+
+        self.assertIsNone(ctx.exception.__cause__)
+
+    @mock.patch("test.e2e.lib.polling.time.monotonic")
     def test_raises_after_deadline_without_trailing_sleep(
         self, mock_monotonic: mock.MagicMock, mock_sleep: mock.MagicMock
     ) -> None:

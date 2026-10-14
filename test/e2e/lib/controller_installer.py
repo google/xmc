@@ -146,13 +146,15 @@ class ControllerInstaller:
         logger.info("✓ The %s controller is serving.", release.name)
 
     def _wait_for_ca_bundle(self, resource: str, jsonpath: str) -> None:
-        """Polls until the controller has injected its CA bundle at jsonpath of resource."""
+        """Polls until the controller has injected its CA bundle at jsonpath of resource.
+
+        A failing kubectl raises CalledProcessError, which poll_until logs and retries.
+        """
         output = f"jsonpath={jsonpath}"
 
         def probe() -> str | None:
             result = run_cmd(
                 ["kubectl", "--context", self.context, "get", resource, "-o", output],
-                check=False,
                 capture_output=True,
             )
             return result.stdout.strip() or None
