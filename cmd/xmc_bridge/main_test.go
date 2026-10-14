@@ -276,17 +276,25 @@ func TestParseConfig_InvalidEnvDuration(t *testing.T) {
 }
 
 func TestParseConfig_Defaults(t *testing.T) {
+	t.Setenv("PROBE_INTERVAL", "")
 	t.Setenv("PROBE_TIMEOUT", "")
 	t.Setenv("RECONCILE_TIMEOUT", "")
+	t.Setenv("MAX_CONCURRENT_RECONCILES", "")
 
 	cfg, err := ParseConfig([]string{"--cms-address=cms:50051", "--namespace=xmc", "--release-name=xmanager-cloud"})
 	if err != nil {
 		t.Fatalf("ParseConfig() unexpected error: %v", err)
+	}
+	if cfg.ProbeInterval != 5*time.Second {
+		t.Errorf("cfg.ProbeInterval = %v, want 5s", cfg.ProbeInterval)
 	}
 	if cfg.ProbeTimeout != 2*time.Second {
 		t.Errorf("cfg.ProbeTimeout = %v, want 2s", cfg.ProbeTimeout)
 	}
 	if cfg.ReconcileTimeout != 60*time.Second {
 		t.Errorf("cfg.ReconcileTimeout = %v, want 60s", cfg.ReconcileTimeout)
+	}
+	if cfg.MaxConcurrentReconciles != 1 {
+		t.Errorf("cfg.MaxConcurrentReconciles = %d, want 1", cfg.MaxConcurrentReconciles)
 	}
 }

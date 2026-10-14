@@ -97,13 +97,9 @@ func ParseConfig(args []string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	defaultMaxConcurrentReconciles := 1
-	if val := os.Getenv("MAX_CONCURRENT_RECONCILES"); val != "" {
-		n, err := strconv.Atoi(val)
-		if err != nil {
-			return nil, fmt.Errorf("invalid MAX_CONCURRENT_RECONCILES %q: %w", val, err)
-		}
-		defaultMaxConcurrentReconciles = n
+	defaultMaxConcurrentReconciles, err := intFromEnv("MAX_CONCURRENT_RECONCILES", 1)
+	if err != nil {
+		return nil, err
 	}
 	defaultKubeconfig := os.Getenv("KUBECONFIG")
 	defaultChartPath := os.Getenv("HELM_CHART_PATH")
@@ -167,6 +163,19 @@ func durationFromEnv(name string, def time.Duration) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid %s %q: %w", name, val, err)
 	}
 	return d, nil
+}
+
+// intFromEnv returns the integer in the environment variable name, or def when it is unset.
+func intFromEnv(name string, def int) (int, error) {
+	val := os.Getenv(name)
+	if val == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q: %w", name, val, err)
+	}
+	return n, nil
 }
 
 // BuildKubeConfig constructs a Kubernetes *rest.Config using the following resolution order:
