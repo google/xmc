@@ -875,7 +875,7 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 
 		var owner *SourceOwner
 		if reqSrc != nil {
-			owner = ownerOf(*reqSrc)
+			owner = deletionOwner(rec.Owner, *reqSrc)
 			rec.Owner = owner
 		}
 		toDelete := collectDeletionTargets(rec, catalog, canonicalName, policy)

@@ -235,3 +235,15 @@ func nonIntentOwner(existing *SourceOwner, src *RequestSource) *SourceOwner {
 	}
 	return next
 }
+
+// deletionOwner returns the owner that ExecuteDeletion from src records on a record currently
+// owned by existing. It records src, except that the owner object itself (same UID) never lowers
+// the recorded SourceGeneration: a deletion sent from an informer snapshot older than the last
+// committed intent keeps the larger generation, as in both stores.
+func deletionOwner(existing *SourceOwner, src RequestSource) *SourceOwner {
+	next := ownerOf(src)
+	if existing != nil && existing.UID == src.UID {
+		next.Generation = max(next.Generation, existing.Generation)
+	}
+	return next
+}

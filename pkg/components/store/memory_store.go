@@ -461,7 +461,7 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 		return err
 	}
 	if reqSrc != nil {
-		rec.Owner = ownerOf(*reqSrc)
+		rec.Owner = deletionOwner(rec.Owner, *reqSrc)
 	}
 
 	now := time.Now().UTC()
