@@ -235,10 +235,10 @@ test('aggregateResults builds 6-column matrix table for multiple test results (s
   );
 });
 
-test('aggregateResults handles empty results directory / array', () => {
+test('aggregateResults handles empty results directory / array as failure', () => {
   const { xidMap, summaryMarkdown, allPassed } = aggregateResults([]);
 
-  assert.strictEqual(allPassed, true);
+  assert.strictEqual(allPassed, false);
   assert.deepStrictEqual(xidMap, {});
   assert.ok(summaryMarkdown.includes('## 🌟 Nightly Examples Test Summary'));
   assert.ok(summaryMarkdown.includes('### ⚠️ Overall Status: NO RESULTS FOUND'));
@@ -337,6 +337,28 @@ test('CLI execution exits with code 1 and error annotation when workloads fail',
     assert.strictEqual(proc.status, 1);
     assert.ok(
       proc.stderr.includes('::error::One or more example workloads failed launch or verification.')
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('CLI execution exits with code 1 and error annotation when results directory is empty', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xmc-cli-empty-test-'));
+  const resultsDir = path.join(tmpDir, 'results');
+  const scriptPath = path.join(__dirname, 'aggregate-example-results.js');
+
+  try {
+    fs.mkdirSync(resultsDir);
+
+    const proc = spawnSync(process.execPath, [scriptPath], {
+      cwd: tmpDir,
+      encoding: 'utf8'
+    });
+
+    assert.strictEqual(proc.status, 1);
+    assert.ok(
+      proc.stderr.includes('::error::No example workload results found or one or more workloads failed.')
     );
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

@@ -77,7 +77,7 @@ function formatStatusBadge(status) {
 function aggregateResults(rawResults, { title } = {}) {
   const results = (rawResults || []).filter(Boolean);
   const xidMap = {};
-  let allPassed = true;
+  let allPassed = results.length > 0;
 
   for (const r of results) {
     if (r.id && r.xid && r.xid !== 'skipped' && r.xid !== 'N/A') {
@@ -185,9 +185,13 @@ function run({
 }
 
 if (require.main === module) {
-  const { allPassed } = run();
+  const { results, allPassed } = run();
   if (!allPassed) {
-    console.error('::error::One or more example workloads failed launch or verification.');
+    if (results.length === 0) {
+      console.error('::error::No example workload results found or one or more workloads failed.');
+    } else {
+      console.error('::error::One or more example workloads failed launch or verification.');
+    }
     process.exit(1);
   }
 }
