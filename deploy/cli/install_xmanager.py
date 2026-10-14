@@ -544,18 +544,24 @@ def copy_virtual_imports_to_site_packages(
         f"site-packages: {site_packages_dir}...\n"
     )
     dest_pkg = site_packages_dir / "xmanager_cloud"
-    dashboard_proto_dir = dest_pkg / "dashboard_service" / "proto"
+    dest_service_dir = dest_pkg / "dashboard_service"
+    dashboard_proto_dir = dest_service_dir / "proto"
     if dashboard_proto_dir.exists():
+        dest_pkg.chmod(dest_pkg.stat().st_mode | stat.S_IWUSR)
+        dest_service_dir.chmod(dest_service_dir.stat().st_mode | stat.S_IWUSR)
         _make_tree_user_writable(dashboard_proto_dir)
         shutil.rmtree(dashboard_proto_dir)
     dest_pkg.mkdir(parents=True, exist_ok=True)
+    dest_pkg.chmod(dest_pkg.stat().st_mode | stat.S_IWUSR)
 
     for proto_target in DASHBOARD_VIRTUAL_IMPORT_TARGETS:
-        src_pkg = virtual_imports_dir / proto_target / "xmanager_cloud"
-        if not src_pkg.is_dir():
-            error_exit(f"Bazel virtual imports directory not found: {src_pkg}")
-        shutil.copytree(src_pkg, dest_pkg, dirs_exist_ok=True)
-        _make_tree_user_writable(dest_pkg / "dashboard_service")
+        src_service_dir = (
+            virtual_imports_dir / proto_target / "xmanager_cloud" / "dashboard_service"
+        )
+        if not src_service_dir.is_dir():
+            error_exit(f"Bazel virtual imports directory not found: {src_service_dir}")
+        shutil.copytree(src_service_dir, dest_service_dir, dirs_exist_ok=True)
+        _make_tree_user_writable(dest_service_dir)
 
 
 def install_bazel_dashboard_protos(venv_python: Path, repo_root: Path) -> None:

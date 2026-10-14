@@ -250,14 +250,16 @@ class TestInstallXmanager(unittest.TestCase):
                 ("dashboard_messages_proto", "messages_pb2.py"),
                 ("dashboard_service_proto", "dashboard_service_pb2.py"),
             ):
-                proto_dir = (
-                    virtual_imports / target / "xmanager_cloud" / "dashboard_service" / "proto"
-                )
+                xm_dir = virtual_imports / target / "xmanager_cloud"
+                svc_dir = xm_dir / "dashboard_service"
+                proto_dir = svc_dir / "proto"
                 proto_dir.mkdir(parents=True)
                 proto_file = proto_dir / filename
                 proto_file.write_text("# generated", encoding="utf-8")
                 proto_file.chmod(stat.S_IRUSR)
                 proto_dir.chmod(stat.S_IRUSR | stat.S_IXUSR)
+                svc_dir.chmod(stat.S_IRUSR | stat.S_IXUSR)
+                xm_dir.chmod(stat.S_IRUSR | stat.S_IXUSR)
 
             sibling_file = (
                 site_packages
@@ -268,6 +270,7 @@ class TestInstallXmanager(unittest.TestCase):
             )
             sibling_file.parent.mkdir(parents=True)
             sibling_file.write_text("# sibling", encoding="utf-8")
+            sibling_file.chmod(stat.S_IRUSR)
 
             stale_dir = site_packages / "xmanager_cloud" / "dashboard_service" / "proto"
             stale_dir.mkdir(parents=True)
@@ -279,17 +282,22 @@ class TestInstallXmanager(unittest.TestCase):
                 install_xmanager.copy_virtual_imports_to_site_packages(
                     virtual_imports, site_packages
                 )
+                install_xmanager.copy_virtual_imports_to_site_packages(
+                    virtual_imports, site_packages
+                )
 
                 dest_proto = site_packages / "xmanager_cloud" / "dashboard_service" / "proto"
                 self.assertFalse((dest_proto / "obsolete_pb2.py").exists())
                 self.assertTrue((dest_proto / "messages_pb2.py").is_file())
                 self.assertTrue((dest_proto / "dashboard_service_pb2.py").is_file())
                 self.assertTrue(sibling_file.is_file())
+                self.assertFalse(bool(sibling_file.stat().st_mode & stat.S_IWUSR))
                 self.assertTrue(
                     bool((dest_proto / "messages_pb2.py").stat().st_mode & stat.S_IWUSR)
                 )
             finally:
                 install_xmanager._make_tree_user_writable(virtual_imports)
+                install_xmanager._make_tree_user_writable(site_packages)
 
     def test_copy_virtual_imports_missing_target_exits(self) -> None:
         """Test copy_virtual_imports_to_site_packages exits when virtual imports are missing."""
