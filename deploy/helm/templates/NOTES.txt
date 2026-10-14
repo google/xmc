@@ -1,4 +1,4 @@
 {{- if and .Values.componentsDeployment.enabled .Values.componentsDeployment.rbac.clusterScope }}
-WARNING: componentsDeployment.rbac.clusterScope=true binds xmc-bridge-sa to a ClusterRole across all namespaces.
-Prefer the default namespace-scoped Role (componentsDeployment.rbac.clusterScope=false) unless cross-namespace RBAC is required.
+WARNING: componentsDeployment.rbac.clusterScope=true grants xmc-bridge-sa read-only (get, list, watch) access to the componentsDeployment.rbac.wrapperRules resources in all namespaces.
+Write access stays limited to the release namespace. Keep the default (componentsDeployment.rbac.clusterScope=false) unless a spec.wrapperRef points outside the release namespace.
 {{- end }}

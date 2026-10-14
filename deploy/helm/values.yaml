@@ -54,9 +54,9 @@ componentsDeployment:
   # Number of Components xmc-bridge reconciles in parallel.
   maxConcurrentReconciles: 1
   rbac:
-    # When false (default), xmc-bridge-role is a namespace-scoped Role in the release namespace.
-    # Set to true only when xmc-bridge must inspect resources across namespaces (e.g. a
-    # spec.wrapperRef pointing outside the release namespace, which is Forbidden under the Role).
+    # xmc-bridge-role is always a namespace-scoped Role in the release namespace. Set to true only
+    # when a spec.wrapperRef points outside the release namespace (Forbidden by default): it adds a
+    # read-only ClusterRole on the wrapperRules resources below and never grants writes elsewhere.
     clusterScope: false
     # Read-only (get, list, watch) RBAC rules granted to xmc-bridge for 3P wrapper custom resources
     # inspected via spec.wrapperRef.

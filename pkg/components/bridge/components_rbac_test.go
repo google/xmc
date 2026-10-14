@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -32,6 +33,8 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -187,21 +190,17 @@ func TestComponentsRBAC_LeastPrivilegeEnvtest(t *testing.T) {
 	if _, err := adminKube.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "xmc"}}, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("failed to create xmc namespace: %v", err)
 	}
-	applyBridgeRBACManifests(ctx, t, adminKube, "xmc")
+	applyBridgeRBACManifests(ctx, t, adminKube, "xmc", false)
+	if _, err := adminKube.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "xmc-cs"}}, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create xmc-cs namespace: %v", err)
+	}
+	applyBridgeRBACManifests(ctx, t, adminKube, "xmc-cs", true)
 
-	bridgeCfg := rest.CopyConfig(adminCfg)
-	bridgeCfg.Impersonate = rest.ImpersonationConfig{
-		UserName: "system:serviceaccount:xmc:xmc-bridge-sa",
-		Groups:   []string{"system:serviceaccounts", "system:serviceaccounts:xmc", "system:authenticated"},
-	}
-	bridgeKube, err := kubernetes.NewForConfig(bridgeCfg)
-	if err != nil {
-		t.Fatalf("impersonated kubernetes.NewForConfig failed: %v", err)
-	}
-	bridgeDyn, err := dynamic.NewForConfig(bridgeCfg)
-	if err != nil {
-		t.Fatalf("impersonated dynamic.NewForConfig failed: %v", err)
-	}
+	bridgeKube, bridgeDyn := impersonateBridgeSA(t, adminCfg, "xmc")
+	clusterScopeKube, clusterScopeDyn := impersonateBridgeSA(t, adminCfg, "xmc-cs")
+	// The RayCluster CRD is not installed: an authorized request reaches the API server's
+	// not-found handler, while an unauthorized one is rejected with Forbidden first.
+	rayClusters := schema.GroupVersionResource{Group: "ray.io", Version: "v1", Resource: "rayclusters"}
 
 	isAllowed := func(err error) bool { return err == nil }
 	tests := []struct {
@@ -263,6 +262,77 @@ func TestComponentsRBAC_LeastPrivilegeEnvtest(t *testing.T) {
 			},
 			want: apierrors.IsForbidden,
 		},
+		{
+			name: "PATCH ConfigMap in release namespace passes RBAC (NotFound)",
+			call: func(ctx context.Context) error {
+				_, err := bridgeKube.CoreV1().ConfigMaps("xmc").Patch(ctx, "xmc-cmp-missing", types.MergePatchType, []byte(`{}`), metav1.PatchOptions{})
+				return err
+			},
+			want: apierrors.IsNotFound,
+		},
+		{
+			name: "DELETE ConfigMap in release namespace passes RBAC (NotFound)",
+			call: func(ctx context.Context) error {
+				return bridgeKube.CoreV1().ConfigMaps("xmc").Delete(ctx, "xmc-cmp-missing", metav1.DeleteOptions{})
+			},
+			want: apierrors.IsNotFound,
+		},
+		{
+			name: "LIST wrapper resources in release namespace passes RBAC (NotFound)",
+			call: func(ctx context.Context) error {
+				_, err := bridgeDyn.Resource(rayClusters).Namespace("xmc").List(ctx, metav1.ListOptions{})
+				return err
+			},
+			want: apierrors.IsNotFound,
+		},
+		{
+			name: "LIST wrapper resources in default namespace is Forbidden without clusterScope",
+			call: func(ctx context.Context) error {
+				_, err := bridgeDyn.Resource(rayClusters).Namespace("default").List(ctx, metav1.ListOptions{})
+				return err
+			},
+			want: apierrors.IsForbidden,
+		},
+		{
+			name: "clusterScope: LIST wrapper resources in default namespace passes RBAC (NotFound)",
+			call: func(ctx context.Context) error {
+				_, err := clusterScopeDyn.Resource(rayClusters).Namespace("default").List(ctx, metav1.ListOptions{})
+				return err
+			},
+			want: apierrors.IsNotFound,
+		},
+		{
+			name: "clusterScope: LIST components in default namespace is Forbidden",
+			call: func(ctx context.Context) error {
+				_, err := clusterScopeDyn.Resource(ComponentGVR).Namespace("default").List(ctx, metav1.ListOptions{})
+				return err
+			},
+			want: apierrors.IsForbidden,
+		},
+		{
+			name: "clusterScope: CREATE ConfigMap in default namespace is Forbidden",
+			call: func(ctx context.Context) error {
+				cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "xmc-cmp-probe"}}
+				_, err := clusterScopeKube.CoreV1().ConfigMaps("default").Create(ctx, cm, metav1.CreateOptions{})
+				return err
+			},
+			want: apierrors.IsForbidden,
+		},
+		{
+			name: "clusterScope: DELETE Deployment in default namespace is Forbidden",
+			call: func(ctx context.Context) error {
+				return clusterScopeKube.AppsV1().Deployments("default").Delete(ctx, "xmc-cmp-probe", metav1.DeleteOptions{})
+			},
+			want: apierrors.IsForbidden,
+		},
+		{
+			name: "clusterScope: LIST components in release namespace is allowed",
+			call: func(ctx context.Context) error {
+				_, err := clusterScopeDyn.Resource(ComponentGVR).Namespace("xmc-cs").List(ctx, metav1.ListOptions{})
+				return err
+			},
+			want: isAllowed,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -273,30 +343,90 @@ func TestComponentsRBAC_LeastPrivilegeEnvtest(t *testing.T) {
 	}
 }
 
-func TestComponentsRBAC_ClusterScopeRendering(t *testing.T) {
-	rendered := string(renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), "custom-ns", true, true))
-	for _, want := range []string{
-		"kind: ClusterRole\nmetadata:\n  name: xmc-bridge-role",
-		"kind: ClusterRoleBinding\nmetadata:\n  name: xmc-bridge-rolebinding",
-		"roleRef:\n  kind: ClusterRole\n  name: xmc-bridge-role",
-		// Leader election stays namespaced even under clusterScope.
-		"kind: Role\nmetadata:\n  name: xmc-bridge-leader-election",
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Errorf("expected clusterScope=true rbac.yaml render to contain %q, got:\n%s", want, rendered)
-		}
+// TestComponentsRBAC_ScopeRendering asserts that xmc-bridge-role stays a namespaced Role and
+// that rbac.clusterScope only adds read-only cluster-scoped rules.
+func TestComponentsRBAC_ScopeRendering(t *testing.T) {
+	tests := []struct {
+		clusterScope     bool
+		wantClusterRoles []string
+	}{
+		{
+			clusterScope:     false,
+			wantClusterRoles: []string{"xmc-bridge-cluster-identity-custom-ns"},
+		},
+		{
+			clusterScope:     true,
+			wantClusterRoles: []string{"xmc-bridge-cluster-identity-custom-ns", "xmc-bridge-wrapper-reader-custom-ns"},
+		},
+	}
+	readVerbs := []string{"get", "list", "watch"}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("clusterScope=%t", tt.clusterScope), func(t *testing.T) {
+			rendered := renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), "custom-ns", true, tt.clusterScope)
+			var roles, clusterRoles []string
+			for _, doc := range decodeRBACDocs(t, rendered) {
+				var obj rbacv1.ClusterRole // Role and ClusterRole share metadata and rules.
+				if err := yaml.Unmarshal(doc.raw, &obj); err != nil {
+					t.Fatalf("unmarshal %s: %v", doc.kind, err)
+				}
+				switch doc.kind {
+				case "Role":
+					roles = append(roles, obj.Name)
+				case "ClusterRole":
+					clusterRoles = append(clusterRoles, obj.Name)
+					for _, r := range obj.Rules {
+						if slices.ContainsFunc(r.Verbs, func(v string) bool { return !slices.Contains(readVerbs, v) }) {
+							t.Errorf("ClusterRole %q grants non-read verbs: %+v", obj.Name, r)
+						}
+					}
+				}
+			}
+			slices.Sort(roles)
+			if want := []string{"xmc-bridge-leader-election", "xmc-bridge-role"}; !slices.Equal(roles, want) {
+				t.Errorf("Roles = %v, want %v", roles, want)
+			}
+			slices.Sort(clusterRoles)
+			if !slices.Equal(clusterRoles, tt.wantClusterRoles) {
+				t.Errorf("ClusterRoles = %v, want %v", clusterRoles, tt.wantClusterRoles)
+			}
+		})
 	}
 }
 
-func applyBridgeRBACManifests(ctx context.Context, t *testing.T, kubeClient kubernetes.Interface, ns string) {
+// impersonateBridgeSA returns clients acting as xmc-bridge-sa in namespace ns.
+func impersonateBridgeSA(t *testing.T, adminCfg *rest.Config, ns string) (kubernetes.Interface, dynamic.Interface) {
 	t.Helper()
-	rendered := renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), ns, true, false)
+	cfg := rest.CopyConfig(adminCfg)
+	cfg.Impersonate = rest.ImpersonationConfig{
+		UserName: "system:serviceaccount:" + ns + ":xmc-bridge-sa",
+		Groups:   []string{"system:serviceaccounts", "system:serviceaccounts:" + ns, "system:authenticated"},
+	}
+	kube, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		t.Fatalf("impersonated kubernetes.NewForConfig failed: %v", err)
+	}
+	dyn, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		t.Fatalf("impersonated dynamic.NewForConfig failed: %v", err)
+	}
+	return kube, dyn
+}
+
+// rbacDoc is one non-empty document of a rendered RBAC manifest, re-encoded as JSON.
+type rbacDoc struct {
+	kind string
+	raw  []byte
+}
+
+func decodeRBACDocs(t *testing.T, rendered []byte) []rbacDoc {
+	t.Helper()
+	var docs []rbacDoc
 	dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(rendered), 4096)
 	for {
 		var raw map[string]any
 		if err := dec.Decode(&raw); err != nil {
 			if errors.Is(err, io.EOF) {
-				break
+				return docs
 			}
 			t.Fatalf("failed to decode RBAC document: %v", err)
 		}
@@ -311,7 +441,15 @@ func applyBridgeRBACManifests(ctx context.Context, t *testing.T, kubeClient kube
 		if !ok {
 			t.Fatalf("RBAC document missing kind or kind is not a string: %v", raw)
 		}
-		applySingleRBACDoc(ctx, t, kubeClient, ns, kind, docBytes)
+		docs = append(docs, rbacDoc{kind: kind, raw: docBytes})
+	}
+}
+
+func applyBridgeRBACManifests(ctx context.Context, t *testing.T, kubeClient kubernetes.Interface, ns string, clusterScope bool) {
+	t.Helper()
+	rendered := renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), ns, true, clusterScope)
+	for _, doc := range decodeRBACDocs(t, rendered) {
+		applySingleRBACDoc(ctx, t, kubeClient, ns, doc.kind, doc.raw)
 	}
 }
 

@@ -13,12 +13,10 @@
 # limitations under the License.
 
 {{- if .Values.componentsDeployment.enabled }}
+# xmc-bridge-role is always namespaced to the release namespace, whatever rbac.clusterScope is,
+# so the bridge never gains write access outside it.
 apiVersion: rbac.authorization.k8s.io/v1
-{{- if .Values.componentsDeployment.rbac.clusterScope }}
-kind: ClusterRole
-{{- else }}
 kind: Role
-{{- end }}
 metadata:
   name: xmc-bridge-role
   labels:
@@ -36,7 +34,7 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get", "list", "watch", "create", "update"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["secrets", "services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -73,11 +71,7 @@ rules:
   {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-{{- if .Values.componentsDeployment.rbac.clusterScope }}
-kind: ClusterRoleBinding
-{{- else }}
 kind: RoleBinding
-{{- end }}
 metadata:
   name: xmc-bridge-rolebinding
   labels:
@@ -88,17 +82,46 @@ subjects:
     name: xmc-bridge-sa
     namespace: {{ .Release.Namespace }}
 roleRef:
-{{- if .Values.componentsDeployment.rbac.clusterScope }}
-  kind: ClusterRole
-{{- else }}
   kind: Role
-{{- end }}
   name: xmc-bridge-role
   apiGroup: rbac.authorization.k8s.io
 ---
+{{- if and .Values.componentsDeployment.rbac.clusterScope .Values.componentsDeployment.rbac.wrapperRules }}
+# rbac.clusterScope only adds read access to the configured 3P wrapper resources in every
+# namespace, for spec.wrapperRef targets outside the release namespace. It grants no writes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: xmc-bridge-wrapper-reader-{{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: xmc-bridge
+    app.kubernetes.io/part-of: xmanager-cloud
+rules:
+  {{- range .Values.componentsDeployment.rbac.wrapperRules }}
+  - apiGroups: {{ toJson .apiGroups }}
+    resources: {{ toJson .resources }}
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: xmc-bridge-wrapper-reader-{{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: xmc-bridge
+    app.kubernetes.io/part-of: xmanager-cloud
+subjects:
+  - kind: ServiceAccount
+    name: xmc-bridge-sa
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: xmc-bridge-wrapper-reader-{{ .Release.Namespace }}
+  apiGroup: rbac.authorization.k8s.io
+---
+{{- end }}
 # Leader election: only the holder of the xmc-bridge Lease in the release namespace reconciles.
-# This Role stays namespaced when rbac.clusterScope is true, so the bridge can write no other
-# namespace's Leases.
+# This Role is namespaced, so the bridge can write no other namespace's Leases.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

@@ -12,7 +12,7 @@ graph TD
         CRD["Component CRD<br>(xmc.dev/v1alpha1)"]
         Deploy["xmc-bridge Deployment<br>(controller daemon)"]
         CM["ConfigMap<br>(xmc-bridge-config)"]
-        RBAC["Role & RoleBinding<br>(least-privilege; ClusterRole opt-in)"]
+        RBAC["Role & RoleBinding<br>(least-privilege; read-only ClusterRole opt-in)"]
         SA["ServiceAccount<br>(xmc-bridge-sa)"]
     end
 
@@ -110,7 +110,7 @@ componentsDeployment:
   reconcileTimeout: "60s"                         # Timeout per Component reconcile pass
   maxConcurrentReconciles: 1                      # Components reconciled in parallel
   rbac:
-    clusterScope: false                           # Namespace-scoped Role by default; explicit opt-in for ClusterRole
+    clusterScope: false                           # true adds a read-only ClusterRole on wrapperRules; writes stay namespaced
     wrapperRules:                                 # Read-only RBAC rules for 3P wrapper CRDs (spec.wrapperRef)
       - apiGroups: ["clickhouse.altinity.com"]
         resources: ["clickhouseinstallations"]
@@ -170,11 +170,15 @@ Removing the CRD is a deliberate manual step. While `xmc-bridge` is still runnin
 ## Security & RBAC Least Privilege
 
 - **ServiceAccount**: `xmc-bridge` runs under a dedicated service account (`xmc-bridge-sa`) with `automountServiceAccountToken: true`.
-- **Namespace-scoped Role by default (`xmc-bridge-role`)**: Bound in the release namespace when `componentsDeployment.rbac.clusterScope` is `false` (default); opting into `clusterScope: true` renders a `ClusterRole`/`ClusterRoleBinding` and emits a Helm `NOTES.txt` warning. Grants explicit least-privilege permissions without wildcard (`*`) API groups or resources:
-  - `get`, `list`, `watch`, `update`, and `patch` on `components.xmc.dev` (`components`, `components/status`, `components/finalizers`).
-  - Workload and Helm release management on `apps/deployments`, `autoscaling/horizontalpodautoscalers`, `core/services`, `core/secrets`, `core/configmaps`, `core/events`, and read-only inspection on `core/pods`, `core/serviceaccounts`, `apps/statefulsets`, `apps/daemonsets`, and `apps/replicasets`.
-  - Scoped `update`/`patch`/`delete` by `resourceNames` on self-provisioned 1P component RBAC (`ingestion-gateway-components-reader`, `ingestion-gateway-components-reader-binding`) and `NetworkPolicy` (`ingestion-gateway-network-policy`), plus `get`, `list`, `watch`, and `create` on `roles`, `rolebindings`, and `networkpolicies`.
-  - Read-only (`get`, `list`, `watch`) rules generated from `componentsDeployment.rbac.wrapperRules` for 3P wrapper CRDs inspected via `spec.wrapperRef` (by default `clickhouse.altinity.com/clickhouseinstallations`, `cluster.redpanda.com` & `redpanda.vectorized.io` `clusters`/`redpandas`, `ray.io` `rayclusters`/`rayjobs`/`rayservices`, and `jobset.x-k8s.io/jobsets`). Wrapper CRs referenced in a namespace other than the release namespace require `componentsDeployment.rbac.clusterScope: true`; under the default Role such GETs are Forbidden and the reconcile fails.
-- **Cluster identity ClusterRole (`xmc-bridge-cluster-identity`)**: Grants `get` on `namespaces` restricted to `resourceNames: ["kube-system"]` so `xmc-bridge` can read the cluster UID for CMS ownership fence declarations.
-- **Leader election Role (`xmc-bridge-leader-election`)**: Grants `create` on `coordination.k8s.io` leases, and `get` and `update` on the `xmc-bridge` Lease only. It stays a namespaced `Role` in the release namespace even when `componentsDeployment.rbac.clusterScope` is `true`, so the bridge cannot write Leases of other namespaces.
+- **Namespaced Role (`xmc-bridge-role`)**: Always a `Role` bound in the release namespace, whatever `componentsDeployment.rbac.clusterScope` is set to. It has no wildcard (`*`) API groups or resources and grants:
+  - `components.xmc.dev` (`components`, `components/status`, `components/finalizers`): `get`, `list`, `watch`, `update`, `patch`.
+  - `core/events`: `create`, `patch`.
+  - `core/pods`, `core/serviceaccounts`: `get`, `list`, `watch`.
+  - `core/configmaps`, `core/secrets`, `core/services`, `apps/deployments`, `autoscaling/horizontalpodautoscalers`: `get`, `list`, `watch`, `create`, `update`, `patch`, `delete`.
+  - `apps/statefulsets`, `apps/daemonsets`, `apps/replicasets`: `get`, `list`, `watch`.
+  - `rbac.authorization.k8s.io` `roles`, `rolebindings` and `networking.k8s.io` `networkpolicies`: `get`, `list`, `watch`, `create`, plus `update`, `patch`, `delete` limited by `resourceNames` to the objects 1P charts self-provision (`ingestion-gateway-components-reader`, `ingestion-gateway-components-reader-binding`, `ingestion-gateway-network-policy`).
+  - `componentsDeployment.rbac.wrapperRules` (3P wrapper CRDs inspected via `spec.wrapperRef`): `get`, `list`, `watch`. The defaults cover `clickhouse.altinity.com/clickhouseinstallations`, `cluster.redpanda.com` & `redpanda.vectorized.io` `clusters`/`redpandas`, `ray.io` `rayclusters`/`rayjobs`/`rayservices`, and `jobset.x-k8s.io/jobsets`.
+- **Wrapper reader ClusterRole (`xmc-bridge-wrapper-reader-<namespace>`, opt-in)**: Rendered only with `componentsDeployment.rbac.clusterScope: true`. It grants `get`, `list`, `watch` on the `wrapperRules` resources in every namespace, so a `spec.wrapperRef` may point outside the release namespace, and Helm `NOTES.txt` prints a warning. It never grants write access outside the release namespace. Under the default, such cross-namespace GETs are Forbidden and the reconcile fails.
+- **Cluster identity ClusterRole (`xmc-bridge-cluster-identity-<namespace>`)**: Grants `get` on `namespaces` restricted to `resourceNames: ["kube-system"]` so `xmc-bridge` can read the cluster UID for CMS ownership fence declarations.
+- **Leader election Role (`xmc-bridge-leader-election`)**: Grants `create` on `coordination.k8s.io` leases, and `get` and `update` on the `xmc-bridge` Lease only. It is a namespaced `Role` in the release namespace, so the bridge cannot write Leases of other namespaces.
 - **Pod & Container Security**: Enforces `seccompProfile: RuntimeDefault`, read-only root filesystems, non-root execution, privilege escalation disabled, and dropping all capabilities (`ALL`).
