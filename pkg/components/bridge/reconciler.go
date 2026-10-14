@@ -23,7 +23,11 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/protobuf/proto"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/logging"
@@ -58,7 +62,8 @@ type ReconcileResult struct {
 	Access *AccessStatus
 	// RemoveFinalizer indicates that cleanup finished and the CMS cleanup finalizer may be released.
 	RemoveFinalizer bool
-	// StaleIncarnation indicates that the evaluated custom resource snapshot is stale because CMS
+	// StaleIncarnation indicates that the evaluated custom resource snapshot is stale, either because
+	// its UID was superseded by a newer custom resource at the same namespace/name or because CMS
 	// already applied a newer generation of it (STALE_GENERATION), so status and finalizer
 	// persistence must be skipped.
 	StaleIncarnation bool
@@ -67,17 +72,44 @@ type ReconcileResult struct {
 	RequeueAfter time.Duration
 }
 
+var errStaleLocalIncarnation = errors.New("stale component incarnation superseded by a newer UID")
+
 // errStaleSnapshot reports that CMS rejected an intent with STALE_GENERATION because it already
 // applied a newer generation of the same custom resource than the reconciled informer snapshot.
 var errStaleSnapshot = errors.New("stale component snapshot older than the generation CMS already applied")
 
+// LiveUIDReader reads the current metadata.uid of a Component custom resource directly from the
+// Kubernetes API server (bypassing informer caches). It returns ("", nil) when the resource does
+// not exist.
+type LiveUIDReader func(ctx context.Context, namespace, name string) (string, error)
+
+// NewAPIReaderLiveUID returns a LiveUIDReader backed by an uncached controller-runtime client.Reader
+// (such as mgr.GetAPIReader()).
+func NewAPIReaderLiveUID(reader client.Reader) LiveUIDReader {
+	if reader == nil {
+		return nil
+	}
+	return func(ctx context.Context, namespace, name string) (string, error) {
+		u := newComponentObject()
+		err := reader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, u)
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		return string(u.GetUID()), nil
+	}
+}
+
 // Reconciler executes reconciliation cycles for XMC Component custom resources.
 type Reconciler struct {
-	cmsClient   CMSClient
-	prober      StatusDetectorHealthProber
-	helmManager HelmManager
-	fence       *ClusterFence
-	syncTracker cmsSyncTracker
+	cmsClient     CMSClient
+	prober        StatusDetectorHealthProber
+	helmManager   HelmManager
+	fence         *ClusterFence
+	liveUIDReader LiveUIDReader
+	syncTracker   cmsSyncTracker
 }
 
 // ReconcilerOption configures optional Reconciler dependencies.
@@ -86,6 +118,14 @@ type ReconcilerOption func(*Reconciler)
 // WithClusterFence configures the Reconciler to gate active reconciliations on fence.
 func WithClusterFence(fence *ClusterFence) ReconcilerOption {
 	return func(r *Reconciler) { r.fence = fence }
+}
+
+// WithLiveUIDReader configures the Reconciler with an uncached UID reader used to verify
+// same-cluster custom resource recreation before taking over CMS ownership via expected_owner_uid.
+func WithLiveUIDReader(reader LiveUIDReader) ReconcilerOption {
+	return func(r *Reconciler) {
+		r.liveUIDReader = reader
+	}
 }
 
 // NewReconciler constructs a new Reconciler instance.
@@ -438,10 +478,12 @@ func (r *Reconciler) evaluateLocalHealth(ctx context.Context, in ReconcileCompon
 	_, _ = r.evaluateHealth(ctx, in, canonicalName, res)
 }
 
-// callWithOwnership invokes fn with r.requestSource(in), re-declaring the cluster epoch and
-// retrying once on CLUSTER_NOT_DECLARED. STALE_GENERATION becomes errStaleSnapshot, never a source
-// conflict: it skips status writes and requeues after staleComponentRetryDelay so the cache can
-// catch up.
+// callWithOwnership invokes fn with r.requestSource(in), re-declaring the cluster epoch on
+// CLUSTER_NOT_DECLARED and retrying with expected_owner_uid after an uncached GET proves a
+// same-cluster custom resource recreation on SOURCE_INCARNATION_MISMATCH (including when the
+// retry after re-declaring returns it). If the recorded owner was deleted before that retry, the
+// call is retried once more without expected_owner_uid (see retrySameClusterTakeover).
+// STALE_GENERATION becomes a stale-snapshot error (see staleSnapshotError), never a source conflict.
 func callWithOwnership[T any](
 	ctx context.Context,
 	r *Reconciler,
@@ -465,11 +507,76 @@ func callWithOwnership[T any](
 		r.fence.RecordConflict(err)
 		info, _ = extractErrorInfo(err)
 	}
+	if info != nil && info.GetReason() == store.ReasonSourceIncarnationMismatch {
+		return retrySameClusterTakeover(ctx, r, in, src, info, err, fn)
+	}
 	if info != nil && info.GetReason() == store.ReasonStaleGeneration {
 		var zero T
-		return zero, errStaleSnapshot
+		return zero, staleSnapshotError(ctx, r, in)
 	}
 	return resp, err
+}
+
+// staleSnapshotError handles STALE_GENERATION: CMS already applied a newer generation of this
+// custom resource, so the reconciled informer snapshot is stale. It reads the live UID with an
+// uncached GET and returns errStaleLocalIncarnation if the custom resource was replaced,
+// errStaleSnapshot otherwise, or the read error. Both sentinels skip status writes and requeue
+// after staleComponentRetryDelay so the cache can catch up.
+func staleSnapshotError(ctx context.Context, r *Reconciler, in ReconcileComponentInput) error {
+	if r.liveUIDReader == nil {
+		return errStaleSnapshot
+	}
+	liveUID, err := r.liveUIDReader(ctx, in.Namespace, in.Name)
+	if err != nil {
+		return fmt.Errorf("failed to read live component UID after a stale generation: %w", err)
+	}
+	if liveUID != in.UID {
+		return errStaleLocalIncarnation
+	}
+	return errStaleSnapshot
+}
+
+func retrySameClusterTakeover[T any](
+	ctx context.Context,
+	r *Reconciler,
+	in ReconcileComponentInput,
+	src *componentspb.RequestSource,
+	info *errdetails.ErrorInfo,
+	origErr error,
+	fn func(context.Context, *componentspb.RequestSource) (T, error),
+) (T, error) {
+	var zero T
+	meta := info.GetMetadata()
+	ownerUID := meta["owner_uid"]
+	if r.liveUIDReader == nil || ownerUID == "" || meta["owner_cluster_uid"] != src.GetCluster().GetUid() || meta["owner_namespace"] != in.Namespace {
+		return zero, origErr
+	}
+	liveUID, err := r.liveUIDReader(ctx, in.Namespace, in.Name)
+	if err != nil {
+		return zero, fmt.Errorf("failed to read live component UID: %w", err)
+	}
+	if liveUID != in.UID {
+		return zero, errStaleLocalIncarnation
+	}
+	retrySrc := proto.Clone(src).(*componentspb.RequestSource)
+	retrySrc.ExpectedOwnerUid = ownerUID
+	resp, err := fn(ctx, retrySrc)
+	r.fence.RecordConflict(err)
+	if !isOwnerGoneRejection(err) {
+		return resp, err
+	}
+	// R1: the recorded owner was deleted between the rejection and the CAS retry, so no active
+	// record exists. A plain sourced call creates a fresh record for this live incarnation.
+	resp, err = fn(ctx, src)
+	r.fence.RecordConflict(err)
+	return resp, err
+}
+
+// isOwnerGoneRejection reports whether err is the SOURCE_INCARNATION_MISMATCH that CMS returns
+// for expected_owner_uid when no active record exists: it carries no owner metadata.
+func isOwnerGoneRejection(err error) bool {
+	info, _ := extractErrorInfo(err)
+	return info != nil && info.GetReason() == store.ReasonSourceIncarnationMismatch && info.GetMetadata()["owner_uid"] == ""
 }
 
 func (r *Reconciler) requestSource(in ReconcileComponentInput) *componentspb.RequestSource {

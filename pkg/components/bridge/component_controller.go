@@ -93,6 +93,9 @@ func (c *ComponentController) newControllerBuilder(mgr manager.Manager) *builder
 		For(newComponentObject(), builder.WithPredicates(ownChanges)).
 		Watches(newComponentObject(), handler.EnqueueRequestsFromMapFunc(c.mapDependents), builder.WithPredicates(dependencyReadinessChanged())).
 		WithOptions(controller.Options{MaxConcurrentReconciles: c.opts.MaxConcurrentReconciles, RateLimiter: NewComponentRateLimiter()})
+	if c.reconciler != nil && c.reconciler.liveUIDReader == nil && mgr.GetAPIReader() != nil {
+		c.reconciler.liveUIDReader = NewAPIReaderLiveUID(mgr.GetAPIReader())
+	}
 	if fence := c.reconciler.ClusterFence(); fence != nil {
 		b = b.WatchesRawSource(source.Channel(fence.Changes(), handler.EnqueueRequestsFromMapFunc(c.enqueueAllComponents)))
 	}

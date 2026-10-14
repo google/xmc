@@ -218,6 +218,9 @@ func TestComponentControllerEnvtest(t *testing.T) {
 	t.Run("FencedStandbyAndTakeover", func(t *testing.T) {
 		testFencedStandbyAndTakeover(t, cfg)
 	})
+	t.Run("SameClusterRecreateAdoptsCMSRecord", func(t *testing.T) {
+		testSameClusterRecreateAdoptsCMSRecord(t, cfg)
+	})
 }
 
 // startControllerEnv creates namespace and runs a manager with a counted ComponentController for
@@ -340,6 +343,61 @@ func testFencedStandbyAndTakeover(t *testing.T, cfg *rest.Config) {
 		conds := ParseConditionsFromUnstructured(u.Object["status"])
 		return readyReason(u) == ReasonComponentHealthy && findCondition(conds, ConditionTypeSourceConflict) == nil
 	})
+}
+
+func testSameClusterRecreateAdoptsCMSRecord(t *testing.T, cfg *rest.Config) {
+	ctx := context.Background()
+	const (
+		ns     = "recreate"
+		oldUID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	)
+	createEnvtestNamespace(t, cfg, ns)
+	cmsStore := store.NewMemoryStore()
+	if _, err := cmsStore.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: testPrimaryClusterUID, Name: "primary", Epoch: 1}); err != nil {
+		t.Fatalf("DeclareClusterEpoch() failed: %v", err)
+	}
+	// Pre-seed CMS with an active record owned by an earlier CR incarnation (oldUID) in the same
+	// cluster and namespace at generation 3, simulating a CR recreated while its CMS record remained.
+	var seededID int64
+	for i, ver := range []string{"1.0.1", "1.0.2", "1.0.3"} {
+		gen := int64(i + 1)
+		rec, err := cmsStore.SetSourcedComponentIntent(ctx, "env-recreate-db", &componentspb.ComponentSpec{
+			Type:           componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version:        ver,
+			DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE,
+		}, nil, store.RequestSource{
+			UID: oldUID, Generation: gen, Namespace: ns, ClusterUID: testPrimaryClusterUID, Epoch: 1,
+		})
+		if err != nil {
+			t.Fatalf("SetSourcedComponentIntent(gen %d) failed: %v", gen, err)
+		}
+		seededID = rec.ComponentID
+	}
+
+	env := runControllerEnvWithStore(t, cfg, ComponentManagerConfig{Namespace: ns}, cmsStore, &componentspb.ClusterIdentity{
+		Uid: testPrimaryClusterUID, Name: "primary", Epoch: 1,
+	})
+	env.createSpec(t, "env-recreate-db", map[string]any{
+		"componentType":      "COMPONENT_TYPE_CUSTOM_1P_COMPONENT",
+		"enabled":            true,
+		"deletionProtection": false,
+		"version":            "1.0.3",
+	})
+	var liveUID string
+	env.waitFor(t, "env-recreate-db", "Ready with componentGeneration 3", func(u *unstructured.Unstructured) bool {
+		if u == nil {
+			return false
+		}
+		liveUID = string(u.GetUID())
+		return readyReason(u) == ReasonComponentHealthy && ParseComponentGenerationFromUnstructured(u.Object["status"]) == 3
+	})
+	rec, err := cmsStore.GetComponent(ctx, "env-recreate-db")
+	if err != nil {
+		t.Fatalf("GetComponent() failed: %v", err)
+	}
+	if rec.ComponentID != seededID || rec.Owner == nil || rec.Owner.UID != liveUID {
+		t.Errorf("CMS record after recreate = (id=%d, owner=%+v), want id=%d and owner UID %q", rec.ComponentID, rec.Owner, seededID, liveUID)
+	}
 }
 
 // testComponentReadsAreCacheBacked checks that once the manager's cache has synced, neither

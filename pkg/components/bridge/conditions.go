@@ -214,14 +214,15 @@ func shouldStopReconcile(res *ReconcileResult) bool {
 }
 
 // staleComponentRetryDelay is how long the controller waits before reconciling a Component again
-// after CMS proved the cached copy is a stale generation snapshot, so the cache can catch up.
+// after CMS proved the cached copy is a stale incarnation or a stale generation snapshot, so the
+// cache can catch up.
 const staleComponentRetryDelay = time.Second
 
 func handleOwnershipError(res *ReconcileResult, in ReconcileComponentInput, err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, errStaleSnapshot) {
+	if errors.Is(err, errStaleLocalIncarnation) || errors.Is(err, errStaleSnapshot) {
 		res.StaleIncarnation = true
 		res.RequeueAfter = staleComponentRetryDelay
 		return true

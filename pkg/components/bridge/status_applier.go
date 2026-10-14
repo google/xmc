@@ -22,6 +22,7 @@ import (
 	"slices"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -126,6 +127,9 @@ func ApplyComponentStatusSSA(ctx context.Context, c client.Client, item *unstruc
 	applied.SetGroupVersionKind(componentGVK)
 	applied.SetName(item.GetName())
 	applied.SetNamespace(item.GetNamespace())
+	if uid := item.GetUID(); uid != "" {
+		applied.SetUID(uid)
+	}
 	if err := c.Status().Apply(ctx, client.ApplyConfigurationFromUnstructured(applied), client.FieldOwner(FieldManagerBridge), client.ForceOwnership); err != nil {
 		return err
 	}
@@ -222,8 +226,8 @@ func PersistReconcileResult(ctx context.Context, c client.Client, item *unstruct
 		}
 		return nil
 	}
-	// A Component that no longer exists has no status left to persist.
-	if err := ApplyComponentStatusSSA(ctx, c, item, res); client.IgnoreNotFound(err) != nil {
+	// A Component that no longer exists or was replaced by a newer UID has no status left to persist.
+	if err := ApplyComponentStatusSSA(ctx, c, item, res); client.IgnoreNotFound(err) != nil && !apierrors.IsConflict(err) {
 		return fmt.Errorf("failed to apply status: %w", err)
 	}
 	return nil
