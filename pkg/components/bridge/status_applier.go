@@ -219,9 +219,10 @@ func patchFinalizers(ctx context.Context, c client.Client, item *unstructured.Un
 	return updated, nil
 }
 
-// PersistReconcileResult persists res for item: it releases the cleanup finalizer when res asks for
-// it, and otherwise applies .status with ApplyComponentStatusSSA. It is a no-op for a nil or stale-incarnation
-// res and rejects a nil item. item is not modified.
+// PersistReconcileResult persists res for item: it first records res.WarningEvent, then releases
+// the cleanup finalizer when res asks for it, and otherwise applies .status with
+// ApplyComponentStatusSSA. The Event is recorded before the finalizer is released so it is never
+// lost. It is a no-op for a nil or stale-incarnation res and rejects a nil item. item is not modified.
 func PersistReconcileResult(ctx context.Context, c client.Client, item *unstructured.Unstructured, res *ReconcileResult) error {
 	if res == nil || res.StaleIncarnation {
 		return nil
@@ -229,11 +230,11 @@ func PersistReconcileResult(ctx context.Context, c client.Client, item *unstruct
 	if item == nil {
 		return errNilComponentItem
 	}
+	recordWarningEvent(ctx, c, item, res.WarningEvent)
 	if res.RemoveFinalizer {
 		if err := ReleaseCleanupFinalizer(ctx, c, item); err != nil {
 			return fmt.Errorf("failed to release finalizer: %w", err)
 		}
-		recordDeletionConflictEvent(ctx, c, item, res)
 		return nil
 	}
 	// A Component that no longer exists has no status left to persist. The only 409 expected with
@@ -250,41 +251,54 @@ func PersistReconcileResult(ctx context.Context, c client.Client, item *unstruct
 // because the deleted CR is not the active CMS owner (DD §5).
 const ReasonStaleDeletion = "StaleDeletion"
 
-// deletionEventSuffix is appended to the CR name to form the Event GenerateName prefix.
-const deletionEventSuffix = ".deletion-skipped-"
+// Event GenerateName suffixes appended to the CR name.
+const (
+	staleDeletionEventSuffix   = ".deletion-skipped-"
+	blockedDeletionEventSuffix = ".deletion-blocked-"
+)
 
 // maxEventGenerateNameLen bounds the GenerateName prefix to the API server's generated-name base
 // length (63 minus the 5-character random suffix), well within the 253-character name limit.
 const maxEventGenerateNameLen = 58
 
-// deletionEventGenerateName returns a GenerateName prefix for name that stays within
-// maxEventGenerateNameLen by truncating name while keeping deletionEventSuffix. Trailing '-' and
-// '.' left by truncation are trimmed so the prefix remains a valid DNS-1123 subdomain.
-func deletionEventGenerateName(name string) string {
-	maxNameLen := maxEventGenerateNameLen - len(deletionEventSuffix)
+// WarningEvent is a Kubernetes Warning Event to record on the reconciled Component.
+type WarningEvent struct {
+	Reason  string
+	Message string
+	// generateNameSuffix is appended to the truncated CR name to form the Event GenerateName.
+	generateNameSuffix string
+}
+
+// eventGenerateName returns a GenerateName prefix for name that stays within
+// maxEventGenerateNameLen by truncating name while keeping suffix. Trailing '-' and '.' left by
+// truncation are trimmed so the prefix remains a valid DNS-1123 subdomain.
+func eventGenerateName(name, suffix string) string {
+	maxNameLen := maxEventGenerateNameLen - len(suffix)
 	if len(name) > maxNameLen {
 		name = strings.TrimRight(name[:maxNameLen], "-.")
 	}
-	return name + deletionEventSuffix
+	return name + suffix
 }
 
-func recordDeletionConflictEvent(ctx context.Context, c client.Client, item *unstructured.Unstructured, res *ReconcileResult) {
-	if c == nil || item == nil || res == nil || res.ConflictMessage == "" {
+// recordWarningEvent creates ev as a Warning Event on item. Failures are logged, not returned, so
+// a lost Event never blocks the reconcile outcome.
+func recordWarningEvent(ctx context.Context, c client.Client, item *unstructured.Unstructured, ev *WarningEvent) {
+	if c == nil || item == nil || ev == nil {
 		return
 	}
 	now := metav1.Now()
-	ev := &corev1.Event{
-		ObjectMeta:     metav1.ObjectMeta{GenerateName: deletionEventGenerateName(item.GetName()), Namespace: item.GetNamespace()},
+	event := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{GenerateName: eventGenerateName(item.GetName(), ev.generateNameSuffix), Namespace: item.GetNamespace()},
 		InvolvedObject: corev1.ObjectReference{APIVersion: item.GetAPIVersion(), Kind: item.GetKind(), Namespace: item.GetNamespace(), Name: item.GetName(), UID: item.GetUID()},
-		Reason:         ReasonStaleDeletion,
-		Message:        res.ConflictMessage,
+		Reason:         ev.Reason,
+		Message:        ev.Message,
 		Source:         corev1.EventSource{Component: FieldManagerBridge},
 		FirstTimestamp: now,
 		LastTimestamp:  now,
 		Count:          1,
 		Type:           corev1.EventTypeWarning,
 	}
-	if err := c.Create(ctx, ev); err != nil {
-		logging.Warn(ctx, "Failed to record deletion conflict warning event", "namespace", item.GetNamespace(), "name", item.GetName(), "error", err)
+	if err := c.Create(ctx, event); err != nil {
+		logging.Warn(ctx, "Failed to record warning event", "namespace", item.GetNamespace(), "name", item.GetName(), "reason", ev.Reason, "error", err)
 	}
 }

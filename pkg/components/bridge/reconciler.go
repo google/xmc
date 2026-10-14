@@ -71,6 +71,9 @@ type ReconcileResult struct {
 	// during deletion when CMS deletion is skipped and only the local CR is cleaned up.
 	ConflictReason  string
 	ConflictMessage string
+	// WarningEvent, when set, is recorded as a Kubernetes Warning Event on the Component before the
+	// finalizer is released or status is applied, so it is never lost with the object.
+	WarningEvent *WarningEvent
 	// RequeueAfter optionally overrides ProbeInterval as the delay before the next pass. It is always
 	// honored, whether shorter or longer than ProbeInterval.
 	RequeueAfter time.Duration

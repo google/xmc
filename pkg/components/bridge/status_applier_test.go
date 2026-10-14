@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -45,6 +46,9 @@ func newStatusApplierTestScheme() *runtime.Scheme {
 		schema.GroupVersionKind{Group: "xmc.dev", Version: "v1alpha1", Kind: "ComponentList"},
 		&unstructured.UnstructuredList{},
 	)
+	if err := corev1.AddToScheme(s); err != nil {
+		panic(err)
+	}
 	return s
 }
 
@@ -67,7 +71,7 @@ func newTestComponent(name, namespace string, finalizers ...string) *unstructure
 
 // componentWrites records the writes made through a fake Component client.
 type componentWrites struct {
-	// calls lists each write as "patch", "update" or "apply/<subresource>", in order.
+	// calls lists each write as "create", "patch", "update" or "apply/<subresource>", in order.
 	calls []string
 	// apply holds the options of the last subresource apply.
 	apply client.SubResourceApplyOptions
@@ -90,6 +94,12 @@ func newFakeComponentClient(t *testing.T, failures map[string]error, objs ...*un
 		b = b.WithObjects(obj.DeepCopy())
 	}
 	return b.WithInterceptorFuncs(interceptor.Funcs{
+		Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			if err := record("create"); err != nil {
+				return err
+			}
+			return c.Create(ctx, obj, opts...)
+		},
 		Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
 			if err := record("patch"); err != nil {
 				return err
@@ -422,6 +432,8 @@ func TestPersistReconcileResult(t *testing.T) {
 	// conflict is the 409 the API server returns when the applied metadata.uid precondition no
 	// longer matches: the Component was replaced by a newer incarnation.
 	conflict := apierrors.NewConflict(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "comp-persist", errors.New("uid precondition failed"))
+	staleDeletion := &WarningEvent{Reason: ReasonStaleDeletion, Message: "skipped", generateNameSuffix: staleDeletionEventSuffix}
+	blockedDeletion := &WarningEvent{Reason: ReasonActiveDependentsExist, Message: "blocked", generateNameSuffix: blockedDeletionEventSuffix}
 	tests := []struct {
 		name       string
 		nilItem    bool
@@ -439,6 +451,10 @@ func TestPersistReconcileResult(t *testing.T) {
 		{name: "status error is returned", res: &ReconcileResult{State: enabled}, failures: map[string]error{"apply/status": errApply}, wantErr: errApply, wantWrites: []string{"apply/status"}},
 		{name: "conflict on a UID-guarded apply is tolerated", uid: "uid-old", res: &ReconcileResult{State: enabled}, failures: map[string]error{"apply/status": conflict}, wantWrites: []string{"apply/status"}},
 		{name: "conflict without a UID precondition is returned", res: &ReconcileResult{State: enabled}, failures: map[string]error{"apply/status": conflict}, wantErr: conflict, wantWrites: []string{"apply/status"}},
+		{name: "stale deletion event precedes finalizer release", res: &ReconcileResult{RemoveFinalizer: true, WarningEvent: staleDeletion}, wantWrites: []string{"create", "patch"}},
+		{name: "event failure does not block finalizer release", res: &ReconcileResult{RemoveFinalizer: true, WarningEvent: staleDeletion}, failures: map[string]error{"create": errors.New("create failed")}, wantWrites: []string{"create", "patch"}},
+		{name: "blocked deletion event precedes status", res: &ReconcileResult{State: enabled, WarningEvent: blockedDeletion}, wantWrites: []string{"create", "apply/status"}},
+		{name: "stale incarnation records no event", res: &ReconcileResult{StaleIncarnation: true, WarningEvent: staleDeletion}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -470,25 +486,27 @@ func TestPersistReconcileResult(t *testing.T) {
 	}
 }
 
-func TestDeletionEventGenerateName(t *testing.T) {
+func TestEventGenerateName(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
-		want  string
+		name   string
+		input  string
+		suffix string
+		want   string
 	}{
-		{name: "short name kept", input: "my-comp", want: "my-comp.deletion-skipped-"},
-		{name: "exact max name kept", input: "a234567890123456789012345678901234567890", want: "a234567890123456789012345678901234567890.deletion-skipped-"},
-		{name: "long name truncated", input: "a2345678901234567890123456789012345678901234567890", want: "a234567890123456789012345678901234567890.deletion-skipped-"},
-		{name: "trailing separators trimmed", input: "a23456789012345678901234567890123456789-.x", want: "a23456789012345678901234567890123456789.deletion-skipped-"},
+		{name: "short name kept", input: "my-comp", suffix: staleDeletionEventSuffix, want: "my-comp.deletion-skipped-"},
+		{name: "exact max name kept", input: "a234567890123456789012345678901234567890", suffix: staleDeletionEventSuffix, want: "a234567890123456789012345678901234567890.deletion-skipped-"},
+		{name: "long name truncated", input: "a2345678901234567890123456789012345678901234567890", suffix: staleDeletionEventSuffix, want: "a234567890123456789012345678901234567890.deletion-skipped-"},
+		{name: "trailing separators trimmed", input: "a23456789012345678901234567890123456789-.x", suffix: staleDeletionEventSuffix, want: "a23456789012345678901234567890123456789.deletion-skipped-"},
+		{name: "blocked deletion suffix", input: "my-comp", suffix: blockedDeletionEventSuffix, want: "my-comp.deletion-blocked-"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := deletionEventGenerateName(tt.input)
+			got := eventGenerateName(tt.input, tt.suffix)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("deletionEventGenerateName(%q) mismatch (-want +got):\n%s", tt.input, diff)
+				t.Errorf("eventGenerateName(%q, %q) mismatch (-want +got):\n%s", tt.input, tt.suffix, diff)
 			}
 			if len(got) > maxEventGenerateNameLen {
-				t.Errorf("deletionEventGenerateName(%q) length = %d, want <= %d", tt.input, len(got), maxEventGenerateNameLen)
+				t.Errorf("eventGenerateName(%q, %q) length = %d, want <= %d", tt.input, tt.suffix, len(got), maxEventGenerateNameLen)
 			}
 		})
 	}

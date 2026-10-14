@@ -101,6 +101,99 @@ func TestReconcileComponent_DeletionOrderingAndIdempotency(t *testing.T) {
 	})
 }
 
+func TestReconcileDeletion_ConflictReasons(t *testing.T) {
+	ctx := context.Background()
+	spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN}
+	tests := []struct {
+		reason        string
+		wantConflict  string
+		wantFinalizer bool
+	}{
+		{reason: store.ReasonSourceNamespaceConflict, wantConflict: ReasonSourceNamespaceConflict, wantFinalizer: true},
+		{reason: store.ReasonSourceIncarnationMismatch, wantConflict: ReasonSourceIncarnationMismatch, wantFinalizer: true},
+		{reason: store.ReasonClusterFenced, wantConflict: ReasonClusterFenced, wantFinalizer: true},
+		{reason: store.ReasonClusterEpochRegressed, wantConflict: ReasonClusterEpochRegressed, wantFinalizer: true},
+		// CLUSTER_NOT_DECLARED left after the re-declare retry is transient: the finalizer is kept so
+		// the CMS record cannot leak.
+		{reason: store.ReasonClusterNotDeclared},
+		{reason: store.ReasonStaleGeneration},
+	}
+	for _, tt := range tests {
+		t.Run(tt.reason, func(t *testing.T) {
+			helm := &mockHelm{active: true}
+			cms := &mockCMS{delErr: errorInfoStatus(t, codes.FailedPrecondition, tt.reason, store.ErrorInfoDomain, "rejected")}
+			r, err := NewReconciler(cms, nil, helm)
+			if err != nil {
+				t.Fatalf("NewReconciler() error = %v", err)
+			}
+			in := ReconcileComponentInput{Namespace: "xmc", Name: "ingestion", Generation: 2, UID: "uid-1", Spec: spec, IsDeleting: true}
+			res, err := r.reconcileDeletion(ctx, in, "xmc.ingestion", &ReconcileResult{})
+			if gotErr := err != nil; gotErr == tt.wantFinalizer {
+				t.Errorf("reconcileDeletion() error = %v, want error %v", err, !tt.wantFinalizer)
+			}
+			if res.RemoveFinalizer != tt.wantFinalizer || res.ConflictReason != tt.wantConflict {
+				t.Errorf("reconcileDeletion() = {RemoveFinalizer: %v, ConflictReason: %q}, want {%v, %q}", res.RemoveFinalizer, res.ConflictReason, tt.wantFinalizer, tt.wantConflict)
+			}
+			wantEvent := tt.wantConflict != ""
+			if gotEvent := res.WarningEvent != nil && res.WarningEvent.Reason == ReasonStaleDeletion; gotEvent != wantEvent {
+				t.Errorf("reconcileDeletion() WarningEvent = %+v, want StaleDeletion event %v", res.WarningEvent, wantEvent)
+			}
+			if helm.orphanCalled != tt.wantFinalizer {
+				t.Errorf("Orphan1PComponent called = %v, want %v", helm.orphanCalled, tt.wantFinalizer)
+			}
+		})
+	}
+}
+
+func TestReconcileDeletion_ActiveDependentsKeepFinalizer(t *testing.T) {
+	ctx := context.Background()
+	helm := &mockHelm{active: true}
+	cms := &mockCMS{delErr: errorInfoStatus(t, codes.FailedPrecondition, store.ReasonActiveDependentsExist, store.ErrorInfoDomain, "active dependents: xmc.dashboard")}
+	r, err := NewReconciler(cms, nil, helm)
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
+	}
+	ready := Condition{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy}
+	in := ReconcileComponentInput{
+		Namespace: "xmc", Name: "ingestion", Generation: 2, UID: "uid-1", IsDeleting: true,
+		Spec:               &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN},
+		ExistingConditions: []Condition{ready},
+	}
+
+	res, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("ReconcileComponent() error = %v, want nil", err)
+	}
+	if res.RemoveFinalizer || helm.orphanCalled || helm.purgeCalled {
+		t.Errorf("ReconcileComponent() RemoveFinalizer = %v (orphan=%v, purge=%v), want finalizer and workload kept", res.RemoveFinalizer, helm.orphanCalled, helm.purgeCalled)
+	}
+	if res.RequeueAfter != deactivationRecheckInterval {
+		t.Errorf("RequeueAfter = %v, want %v", res.RequeueAfter, deactivationRecheckInterval)
+	}
+	stalled := findCondition(res.Conditions, ConditionTypeStalled)
+	if stalled == nil || stalled.Status != ConditionStatusTrue || stalled.Reason != ReasonActiveDependentsExist {
+		t.Errorf("Stalled = %+v, want True/%s", stalled, ReasonActiveDependentsExist)
+	}
+	if got := findCondition(res.Conditions, ConditionTypeReady); got == nil || got.Status != ConditionStatusTrue {
+		t.Errorf("Ready = %+v, want the previous Ready=True kept", got)
+	}
+	if synced := findCondition(res.Conditions, ConditionTypeSynced); synced == nil || synced.Status != ConditionStatusTrue {
+		t.Errorf("Synced = %+v, want True", synced)
+	}
+	if res.WarningEvent == nil || res.WarningEvent.Reason != ReasonActiveDependentsExist {
+		t.Errorf("WarningEvent = %+v, want reason %s on the first blocked pass", res.WarningEvent, ReasonActiveDependentsExist)
+	}
+
+	in.ExistingConditions = res.Conditions
+	again, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("second ReconcileComponent() error = %v, want nil", err)
+	}
+	if again.WarningEvent != nil {
+		t.Errorf("second pass WarningEvent = %+v, want none while the block persists", again.WarningEvent)
+	}
+}
+
 func TestReconciler_DeleteDisabledHelmComponent_SkipsWhenInactive(t *testing.T) {
 	ctx := context.Background()
 	helm := &mockHelm{
