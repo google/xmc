@@ -449,7 +449,7 @@ jobs:
           if [ "${REQUIRES_PLAYWRIGHT:-}" = "true" ]; then
             export XMC_SCREENSHOTS_DIR="/tmp/xmc_screenshots"
             mkdir -p "${XMC_SCREENSHOTS_DIR}"
-            EXTRA_VERIFY_ARGS+=("--ui_base_url=${XMANAGER_UI_URL}")
+            EXTRA_VERIFY_ARGS+=("--verify_ui=true" "--ui_base_url=${XMANAGER_UI_URL}")
           fi
 
           echo "================================================================="

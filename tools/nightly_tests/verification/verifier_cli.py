@@ -56,6 +56,11 @@ flags.DEFINE_bool(
     False,
     "Whether ClickHouse metric arrival assertion is strictly required",
 )
+flags.DEFINE_bool(
+    "verify_ui",
+    False,
+    "Whether Playwright Web UI verification assertions should be executed",
+)
 flags.DEFINE_string(
     "dashboard_id",
     None,

@@ -57,7 +57,7 @@ def _verify_metrics_and_dashboard(_stub: Any, xid: str) -> None:
         dashboard_id=f"exp_{xid}_overview",
         min_hydrated_points=1,
     )
-    if verifier_cli.get_flag(verifier_cli.FLAGS, "ui_base_url"):
+    if verifier_cli.get_flag(verifier_cli.FLAGS, "verify_ui", False):
         with metrics_dashboard_ui_verify.Session.from_flags() as session:
             metrics_dashboard_ui_verify.verify_metrics_dashboard_ui(session, xid)
 
