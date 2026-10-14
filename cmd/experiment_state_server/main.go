@@ -60,7 +60,8 @@ func main() {
 	// 1. Load configuration
 	cfg := config.Load()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
-	ctx := logging.WithLogger(context.Background(), logger)
+	ctx, cancel := context.WithCancel(logging.WithLogger(context.Background(), logger))
+	defer cancel()
 
 	oauthCfg, err := oauth.LoadConfig()
 	if err != nil {
@@ -162,6 +163,7 @@ func main() {
 	<-quit // Block until a signal is received
 
 	logging.Info(ctx, "Shutting down gRPC server")
+	cancel()
 	s.GracefulStop()
 	logging.Info(ctx, "Server gracefully stopped")
 }
