@@ -56,6 +56,6 @@ func resolveDependencyIDs(catalog map[string]*ComponentRecord, canonicalName str
 // of an intent for canonicalName that depends on the unregistered dep.
 func dependencyNotRegisteredError(canonicalName, dep string) error {
 	return errorWithInfo(codes.FailedPrecondition, ReasonDependencyNotRegistered,
-		map[string]string{"operation": "SetComponentIntent", "component": canonicalName, "dependency": dep},
+		map[string]string{metadataKeyOperation: operationSetComponentIntent, metadataKeyComponent: canonicalName, metadataKeyDependency: dep},
 		fmt.Sprintf(DependencyNotFoundMessagePrefix+" component %q depends on %q, which is not registered", canonicalName, dep))
 }

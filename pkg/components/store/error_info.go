@@ -31,13 +31,31 @@ const (
 	// registered (or is soft-deleted). The caller waits for the dependency and retries.
 	ReasonDependencyNotRegistered = "DEPENDENCY_NOT_REGISTERED"
 	// ReasonDependencyCycle rejects an intent whose dependencies would form a dependency cycle.
-	// Metadata "cycle" lists the canonical names on the cycle, comma-separated.
+	// Metadata "cycle" lists the canonical names on the cycle, comma-separated. The cycle always
+	// passes through metadata "component": every intent is validated before it is applied, so the
+	// stored dependency graph stays acyclic and only the rejected intent can close a cycle.
 	ReasonDependencyCycle = "DEPENDENCY_CYCLE"
 	// ReasonActiveDependentsExist rejects a PrepareDeactivation or a non-cascading ExecuteDeletion
 	// of a component that active (neither disabled nor deleted) components still depend on,
 	// directly or transitively. Metadata "dependents" lists their
 	// canonical names, comma-separated.
 	ReasonActiveDependentsExist = "ACTIVE_DEPENDENTS_EXIST"
+)
+
+// google.rpc.ErrorInfo metadata keys of store rejections, part of the contract callers match.
+const (
+	metadataKeyOperation  = "operation"
+	metadataKeyComponent  = "component"
+	metadataKeyDependency = "dependency"
+	metadataKeyCycle      = "cycle"
+	metadataKeyDependents = "dependents"
+)
+
+// Values of metadata "operation": the rejected CMS operation.
+const (
+	operationSetComponentIntent  = "SetComponentIntent"
+	operationPrepareDeactivation = "PrepareDeactivation"
+	operationExecuteDeletion     = "ExecuteDeletion"
 )
 
 // errorWithInfo returns a status error with code and msg carrying a google.rpc.ErrorInfo with

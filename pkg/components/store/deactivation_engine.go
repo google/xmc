@@ -93,7 +93,7 @@ func EvaluateDeactivationSafety(components map[string]*ComponentRecord, targetNa
 			IsSafeToDeactivate: false,
 			BlockingDependents: activeDependents,
 			RejectionReason:    "component has active dependents",
-		}, activeDependentsError("PrepareDeactivation", canonicalName, activeDependents)
+		}, activeDependentsError(operationPrepareDeactivation, canonicalName, activeDependents)
 	}
 
 	drainTimeout := CalculateDrainTimeout(targetRec, cascadedRecs, nil)
@@ -186,7 +186,7 @@ func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName s
 
 	activeDependents, _ := findActiveDependents(components, canonicalName)
 	if len(activeDependents) > 0 {
-		return activeDependentsError("ExecuteDeletion", canonicalName, activeDependents)
+		return activeDependentsError(operationExecuteDeletion, canonicalName, activeDependents)
 	}
 	return nil
 }
@@ -195,6 +195,6 @@ func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName s
 // operation on canonicalName, which the active dependents still depend on.
 func activeDependentsError(operation, canonicalName string, dependents []string) error {
 	return errorWithInfo(codes.FailedPrecondition, ReasonActiveDependentsExist,
-		map[string]string{"operation": operation, "component": canonicalName, "dependents": strings.Join(dependents, ",")},
+		map[string]string{metadataKeyOperation: operation, metadataKeyComponent: canonicalName, metadataKeyDependents: strings.Join(dependents, ",")},
 		fmt.Sprintf("component %s has active dependents: %v", canonicalName, dependents))
 }

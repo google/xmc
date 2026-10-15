@@ -149,7 +149,7 @@ func dependencyCycleError(canonicalTarget string, cycle []string) error {
 	cycleStr := graph.FormatCycle(cycle)
 	logging.Warn(context.Background(), "Prospective dependency cycle detected", "target", canonicalTarget, "cycle", cycleStr)
 	return errorWithInfo(codes.FailedPrecondition, ReasonDependencyCycle,
-		map[string]string{"operation": "SetComponentIntent", "component": canonicalTarget, "cycle": strings.Join(cycle[:len(cycle)-1], ",")},
+		map[string]string{metadataKeyOperation: operationSetComponentIntent, metadataKeyComponent: canonicalTarget, metadataKeyCycle: strings.Join(cycle[:len(cycle)-1], ",")},
 		"dependency cycle detected: "+cycleStr)
 }
 
