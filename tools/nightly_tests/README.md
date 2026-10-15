@@ -221,7 +221,6 @@ Playwright UI verifiers can be wired in two ways depending on whether the UI vie
 
    from tools.nightly_tests.verification import (
        ess_session as ess,
-       ui_css_selectors as sel,
        ui_entities_validator,
        verification_report as rep,
        verifier_cli as cli,
