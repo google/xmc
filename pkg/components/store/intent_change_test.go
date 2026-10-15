@@ -156,9 +156,20 @@ func TestPlanLiveIntent(t *testing.T) {
 }
 
 func TestNewIntentGeneration(t *testing.T) {
-	for desiredGen, want := range map[int64]int64{0: 1, 1: 1, 7: 7} {
-		if got := newIntentGeneration(desiredGen); got != want {
-			t.Errorf("newIntentGeneration(%d) = %d, want %d", desiredGen, got, want)
-		}
+	tests := []struct {
+		name       string
+		desiredGen int64
+		want       int64
+	}{
+		{name: "zero desired generation", desiredGen: 0, want: 1},
+		{name: "generation one", desiredGen: 1, want: 1},
+		{name: "generation seven", desiredGen: 7, want: 7},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := newIntentGeneration(tt.desiredGen); got != tt.want {
+				t.Errorf("newIntentGeneration(%d) = %d, want %d", tt.desiredGen, got, tt.want)
+			}
+		})
 	}
 }
