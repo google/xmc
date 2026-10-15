@@ -30,4 +30,7 @@ data:
   DEFAULT_INGESTION_GATEWAY_IMAGE: {{ .Values.ingestion_gateway_custom_image | default "" | quote }}
   PROBE_INTERVAL: {{ .Values.componentsDeployment.probeInterval | default "5s" | quote }}
   PROBE_TIMEOUT: {{ .Values.componentsDeployment.probeTimeout | default "2s" | quote }}
+  RECONCILE_TIMEOUT: {{ .Values.componentsDeployment.reconcileTimeout | default "60s" | quote }}
+  {{- /* Only an unset value defaults to 1; an explicit 0 reaches xmc-bridge, which rejects it at startup. */}}
+  MAX_CONCURRENT_RECONCILES: {{ ternary 1 .Values.componentsDeployment.maxConcurrentReconciles (kindIs "invalid" .Values.componentsDeployment.maxConcurrentReconciles) | quote }}
 {{- end }}

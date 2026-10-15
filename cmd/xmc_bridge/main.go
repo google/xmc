@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -52,8 +53,12 @@ type Config struct {
 	ReleaseName string
 	// ProbeInterval is how long after a successful reconcile pass a Component is re-probed.
 	ProbeInterval time.Duration
-	// ProbeTimeout is the timeout duration for individual component probe and reconciliation passes.
+	// ProbeTimeout is the timeout duration for an individual component health probe.
 	ProbeTimeout time.Duration
+	// ReconcileTimeout bounds one Component reconcile pass, including CMS calls and actuation.
+	ReconcileTimeout time.Duration
+	// MaxConcurrentReconciles is the number of Components reconciled in parallel.
+	MaxConcurrentReconciles int
 	// Kubeconfig is the optional explicit path to a kubeconfig file.
 	Kubeconfig string
 	// ChartPath is the base directory containing per-component Helm charts (e.g. <chart-path>/components/<name>)
@@ -72,27 +77,29 @@ type ComponentCondition = bridge.ComponentCondition
 
 // ParseConfig parses command line flags and environment variables into a validated Config object.
 // args typically receives os.Args[1:]. Default values fall back to corresponding environment
-// variables (CMS_ADDRESS, NAMESPACE, PROBE_INTERVAL, PROBE_TIMEOUT, KUBECONFIG) if flags are omitted.
-// Returns an error if flag parsing fails or if intervals/timeouts are non-positive.
+// variables (CMS_ADDRESS, NAMESPACE, PROBE_INTERVAL, PROBE_TIMEOUT, RECONCILE_TIMEOUT,
+// MAX_CONCURRENT_RECONCILES, KUBECONFIG) if flags are omitted.
+// Returns an error if flag parsing fails, if intervals/timeouts are non-positive or if
+// max-concurrent-reconciles is below 1.
 func ParseConfig(args []string) (*Config, error) {
 	defaultCMS := os.Getenv("CMS_ADDRESS")
 	defaultNS := os.Getenv("NAMESPACE")
 	defaultReleaseName := os.Getenv("HELM_RELEASE_NAME")
-	defaultProbeInterval := 5 * time.Second
-	if val := os.Getenv("PROBE_INTERVAL"); val != "" {
-		d, err := time.ParseDuration(val)
-		if err != nil {
-			return nil, fmt.Errorf("invalid PROBE_INTERVAL %q: %w", val, err)
-		}
-		defaultProbeInterval = d
+	defaultProbeInterval, err := durationFromEnv("PROBE_INTERVAL", 5*time.Second)
+	if err != nil {
+		return nil, err
 	}
-	defaultProbeTimeout := 2 * time.Second
-	if val := os.Getenv("PROBE_TIMEOUT"); val != "" {
-		d, err := time.ParseDuration(val)
-		if err != nil {
-			return nil, fmt.Errorf("invalid PROBE_TIMEOUT %q: %w", val, err)
-		}
-		defaultProbeTimeout = d
+	defaultProbeTimeout, err := durationFromEnv("PROBE_TIMEOUT", 2*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defaultReconcileTimeout, err := durationFromEnv("RECONCILE_TIMEOUT", 60*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defaultMaxConcurrentReconciles, err := intFromEnv("MAX_CONCURRENT_RECONCILES", 1)
+	if err != nil {
+		return nil, err
 	}
 	defaultKubeconfig := os.Getenv("KUBECONFIG")
 	defaultChartPath := os.Getenv("HELM_CHART_PATH")
@@ -102,7 +109,9 @@ func ParseConfig(args []string) (*Config, error) {
 	namespace := fs.String("namespace", defaultNS, "Kubernetes namespace to watch for Component resources")
 	releaseName := fs.String("release-name", defaultReleaseName, "Helm release name for 1P component actuation")
 	probeInterval := fs.Duration("probe-interval", defaultProbeInterval, "Delay after a successful reconcile pass before a Component is re-probed")
-	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for individual component probe and reconcile passes")
+	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for an individual component health probe")
+	reconcileTimeout := fs.Duration("reconcile-timeout", defaultReconcileTimeout, "Timeout duration for one Component reconcile pass")
+	maxConcurrentReconciles := fs.Int("max-concurrent-reconciles", defaultMaxConcurrentReconciles, "Number of Components reconciled in parallel")
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig file")
 	chartPath := fs.String("chart-path", defaultChartPath, "Base path to per-component Helm charts (<chart-path>/components/<name>) or a fallback Helm chart directory/tarball")
 
@@ -124,15 +133,49 @@ func ParseConfig(args []string) (*Config, error) {
 	if *probeTimeout <= 0 {
 		return nil, fmt.Errorf("probe-timeout must be a positive duration, got %v", *probeTimeout)
 	}
+	if *reconcileTimeout <= 0 {
+		return nil, fmt.Errorf("reconcile-timeout must be a positive duration, got %v", *reconcileTimeout)
+	}
+	if *maxConcurrentReconciles < 1 {
+		return nil, fmt.Errorf("max-concurrent-reconciles must be at least 1, got %d", *maxConcurrentReconciles)
+	}
 	return &Config{
-		CMSAddress:    *cmsAddress,
-		Namespace:     *namespace,
-		ReleaseName:   *releaseName,
-		ProbeInterval: *probeInterval,
-		ProbeTimeout:  *probeTimeout,
-		Kubeconfig:    *kubeconfig,
-		ChartPath:     *chartPath,
+		CMSAddress:              *cmsAddress,
+		Namespace:               *namespace,
+		ReleaseName:             *releaseName,
+		ProbeInterval:           *probeInterval,
+		ProbeTimeout:            *probeTimeout,
+		ReconcileTimeout:        *reconcileTimeout,
+		MaxConcurrentReconciles: *maxConcurrentReconciles,
+		Kubeconfig:              *kubeconfig,
+		ChartPath:               *chartPath,
 	}, nil
+}
+
+// durationFromEnv returns the duration in the environment variable name, or def when it is unset.
+func durationFromEnv(name string, def time.Duration) (time.Duration, error) {
+	val := os.Getenv(name)
+	if val == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q: %w", name, val, err)
+	}
+	return d, nil
+}
+
+// intFromEnv returns the integer in the environment variable name, or def when it is unset.
+func intFromEnv(name string, def int) (int, error) {
+	val := os.Getenv(name)
+	if val == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q: %w", name, val, err)
+	}
+	return n, nil
 }
 
 // BuildKubeConfig constructs a Kubernetes *rest.Config using the following resolution order:
@@ -220,13 +263,14 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 		return fmt.Errorf("failed to create controller manager: %w", err)
 	}
 	controller := bridge.NewComponentController(mgr.GetClient(), dynamicClient, reconciler, bridge.ComponentControllerOptions{
-		ProbeInterval:    cfg.ProbeInterval,
-		ReconcileTimeout: cfg.ProbeTimeout,
+		ProbeInterval:           cfg.ProbeInterval,
+		ReconcileTimeout:        cfg.ReconcileTimeout,
+		MaxConcurrentReconciles: cfg.MaxConcurrentReconciles,
 	})
 	if err := controller.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to set up Component controller: %w", err)
 	}
-	logging.Info(ctx, "Starting XMC Bridge Controller", "namespace", cfg.Namespace, "probeInterval", cfg.ProbeInterval, "probeTimeout", cfg.ProbeTimeout)
+	logging.Info(ctx, "Starting XMC Bridge Controller", "namespace", cfg.Namespace, "probeInterval", cfg.ProbeInterval, "probeTimeout", cfg.ProbeTimeout, "reconcileTimeout", cfg.ReconcileTimeout, "maxConcurrentReconciles", cfg.MaxConcurrentReconciles)
 	return mgr.Start(ctx)
 }
 
