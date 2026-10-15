@@ -15,6 +15,8 @@ metadata:
     xmc.dev/component-type: "custom-1p-component"
     app.kubernetes.io/name: "ingestion-gateway"
     app.kubernetes.io/managed-by: {{ .Release.Service | default "Helm" | quote }}
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   enabled: {{ if hasKey $ig "enabled" }}{{ $ig.enabled }}{{ else }}{{ default false .Values.enabled }}{{ end }}
   componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT

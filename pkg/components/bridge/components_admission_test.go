@@ -17,7 +17,9 @@ package bridge
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -26,6 +28,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,10 +43,10 @@ import (
 )
 
 type admissionClients struct {
-	adminDynamic   dynamic.Interface
-	nonAdminComp   dynamic.ResourceInterface
-	breakglassComp dynamic.ResourceInterface
-	kubeClient     kubernetes.Interface
+	adminDynamic      dynamic.Interface
+	nonAdminComp      dynamic.ResourceInterface
+	platformAdminComp dynamic.ResourceInterface
+	kubeClient        kubernetes.Interface
 }
 
 // TestComponentsAdmissionAndControllerSuite verifies the Component CRD OpenAPI/CEL schema validations
@@ -52,9 +55,6 @@ func TestComponentsAdmissionAndControllerSuite(t *testing.T) {
 	ctx := context.Background()
 	clients := startAdmissionEnvtest(ctx, t)
 
-	t.Run("HelmTemplatesRespectEnableComponentsFlag", func(t *testing.T) {
-		verifyEnableComponentsTemplateFlag(t)
-	})
 	t.Run("CRDOpenAPIAndCELSchemaValidations", func(t *testing.T) {
 		verifyCRDSchemaAndCELRules(ctx, t, clients.adminDynamic.Resource(ComponentGVR).Namespace("default"))
 	})
@@ -127,10 +127,10 @@ func buildAdmissionClients(t *testing.T, baseCfg *rest.Config) admissionClients 
 		return dyn.Resource(ComponentGVR).Namespace("default")
 	}
 	return admissionClients{
-		adminDynamic:   adminDyn,
-		nonAdminComp:   impersonateComp("system:serviceaccount:xmc:gitops-reconciler", "system:authenticated"),
-		breakglassComp: impersonateComp("sre-oncall@example.com", "system:authenticated", "xmc-platform-admins"),
-		kubeClient:     kubeClient,
+		adminDynamic:      adminDyn,
+		nonAdminComp:      impersonateComp("system:serviceaccount:xmc:gitops-reconciler", "system:authenticated"),
+		platformAdminComp: impersonateComp("sre-oncall@example.com", "system:authenticated", "xmc-platform-admins"),
+		kubeClient:        kubeClient,
 	}
 }
 
@@ -178,16 +178,87 @@ func waitForVAPActivation(ctx context.Context, t *testing.T, compClient dynamic.
 	}
 }
 
-func verifyEnableComponentsTemplateFlag(t *testing.T) {
-	t.Helper()
-	for _, tmplName := range []string{"crd.yaml", "deletion-vap.yaml"} {
-		var disabledDoc, enabledDoc map[string]any
-		if err := yaml.Unmarshal(renderHelmManifestTemplate(t, tmplName, false), &disabledDoc); err != nil || len(disabledDoc) != 0 {
-			t.Fatalf("expected %s with componentsDeployment.enabled=false to render empty doc, got %v (err=%v)", tmplName, disabledDoc, err)
-		}
-		if err := yaml.Unmarshal(renderHelmManifestTemplate(t, tmplName, true), &enabledDoc); err != nil || enabledDoc["kind"] == nil {
-			t.Fatalf("expected %s with componentsDeployment.enabled=true to render K8s object, got %v (err=%v)", tmplName, enabledDoc, err)
-		}
+// TestDeletionVAPIgnoresEnableComponentsFlag asserts the deletion admission policy and its binding
+// render whatever componentsDeployment.enabled is set to, and survive helm uninstall, so disabling
+// xmc-bridge never drops deletion protection for the CRs the kept CRD still holds.
+func TestDeletionVAPIgnoresEnableComponentsFlag(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		enabled bool
+	}{
+		{name: "components disabled", enabled: false},
+		{name: "components enabled", enabled: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(renderHelmManifestTemplate(t, "deletion-vap.yaml", tt.enabled)), 4096)
+			var gotKinds []string
+			for {
+				var doc unstructured.Unstructured
+				err := dec.Decode(&doc.Object)
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					t.Fatalf("decoding deletion-vap.yaml: %v", err)
+				}
+				gotKinds = append(gotKinds, doc.GetKind())
+				if got := doc.GetAnnotations()["helm.sh/resource-policy"]; got != "keep" {
+					t.Errorf("%s helm.sh/resource-policy = %q, want %q", doc.GetKind(), got, "keep")
+				}
+			}
+			wantKinds := []string{"ValidatingAdmissionPolicy", "ValidatingAdmissionPolicyBinding"}
+			if diff := cmp.Diff(wantKinds, gotKinds); diff != "" {
+				t.Errorf("deletion-vap.yaml rendered kinds mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestCRDIgnoresEnableComponentsFlag asserts the Component CRD renders whatever
+// componentsDeployment.enabled is set to. It is a pure template check, so it runs outside the
+// envtest suite.
+func TestCRDIgnoresEnableComponentsFlag(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		enabled bool
+	}{
+		{name: "components disabled", enabled: false},
+		{name: "components enabled", enabled: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var doc map[string]any
+			if err := yaml.Unmarshal(renderHelmManifestTemplate(t, "crd.yaml", tt.enabled), &doc); err != nil || doc["kind"] == nil {
+				t.Errorf("expected crd.yaml with componentsDeployment.enabled=%v to render K8s object, got %v (err=%v)", tt.enabled, doc, err)
+			}
+		})
+	}
+}
+
+// TestCRDLifecycleAnnotations asserts the CRD survives helm uninstall, a componentsDeployment.enabled
+// flip and an Argo CD prune, because deleting the CRD deletes every Component CR.
+func TestCRDLifecycleAnnotations(t *testing.T) {
+	t.Parallel()
+	var crd struct {
+		Metadata struct {
+			Annotations map[string]string `json:"annotations"`
+		} `json:"metadata"`
+	}
+	if err := yaml.Unmarshal(renderHelmManifestTemplate(t, "crd.yaml", false), &crd); err != nil {
+		t.Fatalf("yaml.Unmarshal(crd.yaml) = %v", err)
+	}
+	want := map[string]string{
+		"helm.sh/resource-policy":         "keep",
+		"argocd.argoproj.io/sync-options": "Prune=false,Delete=false",
+		"argocd.argoproj.io/sync-wave":    "-1",
+	}
+	if diff := cmp.Diff(want, crd.Metadata.Annotations); diff != "" {
+		t.Errorf("CRD annotations mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -250,8 +321,10 @@ func verifyDeletionProtectionVAP(ctx context.Context, t *testing.T, clients admi
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = clients.breakglassComp.Delete(cleanupCtx, "protected-ingestion", metav1.DeleteOptions{})
-		_ = clients.breakglassComp.Delete(cleanupCtx, "breakglass-protected", metav1.DeleteOptions{})
+		for _, name := range []string{"protected-ingestion", "platform-admin-protected"} {
+			_, _ = clients.nonAdminComp.Patch(cleanupCtx, name, types.MergePatchType, []byte(`{"spec":{"deletionProtection":false}}`), metav1.PatchOptions{})
+			_ = clients.nonAdminComp.Delete(cleanupCtx, name, metav1.DeleteOptions{})
+		}
 	})
 	protectedSpec := map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "deletionProtection": true}
 	comp := newComponentManifest("protected-ingestion", protectedSpec)
@@ -267,12 +340,13 @@ func verifyDeletionProtectionVAP(ctx context.Context, t *testing.T, clients admi
 	if err := clients.nonAdminComp.Delete(ctx, comp.GetName(), metav1.DeleteOptions{}); err != nil {
 		t.Fatalf("expected DELETE to succeed after setting deletionProtection=false, got: %v", err)
 	}
-	breakglassTarget := newComponentManifest("breakglass-protected", protectedSpec)
-	if _, err := clients.nonAdminComp.Create(ctx, breakglassTarget, metav1.CreateOptions{}); err != nil {
-		t.Fatalf("Create breakglass target failed: %v", err)
+	// xmc-platform-admins holds RBAC delete on components but has no admission exemption.
+	platformAdminTarget := newComponentManifest("platform-admin-protected", protectedSpec)
+	if _, err := clients.nonAdminComp.Create(ctx, platformAdminTarget, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("Create platform admin target failed: %v", err)
 	}
-	if err := clients.breakglassComp.Delete(ctx, breakglassTarget.GetName(), metav1.DeleteOptions{}); err != nil {
-		t.Fatalf("expected xmc-platform-admins breakglass DELETE to succeed, got: %v", err)
+	if err := clients.platformAdminComp.Delete(ctx, platformAdminTarget.GetName(), metav1.DeleteOptions{}); err == nil || !strings.Contains(err.Error(), "Deletion rejected: Component has deletionProtection enabled") {
+		t.Fatalf("expected VAP rejection on xmc-platform-admins DELETE with deletionProtection=true, got: %v", err)
 	}
 }
 
