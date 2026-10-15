@@ -18,12 +18,10 @@ package main
 import (
 	"context"
 	"embed"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"cloud.google.com/go/spanner"
@@ -33,6 +31,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"google.golang.org/api/option"
 	"xmanager_cloud/internal/logging"
+	commonmigrations "xmanager_cloud/internal/storage/migrations"
 	"xmanager_cloud/internal/storage/spanner/migrations/commands"
 	"xmanager_cloud/internal/storage/spanner/migrations/driver"
 )
@@ -48,12 +47,12 @@ var migrationsFS embed.FS
 
 // Commands supported by the runner.
 const (
-	upCmd      = "up"
-	downCmd    = "down"
-	forceCmd   = "force"
-	versionCmd = "version"
-	initCmd    = "init"
-	createCmd  = "create"
+	upCmd      = commonmigrations.UpCmd
+	downCmd    = commonmigrations.DownCmd
+	forceCmd   = commonmigrations.ForceCmd
+	versionCmd = commonmigrations.VersionCmd
+	initCmd    = commonmigrations.InitCmd
+	createCmd  = commonmigrations.CreateCmd
 )
 
 type config struct {
@@ -70,23 +69,12 @@ type config struct {
 }
 
 func parseArg(cfg *config, args []string) error {
-	if len(args) == 0 {
-		return nil
-	}
-	if len(args) > 1 {
-		return fmt.Errorf("too many arguments")
-	}
-
-	if cfg.command == createCmd {
-		cfg.migrationName = args[0]
-		return nil
-	}
-
-	argVal, err := strconv.Atoi(args[0])
+	argVal, migrationName, err := commonmigrations.ParseArg(cfg.command, args)
 	if err != nil {
-		return fmt.Errorf("invalid argument: %q is not an integer", args[0])
+		return err
 	}
-	cfg.arg = &argVal
+	cfg.arg = argVal
+	cfg.migrationName = migrationName
 	return nil
 }
 
@@ -210,47 +198,25 @@ func newRunner(ctx context.Context, cfg *config, opts ...option.ClientOption) (*
 	}, nil
 }
 
+func (r *runner) common() *commonmigrations.Runner {
+	return commonmigrations.NewRunner(
+		r.migrator,
+		r.source,
+		func(ctx context.Context) (bool, error) {
+			return commands.IsDatabaseEmpty(ctx, r.dataClient)
+		},
+		r.migrationsDir,
+		r.stdout,
+		r.stdin,
+	)
+}
+
 func (r *runner) close() {
-	err, dbErr := r.migrator.Close()
-	if err != nil {
-		logging.Error(context.Background(), "Failed to close source driver", "error", err)
-	}
-	if dbErr != nil {
-		logging.Error(context.Background(), "Failed to close database driver", "error", dbErr)
-	}
+	r.common().Close()
 }
 
 func (r *runner) execCommand(ctx context.Context, cmd string, arg *int) error {
-	logging.Info(ctx, "Executing command", "command", cmd)
-	switch cmd {
-	case upCmd:
-		return commands.Up(ctx, r.migrator, r.dataClient, arg)
-	case downCmd:
-		return commands.Down(r.migrator, r.source, arg, r.stdout, r.stdin)
-	case forceCmd:
-		if arg == nil {
-			return fmt.Errorf("missing argument for %s command", forceCmd)
-		}
-		if err := r.migrator.Force(*arg); err != nil {
-			return err
-		}
-		fmt.Printf("Forced version to %d\n", *arg)
-	case versionCmd:
-		v, dirty, err := r.migrator.Version()
-		if err != nil {
-			if errors.Is(err, migrate.ErrNilVersion) {
-				fmt.Printf("Migrations are not yet initialized\n")
-				return nil
-			}
-			return err
-		}
-		fmt.Printf("Version: %d, Dirty: %v\n", v, dirty)
-	case initCmd:
-		return commands.Init(r.migrator, r.source)
-	default:
-		return fmt.Errorf("unknown command: %q", cmd)
-	}
-	return nil
+	return r.common().ExecCommand(ctx, cmd, arg)
 }
 
 func selectDescriptor(migrationsDir string) ([]byte, error) {
