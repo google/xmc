@@ -238,7 +238,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 				Enabled: true,
 			},
 			wantState:  componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, ReconcilingStatus: ConditionStatusTrue, Reason: ReasonHelmUpgradeFailed},
+			wantHealth: &healthConditions{ReadyStatus: ConditionStatusFalse, StalledStatus: ConditionStatusTrue, Reason: ReasonHelmUpgradeFailed},
 		},
 		{
 			name: "active 1P with in-flight Helm upgrade is reconciling",
@@ -929,7 +929,11 @@ func verify3PStatusDetectorAssertions(t *testing.T, testName string, cms *mockCM
 	}
 
 	assertConditionStatus(t, res.Conditions, ConditionTypeReady, ConditionStatusFalse)
-	assertConditionStatus(t, res.Conditions, ConditionTypeReconciling, ConditionStatusTrue)
+	if testName == "active 3P with status detector resource not found" {
+		assertConditionStatus(t, res.Conditions, ConditionTypeStalled, ConditionStatusTrue)
+	} else {
+		assertConditionStatus(t, res.Conditions, ConditionTypeReconciling, ConditionStatusTrue)
+	}
 	if res.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
 		t.Errorf("%s: expected state %v, got %v", testName, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, res.State)
 	}
@@ -1680,6 +1684,7 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 		wantReadyRsn   string
 		wantSynced     string
 		wantSyncedRsn  string
+		wantStalledGen int64
 		wantAccessKept bool
 		wantObsCall    bool
 	}{
@@ -1753,13 +1758,25 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 				{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonDependencyCycle},
 				{Type: ConditionTypeStalled, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonDependencyCycle},
 			}},
-			wantErr:       true,
+			wantErr:        true,
+			wantState:      componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantObsGen:     1,
+			wantReady:      ConditionStatusFalse,
+			wantReadyRsn:   ReasonDependencyCycle,
+			wantSynced:     ConditionStatusFalse,
+			wantSyncedRsn:  ReasonCMSSyncFailed,
+			wantStalledGen: 1,
+		},
+		{
+			name:          "CMS unregistered dependency rejection finishes with err == nil and advances observedGeneration",
+			cms:           &mockCMS{setErr: status.Error(codes.FailedPrecondition, store.DependencyNotFoundMessagePrefix+` component "ch" depends on "redpanda", which is not registered`)},
+			in:            ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 3, ExistingObservedGeneration: 1, Spec: spec3P, Enabled: true},
 			wantState:     componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantObsGen:    1,
+			wantObsGen:    3,
 			wantReady:     ConditionStatusFalse,
-			wantReadyRsn:  ReasonDependencyCycle,
-			wantSynced:    ConditionStatusFalse,
-			wantSyncedRsn: ReasonCMSSyncFailed,
+			wantReadyRsn:  ReasonDependenciesNotReady,
+			wantSynced:    ConditionStatusTrue,
+			wantSyncedRsn: ReasonCMSSynced,
 		},
 		{
 			name:           "blocked deactivation keeps Ready=True and status.access while workload remains active",
@@ -1780,11 +1797,12 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 			in:             ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, ExistingObservedGeneration: 1, Spec: spec1P, Enabled: true, ExistingConditions: prevReady, ExistingAccess: prevAccess},
 			wantErr:        true,
 			wantState:      componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			wantObsGen:     1,
+			wantObsGen:     2,
 			wantReady:      ConditionStatusFalse,
 			wantReadyRsn:   ReasonHelmUpgradeFailed,
 			wantSynced:     ConditionStatusTrue,
 			wantSyncedRsn:  ReasonCMSSynced,
+			wantStalledGen: 2,
 			wantAccessKept: true,
 		},
 		{
@@ -1831,6 +1849,12 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 			synced := findCondition(res.Conditions, ConditionTypeSynced)
 			if synced == nil || synced.Status != tt.wantSynced || synced.Reason != tt.wantSyncedRsn {
 				t.Errorf("Synced condition = %+v, want %s/%s", synced, tt.wantSynced, tt.wantSyncedRsn)
+			}
+			if tt.wantStalledGen != 0 {
+				stalled := findCondition(res.Conditions, ConditionTypeStalled)
+				if stalled == nil || stalled.Status != ConditionStatusTrue || stalled.ObservedGeneration != tt.wantStalledGen {
+					t.Errorf("Stalled condition = %+v, want True at ObservedGeneration=%d", stalled, tt.wantStalledGen)
+				}
 			}
 			if tt.wantAccessKept {
 				if diff := cmp.Diff(prevAccess, res.Access); diff != "" {

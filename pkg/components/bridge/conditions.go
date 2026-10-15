@@ -143,8 +143,8 @@ func setReadiness(res *ReconcileResult, in ReconcileComponentInput, ready, reaso
 func isStalledReason(reason string) bool {
 	switch reason {
 	case ReasonDependencyCycle, ReasonDeactivationBlocked, ReasonContractBroken,
-		ReasonInvalidWrapperSpec, "InvalidWrapperRef", "CrossNamespaceForbidden",
-		ReasonInvalidComponentRef, ReasonHelmReleaseStuck, ReasonHelmRunnerUninitialized:
+		ReasonInvalidWrapperSpec, "InvalidWrapperRef", "CrossNamespaceForbidden", "CRDNotFound",
+		ReasonInvalidComponentRef, ReasonHelmUpgradeFailed, ReasonHelmReleaseStuck, ReasonHelmRunnerUninitialized:
 		return true
 	}
 	return false
@@ -196,7 +196,9 @@ func recordCMSSyncFailure(res *ReconcileResult, in ReconcileComponentInput, err 
 	if in.Enabled && !in.IsDeleting && existingReady.Status == ConditionStatusTrue {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
 	}
-	setReadiness(res, in, existingReady.Status, existingReady.Reason, existingReady.Message)
+	prev := in
+	prev.Generation = existingReady.ObservedGeneration
+	setReadiness(res, prev, existingReady.Status, existingReady.Reason, existingReady.Message)
 	upsertCondition(&res.Conditions, *existingReady)
 }
 

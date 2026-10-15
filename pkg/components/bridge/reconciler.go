@@ -290,9 +290,10 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 }
 
 // handleIntentError classifies a SetComponentIntent failure: an unregistered dependency keeps
-// Synced=True (CMS is reachable), a dependency cycle gates the component, and any other error
-// records a CMS sync failure and refreshes the local health of an actuated workload. It always
-// returns the wrapped intent error.
+// Synced=True (CMS is reachable, and registerIntent intercepts the returned intentErr to convert it
+// into a non-error dependency wait message so the pass finishes with err == nil via reportGated and
+// advances status.observedGeneration), a dependency cycle gates the component, and any other error
+// records a CMS sync failure and refreshes the local health of an actuated workload.
 func (r *Reconciler) handleIntentError(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, err error) error {
 	intentErr := fmt.Errorf("failed to apply component intent to CMS: %w", err)
 	if dependencyNotRegisteredMessage(err) != "" {
