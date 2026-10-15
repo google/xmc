@@ -140,7 +140,7 @@ func initStorage(ctx context.Context, cfg *Config) (WorkUnitFetcher, QueueVeloci
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create spanner client for WorkUnit storage: %w", err)
 	}
-	wuStore, err := workunit.NewRepository(spannerClient, nil)
+	wuStore, err := workunit.NewRepository(spannerClient)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create WorkUnit repository: %w", err)
 	}

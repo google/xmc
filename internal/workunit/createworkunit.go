@@ -108,6 +108,13 @@ func prepareLocalWorkUnit(ctx context.Context, workUnits storage.WorkUnitTxRepos
 		return preparedWorkUnit{}, fmt.Errorf("failed to validate work unit name: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
 
+	if localWU.CurrentWorkUnitExecution == nil {
+		localWU.CurrentWorkUnitExecution = &essmsgpb.WorkUnitExecution{}
+	}
+	if localWU.CurrentWorkUnitExecution.Status == nil {
+		localWU.CurrentWorkUnitExecution.Status = &essmsgpb.WorkUnitStatus{}
+	}
+
 	if wid == 0 {
 		wid, err = workUnits.FetchNextWorkUnitID(ctx, xid)
 		if err != nil {
