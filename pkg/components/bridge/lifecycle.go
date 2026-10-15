@@ -37,7 +37,8 @@ const (
 	legacyFinalizerCMSCleanup = "finalizers.xmc.dev/deletion-protection"
 	// ReasonDeactivationBlocked marks a disabled component kept running because enabled components depend on it.
 	ReasonDeactivationBlocked = "DeactivationBlocked"
-	// ReasonDeactivationIncomplete marks a disabled component whose workload was removed before the CMS handshake completed.
+	// ReasonDeactivationIncomplete marks a disabled component with no running workload (removed by an
+	// earlier pass, or never actuated) whose CMS deactivation handshake has not completed.
 	ReasonDeactivationIncomplete = "DeactivationIncomplete"
 	reasonComponentDisabled      = "ComponentDisabled"
 	// deactivationRecheckInterval throttles PrepareDeactivation while deactivation is blocked.
@@ -169,14 +170,15 @@ func recentDeactivationBlock(in ReconcileComponentInput) (string, bool) {
 }
 
 // reportDeactivationBlocked reports DeactivationBlocked=True with msg; checked marks a fresh CMS
-// check, restarting the recheck interval. Ready keeps DeactivationIncomplete if the workload is gone.
+// check, restarting the recheck interval. Ready reports DeactivationIncomplete when no workload is
+// running (an earlier pass removed it, or it was never actuated), so no local health probe runs.
 func (r *Reconciler) reportDeactivationBlocked(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, msg string, checked bool) (*ReconcileResult, error) {
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDeactivationBlocked, ConditionStatusTrue, in.Generation, ReasonDeactivationBlocked, msg)
 	if cond := findCondition(res.Conditions, ConditionTypeDeactivationBlocked); checked && cond != nil {
 		cond.LastTransitionTime = time.Now().UTC()
 	}
-	if wasTornDown(in) {
-		return r.reportGated(ctx, in, canonicalName, res, ReasonDeactivationIncomplete, "workload already removed; "+msg)
+	if wasTornDown(in) || !r.isActuated(in) {
+		return r.reportGated(ctx, in, canonicalName, res, ReasonDeactivationIncomplete, "no workload is running; "+msg)
 	}
 	return r.reportBlockedWorkload(ctx, in, canonicalName, res, msg)
 }

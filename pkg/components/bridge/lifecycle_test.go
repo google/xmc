@@ -246,6 +246,13 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 		o.SetCalls = 1
 		return o
 	}
+	// noWorkloadBlocked is a blocked component without a running workload (torn down earlier or
+	// never actuated): no health probe runs and Ready reports DeactivationIncomplete.
+	noWorkloadBlocked := gateOutcome{
+		State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonDeactivationIncomplete, ReconcilingStatus: ConditionStatusTrue,
+		DeactivationBlocked: ConditionStatusTrue, SetCalls: 1, PrepareCalls: 1,
+	}
 	tests := []struct {
 		name           string
 		cms            *mockCMS
@@ -329,12 +336,22 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 		{
 			name: "block after teardown keeps reporting DeactivationIncomplete",
 			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{}, spec: spec1P, existing: tornDown,
-			want: gateOutcome{
-				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-				ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonDeactivationIncomplete, ReconcilingStatus: ConditionStatusTrue,
-				DeactivationBlocked: ConditionStatusTrue, SetCalls: 1, PrepareCalls: 1,
-			},
-			wantMsg: "workload already removed; " + blockedMsg,
+			want:    noWorkloadBlocked,
+			wantMsg: "no workload is running; " + blockedMsg,
+		},
+		{
+			name: "block of a never-actuated 1P component skips the health probe",
+			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{unhealthyReason: ReasonHelmReleaseNotFound}, spec: spec1P,
+			existing: []Condition{{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonDependenciesNotReady}},
+			want:     noWorkloadBlocked,
+			wantMsg:  "no workload is running; " + blockedMsg,
+		},
+		{
+			name: "block of an already-disabled 3P wrapper at a new generation skips the health probe",
+			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{}, spec: spec3P,
+			existing: []Condition{{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: reasonComponentDisabled}},
+			want:     noWorkloadBlocked,
+			wantMsg:  "no workload is running; " + blockedMsg,
 		},
 		{
 			name: "prepare failure after teardown keeps reporting DeactivationIncomplete",
