@@ -244,6 +244,14 @@ jobs:
             verify_module: 'tools.nightly_tests.examples_verification.resource_observability_dashboard_ui_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             verify_ui: true
+          - id: 'admin_panel_ui'
+            name: 'Admin Panel (Playwright UI)'
+            example_path: ''
+            entrypoint: ''
+            args: ''
+            verify_module: 'tools.nightly_tests.examples_verification.admin_panel_ui_verify'
+            expected_queue: ''
+            verify_ui: true
           - id: 'multikueue_job'
             name: 'MultiKueue Delegated Job'
             example_path: 'examples/simple_job'
@@ -318,7 +326,7 @@ jobs:
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xdash
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install absl-py python-dotenv
-          if [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
+          if [ -n "${EXAMPLE_PATH:-}" ] && [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt"
           fi
           if [ "${VERIFY_UI:-}" = "true" ]; then
@@ -378,6 +386,11 @@ jobs:
           RAW_ARGS: '${{ matrix.example.args }}'
         run: |
           set -euo pipefail
+          if [ -z "${EXAMPLE_PATH:-}" ]; then
+            echo "No example workload launch required for ${EXAMPLE_NAME} (${EXAMPLE_ID})."
+            echo "xid=N/A" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ -n "${IAP_CLIENT_ID:-}" ]; then
             if [ -n "${XMC_CLIENT_SA:-}" ]; then
               XMC_AUTH_TOKEN=$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --impersonate-service-account="${XMC_CLIENT_SA}" --include-email)
