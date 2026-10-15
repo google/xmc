@@ -273,14 +273,14 @@ func (r *Reconciler) handleIntentError(ctx context.Context, in ReconcileComponen
 		return intentErr
 	}
 	msg := dependencyCycleMessage(err)
-	if msg == "" {
-		recordCMSSyncFailure(res, in, err)
-		r.refreshLocalHealth(ctx, in, canonicalName, res, err)
+	if msg != "" {
+		if _, syncErr := r.reportGated(ctx, in, canonicalName, res, ReasonDependencyCycle, msg, ConditionStatusTrue); syncErr != nil {
+			return errors.Join(intentErr, syncErr)
+		}
 		return intentErr
 	}
-	if _, syncErr := r.reportGated(ctx, in, canonicalName, res, ReasonDependencyCycle, msg, ConditionStatusTrue); syncErr != nil {
-		return errors.Join(intentErr, syncErr)
-	}
+	recordCMSSyncFailure(res, in, err)
+	r.refreshLocalHealth(ctx, in, canonicalName, res, err)
 	return intentErr
 }
 

@@ -266,6 +266,9 @@ func extractStringMap(raw any) map[string]string {
 		}
 		return maps.Clone(m)
 	case map[string]any:
+		if len(m) == 0 {
+			return nil
+		}
 		res := make(map[string]string, len(m))
 		for k, v := range m {
 			if s, ok := v.(string); ok {
