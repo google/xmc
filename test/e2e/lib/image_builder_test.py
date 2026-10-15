@@ -76,6 +76,8 @@ class TestImageBuilder(unittest.TestCase):
             ["bazel", "build", *expected_targets],
             cwd="/workspace",
         )
+        self.assertIn("//test/e2e/manifests:jobset_manifests", expected_targets)
+        self.assertIn("//test/e2e/manifests:kueue_manifests", expected_targets)
         self.assertEqual(len(images), 6)
         self.assertEqual(mock_run.call_count, 8)  # 1 bazel build + 1 bazel info + 6 docker load
 

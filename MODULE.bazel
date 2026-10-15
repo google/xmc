@@ -64,6 +64,24 @@ _ENVTEST_BUILD_FILE = """filegroup(
     ]
 ]
 
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# Upstream controller release manifests that the KinD E2E harness installs. Keep the versions in
+# sync with sigs.k8s.io/jobset and sigs.k8s.io/kueue in go.mod.
+http_file(
+    name = "jobset_v0_12_0_manifests",
+    downloaded_file_path = "jobset_manifests.yaml",
+    sha256 = "a41aaf12dd0b7b0a3d626b8d6107f32c3dc889d7e7830adc46b8cdb77a8963bb",
+    urls = ["https://github.com/kubernetes-sigs/jobset/releases/download/v0.12.0/manifests.yaml"],
+)
+
+http_file(
+    name = "kueue_v0_18_2_manifests",
+    downloaded_file_path = "kueue_manifests.yaml",
+    sha256 = "087c660cb2ba78947c9041f80d23c85e091e939c95377f47fb7a012cdca5f85f",
+    urls = ["https://github.com/kubernetes-sigs/kueue/releases/download/v0.18.2/manifests.yaml"],
+)
+
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
 go_deps.module(
@@ -154,7 +172,3 @@ use_repo(
     "sh_helm_helm_v3",
     "xyz_gomodules_jsonpatch_v2",
 )
-
-k8s_crd_manifests = use_repo_rule("//test/e2e/manifests:crd_manifests.bzl", "k8s_crd_manifests")
-
-k8s_crd_manifests(name = "k8s_crd_manifests")

@@ -44,8 +44,9 @@ graph TD
    - `KinD.load_images()` loads all built container images into KinD nodes in a single batch.
    - `SpannerManager.setup()` creates the `e2e-ess` and `e2e-xid` databases concurrently and applies DDL schemas.
 3. **Phase 3: Deployment & Scenario Execution**:
-   - `HelmDeployer.deploy()` applies the upstream JobSet and Kueue CRDs (`//test/e2e/manifests:jobset_kueue_crds`) with server-side apply, installs the XMC Helm chart (including dev Kueue queue and `WorkloadPriorityClass` manifests) into the cluster, and waits for workload readiness.
+   - `HelmDeployer.deploy()` first installs the pinned upstream JobSet v0.12.0 and Kueue v0.18.2 controllers from `//test/e2e/manifests:jobset_manifests` and `//test/e2e/manifests:kueue_manifests` ([`lib/controller_installer.py`](lib/controller_installer.py)). It waits until their CRDs are established, their deployments are rolled out, the Kueue visibility `APIService`s are available, and both controllers have injected their webhook CA bundles: Kueue's webhooks fail closed, so they must serve before the chart creates any pods. It then installs the XMC Helm chart (including dev Kueue queue and `WorkloadPriorityClass` manifests) into the cluster and waits for workload readiness.
    - `TestExecutor.run_tests()` invokes the Playwright scenario suite ([test_e2e_flow.py](test_e2e_flow.py)) in an isolated virtualenv, verifying authentication/authorization boundaries, experiment/artifact creation, and work unit actuation into a schema-validated `JobSet` custom resource in `cpu-queue` ([`lib/jobset_verifier.py`](lib/jobset_verifier.py)).
+   - If the deployment or the scenarios fail, `HelmDeployer.capture_diagnostics()` writes the pods, events, and recent container logs of the `xmc`, `dex`, `jobset-system`, `kueue-system`, and `cpu-queue` namespaces to `k8s_diagnostics.log` in the screenshots directory before teardown.
 4. **Teardown (`managed_lifecycle`)**:
    - Handled via a Python context manager that drops the ephemeral Spanner databases and deletes the KinD cluster after a success, a failure, or a stop. Teardown is best effort; see [Stopping & Teardown](#stopping--teardown).
 
@@ -61,7 +62,7 @@ The orchestrator tags every failure with the lifecycle phase that raised it ([`l
 | `kind-create` | `KindClusterManager.setup()` | Infra |
 | `image-load` | `KindClusterManager.load_images()` | Infra |
 | `spanner-setup` | `SpannerManager.setup()` | Infra |
-| `helm-deploy` | `HelmDeployer.deploy()`, including the wait for workload readiness | Product |
+| `helm-deploy` | `HelmDeployer.deploy()`, including the JobSet and Kueue controller installation and the wait for workload readiness | Product |
 | `tests` | `PlaywrightTestExecutor.execute()`: virtualenv setup, the Dex token fetch, and the Playwright scenarios | Product |
 
 `runner.py` exits with the outcome of its last attempt (`Outcome` in [`lib/outcome.py`](lib/outcome.py)):
