@@ -29,6 +29,7 @@ var _ io.Closer = (*Listener)(nil)
 
 const (
 	defaultReconnectBackoff = 500 * time.Millisecond
+	defaultReadTimeout      = 10 * time.Second
 )
 
 // StreamSubscriber defines the stream operations required by the pause listener.
@@ -45,6 +46,7 @@ type Params struct {
 	Subscriber           StreamSubscriber
 	PauseStateRepository storage.PauseStateRepository
 	ReconnectBackoff     time.Duration
+	ReadTimeout          time.Duration
 }
 
 // Listener is the background worker subscribing to broadcast updates to maintain the local pause cache.
@@ -53,6 +55,7 @@ type Listener struct {
 	subscriber       StreamSubscriber
 	pauseStateRepo   storage.PauseStateRepository
 	reconnectBackoff time.Duration
+	readTimeout      time.Duration
 	mu               sync.RWMutex
 	startID          string
 }
@@ -73,12 +76,17 @@ func New(p Params) (*Listener, error) {
 	if backoff <= 0 {
 		backoff = defaultReconnectBackoff
 	}
+	readTimeout := p.ReadTimeout
+	if readTimeout <= 0 {
+		readTimeout = defaultReadTimeout
+	}
 
 	return &Listener{
 		cache:            p.Cache,
 		subscriber:       p.Subscriber,
 		pauseStateRepo:   p.PauseStateRepository,
 		reconnectBackoff: backoff,
+		readTimeout:      readTimeout,
 		startID:          "0",
 	}, nil
 }
@@ -156,12 +164,20 @@ func (l *Listener) waitForBackoff(ctx context.Context) {
 	}
 }
 
+// handleBroadcastUpdate refreshes the local cache from storage. A failed or timed-out read is
+// retried until it succeeds or ctx is done: the stream has already moved past this message, so
+// giving up would leave the cache stale until the next broadcast or reconnect.
 func (l *Listener) handleBroadcastUpdate(ctx context.Context, msg string) {
 	logging.Info(ctx, "Received broadcast update notification", "message", msg)
-	state, err := l.pauseStateRepo.Get(ctx)
-	if err != nil {
-		logging.Error(ctx, "Failed to query pause scheduling state on broadcast update", "error", err)
-		return
+	state, err := l.readPauseState(ctx)
+	for err != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		logging.Error(ctx, "Failed to query pause scheduling state on broadcast update, retrying",
+			"error", err, "backoff", l.reconnectBackoff)
+		l.waitForBackoff(ctx)
+		state, err = l.readPauseState(ctx)
 	}
 	l.cache.Update(State{
 		IsPaused:  state.SchedulingPaused,
@@ -169,6 +185,14 @@ func (l *Listener) handleBroadcastUpdate(ctx context.Context, msg string) {
 	})
 	logging.Info(ctx, "Updated local pause state from broadcast notification",
 		"is_paused", state.SchedulingPaused, "updated_at", state.UpdatedAt)
+}
+
+// readPauseState bounds a single pause state read with readTimeout, so a hung call surfaces
+// as a retryable error instead of stalling the caller's retry loop.
+func (l *Listener) readPauseState(ctx context.Context) (*storage.PauseSchedulingState, error) {
+	readCtx, cancel := context.WithTimeout(ctx, l.readTimeout)
+	defer cancel()
+	return l.pauseStateRepo.Get(readCtx)
 }
 
 func (l *Listener) resyncOnReconnect(ctx context.Context) error {
@@ -181,7 +205,7 @@ func (l *Listener) resyncOnReconnect(ctx context.Context) error {
 		latestOffset = "0"
 	}
 
-	state, err := l.pauseStateRepo.Get(ctx)
+	state, err := l.readPauseState(ctx)
 	if err != nil {
 		logging.Error(ctx, "Failed to resync pause state from repository on Redis reconnect", "error", err)
 		return err
