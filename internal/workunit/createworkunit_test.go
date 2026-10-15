@@ -193,7 +193,7 @@ func TestCreateWorkUnit_AutoID(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			wu := spanner.BlankWorkUnitProto(xid, tc.inputID)
-			createdWu, err := workunit.NewUpdater(storageClient).CreateWorkUnit(ctx, wu)
+			createdWu, err := workunit.CreateWorkUnit(ctx, storageClient, wu)
 			if err != nil {
 				t.Fatalf("CreateWorkUnit failed: %v", err)
 			}

@@ -33,9 +33,9 @@ func TestUpdateExperimentStatus_NilExperiment(t *testing.T) {
 
 func TestUpdateExperimentResources_NilExperiment(t *testing.T) {
 	ctx := context.Background()
-	r := &Repository{}
+	r := &TxRepository{}
 
-	err := r.UpdateExperimentResources(ctx, nil, nil)
+	err := r.UpdateExperimentResources(ctx, nil)
 	if err == nil || err.Error() != "experiment must not be nil" {
 		t.Errorf("UpdateExperimentResources(nil exp) returned error: %v, want 'experiment must not be nil'", err)
 	}
@@ -43,24 +43,14 @@ func TestUpdateExperimentResources_NilExperiment(t *testing.T) {
 
 func TestUpdateExperimentResources_NilTransaction(t *testing.T) {
 	ctx := context.Background()
-	r := &Repository{}
+	r := &TxRepository{}
 
 	exp := &essmsgpb.Experiment{
 		Name: "experiments/1001",
 	}
 
-	err := r.UpdateExperimentResources(ctx, nil, exp)
+	err := r.UpdateExperimentResources(ctx, exp)
 	if err == nil || err.Error() != "transaction must not be nil" {
 		t.Errorf("UpdateExperimentResources(nil tx) returned error: %v, want 'transaction must not be nil'", err)
-	}
-}
-
-func TestTxRepository_UpdateExperimentResources_NilExperiment(t *testing.T) {
-	ctx := context.Background()
-	r := &TxRepository{Repository: &Repository{}}
-
-	err := r.UpdateExperimentResources(ctx, nil)
-	if err == nil || err.Error() != "experiment must not be nil" {
-		t.Errorf("TxRepository.UpdateExperimentResources(nil exp) returned error: %v, want 'experiment must not be nil'", err)
 	}
 }

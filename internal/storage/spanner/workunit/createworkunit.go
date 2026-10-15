@@ -24,26 +24,21 @@ import (
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 )
 
-// InsertWorkUnit buffers a mutation to insert a new WorkUnit in Spanner.
-func (r *Repository) InsertWorkUnit(ctx context.Context, tx *spanner.ReadWriteTransaction, wu *essmsgpb.WorkUnit) error {
+// InsertWorkUnit buffers a mutation to insert a new WorkUnit in Spanner using the bound read-write transaction.
+func (r *TxRepository) InsertWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) error {
 	if wu == nil {
 		return fmt.Errorf("work unit must not be nil")
 	}
-	if tx == nil {
+	if r.tx == nil {
 		return fmt.Errorf("transaction must not be nil")
 	}
 	mutation, err := spannerdata.WorkUnitProtoToInsertMutation(wu)
 	if err != nil {
 		return err
 	}
-	if err := tx.BufferWrite([]*spanner.Mutation{mutation}); err != nil {
+	if err := r.tx.BufferWrite([]*spanner.Mutation{mutation}); err != nil {
 		logging.Error(ctx, "failed to buffer write mutation for create work unit", "error", err)
 		return err
 	}
 	return nil
-}
-
-// InsertWorkUnit buffers a mutation to insert a new WorkUnit in Spanner using the bound read-write transaction.
-func (r *TxRepository) InsertWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) error {
-	return r.Repository.InsertWorkUnit(ctx, r.tx, wu)
 }
