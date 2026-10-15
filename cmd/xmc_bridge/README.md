@@ -59,11 +59,22 @@ Configuration can be supplied via environment variables (mounted from `xmc-bridg
 | `--cms-address` / `CMS_ADDRESS` | `"localhost:50051"` | gRPC endpoint address of the Component Manager Service. |
 | `--namespace` / `NAMESPACE` | `"xmc"` | Target Kubernetes namespace to watch and reconcile Component custom resources. |
 | `--chart-path` / `HELM_CHART_PATH` | `""` | Base directory containing per-component Helm charts (`<base>/components/<name>`, `<base>/<name>`, `<base>/<name>.tgz`) or fallback umbrella chart path (defaults to embedded chart when empty). |
-| `--probe-interval` / `PROBE_INTERVAL` | `5s` | Duration interval between dynamic reconciliation sweeps across the namespace. |
-| `--probe-timeout` / `PROBE_TIMEOUT` | `2s` | Timeout duration for individual component reconciliation passes. |
+| `--probe-interval` / `PROBE_INTERVAL` | `5s` | Delay after a successful reconcile pass before the same Component is reconciled again, to observe workload health changes that emit no Component event. |
+| `--probe-timeout` / `PROBE_TIMEOUT` | `2s` | Timeout of one Component's reconcile pass; persisting the pass's status is not bounded by it. |
 | `--kubeconfig` / `KUBECONFIG` | `""` | Optional explicit path to kubeconfig file (defaults to in-cluster or `KUBECONFIG` env). |
 
 On startup, `xmc-bridge` invokes `HydrateFromCluster` before entering the reconciliation loop to restore active 1P component states from the `xmc-component-values` ConfigMap, preventing redundant Helm release revision increments and ensuring post-restart deactivations execute cleanly.
+
+### Reconciliation
+
+`xmc-bridge` runs a controller-runtime manager whose cache watches the Component CRs of `--namespace` only. Reconciles and the dependents watch read Components from that cache, so the API server sees one list and watch per bridge rather than reads per Component. Each Component is reconciled on its own work queue item:
+
+- when its spec (generation), labels or annotations change, or its deletion starts;
+- when a Component it lists in `spec.dependencies` is created, deleted, changes generation, or becomes ready or unready as a dependency. Status writes that keep a dependency's readiness, such as condition timestamp refreshes, do not re-enqueue its dependents;
+- `--probe-interval` after each successful pass;
+- after a failed pass (CMS, actuation or status persistence error), with per-Component exponential backoff from 5s to 300s and ±10% jitter. A successful pass resets the backoff.
+
+A pass always persists its status, also when it fails, so the CR reports the failure while the retry is pending.
 
 ---
 
@@ -76,8 +87,8 @@ componentsDeployment:
   enabled: false                                  # Set to true to deploy xmc-bridge controller
   cmsAddress: "grpc-service:50051"                # In-cluster gRPC endpoint for ESS/CMS
   chartPath: ""                                   # Optional base Helm chart directory or fallback chart path
-  probeInterval: "5s"                             # Namespace reconciliation sweep interval
-  probeTimeout: "2s"                              # Timeout per component reconciliation pass
+  probeInterval: "5s"                             # Per-Component re-probe delay after a successful pass
+  probeTimeout: "2s"                              # Timeout per Component reconcile pass
 
 xmc_bridge_custom_image: ""                       # Optional custom container image override
 ```
