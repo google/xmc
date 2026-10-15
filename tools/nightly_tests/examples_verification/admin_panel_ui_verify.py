@@ -82,6 +82,7 @@ def assert_system_info_and_header(session: Session, timeout_ms: int = 30000) -> 
 
 def _collect_component_statuses(session: Session) -> dict[str, str]:
     """Extracts component name -> status label across all rendered health group cards."""
+    session.page.locator(sel.HEALTH_ITEM_ROW_SEL).first.wait_for(state="visible")
     rows = session.page.locator(sel.HEALTH_ITEM_ROW_SEL)
     statuses: dict[str, str] = {}
     for i in range(rows.count()):
@@ -95,6 +96,7 @@ def _collect_component_statuses(session: Session) -> dict[str, str]:
 
 def _verify_health_groups_and_items(session: Session) -> dict[str, str]:
     """Verifies health group titles and component status rows in XMC Services Health."""
+    session.page.locator(sel.HEALTH_GROUP_TITLE_SEL).first.wait_for(state="visible")
     raw_groups = session.page.locator(sel.HEALTH_GROUP_TITLE_SEL).all_inner_texts()
     groups = [g.strip() for g in raw_groups if g.strip()]
     if missing_groups := [g for g in EXPECTED_HEALTH_GROUPS if not any(g in t for t in groups)]:
@@ -116,7 +118,10 @@ def assert_services_health_and_refresh(session: Session, timeout_ms: int = 30000
         raise UIError(f"Expected overall health badge in {VALID_OVERALL_BADGES}, got '{badge}'.")
     statuses = _verify_health_groups_and_items(session)
     session.page.locator(sel.HEALTH_REFRESH_BTN_SEL).first.click()
-    session.settle_and_wait_fonts()
+    try:
+        session.page.wait_for_selector(f"{sel.HEALTH_REFRESH_BTN_SEL}[disabled]", timeout=1000)
+    except Exception:
+        pass
     session.page.wait_for_selector(sel.HEALTH_REFRESH_READY_SEL, timeout=timeout_ms)
     last_checked = _read_trimmed_text(session, sel.HEALTH_LAST_CHECKED_SEL)
     if not last_checked.startswith("Last checked:"):
@@ -129,31 +134,37 @@ def _verify_config_group_collapse_toggle(session: Session) -> None:
     """Clicks the first configuration group header to collapse and re-expand its rows."""
     first_group = session.page.locator(sel.CONFIG_GROUP_ROW_SEL).first
     first_group.click()
-    session.settle_and_wait_fonts()
+    session.page.locator(f"{sel.CONFIG_GROUP_ROW_SEL}[aria-expanded='false']").first.wait_for(
+        state="visible"
+    )
     icon = (first_group.locator(sel.CONFIG_GROUP_ICON_SEL).first.text_content() or "").strip()
-    if first_group.get_attribute("aria-expanded") != "false" or icon != "+":
-        raise UIError(f"Expected collapsed group header (aria-expanded=false, '+'), got '{icon}'.")
+    if icon != "+":
+        raise UIError(f"Expected collapsed group header icon '+', got '{icon}'.")
     first_group.click()
-    session.settle_and_wait_fonts()
+    session.page.locator(f"{sel.CONFIG_GROUP_ROW_SEL}[aria-expanded='true']").first.wait_for(
+        state="visible"
+    )
     icon = (first_group.locator(sel.CONFIG_GROUP_ICON_SEL).first.text_content() or "").strip()
-    if first_group.get_attribute("aria-expanded") != "true" or icon != "−":
-        raise UIError(f"Expected expanded group header (aria-expanded=true, '−'), got '{icon}'.")
+    if icon != "−":
+        raise UIError(f"Expected expanded group header icon '−', got '{icon}'.")
 
 
 def _verify_config_search_filter(session: Session, sample_key: str, timeout_ms: int) -> None:
     """Exercises positive key filtering, no-match empty state, and filter reset."""
     search_input = session.page.locator(sel.CONFIG_FILTER_INPUT_SEL).first
     search_input.fill(sample_key)
-    session.settle_and_wait_fonts()
-    if session.page.locator(sel.CONFIG_ROW_SEL).filter(has_text=sample_key).count() == 0:
-        raise UIError(f"Expected config row matching '{sample_key}' to remain visible.")
+    try:
+        session.page.locator(sel.CONFIG_ROW_SEL).filter(has_text=sample_key).first.wait_for(
+            state="visible", timeout=timeout_ms
+        )
+    except Exception as e:
+        raise UIError(f"Expected config row matching '{sample_key}' to remain visible.") from e
     search_input.fill(NO_MATCH_SENTINEL)
-    session.settle_and_wait_fonts()
     session.page.wait_for_selector(sel.CONFIG_NO_RESULTS_SEL, timeout=timeout_ms)
     if session.page.locator(sel.CONFIG_ROW_SEL).count() != 0:
         raise UIError("Expected 0 config rows when filtering by no-match sentinel.")
     search_input.fill("")
-    session.settle_and_wait_fonts()
+    session.page.wait_for_selector(sel.CONFIG_NO_RESULTS_SEL, state="hidden", timeout=timeout_ms)
 
 
 def assert_config_entries_and_filter(session: Session, timeout_ms: int = 30000) -> list[str]:
