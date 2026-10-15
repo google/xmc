@@ -168,6 +168,26 @@ func TestShouldSyncToCMS(t *testing.T) {
 			currentGen:   1,
 			wantSync:     true,
 		},
+		{
+			name: "Synced=False recovery triggers sync even when Ready is unchanged within heartbeat",
+			conditions: []Condition{
+				{
+					Type:               ConditionTypeReady,
+					Status:             ConditionStatusTrue,
+					ObservedGeneration: 2,
+					LastTransitionTime: now.Add(-5 * time.Second),
+				},
+				{
+					Type:               ConditionTypeSynced,
+					Status:             ConditionStatusFalse,
+					ObservedGeneration: 2,
+					Reason:             ReasonCMSSyncFailed,
+				},
+			},
+			targetStatus: ConditionStatusTrue,
+			currentGen:   2,
+			wantSync:     true,
+		},
 	}
 
 	for _, tt := range tests {

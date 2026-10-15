@@ -1698,6 +1698,7 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 		wantSynced     string
 		wantSyncedRsn  string
 		wantAccessKept bool
+		wantObsCall    bool
 	}{
 		{
 			name:          "initial reconcile CMS failure sets Ready=Unknown/InitialSyncPending and Synced=False/CMSSyncFailed",
@@ -1781,6 +1782,25 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 			wantSyncedRsn:  ReasonCMSSynced,
 			wantAccessKept: true,
 		},
+		{
+			name: "recovery pass after Synced=False executes UpdateObservedGeneration even when Ready at current generation is recent",
+			cms:  &mockCMS{},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true,
+				ExistingConditions: []Condition{
+					{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 2, Reason: ReasonComponentHealthy, Message: "Ready", LastTransitionTime: time.Now().UTC()},
+					{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 2, Reason: ReasonComponentHealthy, Message: "Ready", LastTransitionTime: time.Now().UTC()},
+					{Type: ConditionTypeSynced, Status: ConditionStatusFalse, ObservedGeneration: 2, Reason: ReasonCMSSyncFailed, Message: "cms down", LastTransitionTime: time.Now().UTC()},
+				},
+			},
+			wantState:      componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantReady:      ConditionStatusTrue,
+			wantReadyRsn:   ReasonComponentHealthy,
+			wantSynced:     ConditionStatusTrue,
+			wantSyncedRsn:  ReasonCMSSynced,
+			wantAccessKept: true,
+			wantObsCall:    true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1808,6 +1828,9 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 				if diff := cmp.Diff(prevAccess, res.Access); diff != "" {
 					t.Errorf("Access mismatch (-want +got):\n%s", diff)
 				}
+			}
+			if tt.wantObsCall && tt.cms.lastObsReq == nil {
+				t.Error("expected UpdateObservedGeneration to be called on CMS recovery, got nil")
 			}
 		})
 	}
@@ -1876,6 +1899,37 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 			wantReadyRsn: ReasonCMSSyncFailed,
 			wantReadyGen: 2,
 			wantAccess:   prevAccess,
+		},
+		{
+			name:   "actuated 3P wrapper without dependencies that became unready on outage pass 1 recovers to Ready=True on outage pass 2",
+			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123"}},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true,
+				ExistingConditions: []Condition{
+					{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: "ResourceNotReady", Message: "pods crashing"},
+					{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: "ResourceNotReady", Message: "pods crashing"},
+					{Type: ConditionTypeSynced, Status: ConditionStatusFalse, ObservedGeneration: 2, Reason: ReasonCMSSyncFailed, Message: "cms down"},
+				},
+			},
+			wantState:    componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantReady:    ConditionStatusTrue,
+			wantReadyRsn: ReasonComponentHealthy,
+			wantReadyGen: 1,
+		},
+		{
+			name:   "never-actuated 3P wrapper gated on DependenciesNotReady is not probed during CMS outage",
+			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123"}},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true,
+				ExistingConditions: []Condition{
+					{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonDependenciesNotReady, Message: "waiting on db"},
+					{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonDependenciesNotReady, Message: "waiting on db"},
+				},
+			},
+			wantState:    componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantReady:    ConditionStatusFalse,
+			wantReadyRsn: ReasonDependenciesNotReady,
+			wantReadyGen: 1,
 		},
 	}
 	for _, tt := range tests {

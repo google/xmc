@@ -324,7 +324,8 @@ func unreadyDependenciesMessage(ctx context.Context, in ReconcileComponentInput)
 }
 
 // isActuated reports whether an enabled component already passed dependency gating: its 1P release
-// is active, it reports DependenciesReady (set only after passing the gate), or its Ready is True.
+// is active, it reports DependenciesReady (set only after passing the gate), or its last Ready
+// condition reflects an actuated workload (wasComponentPreviouslyActive).
 func (r *Reconciler) isActuated(in ReconcileComponentInput) bool {
 	if r.helmManager != nil && in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.helmManager.IsComponentActive(resolveComponentRef(in)) {
 		return true
@@ -332,8 +333,7 @@ func (r *Reconciler) isActuated(in ReconcileComponentInput) bool {
 	if findCondition(in.ExistingConditions, ConditionTypeDependenciesReady) != nil {
 		return true
 	}
-	ready := findCondition(in.ExistingConditions, ConditionTypeReady)
-	return ready != nil && ready.Status == ConditionStatusTrue
+	return wasComponentPreviouslyActive(in.ExistingConditions)
 }
 
 // setDependenciesReadyCondition records the informational DependenciesReady condition for an actuated
