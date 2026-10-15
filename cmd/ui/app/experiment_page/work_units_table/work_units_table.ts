@@ -31,6 +31,7 @@ import { MatTableModule } from '@angular/material/table';
 import { MatTooltip } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
 
+import { FilterMenu } from 'app/common/components/filter_menu/filter_menu';
 import { LoadingBar } from 'app/common/components/loading_bar/loading_bar';
 import { PageSizeSelector } from 'app/common/components/page_size_selector/page_size_selector';
 import { StatusChip, StatusOption } from 'app/common/components/status_chip/status_chip';
@@ -44,6 +45,7 @@ import { ProcessedUrl, processUrls } from 'app/common/url/url_processor';
 import { StructuredMessage, WorkUnit, WorkUnitStatus } from 'app/protos/experiment_state_server';
 import { StatusMessageFilterService } from 'app/service/status_message_filter_service';
 
+import { WorkUnitStateFilter } from './work_unit_state_filter/work_unit_state_filter';
 import { WorkUnitsTableStore } from './work_units_table_store';
 
 enum WorkUnitColumn {
@@ -91,6 +93,8 @@ interface WorkUnitView extends WorkUnit {
     Tag,
     PageSizeSelector,
     MatTooltip,
+    FilterMenu,
+    WorkUnitStateFilter,
     StatusMessageFilter,
     MatSortModule,
   ],
@@ -156,7 +160,9 @@ export class WorkUnitsTable {
     () => this.isFetching() && this.workUnitViews() !== undefined,
   );
 
+  protected readonly selectedStates: Signal<readonly string[]> = this.store.selectedStates;
   protected readonly sort: Signal<Sort> = this.store.sort;
+  protected readonly hasFilter: Signal<boolean> = this.store.hasFilter;
 
   constructor() {
     // The experiment page reuses this component across experiments, so reload whenever the
@@ -176,6 +182,11 @@ export class WorkUnitsTable {
 
   protected onSortChange(sort: Sort) {
     this.store.setSort(sort);
+    this.store.fetchPage();
+  }
+
+  protected onStateFilterChange(states: readonly string[]) {
+    this.store.setSelectedStates(states);
     this.store.fetchPage();
   }
 

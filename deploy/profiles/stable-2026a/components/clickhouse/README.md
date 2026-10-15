@@ -108,6 +108,8 @@ metadata:
     xmc.dev/profile: "stable-2026a"
     app.kubernetes.io/name: "clickhouse"
     app.kubernetes.io/managed-by: "Helm"
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   enabled: true
   componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER

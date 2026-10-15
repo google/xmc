@@ -13,12 +13,8 @@
 // limitations under the License.
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatIconModule } from '@angular/material/icon';
-import { MatMenuModule } from '@angular/material/menu';
-import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { StructuredMessage } from 'app/protos/experiment_state_server';
 import {
@@ -29,7 +25,10 @@ import {
 } from 'app/service/status_message_filter_service';
 
 /**
- * Filter component for status messages.
+ * "Display Status Messages" section of a filter menu: chooses which status messages are shown.
+ *
+ * Meant to be projected into an `xmc-filter-menu`. Changes apply immediately through
+ * `StatusMessageFilterService`.
  */
 @Component({
   selector: 'xmc-status-message-filter',
@@ -37,15 +36,7 @@ import {
   templateUrl: './status_message_filter.ng.html',
   styleUrl: './status_message_filter.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    CommonModule,
-    MatButtonModule,
-    MatIconModule,
-    MatMenuModule,
-    MatTooltipModule,
-    MatCardModule,
-    MatCheckboxModule,
-  ],
+  imports: [CommonModule, MatCardModule, MatCheckboxModule],
 })
 export class StatusMessageFilter {
   protected readonly filterService = inject(StatusMessageFilterService);

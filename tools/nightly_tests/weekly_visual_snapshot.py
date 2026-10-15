@@ -26,20 +26,17 @@ from typing import Any
 
 from absl import flags
 
-from tools.nightly_tests import ui_entities_validator
 from tools.nightly_tests.verification import (
     endpoint_resolution,
     ess_session,
+    ui_entities_validator,
     verifier_cli,
 )
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI")
 flags.DEFINE_string("output_dir", "/tmp/visual-gallery", "Output directory for gallery")
 flags.DEFINE_string("commit_sha", None, "Git commit SHA for manifest metadata")
-flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP OIDC auth token")
-flags.DEFINE_bool("headless", True, "Run Chromium browser in headless mode")
 
 
 @dataclasses.dataclass(frozen=True)

@@ -132,5 +132,11 @@ func TestProdServer_HealthCheckers(t *testing.T) {
 		if sp != nil || xid != nil || tq != nil {
 			t.Errorf("HealthCheckers() on nil ProdServer = (%v, %v, %v), want all nil", sp, xid, tq)
 		}
+		if ps.Authorizer() != nil {
+			t.Errorf("Authorizer() on nil ProdServer = %v, want nil", ps.Authorizer())
+		}
+		if ps.SpannerClient() != nil {
+			t.Errorf("SpannerClient() on nil ProdServer = %v, want nil", ps.SpannerClient())
+		}
 	})
 }

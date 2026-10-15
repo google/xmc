@@ -20,12 +20,12 @@ import os
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from tools.nightly_tests import xmc_entities_validator
 from tools.nightly_tests.verification import (
     endpoint_resolution,
     ess_session,
     verification_report,
     verifier_cli,
+    xmc_entities_validator,
 )
 
 

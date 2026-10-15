@@ -116,9 +116,6 @@ type ExperimentStore interface {
 	// original and updated experiments, so that the caller can choose whether to perform
 	// additional actions based on the original experiment state.
 	UpdateExperiment(ctx context.Context, update *ExperimentUpdate) (UpdatedExperiments, error)
-
-	// UpdateExperimentLaunchState updates the launch state of an experiment.
-	UpdateExperimentLaunchState(ctx context.Context, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) (*essmsgpb.Experiment, error)
 }
 
 // UpdatedExperiments contains the original and updated experiment protos.
@@ -133,9 +130,6 @@ type UpdatedExperiments struct {
 
 // WorkUnitStore defines storage operations for work units and work unit executions.
 type WorkUnitStore interface {
-	// CreateWorkUnit creates a new work unit as a sub-collection of an experiment.
-	CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error)
-
 	// FetchWorkUnit retrieves a work unit by its unique ID.
 	FetchWorkUnit(ctx context.Context, xid int64, wid int64) (*essmsgpb.WorkUnit, error)
 
@@ -320,6 +314,10 @@ type PauseSchedulingStore interface {
 
 // WorkUnitTxRepository defines work unit operations scoped to a read-write transaction.
 type WorkUnitTxRepository interface {
+	// FetchNextWorkUnitID retrieves the next available work unit ID for an experiment within the transaction.
+	FetchNextWorkUnitID(ctx context.Context, xid int64) (int64, error)
+	// InsertWorkUnit inserts a new work unit and its initial execution within the transaction.
+	InsertWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) error
 	// FetchWorkUnit retrieves a work unit by its unique ID within the transaction.
 	FetchWorkUnit(ctx context.Context, xid, wid int64) (*essmsgpb.WorkUnit, error)
 	// FetchUpdatingWorkUnits retrieves a batch of work units for update by their unique IDs within the transaction.
@@ -338,6 +336,8 @@ type ExperimentTxRepository interface {
 	FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error)
 	// UpdateExperimentStatus updates the experiment status within the transaction.
 	UpdateExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error
+	// UpdateExperimentResources updates the experiment resources within the transaction.
+	UpdateExperimentResources(ctx context.Context, exp *essmsgpb.Experiment) error
 }
 
 // XidTxRepository defines XID entry operations scoped to a read-write transaction.

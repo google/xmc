@@ -89,8 +89,23 @@ class TestE2EOrchestrator(unittest.TestCase):
         self.orch.kind.load_images.assert_called_once_with(["img:latest"])
         self.orch.helm.deploy.assert_called_once()
         self.orch.tester.execute.assert_called_once()
+        self.orch.helm.capture_diagnostics.assert_not_called()
         self.orch.kind.teardown.assert_called_once()
         self.orch.spanner.teardown.assert_called_once()
+
+    def test_run_captures_cluster_diagnostics_before_teardown_when_tests_fail(self) -> None:
+        self._mock_components()
+        events: list[str] = []
+        self.orch.helm.capture_diagnostics.side_effect = lambda: events.append("diagnostics")
+        self.orch.kind.teardown.side_effect = lambda: events.append("teardown")
+        self.orch.tester.execute.side_effect = RuntimeError("work unit FAILED")
+
+        with self.assertRaises(PhaseError) as ctx:
+            self.orch.run()
+
+        self.assertIs(ctx.exception.phase, Phase.TESTS)
+        self.assertIn("work unit FAILED", str(ctx.exception.__cause__))
+        self.assertEqual(events, ["diagnostics", "teardown"])
 
     def test_managed_lifecycle_preserves_cluster_when_keep_cluster_set(self):
         self.cfg.keep_cluster = True

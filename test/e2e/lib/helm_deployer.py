@@ -20,11 +20,26 @@ import logging
 import os
 import re
 import shutil
+import subprocess
+from typing import TextIO
 
 from test.e2e.lib.command import run_cmd
 from test.e2e.lib.config import E2EConfig
+from test.e2e.lib.controller_installer import ControllerInstaller
 
 logger = logging.getLogger("xmc_e2e_runner")
+
+# Namespaces whose pods, events, and logs are captured when the deployment or the tests fail.
+_DIAGNOSTIC_NAMESPACES = (
+    "xmc",
+    "dex",
+    "jobset-system",
+    "kueue-system",
+    "cpu-queue",
+    "preemption-queue",
+)
+# Kueue queue of the preemption scenario, relative to the workspace root.
+_PREEMPTION_QUEUE_MANIFEST = os.path.join("test", "e2e", "manifests", "preemption_queue.yaml")
 
 
 class HelmDeployer:
@@ -103,6 +118,12 @@ xid_custom_image: "xid_service_image:latest"
 actuator_custom_image: "actuator_image:latest"
 reconciler_custom_image: "reconciler_image:latest"
 ess_custom_image: "experiment_state_server_image:latest"
+xmc_bridge_custom_image: "xmc_bridge_image:latest"
+
+componentsDeployment:
+  enabled: true
+  probeInterval: "2s"
+  probeTimeout: "2s"
 
 experimentStateServer:
   spannerDatabaseName: "projects/{self.cfg.project_id}/instances/{self.cfg.spanner_instance}/databases/{self.cfg.ess_db}"
@@ -155,73 +176,51 @@ ui:
         with open(self.values_file, "w", encoding="utf-8") as vf:
             vf.write(values_content)
 
-    def _capture_diagnostics(self) -> None:
-        """Captures pod status, cluster events, and container logs upon rollout failure."""
-        logger.error("Deployment rollout failed! Capturing diagnostics...")
+    def capture_diagnostics(self) -> None:
+        """Captures pod status, cluster events, and container logs after a failure.
+
+        Best effort: capture failures are logged and never mask the failure being diagnosed.
+        """
+        logger.error("Capturing cluster diagnostics after failure...")
         diag_file = os.path.join(self.cfg.screenshots_dir, "k8s_diagnostics.log")
-        os.makedirs(self.cfg.screenshots_dir, exist_ok=True)
+        try:
+            os.makedirs(self.cfg.screenshots_dir, exist_ok=True)
+            with open(diag_file, "w", encoding="utf-8") as df:
+                for ns in _DIAGNOSTIC_NAMESPACES:
+                    self._write_namespace_diagnostics(df, ns)
+            logger.info("Diagnostics saved to %s", diag_file)
+        except Exception as e:
+            logger.warning("Failed to capture cluster diagnostics: %s", e)
+
+    def _write_namespace_diagnostics(self, df: TextIO, ns: str) -> None:
+        """Writes the pods, events, and recent container logs of a namespace to df."""
+        df.write(f"=== PODS (ns: {ns}) ===\n")
+        df.write(self._kubectl_report("get", "pods", "-n", ns, "-o", "wide"))
+        df.write(f"=== EVENTS (ns: {ns}) ===\n")
+        df.write(
+            self._kubectl_report("get", "events", "-n", ns, "--sort-by=.metadata.creationTimestamp")
+        )
+        df.write(f"=== ALL LOGS (ns: {ns}) ===\n")
+        pods_list_res = self._run_kubectl_best_effort(
+            "get", "pods", "-n", ns, "-o", "jsonpath={.items[*].metadata.name}"
+        )
+        for pod_name in pods_list_res.stdout.strip().split():
+            df.write(f"--- Logs for pod: {pod_name} ---\n")
+            df.write(
+                self._kubectl_report(
+                    "logs", "-n", ns, pod_name, "--all-containers=true", "--tail=100"
+                )
+            )
+
+    def _kubectl_report(self, *args: str) -> str:
+        """Returns the stdout and stderr of a best-effort kubectl command as a report block."""
+        result = self._run_kubectl_best_effort(*args)
+        return result.stdout + "\n" + result.stderr + "\n"
+
+    def _run_kubectl_best_effort(self, *args: str) -> subprocess.CompletedProcess[str]:
+        """Runs a kubectl command against the KinD cluster without raising on failure."""
         context = f"kind-{self.cfg.cluster_name}"
-        with open(diag_file, "w", encoding="utf-8") as df:
-            for ns in ["xmc", "dex"]:
-                df.write(f"=== PODS (ns: {ns}) ===\n")
-                pods_res = run_cmd(
-                    ["kubectl", "--context", context, "get", "pods", "-n", ns, "-o", "wide"],
-                    check=False,
-                    capture_output=True,
-                )
-                df.write(pods_res.stdout + "\n" + pods_res.stderr + "\n")
-                df.write(f"=== EVENTS (ns: {ns}) ===\n")
-                events_res = run_cmd(
-                    [
-                        "kubectl",
-                        "--context",
-                        context,
-                        "get",
-                        "events",
-                        "-n",
-                        ns,
-                        "--sort-by=.metadata.creationTimestamp",
-                    ],
-                    check=False,
-                    capture_output=True,
-                )
-                df.write(events_res.stdout + "\n" + events_res.stderr + "\n")
-                df.write(f"=== ALL LOGS (ns: {ns}) ===\n")
-                pods_list_res = run_cmd(
-                    [
-                        "kubectl",
-                        "--context",
-                        context,
-                        "get",
-                        "pods",
-                        "-n",
-                        ns,
-                        "-o",
-                        "jsonpath={.items[*].metadata.name}",
-                    ],
-                    check=False,
-                    capture_output=True,
-                )
-                pod_names = pods_list_res.stdout.strip().split()
-                for pod_name in pod_names:
-                    df.write(f"--- Logs for pod: {pod_name} ---\n")
-                    logs_res = run_cmd(
-                        [
-                            "kubectl",
-                            "--context",
-                            context,
-                            "logs",
-                            "-n",
-                            ns,
-                            pod_name,
-                            "--all-containers=true",
-                            "--tail=100",
-                        ],
-                        check=False,
-                        capture_output=True,
-                    )
-                    df.write(logs_res.stdout + "\n" + logs_res.stderr + "\n")
-        logger.info("Diagnostics saved to %s", diag_file)
+        return run_cmd(["kubectl", "--context", context, *args], check=False, capture_output=True)
 
     def _wait_for_rollouts(self) -> None:
         """Waits for deployments across namespaces to complete rollouts."""
@@ -246,6 +245,7 @@ ui:
                 "experiment-state-server-deployment",
                 "actuator-deployment",
                 "reconciler-deployment",
+                "xmc-bridge-deployment",
                 "ui-deployment",
             ]:
                 run_cmd(
@@ -289,72 +289,44 @@ ui:
                 ]
             )
         except Exception:
-            self._capture_diagnostics()
+            self.capture_diagnostics()
             raise
 
-    def _resolve_crds_manifest(self) -> str:
-        """Resolves the Bazel-assembled JobSet and Kueue CRD manifest, building if absent."""
-        manifest_rel = os.path.join("test", "e2e", "manifests", "jobset_kueue_crds.yaml")
-        default_path = os.path.join(self.cfg.workspace_root, "bazel-bin", manifest_rel)
-        if os.path.isfile(default_path) and os.path.getsize(default_path) > 0:
-            return default_path
+    def _install_controllers(self) -> None:
+        """Installs the JobSet and Kueue controllers, capturing diagnostics on failure.
 
-        logger.info("Building //test/e2e/manifests:jobset_kueue_crds with Bazel...")
-        run_cmd(
-            ["bazel", "build", "//test/e2e/manifests:jobset_kueue_crds"],
-            cwd=self.cfg.workspace_root,
-        )
-        if os.path.isfile(default_path) and os.path.getsize(default_path) > 0:
-            return default_path
+        Kueue's webhooks fail closed for pods and deployments in the XMC namespaces, so the
+        controllers must serve before the Helm release creates any workloads.
+        """
+        try:
+            ControllerInstaller(self.cfg).install_all()
+        except Exception:
+            self.capture_diagnostics()
+            raise
 
-        bazel_bin_res = run_cmd(
-            ["bazel", "info", "bazel-bin"],
-            cwd=self.cfg.workspace_root,
-            capture_output=True,
-        )
-        bazel_bin_lines = bazel_bin_res.stdout.strip().splitlines()
-        bazel_bin = bazel_bin_lines[-1] if bazel_bin_lines else ""
-        if not bazel_bin:
-            raise RuntimeError("Failed to resolve bazel-bin directory via 'bazel info bazel-bin'")
-        return os.path.join(bazel_bin, manifest_rel)
+    def _apply_preemption_queue(self) -> None:
+        """Applies the preemption scenario's queue, capturing diagnostics on failure.
 
-    def _apply_crds(self) -> None:
-        """Applies upstream JobSet and Kueue CRDs with server-side apply and waits until established."""
-        crds_manifest = self._resolve_crds_manifest()
+        The queue uses the chart's cpu-flavor. Kueue's webhooks must admit its ClusterQueue.
+        """
+        manifest = os.path.join(self.cfg.workspace_root, _PREEMPTION_QUEUE_MANIFEST)
         context = f"kind-{self.cfg.cluster_name}"
-        logger.info("Applying upstream JobSet and Kueue CRDs from %s...", crds_manifest)
-        run_cmd(
-            [
-                "kubectl",
-                "--context",
-                context,
-                "apply",
-                "--server-side",
-                "--force-conflicts",
-                "-f",
-                crds_manifest,
-            ]
-        )
-        run_cmd(
-            [
-                "kubectl",
-                "--context",
-                context,
-                "wait",
-                "--for=condition=established",
-                "--timeout=60s",
-                "-f",
-                crds_manifest,
-            ]
-        )
+        try:
+            run_cmd(["kubectl", "--context", context, "apply", "-f", manifest])
+        except Exception:
+            self.capture_diagnostics()
+            raise
 
     def deploy(self) -> None:
-        """Copies chart, generates values, applies CRDs, and executes helm upgrade --install."""
+        """Copies chart, generates values, installs controllers, and runs helm upgrade --install.
+
+        The preemption scenario's queue is applied after the release, which creates its flavor.
+        """
         logger.info("=== [Helm] Deploying XMC Stack ===")
         self._prepare_helm_chart()
         self._patch_image_pull_policy()
         self._generate_values_file()
-        self._apply_crds()
+        self._install_controllers()
 
         context = f"kind-{self.cfg.cluster_name}"
         run_cmd(
@@ -372,4 +344,5 @@ ui:
                 self.values_file,
             ]
         )
+        self._apply_preemption_queue()
         self._wait_for_rollouts()

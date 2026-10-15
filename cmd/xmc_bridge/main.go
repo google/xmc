@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -29,10 +30,9 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/bridge"
 
+	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/discovery"
 	memory "k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -40,9 +40,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
-
-var componentGVR = bridge.ComponentGVR
 
 // Config holds runtime configuration options for the xmc-bridge controller.
 type Config struct {
@@ -52,10 +51,14 @@ type Config struct {
 	Namespace string
 	// ReleaseName is the Helm release name for 1P component actuation.
 	ReleaseName string
-	// ProbeInterval is the duration interval between periodic reconciliation sweeps.
+	// ProbeInterval is how long after a successful reconcile pass a Component is re-probed.
 	ProbeInterval time.Duration
-	// ProbeTimeout is the timeout duration for individual component probe and reconciliation passes.
+	// ProbeTimeout is the timeout duration for an individual component health probe.
 	ProbeTimeout time.Duration
+	// ReconcileTimeout bounds one Component reconcile pass, including CMS calls and actuation.
+	ReconcileTimeout time.Duration
+	// MaxConcurrentReconciles is the number of Components reconciled in parallel.
+	MaxConcurrentReconciles int
 	// Kubeconfig is the optional explicit path to a kubeconfig file.
 	Kubeconfig string
 	// ChartPath is the base directory containing per-component Helm charts (e.g. <chart-path>/components/<name>)
@@ -74,27 +77,29 @@ type ComponentCondition = bridge.ComponentCondition
 
 // ParseConfig parses command line flags and environment variables into a validated Config object.
 // args typically receives os.Args[1:]. Default values fall back to corresponding environment
-// variables (CMS_ADDRESS, NAMESPACE, PROBE_INTERVAL, PROBE_TIMEOUT, KUBECONFIG) if flags are omitted.
-// Returns an error if flag parsing fails or if intervals/timeouts are non-positive.
+// variables (CMS_ADDRESS, NAMESPACE, PROBE_INTERVAL, PROBE_TIMEOUT, RECONCILE_TIMEOUT,
+// MAX_CONCURRENT_RECONCILES, KUBECONFIG) if flags are omitted.
+// Returns an error if flag parsing fails, if intervals/timeouts are non-positive or if
+// max-concurrent-reconciles is below 1.
 func ParseConfig(args []string) (*Config, error) {
 	defaultCMS := os.Getenv("CMS_ADDRESS")
 	defaultNS := os.Getenv("NAMESPACE")
 	defaultReleaseName := os.Getenv("HELM_RELEASE_NAME")
-	defaultProbeInterval := 5 * time.Second
-	if val := os.Getenv("PROBE_INTERVAL"); val != "" {
-		d, err := time.ParseDuration(val)
-		if err != nil {
-			return nil, fmt.Errorf("invalid PROBE_INTERVAL %q: %w", val, err)
-		}
-		defaultProbeInterval = d
+	defaultProbeInterval, err := durationFromEnv("PROBE_INTERVAL", 5*time.Second)
+	if err != nil {
+		return nil, err
 	}
-	defaultProbeTimeout := 2 * time.Second
-	if val := os.Getenv("PROBE_TIMEOUT"); val != "" {
-		d, err := time.ParseDuration(val)
-		if err != nil {
-			return nil, fmt.Errorf("invalid PROBE_TIMEOUT %q: %w", val, err)
-		}
-		defaultProbeTimeout = d
+	defaultProbeTimeout, err := durationFromEnv("PROBE_TIMEOUT", 2*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defaultReconcileTimeout, err := durationFromEnv("RECONCILE_TIMEOUT", 60*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defaultMaxConcurrentReconciles, err := intFromEnv("MAX_CONCURRENT_RECONCILES", 1)
+	if err != nil {
+		return nil, err
 	}
 	defaultKubeconfig := os.Getenv("KUBECONFIG")
 	defaultChartPath := os.Getenv("HELM_CHART_PATH")
@@ -103,8 +108,10 @@ func ParseConfig(args []string) (*Config, error) {
 	cmsAddress := fs.String("cms-address", defaultCMS, "CMS gRPC server address")
 	namespace := fs.String("namespace", defaultNS, "Kubernetes namespace to watch for Component resources")
 	releaseName := fs.String("release-name", defaultReleaseName, "Helm release name for 1P component actuation")
-	probeInterval := fs.Duration("probe-interval", defaultProbeInterval, "Interval duration between dynamic reconciliation sweeps")
-	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for individual component probe and reconcile passes")
+	probeInterval := fs.Duration("probe-interval", defaultProbeInterval, "Delay after a successful reconcile pass before a Component is re-probed")
+	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for an individual component health probe")
+	reconcileTimeout := fs.Duration("reconcile-timeout", defaultReconcileTimeout, "Timeout duration for one Component reconcile pass")
+	maxConcurrentReconciles := fs.Int("max-concurrent-reconciles", defaultMaxConcurrentReconciles, "Number of Components reconciled in parallel")
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig file")
 	chartPath := fs.String("chart-path", defaultChartPath, "Base path to per-component Helm charts (<chart-path>/components/<name>) or a fallback Helm chart directory/tarball")
 
@@ -126,15 +133,49 @@ func ParseConfig(args []string) (*Config, error) {
 	if *probeTimeout <= 0 {
 		return nil, fmt.Errorf("probe-timeout must be a positive duration, got %v", *probeTimeout)
 	}
+	if *reconcileTimeout <= 0 {
+		return nil, fmt.Errorf("reconcile-timeout must be a positive duration, got %v", *reconcileTimeout)
+	}
+	if *maxConcurrentReconciles < 1 {
+		return nil, fmt.Errorf("max-concurrent-reconciles must be at least 1, got %d", *maxConcurrentReconciles)
+	}
 	return &Config{
-		CMSAddress:    *cmsAddress,
-		Namespace:     *namespace,
-		ReleaseName:   *releaseName,
-		ProbeInterval: *probeInterval,
-		ProbeTimeout:  *probeTimeout,
-		Kubeconfig:    *kubeconfig,
-		ChartPath:     *chartPath,
+		CMSAddress:              *cmsAddress,
+		Namespace:               *namespace,
+		ReleaseName:             *releaseName,
+		ProbeInterval:           *probeInterval,
+		ProbeTimeout:            *probeTimeout,
+		ReconcileTimeout:        *reconcileTimeout,
+		MaxConcurrentReconciles: *maxConcurrentReconciles,
+		Kubeconfig:              *kubeconfig,
+		ChartPath:               *chartPath,
 	}, nil
+}
+
+// durationFromEnv returns the duration in the environment variable name, or def when it is unset.
+func durationFromEnv(name string, def time.Duration) (time.Duration, error) {
+	val := os.Getenv(name)
+	if val == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q: %w", name, val, err)
+	}
+	return d, nil
+}
+
+// intFromEnv returns the integer in the environment variable name, or def when it is unset.
+func intFromEnv(name string, def int) (int, error) {
+	val := os.Getenv(name)
+	if val == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q: %w", name, val, err)
+	}
+	return n, nil
 }
 
 // BuildKubeConfig constructs a Kubernetes *rest.Config using the following resolution order:
@@ -154,145 +195,6 @@ func BuildKubeConfig(kubeconfigPath string) (*rest.Config, error) {
 	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides).ClientConfig()
 }
 
-// Controller orchestrates dynamic polling and reconciliation sweeps across Kubernetes
-// Component custom resources (xmc.dev/v1alpha1) within a specific namespace.
-type Controller struct {
-	dynamicClient dynamic.Interface
-	reconciler    *bridge.Reconciler
-	namespace     string
-	probeInterval time.Duration
-	probeTimeout  time.Duration
-}
-
-// NewController creates a new Controller instance.
-// client is the dynamic Kubernetes client used to list and update Component custom resources.
-// r is the core bridge Reconciler handling state synchronization and lifecycle logic.
-// ns is the target namespace to reconcile.
-// interval is the duration between periodic namespace reconciliation sweeps.
-// timeout is the maximum duration allocated per component reconciliation pass.
-func NewController(client dynamic.Interface, r *bridge.Reconciler, ns string, interval time.Duration, timeout time.Duration) *Controller {
-	return &Controller{
-		dynamicClient: client,
-		reconciler:    r,
-		namespace:     ns,
-		probeInterval: interval,
-		probeTimeout:  timeout,
-	}
-}
-
-// Run executes an immediate initial reconciliation pass and then periodically triggers
-// reconciliation sweeps on every ticker tick until ctx is cancelled.
-func (c *Controller) Run(ctx context.Context) error {
-	logging.Info(ctx, "Starting XMC Bridge Controller", "namespace", c.namespace, "probeInterval", c.probeInterval, "probeTimeout", c.probeTimeout)
-	ticker := time.NewTicker(c.probeInterval)
-	defer ticker.Stop()
-
-	if err := c.RunReconcilePass(ctx); err != nil {
-		logging.Warn(ctx, "Initial reconciliation sweep failed", "error", err)
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			logging.Info(ctx, "Bridge Controller context cancelled, stopping run loop")
-			return ctx.Err()
-		case <-ticker.C:
-			logging.Debug(ctx, "Triggering periodic reconciliation sweep", "namespace", c.namespace)
-			if err := c.RunReconcilePass(ctx); err != nil {
-				logging.Warn(ctx, "Periodic reconciliation sweep failed", "error", err)
-			}
-		}
-	}
-}
-
-// RunReconcilePass lists all Component resources in the configured namespace and executes
-// reconciliation on each item sequentially, checking context cancellation between iterations.
-// Activation is gated on a dependency readiness snapshot taken from the same list.
-func (c *Controller) RunReconcilePass(ctx context.Context) error {
-	list, err := c.dynamicClient.Resource(componentGVR).Namespace(c.namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to list Component resources: %w", err)
-	}
-	logging.Debug(ctx, "Reconciliation pass found components", "namespace", c.namespace, "count", len(list.Items))
-	deps := bridge.NewDependencySnapshot(list.Items)
-	for i := range list.Items {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		c.reconcileItem(ctx, &list.Items[i], deps)
-	}
-	return nil
-}
-
-// reconcileItem performs a bounded reconciliation pass on a single unstructured Component resource.
-// It establishes a per-item timeout context (probeTimeout), calls Reconciler.ReconcileWithDependencies, and
-// updates the custom resource's .status subresource with the resulting state and conditions.
-func (c *Controller) reconcileItem(ctx context.Context, item *unstructured.Unstructured, deps bridge.DependencyReadiness) {
-	name := item.GetName()
-	reconcileCtx, cancel := context.WithTimeout(ctx, c.probeTimeout)
-	defer cancel()
-
-	res, err := c.reconciler.ReconcileWithDependencies(reconcileCtx, item, deps)
-	if err != nil {
-		logging.Error(ctx, "Error reconciling component", "name", name, "error", err)
-		c.handleReconcileFailure(ctx, item, res)
-		return
-	}
-	if res == nil {
-		logging.Error(ctx, "Reconciler returned nil result without error", "name", name)
-		return
-	}
-	updatedItem, err := c.syncFinalizers(ctx, item, res)
-	if err != nil {
-		// If syncFinalizers fails (e.g. API conflict or network blip), log and return.
-		// Level-triggered reconciliation will automatically pick up the custom resource
-		// on the subsequent pass: if detaching finalizer, the CR remains present in K8s
-		// and deletion will be retried idempotently without leaking resources.
-		logging.Error(ctx, "Error syncing finalizers for component", "name", name, "error", err)
-		return
-	}
-	if res.RemoveFinalizer {
-		return
-	}
-	if err := c.syncStatus(ctx, updatedItem, res); err != nil {
-		logging.Error(ctx, "Error syncing status for component", "name", name, "error", err)
-	}
-	logging.Debug(ctx, "Item reconciliation pass finished", "name", name, "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
-}
-
-// handleReconcileFailure handles status and finalizer synchronization when Reconcile returns an error
-// but produced a non-nil ReconcileResult (e.g. Setting Degraded=True status or persisting finalizers).
-func (c *Controller) handleReconcileFailure(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) {
-	if res == nil {
-		return
-	}
-	name := item.GetName()
-	updatedItem, syncErr := c.syncFinalizers(ctx, item, res)
-	if syncErr != nil {
-		logging.Error(ctx, "Error syncing finalizers after reconciliation failure", "name", name, "error", syncErr)
-		return
-	}
-	if res.RemoveFinalizer {
-		return
-	}
-	if err := c.syncStatus(ctx, updatedItem, res); err != nil {
-		logging.Error(ctx, "Error syncing status after reconciliation failure", "name", name, "error", err)
-	}
-}
-
-// syncFinalizers attaches the deletion protection finalizer if res.AddFinalizer is true,
-// or removes it if res.RemoveFinalizer is true, updating the custom resource in Kubernetes.
-// If the Kubernetes API update fails, the error is returned so that the controller can retry
-// on the next pass while ensuring the finalizer remains in place to prevent premature deletion.
-func (c *Controller) syncFinalizers(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) (*unstructured.Unstructured, error) {
-	return bridge.SyncComponentFinalizers(ctx, c.dynamicClient, c.namespace, item, res)
-}
-
-// syncStatus serializes the ReconcileResult into the .status map of item and persists it
-// via Kubernetes Server-Side Apply (SSA) on the /status subresource with fieldManager "xmc-bridge".
-func (c *Controller) syncStatus(ctx context.Context, item *unstructured.Unstructured, res *bridge.ReconcileResult) error {
-	return bridge.ApplyComponentStatusSSA(ctx, c.dynamicClient, c.namespace, item, res)
-}
-
 // BuildStatus converts a ReconcileResult into a typed ComponentStatus matching the Component CRD status schema,
 // including observedGeneration, state string, access envVars (if present), and standard RFC3339 condition list.
 func BuildStatus(res *bridge.ReconcileResult) ComponentStatus {
@@ -304,17 +206,21 @@ func BuildStatusMap(res *bridge.ReconcileResult) map[string]any {
 	return bridge.BuildStatusMap(res)
 }
 
-// RunBridge initializes all dependencies (CMS gRPC client, Kubernetes dynamic client,
-// WorkloadManager, and Reconciler) and starts the Controller main loop.
+// RunBridge initializes all dependencies (CMS gRPC client, Kubernetes clients, WorkloadManager and
+// Reconciler) and runs the Component controller until ctx is cancelled.
 func RunBridge(ctx context.Context, cfg *Config) error {
 	logging.Info(ctx, "Connecting to Component Manager Service (CMS)", "address", cfg.CMSAddress)
-	conn, err := grpc.NewClient(cfg.CMSAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(
+		cfg.CMSAddress,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithPerRPCCredentials(bridge.NewCMSTokenCredentials(ctx)),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to connect to CMS at %q: %w", cfg.CMSAddress, err)
 	}
 	defer conn.Close()
 
-	logging.Info(ctx, "Configuring Kubernetes dynamic client", "kubeconfig", cfg.Kubeconfig)
+	logging.Info(ctx, "Configuring Kubernetes clients", "kubeconfig", cfg.Kubeconfig)
 	k8sCfg, err := BuildKubeConfig(cfg.Kubeconfig)
 	if err != nil {
 		return fmt.Errorf("failed to build Kubernetes client config: %w", err)
@@ -352,7 +258,20 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}
-	return NewController(dynamicClient, reconciler, cfg.Namespace, cfg.ProbeInterval, cfg.ProbeTimeout).Run(ctx)
+	mgr, err := ctrl.NewManager(k8sCfg, bridge.ComponentManagerOptions(cfg.Namespace))
+	if err != nil {
+		return fmt.Errorf("failed to create controller manager: %w", err)
+	}
+	controller := bridge.NewComponentController(mgr.GetClient(), dynamicClient, reconciler, bridge.ComponentControllerOptions{
+		ProbeInterval:           cfg.ProbeInterval,
+		ReconcileTimeout:        cfg.ReconcileTimeout,
+		MaxConcurrentReconciles: cfg.MaxConcurrentReconciles,
+	})
+	if err := controller.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to set up Component controller: %w", err)
+	}
+	logging.Info(ctx, "Starting XMC Bridge Controller", "namespace", cfg.Namespace, "probeInterval", cfg.ProbeInterval, "probeTimeout", cfg.ProbeTimeout, "reconcileTimeout", cfg.ReconcileTimeout, "maxConcurrentReconciles", cfg.MaxConcurrentReconciles)
+	return mgr.Start(ctx)
 }
 
 func main() {
@@ -361,6 +280,7 @@ func main() {
 	defer cancel()
 
 	logger := logging.NewGCPLogger(slog.LevelInfo, "")
+	ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))
 	ctx = logging.WithLogger(ctx, logger)
 
 	if err != nil {

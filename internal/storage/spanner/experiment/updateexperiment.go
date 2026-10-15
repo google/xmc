@@ -115,12 +115,12 @@ func (r *TxRepository) UpdateExperimentStatus(ctx context.Context, exp *essmsgpb
 	return r.tx.BufferWrite([]*spanner.Mutation{expMutation})
 }
 
-// UpdateExperimentResources buffers a mutation to update an Experiment's resources in Spanner.
-func (r *Repository) UpdateExperimentResources(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error {
+// UpdateExperimentResources buffers a mutation to update an Experiment's resources in Spanner using the bound read-write transaction.
+func (r *TxRepository) UpdateExperimentResources(ctx context.Context, exp *essmsgpb.Experiment) error {
 	if exp == nil {
 		return fmt.Errorf("experiment must not be nil")
 	}
-	if tx == nil {
+	if r.tx == nil {
 		return fmt.Errorf("transaction must not be nil")
 	}
 	expResourcesMutation, err := spannerdata.ExperimentProtoToResourcesUpdateMutation(exp)
@@ -128,5 +128,5 @@ func (r *Repository) UpdateExperimentResources(ctx context.Context, tx *spanner.
 		logging.Error(ctx, "failed to create resources mutation for experiment", "experiment", exp, "error", err)
 		return err
 	}
-	return tx.BufferWrite([]*spanner.Mutation{expResourcesMutation})
+	return r.tx.BufferWrite([]*spanner.Mutation{expResourcesMutation})
 }

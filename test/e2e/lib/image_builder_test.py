@@ -34,7 +34,7 @@ class TestImageBuilder(unittest.TestCase):
             screenshots_dir="/screenshots",
         )
 
-    def test_build_all_with_skip_build(self):
+    def test_build_all_with_skip_build(self) -> None:
         cfg = E2EConfig(
             project_id="test-proj",
             spanner_instance="test-inst",
@@ -46,12 +46,15 @@ class TestImageBuilder(unittest.TestCase):
         )
         builder = ImageBuilder(cfg)
         images = builder.build_all()
-        self.assertEqual(len(images), 5)
+        self.assertEqual(len(images), 6)
         self.assertIn("experiment_state_server_image:latest", images)
+        self.assertIn("xmc_bridge_image:latest", images)
 
     @patch.object(ImageBuilder, "_maybe_precompile_ui")
     @patch("test.e2e.lib.image_builder.run_cmd")
-    def test_build_all_executes_parallel_bazel_and_docker_load(self, mock_run, mock_precompile):
+    def test_build_all_executes_parallel_bazel_and_docker_load(
+        self, mock_run, mock_precompile
+    ) -> None:
         mock_run.return_value.stdout = "/workspace/bazel-bin"
         cfg = E2EConfig(
             project_id="test-proj",
@@ -73,8 +76,10 @@ class TestImageBuilder(unittest.TestCase):
             ["bazel", "build", *expected_targets],
             cwd="/workspace",
         )
-        self.assertEqual(len(images), 5)
-        self.assertEqual(mock_run.call_count, 7)  # 1 bazel build + 1 bazel info + 5 docker load
+        self.assertIn("//test/e2e/manifests:jobset_manifests", expected_targets)
+        self.assertIn("//test/e2e/manifests:kueue_manifests", expected_targets)
+        self.assertEqual(len(images), 6)
+        self.assertEqual(mock_run.call_count, 8)  # 1 bazel build + 1 bazel info + 6 docker load
 
     @patch("shutil.which", return_value="/usr/bin/node")
     @patch("os.path.isfile", return_value=False)

@@ -403,7 +403,8 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				CreateWorkUnitErr: fmt.Errorf("Storage create work unit failed"),
+				Experiment:        &msgpb.Experiment{Name: "experiments/123"},
+				InsertWorkUnitErr: fmt.Errorf("Storage create work unit failed"),
 			},
 			wantErr: grpcerr.ErrInternal,
 		},
@@ -413,7 +414,8 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				CreateWorkUnitErr: grpcerr.ErrAlreadyExists,
+				Experiment:        &msgpb.Experiment{Name: "experiments/123"},
+				InsertWorkUnitErr: grpcerr.ErrAlreadyExists,
 			},
 			wantErr: grpcerr.ErrAlreadyExists,
 		},
@@ -423,6 +425,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
+				Experiment:              &msgpb.Experiment{Name: "experiments/123"},
 				AddWorkUnitOperationErr: fmt.Errorf("Storage add operation failed"),
 			},
 			wantErr: grpcerr.ErrInternal,
@@ -479,6 +482,9 @@ func TestCreateWorkUnit_TaskEnqueueFails(t *testing.T) {
 	server := newTestServer(t,
 		withConfig(cfg),
 		withXidClient(xidClient),
+		withStorage(&storage.MockStorage{
+			Experiment: &msgpb.Experiment{Name: "experiments/123"},
+		}),
 		withWorkUnitActuator(taskQueueClient),
 	)
 

@@ -130,8 +130,8 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 // component needs no dependencies. Deactivation then proceeds against any existing CMS record, and
 // a missing one (NotFound) is tolerated by prepareDeactivation and the final observed-state update.
 //
-// Intent is written on every pass, as on the enabled path. The resulting CMS generation bump for
-// unchanged intent comes from the store's SetComponentIntent and is addressed at the store level.
+// Intent is written on every pass, as on the enabled path; CMS treats an unchanged intent at the
+// same generation as a no-op.
 func (r *Reconciler) applyDisabledIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
 	err := r.applyIntent(ctx, in, canonicalName, res)
 	notRegistered := dependencyNotRegisteredMessage(err)

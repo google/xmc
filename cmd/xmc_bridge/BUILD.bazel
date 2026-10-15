@@ -19,17 +19,14 @@ package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "xmc_bridge_lib",
-    srcs = [
-        "main.go",
-    ],
+    srcs = ["main.go"],
     importpath = "xmanager_cloud/cmd/xmc_bridge",
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/logging",
         "//pkg/components/bridge",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@com_github_go_logr_logr//:logr",
         "@io_k8s_client_go//discovery",
         "@io_k8s_client_go//discovery/cached/memory",
         "@io_k8s_client_go//dynamic",
@@ -37,6 +34,7 @@ go_library(
         "@io_k8s_client_go//rest",
         "@io_k8s_client_go//restmapper",
         "@io_k8s_client_go//tools/clientcmd",
+        "@io_k8s_sigs_controller_runtime//:controller-runtime",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials/insecure",
     ],
@@ -57,19 +55,10 @@ oci_image_for_service(
 go_test(
     name = "xmc_bridge_test",
     size = "small",
-    srcs = [
-        "main_test.go",
-    ],
+    srcs = ["main_test.go"],
     embed = [":xmc_bridge_lib"],
     deps = [
         "//api/protos/components/v1alpha1",
         "//pkg/components/bridge",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
-        "@io_k8s_apimachinery//pkg/runtime",
-        "@io_k8s_apimachinery//pkg/runtime/schema",
-        "@io_k8s_client_go//dynamic/fake",
-        "@io_k8s_client_go//testing",
-        "@org_golang_google_grpc//:grpc",
     ],
 )

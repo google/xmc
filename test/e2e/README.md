@@ -44,8 +44,9 @@ graph TD
    - `KinD.load_images()` loads all built container images into KinD nodes in a single batch.
    - `SpannerManager.setup()` creates the `e2e-ess` and `e2e-xid` databases concurrently and applies DDL schemas.
 3. **Phase 3: Deployment & Scenario Execution**:
-   - `HelmDeployer.deploy()` applies the upstream JobSet and Kueue CRDs (`//test/e2e/manifests:jobset_kueue_crds`) with server-side apply, installs the XMC Helm chart (including dev Kueue queue and `WorkloadPriorityClass` manifests) into the cluster, and waits for workload readiness.
-   - `TestExecutor.run_tests()` invokes the Playwright scenario suite ([test_e2e_flow.py](test_e2e_flow.py)) in an isolated virtualenv, verifying authentication/authorization boundaries, experiment/artifact creation, and work unit actuation into a schema-validated `JobSet` custom resource in `cpu-queue` ([`lib/jobset_verifier.py`](lib/jobset_verifier.py)).
+   - `HelmDeployer.deploy()` first installs the pinned upstream JobSet v0.12.0 and Kueue v0.18.2 controllers from `//test/e2e/manifests:jobset_manifests` and `//test/e2e/manifests:kueue_manifests` ([`lib/controller_installer.py`](lib/controller_installer.py)). It waits until their CRDs are established, their deployments are rolled out, the Kueue visibility `APIService`s are available, and both controllers have injected their webhook CA bundles: Kueue's webhooks fail closed, so they must serve before the chart creates any pods. It then installs the XMC Helm chart (including dev Kueue queue and `WorkloadPriorityClass` manifests) into the cluster, applies the `preemption-queue` Kueue queue ([`manifests/preemption_queue.yaml`](manifests/preemption_queue.yaml)), and waits for workload readiness.
+   - `TestExecutor.run_tests()` invokes the Playwright scenario suite ([test_e2e_flow.py](test_e2e_flow.py)) in an isolated virtualenv, verifying authentication/authorization boundaries, experiment/artifact creation, and work unit execution in `cpu-queue`. A work unit running `echo hello` must produce a `JobSet` that satisfies the Non-Restarting JobSets Contract, whose Kueue `Workload` is admitted ([`lib/jobset_verifier.py`](lib/jobset_verifier.py)), and must reach `COMPLETED`; a work unit that exits with code 50 must reach `FAILED`. Work unit states are read through the REST API ([`lib/work_unit_state.py`](lib/work_unit_state.py)). Stopping a running work unit must make it `STOPPED` and delete its `JobSet`, and restarting it must create a `JobSet` for its second execution. In `preemption-queue`, whose quota fits only one of its 400m work units, a `HIGH` priority work unit must preempt a `LOW` priority one and reach `COMPLETED`. Finally, the experiment page must show the `Completed`, `Failed`, or `Stopped` status chip of each of these work units.
+   - If the deployment or the scenarios fail, `HelmDeployer.capture_diagnostics()` writes the pods, events, and recent container logs of the `xmc`, `dex`, `jobset-system`, `kueue-system`, `cpu-queue`, and `preemption-queue` namespaces to `k8s_diagnostics.log` in the screenshots directory before teardown.
 4. **Teardown (`managed_lifecycle`)**:
    - Handled via a Python context manager that drops the ephemeral Spanner databases and deletes the KinD cluster after a success, a failure, or a stop. Teardown is best effort; see [Stopping & Teardown](#stopping--teardown).
 
@@ -61,7 +62,7 @@ The orchestrator tags every failure with the lifecycle phase that raised it ([`l
 | `kind-create` | `KindClusterManager.setup()` | Infra |
 | `image-load` | `KindClusterManager.load_images()` | Infra |
 | `spanner-setup` | `SpannerManager.setup()` | Infra |
-| `helm-deploy` | `HelmDeployer.deploy()`, including the wait for workload readiness | Product |
+| `helm-deploy` | `HelmDeployer.deploy()`, including the JobSet and Kueue controller installation and the wait for workload readiness | Product |
 | `tests` | `PlaywrightTestExecutor.execute()`: virtualenv setup, the Dex token fetch, and the Playwright scenarios | Product |
 
 `runner.py` exits with the outcome of its last attempt (`Outcome` in [`lib/outcome.py`](lib/outcome.py)):
@@ -175,7 +176,10 @@ In addition to the full-platform Playwright orchestrator, `test/e2e` includes st
 
 - **ClickHouse 3P E2E Suite** ([clickhouse_3p_test.go](clickhouse_3p_test.go)): Deploys `clickhouse/clickhouse-server:24.3-alpine` inside KinD and validates both operator-managed `wrapperRef` (`ClickHouseInstallation`) discovery and `stable-2026a` operator-less active probing, `componentconfig.ResolveOptions`, and live SQL execution (`CREATE TABLE`, `INSERT`, `SELECT`) from a mock ML workload Pod injected with `.status.access.envVars`.
 - **Redpanda 3P E2E Suite** ([redpanda_3p_test.go](redpanda_3p_test.go)): Deploys `docker.redpanda.com/redpandadata/redpanda:v24.1.1` inside KinD and validates both operator-managed `wrapperRef` (`Cluster`) discovery and `stable-2026a` operator-less active probing, `ingestiongateway.ResolveRedpandaComponentConfig`, and live Kafka topic creation, message production, and consumption (`rpk topic create/produce/consume`) from a mock ML workload Pod injected with `.status.access.envVars`.
-- **KinD 3P Harness** ([kind_3p_harness_test.go](kind_3p_harness_test.go)): Provisions an isolated ephemeral KinD cluster (or attaches to `KIND_CLUSTER_NAME` when set), preloads container images, installs [crd.yaml](../../deploy/helm/templates/components/crd.yaml), bridges cluster-local service probes over KinD `NodePort`s, and drives in-process CMS and `xmc-bridge` reconciliation.
+- **KinD 3P Harness** ([kind_3p_harness_test.go](kind_3p_harness_test.go)): Provisions an isolated ephemeral KinD cluster (or attaches to `KIND_CLUSTER_NAME` when set), preloads container images, installs [crd.yaml](../../deploy/helm/templates/components/crd.yaml), bridges cluster-local service probes over KinD `NodePort`s, and drives in-process CMS and `xmc-bridge` reconciliation. Each reconcile pass persists finalizer and status changes with `bridge.PersistReconcileResult`, the same function `cmd/xmc_bridge` uses; namespace cleanup releases the `finalizers.xmc.dev/deletion-protection` finalizer so reused clusters do not keep namespaces in `Terminating`.
+
+> [!NOTE]
+> The harness server-side applies the CRD with the `e2e-harness` field manager and `force`, so on a cluster reused through `KIND_CLUSTER_NAME` it takes ownership of it. The Go KinD targets are tagged `manual` and do not run in CI yet.
 
 ### Running the 3P Component E2E Suites
 
@@ -189,6 +193,23 @@ bazel test //test/e2e:redpanda_3p_test --test_output=streamed
 
 # Optionally reuse an existing KinD cluster:
 bazel test //test/e2e:clickhouse_3p_test //test/e2e:redpanda_3p_test \
+  --test_env=KIND_CLUSTER_NAME=xmc-dev --test_output=streamed
+```
+
+---
+
+## Component Lifecycle KinD E2E Suite (`components_lifecycle_e2e_test.go`)
+
+`TestComponentsLifecycle` reuses the KinD harness to verify `Component` lifecycle control-plane behavior. Components are 1P without a Helm manager, so no workloads run; each subtest asserts CMS state, CR status conditions, and finalizers. CRD schema, CEL, and deletion `ValidatingAdmissionPolicy` admission are covered by the hermetic `envtest` suite in [pkg/components/bridge](../../pkg/components/bridge/README.md) (`components_admission_test.go`), so this suite does not install the policy:
+
+- **BlockedDeactivation**: Both components first reach CMS `COMPONENT_STATE_ENABLED` at their CR generation. Disabling a component that an enabled component depends on is rejected by CMS `PrepareDeactivation`. The bridge reports `DeactivationBlocked=True` naming the dependent, CMS keeps the component in `COMPONENT_STATE_PENDING_RECONCILIATION` at its CR generation, and the CR keeps its finalizer. After the dependent is disabled, both components reach `COMPONENT_STATE_DISABLED` and the blocked condition clears. Every CMS check also asserts that repeated bridge passes did not bump the CMS generation past the CR generation. The bridge re-checks a blocked deactivation at most every 30s, so this subtest takes about 30s.
+- **FinalizerCleanup**: The bridge attaches `finalizers.xmc.dev/deletion-protection`. After `DELETE` (with `spec.deletionProtection: false`), the finalizer holds the CR until CMS `ExecuteDeletion` runs. The bridge then removes the finalizer and the CR is gone.
+
+```bash
+bazel test //test/e2e:components_lifecycle_test --test_output=streamed
+
+# Optionally reuse an existing KinD cluster:
+bazel test //test/e2e:components_lifecycle_test \
   --test_env=KIND_CLUSTER_NAME=xmc-dev --test_output=streamed
 ```
 

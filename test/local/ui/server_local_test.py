@@ -358,7 +358,7 @@ class SPAHandlerLocalTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
                     ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
+                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": true};'
                 ),
             },
             {
@@ -367,7 +367,7 @@ class SPAHandlerLocalTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
                     ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
-                    ' true, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
+                    ' true, "isNonProdAuth": false, "pauseSchedulingEnabled": true};'
                 ),
             },
             {
@@ -376,7 +376,7 @@ class SPAHandlerLocalTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
                     ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
-                    ' false, "isNonProdAuth": true, "pauseSchedulingEnabled": false};'
+                    ' false, "isNonProdAuth": true, "pauseSchedulingEnabled": true};'
                 ),
             },
             {
@@ -386,6 +386,15 @@ class SPAHandlerLocalTest(unittest.TestCase):
                     'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
                     ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
                     ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": true};'
+                ),
+            },
+            {
+                "testcase_name": "pause_scheduling_enabled_false",
+                "environ": {"XMC_PAUSE_SCHEDULING_ENABLED": "false"},
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"adminPanelEnabled": true,'
+                    ' "resourceDashboardEnabled": true, "performanceDashboardEnabled":'
+                    ' false, "isNonProdAuth": false, "pauseSchedulingEnabled": false};'
                 ),
             },
         ]

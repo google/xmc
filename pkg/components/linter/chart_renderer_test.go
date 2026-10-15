@@ -96,6 +96,11 @@ upper: "MIXEDCASE"`,
 
 func boolPtr(v bool) *bool { return &v }
 
+// profileCRAnnotations returns the annotations every stable-2026a Component CR renders with.
+func profileCRAnnotations() map[string]string {
+	return map[string]string{"argocd.argoproj.io/sync-options": "SkipDryRunOnMissingResource=true"}
+}
+
 func verifyBlueprintChart(t *testing.T, chartDir, crdPath string, want linter.ComponentManifest) {
 	t.Helper()
 	res, err := linter.NewLinter(nil).ValidateDirectory(chartDir)
@@ -217,6 +222,7 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 						"app.kubernetes.io/name":       "redpanda",
 						"app.kubernetes.io/managed-by": "Helm",
 					},
+					Annotations: profileCRAnnotations(),
 				},
 				Spec: linter.ComponentManifestSpec{
 					Enabled:            boolPtr(false),
@@ -249,6 +255,7 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 						"app.kubernetes.io/name":       "clickhouse",
 						"app.kubernetes.io/managed-by": "Helm",
 					},
+					Annotations: profileCRAnnotations(),
 				},
 				Spec: linter.ComponentManifestSpec{
 					Enabled:            boolPtr(false),
@@ -300,6 +307,7 @@ parameters:
 						"app.kubernetes.io/name":       "clickhouse",
 						"app.kubernetes.io/managed-by": "Helm",
 					},
+					Annotations: profileCRAnnotations(),
 				},
 				Spec: linter.ComponentManifestSpec{
 					Enabled:            boolPtr(true),
@@ -518,6 +526,7 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 				"app.kubernetes.io/name":       "ingestion-gateway",
 				"app.kubernetes.io/managed-by": "Helm",
 			},
+			Annotations: profileCRAnnotations(),
 		},
 		Spec: linter.ComponentManifestSpec{
 			Enabled:            &enabled,
@@ -654,6 +663,25 @@ func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 		for _, f := range []string{"ingestion-gateway/deployment.yaml", "ingestion-gateway/service.yaml", "ingestion-gateway/hpa.yaml", "network-policies.yaml"} {
 			if got := strings.Contains(rendered["xmanager-cloud/templates/"+f], "kind:"); got != tt.wantGateway {
 				t.Errorf("%s: umbrella %s rendered = %v, want %v", tt.name, f, got, tt.wantGateway)
+			}
+		}
+		verifyUmbrellaKeptResources(t, tt.name, rendered)
+	}
+}
+
+// verifyUmbrellaKeptResources asserts the full Helm engine renders the Component CRD and the
+// deletion admission policy with their keep policy, whatever componentsDeployment.enabled is set to.
+func verifyUmbrellaKeptResources(t *testing.T, name string, rendered map[string]string) {
+	t.Helper()
+	wantByFile := map[string][]string{
+		"components/crd.yaml":          {"kind: CustomResourceDefinition"},
+		"components/deletion-vap.yaml": {"kind: ValidatingAdmissionPolicy\n", "kind: ValidatingAdmissionPolicyBinding"},
+	}
+	for f, kinds := range wantByFile {
+		manifest := rendered["xmanager-cloud/templates/"+f]
+		for _, want := range append(kinds, "helm.sh/resource-policy: keep") {
+			if !strings.Contains(manifest, want) {
+				t.Errorf("%s: umbrella %s missing %q", name, f, want)
 			}
 		}
 	}

@@ -22,13 +22,37 @@ exports_files([
     "endpoint_resolution_test.py",
     "ess_session.py",
     "ess_session_test.py",
+    "ui_css_selectors.py",
+    "ui_entities_validator.py",
+    "ui_entities_validator_test.py",
     "verification_report.py",
     "verification_report_test.py",
     "verifier_cli.py",
     "verifier_cli_test.py",
     "workload_verification.py",
     "workload_verification_test.py",
+    "xmc_entities_validator.py",
+    "xmc_entities_validator_test.py",
 ])
+
+py_library(
+    name = "xmc_entities_validator_lib",
+    srcs = ["xmc_entities_validator.py"],
+    imports = ["../../.."],
+)
+
+py_library(
+    name = "ui_entities_validator_lib",
+    srcs = [
+        "ui_css_selectors.py",
+        "ui_entities_validator.py",
+    ],
+    imports = ["../../.."],
+    deps = [
+        ":endpoint_resolution",
+        ":verifier_cli",
+    ],
+)
 
 py_library(
     name = "verifier_cli",
@@ -45,7 +69,7 @@ py_library(
     srcs = ["endpoint_resolution.py"],
     imports = ["../../.."],
     deps = [
-        "//tools/nightly_tests:xmc_entities_validator_lib",
+        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -55,7 +79,7 @@ py_library(
     imports = ["../../.."],
     deps = [
         ":endpoint_resolution",
-        "//tools/nightly_tests:xmc_entities_validator_lib",
+        ":xmc_entities_validator_lib",
     ],
 )
 
@@ -74,7 +98,26 @@ py_library(
         ":ess_session",
         ":verification_report",
         ":verifier_cli",
-        "//tools/nightly_tests:xmc_entities_validator_lib",
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_test(
+    name = "xmc_entities_validator_test",
+    srcs = ["xmc_entities_validator_test.py"],
+    imports = ["../../.."],
+    deps = [
+        ":xmc_entities_validator_lib",
+    ],
+)
+
+py_test(
+    name = "ui_entities_validator_test",
+    size = "small",
+    srcs = ["ui_entities_validator_test.py"],
+    imports = ["../../.."],
+    deps = [
+        ":ui_entities_validator_lib",
     ],
 )
 
@@ -127,6 +170,6 @@ py_test(
         ":endpoint_resolution",
         ":verifier_cli",
         ":workload_verification",
-        "//tools/nightly_tests:xmc_entities_validator_lib",
+        ":xmc_entities_validator_lib",
     ],
 )

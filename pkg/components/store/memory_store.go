@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -66,13 +67,15 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Prospective dependency cycle validation directly against the map.
-	if err := ValidateProspectiveDependenciesFromMap(m.componentsByName, canonicalName, deps); err != nil {
+	if _, err := validateIntentDependencies(m.componentsByName, canonicalName, deps); err != nil {
 		return nil, err
 	}
 
 	rec, exists := m.componentsByName[canonicalName]
 	if exists && !isDeletedRecord(rec) {
+		if isUnchangedIntent(rec, spec, labels, deps, desiredGen) {
+			return cloneRecord(rec), nil
+		}
 		updateExistingIntent(rec, spec, labels, deps, desiredGen, now)
 		m.recordSnapshotLocked(rec)
 		return cloneRecord(rec), nil
@@ -372,6 +375,7 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 		rec.Spec.DeletionPolicy = policy
 	}
 
+	deleted := []string{canonicalName}
 	// Per api/protos/components/v1alpha1/components.proto (line 44), DELETION_POLICY_UNSPECIFIED
 	// defaults to DELETION_POLICY_DELETE (cascading resource deletion across dependents).
 	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE || policy == componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED {
@@ -379,10 +383,31 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 		for _, depName := range allDependents {
 			if depRec, ok := m.componentsByName[depName]; ok && depRec != nil && !isDeletedRecord(depRec) {
 				transitionToDeleted(depRec, now)
+				deleted = append(deleted, depName)
 			}
 		}
 	}
+	m.dropEdgesToLocked(deleted)
 	return nil
+}
+
+// dropEdgesToLocked removes every dependency edge to the soft-deleted components named in deleted.
+// SpannerStore stores edges by ComponentId and reads only edges to active components, so an edge to
+// a soft-deleted component disappears and never matches a later re-registration of the same name.
+// MemoryStore stores edges by name, so it drops them at deletion to keep the same semantics. Like
+// SpannerStore, it leaves the specs, UpdateTime, and Etag of the dependents unchanged.
+func (m *MemoryStore) dropEdgesToLocked(deleted []string) {
+	isDeleted := func(dep string) bool { return slices.Contains(deleted, dep) }
+	for _, rec := range m.componentsByID {
+		if !slices.ContainsFunc(rec.Dependencies, isDeleted) {
+			continue
+		}
+		// Copy before deleting: snapshots and returned clones may share the backing array.
+		rec.Dependencies = slices.DeleteFunc(slices.Clone(rec.Dependencies), isDeleted)
+		if len(rec.Dependencies) == 0 {
+			rec.Dependencies = nil
+		}
+	}
 }
 
 func transitionToDisabling(rec *ComponentRecord, now time.Time) {

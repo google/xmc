@@ -103,7 +103,7 @@ vars:
   health_service_deployment_enabled: true
 
   # Feature flag to allow pausing workload scheduling
-  pause_scheduling_enabled: false
+  pause_scheduling_enabled: true
 
   # The physical address range allowed to call the GKE control plane
   authorized_cidr: 0.0.0.0/0

@@ -61,6 +61,7 @@ go_library(
         "//internal/auth",
         "//internal/common/health",
         "//internal/common/resourceaccumulator",
+        "//internal/experiment",
         "//internal/grpcerr",
         "//internal/logging",
         "//internal/security/keyreloader",

@@ -17,6 +17,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -30,20 +31,36 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
 
+// sampleDependency is the dependency that sampleSpec declares through a manifest annotation.
+const sampleDependency = "dep-svc"
+
 func sampleSpec(desc string) *componentspb.ComponentSpec {
 	return &componentspb.ComponentSpec{
 		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version:     "v1.0.0",
 		Description: desc,
 		Manifests: []string{
-			"apiVersion: v1\nkind: Service\nmetadata:\n  annotations:\n    xmc.dev/depends-on: dep-svc",
+			"apiVersion: v1\nkind: Service\nmetadata:\n  annotations:\n    xmc.dev/depends-on: " + sampleDependency,
 		},
 	}
 }
 
+// newMemoryStoreWithDependencies returns a MemoryStore in which each of deps is registered without
+// dependencies of its own, so intents may declare them; MemoryStore rejects unregistered ones.
+func newMemoryStoreWithDependencies(t *testing.T, deps ...string) *MemoryStore {
+	t.Helper()
+	ms := NewMemoryStore()
+	for _, dep := range deps {
+		if _, err := ms.SetComponentIntent(context.Background(), dep, specWithDeps(""), nil, 0); err != nil {
+			t.Fatalf("register dependency %s error = %v", dep, err)
+		}
+	}
+	return ms
+}
+
 func TestMemoryStore_SetComponentIntent_NewComponent(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
+	ms := newMemoryStoreWithDependencies(t, sampleDependency)
 
 	spec := sampleSpec("Initial intent")
 	labels := map[string]string{"env": "test"}
@@ -54,7 +71,7 @@ func TestMemoryStore_SetComponentIntent_NewComponent(t *testing.T) {
 	}
 
 	wantRec := &ComponentRecord{
-		ComponentID:  1,
+		ComponentID:  2,
 		Name:         "my-comp",
 		Generation:   1,
 		State:        componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
@@ -87,7 +104,7 @@ func TestMemoryStore_SetComponentIntent_NewComponent(t *testing.T) {
 
 func TestMemoryStore_SetComponentIntent_UpdateExisting(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
+	ms := newMemoryStoreWithDependencies(t, sampleDependency)
 
 	spec1 := sampleSpec("First version")
 	rec1, err := ms.SetComponentIntent(ctx, "my-comp", spec1, nil, 0)
@@ -114,7 +131,7 @@ func TestMemoryStore_SetComponentIntent_UpdateExisting(t *testing.T) {
 	}
 
 	wantRec2 := &ComponentRecord{
-		ComponentID:  1,
+		ComponentID:  2,
 		Name:         "my-comp",
 		Generation:   2,
 		State:        componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
@@ -144,7 +161,7 @@ func TestMemoryStore_SetComponentIntent_UpdateExisting(t *testing.T) {
 
 func TestMemoryStore_SetComponentIntent_DesiredGeneration(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
+	ms := newMemoryStoreWithDependencies(t, sampleDependency)
 
 	spec := sampleSpec("Generation override")
 	rec, err := ms.SetComponentIntent(ctx, "my-comp", spec, nil, 5)
@@ -153,7 +170,7 @@ func TestMemoryStore_SetComponentIntent_DesiredGeneration(t *testing.T) {
 	}
 
 	wantRec := &ComponentRecord{
-		ComponentID:  1,
+		ComponentID:  2,
 		Name:         "my-comp",
 		Generation:   5,
 		State:        componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
@@ -225,7 +242,7 @@ func TestMemoryStore_SetComponentIntent_ValidationErrors(t *testing.T) {
 
 func TestMemoryStore_GetComponent(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
+	ms := newMemoryStoreWithDependencies(t, sampleDependency)
 
 	spec := sampleSpec("Testing GetComponent")
 	_, err := ms.SetComponentIntent(ctx, "comp-a", spec, nil, 0)
@@ -266,7 +283,7 @@ func TestMemoryStore_GetComponent(t *testing.T) {
 
 func TestMemoryStore_GetComponent_SoftDeleted(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
+	ms := newMemoryStoreWithDependencies(t, sampleDependency)
 
 	spec := sampleSpec("Soft delete test")
 	rec, err := ms.SetComponentIntent(ctx, "comp-deleted", spec, nil, 0)
@@ -294,7 +311,7 @@ func TestMemoryStore_GetComponent_SoftDeleted(t *testing.T) {
 
 func TestMemoryStore_GetComponentByID(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
+	ms := newMemoryStoreWithDependencies(t, sampleDependency)
 
 	spec := sampleSpec("ByID test")
 	created, err := ms.SetComponentIntent(ctx, "comp-id-test", spec, nil, 0)
@@ -341,7 +358,7 @@ func TestMemoryStore_ListComponents(t *testing.T) {
 	// Populate multiple components out of alphabetical order
 	names := []string{"comp-c", "comp-a", "comp-b"}
 	for _, n := range names {
-		if _, err := ms.SetComponentIntent(ctx, n, sampleSpec(n), nil, 0); err != nil {
+		if _, err := ms.SetComponentIntent(ctx, n, specWithDeps(n), nil, 0); err != nil {
 			t.Fatalf("SetComponentIntent(%s) failed: %v", n, err)
 		}
 	}
@@ -365,7 +382,7 @@ func TestMemoryStore_ListComponents(t *testing.T) {
 
 func TestMemoryStore_UpdateObservedGeneration(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
+	ms := newMemoryStoreWithDependencies(t, sampleDependency)
 
 	spec := sampleSpec("Observed gen test")
 	_, err := ms.SetComponentIntent(ctx, "comp-obs", spec, nil, 0)
@@ -422,7 +439,7 @@ func TestMemoryStore_UpdateObservedGeneration(t *testing.T) {
 
 func TestMemoryStore_Immutability(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
+	ms := newMemoryStoreWithDependencies(t, sampleDependency)
 
 	spec := sampleSpec("Original Spec")
 	labels := map[string]string{"key": "original"}
@@ -502,48 +519,28 @@ func TestMemoryStore_ConcurrencyStress(t *testing.T) {
 
 func TestMemoryStore_SetComponentIntent_CycleRejection(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
-
-	// 1. Create comp-a depending on comp-b
-	specA := &componentspb.ComponentSpec{
-		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
-		Version:     "v1.0.0",
-		Description: "@depends-on: comp-b",
-	}
-	if _, err := ms.SetComponentIntent(ctx, "comp-a", specA, nil, 0); err != nil {
-		t.Fatalf("SetComponentIntent(comp-a) unexpected error: %v", err)
+	// Dependencies must be registered, so build the chain comp-a -> comp-b -> comp-c bottom-up.
+	ms := newMemoryStoreWithDependencies(t, "comp-c")
+	for _, link := range []struct{ name, dep string }{{"comp-b", "comp-c"}, {"comp-a", "comp-b"}} {
+		if _, err := ms.SetComponentIntent(ctx, link.name, specWithDeps("@depends-on: "+link.dep), nil, 0); err != nil {
+			t.Fatalf("SetComponentIntent(%s) unexpected error: %v", link.name, err)
+		}
 	}
 
-	// 2. Attempt to create comp-b depending on comp-a -> Cycle detected!
-	specB := &componentspb.ComponentSpec{
-		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
-		Version:     "v1.0.0",
-		Description: "@depends-on: comp-a",
+	tests := []struct {
+		name   string
+		target string
+	}{
+		{name: "two-node cycle", target: "comp-b"},
+		{name: "three-node cycle", target: "comp-c"},
 	}
-	_, err := ms.SetComponentIntent(ctx, "comp-b", specB, nil, 0)
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("SetComponentIntent(comp-b with cycle) got code %v, want FailedPrecondition (err: %v)", status.Code(err), err)
-	}
-
-	// 3. Create comp-b without cycle (depending on comp-c)
-	specBValid := &componentspb.ComponentSpec{
-		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
-		Version:     "v1.0.0",
-		Description: "@depends-on: comp-c",
-	}
-	if _, err := ms.SetComponentIntent(ctx, "comp-b", specBValid, nil, 0); err != nil {
-		t.Fatalf("SetComponentIntent(comp-b valid) unexpected error: %v", err)
-	}
-
-	// 4. Update comp-c to depend on comp-a -> Cycle detected across 3 nodes!
-	specC := &componentspb.ComponentSpec{
-		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
-		Version:     "v1.0.0",
-		Description: "@depends-on: comp-a",
-	}
-	_, err = ms.SetComponentIntent(ctx, "comp-c", specC, nil, 0)
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("SetComponentIntent(comp-c transitive cycle) got code %v, want FailedPrecondition (err: %v)", status.Code(err), err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ms.SetComponentIntent(ctx, tt.target, specWithDeps("@depends-on: comp-a"), nil, 0)
+			if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "dependency cycle detected") {
+				t.Errorf("SetComponentIntent(%s -> comp-a) error = %v, want FailedPrecondition dependency cycle", tt.target, err)
+			}
+		})
 	}
 }
 
@@ -616,7 +613,7 @@ func TestMemoryStore_SpecDependencies(t *testing.T) {
 
 func TestMemoryStore_SpecDependencies_MergedWithDirectives(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
+	ms := newMemoryStoreWithDependencies(t, "auth", "metrics", "redpanda")
 	spec := specWithDeps("@depends-on: redpanda, metrics", "redpanda", "components/auth")
 
 	rec, err := ms.SetComponentIntent(ctx, "ingestion-gateway", spec, nil, 0)
@@ -633,7 +630,7 @@ func TestMemoryStore_SpecDependencies_MergedWithDirectives(t *testing.T) {
 
 func TestMemoryStore_PrepareDeactivation(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
+	ms := newMemoryStoreWithDependencies(t, sampleDependency)
 
 	specRoot := sampleSpec("Root component")
 	if _, err := ms.SetComponentIntent(ctx, "root-comp", specRoot, nil, 0); err != nil {
@@ -716,7 +713,7 @@ func TestMemoryStore_PrepareDeactivation(t *testing.T) {
 
 func TestMemoryStore_CompleteDeactivation(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
+	ms := newMemoryStoreWithDependencies(t, sampleDependency)
 
 	spec := sampleSpec("Deactivation target")
 	if _, err := ms.SetComponentIntent(ctx, "comp-deact", spec, nil, 0); err != nil {
@@ -830,7 +827,7 @@ func TestMemoryStore_CompleteDeactivation(t *testing.T) {
 
 func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 	ctx := context.Background()
-	ms := NewMemoryStore()
+	ms := newMemoryStoreWithDependencies(t, sampleDependency)
 
 	// Component 1: Protected
 	spec1 := sampleSpec("Protected")

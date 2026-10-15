@@ -22,6 +22,7 @@ import shutil
 
 from test.e2e.lib.command import run_cmd
 from test.e2e.lib.config import E2EConfig
+from test.e2e.lib.controller_installer import CONTROLLER_RELEASES
 
 logger = logging.getLogger("xmc_e2e_runner")
 
@@ -33,6 +34,7 @@ def _get_service_specs() -> list[tuple[str, str, str]]:
         "xid_service",
         "actuator",
         "reconciler",
+        "xmc_bridge",
     ]
     specs = [
         (f"cmd/{name}", f"{name}_image_tarball", f"{name}_image:latest")
@@ -51,7 +53,7 @@ class ImageBuilder:
         "//api/protos/experiment:experiment_messages_descriptor",
         "//api/protos/xid:xid_messages_descriptor",
         "//internal/storage/spanner/migrations:migrations",
-        "//test/e2e/manifests:jobset_kueue_crds",
+        *(f"//test/e2e/manifests:{release.manifest_target}" for release in CONTROLLER_RELEASES),
     ]
 
     def __init__(self, config: E2EConfig) -> None:

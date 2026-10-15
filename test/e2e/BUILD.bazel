@@ -52,6 +52,7 @@ py_test(
 )
 
 _KIND_3P_DEPS = [
+    "//api/protos/components/v1alpha1",
     "//pkg/components/bridge",
     "//pkg/components/cms",
     "//pkg/components/store",
@@ -68,8 +69,13 @@ _KIND_3P_DEPS = [
     "@io_k8s_client_go//dynamic",
     "@io_k8s_client_go//kubernetes",
     "@io_k8s_client_go//kubernetes/fake",
+    "@io_k8s_client_go//rest",
     "@io_k8s_client_go//restmapper",
     "@io_k8s_client_go//tools/clientcmd",
+    "@io_k8s_sigs_controller_runtime//pkg/manager",
+    "@io_k8s_utils//ptr",
+    "@org_golang_google_grpc//codes",
+    "@org_golang_google_grpc//status",
 ]
 
 go_test(
@@ -77,6 +83,24 @@ go_test(
     size = "small",
     srcs = ["kind_3p_harness_test.go"],
     data = ["//deploy/helm:chart"],
+    deps = _KIND_3P_DEPS,
+)
+
+go_test(
+    name = "components_lifecycle_test",
+    size = "large",
+    srcs = [
+        "components_lifecycle_e2e_test.go",
+        "kind_3p_harness_test.go",
+    ],
+    data = ["//deploy/helm:chart"],
+    tags = [
+        "e2e",
+        "exclusive",
+        "external",
+        "local",
+        "manual",
+    ],
     deps = _KIND_3P_DEPS,
 )
 

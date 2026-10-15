@@ -61,6 +61,11 @@ on:
         type: boolean
         required: false
         default: false
+      enable_multikueue:
+        description: 'Enable MultiKueue workload delegation and in-cluster worker deployment'
+        type: boolean
+        required: false
+        default: false
     secrets:
       GCP_PROJECT_ID:
         required: false
@@ -160,6 +165,11 @@ on:
         default: false
       enable_metrics:
         description: 'Enable Metrics system (ClickHouse & Redpanda) deployment'
+        type: boolean
+        required: false
+        default: false
+      enable_multikueue:
+        description: 'Enable MultiKueue workload delegation and in-cluster worker deployment'
         type: boolean
         required: false
         default: false
@@ -310,6 +320,7 @@ jobs:
             allowed_emails: "${ALLOWED_EMAILS}"
             ess_allowed_origins: "https://${ENVIRONMENT}.${DOMAIN_NAME},https://ui.${ENVIRONMENT}.${DOMAIN_NAME},https://api.${ENVIRONMENT}.${DOMAIN_NAME}"
             authorized_iam_role: "roles/viewer"
+            admin_iam_role: "roles/viewer"
 
             certs_email: "${CERTS_EMAIL}"
             gts_key_id: "${GTS_KEY_ID}"
@@ -358,6 +369,12 @@ jobs:
               kubectl rollout restart "deployment/${deploy}" -n xmc
             fi
           done
+
+      - name: 'Deploy MultiKueue Addon (In-Cluster k3s Worker & Queues)'
+        if: ${{ inputs.enable_multikueue == true }}
+        run: |
+          gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}"
+          ./deploy/addons/multikueue/setup_multikueue.sh
 
       - name: 'Run Environment Health Verification'
         if: ${{ inputs.skip_verification != true }}

@@ -80,7 +80,7 @@ vars:
   health_status_force_refresh_window: 5s
   health_scheduling_resume_batch_size: 100
   health_scheduling_resume_max_backlog: 500
-  pause_scheduling_enabled: false
+  pause_scheduling_enabled: true
   # SHA-256 of the deploy/helm chart contents, recorded in the umbrella Helm release description.
   # Terraform does not detect template-only chart changes; a changed hash forces a real Helm upgrade
   # so removed templates are pruned. Set automatically by tools/dev_env; optional elsewhere.
@@ -315,6 +315,12 @@ deployment_groups:
     settings:
       service_account_email: $(log_monitor_service_account.service_account_email)
       k8s_service_account_name: log-monitor-service-account
+
+  - id: xmc_wi_binding_xmc_bridge
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: xmc-bridge-sa
 
   - id: compute_cluster
     source: modules/scheduler/gke-cluster

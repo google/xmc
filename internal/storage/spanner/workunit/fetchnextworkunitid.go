@@ -62,3 +62,11 @@ func (r *Repository) FetchNextWorkUnitIDTransaction(ctx context.Context, xid int
 	logging.Info(ctx, "Fetched next WorkUnit ID from storage", "workUnitID", workUnitID+1)
 	return workUnitID + 1, nil
 }
+
+// FetchNextWorkUnitID retrieves the next available WorkUnit ID for a given XID using the bound read-write transaction.
+func (r *TxRepository) FetchNextWorkUnitID(ctx context.Context, xid int64) (int64, error) {
+	if r.tx == nil {
+		return 0, fmt.Errorf("transaction must not be nil")
+	}
+	return r.FetchNextWorkUnitIDTransaction(ctx, xid, r.tx)
+}

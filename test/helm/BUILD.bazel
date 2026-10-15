@@ -44,6 +44,22 @@ py_test(
 )
 
 py_test(
+    name = "bridge_timeouts_test",
+    srcs = ["bridge_timeouts_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "bridge_timeouts_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
     name = "dashboard_service_clickhouse_config_test",
     srcs = ["dashboard_service_clickhouse_config_test.py"],
     data = ["//deploy/helm:chart"],

@@ -8,8 +8,8 @@ The **GitOps Bridge** provides bi-directional synchronization between Kubernetes
 
 ```mermaid
 graph TD
-    CR["Kubernetes Component CR<br>(xmc.dev/v1alpha1)"] <-->|"Dynamic Informer / Status Patch"| Bridge["xmc-bridge Controller<br>(cmd/xmc_bridge)"]
-    Bridge -->|"Reconcile Loop"| Reconciler["Bridge Reconciler<br>(pkg/components/bridge)"]
+    CR["Kubernetes Component CR<br>(xmc.dev/v1alpha1)"] <-->|"Cached Watch / Status Patch"| Bridge["xmc-bridge Controller<br>(cmd/xmc_bridge)"]
+    Bridge -->|"ComponentController.Reconcile"| Reconciler["Bridge Reconciler<br>(pkg/components/bridge)"]
     Reconciler <-->|"gRPC Intent & Status Sync"| CMS["Component Manager Service<br>(ESS)"]
     Reconciler <-->|"Helm Values Synthesis"| Helm["1P Helm Parameters & Values Synthesis"]
     Reconciler <-->|"Dynamic CRD Status Detection"| Detector["3P Dynamic Status Detector<br>(status_detector.go)"]
@@ -25,14 +25,14 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
    - If `metadata.deletionTimestamp` is present and `spec.deletionProtection: true`, emit `ConditionTypeDeletionBlocked` (`True`) and prevent deletion.
    - If unprotected, prune child workloads, execute CMS deletion, and remove the `finalizers.xmc.dev/deletion-protection` finalizer.
 2. **Intent Registration** (enabled components):
-   - Propagate desired spec (including `spec.dependencies`) to CMS via `SetComponentIntent` on every pass, transitioning CMS state to `COMPONENT_STATE_PENDING_RECONCILIATION`. Registration happens **before** and independently of the activation gate, so CMS knows the dependency edges that make deactivation of a dependency unsafe even while the dependent is still waiting.
-   - A `FailedPrecondition` whose message starts with `store.DependencyNotFoundMessagePrefix` (Spanner store: a dependency is not registered yet) is treated as "waiting on dependencies", not as an error; the intent is retried on the next pass. Any other intent failure reports `IntentApplicationFailed`.
+   - Propagate desired spec (including `spec.dependencies`) to CMS via `SetComponentIntent` on every pass, with the CR generation as `ComponentSpec.generation`. CMS treats an unchanged intent as a no-op and moves a changed one to `COMPONENT_STATE_PENDING_RECONCILIATION` (see "Idempotent intent" in [../README.md](../README.md)). Registration happens **before** and independently of the activation gate, so CMS knows the dependency edges that make deactivation of a dependency unsafe even while the dependent is still waiting.
+   - A `FailedPrecondition` whose message starts with `store.DependencyNotFoundMessagePrefix` (either store: a dependency is not registered yet) is treated as "waiting on dependencies", not as an error; the intent is retried on the next pass. Any other intent failure reports `IntentApplicationFailed`.
 3. **Dependency Activation Gate** (`spec.enabled: true` with `spec.dependencies`, all component types):
-   - `cmd/xmc_bridge` builds a `DependencySnapshot` (`dependency_readiness.go`) once per reconcile pass from the listed Component CRs and passes it to `ReconcileWithDependencies`. A dependency is ready only if its CR exists, has `spec.enabled: true`, is not being deleted, reports `Ready=True` with `observedGeneration == metadata.generation`, and is not `Degraded=True`.
+   - `ComponentController` (`component_controller.go`) builds a `DependencySnapshot` (`dependency_readiness.go`) from the cached Component CRs of the namespace for every Component it reconciles and passes it to `ReconcileWithDependencies`. A dependency is ready only if its CR exists, has `spec.enabled: true`, is not being deleted, reports `Ready=True` with `observedGeneration == metadata.generation`, and is not `Degraded=True`.
    - A component on a multi-node `spec.dependencies` cycle (self-references are dropped) reports `Ready=False`/`Degraded=True` reason `DependencyCycle` with the cycle path (e.g. `dependency cycle detected: ingestion -> redpanda -> ingestion`); intent is not sent.
-   - **Not yet actuated** (no active 1P release, no `DependenciesReady` condition, and `Ready` not `True`): while any dependency is not ready, the component stays `COMPONENT_STATE_PENDING_RECONCILIATION` with `Ready=False`/`Degraded=False` reason `DependenciesNotReady` and a message such as `waiting on dependencies: redpanda (disabled), foo (not found)`. No workload is created. The next poll retries without logging an error.
+   - **Not yet actuated** (no active 1P release, no `DependenciesReady` condition, and `Ready` not `True`): while any dependency is not ready, the component stays `COMPONENT_STATE_PENDING_RECONCILIATION` with `Ready=False`/`Degraded=False` reason `DependenciesNotReady` and a message such as `waiting on dependencies: redpanda (disabled), foo (not found)`. No workload is created. The next pass retries without logging an error.
    - **Already actuated**: a dependency blip never tears the workload down. The informational `DependenciesReady` condition turns `False` (reason `DependenciesNotReady`) and pending Helm installs/upgrades are held until every dependency is ready again. With nothing to upgrade, `Ready` stays health-derived. When an upgrade to a new generation is held, the component reports `PENDING_RECONCILIATION` with `Ready=False`/`Degraded=False` (reason `HelmUpgradePending`) so the new generation is never reported as ready before it is applied.
-   - A chain of N dependent components settles over up to N passes (one poll interval each), because each pass evaluates readiness from a snapshot taken at the start of the pass.
+   - A dependency's change in readiness enqueues its dependents, so a chain of N dependent components settles in N event-driven passes instead of N probe intervals.
    - `Reconcile` (no resolver) does not gate activation on the snapshot; CMS unregistered-dependency rejections still gate.
 4. **Enablement & Workload Actuation**:
    - **Enabled (`spec.enabled: true`)**:
@@ -255,17 +255,22 @@ The reconciler unifies third-party CRD inspection and active health probing in `
 
 ---
 
-## Controller Hardening & Status Mutation (`cmd/xmc_bridge/main.go`, `status_applier.go`, `reconciler.go`)
+## Controller Hardening & Status Mutation (`component_controller.go`, `status_applier.go`, `reconciler.go`)
 
 Production-grade controller reliability, conflict elimination, and Cloud Spanner write throttling:
 
+- **controller-runtime Controller (`component_controller.go`, `component_rate_limiter.go`)**:
+  - `ComponentController` runs the `Reconciler` per Component in a controller-runtime manager whose cache is limited to one namespace (`ComponentManagerOptions`). The manager's client sets `CacheOptions.Unstructured`, so the Get of the reconciled Component and the Lists behind the dependency snapshot and the dependents watch are served from that cache, not the API server; reads can therefore lag the latest write by one watch event. Results are persisted through a dynamic client with `PersistReconcileResult`.
+  - A Component is reconciled when its generation, labels or annotations change or its deletion starts; when a Component it depends on is created, deleted, changes generation, or changes readiness as a dependency (`dependencyReadinessChanged`); and `ProbeInterval` after each successful pass.
+  - A failed pass persists its status and returns its error, so `NewComponentRateLimiter` retries it with per-Component exponential backoff from 5s to 300s and ±10% jitter.
 - **Server-Side Apply (SSA) Status & Finalizer Helpers (`status_applier.go`)**:
   - `ApplyComponentStatusSSA`: Persists status updates via Kubernetes Server-Side Apply (`types.ApplyPatchType`) against the `/status` subresource using `FieldManagerBridge = "xmc-bridge"`.
   - `SyncComponentFinalizers`: Synchronizes `metadata.finalizers` on `Component` CRs via optimistic concurrency update.
+  - `PersistReconcileResult`: Persists a `ReconcileResult` to the API server in a fixed order: finalizers first, then `.status` via SSA (skipped once the finalizer is released, and skipped on a finalizer error so the next pass retries both). It rejects a nil item and never mutates the caller's item. `ComponentController` calls it on success and failure paths.
   - `BuildStatus` and `BuildStatusMap`: Construct RFC3339-formatted typed and unstructured status payloads. Companion unit tests in `status_applier_test.go`.
   - Atomic field ownership eliminates optimistic concurrency update conflicts with other controllers (e.g. `xmc-syncer`) and prevents stale object overwrites.
 - **Control-Plane `envtest` Integration Suite (`components_admission_test.go`, `reconciler_test.go`)**:
-  - Boots an in-process `kube-apiserver` and `etcd` via `controller-runtime/pkg/envtest` to verify `Component` CRD OpenAPI v3 structural schema defaults, `x-kubernetes-validations` CEL rules, `ValidatingAdmissionPolicy` deletion protection with `xmc-platform-admins` RBAC breakglass impersonation, multi-manager SSA `.status.conditions` merge semantics, and 3P `ContractBroken` condition persistence.
+  - Boots an in-process `kube-apiserver` and `etcd` via `controller-runtime/pkg/envtest` to verify `Component` CRD OpenAPI v3 structural schema defaults, `x-kubernetes-validations` CEL rules, `ValidatingAdmissionPolicy` deletion protection (including rejection of `xmc-platform-admins`, which has no exemption), multi-manager SSA `.status.conditions` merge semantics, and 3P `ContractBroken` condition persistence.
 - **Hybrid CMS Heartbeat Throttling (`shouldSyncToCMS`)**:
   - To eliminate Cloud Spanner write amplification caused by periodic steady-state health probe ticks, the bridge decouples Kubernetes data-plane polling from Spanner persistence.
   - Status synchronization RPCs (`UpdateObservedGeneration`) to CMS are triggered only upon:

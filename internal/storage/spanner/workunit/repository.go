@@ -25,22 +25,12 @@ import (
 	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/storage"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
 )
 
 type spannerTransaction interface {
 	ReadRow(ctx context.Context, table string, key spanner.Key, columns []string) (*spanner.Row, error)
 	Query(ctx context.Context, stmt spanner.Statement) *spanner.RowIterator
-}
-
-// ExperimentTxStore defines transactional experiment operations required by WorkUnit repository.
-// TODO(b/517479143): Remove ExperimentTxStore and the experimentRepo dependency from WorkUnit
-// repository once CreateWorkUnit orchestration is moved out of Spanner.
-type ExperimentTxStore interface {
-	FetchExperimentTransaction(ctx context.Context, xid int64, tx experiment.SpannerTransaction) (*essmsgpb.Experiment, error)
-	WithTx(tx *spanner.ReadWriteTransaction) *experiment.TxRepository
-	UpdateExperimentResources(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error
 }
 
 var (
@@ -51,7 +41,6 @@ var (
 // Repository manages persistence for work unit entities in Cloud Spanner.
 type Repository struct {
 	client            *spanner.Client
-	experimentRepo    ExperimentTxStore
 	workUnitsQueryGen querytools.QueryGenerator
 }
 
@@ -62,7 +51,7 @@ type TxRepository struct {
 }
 
 // NewRepository creates a new WorkUnit repository instance with initialized query generator.
-func NewRepository(client *spanner.Client, expRepo ExperimentTxStore) (*Repository, error) {
+func NewRepository(client *spanner.Client) (*Repository, error) {
 	if client == nil {
 		return nil, fmt.Errorf("spanner client must not be nil")
 	}
@@ -74,7 +63,6 @@ func NewRepository(client *spanner.Client, expRepo ExperimentTxStore) (*Reposito
 
 	return &Repository{
 		client:            client,
-		experimentRepo:    expRepo,
 		workUnitsQueryGen: workUnitsQueryGen,
 	}, nil
 }
