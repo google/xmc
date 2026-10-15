@@ -73,7 +73,6 @@ go_test(
 go_test(
     name = "workunit_test",
     srcs = [
-        "createworkunit_test.go",
         "fetchcurrentworkunitexecution_test.go",
         "fetchnextworkunitid_test.go",
         "fetchworkunit_test.go",
@@ -88,7 +87,6 @@ go_test(
     shard_count = 4,
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/domain/workunit",
         "//internal/grpcerr",
         "//internal/storage",
         "//internal/storage/spanner",

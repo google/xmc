@@ -69,18 +69,6 @@ func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu 
 		localWU.CurrentWorkUnitExecution.Status.UpdateTime = timestamppb.New(now)
 		localWU.CurrentWorkUnitExecution.Status.StateUpdateTime = timestamppb.New(now)
 
-		// Populate timestamps back onto input proto pointer for caller convenience (matching CreateExperiment behavior).
-		wu.CreateTime = localWU.CreateTime
-		wu.UpdateTime = localWU.UpdateTime
-		if wu.CurrentWorkUnitExecution != nil {
-			wu.CurrentWorkUnitExecution.CreateTime = localWU.CurrentWorkUnitExecution.CreateTime
-			wu.CurrentWorkUnitExecution.UpdateTime = localWU.CurrentWorkUnitExecution.UpdateTime
-			if wu.CurrentWorkUnitExecution.Status != nil {
-				wu.CurrentWorkUnitExecution.Status.UpdateTime = localWU.CurrentWorkUnitExecution.Status.UpdateTime
-				wu.CurrentWorkUnitExecution.Status.StateUpdateTime = localWU.CurrentWorkUnitExecution.Status.StateUpdateTime
-			}
-		}
-
 		// 2. Insert the work unit into storage.
 		if err := tx.WorkUnits.InsertWorkUnit(ctx, localWU); err != nil {
 			return fmt.Errorf("failed to insert work unit: %w", err)
@@ -124,6 +112,18 @@ func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu 
 	if err != nil {
 		logging.Error(ctx, "failed to create work unit", "work_unit", wu, "error", err)
 		return nil, err
+	}
+
+	// Populate timestamps back onto input proto pointer for caller convenience (matching CreateExperiment behavior).
+	wu.CreateTime = committedWU.CreateTime
+	wu.UpdateTime = committedWU.UpdateTime
+	if wu.CurrentWorkUnitExecution != nil {
+		wu.CurrentWorkUnitExecution.CreateTime = committedWU.CurrentWorkUnitExecution.CreateTime
+		wu.CurrentWorkUnitExecution.UpdateTime = committedWU.CurrentWorkUnitExecution.UpdateTime
+		if wu.CurrentWorkUnitExecution.Status != nil {
+			wu.CurrentWorkUnitExecution.Status.UpdateTime = committedWU.CurrentWorkUnitExecution.Status.UpdateTime
+			wu.CurrentWorkUnitExecution.Status.StateUpdateTime = committedWU.CurrentWorkUnitExecution.Status.StateUpdateTime
+		}
 	}
 
 	logging.Info(ctx, "Written work unit to storage", "work_unit", committedWU)
