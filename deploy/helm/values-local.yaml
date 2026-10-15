@@ -31,7 +31,7 @@ reconciler_custom_image: "reconciler_image:latest"
 ess_custom_image: "experiment_state_server_image:latest"
 
 featureFlags:
-  pause_scheduling_enabled: false
+  pause_scheduling_enabled: true
 
 xidService:
   hpa:
