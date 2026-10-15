@@ -583,7 +583,7 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `deletion_protection` | No | `false` | Enables deletion protection on supported GCP resources (databases, Cloud Run) |
 | `authorized_cidr` | No | `"0.0.0.0/0"`| Authorized IP CIDR allowed to connect to GKE master |
 | `task_signature_ttl_seconds` | No | `86400` | Validity duration of task signature tokens |
-| `pause_scheduling_enabled` | No | `false` | Enables the global workload scheduling pause feature across the Admin Panel, Health Service, Actuator, and ESS |
+| `pause_scheduling_enabled` | No | `true` | Enables the global workload scheduling pause feature across the Admin Panel, Health Service, Actuator, and ESS |
 | `use_redis_queue` | No | `true` | Uses Memorystore Redis for internal queues when true |
 | `deploy_redis` | No | `true` | Provisions Memorystore Redis instance when true |
 | `redis_region` | No | - | Memorystore Redis region (defaults to region above) |

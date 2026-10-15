@@ -296,7 +296,9 @@ sequenceDiagram
   `StopWorkUnit` commit to Spanner and enqueue to `xmc-tasks-stream` as usual.
 - **Actuator intercepts `Create`, `Restart`, and `Update`.** Instead of calling the Kubernetes API,
   the Actuator writes a row to `PausedTasks` and (for `Create` and `Restart`) transitions the target
-  execution to `SCHEDULING_PAUSED` in a single Spanner transaction.
+  execution to `SCHEDULING_PAUSED` with an `INFO` system message ("Scheduling has been paused by
+  administrators. This work unit will be scheduled once scheduling is resumed.") in a single
+  Spanner transaction.
 - **`Delete` bypasses the pause.** `StopWorkUnit` and `BatchStopWorkUnits` always execute against
   Kubernetes immediately, and work units in `SCHEDULING_PAUSED` transition directly to `STOPPED`.
 

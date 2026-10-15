@@ -83,7 +83,7 @@ Which state it is stuck in tells you which subsystem to look at:
 
 | State | Meaning | Where the explanation comes from |
 | :--- | :--- | :--- |
-| `SCHEDULING_PAUSED` | Global workload scheduling is paused by an operator. | The UI displays a scheduling-paused banner; the task is buffered in Spanner (`PausedTasks`) and will be replayed automatically when scheduling resumes. |
+| `SCHEDULING_PAUSED` | Global workload scheduling is paused by an operator. | The UI displays a scheduling-paused banner; the execution status records an `INFO` system message ("Scheduling has been paused by administrators. This work unit will be scheduled once scheduling is resumed."); the task is buffered in Spanner (`PausedTasks`) and will be replayed automatically when scheduling resumes. |
 | `SCHEDULING` | Kueue has not admitted it. | Workload Reconciler writes the `Inadmissible` reason as a status message — usually insufficient quota. |
 | `STARTING` | Admitted, pods not ready. | JobSet Reconciler's startup pod check reports image pull and scheduling errors after ~2 minutes. |
 | `RUNNING`, but wrong | Your code. | Log Monitor surfaces lines your job prefixes with `XMC LOG:`, with severity and stack trace. |
