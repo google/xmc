@@ -56,13 +56,13 @@ go_library(
     deps = [
         "//internal/logging",
         "//internal/storage/migrations",
-        "//internal/storage/spanner/migrations/commands",
         "//internal/storage/spanner/migrations/driver",
         "@com_github_golang_migrate_migrate_v4//:migrate",
         "@com_github_golang_migrate_migrate_v4//source",
         "@com_github_golang_migrate_migrate_v4//source/iofs",
         "@com_google_cloud_go_spanner//:spanner",
         "@com_google_cloud_go_spanner//admin/database/apiv1",
+        "@org_golang_google_api//iterator",
         "@org_golang_google_api//option",
     ],
 )

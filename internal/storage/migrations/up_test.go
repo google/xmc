@@ -11,21 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package commands
+package migrations
 
 import (
+	"context"
 	"testing"
 
-	"cloud.google.com/go/spanner"
-	database "cloud.google.com/go/spanner/admin/database/apiv1"
-	dbadminpb "cloud.google.com/go/spanner/admin/database/apiv1/databasepb"
 	"github.com/golang-migrate/migrate/v4"
 	migdatabase "github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/stub"
 	"github.com/golang-migrate/migrate/v4/source"
 	stubs "github.com/golang-migrate/migrate/v4/source/stub"
 	"k8s.io/utils/ptr"
-	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestUp(t *testing.T) {
@@ -100,13 +97,11 @@ func TestUp(t *testing.T) {
 
 			dbStub.CurrentVersion = tc.initialVersion
 
-			clients := emulator.SetupEmpty(ctx, t)
-			dataClient, emu := clients.ESSClient, clients.Emulator
-			if !tc.emptyDatabase {
-				updateDDL(t, dataClient, emu, []string{"CREATE TABLE NonEmptyTable (ID INT64) PRIMARY KEY (ID)"})
+			isDatabaseEmpty := func(context.Context) (bool, error) {
+				return tc.emptyDatabase, nil
 			}
 
-			err = Up(ctx, m, dataClient, tc.steps)
+			err = Up(ctx, m, isDatabaseEmpty, tc.steps)
 
 			if tc.expectError && err == nil {
 				t.Errorf("Up() expected error, got nil")
@@ -128,25 +123,5 @@ func TestUp(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func updateDDL(t *testing.T, client *spanner.Client, emu *emulator.Emulator, statements []string) {
-	t.Helper()
-	ctx := t.Context()
-
-	adminClient, err := database.NewDatabaseAdminClient(ctx, emu.ClientOptions()...)
-	if err != nil {
-		t.Fatalf("Failed to create database admin client: %v", err)
-	}
-	op, err := adminClient.UpdateDatabaseDdl(ctx, &dbadminpb.UpdateDatabaseDdlRequest{
-		Database:   client.DatabaseName(),
-		Statements: statements,
-	})
-	if err != nil {
-		t.Fatalf("Failed to update database DDL: %v", err)
-	}
-	if err := op.Wait(ctx); err != nil {
-		t.Fatalf("Failed to wait for DDL operation: %v", err)
 	}
 }

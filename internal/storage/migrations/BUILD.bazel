@@ -1,4 +1,4 @@
-# Copyright 2026 Google LLC
+# Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,11 +17,14 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "migrations",
     srcs = [
-        "commands.go",
+        "create.go",
+        "down.go",
+        "init.go",
         "runner.go",
+        "up.go",
     ],
     importpath = "xmanager_cloud/internal/storage/migrations",
-    visibility = ["//internal/storage:__subpackages__"],
+    visibility = ["//:__subpackages__"],
     deps = [
         "//internal/logging",
         "@com_github_golang_migrate_migrate_v4//:migrate",
@@ -32,18 +35,20 @@ go_library(
 
 go_test(
     name = "migrations_test",
-    size = "small",
     srcs = [
-        "commands_test.go",
+        "create_test.go",
+        "down_test.go",
+        "init_test.go",
         "runner_test.go",
+        "up_test.go",
     ],
     embed = [":migrations"],
     deps = [
-        "@com_github_golang_migrate_migrate_v4//:migrate",
         "@com_github_golang_migrate_migrate_v4//database",
         "@com_github_golang_migrate_migrate_v4//database/stub",
         "@com_github_golang_migrate_migrate_v4//source",
         "@com_github_golang_migrate_migrate_v4//source/stub",
         "@com_github_google_go_cmp//cmp",
+        "@io_k8s_utils//ptr",
     ],
 )

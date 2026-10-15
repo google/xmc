@@ -127,9 +127,9 @@ func TestRun(t *testing.T) {
 						if err != nil {
 							t.Fatalf("newRunner() failed: %v", err)
 						}
-						defer r.close()
+						defer r.Close()
 
-						v, dirty, err := r.migrator.Version()
+						v, dirty, err := r.Migrator.Version()
 						if ft.wantVersion == -1 {
 							if err != migrate.ErrNilVersion {
 								t.Errorf("Version() error = %v, want %v", err, migrate.ErrNilVersion)
@@ -160,10 +160,10 @@ func TestRun(t *testing.T) {
 				if err != nil {
 					t.Fatalf("newRunner() failed: %v", err)
 				}
-				defer r.close()
+				defer r.Close()
 
 				// Verify initial state: Schema migration table should not be yet initialized.
-				v, dirty, err := r.migrator.Version()
+				v, dirty, err := r.Migrator.Version()
 				if err != migrate.ErrNilVersion {
 					t.Errorf("Initial Version(): got (%v, %v, %v), want (nil, _, ErrNilVersion)", v, dirty, err)
 				}
@@ -177,7 +177,7 @@ func TestRun(t *testing.T) {
 				}
 
 				// Verify that baseline migration was not applied, and version is still nil.
-				v, dirty, err = r.migrator.Version()
+				v, dirty, err = r.Migrator.Version()
 				if err != migrate.ErrNilVersion {
 					t.Errorf("Final Version(): got (%v, %v, %v), want (nil, false, ErrNilVersion)", v, dirty, err)
 				}
@@ -218,25 +218,25 @@ func TestRun(t *testing.T) {
 				if err != nil {
 					t.Fatalf("newRunner() failed: %v", err)
 				}
-				defer r.close()
+				defer r.Close()
 
-				vBefore, _, err := r.migrator.Version()
+				vBefore, _, err := r.Migrator.Version()
 				if err != nil {
 					t.Fatalf("Version() failed before down: %v", err)
 				}
 
 				// Provide "y" as confirmation via buffer.
-				r.stdin = strings.NewReader("y\n")
+				r.Stdin = strings.NewReader("y\n")
 				var stdout bytes.Buffer
-				r.stdout = &stdout
+				r.Stdout = &stdout
 
 				cfg.command = "down"
 				cfg.arg = ptr(1)
-				if err := r.execCommand(ctx, cfg.command, cfg.arg); err != nil {
-					t.Fatalf("execCommand(down) failed: %v", err)
+				if err := r.ExecCommand(ctx, cfg.command, cfg.arg); err != nil {
+					t.Fatalf("ExecCommand(down) failed: %v", err)
 				}
 
-				vAfter, _, err := r.migrator.Version()
+				vAfter, _, err := r.Migrator.Version()
 				if err != nil && err != migrate.ErrNilVersion {
 					t.Fatalf("Version() failed after down: %v", err)
 				}
@@ -262,9 +262,9 @@ func TestRun(t *testing.T) {
 				if err != nil {
 					t.Fatalf("newRunner() = %v, want nil", err)
 				}
-				defer r.close()
+				defer r.Close()
 
-				versionAfterInit, dirty, err := r.migrator.Version()
+				versionAfterInit, dirty, err := r.Migrator.Version()
 				if err != nil {
 					t.Fatalf("Version() = %v, want nil (after init)", err)
 				}
@@ -278,7 +278,7 @@ func TestRun(t *testing.T) {
 					t.Fatalf("run(up) = %v, want nil (after init)", err)
 				}
 
-				versionAfterUp, dirtyAfterUp, err := r.migrator.Version()
+				versionAfterUp, dirtyAfterUp, err := r.Migrator.Version()
 				if err != nil {
 					t.Fatalf("Version() = %v, want nil (after up)", err)
 				}
@@ -359,77 +359,6 @@ func TestRun_Validation(t *testing.T) {
 			tc.mutator(&cfg)
 			if err := run(&cfg); err == nil {
 				t.Errorf("run() with %s: expected error, got nil", tc.name)
-			}
-		})
-	}
-}
-
-func TestParseArg(t *testing.T) {
-	tests := []struct {
-		name              string
-		cmd               string
-		args              []string
-		wantArg           *int
-		wantMigrationName string
-		wantErr           bool
-	}{
-		{
-			name:    "NoArg",
-			args:    []string{},
-			wantArg: nil,
-			wantErr: false,
-		},
-		{
-			name:    "NumberArg",
-			args:    []string{"123"},
-			wantArg: ptr(123),
-			wantErr: false,
-		},
-		{
-			name:    "InvalidArg",
-			args:    []string{"abc"},
-			wantArg: nil,
-			wantErr: true,
-		},
-		{
-			name:    "TooManyArgs",
-			args:    []string{"123", "456"},
-			wantArg: nil,
-			wantErr: true,
-		},
-		{
-			name:              "Create",
-			cmd:               "create",
-			args:              []string{"new_migration"},
-			wantMigrationName: "new_migration",
-			wantErr:           false,
-		},
-		{
-			name:              "Create_NoArg",
-			cmd:               "create",
-			args:              []string{},
-			wantMigrationName: "",
-			wantErr:           false,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := &config{command: tc.cmd}
-			err := parseArg(cfg, tc.args)
-
-			if (err != nil) != tc.wantErr {
-				t.Errorf("parseArg(%v) = %v, want error presence %v", tc.args, err, tc.wantErr)
-			}
-
-			if (cfg.arg == nil) != (tc.wantArg == nil) {
-				t.Errorf("parseArg(%v).arg nil mismatch: got %v, want %v", tc.args, cfg.arg, tc.wantArg)
-			} else if cfg.arg != nil && *cfg.arg != *tc.wantArg {
-				t.Errorf("parseArg(%v).arg = %d, want %d", tc.args, *cfg.arg, *tc.wantArg)
-			}
-
-			if cfg.migrationName != tc.wantMigrationName {
-				t.Errorf("parseArg(%v).migrationName = %q, want %q", tc.args, cfg.migrationName, tc.wantMigrationName)
 			}
 		})
 	}

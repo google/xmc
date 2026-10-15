@@ -169,7 +169,7 @@ func TestMigrationUpDownConsistency(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create runner: %v", err)
 			}
-			defer runner.close()
+			defer runner.Close()
 
 			adminClient, err := database.NewDatabaseAdminClient(ctx, emu.ClientOptions()...)
 			if err != nil {
@@ -179,7 +179,7 @@ func TestMigrationUpDownConsistency(t *testing.T) {
 
 			dbPath := fmt.Sprintf("projects/%s/instances/%s/databases/%s", cfg.projectID, cfg.instanceID, cfg.databaseID)
 
-			nextV, nextVErr := runner.source.First()
+			nextV, nextVErr := runner.Source.First()
 			for nextVErr == nil {
 				// 1. Get DDL before moving to nextV.
 				ddlBefore, err := fetchDDL(ctx, adminClient, dbPath)
@@ -188,13 +188,13 @@ func TestMigrationUpDownConsistency(t *testing.T) {
 				}
 
 				// 2. Step UP to move to nextV.
-				if err := runner.execCommand(ctx, "up", ptr(1)); err != nil {
+				if err := runner.ExecCommand(ctx, "up", ptr(1)); err != nil {
 					t.Fatalf("Failed to step up: %v", err)
 				}
 
 				// 3. Step DOWN to return to previous version.
-				runner.stdin = strings.NewReader("y\n")
-				if err := runner.execCommand(ctx, "down", ptr(1)); err != nil {
+				runner.Stdin = strings.NewReader("y\n")
+				if err := runner.ExecCommand(ctx, "down", ptr(1)); err != nil {
 					t.Fatalf("Failed to step down from version %d: %v", nextV, err)
 				}
 
@@ -210,12 +210,12 @@ func TestMigrationUpDownConsistency(t *testing.T) {
 				}
 
 				// 6. Step UP again to move permanently to nextV and proceed to the next iteration.
-				if err := runner.execCommand(ctx, "up", ptr(1)); err != nil {
+				if err := runner.ExecCommand(ctx, "up", ptr(1)); err != nil {
 					t.Fatalf("Failed to step up again to version %d: %v", nextV, err)
 				}
 
 				// Move to next version. If there is no next version, nextVErr will be os.ErrNotExist.
-				nextV, nextVErr = runner.source.Next(nextV)
+				nextV, nextVErr = runner.Source.Next(nextV)
 			}
 
 			if !errors.Is(nextVErr, os.ErrNotExist) {
@@ -242,9 +242,9 @@ func mustFetchVersion(ctx context.Context, t *testing.T, cfg *config, opts ...op
 	if err != nil {
 		t.Fatalf("Failed to create runner: %v", err)
 	}
-	defer r.close()
+	defer r.Close()
 
-	v, dirty, err := r.migrator.Version()
+	v, dirty, err := r.Migrator.Version()
 	if err != nil {
 		t.Fatalf("Failed to get version: %v", err)
 	}
