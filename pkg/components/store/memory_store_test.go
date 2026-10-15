@@ -860,7 +860,7 @@ func TestMemoryStore_ExecuteDeletion(t *testing.T) {
 		t.Fatalf("SetComponentIntent(dep-del) failed: %v", err)
 	}
 
-	// Attempt non-cascading deletion without force -> ErrHasActiveDependents
+	// Attempt non-cascading deletion without force -> FailedPrecondition with ErrorInfo reason ACTIVE_DEPENDENTS_EXIST
 	err = ms.ExecuteDeletion(ctx, "root-del", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, false)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("ExecuteDeletion(with dep, orphan policy, force=false) got code %v, want FailedPrecondition", status.Code(err))

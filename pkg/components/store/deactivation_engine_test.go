@@ -290,7 +290,7 @@ func TestValidateDeletionSafety(t *testing.T) {
 		t.Errorf("ValidateDeletionSafety(protected, force=true) unexpected error: %v", err)
 	}
 
-	// 4. Component with active dependents without force and non-cascading policy -> ErrHasActiveDependents
+	// 4. Component with active dependents without force and non-cascading policy -> FailedPrecondition with ErrorInfo reason ACTIVE_DEPENDENTS_EXIST
 	err = ValidateDeletionSafety(components, "comp-with-dep", componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, false)
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("ValidateDeletionSafety(with-dep, non-cascading, force=false) got code %v, want FailedPrecondition", status.Code(err))
