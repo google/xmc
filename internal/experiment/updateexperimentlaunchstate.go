@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	"github.com/kylelemons/godebug/diff"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
@@ -27,14 +26,13 @@ import (
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/statusmessage"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/state"
 	"xmanager_cloud/internal/validator"
 )
 
 // UpdateExperimentLaunchState updates the launch state of an experiment.
-func (r *Repository) UpdateExperimentLaunchState(ctx context.Context, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) (*essmsgpb.Experiment, error) {
+func UpdateExperimentLaunchState(ctx context.Context, txRunner storage.TransactionRunner, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) (*essmsgpb.Experiment, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	logging.Info(ctx, "Update experiment launch state", "launchState", launchState)
 
@@ -44,11 +42,11 @@ func (r *Repository) UpdateExperimentLaunchState(ctx context.Context, xid int64,
 
 	var currentExp *essmsgpb.Experiment
 	var updatedExp *essmsgpb.Experiment
-	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+	err := txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		var err error
 
 		// 1. Read the existing ExperimentStatus from storage.
-		updatedExp, err = r.FetchExperimentTransaction(ctx, xid, txn)
+		updatedExp, err = tx.Experiments.FetchExperiment(ctx, xid)
 		if err != nil {
 			return err
 		}
@@ -83,14 +81,12 @@ func (r *Repository) UpdateExperimentLaunchState(ctx context.Context, xid int64,
 			updatedExp.Status.StructuredStatusMessage = newStructuredMessage
 		}
 
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, xid, nil, nil, currentExp.GetStatus().GetStructuredStatusMessage(), updatedExp.GetStatus().GetStructuredStatusMessage(), txn)
+		if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, nil, nil, currentExp.GetStatus().GetStructuredStatusMessage(), updatedExp.GetStatus().GetStructuredStatusMessage()); err != nil {
+			return fmt.Errorf("failed to save status message history: %w", err)
+		}
 
 		// 5. Buffer a write mutation for the experiment row.
-		mutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(updatedExp)
-		if err != nil {
-			return fmt.Errorf("failed to create mutation for experiment status update: %w", err)
-		}
-		return txn.BufferWrite([]*spanner.Mutation{mutation})
+		return tx.Experiments.UpdateExperimentStatus(ctx, updatedExp)
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to update experiment launch state", "error", err)

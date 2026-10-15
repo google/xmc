@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
@@ -61,7 +62,7 @@ func TestUpdateExperimentLaunchState_Success(t *testing.T) {
 				t.Fatalf("ValidateExperimentName failed: %v", err)
 			}
 
-			updatedExp, err := storage.UpdateExperimentLaunchState(ctx, xid, tc.targetState)
+			updatedExp, err := experiment.UpdateExperimentLaunchState(ctx, storage, xid, tc.targetState)
 			if err != nil {
 				t.Fatalf("UpdateExperimentLaunchState failed: %v", err)
 			}
@@ -134,7 +135,7 @@ func TestUpdateExperimentLaunchState_StatusMessageUpdate(t *testing.T) {
 
 	// This should attempt to overwrite FATAL with INFO message for launch success,
 	// but ShouldStatusMessageSupercede should prevent it because FATAL > INFO.
-	_, err = storage.UpdateExperimentLaunchState(ctx, 999, essmsgpb.ExperimentStatus_COMPLETED)
+	_, err = experiment.UpdateExperimentLaunchState(ctx, storage, 999, essmsgpb.ExperimentStatus_COMPLETED)
 	if err != nil {
 		t.Fatalf("UpdateExperimentLaunchState failed: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestUpdateExperimentLaunchState_InvalidTargetState(t *testing.T) {
 		t.Fatalf("CreateExperiment failed: %v", err)
 	}
 
-	_, err = storage.UpdateExperimentLaunchState(ctx, 123, essmsgpb.ExperimentStatus_LAUNCHING)
+	_, err = experiment.UpdateExperimentLaunchState(ctx, storage, 123, essmsgpb.ExperimentStatus_LAUNCHING)
 	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
 		t.Errorf("UpdateExperimentLaunchState with invalid target state returned error %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
@@ -186,7 +187,7 @@ func TestUpdateExperimentLaunchState_NotFound(t *testing.T) {
 	_, essClient := emulator.Setup(ctx, t)
 	storage, _ := spanner.NewStorage(essClient)
 
-	_, err := storage.UpdateExperimentLaunchState(ctx, 123, essmsgpb.ExperimentStatus_COMPLETED)
+	_, err := experiment.UpdateExperimentLaunchState(ctx, storage, 123, essmsgpb.ExperimentStatus_COMPLETED)
 	if !errors.Is(err, grpcerr.ErrNotFound) {
 		t.Errorf("UpdateExperimentLaunchState for non-existent XID returned error %v, want %v", err, grpcerr.ErrNotFound)
 	}
@@ -215,7 +216,7 @@ func TestUpdateExperimentLaunchState_FailedPrecondition(t *testing.T) {
 		t.Fatalf("CreateExperiment failed: %v", err)
 	}
 
-	_, err = storage.UpdateExperimentLaunchState(ctx, 123, essmsgpb.ExperimentStatus_FAILED)
+	_, err = experiment.UpdateExperimentLaunchState(ctx, storage, 123, essmsgpb.ExperimentStatus_FAILED)
 	if !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("UpdateExperimentLaunchState with wrong initial state returned error %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}

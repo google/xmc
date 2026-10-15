@@ -24,7 +24,6 @@ go_library(
         "listexperiments.go",
         "repository.go",
         "updateexperiment.go",
-        "updateexperimentlaunchstate.go",
     ],
     importpath = "xmanager_cloud/internal/storage/spanner/experiment",
     visibility = ["//visibility:public"],
@@ -41,7 +40,6 @@ go_library(
         "//internal/storage/spanner/schema/experimentschema",
         "//internal/storage/spanner/statusmessage",
         "//internal/storage/spanner/utils",
-        "//internal/storage/state",
         "//internal/validator",
         "@com_github_kylelemons_godebug//diff",
         "@com_google_cloud_go_spanner//:spanner",
@@ -72,7 +70,6 @@ go_test(
         "fetchexperimentstatus_test.go",
         "listexperiments_test.go",
         "updateexperiment_test.go",
-        "updateexperimentlaunchstate_test.go",
     ],
     deps = [
         "//api/protos/experiment:messages_go_proto",
