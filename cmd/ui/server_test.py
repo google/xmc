@@ -329,6 +329,8 @@ class SPAHandlerTest(unittest.TestCase):
             {"env_val": "TRUE", "default": False, "expected": True},
             {"env_val": "false", "default": True, "expected": False},
             {"env_val": "FALSE", "default": True, "expected": False},
+            {"env_val": "", "default": True, "expected": True},
+            {"env_val": "", "default": False, "expected": False},
             {"env_val": None, "default": True, "expected": True},
             {"env_val": None, "default": False, "expected": False},
         ]

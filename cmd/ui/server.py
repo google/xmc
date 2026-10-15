@@ -19,9 +19,9 @@ import os
 
 
 def get_bool_env(name: str, default: bool = False) -> bool:
-    """Reads a boolean environment variable, returning default if unset."""
+    """Reads a boolean environment variable, returning default if unset or empty."""
     val = os.environ.get(name)
-    if val is None:
+    if not val:
         return default
     return val.lower() in ("true", "1", "yes")
 
