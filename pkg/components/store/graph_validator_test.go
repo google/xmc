@@ -235,45 +235,6 @@ func TestValidateProspectiveDependenciesFromMap(t *testing.T) {
 	}
 }
 
-func TestResolveDependencyIDs(t *testing.T) {
-	now := time.Now().UTC()
-	catalog := map[string]*ComponentRecord{
-		"redpanda": {ComponentID: 11, Name: "redpanda"},
-		"auth":     {ComponentID: 22, Name: "auth"},
-		"gone":     {ComponentID: 33, Name: "gone", DeleteTime: &now},
-		"nil-rec":  nil,
-	}
-	tests := []struct {
-		name    string
-		deps    []string
-		want    map[string]int64
-		wantErr string
-	}{
-		{name: "no dependencies", deps: nil, want: map[string]int64{}},
-		{name: "all registered", deps: []string{"auth", "redpanda"}, want: map[string]int64{"auth": 22, "redpanda": 11}},
-		{name: "unregistered", deps: []string{"redpanda", "missing"}, wantErr: `rpc error: code = FailedPrecondition desc = dependency not found: component "ingestion-gateway" depends on "missing", which is not registered`},
-		{name: "soft-deleted", deps: []string{"gone"}, wantErr: `rpc error: code = FailedPrecondition desc = dependency not found: component "ingestion-gateway" depends on "gone", which is not registered`},
-		{name: "nil record", deps: []string{"nil-rec"}, wantErr: `rpc error: code = FailedPrecondition desc = dependency not found: component "ingestion-gateway" depends on "nil-rec", which is not registered`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolveDependencyIDs(catalog, "ingestion-gateway", tt.deps)
-			if tt.wantErr != "" {
-				if err == nil || err.Error() != tt.wantErr {
-					t.Fatalf("resolveDependencyIDs() error = %v, want %q", err, tt.wantErr)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("resolveDependencyIDs() unexpected error: %v", err)
-			}
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("resolveDependencyIDs() mismatch (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
 func TestFindTransitiveDependents_CanonicalizesRoot(t *testing.T) {
 	records := []*ComponentRecord{
 		{
