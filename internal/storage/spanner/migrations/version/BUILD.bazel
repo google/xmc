@@ -14,6 +14,11 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+exports_files(
+    ["generate_version.py"],
+    visibility = ["//internal/storage:__subpackages__"],
+)
+
 genrule(
     name = "ess_version_gen",
     srcs = ["//internal/storage/spanner/migrations:ess_migrations"],
