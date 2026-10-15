@@ -103,17 +103,26 @@ func TestUpdateObservedGeneration_UnchangedHeartbeat_Parity(t *testing.T) {
 			const name = "unchanged-heartbeat"
 			before := seedOwnedComponent(ctx, t, s, name, false)
 
-			for _, srcs := range [][]store.RequestSource{nil, {ownerSource}} {
-				rec, err := seededHeartbeat(ctx, s, name, before, srcs...)
-				if err != nil {
-					t.Fatalf("UpdateObservedGeneration(unchanged, sources %v) error = %v", srcs, err)
-				}
-				assertOwnerOutcome(t, before, rec, 1, ownerFor(ownerSource), false)
-				stored, err := s.GetComponent(ctx, name)
-				if err != nil {
-					t.Fatalf("GetComponent() error = %v", err)
-				}
-				assertOwnerOutcome(t, before, stored, 1, ownerFor(ownerSource), false)
+			heartbeats := []struct {
+				name    string
+				sources []store.RequestSource
+			}{
+				{name: "unsourced", sources: nil},
+				{name: "sourced", sources: []store.RequestSource{ownerSource}},
+			}
+			for _, tt := range heartbeats {
+				t.Run(tt.name, func(t *testing.T) {
+					rec, err := seededHeartbeat(ctx, s, name, before, tt.sources...)
+					if err != nil {
+						t.Fatalf("UpdateObservedGeneration(unchanged, sources %v) error = %v", tt.sources, err)
+					}
+					assertOwnerOutcome(t, before, rec, 1, ownerFor(ownerSource), false)
+					stored, err := s.GetComponent(ctx, name)
+					if err != nil {
+						t.Fatalf("GetComponent() error = %v", err)
+					}
+					assertOwnerOutcome(t, before, stored, 1, ownerFor(ownerSource), false)
+				})
 			}
 
 			rec, err := s.UpdateObservedGeneration(ctx, name, 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Degraded", ownerSource)

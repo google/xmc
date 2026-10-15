@@ -389,6 +389,26 @@ func assertOperationOwnershipRejected(ctx context.Context, t *testing.T, s store
 	}
 }
 
+// sourceRejection is a RequestSource that a sourced store RPC must reject with wantReason.
+type sourceRejection struct {
+	name       string
+	src        store.RequestSource
+	wantReason string
+}
+
+// assertRejectedBy runs call with each rejection's source, in order, as the subtest op/name and
+// checks that the returned error carries the rejection's ErrorInfo reason.
+func assertRejectedBy(t *testing.T, op string, rejections []sourceRejection, call func(src store.RequestSource) error) {
+	t.Helper()
+	t.Run(op, func(t *testing.T) {
+		for _, tc := range rejections {
+			t.Run(tc.name, func(t *testing.T) {
+				assertReason(t, call(tc.src), tc.wantReason)
+			})
+		}
+	})
+}
+
 // TestSourcedObservationAndDeactivation_Parity checks on both MemoryStore and SpannerStore that
 // UpdateObservedGeneration, PrepareDeactivation, and CompleteDeactivation enforce the cluster
 // fence and source ownership when a RequestSource is supplied, while unsourced calls still work and
@@ -408,6 +428,12 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 	casUID.ExpectedOwnerUID = "uid-a"
 	fencedCluster := ownerOnProd
 	fencedCluster.ClusterUID = drClusterUID
+	// rejections are the sources that every sourced non-intent RPC must reject.
+	rejections := []sourceRejection{
+		{name: "fenced cluster", src: fencedCluster, wantReason: store.ReasonClusterFenced},
+		{name: "other namespace", src: otherNamespace, wantReason: store.ReasonSourceNamespaceConflict},
+		{name: "other UID", src: otherUID, wantReason: store.ReasonSourceIncarnationMismatch},
+	}
 
 	for _, backend := range intentStoreBackends() {
 		t.Run(backend.name, func(t *testing.T) {
@@ -422,17 +448,10 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 			}
 
 			// Rejections on UpdateObservedGeneration leave the component in PENDING_RECONCILIATION.
-			for _, tc := range []struct {
-				src        store.RequestSource
-				wantReason string
-			}{
-				{fencedCluster, store.ReasonClusterFenced},
-				{otherNamespace, store.ReasonSourceNamespaceConflict},
-				{otherUID, store.ReasonSourceIncarnationMismatch},
-			} {
-				_, err := s.UpdateObservedGeneration(ctx, name, 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready=True", tc.src)
-				assertReason(t, err, tc.wantReason)
-			}
+			assertRejectedBy(t, "UpdateObservedGeneration", rejections, func(src store.RequestSource) error {
+				_, err := s.UpdateObservedGeneration(ctx, name, 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready=True", src)
+				return err
+			})
 
 			// The owner object at an older CR generation (informer lag) is never STALE_GENERATION on
 			// a non-intent RPC, and keeps the recorded intent owner generation (3).
@@ -455,17 +474,10 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 			}
 
 			// Rejections on PrepareDeactivation leave the component ENABLED.
-			for _, tc := range []struct {
-				src        store.RequestSource
-				wantReason string
-			}{
-				{fencedCluster, store.ReasonClusterFenced},
-				{otherNamespace, store.ReasonSourceNamespaceConflict},
-				{otherUID, store.ReasonSourceIncarnationMismatch},
-			} {
-				_, err := s.PrepareDeactivation(ctx, name, false, tc.src)
-				assertReason(t, err, tc.wantReason)
-			}
+			assertRejectedBy(t, "PrepareDeactivation", rejections, func(src store.RequestSource) error {
+				_, err := s.PrepareDeactivation(ctx, name, false, src)
+				return err
+			})
 			if got, _ := s.GetComponent(ctx, name); got.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
 				t.Fatalf("state after rejected PrepareDeactivation = %v, want ENABLED", got.State)
 			}
@@ -477,17 +489,9 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 			}
 
 			// Rejections on CompleteDeactivation leave the component DISABLING.
-			for _, tc := range []struct {
-				src        store.RequestSource
-				wantReason string
-			}{
-				{fencedCluster, store.ReasonClusterFenced},
-				{otherNamespace, store.ReasonSourceNamespaceConflict},
-				{otherUID, store.ReasonSourceIncarnationMismatch},
-			} {
-				err := s.CompleteDeactivation(ctx, name, false, tc.src)
-				assertReason(t, err, tc.wantReason)
-			}
+			assertRejectedBy(t, "CompleteDeactivation", rejections, func(src store.RequestSource) error {
+				return s.CompleteDeactivation(ctx, name, false, src)
+			})
 			if got, _ := s.GetComponent(ctx, name); got.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
 				t.Fatalf("state after rejected CompleteDeactivation = %v, want DISABLING", got.State)
 			}
