@@ -57,8 +57,9 @@ type ComponentControllerOptions struct {
 // ComponentController runs Reconciler as a controller-runtime controller over the Component CRs of
 // the namespace its manager caches. A Component is reconciled when its spec, labels or annotations
 // change, when its deletion starts, when the readiness of a Component it depends on changes, and
-// ProbeInterval after every successful pass. A failed pass is retried with
-// NewComponentRateLimiter backoff.
+// after every successful pass: after the pass's explicit RequeueAfter when it sets one (30s while
+// deactivation is blocked, the 5m CMS heartbeat once disabled), otherwise after ProbeInterval. A
+// failed pass is retried with NewComponentRateLimiter backoff.
 type ComponentController struct {
 	client     client.Client
 	reconciler *Reconciler

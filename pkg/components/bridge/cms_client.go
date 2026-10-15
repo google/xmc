@@ -191,7 +191,8 @@ func (r *Reconciler) syncReadyToCMS(ctx context.Context, in ReconcileComponentIn
 
 func (r *Reconciler) syncObservedToCMS(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, readyStatus string, ignoreNotFound bool) error {
 	key := componentKey(in.Namespace, canonicalName)
-	if isCMSSynced(in.ExistingConditions) && !r.syncTracker.shouldSync(key, res.State, readyStatus, in.Generation) {
+	// A CR without a Ready condition is new (possibly recreated under the same name), so it always syncs.
+	if isCMSSynced(in.ExistingConditions) && findCondition(in.ExistingConditions, ConditionTypeReady) != nil && !r.syncTracker.shouldSync(key, res.State, readyStatus, in.Generation) {
 		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 		return nil
 	}

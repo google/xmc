@@ -31,6 +31,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
 
 const controllerTestNamespace = "xmc"
@@ -99,12 +101,15 @@ func TestComponentControllerReconcile(t *testing.T) {
 		wantWrites   []string
 		wantSetCalls int
 		wantFinal    []string
+		// wantForgotten reports whether the pass evicts the target's cmsSyncTracker entry.
+		wantForgotten bool
 	}{
 		{
-			name:       "missing Component is ignored",
-			cms:        &mockCMS{},
-			target:     "gone",
-			wantResult: reconcile.Result{},
+			name:          "missing Component is ignored",
+			cms:           &mockCMS{},
+			target:        "gone",
+			wantResult:    reconcile.Result{},
+			wantForgotten: true,
 		},
 		{
 			name:         "new Component gets the finalizer before CMS sees it",
@@ -180,30 +185,33 @@ func TestComponentControllerReconcile(t *testing.T) {
 			wantFinal:    []string{FinalizerCMSCleanup},
 		},
 		{
-			name:       "deletion releases the finalizer and is not requeued",
-			objs:       []*unstructured.Unstructured{deleting(FinalizerCMSCleanup, "other-fin")},
-			cms:        &mockCMS{},
-			target:     "deleting",
-			wantResult: reconcile.Result{},
-			wantWrites: []string{"patch"},
-			wantFinal:  []string{"other-fin"},
+			name:          "deletion releases the finalizer and is not requeued",
+			objs:          []*unstructured.Unstructured{deleting(FinalizerCMSCleanup, "other-fin")},
+			cms:           &mockCMS{},
+			target:        "deleting",
+			wantResult:    reconcile.Result{},
+			wantWrites:    []string{"patch"},
+			wantFinal:     []string{"other-fin"},
+			wantForgotten: true,
 		},
 		{
-			name:       "deletion without the finalizer has nothing to clean up",
-			objs:       []*unstructured.Unstructured{deleting("other-fin")},
-			cms:        &mockCMS{},
-			target:     "deleting",
-			wantResult: reconcile.Result{},
-			wantFinal:  []string{"other-fin"},
+			name:          "deletion without the finalizer has nothing to clean up",
+			objs:          []*unstructured.Unstructured{deleting("other-fin")},
+			cms:           &mockCMS{},
+			target:        "deleting",
+			wantResult:    reconcile.Result{},
+			wantFinal:     []string{"other-fin"},
+			wantForgotten: true,
 		},
 		{
-			name:       "deletion with only the legacy finalizer cleans up and releases it",
-			objs:       []*unstructured.Unstructured{deleting(legacyFinalizerCMSCleanup, "other-fin")},
-			cms:        &mockCMS{},
-			target:     "deleting",
-			wantResult: reconcile.Result{},
-			wantWrites: []string{"patch"},
-			wantFinal:  []string{"other-fin"},
+			name:          "deletion with only the legacy finalizer cleans up and releases it",
+			objs:          []*unstructured.Unstructured{deleting(legacyFinalizerCMSCleanup, "other-fin")},
+			cms:           &mockCMS{},
+			target:        "deleting",
+			wantResult:    reconcile.Result{},
+			wantWrites:    []string{"patch"},
+			wantFinal:     []string{"other-fin"},
+			wantForgotten: true,
 		},
 		{
 			name:         "legacy finalizer counts as attached",
@@ -225,6 +233,15 @@ func TestComponentControllerReconcile(t *testing.T) {
 			wantWrites: []string{"patch"},
 		},
 		{
+			name:          "finalizer patch on a Component deleted meanwhile is not an error",
+			objs:          []*unstructured.Unstructured{controllerTestComponent("app", enabled)},
+			cms:           &mockCMS{},
+			failures:      map[string]error{"patch": apierrors.NewNotFound(ComponentGVR.GroupResource(), "app")},
+			target:        "app",
+			wantWrites:    []string{"patch"},
+			wantForgotten: true,
+		},
+		{
 			name:         "status write after the Component is gone is not an error",
 			objs:         []*unstructured.Unstructured{finalized("app")},
 			cms:          &mockCMS{},
@@ -240,9 +257,17 @@ func TestComponentControllerReconcile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c, cl, writes := newTestComponentController(t, tt.cms, tt.failures, tt.objs...)
 			req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: controllerTestNamespace, Name: tt.target}}
+			key := componentKey(controllerTestNamespace, tt.target)
+			c.reconciler.syncTracker.recordSync(key, componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED, "", 0)
 
 			got, err := c.Reconcile(context.Background(), req)
 
+			c.reconciler.syncTracker.mu.Lock()
+			_, tracked := c.reconciler.syncTracker.entries[key]
+			c.reconciler.syncTracker.mu.Unlock()
+			if tracked == tt.wantForgotten {
+				t.Errorf("cmsSyncTracker has %s after Reconcile = %t, want %t", key, tracked, !tt.wantForgotten)
+			}
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("Reconcile() error = %v, wantErr %v", err, tt.wantErr)
 			}

@@ -119,10 +119,8 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	}
 	logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
 	// A settled disabled component has no workload to probe; spec changes requeue it immediately,
-	// so it only needs a pass per CMS heartbeat. An explicit delay set earlier in the pass is kept.
-	if res.RequeueAfter == 0 {
-		res.RequeueAfter = defaultCMSHeartbeatInterval
-	}
+	// so it only needs a pass per CMS heartbeat.
+	res.RequeueAfter = defaultCMSHeartbeatInterval
 	return res, nil
 }
 

@@ -162,6 +162,28 @@ func TestCMSSyncTracker_ShouldSyncAndForget(t *testing.T) {
 	})
 }
 
+// TestSyncReadyToCMS_ComponentWithoutReadyAlwaysSyncs guards against a Component recreated under
+// the same name, whose eviction no pass observed, inheriting a stale tracker entry and skipping its
+// first UpdateObservedGeneration for up to the heartbeat interval.
+func TestSyncReadyToCMS_ComponentWithoutReadyAlwaysSyncs(t *testing.T) {
+	cms := &mockCMS{}
+	r, err := NewReconciler(cms, nil, nil)
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
+	}
+	r.syncTracker.recordSync("xmc/clickhouse", componentspb.ComponentState_COMPONENT_STATE_ENABLED, ConditionStatusTrue, 1)
+
+	if _, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
+		Namespace: "xmc", Name: "clickhouse", Generation: 1, Enabled: true,
+		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER},
+	}); err != nil {
+		t.Fatalf("ReconcileComponent() error = %v", err)
+	}
+	if cms.lastObsReq == nil {
+		t.Error("UpdateObservedGeneration was skipped for a Component without a Ready condition")
+	}
+}
+
 func TestSyncReadyToCMS_PreservesReadyTransitionTimeAcrossHeartbeats(t *testing.T) {
 	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 	initialLTT := time.Date(2026, 10, 12, 11, 0, 0, 0, time.UTC)
