@@ -1794,11 +1794,11 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 				Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true,
 				ExistingConditions: []Condition{
 					{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 2, Reason: ReasonComponentHealthy, Message: "Ready", LastTransitionTime: time.Now().UTC()},
-					{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 2, Reason: ReasonComponentHealthy, Message: "Ready", LastTransitionTime: time.Now().UTC()},
 					{Type: ConditionTypeSynced, Status: ConditionStatusFalse, ObservedGeneration: 2, Reason: ReasonCMSSyncFailed, Message: "cms down", LastTransitionTime: time.Now().UTC()},
 				},
 			},
 			wantState:      componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			wantObsGen:     2,
 			wantReady:      ConditionStatusTrue,
 			wantReadyRsn:   ReasonComponentHealthy,
 			wantSynced:     ConditionStatusTrue,
@@ -1946,7 +1946,6 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 				Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true,
 				ExistingConditions: []Condition{
 					{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: "ResourceNotReady", Message: "pods crashing"},
-					{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: "ResourceNotReady", Message: "pods crashing"},
 					{Type: ConditionTypeSynced, Status: ConditionStatusFalse, ObservedGeneration: 2, Reason: ReasonCMSSyncFailed, Message: "cms down"},
 				},
 			},
@@ -1962,7 +1961,6 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 				Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true,
 				ExistingConditions: []Condition{
 					{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonDependenciesNotReady, Message: "waiting on db"},
-					{Type: ConditionTypeDegraded, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonDependenciesNotReady, Message: "waiting on db"},
 				},
 			},
 			wantState:    componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
