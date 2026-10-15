@@ -364,8 +364,9 @@ message SetComponentIntentRequest {
   // Declarative object that sent this intent. When set, CMS owns the component generation: it
   // starts at 1 and advances by 1 only when the stored intent changes, ignoring spec.generation.
   // Requests from the owner object are ordered by source.generation, and every write records the
-  // source as the owner of the component. This revision records the owner but does not enforce
-  // it: an intent from another owner takes ownership.
+  // source as the owner of the component. An intent from another namespace is rejected with
+  // SOURCE_NAMESPACE_CONFLICT, and one from another incarnation (uid) in the owner's namespace with
+  // SOURCE_INCARNATION_MISMATCH, unless its expected_owner_uid names the recorded owner.
   RequestSource source = 5 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "source"
