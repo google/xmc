@@ -322,7 +322,9 @@ func (s *SpannerStore) applyIntentTx(
 }
 
 // recordOwnerTx buffers a write of src as the owner of rec, with SourceLastSeenTime at the commit
-// timestamp, and sets rec.Owner. A nil src keeps the recorded owner.
+// timestamp, and sets rec.Owner. A nil src keeps the recorded owner. SourceLastSeenTime is the
+// commit time of the last request accepted from the recorded owner; it only feeds owner-staleness
+// observability and never decides ownership.
 func recordOwnerTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord, src *RequestSource) error {
 	if src == nil {
 		return nil

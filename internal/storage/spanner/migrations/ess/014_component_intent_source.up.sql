@@ -19,4 +19,7 @@ ALTER TABLE Components ADD COLUMN SourceGeneration INT64;
 ALTER TABLE Components ADD COLUMN SourceNamespace STRING(63);
 ALTER TABLE Components ADD COLUMN SourceClusterUid STRING(64);
 ALTER TABLE Components ADD COLUMN SourceEpoch INT64;
+-- Commit time of the last request CMS accepted from the recorded owner. It is written whenever the
+-- owner is recorded and is refreshed by sourced observation heartbeats; it is used only for
+-- owner-staleness observability, never for ownership decisions.
 ALTER TABLE Components ADD COLUMN SourceLastSeenTime TIMESTAMP OPTIONS (allow_commit_timestamp = true);
