@@ -25,7 +25,7 @@ func TestMigrationVersions(t *testing.T) {
 		{
 			name:       "ess",
 			got:        EssExpectedSchemaVersion(),
-			minVersion: 12,
+			minVersion: 13,
 		},
 		{
 			name:       "xid",
