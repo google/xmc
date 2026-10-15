@@ -285,15 +285,14 @@ func (s *SpannerStore) applyIntentTx(
 		return nil, intentPlan{}, err
 	}
 
-	var rec *ComponentRecord
-	switch {
-	case plan.write == writeNothing:
+	if plan.write == writeNothing {
 		return existingRec, plan, nil
-	case existingRec != nil:
-		rec, err = s.updateExistingIntentTx(txn, existingRec, canonicalName, spec, labels, deps, plan.generation, depIDs)
-	default:
-		rec, err = s.createNewIntentTx(txn, canonicalName, spec, labels, deps, plan.generation, depIDs)
 	}
+	if existingRec != nil {
+		rec, err := s.updateExistingIntentTx(txn, existingRec, canonicalName, spec, labels, deps, plan.generation, depIDs)
+		return rec, plan, err
+	}
+	rec, err := s.createNewIntentTx(txn, canonicalName, spec, labels, deps, plan.generation, depIDs)
 	return rec, plan, err
 }
 
