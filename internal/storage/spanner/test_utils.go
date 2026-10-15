@@ -22,6 +22,7 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	xidpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/internal/experiment"
 	"xmanager_cloud/internal/workunit"
 )
 
@@ -52,7 +53,7 @@ func BlankExperimentProto(xid int64) *essmsgpb.Experiment {
 
 func CreateAndStoreExperiment(ctx context.Context, t *testing.T, storage *Storage, exp *essmsgpb.Experiment) *essmsgpb.Experiment {
 	t.Helper()
-	createdExp, err := storage.CreateExperiment(ctx, exp)
+	createdExp, err := experiment.CreateExperiment(ctx, storage, exp)
 	if err != nil {
 		t.Fatalf("CreateExperiment failed: %v", err)
 	}

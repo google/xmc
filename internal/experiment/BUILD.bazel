@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "experiment",
     srcs = [
+        "createexperiment.go",
         "updateexperimentlaunchstate.go",
     ],
     importpath = "xmanager_cloud/internal/experiment",
@@ -38,6 +39,7 @@ go_library(
 go_test(
     name = "experiment_test",
     srcs = [
+        "createexperiment_test.go",
         "updateexperimentlaunchstate_test.go",
     ],
     deps = [

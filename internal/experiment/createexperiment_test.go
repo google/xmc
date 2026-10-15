@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/experiment"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 )
@@ -44,7 +45,7 @@ func TestCreateExperiment(t *testing.T) {
 		},
 	}
 
-	createdExp, err := storage.CreateExperiment(ctx, exp)
+	createdExp, err := experiment.CreateExperiment(ctx, storage, exp)
 	if err != nil {
 		t.Fatalf("CreateExperiment failed: %v", err)
 	}
@@ -78,8 +79,46 @@ func TestCreateExperiment_InvalidName(t *testing.T) {
 		Name: "invalid-name",
 	}
 
-	_, err := storage.CreateExperiment(ctx, exp)
+	_, err := experiment.CreateExperiment(ctx, storage, exp)
 	if err == nil {
 		t.Errorf("CreateExperiment with invalid name succeeded, want error")
+	}
+}
+
+func TestCreateExperiment_NilExperiment(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage, _ := spanner.NewStorage(essClient)
+
+	_, err := experiment.CreateExperiment(ctx, storage, nil)
+	if err == nil {
+		t.Errorf("CreateExperiment(nil) succeeded, want error")
+	}
+}
+
+func TestCreateExperiment_InitializesStatusIfNil(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage, _ := spanner.NewStorage(essClient)
+
+	exp := &essmsgpb.Experiment{
+		Name:      "experiments/456",
+		Title:     "test-title",
+		Creator:   "test-creator",
+		Tags:      []string{},
+		Urls:      []*essmsgpb.Url{},
+		Resources: []*essmsgpb.ResourceSet{},
+		Status:    nil,
+	}
+
+	createdExp, err := experiment.CreateExperiment(ctx, storage, exp)
+	if err != nil {
+		t.Fatalf("CreateExperiment failed: %v", err)
+	}
+	if createdExp.GetStatus() == nil {
+		t.Fatalf("CreateExperiment did not initialize nil status")
+	}
+	if createdExp.GetStatus().GetUpdateTime() == nil {
+		t.Errorf("CreateExperiment returned experiment with nil Status.UpdateTime")
 	}
 }

@@ -30,27 +30,7 @@ func TestCreateArtifact(t *testing.T) {
 		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
-	exp := &essmsgpb.Experiment{
-		Name:    "experiments/123",
-		Title:   "test-title",
-		Creator: "test-creator",
-		Notes:   "test-notes",
-		Tags:    []string{"tag1", "tag2"},
-		Urls: []*essmsgpb.Url{
-			{
-				Url: "http://test.com",
-			},
-		},
-		Resources: []*essmsgpb.ResourceSet{},
-		Status: &essmsgpb.ExperimentStatus{
-			ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
-		},
-	}
-
-	_, err = storage.CreateExperiment(ctx, exp)
-	if err != nil {
-		t.Fatalf("CreateExperiment failed: %v", err)
-	}
+	spanner.CreateBlankExperiment(ctx, t, storage, 123)
 
 	art := &essmsgpb.Artifact{
 		Name:   "artifacts/456",

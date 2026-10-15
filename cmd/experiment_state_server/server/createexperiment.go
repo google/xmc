@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/internal/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
@@ -105,7 +106,7 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 
 	// 5. Persist the experiment to the storage layer.
 	logging.Info(ctx, "Persisting experiment", "experiment_name", newExp.Name)
-	retExp, err := h.storage.CreateExperiment(ctx, newExp)
+	retExp, err := experiment.CreateExperiment(ctx, h.storage, newExp)
 	if err != nil {
 		logging.Error(ctx, "Failed to save experiment", "experiment_name", newExp.GetName(), "error", err)
 		return nil, fmt.Errorf("failed to save experiment %s: %v: %w", newExp.GetName(), err, grpcerr.ErrInternal)

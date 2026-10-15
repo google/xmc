@@ -229,7 +229,7 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 			},
 			storage: &storage.MockStorage{
-				CreateExperimentErr: fmt.Errorf("Storage creation failed"),
+				InsertExperimentErr: fmt.Errorf("Storage creation failed"),
 			},
 			wantErr: grpcerr.ErrInternal,
 		},

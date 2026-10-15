@@ -128,7 +128,7 @@ func TestUpdateExperimentLaunchState_StatusMessageUpdate(t *testing.T) {
 			},
 		},
 	}
-	_, err := storage.CreateExperiment(ctx, exp)
+	_, err := experiment.CreateExperiment(ctx, storage, exp)
 	if err != nil {
 		t.Fatalf("CreateExperiment failed: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestUpdateExperimentLaunchState_InvalidTargetState(t *testing.T) {
 		},
 	}
 
-	_, err := storage.CreateExperiment(ctx, exp)
+	_, err := experiment.CreateExperiment(ctx, storage, exp)
 	if err != nil {
 		t.Fatalf("CreateExperiment failed: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestUpdateExperimentLaunchState_FailedPrecondition(t *testing.T) {
 		},
 	}
 
-	_, err := storage.CreateExperiment(ctx, exp)
+	_, err := experiment.CreateExperiment(ctx, storage, exp)
 	if err != nil {
 		t.Fatalf("CreateExperiment failed: %v", err)
 	}

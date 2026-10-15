@@ -91,7 +91,7 @@ type MockStorage struct {
 	WorkUnit                          *essmsgpb.WorkUnit
 	FetchCurrentWorkUnitExecutionErr  error
 	WorkUnitExecution                 *essmsgpb.WorkUnitExecution
-	CreateExperimentErr               error
+	InsertExperimentErr               error
 	FetchNextWorkUnitIDErr            error
 	NextWorkUnitID                    int64
 	InsertWorkUnitErr                 error
@@ -211,12 +211,13 @@ func (s *MockStorage) DeleteArtifact(ctx context.Context, aid int64) error {
 	return s.DeleteArtifactErr
 }
 
-// CreateExperiment mocks experiment creation.
-func (s *MockStorage) CreateExperiment(ctx context.Context, exp *essmsgpb.Experiment) (*essmsgpb.Experiment, error) {
-	if s.CreateExperimentErr != nil {
-		return nil, s.CreateExperimentErr
+// InsertExperiment mocks inserting an experiment within a transaction.
+func (s *MockStorage) InsertExperiment(ctx context.Context, exp *essmsgpb.Experiment) error {
+	if s.InsertExperimentErr != nil {
+		return s.InsertExperimentErr
 	}
-	return s.Experiment, nil
+	s.Experiment = exp
+	return nil
 }
 
 // FetchNextWorkUnitID mocks fetching the next available work unit ID within a transaction.
