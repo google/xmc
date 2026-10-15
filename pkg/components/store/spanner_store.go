@@ -148,45 +148,19 @@ func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, spec
 
 	deps := ExtractDependencies(spec, labels)
 	var finalRec *ComponentRecord
+	var unchanged bool
 
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		catalog, err := s.loadActiveCatalog(ctx, txn)
-		if err != nil {
-			return err
-		}
-
-		if err := ValidateProspectiveDependenciesFromMap(catalog, canonicalName, deps); err != nil {
-			return err
-		}
-
-		depIDs, err := resolveDependencyIDs(catalog, canonicalName, deps)
-		if err != nil {
-			return err
-		}
-
-		existingRec, exists := catalog[canonicalName]
-		if exists && !isDeletedRecord(existingRec) {
-			rec, err := s.updateExistingIntentTx(txn, existingRec, canonicalName, spec, labels, deps, desiredGen, depIDs)
-			if err != nil {
-				return err
-			}
-			finalRec = rec
-			return nil
-		}
-
-		rec, err := s.createNewIntentTx(txn, canonicalName, spec, labels, deps, desiredGen, depIDs)
-		if err != nil {
-			return err
-		}
-		finalRec = rec
-		return nil
+		// Assign both results on every attempt because the transaction body may be retried.
+		var err error
+		finalRec, unchanged, err = s.applyIntentTx(ctx, txn, canonicalName, spec, labels, deps, desiredGen)
+		return err
 	})
-
 	if err != nil {
 		return nil, err
 	}
 
-	if finalRec != nil {
+	if finalRec != nil && !unchanged {
 		if finalRec.CreateTime.IsZero() {
 			finalRec.CreateTime = commitTimestamp
 		}
@@ -195,6 +169,42 @@ func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, spec
 	}
 
 	return cloneRecord(finalRec), nil
+}
+
+// applyIntentTx validates the intent against the active catalog and buffers the mutations that
+// create or update the component. It reports unchanged=true and buffers nothing when the intent
+// would not change the existing record.
+func (s *SpannerStore) applyIntentTx(
+	ctx context.Context,
+	txn *spanner.ReadWriteTransaction,
+	canonicalName string,
+	spec *componentspb.ComponentSpec,
+	labels map[string]string,
+	deps []string,
+	desiredGen int64,
+) (rec *ComponentRecord, unchanged bool, err error) {
+	catalog, err := s.loadActiveCatalog(ctx, txn)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := ValidateProspectiveDependenciesFromMap(catalog, canonicalName, deps); err != nil {
+		return nil, false, err
+	}
+	depIDs, err := resolveDependencyIDs(catalog, canonicalName, deps)
+	if err != nil {
+		return nil, false, err
+	}
+
+	existingRec, exists := catalog[canonicalName]
+	if !exists || isDeletedRecord(existingRec) {
+		rec, err = s.createNewIntentTx(txn, canonicalName, spec, labels, deps, desiredGen, depIDs)
+		return rec, false, err
+	}
+	if isUnchangedIntent(existingRec, spec, labels, deps, desiredGen) {
+		return existingRec, true, nil
+	}
+	rec, err = s.updateExistingIntentTx(txn, existingRec, canonicalName, spec, labels, deps, desiredGen, depIDs)
+	return rec, false, err
 }
 
 func (s *SpannerStore) updateExistingIntentTx(
