@@ -28,7 +28,8 @@ import (
 
 // recordingLeaderHelm is a leaderHelmManager that records its calls.
 type recordingLeaderHelm struct {
-	hydrateErr error
+	hydrateErr  error
+	shutdownErr error
 
 	mu               sync.Mutex
 	hydrations       int
@@ -48,7 +49,7 @@ func (h *recordingLeaderHelm) Shutdown(ctx context.Context) error {
 	defer h.mu.Unlock()
 	h.shutdowns++
 	h.shutdownDeadline, _ = ctx.Deadline()
-	return nil
+	return h.shutdownErr
 }
 
 // calls returns the number of hydrations and shutdowns so far.
@@ -58,29 +59,47 @@ func (h *recordingLeaderHelm) calls() (hydrations, shutdowns int) {
 	return h.hydrations, h.shutdowns
 }
 
+// TestNewHelmLeaderRunnable checks that the constructed runnable needs leader election and gives
+// the Helm manager helmShutdownTimeout to finish its upgrades.
+func TestNewHelmLeaderRunnable(t *testing.T) {
+	helm := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud")
+	defer helm.Close()
+	r, ok := NewHelmLeaderRunnable(helm).(*helmLeaderRunnable)
+	if !ok {
+		t.Fatalf("NewHelmLeaderRunnable() returned %T, want *helmLeaderRunnable", NewHelmLeaderRunnable(helm))
+	}
+	if r.helm != helm || r.shutdownTimeout != helmShutdownTimeout || !r.NeedLeaderElection() {
+		t.Errorf("NewHelmLeaderRunnable() = {helm: %p, shutdownTimeout: %v, leader: %t}, want {helm: %p, shutdownTimeout: %v, leader: true}", r.helm, r.shutdownTimeout, r.NeedLeaderElection(), helm, helmShutdownTimeout)
+	}
+}
+
 // TestHelmLeaderRunnable checks that the runnable runs only on the leader, hydrates the Helm
 // manager once started, even when hydration fails keeps running until the manager stops leading,
-// and then shuts the Helm manager down with helmShutdownTimeout to finish its upgrades.
+// and then shuts the Helm manager down with helmShutdownTimeout to finish its upgrades, returning
+// nil even when the shutdown cancelled unfinished upgrades.
 func TestHelmLeaderRunnable(t *testing.T) {
 	tests := []struct {
-		name       string
-		hydrateErr error
+		name        string
+		hydrateErr  error
+		shutdownErr error
 	}{
 		{name: "hydrated"},
 		{name: "hydration failed", hydrateErr: errors.New("configmap unavailable")},
+		{name: "shutdown cancelled upgrades", shutdownErr: context.DeadlineExceeded},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) { checkHelmLeaderRunnableLifecycle(t, tt.hydrateErr) })
+			synctest.Test(t, func(t *testing.T) {
+				checkHelmLeaderRunnableLifecycle(t, &recordingLeaderHelm{hydrateErr: tt.hydrateErr, shutdownErr: tt.shutdownErr})
+			})
 		})
 	}
 }
 
-// checkHelmLeaderRunnableLifecycle starts a helmLeaderRunnable whose hydration returns hydrateErr,
-// stops it, and checks its Helm manager calls. It must run inside a synctest bubble.
-func checkHelmLeaderRunnableLifecycle(t *testing.T, hydrateErr error) {
+// checkHelmLeaderRunnableLifecycle starts a helmLeaderRunnable over helm, stops it, and checks its
+// Helm manager calls. It must run inside a synctest bubble.
+func checkHelmLeaderRunnableLifecycle(t *testing.T, helm *recordingLeaderHelm) {
 	t.Helper()
-	helm := &recordingLeaderHelm{hydrateErr: hydrateErr}
 	r := &helmLeaderRunnable{helm: helm, shutdownTimeout: helmShutdownTimeout}
 	if !r.NeedLeaderElection() {
 		t.Error("NeedLeaderElection() = false, want true")
@@ -142,6 +161,44 @@ func TestK8sHelmManager_ShutdownDropsQueuedUpgrades(t *testing.T) {
 	}
 	if mgr.isUpgradePending(queued) {
 		t.Errorf("isUpgradePending(%s) = true after Shutdown, want false", queued.Name)
+	}
+}
+
+// TestK8sHelmManager_UpgradeWaitingOnLockIsDroppedOnShutdown checks that an async upgrade blocked
+// on the upgrade lock behind a teardown when shutdown begins is dropped once it gets the lock: the
+// manager's context is still live then, but the upgrade must not start after shutdown began.
+func TestK8sHelmManager_UpgradeWaitingOnLockIsDroppedOnShutdown(t *testing.T) {
+	ref := ComponentRef{Namespace: "xmc", Name: "queued"}
+	runner := &mockHelmActionRunner{}
+	// Sync execution starts no worker, so the test drives executeComponentUpgrade itself.
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	defer mgr.cancel()
+	req := upgradeRequest{ref: ref, namespace: ref.Namespace, seq: mgr.markUpgradePending(ref)}
+	if err := mgr.acquireUpgradeLock(context.Background()); err != nil { // Held by a teardown.
+		t.Fatalf("acquireUpgradeLock() failed: %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		mgr.executeComponentUpgrade(req)
+	}()
+
+	// Close's first phase: stopCh is closed while m.ctx stays live until the worker returns.
+	mgr.stopMu.Lock()
+	mgr.stopped = true
+	close(mgr.stopCh)
+	mgr.stopMu.Unlock()
+	mgr.releaseUpgradeLock()
+	<-done
+
+	if got := runner.recordedOps(); len(got) != 0 {
+		t.Errorf("completed release operations = %v, want none", got)
+	}
+	if err := mgr.GetUpgradeError(ref); !errors.Is(err, errManagerStopped) {
+		t.Errorf("GetUpgradeError(%s) = %v, want %v", ref.Name, err, errManagerStopped)
+	}
+	if mgr.isUpgradePending(ref) {
+		t.Errorf("isUpgradePending(%s) = true, want false", ref.Name)
 	}
 }
 

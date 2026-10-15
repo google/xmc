@@ -118,7 +118,7 @@ func ParseConfig(args []string) (*Config, error) {
 	reconcileTimeout := fs.Duration("reconcile-timeout", defaultReconcileTimeout, "Timeout duration for one Component reconcile pass")
 	maxConcurrentReconciles := fs.Int("max-concurrent-reconciles", defaultMaxConcurrentReconciles, "Number of Components reconciled in parallel")
 	metricsBindAddress := fs.String("metrics-bind-address", "127.0.0.1:8080", "Address of the unauthenticated metrics endpoint; 0 disables it")
-	healthProbeBindAddress := fs.String("health-probe-bind-address", ":8081", "Address of the /healthz and /readyz endpoints")
+	healthProbeBindAddress := fs.String("health-probe-bind-address", ":8081", "Address of the /healthz and /readyz endpoints; must not be empty or 0")
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig file")
 	chartPath := fs.String("chart-path", defaultChartPath, "Base path to per-component Helm charts (<chart-path>/components/<name>) or a fallback Helm chart directory/tarball")
 
@@ -146,8 +146,8 @@ func ParseConfig(args []string) (*Config, error) {
 	if *maxConcurrentReconciles < 1 {
 		return nil, fmt.Errorf("max-concurrent-reconciles must be at least 1, got %d", *maxConcurrentReconciles)
 	}
-	if *healthProbeBindAddress == "" {
-		return nil, errors.New("health-probe-bind-address must be specified")
+	if *healthProbeBindAddress == "" || *healthProbeBindAddress == "0" {
+		return nil, fmt.Errorf("health-probe-bind-address must be a listen address (\"\" and \"0\" disable the probes), got %q", *healthProbeBindAddress)
 	}
 	return &Config{
 		CMSAddress:              *cmsAddress,

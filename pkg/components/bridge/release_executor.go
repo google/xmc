@@ -342,7 +342,7 @@ func (m *K8sHelmManager) executeComponentUpgrade(req upgradeRequest) {
 	defer cancel()
 
 	if err := m.acquireUpgradeLock(execCtx); err != nil {
-		m.recordAsyncUpgrade(execCtx, req, err)
+		m.finishUnstartedUpgrade(execCtx, req, err)
 		return
 	}
 	defer m.releaseUpgradeLock()
@@ -350,12 +350,21 @@ func (m *K8sHelmManager) executeComponentUpgrade(req upgradeRequest) {
 		logging.Info(execCtx, "Skipping superseded asynchronous Helm upgrade", "release", ComponentReleaseName(req.ref.Name), "name", req.ref.Name, "namespace", req.namespace)
 		return
 	}
-	// acquireUpgradeLock may take a free lock although the manager was cancelled; a cancelled upgrade must not start.
-	if err := execCtx.Err(); err != nil {
-		m.recordAsyncUpgrade(execCtx, req, err)
+	// The lock may have been taken after Shutdown began or the manager was cancelled; such an upgrade must not start.
+	if m.isStopping() || execCtx.Err() != nil {
+		m.finishUnstartedUpgrade(execCtx, req, execCtx.Err())
 		return
 	}
 	m.recordAsyncUpgrade(execCtx, req, m.upgradeRelease(execCtx, ComponentReleaseName(req.ref.Name), req.namespace, req.chartPath, req.values))
+}
+
+// finishUnstartedUpgrade drops req with errManagerStopped once the manager is stopping, and otherwise records err.
+func (m *K8sHelmManager) finishUnstartedUpgrade(ctx context.Context, req upgradeRequest, err error) {
+	if m.isStopping() {
+		m.dropUpgrade(req)
+		return
+	}
+	m.recordAsyncUpgrade(ctx, req, err)
 }
 
 // isUpgradeSuperseded reports whether req is no longer ref's latest enqueued upgrade, either because a newer request

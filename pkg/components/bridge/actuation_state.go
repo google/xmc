@@ -137,6 +137,7 @@ func (m *K8sHelmManager) releaseContradictsReadyCR(ctx context.Context, ref Comp
 // component stays recorded as inactive and keeps its chart path override (Delete); otherwise it is forgotten entirely
 // (Purge, Orphan). Callers must hold m.mu.
 func (m *K8sHelmManager) forgetComponentLocked(key string, keepInactive bool) {
+	m.forgetEpoch++
 	delete(m.actuatedGenerations, key)
 	m.clearRepairLocked(key)
 	if keepInactive {
@@ -168,11 +169,14 @@ func (m *K8sHelmManager) applyHydratedState(key string, observedGeneration int64
 }
 
 // hydrateNamespaceFromConfigMap records the enablement of every component in the namespace's values ConfigMap that
-// has no in-memory state yet. Callers must pass a non-empty namespace.
+// has no in-memory state yet, discarding a read overtaken by a teardown. Callers must pass a non-empty namespace.
 func (m *K8sHelmManager) hydrateNamespaceFromConfigMap(ctx context.Context, namespace string) error {
 	if m.client == nil {
 		return nil
 	}
+	m.mu.RLock()
+	epoch := m.forgetEpoch
+	m.mu.RUnlock()
 	cm, err := m.client.CoreV1().ConfigMaps(namespace).Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil
@@ -183,6 +187,9 @@ func (m *K8sHelmManager) hydrateNamespaceFromConfigMap(ctx context.Context, name
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.forgetEpoch != epoch {
+		return nil
+	}
 	for k, rawJSON := range cm.Data {
 		compName, ok := strings.CutSuffix(k, componentValuesKeySuffix)
 		if !ok {

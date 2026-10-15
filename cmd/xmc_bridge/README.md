@@ -64,10 +64,10 @@ Configuration can be supplied via environment variables (mounted from `xmc-bridg
 | `--reconcile-timeout` / `RECONCILE_TIMEOUT` | `60s` | Timeout of one Component's reconcile pass (CMS calls, actuation and probing); persisting the pass's status is not bounded by it. |
 | `--max-concurrent-reconciles` / `MAX_CONCURRENT_RECONCILES` | `1` | Number of Components reconciled in parallel. Must be at least 1. |
 | `--metrics-bind-address` | `"127.0.0.1:8080"` | Address the controller-runtime metrics endpoint listens on. The endpoint has no authentication, so it listens on loopback by default. `"0"` disables it. |
-| `--health-probe-bind-address` | `":8081"` | Address serving the `/healthz` and `/readyz` probes. Must not be empty. |
+| `--health-probe-bind-address` | `":8081"` | Address serving the `/healthz` and `/readyz` probes. Must not be empty or `"0"` (both would disable the probes). |
 | `--kubeconfig` / `KUBECONFIG` | `""` | Optional explicit path to kubeconfig file (defaults to in-cluster or `KUBECONFIG` env). |
 
-Once elected, `xmc-bridge` invokes `HydrateFromCluster` to restore active 1P component states from the `xmc-component-values` ConfigMap, preventing redundant Helm release revision increments and ensuring post-restart deactivations execute cleanly. Each Component also hydrates its own state on its first reconcile, so a reconcile that runs before the namespace-wide hydration finishes sees the same state.
+Once elected, `xmc-bridge` invokes `HydrateFromCluster` to restore active 1P component states from the `xmc-component-values` ConfigMap, preventing redundant Helm release revision increments and ensuring post-restart deactivations execute cleanly. It runs concurrently with the first reconciles: each 1P Component also hydrates its own state before its Helm actuation, and a reconcile whose dependency gate runs before any hydration falls back to the Component's `DependenciesReady` and `Ready` conditions, so at worst one pass reports `DependenciesNotReady` instead of `HelmUpgradePending` without touching the workload. A namespace hydration read overtaken by a teardown is discarded, so it cannot resurrect a purged or orphaned component.
 
 ### Reconciliation
 

@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Controller-runtime envtest integration suite for ComponentController and NewComponentManagerOptions.
+// Controller-runtime envtest integration suite for ComponentController, ComponentManagerOptions and
+// AddComponentHealthChecks.
 // Production targets: component_controller.go and component_manager.go.
 // Test type: hermetic Kubernetes control-plane integration test (runs against a real kube-apiserver
-// and etcd started via sigs.k8s.io/controller-runtime/pkg/envtest). Kept separate from the pure
-// unit tests in component_controller_test.go and component_manager_test.go (which use fake clients)
-// to test real informer cache wiring, watch predicates, Lease handoff, and Server-Side Apply.
+// and etcd started via sigs.k8s.io/controller-runtime/pkg/envtest). The pure unit tests live in
+// component_controller_test.go and component_manager_test.go; the envtest harness defined here
+// (runControllerEnv) is shared with the Lease handoff test in component_manager_test.go to test
+// real informer cache wiring, watch predicates, Lease handoff, and Server-Side Apply.
 package bridge
 
 import (
@@ -183,6 +185,9 @@ func runControllerEnv(t *testing.T, cfg *rest.Config, mgrCfg ComponentManagerCon
 	counter := &reconcileCounter{inner: c, counts: map[string]int{}}
 	if err := c.newControllerBuilder(mgr).Complete(counter); err != nil {
 		t.Fatalf("failed to set up controller: %v", err)
+	}
+	if err := AddComponentHealthChecks(context.Background(), mgr); err != nil {
+		t.Fatalf("AddComponentHealthChecks() failed: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

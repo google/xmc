@@ -30,6 +30,9 @@ func TestParseConfig(t *testing.T) {
 		args        []string
 		wantErr     bool
 		wantHelpErr bool
+		// wantMetricsAddr and wantHealthAddr, when set, are the expected parsed endpoint addresses.
+		wantMetricsAddr string
+		wantHealthAddr  string
 	}{
 		{
 			name:    "valid flags",
@@ -78,13 +81,20 @@ func TestParseConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "custom endpoints with metrics disabled",
-			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--metrics-bind-address=0", "--health-probe-bind-address=:9443"},
-			wantErr: false,
+			name:            "custom endpoints with metrics disabled",
+			args:            []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--metrics-bind-address=0", "--health-probe-bind-address=:9443"},
+			wantErr:         false,
+			wantMetricsAddr: "0",
+			wantHealthAddr:  ":9443",
 		},
 		{
 			name:    "missing health probe address",
 			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--health-probe-bind-address="},
+			wantErr: true,
+		},
+		{
+			name:    "zero health probe address disables probes and is rejected",
+			args:    []string{"--cms-address=cms:50051", "--namespace=prod", "--release-name=xmanager-cloud", "--health-probe-bind-address=0"},
 			wantErr: true,
 		},
 	}
@@ -100,6 +110,12 @@ func TestParseConfig(t *testing.T) {
 			}
 			if err == nil && cfg == nil {
 				t.Fatal("expected non-nil Config")
+			}
+			if tt.wantMetricsAddr != "" && cfg.MetricsBindAddress != tt.wantMetricsAddr {
+				t.Errorf("MetricsBindAddress = %q, want %q", cfg.MetricsBindAddress, tt.wantMetricsAddr)
+			}
+			if tt.wantHealthAddr != "" && cfg.HealthProbeBindAddress != tt.wantHealthAddr {
+				t.Errorf("HealthProbeBindAddress = %q, want %q", cfg.HealthProbeBindAddress, tt.wantHealthAddr)
 			}
 		})
 	}

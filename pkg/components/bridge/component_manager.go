@@ -50,8 +50,8 @@ type ComponentManagerConfig struct {
 	LeaderElection bool
 	// MetricsBindAddress is the address of the metrics endpoint. "" or "0" disables it.
 	MetricsBindAddress string
-	// HealthProbeBindAddress is the address of the /healthz and /readyz endpoints. "" disables
-	// them.
+	// HealthProbeBindAddress is the address of the /healthz and /readyz endpoints. "" or "0"
+	// disables them.
 	HealthProbeBindAddress string
 }
 

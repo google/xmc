@@ -20,7 +20,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"helm.sh/helm/v3/pkg/release"
 )
@@ -135,6 +137,38 @@ func TestK8sHelmManager_ColdStartHydration(t *testing.T) {
 	}
 	if !mgr2.IsComponentActuated(ref, 3) {
 		t.Fatal("expected ingestion-gateway to be marked actuated at generation 3 after HydrateComponentState")
+	}
+}
+
+// TestK8sHelmManager_HydrationDiscardsReadOvertakenByTeardown checks that a namespace hydration
+// whose ConfigMap read is overtaken by a teardown does not resurrect the forgotten component.
+func TestK8sHelmManager_HydrationDiscardsReadOvertakenByTeardown(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	ref := ComponentRef{Namespace: "xmc", Name: "metrics"}
+	writer := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
+	if err := writer.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent failed: %v", err)
+	}
+	_ = writer.Close()
+
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
+	defer mgr.Close()
+	key := componentKey(ref.Namespace, ref.Name)
+	// A Purge or Orphan finishes while the hydration's ConfigMap GET is in flight.
+	client.PrependReactor("get", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+		mgr.mu.Lock()
+		mgr.forgetComponentLocked(key, false)
+		mgr.mu.Unlock()
+		return false, nil, nil
+	})
+	if err := mgr.HydrateFromCluster(ctx); err != nil {
+		t.Fatalf("HydrateFromCluster failed: %v", err)
+	}
+	mgr.mu.RLock()
+	defer mgr.mu.RUnlock()
+	if active, known := mgr.activeState[key]; known {
+		t.Errorf("activeState[%s] = %t after an overtaken hydration, want absent", key, active)
 	}
 }
 
