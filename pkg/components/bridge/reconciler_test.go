@@ -1818,7 +1818,7 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 		},
 		{
 			name:          "CMS unregistered dependency rejection finishes with err == nil and advances observedGeneration",
-			cms:           &mockCMS{setErr: status.Error(codes.FailedPrecondition, store.DependencyNotFoundMessagePrefix+` component "ch" depends on "redpanda", which is not registered`)},
+			cms:           &mockCMS{setErr: dependencyNotRegisteredErr(t, "ch", "redpanda")},
 			in:            ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 3, ExistingObservedGeneration: 1, Spec: spec3P, Enabled: true},
 			wantState:     componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantObsGen:    3,
