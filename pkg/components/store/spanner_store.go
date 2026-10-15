@@ -161,13 +161,8 @@ func NewSpannerStore(client *spanner.Client) *SpannerStore {
 // SetComponentIntent applies or updates component intent within Spanner. An unchanged intent whose
 // dependencies are all registered and active is answered from a strong read-only read without a
 // read-write transaction; anything else, including every changed or new intent (which therefore
-// pays the extra read), is decided by the read-write transaction.
+// pays the extra read), is decided by the read-write transaction. The intent is ordered by desiredGen.
 func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error) {
-	return s.setIntent(ctx, name, spec, labels, desiredGen)
-}
-
-// setIntent applies an intent ordered by desiredGen.
-func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error) {
 	canonicalName, err := validateIntentArgs(name, spec)
 	if err != nil {
 		return nil, err

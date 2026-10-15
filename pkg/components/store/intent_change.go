@@ -47,7 +47,7 @@ func isUnchangedIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, l
 	return proto.Equal(specWithoutGeneration(rec.Spec), specWithoutGeneration(spec))
 }
 
-// intentWrite is what applying an intent to an existing active record writes.
+// intentWrite is what applying an intent writes; for a new component the plan is always writeSpec.
 type intentWrite int
 
 const (
@@ -57,7 +57,7 @@ const (
 	writeSpec
 )
 
-// intentPlan is the outcome of applying an intent to an existing active record.
+// intentPlan is the outcome of applying an intent: what is written and the resulting generation.
 type intentPlan struct {
 	write      intentWrite
 	generation int64 // Generation of the record after the write.

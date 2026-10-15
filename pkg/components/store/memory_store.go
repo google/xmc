@@ -54,13 +54,8 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-// SetComponentIntent applies or updates component intent within the in-memory store.
+// SetComponentIntent applies or updates component intent, ordered by desiredGen, within the in-memory store.
 func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error) {
-	return m.setIntent(name, spec, labels, desiredGen)
-}
-
-// setIntent applies an intent ordered by desiredGen.
-func (m *MemoryStore) setIntent(name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error) {
 	canonicalName, err := validateIntentArgs(name, spec)
 	if err != nil {
 		return nil, err
@@ -92,13 +87,11 @@ func (m *MemoryStore) setIntent(name string, spec *componentspb.ComponentSpec, l
 
 // applyIntentPlanLocked applies plan to the existing record rec.
 func (m *MemoryStore) applyIntentPlanLocked(rec *ComponentRecord, plan intentPlan, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, now time.Time) {
-	if plan.write == writeNothing {
+	if plan.write != writeSpec {
 		return
 	}
-	if plan.write == writeSpec {
-		updateExistingIntent(rec, spec, labels, deps, plan.generation, now)
-		m.recordSnapshotLocked(rec)
-	}
+	updateExistingIntent(rec, spec, labels, deps, plan.generation, now)
+	m.recordSnapshotLocked(rec)
 }
 
 func validateResourceName(name string) (string, error) {
