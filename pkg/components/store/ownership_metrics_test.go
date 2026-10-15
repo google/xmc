@@ -154,13 +154,21 @@ func verifyFenceAndConflictMetrics(ctx context.Context, t *testing.T, s store.St
 		t.Errorf("xmc_cms_cluster_fence_epoch = %v, want %v", got, prod.Epoch)
 	}
 
-	beforeConflicts := conflictCounts()
-	_, _ = s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 1})
-	assertConflictIncremented(t, beforeConflicts, store.ReasonClusterEpochRegressed)
-
-	beforeConflicts = conflictCounts()
-	_, _ = s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: drClusterUID, Name: "dr", Epoch: prod.Epoch})
-	assertConflictIncremented(t, beforeConflicts, store.ReasonClusterFenced)
+	conflicts := []struct {
+		name       string
+		identity   store.ClusterIdentity
+		wantReason string
+	}{
+		{name: "epoch regressed", identity: store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 1}, wantReason: store.ReasonClusterEpochRegressed},
+		{name: "dr cluster fenced", identity: store.ClusterIdentity{UID: drClusterUID, Name: "dr", Epoch: prod.Epoch}, wantReason: store.ReasonClusterFenced},
+	}
+	for _, tc := range conflicts {
+		t.Run(tc.name, func(t *testing.T) {
+			beforeConflicts := conflictCounts()
+			_, _ = s.DeclareClusterEpoch(ctx, tc.identity)
+			assertConflictIncremented(t, beforeConflicts, tc.wantReason)
+		})
+	}
 }
 
 func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s store.Store, dr store.ClusterIdentity) {
@@ -180,21 +188,44 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 	assertAdoptionIncremented(t, beforeAdoptions, "")
 
 	// Stale generation, namespace conflict, and incarnation mismatch increment conflict counters.
-	beforeConflicts := conflictCounts()
-	_, _ = s.SetSourcedComponentIntent(ctx, "metrics-comp", intentSpec("v2.0.0"), nil, store.RequestSource{UID: "uid-1", Generation: 1, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 2})
-	assertConflictIncremented(t, beforeConflicts, store.ReasonStaleGeneration)
-
-	beforeConflicts = conflictCounts()
-	_, _ = s.SetSourcedComponentIntent(ctx, "metrics-comp", intentSpec("v1.0.0"), nil, store.RequestSource{UID: "uid-other", Generation: 1, Namespace: "other", ClusterUID: prodClusterUID, Epoch: 2})
-	assertConflictIncremented(t, beforeConflicts, store.ReasonSourceNamespaceConflict)
-
-	beforeConflicts = conflictCounts()
-	_, _ = s.SetSourcedComponentIntent(ctx, "metrics-comp", intentSpec("v1.0.0"), nil, store.RequestSource{UID: "uid-2", Generation: 1, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 2})
-	assertConflictIncremented(t, beforeConflicts, store.ReasonSourceIncarnationMismatch)
-
-	beforeConflicts = conflictCounts()
-	_, _ = s.SetSourcedComponentIntent(ctx, "metrics-comp", intentSpec("v1.0.0"), nil, store.RequestSource{UID: "uid-1", Generation: 2, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 3})
-	assertConflictIncremented(t, beforeConflicts, store.ReasonClusterNotDeclared)
+	conflicts := []struct {
+		name       string
+		version    string
+		src        store.RequestSource
+		wantReason string
+	}{
+		{
+			name:       "stale generation",
+			version:    "v2.0.0",
+			src:        store.RequestSource{UID: "uid-1", Generation: 1, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 2},
+			wantReason: store.ReasonStaleGeneration,
+		},
+		{
+			name:       "namespace conflict",
+			version:    "v1.0.0",
+			src:        store.RequestSource{UID: "uid-other", Generation: 1, Namespace: "other", ClusterUID: prodClusterUID, Epoch: 2},
+			wantReason: store.ReasonSourceNamespaceConflict,
+		},
+		{
+			name:       "incarnation mismatch",
+			version:    "v1.0.0",
+			src:        store.RequestSource{UID: "uid-2", Generation: 1, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 2},
+			wantReason: store.ReasonSourceIncarnationMismatch,
+		},
+		{
+			name:       "cluster not declared",
+			version:    "v1.0.0",
+			src:        store.RequestSource{UID: "uid-1", Generation: 2, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 3},
+			wantReason: store.ReasonClusterNotDeclared,
+		},
+	}
+	for _, tc := range conflicts {
+		t.Run(tc.name, func(t *testing.T) {
+			beforeConflicts := conflictCounts()
+			_, _ = s.SetSourcedComponentIntent(ctx, "metrics-comp", intentSpec(tc.version), nil, tc.src)
+			assertConflictIncremented(t, beforeConflicts, tc.wantReason)
+		})
+	}
 
 	// Same-cluster CAS recreate increments same_cluster_recreate.
 	beforeAdoptions = adoptionCounts()
