@@ -20,9 +20,12 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	fepb "xmanager_cloud/api/filter"
 	aipfilter "xmanager_cloud/api/filter/go/filter"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
@@ -40,6 +43,9 @@ func (r *Repository) DeleteChart(ctx context.Context, chartId string) error {
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 		// 1. Read the existing chart from storage to verify existence.
 		if _, err := tx.ReadRow(ctx, dashboardschema.ChartsTableName, spanner.Key{chartId}, []string{"ChartId"}); err != nil {
+			if status.Code(err) == codes.NotFound {
+				return fmt.Errorf("chart %s not found: %w", chartId, grpcerr.ErrNotFound)
+			}
 			return fmt.Errorf("failed to read chart %s: %w", chartId, err)
 		}
 

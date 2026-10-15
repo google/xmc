@@ -152,6 +152,23 @@ func TestCreateWorkUnit_InvalidName(t *testing.T) {
 	}
 }
 
+func TestCreateWorkUnit_Duplicate(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storageClient, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
+	}
+
+	spanner.CreateBlankExperiment(ctx, t, storageClient, 123)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, 123, 1)
+
+	_, err = workunit.CreateWorkUnit(ctx, storageClient, spanner.BlankWorkUnitProto(123, 1))
+	if !errors.Is(err, grpcerr.ErrAlreadyExists) {
+		t.Errorf("CreateWorkUnit for duplicate work unit error = %v, want %v", err, grpcerr.ErrAlreadyExists)
+	}
+}
+
 func TestCreateWorkUnit_AutoID(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)

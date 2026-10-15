@@ -16,7 +16,10 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"xmanager_cloud/internal/grpcerr"
 )
 
 func TestGetChart_Success(t *testing.T) {
@@ -61,8 +64,8 @@ func TestGetChart_NotFound(t *testing.T) {
 	repo := setupDashboardRepository(ctx, t)
 
 	_, err := repo.GetChart(ctx, "non-existent")
-	if err == nil {
-		t.Errorf("GetChart for non-existent chart succeeded, want error")
+	if !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("GetChart for non-existent chart error = %v, want grpcerr.ErrNotFound", err)
 	}
 }
 
