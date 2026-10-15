@@ -54,3 +54,13 @@ func TestUpdateExperimentResources_NilTransaction(t *testing.T) {
 		t.Errorf("UpdateExperimentResources(nil tx) returned error: %v, want 'transaction must not be nil'", err)
 	}
 }
+
+func TestTxRepository_UpdateExperimentResources_NilExperiment(t *testing.T) {
+	ctx := context.Background()
+	r := &TxRepository{Repository: &Repository{}}
+
+	err := r.UpdateExperimentResources(ctx, nil)
+	if err == nil || err.Error() != "experiment must not be nil" {
+		t.Errorf("TxRepository.UpdateExperimentResources(nil exp) returned error: %v, want 'experiment must not be nil'", err)
+	}
+}

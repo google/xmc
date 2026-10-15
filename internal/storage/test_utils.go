@@ -92,7 +92,10 @@ type MockStorage struct {
 	FetchCurrentWorkUnitExecutionErr  error
 	WorkUnitExecution                 *essmsgpb.WorkUnitExecution
 	CreateExperimentErr               error
-	CreateWorkUnitErr                 error
+	FetchNextWorkUnitIDErr            error
+	NextWorkUnitID                    int64
+	InsertWorkUnitErr                 error
+	InsertedWorkUnit                  *essmsgpb.WorkUnit
 	AddWorkUnitOperationErr           error
 	LROOp                             *lropb.Operation
 	UpdateCurrentWorkUnitExecutionErr error
@@ -106,6 +109,10 @@ type MockStorage struct {
 	NextPageToken                     string
 	ListExperimentsErr                error
 	UpdateExperimentErr               error
+	UpdateExperimentStatusErr         error
+	UpdateExperimentResourcesErr      error
+	SaveStatusMessageHistoryErr       error
+	SaveWorkUnitStatusHistoryErr      error
 	UpdateWorkUnitErr                 error
 	UpdateWorkUnitRespOriginal        *essmsgpb.WorkUnit
 	UpdateWorkUnitRespReturned        *essmsgpb.WorkUnit
@@ -121,6 +128,8 @@ type MockStorage struct {
 	RunInTransactionAttempts int
 	// UpdatedExperiment records the last experiment passed to UpdateExperimentStatus.
 	UpdatedExperiment *essmsgpb.Experiment
+	// UpdatedExperimentResources records the last experiment passed to UpdateExperimentResources.
+	UpdatedExperimentResources *essmsgpb.Experiment
 
 	PauseStateRepository PauseStateRepository
 	PausedTaskRepository PausedTaskRepository
@@ -211,12 +220,24 @@ func (s *MockStorage) CreateExperiment(ctx context.Context, exp *essmsgpb.Experi
 	return s.Experiment, nil
 }
 
-// CreateWorkUnit mocks work unit creation.
-func (s *MockStorage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error) {
-	if s.CreateWorkUnitErr != nil {
-		return nil, s.CreateWorkUnitErr
+// FetchNextWorkUnitID mocks fetching the next available work unit ID within a transaction.
+func (s *MockStorage) FetchNextWorkUnitID(ctx context.Context, xid int64) (int64, error) {
+	if s.FetchNextWorkUnitIDErr != nil {
+		return 0, s.FetchNextWorkUnitIDErr
 	}
-	return wu, nil
+	if s.NextWorkUnitID != 0 {
+		return s.NextWorkUnitID, nil
+	}
+	return 1, nil
+}
+
+// InsertWorkUnit mocks inserting a work unit within a transaction.
+func (s *MockStorage) InsertWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) error {
+	if s.InsertWorkUnitErr != nil {
+		return s.InsertWorkUnitErr
+	}
+	s.InsertedWorkUnit = proto.Clone(wu).(*essmsgpb.WorkUnit)
+	return nil
 }
 
 // AddWorkUnitOperation mocks adding a work unit operation.
@@ -315,17 +336,29 @@ func (s *MockStorage) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, w
 
 // SaveWorkUnitStatusHistoryIfChanged mocks saving work unit status history if changed.
 func (s *MockStorage) SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
-	return nil
+	return s.SaveWorkUnitStatusHistoryErr
 }
 
 // SaveStatusMessageHistoryIfChanged mocks saving status message history if changed.
 func (s *MockStorage) SaveStatusMessageHistoryIfChanged(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
-	return nil
+	return s.SaveStatusMessageHistoryErr
 }
 
 // UpdateExperimentStatus mocks updating experiment status and records the experiment.
 func (s *MockStorage) UpdateExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error {
-	s.UpdatedExperiment = exp
+	if s.UpdateExperimentStatusErr != nil {
+		return s.UpdateExperimentStatusErr
+	}
+	s.UpdatedExperiment = proto.Clone(exp).(*essmsgpb.Experiment)
+	return nil
+}
+
+// UpdateExperimentResources mocks updating experiment resources and records the experiment.
+func (s *MockStorage) UpdateExperimentResources(ctx context.Context, exp *essmsgpb.Experiment) error {
+	if s.UpdateExperimentResourcesErr != nil {
+		return s.UpdateExperimentResourcesErr
+	}
+	s.UpdatedExperimentResources = proto.Clone(exp).(*essmsgpb.Experiment)
 	return nil
 }
 

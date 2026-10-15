@@ -44,3 +44,13 @@ func TestInsertWorkUnit_NilTransaction(t *testing.T) {
 		t.Errorf("InsertWorkUnit(nil tx) returned error: %v, want 'transaction must not be nil'", err)
 	}
 }
+
+func TestTxRepository_InsertWorkUnit_NilWorkUnit(t *testing.T) {
+	ctx := context.Background()
+	r := &TxRepository{Repository: &Repository{}}
+
+	err := r.InsertWorkUnit(ctx, nil)
+	if err == nil || err.Error() != "work unit must not be nil" {
+		t.Errorf("TxRepository.InsertWorkUnit(nil wu) returned error: %v, want 'work unit must not be nil'", err)
+	}
+}

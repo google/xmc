@@ -27,6 +27,7 @@ import (
 	"xmanager_cloud/internal/task_queue"
 	ee "xmanager_cloud/internal/toollibs/execution_environments"
 	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/internal/workunit"
 )
 
 // CreateWorkUnit orchestrates the creation of a new work unit for an experiment.
@@ -85,7 +86,7 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *msgpb.CreateW
 	}
 
 	// 5. Persist the new work unit to the storage layer.
-	newWorkUnit, err := h.storage.CreateWorkUnit(ctx, wu)
+	newWorkUnit, err := workunit.CreateWorkUnit(ctx, h.storage, wu)
 	if err != nil {
 		logging.Error(ctx, "Failed to save work unit", "error", err)
 

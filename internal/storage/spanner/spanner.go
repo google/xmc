@@ -113,7 +113,7 @@ func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, 
 		return nil, fmt.Errorf("failed to create experiment repository: %w", err)
 	}
 
-	wuRepo, err := workunit.NewRepository(client, expRepo)
+	wuRepo, err := workunit.NewRepository(client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create workunit repository: %w", err)
 	}

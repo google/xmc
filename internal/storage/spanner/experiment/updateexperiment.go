@@ -130,3 +130,8 @@ func (r *Repository) UpdateExperimentResources(ctx context.Context, tx *spanner.
 	}
 	return tx.BufferWrite([]*spanner.Mutation{expResourcesMutation})
 }
+
+// UpdateExperimentResources buffers a mutation to update an Experiment's resources in Spanner using the bound read-write transaction.
+func (r *TxRepository) UpdateExperimentResources(ctx context.Context, exp *essmsgpb.Experiment) error {
+	return r.Repository.UpdateExperimentResources(ctx, r.tx, exp)
+}

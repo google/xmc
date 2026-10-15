@@ -22,6 +22,7 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	xidpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/internal/workunit"
 )
 
 func BlankExperimentProto(xid int64) *essmsgpb.Experiment {
@@ -108,7 +109,7 @@ func BlankWorkUnitProto(xid int64, wid int64) *essmsgpb.WorkUnit {
 
 func CreateAndStoreWorkUnit(ctx context.Context, t *testing.T, storage *Storage, wu *essmsgpb.WorkUnit) *essmsgpb.WorkUnit {
 	t.Helper()
-	createdWu, err := storage.CreateWorkUnit(ctx, wu)
+	createdWu, err := workunit.CreateWorkUnit(ctx, storage, wu)
 	if err != nil {
 		t.Fatalf("CreateWorkUnit failed: %v", err)
 	}

@@ -32,7 +32,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//internal/domain/experiment",
         "//internal/grpcerr",
         "//internal/logging",
         "//internal/query_generator/liststatement",
@@ -42,10 +41,7 @@ go_library(
         "//internal/storage",
         "//internal/storage/data",
         "//internal/storage/spanner/data",
-        "//internal/storage/spanner/experiment",
         "//internal/storage/spanner/schema/workunitschema",
-        "//internal/storage/spanner/statushistory",
-        "//internal/storage/spanner/statusmessage",
         "//internal/storage/spanner/utils",
         "//internal/validator",
         "@com_github_kylelemons_godebug//diff",
