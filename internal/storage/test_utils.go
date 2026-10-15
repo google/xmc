@@ -99,7 +99,6 @@ type MockStorage struct {
 	UpdatedWorkUnitExecutions         map[int64]*essmsgpb.WorkUnitExecution
 	ListWorkUnitsResp                 []*essmsgpb.WorkUnit
 	ListWorkUnitsErr                  error
-	UpdateExperimentLaunchStateErr    error
 	ListWorkUnitExecutionsErr         error
 	ListWorkUnitExecutionsResp        []*essmsgpb.WorkUnitExecution
 	ListExperimentsResp               []*essmsgpb.Experiment
@@ -339,14 +338,6 @@ func (s *MockStorage) ListWorkUnits(ctx context.Context, parent string, pageSize
 		workUnits[i] = proto.Clone(wu).(*essmsgpb.WorkUnit)
 	}
 	return workUnits, s.NextPageToken, s.ListWorkUnitsErr
-}
-
-// UpdateExperimentLaunchState mocks updating experiment launch state.
-func (s *MockStorage) UpdateExperimentLaunchState(ctx context.Context, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) (*essmsgpb.Experiment, error) {
-	if s.UpdateExperimentLaunchStateErr != nil {
-		return nil, s.UpdateExperimentLaunchStateErr
-	}
-	return s.Experiment, nil
 }
 
 // ListWorkUnitExecutions mocks listing work unit executions.

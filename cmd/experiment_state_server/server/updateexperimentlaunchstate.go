@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/internal/domain/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
@@ -64,7 +65,7 @@ func (h *ExperimentHandler) UpdateExperimentLaunchState(ctx context.Context, req
 
 	// 4. Update the experiment status in the storage layer.
 	logging.Debug(ctx, "Updating experiment launch state in storage")
-	exp, err := h.storage.UpdateExperimentLaunchState(ctx, xid, req.GetLaunchState())
+	exp, err := experiment.UpdateExperimentLaunchState(ctx, h.storage, xid, req.GetLaunchState())
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			logging.Warn(ctx, "Experiment not found in storage")

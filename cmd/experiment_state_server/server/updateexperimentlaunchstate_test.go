@@ -124,7 +124,14 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 				getXidEntryErr:             fmt.Errorf("XID get failed"),
 			},
-			storage: &storage.MockStorage{},
+			storage: &storage.MockStorage{
+				Experiment: &msgpb.Experiment{
+					Name: "experiments/123",
+					Status: &msgpb.ExperimentStatus{
+						LaunchState: msgpb.ExperimentStatus_LAUNCHING,
+					},
+				},
+			},
 			wantErr: grpcerr.ErrInternal,
 		},
 		{
@@ -142,7 +149,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 				getXidEntryResp:            &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 			},
 			storage: &storage.MockStorage{
-				UpdateExperimentLaunchStateErr: fmt.Errorf("Storage update failed"),
+				RunInTransactionErr: fmt.Errorf("Storage update failed"),
 			},
 			wantErr: grpcerr.ErrInternal,
 		},
@@ -153,7 +160,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 				getXidEntryResp:            &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 			},
 			storage: &storage.MockStorage{
-				UpdateExperimentLaunchStateErr: grpcerr.ErrNotFound,
+				FetchExperimentErr: grpcerr.ErrNotFound,
 			},
 			wantErr: grpcerr.ErrNotFound,
 		},

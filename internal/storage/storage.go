@@ -116,9 +116,6 @@ type ExperimentStore interface {
 	// original and updated experiments, so that the caller can choose whether to perform
 	// additional actions based on the original experiment state.
 	UpdateExperiment(ctx context.Context, update *ExperimentUpdate) (UpdatedExperiments, error)
-
-	// UpdateExperimentLaunchState updates the launch state of an experiment.
-	UpdateExperimentLaunchState(ctx context.Context, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) (*essmsgpb.Experiment, error)
 }
 
 // UpdatedExperiments contains the original and updated experiment protos.
