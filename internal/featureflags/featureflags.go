@@ -39,7 +39,7 @@ func Load() Flags {
 		name   string
 		defVal bool
 	}{
-		{&f.PauseSchedulingEnabled, PauseSchedulingFlagName, false},
+		{&f.PauseSchedulingEnabled, PauseSchedulingFlagName, true},
 	}
 
 	for _, flag := range flags {

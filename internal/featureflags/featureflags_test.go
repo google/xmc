@@ -23,8 +23,8 @@ func TestLoad_Default(t *testing.T) {
 	os.Unsetenv(PauseSchedulingFlagName)
 
 	flags := Load()
-	if flags.PauseSchedulingEnabled {
-		t.Errorf("Load() PauseSchedulingEnabled = true; want false")
+	if !flags.PauseSchedulingEnabled {
+		t.Errorf("Load() PauseSchedulingEnabled = false; want true")
 	}
 }
 

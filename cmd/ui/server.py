@@ -19,9 +19,9 @@ import os
 
 
 def get_bool_env(name: str, default: bool = False) -> bool:
-    """Reads a boolean environment variable, returning default if unset."""
+    """Reads a boolean environment variable, returning default if unset or empty."""
     val = os.environ.get(name)
-    if val is None:
+    if not val:
         return default
     return val.lower() in ("true", "1", "yes")
 
@@ -44,7 +44,7 @@ def generate_runtime_config(
         "performanceDashboardEnabled": get_bool_env("XMC_PERFORMANCE_DASHBOARD_ENABLED", False),
         "isNonProdAuth": get_bool_env("XMC_NON_PROD_AUTH", False)
         or get_bool_env("SHOW_SAFETY_WARNING", False),
-        "pauseSchedulingEnabled": get_bool_env("XMC_PAUSE_SCHEDULING_ENABLED", False),
+        "pauseSchedulingEnabled": get_bool_env("XMC_PAUSE_SCHEDULING_ENABLED", True),
     }
 
     return (

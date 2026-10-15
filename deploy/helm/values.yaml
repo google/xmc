@@ -37,7 +37,7 @@ log_monitor_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/log-monitor
 xmc_bridge_custom_image: ""
 
 featureFlags:
-  pause_scheduling_enabled: false
+  pause_scheduling_enabled: true
 
 componentsDeployment:
   enabled: false
