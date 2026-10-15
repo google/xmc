@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -34,44 +35,63 @@ import (
 )
 
 func TestReadClusterUID(t *testing.T) {
-	ctx := context.Background()
-
-	if _, err := ReadClusterUID(ctx, nil); err == nil {
-		t.Fatal("ReadClusterUID(nil) = nil, want error")
+	tests := []struct {
+		name    string
+		client  kubernetes.Interface
+		wantUID string
+		wantErr bool
+	}{
+		{name: "nil client", client: nil, wantErr: true},
+		{name: "missing kube-system", client: fake.NewSimpleClientset(), wantErr: true},
+		{
+			name:    "empty UID",
+			client:  fake.NewSimpleClientset(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}}),
+			wantErr: true,
+		},
+		{
+			name: "valid kube-system UID",
+			client: fake.NewSimpleClientset(&corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: "kube-system", UID: types.UID("cluster-uid-123")},
+			}),
+			wantUID: "cluster-uid-123",
+		},
 	}
-	if _, err := ReadClusterUID(ctx, fake.NewSimpleClientset()); err == nil {
-		t.Fatal("ReadClusterUID(missing kube-system) = nil, want error")
-	}
-	emptyUIDClient := fake.NewSimpleClientset(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}})
-	if _, err := ReadClusterUID(ctx, emptyUIDClient); err == nil {
-		t.Fatal("ReadClusterUID(empty UID) = nil, want error")
-	}
-
-	validClient := fake.NewSimpleClientset(&corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: "kube-system", UID: types.UID("cluster-uid-123")},
-	})
-	got, err := ReadClusterUID(ctx, validClient)
-	if err != nil || got != "cluster-uid-123" {
-		t.Fatalf("ReadClusterUID() = (%q, %v), want (\"cluster-uid-123\", nil)", got, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReadClusterUID(context.Background(), tt.client)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ReadClusterUID() = (%q, nil), want error", got)
+				}
+				return
+			}
+			if err != nil || got != tt.wantUID {
+				t.Fatalf("ReadClusterUID() = (%q, %v), want (%q, nil)", got, err, tt.wantUID)
+			}
+		})
 	}
 }
 
 func TestNewClusterFence_Validation(t *testing.T) {
-	cmsClient := &mockCMS{}
 	valid := &componentspb.ClusterIdentity{Uid: "uid-1", Name: "prod", Epoch: 1}
-	if _, err := NewClusterFence(nil, valid, ClusterFenceOptions{}); err == nil {
-		t.Error("NewClusterFence(nil cms) = nil, want error")
+	tests := []struct {
+		name string
+		cms  CMSClient
+		id   *componentspb.ClusterIdentity
+	}{
+		{name: "nil CMS client", cms: nil, id: valid},
+		{name: "nil identity", cms: &mockCMS{}, id: nil},
+		{name: "missing UID", cms: &mockCMS{}, id: &componentspb.ClusterIdentity{Name: "prod", Epoch: 1}},
+		{name: "missing name", cms: &mockCMS{}, id: &componentspb.ClusterIdentity{Uid: "uid-1", Epoch: 1}},
+		{name: "invalid DNS label name", cms: &mockCMS{}, id: &componentspb.ClusterIdentity{Uid: "uid-1", Name: "INVALID_DNS_LABEL", Epoch: 1}},
+		{name: "zero epoch", cms: &mockCMS{}, id: &componentspb.ClusterIdentity{Uid: "uid-1", Name: "prod", Epoch: 0}},
 	}
-	for _, tc := range []*componentspb.ClusterIdentity{
-		nil,
-		{Name: "prod", Epoch: 1},
-		{Uid: "uid-1", Epoch: 1},
-		{Uid: "uid-1", Name: "INVALID_DNS_LABEL", Epoch: 1},
-		{Uid: "uid-1", Name: "prod", Epoch: 0},
-	} {
-		if _, err := NewClusterFence(cmsClient, tc, ClusterFenceOptions{}); err == nil {
-			t.Errorf("NewClusterFence(%+v) = nil, want error", tc)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewClusterFence(tt.cms, tt.id, ClusterFenceOptions{}); err == nil {
+				t.Errorf("NewClusterFence(%+v) = nil, want error", tt.id)
+			}
+		})
 	}
 }
 
