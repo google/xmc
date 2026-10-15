@@ -177,6 +177,9 @@ func (l *Listener) handleBroadcastUpdate(ctx context.Context, msg string) {
 		logging.Error(ctx, "Failed to query pause scheduling state on broadcast update, retrying",
 			"error", err, "backoff", l.reconnectBackoff)
 		l.waitForBackoff(ctx)
+		if ctx.Err() != nil {
+			return
+		}
 		state, err = l.readPauseState(ctx)
 	}
 	l.cache.Update(State{
