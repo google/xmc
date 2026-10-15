@@ -51,18 +51,7 @@ Developers do not need to write boilerplate gRPC clients, Kubernetes API pollers
 | **WorkUnit Artifacts** | [`xmc_entities_validator.py`](verification/xmc_entities_validator.py), [`workload_verification.py`](verification/workload_verification.py) | WorkUnit artifact registration, expected artifact type coverage (chart configs, checkpoints, storage URIs), and metadata integrity checks. |
 | **ClickHouse Telemetry** | [`xmc_entities_validator.py`](verification/xmc_entities_validator.py), [`workload_verification.py`](verification/workload_verification.py) | ClickHouse HTTP SQL polling (`localhost:8123`) until OTLP/metric rows for the target Experiment XID are ingested with expected metric names and minimum row counts. |
 | **xDash / Dashboard Service** | [`xmc_entities_validator.py`](verification/xmc_entities_validator.py), [`workload_verification.py`](verification/workload_verification.py) | Dashboard configuration persistence via REST/gRPC, minimum chart count checks, and live time-series chart data hydration backed by ClickHouse metrics. |
-| **Playwright Web UI E2E** | [`ui_entities_validator.py`](verification/ui_entities_validator.py), [`ui_css_selectors.py`](verification/ui_css_selectors.py) | Headless Chromium session with Cloud IAP OIDC bearer headers and session JWT cookies, cold-start HTTP 500 reload retry, login/redirect guards, diagnostic screenshots, and JS/HTTP runtime error gates. |
-
-#### Playwright Web UI E2E Testing Framework
-
-[`verification/ui_entities_validator.py`](verification/ui_entities_validator.py) and [`verification/ui_css_selectors.py`](verification/ui_css_selectors.py) provide an end-to-end browser verification harness out of the box:
-
-- **Programmatic Authentication**: Automatically injects `Authorization: Bearer <XMC_AUTH_TOKEN>` headers on same-origin requests, sets `GCP_IAAP_AUTH_TOKEN` and `session_token` (`/api/session` JWT exchange) domain cookies, and configures a 1920x1080 HiDPI viewport.
-- **Cold-Start Resilience**: Waits for initial DOM selectors and automatically performs a single `networkidle` reload after clearing transient error buffers if the first page load hits a cold-start timeout or HTTP 500.
-- **Route Navigation & Auth/Redirect Guards**: Navigates to any Angular route (`/experiments/<xid>`, `/dashboards`, `/resources`, `/admin`), waits for web fonts to settle, captures a landing screenshot, and fails immediately if the session lands on a login prompt or is unexpectedly redirected by an Angular route guard.
-- **Diagnostic Screenshots**: Captures full-page PNG snapshots at each CUJ milestone into `--screenshots_dir` (default `/tmp/xmc_screenshots`). On failure in GitHub Actions, the workflow automatically uploads captured PNGs as the `ui-screenshots-<id>` artifact.
-- **Strict Runtime Error Gates**: Fails the test if any uncaught JavaScript `pageerror`, UI error banner (`xmc-error-banner`), or same-origin HTTP `>= 400` response occurs during the user journey.
-- **Centralized CSS Selectors**: Keeps shared Angular component selectors in [`verification/ui_css_selectors.py`](verification/ui_css_selectors.py) so UI verifiers stay concise and easy to maintain.
+| **Playwright Web UI E2E** | [`ui_entities_validator.py`](verification/ui_entities_validator.py), [`ui_css_selectors.py`](verification/ui_css_selectors.py) | Headless Chromium session with Cloud IAP OIDC bearer headers and `/api/session` JWT cookies, cold-start HTTP 500 reload retry, login/redirect guards, milestone/failure screenshots (`ui-screenshots-<id>`), and JS/HTTP runtime error gates. |
 
 #### Existing UI E2E Verifiers (Reference Implementations)
 
@@ -204,23 +193,10 @@ Playwright UI verifiers can be wired in two ways depending on whether the UI vie
    ```
 
 2. **Standalone UI Route Verifier (`example_path: ''` and `verify_ui: true`)**:
-   For global UI views that do not require launching an experiment workload first (such as `/admin` in [`admin_panel_ui_verify.py`](examples_verification/admin_panel_ui_verify.py)), create a standalone verifier module and set `example_path: ''`, `entrypoint: ''`, and `verify_ui: true` in [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml):
+   For global UI views that do not require launching an experiment workload first (see [`admin_panel_ui_verify.py`](examples_verification/admin_panel_ui_verify.py)), create a standalone verifier module and set `example_path: ''`, `entrypoint: ''`, and `verify_ui: true` in Step 3:
 
    ```python
-   from collections.abc import Sequence
-   from typing import TypeAlias
-
-   from tools.nightly_tests.verification import (
-       ess_session as ess,
-       ui_entities_validator,
-       verification_report as rep,
-       verifier_cli as cli,
-   )
-
-   Session: TypeAlias = ui_entities_validator.XMCUIBrowserSession
-
-
-   def verify_my_feature_ui(session: Session) -> None:
+   def verify_my_feature_ui(session: ui_entities_validator.XMCUIBrowserSession) -> None:
        """Executes Playwright UI E2E assertions for /my-route."""
        session.navigate_to_route("/my-route", "xmc-my-feature-root", "ui_step1_landing.png")
        session.wait_for_selector_with_retry(".feature-card")
@@ -230,30 +206,12 @@ Playwright UI verifiers can be wired in two ways depending on whether the UI vie
 
 
    def main(argv: Sequence[str]) -> None:
-       """CLI entrypoint for standalone UI E2E verification."""
        cli.validate_argv(argv)
-       with ess.handle_verification_errors(), Session.from_flags() as session:
+       with ess.handle_verification_errors(), ui_entities_validator.XMCUIBrowserSession.from_flags() as session:
            verify_my_feature_ui(session)
-
-
-   if __name__ == "__main__":
-       cli.run_main(main)
    ```
 
-   Corresponding matrix entry in [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml):
-
-   ```yaml
-          - id: 'my_feature_ui'
-            name: 'My Feature (Playwright UI)'
-            example_path: ''
-            entrypoint: ''
-            args: ''
-            verify_module: 'tools.nightly_tests.examples_verification.my_feature_ui_verify'
-            expected_queue: ''
-            verify_ui: true
-   ```
-
-   Remember to pair every new `*_verify.py` module with a 1-to-1 `*_verify_test.py` unit test suite in [`tools/nightly_tests/examples_verification/`](examples_verification/).
+   Pair every new `*_verify.py` module with a 1-to-1 `*_verify_test.py` unit test suite in [`examples_verification/`](examples_verification/).
 
 ### Step 2: Register the Target in `tools/nightly_tests/examples_verification/BUILD.bazel`
 
@@ -335,8 +293,8 @@ export XMC_AUTH_TOKEN="$(gcloud auth print-identity-token --audiences="${IAP_CLI
 To execute an end-to-end verification scenario against the live nightly GKE cluster in GitHub Actions without running the entire matrix, pass `-f examples_filter=<id>` (comma-separated IDs are also supported):
 
 ```bash
-BRANCH_NAME="feat/my-new-feature"
-EXAMPLE_ID="admin_panel_ui"
+BRANCH_NAME="feat/my-new-example"
+EXAMPLE_ID="my_new_example"
 gh workflow run nightly-examples-e2e.yml --ref "${BRANCH_NAME}" -f examples_filter="${EXAMPLE_ID}"
 ```
 
