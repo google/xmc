@@ -48,22 +48,21 @@ CHART_HEADER_LINK_SEL = "a.chart-header-link"
 SUMMARY_BOX_SEL, SUMMARY_VALUE_SEL = "xmc-summary-box", ".summary-value"
 PLOT_CANVAS_SEL = "xmc-plot-card div.plot-canvas canvas"
 
-ADMIN_PANEL_ROOT_SEL, ADMIN_PANEL_CONTAINER_SEL = "xmc-admin-panel", ".admin-panel-container"
+ADMIN_PANEL_ROOT_SEL = "xmc-admin-panel"
 ADMIN_PAGE_TITLE_SEL, ADMIN_TIMESTAMP_BADGE_SEL = "h1.page-title", ".timestamp-badge"
-ADMIN_FOOTER_SEL = "footer.admin-panel-footer"
-SYSTEM_INFO_CARD_SEL = "xmc-system-info-card .system-info-card"
+ADMIN_FOOTER_SEL, SYSTEM_INFO_CARD_SEL = (
+    "footer.admin-panel-footer",
+    "xmc-system-info-card .system-info-card",
+)
 APP_VERSION_VAL_SEL, ESS_SCHEMA_VAL_SEL = ".app-version-value", ".ess-schema-value"
 XID_SCHEMA_VAL_SEL = ".xid-schema-value"
-HEALTH_SECTION_SEL = "xmc-health-status-section .services-health-card"
 HEALTH_OVERALL_BADGE_SEL = "xmc-health-status-section .card-header .status-badge"
 HEALTH_REFRESH_BTN_SEL = "xmc-health-status-section button.refresh-button"
 HEALTH_REFRESH_READY_SEL = "xmc-health-status-section button.refresh-button:not([disabled])"
 HEALTH_LAST_CHECKED_SEL = "xmc-health-status-section .last-checked"
-HEALTH_GROUP_CARD_SEL = "xmc-health-status-group-card .group-card"
 HEALTH_GROUP_TITLE_SEL = "xmc-health-status-group-card .group-title"
 HEALTH_ITEM_ROW_SEL, HEALTH_ITEM_NAME_SEL = ".group-items-list .item-row", ".item-name"
 HEALTH_ITEM_STATUS_SEL = ".item-status-text"
-CONFIG_CARD_SEL = "xmc-config-entries-card .config-entries-card"
 CONFIG_FILTER_INPUT_SEL = "xmc-config-entries-card input.filter-input"
 CONFIG_GROUP_ROW_SEL = "xmc-config-entries-card tr.group-header-row"
 CONFIG_GROUP_NAME_SEL, CONFIG_GROUP_ICON_SEL = ".group-display-name", ".group-toggle-icon"

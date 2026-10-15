@@ -60,8 +60,7 @@ def _read_trimmed_text(session: Session, selector: str) -> str:
 
 def assert_system_info_and_header(session: Session, timeout_ms: int = 30000) -> dict[str, str]:
     """CUJ 1: Verifies Admin Panel page header, System Info versions/schemas, and footer."""
-    session.wait_for_selector_with_retry(sel.ADMIN_PANEL_CONTAINER_SEL, timeout_ms)
-    session.page.wait_for_selector(sel.SYSTEM_INFO_CARD_SEL, timeout=timeout_ms)
+    session.wait_for_selector_with_retry(sel.SYSTEM_INFO_CARD_SEL, timeout_ms)
     title = _read_trimmed_text(session, sel.ADMIN_PAGE_TITLE_SEL)
     timestamp = _read_trimmed_text(session, sel.ADMIN_TIMESTAMP_BADGE_SEL)
     footer = _read_trimmed_text(session, sel.ADMIN_FOOTER_SEL)
@@ -82,7 +81,6 @@ def assert_system_info_and_header(session: Session, timeout_ms: int = 30000) -> 
 
 def _collect_component_statuses(session: Session) -> dict[str, str]:
     """Extracts component name -> status label across all rendered health group cards."""
-    session.page.locator(sel.HEALTH_ITEM_ROW_SEL).first.wait_for(state="visible")
     rows = session.page.locator(sel.HEALTH_ITEM_ROW_SEL)
     statuses: dict[str, str] = {}
     for i in range(rows.count()):
@@ -94,9 +92,9 @@ def _collect_component_statuses(session: Session) -> dict[str, str]:
     return statuses
 
 
-def _verify_health_groups_and_items(session: Session) -> dict[str, str]:
+def _verify_health_groups_and_items(session: Session, timeout_ms: int) -> dict[str, str]:
     """Verifies health group titles and component status rows in XMC Services Health."""
-    session.page.locator(sel.HEALTH_GROUP_TITLE_SEL).first.wait_for(state="visible")
+    session.page.wait_for_selector(sel.HEALTH_ITEM_ROW_SEL, timeout=timeout_ms)
     raw_groups = session.page.locator(sel.HEALTH_GROUP_TITLE_SEL).all_inner_texts()
     groups = [g.strip() for g in raw_groups if g.strip()]
     if missing_groups := [g for g in EXPECTED_HEALTH_GROUPS if not any(g in t for t in groups)]:
@@ -111,17 +109,12 @@ def _verify_health_groups_and_items(session: Session) -> dict[str, str]:
 
 def assert_services_health_and_refresh(session: Session, timeout_ms: int = 30000) -> dict[str, Any]:
     """CUJ 2: Verifies XMC Services Health groups, component statuses, and Refresh action."""
-    session.page.wait_for_selector(sel.HEALTH_SECTION_SEL, timeout=timeout_ms)
-    session.page.wait_for_selector(sel.HEALTH_GROUP_CARD_SEL, timeout=timeout_ms)
+    statuses = _verify_health_groups_and_items(session, timeout_ms)
     badge = _read_trimmed_text(session, sel.HEALTH_OVERALL_BADGE_SEL)
     if badge not in VALID_OVERALL_BADGES:
         raise UIError(f"Expected overall health badge in {VALID_OVERALL_BADGES}, got '{badge}'.")
-    statuses = _verify_health_groups_and_items(session)
-    session.page.locator(sel.HEALTH_REFRESH_BTN_SEL).first.click()
-    try:
-        session.page.wait_for_selector(f"{sel.HEALTH_REFRESH_BTN_SEL}[disabled]", timeout=1000)
-    except Exception:
-        pass
+    with session.page.expect_response(lambda r: "/v1/health/status" in r.url, timeout=timeout_ms):
+        session.page.locator(sel.HEALTH_REFRESH_BTN_SEL).first.click()
     session.page.wait_for_selector(sel.HEALTH_REFRESH_READY_SEL, timeout=timeout_ms)
     last_checked = _read_trimmed_text(session, sel.HEALTH_LAST_CHECKED_SEL)
     if not last_checked.startswith("Last checked:"):
@@ -130,35 +123,26 @@ def assert_services_health_and_refresh(session: Session, timeout_ms: int = 30000
     return {"overall_badge": badge, "components": statuses}
 
 
-def _verify_config_group_collapse_toggle(session: Session) -> None:
+def _verify_config_group_collapse_toggle(session: Session, timeout_ms: int) -> None:
     """Clicks the first configuration group header to collapse and re-expand its rows."""
     first_group = session.page.locator(sel.CONFIG_GROUP_ROW_SEL).first
-    first_group.click()
-    session.page.locator(f"{sel.CONFIG_GROUP_ROW_SEL}[aria-expanded='false']").first.wait_for(
-        state="visible"
-    )
-    icon = (first_group.locator(sel.CONFIG_GROUP_ICON_SEL).first.text_content() or "").strip()
-    if icon != "+":
-        raise UIError(f"Expected collapsed group header icon '+', got '{icon}'.")
-    first_group.click()
-    session.page.locator(f"{sel.CONFIG_GROUP_ROW_SEL}[aria-expanded='true']").first.wait_for(
-        state="visible"
-    )
-    icon = (first_group.locator(sel.CONFIG_GROUP_ICON_SEL).first.text_content() or "").strip()
-    if icon != "−":
-        raise UIError(f"Expected expanded group header icon '−', got '{icon}'.")
+    for expanded, expected_icon in (("false", "+"), ("true", "−")):
+        first_group.click()
+        session.page.wait_for_selector(
+            f"{sel.CONFIG_GROUP_ROW_SEL}[aria-expanded='{expanded}']", timeout=timeout_ms
+        )
+        icon = (first_group.locator(sel.CONFIG_GROUP_ICON_SEL).first.text_content() or "").strip()
+        if icon != expected_icon:
+            raise UIError(f"Expected toggle icon '{expected_icon}', got '{icon}'.")
 
 
 def _verify_config_search_filter(session: Session, sample_key: str, timeout_ms: int) -> None:
     """Exercises positive key filtering, no-match empty state, and filter reset."""
     search_input = session.page.locator(sel.CONFIG_FILTER_INPUT_SEL).first
     search_input.fill(sample_key)
-    try:
-        session.page.locator(sel.CONFIG_ROW_SEL).filter(has_text=sample_key).first.wait_for(
-            state="visible", timeout=timeout_ms
-        )
-    except Exception as e:
-        raise UIError(f"Expected config row matching '{sample_key}' to remain visible.") from e
+    session.page.locator(sel.CONFIG_ROW_SEL).filter(has_text=sample_key).first.wait_for(
+        state="visible", timeout=timeout_ms
+    )
     search_input.fill(NO_MATCH_SENTINEL)
     session.page.wait_for_selector(sel.CONFIG_NO_RESULTS_SEL, timeout=timeout_ms)
     if session.page.locator(sel.CONFIG_ROW_SEL).count() != 0:
@@ -169,8 +153,6 @@ def _verify_config_search_filter(session: Session, sample_key: str, timeout_ms: 
 
 def assert_config_entries_and_filter(session: Session, timeout_ms: int = 30000) -> list[str]:
     """CUJ 3: Verifies Configuration Entries groups, collapse/expand, and search filtering."""
-    session.page.wait_for_selector(sel.CONFIG_CARD_SEL, timeout=timeout_ms)
-    session.page.wait_for_selector(sel.CONFIG_GROUP_ROW_SEL, timeout=timeout_ms)
     session.page.wait_for_selector(sel.CONFIG_ROW_SEL, timeout=timeout_ms)
     raw_groups = session.page.locator(sel.CONFIG_GROUP_NAME_SEL).all_inner_texts()
     groups = [g.strip() for g in raw_groups if g.strip()]
@@ -180,7 +162,7 @@ def assert_config_entries_and_filter(session: Session, timeout_ms: int = 30000) 
     sample_val = _read_trimmed_text(session, f"{sel.CONFIG_ROW_SEL} {sel.CONFIG_VAL_CELL_SEL}")
     if not sample_key or not sample_val:
         raise UIError(f"Expected non-empty first config row, got '{sample_key}'='{sample_val}'")
-    _verify_config_group_collapse_toggle(session)
+    _verify_config_group_collapse_toggle(session, timeout_ms)
     _verify_config_search_filter(session, sample_key, timeout_ms)
     print(
         f"  [✓] Verified {len(groups)} config groups, collapse toggle, and filter ('{sample_key}')"
