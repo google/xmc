@@ -87,6 +87,8 @@ type MockStorage struct {
 	Experiment                        *essmsgpb.Experiment
 	FetchExperimentStatusErr          error
 	ExperimentStatus                  *essmsgpb.ExperimentStatus
+	DriftedComponents                 []ComponentDiff
+	FetchDriftedComponentsErr         error
 	FetchWorkUnitErr                  error
 	WorkUnit                          *essmsgpb.WorkUnit
 	FetchCurrentWorkUnitExecutionErr  error
@@ -164,7 +166,18 @@ func (s *MockStorage) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb
 
 // FetchExperimentStatus mocks experiment status fetching.
 func (s *MockStorage) FetchExperimentStatus(ctx context.Context, xid int64) (*essmsgpb.ExperimentStatus, error) {
-	return s.ExperimentStatus, s.FetchExperimentStatusErr
+	return proto.Clone(s.ExperimentStatus).(*essmsgpb.ExperimentStatus), s.FetchExperimentStatusErr
+}
+
+// FetchDriftedComponents mocks fetching drifted component comparisons.
+func (s *MockStorage) FetchDriftedComponents(ctx context.Context, xid int64, limit int) ([]ComponentDiff, error) {
+	if s.FetchDriftedComponentsErr != nil {
+		return nil, s.FetchDriftedComponentsErr
+	}
+	if limit > 0 && len(s.DriftedComponents) > limit {
+		return s.DriftedComponents[:limit], nil
+	}
+	return s.DriftedComponents, nil
 }
 
 // FetchWorkUnit mocks work unit fetching. Like real storage, it returns a fresh copy on every call.

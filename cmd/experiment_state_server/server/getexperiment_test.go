@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -163,29 +164,43 @@ func TestGetExperiment_DependencyFailures(t *testing.T) {
 func TestGetExperiment_DriftWarningPropagation(t *testing.T) {
 	ctx := context.Background()
 	req := &msgpb.GetExperimentRequest{Name: "experiments/123"}
-	driftMsg := &msgpb.StructuredMessage{
-		Severity:       msgpb.StructuredMessage_WARNING,
-		Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
-		UserFacingText: "Component snapshot drift detected",
-	}
+	compName := "redpanda"
+	observed := int64(2)
 	mockStorage := &storage.MockStorage{
 		Experiment: &msgpb.Experiment{
 			Name: "experiments/123",
 			Status: &msgpb.ExperimentStatus{
-				StructuredStatusMessage: driftMsg,
+				ActiveState: msgpb.ExperimentStatus_ACTIVE,
+			},
+		},
+		DriftedComponents: []storage.ComponentDiff{
+			{
+				ComponentID:        202,
+				Name:               &compName,
+				LockedGeneration:   1,
+				ObservedGeneration: &observed,
 			},
 		},
 	}
 	xidClient := &mockXidClient{
 		getXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 	}
-	server := newTestServer(t, withStorage(mockStorage), withXidClient(xidClient))
+	server := newTestServer(t,
+		withConfig(&config.Config{EnableComponents: true}),
+		withStorage(mockStorage),
+		withXidClient(xidClient),
+	)
 
 	got, err := server.GetExperiment(ctx, req)
 	if err != nil {
 		t.Fatalf("GetExperiment(%v) returned unexpected error: %v", req, err)
 	}
-	if diff := cmp.Diff(driftMsg, got.GetStatus().GetStructuredStatusMessage(), protocmp.Transform()); diff != "" {
+	want := &msgpb.StructuredMessage{
+		Severity:       msgpb.StructuredMessage_WARNING,
+		Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
+		UserFacingText: "Component drift detected: live component generations diverge from snapshots: redpanda (snapshot generation 1 != live observed generation 2)",
+	}
+	if diff := cmp.Diff(want, got.GetStatus().GetStructuredStatusMessage(), protocmp.Transform(), protocmp.IgnoreFields(&msgpb.StructuredMessage{}, "create_time")); diff != "" {
 		t.Errorf("GetExperiment() StructuredStatusMessage mismatch (-want +got):\n%s", diff)
 	}
 }

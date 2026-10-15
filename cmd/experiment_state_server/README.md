@@ -63,6 +63,9 @@ Run hermetic unit and integration tests using Bazel:
 # Test ESS server handlers
 bazel test //cmd/experiment_state_server/...
 
-# Test Spanner storage and drift detection against the emulator
+# Test drift evaluation (caching and warning formatting)
+bazel test //internal/experiment:experiment_test
+
+# Test Spanner storage and drift detection queries against the emulator
 bazel test //internal/storage/spanner/experiment:experiment_test
 ```

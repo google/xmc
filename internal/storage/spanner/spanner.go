@@ -92,23 +92,11 @@ func (s *Storage) PausedTasks() storage.PausedTaskRepository {
 
 // NewStorage creates a new instance of the Spanner-backed storage.
 func NewStorage(client *spanner.Client) (*Storage, error) {
-	return NewStorageWithConfig(client, StorageConfig{})
-}
-
-// StorageConfig holds configuration for the Storage.
-type StorageConfig struct {
-	EnableComponents bool
-}
-
-// NewStorageWithConfig creates a new instance of the Spanner-backed storage with the given configuration.
-func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, error) {
 	if client == nil {
 		return nil, fmt.Errorf("spanner client must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 
-	expRepo, err := experiment.NewRepository(client, experiment.RepositoryConfig{
-		EnableComponents: cfg.EnableComponents,
-	})
+	expRepo, err := experiment.NewRepository(client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create experiment repository: %w", err)
 	}
