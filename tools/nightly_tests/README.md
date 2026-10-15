@@ -13,7 +13,7 @@ To maintain high cohesion and clear separation of concerns, `tools/nightly_tests
 1. **`verification/` (`//tools/nightly_tests/verification:*`)**:
    Shared, reusable verification primitives, session/API stubs, and UI validators (e.g. `verifier_cli.py`, `workload_verification.py`, `xmc_entities_validator.py`, `ui_entities_validator.py`). Every shared helper is paired with a 1-to-1 `*_test.py` unit test suite.
 2. **`examples_verification/` (`//tools/nightly_tests/examples_verification:*`)**:
-   Concrete end-to-end verification scripts for individual runnable workloads under `examples/` and CUJs (e.g. `simple_job_verify.py`, `clickhouse_metrics_job_verify.py`, `resource_observability_dashboard_ui_verify.py`).
+   Concrete end-to-end verification scripts for individual runnable workloads under `examples/` and CUJs (e.g. `simple_job_verify.py`, `clickhouse_metrics_job_verify.py`, `metrics_dashboard_ui_verify.py`, `resource_observability_dashboard_ui_verify.py`).
 
 The Nightly Examples E2E workflow ([`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml)) runs in three stages:
 
@@ -21,17 +21,17 @@ The Nightly Examples E2E workflow ([`.github/workflows/nightly-examples-e2e.yml`
    Builds and pushes custom container images for examples that include a `Dockerfile` (`examples/<example_name>/Dockerfile`) to Artifact Registry (`us-docker.pkg.dev/${PROJECT_ID}/xmc/<image_name>:latest`).
 2. **Launch & Verify Matrix (`run-and-verify-examples`)**:
    For each matrix entry:
-   - Installs the XMC CLI, Python SDKs (`sdks/python/xmc`, `sdks/python/xdash`), and optional example `requirements.txt`.
+   - Installs the XMC CLI, Python SDKs (`sdks/python/xmc`, `sdks/python/xdash`), optional example `requirements.txt`, and Playwright Chromium when `verify_ui: true` is set.
    - Mints an OIDC identity token (`XMC_AUTH_TOKEN`) and starts health-checked `kubectl port-forward` tunnels to internal services (`dashboard-service:50051` and `clickhouse:8123`) when `requires_clickhouse: true` is set.
    - Executes the example entrypoint script (`launch.py` or `create_dashboard.py`) and extracts the created Experiment XID (or Dashboard ID) from stdout.
-   - Runs the example's verification module via `python3 -m tools.nightly_tests.examples_verification.<example_name>_verify --xid="${XID}" --endpoint="${XMANAGER_ENDPOINT}" --expected_queue="${EXPECTED_QUEUE}"`.
+   - Runs the example's verification module via `python3 -m tools.nightly_tests.examples_verification.<example_name>_verify --xid="${XID}" --endpoint="${XMANAGER_ENDPOINT}" --expected_queue="${EXPECTED_QUEUE}"` (adding `--verify_ui=true --ui_base_url="${XMANAGER_UI_URL}"` when `verify_ui: true` is set).
 3. **Aggregate Results (`aggregate-results`)**:
    Combines per-example JSON status artifacts into a unified workflow summary and alerts repository owners if any scheduled run on `main` fails.
 
 ### Shared Verification Modules (`tools/nightly_tests/verification/`)
 
 - [`verification/`](verification/) (`//tools/nightly_tests/verification:*`): Domain-focused verification modules (each paired with a 1-to-1 `*_test.py` unit test suite):
-  - [`verification/verifier_cli.py`](verification/verifier_cli.py) (`//tools/nightly_tests/verification:verifier_cli`, tested by [`verification/verifier_cli_test.py`](verification/verifier_cli_test.py)): Defines standard CLI flags (`--xid`, `--endpoint`, `--expected_queue`, `--timeout_sec`, `--dashboard_endpoint`, `--expected_work_units`, `--clickhouse_endpoint`, `--require_clickhouse_metrics`, `--dashboard_id`, `--expected_title_pattern`), flag retrieval (`get_flag`), argument validation (`validate_argv`), XID normalization (`parse_xid`), work unit count resolution (`resolve_expected_work_units`), and the CLI entrypoint wrapper (`run_main`).
+  - [`verification/verifier_cli.py`](verification/verifier_cli.py) (`//tools/nightly_tests/verification:verifier_cli`, tested by [`verification/verifier_cli_test.py`](verification/verifier_cli_test.py)): Defines standard CLI flags (`--xid`, `--endpoint`, `--expected_queue`, `--timeout_sec`, `--dashboard_endpoint`, `--expected_work_units`, `--clickhouse_endpoint`, `--require_clickhouse_metrics`, `--verify_ui`, `--dashboard_id`, `--expected_title_pattern`), flag retrieval (`get_flag`), argument validation (`validate_argv`), XID normalization (`parse_xid`), work unit count resolution (`resolve_expected_work_units`), and the CLI entrypoint wrapper (`run_main`).
   - [`verification/endpoint_resolution.py`](verification/endpoint_resolution.py) (`//tools/nightly_tests/verification:endpoint_resolution`, tested by [`verification/endpoint_resolution_test.py`](verification/endpoint_resolution_test.py)): Resolves ESS gRPC (`resolve_endpoint`), Dashboard Service REST (`resolve_dashboard_endpoint`), ClickHouse HTTP (`resolve_clickhouse_endpoint`), and Web UI (`resolve_ui_base_url`) endpoints from flags, environment variables, or local defaults.
   - [`verification/ess_session.py`](verification/ess_session.py) (`//tools/nightly_tests/verification:ess_session`, tested by [`verification/ess_session_test.py`](verification/ess_session_test.py)): Provides context managers for authenticated ESS gRPC channel lifecycle (`ess_channel_context`) and standardized verification failure exit handling (`handle_verification_errors`).
   - [`verification/verification_report.py`](verification/verification_report.py) (`//tools/nightly_tests/verification:verification_report`, tested by [`verification/verification_report_test.py`](verification/verification_report_test.py)): Formats console verification header banners (`print_banner`) and completion summaries (`print_success_summary`).

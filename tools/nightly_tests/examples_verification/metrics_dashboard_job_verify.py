@@ -28,6 +28,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from tools.nightly_tests.examples_verification import metrics_dashboard_ui_verify
 from tools.nightly_tests.verification import verifier_cli, workload_verification
 
 EXPECTED_TITLE_PATTERN: str = "Metrics Dashboard End-to-End Experiment"
@@ -45,7 +46,7 @@ EXPECTED_JOBSET_SPECS: list[dict[str, Any]] = [
 
 
 def _verify_metrics_and_dashboard(_stub: Any, xid: str) -> None:
-    """Verifies ClickHouse metric ingestion and Dashboard chart data hydration."""
+    """Verifies ClickHouse metric ingestion, Dashboard REST hydration, and Playwright UI CUJs."""
     workload_verification.assert_clickhouse_metrics(
         xid,
         expected_metric_names=EXPECTED_METRICS,
@@ -56,6 +57,9 @@ def _verify_metrics_and_dashboard(_stub: Any, xid: str) -> None:
         dashboard_id=f"exp_{xid}_overview",
         min_hydrated_points=1,
     )
+    if verifier_cli.get_flag(verifier_cli.FLAGS, "verify_ui", False):
+        with metrics_dashboard_ui_verify.Session.from_flags() as session:
+            metrics_dashboard_ui_verify.verify_metrics_dashboard_ui(session, xid)
 
 
 def main(argv: Sequence[str]) -> None:

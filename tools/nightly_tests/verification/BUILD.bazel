@@ -48,6 +48,10 @@ py_library(
         "ui_entities_validator.py",
     ],
     imports = ["../../.."],
+    deps = [
+        ":endpoint_resolution",
+        ":verifier_cli",
+    ],
 )
 
 py_library(

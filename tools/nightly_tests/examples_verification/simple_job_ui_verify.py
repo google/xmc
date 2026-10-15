@@ -18,8 +18,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from absl import flags
-
 from tools.nightly_tests.verification import (
     endpoint_resolution,
     ess_session,
@@ -28,12 +26,7 @@ from tools.nightly_tests.verification import (
     verifier_cli,
 )
 
-FLAGS = flags.FLAGS
-
-flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI")
-flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token")
-flags.DEFINE_bool("headless", True, "Run browser in headless mode")
-flags.DEFINE_string("screenshots_dir", None, "Target directory for diagnostic screenshots")
+FLAGS = verifier_cli.FLAGS
 
 EXPECTED_WORK_UNITS: int = 3
 EXPECTED_WORK_UNIT_NAMES: tuple[str, ...] = ("1", "2", "3")

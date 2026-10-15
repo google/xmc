@@ -59,18 +59,21 @@ class ResourceObservabilityDashboardUIVerifyTest(unittest.TestCase):
         self.assertEqual(rod_verify._parse_velocity_rate("~1.34 cpu/hr"), 1.34)
         self.assertEqual(rod_verify._parse_velocity_rate("N/A"), 0.0)
 
-    def test_wait_for_queue_cards_with_retry_handles_timeout_and_http_errors(self) -> None:
-        session = mock.MagicMock()
+    def test_wait_for_selector_with_retry_handles_timeout_and_http_errors(self) -> None:
+        session = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+        mock_page = mock.MagicMock()
+        session._page = mock_page
         session.http_errors = ["500 https://xmc.example.com/v1/clusterqueues:batchGetSecondaryData"]
-        rod_verify._wait_for_queue_cards_with_retry(session, 5000)
+        session.wait_for_selector_with_retry(sel.QUEUE_CARD_SEL, 5000)
         self.assertEqual(session.http_errors, [])
-        session.page.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
+        mock_page.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
 
-        session2 = mock.MagicMock()
-        session2.http_errors = []
-        session2.page.wait_for_selector.side_effect = [RuntimeError("timeout"), None]
-        rod_verify._wait_for_queue_cards_with_retry(session2, 5000)
-        session2.page.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
+        session2 = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+        mock_page2 = mock.MagicMock()
+        session2._page = mock_page2
+        mock_page2.wait_for_selector.side_effect = [RuntimeError("timeout"), None]
+        session2.wait_for_selector_with_retry(sel.QUEUE_CARD_SEL, 5000)
+        mock_page2.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
 
     def test_collect_and_verify_work_units_across_paginator_pages(self) -> None:
         session = mock.MagicMock()
@@ -133,17 +136,17 @@ class ResourceObservabilityDashboardUIVerifyTest(unittest.TestCase):
                 side_effect=lambda _, name, d=None: flag_vals.get(name, d),
             ),
             mock.patch.object(rod_verify.ess, "ess_channel_context", side_effect=_fake_ess_channel),
-            mock.patch.object(rod_verify, "Session") as mock_session_cls,
+            mock.patch.object(rod_verify.Session, "start"),
+            mock.patch.object(rod_verify.Session, "close"),
             mock.patch.object(rod_verify, "verify_resource_dashboard_ui") as mock_verify,
             mock.patch.object(rod_verify.xmc_entities_validator, "stop_work_units") as mock_stop,
         ):
             rod_verify.main(["prog"])
-            mock_session_cls.assert_called_once_with(
-                ui_base_url="https://xmc.example.com",
-                auth_token="tok-123",
-                headless=False,
-                screenshots_dir="/tmp/custom_shots",
-            )
+            s = mock_verify.call_args[0][0]
+            self.assertEqual(s.ui_base_url, "https://xmc.example.com")
+            self.assertEqual(s.auth_token, "tok-123")
+            self.assertFalse(s.headless)
+            self.assertEqual(s.screenshots_dir, "/tmp/custom_shots")
             mock_verify.assert_called_once()
             mock_stop.assert_called_once_with(mock_stub, "36272")
             mock_stop.reset_mock()
