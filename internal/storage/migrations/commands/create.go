@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package migrations
+package commands
 
 import (
 	"errors"
@@ -24,13 +24,13 @@ import (
 
 const defaultFileMode = 0644
 
-// Create generates a new pair of migration files. baseDir is the workspace-relative directory
-// that contains migrationsDir.
-func Create(baseDir, migrationsDir, name string) error {
+// Create generates a new pair of migration files in migrationsDir, a directory relative to the
+// workspace root.
+func Create(migrationsDir, name string) error {
 	if name == "" {
 		return fmt.Errorf("migration name cannot be empty")
 	}
-	resolvedDir, err := resolveRelativePath(baseDir, migrationsDir)
+	resolvedDir, err := resolveRelativePath(migrationsDir)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func calculateNextVersion(dir string) (int, error) {
 	return int(maxVersion) + 1, nil
 }
 
-func resolveRelativePath(baseDir, name string) (string, error) {
+func resolveRelativePath(name string) (string, error) {
 	// Allow overriding the path for testing.
 	if testTmpDir := os.Getenv("TEST_TMPDIR"); testTmpDir != "" {
 		return name, nil
@@ -105,5 +105,5 @@ func resolveRelativePath(baseDir, name string) (string, error) {
 		return "", fmt.Errorf("the 'create' command must be run via 'bazel run'")
 	}
 
-	return filepath.Join(ws, baseDir, name), nil
+	return filepath.Join(ws, name), nil
 }

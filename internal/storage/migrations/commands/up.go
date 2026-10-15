@@ -11,8 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-// Package migrations provides functions for executing schema migration commands.
-package migrations
+// Package commands provides functions for executing migration commands.
+package commands
 
 import (
 	"context"

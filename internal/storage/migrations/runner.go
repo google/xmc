@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package migrations provides the schema migration runner shared by the storage backends.
 package migrations
 
 import (
@@ -24,6 +25,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/source"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage/migrations/commands"
 )
 
 // Commands supported by the runner.
@@ -83,9 +85,9 @@ func (r *Runner) ExecCommand(ctx context.Context, cmd string, arg *int) error {
 	logging.Info(ctx, "Executing command", "command", cmd)
 	switch cmd {
 	case UpCmd:
-		return Up(ctx, r.Migrator, r.IsDatabaseEmpty, arg)
+		return commands.Up(ctx, r.Migrator, r.IsDatabaseEmpty, arg)
 	case DownCmd:
-		return Down(r.Migrator, r.Source, arg, r.Stdout, r.Stdin)
+		return commands.Down(r.Migrator, r.Source, arg, r.Stdout, r.Stdin)
 	case ForceCmd:
 		if arg == nil {
 			return fmt.Errorf("missing argument for %s command", ForceCmd)
@@ -105,7 +107,7 @@ func (r *Runner) ExecCommand(ctx context.Context, cmd string, arg *int) error {
 		}
 		fmt.Printf("Version: %d, Dirty: %v\n", v, dirty)
 	case InitCmd:
-		return Init(r.Migrator, r.Source)
+		return commands.Init(r.Migrator, r.Source)
 	default:
 		return fmt.Errorf("unknown command: %q", cmd)
 	}

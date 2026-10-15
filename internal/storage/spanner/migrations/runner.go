@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"cloud.google.com/go/spanner"
@@ -32,6 +33,7 @@ import (
 	"google.golang.org/api/option"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/migrations"
+	"xmanager_cloud/internal/storage/migrations/commands"
 	"xmanager_cloud/internal/storage/spanner/migrations/driver"
 )
 
@@ -69,10 +71,12 @@ func parseConfig() *config {
 	flag.StringVar(&cfg.command, "command", "", fmt.Sprintf("Command to run: %s, %s, %s, %s, %s", migrations.UpCmd, migrations.DownCmd, migrations.ForceCmd, migrations.VersionCmd, migrations.InitCmd))
 	flag.Parse()
 
-	var err error
-	if cfg.arg, cfg.migrationName, err = migrations.ParseArg(cfg.command, flag.Args()); err != nil {
+	arg, migrationName, err := migrations.ParseArg(cfg.command, flag.Args())
+	if err != nil {
 		logging.Fatal(context.Background(), "failed to parse arguments", "error", err)
 	}
+	cfg.arg = arg
+	cfg.migrationName = migrationName
 
 	cfg.migrationsDir = strings.ToLower(cfg.migrationsDir)
 	cfg.command = strings.ToLower(cfg.command)
@@ -96,7 +100,7 @@ func run(cfg *config, opts ...option.ClientOption) error {
 		if cfg.migrationsDir == "" {
 			return fmt.Errorf("missing required flag: --migrations_dir (required for %q)", migrations.CreateCmd)
 		}
-		return migrations.Create(migrationsBaseDir, cfg.migrationsDir, cfg.migrationName)
+		return commands.Create(filepath.Join(migrationsBaseDir, cfg.migrationsDir), cfg.migrationName)
 	}
 
 	if cfg.projectID == "" || cfg.instanceID == "" || cfg.databaseID == "" || cfg.migrationsDir == "" {
