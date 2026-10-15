@@ -514,18 +514,16 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 				t.Errorf("final record = (state=%v, owner=%+v), want DISABLED owned by %+v", finalRec.State, finalRec.Owner, wantOwner)
 			}
 
-			// Rejections on ExecuteDeletion leave the component intact in the store.
-			for _, tc := range []struct {
-				src        store.RequestSource
-				wantReason string
-			}{
-				{fencedCluster, store.ReasonClusterFenced},
-				{otherNamespace, store.ReasonSourceNamespaceConflict},
-				{ownerOnProd, store.ReasonSourceIncarnationMismatch},
-			} {
-				err := s.ExecuteDeletion(ctx, name, componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, tc.src)
-				assertReason(t, err, tc.wantReason)
+			// Rejections on ExecuteDeletion leave the component intact in the store. After the CAS
+			// takeover, the former owner ownerOnProd is another incarnation.
+			deletionRejections := []sourceRejection{
+				{name: "fenced cluster", src: fencedCluster, wantReason: store.ReasonClusterFenced},
+				{name: "other namespace", src: otherNamespace, wantReason: store.ReasonSourceNamespaceConflict},
+				{name: "former owner UID", src: ownerOnProd, wantReason: store.ReasonSourceIncarnationMismatch},
 			}
+			assertRejectedBy(t, "ExecuteDeletion", deletionRejections, func(src store.RequestSource) error {
+				return s.ExecuteDeletion(ctx, name, componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, src)
+			})
 			if _, err := s.GetComponent(ctx, name); err != nil {
 				t.Fatalf("GetComponent() after rejected ExecuteDeletion = %v, want component preserved", err)
 			}
