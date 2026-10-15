@@ -28,7 +28,9 @@ from test.e2e.lib.jobset_verifier import (
     assert_jobset_contract,
     build_work_unit_payload,
     wait_for_jobset_for_work_unit,
+    wait_for_jobsets_deleted,
     wait_for_workload_admitted,
+    wait_for_workload_preempted,
 )
 from test.e2e.lib.polling import PollTimeoutError
 
@@ -54,6 +56,13 @@ def _workload(owner_uid: str, admitted: str) -> dict[str, Any]:
             ],
         },
     }
+
+
+def _evicted_workload(owner_uid: str, reason: str, count: int) -> dict[str, Any]:
+    """Returns an admitted Workload whose scheduling statistics count evictions for reason."""
+    workload = _workload(owner_uid, "True")
+    workload["status"]["schedulingStats"] = {"evictions": [{"reason": reason, "count": count}]}
+    return workload
 
 
 def _baseline_jobset() -> dict[str, Any]:
@@ -114,6 +123,15 @@ class JobSetVerifierTest(unittest.TestCase):
         payload = build_work_unit_payload("cpu-queue", command=("sh", "-c", "exit 50"))
         spec = payload["executable"]["jobset"]["jobs"][0]["spec"]
         self.assertEqual(spec["command"], ["sh", "-c", "exit 50"])
+
+    def test_build_work_unit_payload_sets_priority_and_cpu(self) -> None:
+        """build_work_unit_payload must request the given priority and CPU millicores."""
+        payload = build_work_unit_payload("preemption-queue", priority="HIGH", cpu_millicores=400)
+        self.assertEqual(payload["priority"], "HIGH")
+        resources = payload["executable"]["jobset"]["jobs"][0]["spec"]["resources"]
+        self.assertEqual(
+            resources["cpuResources"], {"cpuMillicores": 400, "memoryBytes": 134217728}
+        )
 
     @mock.patch("test.e2e.lib.polling.time.sleep")
     @mock.patch("test.e2e.lib.jobset_verifier.subprocess.run")
@@ -195,6 +213,59 @@ class JobSetVerifierTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     wait_for_jobset_for_work_unit(bad_name)
 
+    @mock.patch("test.e2e.lib.jobset_verifier.subprocess.run")
+    def test_wait_for_jobset_selects_given_execution(self, mock_run: mock.MagicMock) -> None:
+        """wait_for_jobset_for_work_unit only matches the JobSet of the given execution."""
+        mock_run.return_value = _kubectl_items([_baseline_jobset()])
+
+        wait_for_jobset_for_work_unit(_WORK_UNIT, execution_id=2, kube_context="kind-xmc-e2e")
+
+        command = mock_run.call_args.args[0]
+        self.assertEqual(
+            command[command.index("-l") + 1],
+            f"{_WORK_UNIT_SELECTOR},xmc.google.com/execution-id=2",
+        )
+
+    @mock.patch("test.e2e.lib.polling.time.sleep")
+    @mock.patch("test.e2e.lib.jobset_verifier.subprocess.run")
+    def test_wait_for_jobsets_deleted_polls_until_none_remain(
+        self,
+        mock_run: mock.MagicMock,
+        mock_sleep: mock.MagicMock,
+    ) -> None:
+        """wait_for_jobsets_deleted retries while any JobSet of the work unit exists."""
+        mock_run.side_effect = [_kubectl_items([_baseline_jobset()]), _kubectl_items([])]
+
+        wait_for_jobsets_deleted(
+            _WORK_UNIT,
+            namespace="preemption-queue",
+            kube_context="kind-xmc-e2e",
+            poll_interval_seconds=0.01,
+        )
+
+        self.assertEqual(mock_run.call_count, 2)
+        mock_sleep.assert_called_once()
+        command = mock_run.call_args.args[0]
+        self.assertEqual(command[command.index("-l") + 1], _WORK_UNIT_SELECTOR)
+        self.assertEqual(command[command.index("-n") + 1], "preemption-queue")
+
+    @mock.patch("test.e2e.lib.polling.time.sleep")
+    @mock.patch("test.e2e.lib.polling.time.monotonic")
+    @mock.patch("test.e2e.lib.jobset_verifier.subprocess.run")
+    def test_wait_for_jobsets_deleted_raises_on_timeout(
+        self,
+        mock_run: mock.MagicMock,
+        mock_monotonic: mock.MagicMock,
+        mock_sleep: mock.MagicMock,
+    ) -> None:
+        """wait_for_jobsets_deleted raises when a JobSet outlives the deadline."""
+        mock_monotonic.side_effect = [0.0, 10.0]
+        mock_run.return_value = _kubectl_items([_baseline_jobset()])
+
+        with self.assertRaisesRegex(PollTimeoutError, "deletion of the JobSets"):
+            wait_for_jobsets_deleted(_WORK_UNIT, kube_context="kind-xmc-e2e", timeout_seconds=5.0)
+        mock_sleep.assert_not_called()
+
     @mock.patch("test.e2e.lib.polling.time.sleep")
     @mock.patch("test.e2e.lib.jobset_verifier.subprocess.run")
     def test_wait_for_workload_admitted_polls_until_admitted(
@@ -229,6 +300,37 @@ class JobSetVerifierTest(unittest.TestCase):
         del jobset["metadata"]["uid"]
         with self.assertRaisesRegex(ValueError, "UID"):
             wait_for_workload_admitted(jobset)
+
+    @mock.patch("test.e2e.lib.polling.time.sleep")
+    @mock.patch("test.e2e.lib.jobset_verifier.subprocess.run")
+    def test_wait_for_workload_preempted_polls_until_preemption_counted(
+        self,
+        mock_run: mock.MagicMock,
+        mock_sleep: mock.MagicMock,
+    ) -> None:
+        """wait_for_workload_preempted ignores other owners, eviction reasons, and zero counts."""
+        mock_run.side_effect = [
+            _kubectl_items([_workload("jobset-uid", "True")]),
+            _kubectl_items([_evicted_workload("jobset-uid", "PodsReadyTimeout", 1)]),
+            _kubectl_items([_evicted_workload("jobset-uid", "Preempted", 0)]),
+            _kubectl_items(
+                [
+                    _evicted_workload("other-uid", "Preempted", 1),
+                    _evicted_workload("jobset-uid", "Preempted", 1),
+                ]
+            ),
+        ]
+
+        got = wait_for_workload_preempted(
+            _baseline_jobset(),
+            kube_context="kind-xmc-e2e",
+            timeout_seconds=5.0,
+            poll_interval_seconds=0.01,
+        )
+
+        self.assertEqual(got, _evicted_workload("jobset-uid", "Preempted", 1))
+        self.assertEqual(mock_run.call_count, 4)
+        self.assertEqual(mock_sleep.call_count, 3)
 
     def test_assert_jobset_contract_accepts_valid_jobset(self) -> None:
         """assert_jobset_contract succeeds on a compliant JobSet and rejects empty dicts."""

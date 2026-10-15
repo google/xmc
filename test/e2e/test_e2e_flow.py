@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -45,10 +46,13 @@ from test.e2e.lib.config import (
 )
 from test.e2e.lib.dex_authenticator import DexAuthenticator
 from test.e2e.lib.jobset_verifier import (
+    DEFAULT_QUEUE_NAME,
     assert_jobset_contract,
     build_work_unit_payload,
     wait_for_jobset_for_work_unit,
+    wait_for_jobsets_deleted,
     wait_for_workload_admitted,
+    wait_for_workload_preempted,
 )
 from test.e2e.lib.ui_diagnostics import (
     get_screenshots_dir,
@@ -80,6 +84,18 @@ UNAUTHORIZED_PASSWORD = DEFAULT_UNAUTHORIZED_PASSWORD
 
 # The actuator's pod failure policy maps exit code 50, a user's early exit, to FailJob.
 EARLY_EXIT_COMMAND = ("sh", "-c", "exit 50")
+# Outlasts the stop, restart, and preemption scenarios, whose work units end only when stopped.
+# PID 1 ignores SIGTERM unless it handles it, so the shell traps it to exit at once instead of
+# holding node CPU for the 30s grace period; sleep runs in the background so that wait returns
+# on the signal. Preemption and stop suspend the Job, and the Job controller stops tracking a
+# pod before deleting it, so the exit status does not complete the work unit.
+SLEEP_COMMAND = ("sh", "-c", "trap 'exit 0' TERM; sleep 300 & wait")
+PREEMPTOR_COMMAND = ("sh", "-c", "echo preempted")
+# Defined by test/e2e/manifests/preemption_queue.yaml, whose quota fits one such work unit.
+PREEMPTION_QUEUE_NAME = "preemption-queue"
+PREEMPTION_CPU_MILLICORES = 400
+# Labels of the status chips that the experiment page shows for terminal work unit states.
+STATUS_CHIP_LABELS = {"COMPLETED": "Completed", "FAILED": "Failed", "STOPPED": "Stopped"}
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +107,12 @@ class AdminResources:
     Attributes:
         experiment_name: Canonical resource name of the admin experiment.
         artifact_name: Canonical resource name of the admin artifact.
+        work_unit_states: Terminal state of each admin work unit, keyed by resource name.
     """
 
     experiment_name: str
     artifact_name: str
+    work_unit_states: Mapping[str, str]
 
 
 def _create_work_unit(page: Page, experiment_name: str, payload: dict[str, Any]) -> str:
@@ -132,21 +150,32 @@ def _wait_for_work_unit_state(page: Page, work_unit_name: str, state: str) -> No
     logger.info("✓ Work unit %s reached %s.", work_unit_name, state)
 
 
-def _verify_admitted_jobset(work_unit_name: str) -> None:
-    """Verifies the JobSet of a work unit and Kueue's admission of its Workload."""
-    jobset = wait_for_jobset_for_work_unit(work_unit_name)
-    assert_jobset_contract(jobset)
+def _verify_admitted_jobset(
+    work_unit_name: str, namespace: str = DEFAULT_QUEUE_NAME, execution_id: int | None = None
+) -> dict[str, Any]:
+    """Verifies the JobSet of a work unit and Kueue's admission of its Workload.
+
+    The actuator creates the JobSet in the namespace named after the work unit's queue.
+    """
+    jobset = wait_for_jobset_for_work_unit(
+        work_unit_name, namespace=namespace, execution_id=execution_id
+    )
+    assert_jobset_contract(jobset, expected_queue=namespace)
     logger.info(
         "✓ JobSet %s satisfies the Non-Restarting JobSets Contract.", jobset["metadata"]["name"]
     )
     workload = wait_for_workload_admitted(jobset)
     logger.info("✓ Kueue admitted Workload %s.", workload["metadata"]["name"])
+    return jobset
 
 
-def _verify_work_unit_terminal_states(page: Page, experiment_name: str) -> None:
+def _verify_work_unit_terminal_states(page: Page, experiment_name: str) -> dict[str, str]:
     """Verifies that a succeeding work unit completes and an early-exiting one fails.
 
     Both work units are created before either is awaited so that they run concurrently.
+
+    Returns:
+        The terminal state of each work unit, keyed by resource name.
     """
     succeeding = _create_work_unit(page, experiment_name, build_work_unit_payload())
     failing = _create_work_unit(
@@ -156,6 +185,95 @@ def _verify_work_unit_terminal_states(page: Page, experiment_name: str) -> None:
     _verify_admitted_jobset(failing)
     _wait_for_work_unit_state(page, succeeding, "COMPLETED")
     _wait_for_work_unit_state(page, failing, "FAILED")
+    return {succeeding: "COMPLETED", failing: "FAILED"}
+
+
+def _post_work_unit_action(page: Page, work_unit_name: str, action: str) -> None:
+    """Calls a custom method of a work unit, such as stop or restart, via REST."""
+    response = page.request.post(
+        f"{BASE_URL}/v1/{work_unit_name}:{action}",
+        data={},
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if response.status not in (200, 201):
+        raise RuntimeError(
+            f"Failed to {action} {work_unit_name}: {response.status} {response.text()}"
+        )
+    logger.info("✓ Requested %s of work unit %s.", action, work_unit_name)
+
+
+def _stop_work_unit(page: Page, work_unit_name: str, namespace: str = DEFAULT_QUEUE_NAME) -> None:
+    """Stops a work unit and waits until it is STOPPED and its JobSet is deleted."""
+    _post_work_unit_action(page, work_unit_name, "stop")
+    _wait_for_work_unit_state(page, work_unit_name, "STOPPED")
+    wait_for_jobsets_deleted(work_unit_name, namespace=namespace)
+    logger.info("✓ The JobSet of work unit %s was deleted.", work_unit_name)
+
+
+def _verify_stop_and_restart(page: Page, experiment_name: str) -> dict[str, str]:
+    """Verifies that stop deletes a running work unit's JobSet and restart launches another.
+
+    Returns:
+        The terminal state of the work unit, keyed by resource name.
+    """
+    work_unit = _create_work_unit(
+        page, experiment_name, build_work_unit_payload(command=SLEEP_COMMAND)
+    )
+    _verify_admitted_jobset(work_unit)
+    _wait_for_work_unit_state(page, work_unit, "RUNNING")
+    _stop_work_unit(page, work_unit)
+    _post_work_unit_action(page, work_unit, "restart")
+    _verify_admitted_jobset(work_unit, execution_id=2)
+    _wait_for_work_unit_state(page, work_unit, "RUNNING")
+    _stop_work_unit(page, work_unit)
+    return {work_unit: "STOPPED"}
+
+
+def _preemption_payload(priority: str, command: Sequence[str]) -> dict[str, Any]:
+    """Returns a payload for a work unit that fits the preemption queue's quota only alone."""
+    return build_work_unit_payload(
+        PREEMPTION_QUEUE_NAME,
+        command,
+        priority=priority,
+        cpu_millicores=PREEMPTION_CPU_MILLICORES,
+    )
+
+
+def _verify_preemption(page: Page, experiment_name: str) -> dict[str, str]:
+    """Verifies that a high-priority work unit preempts an admitted low-priority one.
+
+    Both work units request enough CPU that the preemption queue's quota fits only one of them.
+    Once the low-priority work unit's Workload is admitted, the high-priority one's Workload must
+    be admitted, the low-priority one's must record a preemption, and the high-priority work unit
+    must reach COMPLETED. The low-priority work unit, which Kueue may have readmitted by then, is
+    stopped at the end.
+
+    Returns:
+        The terminal state of each work unit, keyed by resource name.
+    """
+    low = _create_work_unit(page, experiment_name, _preemption_payload("LOW", SLEEP_COMMAND))
+    low_jobset = _verify_admitted_jobset(low, namespace=PREEMPTION_QUEUE_NAME)
+    high = _create_work_unit(page, experiment_name, _preemption_payload("HIGH", PREEMPTOR_COMMAND))
+    _verify_admitted_jobset(high, namespace=PREEMPTION_QUEUE_NAME)
+    workload = wait_for_workload_preempted(low_jobset)
+    logger.info("✓ Kueue preempted Workload %s.", workload["metadata"]["name"])
+    _wait_for_work_unit_state(page, high, "COMPLETED")
+    _stop_work_unit(page, low, namespace=PREEMPTION_QUEUE_NAME)
+    return {low: "STOPPED", high: "COMPLETED"}
+
+
+def _verify_status_chips(page: Page, experiment_name: str, states: Mapping[str, str]) -> None:
+    """Verifies that the experiment page shows the terminal state of each work unit."""
+    page.goto(f"{BASE_URL}/{experiment_name}")
+    for work_unit_name, state in states.items():
+        work_unit_id = work_unit_name.rsplit("/", 1)[-1]
+        row = page.locator("xmc-work-units-table tr").filter(
+            has=page.get_by_role("link", name=work_unit_id, exact=True)
+        )
+        expect(row.locator("xmc-status-chip")).to_have_text(
+            STATUS_CHIP_LABELS[state], timeout=DEFAULT_TIMEOUT_MS
+        )
+        logger.info("✓ Work unit %s shows %s.", work_unit_id, STATUS_CHIP_LABELS[state])
 
 
 def test_admin_flow_and_experiment_lifecycle(
@@ -244,7 +362,7 @@ def test_admin_flow_and_experiment_lifecycle(
     logger.info("✓ Created admin artifact: %s", admin_art_name)
 
     # 5. Run work units through the actuator, Kueue, and the reconciler to terminal states
-    _verify_work_unit_terminal_states(page, experiment_name)
+    work_unit_states = _verify_work_unit_terminal_states(page, experiment_name)
 
     # 6. Assert experiment appears in the UI table
     logger.info("Reloading dashboard to verify experiment in table...")
@@ -258,7 +376,38 @@ def test_admin_flow_and_experiment_lifecycle(
     return AdminResources(
         experiment_name=experiment_name,
         artifact_name=admin_art_name,
+        work_unit_states=work_unit_states,
     )
+
+
+def test_work_unit_lifecycle_and_preemption(
+    page: Page,
+    screenshots_dir: Path,
+    auth: DexAuthenticator,
+    admin_resources: AdminResources,
+) -> None:
+    """Tests stopping, restarting, and preempting work units, and their status chips.
+
+    Args:
+        page: Active Playwright Page instance.
+        screenshots_dir: Destination directory for diagnostic screenshots.
+        auth: DexAuthenticator instance for OIDC authentication.
+        admin_resources: AdminResources holding the admin experiment and its work units.
+
+    Raises:
+        RuntimeError: If an API call fails or a work unit reaches an unexpected terminal state.
+        PollTimeoutError: If a JobSet, Workload, or work unit state does not appear in time.
+    """
+    logger.info("=== Testing Work Unit Stop, Restart, and Preemption ===")
+    auth.authenticate(page, ADMIN_USER, ADMIN_PASSWORD, screenshots_dir)
+    experiment_name = admin_resources.experiment_name
+    work_unit_states = {
+        **admin_resources.work_unit_states,
+        **_verify_stop_and_restart(page, experiment_name),
+        **_verify_preemption(page, experiment_name),
+    }
+    _verify_status_chips(page, experiment_name, work_unit_states)
+    save_screenshot(page, screenshots_dir, "07_work_unit_status_chips")
 
 
 def test_unauthorized_persona_boundary(
@@ -539,7 +688,7 @@ def verify_cms_bridge_reconciliation() -> None:
     kube_context = os.environ.get("KUBE_CONTEXT", "").strip()
     if not kube_context:
         return
-    logger.info("=== [5/5] Verifying Authenticated xmc-bridge -> CMS Reconciliation ===")
+    logger.info("=== [6/6] Verifying Authenticated xmc-bridge -> CMS Reconciliation ===")
     manifest = json.dumps(
         {
             "apiVersion": "xmc.dev/v1alpha1",
@@ -597,40 +746,50 @@ def main() -> None:
             # 1. Admin Flow in an isolated context
             admin_resources: AdminResources = _run_isolated_stage(
                 browser,
-                "[1/5] Running Admin Flow",
+                "[1/6] Running Admin Flow",
                 test_admin_flow_and_experiment_lifecycle,
                 screenshots_dir,
                 auth,
             )
 
-            # 2. Viewer Flow in an isolated context
+            # 2. Work Unit Lifecycle & Preemption Flow in an isolated context
             _run_isolated_stage(
                 browser,
-                "[2/5] Running Viewer Flow",
+                "[2/6] Running Work Unit Lifecycle & Preemption Flow",
+                test_work_unit_lifecycle_and_preemption,
+                screenshots_dir,
+                auth,
+                admin_resources,
+            )
+
+            # 3. Viewer Flow in an isolated context
+            _run_isolated_stage(
+                browser,
+                "[3/6] Running Viewer Flow",
                 test_viewer_permission_boundaries_and_isolation,
                 screenshots_dir,
                 auth,
                 admin_resources,
             )
 
-            # 3. Token Expiration & Unauthenticated Boundary Flow in an isolated context
+            # 4. Token Expiration & Unauthenticated Boundary Flow in an isolated context
             _run_isolated_stage(
                 browser,
-                "[3/5] Running Token Expiration & Unauthenticated Flow",
+                "[4/6] Running Token Expiration & Unauthenticated Flow",
                 test_token_expiration_and_unauthenticated_boundary,
                 screenshots_dir,
             )
 
-            # 4. Unauthorized Persona Boundary Flow in an isolated context
+            # 5. Unauthorized Persona Boundary Flow in an isolated context
             _run_isolated_stage(
                 browser,
-                "[4/5] Running Unauthorized Persona Boundary Flow",
+                "[5/6] Running Unauthorized Persona Boundary Flow",
                 test_unauthorized_persona_boundary,
                 screenshots_dir,
                 auth,
             )
 
-            # 5. CMS gRPC Authentication & xmc-bridge Reconciliation Flow
+            # 6. CMS gRPC Authentication & xmc-bridge Reconciliation Flow
             verify_cms_bridge_reconciliation()
 
             logger.info("==================================================")
