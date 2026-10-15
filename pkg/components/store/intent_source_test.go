@@ -268,11 +268,20 @@ func TestSetSourcedComponentIntent_UndeclaredFence(t *testing.T) {
 			ctx := context.Background()
 			s := backend.newStore(t)
 			legacy := seedIntentComponent(ctx, t, s, "fence-undeclared-legacy", intentSpec("v1.0.0"), 5000, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED)
-			for _, name := range []string{"fence-undeclared-new", legacy.Name} {
-				_, err := s.SetSourcedComponentIntent(ctx, name, intentSpec("v1.0.0"), nil, ownerSource)
-				if diff := cmp.Diff(wantDetails, status.Convert(err).Details(), protocmp.Transform()); status.Code(err) != codes.FailedPrecondition || diff != "" {
-					t.Errorf("SetSourcedComponentIntent(%s) error = %v, details mismatch (-want +got):\n%s", name, err, diff)
-				}
+			tests := []struct {
+				name      string
+				component string
+			}{
+				{name: "new component", component: "fence-undeclared-new"},
+				{name: "legacy component", component: legacy.Name},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					_, err := s.SetSourcedComponentIntent(ctx, tt.component, intentSpec("v1.0.0"), nil, ownerSource)
+					if diff := cmp.Diff(wantDetails, status.Convert(err).Details(), protocmp.Transform()); status.Code(err) != codes.FailedPrecondition || diff != "" {
+						t.Errorf("SetSourcedComponentIntent(%s) error = %v, details mismatch (-want +got):\n%s", tt.component, err, diff)
+					}
+				})
 			}
 			if _, err := s.GetComponent(ctx, "fence-undeclared-new"); status.Code(err) != codes.NotFound {
 				t.Errorf("GetComponent(fence-undeclared-new) error = %v, want code %v", err, codes.NotFound)
