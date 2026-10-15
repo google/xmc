@@ -308,3 +308,215 @@ func TestMergeResourceSets_EphemeralOnly(t *testing.T) {
 		t.Errorf("CpuResources is nil, expected initialized CpuResources container for ephemeral storage")
 	}
 }
+
+func workUnitWithResource(r *essmsgpb.ResourceSet) *essmsgpb.WorkUnit {
+	return &essmsgpb.WorkUnit{
+		Executable: &essmsgpb.Executable{
+			Type: &essmsgpb.Executable_Jobset{
+				Jobset: &essmsgpb.JobSetExecutable{
+					Jobs: []*essmsgpb.KubernetesJob{
+						{
+							Spec: &essmsgpb.ExecutableSpec{
+								Resources: r,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestGetWorkUnitResources_Table(t *testing.T) {
+	cpuRes := &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_CpuResources{
+			CpuResources: &essmsgpb.CpuResources{
+				CpuMillicores: 1000,
+				MemoryBytes:   1024,
+			},
+		},
+		EphemeralStorageBytes: 2048,
+	}
+
+	gpuRes := &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_GpuResources{
+			GpuResources: &essmsgpb.GpuResources{
+				Type:  "nvidia-tesla-v100",
+				Count: 2,
+			},
+		},
+		EphemeralStorageBytes: 2048,
+	}
+
+	tpuRes := &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_TpuResources{
+			TpuResources: &essmsgpb.TpuResources{
+				Type:     "tpu-v4-pod",
+				Topology: "2x2x2",
+			},
+		},
+		EphemeralStorageBytes: 2048,
+	}
+
+	tests := []struct {
+		name string
+		wu   *essmsgpb.WorkUnit
+		want []*essmsgpb.ResourceSet
+	}{
+		{
+			name: "no_resources",
+			wu:   &essmsgpb.WorkUnit{},
+			want: nil,
+		},
+		{
+			name: "cpu_resources",
+			wu:   workUnitWithResource(cpuRes),
+			want: []*essmsgpb.ResourceSet{cpuRes},
+		},
+		{
+			name: "gpu_resources",
+			wu:   workUnitWithResource(gpuRes),
+			want: []*essmsgpb.ResourceSet{gpuRes},
+		},
+		{
+			name: "tpu_resources",
+			wu:   workUnitWithResource(tpuRes),
+			want: []*essmsgpb.ResourceSet{tpuRes},
+		},
+		{
+			name: "multiple_resources",
+			wu: &essmsgpb.WorkUnit{
+				Executable: &essmsgpb.Executable{
+					Type: &essmsgpb.Executable_Jobset{
+						Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Spec: &essmsgpb.ExecutableSpec{
+										Resources: cpuRes,
+									},
+								},
+								{
+									Spec: &essmsgpb.ExecutableSpec{
+										Resources: gpuRes,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: []*essmsgpb.ResourceSet{cpuRes, gpuRes},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := GetWorkUnitResources(tc.wu)
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("GetWorkUnitResources(%v) returned diff (-want +got):\n%s", tc.wu, diff)
+			}
+		})
+	}
+}
+
+func TestMergeResourceSets_Table(t *testing.T) {
+	cpu1 := &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_CpuResources{
+			CpuResources: &essmsgpb.CpuResources{
+				CpuMillicores: 1000,
+				MemoryBytes:   1024,
+			},
+		},
+		EphemeralStorageBytes: 2048,
+	}
+	cpu2 := &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_CpuResources{
+			CpuResources: &essmsgpb.CpuResources{
+				CpuMillicores: 500,
+				MemoryBytes:   512,
+			},
+		},
+		EphemeralStorageBytes: 1024,
+	}
+	gpuV100 := &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_GpuResources{
+			GpuResources: &essmsgpb.GpuResources{
+				Type:  "nvidia-tesla-v100",
+				Count: 2,
+			},
+		},
+		EphemeralStorageBytes: 2048,
+	}
+	tpuV4 := &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_TpuResources{
+			TpuResources: &essmsgpb.TpuResources{
+				Type:     "tpu-v4-pod",
+				Topology: "2x2x2",
+			},
+		},
+		EphemeralStorageBytes: 2048,
+	}
+
+	tests := []struct {
+		name string
+		a    []*essmsgpb.ResourceSet
+		b    []*essmsgpb.ResourceSet
+		want []*essmsgpb.ResourceSet
+	}{
+		{
+			name: "nil_inputs",
+			a:    nil,
+			b:    nil,
+			want: nil,
+		},
+		{
+			name: "empty_inputs",
+			a:    []*essmsgpb.ResourceSet{},
+			b:    []*essmsgpb.ResourceSet{},
+			want: nil,
+		},
+		{
+			name: "one_cpu",
+			a:    []*essmsgpb.ResourceSet{cpu1},
+			b:    nil,
+			want: []*essmsgpb.ResourceSet{cpu1},
+		},
+		{
+			name: "two_cpu",
+			a:    []*essmsgpb.ResourceSet{cpu1},
+			b:    []*essmsgpb.ResourceSet{cpu2},
+			want: []*essmsgpb.ResourceSet{
+				{
+					Resources: &essmsgpb.ResourceSet_CpuResources{
+						CpuResources: &essmsgpb.CpuResources{
+							CpuMillicores: 1500,
+							MemoryBytes:   1536,
+						},
+					},
+					EphemeralStorageBytes: 3072,
+				},
+			},
+		},
+		{
+			name: "one_tpu",
+			a:    []*essmsgpb.ResourceSet{tpuV4},
+			b:    nil,
+			want: []*essmsgpb.ResourceSet{tpuV4},
+		},
+		{
+			name: "cpu_gpu_tpu",
+			a:    []*essmsgpb.ResourceSet{cpu1, gpuV100},
+			b:    []*essmsgpb.ResourceSet{tpuV4},
+			want: []*essmsgpb.ResourceSet{cpu1, gpuV100, tpuV4},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MergeResourceSets(tc.a, tc.b)
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("MergeResourceSets(%v, %v) returned diff (-want +got):\n%s", tc.a, tc.b, diff)
+			}
+		})
+	}
+}

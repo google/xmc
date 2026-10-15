@@ -158,10 +158,7 @@ func addTestResourcesToStorage(ctx context.Context, t *testing.T, storageClient 
 		t.Fatalf("storageClient.CreateExperiment failed: %v", err)
 	}
 
-	_, err = storageClient.CreateWorkUnit(ctx, workUnitForOperationTest)
-	if err != nil {
-		t.Fatalf("storageClient.CreateWorkUnit failed: %v", err)
-	}
+	spanner_lib.CreateAndStoreWorkUnit(ctx, t, storageClient, workUnitForOperationTest)
 
 	lro, err := storageClient.AddWorkUnitOperation(ctx, testExperimentID, testWorkUnitID, &esspb.OperationMetadata{})
 	if err != nil {
