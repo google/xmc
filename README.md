@@ -20,6 +20,9 @@ Explore the folders and guides below to set up, build, or deploy XMC:
 * ### [Local & Hybrid Development Guide](tools/dev_env/README.md)
   Inner-loop local development using KinD (`dev_env up`), fast microservice reload (`dev_env reload`), and the hybrid execution model (`--remote-k8s`) pairing a local KinD control plane with a remote GKE data plane for real JobSet scheduling.
 
+* ### [End-to-End & UI Feature Testing Guide](tools/nightly_tests/README.md)
+  Out-of-the-box backend, telemetry, and Playwright Web UI verification frameworks, ready-to-use assertion helpers across gRPC, Kubernetes JobSets, ClickHouse, Dashboard Service, and Angular UI routes, and step-by-step patterns for testing new features locally and in CI.
+
 * ### [Developer Documentation](docs/developer.md)
   Technical guides on compiling protocol buffers, custom AIP-160 filter evaluation, testing private packages, running database health checks, pre-commit hooks, and static code analysis.
 

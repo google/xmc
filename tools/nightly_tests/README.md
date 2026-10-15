@@ -31,13 +31,56 @@ The Nightly Examples E2E workflow ([`.github/workflows/nightly-examples-e2e.yml`
 ### Shared Verification Modules (`tools/nightly_tests/verification/`)
 
 - [`verification/`](verification/) (`//tools/nightly_tests/verification:*`): Domain-focused verification modules (each paired with a 1-to-1 `*_test.py` unit test suite):
-  - [`verification/verifier_cli.py`](verification/verifier_cli.py) (`//tools/nightly_tests/verification:verifier_cli`, tested by [`verification/verifier_cli_test.py`](verification/verifier_cli_test.py)): Defines standard CLI flags (`--xid`, `--endpoint`, `--expected_queue`, `--timeout_sec`, `--dashboard_endpoint`, `--expected_work_units`, `--clickhouse_endpoint`, `--require_clickhouse_metrics`, `--verify_ui`, `--dashboard_id`, `--expected_title_pattern`), flag retrieval (`get_flag`), argument validation (`validate_argv`), XID normalization (`parse_xid`), work unit count resolution (`resolve_expected_work_units`), and the CLI entrypoint wrapper (`run_main`).
+  - [`verification/verifier_cli.py`](verification/verifier_cli.py) (`//tools/nightly_tests/verification:verifier_cli`, tested by [`verification/verifier_cli_test.py`](verification/verifier_cli_test.py)): Defines standard CLI flags (`--xid`, `--endpoint`, `--expected_queue`, `--timeout_sec`, `--dashboard_endpoint`, `--expected_work_units`, `--clickhouse_endpoint`, `--require_clickhouse_metrics`, `--verify_ui`, `--ui_base_url`, `--auth_token`, `--headless`, `--screenshots_dir`, `--dashboard_id`, `--expected_title_pattern`), flag retrieval (`get_flag`), argument validation (`validate_argv`), XID normalization (`parse_xid`), work unit count resolution (`resolve_expected_work_units`), and the CLI entrypoint wrapper (`run_main`).
   - [`verification/endpoint_resolution.py`](verification/endpoint_resolution.py) (`//tools/nightly_tests/verification:endpoint_resolution`, tested by [`verification/endpoint_resolution_test.py`](verification/endpoint_resolution_test.py)): Resolves ESS gRPC (`resolve_endpoint`), Dashboard Service REST (`resolve_dashboard_endpoint`), ClickHouse HTTP (`resolve_clickhouse_endpoint`), and Web UI (`resolve_ui_base_url`) endpoints from flags, environment variables, or local defaults.
   - [`verification/ess_session.py`](verification/ess_session.py) (`//tools/nightly_tests/verification:ess_session`, tested by [`verification/ess_session_test.py`](verification/ess_session_test.py)): Provides context managers for authenticated ESS gRPC channel lifecycle (`ess_channel_context`) and standardized verification failure exit handling (`handle_verification_errors`).
   - [`verification/verification_report.py`](verification/verification_report.py) (`//tools/nightly_tests/verification:verification_report`, tested by [`verification/verification_report_test.py`](verification/verification_report_test.py)): Formats console verification header banners (`print_banner`) and completion summaries (`print_success_summary`).
   - [`verification/workload_verification.py`](verification/workload_verification.py) (`//tools/nightly_tests/verification:workload_verification`, tested by [`verification/workload_verification_test.py`](verification/workload_verification_test.py)): Implements high-level workload and dashboard verification orchestrators (`verify_standard_workload`, `verify_dashboard_workload`) and step assertion helpers (`assert_experiment`, `assert_work_units`, `assert_work_unit_jobsets`, `assert_work_unit_artifacts`, `assert_clickhouse_metrics`, `assert_dashboard_chart_data`, `assert_dashboard`).
   - [`verification/xmc_entities_validator.py`](verification/xmc_entities_validator.py) (`//tools/nightly_tests/verification:xmc_entities_validator_lib`, tested by [`verification/xmc_entities_validator_test.py`](verification/xmc_entities_validator_test.py)): Implements underlying ESS gRPC, ClickHouse HTTP SQL, and Dashboard Service REST/gRPC polling and validation assertions (`validate_experiment`, `validate_work_units`, `validate_work_unit_jobsets`, `validate_node_selector_mappings`, `validate_artifacts`, `validate_clickhouse_metrics`, `validate_dashboard`, `validate_dashboard_chart_data`, `validate_multikueue_execution_metadata`, `validate_multikueue_k8s_delegation`, `stop_work_units`).
   - [`verification/ui_entities_validator.py`](verification/ui_entities_validator.py) & [`verification/ui_css_selectors.py`](verification/ui_css_selectors.py) (`//tools/nightly_tests/verification:ui_entities_validator_lib`, tested by [`verification/ui_entities_validator_test.py`](verification/ui_entities_validator_test.py)): Provide authenticated Playwright browser sessions (`XMCUIBrowserSession`), route navigation, CSS selectors, and UI runtime error gates (`navigate_to_route`, `assert_no_runtime_errors`).
+
+### Out-of-the-Box Testing & Verification Capabilities
+
+Future developers do not need to write boilerplate gRPC clients, Kubernetes API pollers, SQL query runners, or Playwright authentication plumbing from scratch. The `tools/nightly_tests/verification/` package provides turnkey assertion primitives across every layer of the XMC stack:
+
+| Verification Layer | Primary Module(s) | Key Out-of-the-Box Functions & Classes | What Is Verified Automatically |
+| :--- | :--- | :--- | :--- |
+| **Control Plane (ESS gRPC)** | [`xmc_entities_validator.py`](verification/xmc_entities_validator.py), [`workload_verification.py`](verification/workload_verification.py) | `validate_experiment`, `assert_experiment`, `validate_work_units`, `assert_work_units`, `stop_work_units` | Experiment creation, title pattern matching, target queue routing (`cpu-queue`, `tpu-queue`, `multikueue-cpu-queue`), WorkUnit state machine polling (`PENDING` -> `RUNNING` -> `COMPLETED`), and automatic `BatchStopWorkUnits` teardown for hardware-gated jobs. |
+| **Kubernetes JobSets & MultiKueue** | [`xmc_entities_validator.py`](verification/xmc_entities_validator.py), [`workload_verification.py`](verification/workload_verification.py) | `validate_work_unit_jobsets`, `assert_work_unit_jobsets`, `validate_node_selector_mappings`, `validate_multikueue_execution_metadata`, `validate_multikueue_k8s_delegation` | ReplicatedJob counts, replica numbers, primary container specifications, per-job `nodeSelector` constraints, and MultiKueue manager-to-worker cluster `Workload` admission and execution delegation. |
+| **WorkUnit Artifacts** | [`xmc_entities_validator.py`](verification/xmc_entities_validator.py), [`workload_verification.py`](verification/workload_verification.py) | `validate_artifacts`, `assert_work_unit_artifacts` | Artifact registration (`GetArtifacts` / WorkUnit artifact records), expected artifact type coverage (e.g., chart configs, checkpoints, storage URIs), and metadata integrity. |
+| **ClickHouse Telemetry** | [`xmc_entities_validator.py`](verification/xmc_entities_validator.py), [`workload_verification.py`](verification/workload_verification.py) | `validate_clickhouse_metrics`, `assert_clickhouse_metrics` | Polls ClickHouse HTTP SQL (`localhost:8123`) until OTLP/metric rows for the target Experiment XID are ingested, asserting expected metric names and minimum row counts. |
+| **xDash / Dashboard Service** | [`xmc_entities_validator.py`](verification/xmc_entities_validator.py), [`workload_verification.py`](verification/workload_verification.py) | `validate_dashboard`, `assert_dashboard`, `validate_dashboard_chart_data`, `assert_dashboard_chart_data`, `verify_dashboard_workload` | Dashboard configuration persistence via REST/gRPC, minimum chart count assertions, and live time-series chart data hydration (`min_hydrated_points`) backed by ClickHouse metrics. |
+| **Playwright Web UI E2E** | [`ui_entities_validator.py`](verification/ui_entities_validator.py), [`ui_css_selectors.py`](verification/ui_css_selectors.py) | `XMCUIBrowserSession` (`Session.from_flags()`), `navigate_to_route`, `wait_for_selector_with_retry`, `take_screenshot`, `assert_no_runtime_errors` | Headless Chromium session with Cloud IAP OIDC bearer headers, `/api/session` JWT exchange, and cookie injection; cold-start HTTP 500 reload resilience; login/redirect guards; full-page diagnostic screenshots; and strict runtime error gates. |
+
+#### Backend / Control-Plane & Telemetry Validators
+
+- **Experiment & Queue Routing Assertions** (`validate_experiment`, `assert_experiment`): Verifies that the Experiment resource exists in ESS, its display title matches `expected_title_pattern`, and its scheduling queue matches `--expected_queue`.
+- **WorkUnit Lifecycle Polling & Terminal State Validation** (`validate_work_units`, `assert_work_units`, `stop_work_units`): Polls WorkUnits until all expected units reach `COMPLETED` (or `PENDING`/`RUNNING` when `wait_for_completion=False`), failing fast if any WorkUnit transitions to `FAILED` or `CANCELLED`. `stop_work_units` issues `BatchStopWorkUnits` to clean up non-completing jobs.
+- **Kubernetes JobSet & `nodeSelector` Topology Assertions** (`validate_work_unit_jobsets`, `validate_node_selector_mappings`): Inspects each WorkUnit's serialized JobSet specification to verify replicated job names, replica counts, primary container names, and custom per-job `nodeSelector` labels (such as `cloud.google.com/gke-nodepool`).
+- **WorkUnit Artifact Registration & Storage Validation** (`validate_artifacts`, `assert_work_unit_artifacts`): Asserts that expected artifact types and storage URIs were registered against the Experiment/WorkUnits.
+- **ClickHouse SQL Metric Ingestion Assertions** (`validate_clickhouse_metrics`, `assert_clickhouse_metrics`): Queries ClickHouse over HTTP to confirm that all `expected_metric_names` have been ingested with at least `expected_min_rows` data points.
+- **xDash / Dashboard Service REST & gRPC Chart Data Validation** (`validate_dashboard`, `validate_dashboard_chart_data`, `verify_dashboard_workload`): Verifies dashboard layout metadata and polls the Dashboard Service chart data endpoint to confirm non-empty time-series points are returned.
+- **MultiKueue Execution Metadata & K8s Delegation Checks** (`validate_multikueue_execution_metadata`, `validate_multikueue_k8s_delegation`): Verifies that jobs submitted to `multikueue-cpu-queue` record remote worker cluster execution metadata in ESS and reconcile `Workload` admission across the MultiKueue control plane.
+
+#### Playwright Web UI E2E Testing Framework
+
+`XMCUIBrowserSession` (typically instantiated via `Session.from_flags()` in [`verification/ui_entities_validator.py`](verification/ui_entities_validator.py)) provides an end-to-end browser verification harness out of the box:
+
+- **Programmatic Authentication**: Automatically injects `Authorization: Bearer <XMC_AUTH_TOKEN>` headers on same-origin requests, sets `GCP_IAAP_AUTH_TOKEN` and `session_token` (`XMC_SESSION_TOKEN` / `/api/session` JWT exchange) domain cookies, and configures a 1920x1080 HiDPI (`device_scale_factor=2`) viewport.
+- **Cold-Start Resilience (`wait_for_selector_with_retry`)**: Waits for initial DOM selectors and automatically performs a clean `networkidle` reload after clearing transient error buffers if the first page load encounters a cold-start timeout or transient HTTP 500.
+- **Route Navigation & Auth/Redirect Guards (`navigate_to_route`, `navigate_to_experiment`)**: Navigates to any Angular route (e.g., `/experiments/<xid>`, `/dashboards`, `/resources`, `/admin`), waits for fonts to settle (`settle_and_wait_fonts`), captures an initial landing screenshot, and fails immediately with a diagnostic screenshot (`ui_AUTHENTICATION_REQUIRED_*.png` or `ui_REDIRECT_*.png`) if the session lands on a login prompt (`Sign in with Google`, `xmc-home-page`) or is unexpectedly redirected by an Angular route guard.
+- **Step Screenshots (`take_screenshot`)**: Captures full-page PNG snapshots at each CUJ milestone into `--screenshots_dir` (default `/tmp/xmc_screenshots`). In GitHub Actions, if any UI verifier fails, the workflow automatically uploads all captured PNGs as the `ui-screenshots-<id>` workflow artifact.
+- **Strict Runtime Error Gates (`assert_no_runtime_errors`)**: Attaches listeners to the Chromium page and fails the test if any uncaught JavaScript `pageerror`, console error banner (`xmc-error-banner`), or same-origin HTTP `>= 400` response occurred during the user journey.
+- **Centralized CSS Selectors (`ui_css_selectors.py`)**: Keeps Angular component selectors (`xmc-experiment-page`, `xmc-dashboards-page`, `xmc-resource-dashboard`, `xmc-admin-panel`, etc.) in [`verification/ui_css_selectors.py`](verification/ui_css_selectors.py) so UI verifiers remain concise and easy to maintain when component templates evolve.
+
+#### Existing UI E2E Verifiers (Reference Implementations)
+
+Use these existing verifiers under [`tools/nightly_tests/examples_verification/`](examples_verification/) as reference templates when adding UI tests for new Angular views or full-stack features:
+
+- [`simple_job_ui_verify.py`](examples_verification/simple_job_ui_verify.py): Verifies the Experiment Overview page (`/experiments/<xid>`), experiment title header rendering (`assert_experiment_header`), and Work Units tab table row hydration (`assert_work_units_tab`).
+- [`metrics_dashboard_ui_verify.py`](examples_verification/metrics_dashboard_ui_verify.py): Piggybacks on `metrics_dashboard_job` via `--verify_ui=true` to test `/dashboards` search filtering, no-match empty states, navigation to `/dashboards/exp_<xid>_overview`, KPI summary box formatting, WorkUnit deep-links, and ECharts HTML5 `<canvas>` bounding-box hydration.
+- [`resource_observability_dashboard_ui_verify.py`](examples_verification/resource_observability_dashboard_ui_verify.py): Verifies the Resource Observability Dashboard (`/resources`), covering Cluster Queue cards (`cpu-queue`, `tpu-queue`, `multikueue-cpu-queue`), interactive queue selection, the "Jobs in the Queue" table and paginator navigation, and the Smart Resource Finder tab with `1h`/`6h`/`24h` queue velocity pill toggles.
+- [`admin_panel_ui_verify.py`](examples_verification/admin_panel_ui_verify.py): Standalone UI verifier for the Admin Panel (`/admin`), asserting privileged route guard access, System Info card build/schema versions (`ESS`, `XID`), XMC Services Health component badges (`ESS`, `XID`, `Actuator`, `Reconciler`, `Redis`, `Spanner ESS`, `Spanner XID`) with live `/v1/health/status` Refresh verification, and Configuration Entries group collapse/expand toggles and search filtering.
 
 ---
 
@@ -154,10 +197,78 @@ def main(argv: Sequence[str]) -> None:
     )
 ```
 
+#### Pattern D: Writing a Playwright Web UI E2E Verifier
+
+Playwright UI verifiers can be wired in two ways depending on whether the UI view requires a freshly launched workload:
+
+1. **Piggybacked on an Existing Workload (`--verify_ui=true`)**:
+   Invoke your UI verifier inside the `extra_step` callback of a backend verifier when `verifier_cli.get_flag(verifier_cli.FLAGS, "verify_ui", False)` is true (see [`metrics_dashboard_job_verify.py`](examples_verification/metrics_dashboard_job_verify.py) and [`metrics_dashboard_ui_verify.py`](examples_verification/metrics_dashboard_ui_verify.py)):
+
+   ```python
+   def _verify_backend_and_ui(_stub: Any, xid: str) -> None:
+       """Runs backend assertions followed by Playwright Web UI CUJ assertions."""
+       if verifier_cli.get_flag(verifier_cli.FLAGS, "verify_ui", False):
+           with my_feature_ui_verify.Session.from_flags() as session:
+               my_feature_ui_verify.verify_my_feature_ui(session, xid)
+   ```
+
+2. **Standalone UI Route Verifier (`example_path: ''` and `verify_ui: true`)**:
+   For global UI views that do not require launching an experiment workload first (such as `/admin` in [`admin_panel_ui_verify.py`](examples_verification/admin_panel_ui_verify.py)), create a standalone verifier module and set `example_path: ''`, `entrypoint: ''`, and `verify_ui: true` in [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml):
+
+   ```python
+   from collections.abc import Sequence
+   from typing import TypeAlias
+
+   from tools.nightly_tests.verification import (
+       ess_session as ess,
+       ui_css_selectors as sel,
+       ui_entities_validator,
+       verification_report as rep,
+       verifier_cli as cli,
+   )
+
+   Session: TypeAlias = ui_entities_validator.XMCUIBrowserSession
+
+
+   def verify_my_feature_ui(session: Session) -> None:
+       """Executes Playwright UI E2E assertions for /my-route."""
+       session.navigate_to_route("/my-route", "xmc-my-feature-root", "ui_step1_landing.png")
+       session.wait_for_selector_with_retry(".feature-card")
+       session.take_screenshot("ui_step2_interacted.png")
+       session.assert_no_runtime_errors("my_feature")
+       rep.print_success_summary("MY FEATURE UI E2E PASSED!", [("UI Base URL", session.ui_base_url)])
+
+
+   def main(argv: Sequence[str]) -> None:
+       """CLI entrypoint for standalone UI E2E verification."""
+       cli.validate_argv(argv)
+       with ess.handle_verification_errors(), Session.from_flags() as session:
+           verify_my_feature_ui(session)
+
+
+   if __name__ == "__main__":
+       cli.run_main(main)
+   ```
+
+   Corresponding matrix entry in [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml):
+
+   ```yaml
+          - id: 'my_feature_ui'
+            name: 'My Feature (Playwright UI)'
+            example_path: ''
+            entrypoint: ''
+            args: ''
+            verify_module: 'tools.nightly_tests.examples_verification.my_feature_ui_verify'
+            expected_queue: ''
+            verify_ui: true
+   ```
+
+   Remember to pair every new `*_verify.py` module with a 1-to-1 `*_verify_test.py` unit test suite in [`tools/nightly_tests/examples_verification/`](examples_verification/).
+
 ### Step 2: Register the Target in `tools/nightly_tests/examples_verification/BUILD.bazel`
 
 1. Add `"<example_name>_verify.py"` to `exports_files([...])` in [`tools/nightly_tests/examples_verification/BUILD.bazel`](examples_verification/BUILD.bazel).
-2. Add a `py_binary` target with `name = "<example_name>_verify"` (include `"//tools/nightly_tests/verification:xmc_entities_validator_lib"` in `deps` if your script invokes `xmc_entities_validator` directly):
+2. Add a `py_binary` target with `name = "<example_name>_verify"` (include `"//tools/nightly_tests/verification:xmc_entities_validator_lib"` or `"//tools/nightly_tests/verification:ui_entities_validator_lib"` in `deps` as needed, plus a `py_test` target when adding unit tests):
 
 ```starlark
 py_binary(
@@ -185,13 +296,16 @@ py_binary(
             verify_module: 'tools.nightly_tests.examples_verification.<example_name>_verify'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: false
+            verify_ui: false
 ```
 
 Ensure your example's `entrypoint` script prints `Experiment XID: <xid>` (or `experiments/<xid>` / `dashboards/<id>`) to stdout so the workflow launch step can extract the identifier automatically.
 
-### Step 4: Verify Locally and in CI
+### Step 4: Verify Locally and in CI (Developer Workflow)
 
-Run the Bazel build, unit tests, and example coverage gate locally:
+#### 1. Run Unit Tests & Coverage Gates Locally with Bazel
+
+All verification libraries and UI verifiers have hermetic unit tests that mock out gRPC channels and Playwright `Page` locators, allowing you to validate logic in seconds without a live cluster:
 
 ```bash
 EXAMPLE_TARGET="simple_job_verify"
@@ -201,11 +315,38 @@ python3 tools/nightly_tests/check_examples_coverage.py
 ./.githooks/pre-commit --check
 ```
 
-To trigger a targeted E2E run on your feature branch in GitHub Actions without running the entire matrix:
+#### 2. Run a Backend or Playwright UI Verifier Locally Against a Deployed GKE Environment
+
+To run or debug a verifier directly from your workstation against a deployed GKE environment (such as `xmc-nightly` or your personal dev cluster):
 
 ```bash
-BRANCH_NAME="feat/my-new-example"
-EXAMPLE_ID="my_new_example"
+# Authenticate with Cloud IAP (or set XMC_SESSION_TOKEN from /api/session)
+export XMC_AUTH_TOKEN="$(gcloud auth print-identity-token --audiences="${IAP_CLIENT_ID}" --include-email)"
+
+# Run a backend + piggybacked Playwright UI verifier with a visible browser window (--headless=false)
+./tools/venv/bin/python3 -m tools.nightly_tests.examples_verification.metrics_dashboard_job_verify \
+  --xid=42 \
+  --endpoint="grpc.xmc-nightly.example.com:443" \
+  --expected_queue="cpu-queue" \
+  --verify_ui=true \
+  --ui_base_url="https://xmc-nightly.example.com" \
+  --headless=false \
+  --screenshots_dir=/tmp/xmc_screenshots
+
+# Or run a standalone Playwright UI verifier directly against any UI route
+./tools/venv/bin/python3 -m tools.nightly_tests.examples_verification.admin_panel_ui_verify \
+  --ui_base_url="https://xmc-nightly.example.com" \
+  --headless=false \
+  --screenshots_dir=/tmp/xmc_screenshots
+```
+
+#### 3. Trigger a Single Scenario in GitHub Actions on Your Feature Branch
+
+To execute an end-to-end verification scenario against the live nightly GKE cluster in GitHub Actions without running the entire matrix, pass `-f examples_filter=<id>` (comma-separated IDs are also supported):
+
+```bash
+BRANCH_NAME="feat/my-new-feature"
+EXAMPLE_ID="admin_panel_ui"
 gh workflow run nightly-examples-e2e.yml --ref "${BRANCH_NAME}" -f examples_filter="${EXAMPLE_ID}"
 ```
 
