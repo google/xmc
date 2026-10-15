@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/internal/domain/experiment"
+	"xmanager_cloud/internal/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"

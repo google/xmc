@@ -18,48 +18,22 @@ package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "experiment",
-    srcs = [
-        "creation.go",
-        "updateexperimentlaunchstate.go",
-    ],
+    srcs = ["creation.go"],
     importpath = "xmanager_cloud/internal/domain/experiment",
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/domain/workunit",
-        "//internal/grpcerr",
-        "//internal/logging",
-        "//internal/storage",
         "//internal/storage/state",
-        "//internal/validator",
-        "@com_github_kylelemons_godebug//diff",
-        "@org_golang_google_protobuf//encoding/prototext",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
-    ],
-)
-
-go_test(
-    name = "experiment_unit_test",
-    srcs = ["creation_test.go"],
-    embed = [":experiment"],
-    deps = [
-        "//api/protos/experiment:messages_go_proto",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 
 go_test(
     name = "experiment_test",
-    srcs = ["updateexperimentlaunchstate_test.go"],
+    srcs = ["creation_test.go"],
+    embed = [":experiment"],
     deps = [
-        ":experiment",
         "//api/protos/experiment:messages_go_proto",
-        "//internal/grpcerr",
-        "//internal/storage/spanner",
-        "//internal/storage/spanner/emulator",
-        "//internal/validator",
-        "@com_github_google_go_cmp//cmp",
-        "@org_golang_google_protobuf//testing/protocmp",
-        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
