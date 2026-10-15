@@ -39,6 +39,7 @@ py_library(
         "step_summary.py",
         "test_executor.py",
         "ui_diagnostics.py",
+        "work_unit_state.py",
     ],
     visibility = ["//visibility:public"],
 )
@@ -154,6 +155,12 @@ py_test(
 py_test(
     name = "jobset_verifier_test",
     srcs = ["jobset_verifier_test.py"],
+    deps = [":orchestration_lib"],
+)
+
+py_test(
+    name = "work_unit_state_test",
+    srcs = ["work_unit_state_test.py"],
     deps = [":orchestration_lib"],
 )
 

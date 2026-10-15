@@ -20,22 +20,30 @@ import json
 import logging
 import os
 import subprocess
-import time
+from collections.abc import Sequence
 from typing import Any
+
+from test.e2e.lib.polling import PollTimeoutError, poll_until
 
 DEFAULT_KUBE_CONTEXT = "kind-xmc-e2e"
 DEFAULT_QUEUE_NAME = "cpu-queue"
 DEFAULT_POLL_TIMEOUT_SECONDS = 30.0
 DEFAULT_POLL_INTERVAL_SECONDS = 1.0
 KUBECTL_TIMEOUT_SECONDS = 10.0
+# Served by registry.k8s.io, which does not rate-limit pulls; the actuator always pulls images.
+E2E_IMAGE = "registry.k8s.io/e2e-test-images/busybox:1.29-4"
+SIMPLE_JOB_COMMAND = ("sh", "-c", "echo hello")
 
 logger = logging.getLogger(__name__)
 
 
-def build_work_unit_payload(queue_name: str = DEFAULT_QUEUE_NAME) -> dict[str, Any]:
-    """Builds a minimal valid CreateWorkUnit payload targeting the given queue."""
+def build_work_unit_payload(
+    queue_name: str = DEFAULT_QUEUE_NAME,
+    command: Sequence[str] = SIMPLE_JOB_COMMAND,
+) -> dict[str, Any]:
+    """Builds a minimal valid CreateWorkUnit payload running command on the given queue."""
     return {
-        "priority": "PRIORITY_MEDIUM",
+        "priority": "NORMAL",
         "workUnitType": "STANDARD",
         "executable": {
             "schedulingConstraints": {
@@ -47,12 +55,12 @@ def build_work_unit_payload(queue_name: str = DEFAULT_QUEUE_NAME) -> dict[str, A
                         "name": "worker",
                         "replicas": 1,
                         "spec": {
-                            "dockerImage": "busybox:1.36",
-                            "command": ["sh", "-c", "echo hello"],
+                            "dockerImage": E2E_IMAGE,
+                            "command": list(command),
                             "resources": {
                                 "cpuResources": {
-                                    "cpuMillicores": 500,
-                                    "memoryBytes": 536870912,
+                                    "cpuMillicores": 100,
+                                    "memoryBytes": 134217728,
                                 },
                             },
                         },
@@ -63,33 +71,32 @@ def build_work_unit_payload(queue_name: str = DEFAULT_QUEUE_NAME) -> dict[str, A
     }
 
 
-def _extract_experiment_id(experiment_name: str) -> str:
-    """Extracts the numeric experiment ID from an experiment resource name."""
-    if not experiment_name or not isinstance(experiment_name, str):
-        raise ValueError("Experiment name cannot be None or empty")
-    prefix = "experiments/"
-    if not experiment_name.startswith(prefix) or len(experiment_name) <= len(prefix):
-        raise ValueError(f"Invalid experiment resource name: {experiment_name!r}")
-    return experiment_name[len(prefix) :]
+def _work_unit_selector(work_unit_name: str) -> str:
+    """Returns the label selector of the JobSets that the actuator creates for a work unit."""
+    parts = work_unit_name.split("/") if isinstance(work_unit_name, str) else []
+    if len(parts) != 4 or parts[0] != "experiments" or parts[2] != "workUnits" or not all(parts):
+        raise ValueError(f"Invalid work unit resource name: {work_unit_name!r}")
+    return f"xmc.google.com/experiment-id={parts[1]},xmc.google.com/work-unit-id={parts[3]}"
 
 
-def _fetch_jobsets_for_experiment(
-    experiment_id: str,
+def _list_resources(
+    resource: str,
     namespace: str,
     kube_context: str,
+    selector: str = "",
 ) -> list[dict[str, Any]]:
-    """Queries Kubernetes for JobSet resources matching the experiment ID label."""
+    """Lists the resources of a kind in a namespace, filtered by a label selector if given."""
+    selector_args = ("-l", selector) if selector else ()
     result = subprocess.run(
         [
             "kubectl",
             "--context",
             kube_context,
             "get",
-            "jobsets.jobset.x-k8s.io",
+            resource,
             "-n",
             namespace,
-            "-l",
-            f"xmc.google.com/experiment-id={experiment_id}",
+            *selector_args,
             "-o",
             "json",
         ],
@@ -130,38 +137,101 @@ def _log_actuator_diagnostics(kube_context: str) -> None:
         logger.error("Actuator logs before timeout:\n%s", output)
 
 
-def wait_for_jobset_for_experiment(
-    experiment_name: str,
+def wait_for_jobset_for_work_unit(
+    work_unit_name: str,
     namespace: str = DEFAULT_QUEUE_NAME,
     kube_context: str | None = None,
     timeout_seconds: float = DEFAULT_POLL_TIMEOUT_SECONDS,
     poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
 ) -> dict[str, Any]:
-    """Polls Kubernetes until the actuator creates a JobSet for the experiment."""
-    experiment_id = _extract_experiment_id(experiment_name)
-    resolved_context = kube_context or os.environ.get("KUBE_CONTEXT", DEFAULT_KUBE_CONTEXT)
-    deadline = time.monotonic() + timeout_seconds
-    while True:
-        try:
-            items = _fetch_jobsets_for_experiment(experiment_id, namespace, resolved_context)
-            if items:
-                return items[0]
-        except subprocess.SubprocessError as exc:
-            stderr = getattr(exc, "stderr", None)
-            logger.warning(
-                "Transient error fetching JobSets (will retry): %s (stderr: %s)",
-                exc,
-                stderr,
-            )
-        except json.JSONDecodeError as exc:
-            logger.warning("Transient error decoding JobSets JSON (will retry): %s", exc)
-        if time.monotonic() >= deadline:
-            _log_actuator_diagnostics(resolved_context)
-            raise RuntimeError(
-                f"Timed out after {timeout_seconds}s waiting for JobSet in namespace "
-                f"{namespace!r} for {experiment_name}"
-            )
-        time.sleep(poll_interval_seconds)
+    """Polls Kubernetes until the actuator creates a JobSet for the work unit.
+
+    Args:
+        work_unit_name: Work unit resource name, such as experiments/1/workUnits/2.
+        namespace: Namespace of the work unit's queue.
+        kube_context: kubectl context; defaults to $KUBE_CONTEXT, else the KinD E2E context.
+        timeout_seconds: Seconds after which waiting gives up.
+        poll_interval_seconds: Seconds between queries.
+
+    Returns:
+        The JobSet of the work unit.
+
+    Raises:
+        ValueError: If work_unit_name is not a work unit resource name.
+        PollTimeoutError: If no JobSet appears before the deadline.
+    """
+    selector = _work_unit_selector(work_unit_name)
+    resolved_context = _resolve_kube_context(kube_context)
+
+    def probe() -> dict[str, Any] | None:
+        items = _list_resources("jobsets.jobset.x-k8s.io", namespace, resolved_context, selector)
+        return items[0] if items else None
+
+    description = f"JobSet in namespace {namespace!r} for {work_unit_name}"
+    try:
+        return poll_until(probe, description, timeout_seconds, poll_interval_seconds)
+    except PollTimeoutError:
+        _log_actuator_diagnostics(resolved_context)
+        raise
+
+
+def wait_for_workload_admitted(
+    jobset: dict[str, Any],
+    kube_context: str | None = None,
+    timeout_seconds: float = DEFAULT_POLL_TIMEOUT_SECONDS,
+    poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
+) -> dict[str, Any]:
+    """Polls until Kueue admits the Workload that it created for a JobSet.
+
+    Kueue keeps the Admitted condition after the Workload finishes, so this also holds for
+    jobs that complete before the first poll.
+
+    Args:
+        jobset: The JobSet, as returned by wait_for_jobset_for_work_unit.
+        kube_context: kubectl context; defaults to $KUBE_CONTEXT, else the KinD E2E context.
+        timeout_seconds: Seconds after which waiting gives up.
+        poll_interval_seconds: Seconds between queries.
+
+    Returns:
+        The admitted Workload.
+
+    Raises:
+        ValueError: If the JobSet has no namespace or UID.
+        PollTimeoutError: If the Workload is not admitted before the deadline.
+    """
+    metadata = jobset.get("metadata") or {}
+    namespace, owner_uid = metadata.get("namespace"), metadata.get("uid")
+    if not namespace or not owner_uid:
+        raise ValueError(f"JobSet metadata has no namespace or UID: {metadata!r}")
+    resolved_context = _resolve_kube_context(kube_context)
+
+    def probe() -> dict[str, Any] | None:
+        workloads = _list_resources("workloads.kueue.x-k8s.io", namespace, resolved_context)
+        workload = _find_owned_workload(workloads, owner_uid)
+        return workload if workload and _has_condition(workload, "Admitted") else None
+
+    description = f"admitted Workload of JobSet {metadata.get('name')}"
+    return poll_until(probe, description, timeout_seconds, poll_interval_seconds)
+
+
+def _resolve_kube_context(kube_context: str | None) -> str:
+    """Returns kube_context, else $KUBE_CONTEXT, else the default KinD E2E context."""
+    return kube_context or os.environ.get("KUBE_CONTEXT", DEFAULT_KUBE_CONTEXT)
+
+
+def _find_owned_workload(workloads: list[dict[str, Any]], owner_uid: str) -> dict[str, Any] | None:
+    """Returns the Workload with an owner reference to owner_uid, if any."""
+    for workload in workloads:
+        owners = (workload.get("metadata") or {}).get("ownerReferences") or []
+        if any(owner.get("uid") == owner_uid for owner in owners):
+            return workload
+    return None
+
+
+def _has_condition(resource: dict[str, Any], condition_type: str) -> bool:
+    """Returns whether a resource has a status condition of the given type set to True."""
+    conditions = (resource.get("status") or {}).get("conditions") or []
+    return any(c.get("type") == condition_type and c.get("status") == "True" for c in conditions)
 
 
 def assert_jobset_contract(

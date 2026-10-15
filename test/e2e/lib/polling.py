@@ -32,6 +32,10 @@ class PollTimeoutError(RuntimeError):
     """Raised when a polled condition is not met before its deadline."""
 
 
+class TransientProbeError(RuntimeError):
+    """Raised by a probe on a transient failure, which poll_until retries until its deadline."""
+
+
 def poll_until(
     probe: Callable[[], T | None],
     description: str,
@@ -40,8 +44,9 @@ def poll_until(
 ) -> T:
     """Calls probe until it returns a value other than None or the deadline passes.
 
-    Transient kubectl failures (subprocess errors and malformed JSON output) are logged and
-    retried; any other exception raised by probe propagates immediately.
+    Transient failures (TransientProbeError, and the subprocess errors and malformed JSON
+    output of kubectl) are logged and retried; any other exception raised by probe propagates
+    immediately.
 
     Args:
         probe: Returns the awaited value, or None while the condition is not yet met.
@@ -64,7 +69,7 @@ def poll_until(
             if result is not None:
                 return result
             last_error = None
-        except (subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        except (TransientProbeError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
             last_error = exc
             logger.warning(
                 "Transient error while waiting for %s (will retry): %s (stderr: %s)",

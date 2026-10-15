@@ -21,7 +21,7 @@ import subprocess
 import unittest
 from unittest import mock
 
-from test.e2e.lib.polling import PollTimeoutError, poll_until
+from test.e2e.lib.polling import PollTimeoutError, TransientProbeError, poll_until
 
 
 @mock.patch("test.e2e.lib.polling.time.sleep")
@@ -99,10 +99,32 @@ class PollUntilTest(unittest.TestCase):
         mock_sleep.assert_not_called()
 
     def test_propagates_non_transient_errors(self, mock_sleep: mock.MagicMock) -> None:
-        """poll_until does not retry errors other than transient kubectl failures."""
+        """poll_until does not retry errors other than transient failures."""
         probe = mock.Mock(side_effect=ValueError("bad state"))
 
         with self.assertRaisesRegex(ValueError, "bad state"):
+            poll_until(probe, "readiness", timeout_seconds=5.0)
+
+        probe.assert_called_once()
+        mock_sleep.assert_not_called()
+
+    def test_retries_transient_probe_errors(self, mock_sleep: mock.MagicMock) -> None:
+        """poll_until retries the transient failures that a probe reports."""
+        probe = mock.Mock(side_effect=[TransientProbeError("503 unavailable"), "done"])
+
+        got = poll_until(probe, "readiness", timeout_seconds=5.0, interval_seconds=0.5)
+
+        self.assertEqual(got, "done")
+        self.assertEqual(probe.call_count, 2)
+        mock_sleep.assert_called_once_with(0.5)
+
+    def test_propagates_runtime_errors_that_are_not_transient(
+        self, mock_sleep: mock.MagicMock
+    ) -> None:
+        """poll_until retries only the TransientProbeError subclass of RuntimeError."""
+        probe = mock.Mock(side_effect=RuntimeError("404 not found"))
+
+        with self.assertRaisesRegex(RuntimeError, "404 not found"):
             poll_until(probe, "readiness", timeout_seconds=5.0)
 
         probe.assert_called_once()
