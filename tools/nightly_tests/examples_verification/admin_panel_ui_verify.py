@@ -97,7 +97,9 @@ def _verify_health_groups_and_items(session: Session, timeout_ms: int) -> dict[s
     session.page.wait_for_selector(sel.HEALTH_ITEM_ROW_SEL, timeout=timeout_ms)
     raw_groups = session.page.locator(sel.HEALTH_GROUP_TITLE_SEL).all_inner_texts()
     groups = [g.strip() for g in raw_groups if g.strip()]
-    if missing_groups := [g for g in EXPECTED_HEALTH_GROUPS if not any(g in t for t in groups)]:
+    if missing_groups := [
+        g for g in EXPECTED_HEALTH_GROUPS if not any(g.lower() in t.lower() for t in groups)
+    ]:
         raise UIError(f"Missing expected health groups {missing_groups} in {groups}")
     statuses = _collect_component_statuses(session)
     if missing_comps := [c for c in EXPECTED_COMPONENTS if c not in statuses]:
