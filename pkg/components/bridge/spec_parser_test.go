@@ -127,17 +127,24 @@ func TestParseHelpers(t *testing.T) {
 	if ParseComponentGenerationFromUnstructured(nil) != 0 || ParseComponentGenerationFromUnstructured(map[string]any{"componentGeneration": int64(4)}) != 4 {
 		t.Error("unexpected ParseComponentGenerationFromUnstructured result")
 	}
-	for _, tc := range []struct {
+}
+
+func TestParseComponentIDFromUnstructured(t *testing.T) {
+	tests := []struct {
+		name   string
 		status any
 		want   string
 	}{
-		{status: map[string]any{"componentId": "6200370836252645701"}, want: "6200370836252645701"},
-		{status: map[string]any{"componentGeneration": int64(3)}, want: ""},
-		{status: nil, want: ""},
-	} {
-		if got := ParseComponentIDFromUnstructured(tc.status); got != tc.want {
-			t.Errorf("ParseComponentIDFromUnstructured(%v) = %q, want %q", tc.status, got, tc.want)
-		}
+		{name: "component ID set", status: map[string]any{"componentId": "6200370836252645701"}, want: "6200370836252645701"},
+		{name: "component ID absent", status: map[string]any{"componentGeneration": int64(3)}, want: ""},
+		{name: "nil status", status: nil, want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ParseComponentIDFromUnstructured(tt.status); got != tt.want {
+				t.Errorf("ParseComponentIDFromUnstructured(%v) = %q, want %q", tt.status, got, tt.want)
+			}
+		})
 	}
 }
 
