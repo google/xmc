@@ -360,27 +360,29 @@ func TestConstructJobSet_ComponentSnapshot_ContextCanceled(t *testing.T) {
 }
 
 func TestExtractStatusInt(t *testing.T) {
+	withObservedGeneration := func(val any) *unstructured.Unstructured {
+		return &unstructured.Unstructured{Object: map[string]any{"status": map[string]any{"observedGeneration": val}}}
+	}
 	tests := []struct {
 		name string
-		val  any
+		comp *unstructured.Unstructured
 		want int64
 	}{
-		{name: "int64", val: int64(42), want: 42},
-		{name: "int", val: 42, want: 42},
-		{name: "float64", val: float64(42), want: 42},
-		{name: "json_number", val: json.Number("42"), want: 42},
-		{name: "string", val: "42", want: 42},
-		{name: "invalid_string", val: "abc", want: 0},
-		{name: "nil", val: nil, want: 0},
+		{name: "int64", comp: withObservedGeneration(int64(42)), want: 42},
+		{name: "int", comp: withObservedGeneration(42), want: 42},
+		{name: "float64", comp: withObservedGeneration(float64(42)), want: 42},
+		{name: "json_number", comp: withObservedGeneration(json.Number("42")), want: 42},
+		{name: "string", comp: withObservedGeneration("42"), want: 42},
+		{name: "invalid_string", comp: withObservedGeneration("abc"), want: 0},
+		{name: "nil", comp: withObservedGeneration(nil), want: 0},
+		{name: "nil_component", comp: nil, want: 0},
 	}
 	for _, tt := range tests {
-		comp := &unstructured.Unstructured{Object: map[string]any{"status": map[string]any{"observedGeneration": tt.val}}}
-		if got := extractStatusInt(comp, "observedGeneration"); got != tt.want {
-			t.Errorf("extractStatusInt(%s) = %v, want %v", tt.name, got, tt.want)
-		}
-	}
-	if got := extractStatusInt(nil, "observedGeneration"); got != 0 {
-		t.Errorf("extractStatusInt(nil) = %v, want 0", got)
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractStatusInt(tt.comp, "observedGeneration"); got != tt.want {
+				t.Errorf("extractStatusInt() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

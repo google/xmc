@@ -206,17 +206,26 @@ func TestReconcileComponent_SourceNamespaceConflictAndStaleGeneration(t *testing
 	helm.ensureCalls = 0
 
 	// team-b attempts to reconcile redpanda (enabled and disabled) -> SourceNamespaceConflict without Helm side effects.
-	for _, enabled := range []bool{true, false} {
-		resConflict, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
-			Namespace: "team-b", Name: "redpanda", Generation: 1, UID: uidTeamB, Enabled: enabled, Spec: specV1,
+	conflictTests := []struct {
+		name    string
+		enabled bool
+	}{
+		{name: "team-b enabled", enabled: true},
+		{name: "team-b disabled", enabled: false},
+	}
+	for _, tt := range conflictTests {
+		t.Run(tt.name, func(t *testing.T) {
+			resConflict, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+				Namespace: "team-b", Name: "redpanda", Generation: 1, UID: uidTeamB, Enabled: tt.enabled, Spec: specV1,
+			})
+			if err != nil {
+				t.Fatalf("team-b (enabled=%v) ReconcileComponent() unexpected error: %v", tt.enabled, err)
+			}
+			if helm.ensureCalls != 0 || helm.deleteCalled {
+				t.Errorf("team-b (enabled=%v) actuated Helm on namespace conflict: ensure=%d delete=%v", tt.enabled, helm.ensureCalls, helm.deleteCalled)
+			}
+			assertSourceConflictConditions(t, resConflict.Conditions, ReasonSourceNamespaceConflict)
 		})
-		if err != nil {
-			t.Fatalf("team-b (enabled=%v) ReconcileComponent() unexpected error: %v", enabled, err)
-		}
-		if helm.ensureCalls != 0 || helm.deleteCalled {
-			t.Errorf("team-b (enabled=%v) actuated Helm on namespace conflict: ensure=%d delete=%v", enabled, helm.ensureCalls, helm.deleteCalled)
-		}
-		assertSourceConflictConditions(t, resConflict.Conditions, ReasonSourceNamespaceConflict)
 	}
 
 	// team-a sends a changed spec at stale generation 1 -> a stale snapshot, not a SourceConflict:
