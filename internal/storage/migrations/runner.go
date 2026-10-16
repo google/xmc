@@ -85,20 +85,6 @@ func NewRunner(migrator *migrate.Migrate, src source.Driver, isDatabaseEmpty fun
 	}
 }
 
-func (r *Runner) stdout() io.Writer {
-	if r.Stdout != nil {
-		return r.Stdout
-	}
-	return os.Stdout
-}
-
-func (r *Runner) stdin() io.Reader {
-	if r.Stdin != nil {
-		return r.Stdin
-	}
-	return os.Stdin
-}
-
 // Version returns the current migration version and whether the database is dirty.
 func (r *Runner) Version() (uint, bool, error) {
 	return r.migrator.Version()
@@ -120,9 +106,9 @@ func (r *Runner) ExecCommand(ctx context.Context, cmd string, arg *int) error {
 	logging.Info(ctx, "Executing command", "command", cmd)
 	switch cmd {
 	case UpCmd:
-		return commands.Up(ctx, r.migrator, r.isDatabaseEmpty, arg, r.stdout())
+		return commands.Up(ctx, r.migrator, r.isDatabaseEmpty, arg, r.Stdout)
 	case DownCmd:
-		return commands.Down(r.migrator, r.source, arg, r.stdout(), r.stdin())
+		return commands.Down(r.migrator, r.source, arg, r.Stdout, r.Stdin)
 	case ForceCmd:
 		if arg == nil {
 			return fmt.Errorf("missing argument for %s command", ForceCmd)
@@ -130,19 +116,19 @@ func (r *Runner) ExecCommand(ctx context.Context, cmd string, arg *int) error {
 		if err := r.migrator.Force(*arg); err != nil {
 			return err
 		}
-		fmt.Fprintf(r.stdout(), "Forced version to %d\n", *arg)
+		fmt.Fprintf(r.Stdout, "Forced version to %d\n", *arg)
 	case VersionCmd:
 		v, dirty, err := r.migrator.Version()
 		if err != nil {
 			if errors.Is(err, migrate.ErrNilVersion) {
-				fmt.Fprintf(r.stdout(), "Migrations are not yet initialized\n")
+				fmt.Fprintf(r.Stdout, "Migrations are not yet initialized\n")
 				return nil
 			}
 			return err
 		}
-		fmt.Fprintf(r.stdout(), "Version: %d, Dirty: %v\n", v, dirty)
+		fmt.Fprintf(r.Stdout, "Version: %d, Dirty: %v\n", v, dirty)
 	case InitCmd:
-		return commands.Init(r.migrator, r.source, r.stdout())
+		return commands.Init(r.migrator, r.source, r.Stdout)
 	default:
 		return fmt.Errorf("unknown command: %q", cmd)
 	}

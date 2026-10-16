@@ -190,13 +190,3 @@ func TestExecCommand_ForceMissingArg(t *testing.T) {
 		t.Errorf("ExecCommand(force, nil) expected error, got nil")
 	}
 }
-
-func TestExecCommand_NilStdoutFallback(t *testing.T) {
-	r := newStubRunner(t)
-	r.Stdout = nil
-
-	// Executing a command with r.Stdout == nil should fall back without panicking.
-	if err := r.ExecCommand(t.Context(), VersionCmd, nil); err != nil {
-		t.Fatalf("ExecCommand with nil Stdout failed: %v", err)
-	}
-}
