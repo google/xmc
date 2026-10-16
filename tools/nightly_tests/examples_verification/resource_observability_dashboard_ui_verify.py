@@ -92,7 +92,11 @@ def _collect_xid_work_unit_positions(session: Session, xid: str) -> dict[str, st
             if wid:
                 positions[wid] = pos
         next_btn = session.page.locator(sel.JOBS_NEXT_PAGE_BTN_SEL)
-        if all(w in positions for w in EXPECTED_WORK_UNITS) or next_btn.count() == 0:
+        if (
+            all(w in positions for w in EXPECTED_WORK_UNITS)
+            or next_btn.count() == 0
+            or not next_btn.first.is_enabled()
+        ):
             break
         next_btn.first.click()
         session.settle_and_wait_fonts()

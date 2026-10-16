@@ -95,7 +95,8 @@ class ResourceObservabilityDashboardUIVerifyTest(unittest.TestCase):
 
                 loc.filter.side_effect = _record_filter
             elif selector == sel.JOBS_NEXT_PAGE_BTN_SEL:
-                loc.count.return_value = 1 if state["page"] == 0 else 0
+                loc.count.return_value = 1
+                loc.first.is_enabled.return_value = state["page"] == 0
                 loc.first.click.side_effect = lambda: state.__setitem__("page", 1)
             return loc
 
@@ -105,6 +106,7 @@ class ResourceObservabilityDashboardUIVerifyTest(unittest.TestCase):
         )
         self.assertEqual(state["page"], 1)
         self.assertEqual(state["filter_args"], [{"has_text": "Experiment #36272"}] * 2)
+        self.assertEqual(rod_verify._collect_xid_work_unit_positions(session, "36272"), {"3": "2"})
 
         state["page"] = 0
         with self.assertRaises(ui_entities_validator.UIVerificationError) as err_ctx:
