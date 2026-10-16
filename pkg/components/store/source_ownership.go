@@ -17,9 +17,12 @@ package store
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // RequestSource identifies the declarative object (Kubernetes CR) that sent a request. The owner
@@ -28,6 +31,9 @@ import (
 type RequestSource struct {
 	UID, Namespace, ClusterUID string
 	Generation, Epoch          int64
+	// ExpectedOwnerUID is a compare-and-swap guard: when it names the owner UID, a source with
+	// another UID in the owner's namespace and cluster takes the record over. It is never recorded.
+	ExpectedOwnerUID string
 }
 
 // SourceOwner is the recorded owner of a component: the source of its last owner write.
@@ -36,26 +42,44 @@ type SourceOwner struct {
 	Generation, Epoch          int64
 }
 
-// Widths of the SourceUid / SourceClusterUid and SourceNamespace columns of Components.
-const (
-	maxSourceUIDLength       = 64
-	maxSourceNamespaceLength = 63
-)
+// maxSourceUIDLength is the width of the SourceUid column of Components.
+const maxSourceUIDLength = 64
 
-// ValidateRequestSource returns an InvalidArgument error for a source without a valid UID,
-// namespace or cluster UID, or with a non-positive generation or epoch.
+// ValidateRequestSource returns an InvalidArgument error for a source without a valid UID (or with
+// an expected owner UID wider than its column), whose namespace is not a DNS-1123 label, whose
+// cluster UID is not a canonical UUID (validateClusterUID), or with a non-positive generation or
+// epoch.
 func ValidateRequestSource(src RequestSource) error {
 	switch {
 	case !fitsColumn(src.UID, maxSourceUIDLength):
 		return status.Errorf(codes.InvalidArgument, "request source uid must have 1 to %d bytes", maxSourceUIDLength)
 	case src.Generation <= 0:
 		return status.Error(codes.InvalidArgument, "request source generation must be positive")
-	case !fitsColumn(src.Namespace, maxSourceNamespaceLength):
-		return status.Errorf(codes.InvalidArgument, "request source namespace must have 1 to %d bytes", maxSourceNamespaceLength)
-	case !fitsColumn(src.ClusterUID, maxSourceUIDLength):
-		return status.Errorf(codes.InvalidArgument, "request source cluster uid must have 1 to %d bytes", maxSourceUIDLength)
 	case src.Epoch <= 0:
 		return status.Error(codes.InvalidArgument, "request source cluster epoch must be positive")
+	case len(src.ExpectedOwnerUID) > maxSourceUIDLength:
+		return status.Errorf(codes.InvalidArgument, "request source expected owner uid must have at most %d bytes", maxSourceUIDLength)
+	}
+	if err := validateDNS1123Label("request source namespace", src.Namespace); err != nil {
+		return err
+	}
+	return validateClusterUID(src.ClusterUID)
+}
+
+// validateClusterUID returns an InvalidArgument error unless uid is a canonical (lowercase,
+// hyphenated) UUID, as the UID of the kube-system Namespace that identifies a cluster is.
+func validateClusterUID(uid string) error {
+	if u, err := uuid.Parse(uid); err != nil || u.String() != uid {
+		return status.Errorf(codes.InvalidArgument, "cluster uid %q must be a lowercase hyphenated UUID, the kube-system Namespace UID", uid)
+	}
+	return nil
+}
+
+// validateDNS1123Label returns an InvalidArgument error naming field unless value is a DNS-1123
+// label, which also bounds it to the 63-byte width of its column.
+func validateDNS1123Label(field, value string) error {
+	if errs := validation.IsDNS1123Label(value); len(errs) > 0 {
+		return status.Errorf(codes.InvalidArgument, "%s %q must be a DNS-1123 label: %s", field, value, strings.Join(errs, "; "))
 	}
 	return nil
 }
@@ -75,9 +99,10 @@ func (o *SourceOwner) records(src RequestSource) bool {
 	return o != nil && *o == *ownerOf(src)
 }
 
-// isOwnerObject reports whether src comes from the owner object o itself (same UID).
-func (o *SourceOwner) isOwnerObject(src RequestSource) bool {
-	return o != nil && o.UID == src.UID
+// isOlderGeneration reports whether src is an older generation of the owner object o (same UID). A
+// nil o has no generations.
+func (o *SourceOwner) isOlderGeneration(src RequestSource) bool {
+	return o != nil && o.UID == src.UID && src.Generation < o.Generation
 }
 
 // cloneSourceOwner returns a copy of o, or nil for a nil o.
@@ -90,13 +115,67 @@ func cloneSourceOwner(o *SourceOwner) *SourceOwner {
 }
 
 // staleGenerationError returns the FailedPrecondition STALE_GENERATION rejection of a changed
-// request of operation from src, an older generation of the owner object.
-func staleGenerationError(operation, canonicalName string, owner *SourceOwner, src RequestSource) error {
-	metadata := map[string]string{
-		"operation": operation, "owner_namespace": owner.Namespace, "owner_uid": owner.UID,
-		"owner_cluster_uid": owner.ClusterUID, "owner_generation": strconv.FormatInt(owner.Generation, 10),
-	}
+// intent from src, an older generation of the owner object. Only SetComponentIntent orders
+// requests by generation (R3): every other sourced RPC from the owner object is always allowed, so
+// that informer lag never blocks an observation, a deactivation or a deletion.
+func staleGenerationError(canonicalName string, owner *SourceOwner, src RequestSource) error {
+	metadata := ownerMetadata(operationSetComponentIntent, owner)
+	metadata[MetadataKeyOwnerGeneration] = strconv.FormatInt(owner.Generation, 10)
 	return errorWithInfo(codes.FailedPrecondition, ReasonStaleGeneration, metadata, fmt.Sprintf(
 		"component %q is owned by generation %d of source %q, newer than the generation %d of the changed request",
 		canonicalName, owner.Generation, owner.UID, src.Generation))
+}
+
+// checkSourceCreation applies R1 to a request of operation from src for canonicalName, which has
+// no active record. A CAS guard (ExpectedOwnerUID) names an owner that no longer exists, so the
+// request is rejected with SOURCE_INCARNATION_MISMATCH, with empty owner metadata, instead of
+// silently creating a record.
+func checkSourceCreation(operation, canonicalName string, src RequestSource) error {
+	if src.ExpectedOwnerUID == "" {
+		return nil
+	}
+	return errorWithInfo(codes.FailedPrecondition, ReasonSourceIncarnationMismatch, ownerMetadata(operation, &SourceOwner{}), fmt.Sprintf(
+		"component %q has no active record, so source %q cannot take it over from expected owner %q",
+		canonicalName, src.UID, src.ExpectedOwnerUID))
+}
+
+// checkSourceOwnership applies the ownership rules to a request of operation from src for the
+// active record canonicalName owned by owner, and returns the rejection of a source that may not
+// write it:
+//   - R2: no recorded owner (written only by unsourced intents): src adopts the record.
+//   - R4: an owner in another namespace keeps the record: SOURCE_NAMESPACE_CONFLICT.
+//   - R3: the owner object itself (same UID) writes; planSourcedIntent orders its generations.
+//   - R5: another incarnation in the owner's namespace and cluster adopts the record when
+//     ExpectedOwnerUID names the owner UID, which the caller sets after an uncached GET in its
+//     cluster proves the owner object is gone. A GET cannot prove that for another cluster.
+//   - R6: any other incarnation is rejected: SOURCE_INCARNATION_MISMATCH.
+//
+// R1 (no active record) is checkSourceCreation.
+func checkSourceOwnership(operation, canonicalName string, owner *SourceOwner, src RequestSource) error {
+	switch {
+	case owner == nil:
+		return nil
+	case owner.Namespace != src.Namespace:
+		return errorWithInfo(codes.FailedPrecondition, ReasonSourceNamespaceConflict, ownerMetadata(operation, owner), fmt.Sprintf(
+			"component %q is owned by source %q in namespace %q; the request comes from namespace %q",
+			canonicalName, owner.UID, owner.Namespace, src.Namespace))
+	case owner.UID == src.UID:
+		return nil
+	case owner.UID == src.ExpectedOwnerUID && owner.ClusterUID == src.ClusterUID:
+		return nil
+	}
+	return errorWithInfo(codes.FailedPrecondition, ReasonSourceIncarnationMismatch, ownerMetadata(operation, owner), fmt.Sprintf(
+		"component %q is owned by source %q in cluster %q; source %q must name it in expected_owner_uid, from the same cluster, to take it over",
+		canonicalName, owner.UID, owner.ClusterUID, src.UID))
+}
+
+// ownerMetadata returns the ErrorInfo metadata of an ownership rejection of operation, naming the
+// recorded owner.
+func ownerMetadata(operation string, owner *SourceOwner) map[string]string {
+	return map[string]string{
+		metadataKeyOperation:       operation,
+		MetadataKeyOwnerNamespace:  owner.Namespace,
+		MetadataKeyOwnerUID:        owner.UID,
+		MetadataKeyOwnerClusterUID: owner.ClusterUID,
+	}
 }

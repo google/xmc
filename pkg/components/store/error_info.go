@@ -42,6 +42,13 @@ const (
 	ReasonActiveDependentsExist = "ACTIVE_DEPENDENTS_EXIST"
 	// ReasonStaleGeneration rejects a changed intent from an older generation of the owner object.
 	ReasonStaleGeneration = "STALE_GENERATION"
+	// ReasonSourceNamespaceConflict rejects an object of the same name in another namespace; the
+	// first owner keeps the record.
+	ReasonSourceNamespaceConflict = "SOURCE_NAMESPACE_CONFLICT"
+	// ReasonSourceIncarnationMismatch rejects another incarnation (a different uid) of the object
+	// in the owner's namespace. After proving that its own object is live, the caller may retry
+	// once with expected_owner_uid set to the owner_uid metadata.
+	ReasonSourceIncarnationMismatch = "SOURCE_INCARNATION_MISMATCH"
 )
 
 // google.rpc.ErrorInfo metadata keys of store rejections, part of the contract callers match.
@@ -51,6 +58,15 @@ const (
 	metadataKeyDependency = "dependency"
 	metadataKeyCycle      = "cycle"
 	metadataKeyDependents = "dependents"
+)
+
+// ErrorInfo metadata keys naming the recorded owner in source-ownership rejections. Callers such as
+// xmc-bridge read them to decide a same-cluster CAS retry.
+const (
+	MetadataKeyOwnerNamespace  = "owner_namespace"
+	MetadataKeyOwnerUID        = "owner_uid"
+	MetadataKeyOwnerClusterUID = "owner_cluster_uid"
+	MetadataKeyOwnerGeneration = "owner_generation"
 )
 
 // Values of metadata "operation": the rejected CMS operation.

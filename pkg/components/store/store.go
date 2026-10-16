@@ -110,8 +110,10 @@ type Store interface {
 
 	// SetSourcedComponentIntent applies an intent sent by src (validated by ValidateRequestSource),
 	// ordered by src instead of by generation. A new component starts at generation 1; on an
-	// existing one, planSourcedIntent decides whether the intent is stale (STALE_GENERATION), a
-	// no-op, an owner-only write, or a spec write (+1 generation). Every write records src as owner.
+	// existing one, src must pass checkSourceOwnership (SOURCE_NAMESPACE_CONFLICT,
+	// SOURCE_INCARNATION_MISMATCH) before planSourcedIntent decides whether the intent is stale
+	// (STALE_GENERATION), a no-op, an owner-only write, or a spec write (+1 generation). Every
+	// write records src as owner.
 	SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src RequestSource) (*ComponentRecord, error)
 
 	// GetComponent retrieves a component record by canonical or full resource name.

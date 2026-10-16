@@ -195,6 +195,7 @@ func requestSourceFromProto(src *componentspb.RequestSource) (*store.RequestSour
 	storeSrc := store.RequestSource{
 		UID: src.GetUid(), Generation: src.GetGeneration(), Namespace: src.GetNamespace(),
 		ClusterUID: src.GetCluster().GetUid(), Epoch: src.GetCluster().GetEpoch(),
+		ExpectedOwnerUID: src.GetExpectedOwnerUid(),
 	}
 	if err := store.ValidateRequestSource(storeSrc); err != nil {
 		return nil, err

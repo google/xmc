@@ -77,15 +77,19 @@ func planIntent(canonicalName string, rec *ComponentRecord, spec *componentspb.C
 	return intentPlan{write: writeSpec, generation: max(desiredGen, rec.Generation+1)}, nil
 }
 
-// planSourcedIntent decides how an intent from src applies to rec. An intent from the owner object
-// (same UID) at an older generation is stale when changed and a no-op otherwise. Any other intent
-// is current: a changed one bumps the generation by 1, and an unchanged one records src as owner.
+// planSourcedIntent decides how an intent from src applies to rec. After checkSourceOwnership, an
+// intent from the owner object (same UID) at an older generation is stale when changed and a no-op
+// otherwise. Any other intent, including an adoption, is current: a changed one bumps the
+// generation by 1, and an unchanged one records src as owner.
 func planSourcedIntent(canonicalName string, rec *ComponentRecord, changed bool, src RequestSource) (intentPlan, error) {
+	if err := checkSourceOwnership(operationSetComponentIntent, canonicalName, rec.Owner, src); err != nil {
+		return intentPlan{}, err
+	}
 	plan := intentPlan{write: writeNothing, generation: rec.Generation}
-	olderGeneration := rec.Owner.isOwnerObject(src) && src.Generation < rec.Owner.Generation
+	olderGeneration := rec.Owner.isOlderGeneration(src)
 	switch {
 	case olderGeneration && changed:
-		return intentPlan{}, staleGenerationError(operationSetComponentIntent, canonicalName, rec.Owner, src)
+		return intentPlan{}, staleGenerationError(canonicalName, rec.Owner, src)
 	case olderGeneration:
 		// An unchanged replay of an older generation keeps the newer recorded owner.
 	case changed:
@@ -107,10 +111,16 @@ func newIntentGeneration(desiredGen int64, src *RequestSource) int64 {
 
 // planLiveIntent returns the active record of canonicalName in catalog (nil when there is none)
 // and the plan for applying the intent to it; a missing or soft-deleted record is planned as a
-// create. Both stores call it before validating dependencies so source rejections take precedence.
+// create unless checkSourceCreation rejects src. Both stores call it before validating
+// dependencies so source rejections take precedence.
 func planLiveIntent(catalog map[string]*ComponentRecord, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *RequestSource) (*ComponentRecord, intentPlan, error) {
 	rec := catalog[canonicalName]
 	if isDeletedRecord(rec) {
+		if src != nil {
+			if err := checkSourceCreation(operationSetComponentIntent, canonicalName, *src); err != nil {
+				return nil, intentPlan{}, err
+			}
+		}
 		return nil, intentPlan{write: writeSpec, generation: newIntentGeneration(desiredGen, src)}, nil
 	}
 	plan, err := planIntent(canonicalName, rec, spec, labels, deps, desiredGen, src)
