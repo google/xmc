@@ -133,19 +133,16 @@ func (m *K8sHelmManager) releaseContradictsReadyCR(ctx context.Context, ref Comp
 	return status != release.StatusDeployed && !status.IsPending()
 }
 
-// forgetComponentLocked drops the component's actuation and repair state after a teardown. With keepInactive, the
-// component stays recorded as inactive and keeps its chart path override (Delete); otherwise it is forgotten entirely
-// (Purge, Orphan). Callers must hold m.mu.
+// forgetComponentLocked drops the component's actuation and repair state after a teardown and records it as inactive,
+// so namespace hydration never re-activates it from the values ConfigMap (Orphan keeps enabled values there). Delete
+// keeps the chart path override (keepInactive); Purge and Orphan drop it. Callers must hold m.mu.
 func (m *K8sHelmManager) forgetComponentLocked(key string, keepInactive bool) {
-	m.forgetEpoch++
 	delete(m.actuatedGenerations, key)
 	m.clearRepairLocked(key)
-	if keepInactive {
-		m.activeState[key] = false
-		return
+	m.activeState[key] = false
+	if !keepInactive {
+		delete(m.componentChartPaths, key)
 	}
-	delete(m.activeState, key)
-	delete(m.componentChartPaths, key)
 }
 
 // applyHydratedState records the hydrated activation and actuated generation for a component, never overwriting an
@@ -169,14 +166,11 @@ func (m *K8sHelmManager) applyHydratedState(key string, observedGeneration int64
 }
 
 // hydrateNamespaceFromConfigMap records the enablement of every component in the namespace's values ConfigMap that
-// has no in-memory state yet, discarding a read overtaken by a teardown. Callers must pass a non-empty namespace.
+// has no in-memory state yet; torn-down components stay recorded as inactive. Callers must pass a non-empty namespace.
 func (m *K8sHelmManager) hydrateNamespaceFromConfigMap(ctx context.Context, namespace string) error {
 	if m.client == nil {
 		return nil
 	}
-	m.mu.RLock()
-	epoch := m.forgetEpoch
-	m.mu.RUnlock()
 	cm, err := m.client.CoreV1().ConfigMaps(namespace).Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil
@@ -187,9 +181,6 @@ func (m *K8sHelmManager) hydrateNamespaceFromConfigMap(ctx context.Context, name
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.forgetEpoch != epoch {
-		return nil
-	}
 	for k, rawJSON := range cm.Data {
 		compName, ok := strings.CutSuffix(k, componentValuesKeySuffix)
 		if !ok {

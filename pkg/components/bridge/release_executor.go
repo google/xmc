@@ -140,7 +140,7 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 	}
 	resolvedChartPath := m.resolveChartPathForComponent(ref)
 	if !m.registerProducer() {
-		return errManagerStopped
+		return m.failUpgrade(ref, errManagerStopped)
 	}
 	defer m.producerWg.Done()
 
@@ -159,7 +159,7 @@ func (m *K8sHelmManager) enqueueUpgrade(ctx context.Context, req upgradeRequest)
 	select {
 	case <-m.stopCh:
 		m.clearUpgradePending(req.ref, req.seq)
-		return errManagerStopped
+		return m.failUpgrade(req.ref, errManagerStopped)
 	case m.upgradeChan <- req:
 		return nil
 	case <-ctx.Done():

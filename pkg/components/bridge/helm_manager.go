@@ -88,8 +88,6 @@ type K8sHelmManager struct {
 	componentChartPaths map[string]string
 	chartCache          map[string]*chart.Chart
 	upgradeErrs         map[string]error
-	// forgetEpoch counts teardowns that forgot component state, so namespace hydration can discard an overtaken read.
-	forgetEpoch uint64
 	// upgradeSem serializes every Helm release operation: sync and async upgrades and uninstalls.
 	upgradeSem chan struct{}
 	// pendingUpgrades maps component keys to the sequence number of their latest enqueued async upgrade.

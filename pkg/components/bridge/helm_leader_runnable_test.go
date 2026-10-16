@@ -202,6 +202,21 @@ func TestK8sHelmManager_UpgradeWaitingOnLockIsDroppedOnShutdown(t *testing.T) {
 	}
 }
 
+// TestK8sHelmManager_EnsureAfterStopRecordsManagerStopped checks that an upgrade requested after
+// the manager stopped records errManagerStopped as the component's upgrade error, like a dropped
+// queued upgrade, so a retry on the same manager does not take the unchanged-values shortcut.
+func TestK8sHelmManager_EnsureAfterStopRecordsManagerStopped(t *testing.T) {
+	ref := ComponentRef{Namespace: "xmc", Name: "late"}
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithDebounceDuration(time.Millisecond))
+	_ = mgr.Close()
+	if err := mgr.Ensure1PComponent(context.Background(), ref, HelmComponentOptions{Ref: ref, Enabled: true}); !errors.Is(err, errManagerStopped) {
+		t.Fatalf("Ensure1PComponent() after stop = %v, want %v", err, errManagerStopped)
+	}
+	if err := mgr.GetUpgradeError(ref); !errors.Is(err, errManagerStopped) {
+		t.Errorf("GetUpgradeError(%s) = %v, want %v", ref.Name, err, errManagerStopped)
+	}
+}
+
 // TestK8sHelmManager_StopCancelsUpgrades checks that Shutdown whose context ended, and Abort,
 // cancel the in-flight upgrade and never start a queued one, so no Helm write outlives a
 // leader's shutdown, and that a second Abort, as after a graceful shutdown, returns at once.

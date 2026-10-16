@@ -85,7 +85,7 @@ type ComponentCondition = bridge.ComponentCondition
 // variables (CMS_ADDRESS, NAMESPACE, PROBE_INTERVAL, PROBE_TIMEOUT, RECONCILE_TIMEOUT,
 // MAX_CONCURRENT_RECONCILES, KUBECONFIG) if flags are omitted.
 // Returns an error if flag parsing fails, if intervals/timeouts are non-positive, if
-// max-concurrent-reconciles is below 1 or if health-probe-bind-address is empty.
+// max-concurrent-reconciles is below 1 or if health-probe-bind-address is empty or "0".
 func ParseConfig(args []string) (*Config, error) {
 	defaultCMS := os.Getenv("CMS_ADDRESS")
 	defaultNS := os.Getenv("NAMESPACE")
