@@ -275,7 +275,7 @@ sequenceDiagram
     HS->>PauseStream: 3. Publish SchedulingPaused
     PauseStream-->>Actuator: 4. Refresh local pause cache from Spanner
 
-    Note over Actuator,Spanner: While paused: Create / Restart / Update tasks<br/>are buffered in PausedTasks; Create & Restart<br/>executions move to SCHEDULING_PAUSED.<br/>Delete tasks bypass pause and execute immediately.
+    Note over Actuator,Spanner: While paused: Create / Restart / Update tasks<br/>are buffered in PausedTasks, and Create / Restart<br/>executions move to SCHEDULING_PAUSED.<br/>Delete tasks bypass pause and execute immediately.
 
     Admin->>HS: 5. ResumeScheduling
     HS->>Spanner: 6. Set PauseSchedulingState(paused=false, run_id)
@@ -309,17 +309,17 @@ sequenceDiagram
    trigger on `xmc-scheduling-resume-stream`.
 2. One ESS replica in the `ess-group` consumer group claims the trigger, records its
    `ResumptionWorkerID` in `PauseSchedulingState` (fencing any stale worker), and replays pending
-   `PausedTasks` in batches (`schedulingResumeBatchSize`, default `100`) ordered by
+   `PausedTasks` in batches (`health_scheduling_resume_batch_size`, default `100`) ordered by
    `Priority DESC, CreateTime ASC`.
 3. Before each batch, the worker checks the `actuator-group` backlog on `xmc-tasks-stream`; if
-   unprocessed tasks reach `schedulingResumeMaxBacklog` (default `500`), it pauses replay for 10s
+   unprocessed tasks reach `health_scheduling_resume_max_backlog` (default `500`), it pauses replay for 10s
    and extends its Redis message claim.
-4. Before replaying, the worker evaluates each task against live WorkUnit state and marks it `skipped` if:
-   - A newer execution ID exists on the parent WorkUnit (for `RestartAction`, obsolete if `wuEid > taskEid + 1`).
-   - The WorkUnit is in a terminal or stopping execution state (`COMPLETED`, `STOPPED`, `STOPPING`, `FAILED`).
-   - An `UpdateAction` was buffered while the WorkUnit is in `SCHEDULING_PAUSED` state (the replayed `Create` or `Restart` task builds the JobSet using current Spanner specs directly).
-   - An `UpdateAction` priority does not match the live WorkUnit priority (superseded update).
-   Eligible tasks are re-enqueued to `xmc-tasks-stream` with `resumption_time` in their metadata so any Actuator replica whose broadcast listener lagged behind immediately advances its local cache to unpaused.
+4. Tasks whose work unit has moved to a newer execution ID, reached a terminal/stopping state
+   (`COMPLETED`, `STOPPED`, `STOPPING`, `FAILED`), is an `Update` for a work unit still in
+   `SCHEDULING_PAUSED` (whose buffered `Create`/`Restart` task already joins the latest priority),
+   or carries a superseded `Update` priority are marked `skipped` rather than re-enqueued. Replayed
+   tasks carry `resumption_time` in their metadata so any Actuator replica whose broadcast listener
+   lagged behind immediately advances its local cache to unpaused.
 
 ---
 

@@ -189,7 +189,7 @@ Operation:
    [`cmd/actuator/k8s_client`](../../cmd/actuator/k8s_client), which builds the `JobSet`
    (labels, annotations, environment variables, Kueue queue and priority-class labels, init
    containers, TPU/GPU node selectors, managed-`xprof` GCS wiring).
-5. Marks the corresponding Spanner `Operation` done.
+5. Marks the corresponding Spanner `Operation` done (for tasks buffered in step 3, the `Operation` remains pending until replay).
 
 Delivery semantics are configured in
 [`internal/kubernetes/common/constants`](../../internal/kubernetes/common/constants/constants.go):
