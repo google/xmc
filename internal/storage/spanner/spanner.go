@@ -17,9 +17,12 @@ package spanner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"cloud.google.com/go/spanner"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/artifact"
@@ -77,6 +80,9 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 		}
 		return fn(txCtx, tx)
 	})
+	if status.Code(err) == codes.AlreadyExists && !errors.Is(err, grpcerr.ErrAlreadyExists) {
+		return fmt.Errorf("%w: %v", grpcerr.ErrAlreadyExists, err)
+	}
 	return err
 }
 
