@@ -35,16 +35,6 @@ func modifiedSource(mutate func(*RequestSource)) RequestSource {
 	return src
 }
 
-// reasonOf returns the ErrorInfo reason of err, or "" when err carries none in ErrorInfoDomain.
-func reasonOf(err error) string {
-	for _, d := range status.Convert(err).Details() {
-		if info, ok := d.(*errdetails.ErrorInfo); ok && info.GetDomain() == ErrorInfoDomain {
-			return info.GetReason()
-		}
-	}
-	return ""
-}
-
 func TestValidateRequestSource(t *testing.T) {
 	tests := []struct {
 		name    string

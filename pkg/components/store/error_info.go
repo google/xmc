@@ -101,3 +101,15 @@ func errorWithInfo(code codes.Code, reason string, metadata map[string]string, m
 	}
 	return detailed.Err()
 }
+
+// ErrorInfoReason returns the reason of the google.rpc.ErrorInfo that err carries in
+// ErrorInfoDomain, or "" when it carries none. Callers branch on this reason, never on the
+// status message.
+func ErrorInfoReason(err error) string {
+	for _, detail := range status.Convert(err).Details() {
+		if info, ok := detail.(*errdetails.ErrorInfo); ok && info.GetDomain() == ErrorInfoDomain {
+			return info.GetReason()
+		}
+	}
+	return ""
+}

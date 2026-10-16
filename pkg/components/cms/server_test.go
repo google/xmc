@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -686,7 +685,7 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 			}
 
 			resp, err := server.SetComponentIntent(ctx, tt.req)
-			if status.Code(err) != tt.wantCode || errorInfoReason(err) != tt.wantReason {
+			if status.Code(err) != tt.wantCode || store.ErrorInfoReason(err) != tt.wantReason {
 				t.Fatalf("SetComponentIntent() error = %v, want code %v and reason %q", err, tt.wantCode, tt.wantReason)
 			}
 			if err != nil {
@@ -764,7 +763,7 @@ func TestCMSServer_DeclareClusterEpoch(t *testing.T) {
 			}
 
 			got, err := server.DeclareClusterEpoch(ctx, tt.req)
-			if status.Code(err) != tt.wantCode || errorInfoReason(err) != tt.wantReason {
+			if status.Code(err) != tt.wantCode || store.ErrorInfoReason(err) != tt.wantReason {
 				t.Fatalf("DeclareClusterEpoch() error = %v, want code %v and reason %q", err, tt.wantCode, tt.wantReason)
 			}
 			if diff := cmp.Diff(tt.want, got, protocmp.Transform()); diff != "" {
@@ -853,7 +852,7 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 			if got := status.Code(err); got != tc.wantCode {
 				t.Fatalf("SetComponentIntent() got code %v, want %v (err: %v)", got, tc.wantCode, err)
 			}
-			if got := errorInfoReason(err); got != tc.wantReason {
+			if got := store.ErrorInfoReason(err); got != tc.wantReason {
 				t.Errorf("SetComponentIntent() ErrorInfo reason = %q, want %q", got, tc.wantReason)
 			}
 			if tc.wantStoreDep == nil {
@@ -874,17 +873,6 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 			}
 		})
 	}
-}
-
-// errorInfoReason returns the reason of the google.rpc.ErrorInfo that err carries in
-// store.ErrorInfoDomain, or "" when it carries none.
-func errorInfoReason(err error) string {
-	for _, d := range status.Convert(err).Details() {
-		if info, ok := d.(*errdetails.ErrorInfo); ok && info.GetDomain() == store.ErrorInfoDomain {
-			return info.GetReason()
-		}
-	}
-	return ""
 }
 
 func TestCMSServer_UpdateObservedGeneration_MemoryStore(t *testing.T) {

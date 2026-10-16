@@ -131,7 +131,7 @@ func TestPlanIntent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := planIntent("redpanda", tt.rec, tt.spec, tt.labels, tt.deps, tt.desiredGen, tt.src)
-			if reason := reasonOf(err); reason != tt.wantReason || (err == nil) != (tt.wantReason == "") {
+			if reason := ErrorInfoReason(err); reason != tt.wantReason || (err == nil) != (tt.wantReason == "") {
 				t.Fatalf("planIntent() error = %v, want reason %q", err, tt.wantReason)
 			}
 			if got != tt.want {
