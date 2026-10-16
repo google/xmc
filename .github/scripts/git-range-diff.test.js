@@ -28,6 +28,7 @@ const {
   resolveStackedApprovedRange,
   resolveCommitRanges,
   runGitRangeDiff,
+  parseNumstatDelta,
   getCommitLineDelta,
   computeAddedCommitsDelta,
   getPrChangedFiles,
@@ -100,15 +101,15 @@ test('getCommitLineDelta validates commit SHA before spawning subprocess', () =>
   try {
     const invalidShaDelta = getCommitLineDelta('invalid-sha');
     assert.strictEqual(execCalled, false);
-    assert.deepStrictEqual(invalidShaDelta, { additions: 0, deletions: 0, totalDelta: 0 });
+    assert.deepStrictEqual(invalidShaDelta, { additions: 0, deletions: 0, totalDelta: 0, testDelta: 0 });
 
     const nullDelta = getCommitLineDelta(null);
     assert.strictEqual(execCalled, false);
-    assert.deepStrictEqual(nullDelta, { additions: 0, deletions: 0, totalDelta: 0 });
+    assert.deepStrictEqual(nullDelta, { additions: 0, deletions: 0, totalDelta: 0, testDelta: 0 });
 
     const emptyDelta = getCommitLineDelta('');
     assert.strictEqual(execCalled, false);
-    assert.deepStrictEqual(emptyDelta, { additions: 0, deletions: 0, totalDelta: 0 });
+    assert.deepStrictEqual(emptyDelta, { additions: 0, deletions: 0, totalDelta: 0, testDelta: 0 });
   } finally {
     childProcess.execFileSync = originalExec;
   }
@@ -140,11 +141,47 @@ test('computeAddedCommitsDelta sums additions and deletions across multiple comm
   }
 });
 
+test('parseNumstatDelta counts test file lines separately', () => {
+  const numstat = [
+    '1111111',
+    '10\t2\tpkg/workunit/create.go',
+    '30\t5\tpkg/workunit/create_test.go',
+    '4\t0\tpkg/api/testdata/golden.json',
+    '-\t-\tassets/logo.png',
+    '1\t1\tdocs/my file.md'
+  ].join('\n');
+  assert.deepStrictEqual(parseNumstatDelta(numstat), {
+    additions: 45,
+    deletions: 8,
+    totalDelta: 53,
+    testDelta: 39
+  });
+});
+
+test('computeAddedCommitsDelta accumulates test file lines across commits', () => {
+  const originalExec = childProcess.execFileSync;
+
+  childProcess.execFileSync = (cmd, args) => {
+    const sha = args[args.length - 1];
+    if (sha === '1111111') return '2\t1\tpkg/a.go\n';
+    if (sha === '2222222') return '20\t0\tpkg/a_test.go\n';
+    throw new Error(`Unexpected command: ${cmd}`);
+  };
+
+  try {
+    const delta = computeAddedCommitsDelta(['1111111', '2222222']);
+    assert.strictEqual(delta.totalDelta, 23);
+    assert.strictEqual(delta.testDelta, 20);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
 test('computeAddedCommitsDelta handles non-array input defensively', () => {
-  assert.deepStrictEqual(computeAddedCommitsDelta(null), { additions: 0, deletions: 0, totalDelta: 0 });
-  assert.deepStrictEqual(computeAddedCommitsDelta(undefined), { additions: 0, deletions: 0, totalDelta: 0 });
-  assert.deepStrictEqual(computeAddedCommitsDelta('not-an-array'), { additions: 0, deletions: 0, totalDelta: 0 });
-  assert.deepStrictEqual(computeAddedCommitsDelta({}), { additions: 0, deletions: 0, totalDelta: 0 });
+  assert.deepStrictEqual(computeAddedCommitsDelta(null), { additions: 0, deletions: 0, totalDelta: 0, testDelta: 0 });
+  assert.deepStrictEqual(computeAddedCommitsDelta(undefined), { additions: 0, deletions: 0, totalDelta: 0, testDelta: 0 });
+  assert.deepStrictEqual(computeAddedCommitsDelta('not-an-array'), { additions: 0, deletions: 0, totalDelta: 0, testDelta: 0 });
+  assert.deepStrictEqual(computeAddedCommitsDelta({}), { additions: 0, deletions: 0, totalDelta: 0, testDelta: 0 });
 });
 
 test('resolveCommitRanges uses standard ranges when commit count matches', () => {

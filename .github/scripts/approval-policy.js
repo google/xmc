@@ -14,8 +14,9 @@
 
 const { getPrChangedFiles, getCommitModifiedFiles } = require('./git-range-diff');
 
-// Default maximum lines of diff delta (additions + deletions) permitted for code owners to auto-reapprove.
-const DEFAULT_MAX_OWNER_GRACE_LINES = 10;
+// Default maximum lines of non-test diff delta (additions + deletions) permitted for code owners to auto-reapprove.
+// Test file changes (see test-file-classifier.js) do not count against this budget.
+const DEFAULT_MAX_OWNER_GRACE_LINES = 50;
 
 /**
  * Pure function: Resolves maximum owner grace lines from env or fallback default.
@@ -119,12 +120,13 @@ function checkAddedCommitsForProtectedFiles(addedCommitShas, execOptions = {}) {
  * @param {string} [params.approvedSha]
  * @param {string} [params.currentSha]
  * @param {boolean} [params.isAuthorOwner]
- * @param {number} [params.deltaLines]
+ * @param {number} [params.deltaLines] - Total changed lines since last approval, including test files.
+ * @param {number} [params.testDeltaLines=0] - Subset of deltaLines in test files; excluded from the owner grace budget only.
  * @param {boolean} [params.isCleanRebase]
  * @param {boolean} [params.hasRemovedCommits=false]
  * @param {boolean} [params.hasProtectedFileChanges=false]
  * @param {boolean} [params.isDismissed=false]
- * @param {number} [params.maxGraceLines=10]
+ * @param {number} [params.maxGraceLines=MAX_OWNER_GRACE_LINES]
  * @returns {{ shouldReapprove: boolean, reason: string, trigger: string }}
  */
 function evaluateIncrementalApproval({
@@ -133,6 +135,7 @@ function evaluateIncrementalApproval({
   currentSha,
   isAuthorOwner,
   deltaLines,
+  testDeltaLines = 0,
   isCleanRebase,
   hasRemovedCommits = false,
   hasProtectedFileChanges = false,
@@ -171,10 +174,12 @@ function evaluateIncrementalApproval({
   }
 
   const validDelta = typeof deltaLines === 'number' && !isNaN(deltaLines) && deltaLines >= 0;
-  if (!validDelta) {
+  const validTestDelta = typeof testDeltaLines === 'number' && !isNaN(testDeltaLines) &&
+    testDeltaLines >= 0 && validDelta && testDeltaLines <= deltaLines;
+  if (!validDelta || !validTestDelta) {
     return {
       shouldReapprove: false,
-      reason: `Invalid delta lines count: ${deltaLines}. Manual review required.`,
+      reason: `Invalid delta lines count: ${deltaLines} (test file lines: ${testDeltaLines}). Manual review required.`,
       trigger: 'INVALID_DELTA'
     };
   }
@@ -195,18 +200,19 @@ function evaluateIncrementalApproval({
     };
   }
 
-  if (isAuthorOwner && validDelta && deltaLines <= maxGraceLines) {
-    return {
-      shouldReapprove: true,
-      reason: `PR author is a code owner and changes since last approval (${deltaLines} line${deltaLines === 1 ? '' : 's'}) are within the ${maxGraceLines}-line grace delta.`,
-      trigger: 'OWNER_GRACE_DELTA'
-    };
-  }
-
   if (isAuthorOwner) {
+    const nonTestDelta = deltaLines - testDeltaLines;
+    const testSuffix = testDeltaLines > 0 ? `, excluding ${testDeltaLines} test file line${testDeltaLines === 1 ? '' : 's'}` : '';
+    if (nonTestDelta <= maxGraceLines) {
+      return {
+        shouldReapprove: true,
+        reason: `PR author is a code owner and changes since last approval (${nonTestDelta} line${nonTestDelta === 1 ? '' : 's'}${testSuffix}) are within the ${maxGraceLines}-line grace delta.`,
+        trigger: 'OWNER_GRACE_DELTA'
+      };
+    }
     return {
       shouldReapprove: false,
-      reason: `Changes since last approval (${deltaLines} lines) exceed the ${maxGraceLines}-line grace delta for code owners. Manual review required.`,
+      reason: `Changes since last approval (${nonTestDelta} lines${testSuffix}) exceed the ${maxGraceLines}-line grace delta for code owners. Manual review required.`,
       trigger: 'EXCEEDS_OWNER_GRACE'
     };
   }

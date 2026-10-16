@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+const { isTestFile } = require('./test-file-classifier');
+
 /**
  * Pure function: Detects whether a diff line is metadata or commit header in git range-diff output.
  * @param {string} trimmedLine - Trimmed line content from range-diff.
@@ -28,9 +30,32 @@ function isIgnoredRangeDiffHeader(trimmedLine) {
 }
 
 /**
+ * Pure function: Extracts the file path from a range-diff file header.
+ * Handles outer hunk headers (`@@ path: context`, `@@ path (new)`) and inner file headers
+ * (`## path ##`, `## old => new ##`, `## path (deleted) ##`).
+ * @param {string} header - Header text with the leading `@@` or surrounding `##` markers.
+ * @returns {string|null} File path, or null when the header names no file.
+ */
+function extractRangeDiffFilePath(header) {
+  let body = header.trim();
+  if (body.startsWith('@@')) {
+    body = body.slice(2).trim().split(/:(?:\s|$)/)[0];
+  } else if (body.startsWith('## ') && body.endsWith(' ##')) {
+    body = body.slice(3, -3);
+  } else {
+    return null;
+  }
+  body = body.replace(/\s+\([^)]*\)$/, '').trim();
+  const renameParts = body.split(' => ');
+  const path = renameParts[renameParts.length - 1].trim();
+  return path || null;
+}
+
+/**
  * Pure function: Parses git range-diff output into structured additions, deletions, and commit modifications.
+ * Lines belonging to test files (see test-file-classifier.js) are additionally counted in testDelta.
  * @param {string} output - Raw output of `git range-diff`.
- * @returns {{ additions: number, deletions: number, totalDelta: number, isCleanRebase: boolean, hasRemovedCommits: boolean, addedCommitShas: string[] }}
+ * @returns {{ additions: number, deletions: number, totalDelta: number, testDelta: number, isCleanRebase: boolean, hasRemovedCommits: boolean, addedCommitShas: string[] }}
  */
 function parseRangeDiff(output) {
   if (!output || typeof output !== 'string' || output.trim() === '') {
@@ -38,6 +63,7 @@ function parseRangeDiff(output) {
       additions: 0,
       deletions: 0,
       totalDelta: 0,
+      testDelta: 0,
       isCleanRebase: true,
       hasRemovedCommits: false,
       addedCommitShas: []
@@ -47,6 +73,8 @@ function parseRangeDiff(output) {
   const lines = output.split(/\r?\n/);
   let additions = 0;
   let deletions = 0;
+  let testDelta = 0;
+  let currentFile = null;
   let inCodeDiffHunk = false;
   let hasModifiedCommits = false;
   let hasRemovedCommits = false;
@@ -69,17 +97,20 @@ function parseRangeDiff(output) {
         }
       }
       inCodeDiffHunk = false;
+      currentFile = null;
       continue;
     }
 
     const trimmed = cleanLine.trim();
     if (isIgnoredRangeDiffHeader(trimmed)) {
       inCodeDiffHunk = false;
+      currentFile = null;
       continue;
     }
 
     if ((trimmed.startsWith('## ') && trimmed.endsWith(' ##')) || trimmed.startsWith('@@')) {
       inCodeDiffHunk = true;
+      currentFile = extractRangeDiffFilePath(trimmed) || currentFile;
       continue;
     }
 
@@ -92,7 +123,11 @@ function parseRangeDiff(output) {
       const outerCol = hunkMatch[1];
       const content = (hunkMatch[3] || '').trim();
 
-      if (content.startsWith('## ') || content.startsWith('\\ No newline') || content.startsWith('Binary files')) {
+      if (content.startsWith('## ')) {
+        currentFile = extractRangeDiffFilePath(content) || currentFile;
+        continue;
+      }
+      if (content.startsWith('\\ No newline') || content.startsWith('Binary files')) {
         continue;
       }
 
@@ -100,6 +135,11 @@ function parseRangeDiff(output) {
         additions++;
       } else if (outerCol === '-') {
         deletions++;
+      } else {
+        continue;
+      }
+      if (isTestFile(currentFile)) {
+        testDelta++;
       }
     }
   }
@@ -111,6 +151,7 @@ function parseRangeDiff(output) {
     additions,
     deletions,
     totalDelta,
+    testDelta,
     isCleanRebase,
     hasRemovedCommits,
     addedCommitShas
@@ -118,6 +159,7 @@ function parseRangeDiff(output) {
 }
 
 module.exports = {
+  extractRangeDiffFilePath,
   isIgnoredRangeDiffHeader,
   parseRangeDiff
 };

@@ -289,7 +289,7 @@ test('evaluateIncrementalApproval auto-reapproves pure clean rebase with 0 delta
   assert.strictEqual(result.trigger, 'CLEAN_REBASE');
 });
 
-test('evaluateIncrementalApproval auto-reapproves code owner within 10-line grace delta', () => {
+test('evaluateIncrementalApproval auto-reapproves code owner within 50-line grace delta', () => {
   const result = evaluateIncrementalApproval({
     hasPriorApproval: true,
     approvedSha: 'sha-111',
@@ -304,13 +304,13 @@ test('evaluateIncrementalApproval auto-reapproves code owner within 10-line grac
   assert.strictEqual(result.trigger, 'OWNER_GRACE_DELTA');
 });
 
-test('evaluateIncrementalApproval auto-reapproves code owner with exactly 10 lines delta', () => {
+test('evaluateIncrementalApproval auto-reapproves code owner with exactly 50 lines delta', () => {
   const result = evaluateIncrementalApproval({
     hasPriorApproval: true,
     approvedSha: 'sha-111',
     currentSha: 'sha-222',
     isAuthorOwner: true,
-    deltaLines: 10,
+    deltaLines: 50,
     isCleanRebase: false,
     hasRemovedCommits: false,
     hasProtectedFileChanges: false
@@ -319,19 +319,97 @@ test('evaluateIncrementalApproval auto-reapproves code owner with exactly 10 lin
   assert.strictEqual(result.trigger, 'OWNER_GRACE_DELTA');
 });
 
-test('evaluateIncrementalApproval rejects code owner when delta exceeds 10 lines', () => {
+test('evaluateIncrementalApproval rejects code owner when delta exceeds 50 lines', () => {
   const result = evaluateIncrementalApproval({
     hasPriorApproval: true,
     approvedSha: 'sha-111',
     currentSha: 'sha-222',
     isAuthorOwner: true,
-    deltaLines: 11,
+    deltaLines: 51,
     isCleanRebase: false,
     hasRemovedCommits: false,
     hasProtectedFileChanges: false
   });
   assert.strictEqual(result.shouldReapprove, false);
   assert.strictEqual(result.trigger, 'EXCEEDS_OWNER_GRACE');
+});
+
+test('evaluateIncrementalApproval excludes test file lines from code owner grace budget', () => {
+  const result = evaluateIncrementalApproval({
+    hasPriorApproval: true,
+    approvedSha: 'sha-111',
+    currentSha: 'sha-222',
+    isAuthorOwner: true,
+    deltaLines: 550,
+    testDeltaLines: 500,
+    isCleanRebase: false
+  });
+  assert.strictEqual(result.shouldReapprove, true);
+  assert.strictEqual(result.trigger, 'OWNER_GRACE_DELTA');
+  assert.match(result.reason, /50 lines, excluding 500 test file lines/);
+});
+
+test('evaluateIncrementalApproval rejects code owner when non-test lines exceed budget despite test lines', () => {
+  const result = evaluateIncrementalApproval({
+    hasPriorApproval: true,
+    approvedSha: 'sha-111',
+    currentSha: 'sha-222',
+    isAuthorOwner: true,
+    deltaLines: 251,
+    testDeltaLines: 200,
+    isCleanRebase: false
+  });
+  assert.strictEqual(result.shouldReapprove, false);
+  assert.strictEqual(result.trigger, 'EXCEEDS_OWNER_GRACE');
+});
+
+test('evaluateIncrementalApproval rejects non-owner even for test-only changes', () => {
+  const result = evaluateIncrementalApproval({
+    hasPriorApproval: true,
+    approvedSha: 'sha-111',
+    currentSha: 'sha-222',
+    isAuthorOwner: false,
+    deltaLines: 1,
+    testDeltaLines: 1,
+    isCleanRebase: false
+  });
+  assert.strictEqual(result.shouldReapprove, false);
+  assert.strictEqual(result.trigger, 'NON_OWNER_MODIFICATION');
+});
+
+test('evaluateIncrementalApproval keeps protected file lockout for code owner test-only changes', () => {
+  const result = evaluateIncrementalApproval({
+    hasPriorApproval: true,
+    approvedSha: 'sha-111',
+    currentSha: 'sha-222',
+    isAuthorOwner: true,
+    deltaLines: 5,
+    testDeltaLines: 5,
+    isCleanRebase: false,
+    hasProtectedFileChanges: true
+  });
+  assert.strictEqual(result.shouldReapprove, false);
+  assert.strictEqual(result.trigger, 'PROTECTED_FILES_MODIFIED');
+});
+
+test('evaluateIncrementalApproval rejects invalid test delta inputs', () => {
+  for (const testDeltaLines of [-1, NaN, null, 11]) {
+    const result = evaluateIncrementalApproval({
+      hasPriorApproval: true,
+      approvedSha: 'sha-111',
+      currentSha: 'sha-222',
+      isAuthorOwner: true,
+      deltaLines: 10,
+      testDeltaLines,
+      isCleanRebase: false
+    });
+    assert.strictEqual(result.shouldReapprove, false, String(testDeltaLines));
+    assert.strictEqual(result.trigger, 'INVALID_DELTA', String(testDeltaLines));
+  }
+});
+
+test('DEFAULT_MAX_OWNER_GRACE_LINES is 50', () => {
+  assert.strictEqual(DEFAULT_MAX_OWNER_GRACE_LINES, 50);
 });
 
 test('evaluateIncrementalApproval rejects non-owner when delta > 0', () => {

@@ -38,7 +38,8 @@ graph TD
 | [`incremental-approval.js`](incremental-approval.js) | **Orchestrator**: Entry point invoked by GitHub Actions. Validates PR context, coordinates timeline querying, Git range-diff calculation, policy evaluation, and submits the GitHub review. Re-exports all public symbols for backwards compatibility. |
 | [`pr-approval-timeline.js`](pr-approval-timeline.js) | **Timeline State Machine**: Fetches PR timeline events via GraphQL (with REST fallback). Disambiguates automatic stale-push dismissals from manual human dismissals. Enforces that active `CHANGES_REQUESTED` reviews always block auto-approval. |
 | [`git-range-diff.js`](git-range-diff.js) | **Git Subprocess Mechanics**: Proactively fetches missing Git refs (`ensureGitRefs`), detects fast-forward ancestry, computes line deltas, indexes candidate commits using `git patch-id` and commit subjects, and resolves commit ranges for stacked PRs. |
-| [`range-diff-parser.js`](range-diff-parser.js) | **Diff Parser**: Parses raw `git range-diff` output. Distinguishes code hunks from commit metadata/commit message hunks, computes added/deleted line deltas, and extracts added commit SHAs. |
+| [`range-diff-parser.js`](range-diff-parser.js) | **Diff Parser**: Parses raw `git range-diff` output. Distinguishes code hunks from commit metadata/commit message hunks, computes added/deleted line deltas (tracking the test file subset), and extracts added commit SHAs. |
+| [`test-file-classifier.js`](test-file-classifier.js) | **Test File Classifier**: Identifies test files and fixtures whose line changes are excluded from the code owner grace budget. |
 | [`approval-policy.js`](approval-policy.js) | **Decision Engine**: Evaluates whether a PR qualify for auto-reapproval (clean rebase vs code owner grace delta). Enforces protected file boundaries, handles absence PR auto-approvals, and manages reviewer assignment logic. |
 
 ---
@@ -123,8 +124,8 @@ Scoping uses 3-dot diff against the PR's target base branch (`git diff --name-on
 
 ### 2. Tiered Approval Policy
 - **Clean Rebase (0 line delta)**: Approved for all authors if code hunks have zero additions and deletions across the rebase.
-- **Grace Delta (&le; 10 lines)**: Permitted **only** if the PR author is a designated repository code owner (listed in `OWNERS`). Non-code-owners are strictly limited to clean rebases.
-- **Added Commits**: If follow-up commits were appended, each commit is individually inspected for protected file modifications, and line deltas are accumulated into the grace budget.
+- **Grace Delta (&le; 50 non-test lines)**: Permitted **only** if the PR author is a designated repository code owner (listed in `OWNERS`). Changes to test files (`*_test.go`, `*.test.{js,ts,jsx,tsx}`, `*.spec.{js,ts,jsx,tsx}`, `*_test.py`, `test_*.py`, and anything under a `testdata/` directory; see [`test-file-classifier.js`](test-file-classifier.js)) do not count against the budget. The budget is configurable via the `MAX_OWNER_GRACE_LINES` repository variable (defaults to 50 when unset). Non-code-owners are strictly limited to clean rebases: any changed line, including in test files, requires manual review. Protected files are always locked out, even when they match a test file pattern.
+- **Added Commits**: If follow-up commits were appended, each commit is individually inspected for protected file modifications, and line deltas (minus test file lines) are accumulated into the grace budget.
 
 ### 3. Dismissal Integrity (Human vs Bot)
 - **Manual Dismissal**: If a human reviewer dismisses an approval or requests changes (`CHANGES_REQUESTED`), the system **never** overrides the human decision.
@@ -164,6 +165,7 @@ node --test .github/scripts/git-range-diff.test.js
 node --test .github/scripts/pr-approval-timeline.test.js
 node --test .github/scripts/approval-policy.test.js
 node --test .github/scripts/range-diff-parser.test.js
+node --test .github/scripts/test-file-classifier.test.js
 node --test .github/scripts/incremental-approval.test.js
 ```
 

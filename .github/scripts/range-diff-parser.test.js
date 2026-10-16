@@ -15,9 +15,83 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const {
+  extractRangeDiffFilePath,
   isIgnoredRangeDiffHeader,
   parseRangeDiff
 } = require('./range-diff-parser');
+
+test('extractRangeDiffFilePath parses outer hunk and inner file headers', () => {
+  assert.strictEqual(extractRangeDiffFilePath('@@ pkg/a_test.go (new)'), 'pkg/a_test.go');
+  assert.strictEqual(extractRangeDiffFilePath('@@ pkg/b.go: func Foo() {'), 'pkg/b.go');
+  assert.strictEqual(extractRangeDiffFilePath('@@ pkg/b.go:'), 'pkg/b.go');
+  assert.strictEqual(extractRangeDiffFilePath('## pkg/new_test.go (new) ##'), 'pkg/new_test.go');
+  assert.strictEqual(extractRangeDiffFilePath('## pkg/old.go => pkg/old_test.go ##'), 'pkg/old_test.go');
+  assert.strictEqual(extractRangeDiffFilePath('## pkg/c.go ##'), 'pkg/c.go');
+  assert.strictEqual(extractRangeDiffFilePath('@@'), null);
+  assert.strictEqual(extractRangeDiffFilePath('plain text'), null);
+});
+
+test('parseRangeDiff counts test file lines separately from production lines', () => {
+  // Captured from real `git range-diff` output.
+  const sampleOutput = [
+    '1:  d1d6891 ! 1:  68a818d c1',
+    '    @@ p/a_test.go (new)',
+    '     +4',
+    '    -+5',
+    '    ++FIVE',
+    '     +6',
+    '    @@ p/b.go (new)',
+    '     +4',
+    '    -+5',
+    '    ++FIVE',
+    '     +6',
+    '    @@ p/b.go (new)',
+    '     +30',
+    '     ',
+    '    - ## p/old.go (new) ##',
+    '    + ## p/new_test.go (new) ##',
+    '    +@@',
+    '    ++1',
+    '    ++2',
+    '    ++3',
+    '    +',
+    '    + ## p/renamed.go (new) ##',
+    '     @@',
+    '     +1',
+    '    ++extra'
+  ].join('\n');
+
+  const result = parseRangeDiff(sampleOutput);
+  // a_test.go: 2, b.go: 2, new_test.go: '+@@' + 3 lines + blank = 5, renamed.go: 1.
+  assert.strictEqual(result.totalDelta, 10);
+  assert.strictEqual(result.testDelta, 7);
+});
+
+test('parseRangeDiff treats lines with unknown file as non-test', () => {
+  const sampleOutput = [
+    '1:  a1b2c3d ! 1:  e5f6g7h Commit',
+    '    @@',
+    '    -+old',
+    '    ++new'
+  ].join('\n');
+  const result = parseRangeDiff(sampleOutput);
+  assert.strictEqual(result.totalDelta, 2);
+  assert.strictEqual(result.testDelta, 0);
+});
+
+test('parseRangeDiff resets current file across commits', () => {
+  const sampleOutput = [
+    '1:  a1b2c3d ! 1:  e5f6g7h First',
+    '    @@ pkg/a_test.go: func TestA(t *testing.T) {',
+    '    ++x',
+    '2:  1234567 ! 2:  89abcde Second',
+    '    @@',
+    '    ++y'
+  ].join('\n');
+  const result = parseRangeDiff(sampleOutput);
+  assert.strictEqual(result.totalDelta, 2);
+  assert.strictEqual(result.testDelta, 1);
+});
 
 test('parseRangeDiff handles empty or invalid output safely', () => {
   for (const emptyInput of ['', '   ', null, undefined]) {
