@@ -116,6 +116,11 @@ type Store interface {
 	// write records src as owner.
 	SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src RequestSource) (*ComponentRecord, error)
 
+	// DeclareClusterEpoch makes cluster (validated by ValidateClusterIdentity) the holder of the
+	// ownership fence at its epoch (see planDeclaration) and reassigns active owned components on
+	// a takeover. Rejections are FailedPrecondition (CLUSTER_EPOCH_REGRESSED, CLUSTER_FENCED).
+	DeclareClusterEpoch(ctx context.Context, cluster ClusterIdentity) (*DeclarationResult, error)
+
 	// GetComponent retrieves a component record by canonical or full resource name.
 	GetComponent(ctx context.Context, name string) (*ComponentRecord, error)
 

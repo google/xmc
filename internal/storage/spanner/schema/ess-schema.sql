@@ -496,6 +496,18 @@ CREATE TABLE ComponentDependencies (
 
 CREATE INDEX Idx_ComponentDependencies_Dependency ON ComponentDependencies(DependencyComponentId);
 
+-- Table: ComponentOwnershipFence (CMS writes only FenceId = 1; FenceId is reserved for partitioned
+-- fences, so there is no singleton CHECK): the cluster allowed to write intents.
+CREATE TABLE ComponentOwnershipFence (
+  FenceId INT64 NOT NULL,
+  ActiveClusterUid STRING(64) NOT NULL,
+  ActiveClusterName STRING(63) NOT NULL,
+  Epoch INT64 NOT NULL,
+  DeclaredTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  LastSeenTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  CONSTRAINT CK_ComponentOwnershipFence_Epoch CHECK (Epoch >= 1),
+) PRIMARY KEY (FenceId);
+
 -- Table: ExperimentComponentSnapshots
 CREATE TABLE ExperimentComponentSnapshots (
   BitReversedXid INT64 NOT NULL,

@@ -43,6 +43,7 @@ type MemoryStore struct {
 	componentsByID   map[int64]*ComponentRecord
 	nextID           int64
 	snapshots        map[string]map[int64]*SnapshotRecord
+	fence            *ClusterIdentity // Ownership fence holder; nil before the first declaration.
 }
 
 // NewMemoryStore creates a new thread-safe in-memory component store.
@@ -116,6 +117,30 @@ func (m *MemoryStore) applyIntentPlanLocked(rec *ComponentRecord, plan intentPla
 		updateExistingIntent(rec, spec, labels, deps, plan.generation, now)
 		m.recordSnapshotLocked(rec)
 	}
+}
+
+// DeclareClusterEpoch declares cluster the writer of sourced intents within the in-memory store.
+func (m *MemoryStore) DeclareClusterEpoch(ctx context.Context, cluster ClusterIdentity) (*DeclarationResult, error) {
+	if err := ValidateClusterIdentity(cluster); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	outcome, err := planDeclaration(m.fence, cluster)
+	if err != nil {
+		return nil, err
+	}
+	res := &DeclarationResult{Outcome: outcome, Active: cluster}
+	if outcome == DeclarationTakeover {
+		for _, rec := range m.componentsByName {
+			if !isDeletedRecord(rec) && rec.Owner != nil {
+				rec.Owner = takenOverOwner(rec.Owner, cluster)
+				res.RecordsReassigned++
+			}
+		}
+	}
+	m.fence = &cluster
+	return res, nil
 }
 
 func validateResourceName(name string) (string, error) {

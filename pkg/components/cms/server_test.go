@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -42,6 +41,10 @@ func (s *stubStore) SetComponentIntent(ctx context.Context, name string, spec *c
 }
 
 func (s *stubStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src store.RequestSource) (*store.ComponentRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
+func (s *stubStore) DeclareClusterEpoch(ctx context.Context, cluster store.ClusterIdentity) (*store.DeclarationResult, error) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
@@ -682,7 +685,7 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 			}
 
 			resp, err := server.SetComponentIntent(ctx, tt.req)
-			if status.Code(err) != tt.wantCode || errorInfoReason(err) != tt.wantReason {
+			if status.Code(err) != tt.wantCode || store.ErrorInfoReason(err) != tt.wantReason {
 				t.Fatalf("SetComponentIntent() error = %v, want code %v and reason %q", err, tt.wantCode, tt.wantReason)
 			}
 			if err != nil {
@@ -697,6 +700,74 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 			}
 			if diff := cmp.Diff(tt.wantOwner, stored.Owner); diff != "" {
 				t.Errorf("stored Owner mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestCMSServer_DeclareClusterEpoch(t *testing.T) {
+	const prodUID, drUID = "5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c01", "5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c02"
+	prod := &componentspb.ClusterIdentity{Uid: prodUID, Name: "prod", Epoch: 2}
+	dr := func(epoch int64) *componentspb.ClusterIdentity {
+		return &componentspb.ClusterIdentity{Uid: drUID, Name: "dr", Epoch: epoch}
+	}
+	tests := []struct {
+		name       string
+		req        *componentspb.DeclareClusterEpochRequest
+		wantCode   codes.Code
+		wantReason string
+		want       *componentspb.DeclareClusterEpochResponse
+	}{
+		{
+			name: "active cluster refreshes its epoch",
+			req:  &componentspb.DeclareClusterEpochRequest{Cluster: prod},
+			want: &componentspb.DeclareClusterEpochResponse{ActiveCluster: prod, Outcome: componentspb.DeclareClusterEpochResponse_OUTCOME_REFRESHED},
+		},
+		{
+			name: "active cluster raises its epoch",
+			req:  &componentspb.DeclareClusterEpochRequest{Cluster: &componentspb.ClusterIdentity{Uid: prodUID, Name: "prod", Epoch: 3}},
+			want: &componentspb.DeclareClusterEpochResponse{
+				ActiveCluster: &componentspb.ClusterIdentity{Uid: prodUID, Name: "prod", Epoch: 3},
+				Outcome:       componentspb.DeclareClusterEpochResponse_OUTCOME_RAISED,
+			},
+		},
+		{
+			name: "another cluster at a higher epoch takes the owned component over",
+			req:  &componentspb.DeclareClusterEpochRequest{Cluster: dr(3)},
+			want: &componentspb.DeclareClusterEpochResponse{ActiveCluster: dr(3), RecordsReassigned: 1, Outcome: componentspb.DeclareClusterEpochResponse_OUTCOME_TAKEOVER},
+		},
+		{
+			name:       "another cluster at the active epoch is fenced",
+			req:        &componentspb.DeclareClusterEpochRequest{Cluster: dr(2)},
+			wantCode:   codes.FailedPrecondition,
+			wantReason: store.ReasonClusterFenced,
+		},
+		{name: "cluster without a name is rejected", req: &componentspb.DeclareClusterEpochRequest{Cluster: &componentspb.ClusterIdentity{Uid: prodUID, Epoch: 2}}, wantCode: codes.InvalidArgument},
+		{name: "cluster uid that is not a UUID is rejected", req: &componentspb.DeclareClusterEpochRequest{Cluster: &componentspb.ClusterIdentity{Uid: "cluster-1", Name: "prod", Epoch: 2}}, wantCode: codes.InvalidArgument},
+		{name: "request without a cluster is rejected", req: &componentspb.DeclareClusterEpochRequest{}, wantCode: codes.InvalidArgument},
+		{name: "nil request is rejected", wantCode: codes.InvalidArgument},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			server := NewServer(store.NewMemoryStore(), WithAuthorizer(NewDisabledAuthorizer()))
+			if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+				Name:   "redpanda",
+				Spec:   &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"},
+				Source: &componentspb.RequestSource{Uid: "uid-a", Generation: 1, Namespace: "xmc", Cluster: prod},
+			}); err != nil {
+				t.Fatalf("seed SetComponentIntent() error = %v", err)
+			}
+			if _, err := server.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: prod}); err != nil {
+				t.Fatalf("seed DeclareClusterEpoch() error = %v", err)
+			}
+
+			got, err := server.DeclareClusterEpoch(ctx, tt.req)
+			if status.Code(err) != tt.wantCode || store.ErrorInfoReason(err) != tt.wantReason {
+				t.Fatalf("DeclareClusterEpoch() error = %v, want code %v and reason %q", err, tt.wantCode, tt.wantReason)
+			}
+			if diff := cmp.Diff(tt.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("DeclareClusterEpoch() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -781,7 +852,7 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 			if got := status.Code(err); got != tc.wantCode {
 				t.Fatalf("SetComponentIntent() got code %v, want %v (err: %v)", got, tc.wantCode, err)
 			}
-			if got := errorInfoReason(err); got != tc.wantReason {
+			if got := store.ErrorInfoReason(err); got != tc.wantReason {
 				t.Errorf("SetComponentIntent() ErrorInfo reason = %q, want %q", got, tc.wantReason)
 			}
 			if tc.wantStoreDep == nil {
@@ -802,17 +873,6 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 			}
 		})
 	}
-}
-
-// errorInfoReason returns the reason of the google.rpc.ErrorInfo that err carries in
-// store.ErrorInfoDomain, or "" when it carries none.
-func errorInfoReason(err error) string {
-	for _, d := range status.Convert(err).Details() {
-		if info, ok := d.(*errdetails.ErrorInfo); ok && info.GetDomain() == store.ErrorInfoDomain {
-			return info.GetReason()
-		}
-	}
-	return ""
 }
 
 func TestCMSServer_UpdateObservedGeneration_MemoryStore(t *testing.T) {

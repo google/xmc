@@ -49,6 +49,12 @@ const (
 	// in the owner's namespace. After proving that its own object is live, the caller may retry
 	// once with expected_owner_uid set to the owner_uid metadata.
 	ReasonSourceIncarnationMismatch = "SOURCE_INCARNATION_MISMATCH"
+	// ReasonClusterFenced rejects a cluster that does not hold the ownership fence. It stays in
+	// standby until it declares an epoch higher than the active one.
+	ReasonClusterFenced = "CLUSTER_FENCED"
+	// ReasonClusterEpochRegressed rejects the active cluster declaring a lower epoch, for example
+	// after a reverted configuration.
+	ReasonClusterEpochRegressed = "CLUSTER_EPOCH_REGRESSED"
 )
 
 // google.rpc.ErrorInfo metadata keys of store rejections, part of the contract callers match.
@@ -69,11 +75,19 @@ const (
 	MetadataKeyOwnerGeneration = "owner_generation"
 )
 
+// ErrorInfo metadata keys naming the fence holder in cluster fence rejections.
+const (
+	metadataKeyActiveClusterUID  = "active_cluster_uid"
+	metadataKeyActiveClusterName = "active_cluster_name"
+	metadataKeyActiveEpoch       = "active_epoch"
+)
+
 // Values of metadata "operation": the rejected CMS operation.
 const (
 	operationSetComponentIntent  = "SetComponentIntent"
 	operationPrepareDeactivation = "PrepareDeactivation"
 	operationExecuteDeletion     = "ExecuteDeletion"
+	operationDeclareClusterEpoch = "DeclareClusterEpoch"
 )
 
 // errorWithInfo returns a status error with code and msg carrying a google.rpc.ErrorInfo with
@@ -86,4 +100,16 @@ func errorWithInfo(code codes.Code, reason string, metadata map[string]string, m
 		return st.Err()
 	}
 	return detailed.Err()
+}
+
+// ErrorInfoReason returns the reason of the google.rpc.ErrorInfo that err carries in
+// ErrorInfoDomain, or "" when it carries none. Callers branch on this reason, never on the
+// status message.
+func ErrorInfoReason(err error) string {
+	for _, detail := range status.Convert(err).Details() {
+		if info, ok := detail.(*errdetails.ErrorInfo); ok && info.GetDomain() == ErrorInfoDomain {
+			return info.GetReason()
+		}
+	}
+	return ""
 }

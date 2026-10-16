@@ -263,6 +263,19 @@ CREATE TABLE ComponentDependencies (
 
 CREATE INDEX Idx_ComponentDependencies_Dependency ON ComponentDependencies (DependencyComponentId);
 
+-- CMS writes only FenceId = 1; FenceId is reserved for partitioned fences, so there is no singleton
+-- CHECK: the cluster allowed to write intents.
+CREATE TABLE ComponentOwnershipFence (
+  FenceId BIGINT NOT NULL,
+  ActiveClusterUid TEXT NOT NULL,
+  ActiveClusterName TEXT NOT NULL,
+  Epoch BIGINT NOT NULL,
+  DeclaredTime TIMESTAMPTZ NOT NULL,
+  LastSeenTime TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (FenceId),
+  CONSTRAINT CK_ComponentOwnershipFence_Epoch CHECK (Epoch >= 1)
+);
+
 CREATE TABLE ExperimentComponentSnapshots (
   Xid BIGINT NOT NULL,
   ComponentId BIGINT NOT NULL,

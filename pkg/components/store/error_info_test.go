@@ -15,6 +15,7 @@
 package store
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -34,6 +35,28 @@ func TestErrorWithInfo(t *testing.T) {
 	want := []any{&errdetails.ErrorInfo{Reason: ReasonDependencyNotRegistered, Domain: "components.xmc.dev", Metadata: map[string]string{"dependency": "redpanda"}}}
 	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
 		t.Errorf("details mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestErrorInfoReason(t *testing.T) {
+	foreign, err := status.New(codes.FailedPrecondition, "foreign").WithDetails(&errdetails.ErrorInfo{Reason: ReasonClusterFenced, Domain: "example.com"})
+	if err != nil {
+		t.Fatalf("WithDetails() error = %v", err)
+	}
+	tests := []struct {
+		name, want string
+		err        error
+	}{
+		{name: "non-status error", err: errors.New("boom"), want: ""},
+		{name: "ErrorInfo in a foreign domain", err: foreign.Err(), want: ""},
+		{name: "store rejection", err: errorWithInfo(codes.FailedPrecondition, ReasonClusterFenced, nil, "fenced"), want: ReasonClusterFenced},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ErrorInfoReason(tt.err); got != tt.want {
+				t.Errorf("ErrorInfoReason(%v) = %q, want %q", tt.err, got, tt.want)
+			}
+		})
 	}
 }
 

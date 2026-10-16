@@ -103,13 +103,19 @@ func validateNamedRequest[T namedRequest](s *Server, req T) (string, error) {
 }
 
 func validateMutatingRequest[T namedRequest](ctx context.Context, s *Server, req T) (string, error) {
-	if s.auth == nil {
-		return "", status.Error(codes.Unauthenticated, "CMS authorizer is not configured")
-	}
-	if _, err := s.auth.AuthorizeMutating(ctx); err != nil {
+	if err := s.authorizeMutating(ctx); err != nil {
 		return "", err
 	}
 	return validateNamedRequest(s, req)
+}
+
+// authorizeMutating fails closed unless the caller may mutate component state.
+func (s *Server) authorizeMutating(ctx context.Context) error {
+	if s.auth == nil {
+		return status.Error(codes.Unauthenticated, "CMS authorizer is not configured")
+	}
+	_, err := s.auth.AuthorizeMutating(ctx)
+	return err
 }
 
 func validateReadRequest[T namedRequest](ctx context.Context, s *Server, req T) (string, error) {
@@ -423,4 +429,40 @@ func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPla
 	}
 
 	return s.store.GetPlatformHealth(ctx, req.GetFilter(), req.GetPageSize(), req.GetPageToken())
+}
+
+// DeclareClusterEpoch declares the calling cluster the writer of Component intents at its epoch.
+func (s *Server) DeclareClusterEpoch(ctx context.Context, req *componentspb.DeclareClusterEpochRequest) (*componentspb.DeclareClusterEpochResponse, error) {
+	// A declaration can take over every component a cluster owns, so it needs the same
+	// authorization as the other mutating RPCs.
+	if err := s.authorizeMutating(ctx); err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if err := s.checkStoreReady(); err != nil {
+		return nil, err
+	}
+	c := req.GetCluster()
+	if c == nil {
+		return nil, status.Error(codes.InvalidArgument, "cluster identity is required")
+	}
+	res, err := s.store.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: c.GetUid(), Name: c.GetName(), Epoch: c.GetEpoch()})
+	if err != nil {
+		return nil, err
+	}
+	return &componentspb.DeclareClusterEpochResponse{
+		ActiveCluster:     &componentspb.ClusterIdentity{Uid: res.Active.UID, Name: res.Active.Name, Epoch: res.Active.Epoch},
+		RecordsReassigned: res.RecordsReassigned,
+		Outcome:           declarationOutcomes[res.Outcome],
+	}, nil
+}
+
+// declarationOutcomes maps store declaration outcomes to their API values.
+var declarationOutcomes = map[store.DeclarationOutcome]componentspb.DeclareClusterEpochResponse_Outcome{
+	store.DeclarationCreated:   componentspb.DeclareClusterEpochResponse_OUTCOME_CREATED,
+	store.DeclarationRefreshed: componentspb.DeclareClusterEpochResponse_OUTCOME_REFRESHED,
+	store.DeclarationRaised:    componentspb.DeclareClusterEpochResponse_OUTCOME_RAISED,
+	store.DeclarationTakeover:  componentspb.DeclareClusterEpochResponse_OUTCOME_TAKEOVER,
 }
