@@ -97,6 +97,7 @@ go_library(
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//status",
         "@org_golang_x_oauth2//:oauth2",
+        "@org_golang_x_sync//singleflight",
         "@sh_helm_helm_v3//pkg/action",
         "@sh_helm_helm_v3//pkg/chart",
         "@sh_helm_helm_v3//pkg/chart/loader",

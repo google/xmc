@@ -541,7 +541,7 @@ func TestWasComponentPreviouslyActive(t *testing.T) {
 		{name: "initial sync pending never actuated", status: ConditionStatusUnknown, reason: ReasonInitialSyncPending, want: false},
 		{name: "gated on dependencies", status: ConditionStatusFalse, reason: ReasonDependenciesNotReady, want: false},
 		{name: "gated on a cycle", status: ConditionStatusFalse, reason: ReasonDependencyCycle, want: false},
-		{name: "gated on source conflict", status: ConditionStatusFalse, reason: ReasonSourceConflict, want: false},
+		{name: "source conflict may follow actuation", status: ConditionStatusFalse, reason: ReasonSourceConflict, want: true},
 		{name: "disabled", status: ConditionStatusFalse, reason: reasonComponentDisabled, want: false},
 		{name: "no reason", status: ConditionStatusFalse, reason: "", want: false},
 	}

@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -95,6 +96,8 @@ type ClusterFence struct {
 	// declareSeq numbers declarations in start order; appliedSeq is the newest applied result,
 	// so a slow declaration finishing after a newer one cannot overwrite fresher status.
 	declareSeq, appliedSeq uint64
+	// declareGroup collapses concurrent first declarations from Check into one CMS call.
+	declareGroup singleflight.Group
 }
 
 var _ manager.LeaderElectionRunnable = (*ClusterFence)(nil)
@@ -204,13 +207,23 @@ func (f *ClusterFence) Declare(ctx context.Context) error {
 // declaration has succeeded yet.
 func (f *ClusterFence) Check(ctx context.Context) (string, string, error) {
 	if !f.isDeclared() {
-		if err := f.Declare(ctx); err != nil {
+		if err := f.declareShared(ctx); err != nil {
 			return "", "", err
 		}
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.fencedReason, f.fencedMessage, nil
+}
+
+// declareShared runs one bounded declaration for all concurrent callers. The shared call detaches
+// from any single caller's cancellation and is bounded by DeclareTimeout, so a hung CMS cannot stall
+// reconcile workers.
+func (f *ClusterFence) declareShared(ctx context.Context) error {
+	_, err, _ := f.declareGroup.Do("declare", func() (any, error) {
+		return nil, f.declareWithTimeout(context.WithoutCancel(ctx))
+	})
+	return err
 }
 
 func (f *ClusterFence) nextDeclareSeq() uint64 {

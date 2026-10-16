@@ -83,6 +83,10 @@ func WithClusterFence(fence *ClusterFence) ReconcilerOption {
 }
 
 // NewReconciler constructs a new Reconciler instance.
+// cms is the required gRPC client for CMS communication.
+// prober is an optional health prober for component health checks.
+// helmMgr is an optional HelmManager for provisioning 1P component workloads via Helm releases.
+// opts configure optional dependencies such as WithClusterFence.
 func NewReconciler(cms CMSClient, prober StatusDetectorHealthProber, helmMgr HelmManager, opts ...ReconcilerOption) (*Reconciler, error) {
 	if cms == nil {
 		return nil, errors.New("cms client must not be nil")
@@ -186,6 +190,10 @@ func generationEvaluated(res *ReconcileResult, generation int64, err error) bool
 }
 
 func (r *Reconciler) reconcilePass(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
+	// Deletion runs before the fence check on purpose: cold standby holds only non-deleting CRs, so a
+	// fenced cluster still releases a deleted CR's finalizer.
+	// TODO(vluk): Send a sourced ExecuteDeletion so CMS rejects a fenced deletion (CLUSTER_FENCED) and
+	// leaves the active owner's record untouched; until then a fenced cluster deletes unsourced (#1240).
 	if in.IsDeleting {
 		return r.reconcileDeletion(ctx, in, canonicalName, res)
 	}

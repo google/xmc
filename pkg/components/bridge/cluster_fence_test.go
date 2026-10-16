@@ -17,6 +17,7 @@ package bridge
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -233,6 +234,54 @@ func TestReconciler_ClusterFenceTransientError(t *testing.T) {
 	case <-fence.Changes():
 	default:
 		t.Error("expected notification on fence.Changes() when initial Declare recovers from transient error")
+	}
+}
+
+// TestReconciler_FencedThenUnfencedDisabledUninstalls checks that a component whose workload ran
+// before the fence engaged is still uninstalled when it is disabled after unfencing, even with cold
+// in-memory Helm state (for example after a bridge restart while fenced).
+func TestReconciler_FencedThenUnfencedDisabledUninstalls(t *testing.T) {
+	ctx := context.Background()
+	cmsMock := &mockCMS{declareErr: fenceRejection(t, store.ReasonClusterFenced)}
+	fence, err := NewClusterFence(cmsMock, &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "prod", Epoch: 1}, ClusterFenceOptions{})
+	if err != nil {
+		t.Fatalf("NewClusterFence() failed: %v", err)
+	}
+	helm := &mockHelm{active: false}
+	r, err := NewReconciler(cmsMock, &mockProber{healthy: true}, helm, WithClusterFence(fence))
+	if err != nil {
+		t.Fatalf("NewReconciler() failed: %v", err)
+	}
+	in := ReconcileComponentInput{
+		Namespace:  "xmc",
+		Name:       "redpanda",
+		Generation: 1,
+		Enabled:    true,
+		ExistingConditions: []Condition{{
+			Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy,
+		}},
+		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "1.0.0"},
+	}
+	fencedRes, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("fenced ReconcileComponent() error = %v", err)
+	}
+	assertSourceConflictConditions(t, fencedRes.Conditions, ReasonClusterFenced)
+
+	cmsMock.declareErr = nil
+	if err := fence.Declare(ctx); err != nil {
+		t.Fatalf("fence.Declare() after unfencing = %v", err)
+	}
+	in.Generation, in.Enabled, in.ExistingConditions = 2, false, fencedRes.Conditions
+	res, err := r.ReconcileComponent(ctx, in)
+	if err != nil {
+		t.Fatalf("disabled ReconcileComponent() after unfencing error = %v", err)
+	}
+	if !helm.deleteCalled {
+		t.Error("Delete1PComponent not called: a workload running before the fence must be uninstalled when disabled after unfencing")
+	}
+	if res.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		t.Errorf("State = %v, want COMPONENT_STATE_DISABLED", res.State)
 	}
 }
 
@@ -454,6 +503,61 @@ func (s *scriptedDeclareCMS) DeclareClusterEpoch(ctx context.Context, in *compon
 		return nil, err
 	}
 	return &componentspb.DeclareClusterEpochResponse{ActiveCluster: in.GetCluster()}, nil
+}
+
+// TestClusterFence_CheckSharesOneDeclaration checks that concurrent Check calls before the first
+// successful declaration send a single DeclareClusterEpoch, which is not cancelled with any one
+// caller's context.
+func TestClusterFence_CheckSharesOneDeclaration(t *testing.T) {
+	const callers = 5
+	cmsScripted := &scriptedDeclareCMS{calls: make(chan chan error, callers)}
+	fence, err := NewClusterFence(cmsScripted, &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "prod", Epoch: 1}, ClusterFenceOptions{})
+	if err != nil {
+		t.Fatalf("NewClusterFence() failed: %v", err)
+	}
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	started := make(chan struct{}, callers)
+	errs := make(chan error, callers)
+	for i := range callers {
+		ctx := context.Background()
+		if i == 0 {
+			ctx = cancelledCtx // The shared declaration must not inherit this caller's cancellation.
+		}
+		go func() {
+			started <- struct{}{}
+			_, _, err := fence.Check(ctx)
+			errs <- err
+		}()
+	}
+	for range callers {
+		<-started
+	}
+	reply := <-cmsScripted.calls
+	time.Sleep(50 * time.Millisecond) // Let the other callers join the in-flight declaration.
+	reply <- nil
+	for range callers {
+		if err := <-errs; err != nil {
+			t.Errorf("Check() = %v, want nil", err)
+		}
+	}
+	if extra := len(cmsScripted.calls); extra != 0 {
+		t.Errorf("DeclareClusterEpoch calls = %d, want 1 shared declaration", 1+extra)
+	}
+}
+
+// TestClusterFence_CheckBoundsHungDeclare checks that Check bounds its declaration by
+// DeclareTimeout even when the caller's context has no deadline.
+func TestClusterFence_CheckBoundsHungDeclare(t *testing.T) {
+	cmsHung := &hungDeclareCMS{}
+	cmsHung.hang.Store(true)
+	fence, err := NewClusterFence(cmsHung, &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "prod", Epoch: 1}, ClusterFenceOptions{DeclareTimeout: 20 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("NewClusterFence() failed: %v", err)
+	}
+	if _, _, err := fence.Check(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Check() with a hung CMS = %v, want context.DeadlineExceeded", err)
+	}
 }
 
 func TestClusterFence_StaleDeclarationDoesNotOverwriteNewer(t *testing.T) {
