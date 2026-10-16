@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "experiment",
     srcs = [
+        "createexperiment.go",
         "driftdetection.go",
         "updateexperimentlaunchstate.go",
     ],
@@ -39,6 +40,7 @@ go_library(
 go_test(
     name = "experiment_test",
     srcs = [
+        "createexperiment_test.go",
         "driftdetection_test.go",
         "updateexperimentlaunchstate_test.go",
     ],

@@ -153,10 +153,7 @@ var (
 
 func addTestResourcesToStorage(ctx context.Context, t *testing.T, storageClient *spanner_lib.Storage) string {
 	t.Helper()
-	_, err := storageClient.CreateExperiment(ctx, experimentForOperationTest)
-	if err != nil {
-		t.Fatalf("storageClient.CreateExperiment failed: %v", err)
-	}
+	spanner_lib.CreateAndStoreExperiment(ctx, t, storageClient, experimentForOperationTest)
 
 	spanner_lib.CreateAndStoreWorkUnit(ctx, t, storageClient, workUnitForOperationTest)
 

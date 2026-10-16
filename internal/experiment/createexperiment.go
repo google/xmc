@@ -19,31 +19,29 @@ import (
 	"fmt"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/statusmessage"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
 )
 
-// CreateExperiment creates a new experiment in Spanner. It returns the experiment proto with
-// the timestamps set to the initial commit timestamps.
-func (r *Repository) CreateExperiment(ctx context.Context, exp *essmsgpb.Experiment) (*essmsgpb.Experiment, error) {
+// CreateExperiment orchestrates the creation of a new experiment using the provided transaction runner.
+// It returns the experiment proto with initial commit timestamps populated.
+func CreateExperiment(ctx context.Context, txRunner storage.TransactionRunner, exp *essmsgpb.Experiment) (*essmsgpb.Experiment, error) {
+	if exp == nil {
+		return nil, fmt.Errorf("experiment must not be nil")
+	}
 	ctx = logging.WithExperimentName(ctx, exp.GetName())
 	logging.Info(ctx, "Write experiment to storage", "experiment", exp)
 
 	// 1. Validate the experiment name and extract the XID.
-	xid, err := validator.ValidateExperimentName(exp.Name)
+	xid, err := validator.ValidateExperimentName(exp.GetName())
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
-		if exp == nil {
-			return fmt.Errorf("experiment must not be nil")
-		}
+	err = txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		if exp.Status == nil {
 			exp.Status = &essmsgpb.ExperimentStatus{}
 		}
@@ -54,31 +52,25 @@ func (r *Repository) CreateExperiment(ctx context.Context, exp *essmsgpb.Experim
 		exp.Status.LastChildStatusUpdateTime = now
 		exp.Status.UpdateTime = now
 
-		// 3. Generate the insert mutation for the experiment.
-		expMutation, err := spannerdata.ExperimentProtoToInsertMutation(exp)
-		if err != nil {
-			logging.Error(ctx, "failed to create mutation for experiment", "experiment", exp, "error", err)
+		// 3. Insert the experiment via the transaction-scoped repository.
+		if err := tx.Experiments.InsertExperiment(ctx, exp); err != nil {
+			logging.Error(ctx, "failed to insert experiment", "experiment", exp, "error", err)
 			return err
 		}
 
-		// 4. Buffer the write mutation.
-		err = tx.BufferWrite([]*spanner.Mutation{expMutation})
-		if err != nil {
-			logging.Error(ctx, "failed to buffer write mutation for create experiment", "error", err)
+		// 4. Record the initial status message history.
+		if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, nil, nil, nil, exp.GetStatus().GetStructuredStatusMessage()); err != nil {
+			logging.Error(ctx, "failed to save status message history for experiment", "xid", xid, "error", err)
 			return err
 		}
-
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, xid, nil, nil, nil, exp.GetStatus().GetStructuredStatusMessage(), tx)
 
 		return nil
 	})
-
 	if err != nil {
 		logging.Error(ctx, "failed to create experiment", "error", err)
 		return nil, err
 	}
 
 	logging.Info(ctx, "Written experiment to storage")
-
 	return exp, nil
 }

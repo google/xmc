@@ -114,9 +114,6 @@ type ComponentDiff struct {
 
 // ExperimentStore defines storage operations for experiments.
 type ExperimentStore interface {
-	// CreateExperiment creates a new experiment.
-	CreateExperiment(ctx context.Context, exp *essmsgpb.Experiment) (*essmsgpb.Experiment, error)
-
 	// FetchExperiment retrieves an experiment by its unique ID.
 	FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error)
 
@@ -356,6 +353,8 @@ type WorkUnitTxRepository interface {
 type ExperimentTxRepository interface {
 	// FetchExperiment retrieves an experiment by its unique ID within the transaction.
 	FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error)
+	// InsertExperiment buffers a mutation to insert a new experiment within the transaction.
+	InsertExperiment(ctx context.Context, exp *essmsgpb.Experiment) error
 	// UpdateExperimentStatus updates the experiment status within the transaction.
 	UpdateExperimentStatus(ctx context.Context, exp *essmsgpb.Experiment) error
 	// UpdateExperimentResources updates the experiment resources within the transaction.
