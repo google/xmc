@@ -138,11 +138,15 @@ kubectl annotate crd components.xmc.dev --overwrite \
   meta.helm.sh/release-name=<release> meta.helm.sh/release-namespace=<namespace>
 ```
 
-With `componentsDeployment.enabled=false`, nothing removes the `finalizers.xmc.dev/deletion-protection` finalizer that `xmc-bridge` attached, so deleting a Component CR, or the namespace that holds it, hangs. Re-enable the bridge, or strip the finalizer by hand. Stripping it skips the bridge's teardown of the component's workload release:
+With `componentsDeployment.enabled=false`, nothing removes the `xmc.dev/cms-cleanup` finalizer that `xmc-bridge` attached, so deleting a Component CR, or the namespace that holds it, hangs. Re-enable the bridge, or strip the finalizer by hand. Stripping it skips the bridge's CMS cleanup and teardown of the component's workload release:
 
 ```bash
 kubectl patch components.xmc.dev <name> -n <namespace> --type=merge -p '{"metadata":{"finalizers":null}}'
 ```
+
+Earlier bridge versions attached `finalizers.xmc.dev/deletion-protection` instead. No migration is needed: the bridge treats that name as its cleanup finalizer, so a Component CR that carries it gets the same CMS cleanup and teardown on deletion, and releasing the finalizer removes both names. The merge patch above also strips the legacy name.
+
+`xmc-bridge` never blocks a deletion itself: `spec.deletionProtection` is enforced only by the `component-deletion-protection` admission policy, so a deletion the policy admits, such as one issued by the namespace controller, always runs the bridge cleanup.
 
 Removing the CRD is a deliberate manual step. While `xmc-bridge` is still running, so it can release each CR's finalizer, delete every Component CR (see the profile's [Disable or Uninstall](../../deploy/profiles/stable-2026a/README.md#disable-or-uninstall) flow). Then run `kubectl delete crd components.xmc.dev`, and remove the kept policy with `kubectl delete validatingadmissionpolicybinding component-deletion-protection-binding` and `kubectl delete validatingadmissionpolicy component-deletion-protection`.
 

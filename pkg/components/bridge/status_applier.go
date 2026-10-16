@@ -19,16 +19,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/util/retry"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"xmanager_cloud/internal/logging"
 )
@@ -112,144 +110,115 @@ func BuildStatusMap(res *ReconcileResult) map[string]any {
 	return m
 }
 
-// ApplyComponentStatusSSA serializes the ReconcileResult into the .status map of item and persists it
-// via Kubernetes Server-Side Apply (SSA) on the /status subresource with fieldManager "xmc-bridge".
-func ApplyComponentStatusSSA(ctx context.Context, client dynamic.Interface, defaultNamespace string, item *unstructured.Unstructured, res *ReconcileResult) error {
-	if client == nil || item == nil || res == nil {
-		return errors.New("dynamic client, item, and reconcile result must not be nil")
+// ApplyComponentStatusSSA persists res as the .status of item through Server-Side Apply on the
+// status subresource, with field manager FieldManagerBridge. item is not modified.
+func ApplyComponentStatusSSA(ctx context.Context, c client.Client, item *unstructured.Unstructured, res *ReconcileResult) error {
+	if c == nil || item == nil || res == nil {
+		return errors.New("client, item, and reconcile result must not be nil")
 	}
-	ns := resolveTargetNamespace(item, defaultNamespace)
-	statusPatch := map[string]any{
-		"apiVersion": ComponentGVR.Group + "/" + ComponentGVR.Version,
-		"kind":       "Component",
-		"metadata": map[string]any{
-			"name":      item.GetName(),
-			"namespace": ns,
-		},
-		"status": BuildStatus(res),
-	}
-	patchBytes, err := json.Marshal(statusPatch)
-	if err != nil {
-		return fmt.Errorf("failed to marshal status SSA patch: %w", err)
-	}
-	force := true
-	updated, err := client.Resource(ComponentGVR).Namespace(ns).Patch(
-		ctx,
-		item.GetName(),
-		types.ApplyPatchType,
-		patchBytes,
-		metav1.PatchOptions{
-			FieldManager: FieldManagerBridge,
-			Force:        &force,
-		},
-		"status",
-	)
-	if err != nil {
+	applied := &unstructured.Unstructured{Object: map[string]any{"status": BuildStatusMap(res)}}
+	applied.SetGroupVersionKind(componentGVK)
+	applied.SetName(item.GetName())
+	applied.SetNamespace(item.GetNamespace())
+	if err := c.Status().Apply(ctx, client.ApplyConfigurationFromUnstructured(applied), client.FieldOwner(FieldManagerBridge), client.ForceOwnership); err != nil {
 		return err
-	}
-	if updated != nil {
-		item.Object = updated.Object
 	}
 	logging.Debug(ctx, "Updated Component status via Server-Side Apply", "name", item.GetName(), "state", res.State.String(), "observedGeneration", res.ObservedGeneration)
 	return nil
 }
 
-// SyncComponentFinalizers attaches or detaches the deletion protection finalizer on item in Kubernetes,
-// retrying on optimistic concurrency conflicts so concurrent resource updates do not fail reconciliation.
-func SyncComponentFinalizers(ctx context.Context, client dynamic.Interface, defaultNamespace string, item *unstructured.Unstructured, res *ReconcileResult) (*unstructured.Unstructured, error) {
-	if res == nil || item == nil || (!res.AddFinalizer && !res.RemoveFinalizer) {
+// AddCleanupFinalizer persists FinalizerCMSCleanup on item and returns the stored object; item is
+// not modified. The patch fails, rather than overwriting finalizers that other writers changed,
+// unless the stored finalizers still equal those of item. An item that already carries the cleanup
+// finalizer, or its legacy name, is returned as is without a write.
+func AddCleanupFinalizer(ctx context.Context, c client.Client, item *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+	if item == nil {
+		return nil, errNilComponentItem
+	}
+	if HasCleanupFinalizer(item) {
 		return item, nil
 	}
-	if client == nil {
-		return nil, errors.New("dynamic client must not be nil")
+	logging.Info(ctx, "Attaching CMS cleanup finalizer", "name", item.GetName())
+	return patchFinalizers(ctx, c, item, append(slices.Clone(item.GetFinalizers()), FinalizerCMSCleanup))
+}
+
+// ReleaseCleanupFinalizer removes FinalizerCMSCleanup, and its legacy name, from item, guarded like
+// AddCleanupFinalizer. A Component that no longer exists, or whose item carries neither name,
+// counts as released.
+func ReleaseCleanupFinalizer(ctx context.Context, c client.Client, item *unstructured.Unstructured) error {
+	if item == nil {
+		return errNilComponentItem
 	}
-	resClient := client.Resource(ComponentGVR).Namespace(resolveTargetNamespace(item, defaultNamespace))
-	current := item.DeepCopy()
-	var updated *unstructured.Unstructured
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		if !applyFinalizerMutation(ctx, current, res) {
-			updated = current
-			return nil
-		}
-		var updateErr error
-		updated, updateErr = resClient.Update(ctx, current, metav1.UpdateOptions{})
-		if apierrors.IsConflict(updateErr) {
-			latest, getErr := resClient.Get(ctx, current.GetName(), metav1.GetOptions{})
-			if getErr != nil {
-				return getErr
-			}
-			current = latest
-		}
-		return updateErr
+	if !HasCleanupFinalizer(item) {
+		return nil
+	}
+	logging.Info(ctx, "Releasing CMS cleanup finalizer", "name", item.GetName())
+	kept := slices.DeleteFunc(slices.Clone(item.GetFinalizers()), isCleanupFinalizer)
+	_, err := patchFinalizers(ctx, c, item, kept)
+	return client.IgnoreNotFound(err)
+}
+
+// HasCleanupFinalizer reports whether item carries FinalizerCMSCleanup or its legacy name.
+func HasCleanupFinalizer(item *unstructured.Unstructured) bool {
+	return slices.ContainsFunc(item.GetFinalizers(), isCleanupFinalizer)
+}
+
+func isCleanupFinalizer(f string) bool {
+	return f == FinalizerCMSCleanup || f == legacyFinalizerCMSCleanup
+}
+
+// jsonPatchOp is one RFC 6902 JSON patch operation.
+type jsonPatchOp struct {
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value"`
+}
+
+// patchFinalizers sets the finalizers of item to want with a JSON patch whose test op requires the
+// stored finalizers to equal those of item. A test against null passes only while none are stored.
+func patchFinalizers(ctx context.Context, c client.Client, item *unstructured.Unstructured, want []string) (*unstructured.Unstructured, error) {
+	if c == nil {
+		return nil, errors.New("client must not be nil")
+	}
+	var stored any
+	// The apiserver drops an empty finalizers list from stored objects, so "none stored" must be
+	// tested as null: a test against [] would never pass.
+	if f := item.GetFinalizers(); len(f) > 0 {
+		stored = f
+	}
+	patch, err := json.Marshal([]jsonPatchOp{
+		{Op: "test", Path: "/metadata/finalizers", Value: stored},
+		{Op: "add", Path: "/metadata/finalizers", Value: want},
 	})
 	if err != nil {
+		return nil, fmt.Errorf("failed to marshal finalizer patch: %w", err)
+	}
+	updated := item.DeepCopy()
+	if err := c.Patch(ctx, updated, client.RawPatch(types.JSONPatchType, patch)); err != nil {
 		return nil, err
 	}
 	return updated, nil
 }
 
-// PersistReconcileResult persists res for item to the API server: it syncs the deletion protection
-// finalizer with SyncComponentFinalizers and then applies .status with ApplyComponentStatusSSA,
-// unless the finalizer was released for deletion. It is a no-op for a nil res and rejects a nil item.
-// On a finalizer error the status is not written, so the next level-triggered pass retries both.
-// item is read-only: it does not reflect the persisted object, which callers must re-read if needed.
-func PersistReconcileResult(ctx context.Context, client dynamic.Interface, defaultNamespace string, item *unstructured.Unstructured, res *ReconcileResult) error {
+// PersistReconcileResult persists res for item: it releases the cleanup finalizer when res asks for
+// it, and otherwise applies .status with ApplyComponentStatusSSA. It is a no-op for a nil res and
+// rejects a nil item. item is not modified.
+func PersistReconcileResult(ctx context.Context, c client.Client, item *unstructured.Unstructured, res *ReconcileResult) error {
 	if res == nil {
 		return nil
 	}
 	if item == nil {
 		return errNilComponentItem
 	}
-	updated, err := SyncComponentFinalizers(ctx, client, defaultNamespace, item.DeepCopy(), res)
-	if err != nil {
-		return fmt.Errorf("failed to sync finalizers: %w", err)
-	}
 	if res.RemoveFinalizer {
+		if err := ReleaseCleanupFinalizer(ctx, c, item); err != nil {
+			return fmt.Errorf("failed to release finalizer: %w", err)
+		}
 		return nil
 	}
-	if err := ApplyComponentStatusSSA(ctx, client, defaultNamespace, updated, res); err != nil {
+	// A Component that no longer exists has no status left to persist.
+	if err := ApplyComponentStatusSSA(ctx, c, item, res); client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("failed to apply status: %w", err)
 	}
 	return nil
-}
-
-func applyFinalizerMutation(ctx context.Context, item *unstructured.Unstructured, res *ReconcileResult) bool {
-	hasFin := hasDeletionProtectionFinalizer(item.GetFinalizers())
-	if res.AddFinalizer && !hasFin {
-		item.SetFinalizers(append(item.GetFinalizers(), FinalizerDeletionProtection))
-		logging.Info(ctx, "Attaching deletion protection finalizer", "name", item.GetName())
-		return true
-	}
-	if res.RemoveFinalizer && hasFin {
-		item.SetFinalizers(removeDeletionProtectionFinalizer(item.GetFinalizers()))
-		logging.Info(ctx, "Removing deletion protection finalizer", "name", item.GetName())
-		return true
-	}
-	return false
-}
-
-func resolveTargetNamespace(item *unstructured.Unstructured, defaultNamespace string) string {
-	if ns := item.GetNamespace(); ns != "" {
-		return ns
-	}
-	return defaultNamespace
-}
-
-func hasDeletionProtectionFinalizer(finalizers []string) bool {
-	for _, f := range finalizers {
-		if f == FinalizerDeletionProtection {
-			return true
-		}
-	}
-	return false
-}
-
-func removeDeletionProtectionFinalizer(finalizers []string) []string {
-	var updated []string
-	for _, f := range finalizers {
-		if f != FinalizerDeletionProtection {
-			updated = append(updated, f)
-		}
-	}
-	return updated
 }

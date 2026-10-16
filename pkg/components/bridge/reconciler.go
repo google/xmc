@@ -56,9 +56,7 @@ type ReconcileResult struct {
 	Conditions []Condition
 	// Access contains resolved network access coordinates and environment variables.
 	Access *AccessStatus
-	// AddFinalizer indicates whether the deletion protection finalizer should be attached.
-	AddFinalizer bool
-	// RemoveFinalizer indicates whether the deletion protection finalizer should be detached.
+	// RemoveFinalizer indicates that cleanup finished and the CMS cleanup finalizer may be released.
 	RemoveFinalizer bool
 }
 
@@ -92,10 +90,6 @@ type ReconcileComponentInput struct {
 	Spec *componentspb.ComponentSpec
 	// IsDeleting indicates whether the custom resource has a non-nil deletionTimestamp.
 	IsDeleting bool
-	// HasFinalizer indicates whether the deletion protection finalizer is already present on the resource.
-	HasFinalizer bool
-	// DeletionProtection indicates whether the custom resource is protected against deletion.
-	DeletionProtection bool
 	// Enabled indicates whether the component should be active.
 	Enabled bool
 	// ExistingConditions contains conditions previously reported on the custom resource.
@@ -110,11 +104,13 @@ type ReconcileComponentInput struct {
 // ReconcileComponent executes a single reconciliation pass for a Component.
 // The flow executes the following steps:
 // 1. Validates input name and spec.
-// 2. If IsDeleting, delegates to reconcileDeletion (gated by DeletionProtection).
-// 3. Attaches deletion protection finalizer if not already present.
-// 4. If !Enabled, synchronizes intent via applyDisabledIntent (tolerating a dependency that is not
+// 2. If IsDeleting, delegates to reconcileDeletion.
+// 3. If !Enabled, synchronizes intent via applyDisabledIntent (tolerating a dependency that is not
 // registered in CMS) and handles deactivation via reconcileDisabled (gated by CMS deactivation safety).
-// 5. Otherwise delegates to reconcileEnabled (dependency gating, intent, actuation, health).
+// 4. Otherwise delegates to reconcileEnabled (dependency gating, intent, actuation, health).
+//
+// Callers must persist FinalizerCMSCleanup on the Component before the first pass, so that every
+// CMS or workload side effect is cleaned up on deletion; ComponentController does.
 func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileComponentInput) (*ReconcileResult, error) {
 	if in.Name == "" || in.Spec == nil {
 		return nil, errors.New("component name and spec must not be empty/nil")
@@ -127,11 +123,6 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 
 	if in.IsDeleting {
 		return r.reconcileDeletion(ctx, in, canonicalName, res)
-	}
-
-	if !in.HasFinalizer {
-		res.AddFinalizer = true
-		logging.Info(ctx, "Attaching deletion protection finalizer", "name", in.Name)
 	}
 	if !in.Enabled {
 		if err := r.applyDisabledIntent(ctx, in, canonicalName, res); err != nil {
@@ -443,14 +434,7 @@ func (r *Reconciler) ReconcileWithDependencies(ctx context.Context, obj *unstruc
 	if obj == nil {
 		return nil, errors.New("unstructured object must not be nil")
 	}
-	hasFinalizer := false
-	for _, f := range obj.GetFinalizers() {
-		if f == FinalizerDeletionProtection {
-			hasFinalizer = true
-			break
-		}
-	}
-	spec, dp, enabled := ParseSpecFromUnstructured(obj.Object["spec"])
+	spec, _, enabled := ParseSpecFromUnstructured(obj.Object["spec"])
 	opts := ParseHelmComponentOptions(obj.GetName(), obj.GetNamespace(), obj.Object["spec"], spec)
 	wopts := ParseWrapperRef(obj.Object["spec"], obj.GetNamespace())
 	return r.ReconcileComponent(ctx, ReconcileComponentInput{
@@ -459,8 +443,6 @@ func (r *Reconciler) ReconcileWithDependencies(ctx context.Context, obj *unstruc
 		Generation:         obj.GetGeneration(),
 		Spec:               spec,
 		IsDeleting:         obj.GetDeletionTimestamp() != nil,
-		HasFinalizer:       hasFinalizer,
-		DeletionProtection: dp,
 		Enabled:            enabled,
 		ExistingConditions: ParseConditionsFromUnstructured(obj.Object["status"]),
 		HelmOpts:           opts,

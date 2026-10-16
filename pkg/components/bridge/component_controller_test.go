@@ -16,20 +16,17 @@ package bridge
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
-	k8stesting "k8s.io/client-go/testing"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -44,93 +41,56 @@ func controllerTestComponent(name string, spec map[string]any) *unstructured.Uns
 	return u
 }
 
-// newTestComponentController returns a ComponentController whose reader is a controller-runtime
-// fake client and whose writer is a dynamic fake client, both holding objs. The writer applies
-// status patches to its tracker, and fails them with patchErr if it is non-nil.
-func newTestComponentController(t *testing.T, cms *mockCMS, patchErr error, objs ...*unstructured.Unstructured) (*ComponentController, *dynamicfake.FakeDynamicClient) {
+// newTestComponentController returns a ComponentController over a fake Component client holding
+// objs (see newFakeComponentClient), whose writes fail per failures, together with that client.
+func newTestComponentController(t *testing.T, cms *mockCMS, failures map[string]error, objs ...*unstructured.Unstructured) (*ComponentController, client.Client, *componentWrites) {
 	t.Helper()
-	scheme := newStatusApplierTestScheme()
-	builder := fake.NewClientBuilder().WithScheme(scheme)
-	writerObjs := make([]runtime.Object, 0, len(objs))
-	for _, obj := range objs {
-		builder = builder.WithObjects(obj.DeepCopy())
-		writerObjs = append(writerObjs, obj.DeepCopy())
-	}
-	writer := dynamicfake.NewSimpleDynamicClient(scheme, writerObjs...)
-	writer.PrependReactor("patch", "components", func(action k8stesting.Action) (bool, runtime.Object, error) {
-		if patchErr != nil {
-			return true, nil, patchErr
-		}
-		return true, nil, applyStatusPatch(writer, action.(k8stesting.PatchAction))
-	})
+	c, writes := newFakeComponentClient(t, failures, objs...)
 	r, err := NewReconciler(cms, nil, nil)
 	if err != nil {
 		t.Fatalf("NewReconciler() failed: %v", err)
 	}
 	opts := ComponentControllerOptions{ProbeInterval: time.Minute, ReconcileTimeout: 5 * time.Second}
-	return NewComponentController(builder.Build(), writer, r, opts), writer
+	return NewComponentController(c, r, opts), c, writes
 }
 
-// applyStatusPatch stores the status of the server-side apply patch pa in the tracker of client.
-func applyStatusPatch(client *dynamicfake.FakeDynamicClient, pa k8stesting.PatchAction) error {
-	var patch map[string]any
-	if err := json.Unmarshal(pa.GetPatch(), &patch); err != nil {
-		return err
-	}
-	obj, err := client.Tracker().Get(ComponentGVR, pa.GetNamespace(), pa.GetName())
-	if err != nil {
-		return err
-	}
-	u := obj.(*unstructured.Unstructured).DeepCopy()
-	u.Object["status"] = patch["status"]
-	return client.Tracker().Update(ComponentGVR, u, pa.GetNamespace())
-}
-
-// persistedReadyReason returns the Ready condition reason that client holds for Component name.
-func persistedReadyReason(t *testing.T, client *dynamicfake.FakeDynamicClient, name string) string {
+// persistedReadyReason returns the Ready condition reason that c stores for Component name.
+func persistedReadyReason(t *testing.T, c client.Client, name string) string {
 	t.Helper()
-	obj, err := client.Tracker().Get(ComponentGVR, controllerTestNamespace, name)
-	if err != nil {
-		t.Fatalf("tracker Get(%s) failed: %v", name, err)
-	}
-	ready := findCondition(ParseConditionsFromUnstructured(obj.(*unstructured.Unstructured).Object["status"]), ConditionTypeReady)
+	u := getFakeComponent(t, c, controllerTestNamespace, name)
+	ready := findCondition(ParseConditionsFromUnstructured(u.Object["status"]), ConditionTypeReady)
 	if ready == nil {
 		return ""
 	}
 	return ready.Reason
 }
 
-// writeActions summarizes the mutating actions of client as "verb" or "verb/subresource".
-func writeActions(client *dynamicfake.FakeDynamicClient) []string {
-	var got []string
-	for _, a := range client.Actions() {
-		if a.GetVerb() == "get" || a.GetVerb() == "list" {
-			continue
-		}
-		verb := a.GetVerb()
-		if a.GetSubresource() != "" {
-			verb += "/" + a.GetSubresource()
-		}
-		got = append(got, verb)
-	}
-	return got
-}
-
 func TestComponentControllerReconcile(t *testing.T) {
 	enabled := map[string]any{"enabled": true, "deletionProtection": false}
-	deleting := controllerTestComponent("deleting", enabled)
-	deleting.SetFinalizers([]string{FinalizerDeletionProtection})
-	deleting.SetDeletionTimestamp(&metav1.Time{Time: time.Now()})
+	finalizedWith := func(name, finalizer string) *unstructured.Unstructured {
+		u := controllerTestComponent(name, enabled)
+		u.SetFinalizers([]string{finalizer})
+		return u
+	}
+	finalized := func(name string) *unstructured.Unstructured { return finalizedWith(name, FinalizerCMSCleanup) }
+	deleting := func(finalizers ...string) *unstructured.Unstructured {
+		u := controllerTestComponent("deleting", enabled)
+		u.SetFinalizers(finalizers)
+		u.SetDeletionTimestamp(&metav1.Time{Time: time.Now()})
+		return u
+	}
 
 	tests := []struct {
-		name        string
-		objs        []*unstructured.Unstructured
-		cms         *mockCMS
-		patchErr    error
-		target      string
-		wantResult  reconcile.Result
-		wantErr     bool
-		wantActions []string
+		name         string
+		objs         []*unstructured.Unstructured
+		cms          *mockCMS
+		failures     map[string]error
+		target       string
+		wantResult   reconcile.Result
+		wantErr      bool
+		wantWrites   []string
+		wantSetCalls int
+		wantFinal    []string
 	}{
 		{
 			name:       "missing Component is ignored",
@@ -139,44 +99,118 @@ func TestComponentControllerReconcile(t *testing.T) {
 			wantResult: reconcile.Result{},
 		},
 		{
-			name:        "successful pass persists and requeues after the probe interval",
-			objs:        []*unstructured.Unstructured{controllerTestComponent("app", enabled)},
-			cms:         &mockCMS{},
-			target:      "app",
-			wantResult:  reconcile.Result{RequeueAfter: time.Minute},
-			wantActions: []string{"update", "patch/status"},
+			name:         "new Component gets the finalizer before CMS sees it",
+			objs:         []*unstructured.Unstructured{controllerTestComponent("app", enabled)},
+			cms:          &mockCMS{},
+			target:       "app",
+			wantResult:   reconcile.Result{RequeueAfter: time.Minute},
+			wantWrites:   []string{"patch", "apply/status"},
+			wantSetCalls: 1,
+			wantFinal:    []string{FinalizerCMSCleanup},
 		},
 		{
-			name:        "failed pass persists its status and returns the error for backoff",
-			objs:        []*unstructured.Unstructured{controllerTestComponent("app", enabled)},
-			cms:         &mockCMS{setErr: errors.New("cms unavailable")},
-			target:      "app",
-			wantResult:  reconcile.Result{},
-			wantErr:     true,
-			wantActions: []string{"update", "patch/status"},
+			name:       "failed finalizer attach skips every side effect",
+			objs:       []*unstructured.Unstructured{controllerTestComponent("app", enabled)},
+			cms:        &mockCMS{},
+			failures:   map[string]error{"patch": errors.New("apiserver unavailable")},
+			target:     "app",
+			wantResult: reconcile.Result{},
+			wantErr:    true,
+			wantWrites: []string{"patch"},
 		},
 		{
-			name:        "failed persistence returns the error for backoff",
-			objs:        []*unstructured.Unstructured{controllerTestComponent("app", enabled)},
-			cms:         &mockCMS{},
-			patchErr:    errors.New("apiserver unavailable"),
-			target:      "app",
-			wantResult:  reconcile.Result{},
-			wantErr:     true,
-			wantActions: []string{"update", "patch/status"},
+			name:         "successful pass persists and requeues after the probe interval",
+			objs:         []*unstructured.Unstructured{finalized("app")},
+			cms:          &mockCMS{},
+			target:       "app",
+			wantResult:   reconcile.Result{RequeueAfter: time.Minute},
+			wantWrites:   []string{"apply/status"},
+			wantSetCalls: 1,
+			wantFinal:    []string{FinalizerCMSCleanup},
 		},
 		{
-			name:        "released finalizer is not requeued",
-			objs:        []*unstructured.Unstructured{deleting},
-			cms:         &mockCMS{},
-			target:      "deleting",
-			wantResult:  reconcile.Result{},
-			wantActions: []string{"update"},
+			name:         "failed pass persists its status and returns the error for backoff",
+			objs:         []*unstructured.Unstructured{finalized("app")},
+			cms:          &mockCMS{setErr: errors.New("cms unavailable")},
+			target:       "app",
+			wantResult:   reconcile.Result{},
+			wantErr:      true,
+			wantWrites:   []string{"apply/status"},
+			wantSetCalls: 1,
+			wantFinal:    []string{FinalizerCMSCleanup},
+		},
+		{
+			name:         "failed persistence returns the error for backoff",
+			objs:         []*unstructured.Unstructured{finalized("app")},
+			cms:          &mockCMS{},
+			failures:     map[string]error{"apply/status": errors.New("apiserver unavailable")},
+			target:       "app",
+			wantResult:   reconcile.Result{},
+			wantErr:      true,
+			wantWrites:   []string{"apply/status"},
+			wantSetCalls: 1,
+			wantFinal:    []string{FinalizerCMSCleanup},
+		},
+		{
+			name:       "deletion releases the finalizer and is not requeued",
+			objs:       []*unstructured.Unstructured{deleting(FinalizerCMSCleanup, "other-fin")},
+			cms:        &mockCMS{},
+			target:     "deleting",
+			wantResult: reconcile.Result{},
+			wantWrites: []string{"patch"},
+			wantFinal:  []string{"other-fin"},
+		},
+		{
+			name:       "deletion without the finalizer has nothing to clean up",
+			objs:       []*unstructured.Unstructured{deleting("other-fin")},
+			cms:        &mockCMS{},
+			target:     "deleting",
+			wantResult: reconcile.Result{},
+			wantFinal:  []string{"other-fin"},
+		},
+		{
+			name:       "deletion with only the legacy finalizer cleans up and releases it",
+			objs:       []*unstructured.Unstructured{deleting(legacyFinalizerCMSCleanup, "other-fin")},
+			cms:        &mockCMS{},
+			target:     "deleting",
+			wantResult: reconcile.Result{},
+			wantWrites: []string{"patch"},
+			wantFinal:  []string{"other-fin"},
+		},
+		{
+			name:         "legacy finalizer counts as attached",
+			objs:         []*unstructured.Unstructured{finalizedWith("app", legacyFinalizerCMSCleanup)},
+			cms:          &mockCMS{},
+			target:       "app",
+			wantResult:   reconcile.Result{RequeueAfter: time.Minute},
+			wantWrites:   []string{"apply/status"},
+			wantSetCalls: 1,
+			wantFinal:    []string{legacyFinalizerCMSCleanup},
+		},
+		{
+			name:       "finalizer patch rejected as stale returns an error for backoff without side effects",
+			objs:       []*unstructured.Unstructured{controllerTestComponent("app", enabled)},
+			cms:        &mockCMS{},
+			failures:   map[string]error{"patch": apierrors.NewInvalid(componentGVK.GroupKind(), "app", nil)},
+			target:     "app",
+			wantErr:    true,
+			wantWrites: []string{"patch"},
+		},
+		{
+			name:         "status write after the Component is gone is not an error",
+			objs:         []*unstructured.Unstructured{finalized("app")},
+			cms:          &mockCMS{},
+			failures:     map[string]error{"apply/status": apierrors.NewNotFound(ComponentGVR.GroupResource(), "app")},
+			target:       "app",
+			wantResult:   reconcile.Result{RequeueAfter: time.Minute},
+			wantWrites:   []string{"apply/status"},
+			wantSetCalls: 1,
+			wantFinal:    []string{FinalizerCMSCleanup},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, writer := newTestComponentController(t, tt.cms, tt.patchErr, tt.objs...)
+			c, cl, writes := newTestComponentController(t, tt.cms, tt.failures, tt.objs...)
 			req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: controllerTestNamespace, Name: tt.target}}
 
 			got, err := c.Reconcile(context.Background(), req)
@@ -187,8 +221,16 @@ func TestComponentControllerReconcile(t *testing.T) {
 			if diff := cmp.Diff(tt.wantResult, got); diff != "" {
 				t.Errorf("Reconcile() result mismatch (-want +got):\n%s", diff)
 			}
-			if diff := cmp.Diff(tt.wantActions, writeActions(writer)); diff != "" {
-				t.Errorf("writer actions mismatch (-want +got):\n%s", diff)
+			if diff := cmp.Diff(tt.wantWrites, writes.calls); diff != "" {
+				t.Errorf("writes mismatch (-want +got):\n%s", diff)
+			}
+			if tt.cms.setCalls != tt.wantSetCalls {
+				t.Errorf("CMS SetComponentIntent calls = %d, want %d", tt.cms.setCalls, tt.wantSetCalls)
+			}
+			if len(tt.objs) > 0 {
+				if diff := cmp.Diff(tt.wantFinal, getFakeComponent(t, cl, controllerTestNamespace, tt.target).GetFinalizers()); diff != "" {
+					t.Errorf("stored finalizers mismatch (-want +got):\n%s", diff)
+				}
 			}
 		})
 	}
@@ -222,14 +264,14 @@ func TestComponentControllerReconcileGatesOnNamespaceDependencies(t *testing.T) 
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, writer := newTestComponentController(t, &mockCMS{}, nil, tt.objs...)
+			c, cl, _ := newTestComponentController(t, &mockCMS{}, nil, tt.objs...)
 			req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: controllerTestNamespace, Name: "app"}}
 
 			if _, err := c.Reconcile(context.Background(), req); err != nil {
 				t.Fatalf("Reconcile() unexpected error: %v", err)
 			}
 
-			if got := persistedReadyReason(t, writer, "app"); got != tt.wantReason {
+			if got := persistedReadyReason(t, cl, "app"); got != tt.wantReason {
 				t.Errorf("persisted Ready reason = %q, want %q", got, tt.wantReason)
 			}
 		})
@@ -237,7 +279,7 @@ func TestComponentControllerReconcileGatesOnNamespaceDependencies(t *testing.T) 
 }
 
 func TestComponentControllerMapDependents(t *testing.T) {
-	c, _ := newTestComponentController(t, &mockCMS{}, nil,
+	c, _, _ := newTestComponentController(t, &mockCMS{}, nil,
 		controllerTestComponent("db", map[string]any{"enabled": true}),
 		controllerTestComponent("app", map[string]any{"enabled": true, "dependencies": []any{"db"}}),
 		controllerTestComponent("worker", map[string]any{"enabled": true, "dependencies": []any{"app", "db"}}),

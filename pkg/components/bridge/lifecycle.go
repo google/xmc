@@ -27,7 +27,14 @@ import (
 )
 
 const (
-	FinalizerDeletionProtection = "finalizers.xmc.dev/deletion-protection"
+	// FinalizerCMSCleanup holds a Component's deletion until xmc-bridge has removed it from CMS and
+	// torn down its workload. It never vetoes deletion: the component-deletion-protection
+	// ValidatingAdmissionPolicy enforces spec.deletionProtection.
+	FinalizerCMSCleanup = "xmc.dev/cms-cleanup"
+	// legacyFinalizerCMSCleanup is the name earlier xmc-bridge versions gave FinalizerCMSCleanup.
+	// Components that still carry it are cleaned up as if they carried FinalizerCMSCleanup, and
+	// releasing the cleanup finalizer removes both names.
+	legacyFinalizerCMSCleanup = "finalizers.xmc.dev/deletion-protection"
 	// ReasonDeactivationBlocked marks a disabled component kept running because enabled components depend on it.
 	ReasonDeactivationBlocked = "DeactivationBlocked"
 	// ReasonDeactivationIncomplete marks a disabled component whose workload was removed before the CMS handshake completed.
@@ -37,18 +44,10 @@ const (
 	deactivationRecheckInterval = 30 * time.Second
 )
 
-// reconcileDeletion handles component teardown when a deletionTimestamp is present.
-// If DeletionProtection is true, deletion is blocked, DeletionBlocked condition is set to True,
-// and finalizers remain intact. Otherwise, CMS ExecuteDeletion is called first to validate
-// deletion safety before mutating Kubernetes resources. If CMS reports NotFound, deletion
-// is treated as idempotently completed in CMS and proceeds to 1P workload teardown.
+// reconcileDeletion tears a deleted Component down: CMS ExecuteDeletion first (a NotFound means
+// CMS already deleted it), then the 1P workload per deletionPolicy, then the finalizer is
+// released. spec.deletionProtection is not consulted: a deletion that passed admission is final.
 func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	if in.DeletionProtection {
-		logging.Warn(ctx, "Component deletion blocked by deletion protection", "name", in.Name, "generation", in.Generation)
-		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDeletionBlocked, ConditionStatusTrue, in.Generation, "DeletionProtectionEnabled", fmt.Sprintf("Cannot delete %q: deletionProtection is enabled", in.Name))
-		setReadiness(res, in, ConditionStatusFalse, ConditionStatusFalse, "DeletingBlocked", "Deletion blocked by deletion protection")
-		return res, nil
-	}
 	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
 		if status.Code(err) != codes.NotFound {
 			setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "CMSDeletionFailed", err.Error())

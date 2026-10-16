@@ -53,6 +53,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -395,7 +396,7 @@ func startNamespaceBridge(t *testing.T, h *kindClusterHarness, namespace string)
 	if err != nil {
 		t.Fatalf("failed to create bridge manager for %s: %v", namespace, err)
 	}
-	c := bridge.NewComponentController(mgr.GetClient(), h.dynClient, h.reconciler, bridge.ComponentControllerOptions{ProbeInterval: kindBridgeProbeInterval, ReconcileTimeout: 30 * time.Second})
+	c := bridge.NewComponentController(mgr.GetClient(), h.reconciler, bridge.ComponentControllerOptions{ProbeInterval: kindBridgeProbeInterval, ReconcileTimeout: 30 * time.Second})
 	if err := c.SetupWithManager(mgr); err != nil {
 		t.Fatalf("failed to set up bridge controller for %s: %v", namespace, err)
 	}
@@ -410,24 +411,25 @@ func startNamespaceBridge(t *testing.T, h *kindClusterHarness, namespace string)
 	})
 }
 
-// releaseComponentFinalizers removes the bridge deletion protection finalizer from every Component in
+// releaseComponentFinalizers removes the bridge cleanup finalizer from every Component in
 // namespace. The bridge stops before this cleanup, so finalized Components would otherwise keep the
 // namespace in Terminating on a reused KinD cluster. Failures are logged, not fatal, because this
 // runs during cleanup.
 func releaseComponentFinalizers(ctx context.Context, t *testing.T, h *kindClusterHarness, namespace string) {
 	t.Helper()
-	compRes := h.dynClient.Resource(componentGVR).Namespace(namespace)
-	list, err := compRes.List(ctx, metav1.ListOptions{})
+	c, err := client.New(h.restCfg, client.Options{})
+	if err != nil {
+		t.Logf("cleanup: failed to create client for %s: %v", namespace, err)
+		return
+	}
+	list, err := h.dynClient.Resource(componentGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		t.Logf("cleanup: failed to list Components in %s: %v", namespace, err)
 		return
 	}
-	release := &bridge.ReconcileResult{RemoveFinalizer: true}
 	for i := range list.Items {
-		item := &list.Items[i]
-		// SyncComponentFinalizers refreshes the item and retries on conflicts.
-		if _, err := bridge.SyncComponentFinalizers(ctx, h.dynClient, namespace, item, release); err != nil && !apierrors.IsNotFound(err) {
-			t.Logf("cleanup: failed to release finalizer of Component %s/%s: %v", namespace, item.GetName(), err)
+		if err := bridge.ReleaseCleanupFinalizer(ctx, c, &list.Items[i]); err != nil {
+			t.Logf("cleanup: failed to release finalizer of Component %s/%s: %v", namespace, list.Items[i].GetName(), err)
 		}
 	}
 }

@@ -46,7 +46,7 @@ func TestReconcileComponent_IntentCarriesCRGeneration(t *testing.T) {
 				t.Fatalf("NewReconciler() error = %v", err)
 			}
 			in := ReconcileComponentInput{
-				Namespace: "xmc", Name: "redpanda", Generation: 7, HasFinalizer: true, Enabled: tt.enabled,
+				Namespace: "xmc", Name: "redpanda", Generation: 7, Enabled: tt.enabled,
 				Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
 			}
 			if _, err := r.ReconcileComponent(context.Background(), in); err != nil {
@@ -70,7 +70,7 @@ func TestReconcileComponent_UnchangedIntentKeepsCMSRecord(t *testing.T) {
 		t.Fatalf("NewReconciler() error = %v", err)
 	}
 	in := ReconcileComponentInput{
-		Namespace: "xmc", Name: "redpanda", Generation: 3, HasFinalizer: true, Enabled: true,
+		Namespace: "xmc", Name: "redpanda", Generation: 3, Enabled: true,
 		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
 	}
 	for pass := 1; pass <= 3; pass++ {

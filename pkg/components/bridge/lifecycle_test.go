@@ -115,12 +115,11 @@ func TestReconciler_DeleteDisabledHelmComponent_SkipsWhenInactive(t *testing.T) 
 
 	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
 	in := ReconcileComponentInput{
-		Namespace:    "xmc",
-		Name:         "metrics",
-		Generation:   1,
-		Spec:         spec1P,
-		Enabled:      false,
-		HasFinalizer: true,
+		Namespace:  "xmc",
+		Name:       "metrics",
+		Generation: 1,
+		Spec:       spec1P,
+		Enabled:    false,
 	}
 	res, err := r.ReconcileComponent(ctx, in)
 	if err != nil {
@@ -144,12 +143,11 @@ func TestReconciler_ColdStartDeactivation_DeletesPreviouslyActiveComponent(t *te
 	}
 
 	in := ReconcileComponentInput{
-		Namespace:    "xmc",
-		Name:         "ingestion-gateway",
-		Generation:   2,
-		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
-		Enabled:      false,
-		HasFinalizer: true,
+		Namespace:  "xmc",
+		Name:       "ingestion-gateway",
+		Generation: 2,
+		Spec:       &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+		Enabled:    false,
 		ExistingConditions: []Condition{
 			{
 				Type:               ConditionTypeReady,
@@ -188,7 +186,7 @@ func TestReconcileComponent_GatedDependentBlocksDeactivationInCMS(t *testing.T) 
 	reconcile := func(name string, gen int64, enabled bool, s *componentspb.ComponentSpec, existing []Condition) *ReconcileResult {
 		t.Helper()
 		res, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
-			Namespace: "xmc", Name: name, Generation: gen, Spec: s, HasFinalizer: true, Enabled: enabled,
+			Namespace: "xmc", Name: name, Generation: gen, Spec: s, Enabled: enabled,
 			ExistingConditions: existing, Dependencies: unreadyRedpanda,
 		})
 		if err != nil {
@@ -364,7 +362,7 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r, _ := NewReconciler(tt.cms, nil, tt.helm)
 			res, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
-				Namespace: "xmc", Name: "redpanda", Generation: 2, Spec: tt.spec, HasFinalizer: true,
+				Namespace: "xmc", Name: "redpanda", Generation: 2, Spec: tt.spec,
 				Enabled: false, ExistingConditions: tt.existing,
 			})
 			if (err != nil) != tt.wantErr {
@@ -384,7 +382,7 @@ func TestReconcileComponent_DeactivationUnblocksAcrossPasses(t *testing.T) {
 	cms, helm := &mockCMS{prepareErr: status.Error(codes.FailedPrecondition, "component redpanda has active dependents: [ingestion-gateway]")}, &mockHelm{active: true}
 	r, _ := NewReconciler(cms, nil, helm)
 	in := ReconcileComponentInput{
-		Namespace: "xmc", Name: "redpanda", Generation: 2, HasFinalizer: true, Enabled: false,
+		Namespace: "xmc", Name: "redpanda", Generation: 2, Enabled: false,
 		Spec:               &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
 		ExistingConditions: []Condition{{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy}},
 	}
@@ -430,7 +428,7 @@ func TestReconcileComponent_BlockAfterTeardownSyncsCMS(t *testing.T) {
 			cms := &mockCMS{prepareErr: status.Error(codes.FailedPrecondition, "component redpanda has active dependents: [ingestion-gateway]")}
 			r, _ := NewReconciler(cms, nil, &mockHelm{})
 			_, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
-				Namespace: "xmc", Name: "redpanda", Generation: 2, HasFinalizer: true, Enabled: false,
+				Namespace: "xmc", Name: "redpanda", Generation: 2, Enabled: false,
 				Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
 				ExistingConditions: []Condition{{
 					Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 2,

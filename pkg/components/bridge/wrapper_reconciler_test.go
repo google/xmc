@@ -272,13 +272,11 @@ func TestReconcile_OperatorlessProfile3(t *testing.T) {
 
 	// Case 1: Operator-less component with static endpoint probes healthy
 	in := ReconcileComponentInput{
-		Namespace:          "xmc",
-		Name:               "external-saas-db",
-		Generation:         1,
-		Spec:               specProfile3,
-		HasFinalizer:       true,
-		DeletionProtection: true,
-		Enabled:            true,
+		Namespace:  "xmc",
+		Name:       "external-saas-db",
+		Generation: 1,
+		Spec:       specProfile3,
+		Enabled:    true,
 		WrapperOpts: WrapperRef{
 			EndpointJSONPath: "http://external-db.example.com:5432",
 		},

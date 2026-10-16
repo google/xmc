@@ -19,11 +19,12 @@ graph TD
 
 ## State Machine & Lifecycle
 
+Before any of these steps, `ComponentController` stores the `xmc.dev/cms-cleanup` finalizer on a Component that lacks it, through a JSON patch whose `test` op requires the stored finalizers to equal the cached ones, and continues the same pass on the patched object. No CMS or Helm side effect happens until the finalizer is stored, so a deletion can never skip the cleanup. A failed patch ends the pass with no side effect and returns an error, so the Component is retried with backoff: a `422 Invalid` rejection usually means the cached Component is stale (its finalizers changed or its deletion started), and the retry reads the newer copy. A Component already being deleted without the finalizer has nothing to clean up and is skipped. The `finalizers.xmc.dev/deletion-protection` finalizer of earlier bridge versions counts as the cleanup finalizer, and releasing the cleanup finalizer removes both names.
+
 The `Reconciler` evaluates Component CRs through a deterministic state machine:
 
-1. **Deletion Evaluation & Finalizer Gating**:
-   - If `metadata.deletionTimestamp` is present and `spec.deletionProtection: true`, emit `ConditionTypeDeletionBlocked` (`True`) and prevent deletion.
-   - If unprotected, prune child workloads, execute CMS deletion, and remove the `finalizers.xmc.dev/deletion-protection` finalizer.
+1. **Deletion**:
+   - If `metadata.deletionTimestamp` is present, execute CMS deletion, tear down child workloads per `spec.deletionPolicy`, and release the `xmc.dev/cms-cleanup` finalizer. `spec.deletionProtection` does not gate this step: the `component-deletion-protection` admission policy is its only enforcement, so a deletion that reached the bridge was already admitted (for example, one issued by the namespace controller).
 2. **Intent Registration** (enabled components):
    - Propagate desired spec (including `spec.dependencies`) to CMS via `SetComponentIntent` on every pass, with the CR generation as `ComponentSpec.generation`. CMS treats an unchanged intent as a no-op and moves a changed one to `COMPONENT_STATE_PENDING_RECONCILIATION` (see "Idempotent intent" in [../README.md](../README.md)). Registration happens **before** and independently of the activation gate, so CMS knows the dependency edges that make deactivation of a dependency unsafe even while the dependent is still waiting.
    - A `FailedPrecondition` whose message starts with `store.DependencyNotFoundMessagePrefix` (either store: a dependency is not registered yet) is treated as "waiting on dependencies", not as an error; the intent is retried on the next pass. Any other intent failure reports `IntentApplicationFailed`.
@@ -53,7 +54,6 @@ The `Reconciler` evaluates Component CRs through a deterministic state machine:
 | :--- | :--- | :--- |
 | `Ready` | `True` / `False` | Operational health and readiness of the underlying component. |
 | `Degraded` | `True` / `False` | Presence of active probe failures, crash loops, or provisioning errors. |
-| `DeletionBlocked` | `True` / `False` | Deletion request blocked due to active deletion protection policy. |
 | `DeactivationBlocked` | `True` | `spec.enabled: false` blocked because enabled components depend on this one; the workload keeps running. |
 | `DependenciesReady` | `True` / `False` | Informational, on actuated enabled components with `spec.dependencies`. `False` means Helm upgrades are held (see `HelmUpgradePending`). |
 
@@ -261,14 +261,14 @@ The reconciler unifies third-party CRD inspection and active health probing in `
 Production-grade controller reliability, conflict elimination, and Cloud Spanner write throttling:
 
 - **controller-runtime Controller (`component_controller.go`, `component_manager.go`, `component_rate_limiter.go`)**:
-  - `ComponentController` runs the `Reconciler` per Component in a controller-runtime manager whose cache is limited to one namespace (`ComponentManagerOptions` in `component_manager.go`). The manager's client sets `CacheOptions.Unstructured`, so the Get of the reconciled Component and the Lists behind the dependency snapshot and the dependents watch are served from that cache, not the API server; reads can therefore lag the latest write by one watch event. Results are persisted through a dynamic client with `PersistReconcileResult`.
+  - `ComponentController` runs the `Reconciler` per Component in a controller-runtime manager whose cache is limited to one namespace (`ComponentManagerOptions` in `component_manager.go`). The manager's client sets `CacheOptions.Unstructured`, so the Get of the reconciled Component and the Lists behind the dependency snapshot and the dependents watch are served from that cache, not the API server; reads can therefore lag the latest write by one watch event. The same manager client persists results with `AddCleanupFinalizer` and `PersistReconcileResult`.
   - With `ComponentManagerConfig.LeaderElection`, the manager runs the controller only while it holds the `ComponentLeaseName` (`xmc-bridge`) Lease and releases it on shutdown. `NewHelmLeaderRunnable` (`helm_leader_runnable.go`) ties the Helm manager to the same Lease: it hydrates once elected and stops Helm upgrades before the Lease is released. `AddComponentHealthChecks` registers a `/healthz` ping and a `/readyz` check that passes once the cache has synced, which followers also reach.
   - A Component is reconciled when its generation, labels or annotations change or its deletion starts; when a Component it depends on is created, deleted, changes generation, or changes readiness as a dependency (`dependencyReadinessChanged`); and `ProbeInterval` after each successful pass.
   - A failed pass persists its status and returns its error, so `NewComponentRateLimiter` retries it with per-Component exponential backoff from 5s to 300s and ±10% jitter.
 - **Server-Side Apply (SSA) Status & Finalizer Helpers (`status_applier.go`)**:
-  - `ApplyComponentStatusSSA`: Persists status updates via Kubernetes Server-Side Apply (`types.ApplyPatchType`) against the `/status` subresource using `FieldManagerBridge = "xmc-bridge"`.
-  - `SyncComponentFinalizers`: Synchronizes `metadata.finalizers` on `Component` CRs via optimistic concurrency update.
-  - `PersistReconcileResult`: Persists a `ReconcileResult` to the API server in a fixed order: finalizers first, then `.status` via SSA (skipped once the finalizer is released, and skipped on a finalizer error so the next pass retries both). It rejects a nil item and never mutates the caller's item. `ComponentController` calls it on success and failure paths.
+  - `ApplyComponentStatusSSA`: Persists status updates via Kubernetes Server-Side Apply against the `/status` subresource using `FieldManagerBridge = "xmc-bridge"`.
+  - `AddCleanupFinalizer` and `ReleaseCleanupFinalizer`: Add or remove `FinalizerCMSCleanup` with a JSON patch (`test` + `add` on `/metadata/finalizers`) that fails instead of overwriting finalizers another writer changed. Releasing also removes the legacy `finalizers.xmc.dev/deletion-protection` name, which `HasCleanupFinalizer` accepts, and succeeds for a Component that no longer exists.
+  - `PersistReconcileResult`: Releases the finalizer when the result asks for it and otherwise applies `.status` via SSA, treating a Component that no longer exists as persisted. It rejects a nil item and never mutates the caller's item. `ComponentController` calls it on success and failure paths.
   - `BuildStatus` and `BuildStatusMap`: Construct RFC3339-formatted typed and unstructured status payloads. Companion unit tests in `status_applier_test.go`.
   - Atomic field ownership eliminates optimistic concurrency update conflicts with other controllers (e.g. `xmc-syncer`) and prevents stale object overwrites.
 - **Control-Plane `envtest` Integration Suite (`components_admission_test.go`, `reconciler_test.go`)**:
@@ -288,7 +288,7 @@ Production-grade controller reliability, conflict elimination, and Cloud Spanner
 
 - **State Machine Reconciliation**: Deterministic state transitions (`PENDING_RECONCILIATION`, `ENABLED`, `DISABLED`, `DELETED`) synchronized between Kubernetes CR status conditions and CMS access status.
 - **Bi-directional Intent & Status Sync**: Propagates desired spec to CMS via `SetComponentIntent`, and records observed generation and condition history back to the Kubernetes API server.
-- **Deletion Protection & Finalizer Engine**: Enforces `finalizers.xmc.dev/deletion-protection` to safeguard active components, emits `ConditionTypeDeletionBlocked` when protected, and orchestrates teardown according to `spec.deletionPolicy` (`Delete` vs `Orphan`).
+- **Cleanup Finalizer Engine**: Stores `xmc.dev/cms-cleanup` before any CMS or Helm side effect and, on deletion, runs CMS deletion and teardown according to `spec.deletionPolicy` (`Delete` vs `Orphan`) before releasing it. Deletion protection is enforced only by the `component-deletion-protection` admission policy.
 - **Dynamic 3P CRD Status Detection & Coordinate Resolution**: Query third-party operator CRDs dynamically using normalized JSONPath queries and publish structured connection coordinates into CMS.
 - **1P Helm Values Synthesis & Release Management**: Synthesizes structured Helm values and synchronizes release ConfigMaps for automated Helm release actuation.
 - **Deterministic 4-Tier Image Resolution**: Prioritizes explicit container images over repository overrides and baseline release tags.

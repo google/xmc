@@ -288,7 +288,7 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err := mgr.Add(bridge.NewHelmLeaderRunnable(helmMgr)); err != nil {
 		return fmt.Errorf("failed to add Helm manager runnable: %w", err)
 	}
-	controller := bridge.NewComponentController(mgr.GetClient(), dynamicClient, reconciler, bridge.ComponentControllerOptions{
+	controller := bridge.NewComponentController(mgr.GetClient(), reconciler, bridge.ComponentControllerOptions{
 		ProbeInterval:           cfg.ProbeInterval,
 		ReconcileTimeout:        cfg.ReconcileTimeout,
 		MaxConcurrentReconciles: cfg.MaxConcurrentReconciles,

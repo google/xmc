@@ -65,7 +65,7 @@ func testBlockedDeactivation(ctx context.Context, t *testing.T, h *kindClusterHa
 	for _, name := range []string{dep, app} {
 		ready := waitForComponent(ctx, t, h, ns, name, "Ready", isExistingComponentReady)
 		assertCMSComponent(ctx, t, h, ready, componentspb.ComponentState_COMPONENT_STATE_ENABLED)
-		assertDeletionProtectionFinalizer(ctx, t, h, ns, name)
+		assertCleanupFinalizer(ctx, t, h, ns, name)
 	}
 
 	applyLifecycleComponent(ctx, t, h, ns, dep, lifecycleComponentSpec{enabled: false})
@@ -91,7 +91,7 @@ func assertDeactivationBlocked(ctx context.Context, t *testing.T, h *kindCluster
 	}
 	// The bridge reports a blocked deactivation as gated, i.e. PENDING_RECONCILIATION.
 	assertCMSComponent(ctx, t, h, blocked, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION)
-	assertDeletionProtectionFinalizer(ctx, t, h, ns, dep)
+	assertCleanupFinalizer(ctx, t, h, ns, dep)
 }
 
 // assertComponentsDisabled waits until every named Component reports COMPONENT_STATE_DISABLED with
@@ -104,7 +104,7 @@ func assertComponentsDisabled(ctx context.Context, t *testing.T, h *kindClusterH
 			t.Errorf("disabled %s still reports DeactivationBlocked=%q, want condition cleared", name, got)
 		}
 		assertCMSComponent(ctx, t, h, disabled, componentspb.ComponentState_COMPONENT_STATE_DISABLED)
-		assertDeletionProtectionFinalizer(ctx, t, h, ns, name)
+		assertCleanupFinalizer(ctx, t, h, ns, name)
 	}
 }
 
@@ -132,7 +132,7 @@ func testFinalizerCleanup(ctx context.Context, t *testing.T, h *kindClusterHarne
 	compRes := h.dynClient.Resource(componentGVR).Namespace(ns)
 	applyLifecycleComponent(ctx, t, h, ns, name, lifecycleComponentSpec{enabled: true, deletionProtection: false})
 	waitForComponent(ctx, t, h, ns, name, "Ready", isExistingComponentReady)
-	assertDeletionProtectionFinalizer(ctx, t, h, ns, name)
+	assertCleanupFinalizer(ctx, t, h, ns, name)
 
 	cmsComponentState(ctx, t, h, name) // The CMS record must exist for the NotFound check below to be meaningful.
 	w, err := compRes.Watch(ctx, metav1.ListOptions{FieldSelector: fields.OneTermEqualSelector("metadata.name", name).String()})
@@ -143,7 +143,7 @@ func testFinalizerCleanup(ctx context.Context, t *testing.T, h *kindClusterHarne
 	if err := compRes.Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
 		t.Fatalf("DELETE with deletionProtection=false failed: %v", err)
 	}
-	assertFinalizerHeldDeletion(ctx, t, w, bridge.FinalizerDeletionProtection)
+	assertFinalizerHeldDeletion(ctx, t, w, bridge.FinalizerCMSCleanup)
 	if _, err := h.cmsServer.Store().GetComponent(ctx, name); status.Code(err) != codes.NotFound {
 		t.Errorf("CMS GetComponent(%s) after CR deletion: error = %v, want NotFound (ExecuteDeletion)", name, err)
 	}
@@ -273,10 +273,10 @@ func getComponent(ctx context.Context, t *testing.T, compRes dynamic.ResourceInt
 	return u
 }
 
-func assertDeletionProtectionFinalizer(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, name string) {
+func assertCleanupFinalizer(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, name string) {
 	t.Helper()
-	if u := getComponent(ctx, t, h.dynClient.Resource(componentGVR).Namespace(ns), name); !slices.Contains(u.GetFinalizers(), bridge.FinalizerDeletionProtection) {
-		t.Errorf("Component %s/%s finalizers = %v, want %s", ns, name, u.GetFinalizers(), bridge.FinalizerDeletionProtection)
+	if u := getComponent(ctx, t, h.dynClient.Resource(componentGVR).Namespace(ns), name); !slices.Contains(u.GetFinalizers(), bridge.FinalizerCMSCleanup) {
+		t.Errorf("Component %s/%s finalizers = %v, want %s", ns, name, u.GetFinalizers(), bridge.FinalizerCMSCleanup)
 	}
 }
 
