@@ -26,6 +26,14 @@ const {
   formatReapprovalReviewBody
 } = require('./approval-policy');
 
+test('isProtectedFile strips git double-quote wrapping before matching', () => {
+  assert.strictEqual(isProtectedFile('".github/workflows/\\303\\251.yml"'), true);
+  assert.strictEqual(isProtectedFile('".github/workflows/evil\\ttab.yml"'), true);
+  assert.strictEqual(isProtectedFile('"OWNERS"'), true);
+  assert.strictEqual(isProtectedFile('".githooks/pre\\"commit"'), true);
+  assert.strictEqual(isProtectedFile('"pkg/\\303\\251.go"'), false);
+});
+
 test('isProtectedFile accurately identifies sensitive repository files', () => {
   assert.strictEqual(isProtectedFile('.github/workflows/unit-tests.yml'), true);
   assert.strictEqual(isProtectedFile('.github/scripts/incremental-approval.js'), true);

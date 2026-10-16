@@ -34,6 +34,13 @@ test('isTestFile recognizes test files and fixtures', () => {
   }
 });
 
+test('isTestFile never treats git backslash escapes as directory separators', () => {
+  // Git quotes and C-escapes a production file named `testdata<TAB>prod.go`.
+  assert.strictEqual(isTestFile('"testdata\\tprod.go"'), false);
+  assert.strictEqual(isTestFile('testdata\\prod.go'), false);
+  assert.strictEqual(isTestFile('"pkg\\\\testdata\\\\prod.go"'), false);
+});
+
 test('isTestFile rejects production files and invalid input', () => {
   for (const path of [
     'pkg/workunit/create.go',

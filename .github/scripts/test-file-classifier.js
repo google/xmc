@@ -30,7 +30,9 @@ function isTestFile(filePath) {
   if (!filePath || typeof filePath !== 'string') {
     return false;
   }
-  let normalized = filePath.replace(/\\/g, '/').trim();
+  // Git always emits `/` separators, so backslashes are left untouched: in git output they are
+  // escape sequences or literal characters, and must never be treated as directory separators.
+  let normalized = filePath.trim();
   // Git wraps paths containing special or non-ASCII characters in double quotes.
   if (normalized.length >= 2 && normalized.startsWith('"') && normalized.endsWith('"')) {
     normalized = normalized.slice(1, -1);
