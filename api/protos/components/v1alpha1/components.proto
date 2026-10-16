@@ -374,8 +374,9 @@ message SetComponentIntentRequest {
 }
 
 // Identity of the declarative object, such as a Kubernetes custom resource, that sent a request.
-// The owner of a component is the (cluster, namespace) of the object that last wrote it, and uid is
-// the object's incarnation within that owner.
+// The owner of a component is the (cluster, namespace) of the object that last wrote it. Each
+// instance of the object is an incarnation, identified by uid: deleting and re-creating an object of
+// the same name creates a new incarnation with a new uid.
 message RequestSource {
   // Unique identifier (metadata.uid) of the source object.
   string uid = 1 [

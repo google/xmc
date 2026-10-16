@@ -47,9 +47,6 @@ func isUnchangedIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, l
 	return proto.Equal(specWithoutGeneration(rec.Spec), specWithoutGeneration(spec))
 }
 
-// setIntentOperation names SetComponentIntent in ErrorInfo metadata of source-ownership rejections.
-const setIntentOperation = operationSetComponentIntent
-
 // intentWrite is what applying an intent writes; for a new component the plan is always writeSpec.
 type intentWrite int
 
@@ -85,7 +82,7 @@ func planIntent(canonicalName string, rec *ComponentRecord, spec *componentspb.C
 // otherwise. Any other intent, including an adoption, is current: a changed one bumps the
 // generation by 1, and an unchanged one records src as owner.
 func planSourcedIntent(canonicalName string, rec *ComponentRecord, changed bool, src RequestSource) (intentPlan, error) {
-	if err := checkSourceOwnership(setIntentOperation, canonicalName, rec.Owner, src); err != nil {
+	if err := checkSourceOwnership(operationSetComponentIntent, canonicalName, rec.Owner, src); err != nil {
 		return intentPlan{}, err
 	}
 	plan := intentPlan{write: writeNothing, generation: rec.Generation}
@@ -120,7 +117,7 @@ func planLiveIntent(catalog map[string]*ComponentRecord, canonicalName string, s
 	rec := catalog[canonicalName]
 	if isDeletedRecord(rec) {
 		if src != nil {
-			if err := checkSourceCreation(setIntentOperation, canonicalName, *src); err != nil {
+			if err := checkSourceCreation(operationSetComponentIntent, canonicalName, *src); err != nil {
 				return nil, intentPlan{}, err
 			}
 		}

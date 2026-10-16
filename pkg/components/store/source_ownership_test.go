@@ -175,8 +175,11 @@ func TestCheckSourceOwnership(t *testing.T) {
 				Domain:   ErrorInfoDomain,
 				Metadata: map[string]string{"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": "uid-a", "owner_cluster_uid": baseRequestSource.ClusterUID},
 			}}
-			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); st.Code() != codes.FailedPrecondition || diff != "" {
-				t.Errorf("checkSourceOwnership() code = %v, details mismatch (-want +got):\n%s", st.Code(), diff)
+			if st.Code() != codes.FailedPrecondition {
+				t.Errorf("checkSourceOwnership() code = %v, want %v", st.Code(), codes.FailedPrecondition)
+			}
+			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
+				t.Errorf("checkSourceOwnership() details mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -194,7 +197,10 @@ func TestCheckSourceCreation(t *testing.T) {
 		Domain:   ErrorInfoDomain,
 		Metadata: map[string]string{"operation": "SetComponentIntent", "owner_namespace": "", "owner_uid": "", "owner_cluster_uid": ""},
 	}}
-	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); st.Code() != codes.FailedPrecondition || diff != "" {
-		t.Errorf("checkSourceCreation() with a CAS guard code = %v, details mismatch (-want +got):\n%s", st.Code(), diff)
+	if st.Code() != codes.FailedPrecondition {
+		t.Errorf("checkSourceCreation() with a CAS guard code = %v, want %v", st.Code(), codes.FailedPrecondition)
+	}
+	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
+		t.Errorf("checkSourceCreation() with a CAS guard details mismatch (-want +got):\n%s", diff)
 	}
 }

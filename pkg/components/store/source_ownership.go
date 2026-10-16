@@ -119,8 +119,8 @@ func cloneSourceOwner(o *SourceOwner) *SourceOwner {
 // requests by generation (R3): every other sourced RPC from the owner object is always allowed, so
 // that informer lag never blocks an observation, a deactivation or a deletion.
 func staleGenerationError(canonicalName string, owner *SourceOwner, src RequestSource) error {
-	metadata := ownerMetadata(setIntentOperation, owner)
-	metadata["owner_generation"] = strconv.FormatInt(owner.Generation, 10)
+	metadata := ownerMetadata(operationSetComponentIntent, owner)
+	metadata[MetadataKeyOwnerGeneration] = strconv.FormatInt(owner.Generation, 10)
 	return errorWithInfo(codes.FailedPrecondition, ReasonStaleGeneration, metadata, fmt.Sprintf(
 		"component %q is owned by generation %d of source %q, newer than the generation %d of the changed request",
 		canonicalName, owner.Generation, owner.UID, src.Generation))
@@ -173,9 +173,9 @@ func checkSourceOwnership(operation, canonicalName string, owner *SourceOwner, s
 // recorded owner.
 func ownerMetadata(operation string, owner *SourceOwner) map[string]string {
 	return map[string]string{
-		"operation":         operation,
-		"owner_namespace":   owner.Namespace,
-		"owner_uid":         owner.UID,
-		"owner_cluster_uid": owner.ClusterUID,
+		metadataKeyOperation:       operation,
+		MetadataKeyOwnerNamespace:  owner.Namespace,
+		MetadataKeyOwnerUID:        owner.UID,
+		MetadataKeyOwnerClusterUID: owner.ClusterUID,
 	}
 }
