@@ -547,8 +547,8 @@ func retrySameClusterTakeover[T any](
 ) (T, error) {
 	var zero T
 	meta := info.GetMetadata()
-	ownerUID := meta["owner_uid"]
-	if r.liveUIDReader == nil || ownerUID == "" || meta["owner_cluster_uid"] != src.GetCluster().GetUid() || meta["owner_namespace"] != in.Namespace {
+	ownerUID := meta[store.MetadataKeyOwnerUID]
+	if r.liveUIDReader == nil || ownerUID == "" || meta[store.MetadataKeyOwnerClusterUID] != src.GetCluster().GetUid() || meta[store.MetadataKeyOwnerNamespace] != in.Namespace {
 		return zero, origErr
 	}
 	liveUID, err := r.liveUIDReader(ctx, in.Namespace, in.Name)
@@ -576,7 +576,7 @@ func retrySameClusterTakeover[T any](
 // for expected_owner_uid when no active record exists: it carries no owner metadata.
 func isOwnerGoneRejection(err error) bool {
 	info, _ := extractErrorInfo(err)
-	return info != nil && info.GetReason() == store.ReasonSourceIncarnationMismatch && info.GetMetadata()["owner_uid"] == ""
+	return info != nil && info.GetReason() == store.ReasonSourceIncarnationMismatch && info.GetMetadata()[store.MetadataKeyOwnerUID] == ""
 }
 
 func (r *Reconciler) requestSource(in ReconcileComponentInput) *componentspb.RequestSource {
