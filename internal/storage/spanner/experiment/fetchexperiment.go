@@ -33,18 +33,7 @@ import (
 // FetchExperiment retrieves a single Experiment from storage by its unique numerical ID.
 func (r *Repository) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
-	txn := r.client.ReadOnlyTransaction()
-	defer txn.Close()
-	exp, err := r.FetchExperimentTransaction(ctx, xid, txn)
-	if err != nil {
-		return nil, err
-	}
-	// TODO(b/517479143): Move drift evaluation out of FetchExperiment so fetching only returns the
-	// stored experiment; drift is only consumed by GetExperiment and GetExperimentStatus.
-	if err := r.evaluateExperimentDrift(ctx, txn, xid, exp.GetStatus()); err != nil {
-		logging.Warn(ctx, "Failed to evaluate experiment drift", "xid", xid, "error", err)
-	}
-	return exp, nil
+	return r.FetchExperimentTransaction(ctx, xid, r.client.Single())
 }
 
 // FetchExperiment retrieves a single Experiment from storage by its unique numerical ID within the bound read-write transaction.

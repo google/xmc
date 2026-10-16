@@ -80,6 +80,11 @@ func (h *ExperimentHandler) GetExperiment(ctx context.Context, req *msgpb.GetExp
 	// 4.1. Attach the ACLs from the XID entry to the experiment.
 	exp.Acls = xidEntry.GetAcls()
 
+	// 4.2. Evaluate component drift for the experiment status.
+	if err := h.driftEvaluator.Evaluate(ctx, xid, exp.GetStatus()); err != nil {
+		logging.Warn(ctx, "Failed to evaluate experiment drift", "xid", xid, "error", err)
+	}
+
 	// 5. Return the successful response.
 	logging.Info(ctx, "Fetched experiment", "experiment", exp)
 	return exp, nil

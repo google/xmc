@@ -96,6 +96,22 @@ type XidEntryUpdate struct {
 // Experiment Methods
 // -----------------------
 
+// ComponentStateDeleted is the stored component state value for soft-deleted catalog components.
+const ComponentStateDeleted = 5
+
+// ComponentDiff describes a single component whose live catalog entry diverges from the
+// generation locked in an experiment's component snapshot.
+type ComponentDiff struct {
+	ComponentID int64
+	// Name is nil when the component is missing from the catalog.
+	Name             *string
+	LockedGeneration int64
+	// ObservedGeneration is nil when the live component has not been reconciled yet.
+	ObservedGeneration *int64
+	// State is nil when the component is missing from the catalog.
+	State *int64
+}
+
 // ExperimentStore defines storage operations for experiments.
 type ExperimentStore interface {
 	// FetchExperiment retrieves an experiment by its unique ID.
@@ -103,6 +119,12 @@ type ExperimentStore interface {
 
 	// FetchExperimentStatus retrieves only the status of an experiment by its unique ID.
 	FetchExperimentStatus(ctx context.Context, xid int64) (*essmsgpb.ExperimentStatus, error)
+
+	// FetchDriftedComponents retrieves up to limit components for an active experiment, ordered by
+	// name, that are missing or deleted from the catalog or whose observed generation differs from
+	// the experiment's snapshot. It returns an empty slice for consistent, inactive, or snapshot-free
+	// experiments. A limit <= 0 returns all drifted components.
+	FetchDriftedComponents(ctx context.Context, xid int64, limit int) ([]ComponentDiff, error)
 
 	// ListExperiments retrieves a list of experiments matching the given filter. Staleness should
 	// be set to 0 for strong reads, and up to 15 seconds for stale reads.

@@ -16,7 +16,10 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"xmanager_cloud/internal/grpcerr"
 )
 
 func TestDeleteChart_Success(t *testing.T) {
@@ -66,8 +69,8 @@ func TestDeleteChart_NotFound(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	if err := repo.DeleteChart(ctx, "non-existent"); err == nil {
-		t.Errorf("DeleteChart for non-existent chart succeeded, want error")
+	if err := repo.DeleteChart(ctx, "non-existent"); !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("DeleteChart for non-existent chart error = %v, want grpcerr.ErrNotFound", err)
 	}
 }
 

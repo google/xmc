@@ -22,6 +22,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -164,26 +165,40 @@ func TestGetExperimentStatus_DependencyFailures(t *testing.T) {
 func TestGetExperimentStatus_DriftWarningPropagation(t *testing.T) {
 	ctx := context.Background()
 	req := &apipb.GetExperimentStatusRequest{Name: "experiments/123"}
-	driftMsg := &apipb.StructuredMessage{
-		Severity:       apipb.StructuredMessage_WARNING,
-		Source:         apipb.StructuredMessage_XMANAGER_BACKEND,
-		UserFacingText: "Component snapshot drift detected",
-	}
+	compName := "redpanda"
+	observed := int64(2)
 	mockStorage := &storage.MockStorage{
 		ExperimentStatus: &apipb.ExperimentStatus{
-			StructuredStatusMessage: driftMsg,
+			ActiveState: apipb.ExperimentStatus_ACTIVE,
+		},
+		DriftedComponents: []storage.ComponentDiff{
+			{
+				ComponentID:        202,
+				Name:               &compName,
+				LockedGeneration:   1,
+				ObservedGeneration: &observed,
+			},
 		},
 	}
 	xidClient := &mockXidClient{
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
-	server := newTestServer(t, withStorage(mockStorage), withXidClient(xidClient))
+	server := newTestServer(t,
+		withConfig(&config.Config{EnableComponents: true}),
+		withStorage(mockStorage),
+		withXidClient(xidClient),
+	)
 
 	got, err := server.GetExperimentStatus(ctx, req)
 	if err != nil {
 		t.Fatalf("GetExperimentStatus(%v) returned unexpected error: %v", req, err)
 	}
-	if diff := cmp.Diff(driftMsg, got.GetStructuredStatusMessage(), protocmp.Transform()); diff != "" {
+	want := &apipb.StructuredMessage{
+		Severity:       apipb.StructuredMessage_WARNING,
+		Source:         apipb.StructuredMessage_XMANAGER_BACKEND,
+		UserFacingText: "Component drift detected: live component generations diverge from snapshots: redpanda (snapshot generation 1 != live observed generation 2)",
+	}
+	if diff := cmp.Diff(want, got.GetStructuredStatusMessage(), protocmp.Transform(), protocmp.IgnoreFields(&apipb.StructuredMessage{}, "create_time")); diff != "" {
 		t.Errorf("GetExperimentStatus() StructuredStatusMessage mismatch (-want +got):\n%s", diff)
 	}
 }

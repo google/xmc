@@ -19,8 +19,11 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
@@ -37,6 +40,9 @@ func (r *Repository) fetchChartPlots(ctx context.Context, txn *spanner.ReadOnlyT
 
 // GetChart retrieves a chart by its unique ID along with its plot specifications and plot layout.
 func (r *Repository) GetChart(ctx context.Context, chartId string) (*dpb.Chart, error) {
+	if chartId == "" {
+		return nil, fmt.Errorf("chartId must not be empty: %w", grpcerr.ErrInvalidArgument)
+	}
 	logging.Info(ctx, "Get chart from storage", "chartId", chartId)
 
 	txn := r.client.ReadOnlyTransaction()
@@ -44,6 +50,9 @@ func (r *Repository) GetChart(ctx context.Context, chartId string) (*dpb.Chart, 
 
 	row, err := txn.ReadRow(ctx, dashboardschema.ChartsTableName, spanner.Key{chartId}, dashboardschema.FetchedChartColumns)
 	if err != nil {
+		if err == spanner.ErrRowNotFound || status.Code(err) == codes.NotFound {
+			return nil, fmt.Errorf("chart %s not found: %w", chartId, grpcerr.ErrNotFound)
+		}
 		return nil, fmt.Errorf("failed to read chart %s: %w", chartId, err)
 	}
 

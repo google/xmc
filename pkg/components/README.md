@@ -13,7 +13,7 @@ The Components subsystem coordinates component definitions, versioning, and runt
 - **GitOps Bridge (`cmd/xmc-bridge`)**: A bidirectional synchronizer reconciling Kubernetes Custom Resources (`Component.xmc.dev`) with the authoritative Spanner catalog.
 - **Production Spanner Store (`pkg/components/store/spanner_store.go`)**: A production Cloud Spanner persistence driver with ACID read-write transactions, prospective cycle checking, soft-deletion active name index release, and snapshot queries.
 - **In-Memory Store (`pkg/components/store/memory_store.go`)**: A thread-safe in-memory cache and test double implementation.
-- **Dynamic Drift Detection (`internal/storage/spanner/experiment/driftdetection.go`)**: Evaluates component drift dynamically on ESS experiment read endpoints (`FetchExperiment`, `FetchExperimentStatus`) by querying Cloud Spanner's `ExperimentConsistencyInfo` view, surfacing warnings to the UI console.
+- **Dynamic Drift Detection (`internal/experiment/driftdetection.go`)**: Evaluates component drift dynamically on ESS experiment read endpoints (`GetExperiment`, `GetExperimentStatus`) by querying Cloud Spanner's `ExperimentConsistencyInfo` view, surfacing warnings to the UI console.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -155,7 +155,7 @@ The `ComponentManagerService` exposes standard AIP-compliant gRPC RPCs for exter
 
 ---
 
-### 6. Dynamic Drift Detection & Warning Propagation (`internal/storage/spanner/experiment/driftdetection.go`)
+### 6. Dynamic Drift Detection & Warning Propagation (`internal/experiment/driftdetection.go`)
 
 To alert users when active experiments run against stale or deleted component configurations without introducing periodic background reconciliation loops or polling cron jobs, the Experiment State Server (ESS) evaluates component drift dynamically during experiment read RPCs.
 
@@ -174,7 +174,7 @@ To alert users when active experiments run against stale or deleted component co
 └───────────────────────────┬────────────────────────────┘
                             │
               Top-Level Read Entry Points
-              (FetchExperiment, FetchExperimentStatus)
+              (GetExperiment, GetExperimentStatus)
                             │
                             ▼
 ┌────────────────────────────────────────────────────────┐
@@ -214,7 +214,7 @@ To alert users when active experiments run against stale or deleted component co
    - Upgrades lower-severity messages (`INFO`, `UNSPECIFIED`) to `WARNING` severity and appends human-readable drift details without losing existing status text.
    - Eliminates duplicate drift notices on repeated read calls.
 5. **Strict Transaction Isolation**:
-   - Drift evaluation executes exclusively within top-level read entry points (`FetchExperiment`, `FetchExperimentStatus`) using independent read-only transactions (`ReadOnlyTransaction`).
+   - Drift evaluation executes exclusively within top-level read RPCs (`GetExperiment`, `GetExperimentStatus`) using an independent read-only transaction (`ReadOnlyTransaction`) in `FetchDriftedComponents`.
    - Core read-write transaction methods (`FetchExperimentTransaction`, `fetchExperimentStatusTransaction`) remain completely side-effect free, preventing phantom reads, transaction aborts, or concurrent mutation deadlocks.
 6. **Feature Flag Gating (`enable_components`)**:
    - Drift detection is strictly gated by the server configuration flag `enable_components` (`cfg.EnableComponents`). When `enable_components = false` (default across non-component clusters), drift evaluation is bypassed immediately, guaranteeing zero extra Spanner queries and zero regression risk on unmigrated databases.

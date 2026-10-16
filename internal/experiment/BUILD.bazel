@@ -18,6 +18,7 @@ go_library(
     name = "experiment",
     srcs = [
         "createexperiment.go",
+        "driftdetection.go",
         "updateexperimentlaunchstate.go",
     ],
     importpath = "xmanager_cloud/internal/experiment",
@@ -40,12 +41,14 @@ go_test(
     name = "experiment_test",
     srcs = [
         "createexperiment_test.go",
+        "driftdetection_test.go",
         "updateexperimentlaunchstate_test.go",
     ],
+    embed = [":experiment"],
     deps = [
-        ":experiment",
         "//api/protos/experiment:messages_go_proto",
         "//internal/grpcerr",
+        "//internal/storage",
         "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",
         "//internal/validator",

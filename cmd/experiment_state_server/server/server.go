@@ -24,6 +24,7 @@ import (
 	xidgrpcpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/experiment"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/workunit"
 )
@@ -62,7 +63,8 @@ type baseHandler struct {
 // ExperimentHandler handles experiment lifecycle operations.
 type ExperimentHandler struct {
 	baseHandler
-	server apipb.ExperimentStateServiceServer
+	driftEvaluator *experiment.DriftEvaluator
+	server         apipb.ExperimentStateServiceServer
 }
 
 // ArtifactHandler handles artifact operations.
@@ -85,9 +87,14 @@ type WorkUnitHandler struct {
 }
 
 func newExperimentHandler(base baseHandler, server apipb.ExperimentStateServiceServer) *ExperimentHandler {
+	var enableComponents bool
+	if base.cfg != nil {
+		enableComponents = base.cfg.EnableComponents
+	}
 	return &ExperimentHandler{
-		baseHandler: base,
-		server:      server,
+		baseHandler:    base,
+		driftEvaluator: experiment.NewDriftEvaluator(base.storage, enableComponents),
+		server:         server,
 	}
 }
 
