@@ -233,6 +233,53 @@ def wait_for_jobsets_deleted(
     poll_until(probe, description, timeout_seconds, poll_interval_seconds)
 
 
+def wait_for_jobset_priority_class(
+    work_unit_name: str,
+    expected_priority_class: str,
+    namespace: str = DEFAULT_QUEUE_NAME,
+    execution_id: int | None = None,
+    kube_context: str | None = None,
+    timeout_seconds: float = DEFAULT_POLL_TIMEOUT_SECONDS,
+    poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
+) -> dict[str, Any]:
+    """Polls until the JobSet of a work unit matches the expected priority class label.
+
+    Args:
+        work_unit_name: Work unit resource name, such as experiments/1/workUnits/2.
+        expected_priority_class: Expected kueue.x-k8s.io/priority-class label value.
+        namespace: Namespace of the work unit's queue.
+        execution_id: If set, only the JobSet of this execution of the work unit counts.
+        kube_context: kubectl context; defaults to $KUBE_CONTEXT, else the KinD E2E context.
+        timeout_seconds: Seconds after which waiting gives up.
+        poll_interval_seconds: Seconds between queries.
+
+    Returns:
+        The JobSet of the work unit with the expected priority class.
+
+    Raises:
+        ValueError: If work_unit_name is not a work unit resource name.
+        PollTimeoutError: If no JobSet with the expected priority class appears before deadline.
+    """
+    selector = _work_unit_selector(work_unit_name, execution_id)
+    resolved_context = _resolve_kube_context(kube_context)
+
+    def probe() -> dict[str, Any] | None:
+        items = _list_resources(_JOBSET_RESOURCE, namespace, resolved_context, selector)
+        if not items:
+            return None
+        jobset = items[0]
+        labels = (jobset.get("metadata") or {}).get("labels") or {}
+        if labels.get("kueue.x-k8s.io/priority-class") == expected_priority_class:
+            return jobset
+        return None
+
+    description = (
+        f"JobSet in namespace {namespace!r} matching {selector!r} with "
+        f"kueue.x-k8s.io/priority-class={expected_priority_class!r}"
+    )
+    return poll_until(probe, description, timeout_seconds, poll_interval_seconds)
+
+
 def wait_for_workload_admitted(
     jobset: dict[str, Any],
     kube_context: str | None = None,
@@ -352,6 +399,7 @@ def _was_preempted(workload: dict[str, Any]) -> bool:
 def assert_jobset_contract(
     jobset: dict[str, Any],
     expected_queue: str = DEFAULT_QUEUE_NAME,
+    expected_priority_class: str | None = None,
 ) -> None:
     """Asserts XMC's Non-Restarting JobSets Contract and Kueue queue labels on a JobSet."""
     if not jobset:
@@ -362,6 +410,13 @@ def assert_jobset_contract(
         raise RuntimeError(f"Expected kueue.x-k8s.io/queue-name={expected_queue!r}, got {labels!r}")
     if labels.get("app.kubernetes.io/managed-by") != "xmc":
         raise RuntimeError(f"Expected app.kubernetes.io/managed-by='xmc', got {labels!r}")
+    if expected_priority_class is not None:
+        actual_priority_class = labels.get("kueue.x-k8s.io/priority-class")
+        if actual_priority_class != expected_priority_class:
+            raise RuntimeError(
+                f"Expected kueue.x-k8s.io/priority-class={expected_priority_class!r}, "
+                f"got {actual_priority_class!r}"
+            )
 
     spec = jobset.get("spec") or {}
     failure_policy = spec.get("failurePolicy") or {}

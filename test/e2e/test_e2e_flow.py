@@ -50,6 +50,7 @@ from test.e2e.lib.jobset_verifier import (
     assert_jobset_contract,
     build_work_unit_payload,
     wait_for_jobset_for_work_unit,
+    wait_for_jobset_priority_class,
     wait_for_jobsets_deleted,
     wait_for_workload_admitted,
     wait_for_workload_preempted,
@@ -61,6 +62,7 @@ from test.e2e.lib.ui_diagnostics import (
 )
 from test.e2e.lib.work_unit_state import (
     WorkUnit,
+    assert_executions_history,
     wait_for_work_unit_state,
     work_unit_fetch_error,
     work_unit_name_from_operation,
@@ -225,8 +227,159 @@ def _verify_stop_and_restart(page: Page, experiment_name: str) -> dict[str, str]
     _post_work_unit_action(page, work_unit, "restart")
     _verify_admitted_jobset(work_unit, execution_id=2)
     _wait_for_work_unit_state(page, work_unit, "RUNNING")
+    executions = _fetch_work_unit_executions(page, work_unit)
+    assert_executions_history(executions, expected_min_count=2)
+    logger.info(
+        "✓ Multi-execution history verified for %s: %d executions.", work_unit, len(executions)
+    )
     _stop_work_unit(page, work_unit)
     return {work_unit: "STOPPED"}
+
+
+def _update_experiment(
+    page: Page, experiment_name: str, payload: dict[str, Any], update_mask: str
+) -> dict[str, Any]:
+    """Updates an experiment via REST PATCH and returns the updated representation."""
+    encoded_mask = urllib.parse.quote(update_mask)
+    response = page.request.patch(
+        f"{BASE_URL}/v1/{experiment_name}?update_mask={encoded_mask}",
+        data=payload,
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if response.status != 200:
+        raise RuntimeError(
+            f"Failed to update experiment {experiment_name}: {response.status} {response.text()}"
+        )
+    logger.info("✓ Updated experiment %s.", experiment_name)
+    return response.json()
+
+
+def _update_work_unit(
+    page: Page, work_unit_name: str, payload: dict[str, Any], update_mask: str
+) -> dict[str, Any]:
+    """Updates mutable metadata or priority for a work unit via REST PATCH."""
+    encoded_mask = urllib.parse.quote(update_mask)
+    response = page.request.patch(
+        f"{BASE_URL}/v1/{work_unit_name}?update_mask={encoded_mask}",
+        data=payload,
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if response.status != 200:
+        raise RuntimeError(
+            f"Failed to update work unit {work_unit_name}: {response.status} {response.text()}"
+        )
+    logger.info("✓ Updated work unit %s.", work_unit_name)
+    return response.json()
+
+
+def _fetch_work_unit_executions(page: Page, work_unit_name: str) -> list[dict[str, Any]]:
+    """Lists the executions of a work unit via REST."""
+    response = page.request.get(f"{BASE_URL}/v1/{work_unit_name}/executions")
+    if response.status != 200:
+        raise RuntimeError(
+            f"Failed to list executions for {work_unit_name}: {response.status} {response.text()}"
+        )
+    return list(response.json().get("workUnitExecutions") or [])
+
+
+def _batch_stop_work_units(page: Page, experiment_name: str, filter_expr: str = "") -> None:
+    """Stops work units in batch for an experiment via REST."""
+    payload: dict[str, Any] = {"parent": experiment_name}
+    if filter_expr:
+        payload["filter"] = filter_expr
+    response = page.request.post(
+        f"{BASE_URL}/v1/{experiment_name}/workUnits:batchStop",
+        data=payload,
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if response.status not in (200, 201):
+        raise RuntimeError(
+            f"Failed to batch stop work units for {experiment_name}: {response.status} {response.text()}"
+        )
+    logger.info("✓ Requested batch stop of work units for %s.", experiment_name)
+
+
+def _batch_restart_work_units(page: Page, experiment_name: str, filter_expr: str = "") -> None:
+    """Restarts work units in batch for an experiment via REST."""
+    payload: dict[str, Any] = {"parent": experiment_name}
+    if filter_expr:
+        payload["filter"] = filter_expr
+    response = page.request.post(
+        f"{BASE_URL}/v1/{experiment_name}/workUnits:batchRestart",
+        data=payload,
+        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    )
+    if response.status not in (200, 201):
+        raise RuntimeError(
+            f"Failed to batch restart work units for {experiment_name}: {response.status} {response.text()}"
+        )
+    logger.info("✓ Requested batch restart of work units for %s.", experiment_name)
+
+
+def _verify_live_priority_and_metadata_updates(page: Page, experiment_name: str) -> dict[str, str]:
+    """Verifies live priority and metadata updates on experiment and running work unit."""
+    work_unit = _create_work_unit(
+        page,
+        experiment_name,
+        build_work_unit_payload(command=SLEEP_COMMAND, priority="LOW"),
+    )
+    _verify_admitted_jobset(work_unit)
+    _wait_for_work_unit_state(page, work_unit, "RUNNING")
+
+    # 1. Update experiment title and priority
+    _update_experiment(
+        page,
+        experiment_name,
+        {"title": f"Mutated Experiment {int(time.time())}", "priority": "HIGH"},
+        "title,priority",
+    )
+    exp_res = page.request.get(f"{BASE_URL}/v1/{experiment_name}")
+    if exp_res.status != 200 or exp_res.json().get("priority") != "HIGH":
+        raise RuntimeError(f"Experiment {experiment_name} did not reflect priority update.")
+
+    # 2. Update WorkUnit priority to HIGH
+    _update_work_unit(page, work_unit, {"priority": "HIGH"}, "priority")
+
+    # 3. Verify Actuator updates JobSet kueue.x-k8s.io/priority-class label
+    wait_for_jobset_priority_class(work_unit, expected_priority_class="exp-high-wu-high")
+    logger.info("✓ Live JobSet updated with kueue.x-k8s.io/priority-class=exp-high-wu-high.")
+
+    _stop_work_unit(page, work_unit)
+    return {work_unit: "STOPPED"}
+
+
+def _verify_batch_stop_and_restart(page: Page, experiment_name: str) -> dict[str, str]:
+    """Verifies batch stop, batch restart, and multi-execution history on multiple work units."""
+    wu1 = _create_work_unit(page, experiment_name, build_work_unit_payload(command=SLEEP_COMMAND))
+    wu2 = _create_work_unit(page, experiment_name, build_work_unit_payload(command=SLEEP_COMMAND))
+    _verify_admitted_jobset(wu1)
+    _verify_admitted_jobset(wu2)
+    _wait_for_work_unit_state(page, wu1, "RUNNING")
+    _wait_for_work_unit_state(page, wu2, "RUNNING")
+
+    _batch_stop_work_units(page, experiment_name)
+    _wait_for_work_unit_state(page, wu1, "STOPPED")
+    _wait_for_work_unit_state(page, wu2, "STOPPED")
+    wait_for_jobsets_deleted(wu1)
+    wait_for_jobsets_deleted(wu2)
+
+    _batch_restart_work_units(page, experiment_name)
+    _verify_admitted_jobset(wu1, execution_id=2)
+    _verify_admitted_jobset(wu2, execution_id=2)
+    _wait_for_work_unit_state(page, wu1, "RUNNING")
+    _wait_for_work_unit_state(page, wu2, "RUNNING")
+
+    for wu in (wu1, wu2):
+        executions = _fetch_work_unit_executions(page, wu)
+        assert_executions_history(executions, expected_min_count=2)
+        logger.info("✓ Batch restarted work unit %s execution history verified.", wu)
+
+    _batch_stop_work_units(page, experiment_name)
+    _wait_for_work_unit_state(page, wu1, "STOPPED")
+    _wait_for_work_unit_state(page, wu2, "STOPPED")
+    wait_for_jobsets_deleted(wu1)
+    wait_for_jobsets_deleted(wu2)
+    return {wu1: "STOPPED", wu2: "STOPPED"}
 
 
 def _preemption_payload(priority: str, command: Sequence[str]) -> dict[str, Any]:
@@ -386,7 +539,7 @@ def test_work_unit_lifecycle_and_preemption(
     auth: DexAuthenticator,
     admin_resources: AdminResources,
 ) -> None:
-    """Tests stopping, restarting, and preempting work units, and their status chips.
+    """Tests stopping, restarting, live mutations, batch lifecycle, and preemption.
 
     Args:
         page: Active Playwright Page instance.
@@ -404,6 +557,8 @@ def test_work_unit_lifecycle_and_preemption(
     work_unit_states = {
         **admin_resources.work_unit_states,
         **_verify_stop_and_restart(page, experiment_name),
+        **_verify_live_priority_and_metadata_updates(page, experiment_name),
+        **_verify_batch_stop_and_restart(page, experiment_name),
         **_verify_preemption(page, experiment_name),
     }
     _verify_status_chips(page, experiment_name, work_unit_states)
