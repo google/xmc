@@ -51,7 +51,7 @@ const (
 	checkNonEmptyDBQuery = `
 SELECT 1
 FROM information_schema.tables
-WHERE table_schema = 'public'
+WHERE table_schema = current_schema()
   AND table_name != 'schema_migrations'
 LIMIT 1
 `
@@ -166,7 +166,7 @@ func createMigrator(db *sql.DB, migrationsDir string) (*migrate.Migrate, source.
 	return migrator, sourceDriver, nil
 }
 
-// isDatabaseEmpty checks whether the PostgreSQL public schema contains any user tables other than schema_migrations.
+// isDatabaseEmpty checks whether the current PostgreSQL schema contains any user tables other than schema_migrations.
 func isDatabaseEmpty(ctx context.Context, db *sql.DB) (bool, error) {
 	var dummy int
 	err := db.QueryRowContext(ctx, checkNonEmptyDBQuery).Scan(&dummy)

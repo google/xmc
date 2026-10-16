@@ -40,7 +40,7 @@ const (
 	inspectTablesQuery = `
 SELECT table_name, table_type
 FROM information_schema.tables
-WHERE table_schema = 'public'
+WHERE table_schema = current_schema()
   AND table_name != 'schema_migrations'
 ORDER BY table_name
 `
@@ -49,7 +49,7 @@ ORDER BY table_name
 SELECT table_name, column_name, data_type, udt_name, is_nullable,
        COALESCE(column_default, ''), COALESCE(is_generated, ''), COALESCE(generation_expression, '')
 FROM information_schema.columns
-WHERE table_schema = 'public'
+WHERE table_schema = current_schema()
   AND table_name != 'schema_migrations'
 ORDER BY table_name, column_name
 `
@@ -57,14 +57,14 @@ ORDER BY table_name, column_name
 	inspectViewsQuery = `
 SELECT table_name, COALESCE(view_definition, '')
 FROM information_schema.views
-WHERE table_schema = 'public'
+WHERE table_schema = current_schema()
 ORDER BY table_name
 `
 
 	inspectIndexesQuery = `
 SELECT tablename, indexname, indexdef
 FROM pg_catalog.pg_indexes
-WHERE schemaname = 'public'
+WHERE schemaname = current_schema()
   AND tablename != 'schema_migrations'
 ORDER BY tablename, indexname
 `

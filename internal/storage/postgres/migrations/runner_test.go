@@ -239,6 +239,25 @@ func TestIsDatabaseEmpty(t *testing.T) {
 	}
 }
 
+func TestIsDatabaseEmpty_CustomSearchPath(t *testing.T) {
+	ctx := t.Context()
+
+	dsn := newTestDatabase(t)
+	db, err := sql.Open("postgres", dsn+"&search_path=custom_schema")
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if _, err := db.ExecContext(ctx, "CREATE SCHEMA custom_schema; CREATE TABLE custom_schema.experiments (experiment_id bigint primary key)"); err != nil {
+		t.Fatalf("failed to create custom_schema table: %v", err)
+	}
+	empty, err := isDatabaseEmpty(ctx, db)
+	if err != nil || empty {
+		t.Fatalf("isDatabaseEmpty(custom_schema with user table) = (%v, %v), want (false, nil)", empty, err)
+	}
+}
+
 func TestRun(t *testing.T) {
 	ctx := t.Context()
 	schemas := []string{schemaESS, schemaXID}
