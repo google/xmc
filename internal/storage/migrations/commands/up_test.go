@@ -15,6 +15,7 @@ package commands
 
 import (
 	"context"
+	"io"
 	"testing"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -101,7 +102,7 @@ func TestUp(t *testing.T) {
 				return tc.emptyDatabase, nil
 			}
 
-			err = Up(ctx, m, isDatabaseEmpty, tc.steps)
+			err = Up(ctx, m, isDatabaseEmpty, tc.steps, io.Discard)
 
 			if tc.expectError && err == nil {
 				t.Errorf("Up() expected error, got nil")

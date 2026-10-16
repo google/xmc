@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -170,6 +171,7 @@ func TestMigrationUpDownConsistency(t *testing.T) {
 				t.Fatalf("Failed to create runner: %v", err)
 			}
 			defer runner.Close()
+			runner.Stdout = io.Discard
 
 			adminClient, err := database.NewDatabaseAdminClient(ctx, emu.ClientOptions()...)
 			if err != nil {
@@ -179,8 +181,10 @@ func TestMigrationUpDownConsistency(t *testing.T) {
 
 			dbPath := fmt.Sprintf("projects/%s/instances/%s/databases/%s", cfg.projectID, cfg.instanceID, cfg.databaseID)
 
-			nextV, nextVErr := runner.Source.First()
+			migrationCount := 0
+			nextV, nextVErr := cfg.customSourceDriver.First()
 			for nextVErr == nil {
+				migrationCount++
 				// 1. Get DDL before moving to nextV.
 				ddlBefore, err := fetchDDL(ctx, adminClient, dbPath)
 				if err != nil {
@@ -215,11 +219,14 @@ func TestMigrationUpDownConsistency(t *testing.T) {
 				}
 
 				// Move to next version. If there is no next version, nextVErr will be os.ErrNotExist.
-				nextV, nextVErr = runner.Source.Next(nextV)
+				nextV, nextVErr = cfg.customSourceDriver.Next(nextV)
 			}
 
 			if !errors.Is(nextVErr, os.ErrNotExist) {
 				t.Fatalf("Failed to get next migration version: %v", nextVErr)
+			}
+			if migrationCount == 0 {
+				t.Fatal("No migrations were tested")
 			}
 		})
 	}
@@ -244,7 +251,7 @@ func mustFetchVersion(ctx context.Context, t *testing.T, cfg *config, opts ...op
 	}
 	defer r.Close()
 
-	v, dirty, err := r.Migrator.Version()
+	v, dirty, err := r.Version()
 	if err != nil {
 		t.Fatalf("Failed to get version: %v", err)
 	}

@@ -17,13 +17,14 @@ package commands
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/golang-migrate/migrate/v4"
 )
 
 // Up handles the migration up command. isDatabaseEmpty reports whether the database contains no
 // user-defined tables.
-func Up(ctx context.Context, migrator *migrate.Migrate, isDatabaseEmpty func(context.Context) (bool, error), steps *int) error {
+func Up(ctx context.Context, migrator *migrate.Migrate, isDatabaseEmpty func(context.Context) (bool, error), steps *int, out io.Writer) error {
 	// Check if we need to adopt the database from before the migration system was introduced.
 	migrationsInitialized, err := verifySchemaMigrationsInitialized(ctx, migrator)
 	if err != nil {
@@ -39,7 +40,7 @@ func Up(ctx context.Context, migrator *migrate.Migrate, isDatabaseEmpty func(con
 			return fmt.Errorf("schema migrations table is not yet initialized in a non-empty database. " +
 				"Please verify your schema and run the 'force' command to set the correct migration version")
 		}
-		fmt.Println("Database is empty, proceeding with initial migration up.")
+		fmt.Fprintln(out, "Database is empty, proceeding with initial migration up.")
 	}
 
 	// if argument was set apply specified number of steps, otherwise apply all migrations.
@@ -56,14 +57,14 @@ func Up(ctx context.Context, migrator *migrate.Migrate, isDatabaseEmpty func(con
 	}
 
 	if err == migrate.ErrNoChange {
-		fmt.Println("No migrations to apply. Schema is already up to date.")
+		fmt.Fprintln(out, "No migrations to apply. Schema is already up to date.")
 		return nil
 	}
 
 	if steps != nil {
-		fmt.Printf("Migration up %d steps completed successfully.\n", *steps)
+		fmt.Fprintf(out, "Migration up %d steps completed successfully.\n", *steps)
 	} else {
-		fmt.Println("Migration up completed successfully.")
+		fmt.Fprintln(out, "Migration up completed successfully.")
 	}
 	return nil
 }

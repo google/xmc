@@ -129,7 +129,7 @@ func TestRun(t *testing.T) {
 						}
 						defer r.Close()
 
-						v, dirty, err := r.Migrator.Version()
+						v, dirty, err := r.Version()
 						if ft.wantVersion == -1 {
 							if err != migrate.ErrNilVersion {
 								t.Errorf("Version() error = %v, want %v", err, migrate.ErrNilVersion)
@@ -163,7 +163,7 @@ func TestRun(t *testing.T) {
 				defer r.Close()
 
 				// Verify initial state: Schema migration table should not be yet initialized.
-				v, dirty, err := r.Migrator.Version()
+				v, dirty, err := r.Version()
 				if err != migrate.ErrNilVersion {
 					t.Errorf("Initial Version(): got (%v, %v, %v), want (nil, _, ErrNilVersion)", v, dirty, err)
 				}
@@ -177,7 +177,7 @@ func TestRun(t *testing.T) {
 				}
 
 				// Verify that baseline migration was not applied, and version is still nil.
-				v, dirty, err = r.Migrator.Version()
+				v, dirty, err = r.Version()
 				if err != migrate.ErrNilVersion {
 					t.Errorf("Final Version(): got (%v, %v, %v), want (nil, false, ErrNilVersion)", v, dirty, err)
 				}
@@ -220,7 +220,7 @@ func TestRun(t *testing.T) {
 				}
 				defer r.Close()
 
-				vBefore, _, err := r.Migrator.Version()
+				vBefore, _, err := r.Version()
 				if err != nil {
 					t.Fatalf("Version() failed before down: %v", err)
 				}
@@ -236,7 +236,7 @@ func TestRun(t *testing.T) {
 					t.Fatalf("ExecCommand(down) failed: %v", err)
 				}
 
-				vAfter, _, err := r.Migrator.Version()
+				vAfter, _, err := r.Version()
 				if err != nil && err != migrate.ErrNilVersion {
 					t.Fatalf("Version() failed after down: %v", err)
 				}
@@ -264,7 +264,7 @@ func TestRun(t *testing.T) {
 				}
 				defer r.Close()
 
-				versionAfterInit, dirty, err := r.Migrator.Version()
+				versionAfterInit, dirty, err := r.Version()
 				if err != nil {
 					t.Fatalf("Version() = %v, want nil (after init)", err)
 				}
@@ -278,7 +278,7 @@ func TestRun(t *testing.T) {
 					t.Fatalf("run(up) = %v, want nil (after init)", err)
 				}
 
-				versionAfterUp, dirtyAfterUp, err := r.Migrator.Version()
+				versionAfterUp, dirtyAfterUp, err := r.Version()
 				if err != nil {
 					t.Fatalf("Version() = %v, want nil (after up)", err)
 				}

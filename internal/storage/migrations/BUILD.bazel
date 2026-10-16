@@ -31,5 +31,10 @@ go_test(
     name = "migrations_test",
     srcs = ["runner_test.go"],
     embed = [":migrations"],
-    deps = ["@io_k8s_utils//ptr"],
+    deps = [
+        "@com_github_golang_migrate_migrate_v4//:migrate",
+        "@com_github_golang_migrate_migrate_v4//database/stub",
+        "@com_github_golang_migrate_migrate_v4//source/iofs",
+        "@io_k8s_utils//ptr",
+    ],
 )

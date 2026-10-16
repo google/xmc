@@ -20,7 +20,6 @@ import (
 	"embed"
 	"flag"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -166,15 +165,9 @@ func newRunner(ctx context.Context, cfg *config, opts ...option.ClientOption) (*
 		return nil, fmt.Errorf("failed to create migrator: %w", err)
 	}
 
-	return &migrations.Runner{
-		Migrator: migrator,
-		Source:   sourceDriver,
-		IsDatabaseEmpty: func(ctx context.Context) (bool, error) {
-			return isDatabaseEmpty(ctx, dataClient)
-		},
-		Stdout: os.Stdout,
-		Stdin:  os.Stdin,
-	}, nil
+	return migrations.NewRunner(migrator, sourceDriver, func(ctx context.Context) (bool, error) {
+		return isDatabaseEmpty(ctx, dataClient)
+	}), nil
 }
 
 // isDatabaseEmpty checks if the Spanner database contains any user-defined tables.
