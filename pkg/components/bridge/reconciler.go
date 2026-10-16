@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -59,6 +60,9 @@ type ReconcileResult struct {
 	Access *AccessStatus
 	// RemoveFinalizer indicates that cleanup finished and the CMS cleanup finalizer may be released.
 	RemoveFinalizer bool
+	// RequeueAfter optionally overrides ProbeInterval as the delay before the next pass. It is always
+	// honored, whether shorter or longer than ProbeInterval.
+	RequeueAfter time.Duration
 }
 
 // Reconciler executes reconciliation cycles for XMC Component custom resources.
@@ -66,6 +70,7 @@ type Reconciler struct {
 	cmsClient   CMSClient
 	prober      StatusDetectorHealthProber
 	helmManager HelmManager
+	syncTracker cmsSyncTracker
 }
 
 // NewReconciler constructs a new Reconciler instance.
@@ -77,6 +82,14 @@ func NewReconciler(cms CMSClient, prober StatusDetectorHealthProber, helmMgr Hel
 		return nil, errors.New("cms client must not be nil")
 	}
 	return &Reconciler{cmsClient: cms, prober: prober, helmManager: helmMgr}, nil
+}
+
+// ForgetComponent evicts any in-memory CMS sync or deactivation-block state tracked for the component.
+func (r *Reconciler) ForgetComponent(namespace, name string) {
+	if r == nil {
+		return
+	}
+	r.syncTracker.forget(componentKey(namespace, naming.CanonicalComponentName(name)))
 }
 
 // ReconcileComponentInput bundles parameters for a component reconciliation pass.
@@ -393,16 +406,9 @@ func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput
 		preserveExistingAccess(res, in.ExistingAccess)
 	}
 	setReadiness(res, in, ConditionStatusFalse, reason, msg)
-	if !shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) {
-		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
-		return res, nil
+	if err := r.syncObservedToCMS(ctx, in, canonicalName, res, ConditionStatusFalse, true); err != nil {
+		return res, err
 	}
-	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
-		setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
-		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
-	}
-	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
-	resetReadyTransitionTime(res.Conditions)
 	logging.Info(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "message", msg)
 	return res, nil
 }

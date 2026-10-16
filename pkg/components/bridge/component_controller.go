@@ -57,8 +57,9 @@ type ComponentControllerOptions struct {
 // ComponentController runs Reconciler as a controller-runtime controller over the Component CRs of
 // the namespace its manager caches. A Component is reconciled when its spec, labels or annotations
 // change, when its deletion starts, when the readiness of a Component it depends on changes, and
-// ProbeInterval after every successful pass. A failed pass is retried with
-// NewComponentRateLimiter backoff.
+// after every successful pass: after the pass's explicit RequeueAfter when it sets one (30s while
+// deactivation is blocked, the 5m CMS heartbeat once disabled), otherwise after ProbeInterval. A
+// failed pass is retried with NewComponentRateLimiter backoff.
 type ComponentController struct {
 	client     client.Client
 	reconciler *Reconciler
@@ -97,6 +98,9 @@ func (c *ComponentController) newControllerBuilder(mgr manager.Manager) *builder
 func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	item := newComponentObject()
 	if err := c.client.Get(ctx, req.NamespacedName, item); err != nil {
+		if apierrors.IsNotFound(err) {
+			c.reconciler.ForgetComponent(req.Namespace, req.Name)
+		}
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 	// A rejected finalizer patch, typically a 422 because the cached Component is stale, is
@@ -121,7 +125,17 @@ func (c *ComponentController) Reconcile(ctx context.Context, req reconcile.Reque
 	if res != nil && res.RemoveFinalizer {
 		return reconcile.Result{}, nil
 	}
-	return reconcile.Result{RequeueAfter: c.opts.ProbeInterval}, nil
+	return reconcile.Result{RequeueAfter: c.requeueDelay(res)}, nil
+}
+
+// requeueDelay returns the pass's explicit RequeueAfter when set, which is always honored, longer
+// or shorter than ProbeInterval (e.g. the 30s DeactivationBlocked recheck or the 5m heartbeat of a
+// disabled component); otherwise it returns ProbeInterval.
+func (c *ComponentController) requeueDelay(res *ReconcileResult) time.Duration {
+	if res != nil && res.RequeueAfter > 0 {
+		return res.RequeueAfter
+	}
+	return c.opts.ProbeInterval
 }
 
 // ensureCleanupFinalizer returns item once FinalizerCMSCleanup is persisted on it, attaching the
@@ -133,10 +147,12 @@ func (c *ComponentController) ensureCleanupFinalizer(ctx context.Context, item *
 		return item, nil
 	}
 	if item.GetDeletionTimestamp() != nil {
+		c.reconciler.ForgetComponent(item.GetNamespace(), item.GetName())
 		return nil, nil
 	}
 	updated, err := AddCleanupFinalizer(ctx, c.client, item)
 	if apierrors.IsNotFound(err) {
+		c.reconciler.ForgetComponent(item.GetNamespace(), item.GetName())
 		return nil, nil
 	}
 	if err != nil {

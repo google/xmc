@@ -75,7 +75,7 @@ Once elected, `xmc-bridge` invokes `HydrateFromCluster` to restore active 1P com
 
 - when its spec (generation), labels or annotations change, or its deletion starts;
 - when a Component it lists in `spec.dependencies` is created, deleted, changes generation, or becomes ready or unready as a dependency. Status writes that keep a dependency's readiness, such as condition timestamp refreshes, do not re-enqueue its dependents;
-- `--probe-interval` after each successful pass;
+- after each successful pass: after the pass's explicit requeue delay when it sets one, otherwise after `--probe-interval`. The explicit delay is always honored, longer or shorter than the probe interval: 30s while deactivation is blocked (`DeactivationBlocked`, so the blocked workload's health and the CMS `PrepareDeactivation` recheck refresh every 30s), and the 5-minute CMS heartbeat once a Component is disabled;
 - after a failed pass (CMS, actuation or status persistence error), with per-Component exponential backoff from 5s to 300s and ±10% jitter. A successful pass resets the backoff.
 
 A pass always persists its status, also when it fails, so the CR reports the failure while the retry is pending.
