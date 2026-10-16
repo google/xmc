@@ -262,3 +262,34 @@ func TestFakePauseState_WithStateAndInjectedErrors(t *testing.T) {
 		t.Errorf("Set() error = %v, want %v", err, wantSetErr)
 	}
 }
+
+func TestFakePauseState_InjectGetFaults(t *testing.T) {
+	seed := &storage.PauseSchedulingState{
+		SchedulingPaused: true,
+		UpdatedAt:        time.Date(2026, 3, 1, 14, 0, 0, 0, time.UTC),
+	}
+	fake := NewFakePauseStateRepositoryWithState(seed)
+	fake.InjectGetFaults(1, 1)
+
+	hangCtx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := fake.Get(hangCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Get() during injected hang error = %v, want %v", err, context.DeadlineExceeded)
+	}
+
+	ctx := context.Background()
+	if _, err := fake.Get(ctx); !errors.Is(err, grpcerr.ErrUnavailable) {
+		t.Errorf("Get() during injected failure error = %v, want %v", err, grpcerr.ErrUnavailable)
+	}
+
+	got, err := fake.Get(ctx)
+	if err != nil {
+		t.Fatalf("Get() after injected faults unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(seed, got); diff != "" {
+		t.Errorf("Get() after injected faults mismatch (-want +got):\n%s", diff)
+	}
+	if calls := fake.GetCallCount(); calls != 3 {
+		t.Errorf("GetCallCount() = %d, want 3", calls)
+	}
+}

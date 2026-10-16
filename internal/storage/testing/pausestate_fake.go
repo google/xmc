@@ -34,6 +34,11 @@ type FakePauseStateRepository struct {
 	state  *storage.PauseSchedulingState
 	GetErr error
 	SetErr error
+
+	// Injected Get faults, consumed in order: hangs first, then failures.
+	getHangs    int
+	getFailures int
+	getCalls    int
 }
 
 // NewFakePauseStateRepository creates a new in-memory FakePauseStateRepository.
@@ -62,6 +67,9 @@ func clonePauseSchedulingState(s *storage.PauseSchedulingState) *storage.PauseSc
 // If uninitialized, it returns a safe default with SchedulingPaused = false.
 func (f *FakePauseStateRepository) Get(ctx context.Context) (*storage.PauseSchedulingState, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := f.consumeGetFault(ctx); err != nil {
 		return nil, err
 	}
 
@@ -103,4 +111,45 @@ func (f *FakePauseStateRepository) Reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.state = nil
+}
+
+// InjectGetFaults makes the next hangs Get calls block until their context is done and the
+// following failures calls return grpcerr.ErrUnavailable. Later calls behave normally.
+func (f *FakePauseStateRepository) InjectGetFaults(hangs, failures int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.getHangs = hangs
+	f.getFailures = failures
+}
+
+// GetCallCount returns how many Get calls were made with a live context.
+func (f *FakePauseStateRepository) GetCallCount() int {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.getCalls
+}
+
+// consumeGetFault records a Get call and applies the next injected fault, if any. The lock is
+// released before hanging so other calls and GetCallCount are not blocked.
+func (f *FakePauseStateRepository) consumeGetFault(ctx context.Context) error {
+	f.mu.Lock()
+	f.getCalls++
+	hang := f.getHangs > 0
+	fail := !hang && f.getFailures > 0
+	if hang {
+		f.getHangs--
+	}
+	if fail {
+		f.getFailures--
+	}
+	f.mu.Unlock()
+
+	if hang {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	if fail {
+		return fmt.Errorf("%w: injected Get failure", grpcerr.ErrUnavailable)
+	}
+	return nil
 }

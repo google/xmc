@@ -169,25 +169,24 @@ func (l *Listener) waitForBackoff(ctx context.Context) {
 // giving up would leave the cache stale until the next broadcast or reconnect.
 func (l *Listener) handleBroadcastUpdate(ctx context.Context, msg string) {
 	logging.Info(ctx, "Received broadcast update notification", "message", msg)
-	state, err := l.readPauseState(ctx)
-	for err != nil {
+	for ctx.Err() == nil {
+		state, err := l.readPauseState(ctx)
+		if err == nil {
+			l.cache.Update(State{
+				IsPaused:  state.SchedulingPaused,
+				UpdatedAt: state.UpdatedAt,
+			})
+			logging.Info(ctx, "Updated local pause state from broadcast notification",
+				"is_paused", state.SchedulingPaused, "updated_at", state.UpdatedAt)
+			return
+		}
 		if ctx.Err() != nil {
 			return
 		}
 		logging.Error(ctx, "Failed to query pause scheduling state on broadcast update, retrying",
 			"error", err, "backoff", l.reconnectBackoff)
 		l.waitForBackoff(ctx)
-		if ctx.Err() != nil {
-			return
-		}
-		state, err = l.readPauseState(ctx)
 	}
-	l.cache.Update(State{
-		IsPaused:  state.SchedulingPaused,
-		UpdatedAt: state.UpdatedAt,
-	})
-	logging.Info(ctx, "Updated local pause state from broadcast notification",
-		"is_paused", state.SchedulingPaused, "updated_at", state.UpdatedAt)
 }
 
 // readPauseState bounds a single pause state read with readTimeout, so a hung call surfaces
@@ -199,7 +198,9 @@ func (l *Listener) readPauseState(ctx context.Context) (*storage.PauseScheduling
 }
 
 func (l *Listener) resyncOnReconnect(ctx context.Context) error {
-	latestOffset, err := l.subscriber.LatestOffset(ctx)
+	offsetCtx, cancel := context.WithTimeout(ctx, l.readTimeout)
+	defer cancel()
+	latestOffset, err := l.subscriber.LatestOffset(offsetCtx)
 	if err != nil {
 		logging.Warn(ctx, "Failed to query stream offset on Redis reconnect", "error", err)
 		return err

@@ -268,54 +268,20 @@ func TestListener_BroadcastUpdate(t *testing.T) {
 	}
 }
 
-var _ storage.PauseStateRepository = (*flakyPauseStateRepository)(nil)
-
-// flakyPauseStateRepository blocks the first `hangs` Get calls until their context ends, fails the
-// next `failures` calls, and returns state after that.
-type flakyPauseStateRepository struct {
-	mu       sync.Mutex
-	hangs    int
-	failures int
-	calls    int
-	state    *storage.PauseSchedulingState
-	called   chan struct{}
-}
-
-func (r *flakyPauseStateRepository) Get(ctx context.Context) (*storage.PauseSchedulingState, error) {
-	call := r.recordCall()
-	switch {
-	case call <= r.hangs:
-		<-ctx.Done()
-		return nil, ctx.Err()
-	case call <= r.hangs+r.failures:
-		return nil, errors.New("spanner unavailable")
-	default:
-		state := *r.state
-		return &state, nil
-	}
-}
-
-func (r *flakyPauseStateRepository) recordCall() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.calls++
-	if r.called != nil {
-		select {
-		case r.called <- struct{}{}:
-		default:
-		}
-	}
-	return r.calls
-}
-
-func (r *flakyPauseStateRepository) callCount() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.calls
-}
-
 func withReadTimeout(d time.Duration) func(*Params) {
 	return func(p *Params) { p.ReadTimeout = d }
+}
+
+// waitForGetCalls blocks until repo has served at least n Get calls, failing the test after a second.
+func waitForGetCalls(t *testing.T, repo *storagetest.FakePauseStateRepository, n int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for repo.GetCallCount() < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %d Get() calls, got %d", n, repo.GetCallCount())
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func TestListener_BroadcastUpdate_RetriesUntilReadSucceeds(t *testing.T) {
@@ -334,11 +300,8 @@ func TestListener_BroadcastUpdate_RetriesUntilReadSucceeds(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			repo := &flakyPauseStateRepository{
-				hangs:    tt.hangs,
-				failures: tt.failures,
-				state:    &storage.PauseSchedulingState{SchedulingPaused: true, UpdatedAt: updatedAt},
-			}
+			repo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true, UpdatedAt: updatedAt})
+			repo.InjectGetFaults(tt.hangs, tt.failures)
 			listener, cache := newTestListener(t, newMockSubscriber(), repo, withReadTimeout(20*time.Millisecond))
 
 			done := make(chan struct{})
@@ -352,7 +315,7 @@ func TestListener_BroadcastUpdate_RetriesUntilReadSucceeds(t *testing.T) {
 				t.Fatal("handleBroadcastUpdate() did not return after the read recovered")
 			}
 
-			if got := repo.callCount(); got != tt.wantCalls {
+			if got := repo.GetCallCount(); got != tt.wantCalls {
 				t.Errorf("Get() calls = %d, want %d", got, tt.wantCalls)
 			}
 			want := State{IsPaused: true, UpdatedAt: updatedAt}
@@ -377,12 +340,8 @@ func TestListener_BroadcastUpdate_StopsRetryingOnShutdown(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			repo := &flakyPauseStateRepository{
-				hangs:    tt.hangs,
-				failures: tt.failures,
-				state:    &storage.PauseSchedulingState{SchedulingPaused: true},
-				called:   make(chan struct{}, 10),
-			}
+			repo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
+			repo.InjectGetFaults(tt.hangs, tt.failures)
 			listener, cache := newTestListener(t, newMockSubscriber(), repo, withReadTimeout(20*time.Millisecond))
 
 			done := make(chan struct{})
@@ -392,13 +351,7 @@ func TestListener_BroadcastUpdate_StopsRetryingOnShutdown(t *testing.T) {
 			}()
 
 			// Wait for the first attempt and one retry before shutting down.
-			for i := 1; i <= 2; i++ {
-				select {
-				case <-repo.called:
-				case <-time.After(time.Second):
-					t.Fatalf("timed out waiting for Get() attempt %d", i)
-				}
-			}
+			waitForGetCalls(t, repo, 2)
 			cancel()
 
 			select {
