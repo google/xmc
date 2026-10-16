@@ -382,24 +382,20 @@ message RequestSource {
     json_name = "uid"
   ];
 
-  // Creation time of the source object. Dropped: ownership never compares wall clocks.
-  reserved 2;
-  reserved "create_time";
-
   // Generation (metadata.generation) of the source object; orders requests within one uid.
-  int64 generation = 3 [
+  int64 generation = 2 [
     (google.api.field_behavior) = REQUIRED,
     json_name = "generation"
   ];
 
   // Namespace (metadata.namespace) of the source object.
-  string namespace = 4 [
+  string namespace = 3 [
     (google.api.field_behavior) = REQUIRED,
     json_name = "namespace"
   ];
 
   // Cluster that hosts the source object.
-  ClusterIdentity cluster = 5 [
+  ClusterIdentity cluster = 4 [
     (google.api.field_behavior) = REQUIRED,
     json_name = "cluster"
   ];

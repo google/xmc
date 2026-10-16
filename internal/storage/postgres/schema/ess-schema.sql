@@ -238,6 +238,14 @@ CREATE TABLE Components (
   UpdateTime TIMESTAMPTZ NOT NULL,
   -- NULL once the component is deleted (State 5), freeing the name for reuse.
   ActiveName TEXT GENERATED ALWAYS AS (CASE WHEN State != 5 THEN Name ELSE NULL END) STORED,
+  -- Recorded owner: the declarative object (Kubernetes CR) that last wrote the component; all NULL
+  -- for records never written by a sourced request.
+  SourceUid TEXT,
+  SourceGeneration BIGINT,
+  SourceNamespace TEXT,
+  SourceClusterUid TEXT,
+  SourceEpoch BIGINT,
+  SourceLastSeenTime TIMESTAMPTZ, -- Last request accepted from the owner; staleness observability only.
   PRIMARY KEY (ComponentId),
   CONSTRAINT CK_Components_State CHECK (State IN (1, 2, 3, 4, 5))
 );
