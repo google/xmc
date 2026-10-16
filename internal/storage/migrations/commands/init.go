@@ -16,6 +16,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -23,7 +24,7 @@ import (
 )
 
 // Init initializes the schema version to the latest migration version.
-func Init(migrator *migrate.Migrate, src source.Driver) error {
+func Init(migrator *migrate.Migrate, src source.Driver, out io.Writer) error {
 	latestVersion, err := calculateLatestVersion(src)
 	if err != nil {
 		return fmt.Errorf("failed to get latest migration version: %w", err)
@@ -33,7 +34,7 @@ func Init(migrator *migrate.Migrate, src source.Driver) error {
 		return fmt.Errorf("failed to set schema version to %d: %w", latestVersion, err)
 	}
 
-	fmt.Printf("Schema version initialized to: %d\n", latestVersion)
+	fmt.Fprintf(out, "Schema version initialized to: %d\n", latestVersion)
 	return nil
 }
 

@@ -18,14 +18,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
 const defaultFileMode = 0644
 
-// Create generates a new pair of migration files.
+// Create generates a new pair of migration files in migrationsDir, a directory relative to the
+// workspace root.
 func Create(migrationsDir, name string) error {
 	if name == "" {
 		return fmt.Errorf("migration name cannot be empty")
@@ -104,13 +104,6 @@ func resolveRelativePath(name string) (string, error) {
 	if ws == "" {
 		return "", fmt.Errorf("the 'create' command must be run via 'bazel run'")
 	}
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", fmt.Errorf("failed to get current file information")
-	}
 
-	// Go up two levels from commands/ to migrations/
-	baseDir := filepath.Dir(filepath.Dir(filename))
-
-	return filepath.Join(ws, baseDir, name), nil
+	return filepath.Join(ws, name), nil
 }

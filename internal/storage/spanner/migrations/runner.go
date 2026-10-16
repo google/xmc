@@ -18,12 +18,9 @@ package main
 import (
 	"context"
 	"embed"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"os"
-	"strconv"
+	"path/filepath"
 	"strings"
 
 	"cloud.google.com/go/spanner"
@@ -31,9 +28,11 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/migrations/commands"
+	"xmanager_cloud/internal/storage/migrations"
+	"xmanager_cloud/internal/storage/migrations/commands"
 	"xmanager_cloud/internal/storage/spanner/migrations/driver"
 )
 
@@ -46,15 +45,8 @@ var xidMessagesDescriptor []byte
 //go:embed ess/*.sql xid/*.sql
 var migrationsFS embed.FS
 
-// Commands supported by the runner.
-const (
-	upCmd      = "up"
-	downCmd    = "down"
-	forceCmd   = "force"
-	versionCmd = "version"
-	initCmd    = "init"
-	createCmd  = "create"
-)
+// migrationsBaseDir is the workspace-relative directory that contains the migrations subdirectories.
+const migrationsBaseDir = "internal/storage/spanner/migrations"
 
 type config struct {
 	projectID     string
@@ -69,39 +61,21 @@ type config struct {
 	customSourceDriver source.Driver
 }
 
-func parseArg(cfg *config, args []string) error {
-	if len(args) == 0 {
-		return nil
-	}
-	if len(args) > 1 {
-		return fmt.Errorf("too many arguments")
-	}
-
-	if cfg.command == createCmd {
-		cfg.migrationName = args[0]
-		return nil
-	}
-
-	argVal, err := strconv.Atoi(args[0])
-	if err != nil {
-		return fmt.Errorf("invalid argument: %q is not an integer", args[0])
-	}
-	cfg.arg = &argVal
-	return nil
-}
-
 func parseConfig() *config {
 	cfg := &config{}
 	flag.StringVar(&cfg.projectID, "project", "", "Google Cloud Project ID")
 	flag.StringVar(&cfg.instanceID, "instance", "", "Spanner Instance ID")
 	flag.StringVar(&cfg.databaseID, "database", "", "Spanner Database ID")
 	flag.StringVar(&cfg.migrationsDir, "migrations_dir", "", "Name of the migrations subdirectory (e.g., 'ess' or 'xid')")
-	flag.StringVar(&cfg.command, "command", "", fmt.Sprintf("Command to run: %s, %s, %s, %s, %s", upCmd, downCmd, forceCmd, versionCmd, initCmd))
+	flag.StringVar(&cfg.command, "command", "", fmt.Sprintf("Command to run: %s, %s, %s, %s, %s", migrations.UpCmd, migrations.DownCmd, migrations.ForceCmd, migrations.VersionCmd, migrations.InitCmd))
 	flag.Parse()
 
-	if err := parseArg(cfg, flag.Args()); err != nil {
+	arg, migrationName, err := migrations.ParseArg(cfg.command, flag.Args())
+	if err != nil {
 		logging.Fatal(context.Background(), "failed to parse arguments", "error", err)
 	}
+	cfg.arg = arg
+	cfg.migrationName = migrationName
 
 	cfg.migrationsDir = strings.ToLower(cfg.migrationsDir)
 	cfg.command = strings.ToLower(cfg.command)
@@ -121,11 +95,11 @@ func run(cfg *config, opts ...option.ClientOption) error {
 		return fmt.Errorf("missing required flag: --command")
 	}
 
-	if cfg.command == createCmd {
+	if cfg.command == migrations.CreateCmd {
 		if cfg.migrationsDir == "" {
-			return fmt.Errorf("missing required flag: --migrations_dir (required for %q)", createCmd)
+			return fmt.Errorf("missing required flag: --migrations_dir (required for %q)", migrations.CreateCmd)
 		}
-		return commands.Create(cfg.migrationsDir, cfg.migrationName)
+		return commands.Create(filepath.Join(migrationsBaseDir, cfg.migrationsDir), cfg.migrationName)
 	}
 
 	if cfg.projectID == "" || cfg.instanceID == "" || cfg.databaseID == "" || cfg.migrationsDir == "" {
@@ -137,21 +111,12 @@ func run(cfg *config, opts ...option.ClientOption) error {
 	if err != nil {
 		return err
 	}
-	defer runner.close()
+	defer runner.Close()
 
-	return runner.execCommand(ctx, cfg.command, cfg.arg)
+	return runner.ExecCommand(ctx, cfg.command, cfg.arg)
 }
 
-type runner struct {
-	migrator      *migrate.Migrate
-	source        source.Driver
-	dataClient    *spanner.Client
-	migrationsDir string
-	stdout        io.Writer
-	stdin         io.Reader
-}
-
-func newRunner(ctx context.Context, cfg *config, opts ...option.ClientOption) (*runner, error) {
+func newRunner(ctx context.Context, cfg *config, opts ...option.ClientOption) (*migrations.Runner, error) {
 	dbName := fmt.Sprintf("projects/%s/instances/%s/databases/%s", cfg.projectID, cfg.instanceID, cfg.databaseID)
 	clientOpts := append([]option.ClientOption{option.WithQuotaProject(cfg.projectID)}, opts...)
 
@@ -200,57 +165,33 @@ func newRunner(ctx context.Context, cfg *config, opts ...option.ClientOption) (*
 		return nil, fmt.Errorf("failed to create migrator: %w", err)
 	}
 
-	return &runner{
-		migrator:      migrator,
-		source:        sourceDriver,
-		dataClient:    dataClient,
-		migrationsDir: cfg.migrationsDir,
-		stdout:        os.Stdout,
-		stdin:         os.Stdin,
-	}, nil
+	return migrations.NewRunner(migrator, sourceDriver, func(ctx context.Context) (bool, error) {
+		return isDatabaseEmpty(ctx, dataClient)
+	}), nil
 }
 
-func (r *runner) close() {
-	err, dbErr := r.migrator.Close()
+// isDatabaseEmpty checks if the Spanner database contains any user-defined tables.
+func isDatabaseEmpty(ctx context.Context, dataClient *spanner.Client) (bool, error) {
+	// Query the information schema to check for user-defined tables. We exclude the SchemaMigrations
+	// table from the check because it can exist on empty db with nil version after running the "down" command.
+	stmt := spanner.Statement{
+		SQL: `SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+              WHERE TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA', 'SPANNER_SYS')
+              AND TABLE_NAME != 'SchemaMigrations' LIMIT 1`,
+	}
+	iter := dataClient.Single().Query(ctx, stmt)
+	defer iter.Stop()
+	_, err := iter.Next()
+	if err == iterator.Done {
+		// No rows were returned, so the database is empty of user tables.
+		return true, nil
+	}
 	if err != nil {
-		logging.Error(context.Background(), "Failed to close source driver", "error", err)
+		return false, err
 	}
-	if dbErr != nil {
-		logging.Error(context.Background(), "Failed to close database driver", "error", dbErr)
-	}
-}
 
-func (r *runner) execCommand(ctx context.Context, cmd string, arg *int) error {
-	logging.Info(ctx, "Executing command", "command", cmd)
-	switch cmd {
-	case upCmd:
-		return commands.Up(ctx, r.migrator, r.dataClient, arg)
-	case downCmd:
-		return commands.Down(r.migrator, r.source, arg, r.stdout, r.stdin)
-	case forceCmd:
-		if arg == nil {
-			return fmt.Errorf("missing argument for %s command", forceCmd)
-		}
-		if err := r.migrator.Force(*arg); err != nil {
-			return err
-		}
-		fmt.Printf("Forced version to %d\n", *arg)
-	case versionCmd:
-		v, dirty, err := r.migrator.Version()
-		if err != nil {
-			if errors.Is(err, migrate.ErrNilVersion) {
-				fmt.Printf("Migrations are not yet initialized\n")
-				return nil
-			}
-			return err
-		}
-		fmt.Printf("Version: %d, Dirty: %v\n", v, dirty)
-	case initCmd:
-		return commands.Init(r.migrator, r.source)
-	default:
-		return fmt.Errorf("unknown command: %q", cmd)
-	}
-	return nil
+	// A row was found, so the database is not empty.
+	return false, nil
 }
 
 func selectDescriptor(migrationsDir string) ([]byte, error) {

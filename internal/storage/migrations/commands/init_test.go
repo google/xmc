@@ -14,6 +14,7 @@
 package commands
 
 import (
+	"io"
 	"strings"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestInit(t *testing.T) {
 			}
 			defer m.Close()
 
-			err = Init(m, s)
+			err = Init(m, s, io.Discard)
 
 			if tc.expectError {
 				if err == nil {
