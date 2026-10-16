@@ -17,6 +17,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -91,5 +92,84 @@ func TestMemoryStore_UnchangedIntentRecordsNoSnapshot(t *testing.T) {
 	}
 	if got := len(ms.snapshots["redpanda"]); got != 1 {
 		t.Errorf("snapshots after repeated unchanged intent = %d, want 1", got)
+	}
+}
+
+func TestPlanIntent(t *testing.T) {
+	spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"}
+	changedSpec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.1.0"}
+	rec := &ComponentRecord{Generation: 5, Spec: spec}
+	tests := []struct {
+		name       string
+		spec       *componentspb.ComponentSpec
+		labels     map[string]string
+		deps       []string
+		desiredGen int64
+		want       intentPlan
+	}{
+		{name: "unchanged intent writes nothing", spec: spec, desiredGen: 5, want: intentPlan{write: writeNothing, generation: 5}},
+		{name: "older desired generation with an equal spec writes nothing", spec: spec, desiredGen: 3, want: intentPlan{write: writeNothing, generation: 5}},
+		{name: "newer desired generation jumps to it", spec: spec, desiredGen: 9, want: intentPlan{write: writeSpec, generation: 9}},
+		{name: "changed spec at an older desired generation bumps by one", spec: changedSpec, desiredGen: 3, want: intentPlan{write: writeSpec, generation: 6}},
+		{name: "labels-only change writes the spec", spec: spec, labels: map[string]string{"tier": "backend"}, desiredGen: 5, want: intentPlan{write: writeSpec, generation: 6}},
+		{name: "dependencies-only change writes the spec", spec: spec, deps: []string{"redpanda"}, desiredGen: 5, want: intentPlan{write: writeSpec, generation: 6}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := planIntent(rec, tt.spec, tt.labels, tt.deps, tt.desiredGen); got != tt.want {
+				t.Errorf("planIntent() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPlanLiveIntent checks the create-versus-update dispatch both stores rely on: a missing or
+// soft-deleted record is planned as a create at newIntentGeneration, and an active record is
+// returned with the planIntent outcome.
+func TestPlanLiveIntent(t *testing.T) {
+	spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"}
+	active := &ComponentRecord{Name: "redpanda", Generation: 5, Spec: spec}
+	deleteTime := time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
+	softDeleted := &ComponentRecord{Name: "redpanda", Generation: 5, Spec: spec, DeleteTime: &deleteTime}
+	tests := []struct {
+		name       string
+		catalog    map[string]*ComponentRecord
+		desiredGen int64
+		wantRec    *ComponentRecord
+		wantPlan   intentPlan
+	}{
+		{name: "absent name is a create", catalog: map[string]*ComponentRecord{}, desiredGen: 0, wantPlan: intentPlan{write: writeSpec, generation: 1}},
+		{name: "soft-deleted record is a create at the desired generation", catalog: map[string]*ComponentRecord{"redpanda": softDeleted}, desiredGen: 3, wantPlan: intentPlan{write: writeSpec, generation: 3}},
+		{name: "active record delegates to planIntent", catalog: map[string]*ComponentRecord{"redpanda": active}, desiredGen: 5, wantRec: active, wantPlan: intentPlan{write: writeNothing, generation: 5}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec, plan := planLiveIntent(tt.catalog, "redpanda", spec, nil, nil, tt.desiredGen)
+			if rec != tt.wantRec {
+				t.Errorf("planLiveIntent() record = %p, want %p", rec, tt.wantRec)
+			}
+			if plan != tt.wantPlan {
+				t.Errorf("planLiveIntent() plan = %+v, want %+v", plan, tt.wantPlan)
+			}
+		})
+	}
+}
+
+func TestNewIntentGeneration(t *testing.T) {
+	tests := []struct {
+		name       string
+		desiredGen int64
+		want       int64
+	}{
+		{name: "zero desired generation", desiredGen: 0, want: 1},
+		{name: "generation one", desiredGen: 1, want: 1},
+		{name: "generation seven", desiredGen: 7, want: 7},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := newIntentGeneration(tt.desiredGen); got != tt.want {
+				t.Errorf("newIntentGeneration(%d) = %d, want %d", tt.desiredGen, got, tt.want)
+			}
+		})
 	}
 }

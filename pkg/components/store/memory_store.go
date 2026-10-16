@@ -54,7 +54,7 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-// SetComponentIntent applies or updates component intent within the in-memory store.
+// SetComponentIntent applies or updates component intent, ordered by desiredGen, within the in-memory store.
 func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error) {
 	canonicalName, err := validateIntentArgs(name, spec)
 	if err != nil {
@@ -67,27 +67,31 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	rec, plan := planLiveIntent(m.componentsByName, canonicalName, spec, labels, deps, desiredGen)
 	if _, err := validateIntentDependencies(m.componentsByName, canonicalName, deps); err != nil {
 		return nil, err
 	}
-
-	rec, exists := m.componentsByName[canonicalName]
-	if exists && !isDeletedRecord(rec) {
-		if isUnchangedIntent(rec, spec, labels, deps, desiredGen) {
-			return cloneRecord(rec), nil
-		}
-		updateExistingIntent(rec, spec, labels, deps, desiredGen, now)
-		m.recordSnapshotLocked(rec)
+	if rec != nil {
+		m.applyIntentPlanLocked(rec, plan, spec, labels, deps, now)
 		return cloneRecord(rec), nil
 	}
 
 	m.nextID++
-	rec = createNewIntentRecord(m.nextID, canonicalName, spec, labels, deps, desiredGen, now)
+	rec = createNewIntentRecord(m.nextID, canonicalName, spec, labels, deps, plan.generation, now)
 	m.componentsByName[canonicalName] = rec
 	m.componentsByID[rec.ComponentID] = rec
 	m.recordSnapshotLocked(rec)
 
 	return cloneRecord(rec), nil
+}
+
+// applyIntentPlanLocked applies plan to the existing record rec.
+func (m *MemoryStore) applyIntentPlanLocked(rec *ComponentRecord, plan intentPlan, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, now time.Time) {
+	if plan.write != writeSpec {
+		return
+	}
+	updateExistingIntent(rec, spec, labels, deps, plan.generation, now)
+	m.recordSnapshotLocked(rec)
 }
 
 func validateResourceName(name string) (string, error) {
@@ -112,11 +116,7 @@ func validateIntentArgs(name string, spec *componentspb.ComponentSpec) (string, 
 	return canonicalName, nil
 }
 
-func updateExistingIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, now time.Time) {
-	newGen := rec.Generation + 1
-	if desiredGen > rec.Generation {
-		newGen = desiredGen
-	}
+func updateExistingIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, newGen int64, now time.Time) {
 	rec.Generation = newGen
 	rec.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 	rec.Spec = proto.Clone(spec).(*componentspb.ComponentSpec)
@@ -131,12 +131,7 @@ func updateExistingIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec
 	rec.Status.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 }
 
-func createNewIntentRecord(id int64, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, now time.Time) *ComponentRecord {
-	gen := int64(1)
-	if desiredGen > 1 {
-		gen = desiredGen
-	}
-
+func createNewIntentRecord(id int64, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, gen int64, now time.Time) *ComponentRecord {
 	specClone := proto.Clone(spec).(*componentspb.ComponentSpec)
 	specClone.Generation = gen
 

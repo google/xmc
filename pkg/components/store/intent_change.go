@@ -47,6 +47,47 @@ func isUnchangedIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, l
 	return proto.Equal(specWithoutGeneration(rec.Spec), specWithoutGeneration(spec))
 }
 
+// intentWrite is what applying an intent writes; for a new component the plan is always writeSpec.
+type intentWrite int
+
+const (
+	// writeNothing leaves the record untouched.
+	writeNothing intentWrite = iota
+	// writeSpec stores the intent under a bumped generation and resets the state.
+	writeSpec
+)
+
+// intentPlan is the outcome of applying an intent: what is written and the resulting generation.
+type intentPlan struct {
+	write      intentWrite
+	generation int64 // Generation of the record after the write.
+}
+
+// planIntent decides how an intent ordered by desiredGen applies to the existing active record rec.
+// Both stores use it so their semantics stay identical.
+func planIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) intentPlan {
+	if isUnchangedIntent(rec, spec, labels, deps, desiredGen) {
+		return intentPlan{write: writeNothing, generation: rec.Generation}
+	}
+	return intentPlan{write: writeSpec, generation: max(desiredGen, rec.Generation+1)}
+}
+
+// newIntentGeneration returns the generation of a newly created component: max(desiredGen, 1).
+func newIntentGeneration(desiredGen int64) int64 {
+	return max(desiredGen, 1)
+}
+
+// planLiveIntent returns the active record of canonicalName in catalog (nil when there is none)
+// and the plan for applying the intent to it; a missing or soft-deleted record is planned as a
+// create.
+func planLiveIntent(catalog map[string]*ComponentRecord, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) (*ComponentRecord, intentPlan) {
+	rec := catalog[canonicalName]
+	if isDeletedRecord(rec) {
+		return nil, intentPlan{write: writeSpec, generation: newIntentGeneration(desiredGen)}
+	}
+	return rec, planIntent(rec, spec, labels, deps, desiredGen)
+}
+
 // specWithoutGeneration returns spec with the generation field cleared, or nil for a nil spec. It
 // returns spec itself when its generation is already 0 and a copy otherwise, so callers must treat
 // the result as read-only.
