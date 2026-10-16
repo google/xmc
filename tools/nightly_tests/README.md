@@ -1,6 +1,6 @@
 # Nightly Examples E2E Verification Suite
 
-This directory contains the end-to-end (E2E) verification suite for runnable workloads under [`examples/`](../../examples/) and Web UI Critical User Journeys (CUJs).
+This directory contains the end-to-end (E2E) verification suite for runnable workloads under [`examples/`](../../examples/), Web UI Critical User Journeys (CUJs), and the weekly UI visual snapshot validator ([`weekly_visual_snapshot.py`](weekly_visual_snapshot.py), tested by [`weekly_visual_snapshot_test.py`](weekly_visual_snapshot_test.py), and report formatter [`format_visual_audit_summary.js`](format_visual_audit_summary.js)).
 
 Every runnable example under [`examples/`](../../examples/) is executed nightly against a live XMC GKE environment by [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml) and verified by a corresponding script in [`examples_verification/`](examples_verification/).
 
@@ -10,7 +10,7 @@ Every runnable example under [`examples/`](../../examples/) is executed nightly 
 
 `tools/nightly_tests/` is organized into two primary packages:
 
-- **[`verification/`](verification/) ([`BUILD.bazel`](verification/BUILD.bazel))**: Shared verification primitives, session managers, backend entity pollers, and Playwright Web UI helpers, each paired with a 1-to-1 `*_test.py` unit test suite.
+- **[`verification/`](verification/) ([`BUILD.bazel`](verification/BUILD.bazel))**: Shared verification primitives, session managers, backend entity pollers, and Playwright Web UI helpers, where logic modules are each paired with a `*_test.py` unit test suite.
 - **[`examples_verification/`](examples_verification/) ([`BUILD.bazel`](examples_verification/BUILD.bazel))**: Concrete E2E verification entrypoints and unit tests for individual runnable workloads and Web UI routes.
 
 The Nightly Examples E2E workflow ([`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml)) runs in three stages:
@@ -48,7 +48,7 @@ Refer to these implementations in [`examples_verification/`](examples_verificati
 
 - [`examples_verification/simple_job_ui_verify.py`](examples_verification/simple_job_ui_verify.py): Experiment Overview page (`/experiments/<xid>`), header metadata, and Work Units table hydration.
 - [`examples_verification/metrics_dashboard_ui_verify.py`](examples_verification/metrics_dashboard_ui_verify.py): Piggybacks on [`metrics_dashboard_job_verify.py`](examples_verification/metrics_dashboard_job_verify.py) (`--verify_ui=true`) to verify `/dashboards` search filtering, `/dashboards/exp_<xid>_overview` KPI boxes, WorkUnit deep-links, and ECharts canvas rendering.
-- [`examples_verification/resource_observability_dashboard_ui_verify.py`](examples_verification/resource_observability_dashboard_ui_verify.py): Resource Observability Dashboard (`/resources`), covering Cluster Queue cards, queue selection, the queued jobs table, and the Smart Resource Finder tab.
+- [`examples_verification/resource_observability_dashboard_ui_verify.py`](examples_verification/resource_observability_dashboard_ui_verify.py) (tested by [`examples_verification/resource_observability_dashboard_ui_verify_test.py`](examples_verification/resource_observability_dashboard_ui_verify_test.py)): Resource Observability Dashboard (`/resources`), covering Cluster Queue cards, queue selection, the queued jobs table (optionally workload-backed via `--xid`), and the Smart Resource Finder tab.
 - [`examples_verification/admin_panel_ui_verify.py`](examples_verification/admin_panel_ui_verify.py): Standalone UI verifier for the Admin Panel (`/admin`), covering route access, System Info cards, Services Health statuses and refresh, and Configuration Entries filtering.
 
 ---
@@ -72,8 +72,9 @@ Create `tools/nightly_tests/examples_verification/<example_name>_verify.py` (and
 - **Pattern C — Standalone Dashboard or Control-Plane Script**: For examples that provision control-plane resources (such as `xdash` dashboards) rather than launching an Experiment XID.
   - Standalone dashboard verification: [`examples_verification/xdash_dashboard_verify.py`](examples_verification/xdash_dashboard_verify.py)
 - **Pattern D — Playwright Web UI E2E Verifier**:
-  - Piggybacked on a backend workload via `--verify_ui=true`: see [`examples_verification/metrics_dashboard_job_verify.py`](examples_verification/metrics_dashboard_job_verify.py) and [`examples_verification/metrics_dashboard_ui_verify.py`](examples_verification/metrics_dashboard_ui_verify.py) (along with its unit test [`examples_verification/metrics_dashboard_ui_verify_test.py`](examples_verification/metrics_dashboard_ui_verify_test.py)).
-  - Standalone global UI route verifier (no workload launch required): see [`examples_verification/admin_panel_ui_verify.py`](examples_verification/admin_panel_ui_verify.py) and [`examples_verification/resource_observability_dashboard_ui_verify.py`](examples_verification/resource_observability_dashboard_ui_verify.py) (along with [`examples_verification/admin_panel_ui_verify_test.py`](examples_verification/admin_panel_ui_verify_test.py)).
+  - Piggybacked on a backend workload via `--verify_ui=true`: see [`examples_verification/metrics_dashboard_job_verify.py`](examples_verification/metrics_dashboard_job_verify.py) and [`examples_verification/metrics_dashboard_ui_verify.py`](examples_verification/metrics_dashboard_ui_verify.py).
+  - Optionally workload-backed global UI route verifier (accepts `--xid` to verify queued/running work units and stops them on exit): see [`examples_verification/resource_observability_dashboard_ui_verify.py`](examples_verification/resource_observability_dashboard_ui_verify.py) (tested by [`examples_verification/resource_observability_dashboard_ui_verify_test.py`](examples_verification/resource_observability_dashboard_ui_verify_test.py)).
+  - Standalone global UI route verifier (no workload launch required): see [`examples_verification/admin_panel_ui_verify.py`](examples_verification/admin_panel_ui_verify.py).
 
 ### Step 2: Register Bazel Targets in [`examples_verification/BUILD.bazel`](examples_verification/BUILD.bazel)
 
@@ -82,7 +83,7 @@ Export `<example_name>_verify.py` in `exports_files` and add the corresponding `
 ### Step 3: Wire the Scenario in [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml)
 
 1. **Container Image (if applicable)**: If the example has a custom `Dockerfile`, add a build-and-push entry in the `build-example-images` job of [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml).
-2. **Matrix Entry**: Add an entry under `jobs.run-and-verify-examples.strategy.matrix.example` in [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml) (follow existing entries for workload-backed, ClickHouse-backed, or standalone `verify_ui: true` checks).
+2. **Matrix Entry**: Add an entry under `jobs.run-and-verify-examples.strategy.matrix.example` in [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml) (follow existing entries for workload-backed, ClickHouse-backed, or standalone `verify_ui: true` checks). Ensure workload entrypoints print `Experiment XID: <xid>` (or `experiments/<xid>` / `dashboards/<id>`) to stdout so the workflow launch step can extract the identifier.
 
 ### Step 4: Verify Locally and in CI
 
@@ -93,11 +94,12 @@ Export `<example_name>_verify.py` in `exports_files` and add the corresponding `
    ./.githooks/pre-commit --check
    ```
 2. **Run a Verifier Against a Deployed GKE Environment**:
-   Invoke any module in [`examples_verification/`](examples_verification/) via `./tools/venv/bin/python3 -m tools.nightly_tests.examples_verification.<verifier_name>` with `--endpoint`, `--ui_base_url`, and `--headless=false` (see flags in [`verification/verifier_cli.py`](verification/verifier_cli.py)).
+   Mint an IAP OIDC token (`export XMC_AUTH_TOKEN="$(gcloud auth print-identity-token --audiences=${IAP_CLIENT_ID} --include-email)"`) and invoke any module in [`examples_verification/`](examples_verification/) via `./tools/venv/bin/python3 -m tools.nightly_tests.examples_verification.<verifier_name>` with `--xid`, `--expected_queue`, `--endpoint`, `--ui_base_url`, and `--headless=false` (see flags in [`verification/verifier_cli.py`](verification/verifier_cli.py)).
 3. **Trigger a Single Scenario in GitHub Actions on Your Branch**:
    ```bash
    gh workflow run nightly-examples-e2e.yml --ref "<branch_name>" -f examples_filter="<example_id>"
    ```
+   Pass `-f skip_verification=true` to test building and launching without running verification assertions.
 
 ---
 
