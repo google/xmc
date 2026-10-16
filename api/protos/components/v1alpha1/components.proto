@@ -403,7 +403,7 @@ message RequestSource {
 
   // Compare-and-swap guard: when it names the uid of the recorded owner, a source with another uid
   // in the owner's namespace and cluster takes the component over instead of being rejected.
-  string expected_owner_uid = 6 [
+  string expected_owner_uid = 5 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "expectedOwnerUid"
   ];
