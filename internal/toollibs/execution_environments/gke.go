@@ -556,7 +556,7 @@ func annotateGCSVolumes(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.Ku
 	}
 	if !hasGCS {
 		for _, vol := range replicatedJob.Template.Spec.Template.Spec.Volumes {
-			if vol.CSI != nil && vol.CSI.Driver == "gcs.csi.storage.gke.io" {
+			if vol.CSI != nil && vol.CSI.Driver == "gcsfuse.csi.storage.gke.io" {
 				hasGCS = true
 				break
 			}
