@@ -51,6 +51,10 @@ type Config struct {
 	Namespace string
 	// ReleaseName is the Helm release name for 1P component actuation.
 	ReleaseName string
+	// ClusterName is the human-readable cluster label declared to CMS.
+	ClusterName string
+	// OwnershipEpoch is the monotonic fencing epoch declared to CMS (>= 1).
+	OwnershipEpoch int64
 	// ProbeInterval is how long after a successful reconcile pass a Component is re-probed.
 	ProbeInterval time.Duration
 	// ProbeTimeout is the timeout duration for an individual component health probe.
@@ -90,6 +94,11 @@ func ParseConfig(args []string) (*Config, error) {
 	defaultCMS := os.Getenv("CMS_ADDRESS")
 	defaultNS := os.Getenv("NAMESPACE")
 	defaultReleaseName := os.Getenv("HELM_RELEASE_NAME")
+	defaultClusterName := os.Getenv("CLUSTER_NAME")
+	defaultOwnershipEpoch, err := ownershipEpochFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	defaultProbeInterval, err := durationFromEnv("PROBE_INTERVAL", 5*time.Second)
 	if err != nil {
 		return nil, err
@@ -113,6 +122,8 @@ func ParseConfig(args []string) (*Config, error) {
 	cmsAddress := fs.String("cms-address", defaultCMS, "CMS gRPC server address")
 	namespace := fs.String("namespace", defaultNS, "Kubernetes namespace to watch for Component resources")
 	releaseName := fs.String("release-name", defaultReleaseName, "Helm release name for 1P component actuation")
+	clusterName := fs.String("cluster-name", defaultClusterName, "Human-readable cluster label declared to CMS (defaults to release-name)")
+	ownershipEpoch := fs.Int64("ownership-epoch", defaultOwnershipEpoch, "Monotonic fencing epoch declared to CMS (>= 1)")
 	probeInterval := fs.Duration("probe-interval", defaultProbeInterval, "Delay after a successful reconcile pass before a Component is re-probed")
 	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for an individual component health probe")
 	reconcileTimeout := fs.Duration("reconcile-timeout", defaultReconcileTimeout, "Timeout duration for one Component reconcile pass")
@@ -134,14 +145,12 @@ func ParseConfig(args []string) (*Config, error) {
 	if *releaseName == "" {
 		return nil, errors.New("release-name must be specified")
 	}
-	if *probeInterval <= 0 {
-		return nil, fmt.Errorf("probe-interval must be a positive duration, got %v", *probeInterval)
+	resolvedClusterName, err := resolveClusterIdentityFlags(*clusterName, *releaseName, *ownershipEpoch)
+	if err != nil {
+		return nil, err
 	}
-	if *probeTimeout <= 0 {
-		return nil, fmt.Errorf("probe-timeout must be a positive duration, got %v", *probeTimeout)
-	}
-	if *reconcileTimeout <= 0 {
-		return nil, fmt.Errorf("reconcile-timeout must be a positive duration, got %v", *reconcileTimeout)
+	if err := validateTimings(*probeInterval, *probeTimeout, *reconcileTimeout); err != nil {
+		return nil, err
 	}
 	if *maxConcurrentReconciles < 1 {
 		return nil, fmt.Errorf("max-concurrent-reconciles must be at least 1, got %d", *maxConcurrentReconciles)
@@ -153,6 +162,8 @@ func ParseConfig(args []string) (*Config, error) {
 		CMSAddress:              *cmsAddress,
 		Namespace:               *namespace,
 		ReleaseName:             *releaseName,
+		ClusterName:             resolvedClusterName,
+		OwnershipEpoch:          *ownershipEpoch,
 		ProbeInterval:           *probeInterval,
 		ProbeTimeout:            *probeTimeout,
 		ReconcileTimeout:        *reconcileTimeout,
@@ -164,7 +175,22 @@ func ParseConfig(args []string) (*Config, error) {
 	}, nil
 }
 
-// durationFromEnv returns the duration in the environment variable name, or def when it is unset.
+// validateTimings returns an error for the first non-positive probe or reconcile duration. It is
+// separate from ParseConfig to keep that function within the cyclomatic complexity limit.
+func validateTimings(probeInterval, probeTimeout, reconcileTimeout time.Duration) error {
+	if probeInterval <= 0 {
+		return fmt.Errorf("probe-interval must be a positive duration, got %v", probeInterval)
+	}
+	if probeTimeout <= 0 {
+		return fmt.Errorf("probe-timeout must be a positive duration, got %v", probeTimeout)
+	}
+	if reconcileTimeout <= 0 {
+		return fmt.Errorf("reconcile-timeout must be a positive duration, got %v", reconcileTimeout)
+	}
+	return nil
+}
+
+// durationFromEnv returns the duration parsed from environment variable name, or def when unset.
 func durationFromEnv(name string, def time.Duration) (time.Duration, error) {
 	val := os.Getenv(name)
 	if val == "" {
@@ -188,6 +214,34 @@ func intFromEnv(name string, def int) (int, error) {
 		return 0, fmt.Errorf("invalid %s %q: %w", name, val, err)
 	}
 	return n, nil
+}
+
+// ownershipEpochFromEnv returns the COMPONENT_OWNERSHIP_EPOCH environment value, or 1 when unset.
+func ownershipEpochFromEnv() (int64, error) {
+	val := os.Getenv("COMPONENT_OWNERSHIP_EPOCH")
+	if val == "" {
+		return 1, nil
+	}
+	epoch, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid COMPONENT_OWNERSHIP_EPOCH %q: %w", val, err)
+	}
+	return epoch, nil
+}
+
+// resolveClusterIdentityFlags defaults clusterName to releaseName, validates it as a DNS-1123
+// label and checks that epoch is at least 1. It returns the resolved cluster name.
+func resolveClusterIdentityFlags(clusterName, releaseName string, epoch int64) (string, error) {
+	if clusterName == "" {
+		clusterName = releaseName
+	}
+	if err := bridge.ValidateClusterName(clusterName); err != nil {
+		return "", err
+	}
+	if epoch < 1 {
+		return "", fmt.Errorf("ownership-epoch must be at least 1, got %d", epoch)
+	}
+	return clusterName, nil
 }
 
 // BuildKubeConfig constructs a Kubernetes *rest.Config using the following resolution order:
@@ -266,7 +320,17 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	// return path too: a follower that never led, an early error, or a lost Lease, where Helm work is cancelled
 	// rather than awaited, so exit waits only for the cancelled Helm actions to return.
 	defer helmMgr.Abort()
-	reconciler, err := bridge.NewReconciler(componentspb.NewComponentManagerServiceClient(conn), bridgeProber, helmMgr)
+	clusterUID, err := bridge.ReadClusterUID(ctx, k8sClient)
+	if err != nil {
+		return fmt.Errorf("failed to read cluster identity: %w", err)
+	}
+	cmsClient := componentspb.NewComponentManagerServiceClient(conn)
+	identity := &componentspb.ClusterIdentity{Uid: clusterUID, Name: cfg.ClusterName, Epoch: cfg.OwnershipEpoch}
+	fence, err := bridge.NewClusterFence(cmsClient, identity, bridge.ClusterFenceOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to initialize cluster fence: %w", err)
+	}
+	reconciler, err := bridge.NewReconciler(cmsClient, bridgeProber, helmMgr)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}
@@ -288,6 +352,9 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err := mgr.Add(bridge.NewHelmLeaderRunnable(helmMgr)); err != nil {
 		return fmt.Errorf("failed to add Helm manager runnable: %w", err)
 	}
+	if err := mgr.Add(fence); err != nil {
+		return fmt.Errorf("failed to add cluster fence runnable: %w", err)
+	}
 	controller := bridge.NewComponentController(mgr.GetClient(), reconciler, bridge.ComponentControllerOptions{
 		ProbeInterval:           cfg.ProbeInterval,
 		ReconcileTimeout:        cfg.ReconcileTimeout,
@@ -296,7 +363,7 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err := controller.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to set up Component controller: %w", err)
 	}
-	logging.Info(ctx, "Starting XMC Bridge Controller; reconciling once elected", "namespace", cfg.Namespace, "lease", bridge.ComponentLeaseName, "probeInterval", cfg.ProbeInterval, "probeTimeout", cfg.ProbeTimeout, "reconcileTimeout", cfg.ReconcileTimeout, "maxConcurrentReconciles", cfg.MaxConcurrentReconciles)
+	logging.Info(ctx, "Starting XMC Bridge Controller; reconciling once elected", "namespace", cfg.Namespace, "cluster", cfg.ClusterName, "epoch", cfg.OwnershipEpoch, "lease", bridge.ComponentLeaseName, "probeInterval", cfg.ProbeInterval, "probeTimeout", cfg.ProbeTimeout, "reconcileTimeout", cfg.ReconcileTimeout, "maxConcurrentReconciles", cfg.MaxConcurrentReconciles)
 	return mgr.Start(ctx)
 }
 

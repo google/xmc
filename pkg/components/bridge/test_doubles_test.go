@@ -34,12 +34,15 @@ import (
 type mockCMS struct {
 	setErr, delErr, obsErr  error
 	prepareErr, completeErr error
+	declareErr              error
 	state                   componentspb.ComponentState
 	lastSetReq              *componentspb.SetComponentIntentRequest
 	lastObsReq              *componentspb.UpdateObservedGenerationRequest
+	lastDeclareReq          *componentspb.DeclareClusterEpochRequest
 	setCalls                int
 	prepareCalls            int
 	completeCalls           int
+	declareCalls            int
 }
 
 func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error) {
@@ -74,6 +77,15 @@ func (m *mockCMS) PrepareDeactivation(ctx context.Context, in *componentspb.Prep
 func (m *mockCMS) CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error) {
 	m.completeCalls++
 	return &componentspb.CompleteDeactivationResponse{State: componentspb.ComponentState_COMPONENT_STATE_DISABLED}, m.completeErr
+}
+
+func (m *mockCMS) DeclareClusterEpoch(ctx context.Context, in *componentspb.DeclareClusterEpochRequest, opts ...grpc.CallOption) (*componentspb.DeclareClusterEpochResponse, error) {
+	m.declareCalls++
+	m.lastDeclareReq = in
+	if m.declareErr != nil {
+		return nil, m.declareErr
+	}
+	return &componentspb.DeclareClusterEpochResponse{ActiveCluster: in.GetCluster()}, nil
 }
 
 type mockProber struct {

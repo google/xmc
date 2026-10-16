@@ -42,6 +42,10 @@ featureFlags:
 componentsDeployment:
   enabled: false
   cmsAddress: "grpc-service:50051"
+  # Human-readable cluster label reported in CMS ownership fence declarations; defaults to release name when empty.
+  clusterName: ""
+  # Monotonic fencing epoch declared by xmc-bridge to CMS (>= 1).
+  ownershipEpoch: 1
   # Default empty chartPath; dedicated per-component charts will be introduced in follow-up PRs.
   chartPath: ""
   probeInterval: "5s"

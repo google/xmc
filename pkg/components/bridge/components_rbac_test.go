@@ -67,6 +67,9 @@ func TestComponentsRBAC_TemplateRendering(t *testing.T) {
 	if !strings.Contains(contentStr, "resources: [\"configmaps\"]") {
 		t.Errorf("expected rbac.yaml to grant configmaps permissions")
 	}
+	if !strings.Contains(contentStr, "resources: [\"namespaces\"]\n    resourceNames: [\"kube-system\"]\n    verbs: [\"get\"]") {
+		t.Errorf("expected rbac.yaml to grant get on kube-system namespace")
+	}
 	if !strings.Contains(contentStr, "namespace: {{ .Release.Namespace }}") {
 		t.Errorf("expected subject in ClusterRoleBinding to specify release namespace")
 	}
@@ -91,17 +94,17 @@ func TestComponentsRBAC_TemplateRendering(t *testing.T) {
 	}
 
 	rendered := string(out)
-	if !strings.Contains(rendered, "kind: Role") || strings.Contains(rendered, "kind: ClusterRole") {
-		t.Errorf("expected rendered output to contain 'kind: Role' (default scope), got:\n%s", rendered)
+	if !strings.Contains(rendered, "kind: Role\nmetadata:\n  name: xmc-bridge-role") || strings.Contains(rendered, "kind: ClusterRole\nmetadata:\n  name: xmc-bridge-role") {
+		t.Errorf("expected rendered output to contain 'kind: Role' for xmc-bridge-role (default scope), got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "name: xmc-bridge-role") {
-		t.Errorf("expected rendered output to contain 'name: xmc-bridge-role', got:\n%s", rendered)
+	if !strings.Contains(rendered, "kind: RoleBinding\nmetadata:\n  name: xmc-bridge-rolebinding") || strings.Contains(rendered, "kind: ClusterRoleBinding\nmetadata:\n  name: xmc-bridge-rolebinding") {
+		t.Errorf("expected rendered output to contain 'kind: RoleBinding' for xmc-bridge-rolebinding, got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "kind: RoleBinding") || strings.Contains(rendered, "kind: ClusterRoleBinding") {
-		t.Errorf("expected rendered output to contain 'kind: RoleBinding', got:\n%s", rendered)
+	if !strings.Contains(rendered, "kind: ClusterRole\nmetadata:\n  name: xmc-bridge-cluster-identity-custom-ns") {
+		t.Errorf("expected rendered output to contain namespace-suffixed 'kind: ClusterRole' xmc-bridge-cluster-identity-custom-ns, got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "name: xmc-bridge-rolebinding") {
-		t.Errorf("expected rendered output to contain 'name: xmc-bridge-rolebinding', got:\n%s", rendered)
+	if !strings.Contains(rendered, "kind: ClusterRoleBinding\nmetadata:\n  name: xmc-bridge-cluster-identity-custom-ns") {
+		t.Errorf("expected rendered output to contain namespace-suffixed 'kind: ClusterRoleBinding' xmc-bridge-cluster-identity-custom-ns, got:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "namespace: custom-ns") {
 		t.Errorf("expected rendered output to contain 'namespace: custom-ns', got:\n%s", rendered)
