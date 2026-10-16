@@ -101,7 +101,7 @@ func checkFence(ctx context.Context, txn *spanner.ReadWriteTransaction, src *Req
 	if err != nil {
 		return err
 	}
-	return checkClusterFence(setIntentOperation, fence, src)
+	return checkClusterFence(operationSetComponentIntent, fence, src)
 }
 
 // readFence returns the current fence holder, or nil before the first declaration.

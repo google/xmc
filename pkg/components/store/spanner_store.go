@@ -210,7 +210,7 @@ func (s *SpannerStore) readUnchangedIntent(ctx context.Context, canonicalName st
 		logFastPathReadError(ctx, canonicalName, err)
 		return nil, false, nil
 	}
-	if err := checkClusterFence(setIntentOperation, fence, src); err != nil {
+	if err := checkClusterFence(operationSetComponentIntent, fence, src); err != nil {
 		return nil, false, err
 	}
 	// The read returns only registered, non-deleted dependencies, so a deregistered dependency

@@ -155,8 +155,11 @@ func TestCheckClusterFence(t *testing.T) {
 			}
 			st := status.Convert(err)
 			want := []any{&errdetails.ErrorInfo{Reason: tt.wantReason, Domain: ErrorInfoDomain, Metadata: tt.wantMeta}}
-			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); st.Code() != codes.FailedPrecondition || diff != "" {
-				t.Errorf("checkClusterFence() code = %v, details mismatch (-want +got):\n%s", st.Code(), diff)
+			if st.Code() != codes.FailedPrecondition {
+				t.Errorf("checkClusterFence() code = %v, want %v", st.Code(), codes.FailedPrecondition)
+			}
+			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
+				t.Errorf("checkClusterFence() details mismatch (-want +got):\n%s", diff)
 			}
 			if !strings.Contains(st.Message(), tt.wantInMessage) {
 				t.Errorf("checkClusterFence() message = %q, want it to contain %q", st.Message(), tt.wantInMessage)

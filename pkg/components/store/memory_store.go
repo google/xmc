@@ -81,7 +81,7 @@ func (m *MemoryStore) setIntent(name string, spec *componentspb.ComponentSpec, l
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if err := checkClusterFence(setIntentOperation, m.fence, src); err != nil {
+	if err := checkClusterFence(operationSetComponentIntent, m.fence, src); err != nil {
 		return nil, err
 	}
 	rec, plan, err := planLiveIntent(m.componentsByName, canonicalName, spec, labels, deps, desiredGen, src)

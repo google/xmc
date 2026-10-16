@@ -76,17 +76,14 @@ func planDeclaration(fence *ClusterIdentity, c ClusterIdentity) (DeclarationOutc
 	case fence.UID == c.UID && c.Epoch > fence.Epoch:
 		return DeclarationRaised, nil
 	case fence.UID == c.UID:
-		return 0, fenceError(declareClusterEpochOperation, ReasonClusterEpochRegressed, fence,
+		return 0, fenceError(operationDeclareClusterEpoch, ReasonClusterEpochRegressed, fence,
 			fmt.Sprintf("cluster %q declared epoch %d, lower than its active epoch %d", c.Name, c.Epoch, fence.Epoch))
 	case c.Epoch > fence.Epoch:
 		return DeclarationTakeover, nil
 	}
-	return 0, fenceError(declareClusterEpochOperation, ReasonClusterFenced, fence,
+	return 0, fenceError(operationDeclareClusterEpoch, ReasonClusterFenced, fence,
 		fmt.Sprintf("cluster %q at epoch %d is fenced: cluster %q holds the fence at epoch %d; declare a higher epoch to take over", c.Name, c.Epoch, fence.Name, fence.Epoch))
 }
-
-// declareClusterEpochOperation names DeclareClusterEpoch in ErrorInfo metadata.
-const declareClusterEpochOperation = "DeclareClusterEpoch"
 
 // checkClusterFence returns the rejection of a request of operation from src unless src comes
 // from the fence holder at the fence epoch. Unsourced requests (nil src) bypass the fence. Before
