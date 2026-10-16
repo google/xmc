@@ -399,7 +399,6 @@ def _was_preempted(workload: dict[str, Any]) -> bool:
 def assert_jobset_contract(
     jobset: dict[str, Any],
     expected_queue: str = DEFAULT_QUEUE_NAME,
-    expected_priority_class: str | None = None,
 ) -> None:
     """Asserts XMC's Non-Restarting JobSets Contract and Kueue queue labels on a JobSet."""
     if not jobset:
@@ -410,13 +409,6 @@ def assert_jobset_contract(
         raise RuntimeError(f"Expected kueue.x-k8s.io/queue-name={expected_queue!r}, got {labels!r}")
     if labels.get("app.kubernetes.io/managed-by") != "xmc":
         raise RuntimeError(f"Expected app.kubernetes.io/managed-by='xmc', got {labels!r}")
-    if expected_priority_class is not None:
-        actual_priority_class = labels.get("kueue.x-k8s.io/priority-class")
-        if actual_priority_class != expected_priority_class:
-            raise RuntimeError(
-                f"Expected kueue.x-k8s.io/priority-class={expected_priority_class!r}, "
-                f"got {actual_priority_class!r}"
-            )
 
     spec = jobset.get("spec") or {}
     failure_policy = spec.get("failurePolicy") or {}

@@ -65,8 +65,6 @@ def execution_id_from_name(execution_name: str) -> int:
     Raises:
         ValueError: If execution_name is not a valid execution resource name.
     """
-    if not isinstance(execution_name, str):
-        raise ValueError(f"Invalid execution resource name: {execution_name!r}")
     parts = execution_name.split("/")
     if (
         len(parts) != 6
@@ -92,13 +90,13 @@ def assert_executions_history(
         expected_min_count: Minimum expected number of executions.
 
     Raises:
-        ValueError: If executions is empty, has fewer than expected_min_count items, or an
-            execution has a missing or invalid name.
+        ValueError: If executions has fewer than expected_min_count items, or an execution has a
+            missing or invalid name.
         RuntimeError: If ordering or active/inactive states violate the contract.
     """
-    if not executions or len(executions) < expected_min_count:
+    if len(executions) < expected_min_count:
         raise ValueError(
-            f"Expected at least {expected_min_count} executions, but found {len(executions) if executions else 0}"
+            f"Expected at least {expected_min_count} executions, but found {len(executions)}"
         )
 
     eids = []

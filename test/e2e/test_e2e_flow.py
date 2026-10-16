@@ -236,40 +236,19 @@ def _verify_stop_and_restart(page: Page, experiment_name: str) -> dict[str, str]
     return {work_unit: "STOPPED"}
 
 
-def _update_experiment(
-    page: Page, experiment_name: str, payload: dict[str, Any], update_mask: str
-) -> dict[str, Any]:
-    """Updates an experiment via REST PATCH and returns the updated representation."""
+def _patch_resource(
+    page: Page, resource_name: str, payload: dict[str, Any], update_mask: str
+) -> None:
+    """Updates an experiment or work unit resource via REST PATCH."""
     encoded_mask = urllib.parse.quote(update_mask)
     response = page.request.patch(
-        f"{BASE_URL}/v1/{experiment_name}?update_mask={encoded_mask}",
+        f"{BASE_URL}/v1/{resource_name}?update_mask={encoded_mask}",
         data=payload,
         headers={"Content-Type": "application/json", "Origin": BASE_URL},
     )
     if response.status != 200:
-        raise RuntimeError(
-            f"Failed to update experiment {experiment_name}: {response.status} {response.text()}"
-        )
-    logger.info("✓ Updated experiment %s.", experiment_name)
-    return response.json()
-
-
-def _update_work_unit(
-    page: Page, work_unit_name: str, payload: dict[str, Any], update_mask: str
-) -> dict[str, Any]:
-    """Updates mutable metadata or priority for a work unit via REST PATCH."""
-    encoded_mask = urllib.parse.quote(update_mask)
-    response = page.request.patch(
-        f"{BASE_URL}/v1/{work_unit_name}?update_mask={encoded_mask}",
-        data=payload,
-        headers={"Content-Type": "application/json", "Origin": BASE_URL},
-    )
-    if response.status != 200:
-        raise RuntimeError(
-            f"Failed to update work unit {work_unit_name}: {response.status} {response.text()}"
-        )
-    logger.info("✓ Updated work unit %s.", work_unit_name)
-    return response.json()
+        raise RuntimeError(f"Failed to update {resource_name}: {response.status} {response.text()}")
+    logger.info("✓ Updated %s.", resource_name)
 
 
 def _fetch_work_unit_executions(page: Page, work_unit_name: str) -> list[dict[str, Any]]:
@@ -282,38 +261,18 @@ def _fetch_work_unit_executions(page: Page, work_unit_name: str) -> list[dict[st
     return list(response.json().get("workUnitExecutions") or [])
 
 
-def _batch_stop_work_units(page: Page, experiment_name: str, filter_expr: str = "") -> None:
-    """Stops work units in batch for an experiment via REST."""
-    payload: dict[str, Any] = {"parent": experiment_name}
-    if filter_expr:
-        payload["filter"] = filter_expr
+def _post_batch_work_unit_action(page: Page, experiment_name: str, action: str) -> None:
+    """Calls a batch work unit custom method (batchStop or batchRestart) via REST."""
     response = page.request.post(
-        f"{BASE_URL}/v1/{experiment_name}/workUnits:batchStop",
-        data=payload,
+        f"{BASE_URL}/v1/{experiment_name}/workUnits:{action}",
+        data={"parent": experiment_name},
         headers={"Content-Type": "application/json", "Origin": BASE_URL},
     )
     if response.status not in (200, 201):
         raise RuntimeError(
-            f"Failed to batch stop work units for {experiment_name}: {response.status} {response.text()}"
+            f"Failed to {action} work units for {experiment_name}: {response.status} {response.text()}"
         )
-    logger.info("✓ Requested batch stop of work units for %s.", experiment_name)
-
-
-def _batch_restart_work_units(page: Page, experiment_name: str, filter_expr: str = "") -> None:
-    """Restarts work units in batch for an experiment via REST."""
-    payload: dict[str, Any] = {"parent": experiment_name}
-    if filter_expr:
-        payload["filter"] = filter_expr
-    response = page.request.post(
-        f"{BASE_URL}/v1/{experiment_name}/workUnits:batchRestart",
-        data=payload,
-        headers={"Content-Type": "application/json", "Origin": BASE_URL},
-    )
-    if response.status not in (200, 201):
-        raise RuntimeError(
-            f"Failed to batch restart work units for {experiment_name}: {response.status} {response.text()}"
-        )
-    logger.info("✓ Requested batch restart of work units for %s.", experiment_name)
+    logger.info("✓ Requested %s of work units for %s.", action, experiment_name)
 
 
 def _verify_live_priority_and_metadata_updates(page: Page, experiment_name: str) -> dict[str, str]:
@@ -326,8 +285,7 @@ def _verify_live_priority_and_metadata_updates(page: Page, experiment_name: str)
     _verify_admitted_jobset(work_unit)
     _wait_for_work_unit_state(page, work_unit, "RUNNING")
 
-    # 1. Update experiment title and priority
-    _update_experiment(
+    _patch_resource(
         page,
         experiment_name,
         {"title": f"Mutated Experiment {int(time.time())}", "priority": "HIGH"},
@@ -337,10 +295,7 @@ def _verify_live_priority_and_metadata_updates(page: Page, experiment_name: str)
     if exp_res.status != 200 or exp_res.json().get("priority") != "HIGH":
         raise RuntimeError(f"Experiment {experiment_name} did not reflect priority update.")
 
-    # 2. Update WorkUnit priority to HIGH
-    _update_work_unit(page, work_unit, {"priority": "HIGH"}, "priority")
-
-    # 3. Verify Actuator updates JobSet kueue.x-k8s.io/priority-class label
+    _patch_resource(page, work_unit, {"priority": "HIGH"}, "priority")
     wait_for_jobset_priority_class(work_unit, expected_priority_class="exp-high-wu-high")
     logger.info("✓ Live JobSet updated with kueue.x-k8s.io/priority-class=exp-high-wu-high.")
 
@@ -350,36 +305,34 @@ def _verify_live_priority_and_metadata_updates(page: Page, experiment_name: str)
 
 def _verify_batch_stop_and_restart(page: Page, experiment_name: str) -> dict[str, str]:
     """Verifies batch stop, batch restart, and multi-execution history on multiple work units."""
-    wu1 = _create_work_unit(page, experiment_name, build_work_unit_payload(command=SLEEP_COMMAND))
-    wu2 = _create_work_unit(page, experiment_name, build_work_unit_payload(command=SLEEP_COMMAND))
-    _verify_admitted_jobset(wu1)
-    _verify_admitted_jobset(wu2)
-    _wait_for_work_unit_state(page, wu1, "RUNNING")
-    _wait_for_work_unit_state(page, wu2, "RUNNING")
+    work_units = (
+        _create_work_unit(page, experiment_name, build_work_unit_payload(command=SLEEP_COMMAND)),
+        _create_work_unit(page, experiment_name, build_work_unit_payload(command=SLEEP_COMMAND)),
+    )
+    for wu in work_units:
+        _verify_admitted_jobset(wu)
+    for wu in work_units:
+        _wait_for_work_unit_state(page, wu, "RUNNING")
 
-    _batch_stop_work_units(page, experiment_name)
-    _wait_for_work_unit_state(page, wu1, "STOPPED")
-    _wait_for_work_unit_state(page, wu2, "STOPPED")
-    wait_for_jobsets_deleted(wu1)
-    wait_for_jobsets_deleted(wu2)
+    _post_batch_work_unit_action(page, experiment_name, "batchStop")
+    for wu in work_units:
+        _wait_for_work_unit_state(page, wu, "STOPPED")
+        wait_for_jobsets_deleted(wu)
 
-    _batch_restart_work_units(page, experiment_name)
-    _verify_admitted_jobset(wu1, execution_id=2)
-    _verify_admitted_jobset(wu2, execution_id=2)
-    _wait_for_work_unit_state(page, wu1, "RUNNING")
-    _wait_for_work_unit_state(page, wu2, "RUNNING")
-
-    for wu in (wu1, wu2):
+    _post_batch_work_unit_action(page, experiment_name, "batchRestart")
+    for wu in work_units:
+        _verify_admitted_jobset(wu, execution_id=2)
+    for wu in work_units:
+        _wait_for_work_unit_state(page, wu, "RUNNING")
         executions = _fetch_work_unit_executions(page, wu)
         assert_executions_history(executions, expected_min_count=2)
         logger.info("✓ Batch restarted work unit %s execution history verified.", wu)
 
-    _batch_stop_work_units(page, experiment_name)
-    _wait_for_work_unit_state(page, wu1, "STOPPED")
-    _wait_for_work_unit_state(page, wu2, "STOPPED")
-    wait_for_jobsets_deleted(wu1)
-    wait_for_jobsets_deleted(wu2)
-    return {wu1: "STOPPED", wu2: "STOPPED"}
+    _post_batch_work_unit_action(page, experiment_name, "batchStop")
+    for wu in work_units:
+        _wait_for_work_unit_state(page, wu, "STOPPED")
+        wait_for_jobsets_deleted(wu)
+    return dict.fromkeys(work_units, "STOPPED")
 
 
 def _preemption_payload(priority: str, command: Sequence[str]) -> dict[str, Any]:

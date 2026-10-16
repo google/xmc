@@ -377,17 +377,6 @@ class JobSetVerifierTest(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, expected_msg):
                     assert_jobset_contract(candidate)
 
-    def test_assert_jobset_contract_validates_priority_class(self) -> None:
-        """assert_jobset_contract verifies matching and mismatched priority classes."""
-        jobset = copy.deepcopy(_baseline_jobset())
-        jobset["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] = "exp-high-wu-high"
-
-        assert_jobset_contract(jobset, expected_priority_class="exp-high-wu-high")
-        with self.assertRaisesRegex(
-            RuntimeError, "Expected kueue.x-k8s.io/priority-class='exp-low'"
-        ):
-            assert_jobset_contract(jobset, expected_priority_class="exp-low")
-
     @mock.patch("test.e2e.lib.polling.time.sleep")
     @mock.patch("test.e2e.lib.jobset_verifier.subprocess.run")
     def test_wait_for_jobset_priority_class_polls_until_matched(

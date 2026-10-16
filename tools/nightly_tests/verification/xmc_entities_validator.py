@@ -52,11 +52,6 @@ except ImportError:
     ess_api_pb2 = None
     priority_pb2 = None
 
-try:
-    from google.protobuf import field_mask_pb2
-except ImportError:
-    field_mask_pb2 = None
-
 # State enum names matching cloud.xmanager.v1.WorkUnitStatus.WorkUnitState
 STATE_NAMES = [
     "UNSPECIFIED",
@@ -112,13 +107,6 @@ def _make_req(cls_name: str, **kwargs: Any) -> Any:
     if ess_api_pb2 is not None and hasattr(ess_api_pb2, cls_name):
         return getattr(ess_api_pb2, cls_name)(**kwargs)
     return SimpleNamespace(**kwargs)
-
-
-def _make_field_mask(paths: Sequence[str]) -> Any:
-    """Creates a FieldMask protobuf message or duck-typed fallback."""
-    if field_mask_pb2 is not None:
-        return field_mask_pb2.FieldMask(paths=list(paths))
-    return SimpleNamespace(paths=list(paths))
 
 
 def state_enum_to_name(state_enum: int) -> str:
@@ -216,16 +204,6 @@ def validate_experiment(
     return experiment
 
 
-def resolve_priority_enum(priority_input: int | str) -> int:
-    """Resolves priority string or int into the canonical Priority enum value."""
-    if isinstance(priority_input, int):
-        return priority_input
-    upper = priority_input.upper()
-    if priority_pb2 is not None and hasattr(priority_pb2.Priority, upper):
-        return int(getattr(priority_pb2.Priority, upper))
-    return PRIORITY_FALLBACK_MAP.get(upper, 0)
-
-
 def validate_work_unit_priority(
     work_unit: Any,
     expected_priority: int | str,
@@ -236,7 +214,13 @@ def validate_work_unit_priority(
     if actual_priority is None:
         raise AssertionError(f"WorkUnit '{wu_name}' missing priority field.")
 
-    exp_val = resolve_priority_enum(expected_priority)
+    if isinstance(expected_priority, str):
+        if priority_pb2 is not None and hasattr(priority_pb2.Priority, expected_priority.upper()):
+            exp_val = getattr(priority_pb2.Priority, expected_priority.upper())
+        else:
+            exp_val = PRIORITY_FALLBACK_MAP.get(expected_priority.upper(), 0)
+    else:
+        exp_val = expected_priority
 
     if int(actual_priority) != int(exp_val):
         raise AssertionError(
@@ -778,92 +762,6 @@ def stop_work_units(stub: Any, xid: str) -> None:
     req = _make_req("BatchStopWorkUnitsRequest", parent=f"experiments/{xid}")
     stub.BatchStopWorkUnits(req)
     print(f"  [✓] Stopped pending WorkUnits for experiments/{xid}")
-
-
-def restart_work_unit(stub: Any, work_unit_name: str) -> Any:
-    """Restarts a WorkUnit via RestartWorkUnit RPC."""
-    req = _make_req("RestartWorkUnitRequest", name=work_unit_name)
-    resp = stub.RestartWorkUnit(req)
-    print(f"  [✓] Restarted WorkUnit {work_unit_name}")
-    return resp
-
-
-def batch_restart_work_units(stub: Any, xid: str, filter_expr: str | None = None) -> Any:
-    """Restarts WorkUnits for an experiment via BatchRestartWorkUnits RPC."""
-    kwargs: dict[str, Any] = {"parent": f"experiments/{xid}"}
-    if filter_expr:
-        kwargs["filter"] = filter_expr
-    req = _make_req("BatchRestartWorkUnitsRequest", **kwargs)
-    resp = stub.BatchRestartWorkUnits(req)
-    print(f"  [✓] Batch restarted WorkUnits for experiments/{xid}")
-    return resp
-
-
-def update_work_unit_priority(stub: Any, work_unit_name: str, priority_str: str) -> Any:
-    """Updates WorkUnit priority via UpdateWorkUnit RPC."""
-    priority_enum = resolve_priority_enum(priority_str)
-    wu_msg = _make_req("WorkUnit", name=work_unit_name, priority=priority_enum)
-    mask = _make_field_mask(["priority"])
-    req = _make_req("UpdateWorkUnitRequest", work_unit=wu_msg, update_mask=mask)
-    resp = stub.UpdateWorkUnit(req)
-    print(f"  [✓] Updated WorkUnit {work_unit_name} priority to {priority_str}")
-    return resp
-
-
-def update_experiment_title(stub: Any, xid: str, title: str) -> Any:
-    """Updates Experiment title via UpdateExperiment RPC."""
-    exp_msg = _make_req("Experiment", name=f"experiments/{xid}", title=title)
-    mask = _make_field_mask(["title"])
-    req = _make_req("UpdateExperimentRequest", experiment=exp_msg, update_mask=mask)
-    resp = stub.UpdateExperiment(req)
-    print(f"  [✓] Updated Experiment experiments/{xid} title to {title!r}")
-    return resp
-
-
-def validate_work_unit_executions(
-    stub: Any,
-    work_unit_name: str,
-    expected_min_count: int = 2,
-) -> list[Any]:
-    """Fetches and asserts executions order and active/inactive status."""
-    req = _make_req("ListWorkUnitExecutionsRequest", parent=work_unit_name)
-    resp = stub.ListWorkUnitExecutions(req)
-    executions = list(getattr(resp, "work_unit_executions", []))
-    if len(executions) < expected_min_count:
-        raise AssertionError(
-            f"Expected at least {expected_min_count} executions for {work_unit_name}, found {len(executions)}"
-        )
-    _assert_executions_ordering_and_states(work_unit_name, executions)
-    print(
-        f"  [✓] Verified {len(executions)} execution(s) for {work_unit_name} in descending order."
-    )
-    return executions
-
-
-def _assert_executions_ordering_and_states(work_unit_name: str, executions: Sequence[Any]) -> None:
-    """Validates strictly descending execution IDs with active head and inactive tail."""
-    eids: list[int] = []
-    for e in executions:
-        name = getattr(e, "name", "")
-        parts = name.split("/")
-        if len(parts) >= 6 and parts[-2] == "executions" and parts[-1].isdigit():
-            eids.append(int(parts[-1]))
-    for i in range(len(eids) - 1):
-        if eids[i] <= eids[i + 1]:
-            raise AssertionError(
-                f"Executions for {work_unit_name} not in descending order: {eids[i]} <= {eids[i + 1]}"
-            )
-    first_state = getattr(executions[0], "state", None)
-    if first_state not in (1, "ACTIVE"):
-        raise AssertionError(
-            f"Expected primary execution of {work_unit_name} to be ACTIVE, got {first_state!r}"
-        )
-    for idx, e in enumerate(executions[1:], start=1):
-        st = getattr(e, "state", None)
-        if st not in (2, "INACTIVE"):
-            raise AssertionError(
-                f"Expected historical execution at index {idx} of {work_unit_name} to be INACTIVE, got {st!r}"
-            )
 
 
 def _normalize_artifact_type(type_name: str) -> str:
