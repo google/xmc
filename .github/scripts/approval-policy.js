@@ -151,6 +151,14 @@ function evaluateIncrementalApproval({
   }
 
   if (hasProtectedFileChanges) {
+    const isUnchangedRebase = approvedSha !== currentSha && isCleanRebase && !hasRemovedCommits && deltaLines === 0;
+    if (isUnchangedRebase) {
+      return {
+        shouldReapprove: true,
+        reason: 'Clean rebase detected with zero semantic patch lines changed. PR touches protected files, but the approved patches are unchanged.',
+        trigger: 'CLEAN_REBASE'
+      };
+    }
     return {
       shouldReapprove: false,
       reason: 'PR modifies sensitive CI workflows, scripts, ownership files, or the protobuf breaking-change baseline or its configuration (.github/, OWNERS, .githooks/, api/testdata/protos_baseline.binpb, api/buf.yaml, api/BUILD.bazel). Manual human review is required.',

@@ -265,8 +265,8 @@ test('evaluateIncrementalApproval rejects when sensitive CI/ownership files are 
     approvedSha: 'sha-111',
     currentSha: 'sha-222',
     isAuthorOwner: true,
-    deltaLines: 0,
-    isCleanRebase: true,
+    deltaLines: 1,
+    isCleanRebase: false,
     hasProtectedFileChanges: true
   });
   assert.strictEqual(result.shouldReapprove, false);
@@ -406,6 +406,59 @@ test('evaluateIncrementalApproval rejects invalid test delta inputs', () => {
     assert.strictEqual(result.shouldReapprove, false, String(testDeltaLines));
     assert.strictEqual(result.trigger, 'INVALID_DELTA', String(testDeltaLines));
   }
+});
+
+test('evaluateIncrementalApproval auto-reapproves clean rebase of PR touching protected files', () => {
+  for (const isAuthorOwner of [true, false]) {
+    const result = evaluateIncrementalApproval({
+      hasPriorApproval: true,
+      approvedSha: 'sha-111',
+      currentSha: 'sha-222',
+      isAuthorOwner,
+      deltaLines: 0,
+      isCleanRebase: true,
+      hasProtectedFileChanges: true
+    });
+    assert.strictEqual(result.shouldReapprove, true);
+    assert.strictEqual(result.trigger, 'CLEAN_REBASE');
+  }
+});
+
+test('evaluateIncrementalApproval rejects non-clean rebase of PR touching protected files', () => {
+  const cases = [
+    { deltaLines: 1, isCleanRebase: false },
+    { deltaLines: 0, isCleanRebase: false },
+    { deltaLines: 0, isCleanRebase: true, hasRemovedCommits: true },
+    { deltaLines: 2, testDeltaLines: 2, isCleanRebase: false },
+    { deltaLines: NaN, isCleanRebase: true }
+  ];
+  for (const overrides of cases) {
+    const result = evaluateIncrementalApproval({
+      hasPriorApproval: true,
+      approvedSha: 'sha-111',
+      currentSha: 'sha-222',
+      isAuthorOwner: true,
+      hasProtectedFileChanges: true,
+      ...overrides
+    });
+    assert.strictEqual(result.shouldReapprove, false, JSON.stringify(overrides));
+    assert.strictEqual(result.trigger, 'PROTECTED_FILES_MODIFIED', JSON.stringify(overrides));
+  }
+});
+
+test('evaluateIncrementalApproval keeps protected lockout when HEAD equals approved commit', () => {
+  const result = evaluateIncrementalApproval({
+    hasPriorApproval: true,
+    approvedSha: 'sha-111',
+    currentSha: 'sha-111',
+    isAuthorOwner: true,
+    deltaLines: 0,
+    isCleanRebase: true,
+    hasProtectedFileChanges: true,
+    isDismissed: true
+  });
+  assert.strictEqual(result.shouldReapprove, false);
+  assert.strictEqual(result.trigger, 'PROTECTED_FILES_MODIFIED');
 });
 
 test('DEFAULT_MAX_OWNER_GRACE_LINES is 50', () => {

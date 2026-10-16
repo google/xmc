@@ -122,6 +122,8 @@ Any modification touching protected files immediately aborts auto-reapproval:
 
 Scoping uses 3-dot diff against the PR's target base branch (`git diff --name-only origin/${baseRef}...${currentSha}`) to prevent false positives when intermediate commits are merged into `origin/main`. If Git commands fail, the check defaults to `hasProtectedFileChanges = true` (fail-safe).
 
+**Clean rebase exception**: A PR touching protected files is still auto-reapproved, for any author, when the push is a pure clean rebase: every approved commit is unchanged in `git range-diff`, with zero changed patch lines and no removed or added commits. Any other change (including grace delta or test-only edits) keeps the lockout. Restoring a dismissed approval on the same commit also stays locked out.
+
 ### 2. Tiered Approval Policy
 - **Clean Rebase (0 line delta)**: Approved for all authors if code hunks have zero additions and deletions across the rebase.
 - **Grace Delta (&le; 50 non-test lines)**: Permitted **only** if the PR author is a designated repository code owner (listed in `OWNERS`). Changes to test files (`*_test.go`, `*.test.{js,ts,jsx,tsx}`, `*.spec.{js,ts,jsx,tsx}`, `*_test.py`, `test_*.py`, and anything under a `testdata/` directory; see [`test-file-classifier.js`](test-file-classifier.js)) do not count against the budget. The budget is configurable via the `MAX_OWNER_GRACE_LINES` repository variable (defaults to 50 when unset). Non-code-owners are strictly limited to clean rebases: any changed line, including in test files, requires manual review. Protected files are always locked out, even when they match a test file pattern.
