@@ -216,7 +216,7 @@ func (s *MockStorage) InsertExperiment(ctx context.Context, exp *essmsgpb.Experi
 	if s.InsertExperimentErr != nil {
 		return s.InsertExperimentErr
 	}
-	s.Experiment = exp
+	s.Experiment = proto.Clone(exp).(*essmsgpb.Experiment)
 	return nil
 }
 

@@ -122,3 +122,46 @@ func TestCreateExperiment_InitializesStatusIfNil(t *testing.T) {
 		t.Errorf("CreateExperiment returned experiment with nil Status.UpdateTime")
 	}
 }
+
+func TestCreateExperiment_WithStructuredStatusMessage(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage, _ := spanner.NewStorage(essClient)
+
+	exp := &essmsgpb.Experiment{
+		Name:      "experiments/789",
+		Title:     "test-title",
+		Creator:   "test-creator",
+		Tags:      []string{},
+		Urls:      []*essmsgpb.Url{},
+		Resources: []*essmsgpb.ResourceSet{},
+		Status: &essmsgpb.ExperimentStatus{
+			ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
+			StructuredStatusMessage: &essmsgpb.StructuredMessage{
+				Severity:       essmsgpb.StructuredMessage_INFO,
+				UserFacingText: "initial status message",
+				Parent:         "experiments/789",
+			},
+		},
+	}
+
+	createdExp, err := experiment.CreateExperiment(ctx, storage, exp)
+	if err != nil {
+		t.Fatalf("CreateExperiment failed: %v", err)
+	}
+
+	if got := createdExp.GetStatus().GetStructuredStatusMessage().GetUserFacingText(); got != "initial status message" {
+		t.Errorf("CreateExperiment returned message %q, want %q", got, "initial status message")
+	}
+
+	messages, _, err := storage.ListStatusMessages(ctx, "experiments/789", 10, "", "", "", 0)
+	if err != nil {
+		t.Fatalf("ListStatusMessages failed: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("ListStatusMessages returned %d messages, want 1", len(messages))
+	}
+	if got := messages[0].GetContent().GetUserFacingText(); got != "initial status message" {
+		t.Errorf("ListStatusMessages returned message text %q, want %q", got, "initial status message")
+	}
+}

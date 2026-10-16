@@ -42,9 +42,6 @@ func CreateExperiment(ctx context.Context, txRunner storage.TransactionRunner, e
 	}
 
 	err = txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
-		if exp == nil {
-			return fmt.Errorf("experiment must not be nil")
-		}
 		if exp.Status == nil {
 			exp.Status = &essmsgpb.ExperimentStatus{}
 		}
