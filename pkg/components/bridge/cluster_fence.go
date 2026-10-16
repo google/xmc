@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
@@ -125,8 +127,7 @@ func (f *ClusterFence) Start(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			logging.Warn(ctx, "Failed to declare cluster ownership epoch to CMS; retrying", "cluster", f.identity.GetName(), "epoch", f.identity.GetEpoch(), "error", err)
-			delay = f.opts.RetryInterval
+			delay = f.retryDelay(ctx, err)
 		}
 		timer := time.NewTimer(delay)
 		select {
@@ -138,6 +139,19 @@ func (f *ClusterFence) Start(ctx context.Context) error {
 	}
 }
 
+// retryDelay logs a failed declaration and returns how long Start waits before declaring again.
+// CMS keeps rejecting a fenced or regressed declaration (FailedPrecondition) until an operator
+// raises the epoch, so it is logged as an error and retried at the heartbeat interval; other
+// failures, such as Unavailable or DeadlineExceeded, are retried at RetryInterval.
+func (f *ClusterFence) retryDelay(ctx context.Context, err error) time.Duration {
+	if status.Code(err) == codes.FailedPrecondition {
+		logging.Error(ctx, "CMS rejected the cluster ownership epoch; retrying at the heartbeat interval", "cluster", f.identity.GetName(), "epoch", f.identity.GetEpoch(), "error", err)
+		return f.opts.HeartbeatInterval
+	}
+	logging.Warn(ctx, "Failed to declare cluster ownership epoch to CMS; retrying", "cluster", f.identity.GetName(), "epoch", f.identity.GetEpoch(), "error", err)
+	return f.opts.RetryInterval
+}
+
 // declareWithTimeout runs Declare bounded by the configured DeclareTimeout.
 func (f *ClusterFence) declareWithTimeout(ctx context.Context) error {
 	declareCtx, cancel := context.WithTimeout(ctx, f.opts.DeclareTimeout)
@@ -147,7 +161,7 @@ func (f *ClusterFence) declareWithTimeout(ctx context.Context) error {
 
 // Declare sends DeclareClusterEpoch to CMS. A declaration that CMS rejects because another
 // cluster holds the fence or the epoch regressed returns its FailedPrecondition error, which Start
-// logs and retries.
+// logs and retries at the heartbeat interval.
 func (f *ClusterFence) Declare(ctx context.Context) error {
 	if _, err := f.cms.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: f.Identity()}); err != nil {
 		return fmt.Errorf("failed to declare cluster epoch in CMS: %w", err)

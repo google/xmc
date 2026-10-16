@@ -16,6 +16,7 @@ package bridge
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -223,5 +224,35 @@ func TestClusterFence_StartBoundsHungDeclare(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatalf("fence.Start() returned error: %v", err)
+	}
+}
+
+// TestClusterFence_RetryDelay checks that a fenced or regressed declaration, which CMS keeps
+// rejecting until the epoch is raised, waits the heartbeat interval, while transient failures are
+// retried quickly.
+func TestClusterFence_RetryDelay(t *testing.T) {
+	const heartbeat, retry = time.Hour, time.Second
+	fence, err := NewClusterFence(&mockCMS{}, &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "prod", Epoch: 1},
+		ClusterFenceOptions{HeartbeatInterval: heartbeat, RetryInterval: retry})
+	if err != nil {
+		t.Fatalf("NewClusterFence() failed: %v", err)
+	}
+	fenced := status.Error(codes.FailedPrecondition, "cluster \"dr\" holds the fence at epoch 2")
+	tests := []struct {
+		name string
+		err  error
+		want time.Duration
+	}{
+		{name: "fenced", err: fenced, want: heartbeat},
+		{name: "wrapped fenced", err: fmt.Errorf("failed to declare cluster epoch in CMS: %w", fenced), want: heartbeat},
+		{name: "unavailable", err: status.Error(codes.Unavailable, "cms unreachable"), want: retry},
+		{name: "deadline exceeded", err: context.DeadlineExceeded, want: retry},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := fence.retryDelay(context.Background(), tt.err); got != tt.want {
+				t.Errorf("retryDelay(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
 	}
 }

@@ -26,7 +26,7 @@ data:
   NAMESPACE: {{ .Release.Namespace | quote }}
   HELM_RELEASE_NAME: {{ .Release.Name | quote }}
   CLUSTER_NAME: {{ .Values.componentsDeployment.clusterName | default .Release.Name | quote }}
-  COMPONENT_OWNERSHIP_EPOCH: {{ .Values.componentsDeployment.ownershipEpoch | default 1 | quote }}
+  COMPONENT_OWNERSHIP_EPOCH: {{ ternary 1 (int64 .Values.componentsDeployment.ownershipEpoch) (kindIs "invalid" .Values.componentsDeployment.ownershipEpoch) | quote }}
   HELM_CHART_PATH: {{ .Values.componentsDeployment.chartPath | default "" | quote }}
   PROJECT_ID: {{ .Values.projectId | default "" | quote }}
   DEFAULT_INGESTION_GATEWAY_IMAGE: {{ .Values.ingestion_gateway_custom_image | default "" | quote }}

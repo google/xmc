@@ -20,10 +20,8 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"maps"
 	"os"
 	"os/signal"
-	"slices"
 	"strconv"
 	"syscall"
 	"time"
@@ -151,11 +149,7 @@ func ParseConfig(args []string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := requirePositiveDurations(map[string]time.Duration{
-		"probe-interval":    *probeInterval,
-		"probe-timeout":     *probeTimeout,
-		"reconcile-timeout": *reconcileTimeout,
-	}); err != nil {
+	if err := validateTimings(*probeInterval, *probeTimeout, *reconcileTimeout); err != nil {
 		return nil, err
 	}
 	if *maxConcurrentReconciles < 1 {
@@ -181,13 +175,17 @@ func ParseConfig(args []string) (*Config, error) {
 	}, nil
 }
 
-// requirePositiveDurations returns an error naming the first flag, in name order, whose duration
-// is not positive.
-func requirePositiveDurations(durations map[string]time.Duration) error {
-	for _, name := range slices.Sorted(maps.Keys(durations)) {
-		if d := durations[name]; d <= 0 {
-			return fmt.Errorf("%s must be a positive duration, got %v", name, d)
-		}
+// validateTimings returns an error for the first non-positive probe or reconcile duration. It is
+// separate from ParseConfig to keep that function within the cyclomatic complexity limit.
+func validateTimings(probeInterval, probeTimeout, reconcileTimeout time.Duration) error {
+	if probeInterval <= 0 {
+		return fmt.Errorf("probe-interval must be a positive duration, got %v", probeInterval)
+	}
+	if probeTimeout <= 0 {
+		return fmt.Errorf("probe-timeout must be a positive duration, got %v", probeTimeout)
+	}
+	if reconcileTimeout <= 0 {
+		return fmt.Errorf("reconcile-timeout must be a positive duration, got %v", reconcileTimeout)
 	}
 	return nil
 }

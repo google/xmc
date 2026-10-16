@@ -44,6 +44,22 @@ py_test(
 )
 
 py_test(
+    name = "bridge_cluster_identity_test",
+    srcs = ["bridge_cluster_identity_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "bridge_cluster_identity_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
     name = "bridge_timeouts_test",
     srcs = ["bridge_timeouts_test.py"],
     data = ["//deploy/helm:chart"],
