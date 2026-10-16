@@ -83,6 +83,7 @@ Which state it is stuck in tells you which subsystem to look at:
 
 | State | Meaning | Where the explanation comes from |
 | :--- | :--- | :--- |
+| `SCHEDULING_PAUSED` | Global workload scheduling is paused by an operator. | The UI displays a scheduling-paused banner; the execution status records an `INFO` system message ("Scheduling has been paused by administrators. This work unit will be scheduled once scheduling is resumed."); the task is buffered in Spanner (`PausedTasks`) and will be replayed automatically when scheduling resumes. |
 | `SCHEDULING` | Kueue has not admitted it. | Workload Reconciler writes the `Inadmissible` reason as a status message — usually insufficient quota. |
 | `STARTING` | Admitted, pods not ready. | JobSet Reconciler's startup pod check reports image pull and scheduling errors after ~2 minutes. |
 | `RUNNING`, but wrong | Your code. | Log Monitor surfaces lines your job prefixes with `XMC LOG:`, with severity and stack trace. |
@@ -223,9 +224,21 @@ An operation that never completes means a task did not make it through the queue
    after 5 minutes idle.
 4. **Actuator logs** — signature or OIDC verification failures reject the task at the boundary.
 
-**Read more.** [Work Unit Lifecycle §7](../flows/work_unit_lifecycle.md#7-failure-handling-along-the-path).
+**Read more.** [Work Unit Lifecycle §8](../flows/work_unit_lifecycle.md#8-failure-handling-along-the-path).
 
-### 2.6 Manage reusable components
+### 2.6 Pause and resume workload scheduling
+
+When the cluster needs maintenance (for example, node pool upgrades or Kueue reconfiguration), an
+operator with the admin role can pause workload scheduling from the `/admin` panel
+(`PauseScheduling` on the Health Service) rather than rejecting user submissions. While paused, the
+Actuator intercepts `Create`, `Restart`, and `Update` tasks into Spanner (`PausedTasks`) and marks
+new or restarted executions `SCHEDULING_PAUSED`, while `StopWorkUnit` (`Delete`) continues to
+execute immediately. Resuming (`ResumeScheduling`) triggers the ESS resumption worker to drain
+buffered tasks back to `xmc-tasks-stream` in priority order with backlog throttling.
+
+**Read more.** [Work Unit Lifecycle §7](../flows/work_unit_lifecycle.md#7-pause-and-resume-workload-scheduling).
+
+### 2.7 Manage reusable components
 
 The Components subsystem (CMS in the ESS, plus the `xmc-bridge` GitOps synchroniser) maintains a
 catalog of reusable AI software modules in Spanner, with dependency DAG validation and cycle

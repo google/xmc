@@ -15,6 +15,7 @@ The chart orchestrates the following backend and frontend microservices:
 | **`reconciler`** | Workload status watcher observing Kubernetes `JobSet` pod events and synchronizing state back to the database. | Cloud Spanner, Kubernetes API (In-Cluster or Remote) |
 | **`xid_service`** | Unique distributed identifier generator for experiments and work units. | Cloud Spanner (`xids-db`) |
 | **`ui`** | Angular-based web management console. | ESS, Dex / OAuth2 Gateway |
+| **`health_service`** | Platform health diagnostics, runtime configuration inspection, and global workload scheduling pause/resume controls. | Cloud Spanner (`experiment-db`, `xids-db`), Redis, ESS, XID, Cloud Run, Cloud Identity |
 | **`log_monitor`** | Pub/Sub subscriber turning filtered workload log entries into work unit status messages. Needs the subscription from `deploy/ctk_v2/modules/log_monitor`. | Pub/Sub, Cloud Spanner (`experiment-db`) |
 
 ---
@@ -30,11 +31,14 @@ global:
   region: "us-central1"    # Primary GCP region
 
 isDevEnvironment: false    # Set to true for local development / KinD clusters
+
+featureFlags:
+  pause_scheduling_enabled: true  # Enable global workload scheduling pause (XMC_PAUSE_SCHEDULING_ENABLED)
 ```
 
 ### 2. Microservice Deployment Settings
 
-Each microservice (`actuator`, `reconciler`, `ess`, `xid`, `ui`, `logMonitor`) can be independently scaled, configured with resource requests/limits, and assigned container image coordinates:
+Each microservice (`actuator`, `reconciler`, `ess`, `xid`, `ui`, `healthService`, `logMonitor`) can be independently scaled, configured with resource requests/limits, and assigned container image coordinates:
 
 ```yaml
 actuator:
@@ -51,6 +55,14 @@ actuator:
     requests:
       cpu: "250m"
       memory: "256Mi"
+
+healthService:
+  cacheTTL: "15s"
+  forceRefreshMaxRequests: 5
+  forceRefreshWindow: "5s"
+  # Paused task resumption tuning (when featureFlags.pause_scheduling_enabled is true)
+  schedulingResumeBatchSize: 100
+  schedulingResumeMaxBacklog: 500
 ```
 
 ---

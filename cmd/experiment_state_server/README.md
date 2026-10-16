@@ -9,6 +9,7 @@ The **Experiment State Server (ESS)** is the central control plane service in XM
 - **Experiment Lifecycle & State Management**: Tracks active, completed, failed, and aborted experiments (`Experiments` and `WorkUnits` tables in Cloud Spanner).
 - **gRPC & HTTP APIs**: Implements AIP-compliant APIs defined in `api/protos/experiment/` (`GetExperiment`, `FetchExperimentStatus`, `ListExperiments`, `CreateExperiment`, `UpdateExperiment`).
 - **Component Drift Evaluation**: Dynamically evaluates live component drift against locked snapshot generations on read endpoints, propagating warning banners to client consoles (see [Dynamic Drift Detection](#dynamic-drift-detection)).
+- **Paused Task Resumption (`resumption/`)**: When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled, runs a background consumer on `xmc-scheduling-resume-stream` (`ess-group`) that claims resumption triggers from the Health Service, fences concurrent workers via `PauseSchedulingState.ResumptionWorkerId`, filters obsolete/terminal tasks, and replays buffered `PausedTasks` back to `xmc-tasks-stream` with backlog throttling.
 - **Authentication & Authorization**: Integrates OAuth2/OIDC token verification and Google Cloud IAM validation (`auth_dev.go` / `auth_prod.go`).
 
 ---
@@ -20,6 +21,7 @@ cmd/experiment_state_server/
 ├── main.go                     # Service entrypoint, flag parsing, and gRPC/HTTP server bootstrap
 ├── auth_dev.go / auth_prod.go  # Environment-specific authentication interceptors
 ├── health.go                   # Health check probe handlers (liveness and readiness)
+├── resumption/                 # Pause scheduling resumption stream consumer, worker, and task filter
 ├── server/                     # gRPC API handler implementations
 │   ├── getexperiment.go        # Fetch single experiment handler
 │   ├── getexperimentstatus.go  # Fetch experiment status handler
@@ -34,7 +36,7 @@ cmd/experiment_state_server/
 
 ESS delegates persistence to the storage subsystem defined in [`internal/storage`](../../internal/storage/README.md):
 - **Interfaces**: Handlers interact with `storage.Storage` and execute multi-entity atomic mutations via `storage.TransactionRunner` using transaction-scoped repositories (`*storage.Transaction`).
-- **Cloud Spanner Backend**: Persistence is implemented in `internal/storage/spanner/` (`experiment/`, `workunit/`, `statusmessage/`, `statushistory/`).
+- **Cloud Spanner Backend**: Persistence is implemented in `internal/storage/spanner/` (`experiment/`, `workunit/`, `statusmessage/`, `statushistory/`, `pausestate/`, `pausedtask/`).
 - **Hermetic Testing**: Service handlers are unit-tested in memory without database emulators using `storage.MockStorage`.
 
 For details on the transaction model, see [internal/storage/README.md](../../internal/storage/README.md).

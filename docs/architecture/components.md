@@ -61,6 +61,11 @@ Responsibilities beyond CRUD:
   operation rather than blocking.
 - **CMS host.** The Component Manager Service is registered on the same gRPC server (see
   [§5.1](#51-component-manager-service-cms)).
+- **Resumption worker.** When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled, ESS runs a consumer in the
+  `ess-group` consumer group on `xmc-scheduling-resume-stream`
+  ([`cmd/experiment_state_server/resumption`](../../cmd/experiment_state_server/resumption)) that
+  claims resumption triggers published by the Health Service and replays buffered `PausedTasks`
+  from Spanner back to `xmc-tasks-stream` in priority order with backlog throttling.
 - **OAuth2 endpoints.** The application-level OAuth2 login, callback, and session handling live in
   [`pkg/auth/oauth2`](../../pkg/auth/oauth2) and are mounted by ESS.
 
@@ -98,7 +103,9 @@ The operator-facing diagnostic and scheduling control surface, reachable at `/v1
 - `GetSchedulingStatus` — returns whether global workload scheduling is currently paused so the UI
   can surface a status banner to all authenticated users.
 - `PauseScheduling` / `ResumeScheduling` — administrative RPCs that toggle the global workload
-  scheduling pause state in Spanner and broadcast state transitions to Actuator replicas.
+  scheduling pause state in Spanner (`PauseSchedulingState`), broadcast state transitions to
+  Actuator replicas over `xmc-pause-stream`, and (on resume) publish a resumption trigger to
+  `xmc-scheduling-resume-stream` for the ESS resumption worker.
 
 **Depends on:** Cloud Spanner (both databases), Redis, ESS, XID, Cloud Run API, Cloud Identity API.
 
@@ -171,11 +178,18 @@ Operation:
    group.
 2. Validates the message's OIDC token and its Tink-signed payload hash
    ([`cmd/actuator/workunittaskhandler`](../../cmd/actuator/workunittaskhandler)).
-3. Dispatches on the payload's action — `Create`, `Delete`, `Restart`, or `Update` — into
+3. If global workload scheduling is paused (`XMC_PAUSE_SCHEDULING_ENABLED`) and the action is
+   `Create`, `Restart`, or `Update`, intercepts the task, buffers it in the Spanner `PausedTasks`
+   table, and transitions `Create` and `Restart` executions to `SCHEDULING_PAUSED`
+   ([`cmd/actuator/pausescheduling`](../../cmd/actuator/pausescheduling)). `Delete` actions bypass
+   the pause so users can always stop work. Each replica keeps an in-memory pause state cache seeded
+   from Spanner on startup and updated via `xmc-pause-stream` broadcasts (or fast-forwarded by a
+   newer `resumption_time` on replayed task metadata).
+4. Otherwise dispatches on the payload's action — `Create`, `Delete`, `Restart`, or `Update` — into
    [`cmd/actuator/k8s_client`](../../cmd/actuator/k8s_client), which builds the `JobSet`
    (labels, annotations, environment variables, Kueue queue and priority-class labels, init
    containers, TPU/GPU node selectors, managed-`xprof` GCS wiring).
-4. Marks the corresponding Spanner `Operation` done.
+5. Marks the corresponding Spanner `Operation` done (for tasks buffered in step 3, the `Operation` remains pending until replay).
 
 Delivery semantics are configured in
 [`internal/kubernetes/common/constants`](../../internal/kubernetes/common/constants/constants.go):
@@ -299,9 +313,11 @@ declarations fail the build rather than a deployment.
 
 | Package | Responsibility |
 | :--- | :--- |
-| [`internal/storage`](../../internal/storage) | Spanner data access, schema migrations, and the storage interfaces used by ESS, Actuator, Reconciler, and Log Monitor. |
+| [`internal/storage`](../../internal/storage) | Spanner data access, schema migrations, and the storage interfaces used by ESS, Actuator, Reconciler, Health Service, and Log Monitor. |
 | [`internal/task_queue`](../../internal/task_queue) | Builds, signs, and enqueues actuator payloads. Owns the idempotency key and JWT/OIDC signing scheme. |
 | [`internal/task_queue_redis`](../../internal/task_queue_redis) | Redis Streams publisher and consumer with consumer groups, retries, abandoned-message reclamation, and dead-lettering. |
+| [`internal/broadcast`](../../internal/broadcast) | Redis Streams broadcast publisher and consumer used to fan out scheduling pause and resume events (`xmc-pause-stream`) to Actuator replicas. |
+| [`internal/featureflags`](../../internal/featureflags) | Unified feature flag definitions (`XMC_PAUSE_SCHEDULING_ENABLED`) and environment-variable loading across services. |
 | [`internal/auth`](../../internal/auth) | Authentication context extraction and authorization decisions shared across services. |
 | [`pkg/auth/oauth2`](../../pkg/auth/oauth2) | OAuth2/OIDC provider integration, session lifecycle, middleware, and the gateway auth pipeline. |
 | [`internal/domain`](../../internal/domain) | Domain rules for experiment creation and work unit resource derivation, kept free of transport and storage concerns. |

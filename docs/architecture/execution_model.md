@@ -58,11 +58,12 @@ graph TD
 ## 2. Work Unit State Machine
 
 `WorkUnitStatus.WorkUnitState`
-([`status.proto`](../../api/protos/experiment/status.proto)) has twelve values. Two are terminal.
+([`status.proto`](../../api/protos/experiment/status.proto)) has thirteen values. Two are terminal.
 
 | State | Meaning |
 | :--- | :--- |
 | `INITIALIZING` | Being prepared before launch. |
+| `SCHEDULING_PAUSED` | Actuation is buffered in Spanner (`PausedTasks`) while global workload scheduling is paused. |
 | `SCHEDULING` | Waiting for resources from the scheduler (Kueue has not admitted it). |
 | `STARTING` | Admitted and being launched. |
 | `RUNNING` | All jobs are running. |
@@ -79,6 +80,8 @@ graph TD
 stateDiagram-v2
     [*] --> INITIALIZING
     INITIALIZING --> SCHEDULING
+    INITIALIZING --> SCHEDULING_PAUSED: global scheduling paused
+    SCHEDULING_PAUSED --> SCHEDULING: scheduling resumed
     SCHEDULING --> STARTING: Kueue admits workload
     STARTING --> RUNNING: all jobs running
     STARTING --> FAILED: bring-up failed
@@ -95,12 +98,14 @@ stateDiagram-v2
 
     SCHEDULING --> STOPPING: StopWorkUnit
     RUNNING --> STOPPING: StopWorkUnit
+    SCHEDULING_PAUSED --> STOPPED: StopWorkUnit (no JobSet on cluster)
     STOPPING --> STOPPED
 
     RUNNING --> RESTARTING: RestartWorkUnit
     STOPPED --> RESTARTING: RestartWorkUnit
     FAILED --> RESTARTING: RestartWorkUnit
     RESTARTING --> STARTING: new execution
+    RESTARTING --> SCHEDULING_PAUSED: global scheduling paused
 
     COMPLETED --> [*]
     FAILED --> [*]
@@ -188,7 +193,7 @@ The sequence is always the same:
 
 Steps 2 and 3 are separate writes rather than one atomic commit, so a crash between them can leave
 an operation with no queued task — see
-[Work Unit Lifecycle §7](../flows/work_unit_lifecycle.md#7-failure-handling-along-the-path) for how
+[Work Unit Lifecycle §8](../flows/work_unit_lifecycle.md#8-failure-handling-along-the-path) for how
 that case is recovered.
 
 Clients poll the operation, or simply watch the work unit's state converge. The decoupling is what
