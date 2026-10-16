@@ -264,10 +264,10 @@ func generationEvaluated(res *ReconcileResult, generation int64, err error) bool
 }
 
 func (r *Reconciler) reconcilePass(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	// Deletion runs before the fence check on purpose: cold standby holds only non-deleting CRs, so a
-	// fenced cluster still releases a deleted CR's finalizer.
-	// TODO(vluk): Send a sourced ExecuteDeletion so CMS rejects a fenced deletion (CLUSTER_FENCED) and
-	// leaves the active owner's record untouched; until then a fenced cluster deletes unsourced (#1240).
+	// Deletion runs before the fence check on purpose: cold standby holds only non-deleting CRs. A
+	// fenced cluster's deletion skips CMS (the local fence check, or CLUSTER_FENCED on the sourced
+	// ExecuteDeletion), so CMS keeps the active owner's record while reconcileDeletion reports
+	// StaleDeletion, tears down only the local release and releases the finalizer.
 	if in.IsDeleting {
 		return r.reconcileDeletion(ctx, in, canonicalName, res)
 	}
