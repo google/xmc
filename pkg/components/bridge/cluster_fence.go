@@ -196,7 +196,7 @@ func (f *ClusterFence) Declare(ctx context.Context) error {
 		return fmt.Errorf("failed to declare cluster epoch in CMS: %w", err)
 	}
 	f.appliedSeq = seq
-	f.applyStateLocked(reason, msg, !f.declared && f.declareFailed)
+	f.applyStateLocked(ctx, reason, msg, !f.declared && f.declareFailed)
 	return nil
 }
 
@@ -226,7 +226,10 @@ func (f *ClusterFence) isDeclared() bool {
 	return f.declared
 }
 
-func (f *ClusterFence) applyStateLocked(reason, msg string, recoveredFromError bool) {
+func (f *ClusterFence) applyStateLocked(ctx context.Context, reason, msg string, recoveredFromError bool) {
+	if !f.declared || f.fencedReason != reason {
+		f.logTransition(ctx, reason, msg)
+	}
 	changed := (f.declared && f.fencedReason != reason) || (!f.declared && (reason != "" || recoveredFromError))
 	f.declared, f.declareFailed = true, false
 	f.fencedReason, f.fencedMessage = reason, msg
@@ -236,6 +239,16 @@ func (f *ClusterFence) applyStateLocked(reason, msg string, recoveredFromError b
 		default:
 		}
 	}
+}
+
+// logTransition logs the fence status that a declaration moves this cluster into: once on the
+// first declaration and once per change, never on an unchanged heartbeat.
+func (f *ClusterFence) logTransition(ctx context.Context, reason, msg string) {
+	if reason != "" {
+		logging.Error(ctx, "Cluster is fenced out of CMS; holding Components in cold standby until the ownership epoch is raised", "cluster", f.identity.GetName(), "epoch", f.identity.GetEpoch(), "reason", reason, "message", msg)
+		return
+	}
+	logging.Info(ctx, "Cluster holds the CMS ownership fence", "cluster", f.identity.GetName(), "epoch", f.identity.GetEpoch())
 }
 
 func fenceConflictFromError(err error) (string, string, bool) {

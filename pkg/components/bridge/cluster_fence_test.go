@@ -15,8 +15,11 @@
 package bridge
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -32,6 +35,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
 )
@@ -299,10 +303,12 @@ func TestClusterFence_TransitionNotifications(t *testing.T) {
 		first, second error
 		wantReason    string
 		wantNotify    bool
+		// wantLog is a fragment of the one log line the second declaration writes; empty means none.
+		wantLog string
 	}{
-		{name: "active to fenced", first: nil, second: fenced, wantReason: ReasonClusterFenced, wantNotify: true},
-		{name: "fenced to active", first: fenced, second: nil, wantReason: "", wantNotify: true},
-		{name: "fenced to regressed", first: fenced, second: regressed, wantReason: ReasonClusterEpochRegressed, wantNotify: true},
+		{name: "active to fenced", first: nil, second: fenced, wantReason: ReasonClusterFenced, wantNotify: true, wantLog: "level=ERROR msg=\"Cluster is fenced out of CMS"},
+		{name: "fenced to active", first: fenced, second: nil, wantReason: "", wantNotify: true, wantLog: "level=INFO msg=\"Cluster holds the CMS ownership fence\""},
+		{name: "fenced to regressed", first: fenced, second: regressed, wantReason: ReasonClusterEpochRegressed, wantNotify: true, wantLog: "reason=" + ReasonClusterEpochRegressed},
 		{name: "active unchanged", first: nil, second: nil, wantReason: "", wantNotify: false},
 		{name: "fenced unchanged", first: fenced, second: fenced, wantReason: ReasonClusterFenced, wantNotify: false},
 	}
@@ -322,8 +328,16 @@ func TestClusterFence_TransitionNotifications(t *testing.T) {
 			}
 
 			cmsMock.declareErr = tc.second
-			if err := fence.Declare(ctx); err != nil {
+			var logs bytes.Buffer
+			logCtx := logging.WithLogger(ctx, slog.New(slog.NewTextHandler(&logs, nil)))
+			if err := fence.Declare(logCtx); err != nil {
 				t.Fatalf("second Declare() = %v, want nil", err)
+			}
+			switch got := logs.String(); {
+			case tc.wantLog == "" && got != "":
+				t.Errorf("second Declare() logged %q, want no log", got)
+			case tc.wantLog != "" && (strings.Count(got, "msg=") != 1 || !strings.Contains(got, tc.wantLog)):
+				t.Errorf("second Declare() logged %q, want one line containing %q", got, tc.wantLog)
 			}
 			gotNotify := false
 			select {
