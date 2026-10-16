@@ -20,8 +20,6 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	fepb "xmanager_cloud/api/filter"
 	aipfilter "xmanager_cloud/api/filter/go/filter"
@@ -35,18 +33,15 @@ import (
 // DeleteChart deletes a chart by its unique ID in a ReadWriteTransaction.
 func (r *Repository) DeleteChart(ctx context.Context, chartId string) error {
 	if chartId == "" {
-		return fmt.Errorf("chartId must not be empty")
+		return fmt.Errorf("chartId must not be empty: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	logging.Info(ctx, "Delete chart from storage", "chartId", chartId)
 
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 		// 1. Read the existing chart from storage to verify existence.
-		if _, err := tx.ReadRow(ctx, dashboardschema.ChartsTableName, spanner.Key{chartId}, []string{"ChartId"}); err != nil {
-			if status.Code(err) == codes.NotFound {
-				return fmt.Errorf("chart %s not found: %w", chartId, grpcerr.ErrNotFound)
-			}
-			return fmt.Errorf("failed to read chart %s: %w", chartId, err)
+		if _, err := readRowInTransaction(ctx, tx, dashboardschema.ChartsTableName, "chart", chartId, []string{"ChartId"}); err != nil {
+			return err
 		}
 
 		artMuts, err := r.deleteArtifactChartReferences(ctx, tx, chartId)

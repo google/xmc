@@ -40,6 +40,9 @@ func (r *Repository) fetchChartPlots(ctx context.Context, txn *spanner.ReadOnlyT
 
 // GetChart retrieves a chart by its unique ID along with its plot specifications and plot layout.
 func (r *Repository) GetChart(ctx context.Context, chartId string) (*dpb.Chart, error) {
+	if chartId == "" {
+		return nil, fmt.Errorf("chartId must not be empty: %w", grpcerr.ErrInvalidArgument)
+	}
 	logging.Info(ctx, "Get chart from storage", "chartId", chartId)
 
 	txn := r.client.ReadOnlyTransaction()
@@ -47,7 +50,7 @@ func (r *Repository) GetChart(ctx context.Context, chartId string) (*dpb.Chart, 
 
 	row, err := txn.ReadRow(ctx, dashboardschema.ChartsTableName, spanner.Key{chartId}, dashboardschema.FetchedChartColumns)
 	if err != nil {
-		if status.Code(err) == codes.NotFound {
+		if err == spanner.ErrRowNotFound || status.Code(err) == codes.NotFound {
 			return nil, fmt.Errorf("chart %s not found: %w", chartId, grpcerr.ErrNotFound)
 		}
 		return nil, fmt.Errorf("failed to read chart %s: %w", chartId, err)

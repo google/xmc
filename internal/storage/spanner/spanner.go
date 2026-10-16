@@ -17,6 +17,7 @@ package spanner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"cloud.google.com/go/spanner"
@@ -79,7 +80,7 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 		}
 		return fn(txCtx, tx)
 	})
-	if status.Code(err) == codes.AlreadyExists {
+	if status.Code(err) == codes.AlreadyExists && !errors.Is(err, grpcerr.ErrAlreadyExists) {
 		return fmt.Errorf("%w: %v", grpcerr.ErrAlreadyExists, err)
 	}
 	return err
