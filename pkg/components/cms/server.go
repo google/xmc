@@ -136,6 +136,10 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 	if req.GetSpec() == nil {
 		return nil, status.Error(codes.InvalidArgument, "component spec is required")
 	}
+	src, err := requestSourceFromProto(req.GetSource())
+	if err != nil {
+		return nil, err
+	}
 
 	specToSet := req.GetSpec()
 	if req.GetUpdateMask() != nil && len(req.GetUpdateMask().GetPaths()) > 0 {
@@ -173,13 +177,37 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 		}, nil
 	}
 
-	rec, err := s.store.SetComponentIntent(ctx, canonicalName, specToSet, nil, specToSet.GetGeneration())
+	rec, err := s.applyIntent(ctx, canonicalName, specToSet, src)
 	if err != nil {
 		return nil, err
 	}
 	return &componentspb.SetComponentIntentResponse{
 		Component: store.ToProtoComponent(rec),
 	}, nil
+}
+
+// requestSourceFromProto converts and validates the source of a request (including validate_only),
+// or returns nil when src is nil.
+func requestSourceFromProto(src *componentspb.RequestSource) (*store.RequestSource, error) {
+	if src == nil {
+		return nil, nil
+	}
+	storeSrc := store.RequestSource{
+		UID: src.GetUid(), Generation: src.GetGeneration(), Namespace: src.GetNamespace(),
+		ClusterUID: src.GetCluster().GetUid(), Epoch: src.GetCluster().GetEpoch(),
+	}
+	if err := store.ValidateRequestSource(storeSrc); err != nil {
+		return nil, err
+	}
+	return &storeSrc, nil
+}
+
+// applyIntent stores spec ordered by src when it is set, and by spec.generation otherwise.
+func (s *Server) applyIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, src *store.RequestSource) (*store.ComponentRecord, error) {
+	if src == nil {
+		return s.store.SetComponentIntent(ctx, canonicalName, spec, nil, spec.GetGeneration())
+	}
+	return s.store.SetSourcedComponentIntent(ctx, canonicalName, spec, nil, *src)
 }
 
 // canonicalDependencies returns spec.dependencies as deduplicated canonical component names in

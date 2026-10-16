@@ -40,6 +40,8 @@ const (
 	// directly or transitively. Metadata "dependents" lists their
 	// canonical names, comma-separated.
 	ReasonActiveDependentsExist = "ACTIVE_DEPENDENTS_EXIST"
+	// ReasonStaleGeneration rejects a changed intent from an older generation of the owner object.
+	ReasonStaleGeneration = "STALE_GENERATION"
 )
 
 // google.rpc.ErrorInfo metadata keys of store rejections, part of the contract callers match.
