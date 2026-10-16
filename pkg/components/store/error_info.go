@@ -75,11 +75,19 @@ const (
 	MetadataKeyOwnerGeneration = "owner_generation"
 )
 
+// ErrorInfo metadata keys naming the fence holder in cluster fence rejections.
+const (
+	metadataKeyActiveClusterUID  = "active_cluster_uid"
+	metadataKeyActiveClusterName = "active_cluster_name"
+	metadataKeyActiveEpoch       = "active_epoch"
+)
+
 // Values of metadata "operation": the rejected CMS operation.
 const (
 	operationSetComponentIntent  = "SetComponentIntent"
 	operationPrepareDeactivation = "PrepareDeactivation"
 	operationExecuteDeletion     = "ExecuteDeletion"
+	operationDeclareClusterEpoch = "DeclareClusterEpoch"
 )
 
 // errorWithInfo returns a status error with code and msg carrying a google.rpc.ErrorInfo with

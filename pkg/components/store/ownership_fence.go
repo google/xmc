@@ -88,10 +88,10 @@ func planDeclaration(fence *ClusterIdentity, c ClusterIdentity) (DeclarationOutc
 // fenceError returns the FailedPrecondition rejection with reason against the fence holder.
 func fenceError(reason string, fence *ClusterIdentity, msg string) error {
 	meta := map[string]string{
-		"operation":           "DeclareClusterEpoch",
-		"active_cluster_uid":  fence.UID,
-		"active_cluster_name": fence.Name,
-		"active_epoch":        strconv.FormatInt(fence.Epoch, 10),
+		metadataKeyOperation:         operationDeclareClusterEpoch,
+		metadataKeyActiveClusterUID:  fence.UID,
+		metadataKeyActiveClusterName: fence.Name,
+		metadataKeyActiveEpoch:       strconv.FormatInt(fence.Epoch, 10),
 	}
 	return errorWithInfo(codes.FailedPrecondition, reason, meta, msg)
 }

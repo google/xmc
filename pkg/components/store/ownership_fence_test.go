@@ -100,8 +100,11 @@ func TestPlanDeclaration(t *testing.T) {
 				Domain:   ErrorInfoDomain,
 				Metadata: map[string]string{"operation": "DeclareClusterEpoch", "active_cluster_uid": baseCluster.UID, "active_cluster_name": "prod", "active_epoch": "3"},
 			}}
-			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); st.Code() != codes.FailedPrecondition || diff != "" {
-				t.Errorf("planDeclaration() code = %v, details mismatch (-want +got):\n%s", st.Code(), diff)
+			if st.Code() != codes.FailedPrecondition {
+				t.Errorf("planDeclaration() code = %v, want %v", st.Code(), codes.FailedPrecondition)
+			}
+			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
+				t.Errorf("planDeclaration() details mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

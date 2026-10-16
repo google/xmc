@@ -207,8 +207,11 @@ func assertFenceRejected(t *testing.T, err error, wantReason string, active stor
 			"active_epoch":        fmt.Sprint(active.Epoch),
 		},
 	}}
-	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); st.Code() != codes.FailedPrecondition || diff != "" {
-		t.Errorf("DeclareClusterEpoch() error = %v, details mismatch (-want +got):\n%s", err, diff)
+	if st.Code() != codes.FailedPrecondition {
+		t.Errorf("DeclareClusterEpoch() code = %v, want %v (error = %v)", st.Code(), codes.FailedPrecondition, err)
+	}
+	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
+		t.Errorf("DeclareClusterEpoch() details mismatch (-want +got):\n%s", diff)
 	}
 }
 
