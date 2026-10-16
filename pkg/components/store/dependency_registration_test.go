@@ -19,6 +19,10 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 const (
@@ -99,5 +103,17 @@ func TestValidateIntentDependencies(t *testing.T) {
 				t.Errorf("validateIntentDependencies() mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestDependencyNotRegisteredError(t *testing.T) {
+	st := status.Convert(dependencyNotRegisteredError("ingestion", "redpanda"))
+
+	if want := DependencyNotFoundMessagePrefix + ` component "ingestion" depends on "redpanda", which is not registered`; st.Code() != codes.FailedPrecondition || st.Message() != want {
+		t.Errorf("status = %v %q, want %v %q", st.Code(), st.Message(), codes.FailedPrecondition, want)
+	}
+	want := []any{&errdetails.ErrorInfo{Reason: "DEPENDENCY_NOT_REGISTERED", Domain: ErrorInfoDomain, Metadata: map[string]string{"operation": "SetComponentIntent", "component": "ingestion", "dependency": "redpanda"}}}
+	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
+		t.Errorf("details mismatch (-want +got):\n%s", diff)
 	}
 }

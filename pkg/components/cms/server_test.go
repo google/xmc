@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -606,6 +607,7 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 		seedDependent bool
 		req           *componentspb.SetComponentIntentRequest
 		wantCode      codes.Code
+		wantReason    string
 		wantStoreDep  []string
 	}{
 		{
@@ -641,10 +643,17 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 			wantCode: codes.InvalidArgument,
 		},
 		{
-			name:          "cycle via spec.dependencies is rejected",
+			name:          "cycle via spec.dependencies carries the DEPENDENCY_CYCLE ErrorInfo",
 			seedDependent: true,
 			req:           &componentspb.SetComponentIntentRequest{Name: "redpanda", Spec: specWithDeps("components/ingestion-gateway")},
 			wantCode:      codes.FailedPrecondition,
+			wantReason:    store.ReasonDependencyCycle,
+		},
+		{
+			name:       "unregistered dependency carries the DEPENDENCY_NOT_REGISTERED ErrorInfo",
+			req:        &componentspb.SetComponentIntentRequest{Name: "ingestion-gateway", Spec: specWithDeps("zookeeper")},
+			wantCode:   codes.FailedPrecondition,
+			wantReason: store.ReasonDependencyNotRegistered,
 		},
 	}
 	for _, tc := range tests {
@@ -662,6 +671,9 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 			_, err := server.SetComponentIntent(ctx, tc.req)
 			if got := status.Code(err); got != tc.wantCode {
 				t.Fatalf("SetComponentIntent() got code %v, want %v (err: %v)", got, tc.wantCode, err)
+			}
+			if got := errorInfoReason(err); got != tc.wantReason {
+				t.Errorf("SetComponentIntent() ErrorInfo reason = %q, want %q", got, tc.wantReason)
 			}
 			if tc.wantStoreDep == nil {
 				return
@@ -681,6 +693,17 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 			}
 		})
 	}
+}
+
+// errorInfoReason returns the reason of the google.rpc.ErrorInfo that err carries in
+// store.ErrorInfoDomain, or "" when it carries none.
+func errorInfoReason(err error) string {
+	for _, d := range status.Convert(err).Details() {
+		if info, ok := d.(*errdetails.ErrorInfo); ok && info.GetDomain() == store.ErrorInfoDomain {
+			return info.GetReason()
+		}
+	}
+	return ""
 }
 
 func TestCMSServer_UpdateObservedGeneration_MemoryStore(t *testing.T) {

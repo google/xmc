@@ -15,13 +15,16 @@
 package store
 
 import (
+	"fmt"
+
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // DependencyNotFoundMessagePrefix starts the FailedPrecondition message returned when a component
-// declares a dependency that is not registered. The GitOps bridge matches codes.FailedPrecondition
-// plus this prefix to report "waiting on dependencies" instead of an error, so keep it stable.
+// declares a dependency that is not registered. The error also carries a google.rpc.ErrorInfo with
+// ReasonDependencyNotRegistered, which new callers match instead. The GitOps bridge still matches
+// codes.FailedPrecondition plus this prefix to report "waiting on dependencies" instead of an
+// error, so keep it stable until the bridge matches the reason.
 const DependencyNotFoundMessagePrefix = "dependency not found:"
 
 // validateIntentDependencies checks that the dependencies deps of an intent for canonicalName keep
@@ -49,6 +52,10 @@ func resolveDependencyIDs(catalog map[string]*ComponentRecord, canonicalName str
 	return depIDs, nil
 }
 
+// dependencyNotRegisteredError returns the FailedPrecondition DEPENDENCY_NOT_REGISTERED rejection
+// of an intent for canonicalName that depends on the unregistered dep.
 func dependencyNotRegisteredError(canonicalName, dep string) error {
-	return status.Errorf(codes.FailedPrecondition, DependencyNotFoundMessagePrefix+" component %q depends on %q, which is not registered", canonicalName, dep)
+	return errorWithInfo(codes.FailedPrecondition, ReasonDependencyNotRegistered,
+		map[string]string{metadataKeyOperation: operationSetComponentIntent, metadataKeyComponent: canonicalName, metadataKeyDependency: dep},
+		fmt.Sprintf(DependencyNotFoundMessagePrefix+" component %q depends on %q, which is not registered", canonicalName, dep))
 }

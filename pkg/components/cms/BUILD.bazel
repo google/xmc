@@ -47,6 +47,7 @@ go_test(
         "//api/protos/components/v1alpha1",
         "//pkg/components/store",
         "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",

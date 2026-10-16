@@ -17,6 +17,7 @@ package store
 import (
 	"context"
 	"sort"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -130,20 +131,26 @@ func ValidateProspectiveDependenciesFromMap(existing map[string]*ComponentRecord
 func validateProspectiveGraph(depGraph DependencyGraph, canonicalTarget string, normalized []string) error {
 	for _, dep := range normalized {
 		if dep == canonicalTarget {
-			cycleStr := canonicalTarget + " -> " + canonicalTarget
-			logging.Warn(context.Background(), "Prospective dependency self-cycle detected", "target", canonicalTarget, "cycle", cycleStr)
-			return status.Errorf(codes.FailedPrecondition, "dependency cycle detected: %s", cycleStr)
+			return dependencyCycleError(canonicalTarget, []string{canonicalTarget, canonicalTarget})
 		}
 	}
 
 	depGraph[canonicalTarget] = normalized
 
 	if cycle, found := DetectCycles(depGraph); found {
-		cycleStr := graph.FormatCycle(cycle)
-		logging.Warn(context.Background(), "Prospective dependency cycle detected", "target", canonicalTarget, "cycle", cycleStr)
-		return status.Errorf(codes.FailedPrecondition, "dependency cycle detected: %s", cycleStr)
+		return dependencyCycleError(canonicalTarget, cycle)
 	}
 	return nil
+}
+
+// dependencyCycleError returns the FailedPrecondition DEPENDENCY_CYCLE rejection of an intent for
+// canonicalTarget. cycle is the closed cycle path, whose last name repeats the first.
+func dependencyCycleError(canonicalTarget string, cycle []string) error {
+	cycleStr := graph.FormatCycle(cycle)
+	logging.Warn(context.Background(), "Prospective dependency cycle detected", "target", canonicalTarget, "cycle", cycleStr)
+	return errorWithInfo(codes.FailedPrecondition, ReasonDependencyCycle,
+		map[string]string{metadataKeyOperation: operationSetComponentIntent, metadataKeyComponent: canonicalTarget, metadataKeyCycle: strings.Join(cycle[:len(cycle)-1], ",")},
+		"dependency cycle detected: "+cycleStr)
 }
 
 // FindTransitiveDependents returns all components that transitively depend on root.

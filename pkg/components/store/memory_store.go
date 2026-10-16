@@ -289,9 +289,6 @@ func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requ
 
 	result, err := EvaluateDeactivationSafety(m.componentsByName, canonicalName, requestCascade, minDrainTimeout)
 	if err != nil {
-		if status.Code(err) == codes.FailedPrecondition && result != nil && len(result.BlockingDependents) > 0 {
-			return nil, status.Errorf(codes.FailedPrecondition, "component %s has active dependents: %v", canonicalName, result.BlockingDependents)
-		}
 		return nil, err
 	}
 
