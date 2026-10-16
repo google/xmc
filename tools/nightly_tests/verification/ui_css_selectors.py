@@ -22,7 +22,10 @@ JOBS_PANE_QUEUE_NAME_SEL = "xmc-queue-jobs-table .target-queue-name"
 SMART_FINDER_ROOT_SEL = "xmc-smart-resource-finder"
 JOBS_CONTENT_SEL = "xmc-queue-jobs-table .jobs-mat-table, xmc-queue-jobs-table .jobs-empty-state"
 JOBS_TABLE_ROW_SEL = "xmc-queue-jobs-table table.jobs-mat-table tr.mat-mdc-row"
-JOBS_NEXT_PAGE_BTN_SEL = "button.mat-mdc-paginator-navigation-next:not([disabled])"
+JOBS_NEXT_PAGE_BTN_SEL = (
+    "button.mat-mdc-paginator-navigation-next:not([disabled])"
+    ':not([aria-disabled="true"]):not(.mat-mdc-button-disabled)'
+)
 PREDICTABILITY_EMPTY_SEL = ".predictability-empty-state"
 PREDICTABILITY_STATS_GRID_SEL = ".predictability-stats-grid"
 PREDICTABILITY_CONTENT_SEL = ".predictability-stats-grid, .predictability-spinner-container"
