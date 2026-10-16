@@ -48,7 +48,10 @@ function extractRangeDiffFilePath(header) {
   body = body.replace(/\s+\([^)]*\)$/, '').trim();
   const renameParts = body.split(' => ');
   const path = renameParts[renameParts.length - 1].trim();
-  return path || null;
+  if (!path || path.startsWith('-') || path.startsWith('+') || path.endsWith('@@')) {
+    return null;
+  }
+  return path;
 }
 
 /**
@@ -127,7 +130,7 @@ function parseRangeDiff(output) {
         currentFile = extractRangeDiffFilePath(content) || currentFile;
         continue;
       }
-      if (content.startsWith('\\ No newline') || content.startsWith('Binary files')) {
+      if (content.startsWith('@@') || content.startsWith('\\ No newline') || content.startsWith('Binary files')) {
         continue;
       }
 

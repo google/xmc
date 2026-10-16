@@ -28,6 +28,7 @@ test('extractRangeDiffFilePath parses outer hunk and inner file headers', () => 
   assert.strictEqual(extractRangeDiffFilePath('## pkg/old.go => pkg/old_test.go ##'), 'pkg/old_test.go');
   assert.strictEqual(extractRangeDiffFilePath('## pkg/c.go ##'), 'pkg/c.go');
   assert.strictEqual(extractRangeDiffFilePath('@@'), null);
+  assert.strictEqual(extractRangeDiffFilePath('@@ -1,3 +1,4 @@'), null);
   assert.strictEqual(extractRangeDiffFilePath('plain text'), null);
 });
 
@@ -62,9 +63,9 @@ test('parseRangeDiff counts test file lines separately from production lines', (
   ].join('\n');
 
   const result = parseRangeDiff(sampleOutput);
-  // a_test.go: 2, b.go: 2, new_test.go: '+@@' + 3 lines + blank = 5, renamed.go: 1.
-  assert.strictEqual(result.totalDelta, 10);
-  assert.strictEqual(result.testDelta, 7);
+  // a_test.go: 2, b.go: 2, new_test.go: 3 lines + blank = 4 ('+@@' header skipped), renamed.go: 1.
+  assert.strictEqual(result.totalDelta, 9);
+  assert.strictEqual(result.testDelta, 6);
 });
 
 test('parseRangeDiff treats lines with unknown file as non-test', () => {

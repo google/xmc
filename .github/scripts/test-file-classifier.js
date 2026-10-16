@@ -30,7 +30,11 @@ function isTestFile(filePath) {
   if (!filePath || typeof filePath !== 'string') {
     return false;
   }
-  const normalized = filePath.replace(/\\/g, '/').trim();
+  let normalized = filePath.replace(/\\/g, '/').trim();
+  // Git wraps paths containing special or non-ASCII characters in double quotes.
+  if (normalized.length >= 2 && normalized.startsWith('"') && normalized.endsWith('"')) {
+    normalized = normalized.slice(1, -1);
+  }
   return TEST_FILE_PATTERNS.some(pattern => pattern.test(normalized));
 }
 

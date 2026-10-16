@@ -26,7 +26,9 @@ test('isTestFile recognizes test files and fixtures', () => {
     'python/xm/launcher_test.py',
     'pkg/api/testdata/golden.json',
     'testdata/fixture.yaml',
-    'pkg\\api\\handler_test.go'
+    'pkg\\api\\handler_test.go',
+    '"pkg/workunit/create_test.go"',
+    '"pkg/\\303\\251t\\303\\251_test.go"'
   ]) {
     assert.strictEqual(isTestFile(path), true, path);
   }
