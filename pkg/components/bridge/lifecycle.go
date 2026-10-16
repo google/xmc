@@ -50,13 +50,14 @@ const (
 func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
 		if status.Code(err) != codes.NotFound {
-			setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "CMSDeletionFailed", err.Error())
+			recordCMSSyncFailure(res, in, err)
 			return res, fmt.Errorf("failed to execute deletion in CMS: %w", err)
 		}
 		logging.Info(ctx, "Component already deleted in CMS, proceeding with workload teardown", "name", canonicalName)
 	} else {
 		logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
 	}
+	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 	if err := r.teardown1PComponent(ctx, in, res); err != nil {
 		return res, err
 	}
@@ -100,7 +101,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	}
 	if err != nil {
 		err = fmt.Errorf("failed to prepare deactivation in CMS: %w", err)
-		markDeactivationFailed(in, res, "CMSDeactivationFailed", err.Error())
+		recordCMSSyncFailure(res, in, err)
 		return res, err
 	}
 	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
@@ -112,14 +113,17 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 		if _, err := r.cmsClient.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: canonicalName}); err != nil {
 			err = fmt.Errorf("failed to complete deactivation in CMS: %w", err)
 			markDeactivationFailed(in, res, ReasonDeactivationIncomplete, err.Error())
+			setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
 			return res, err
 		}
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	setReadiness(res, in, ConditionStatusFalse, ConditionStatusFalse, reasonComponentDisabled, "Component is disabled")
 	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
+		setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
+	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 	logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
 	return res, nil
 }
@@ -218,17 +222,15 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 }
 
 // wasComponentPreviouslyActive infers from the last Ready condition whether a workload may exist;
-// gated (DependenciesNotReady, DependencyCycle) or disabled components never had one actuated, and
-// DeactivationIncomplete means an earlier pass already removed it. Transient error reasons such as
-// IntentApplicationFailed or CMSDeactivationFailed overwrite the previous reason, so they are
-// treated as active: an idempotent extra uninstall is cheaper than leaking a running workload.
+// gated (DependenciesNotReady, DependencyCycle), InitialSyncPending, or disabled components never had
+// one actuated, and DeactivationIncomplete means an earlier pass already removed it.
 func wasComponentPreviouslyActive(existing []Condition) bool {
 	ready := findCondition(existing, ConditionTypeReady)
 	if ready == nil {
 		return false
 	}
 	switch ready.Reason {
-	case "", reasonComponentDisabled, ReasonDependenciesNotReady, ReasonDependencyCycle, ReasonDeactivationIncomplete:
+	case "", reasonComponentDisabled, ReasonDependenciesNotReady, ReasonDependencyCycle, ReasonDeactivationIncomplete, ReasonInitialSyncPending:
 		return ready.Status == ConditionStatusTrue
 	}
 	return true

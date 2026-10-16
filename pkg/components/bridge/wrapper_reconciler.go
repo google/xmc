@@ -172,7 +172,11 @@ func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileCompon
 		msg = resStatus.Message
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
-	populateAccessEnvVars(res, resStatus)
+	if resStatus == nil {
+		preserveExistingAccess(res, in.ExistingAccess)
+	} else {
+		populateAccessEnvVars(res, resStatus)
+	}
 	setReadiness(res, in, ConditionStatusTrue, ConditionStatusFalse, ReasonComponentHealthy, msg)
 	return res, r.syncReadyToCMS(ctx, in, canonicalName, res, ConditionStatusTrue)
 }

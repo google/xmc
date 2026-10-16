@@ -38,6 +38,7 @@ const (
 	ReasonDependencyCycle = "DependencyCycle"
 	// dependencyNotFoundMessagePrefix mirrors store.DependencyNotFoundMessagePrefix (pinned by a test).
 	dependencyNotFoundMessagePrefix = "dependency not found:"
+	dependencyCycleMessagePrefix    = "dependency cycle detected:"
 )
 
 // AccessStatus encapsulates network and access metadata (such as environment variables) for a component.
@@ -94,11 +95,15 @@ type ReconcileComponentInput struct {
 	Enabled bool
 	// ExistingConditions contains conditions previously reported on the custom resource.
 	ExistingConditions []Condition
-	HelmOpts           HelmComponentOptions
-	WrapperOpts        WrapperRef
+	// ExistingAccess contains status.access previously reported on the custom resource.
+	ExistingAccess *AccessStatus
+	HelmOpts       HelmComponentOptions
+	WrapperOpts    WrapperRef
 	// Dependencies optionally resolves readiness of Spec.Dependencies. When nil, activation
 	// is not gated on dependency readiness.
 	Dependencies DependencyReadiness
+	// skipCMSSync limits a pass to local health evaluation: syncReadyToCMS does not call CMS.
+	skipCMSSync bool
 }
 
 // ReconcileComponent executes a single reconciliation pass for a Component.
@@ -192,6 +197,16 @@ func (r *Reconciler) registerIntent(ctx context.Context, in ReconcileComponentIn
 // dependencyNotRegisteredMessage returns the CMS status message if err (possibly wrapped) is the
 // store's FailedPrecondition for an unregistered dependency, or "" otherwise.
 func dependencyNotRegisteredMessage(err error) string {
+	return failedPreconditionWithPrefix(err, dependencyNotFoundMessagePrefix)
+}
+
+// dependencyCycleMessage returns the CMS status message if err (possibly wrapped) is the store's
+// FailedPrecondition for a dependency cycle, or "" otherwise.
+func dependencyCycleMessage(err error) string {
+	return failedPreconditionWithPrefix(err, dependencyCycleMessagePrefix)
+}
+
+func failedPreconditionWithPrefix(err error, prefix string) string {
 	// Not status.FromError: for wrapped errors it replaces the message with the full err.Error(),
 	// which would defeat the prefix match below.
 	var se interface{ GRPCStatus() *status.Status }
@@ -199,7 +214,7 @@ func dependencyNotRegisteredMessage(err error) string {
 		return ""
 	}
 	st := se.GRPCStatus()
-	if st.Code() != codes.FailedPrecondition || !strings.HasPrefix(st.Message(), dependencyNotFoundMessagePrefix) {
+	if st.Code() != codes.FailedPrecondition || !strings.HasPrefix(st.Message(), prefix) {
 		return ""
 	}
 	return st.Message()
@@ -237,15 +252,57 @@ func resolveComponentRef(in ReconcileComponentInput) ComponentRef {
 func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
 	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec})
 	if err != nil {
-		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "IntentApplicationFailed", err.Error())
-		return fmt.Errorf("failed to apply component intent to CMS: %w", err)
+		return r.handleIntentError(ctx, in, canonicalName, res, err)
 	}
+	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 	if setResp != nil && setResp.GetComponent() != nil && setResp.GetComponent().GetStatus() != nil {
 		res.State = setResp.GetComponent().GetStatus().GetState()
 	}
 	logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "state", res.State.String())
 	return nil
+}
+
+// handleIntentError classifies a SetComponentIntent failure: an unregistered dependency keeps
+// Synced=True (CMS is reachable), a dependency cycle gates the component, and any other error
+// records a CMS sync failure and refreshes the local health of an actuated workload. It always
+// returns the wrapped intent error.
+func (r *Reconciler) handleIntentError(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, err error) error {
+	intentErr := fmt.Errorf("failed to apply component intent to CMS: %w", err)
+	if dependencyNotRegisteredMessage(err) != "" {
+		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
+		return intentErr
+	}
+	msg := dependencyCycleMessage(err)
+	if msg != "" {
+		if _, syncErr := r.reportGated(ctx, in, canonicalName, res, ReasonDependencyCycle, msg, ConditionStatusTrue); syncErr != nil {
+			return errors.Join(intentErr, syncErr)
+		}
+		return intentErr
+	}
+	recordCMSSyncFailure(res, in, err)
+	r.refreshLocalHealth(ctx, in, canonicalName, res, err)
+	return intentErr
+}
+
+// refreshLocalHealth keeps probing the workload of an already-actuated, enabled component while
+// CMS is unreachable, so Ready reflects the latest local probe rather than the value from before
+// the outage. Health is evaluated at the last evaluated generation, because the new spec has not
+// reached CMS; the pass never calls CMS and never changes the workload. Synced stays False.
+func (r *Reconciler) refreshLocalHealth(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, cmsErr error) {
+	prev := findCondition(in.ExistingConditions, ConditionTypeReady)
+	if !in.Enabled || in.IsDeleting || prev == nil || !r.isActuated(in) {
+		return
+	}
+	local := in
+	local.Generation = prev.ObservedGeneration
+	local.skipCMSSync = true
+	// Local failures are recorded in Ready; the pass already returns the CMS error.
+	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER {
+		_, _ = r.reconcile3PWrapper(ctx, local, canonicalName, res)
+	} else {
+		_, _ = r.evaluateHealth(ctx, local, canonicalName, res)
+	}
+	setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, cmsErr.Error())
 }
 
 // unreadyDependenciesMessage returns "waiting on dependencies: ..." naming every unready dependency,
@@ -267,7 +324,8 @@ func unreadyDependenciesMessage(ctx context.Context, in ReconcileComponentInput)
 }
 
 // isActuated reports whether an enabled component already passed dependency gating: its 1P release
-// is active, it reports DependenciesReady (set only after passing the gate), or its Ready is True.
+// is active, it reports DependenciesReady (set only after passing the gate), or its last Ready
+// condition reflects an actuated workload (wasComponentPreviouslyActive).
 func (r *Reconciler) isActuated(in ReconcileComponentInput) bool {
 	if r.helmManager != nil && in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.helmManager.IsComponentActive(resolveComponentRef(in)) {
 		return true
@@ -275,8 +333,7 @@ func (r *Reconciler) isActuated(in ReconcileComponentInput) bool {
 	if findCondition(in.ExistingConditions, ConditionTypeDependenciesReady) != nil {
 		return true
 	}
-	ready := findCondition(in.ExistingConditions, ConditionTypeReady)
-	return ready != nil && ready.Status == ConditionStatusTrue
+	return wasComponentPreviouslyActive(in.ExistingConditions)
 }
 
 // setDependenciesReadyCondition records the informational DependenciesReady condition for an actuated
@@ -298,13 +355,19 @@ func setDependenciesReadyCondition(res *ReconcileResult, in ReconcileComponentIn
 // generation changes, so details would go stale). NotFound is tolerated: it may not be registered yet.
 func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, msg, degraded string) (*ReconcileResult, error) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	if r.isActuated(in) || reason == ReasonDeactivationBlocked || reason == ReasonHelmUpgradePending {
+		preserveExistingAccess(res, in.ExistingAccess)
+	}
 	setReadiness(res, in, ConditionStatusFalse, degraded, reason, msg)
 	if !shouldSyncToCMS(in.ExistingConditions, ConditionStatusFalse, in.Generation) {
+		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 		return res, nil
 	}
 	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
+		setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
 	}
+	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 	resetReadyTransitionTime(res.Conditions)
 	logging.Info(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "message", msg)
 	return res, nil
@@ -339,6 +402,7 @@ func (r *Reconciler) ensure1PComponent(ctx context.Context, in ReconcileComponen
 	in.HelmOpts.Enabled = in.Enabled
 	if err := r.helmManager.Ensure1PComponent(ctx, ref, in.HelmOpts); err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+		preserveExistingAccess(res, in.ExistingAccess)
 		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, ReasonHelmUpgradeFailed, err.Error())
 		return false, fmt.Errorf("failed to ensure 1P Helm component: %w", err)
 	}
@@ -369,7 +433,9 @@ func isReadyAtGeneration(existing []Condition, generation int64) bool {
 func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	isHealthy, reason, healthMsg := r.probeComponentHealth(ctx, in)
 	res.Access = &AccessStatus{EnvVars: make(map[string]string)}
+	preserveExistingAccess(res, in.ExistingAccess)
 	if reason == ReasonHelmStatusUnavailable && preserveHealthConditions(in, res) {
+		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 		logging.Warn(ctx, "Transient component health check failure; keeping previous Ready/Degraded conditions", "name", canonicalName, "generation", in.Generation, "message", healthMsg)
 		return res, nil
 	}
@@ -445,6 +511,7 @@ func (r *Reconciler) ReconcileWithDependencies(ctx context.Context, obj *unstruc
 		IsDeleting:         obj.GetDeletionTimestamp() != nil,
 		Enabled:            enabled,
 		ExistingConditions: ParseConditionsFromUnstructured(obj.Object["status"]),
+		ExistingAccess:     ParseAccessFromUnstructured(obj.Object["status"]),
 		HelmOpts:           opts,
 		WrapperOpts:        wopts,
 		Dependencies:       deps,

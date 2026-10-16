@@ -17,6 +17,7 @@ package bridge
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strconv"
 	"time"
 
@@ -238,6 +239,49 @@ func ParseConditionsFromUnstructured(statusObj any) []Condition {
 		}
 	}
 	return res
+}
+
+// ParseAccessFromUnstructured extracts status.access.envVars from the unstructured .status map.
+func ParseAccessFromUnstructured(statusObj any) *AccessStatus {
+	statusMap, ok := statusObj.(map[string]any)
+	if !ok || statusMap == nil {
+		return nil
+	}
+	accessMap, ok := statusMap["access"].(map[string]any)
+	if !ok || accessMap == nil {
+		return nil
+	}
+	envVars := extractStringMap(accessMap["envVars"])
+	if len(envVars) == 0 {
+		return nil
+	}
+	return &AccessStatus{EnvVars: envVars}
+}
+
+func extractStringMap(raw any) map[string]string {
+	switch m := raw.(type) {
+	case map[string]string:
+		if len(m) == 0 {
+			return nil
+		}
+		return maps.Clone(m)
+	case map[string]any:
+		if len(m) == 0 {
+			return nil
+		}
+		res := make(map[string]string, len(m))
+		for k, v := range m {
+			if s, ok := v.(string); ok {
+				res[k] = s
+			}
+		}
+		if len(res) == 0 {
+			return nil
+		}
+		return res
+	default:
+		return nil
+	}
 }
 
 // ParseWrapperRef extracts WrapperRef from unstructured custom resource spec map.

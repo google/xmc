@@ -427,3 +427,32 @@ func TestParseWrapperRef_KeyAliases(t *testing.T) {
 		})
 	}
 }
+
+func TestParseAccessFromUnstructured(t *testing.T) {
+	tests := []struct {
+		name   string
+		status any
+		want   *AccessStatus
+	}{
+		{name: "nil status", status: nil, want: nil},
+		{name: "missing access", status: map[string]any{"state": "ENABLED"}, want: nil},
+		{name: "empty envVars", status: map[string]any{"access": map[string]any{"envVars": map[string]any{}}}, want: nil},
+		{
+			name:   "unstructured map[string]any envVars",
+			status: map[string]any{"access": map[string]any{"envVars": map[string]any{"ENDPOINT": "http://ch:8123", "PORT": "8123", "bad": 123}}},
+			want:   &AccessStatus{EnvVars: map[string]string{"ENDPOINT": "http://ch:8123", "PORT": "8123"}},
+		},
+		{
+			name:   "typed map[string]string envVars",
+			status: map[string]any{"access": map[string]any{"envVars": map[string]string{"HOST": "ch.xmc"}}},
+			want:   &AccessStatus{EnvVars: map[string]string{"HOST": "ch.xmc"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if diff := cmp.Diff(tt.want, ParseAccessFromUnstructured(tt.status)); diff != "" {
+				t.Errorf("ParseAccessFromUnstructured() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

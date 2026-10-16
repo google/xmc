@@ -15,21 +15,32 @@
 package bridge
 
 import (
+	"maps"
 	"time"
+
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
 
 const (
 	ConditionTypeReady               = "Ready"
+	ConditionTypeSynced              = "Synced"
 	ConditionTypeDegraded            = "Degraded"
 	ConditionTypeDeactivationBlocked = "DeactivationBlocked"
 	ConditionStatusTrue              = "True"
 	ConditionStatusFalse             = "False"
+	ConditionStatusUnknown           = "Unknown"
 	// ConditionTypeDependenciesReady is informational on actuated components with dependencies; it does not affect Ready.
 	ConditionTypeDependenciesReady = "DependenciesReady"
 )
 
-// Ready/Degraded condition reasons reported by component health evaluation.
+// Ready, Synced, and Degraded condition reasons reported by component reconciliation.
 const (
+	// ReasonCMSSynced indicates the component's intent and observed state are synchronized with CMS.
+	ReasonCMSSynced = "CMSSynced"
+	// ReasonCMSSyncFailed indicates a CMS RPC failed while synchronizing intent or observed state.
+	ReasonCMSSyncFailed = "CMSSyncFailed"
+	// ReasonInitialSyncPending indicates CMS failed before initial component readiness was evaluated.
+	ReasonInitialSyncPending = "InitialSyncPending"
 	// ReasonComponentHealthy indicates the component is healthy (for 1P: Helm release deployed, no upgrade pending or failed).
 	ReasonComponentHealthy = "ComponentHealthy"
 	// ReasonHealthProbeFailed indicates the prober-based health check failed.
@@ -61,6 +72,8 @@ const (
 	// ReasonStatusDetectionFailed indicates a failure querying the 3P status detector or Kubernetes API.
 	ReasonStatusDetectionFailed = "StatusDetectionFailed"
 )
+
+const cmsSyncedMessage = "Component synchronized with CMS"
 
 // Condition represents a standardized Kubernetes custom resource condition.
 type Condition struct {
@@ -107,6 +120,59 @@ func setReadiness(res *ReconcileResult, in ReconcileComponentInput, ready, degra
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degraded, in.Generation, reason, msg)
 }
 
+// setSynced records the Synced condition on res.
+func setSynced(res *ReconcileResult, in ReconcileComponentInput, status, reason, msg string) {
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeSynced, status, in.Generation, reason, msg)
+}
+
+// recordCMSSyncFailure records Synced=False when a CMS RPC fails before workload health is
+// evaluated in the current pass, preserving the previous Ready/Degraded conditions and
+// status.access (or reporting Ready=Unknown/InitialSyncPending on first reconcile). Ready=True is
+// preserved only while spec.enabled: a disabled component whose deactivation cannot reach CMS
+// reports Ready=Unknown/CMSSyncFailed instead.
+func recordCMSSyncFailure(res *ReconcileResult, in ReconcileComponentInput, err error) {
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
+	preserveExistingAccess(res, in.ExistingAccess)
+	existingReady := findCondition(in.ExistingConditions, ConditionTypeReady)
+	if existingReady == nil {
+		setReadiness(res, in, ConditionStatusUnknown, ConditionStatusFalse, ReasonInitialSyncPending, err.Error())
+		return
+	}
+	if !in.Enabled && existingReady.Status == ConditionStatusTrue {
+		setReadiness(res, in, ConditionStatusUnknown, ConditionStatusFalse, ReasonCMSSyncFailed, "deactivation is pending until CMS is reachable: "+err.Error())
+		return
+	}
+	if in.Enabled && !in.IsDeleting && existingReady.Status == ConditionStatusTrue {
+		res.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
+	}
+	upsertCondition(&res.Conditions, *existingReady)
+	if existingDegraded := findCondition(in.ExistingConditions, ConditionTypeDegraded); existingDegraded != nil {
+		upsertCondition(&res.Conditions, *existingDegraded)
+		return
+	}
+	degraded := ConditionStatusFalse
+	if existingReady.Status == ConditionStatusFalse && isFaultReadyReason(existingReady.Reason) {
+		degraded = ConditionStatusTrue
+	}
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDegraded, degraded, existingReady.ObservedGeneration, existingReady.Reason, existingReady.Message)
+}
+
+func isFaultReadyReason(reason string) bool {
+	switch reason {
+	case "", reasonComponentDisabled, ReasonDependenciesNotReady, ReasonHelmUpgradePending, ReasonHelmStatusUnavailable, ReasonDeactivationBlocked, ReasonInitialSyncPending:
+		return false
+	}
+	return true
+}
+
+func preserveExistingAccess(res *ReconcileResult, existing *AccessStatus) {
+	if res == nil || existing == nil || len(existing.EnvVars) == 0 {
+		return
+	}
+	res.Access = &AccessStatus{EnvVars: maps.Clone(existing.EnvVars)}
+}
+
 // upsertCondition replaces the entry in conditions with the same Type as c, or appends c.
 func upsertCondition(conditions *[]Condition, c Condition) {
 	for i := range *conditions {
@@ -135,18 +201,15 @@ const defaultCMSHeartbeatInterval = 5 * time.Minute
 // shouldSyncToCMS determines whether an UpdateObservedGeneration RPC to CMS should be executed.
 // Under the Hybrid Probing Model (Drift 1), periodic steady-state health probe ticks bypass
 // CMS and Cloud Spanner to eliminate write amplification. CMS is only invoked when:
-// 1. Initial reconciliation (no existing Ready condition reported).
+// 1. Initial reconciliation (no existing Ready condition reported) or recovery from Synced!=True.
 // 2. State/readiness transitions (e.g. Ready=True <-> Ready=False).
 // 3. Metadata generation update (CR spec modified).
 // 4. Coarse heartbeat interval expiration (>= 5 minutes).
 func shouldSyncToCMS(existingConditions []Condition, targetStatus string, currentGen int64) bool {
-	var existingReady *Condition
-	for i := range existingConditions {
-		if existingConditions[i].Type == ConditionTypeReady {
-			existingReady = &existingConditions[i]
-			break
-		}
+	if existingSynced := findCondition(existingConditions, ConditionTypeSynced); existingSynced != nil && existingSynced.Status != ConditionStatusTrue {
+		return true
 	}
+	existingReady := findCondition(existingConditions, ConditionTypeReady)
 	if existingReady == nil {
 		return true
 	}
