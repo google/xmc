@@ -86,4 +86,39 @@ roleRef:
 {{- end }}
   name: xmc-bridge-role
   apiGroup: rbac.authorization.k8s.io
+---
+# Leader election: only the holder of the xmc-bridge Lease in the release namespace reconciles.
+# This Role stays namespaced when rbac.clusterScope is true, so the bridge can write no other
+# namespace's Leases.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: xmc-bridge-leader-election
+  labels:
+    app.kubernetes.io/name: xmc-bridge
+    app.kubernetes.io/part-of: xmanager-cloud
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["xmc-bridge"]
+    verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: xmc-bridge-leader-election
+  labels:
+    app.kubernetes.io/name: xmc-bridge
+    app.kubernetes.io/part-of: xmanager-cloud
+subjects:
+  - kind: ServiceAccount
+    name: xmc-bridge-sa
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: xmc-bridge-leader-election
+  apiGroup: rbac.authorization.k8s.io
 {{- end }}

@@ -710,8 +710,9 @@ func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T
 	ctx := context.Background()
 	gate := make(chan struct{})
 	runner := &mockHelmActionRunner{
-		upgradeGate: gate,
-		installed:   map[string]bool{componentKey("xmc", "xmc-cmp-ingestion"): true}, // Generation 1 is deployed.
+		upgradeGate:    gate,
+		upgradeStarted: make(chan struct{}, 1),
+		installed:      map[string]bool{componentKey("xmc", "xmc-cmp-ingestion"): true}, // Generation 1 is deployed.
 	}
 	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner))
 	r, err := NewReconciler(&mockCMS{}, nil, mgr)
@@ -741,7 +742,8 @@ func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T
 	}
 
 	close(gate)
-	_ = mgr.Close() // Waits for the worker to finish the upgrade.
+	<-runner.upgradeStarted // Close drops queued upgrades, so wait until this one is in flight.
+	_ = mgr.Close()         // Waits for the worker to finish the in-flight upgrade.
 	res, err = r.ReconcileComponent(ctx, in)
 	if err != nil {
 		t.Fatalf("ReconcileComponent() after upgrade failed: %v", err)

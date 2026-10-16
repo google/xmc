@@ -20,13 +20,16 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"helm.sh/helm/v3/pkg/release"
 )
 
-// TestK8sHelmManager_TeardownForgetsState verifies that Delete keeps the component recorded as inactive with its chart
-// path override, while Purge and Orphan forget it entirely; all three drop the actuated generation.
+// TestK8sHelmManager_TeardownForgetsState verifies that every teardown drops the actuated generation and records the
+// component as inactive (a tombstone that namespace hydration does not overwrite), while only Delete keeps the chart
+// path override.
 func TestK8sHelmManager_TeardownForgetsState(t *testing.T) {
 	ref := ComponentRef{Namespace: "xmc", Name: "metrics"}
 	key := componentKey(ref.Namespace, ref.Name)
@@ -39,8 +42,8 @@ func TestK8sHelmManager_TeardownForgetsState(t *testing.T) {
 		want     state
 	}{
 		{name: "Delete1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Delete1PComponent(ctx, ref) }, want: state{Known: true, HasChartPath: true}},
-		{name: "Purge1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Purge1PComponent(ctx, ref) }},
-		{name: "Orphan1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Orphan1PComponent(ctx, ref) }},
+		{name: "Purge1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Purge1PComponent(ctx, ref) }, want: state{Known: true}},
+		{name: "Orphan1PComponent", teardown: func(ctx context.Context, m *K8sHelmManager) error { return m.Orphan1PComponent(ctx, ref) }, want: state{Known: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -135,6 +138,60 @@ func TestK8sHelmManager_ColdStartHydration(t *testing.T) {
 	}
 	if !mgr2.IsComponentActuated(ref, 3) {
 		t.Fatal("expected ingestion-gateway to be marked actuated at generation 3 after HydrateComponentState")
+	}
+}
+
+// TestK8sHelmManager_HydrationKeepsTornDownComponentsInactive checks that namespace hydration never re-activates a
+// torn-down component from the values ConfigMap, whether the teardown lands while the ConfigMap read is in flight or
+// before the hydration starts (Orphan keeps enabled values there), and that it still hydrates the other components.
+func TestK8sHelmManager_HydrationKeepsTornDownComponentsInactive(t *testing.T) {
+	torn := ComponentRef{Namespace: "xmc", Name: "metrics"}
+	sibling := ComponentRef{Namespace: "xmc", Name: "ingestion"}
+	tests := []struct {
+		name string
+		// duringRead runs the teardown while the hydration's ConfigMap GET is in flight; otherwise it runs before.
+		duringRead bool
+	}{
+		{name: "teardown during the ConfigMap read", duringRead: true},
+		{name: "orphan before the hydration"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := fake.NewClientset()
+			writer := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
+			for _, ref := range []ComponentRef{torn, sibling} {
+				if err := writer.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true}); err != nil {
+					t.Fatalf("Ensure1PComponent(%s) failed: %v", ref.Name, err)
+				}
+			}
+			_ = writer.Close()
+
+			mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
+			defer mgr.Close()
+			tearDown := func() {
+				mgr.mu.Lock()
+				mgr.forgetComponentLocked(componentKey(torn.Namespace, torn.Name), false)
+				mgr.mu.Unlock()
+			}
+			if tt.duringRead {
+				client.PrependReactor("get", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+					tearDown()
+					return false, nil, nil
+				})
+			} else {
+				tearDown()
+			}
+			if err := mgr.HydrateFromCluster(ctx); err != nil {
+				t.Fatalf("HydrateFromCluster failed: %v", err)
+			}
+			if mgr.IsComponentActive(torn) {
+				t.Errorf("IsComponentActive(%s) = true after its teardown, want false", torn.Name)
+			}
+			if !mgr.IsComponentActive(sibling) {
+				t.Errorf("IsComponentActive(%s) = false, want the sibling hydrated from the ConfigMap", sibling.Name)
+			}
+		})
 	}
 }
 

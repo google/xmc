@@ -23,6 +23,10 @@ metadata:
     app.kubernetes.io/part-of: xmanager-cloud
 spec:
   replicas: 1
+  # A rollout stops the old bridge before it starts the new one. The xmc-bridge Lease keeps a
+  # single writer in the remaining overlap cases, such as a partitioned node.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: xmc-bridge
@@ -36,6 +40,9 @@ spec:
         app.kubernetes.io/part-of: xmanager-cloud
     spec:
       serviceAccountName: xmc-bridge-sa
+      # Longer than the bridge's 25s graceful shutdown, in which a stopping leader finishes or
+      # cancels its reconciles and Helm upgrades before it releases the xmc-bridge Lease.
+      terminationGracePeriodSeconds: 45
       securityContext:
         seccompProfile:
           type: RuntimeDefault
@@ -63,6 +70,25 @@ spec:
         - name: gcp-secrets-volume
           mountPath: "/etc/gcp-secrets"
           readOnly: true
+        # The unauthenticated metrics endpoint listens on 127.0.0.1:8080 only and has no port here.
+        ports:
+        - name: health
+          containerPort: 8081
+        # Liveness only checks that the process serves requests; readiness waits for the
+        # Component cache, which followers sync too while they wait for the Lease.
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
         resources:
           requests:
             cpu: 100m

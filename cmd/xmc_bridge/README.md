@@ -63,9 +63,11 @@ Configuration can be supplied via environment variables (mounted from `xmc-bridg
 | `--probe-timeout` / `PROBE_TIMEOUT` | `2s` | Timeout of one workload health probe. |
 | `--reconcile-timeout` / `RECONCILE_TIMEOUT` | `60s` | Timeout of one Component's reconcile pass (CMS calls, actuation and probing); persisting the pass's status is not bounded by it. |
 | `--max-concurrent-reconciles` / `MAX_CONCURRENT_RECONCILES` | `1` | Number of Components reconciled in parallel. Must be at least 1. |
+| `--metrics-bind-address` | `"127.0.0.1:8080"` | Address the controller-runtime metrics endpoint listens on. The endpoint has no authentication, so it listens on loopback by default. `"0"` disables it. |
+| `--health-probe-bind-address` | `":8081"` | Address serving the `/healthz` and `/readyz` probes. Must not be empty or `"0"` (both would disable the probes). |
 | `--kubeconfig` / `KUBECONFIG` | `""` | Optional explicit path to kubeconfig file (defaults to in-cluster or `KUBECONFIG` env). |
 
-On startup, `xmc-bridge` invokes `HydrateFromCluster` before entering the reconciliation loop to restore active 1P component states from the `xmc-component-values` ConfigMap, preventing redundant Helm release revision increments and ensuring post-restart deactivations execute cleanly.
+Once elected, `xmc-bridge` invokes `HydrateFromCluster` to restore active 1P component states from the `xmc-component-values` ConfigMap, preventing redundant Helm release revision increments and ensuring post-restart deactivations execute cleanly. It runs concurrently with the first reconciles: each 1P Component also hydrates its own state before its Helm actuation, and a reconcile whose dependency gate runs before any hydration falls back to the Component's `DependenciesReady` and `Ready` conditions, so at worst one pass reports `DependenciesNotReady` instead of `HelmUpgradePending` without touching the workload. A torn-down component stays recorded as inactive, so no namespace hydration re-activates a purged or orphaned component from the ConfigMap.
 
 ### Reconciliation
 
@@ -77,6 +79,16 @@ On startup, `xmc-bridge` invokes `HydrateFromCluster` before entering the reconc
 - after a failed pass (CMS, actuation or status persistence error), with per-Component exponential backoff from 5s to 300s and ±10% jitter. A successful pass resets the backoff.
 
 A pass always persists its status, also when it fails, so the CR reports the failure while the retry is pending.
+
+### Single writer
+
+Only one `xmc-bridge` process reconciles at a time. Each process competes for the `xmc-bridge` Lease in `--namespace`, and only the holder runs the Component controller and Helm actuation. The Helm Deployment uses `strategy: Recreate`, so a rollout stops the old pod before the new one starts. The Lease covers the remaining overlap cases, such as a partitioned node.
+
+- **Shutdown**: on `SIGTERM` the leader stops reconciling, drops queued asynchronous Helm upgrades that have not started (its successor re-reconciles them from the Component CRs), gives the in-flight upgrade 20s to finish and cancels it after that, and then releases the Lease, so its successor takes over without waiting for the Lease to expire. The whole shutdown is bounded at 25s; the Deployment's `terminationGracePeriodSeconds` is 45.
+- **Lost Lease**: a leader that fails to renew the Lease stops at once and exits, cancelling in-flight Helm work, so that no write outlives its Lease.
+- `/healthz` on `--health-probe-bind-address` is the liveness probe and only reports that the process serves requests.
+- `/readyz` reports ready once the Component informer has synced. Processes waiting for the Lease start and sync the informer too, so they report ready.
+- Controller-runtime metrics are served on `--metrics-bind-address`, `127.0.0.1:8080` by default, which the Helm Deployment does not expose. To scrape them, run a sidecar that adds authentication, or bind them to `:8080` and restrict access with a NetworkPolicy.
 
 ---
 
@@ -144,3 +156,4 @@ Removing the CRD is a deliberate manual step. While `xmc-bridge` is still runnin
   - Workload management permissions on `apps/deployments` and `core/services` for 1P components.
   - Read-only (`get`, `list`, `watch`) discovery permissions across all API groups (`*`) to support dynamic 3P CR status detection.
   - Security contexts enforce read-only root filesystems, non-root execution, privilege escalation disabled, and dropping all capabilities (`ALL`).
+- **Leader election Role**: `xmc-bridge-leader-election` grants `create` on `coordination.k8s.io` leases, and `get` and `update` on the `xmc-bridge` Lease only. It is a namespaced Role in the release namespace also when `componentsDeployment.rbac.clusterScope` is `true`, so the bridge cannot write Leases of other namespaces.

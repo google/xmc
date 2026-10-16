@@ -140,7 +140,7 @@ func (m *K8sHelmManager) triggerUpgrade(ctx context.Context, ref ComponentRef, v
 	}
 	resolvedChartPath := m.resolveChartPathForComponent(ref)
 	if !m.registerProducer() {
-		return errManagerStopped
+		return m.failUpgrade(ref, errManagerStopped)
 	}
 	defer m.producerWg.Done()
 
@@ -159,7 +159,7 @@ func (m *K8sHelmManager) enqueueUpgrade(ctx context.Context, req upgradeRequest)
 	select {
 	case <-m.stopCh:
 		m.clearUpgradePending(req.ref, req.seq)
-		return errManagerStopped
+		return m.failUpgrade(req.ref, errManagerStopped)
 	case m.upgradeChan <- req:
 		return nil
 	case <-ctx.Done():
@@ -231,7 +231,7 @@ func (m *K8sHelmManager) syncUpgradeWorker() {
 	for {
 		select {
 		case <-m.stopCh:
-			m.drainRemainingUpgrades()
+			m.dropQueuedUpgrades()
 			return
 		case req, ok := <-m.upgradeChan:
 			if !ok {
@@ -263,25 +263,52 @@ func (m *K8sHelmManager) collectDebouncedBatch(first upgradeRequest) []upgradeRe
 	}
 }
 
-func (m *K8sHelmManager) drainRemainingUpgrades() {
-	var drainBatch []upgradeRequest
-drainLoop:
+// dropQueuedUpgrades discards every upgrade still queued on upgradeChan without starting it. A stopping manager no
+// longer holds the Lease, so the next leader re-reconciles these components from their CRs.
+func (m *K8sHelmManager) dropQueuedUpgrades() {
 	for {
 		select {
 		case req, ok := <-m.upgradeChan:
 			if !ok {
-				break drainLoop
+				return
 			}
-			drainBatch = append(drainBatch, req)
+			m.dropUpgrade(req)
 		default:
-			break drainLoop
+			return
 		}
-	}
-	if len(drainBatch) > 0 {
-		m.processUpgradeBatch(drainBatch)
 	}
 }
 
+// dropUpgrade discards req without starting it. If req is still ref's latest upgrade, it records errManagerStopped
+// as the outcome and clears the pending marker.
+func (m *K8sHelmManager) dropUpgrade(req upgradeRequest) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := req.ref.String()
+	if seq, pending := m.pendingUpgrades[key]; !pending || seq != req.seq {
+		return
+	}
+	delete(m.pendingUpgrades, key)
+	delete(m.healthVerifiedAt, key)
+	m.upgradeErrs[key] = errManagerStopped
+	logging.Info(m.ctx, "Dropped queued asynchronous Helm upgrade on shutdown", "release", ComponentReleaseName(req.ref.Name), "name", req.ref.Name, "namespace", req.namespace)
+}
+
+// isStopping reports whether Close or a cancellation has begun, after which no new upgrade may start.
+func (m *K8sHelmManager) isStopping() bool {
+	if m.ctx.Err() != nil {
+		return true
+	}
+	select {
+	case <-m.stopCh:
+		return true
+	default:
+		return false
+	}
+}
+
+// processUpgradeBatch runs the latest request per component in batch, in arrival order. Once the manager is
+// stopping, it drops the requests that have not started instead.
 func (m *K8sHelmManager) processUpgradeBatch(batch []upgradeRequest) {
 	if len(batch) == 0 || m.runner == nil {
 		return
@@ -298,6 +325,10 @@ func (m *K8sHelmManager) processUpgradeBatch(batch []upgradeRequest) {
 	}
 
 	for _, key := range orderedKeys {
+		if m.isStopping() {
+			m.dropUpgrade(latestByComponent[key])
+			continue
+		}
 		m.executeComponentUpgrade(latestByComponent[key])
 	}
 }
@@ -311,7 +342,7 @@ func (m *K8sHelmManager) executeComponentUpgrade(req upgradeRequest) {
 	defer cancel()
 
 	if err := m.acquireUpgradeLock(execCtx); err != nil {
-		m.recordAsyncUpgrade(execCtx, req, err)
+		m.finishUnstartedUpgrade(execCtx, req, err)
 		return
 	}
 	defer m.releaseUpgradeLock()
@@ -319,7 +350,21 @@ func (m *K8sHelmManager) executeComponentUpgrade(req upgradeRequest) {
 		logging.Info(execCtx, "Skipping superseded asynchronous Helm upgrade", "release", ComponentReleaseName(req.ref.Name), "name", req.ref.Name, "namespace", req.namespace)
 		return
 	}
+	// The lock may have been taken after Shutdown began or the manager was cancelled; such an upgrade must not start.
+	if m.isStopping() || execCtx.Err() != nil {
+		m.finishUnstartedUpgrade(execCtx, req, execCtx.Err())
+		return
+	}
 	m.recordAsyncUpgrade(execCtx, req, m.upgradeRelease(execCtx, ComponentReleaseName(req.ref.Name), req.namespace, req.chartPath, req.values))
+}
+
+// finishUnstartedUpgrade drops req with errManagerStopped once the manager is stopping, and otherwise records err.
+func (m *K8sHelmManager) finishUnstartedUpgrade(ctx context.Context, req upgradeRequest, err error) {
+	if m.isStopping() {
+		m.dropUpgrade(req)
+		return
+	}
+	m.recordAsyncUpgrade(ctx, req, err)
 }
 
 // isUpgradeSuperseded reports whether req is no longer ref's latest enqueued upgrade, either because a newer request

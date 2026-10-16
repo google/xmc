@@ -218,7 +218,8 @@ func (m *K8sHelmManager) defaultActionRunner() *SDKHelmActionRunner {
 	}))
 }
 
-// Close stops the background upgrade worker and waits for in-flight upgrades to complete cleanly.
+// Close stops the background upgrade worker, drops the queued upgrades that have not started, and waits for the
+// in-flight upgrade to complete cleanly.
 func (m *K8sHelmManager) Close() error {
 	if m == nil {
 		return nil
@@ -231,12 +232,49 @@ func (m *K8sHelmManager) Close() error {
 
 		m.producerWg.Wait()
 		m.wg.Wait()
-		m.drainRemainingUpgrades()
+		m.dropQueuedUpgrades()
 		if m.cancel != nil {
 			m.cancel()
 		}
 	})
 	return nil
+}
+
+// Shutdown stops accepting upgrades, drops the queued ones that have not started, and waits for the in-flight one to
+// finish, like Close. If ctx ends first, Shutdown cancels the in-flight upgrade instead, waits for the worker to
+// return, and returns ctx's error.
+func (m *K8sHelmManager) Shutdown(ctx context.Context) error {
+	if m == nil {
+		return nil
+	}
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		m.Close()
+	}()
+	select {
+	case <-closed:
+		return nil
+	case <-ctx.Done():
+		if m.cancel != nil {
+			m.cancel()
+		}
+		<-closed
+		return ctx.Err()
+	}
+}
+
+// Abort stops accepting upgrades, cancels the queued and in-flight ones instead of waiting for them, and waits for
+// the background worker to return. That wait lasts only as long as the cancelled Helm actions take to return. Abort
+// returns at once if the manager was already closed.
+func (m *K8sHelmManager) Abort() {
+	if m == nil {
+		return
+	}
+	if m.cancel != nil {
+		m.cancel()
+	}
+	m.Close()
 }
 
 // componentReleasePrefix prefixes the component name in every per-component Helm release name.

@@ -24,13 +24,11 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -73,18 +71,6 @@ type ComponentController struct {
 // with ComponentManagerOptions, which serves the reads from the manager's informer cache.
 func NewComponentController(reader client.Reader, writer dynamic.Interface, r *Reconciler, opts ComponentControllerOptions) *ComponentController {
 	return &ComponentController{reader: reader, writer: writer, reconciler: r, opts: opts}
-}
-
-// ComponentManagerOptions returns the manager options of an xmc-bridge that reconciles the
-// Components of namespace: the cache is limited to namespace, the manager's client serves
-// unstructured Gets and Lists from that cache instead of the API server, and the metrics server
-// is disabled.
-func ComponentManagerOptions(namespace string) manager.Options {
-	return manager.Options{
-		Cache:   cache.Options{DefaultNamespaces: map[string]cache.Config{namespace: {}}},
-		Client:  client.Options{Cache: &client.CacheOptions{Unstructured: true}},
-		Metrics: metricsserver.Options{BindAddress: "0"},
-	}
 }
 
 // SetupWithManager registers the controller and its Component watches with mgr.

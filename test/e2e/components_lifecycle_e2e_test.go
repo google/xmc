@@ -26,6 +26,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -119,8 +121,10 @@ func assertCMSComponent(ctx context.Context, t *testing.T, h *kindClusterHarness
 	}
 }
 
-// testFinalizerCleanup verifies the deletion path through the full bridge persistence flow: a
-// deleted CR disappears only after CMS ExecuteDeletion ran and the bridge released its finalizer.
+// testFinalizerCleanup verifies the deletion path through the full bridge persistence flow: the
+// bridge finalizer holds a deleted CR until CMS ExecuteDeletion runs, after which the finalizer is
+// released and the CR disappears. The running bridge can release the finalizer before a GET
+// observes the held deletion, so the hold is asserted from a watch opened before the DELETE.
 // Admission of the DELETE itself is covered by the envtest suite.
 func testFinalizerCleanup(ctx context.Context, t *testing.T, h *kindClusterHarness) {
 	ns := createTestNamespace(ctx, t, h, "xmc-lc-finalizer")
@@ -131,12 +135,46 @@ func testFinalizerCleanup(ctx context.Context, t *testing.T, h *kindClusterHarne
 	assertDeletionProtectionFinalizer(ctx, t, h, ns, name)
 
 	cmsComponentState(ctx, t, h, name) // The CMS record must exist for the NotFound check below to be meaningful.
+	w, err := compRes.Watch(ctx, metav1.ListOptions{FieldSelector: fields.OneTermEqualSelector("metadata.name", name).String()})
+	if err != nil {
+		t.Fatalf("failed to watch %s/%s: %v", ns, name, err)
+	}
+	defer w.Stop()
 	if err := compRes.Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
 		t.Fatalf("DELETE with deletionProtection=false failed: %v", err)
 	}
-	waitForComponent(ctx, t, h, ns, name, "gone", func(u *unstructured.Unstructured) bool { return u == nil })
+	assertFinalizerHeldDeletion(ctx, t, w, bridge.FinalizerDeletionProtection)
 	if _, err := h.cmsServer.Store().GetComponent(ctx, name); status.Code(err) != codes.NotFound {
 		t.Errorf("CMS GetComponent(%s) after CR deletion: error = %v, want NotFound (ExecuteDeletion)", name, err)
+	}
+}
+
+// assertFinalizerHeldDeletion consumes w until the watched Component is DELETED, and fails unless
+// an earlier MODIFIED event showed its deletion held by finalizer.
+func assertFinalizerHeldDeletion(ctx context.Context, t *testing.T, w watch.Interface, finalizer string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, lifecycleWaitTimeout)
+	defer cancel()
+	held := false
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("Component was not deleted within %v (deletion held by %s observed: %v)", lifecycleWaitTimeout, finalizer, held)
+		case ev, ok := <-w.ResultChan():
+			if !ok {
+				t.Fatalf("watch closed before the Component was deleted (deletion held by %s observed: %v)", finalizer, held)
+			}
+			u, _ := ev.Object.(*unstructured.Unstructured)
+			switch {
+			case ev.Type == watch.Modified && u != nil && u.GetDeletionTimestamp() != nil && slices.Contains(u.GetFinalizers(), finalizer):
+				held = true
+			case ev.Type == watch.Deleted:
+				if !held {
+					t.Errorf("Component was deleted without a MODIFIED event holding its deletion with %s", finalizer)
+				}
+				return
+			}
+		}
 	}
 }
 
