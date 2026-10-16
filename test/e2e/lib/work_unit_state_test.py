@@ -215,6 +215,19 @@ class AssertExecutionsHistoryTest(unittest.TestCase):
                 expected_min_count=2,
             )
 
+    def test_rejects_missing_or_empty_execution_name(self) -> None:
+        """Executions without a name or with an empty name raise ValueError."""
+        for bad_execution in ({"state": "INACTIVE"}, {"name": "", "state": "INACTIVE"}):
+            with self.subTest(bad_execution=bad_execution):
+                with self.assertRaisesRegex(ValueError, "Execution is missing a name"):
+                    assert_executions_history(
+                        [
+                            {"name": "experiments/42/workUnits/7/executions/2", "state": "ACTIVE"},
+                            bad_execution,
+                        ],
+                        expected_min_count=2,
+                    )
+
     def test_rejects_non_descending_executions(self) -> None:
         """Ascending or equal execution IDs raise RuntimeError."""
         ascending = [

@@ -92,7 +92,8 @@ def assert_executions_history(
         expected_min_count: Minimum expected number of executions.
 
     Raises:
-        ValueError: If executions is empty or has fewer than expected_min_count items.
+        ValueError: If executions is empty, has fewer than expected_min_count items, or an
+            execution has a missing or invalid name.
         RuntimeError: If ordering or active/inactive states violate the contract.
     """
     if not executions or len(executions) < expected_min_count:
@@ -100,7 +101,12 @@ def assert_executions_history(
             f"Expected at least {expected_min_count} executions, but found {len(executions) if executions else 0}"
         )
 
-    eids = [execution_id_from_name(e.get("name", "")) for e in executions]
+    eids = []
+    for e in executions:
+        name = e.get("name")
+        if not name:
+            raise ValueError(f"Execution is missing a name: {e!r}")
+        eids.append(execution_id_from_name(name))
     for i in range(len(eids) - 1):
         if eids[i] <= eids[i + 1]:
             raise RuntimeError(
