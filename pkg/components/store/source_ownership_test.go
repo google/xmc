@@ -53,6 +53,9 @@ func TestValidateRequestSource(t *testing.T) {
 		{name: "cluster uid that is an uppercase UUID", src: modifiedSource(func(s *RequestSource) { s.ClusterUID = "5A6B7C8D-1E2F-4A3B-8C4D-5E6F7A8B9C01" }), wantErr: true},
 		{name: "cluster uid that is a braced UUID", src: modifiedSource(func(s *RequestSource) { s.ClusterUID = "{5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c01}" }), wantErr: true},
 		{name: "zero epoch", src: modifiedSource(func(s *RequestSource) { s.Epoch = 0 }), wantErr: true},
+		{name: "valid cluster name", src: modifiedSource(func(s *RequestSource) { s.ClusterName = "gke-1" })},
+		{name: "cluster name that is not a DNS-1123 label", src: modifiedSource(func(s *RequestSource) { s.ClusterName = "GKE_1" }), wantErr: true},
+		{name: "cluster name wider than a label", src: modifiedSource(func(s *RequestSource) { s.ClusterName = strings.Repeat("c", 64) }), wantErr: true},
 		{name: "valid CAS guard", src: modifiedSource(func(s *RequestSource) { s.ExpectedOwnerUID = "uid-b" })},
 		{name: "CAS guard wider than the column", src: modifiedSource(func(s *RequestSource) { s.ExpectedOwnerUID = strings.Repeat("u", 65) }), wantErr: true},
 	}

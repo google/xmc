@@ -49,9 +49,10 @@ type SourceOwner struct {
 const maxSourceUIDLength = 64
 
 // ValidateRequestSource returns an InvalidArgument error for a source without a valid UID (or with
-// an expected owner UID wider than its column), whose namespace is not a DNS-1123 label, whose
-// cluster UID is not a canonical UUID (validateClusterUID), or with a non-positive generation or
-// epoch.
+// an expected owner UID wider than its column), whose namespace or set cluster name is not a
+// DNS-1123 label, whose cluster UID is not a canonical UUID (validateClusterUID), or with a
+// non-positive generation or epoch. The cluster name is optional, but the caller controls it and
+// it is echoed in rejection messages, so a set name is bounded like ValidateClusterIdentity's.
 func ValidateRequestSource(src RequestSource) error {
 	switch {
 	case !fitsColumn(src.UID, maxSourceUIDLength):
@@ -65,6 +66,11 @@ func ValidateRequestSource(src RequestSource) error {
 	}
 	if err := validateDNS1123Label("request source namespace", src.Namespace); err != nil {
 		return err
+	}
+	if src.ClusterName != "" {
+		if err := validateDNS1123Label("request source cluster name", src.ClusterName); err != nil {
+			return err
+		}
 	}
 	return validateClusterUID(src.ClusterUID)
 }

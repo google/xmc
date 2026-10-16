@@ -420,7 +420,8 @@ message ClusterIdentity {
   ];
 
   // Human-readable cluster name (DNS-1123 label), used only in messages, metrics and alerts.
-  // Required by DeclareClusterEpoch.
+  // Required by DeclareClusterEpoch. Optional in a RequestSource, which rejects a set name that is
+  // not a DNS-1123 label.
   string name = 2 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "name"
