@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//:oci.bzl", "oci_image_for_service")
+
 filegroup(
     name = "ess_migrations",
     srcs = glob(["ess/*.sql"]),
@@ -22,4 +25,58 @@ filegroup(
     name = "xid_migrations",
     srcs = glob(["xid/*.sql"]),
     visibility = ["//internal/storage:__subpackages__"],
+)
+
+go_library(
+    name = "migrations_lib",
+    srcs = ["runner.go"],
+    embedsrcs = glob([
+        "ess/*.sql",
+        "xid/*.sql",
+    ]),
+    importpath = "xmanager_cloud/internal/storage/postgres/migrations",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//internal/logging",
+        "//internal/storage/migrations",
+        "//internal/storage/migrations/commands",
+        "@com_github_golang_migrate_migrate_v4//:migrate",
+        "@com_github_golang_migrate_migrate_v4//database/postgres",
+        "@com_github_golang_migrate_migrate_v4//source",
+        "@com_github_golang_migrate_migrate_v4//source/iofs",
+    ],
+)
+
+go_binary(
+    name = "migrations",
+    embed = [":migrations_lib"],
+    pure = "on",
+    visibility = ["//:__subpackages__"],
+)
+
+oci_image_for_service(
+    name = "postgres_migrator_image",
+    binary = ":migrations",
+)
+
+go_test(
+    name = "migrations_test",
+    srcs = [
+        "runner_test.go",
+        "schema_consistency_test.go",
+    ],
+    data = [
+        "//internal/storage/postgres/schema:ess-schema.sql",
+        "//internal/storage/postgres/schema:xid-schema.sql",
+    ],
+    embed = [":migrations_lib"],
+    tags = ["local"],
+    deps = [
+        "//internal/storage/migrations",
+        "//internal/storage/postgres/migrations/version",
+        "@com_github_golang_migrate_migrate_v4//:migrate",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_testcontainers_testcontainers_go//:testcontainers-go",
+        "@com_github_testcontainers_testcontainers_go//wait",
+    ],
 )
