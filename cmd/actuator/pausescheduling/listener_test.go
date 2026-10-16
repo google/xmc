@@ -17,6 +17,7 @@ package pausescheduling
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -26,6 +27,7 @@ import (
 	"xmanager_cloud/internal/storage"
 	storagetest "xmanager_cloud/internal/storage/testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -90,15 +92,19 @@ func (m *mockStreamSubscriber) emit(msg string) {
 	}
 }
 
-func newTestListener(t *testing.T, sub StreamSubscriber, repo storage.PauseStateRepository) (*Listener, Cache) {
+func newTestListener(t *testing.T, sub StreamSubscriber, repo storage.PauseStateRepository, opts ...func(*Params)) (*Listener, Cache) {
 	t.Helper()
 	c := NewCache()
-	l, err := New(Params{
+	p := Params{
 		Cache:                c,
 		Subscriber:           sub,
 		PauseStateRepository: repo,
 		ReconnectBackoff:     15 * time.Millisecond,
-	})
+	}
+	for _, opt := range opts {
+		opt(&p)
+	}
+	l, err := New(p)
 	if err != nil {
 		t.Fatalf("New() unexpected error: %v", err)
 	}
@@ -259,6 +265,104 @@ func TestListener_BroadcastUpdate(t *testing.T) {
 	}
 	if got := testutil.ToFloat64(schedulingPausedGauge); got != 1 {
 		t.Errorf("xmc_actuator_scheduling_paused = %v, want 1", got)
+	}
+}
+
+func withReadTimeout(d time.Duration) func(*Params) {
+	return func(p *Params) { p.ReadTimeout = d }
+}
+
+// waitForGetCalls blocks until repo has served at least n Get calls, failing the test after a second.
+func waitForGetCalls(t *testing.T, repo *storagetest.FakePauseStateRepository, n int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for repo.GetCallCount() < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %d Get() calls, got %d", n, repo.GetCallCount())
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestListener_BroadcastUpdate_RetriesUntilReadSucceeds(t *testing.T) {
+	updatedAt := time.Date(2026, 3, 1, 14, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name      string
+		hangs     int
+		failures  int
+		wantCalls int
+	}{
+		{name: "after_failed_reads", failures: 2, wantCalls: 3},
+		{name: "after_timed_out_read", hangs: 1, wantCalls: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			repo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true, UpdatedAt: updatedAt})
+			repo.InjectGetFaults(tt.hangs, tt.failures)
+			listener, cache := newTestListener(t, newMockSubscriber(), repo, withReadTimeout(20*time.Millisecond))
+
+			done := make(chan struct{})
+			go func() {
+				listener.handleBroadcastUpdate(ctx, broadcast.EventSchedulingPaused)
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("handleBroadcastUpdate() did not return after the read recovered")
+			}
+
+			if got := repo.GetCallCount(); got != tt.wantCalls {
+				t.Errorf("Get() calls = %d, want %d", got, tt.wantCalls)
+			}
+			want := State{IsPaused: true, UpdatedAt: updatedAt}
+			if diff := cmp.Diff(want, cache.State()); diff != "" {
+				t.Errorf("cache state mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestListener_BroadcastUpdate_StopsRetryingOnShutdown(t *testing.T) {
+	tests := []struct {
+		name     string
+		hangs    int
+		failures int
+	}{
+		{name: "while_reads_fail", failures: math.MaxInt},
+		{name: "while_reads_hang", hangs: math.MaxInt},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			repo := storagetest.NewFakePauseStateRepositoryWithState(&storage.PauseSchedulingState{SchedulingPaused: true})
+			repo.InjectGetFaults(tt.hangs, tt.failures)
+			listener, cache := newTestListener(t, newMockSubscriber(), repo, withReadTimeout(20*time.Millisecond))
+
+			done := make(chan struct{})
+			go func() {
+				listener.handleBroadcastUpdate(ctx, broadcast.EventSchedulingPaused)
+				close(done)
+			}()
+
+			// Wait for the first attempt and one retry before shutting down.
+			waitForGetCalls(t, repo, 2)
+			cancel()
+
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("handleBroadcastUpdate() did not return after context cancellation")
+			}
+			if diff := cmp.Diff(State{}, cache.State()); diff != "" {
+				t.Errorf("cache should be untouched when no read succeeds (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
