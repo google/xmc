@@ -109,11 +109,13 @@ type Store interface {
 	SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error)
 
 	// SetSourcedComponentIntent applies an intent sent by src (validated by ValidateRequestSource),
-	// ordered by src instead of by generation. A new component starts at generation 1; on an
-	// existing one, src must pass checkSourceOwnership (SOURCE_NAMESPACE_CONFLICT,
-	// SOURCE_INCARNATION_MISMATCH) before planSourcedIntent decides whether the intent is stale
-	// (STALE_GENERATION), a no-op, an owner-only write, or a spec write (+1 generation). Every
-	// write records src as owner.
+	// ordered by src instead of by generation. src must come from the cluster that declared the
+	// ownership fence, at the fence epoch (checkClusterFence: CLUSTER_NOT_DECLARED,
+	// CLUSTER_EPOCH_REGRESSED, CLUSTER_FENCED).
+	// A new component starts at generation 1; on an existing one, src must pass checkSourceOwnership
+	// (SOURCE_NAMESPACE_CONFLICT, SOURCE_INCARNATION_MISMATCH) before planSourcedIntent decides
+	// whether the intent is stale (STALE_GENERATION), a no-op, an owner-only write, or a spec write
+	// (+1 generation). Every write records src as owner.
 	SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src RequestSource) (*ComponentRecord, error)
 
 	// DeclareClusterEpoch makes cluster (validated by ValidateClusterIdentity) the holder of the

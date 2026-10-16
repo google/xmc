@@ -91,7 +91,8 @@ func planSourcedIntent(canonicalName string, rec *ComponentRecord, changed bool,
 	case olderGeneration && changed:
 		return intentPlan{}, staleGenerationError(canonicalName, rec.Owner, src)
 	case olderGeneration:
-		// An unchanged replay of an older generation keeps the newer recorded owner.
+		// An unchanged replay of an older generation keeps the newer recorded owner, even at a newer
+		// fence epoch: the recorded epoch moves with the owner object's next owner write.
 	case changed:
 		plan.write, plan.generation = writeSpec, rec.Generation+1
 	case !rec.Owner.records(src):

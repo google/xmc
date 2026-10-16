@@ -420,7 +420,8 @@ message ClusterIdentity {
   ];
 
   // Human-readable cluster name (DNS-1123 label), used only in messages, metrics and alerts.
-  // Required by DeclareClusterEpoch.
+  // Required by DeclareClusterEpoch. Optional in a RequestSource, which rejects a set name that is
+  // not a DNS-1123 label.
   string name = 2 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "name"
@@ -805,8 +806,9 @@ message GetPlatformHealthResponse {
 service ComponentManagerService {
   // Sets or updates the desired intent and specification for a component. Rejections that callers
   // act on are FailedPrecondition with a google.rpc.ErrorInfo in domain components.xmc.dev:
-  // DEPENDENCY_NOT_REGISTERED, and for sourced requests STALE_GENERATION,
-  // SOURCE_NAMESPACE_CONFLICT and SOURCE_INCARNATION_MISMATCH.
+  // DEPENDENCY_NOT_REGISTERED, and for sourced requests CLUSTER_NOT_DECLARED, CLUSTER_FENCED,
+  // CLUSTER_EPOCH_REGRESSED, STALE_GENERATION, SOURCE_NAMESPACE_CONFLICT and
+  // SOURCE_INCARNATION_MISMATCH.
   rpc SetComponentIntent(SetComponentIntentRequest) returns (SetComponentIntentResponse) {
     option (google.api.http) = {
       post: "/v1alpha1/{name=components/*}:setIntent"

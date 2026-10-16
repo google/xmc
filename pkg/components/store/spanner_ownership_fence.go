@@ -29,6 +29,12 @@ const (
 	// owner UID so that the cluster's next intent adopts it (R2). SourceLastSeenTime is set to the
 	// commit time, which starts the adoption grace period of the owner_stale gauge.
 	takeOverOwnersSQL = `UPDATE Components SET SourceClusterUid = @clusterUid, SourceEpoch = @epoch, SourceUid = NULL, SourceLastSeenTime = PENDING_COMMIT_TIMESTAMP() WHERE ActiveName IS NOT NULL AND SourceClusterUid IS NOT NULL`
+
+	// fenceColumnsSQL adds the fence holder to a query as scalar subqueries, NULL before the first
+	// declaration, so that one single-use read sees the fence and the component in one snapshot.
+	fenceColumnsSQL = `(SELECT f.ActiveClusterUid FROM ComponentOwnershipFence f WHERE f.FenceId = 1) AS FenceClusterUid,
+  (SELECT f.ActiveClusterName FROM ComponentOwnershipFence f WHERE f.FenceId = 1) AS FenceClusterName,
+  (SELECT f.Epoch FROM ComponentOwnershipFence f WHERE f.FenceId = 1) AS FenceEpoch`
 )
 
 // DeclareClusterEpoch declares cluster the writer of sourced intents within Spanner, reading the
@@ -85,6 +91,19 @@ func fenceMutation(fence *ClusterIdentity, cluster ClusterIdentity, outcome Decl
 	})
 }
 
+// checkFence reads the fence within txn and returns the rejection of src by checkClusterFence.
+// Unsourced intents (nil src) skip the read.
+func checkFence(ctx context.Context, txn *spanner.ReadWriteTransaction, src *RequestSource) error {
+	if src == nil {
+		return nil
+	}
+	fence, err := readFence(ctx, txn)
+	if err != nil {
+		return err
+	}
+	return checkClusterFence(operationSetComponentIntent, fence, src)
+}
+
 // readFence returns the current fence holder, or nil before the first declaration.
 func readFence(ctx context.Context, txn *spanner.ReadWriteTransaction) (*ClusterIdentity, error) {
 	row, err := txn.ReadRow(ctx, fenceTable, spanner.Key{fenceID}, []string{"ActiveClusterUid", "ActiveClusterName", "Epoch"})
@@ -99,4 +118,24 @@ func readFence(ctx context.Context, txn *spanner.ReadWriteTransaction) (*Cluster
 		return nil, fmt.Errorf("failed to decode the ownership fence: %w", err)
 	}
 	return &fence, nil
+}
+
+// scanFenceColumns returns the fence holder from the columns that fenceColumnsSQL adds to a
+// query, or nil before the first declaration (when the scalar subqueries are NULL).
+func scanFenceColumns(row *spanner.Row) (*ClusterIdentity, error) {
+	var uid, name spanner.NullString
+	var epoch spanner.NullInt64
+	if err := row.ColumnByName("FenceClusterUid", &uid); err != nil {
+		return nil, fmt.Errorf("failed to decode the ownership fence column FenceClusterUid: %w", err)
+	}
+	if err := row.ColumnByName("FenceClusterName", &name); err != nil {
+		return nil, fmt.Errorf("failed to decode the ownership fence column FenceClusterName: %w", err)
+	}
+	if err := row.ColumnByName("FenceEpoch", &epoch); err != nil {
+		return nil, fmt.Errorf("failed to decode the ownership fence column FenceEpoch: %w", err)
+	}
+	if !uid.Valid {
+		return nil, nil
+	}
+	return &ClusterIdentity{UID: uid.StringVal, Name: name.StringVal, Epoch: epoch.Int64}, nil
 }

@@ -120,3 +120,50 @@ func TestTakenOverOwner(t *testing.T) {
 		t.Errorf("takenOverOwner(nil) = %+v, want nil", got)
 	}
 }
+
+func TestCheckClusterFence(t *testing.T) {
+	fence := &baseCluster
+	src := func(clusterUID, clusterName string, epoch int64) *RequestSource {
+		return &RequestSource{UID: "uid-a", Generation: 1, Namespace: "xmc", ClusterUID: clusterUID, ClusterName: clusterName, Epoch: epoch}
+	}
+	activeMeta := map[string]string{"operation": "SetComponentIntent", "active_cluster_uid": baseCluster.UID, "active_cluster_name": "prod", "active_epoch": "3"}
+	tests := []struct {
+		name          string
+		fence         *ClusterIdentity
+		src           *RequestSource
+		wantReason    string
+		wantMeta      map[string]string
+		wantInMessage string
+	}{
+		{name: "unsourced intent bypasses the fence", fence: fence},
+		{name: "unsourced intent bypasses a missing fence"},
+		{name: "no fence requires a declaration without active metadata", src: src(clusterBUID, "dr", 1), wantReason: "CLUSTER_NOT_DECLARED", wantMeta: map[string]string{"operation": "SetComponentIntent"}, wantInMessage: `cluster "dr"`},
+		{name: "fence holder at the fence epoch is admitted", fence: fence, src: src(clusterAUID, "", 3)},
+		{name: "fence holder at a newer epoch must declare it", fence: fence, src: src(clusterAUID, "prod", 4), wantReason: "CLUSTER_NOT_DECLARED", wantMeta: activeMeta, wantInMessage: `cluster "prod"`},
+		{name: "fence holder at an older epoch regressed", fence: fence, src: src(clusterAUID, "", 2), wantReason: "CLUSTER_EPOCH_REGRESSED", wantMeta: activeMeta, wantInMessage: clusterAUID},
+		{name: "another cluster at a lower epoch is fenced", fence: fence, src: src(clusterBUID, "dr", 2), wantReason: "CLUSTER_FENCED", wantMeta: activeMeta, wantInMessage: `cluster "dr"`},
+		{name: "another cluster at a higher epoch is fenced under its name", fence: fence, src: src(clusterBUID, "dr", 9), wantReason: "CLUSTER_FENCED", wantMeta: activeMeta, wantInMessage: `cluster "dr"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkClusterFence("SetComponentIntent", tt.fence, tt.src)
+			if tt.wantReason == "" {
+				if err != nil {
+					t.Fatalf("checkClusterFence() error = %v, want nil", err)
+				}
+				return
+			}
+			st := status.Convert(err)
+			want := []any{&errdetails.ErrorInfo{Reason: tt.wantReason, Domain: ErrorInfoDomain, Metadata: tt.wantMeta}}
+			if st.Code() != codes.FailedPrecondition {
+				t.Errorf("checkClusterFence() code = %v, want %v", st.Code(), codes.FailedPrecondition)
+			}
+			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
+				t.Errorf("checkClusterFence() details mismatch (-want +got):\n%s", diff)
+			}
+			if !strings.Contains(st.Message(), tt.wantInMessage) {
+				t.Errorf("checkClusterFence() message = %q, want it to contain %q", st.Message(), tt.wantInMessage)
+			}
+		})
+	}
+}

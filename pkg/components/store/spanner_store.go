@@ -52,7 +52,8 @@ LIMIT 1`
     JOIN Components dep ON cd.DependencyComponentId = dep.ComponentId
     WHERE cd.ComponentId = c.ComponentId AND dep.ActiveName IS NOT NULL
     ORDER BY dep.Name ASC
-  ) AS ActiveDependencies
+  ) AS ActiveDependencies,
+  ` + fenceColumnsSQL + `
 FROM Components c
 WHERE c.ActiveName = @name
 LIMIT 1`
@@ -167,8 +168,8 @@ func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, spec
 }
 
 // SetSourcedComponentIntent applies an intent sent by src within Spanner, with the same read-only
-// fast path as SetComponentIntent. Recording a new owner, and every rejection, is decided by the
-// read-write transaction.
+// fast path as SetComponentIntent. Recording a new owner, and every rejection except a fence
+// rejection seen by the fast-path read, is decided by the read-write transaction.
 func (s *SpannerStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src RequestSource) (*ComponentRecord, error) {
 	if err := ValidateRequestSource(src); err != nil {
 		return nil, err
@@ -184,7 +185,11 @@ func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *compone
 	}
 
 	deps := ExtractDependencies(spec, labels)
-	if rec, ok := s.readUnchangedIntent(ctx, canonicalName, spec, labels, deps, desiredGen, src); ok {
+	rec, ok, err := s.readUnchangedIntent(ctx, canonicalName, spec, labels, deps, desiredGen, src)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
 		return rec, nil
 	}
 	if s.beforeIntentWrite != nil {
@@ -193,23 +198,28 @@ func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *compone
 	return s.writeIntent(ctx, canonicalName, spec, labels, deps, desiredGen, src)
 }
 
-// readUnchangedIntent reads the active record of canonicalName and its active dependencies with a
-// single strong read. It returns the record and true only when the intent writes nothing at that
-// read; on any other outcome, including read errors and rejections, it returns false so that the
-// read-write transaction decides authoritatively.
-func (s *SpannerStore) readUnchangedIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *RequestSource) (*ComponentRecord, bool) {
-	rec, err := queryComponentWithActiveDependencies(ctx, s.client.Single(), canonicalName)
+// readUnchangedIntent reads the active record of canonicalName, its active dependencies and the
+// ownership fence with a single strong read. It returns the record and true only when the intent
+// writes nothing at that read. A fence rejection is returned as the error: the strong read sees
+// the latest committed fence, so it is authoritative and fenced clusters replaying intents cost no
+// read-write transaction. On any other outcome, including read errors and other rejections, it
+// returns false so that the read-write transaction decides authoritatively.
+func (s *SpannerStore) readUnchangedIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *RequestSource) (*ComponentRecord, bool, error) {
+	rec, fence, err := queryComponentWithActiveDependencies(ctx, s.client.Single(), canonicalName)
 	if err != nil {
 		logFastPathReadError(ctx, canonicalName, err)
-		return nil, false
+		return nil, false, nil
+	}
+	if err := checkClusterFence(operationSetComponentIntent, fence, src); err != nil {
+		return nil, false, err
 	}
 	// The read returns only registered, non-deleted dependencies, so a deregistered dependency
 	// makes the intent's dependencies differ and the plan a write; the read-write fallback then
 	// rejects it authoritatively.
 	if plan, err := planIntent(canonicalName, rec, spec, labels, deps, desiredGen, src); err != nil || plan.write != writeNothing {
-		return nil, false
+		return nil, false, nil
 	}
-	return cloneRecord(rec), true
+	return cloneRecord(rec), true, nil
 }
 
 // logFastPathReadError logs a failed fast-path read before the read-write fallback. A missing
@@ -226,29 +236,34 @@ func logFastPathReadError(ctx context.Context, canonicalName string, err error) 
 
 // queryComponentWithActiveDependencies runs one query, so it can use a single-use read-only
 // transaction, and returns the active record of canonicalName with Dependencies set to its
-// registered, non-deleted dependencies (nil when there are none, as on the read-write path).
-func queryComponentWithActiveDependencies(ctx context.Context, queryable spannerQueryable, canonicalName string) (*ComponentRecord, error) {
+// registered, non-deleted dependencies (nil when there are none, as on the read-write path),
+// together with the fence holder in the same snapshot (nil before the first declaration).
+func queryComponentWithActiveDependencies(ctx context.Context, queryable spannerQueryable, canonicalName string) (*ComponentRecord, *ClusterIdentity, error) {
 	iter := queryable.Query(ctx, spanner.Statement{SQL: selectComponentWithActiveDependenciesSQL, Params: map[string]any{"name": canonicalName}})
 	defer iter.Stop()
 
 	row, err := iter.Next()
 	if errors.Is(err, iterator.Done) {
-		return nil, ErrComponentNotFound
+		return nil, nil, ErrComponentNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to query component %q: %w", canonicalName, err)
+		return nil, nil, fmt.Errorf("failed to query component %q: %w", canonicalName, err)
 	}
 	rec, err := rowToComponentRecord(row)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := row.ColumnByName("ActiveDependencies", &rec.Dependencies); err != nil {
-		return nil, fmt.Errorf("failed to read dependencies of component %q: %w", canonicalName, err)
+		return nil, nil, fmt.Errorf("failed to read dependencies of component %q: %w", canonicalName, err)
 	}
 	if len(rec.Dependencies) == 0 {
 		rec.Dependencies = nil
 	}
-	return rec, nil
+	fence, err := scanFenceColumns(row)
+	if err != nil {
+		return nil, nil, err
+	}
+	return rec, fence, nil
 }
 
 // writeIntent applies the intent in a read-write transaction. It returns the existing record, with
@@ -291,6 +306,9 @@ func (s *SpannerStore) applyIntentTx(
 	desiredGen int64,
 	src *RequestSource,
 ) (*ComponentRecord, intentPlan, error) {
+	if err := checkFence(ctx, txn, src); err != nil {
+		return nil, intentPlan{}, err
+	}
 	catalog, err := s.loadActiveCatalog(ctx, txn)
 	if err != nil {
 		return nil, intentPlan{}, err

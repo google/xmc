@@ -36,8 +36,20 @@ import (
 	"xmanager_cloud/pkg/components/store"
 )
 
-// ownerSource is the source that seeds owned rows; cases modify it with sourceWith.
-var ownerSource = store.RequestSource{UID: "uid-a", Generation: 3, Namespace: "xmc", ClusterUID: "11111111-1111-4111-8111-111111111111", Epoch: 1}
+// ownerSource is the source that seeds owned rows; cases modify it with sourceWith. It comes from
+// ownerCluster, which seedOwnedComponent declares as the fence holder.
+var ownerSource = store.RequestSource{UID: "uid-a", Generation: 3, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 1}
+
+// ownerCluster is the cluster of ownerSource at its epoch.
+var ownerCluster = store.ClusterIdentity{UID: ownerSource.ClusterUID, Name: "prod", Epoch: ownerSource.Epoch}
+
+// declareOwnerCluster declares ownerCluster on s, so that intents from ownerSource pass the fence.
+func declareOwnerCluster(ctx context.Context, t *testing.T, s store.Store) {
+	t.Helper()
+	if _, err := s.DeclareClusterEpoch(ctx, ownerCluster); err != nil {
+		t.Fatalf("DeclareClusterEpoch(%+v) error = %v", ownerCluster, err)
+	}
+}
 
 // sourceWith returns ownerSource changed by mutate.
 func sourceWith(mutate func(*store.RequestSource)) store.RequestSource {
@@ -53,18 +65,16 @@ func ownerFor(src store.RequestSource) *store.SourceOwner {
 
 // TestSetSourcedComponentIntent_OwnerParity runs the same rows against MemoryStore and
 // SpannerStore. Each row seeds an ENABLED component, from ownerSource or, when legacy is set,
-// through SetComponentIntent at generation 5000, and then applies spec from src.
+// through SetComponentIntent at generation 5000, and then applies spec from src. Every source comes
+// from the fence holder at the fence epoch: owners from other clusters or epochs are reachable only
+// through the fence (TestSetSourcedComponentIntent_FenceParity).
 func TestSetSourcedComponentIntent_OwnerParity(t *testing.T) {
 	unchanged, changed := intentSpec("v1.0.0"), intentSpec("v1.1.0")
 	newerGen := sourceWith(func(s *store.RequestSource) { s.Generation = 4 })
-	newEpoch := sourceWith(func(s *store.RequestSource) { s.Epoch = 2 })
 	olderGen := sourceWith(func(s *store.RequestSource) { s.Generation = 2 })
 	otherObject := sourceWith(func(s *store.RequestSource) { s.UID, s.Generation = "uid-b", 1 })
 	casAdopter := sourceWith(func(s *store.RequestSource) { s.UID, s.Generation, s.ExpectedOwnerUID = "uid-b", 1, "uid-a" })
 	otherNamespace := sourceWith(func(s *store.RequestSource) { s.Namespace, s.UID, s.ExpectedOwnerUID = "other", "uid-b", "uid-a" })
-	casFromOtherCluster := sourceWith(func(s *store.RequestSource) {
-		s.UID, s.ExpectedOwnerUID, s.ClusterUID = "uid-b", "uid-a", "22222222-2222-4222-8222-222222222222"
-	})
 	withUnregisteredDep := intentSpec("v1.1.0", "intent-source-unregistered")
 	tests := []struct {
 		name       string
@@ -82,7 +92,6 @@ func TestSetSourcedComponentIntent_OwnerParity(t *testing.T) {
 		{name: "legacy record adopts a changed intent with a bump by one (R2)", legacy: true, spec: changed, src: ownerSource, wantGen: 5001, wantOwner: ownerFor(ownerSource), wantReset: true},
 		{name: "owner replay is a no-op (R3)", spec: unchanged, src: ownerSource, wantGen: 1, wantOwner: ownerFor(ownerSource)},
 		{name: "owner at a newer generation records only the owner (R3)", spec: unchanged, src: newerGen, wantGen: 1, wantOwner: ownerFor(newerGen)},
-		{name: "owner at a new cluster epoch records only the owner (R3)", spec: unchanged, src: newEpoch, wantGen: 1, wantOwner: ownerFor(newEpoch)},
 		{name: "owner with a changed spec bumps by one (R3)", spec: changed, src: ownerSource, wantGen: 2, wantOwner: ownerFor(ownerSource), wantReset: true},
 		{name: "owner at an older generation with an unchanged spec is a no-op (R3)", spec: unchanged, src: olderGen, wantGen: 1, wantOwner: ownerFor(ownerSource)},
 		{name: "owner at an older generation with a changed spec is stale (R3)", spec: changed, src: olderGen, wantReason: store.ReasonStaleGeneration},
@@ -92,7 +101,6 @@ func TestSetSourcedComponentIntent_OwnerParity(t *testing.T) {
 		{name: "another object naming the owner adopts an unchanged intent (R5)", spec: unchanged, src: casAdopter, wantGen: 1, wantOwner: ownerFor(casAdopter)},
 		{name: "another object naming the owner adopts a changed intent (R5)", spec: changed, src: casAdopter, wantGen: 2, wantOwner: ownerFor(casAdopter), wantReset: true},
 		{name: "another object without a CAS guard mismatches (R6)", spec: unchanged, src: otherObject, wantReason: store.ReasonSourceIncarnationMismatch},
-		{name: "CAS guard from another cluster mismatches (R6)", spec: unchanged, src: casFromOtherCluster, wantReason: store.ReasonSourceIncarnationMismatch},
 		{name: "mismatching object naming an unregistered dependency is rejected as a mismatch (R6)", spec: withUnregisteredDep, src: otherObject, wantReason: store.ReasonSourceIncarnationMismatch},
 	}
 	for _, backend := range intentStoreBackends() {
@@ -183,6 +191,7 @@ func TestSetSourcedComponentIntent_CASGuardWithoutRecord(t *testing.T) {
 		t.Run(backend.name, func(t *testing.T) {
 			ctx := context.Background()
 			s := backend.newStore(t)
+			declareOwnerCluster(ctx, t, s)
 			for i, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
 					name := fmt.Sprintf("intent-source-cas-missing-%d", i)
@@ -244,6 +253,44 @@ func TestSpannerStore_SetSourcedComponentIntent_ReadOnlyFastPath(t *testing.T) {
 	}
 }
 
+// TestSetSourcedComponentIntent_UndeclaredFence checks on both backends that, before any cluster
+// declares the fence, a sourced intent is rejected with CLUSTER_NOT_DECLARED and no active_*
+// metadata, whether it would create a component (read-write path) or replay over an unsourced one
+// (Spanner's read-only fast path), and that nothing is written.
+func TestSetSourcedComponentIntent_UndeclaredFence(t *testing.T) {
+	wantDetails := []any{&errdetails.ErrorInfo{
+		Reason:   store.ReasonClusterNotDeclared,
+		Domain:   store.ErrorInfoDomain,
+		Metadata: map[string]string{"operation": "SetComponentIntent"},
+	}}
+	for _, backend := range intentStoreBackends() {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := backend.newStore(t)
+			legacy := seedIntentComponent(ctx, t, s, "fence-undeclared-legacy", intentSpec("v1.0.0"), 5000, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED)
+			tests := []struct {
+				name      string
+				component string
+			}{
+				{name: "new component", component: "fence-undeclared-new"},
+				{name: "legacy component", component: legacy.Name},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					_, err := s.SetSourcedComponentIntent(ctx, tt.component, intentSpec("v1.0.0"), nil, ownerSource)
+					if diff := cmp.Diff(wantDetails, status.Convert(err).Details(), protocmp.Transform()); status.Code(err) != codes.FailedPrecondition || diff != "" {
+						t.Errorf("SetSourcedComponentIntent(%s) error = %v, details mismatch (-want +got):\n%s", tt.component, err, diff)
+					}
+				})
+			}
+			if _, err := s.GetComponent(ctx, "fence-undeclared-new"); status.Code(err) != codes.NotFound {
+				t.Errorf("GetComponent(fence-undeclared-new) error = %v, want code %v", err, codes.NotFound)
+			}
+			assertStoredOwner(ctx, t, s, legacy.Name, nil)
+		})
+	}
+}
+
 // TestSetSourcedComponentIntent_InvalidSource checks on both backends that an invalid source is
 // rejected before anything is written.
 func TestSetSourcedComponentIntent_InvalidSource(t *testing.T) {
@@ -262,11 +309,13 @@ func TestSetSourcedComponentIntent_InvalidSource(t *testing.T) {
 	}
 }
 
-// seedOwnedComponent creates name with spec v1.0.0 from ownerSource (checking that it starts at
-// generation 1 owned by ownerSource) or, when legacy is set, unsourced at generation 5000, records
-// it as observed and ENABLED, and returns the stored record.
+// seedOwnedComponent declares ownerCluster (refreshing it if already declared), creates name with
+// spec v1.0.0 from ownerSource (checking that it starts at generation 1 owned by ownerSource) or,
+// when legacy is set, unsourced at generation 5000, records it as observed and ENABLED, and returns
+// the stored record.
 func seedOwnedComponent(ctx context.Context, t *testing.T, s store.Store, name string, legacy bool) *store.ComponentRecord {
 	t.Helper()
+	declareOwnerCluster(ctx, t, s)
 	if legacy {
 		return seedIntentComponent(ctx, t, s, name, intentSpec("v1.0.0"), 5000, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED)
 	}
