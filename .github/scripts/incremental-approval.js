@@ -120,6 +120,7 @@ async function run({ github, context, core }) {
 
   const {
     totalDelta: hunkDelta,
+    testDelta: hunkTestDelta,
     isCleanRebase,
     hasRemovedCommits,
     addedCommitShas
@@ -138,7 +139,8 @@ async function run({ github, context, core }) {
     return;
   }
   const totalDelta = hunkDelta + addedDelta.totalDelta;
-  core.info(`Computed range-diff: isCleanRebase=${isCleanRebase}, hunkDelta=${hunkDelta}, addedCommitsDelta=${addedDelta.totalDelta} (commits: ${addedCommitShas.length}), totalDelta=${totalDelta} lines, hasRemovedCommits=${hasRemovedCommits}, hasProtectedFileChanges=${hasProtectedFileChanges}`);
+  const testDelta = hunkTestDelta + addedDelta.testDelta;
+  core.info(`Computed range-diff: isCleanRebase=${isCleanRebase}, hunkDelta=${hunkDelta}, addedCommitsDelta=${addedDelta.totalDelta} (commits: ${addedCommitShas.length}), totalDelta=${totalDelta} lines (test files: ${testDelta}), hasRemovedCommits=${hasRemovedCommits}, hasProtectedFileChanges=${hasProtectedFileChanges}`);
 
   const decision = evaluateIncrementalApproval({
     hasPriorApproval: true,
@@ -146,6 +148,7 @@ async function run({ github, context, core }) {
     currentSha,
     isAuthorOwner,
     deltaLines: totalDelta,
+    testDeltaLines: testDelta,
     isCleanRebase,
     hasRemovedCommits,
     hasProtectedFileChanges,

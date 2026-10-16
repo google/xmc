@@ -13,6 +13,7 @@
 // limitations under the License.
 
 const childProcess = require('child_process');
+const { isTestFile } = require('./test-file-classifier');
 
 // Maximum execution duration (60s) for git child processes (range-diff, fetch) before timing out to prevent hanging runner jobs.
 const GIT_EXEC_TIMEOUT_MS = 60000;
@@ -440,15 +441,40 @@ function runGitRangeDiff(baseRef, approvedSha, currentSha) {
 }
 
 /**
+ * Pure function: Parses `git diff-tree --numstat` output into line deltas.
+ * Lines in test files (see test-file-classifier.js) are additionally counted in testDelta.
+ * @param {string} numstat - Raw numstat output (`<additions>\t<deletions>\t<path>` per line).
+ * @returns {{ additions: number, deletions: number, totalDelta: number, testDelta: number }}
+ */
+function parseNumstatDelta(numstat) {
+  let additions = 0;
+  let deletions = 0;
+  let testDelta = 0;
+  for (const line of numstat.split(/\r?\n/)) {
+    const parts = line.trim().split('\t');
+    if (parts.length < 2) {
+      continue;
+    }
+    const a = parseInt(parts[0], 10);
+    const d = parseInt(parts[1], 10);
+    const fileDelta = (isNaN(a) ? 0 : a) + (isNaN(d) ? 0 : d);
+    if (!isNaN(a)) additions += a;
+    if (!isNaN(d)) deletions += d;
+    if (isTestFile(parts.slice(2).join('\t'))) testDelta += fileDelta;
+  }
+  return { additions, deletions, totalDelta: additions + deletions, testDelta };
+}
+
+/**
  * Shell Helper: Calculates line additions and deletions for a single commit.
  * @param {string} commitSha - Commit SHA to inspect.
  * @param {Object} [execOptions={}] - Subprocess options.
- * @returns {{ additions: number, deletions: number, totalDelta: number }}
+ * @returns {{ additions: number, deletions: number, totalDelta: number, testDelta: number }}
  */
 function getCommitLineDelta(commitSha, execOptions = {}) {
   if (!commitSha || !SHA_REGEX.test(commitSha)) {
     console.log('[incremental-approval] Invalid commit SHA: "' + commitSha + '"');
-    return { additions: 0, deletions: 0, totalDelta: 0 };
+    return { additions: 0, deletions: 0, totalDelta: 0, testDelta: 0 };
   }
 
   const opts = {
@@ -461,18 +487,7 @@ function getCommitLineDelta(commitSha, execOptions = {}) {
 
   try {
     const numstat = execGit(['diff-tree', '--no-commit-id', '--numstat', '-r', '--no-renames', commitSha], opts);
-    let additions = 0;
-    let deletions = 0;
-    for (const line of numstat.split(/\r?\n/)) {
-      const parts = line.trim().split(/\s+/);
-      if (parts.length >= 2) {
-        const a = parseInt(parts[0], 10);
-        const d = parseInt(parts[1], 10);
-        if (!isNaN(a)) additions += a;
-        if (!isNaN(d)) deletions += d;
-      }
-    }
-    return { additions, deletions, totalDelta: additions + deletions };
+    return parseNumstatDelta(numstat);
   } catch (error) {
     throw new Error(`Failed to get line delta for commit ${commitSha}: ${error.message}`);
   }
@@ -482,20 +497,22 @@ function getCommitLineDelta(commitSha, execOptions = {}) {
  * Shell Helper: Aggregates line additions and deletions across all newly added commits.
  * @param {Array<string>} addedCommitShas - List of added commit SHAs.
  * @param {Object} [execOptions={}] - Subprocess options.
- * @returns {{ additions: number, deletions: number, totalDelta: number }}
+ * @returns {{ additions: number, deletions: number, totalDelta: number, testDelta: number }}
  */
 function computeAddedCommitsDelta(addedCommitShas, execOptions = {}) {
   let additions = 0;
   let deletions = 0;
+  let testDelta = 0;
   if (!Array.isArray(addedCommitShas)) {
-    return { additions, deletions, totalDelta: 0 };
+    return { additions, deletions, totalDelta: 0, testDelta };
   }
   for (const sha of addedCommitShas) {
     const delta = getCommitLineDelta(sha, execOptions);
     additions += delta.additions;
     deletions += delta.deletions;
+    testDelta += delta.testDelta;
   }
-  return { additions, deletions, totalDelta: additions + deletions };
+  return { additions, deletions, totalDelta: additions + deletions, testDelta };
 }
 
 /**
@@ -571,6 +588,7 @@ module.exports = {
   resolveStackedApprovedRange,
   resolveCommitRanges,
   runGitRangeDiff,
+  parseNumstatDelta,
   getCommitLineDelta,
   computeAddedCommitsDelta,
   getPrChangedFiles,
