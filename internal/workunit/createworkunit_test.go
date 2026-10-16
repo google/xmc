@@ -231,6 +231,48 @@ func TestCreateWorkUnit_AutoID(t *testing.T) {
 	}
 }
 
+func TestCreateWorkUnit_WithUserMessage(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storageClient, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
+	}
+
+	xid := int64(456)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+
+	wu := spanner.BlankWorkUnitProto(xid, 0)
+	wu.CurrentWorkUnitExecution.Status.SystemMessage.Parent = "experiments/456/workUnits/0"
+	wu.CurrentWorkUnitExecution.Status.UserMessage = &essmsgpb.StructuredMessage{
+		Severity:       essmsgpb.StructuredMessage_INFO,
+		Source:         essmsgpb.StructuredMessage_USER_DEFINED,
+		Parent:         "experiments/456/workUnits/0",
+		UserFacingText: "user-provided message",
+	}
+
+	createdWu, err := workunit.CreateWorkUnit(ctx, storageClient, wu)
+	if err != nil {
+		t.Fatalf("CreateWorkUnit failed: %v", err)
+	}
+
+	wantParent := "experiments/456/workUnits/1"
+	if got := createdWu.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage().GetParent(); got != wantParent {
+		t.Errorf("SystemMessage.Parent = %q, want %q", got, wantParent)
+	}
+	if got := createdWu.GetCurrentWorkUnitExecution().GetStatus().GetUserMessage().GetParent(); got != wantParent {
+		t.Errorf("UserMessage.Parent = %q, want %q", got, wantParent)
+	}
+
+	messages, _, err := storageClient.ListStatusMessages(ctx, wantParent, 10, "", "", "", 0)
+	if err != nil {
+		t.Fatalf("ListStatusMessages failed: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("ListStatusMessages returned %d messages, want 2", len(messages))
+	}
+}
+
 func TestCreateWorkUnit_TransactionRetryAndErrorPaths(t *testing.T) {
 	ctx := context.Background()
 	boomErr := errors.New("boom")

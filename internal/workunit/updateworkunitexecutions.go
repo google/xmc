@@ -27,7 +27,6 @@ import (
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/common/resourceaccumulator"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
@@ -214,43 +213,13 @@ func processExecutionUpdates(ctx context.Context, tx *storage.Transaction, xid i
 		}
 		executionDeltas = append(executionDeltas, executionDelta)
 
-		if err := recordExecutionHistory(ctx, tx, xid, update, workUnits[update.WID].GetExecutable(), updatedExecutions[update.WID], updatedExecution); err != nil {
+		if err := RecordExecutionHistory(ctx, tx, xid, update.WID, update.EID, workUnits[update.WID].GetExecutable(), updatedExecutions[update.WID], updatedExecution); err != nil {
 			return nil, err
 		}
 
 		updatedExecutions[update.WID] = updatedExecution
 	}
 	return executionDeltas, nil
-}
-
-func recordExecutionHistory(ctx context.Context, tx *storage.Transaction, xid int64, update *storage.WorkUnitExecutionUpdate, executable *essmsgpb.Executable, currentExec, updatedExecution *essmsgpb.WorkUnitExecution) error {
-	if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, &update.WID, &update.EID, currentExec.GetStatus().GetSystemMessage(), updatedExecution.GetStatus().GetSystemMessage()); err != nil {
-		return fmt.Errorf("failed to save system status message history: %w", err)
-	}
-	if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, &update.WID, &update.EID, currentExec.GetStatus().GetUserMessage(), updatedExecution.GetStatus().GetUserMessage()); err != nil {
-		return fmt.Errorf("failed to save user status message history: %w", err)
-	}
-
-	qName := executable.GetSchedulingConstraints().GetQueueName()
-	acc := resourceaccumulator.New()
-	acc.AccumulateExecutable(executable)
-	resMap := acc.IntTotals()
-	var prevState *essmsgpb.WorkUnitStatus_WorkUnitState
-	if currentExec.GetStatus() != nil {
-		prevState = currentExec.Status.State.Enum()
-	}
-	var newState *essmsgpb.WorkUnitStatus_WorkUnitState
-	var stateTime time.Time
-	if updatedExecution.GetStatus() != nil {
-		newState = updatedExecution.Status.State.Enum()
-		if updatedExecution.Status.GetUpdateTime() != nil {
-			stateTime = updatedExecution.Status.GetUpdateTime().AsTime()
-		}
-	}
-	if err := tx.StatusHistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, update.WID, &update.EID, qName, prevState, newState, resMap, stateTime); err != nil {
-		return fmt.Errorf("failed to save work unit status history: %w", err)
-	}
-	return nil
 }
 
 func updateExperimentFromExecutions(ctx context.Context, tx *storage.Transaction, xid int64, executionDeltas []*state.WorkUnitStateDelta, updatedExecutions map[int64]*essmsgpb.WorkUnitExecution) (*essmsgpb.Experiment, error) {

@@ -63,6 +63,70 @@ func (m *MockXidTxRepository) UpdateXidEntry(_ context.Context, _ int64, entry *
 	return nil
 }
 
+// StatusMessageHistoryCall records a single invocation of SaveStatusMessageHistory.
+type StatusMessageHistoryCall struct {
+	XID    int64
+	WID    *int64
+	EID    *int64
+	OldMsg *essmsgpb.StructuredMessage
+	NewMsg *essmsgpb.StructuredMessage
+}
+
+// MockStatusMessageTxRepository is an in-memory mock implementation of StatusMessageTxRepository for unit testing.
+type MockStatusMessageTxRepository struct {
+	SaveErr  error
+	SaveFunc func(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error
+	Calls    []StatusMessageHistoryCall
+}
+
+// SaveStatusMessageHistory records the call and returns SaveErr if configured.
+func (m *MockStatusMessageTxRepository) SaveStatusMessageHistory(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
+	m.Calls = append(m.Calls, StatusMessageHistoryCall{
+		XID:    xid,
+		WID:    wid,
+		EID:    eid,
+		OldMsg: oldMsg,
+		NewMsg: newMsg,
+	})
+	if m.SaveFunc != nil {
+		return m.SaveFunc(ctx, xid, wid, eid, oldMsg, newMsg)
+	}
+	return m.SaveErr
+}
+
+// WorkUnitStatusHistoryCall records a single invocation of SaveWorkUnitStatusHistory.
+type WorkUnitStatusHistoryCall struct {
+	XID       int64
+	WID       int64
+	EID       *int64
+	QueueName string
+	PrevState *essmsgpb.WorkUnitStatus_WorkUnitState
+	NewState  *essmsgpb.WorkUnitStatus_WorkUnitState
+	Resources map[string]int64
+	Timestamp time.Time
+}
+
+// MockStatusHistoryTxRepository is an in-memory mock implementation of StatusHistoryTxRepository for unit testing.
+type MockStatusHistoryTxRepository struct {
+	SaveErr error
+	Calls   []WorkUnitStatusHistoryCall
+}
+
+// SaveWorkUnitStatusHistory records the call and returns SaveErr if configured.
+func (m *MockStatusHistoryTxRepository) SaveWorkUnitStatusHistory(_ context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
+	m.Calls = append(m.Calls, WorkUnitStatusHistoryCall{
+		XID:       xid,
+		WID:       wid,
+		EID:       eid,
+		QueueName: queueName,
+		PrevState: prevState,
+		NewState:  newState,
+		Resources: resources,
+		Timestamp: timestamp,
+	})
+	return m.SaveErr
+}
+
 // MockStorage is a mock implementation of Storage for testing.
 type MockStorage struct {
 	Storage
@@ -112,8 +176,6 @@ type MockStorage struct {
 	UpdateExperimentErr               error
 	UpdateExperimentStatusErr         error
 	UpdateExperimentResourcesErr      error
-	SaveStatusMessageHistoryErr       error
-	SaveWorkUnitStatusHistoryErr      error
 	UpdateWorkUnitErr                 error
 	UpdateWorkUnitRespOriginal        *essmsgpb.WorkUnit
 	UpdateWorkUnitRespReturned        *essmsgpb.WorkUnit
@@ -122,6 +184,10 @@ type MockStorage struct {
 	GotOperationUpdate                *OperationUpdate
 	ListStatusMessagesResp            []*essmsgpb.StatusMessage
 	ListStatusMessagesErr             error
+	SaveStatusMessageHistoryErr       error
+	SaveWorkUnitStatusHistoryErr      error
+	StatusMessageTxRepository         StatusMessageTxRepository
+	StatusHistoryTxRepository         StatusHistoryTxRepository
 
 	RunInTransactionErr error
 	// RunInTransactionAttempts is how many times RunInTransaction invokes fn, simulating
@@ -134,8 +200,9 @@ type MockStorage struct {
 
 	PauseStateRepository PauseStateRepository
 	PausedTaskRepository PausedTaskRepository
-	// Transaction optionally overrides Transaction.XIDs, Transaction.PauseState, and
-	// Transaction.PausedTasks passed to RunInTransaction callbacks; other fields are ignored.
+	// Transaction optionally overrides Transaction.XIDs, Transaction.StatusMessages,
+	// Transaction.StatusHistory, Transaction.PauseState, and Transaction.PausedTasks
+	// passed to RunInTransaction callbacks; other fields are ignored.
 	Transaction *Transaction
 }
 
@@ -292,32 +359,51 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 	if xidsTx == nil {
 		xidsTx = &MockXidTxRepository{FetchErr: s.FetchErr}
 	}
+	statusMsgTx := StatusMessageTxRepository(s)
+	if s.StatusMessageTxRepository != nil {
+		statusMsgTx = s.StatusMessageTxRepository
+	}
+	statusHistTx := StatusHistoryTxRepository(s)
+	if s.StatusHistoryTxRepository != nil {
+		statusHistTx = s.StatusHistoryTxRepository
+	}
 	tx := &Transaction{
 		WorkUnits:      s,
 		Experiments:    s,
 		XIDs:           xidsTx,
-		StatusMessages: s,
-		StatusHistory:  s,
+		StatusMessages: statusMsgTx,
+		StatusHistory:  statusHistTx,
 		PauseState:     pauseStateTx,
 		PausedTasks:    pausedTaskTx,
 	}
-	if s.Transaction != nil {
-		if s.Transaction.XIDs != nil {
-			tx.XIDs = s.Transaction.XIDs
-		}
-		if s.Transaction.PauseState != nil {
-			tx.PauseState = s.Transaction.PauseState
-		}
-		if s.Transaction.PausedTasks != nil {
-			tx.PausedTasks = s.Transaction.PausedTasks
-		}
-	}
+	applyTransactionOverrides(tx, s.Transaction)
 	for attempt := 1; attempt < s.RunInTransactionAttempts; attempt++ {
 		if err := fn(ctx, tx); err != nil {
 			return err
 		}
 	}
 	return fn(ctx, tx)
+}
+
+func applyTransactionOverrides(tx, overrides *Transaction) {
+	if overrides == nil {
+		return
+	}
+	if overrides.XIDs != nil {
+		tx.XIDs = overrides.XIDs
+	}
+	if overrides.StatusMessages != nil {
+		tx.StatusMessages = overrides.StatusMessages
+	}
+	if overrides.StatusHistory != nil {
+		tx.StatusHistory = overrides.StatusHistory
+	}
+	if overrides.PauseState != nil {
+		tx.PauseState = overrides.PauseState
+	}
+	if overrides.PausedTasks != nil {
+		tx.PausedTasks = overrides.PausedTasks
+	}
 }
 
 // PauseState returns the configured pause state repository (nil if unset).
@@ -347,13 +433,13 @@ func (s *MockStorage) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, w
 	return nil
 }
 
-// SaveWorkUnitStatusHistoryIfChanged mocks saving work unit status history if changed.
-func (s *MockStorage) SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
+// SaveWorkUnitStatusHistory mocks saving work unit status history.
+func (s *MockStorage) SaveWorkUnitStatusHistory(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
 	return s.SaveWorkUnitStatusHistoryErr
 }
 
-// SaveStatusMessageHistoryIfChanged mocks saving status message history if changed.
-func (s *MockStorage) SaveStatusMessageHistoryIfChanged(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
+// SaveStatusMessageHistory mocks saving status message history.
+func (s *MockStorage) SaveStatusMessageHistory(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
 	return s.SaveStatusMessageHistoryErr
 }
 

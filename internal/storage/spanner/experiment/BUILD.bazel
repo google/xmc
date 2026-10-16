@@ -38,7 +38,6 @@ go_library(
         "//internal/storage/data",
         "//internal/storage/spanner/data",
         "//internal/storage/spanner/schema/experimentschema",
-        "//internal/storage/spanner/statusmessage",
         "//internal/storage/spanner/utils",
         "//internal/validator",
         "@com_github_kylelemons_godebug//diff",

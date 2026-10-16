@@ -26,6 +26,8 @@ import (
 	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
+const ResourceTypeCPU = "CPU"
+
 func TestQueueMetricRow(t *testing.T) {
 	row := storage.QueueMetricRow{
 		QueueName:    "cq-gpu",
@@ -289,4 +291,27 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 			compareQueueMetricRows(t, got, tt.want)
 		})
 	}
+}
+
+func TestTxRepository_SaveWorkUnitStatusHistory(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	repo := NewRepository(essClient)
+
+	running := essmsgpb.WorkUnitStatus_RUNNING
+	eid := int64(1)
+
+	t.Run("nil transaction propagates error", func(t *testing.T) {
+		if err := repo.WithTx(nil).SaveWorkUnitStatusHistory(ctx, 1, 1, &eid, "q1", nil, &running, map[string]int64{"": 0}, time.Now()); err == nil {
+			t.Fatalf("SaveWorkUnitStatusHistory() with nil tx succeeded, want error")
+		}
+	})
+
+	t.Run("canceled context propagates error", func(t *testing.T) {
+		canceledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+		if err := repo.WithTx(nil).SaveWorkUnitStatusHistory(canceledCtx, 1, 1, &eid, "q1", nil, &running, map[string]int64{"": 0}, time.Now()); err == nil {
+			t.Fatalf("SaveWorkUnitStatusHistory() with canceled ctx succeeded, want error")
+		}
+	})
 }

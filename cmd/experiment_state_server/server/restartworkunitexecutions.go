@@ -21,12 +21,12 @@ import (
 
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/common/resourceaccumulator"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/state"
 	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/internal/workunit"
 )
 
 // restartWorkUnitExecutions archives the active work unit execution for a set of work units, and
@@ -110,7 +110,7 @@ func restartSingleWorkUnitExecution(
 	logging.Debug(ctx, "Archiving active execution and generating new execution", "wid", wid, "prevEID", eid, "newEID", newEID)
 
 	// 4.2. Record status message and history mutations.
-	if err := recordRestartExecutionHistory(ctx, tx, xid, wid, newEID, wu.GetExecutable(), currentExecution, newExecution); err != nil {
+	if err := workunit.RecordExecutionHistory(ctx, tx, xid, wid, newEID, wu.GetExecutable(), currentExecution, newExecution); err != nil {
 		return nil, nil, err
 	}
 
@@ -149,33 +149,6 @@ func newRestartingWorkUnitExecution(xid, wid, newEID int64, requester string, no
 		CreateTime: nowProto,
 		UpdateTime: nowProto,
 	}
-}
-
-func recordRestartExecutionHistory(
-	ctx context.Context,
-	tx *storage.Transaction,
-	xid, wid, newEID int64,
-	executable *essmsgpb.Executable,
-	currentExecution, newExecution *essmsgpb.WorkUnitExecution,
-) error {
-	if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage()); err != nil {
-		return fmt.Errorf("failed to save status message history: %w", err)
-	}
-
-	qName := executable.GetSchedulingConstraints().GetQueueName()
-	acc := resourceaccumulator.New()
-	acc.AccumulateExecutable(executable)
-	resMap := acc.IntTotals()
-	prevState := currentExecution.GetStatus().GetState().Enum()
-	newState := newExecution.GetStatus().GetState().Enum()
-	var stateTime time.Time
-	if newExecution.GetStatus().GetUpdateTime() != nil {
-		stateTime = newExecution.GetStatus().GetUpdateTime().AsTime()
-	}
-	if err := tx.StatusHistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, &newEID, qName, prevState, newState, resMap, stateTime); err != nil {
-		return fmt.Errorf("failed to save work unit status history: %w", err)
-	}
-	return nil
 }
 
 // updateRestartExperimentStatus denormalizes execution state deltas and updates the experiment status in storage.

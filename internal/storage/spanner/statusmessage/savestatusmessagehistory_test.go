@@ -19,43 +19,13 @@ import (
 	"testing"
 
 	cloudspanner "cloud.google.com/go/spanner"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 )
 
-func TestSaveStatusMessageHistoryIfChanged_NilNewMessage(t *testing.T) {
-	fix := setupTest(t)
-	ctx, essClient := fix.ctx, fix.essClient
-
-	currentMsg := &essmsgpb.StructuredMessage{UserFacingText: "old"}
-
-	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, 123, nil, nil, currentMsg, nil, nil)
-
-	messages := listStatusMessagesForTest(ctx, t, essClient, 123)
-	if len(messages) > 0 {
-		t.Errorf("saveStatusMessageHistoryIfChanged() wrote %d messages when new message is nil, want 0", len(messages))
-	}
-}
-
-func TestSaveStatusMessageHistoryIfChanged_EqualMessages(t *testing.T) {
-	fix := setupTest(t)
-	ctx, essClient := fix.ctx, fix.essClient
-
-	currentMsg := &essmsgpb.StructuredMessage{UserFacingText: "same"}
-	newMsg := &essmsgpb.StructuredMessage{UserFacingText: "same"}
-
-	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, 123, nil, nil, currentMsg, newMsg, nil)
-
-	messages := listStatusMessagesForTest(ctx, t, essClient, 123)
-	if len(messages) > 0 {
-		t.Errorf("saveStatusMessageHistoryIfChanged() wrote %d messages when messages are equal, want 0", len(messages))
-	}
-}
-
-func TestSaveStatusMessageHistoryIfChanged_Success(t *testing.T) {
+func TestSaveStatusMessageHistory_Success(t *testing.T) {
 	fix := setupTest(t)
 	ctx, storage, essClient := fix.ctx, fix.storage, fix.essClient
 
@@ -71,43 +41,48 @@ func TestSaveStatusMessageHistoryIfChanged_Success(t *testing.T) {
 		UserFacingText: "new",
 	}
 
-	_, err := essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *cloudspanner.ReadWriteTransaction) error {
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, xid, nil, nil, currentMsg, newMsg, txn)
-		return nil
+	repo, err := statusmessage.NewRepository(essClient)
+	if err != nil {
+		t.Fatalf("NewRepository() failed: %v", err)
+	}
+
+	_, err = essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *cloudspanner.ReadWriteTransaction) error {
+		return repo.WithTx(txn).SaveStatusMessageHistory(ctx, xid, nil, nil, currentMsg, newMsg)
 	})
 	if err != nil {
-		t.Fatalf("saveStatusMessageHistoryIfChanged() ReadWriteTransaction failed: %v", err)
+		t.Fatalf("SaveStatusMessageHistory() ReadWriteTransaction failed: %v", err)
 	}
 
 	messages := listStatusMessagesForTest(ctx, t, essClient, xid)
 
 	if len(messages) != 1 {
-		t.Fatalf("saveStatusMessageHistoryIfChanged() wrote %d rows in StatusMessages, want 1", len(messages))
+		t.Fatalf("SaveStatusMessageHistory() wrote %d rows in StatusMessages, want 1", len(messages))
 	}
 
 	if messages[0] != "new" {
-		t.Errorf("saveStatusMessageHistoryIfChanged() wrote UserFacingText %q, want %q", messages[0], "new")
+		t.Errorf("SaveStatusMessageHistory() wrote UserFacingText %q, want %q", messages[0], "new")
 	}
 }
 
-func TestSaveStatusMessageHistoryIfChanged_EqualMessagesDifferentTimestamp(t *testing.T) {
+func TestTxRepository_SaveStatusMessageHistory_PropagatesError(t *testing.T) {
 	fix := setupTest(t)
 	ctx, essClient := fix.ctx, fix.essClient
 
-	currentMsg := &essmsgpb.StructuredMessage{
-		UserFacingText: "same",
-		CreateTime:     &timestamppb.Timestamp{Seconds: 100},
-	}
-	newMsg := &essmsgpb.StructuredMessage{
-		UserFacingText: "same",
-		CreateTime:     &timestamppb.Timestamp{Seconds: 200},
+	repo, err := statusmessage.NewRepository(essClient)
+	if err != nil {
+		t.Fatalf("NewRepository() failed: %v", err)
 	}
 
-	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, 123, nil, nil, currentMsg, newMsg, nil)
+	invalidMsg := &essmsgpb.StructuredMessage{
+		Parent:         "invalid-parent",
+		UserFacingText: "new",
+	}
 
-	messages := listStatusMessagesForTest(ctx, t, essClient, 123)
-	if len(messages) > 0 {
-		t.Errorf("saveStatusMessageHistoryIfChanged() wrote %d messages when messages are equal with different timestamps, want 0", len(messages))
+	_, err = essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *cloudspanner.ReadWriteTransaction) error {
+		return repo.WithTx(txn).SaveStatusMessageHistory(ctx, 123, nil, nil, nil, invalidMsg)
+	})
+	if err == nil {
+		t.Fatalf("TxRepository.SaveStatusMessageHistory() with invalid parent succeeded, want error")
 	}
 }
 

@@ -30,6 +30,7 @@ go_library(
         "//internal/storage",
         "//internal/storage/state",
         "//internal/validator",
+        "//internal/workunit",
         "@com_github_kylelemons_godebug//diff",
         "@org_golang_google_protobuf//encoding/prototext",
         "@org_golang_google_protobuf//proto",

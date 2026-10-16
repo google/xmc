@@ -15,10 +15,12 @@ package experiment_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/experiment"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 )
@@ -163,5 +165,28 @@ func TestCreateExperiment_WithStructuredStatusMessage(t *testing.T) {
 	}
 	if got := messages[0].GetContent().GetUserFacingText(); got != "initial status message" {
 		t.Errorf("ListStatusMessages returned message text %q, want %q", got, "initial status message")
+	}
+}
+
+func TestCreateExperiment_SaveStatusMessageHistoryError(t *testing.T) {
+	ctx := context.Background()
+	boomErr := errors.New("boom")
+	mockStorage := &storage.MockStorage{
+		SaveStatusMessageHistoryErr: boomErr,
+	}
+
+	exp := &essmsgpb.Experiment{
+		Name: "experiments/789",
+		Status: &essmsgpb.ExperimentStatus{
+			StructuredStatusMessage: &essmsgpb.StructuredMessage{
+				Severity:       essmsgpb.StructuredMessage_INFO,
+				UserFacingText: "initial status message",
+			},
+		},
+	}
+
+	_, err := experiment.CreateExperiment(ctx, mockStorage, exp)
+	if !errors.Is(err, boomErr) {
+		t.Fatalf("CreateExperiment() error = %v, want %v", err, boomErr)
 	}
 }

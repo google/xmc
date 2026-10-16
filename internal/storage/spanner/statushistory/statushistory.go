@@ -24,11 +24,11 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/common/resourceaccumulator"
-	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/storage"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 )
+
+var _ storage.StatusHistoryTxRepository = (*TxRepository)(nil)
 
 // WorkUnitStatusHistoryItem represents a single WorkUnitStatusHistory record for Spanner queries and UNNEST mocks.
 type WorkUnitStatusHistoryItem struct {
@@ -41,50 +41,6 @@ type WorkUnitStatusHistoryItem struct {
 	PreviousState  int64     `spanner:"PreviousState"`
 	ResourceType   string    `spanner:"ResourceType"`
 	ResourceUnits  int64     `spanner:"ResourceUnits"`
-}
-
-// ResourceTypeCPU represents the standard CPU resource identifier string.
-const ResourceTypeCPU = constants.ResourceTypeCPU
-
-// ExtractAllResourcesFromExecutable extracts all compute resource types and unit counts from an Executable.
-func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int64 {
-	acc := resourceaccumulator.New()
-	acc.AccumulateExecutable(exec)
-	return acc.IntTotals()
-}
-
-// SaveWorkUnitStatusHistoryIfChanged buffers Spanner mutations for all requested resources if the WorkUnit state transitioned.
-// TODO(b/517479143): Inline into Repository.SaveWorkUnitStatusHistoryIfChanged once CreateWorkUnit and UpdateWorkUnitExecutions are moved out of Spanner.
-func SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, currentState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resourceMap map[string]int64, t time.Time, tx *spanner.ReadWriteTransaction) {
-	if ctx == nil || ctx.Err() != nil {
-		return
-	}
-	if newState == nil {
-		return
-	}
-	if currentState != nil && *currentState == *newState {
-		return
-	}
-
-	if len(resourceMap) == 0 {
-		resourceMap = map[string]int64{"": 0}
-	}
-
-	if t.IsZero() {
-		t = time.Now()
-	}
-	for resType, units := range resourceMap {
-		historyID := generateHistoryID()
-		mutation, err := spannerdata.WorkUnitStatusHistoryToInsertMutation(xid, wid, historyID, eid, queueName, currentState, newState, resType, units, t)
-		if err != nil {
-			continue
-		}
-		tx.BufferWrite([]*spanner.Mutation{mutation})
-	}
-}
-
-func generateHistoryID() int64 {
-	return mrand.Int63n(math.MaxInt64-1) + 1
 }
 
 // Repository handles Spanner operations for status history and velocity metrics.
@@ -111,12 +67,31 @@ func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
 	}
 }
 
-// SaveWorkUnitStatusHistoryIfChanged buffers a work unit status history mutation if the state changed using the bound read-write transaction.
-// TODO(b/517479143): Mutation build/buffer failures are currently logged and skipped by the
-// delegated helper; return them once it is inlined here.
-func (r *TxRepository) SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
-	SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, eid, queueName, prevState, newState, resources, timestamp, r.tx)
-	return nil
+// SaveWorkUnitStatusHistory buffers work unit status history mutations using the bound read-write transaction.
+func (r *TxRepository) SaveWorkUnitStatusHistory(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
+	if ctx == nil {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if r.tx == nil {
+		return fmt.Errorf("transaction must not be nil")
+	}
+	mutations := make([]*spanner.Mutation, 0, len(resources))
+	for resType, units := range resources {
+		historyID := generateHistoryID()
+		mutation, err := spannerdata.WorkUnitStatusHistoryToInsertMutation(xid, wid, historyID, eid, queueName, prevState, newState, resType, units, timestamp)
+		if err != nil {
+			return err
+		}
+		mutations = append(mutations, mutation)
+	}
+	return r.tx.BufferWrite(mutations)
+}
+
+func generateHistoryID() int64 {
+	return mrand.Int63n(math.MaxInt64-1) + 1
 }
 
 // FetchBatchQueueVelocity queries the WorkUnitStatusHistory table for multiple queues and returns raw rows.
