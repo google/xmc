@@ -92,8 +92,8 @@ func (s *DependencySnapshot) DependencyCycle(_ context.Context, name string) str
 }
 
 // componentUnreadyReason returns "" if obj is enabled (as pre-parsed from its spec), not being
-// deleted, Ready=True at its current metadata.generation and not Degraded; otherwise it returns
-// the first failing reason.
+// deleted, and Ready=True at its current metadata.generation; otherwise it returns the first
+// failing reason.
 func componentUnreadyReason(obj *unstructured.Unstructured, enabled bool) string {
 	if obj.GetDeletionTimestamp() != nil {
 		return "being deleted"
@@ -108,9 +108,6 @@ func componentUnreadyReason(obj *unstructured.Unstructured, enabled bool) string
 	}
 	if ready.ObservedGeneration != obj.GetGeneration() {
 		return "not ready at current generation"
-	}
-	if degraded := findCondition(conds, ConditionTypeDegraded); degraded != nil && degraded.Status == ConditionStatusTrue {
-		return "degraded"
 	}
 	return ""
 }

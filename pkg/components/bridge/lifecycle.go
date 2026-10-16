@@ -37,7 +37,8 @@ const (
 	legacyFinalizerCMSCleanup = "finalizers.xmc.dev/deletion-protection"
 	// ReasonDeactivationBlocked marks a disabled component kept running because enabled components depend on it.
 	ReasonDeactivationBlocked = "DeactivationBlocked"
-	// ReasonDeactivationIncomplete marks a disabled component whose workload was removed before the CMS handshake completed.
+	// ReasonDeactivationIncomplete marks a disabled component with no running workload (removed by an
+	// earlier pass, or never actuated) whose CMS deactivation handshake has not completed.
 	ReasonDeactivationIncomplete = "DeactivationIncomplete"
 	reasonComponentDisabled      = "ComponentDisabled"
 	// deactivationRecheckInterval throttles PrepareDeactivation while deactivation is blocked.
@@ -73,13 +74,13 @@ func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileCompon
 	ref := resolveComponentRef(in)
 	if in.Spec.GetDeletionPolicy() == componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN {
 		if err := r.helmManager.Orphan1PComponent(ctx, ref); err != nil {
-			setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "HelmOrphanFailed", err.Error())
+			setReadiness(res, in, ConditionStatusFalse, "HelmOrphanFailed", err.Error())
 			return fmt.Errorf("failed to orphan 1P Helm component: %w", err)
 		}
 		return nil
 	}
 	if err := r.helmManager.Purge1PComponent(ctx, ref); err != nil {
-		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "HelmDeletionFailed", err.Error())
+		setReadiness(res, in, ConditionStatusFalse, "HelmDeletionFailed", err.Error())
 		return fmt.Errorf("failed to delete 1P Helm component: %w", err)
 	}
 	return nil
@@ -118,7 +119,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 		}
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
-	setReadiness(res, in, ConditionStatusFalse, ConditionStatusFalse, reasonComponentDisabled, "Component is disabled")
+	setReadiness(res, in, ConditionStatusFalse, reasonComponentDisabled, "Component is disabled")
 	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready=False"); err != nil && status.Code(err) != codes.NotFound {
 		setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
 		return res, fmt.Errorf("failed to update observed generation in CMS: %w", err)
@@ -169,16 +170,32 @@ func recentDeactivationBlock(in ReconcileComponentInput) (string, bool) {
 }
 
 // reportDeactivationBlocked reports DeactivationBlocked=True with msg; checked marks a fresh CMS
-// check, restarting the recheck interval. Ready keeps DeactivationIncomplete if the workload is gone.
+// check, restarting the recheck interval. Ready reports DeactivationIncomplete when no workload is
+// running (an earlier pass removed it, or it was never actuated), so no local health probe runs.
 func (r *Reconciler) reportDeactivationBlocked(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, msg string, checked bool) (*ReconcileResult, error) {
 	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDeactivationBlocked, ConditionStatusTrue, in.Generation, ReasonDeactivationBlocked, msg)
 	if cond := findCondition(res.Conditions, ConditionTypeDeactivationBlocked); checked && cond != nil {
 		cond.LastTransitionTime = time.Now().UTC()
 	}
-	if wasTornDown(in) {
-		return r.reportGated(ctx, in, canonicalName, res, ReasonDeactivationIncomplete, "workload already removed; "+msg, ConditionStatusTrue)
+	if wasTornDown(in) || !r.isActuated(in) {
+		return r.reportGated(ctx, in, canonicalName, res, ReasonDeactivationIncomplete, "no workload is running; "+msg)
 	}
-	return r.reportGated(ctx, in, canonicalName, res, ReasonDeactivationBlocked, msg, ConditionStatusFalse)
+	return r.reportBlockedWorkload(ctx, in, canonicalName, res, msg)
+}
+
+// reportBlockedWorkload reports a component whose deactivation is blocked by active dependents. Its
+// workload keeps running and serving them, so Ready follows the workload's local health (normally
+// True) while Stalled=True (DeactivationBlocked) surfaces the block.
+func (r *Reconciler) reportBlockedWorkload(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, msg string) (*ReconcileResult, error) {
+	r.evaluateLocalHealth(ctx, in, canonicalName, res)
+	readyStatus := ConditionStatusUnknown
+	if ready := findCondition(res.Conditions, ConditionTypeReady); ready != nil {
+		readyStatus = ready.Status
+	}
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	deleteCondition(&res.Conditions, ConditionTypeReconciling)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeStalled, ConditionStatusTrue, in.Generation, ReasonDeactivationBlocked, msg)
+	return res, r.syncReadyToCMS(ctx, in, canonicalName, res, readyStatus)
 }
 
 // wasTornDown reports whether a previous pass removed the workload without completing deactivation.
@@ -187,14 +204,14 @@ func wasTornDown(in ReconcileComponentInput) bool {
 	return ready != nil && ready.Reason == ReasonDeactivationIncomplete
 }
 
-// markDeactivationFailed records Ready=False, Degraded=True with reason, or DeactivationIncomplete
+// markDeactivationFailed records Ready=False, Reconciling=True with reason, or DeactivationIncomplete
 // once an earlier pass removed the workload (the handshake is retried every pass).
 func markDeactivationFailed(in ReconcileComponentInput, res *ReconcileResult, reason, msg string) {
 	if wasTornDown(in) {
 		reason = ReasonDeactivationIncomplete
 	}
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-	setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, reason, msg)
+	setReadiness(res, in, ConditionStatusFalse, reason, msg)
 }
 
 func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {
@@ -215,7 +232,7 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 	}
 	if err := r.helmManager.Delete1PComponent(ctx, ref); err != nil {
 		res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		setReadiness(res, in, ConditionStatusFalse, ConditionStatusTrue, "HelmDeletionFailed", err.Error())
+		setReadiness(res, in, ConditionStatusFalse, "HelmDeletionFailed", err.Error())
 		return fmt.Errorf("failed to delete 1P Helm component: %w", err)
 	}
 	return nil

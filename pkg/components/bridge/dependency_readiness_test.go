@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-// readyComponent returns a baseline enabled Component at generation 2 with Ready=True and Degraded=False
+// readyComponent returns a baseline enabled Component at generation 2 with Ready=True
 // at that generation. mutate applies a targeted delta.
 func readyComponent(name string, mutate func(u *unstructured.Unstructured)) unstructured.Unstructured {
 	u := unstructured.Unstructured{Object: map[string]any{
@@ -31,7 +31,6 @@ func readyComponent(name string, mutate func(u *unstructured.Unstructured)) unst
 		"spec":     map[string]any{"enabled": true},
 		"status": map[string]any{"conditions": []any{
 			map[string]any{"type": ConditionTypeReady, "status": ConditionStatusTrue, "observedGeneration": int64(2)},
-			map[string]any{"type": ConditionTypeDegraded, "status": ConditionStatusFalse, "observedGeneration": int64(2)},
 		}},
 	}}
 	if mutate != nil {
@@ -178,14 +177,6 @@ func TestDependencySnapshot_IsDependencyReady(t *testing.T) {
 			})},
 			dep:  "redpanda",
 			want: result{Reason: "not ready at current generation"},
-		},
-		{
-			name: "degraded",
-			items: []unstructured.Unstructured{readyComponent("redpanda", func(u *unstructured.Unstructured) {
-				setConditionStatus(u, 1, "status", ConditionStatusTrue)
-			})},
-			dep:  "redpanda",
-			want: result{Reason: "degraded"},
 		},
 	}
 	for _, tt := range tests {

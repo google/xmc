@@ -203,7 +203,7 @@ func TestReconcileComponent_GatedDependentBlocksDeactivationInCMS(t *testing.T) 
 	got := summarizeGate(disabled, &mockCMS{}, &mockHelm{})
 	want := gateOutcome{
 		State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-		ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonDeactivationBlocked, DegradedStatus: ConditionStatusFalse,
+		ReadyStatus: ConditionStatusTrue, ReadyReason: ReasonComponentHealthy, StalledStatus: ConditionStatusTrue,
 		DeactivationBlocked: ConditionStatusTrue,
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -227,32 +227,42 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 	}
 	disabled := func(o gateOutcome) gateOutcome {
 		o.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
-		o.ReadyStatus, o.ReadyReason, o.DegradedStatus = ConditionStatusFalse, reasonComponentDisabled, ConditionStatusFalse
+		o.ReadyStatus, o.ReadyReason = ConditionStatusFalse, reasonComponentDisabled
 		o.SetCalls = 1
 		return o
 	}
+	// blocked keeps the running workload Ready (its health is unchanged) and surfaces the block
+	// through Stalled=True (DeactivationBlocked) and DeactivationBlocked=True.
 	blocked := func(prepareCalls int) gateOutcome {
 		return gateOutcome{
 			State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-			ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonDeactivationBlocked, DegradedStatus: ConditionStatusFalse,
+			ReadyStatus: ConditionStatusTrue, ReadyReason: ReasonComponentHealthy, StalledStatus: ConditionStatusTrue,
 			DeactivationBlocked: ConditionStatusTrue, SetCalls: 1, PrepareCalls: prepareCalls,
 		}
 	}
 	failed := func(reason string, o gateOutcome) gateOutcome {
 		o.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-		o.ReadyStatus, o.ReadyReason, o.DegradedStatus = ConditionStatusFalse, reason, ConditionStatusTrue
+		o.ReadyStatus, o.ReadyReason, o.ReconcilingStatus = ConditionStatusFalse, reason, ConditionStatusTrue
 		o.SetCalls = 1
 		return o
 	}
+	// noWorkloadBlocked is a blocked component without a running workload (torn down earlier or
+	// never actuated): no health probe runs and Ready reports DeactivationIncomplete.
+	noWorkloadBlocked := gateOutcome{
+		State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+		ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonDeactivationIncomplete, ReconcilingStatus: ConditionStatusTrue,
+		DeactivationBlocked: ConditionStatusTrue, SetCalls: 1, PrepareCalls: 1,
+	}
 	tests := []struct {
-		name     string
-		cms      *mockCMS
-		helm     *mockHelm
-		spec     *componentspb.ComponentSpec
-		existing []Condition
-		want     gateOutcome
-		wantMsg  string
-		wantErr  bool
+		name           string
+		cms            *mockCMS
+		helm           *mockHelm
+		spec           *componentspb.ComponentSpec
+		existing       []Condition
+		want           gateOutcome
+		wantMsg        string
+		wantStalledMsg string
+		wantErr        bool
 	}{
 		{
 			name: "no active dependents deletes workload and completes handshake",
@@ -262,22 +272,22 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 		{
 			name: "active dependent blocks deactivation and keeps workload",
 			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
-			want: blocked(1), wantMsg: blockedMsg,
+			want: blocked(1), wantStalledMsg: blockedMsg,
 		},
 		{
 			name: "active dependent blocks 3P wrapper deactivation",
 			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{}, spec: spec3P, existing: wasReady,
-			want: blocked(1), wantMsg: blockedMsg,
+			want: blocked(1), wantStalledMsg: blockedMsg,
 		},
 		{
 			name: "recent block skips the CMS recheck",
 			cms:  &mockCMS{}, helm: &mockHelm{active: true}, spec: spec1P, existing: blockedAt(2, 5*time.Second),
-			want: blocked(0), wantMsg: blockedMsg,
+			want: blocked(0), wantStalledMsg: blockedMsg,
 		},
 		{
 			name: "block older than the recheck interval is rechecked",
 			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{active: true}, spec: spec1P, existing: blockedAt(2, time.Minute),
-			want: blocked(1), wantMsg: blockedMsg,
+			want: blocked(1), wantStalledMsg: blockedMsg,
 		},
 		{
 			name: "block at an older generation is rechecked",
@@ -306,7 +316,7 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 			cms:  &mockCMS{prepareErr: status.Error(codes.Unavailable, "cms down")}, helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
 			want: gateOutcome{
 				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-				ReadyStatus: ConditionStatusUnknown, ReadyReason: ReasonCMSSyncFailed, DegradedStatus: ConditionStatusFalse,
+				ReadyStatus: ConditionStatusUnknown, ReadyReason: ReasonCMSSyncFailed, ReconcilingStatus: ConditionStatusTrue,
 				SetCalls: 1, PrepareCalls: 1,
 			},
 			wantErr: true,
@@ -326,12 +336,22 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 		{
 			name: "block after teardown keeps reporting DeactivationIncomplete",
 			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{}, spec: spec1P, existing: tornDown,
-			want: gateOutcome{
-				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-				ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonDeactivationIncomplete, DegradedStatus: ConditionStatusTrue,
-				DeactivationBlocked: ConditionStatusTrue, SetCalls: 1, PrepareCalls: 1,
-			},
-			wantMsg: "workload already removed; " + blockedMsg,
+			want:    noWorkloadBlocked,
+			wantMsg: "no workload is running; " + blockedMsg,
+		},
+		{
+			name: "block of a never-actuated 1P component skips the health probe",
+			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{unhealthyReason: ReasonHelmReleaseNotFound}, spec: spec1P,
+			existing: []Condition{{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: ReasonDependenciesNotReady}},
+			want:     noWorkloadBlocked,
+			wantMsg:  "no workload is running; " + blockedMsg,
+		},
+		{
+			name: "block of an already-disabled 3P wrapper at a new generation skips the health probe",
+			cms:  &mockCMS{prepareErr: blockedErr}, helm: &mockHelm{}, spec: spec3P,
+			existing: []Condition{{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 1, Reason: reasonComponentDisabled}},
+			want:     noWorkloadBlocked,
+			wantMsg:  "no workload is running; " + blockedMsg,
 		},
 		{
 			name: "prepare failure after teardown keeps reporting DeactivationIncomplete",
@@ -359,7 +379,7 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 			cms:  &mockCMS{setErr: status.Error(codes.Unavailable, "cms down")}, helm: &mockHelm{active: true}, spec: spec1P, existing: wasReady,
 			want: gateOutcome{
 				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
-				ReadyStatus: ConditionStatusUnknown, ReadyReason: ReasonCMSSyncFailed, DegradedStatus: ConditionStatusFalse,
+				ReadyStatus: ConditionStatusUnknown, ReadyReason: ReasonCMSSyncFailed, ReconcilingStatus: ConditionStatusTrue,
 				SetCalls: 1,
 			},
 			wantErr: true,
@@ -379,6 +399,12 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 				t.Errorf("ReconcileComponent() outcome mismatch (-want +got):\n%s", diff)
 			}
 			checkReadyMessage(t, res, tt.wantMsg)
+			if c := findCondition(res.Conditions, ConditionTypeStalled); tt.wantStalledMsg != "" && (c == nil || c.Reason != ReasonDeactivationBlocked || c.Message != tt.wantStalledMsg) {
+				t.Errorf("Stalled condition = %+v, want reason %s and message %q", c, ReasonDeactivationBlocked, tt.wantStalledMsg)
+			}
+			if wantObsGen := int64(2); err == nil && res.ObservedGeneration != wantObsGen {
+				t.Errorf("ObservedGeneration = %d, want %d (stamped for every evaluated outcome)", res.ObservedGeneration, wantObsGen)
+			}
 		})
 	}
 }
@@ -410,7 +436,7 @@ func TestReconcileComponent_DeactivationUnblocksAcrossPasses(t *testing.T) {
 	}
 	want := gateOutcome{
 		State:       componentspb.ComponentState_COMPONENT_STATE_DISABLED,
-		ReadyStatus: ConditionStatusFalse, ReadyReason: reasonComponentDisabled, DegradedStatus: ConditionStatusFalse,
+		ReadyStatus: ConditionStatusFalse, ReadyReason: reasonComponentDisabled,
 		SetCalls: 2, PrepareCalls: 2, CompleteCalls: 1, HelmDeleted: true,
 	}
 	if diff := cmp.Diff(want, summarizeGate(second, cms, helm)); diff != "" {

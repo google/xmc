@@ -25,7 +25,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
-func buildFakeComponentCR(name, namespace string, enabled bool, gen, obsGen int64, readyStatus, readyReason, degradedStatus string) *unstructured.Unstructured {
+func buildFakeComponentCR(name, namespace string, enabled bool, gen, obsGen int64, readyStatus, readyReason, stalledStatus string) *unstructured.Unstructured {
 	var conds []any
 	if readyStatus != "" {
 		conds = append(conds, map[string]any{
@@ -35,12 +35,12 @@ func buildFakeComponentCR(name, namespace string, enabled bool, gen, obsGen int6
 			"message": "ready message",
 		})
 	}
-	if degradedStatus != "" {
+	if stalledStatus != "" {
 		conds = append(conds, map[string]any{
-			"type":    "Degraded",
-			"status":  degradedStatus,
-			"reason":  "DegradedReason",
-			"message": "degraded message",
+			"type":    "Stalled",
+			"status":  stalledStatus,
+			"reason":  "StalledReason",
+			"message": "stalled message",
 		})
 	}
 	return &unstructured.Unstructured{

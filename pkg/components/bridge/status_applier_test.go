@@ -130,8 +130,7 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 		}
 		gotMap := BuildStatusMap(nil)
 		wantMap := map[string]any{
-			"observedGeneration": int64(0),
-			"state":              "",
+			"state": "",
 		}
 		if diff := cmp.Diff(wantMap, gotMap); diff != "" {
 			t.Errorf("BuildStatusMap(nil) mismatch (-want +got):\n%s", diff)

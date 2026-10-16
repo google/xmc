@@ -187,7 +187,7 @@ func (c *Client) fetchComponentResource(ctx context.Context, name, namespace str
 	return nil, apierrors.NewServiceUnavailable("no kubernetes client available to fetch component")
 }
 
-// evaluateComponentHealth checks whether the component is fully initialized and healthy (Ready=True, Degraded!=True).
+// evaluateComponentHealth checks whether the component is fully initialized and healthy (Ready=True).
 func evaluateComponentHealth(comp *unstructured.Unstructured) (bool, string) {
 	if comp == nil || comp.Object == nil {
 		return true, ""
@@ -225,12 +225,6 @@ func checkConditionHealth(c any) (bool, string) {
 	if cType == "Ready" && cStatus != "True" {
 		if reason == "" {
 			reason = fmt.Sprintf("Ready condition is %s", cStatus)
-		}
-		return false, reason
-	}
-	if cType == "Degraded" && cStatus == "True" {
-		if reason == "" {
-			reason = "Degraded condition is True"
 		}
 		return false, reason
 	}
