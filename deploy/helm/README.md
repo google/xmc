@@ -38,7 +38,7 @@ featureFlags:
 
 ### 2. Microservice Deployment Settings
 
-Each microservice (`actuator`, `reconciler`, `ess`, `xid`, `ui`, `logMonitor`) can be independently scaled, configured with resource requests/limits, and assigned container image coordinates:
+Each microservice (`actuator`, `reconciler`, `ess`, `xid`, `ui`, `healthService`, `logMonitor`) can be independently scaled, configured with resource requests/limits, and assigned container image coordinates:
 
 ```yaml
 actuator:
@@ -55,6 +55,14 @@ actuator:
     requests:
       cpu: "250m"
       memory: "256Mi"
+
+healthService:
+  cacheTTL: "15s"
+  forceRefreshMaxRequests: 5
+  forceRefreshWindow: "5s"
+  # Paused task resumption tuning (when featureFlags.pause_scheduling_enabled is true)
+  schedulingResumeBatchSize: 100
+  schedulingResumeMaxBacklog: 500
 ```
 
 ---

@@ -237,6 +237,19 @@ scheduling pause controls: `GetSchedulingStatus` (available to all authenticated
 render the scheduling-paused banner) and the admin-guarded `PauseScheduling` / `ResumeScheduling`
 RPCs (see [Work Unit Lifecycle §7](work_unit_lifecycle.md#7-pause-and-resume-workload-scheduling)).
 
+### 4.1 Pause Scheduling & Resumption Observability
+
+When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled, the Health Service, Actuator, and ESS expose Prometheus metrics under `/metrics`:
+
+| Metric | Type | Component | Labels | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `xmc_actuator_scheduling_paused` | Gauge | Actuator | — | Current pause state in the local Actuator cache (1 = paused, 0 = unpaused). |
+| `xmc_actuator_paused_tasks_buffered_total` | Counter | Actuator | `action` | Total WorkUnit tasks intercepted and buffered into Spanner `PausedTasks` during pause. |
+| `xmc_resumption_tasks_total` | Counter | ESS | `action`, `result` | Paused tasks processed during resumption replay, differentiating `replayed` from `skipped`. |
+| `xmc_resumption_throttles_total` | Counter | ESS | — | Number of times the resumption worker paused replay for 10s due to task queue backlog. |
+| `xmc_resumption_errors_total` | Counter | ESS | `stage` | Errors encountered by the resumption worker during replay batches. |
+| `xmc_scheduling_pause_events_total` | Counter | Health Service | `action`, `status` | Total count of pause and resume operations triggered via the Health Service API. |
+
 ---
 
 ## 5. Resource Observability (ROD)

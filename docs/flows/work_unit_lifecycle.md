@@ -314,11 +314,12 @@ sequenceDiagram
 3. Before each batch, the worker checks the `actuator-group` backlog on `xmc-tasks-stream`; if
    unprocessed tasks reach `schedulingResumeMaxBacklog` (default `500`), it pauses replay for 10s
    and extends its Redis message claim.
-4. Tasks whose work unit has moved to a newer execution ID, reached a terminal/stopping state
-   (`COMPLETED`, `STOPPED`, `STOPPING`, `FAILED`), or carries a superseded `Update` priority are
-   marked `skipped` rather than re-enqueued. Replayed tasks carry `resumption_time` in their
-   metadata so any Actuator replica whose broadcast listener lagged behind immediately advances its
-   local cache to unpaused.
+4. Before replaying, the worker evaluates each task against live WorkUnit state and marks it `skipped` if:
+   - A newer execution ID exists on the parent WorkUnit (for `RestartAction`, obsolete if `wuEid > taskEid + 1`).
+   - The WorkUnit is in a terminal or stopping execution state (`COMPLETED`, `STOPPED`, `STOPPING`, `FAILED`).
+   - An `UpdateAction` was buffered while the WorkUnit is in `SCHEDULING_PAUSED` state (the replayed `Create` or `Restart` task builds the JobSet using current Spanner specs directly).
+   - An `UpdateAction` priority does not match the live WorkUnit priority (superseded update).
+   Eligible tasks are re-enqueued to `xmc-tasks-stream` with `resumption_time` in their metadata so any Actuator replica whose broadcast listener lagged behind immediately advances its local cache to unpaused.
 
 ---
 
