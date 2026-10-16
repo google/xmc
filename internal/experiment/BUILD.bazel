@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "experiment",
     srcs = [
+        "driftdetection.go",
         "updateexperimentlaunchstate.go",
     ],
     importpath = "xmanager_cloud/internal/experiment",
@@ -38,12 +39,14 @@ go_library(
 go_test(
     name = "experiment_test",
     srcs = [
+        "driftdetection_test.go",
         "updateexperimentlaunchstate_test.go",
     ],
+    embed = [":experiment"],
     deps = [
-        ":experiment",
         "//api/protos/experiment:messages_go_proto",
         "//internal/grpcerr",
+        "//internal/storage",
         "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",
         "//internal/validator",

@@ -76,6 +76,11 @@ func (h *ExperimentHandler) GetExperimentStatus(ctx context.Context, req *msgpb.
 		return nil, fmt.Errorf("failed to retrieve experiment %s from storage: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 
+	// 4.1. Evaluate component drift for the experiment status.
+	if err := h.driftEvaluator.Evaluate(ctx, xid, exp); err != nil {
+		logging.Warn(ctx, "Failed to evaluate experiment drift", "xid", xid, "error", err)
+	}
+
 	// 5. Return the successful response.
 	logging.Info(ctx, "Fetched experiment status", "status", exp)
 	return exp, nil
