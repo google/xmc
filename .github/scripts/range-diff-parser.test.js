@@ -25,7 +25,8 @@ test('extractRangeDiffFilePath parses outer hunk and inner file headers', () => 
   assert.strictEqual(extractRangeDiffFilePath('@@ pkg/b.go: func Foo() {'), 'pkg/b.go');
   assert.strictEqual(extractRangeDiffFilePath('@@ pkg/b.go:'), 'pkg/b.go');
   assert.strictEqual(extractRangeDiffFilePath('## pkg/new_test.go (new) ##'), 'pkg/new_test.go');
-  assert.strictEqual(extractRangeDiffFilePath('## pkg/old.go => pkg/old_test.go ##'), 'pkg/old_test.go');
+  assert.strictEqual(extractRangeDiffFilePath('## pkg/old.go => pkg/old_test.go ##'), 'pkg/old.go');
+  assert.strictEqual(extractRangeDiffFilePath('## pkg/a_test.go => pkg/b_test.go ##'), 'pkg/b_test.go');
   assert.strictEqual(extractRangeDiffFilePath('## pkg/c.go ##'), 'pkg/c.go');
   assert.strictEqual(extractRangeDiffFilePath('@@'), null);
   assert.strictEqual(extractRangeDiffFilePath('@@ -1,3 +1,4 @@'), null);
@@ -92,6 +93,91 @@ test('parseRangeDiff resets current file across commits', () => {
   const result = parseRangeDiff(sampleOutput);
   assert.strictEqual(result.totalDelta, 2);
   assert.strictEqual(result.testDelta, 1);
+});
+
+test('parseRangeDiff ignores forged file headers in added code lines', () => {
+  // Captured from real `git range-diff`: an added prod line whose text is `## a_test.go ##`.
+  const sampleOutput = [
+    '1:  a1b2c3d ! 1:  e5f6g7h Commit',
+    '    @@ p/prod.py (new)',
+    '     +1',
+    '    ++## a_test.go ##',
+    '    ++@@ fake',
+    '    ++EVIL1',
+    '    ++EVIL2'
+  ].join('\n');
+  const result = parseRangeDiff(sampleOutput);
+  assert.strictEqual(result.totalDelta, 4);
+  assert.strictEqual(result.testDelta, 0);
+});
+
+test('parseRangeDiff ignores forged section headers in context lines', () => {
+  const sampleOutput = [
+    '1:  a1b2c3d ! 1:  e5f6g7h Commit',
+    '    @@ p/prod.go: func Foo() {',
+    '    + ## a_test.go ##',
+    '    +@@',
+    '    ++EVIL1',
+    '      ## Commit message ##',
+    '    ++EVIL2'
+  ].join('\n');
+  const result = parseRangeDiff(sampleOutput);
+  // Forged lines are counted as code: the added context line + 2 EVIL lines.
+  assert.strictEqual(result.totalDelta, 3);
+  assert.strictEqual(result.testDelta, 0);
+});
+
+test('parseRangeDiff drops an unconfirmed file header to unknown (non-test)', () => {
+  const sampleOutput = [
+    '1:  a1b2c3d ! 1:  e5f6g7h Commit',
+    '    @@ p/a_test.go (new)',
+    '     ',
+    '    + ## p/b_test.go (new) ##',
+    '    ++line'
+  ].join('\n');
+  const result = parseRangeDiff(sampleOutput);
+  // Only `++line` counts; the unconfirmed header leaves the file unknown.
+  assert.strictEqual(result.totalDelta, 1);
+  assert.strictEqual(result.testDelta, 0);
+});
+
+test('parseRangeDiff resets file on outer header without a path', () => {
+  const sampleOutput = [
+    '1:  a1b2c3d ! 1:  e5f6g7h Commit',
+    '    @@ p/a_test.go (new)',
+    '    ++x',
+    '    @@',
+    '    ++y'
+  ].join('\n');
+  const result = parseRangeDiff(sampleOutput);
+  assert.strictEqual(result.totalDelta, 2);
+  assert.strictEqual(result.testDelta, 1);
+});
+
+test('parseRangeDiff skips metadata and commit message sections', () => {
+  // Captured from real `git range-diff` with author and message changes.
+  const sampleOutput = [
+    '1:  d1d6891 ! 1:  2daeff1 c1',
+    '    @@',
+    '      ## Metadata ##',
+    '    -Author: A <a@example.com>',
+    '    +Author: B <a@example.com>',
+    '     ',
+    '      ## Commit message ##',
+    '    -    c1',
+    '    +    c1 changed msg',
+    '     ',
+    '      ## p/a_test.go (new) ##',
+    '     @@',
+    '    @@ p/a_test.go (new)',
+    '    -+5',
+    '    ++FIVE'
+  ].join('\n');
+  const result = parseRangeDiff(sampleOutput);
+  // The leading `## Metadata ##` follows an outer header, so it is not trusted and the
+  // author lines count conservatively (2); the commit message section is skipped.
+  assert.strictEqual(result.totalDelta, 4);
+  assert.strictEqual(result.testDelta, 2);
 });
 
 test('parseRangeDiff handles empty or invalid output safely', () => {
