@@ -44,11 +44,15 @@ func TestListDashboards_Basic(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	for i := 1; i <= 3; i++ {
-		dash := blankDashboardProto(fmt.Sprintf("dashboards/test-list-basic-%d", i))
-		dash.Title = fmt.Sprintf("Dashboard Title %d", i)
+	// Insert with ascending lexicographical prefixes ("a-", "b-", "c-") in sequential commits
+	// so default ordering (created DESC, dashboard_id ASC) returns newest first ("c-", "b-", "a-"),
+	// rather than primary-key alphabetical order.
+	names := []string{"dashboards/a-oldest", "dashboards/b-middle", "dashboards/c-newest"}
+	for i, name := range names {
+		dash := blankDashboardProto(name)
+		dash.Title = fmt.Sprintf("Dashboard Title %d", i+1)
 		if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
-			t.Fatalf("CreateDashboard %d failed: %v", i, err)
+			t.Fatalf("CreateDashboard %s failed: %v", name, err)
 		}
 	}
 
@@ -58,6 +62,12 @@ func TestListDashboards_Basic(t *testing.T) {
 	}
 	if len(dashboards) != 3 {
 		t.Fatalf("got %d dashboards, want 3", len(dashboards))
+	}
+	wantOrder := []string{"dashboards/c-newest", "dashboards/b-middle", "dashboards/a-oldest"}
+	for i, wantName := range wantOrder {
+		if dashboards[i].GetName() != wantName {
+			t.Errorf("dashboards[%d].Name = %q, want %q", i, dashboards[i].GetName(), wantName)
+		}
 	}
 }
 
