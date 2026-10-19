@@ -128,6 +128,12 @@ var (
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
 			{TableField: DashboardIDTableField, SortOrder: querytools.Asc},
 		},
+		// Default ListDashboards order: newest first; dashboard_id is a unique tie-breaker so
+		// page-token cursors are deterministic.
+		OrderByFieldsWithSortDirection: []querytools.UserOrderedIndex{
+			{TableField: CreatedTableField, SortOrder: querytools.Desc},
+			{TableField: DashboardIDTableField, SortOrder: querytools.Asc},
+		},
 	}
 
 	chartsTableView = querytools.TableView{
