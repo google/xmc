@@ -136,7 +136,7 @@ export class DashboardsListPage implements OnInit {
   }
 
   refresh(): void {
-    this.resetPagination();
+    this.pagination.set(getInitialPaginationState(this.pagination().pageSize));
     this.loadDashboards();
   }
 
@@ -159,10 +159,6 @@ export class DashboardsListPage implements OnInit {
     }
     this.pagination.set(goToPreviousPage({ pagination: this.pagination() }).pagination);
     this.loadDashboards();
-  }
-
-  resetPagination(): void {
-    this.pagination.set(getInitialPaginationState(this.pagination().pageSize));
   }
 
   getDashboardId(name?: string): string {
@@ -201,15 +197,13 @@ export class DashboardsListPage implements OnInit {
             this.router.navigate(['/dashboards', id]);
             return;
           }
-          this.resetPagination();
-          this.loadDashboards();
+          this.refresh();
         },
         error: (err) => {
           this.isLoading.set(false);
           this.snackbar?.open?.('Failed to create dashboard');
           console.error('Error creating dashboard:', err);
-          this.resetPagination();
-          this.loadDashboards();
+          this.refresh();
         },
       });
   }

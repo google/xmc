@@ -14,13 +14,13 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 import { MatButtonHarness } from '@angular/material/button/testing';
-import { MatTableHarness } from '@angular/material/table/testing';
 
 /**
  * Component harness for DashboardsListPage.
  */
 export class DashboardsListPageHarness extends ComponentHarness {
-  static hostSelector = 'xmc-dashboards-list-page';
+  static hostSelector =
+    'xmc-dashboards-list-page, [data-component-selector="xmc-dashboards-list-page"]';
 
   private readonly refreshButton = this.locatorFor(
     MatButtonHarness.with({ selector: '.action-button' }),
@@ -32,7 +32,6 @@ export class DashboardsListPageHarness extends ComponentHarness {
     MatButtonHarness.with({ selector: '[data-test-id="next-page-button"]' }),
   );
   private readonly pageLabelEl = this.locatorForOptional('.page-label');
-  private readonly table = this.locatorFor(MatTableHarness);
 
   async clickRefresh(): Promise<void> {
     return (await this.refreshButton()).click();
@@ -54,16 +53,8 @@ export class DashboardsListPageHarness extends ComponentHarness {
     return (await this.prevPageButton()).isDisabled();
   }
 
-  async isRefreshDisabled(): Promise<boolean> {
-    return (await this.refreshButton()).isDisabled();
-  }
-
   async getPageLabelText(): Promise<string | null> {
     const el = await this.pageLabelEl();
     return el ? el.text() : null;
-  }
-
-  async getTable(): Promise<MatTableHarness> {
-    return this.table();
   }
 }
