@@ -18,8 +18,6 @@ load("//:oci.bzl", "oci_image_for_service")
 go_library(
     name = "experiment_state_server_lib",
     srcs = [
-        "auth_dev.go",
-        "auth_prod.go",
         "health.go",
         "main.go",
     ],

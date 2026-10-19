@@ -48,6 +48,11 @@ func main() {
 	if err != nil {
 		logging.Fatal(ctx, "failed to load oauth configuration", "error", err)
 	}
+	// Admission falls back to the project IAM policy; default to the deployment project as the
+	// other XMC services do.
+	if oauthCfg.GCPProjectID == "" {
+		oauthCfg.GCPProjectID = cfg.QuotaProjectID
+	}
 
 	// 2. Initialize runtime server.
 	runtimeServer, err := server.NewRuntimeServer(ctx, &cfg, oauthCfg)

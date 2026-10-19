@@ -50,6 +50,10 @@ type AuthorizerInterface interface {
 	// which uniquely identifies the user, and an error if the user is not authenticated.
 	// Se https://docs.cloud.google.com/iap/docs/signed-headers-howto#retrieving_the_user_identity
 	// for more details about the user ID and email.
+	//
+	// After authenticating, it also runs the deployment admission check (see
+	// AuthorizerParams.Admission): an authenticated principal that is not admitted gets a
+	// PermissionDenied error.
 	AuthenticateUserFromContext(ctx context.Context) (string, string, error)
 	// IsUserAuthorized checks whether the user has the given role in the ACLs. It returns true if the
 	// user has the given role, and an error if the authorization check fails.
@@ -81,6 +85,32 @@ type Authorizer struct {
 	iapIssuer     string
 	jwtSecret     []byte
 	jwksValidator TokenValidator
+	admission     AdmissionChecker
+	// requireVerifiedJWKSEmail makes the JWKS path reject tokens that do not assert
+	// email_verified=true, instead of only those that explicitly deny it.
+	requireVerifiedJWKSEmail bool
+}
+
+// AuthorizerParams configures NewAuthorizer.
+type AuthorizerParams struct {
+	// IDService resolves group memberships for ACL checks.
+	IDService *cloudidentity.Service
+	// CacheTTL (e.g. 10 * time.Minute) is how long group membership results are cached, and
+	// CacheErrorTTL how long failed lookups are.
+	CacheTTL      time.Duration
+	CacheErrorTTL time.Duration
+	// IAPAudiences are the accepted audiences of Google ID tokens and JWKS tokens.
+	IAPAudiences []string
+	// IAPIssuer is the accepted issuer of IAP assertions and JWKS tokens. Required.
+	IAPIssuer string
+	// JWTSecret verifies XMC session tokens. Empty disables the session token path.
+	JWTSecret []byte
+	// Admission decides whether an authenticated principal may use the deployment. Required; pass
+	// AdmitAll only when authentication is disabled (see DeploymentAdmission).
+	Admission AdmissionChecker
+	// RequireVerifiedJWKSEmail should be set when a domain allowlist is configured: admitting by
+	// email domain is only sound for emails the identity provider has verified.
+	RequireVerifiedJWKSEmail bool
 }
 
 // SetJWKSValidator configures a JWKS token validator for OIDC token verification.
@@ -89,32 +119,28 @@ func (a *Authorizer) SetJWKSValidator(v TokenValidator) {
 }
 
 // NewAuthorizer creates a new Authorizer with an initialized group cache.
-// cacheTTL (e.g., 10 * time.Minute) defines how long to cache results.
-func NewAuthorizer(ctx context.Context, idService *cloudidentity.Service, cacheTTL time.Duration, cacheErrorTTL time.Duration, iapAudiences []string, iapIssuer string, args ...any) (*Authorizer, error) {
-	for _, aud := range iapAudiences {
+func NewAuthorizer(p AuthorizerParams) (*Authorizer, error) {
+	for _, aud := range p.IAPAudiences {
 		if aud == "" {
 			return nil, fmt.Errorf("IAP audience cannot be an empty string")
 		}
 	}
-
-	if iapIssuer == "" {
+	if p.IAPIssuer == "" {
 		return nil, fmt.Errorf("IAP issuer cannot be an empty string")
 	}
-
-	var jwtSecret []byte
-	if len(args) == 1 {
-		jwtSecret, _ = args[0].([]byte)
-	} else if len(args) >= 2 {
-		jwtSecret, _ = args[1].([]byte)
+	if p.Admission == nil {
+		return nil, fmt.Errorf("admission checker is required")
 	}
 
 	return &Authorizer{
-		IDService:     idService,
-		groupCache:    make(map[string]cacheEntry),
-		cacheTTL:      cacheTTL,
-		cacheErrorTTL: cacheErrorTTL,
-		iapAudiences:  iapAudiences,
-		iapIssuer:     iapIssuer,
-		jwtSecret:     jwtSecret,
+		IDService:                p.IDService,
+		groupCache:               make(map[string]cacheEntry),
+		cacheTTL:                 p.CacheTTL,
+		cacheErrorTTL:            p.CacheErrorTTL,
+		iapAudiences:             p.IAPAudiences,
+		iapIssuer:                p.IAPIssuer,
+		jwtSecret:                p.JWTSecret,
+		admission:                p.Admission,
+		requireVerifiedJWKSEmail: p.RequireVerifiedJWKSEmail,
 	}, nil
 }

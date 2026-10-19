@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "mock",
-    srcs = ["mock.go"],
+    srcs = [
+        "configure_mockauth.go",
+        "configure_prod.go",
+        "mock.go",
+    ],
     importpath = "xmanager_cloud/pkg/auth/oauth2/mock",
     visibility = ["//visibility:public"],
     deps = [
@@ -24,4 +28,26 @@ go_library(
         "@com_google_cloud_go_iam//apiv1/iampb",
         "@org_golang_google_api//idtoken",
     ],
+)
+
+go_test(
+    name = "mock_test",
+    srcs = [
+        "configure_mockauth_test.go",
+        "configure_prod_test.go",
+    ],
+    embed = [":mock"],
+    deps = ["//pkg/auth/oauth2"],
+)
+
+# Exercises the mockauth variant that the *_dev binaries are built with.
+go_test(
+    name = "mock_mockauth_test",
+    srcs = [
+        "configure_mockauth_test.go",
+        "configure_prod_test.go",
+    ],
+    embed = [":mock"],
+    gotags = ["mockauth"],
+    deps = ["//pkg/auth/oauth2"],
 )

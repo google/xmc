@@ -12,17 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build mockauth
+//go:build !mockauth
 
-package main
+package mock
 
-import (
-	"xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/pkg/auth/oauth2/mock"
-)
+import "xmanager_cloud/pkg/auth/oauth2"
 
-func configureAuth(a *oauth2.Authenticator, cfg *oauth2.Config) {
-	if cfg.MockAuth {
-		mock.ConfigureMockAuth(a)
-	}
-}
+// ConfigureIfEnabled is a no-op in binaries built without the mockauth tag, so they never install
+// mock authentication even when MOCK_AUTH is set.
+func ConfigureIfEnabled(*oauth2.Authenticator) {}

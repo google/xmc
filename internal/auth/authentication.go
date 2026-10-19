@@ -31,10 +31,14 @@ import (
 // validate is the function that validates the JWT. It is stubbed out for testing.
 var validate = idtoken.Validate
 
-// AuthenticateUserFromContext authenticates a user's identity from the context.
+// AuthenticateUserFromContext authenticates a user's identity from the context and then runs the
+// deployment admission check on it.
 func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
 	ident, err := a.resolveIdentity(ctx)
 	if err != nil {
+		return "", "", err
+	}
+	if err := a.admit(ctx, ident.email); err != nil {
 		return "", "", err
 	}
 	return ident.email, ident.userID, nil
@@ -152,7 +156,7 @@ func (a *Authorizer) authenticateViaJWKS(ctx context.Context, jwt string) (*auth
 		logging.Debug(ctx, "authenticateViaJWKS: JWKS validation failed", "error", err)
 		return nil, nil
 	}
-	if err := verifyJWKSEmail(ctx, claims); err != nil {
+	if err := a.verifyJWKSEmail(ctx, claims); err != nil {
 		return nil, err
 	}
 	email, ok := jwksEmail(claims)
@@ -169,10 +173,14 @@ func (a *Authorizer) authenticateViaJWKS(ctx context.Context, jwt string) (*auth
 }
 
 // verifyJWKSEmail rejects JWKS tokens whose email is not verified. Dex sets email_verified alongside
-// email, but not every OIDC provider emits the claim, so only an explicit non-true value is
-// rejected.
-func verifyJWKSEmail(ctx context.Context, claims *jwks.Claims) error {
-	if claims.EmailVerified == nil || isTrueClaim(claims.EmailVerified) {
+// email, but not every OIDC provider emits the claim, so by default only an explicit non-true value
+// is rejected. With requireVerifiedJWKSEmail (set when a domain allowlist is configured) the claim
+// must be present and true, because admitting by email domain is only sound for verified emails.
+func (a *Authorizer) verifyJWKSEmail(ctx context.Context, claims *jwks.Claims) error {
+	if isTrueClaim(claims.EmailVerified) {
+		return nil
+	}
+	if claims.EmailVerified == nil && !a.requireVerifiedJWKSEmail {
 		return nil
 	}
 	logging.Warn(ctx, "authenticateViaJWKS: rejecting token without a verified email", "email", claims.Email, "email_verified", claims.EmailVerified)

@@ -89,6 +89,27 @@ account does not invalidate an existing session admitted by the domain allowlist
 
 ---
 
+## Deployment admission
+
+Every authenticated caller must be admitted to the deployment before any per-experiment ACL is
+checked. This applies to browser and HTTP API requests, to gRPC calls to the experiment state
+server (exposed through the gateway), and to the in-cluster gRPC APIs of the XID, dashboard and
+health services. The rod-data-provider gRPC port is in-cluster only, is not part of its Service,
+and performs no authentication. A caller is admitted when it matches, in order:
+
+1. `auth.allowedEmails` (`ALLOWED_EMAILS`),
+2. `auth.allowedDomains` (`ALLOWED_DOMAINS`), or
+3. a direct binding of `auth.authorizedIamRole` (`AUTHORIZED_IAM_ROLE`) on `projectId` for the
+   `user:`, `serviceAccount:` or `domain:` principal. Owner, editor and group bindings do not count.
+
+Human users and service accounts that call gRPC directly, such as CI runners or workloads using
+their own ID token, need one of these entries. The Component Manager Service additionally admits
+`gcpServiceAccount`, the account `xmc-bridge` runs as; no other service admits it by identity.
+`auth.disableAuthentication: true` skips admission on gRPC; use it only on local development
+clusters.
+
+---
+
 ## Out-of-Cluster & Remote Kubernetes Configuration (`k8s.remote`)
 
 By default, the `actuator` and `reconciler` controllers manage `JobSet` and `Workload` resources on the Kubernetes cluster where they are deployed (using standard in-cluster service account tokens via `rest.InClusterConfig()`).

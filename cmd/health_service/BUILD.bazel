@@ -44,6 +44,7 @@ go_library(
         "//internal/storage/spanner/migrations/version",
         "//internal/task_queue_redis/redisclient",
         "//pkg/auth/oauth2",
+        "//pkg/auth/oauth2/mock",
         "//pkg/components/store",
         "//pkg/components/summary",
         "@com_github_google_uuid//:uuid",
