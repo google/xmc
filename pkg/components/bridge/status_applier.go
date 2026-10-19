@@ -115,12 +115,9 @@ func BuildStatusMap(res *ReconcileResult) map[string]any {
 	status := BuildStatus(res)
 	m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&status)
 	if err != nil {
-		fallback := ComponentStatus{
-			ObservedGeneration:  status.ObservedGeneration,
-			ComponentGeneration: status.ComponentGeneration,
-			ComponentID:         status.ComponentID,
-			State:               status.State,
-		}
+		// Drop the composite fields so a failed conversion still reports the scalar status.
+		fallback := status
+		fallback.Access, fallback.Conditions = nil, nil
 		fallbackMap, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(&fallback)
 		return fallbackMap
 	}

@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"testing"
 
+	"google.golang.org/grpc/codes"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -340,6 +341,10 @@ func TestReconcileComponent_ComponentIDPropagation(t *testing.T) {
 	}{
 		{name: "replaced by the committed intent", cms: &mockCMS{componentID: 2}, want: "2"},
 		{name: "kept when the intent write fails", cms: &mockCMS{componentID: 2, setErr: errors.New("cms unavailable")}, wantErr: true, want: "1"},
+		{
+			name: "kept on SourceConflict", want: "1",
+			cms: &mockCMS{componentID: 2, setErr: errorInfoStatus(t, codes.FailedPrecondition, store.ReasonSourceNamespaceConflict, store.ErrorInfoDomain, "owned by namespace team-b")},
+		},
 		{
 			name: "kept while gated on a dependency cycle", cms: &mockCMS{componentID: 2}, want: "1",
 			mutate: func(in *ReconcileComponentInput) { in.Spec, in.Dependencies = spec("redpanda"), cycle },
