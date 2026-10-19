@@ -25,7 +25,9 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
+	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -510,6 +512,64 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 			wantOwner.Generation = 0
 			if finalRec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED || !cmp.Equal(finalRec.Owner, wantOwner) {
 				t.Errorf("final record = (state=%v, owner=%+v), want DISABLED owned by %+v", finalRec.State, finalRec.Owner, wantOwner)
+			}
+		})
+	}
+}
+
+// TestPrepareDeactivation_CascadeKeepsDependentOwner checks the cascade exception on both backends:
+// a forced PrepareDeactivation from the target's owner moves a dependent owned by another CR to
+// DISABLING without checking the dependent's ownership, and keeps the dependent's recorded owner
+// (and, on Spanner, which alone records it, its SourceLastSeenTime).
+func TestPrepareDeactivation_CascadeKeepsDependentOwner(t *testing.T) {
+	const target, dependent = "cascade-target", "cascade-dependent"
+	cluster := store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 1}
+	targetOwner := store.RequestSource{UID: "uid-a", Generation: 1, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 1}
+	dependentOwner := targetOwner
+	dependentOwner.UID = "uid-b"
+	backends := []struct {
+		name     string
+		newStore func(context.Context, *testing.T) (store.Store, *spanner.Client)
+	}{
+		{name: "memory", newStore: func(context.Context, *testing.T) (store.Store, *spanner.Client) { return store.NewMemoryStore(), nil }},
+		{name: "spanner", newStore: func(ctx context.Context, t *testing.T) (store.Store, *spanner.Client) { return setupTestStore(ctx, t) }},
+	}
+	for _, backend := range backends {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			s, client := backend.newStore(ctx, t)
+			if _, err := s.DeclareClusterEpoch(ctx, cluster); err != nil {
+				t.Fatalf("DeclareClusterEpoch() error = %v", err)
+			}
+			if _, err := s.SetSourcedComponentIntent(ctx, target, intentSpec("v1.0.0"), nil, targetOwner); err != nil {
+				t.Fatalf("SetSourcedComponentIntent(%s) error = %v", target, err)
+			}
+			if _, err := s.SetSourcedComponentIntent(ctx, dependent, intentSpec("v1.0.0", target), nil, dependentOwner); err != nil {
+				t.Fatalf("SetSourcedComponentIntent(%s) error = %v", dependent, err)
+			}
+			var lastSeenBefore time.Time
+			if client != nil {
+				lastSeenBefore, _ = readSourceTimes(ctx, t, client, dependent)
+			}
+
+			res, err := s.PrepareDeactivation(ctx, target, true, targetOwner)
+			if err != nil {
+				t.Fatalf("PrepareDeactivation(%s, force, target owner) error = %v", target, err)
+			}
+			if diff := cmp.Diff([]string{dependent}, res.CascadedDeactivations); diff != "" {
+				t.Errorf("CascadedDeactivations mismatch (-want +got):\n%s", diff)
+			}
+			got, err := s.GetComponent(ctx, dependent)
+			if err != nil {
+				t.Fatalf("GetComponent(%s) error = %v", dependent, err)
+			}
+			if got.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING || !cmp.Equal(got.Owner, ownerFor(dependentOwner)) {
+				t.Errorf("dependent = (state=%v, owner=%+v), want DISABLING owned by %+v", got.State, got.Owner, ownerFor(dependentOwner))
+			}
+			if client != nil {
+				if lastSeenAfter, _ := readSourceTimes(ctx, t, client, dependent); !lastSeenAfter.Equal(lastSeenBefore) {
+					t.Errorf("dependent SourceLastSeenTime = %v, want unchanged %v", lastSeenAfter, lastSeenBefore)
+				}
 			}
 		})
 	}

@@ -525,7 +525,9 @@ message PrepareDeactivationRequest {
   ];
 
   // Declarative object requesting deactivation. When set, CMS checks the cluster ownership fence
-  // and source ownership before preparing deactivation.
+  // and source ownership of the target before preparing deactivation. With force, dependents
+  // moved to DISABLING are changed on behalf of the target's owner: they skip the ownership check
+  // and keep their recorded owner.
   RequestSource source = 4 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "source"

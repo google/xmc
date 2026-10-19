@@ -72,6 +72,32 @@ func TestValidateRequestSource(t *testing.T) {
 	}
 }
 
+func TestOptionalRequestSource(t *testing.T) {
+	invalid := modifiedSource(func(s *RequestSource) { s.UID = "" })
+	tests := []struct {
+		name     string
+		srcs     []RequestSource
+		want     *RequestSource
+		wantCode codes.Code
+	}{
+		{name: "no source", srcs: nil, want: nil},
+		{name: "one valid source", srcs: []RequestSource{baseRequestSource}, want: &baseRequestSource},
+		{name: "one invalid source", srcs: []RequestSource{invalid}, wantCode: codes.InvalidArgument},
+		{name: "more than one source", srcs: []RequestSource{baseRequestSource, baseRequestSource}, wantCode: codes.InvalidArgument},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := optionalRequestSource(tt.srcs)
+			if status.Code(err) != tt.wantCode {
+				t.Fatalf("optionalRequestSource() error = %v, want code %v", err, tt.wantCode)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("optionalRequestSource() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestSourceOwnerRelations(t *testing.T) {
 	owner := ownerOf(baseRequestSource)
 	tests := []struct {

@@ -198,10 +198,14 @@ const (
 	updateObservedGenerationOperation = "UpdateObservedGeneration"
 )
 
-// optionalRequestSource validates and returns the first source in srcs, or nil when srcs is empty.
+// optionalRequestSource validates and returns the single source in srcs, or nil when srcs is empty.
+// More than one source is rejected rather than silently dropped.
 func optionalRequestSource(srcs []RequestSource) (*RequestSource, error) {
 	if len(srcs) == 0 {
 		return nil, nil
+	}
+	if len(srcs) > 1 {
+		return nil, status.Errorf(codes.InvalidArgument, "at most one request source may be given, got %d", len(srcs))
 	}
 	if err := ValidateRequestSource(srcs[0]); err != nil {
 		return nil, err
