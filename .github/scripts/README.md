@@ -69,6 +69,10 @@ sequenceDiagram
     Git-->>Orch: Refs verified locally
 
     Orch->>Pol: checkProtectedFileChanges(baseRef, currentSha)
+    alt Git cannot list changed files (e.g. no merge base)
+        Pol--xOrch: throws
+        Orch-->>CI: Warn "Unable to determine files changed" (manual review)
+    end
     alt Protected Files Modified (.github, OWNERS, .githooks, protobuf breaking check)
         Pol-->>Orch: hasProtectedFileChanges = true
         Orch-->>CI: Abort (Fail-safe lockout)

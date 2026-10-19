@@ -104,7 +104,7 @@ test('checkProtectedFileChanges detects sensitive modifications and handles git 
     childProcess.execFileSync = originalExec;
   }
 
-  // Git failure fail-safe (with stderr)
+  // Git failure propagates so callers can distinguish it from a protected-file change.
   childProcess.execFileSync = () => {
     const err = new Error('Fatal git error');
     err.stderr = 'fatal: bad object sha1\n';
@@ -112,8 +112,22 @@ test('checkProtectedFileChanges detects sensitive modifications and handles git 
   };
 
   try {
-    const hasProtected = checkProtectedFileChanges('sha1', 'sha2');
-    assert.strictEqual(hasProtected, true);
+    assert.throws(() => checkProtectedFileChanges('sha1', 'sha2'), /bad object sha1/);
+  } finally {
+    childProcess.execFileSync = originalExec;
+  }
+});
+
+test('checkProtectedFileChanges propagates no-merge-base failure instead of reporting protected files (PR #1236 incident fix)', () => {
+  const originalExec = childProcess.execFileSync;
+  childProcess.execFileSync = () => {
+    const err = new Error('git diff failed (exit 128): fatal: origin/main...b5a5c9c: no merge base');
+    err.stderr = 'fatal: origin/main...b5a5c9c: no merge base\n';
+    throw err;
+  };
+
+  try {
+    assert.throws(() => checkProtectedFileChanges('main', 'eff3991', 'b5a5c9c'), /no merge base/);
   } finally {
     childProcess.execFileSync = originalExec;
   }

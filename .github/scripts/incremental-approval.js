@@ -105,7 +105,14 @@ async function run({ github, context, core }) {
   const isAuthorOwner = isAuthorCodeOwner(prAuthor, ownersList);
   core.info(`PR Author @${prAuthor} is code owner: ${isAuthorOwner}`);
 
-  let hasProtectedFileChanges = checkProtectedFileChanges(baseRef, latestApproval.approvedSha, currentSha);
+  let hasProtectedFileChanges;
+  try {
+    hasProtectedFileChanges = checkProtectedFileChanges(baseRef, latestApproval.approvedSha, currentSha);
+  } catch (error) {
+    const stderrInfo = error.stderr ? ` | Stderr: ${String(error.stderr).trim()}` : '';
+    core.warning(`Unable to determine files changed by PR #${prNumber} (${error.message}${stderrInfo}). Requiring manual review.`);
+    return;
+  }
   if (hasProtectedFileChanges) {
     core.info(`PR #${prNumber} modifies sensitive CI workflows, scripts, ownership files, or the protobuf breaking-change baseline or its configuration (.github/, OWNERS, .githooks/, api/testdata/protos_baseline.binpb, api/buf.yaml, api/BUILD.bazel). Skipping auto-reapproval.`);
   }
