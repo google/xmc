@@ -59,6 +59,7 @@ go_test(
     embed = [":xmc_bridge_lib"],
     deps = [
         "//api/protos/components/v1alpha1",
+        "//internal/logging",
         "//pkg/components/bridge",
     ],
 )
