@@ -51,7 +51,8 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
 3. **Open-Source Code TODOs**:
    - Ensure inline `TODO` comments in public packages use `TODO:` or public issue links `TODO(#123)`, avoiding internal bug IDs.
 4. **Unbounded Collections & Shared Dirty Environments**:
-   - Design backend `List*` query generators and `TableView` schemas with explicit newest-first default ordering (`OrderByFieldsWithSortDirection`, typically `created DESC` with unique tie-breaker) per [Architectural Contracts](../../rules/architectural_contracts.md#3-relational-storage--lifecycle-safety-contracts).
+   - **Shared Environment Invariant**: Target environments (`xmc-nightly`, staging, production, multi-tenant dev clusters) are dirty, long-lived, and populated with thousands of historical entities. Software designs and test suites MUST NEVER assume an environment is clean, empty, or low-cardinality (see [`tools/nightly_tests/README.md`](../../../tools/nightly_tests/README.md#step-1-implement-the-verifier-in-examples_verification)).
+   - Design backend `List*` query generators and `TableView` schemas with explicit newest-first default ordering (`OrderByFieldsWithSortDirection`, typically `created DESC` with unique tie-breaker) per [Storage Layer Guidelines](../../../internal/storage/AGENTS.md#4-deterministic-default-ordering--pagination-for-unbounded-collections).
    - In UI components and stores, implement server-side filtering and pagination controls rather than single-page client-side filtering.
    - For E2E tests and verifiers, scope lookups by specific XID/entity ID or server-side filter; never assume target entities appear on an unfiltered first page in shared environments (`xmc-nightly`).
 
