@@ -27,6 +27,8 @@ import { bootstrap, cleanState, flush, get, getEl, getEls, setupModule } from 'a
 import { DashboardsListPage } from './dashboards_list_page';
 
 const DASHBOARD_ROW_SELECTOR = '.dashboard-row';
+const DASHBOARD_TITLE_CELL_SELECTOR = '.title-cell';
+const DASHBOARD_TITLE_CELL_CONTENT_SELECTOR = '.title-cell .title-cell-content';
 const DASHBOARD_TITLE_TEXT_SELECTOR = '.dashboard-title-text';
 
 /** Baseline dialog result: one chart to create alongside the dashboard. */
@@ -114,6 +116,17 @@ describe('DashboardsListPage', () => {
 
     const firstTitle = getEl(DASHBOARD_TITLE_TEXT_SELECTOR);
     expect(firstTitle?.textContent?.trim()).toBe('VCC baseline tune comparison');
+  });
+
+  it('should keep title table cell as table-cell display and wrap content in flex container for row border alignment', () => {
+    bootstrap(DashboardsListPage);
+    const titleCell = getEl(DASHBOARD_TITLE_CELL_SELECTOR);
+    const titleCellContent = getEl(DASHBOARD_TITLE_CELL_CONTENT_SELECTOR);
+
+    expect(titleCell).toBeTruthy();
+    expect(titleCellContent).toBeTruthy();
+    expect(window.getComputedStyle(titleCell!).display).toBe('table-cell');
+    expect(window.getComputedStyle(titleCellContent!).display).toBe('flex');
   });
 
   it('should send the dialog charts alongside the dashboard in a single create call', () => {

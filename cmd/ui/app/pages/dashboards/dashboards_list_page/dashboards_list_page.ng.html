@@ -79,10 +79,12 @@ limitations under the License.
         <ng-container matColumnDef="title">
           <th mat-header-cell *matHeaderCellDef class="title-header">Dashboard</th>
           <td mat-cell *matCellDef="let row" class="title-cell">
-            <a class="dashboard-link" [routerLink]="['/dashboards', getDashboardId(row.name)]">
-              <span class="dashboard-title-text">{{ row.title || row.name }}</span>
-            </a>
-            <span class="dashboard-resource-name">{{ row.name }}</span>
+            <div class="title-cell-content">
+              <a class="dashboard-link" [routerLink]="['/dashboards', getDashboardId(row.name)]">
+                <span class="dashboard-title-text">{{ row.title || row.name }}</span>
+              </a>
+              <span class="dashboard-resource-name">{{ row.name }}</span>
+            </div>
           </td>
         </ng-container>
 

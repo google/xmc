@@ -32,6 +32,8 @@ import type {
   DashboardJob,
   ListClusterQueuesResponse,
 } from 'app/protos/rod';
+import type { ListDashboardsResponse } from 'app/service/dashboard_models';
+import { createMockDashboardList } from 'app/testing/mock_dashboards';
 
 import type { UserResponse } from '../app/service/auth.service';
 
@@ -738,6 +740,10 @@ export const MOCK_WORK_UNIT_STATUS_MESSAGES: ListStatusMessagesResponse = {
   ],
 };
 
+export const MOCK_DASHBOARDS_LIST: ListDashboardsResponse = {
+  dashboards: createMockDashboardList(),
+};
+
 /**
  * Generic base layout reset for page screenshot testing.
  */
@@ -965,6 +971,18 @@ export async function handleWorkUnitStatusMessagesRoute(route: Route) {
   });
 }
 
+export async function handleDashboardsListRoute(route: Route) {
+  if (route.request().resourceType() === 'document') {
+    await route.fallback();
+    return;
+  }
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(MOCK_DASHBOARDS_LIST),
+  });
+}
+
 /**
  * UI test harness utilities for Playwright visual screenshot testing.
  * Mocks user auth, feature flag configuration, admin panel, cluster queue data,
@@ -985,6 +1003,9 @@ export async function setupMockRoutes(page: Page) {
   await page.route(/\/clusterqueues(?:\?.*)?$/, handleClusterQueuesRoute);
   await page.route(/\/clusterqueues\/.*\/jobs/, handleQueueJobsRoute);
   await page.route(/.*batchGetSecondaryData.*/, handleSecondaryDataRoute);
+
+  // Performance Dashboards List
+  await page.route(/\/dashboards(?:\?.*)?$/, handleDashboardsListRoute);
 
   // Experiments List
   await page.route(/\/experiments(?:\?.*)?$/, handleExperimentsListRoute);
