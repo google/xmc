@@ -29,12 +29,24 @@ go_library(
 
 go_test(
     name = "migrations_test",
-    srcs = ["runner_test.go"],
+    srcs = [
+        "parity_test.go",
+        "runner_test.go",
+    ],
+    data = [
+        "//internal/storage/postgres/schema:ess-schema.sql",
+        "//internal/storage/postgres/schema:xid-schema.sql",
+        "//internal/storage/spanner/schema:ess-schema.sql",
+        "//internal/storage/spanner/schema:xid-schema.sql",
+    ],
     embed = [":migrations"],
     deps = [
+        "//internal/storage/postgres/migrations/version",
+        "//internal/storage/spanner/migrations/version",
         "@com_github_golang_migrate_migrate_v4//:migrate",
         "@com_github_golang_migrate_migrate_v4//database/stub",
         "@com_github_golang_migrate_migrate_v4//source/iofs",
+        "@com_github_google_go_cmp//cmp",
         "@io_k8s_utils//ptr",
     ],
 )
