@@ -398,7 +398,7 @@ class DashboardClientTest(unittest.TestCase):
             ) as mock_fetch_iam,
             patch(
                 "xdash.client.time.monotonic",
-                side_effect=[100.0, 200.0, 3500.0],
+                side_effect=[100.0, 100.0, 200.0, 3500.0, 3500.0],
             ),
         ):
             self.client.get_dashboard("dashboards/123")
@@ -421,6 +421,59 @@ class DashboardClientTest(unittest.TestCase):
                 self.mock_stub.GetDashboard.call_args.kwargs,
                 {"metadata": (("authorization", "Bearer iam-token-2"),)},
             )
+
+    def test_execute_rpc_partial_iam_env_raises_error(self) -> None:
+        for partial_env in (
+            {
+                "XMC_AUTH_TOKEN": "",
+                "AUTH_TOKEN": "",
+                "XMC_CLIENT_SA": "sa@test-proj.iam.gserviceaccount.com",
+                "IAP_CLIENT_ID": "",
+            },
+            {
+                "XMC_AUTH_TOKEN": "",
+                "AUTH_TOKEN": "",
+                "XMC_CLIENT_SA": "",
+                "IAP_CLIENT_ID": "12345-abc.apps.googleusercontent.com",
+            },
+        ):
+            with (
+                patch.dict("os.environ", partial_env, clear=False),
+                self.assertRaises(XDashError) as cm,
+            ):
+                self.client.get_dashboard("dashboards/123")
+            self.assertIn(
+                "Both XMC_CLIENT_SA and IAP_CLIENT_ID must be set",
+                str(cm.exception),
+            )
+        self.mock_stub.GetDashboard.assert_not_called()
+
+    def test_get_cached_or_fetch_iam_token_double_checked_locking(self) -> None:
+        sa = "portal-sa-client@test-proj.iam.gserviceaccount.com"
+        aud = "12345-abc.apps.googleusercontent.com"
+
+        class PopulateOnEnterLock:
+            def __init__(self, client: DashboardClient) -> None:
+                self._client = client
+                self.entered = False
+
+            def __enter__(self) -> None:
+                self.entered = True
+                self._client._cached_iam_token = ((sa, aud), "concurrent-token", 5000.0)
+
+            def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+                pass
+
+        lock = PopulateOnEnterLock(self.client)
+        self.client._token_lock = lock  # type: ignore[assignment]
+        with (
+            patch("xdash.client._fetch_iam_id_token") as mock_fetch_iam,
+            patch("xdash.client.time.monotonic", side_effect=[100.0, 100.0]),
+        ):
+            token = self.client._get_cached_or_fetch_iam_token(sa, aud)
+        self.assertTrue(lock.entered)
+        self.assertEqual(token, "concurrent-token")
+        mock_fetch_iam.assert_not_called()
 
     def test_fetch_iam_id_token_calls_iam_credentials_api(self) -> None:
         mock_google = MagicMock()

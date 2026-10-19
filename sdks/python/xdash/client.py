@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 from collections.abc import Sequence
 from typing import Any
@@ -186,6 +187,7 @@ class DashboardClient:
         # shared with other clients, and tearing it down under them is not our call.
         self._owns_channel = False
         self._cached_iam_token: tuple[tuple[str, str], str, float] | None = None
+        self._token_lock = threading.Lock()
 
         if stub is not None:
             self._stub = stub
@@ -248,17 +250,31 @@ class DashboardClient:
             return token
         client_sa = (os.environ.get("XMC_CLIENT_SA") or "").strip()
         audience = (os.environ.get("IAP_CLIENT_ID") or "").strip()
-        if not client_sa or not audience:
+        if bool(client_sa) != bool(audience):
+            raise XDashError(
+                "Both XMC_CLIENT_SA and IAP_CLIENT_ID must be set for IAM OIDC fallback."
+            )
+        if not client_sa:
             return ""
+        return self._get_cached_or_fetch_iam_token(client_sa, audience)
+
+    def _get_cached_or_fetch_iam_token(self, client_sa: str, audience: str) -> str:
+        """Returns a cached IAM OIDC token or mints a fresh one under a thread lock."""
         key = (client_sa, audience)
         now = time.monotonic()
         if self._cached_iam_token is not None:
             cached_key, cached_token, expires_at = self._cached_iam_token
             if cached_key == key and now < expires_at:
                 return cached_token
-        fetched = _fetch_iam_id_token(client_sa, audience)
-        self._cached_iam_token = (key, fetched, now + _TOKEN_TTL_SEC)
-        return fetched
+        with self._token_lock:
+            now = time.monotonic()
+            if self._cached_iam_token is not None:
+                cached_key, cached_token, expires_at = self._cached_iam_token
+                if cached_key == key and now < expires_at:
+                    return cached_token
+            fetched = _fetch_iam_id_token(client_sa, audience)
+            self._cached_iam_token = (key, fetched, now + _TOKEN_TTL_SEC)
+            return fetched
 
     def _execute_rpc(self, call: Any, request: Any, rpc_name: str) -> Any:
         """Executes a gRPC call and converts grpc.RpcError to XDashRPCError."""
