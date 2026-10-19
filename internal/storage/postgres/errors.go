@@ -17,6 +17,7 @@
 package postgres
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -40,8 +41,8 @@ const (
 
 // TranslateError maps PostgreSQL driver and SQLSTATE errors into canonical storage status errors.
 func TranslateError(err error, entity string) error {
-	if err == nil {
-		return nil
+	if err == nil || isPassthroughError(err) {
+		return err
 	}
 	name := normalizeEntity(entity)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -54,6 +55,14 @@ func TranslateError(err error, entity string) error {
 		}
 	}
 	return fmt.Errorf("%s storage error: %w", name, err)
+}
+
+func isPassthroughError(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	_, ok := status.FromError(err)
+	return ok
 }
 
 func translatePgError(pgErr *pgconn.PgError, cause error, entity string) error {

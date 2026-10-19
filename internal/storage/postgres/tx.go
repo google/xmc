@@ -16,7 +16,6 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -93,9 +92,6 @@ func runInTx(ctx context.Context, beginner txBeginner, cfg txRetryConfig, fn fun
 			}
 			backoff = nextBackoff(backoff, cfg.maxBackoff)
 		}
-	}
-	if errors.Is(lastErr, grpcerr.ErrAborted) {
-		return lastErr
 	}
 	return TranslateError(lastErr, "transaction")
 }

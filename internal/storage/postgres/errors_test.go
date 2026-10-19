@@ -15,6 +15,7 @@
 package postgres
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -167,6 +168,31 @@ func TestTranslateError(t *testing.T) {
 			wantSentinel: grpcerr.ErrNotFound,
 			wantCause:    pgx.ErrNoRows,
 			wantSubstr:   "entity not found",
+		},
+		{
+			name:       "context.Canceled passes through unchanged",
+			err:        context.Canceled,
+			entity:     "experiment",
+			wantCode:   codes.Unknown,
+			wantCause:  context.Canceled,
+			wantSubstr: context.Canceled.Error(),
+		},
+		{
+			name:       "context.DeadlineExceeded passes through unchanged",
+			err:        context.DeadlineExceeded,
+			entity:     "experiment",
+			wantCode:   codes.Unknown,
+			wantCause:  context.DeadlineExceeded,
+			wantSubstr: context.DeadlineExceeded.Error(),
+		},
+		{
+			name:         "already translated status error passes through without double-wrapping",
+			err:          TranslateError(pgx.ErrNoRows, "experiment"),
+			entity:       "work unit",
+			wantCode:     codes.NotFound,
+			wantSentinel: grpcerr.ErrNotFound,
+			wantCause:    pgx.ErrNoRows,
+			wantSubstr:   "experiment not found",
 		},
 	}
 
