@@ -28,6 +28,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -77,8 +78,8 @@ func TestApplyIntentResponse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res := ReconcileResult{State: pending, ComponentGeneration: 2}
 			applyIntentResponse(&res, tt.resp)
-			if res.State != tt.wantRes.State || res.ComponentGeneration != tt.wantRes.ComponentGeneration {
-				t.Errorf("applyIntentResponse() = (state %v, componentGeneration %d), want (%v, %d)", res.State, res.ComponentGeneration, tt.wantRes.State, tt.wantRes.ComponentGeneration)
+			if diff := cmp.Diff(tt.wantRes, res); diff != "" {
+				t.Errorf("applyIntentResponse() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
