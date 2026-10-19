@@ -120,10 +120,7 @@ func NewUnnester(members map[string]Member, functions map[string]Function, filte
 		return unr, nil
 	}
 	// Do a preliminary walk over the filterPredicate expression, so that we can scout what members it accesses.
-	// We use a "dummy query" here to recycle the logic in queryfilter.Spanner that walks the expression and calls
-	// us back on members.
-	dummyQuery := spanner.NewStatement("")
-	qf := queryfilter.Spanner{
+	qf := queryfilter.Visitor{
 		MemberFunc: func(name []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
 			n := strings.Join(name, ".")
 			m, ok := members[n]
@@ -134,7 +131,6 @@ func NewUnnester(members map[string]Member, functions map[string]Function, filte
 			return safesql.New(""), m.Type, nil
 		},
 		FunctionFunc: FunctionMap(functions),
-		Q:            &dummyQuery,
 	}
 	err := qf.AppendFilters(filterPredicate)
 	if err != nil {

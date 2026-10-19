@@ -31,6 +31,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"xmanager_cloud/api/filter/go/filtervisitor"
 	"xmanager_cloud/internal/logging"
+	spannerdialect "xmanager_cloud/internal/query_generator/dialect/spanner"
 	"xmanager_cloud/internal/query_generator/equalityvisitor"
 	"xmanager_cloud/internal/query_generator/filter"
 	"xmanager_cloud/internal/safesql"
@@ -246,7 +247,7 @@ func DisjunctionMemberMap(members map[string]Member) queryfilter.DisjunctionFunc
 
 // Function represents a named function that can be evaluated against
 // expression arguments.
-type Function func(*queryfilter.Spanner, []*fpb.Expression) (filtervisitor.PrimType, error)
+type Function func(*queryfilter.Visitor, []*fpb.Expression) (filtervisitor.PrimType, error)
 
 // FunctionMap takes a query and a map of name=>Function and produces a
 // FunctionFunc for use by the queryfilter expression parser that looks up
@@ -254,7 +255,7 @@ type Function func(*queryfilter.Spanner, []*fpb.Expression) (filtervisitor.PrimT
 // function with the parsed arguments, and returns the result.
 // If a given function name is unrecognized, it returns an error.
 func FunctionMap(functions map[string]Function) queryfilter.FunctionFunc {
-	return func(fn string, s *queryfilter.Spanner, args []*fpb.Expression) (filtervisitor.PrimType, error) {
+	return func(fn string, s *queryfilter.Visitor, args []*fpb.Expression) (filtervisitor.PrimType, error) {
 		f, ok := functions[fn]
 		if !ok {
 			return filtervisitor.Invalid, status.Errorf(codes.InvalidArgument, "unsupported function name in query: %q", fn)
@@ -578,7 +579,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 
 	// Do a walk over the userFilterExp expression so that we can scout
 	// what Members it accesses. We use a "dummy query" here to recycle the
-	// logic in qfcs.Spanner that walks the expression and calls us
+	// logic in queryfilter.Visitor that walks the expression and calls us
 	// back on Members.
 	if err := q.scoutUserFilterMembers(userFilterExp, fullTextFields, userFilters, equalityFilters); err != nil {
 		return nil, nil, nil, err
@@ -901,12 +902,12 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 		query.SQL = query.SQL + " WHERE "
 	}
 
-	qf := queryfilter.Spanner{
+	qf := queryfilter.Visitor{
 		MemberFunc:           MemberMap(query, filters),
 		FunctionFunc:         FunctionMap(q.functions),
 		DisjunctionFunc:      DisjunctionMemberMap(filters),
 		OptimizeDisjunction:  q.optimizeFilters,
-		Q:                    query,
+		Q:                    spannerdialect.NewStatement(query),
 		RestrictionTranslate: PhraseMap(q.options.rewrites),
 		TextSearchColumns:    fullTextFields,
 		FilterBaseOptions:    []queryfilter.FilterBaseOption{queryfilter.WithFullTextSearchEnabled},
@@ -1333,9 +1334,8 @@ func (q *queryGen) scoutUserFilterMembers(userFilterExp *fpb.Expression, fullTex
 	if emptyExpression(userFilterExp) {
 		return nil
 	}
-	dummyQuery := spanner.NewStatement("")
 
-	qf := queryfilter.Spanner{
+	qf := queryfilter.Visitor{
 		MemberFunc: func(name []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
 			n := strings.Join(name, ".")
 			m, ok := q.members[n]
@@ -1346,7 +1346,6 @@ func (q *queryGen) scoutUserFilterMembers(userFilterExp *fpb.Expression, fullTex
 			return safesql.New(""), m.Type, nil
 		},
 		FunctionFunc:      FunctionMap(q.functions),
-		Q:                 &dummyQuery,
 		TextSearchColumns: fullTextFields,
 		FilterBaseOptions: []queryfilter.FilterBaseOption{queryfilter.WithFullTextSearchEnabled},
 	}
