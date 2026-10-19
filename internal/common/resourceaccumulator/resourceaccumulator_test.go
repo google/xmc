@@ -182,6 +182,15 @@ func TestAccumulateExecutable(t *testing.T) {
 		if diff := cmp.Diff(wantTotals, totals); diff != "" {
 			t.Errorf("AccumulateExecutable Totals() diff (-want +got):\n%s", diff)
 		}
+
+		wantIntTotals := map[string]int64{
+			"cpu":               8000,
+			"memory":            16384,
+			"nvidia-tesla-h100": 4,
+		}
+		if diff := cmp.Diff(wantIntTotals, ExtractExecutableResources(exec)); diff != "" {
+			t.Errorf("ExtractExecutableResources() diff (-want +got):\n%s", diff)
+		}
 	})
 }
 

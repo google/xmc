@@ -25,6 +25,7 @@ import (
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/experiment"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/validator"
@@ -219,5 +220,24 @@ func TestUpdateExperimentLaunchState_FailedPrecondition(t *testing.T) {
 	_, err = experiment.UpdateExperimentLaunchState(ctx, storage, 123, essmsgpb.ExperimentStatus_FAILED)
 	if !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("UpdateExperimentLaunchState with wrong initial state returned error %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+}
+
+func TestUpdateExperimentLaunchState_SaveStatusMessageHistoryError(t *testing.T) {
+	ctx := context.Background()
+	boomErr := errors.New("boom")
+	mockStorage := &storage.MockStorage{
+		Experiment: &essmsgpb.Experiment{
+			Name: "experiments/123",
+			Status: &essmsgpb.ExperimentStatus{
+				LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
+			},
+		},
+		SaveStatusMessageHistoryErr: boomErr,
+	}
+
+	_, err := experiment.UpdateExperimentLaunchState(ctx, mockStorage, 123, essmsgpb.ExperimentStatus_COMPLETED)
+	if !errors.Is(err, boomErr) {
+		t.Fatalf("UpdateExperimentLaunchState() error = %v, want %v", err, boomErr)
 	}
 }

@@ -24,6 +24,7 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/internal/workunit"
 )
 
 // CreateExperiment orchestrates the creation of a new experiment using the provided transaction runner.
@@ -59,9 +60,8 @@ func CreateExperiment(ctx context.Context, txRunner storage.TransactionRunner, e
 		}
 
 		// 4. Record the initial status message history.
-		if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, nil, nil, nil, exp.GetStatus().GetStructuredStatusMessage()); err != nil {
-			logging.Error(ctx, "failed to save status message history for experiment", "xid", xid, "error", err)
-			return err
+		if err := workunit.RecordStatusMessageHistory(ctx, tx.StatusMessages, xid, nil, nil, nil, exp.GetStatus().GetStructuredStatusMessage()); err != nil {
+			return fmt.Errorf("failed to save status message history for experiment: %w", err)
 		}
 
 		return nil

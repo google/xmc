@@ -310,9 +310,12 @@ func TestListStatusMessages_EmptyParent(t *testing.T) {
 
 func insertStatusMessage(ctx context.Context, t *testing.T, storage *spanner.Storage, essClient *cloudspanner.Client, xid int64, wid *int64, msg *essmsgpb.StructuredMessage) {
 	t.Helper()
-	_, err := essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *cloudspanner.ReadWriteTransaction) error {
-		statusmessage.SaveStatusMessageHistory(ctx, xid, wid, nil, nil, msg, txn)
-		return nil
+	repo, err := statusmessage.NewRepository(essClient)
+	if err != nil {
+		t.Fatalf("NewRepository() failed: %v", err)
+	}
+	_, err = essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *cloudspanner.ReadWriteTransaction) error {
+		return repo.WithTx(txn).SaveStatusMessageHistory(ctx, nil, nil, msg)
 	})
 	if err != nil {
 		t.Fatalf("Failed to save status message history: %v", err)

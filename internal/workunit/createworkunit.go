@@ -22,7 +22,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/common/resourceaccumulator"
 	experimentdomain "xmanager_cloud/internal/domain/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
@@ -58,8 +57,9 @@ func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu 
 			}
 			localWU.Name = validator.ConstructWorkUnitName(xid, wid)
 			localWU.CurrentWorkUnitExecution.Name = validator.ConstructWorkUnitExecutionName(xid, wid, initialEID)
-			setParentIfNonNil(localWU.CurrentWorkUnitExecution.Status.SystemMessage, localWU.GetName())
 		}
+		setParentIfNonNil(localWU.CurrentWorkUnitExecution.Status.SystemMessage, localWU.GetName())
+		setParentIfNonNil(localWU.CurrentWorkUnitExecution.Status.UserMessage, localWU.GetName())
 
 		// 1.2. Set the initial timestamps to the current time.
 		localWU.CreateTime = timestamppb.New(now)
@@ -84,7 +84,7 @@ func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu 
 		}
 
 		// 4. Update the denormalized status fields and resources in the Experiment row using domain rules.
-		if err := recordWorkUnitCreationHistory(ctx, tx, xid, wid, initialEID, localWU); err != nil {
+		if err := RecordExecutionHistory(ctx, tx, xid, wid, initialEID, localWU.GetExecutable(), nil, localWU.GetCurrentWorkUnitExecution()); err != nil {
 			return err
 		}
 
@@ -139,27 +139,4 @@ func ensureWorkUnitExecutionStatus(wu *essmsgpb.WorkUnit) {
 	if wu.CurrentWorkUnitExecution.Status == nil {
 		wu.CurrentWorkUnitExecution.Status = &essmsgpb.WorkUnitStatus{}
 	}
-}
-
-func recordWorkUnitCreationHistory(ctx context.Context, tx *storage.Transaction, xid, wid, initialEID int64, localWU *essmsgpb.WorkUnit) error {
-	if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, &wid, &initialEID, nil, localWU.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage()); err != nil {
-		return fmt.Errorf("failed to save system status message history: %w", err)
-	}
-
-	acc := resourceaccumulator.New()
-	acc.AccumulateExecutable(localWU.GetExecutable())
-	resMap := acc.IntTotals()
-	qName := localWU.GetExecutable().GetSchedulingConstraints().GetQueueName()
-	var newState *essmsgpb.WorkUnitStatus_WorkUnitState
-	var stateTime time.Time
-	if status := localWU.GetCurrentWorkUnitExecution().GetStatus(); status != nil {
-		newState = status.GetState().Enum()
-		if status.GetUpdateTime() != nil {
-			stateTime = status.GetUpdateTime().AsTime()
-		}
-	}
-	if err := tx.StatusHistory.SaveWorkUnitStatusHistoryIfChanged(ctx, xid, wid, &initialEID, qName, nil, newState, resMap, stateTime); err != nil {
-		return fmt.Errorf("failed to save work unit status history: %w", err)
-	}
-	return nil
 }

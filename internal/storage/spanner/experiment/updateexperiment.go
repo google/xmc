@@ -29,7 +29,6 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -79,8 +78,6 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 
 		// 4. Apply the mutation to the transaction.
 		mutated = true
-
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, update.XID, nil, nil, originalExperiment.GetStatus().GetStructuredStatusMessage(), updatedExperiment.GetStatus().GetStructuredStatusMessage(), txn)
 
 		return txn.BufferWrite([]*spanner.Mutation{mutation})
 	})

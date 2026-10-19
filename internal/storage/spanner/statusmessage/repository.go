@@ -25,7 +25,10 @@ import (
 	"xmanager_cloud/internal/storage/spanner/schema/statusmessageschema"
 )
 
-var _ storage.StatusMessageStore = (*Repository)(nil)
+var (
+	_ storage.StatusMessageStore        = (*Repository)(nil)
+	_ storage.StatusMessageTxRepository = (*TxRepository)(nil)
+)
 
 // Repository manages persistence for status message entities in Cloud Spanner.
 type Repository struct {

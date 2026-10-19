@@ -126,6 +126,13 @@ func (a *Accumulator) AccumulateExecutable(exec *essmsgpb.Executable) {
 	}
 }
 
+// ExtractExecutableResources returns the accumulated int64 resource totals for an Executable.
+func ExtractExecutableResources(exec *essmsgpb.Executable) map[string]int64 {
+	acc := New()
+	acc.AccumulateExecutable(exec)
+	return acc.IntTotals()
+}
+
 // Totals returns the accumulated float64 resource counts map (with CPU in Cores).
 func (a *Accumulator) Totals() map[string]float64 {
 	if a == nil {

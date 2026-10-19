@@ -60,7 +60,6 @@ go_library(
         "//cmd/experiment_state_server/toollibs",
         "//internal/auth",
         "//internal/common/health",
-        "//internal/common/resourceaccumulator",
         "//internal/experiment",
         "//internal/grpcerr",
         "//internal/logging",

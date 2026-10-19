@@ -22,59 +22,33 @@ import (
 	"math/big"
 
 	"cloud.google.com/go/spanner"
-	"google.golang.org/protobuf/proto"
 
 	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/data"
+	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 )
 
-// SaveStatusMessageHistoryIfChanged buffers a status message history mutation in the bound Spanner transaction if the message changed.
-// TODO(b/517479143): Mutation build/buffer failures are currently logged and skipped by the
-// delegated helper; return them once it is inlined here.
-func (r *TxRepository) SaveStatusMessageHistoryIfChanged(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
-	SaveStatusMessageHistoryIfChanged(ctx, xid, wid, eid, oldMsg, newMsg, r.tx)
-	return nil
-}
-
-// SaveStatusMessageHistoryIfChanged buffers a status message history mutation if the message changed.
-// TODO(b/517479143): Inline into Repository.SaveStatusMessageHistoryIfChanged once Experiment and WorkUnit transactions are moved out of Spanner.
-func SaveStatusMessageHistoryIfChanged(ctx context.Context, xid int64, wid *int64, eid *int64, currentMsg, newMsg *essmsgpb.StructuredMessage, txn *spanner.ReadWriteTransaction) {
-	if newMsg == nil {
-		return
+// SaveStatusMessageHistory buffers a status message history mutation in the bound Spanner transaction.
+func (r *TxRepository) SaveStatusMessageHistory(ctx context.Context, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
+	if ctx == nil {
+		return fmt.Errorf("context must not be nil")
 	}
-
-	if currentMsg != nil {
-		currentClone := proto.Clone(currentMsg).(*essmsgpb.StructuredMessage)
-		newClone := proto.Clone(newMsg).(*essmsgpb.StructuredMessage)
-
-		currentClone.CreateTime = nil
-		newClone.CreateTime = nil
-
-		if proto.Equal(currentClone, newClone) {
-			return
-		}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-
-	SaveStatusMessageHistory(ctx, xid, wid, eid, currentMsg, newMsg, txn)
-}
-
-// SaveStatusMessageHistory buffers a status message history mutation in the Spanner transaction.
-// TODO(b/517479143): Refactor SaveStatusMessageHistory to return an error and propagate it so status message history failures fail the transaction instead of silently logging.
-func SaveStatusMessageHistory(ctx context.Context, xid int64, wid *int64, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage, txn *spanner.ReadWriteTransaction) {
+	if r.tx == nil {
+		return fmt.Errorf("transaction must not be nil")
+	}
 	messageID, err := generateMessageID(ctx)
 	if err != nil {
-		logging.Error(ctx, "Failed to generate MessageId, skipping saving status message history", "error", err)
-		return
+		return fmt.Errorf("failed to generate message ID: %w", err)
 	}
 
 	mutation, err := spannerdata.StatusMessageProtoToInsertMutation(newMsg, messageID, eid, oldMsg)
 	if err != nil {
-		logging.Error(ctx, "Failed to create mutation for status message", "error", err)
-		return
+		return fmt.Errorf("failed to create mutation for status message: %w", err)
 	}
 
-	txn.BufferWrite([]*spanner.Mutation{mutation})
+	return r.tx.BufferWrite([]*spanner.Mutation{mutation})
 }
 
 func generateMessageID(ctx context.Context) (int64, error) {

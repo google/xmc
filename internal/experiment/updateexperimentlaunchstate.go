@@ -29,6 +29,7 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/state"
 	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/internal/workunit"
 )
 
 // UpdateExperimentLaunchState updates the launch state of an experiment.
@@ -81,7 +82,7 @@ func UpdateExperimentLaunchState(ctx context.Context, txRunner storage.Transacti
 			updatedExp.Status.StructuredStatusMessage = newStructuredMessage
 		}
 
-		if err := tx.StatusMessages.SaveStatusMessageHistoryIfChanged(ctx, xid, nil, nil, currentExp.GetStatus().GetStructuredStatusMessage(), updatedExp.GetStatus().GetStructuredStatusMessage()); err != nil {
+		if err := workunit.RecordStatusMessageHistory(ctx, tx.StatusMessages, xid, nil, nil, currentExp.GetStatus().GetStructuredStatusMessage(), updatedExp.GetStatus().GetStructuredStatusMessage()); err != nil {
 			return fmt.Errorf("failed to save status message history: %w", err)
 		}
 
