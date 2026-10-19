@@ -128,6 +128,10 @@ var (
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
 			{TableField: DashboardIDTableField, SortOrder: querytools.Asc},
 		},
+		OrderByFieldsWithSortDirection: []querytools.UserOrderedIndex{
+			{TableField: CreatedTableField, SortOrder: querytools.Desc},
+			{TableField: DashboardIDTableField, SortOrder: querytools.Asc},
+		},
 	}
 
 	chartsTableView = querytools.TableView{
