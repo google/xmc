@@ -77,7 +77,7 @@ func PrepareStatusMessageHistory(xid int64, wid *int64, oldMsg, newMsg *essmsgpb
 // message history entry via repo if the message changed.
 func RecordStatusMessageHistory(ctx context.Context, repo storage.StatusMessageTxRepository, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
 	if repo == nil {
-		return nil
+		return fmt.Errorf("status message repository must not be nil")
 	}
 	prevMsg, nextMsg, changed := PrepareStatusMessageHistory(xid, wid, oldMsg, newMsg)
 	if !changed {
@@ -114,8 +114,11 @@ func PrepareStatusHistory(currentState, newState *essmsgpb.WorkUnitStatus_WorkUn
 // RecordExecutionHistory records system and user status messages and work unit status history
 // for a work unit execution transition within the provided transaction.
 func RecordExecutionHistory(ctx context.Context, tx *storage.Transaction, xid, wid, eid int64, executable *essmsgpb.Executable, oldExec, newExec *essmsgpb.WorkUnitExecution) error {
-	if tx == nil || newExec == nil {
-		return nil
+	if tx == nil {
+		return fmt.Errorf("transaction must not be nil")
+	}
+	if newExec == nil {
+		return fmt.Errorf("new execution must not be nil")
 	}
 	if err := recordStatusMessages(ctx, tx.StatusMessages, xid, wid, eid, oldExec.GetStatus(), newExec.GetStatus()); err != nil {
 		return err
@@ -125,7 +128,7 @@ func RecordExecutionHistory(ctx context.Context, tx *storage.Transaction, xid, w
 
 func recordStatusMessages(ctx context.Context, repo storage.StatusMessageTxRepository, xid, wid, eid int64, oldStatus, newStatus *essmsgpb.WorkUnitStatus) error {
 	if repo == nil {
-		return nil
+		return fmt.Errorf("status message repository must not be nil")
 	}
 	if err := RecordStatusMessageHistory(ctx, repo, xid, &wid, &eid, oldStatus.GetSystemMessage(), newStatus.GetSystemMessage()); err != nil {
 		return fmt.Errorf("failed to save system status message history: %w", err)
@@ -138,7 +141,7 @@ func recordStatusMessages(ctx context.Context, repo storage.StatusMessageTxRepos
 
 func recordStatusHistory(ctx context.Context, repo storage.StatusHistoryTxRepository, xid, wid, eid int64, executable *essmsgpb.Executable, oldStatus, newStatus *essmsgpb.WorkUnitStatus) error {
 	if repo == nil {
-		return nil
+		return fmt.Errorf("status history repository must not be nil")
 	}
 	oldState := workUnitState(oldStatus)
 	newState := workUnitState(newStatus)

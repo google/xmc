@@ -79,10 +79,17 @@ type MockStatusMessageTxRepository struct {
 
 // SaveStatusMessageHistory records the call and returns SaveErr if configured.
 func (m *MockStatusMessageTxRepository) SaveStatusMessageHistory(ctx context.Context, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
+	var clonedOld, clonedNew *essmsgpb.StructuredMessage
+	if oldMsg != nil {
+		clonedOld = proto.Clone(oldMsg).(*essmsgpb.StructuredMessage)
+	}
+	if newMsg != nil {
+		clonedNew = proto.Clone(newMsg).(*essmsgpb.StructuredMessage)
+	}
 	m.Calls = append(m.Calls, StatusMessageHistoryCall{
 		EID:    eid,
-		OldMsg: oldMsg,
-		NewMsg: newMsg,
+		OldMsg: clonedOld,
+		NewMsg: clonedNew,
 	})
 	if m.SaveFunc != nil {
 		return m.SaveFunc(ctx, eid, oldMsg, newMsg)
@@ -110,6 +117,13 @@ type MockStatusHistoryTxRepository struct {
 
 // SaveWorkUnitStatusHistory records the call and returns SaveErr if configured.
 func (m *MockStatusHistoryTxRepository) SaveWorkUnitStatusHistory(_ context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
+	var clonedResources map[string]int64
+	if resources != nil {
+		clonedResources = make(map[string]int64, len(resources))
+		for k, v := range resources {
+			clonedResources[k] = v
+		}
+	}
 	m.Calls = append(m.Calls, WorkUnitStatusHistoryCall{
 		XID:       xid,
 		WID:       wid,
@@ -117,7 +131,7 @@ func (m *MockStatusHistoryTxRepository) SaveWorkUnitStatusHistory(_ context.Cont
 		QueueName: queueName,
 		PrevState: prevState,
 		NewState:  newState,
-		Resources: resources,
+		Resources: clonedResources,
 		Timestamp: timestamp,
 	})
 	return m.SaveErr

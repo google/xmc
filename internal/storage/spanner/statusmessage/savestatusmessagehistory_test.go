@@ -16,6 +16,7 @@ package statusmessage_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	cloudspanner "cloud.google.com/go/spanner"
@@ -84,6 +85,32 @@ func TestTxRepository_SaveStatusMessageHistory_PropagatesError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("TxRepository.SaveStatusMessageHistory() with invalid parent succeeded, want error")
 	}
+}
+
+func TestTxRepository_SaveStatusMessageHistory_ContextValidation(t *testing.T) {
+	fix := setupTest(t)
+	ctx, essClient := fix.ctx, fix.essClient
+
+	repo, err := statusmessage.NewRepository(essClient)
+	if err != nil {
+		t.Fatalf("NewRepository() failed: %v", err)
+	}
+
+	_, _ = essClient.ReadWriteTransaction(ctx, func(txCtx context.Context, txn *cloudspanner.ReadWriteTransaction) error {
+		txRepo := repo.WithTx(txn)
+
+		if err := txRepo.SaveStatusMessageHistory(nil, nil, nil, nil); err == nil {
+			t.Errorf("SaveStatusMessageHistory(nil, ...) expected error, got nil")
+		}
+
+		canceledCtx, cancel := context.WithCancel(txCtx)
+		cancel()
+		if err := txRepo.SaveStatusMessageHistory(canceledCtx, nil, nil, nil); err == nil {
+			t.Errorf("SaveStatusMessageHistory(canceledCtx, ...) expected error, got nil")
+		}
+
+		return errors.New("abort transaction")
+	})
 }
 
 type testFixture struct {

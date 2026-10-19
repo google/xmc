@@ -29,6 +29,12 @@ import (
 
 // SaveStatusMessageHistory buffers a status message history mutation in the bound Spanner transaction.
 func (r *TxRepository) SaveStatusMessageHistory(ctx context.Context, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
+	if ctx == nil {
+		return fmt.Errorf("context must not be nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if r.tx == nil {
 		return fmt.Errorf("transaction must not be nil")
 	}

@@ -555,3 +555,50 @@ func TestRecordExecutionHistory_PropagatesErrors(t *testing.T) {
 		}
 	})
 }
+
+func TestRecordExecutionHistory_DefensiveValidation(t *testing.T) {
+	ctx := context.Background()
+	exec := &essmsgpb.WorkUnitExecution{
+		Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_RUNNING},
+	}
+
+	t.Run("nil transaction", func(t *testing.T) {
+		if err := workunit.RecordExecutionHistory(ctx, nil, 1, 2, 3, nil, nil, exec); err == nil {
+			t.Errorf("RecordExecutionHistory(nil tx) expected error, got nil")
+		}
+	})
+
+	t.Run("nil new execution", func(t *testing.T) {
+		tx := &storage.Transaction{
+			StatusMessages: &storage.MockStatusMessageTxRepository{},
+			StatusHistory:  &storage.MockStatusHistoryTxRepository{},
+		}
+		if err := workunit.RecordExecutionHistory(ctx, tx, 1, 2, 3, nil, nil, nil); err == nil {
+			t.Errorf("RecordExecutionHistory(nil newExec) expected error, got nil")
+		}
+	})
+
+	t.Run("nil status message repository", func(t *testing.T) {
+		tx := &storage.Transaction{
+			StatusHistory: &storage.MockStatusHistoryTxRepository{},
+		}
+		if err := workunit.RecordExecutionHistory(ctx, tx, 1, 2, 3, nil, nil, exec); err == nil {
+			t.Errorf("RecordExecutionHistory(nil StatusMessages) expected error, got nil")
+		}
+	})
+
+	t.Run("nil status history repository", func(t *testing.T) {
+		tx := &storage.Transaction{
+			StatusMessages: &storage.MockStatusMessageTxRepository{},
+		}
+		if err := workunit.RecordExecutionHistory(ctx, tx, 1, 2, 3, nil, nil, exec); err == nil {
+			t.Errorf("RecordExecutionHistory(nil StatusHistory) expected error, got nil")
+		}
+	})
+
+	t.Run("nil repository in RecordStatusMessageHistory", func(t *testing.T) {
+		if err := workunit.RecordStatusMessageHistory(ctx, nil, 1, nil, nil, nil, &essmsgpb.StructuredMessage{UserFacingText: "msg"}); err == nil {
+			t.Errorf("RecordStatusMessageHistory(nil repo) expected error, got nil")
+		}
+	})
+}
