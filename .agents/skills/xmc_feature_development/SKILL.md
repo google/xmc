@@ -50,11 +50,10 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
    - Define baseline test fixtures and express test cases as concise deltas (e.g., using `prototest.Modify`).
 3. **Open-Source Code TODOs**:
    - Ensure inline `TODO` comments in public packages use `TODO:` or public issue links `TODO(#123)`, avoiding internal bug IDs.
-4. **Unbounded Collections & Shared Dirty Environments**:
-   - **Shared Environment Invariant**: Target environments (`xmc-nightly`, staging, production, multi-tenant dev clusters) are dirty, long-lived, and populated with thousands of historical entities. Software designs and test suites MUST NEVER assume an environment is clean, empty, or low-cardinality (see [`tools/nightly_tests/README.md`](../../../tools/nightly_tests/README.md#step-1-implement-the-verifier-in-examples_verification)).
-   - Design backend `List*` query generators and `TableView` schemas with explicit newest-first default ordering (`OrderByFieldsWithSortDirection`, typically `created DESC` with unique tie-breaker) per [Storage Layer Guidelines](../../../internal/storage/AGENTS.md#4-deterministic-default-ordering--pagination-for-unbounded-collections).
-   - In UI components and stores, implement server-side filtering and pagination controls rather than single-page client-side filtering.
-   - For E2E tests and verifiers, scope lookups by specific XID/entity ID or server-side filter; never assume target entities appear on an unfiltered first page in shared environments (`xmc-nightly`).
+4. **Unbounded Collections & Shared Dirty-Environment Testing**:
+   - **Shared Dirty-Environment Test Scoping**: Target test and runtime environments (`xmc-nightly`, staging, production, multi-tenant dev clusters) are dirty, long-lived, and populated with thousands of historical entities. Software designs, E2E verifiers, and integration tests MUST NEVER assume an environment is clean/empty or that newly created entities appear on an unfiltered first page—always scope queries by specific XID/entity ID, use server-side filters, or traverse pages (see [`tools/nightly_tests/README.md`](../../../tools/nightly_tests/README.md#step-1-implement-the-verifier-in-examples_verification)).
+   - **Backend Storage Ordering & Pagination Tests**: Design `List*` query generators and `TableView` schemas with explicit newest-first default ordering (`OrderByFieldsWithSortDirection`, typically `created DESC` with unique tie-breaker) and test multi-page pagination traversal (`N > page_size`) per [Storage Layer Guidelines](../../../internal/storage/AGENTS.md#4-deterministic-default-ordering--pagination-for-unbounded-collections).
+   - **UI & Client Querying**: Use server-side filtering, pagination controls, or direct `Get*` lookups rather than single-page client-side truncation per [Core Engineering Standards](../../rules/core_engineering.md#3-default-immutability--safe-data-handling).
 
 ---
 
@@ -86,7 +85,6 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
    - Locate the coverage output at `bazel-out/_coverage/_coverage_report.dat`.
    - Verify that 100% of newly added or modified lines of business logic are covered by unit tests.
    - Ensure 1-to-1 test file cohesion (each source file must have a dedicated `*_test.go` or `*_test.py` file).
-   - For `List*` repositories and endpoints, ensure tests verify multi-page pagination traversal and newest-first default ordering across page boundaries.
 
 ---
 
