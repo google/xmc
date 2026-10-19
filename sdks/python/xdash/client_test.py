@@ -513,6 +513,17 @@ class DashboardClientTest(unittest.TestCase):
         )
         mock_response.raise_for_status.assert_called_once()
 
+    def test_fetch_iam_id_token_missing_google_auth_raises_xdash_error(self) -> None:
+        with (
+            patch.dict("sys.modules", {"google": None, "google.auth": None}),
+            self.assertRaises(XDashError) as cm,
+        ):
+            _fetch_iam_id_token(
+                "sa@test-proj.iam.gserviceaccount.com",
+                "iap-client-id.apps.googleusercontent.com",
+            )
+        self.assertIn("google-auth", str(cm.exception))
+
 
 class ChannelSecurityTest(unittest.TestCase):
     """Tests for how DashboardClient chooses between plaintext and TLS channels."""

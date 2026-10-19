@@ -47,8 +47,14 @@ def _fetch_iam_id_token(client_sa: str, audience: str) -> str:
     Returns:
         The signed OIDC ID token string.
     """
-    import google.auth
-    from google.auth.transport import requests as google_requests
+    try:
+        import google.auth
+        from google.auth.transport import requests as google_requests
+    except ImportError as e:
+        raise XDashError(
+            "The 'google-auth' package is required for IAM OIDC token fallback. "
+            "Please install it using 'pip install google-auth'."
+        ) from e
 
     credentials, _ = google.auth.default()
     session = google_requests.AuthorizedSession(credentials)
@@ -258,20 +264,27 @@ class DashboardClient:
             return ""
         return self._get_cached_or_fetch_iam_token(client_sa, audience)
 
+    def _get_valid_cached_token(self, key: tuple[str, str], now: float) -> str | None:
+        """Returns a cached IAM token if present and not expired."""
+        cached = self._cached_iam_token
+        if cached is None:
+            return None
+        cached_key, cached_token, expires_at = cached
+        if cached_key == key and now < expires_at:
+            return cached_token
+        return None
+
     def _get_cached_or_fetch_iam_token(self, client_sa: str, audience: str) -> str:
         """Returns a cached IAM OIDC token or mints a fresh one under a thread lock."""
         key = (client_sa, audience)
-        now = time.monotonic()
-        if self._cached_iam_token is not None:
-            cached_key, cached_token, expires_at = self._cached_iam_token
-            if cached_key == key and now < expires_at:
-                return cached_token
+        cached_token = self._get_valid_cached_token(key, time.monotonic())
+        if cached_token is not None:
+            return cached_token
         with self._token_lock:
             now = time.monotonic()
-            if self._cached_iam_token is not None:
-                cached_key, cached_token, expires_at = self._cached_iam_token
-                if cached_key == key and now < expires_at:
-                    return cached_token
+            cached_token = self._get_valid_cached_token(key, now)
+            if cached_token is not None:
+                return cached_token
             fetched = _fetch_iam_id_token(client_sa, audience)
             self._cached_iam_token = (key, fetched, now + _TOKEN_TTL_SEC)
             return fetched
