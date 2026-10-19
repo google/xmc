@@ -12,7 +12,7 @@ graph TD
         CRD["Component CRD<br>(xmc.dev/v1alpha1)"]
         Deploy["xmc-bridge Deployment<br>(controller daemon)"]
         CM["ConfigMap<br>(xmc-bridge-config)"]
-        RBAC["Role & RoleBinding<br>(least-privilege; read-only ClusterRole opt-in)"]
+        RBAC["Role & RoleBinding<br>(least-privilege, namespaced)"]
         SA["ServiceAccount<br>(xmc-bridge-sa)"]
     end
 
@@ -110,16 +110,13 @@ componentsDeployment:
   reconcileTimeout: "60s"                         # Timeout per Component reconcile pass
   maxConcurrentReconciles: 1                      # Components reconciled in parallel
   rbac:
-    clusterScope: false                           # true adds a read-only ClusterRole on wrapperRules; writes stay namespaced
-    wrapperRules:                                 # Read-only RBAC rules for 3P wrapper CRDs (spec.wrapperRef)
+    wrapperRules:                                 # 3P wrapper CRDs xmc-bridge may get (spec.wrapperRef)
       - apiGroups: ["clickhouse.altinity.com"]
         resources: ["clickhouseinstallations"]
       - apiGroups: ["cluster.redpanda.com", "redpanda.vectorized.io"]
         resources: ["clusters", "redpandas"]
       - apiGroups: ["ray.io"]
-        resources: ["rayclusters", "rayjobs", "rayservices"]
-      - apiGroups: ["jobset.x-k8s.io"]
-        resources: ["jobsets"]
+        resources: ["rayclusters", "rayservices"]
 
 xmc_bridge_custom_image: ""                       # Optional custom container image override
 ```
@@ -170,15 +167,13 @@ Removing the CRD is a deliberate manual step. While `xmc-bridge` is still runnin
 ## Security & RBAC Least Privilege
 
 - **ServiceAccount**: `xmc-bridge` runs under a dedicated service account (`xmc-bridge-sa`) with `automountServiceAccountToken: true`.
-- **Namespaced Role (`xmc-bridge-role`)**: Always a `Role` bound in the release namespace, whatever `componentsDeployment.rbac.clusterScope` is set to. It has no wildcard (`*`) API groups or resources and grants:
-  - `components.xmc.dev` (`components`, `components/status`, `components/finalizers`): `get`, `list`, `watch`, `update`, `patch`.
+- **Namespaced Role (`xmc-bridge-role`)**: A `Role` bound in the release namespace. It has no wildcard (`*`) API groups or resources and grants only the requests `xmc-bridge` and its Helm client make (`create` cannot be limited by `resourceNames`):
+  - `components.xmc.dev` `components`: `get`, `list`, `watch`, `patch`; `components/status`, `components/finalizers`: `update`, `patch`.
   - `core/events`: `create`, `patch`.
-  - `core/pods`, `core/serviceaccounts`: `get`, `list`, `watch`.
-  - `core/configmaps`, `core/secrets`, `core/services`, `apps/deployments`, `autoscaling/horizontalpodautoscalers`: `get`, `list`, `watch`, `create`, `update`, `patch`, `delete`.
-  - `apps/statefulsets`, `apps/daemonsets`, `apps/replicasets`: `get`, `list`, `watch`.
-  - `rbac.authorization.k8s.io` `roles`, `rolebindings` and `networking.k8s.io` `networkpolicies`: `get`, `list`, `watch`, `create`, plus `update`, `patch`, `delete` limited by `resourceNames` to the objects 1P charts self-provision (`ingestion-gateway-components-reader`, `ingestion-gateway-components-reader-binding`, `ingestion-gateway-network-policy`).
-  - `componentsDeployment.rbac.wrapperRules` (3P wrapper CRDs inspected via `spec.wrapperRef`): `get`, `list`, `watch`. The defaults cover `clickhouse.altinity.com/clickhouseinstallations`, `cluster.redpanda.com` & `redpanda.vectorized.io` `clusters`/`redpandas`, `ray.io` `rayclusters`/`rayjobs`/`rayservices`, and `jobset.x-k8s.io/jobsets`.
-- **Wrapper reader ClusterRole (`xmc-bridge-wrapper-reader-<namespace>`, opt-in)**: Rendered only with `componentsDeployment.rbac.clusterScope: true`. It grants `get`, `list`, `watch` on the `wrapperRules` resources in every namespace, so a `spec.wrapperRef` may point outside the release namespace, and Helm `NOTES.txt` prints a warning. It never grants write access outside the release namespace. Under the default, such cross-namespace GETs are Forbidden and the reconcile fails.
+  - `core/configmaps`: `create`, plus `get`, `update` on `xmc-component-values` only.
+  - `core/secrets` (Helm release storage, one Secret per revision): `get`, `list`, `create`, `update`, `delete`.
+  - `core/services`, `apps/deployments`, `autoscaling/horizontalpodautoscalers`, `rbac.authorization.k8s.io` `roles`/`rolebindings` and `networking.k8s.io` `networkpolicies`: `create`, plus `get`, `update`, `patch`, `delete` limited by `resourceNames` to the objects of the shipped 1P chart (`ingestion-gateway-deployment`, `ingestion-gateway-service`, `ingestion-gateway-hpa`, `ingestion-gateway-components-reader`, `ingestion-gateway-components-reader-binding`, `ingestion-gateway-network-policy`). A custom 1P chart loaded through `--chart-path` or `spec.parameters.chartPath` can only manage objects with these names; add its object names to `deploy/helm/templates/components/rbac.yaml` first, or its Helm install fails with `Forbidden`.
+  - `componentsDeployment.rbac.wrapperRules` (3P wrapper CRDs inspected via `spec.wrapperRef`): `get`. The defaults cover `clickhouse.altinity.com/clickhouseinstallations`, `cluster.redpanda.com` & `redpanda.vectorized.io` `clusters`/`redpandas`, and `ray.io` `rayclusters`/`rayservices`. A cross-namespace `wrapperRef` is rejected (`CrossNamespaceForbidden`), so wrapper resources are only read in the release namespace.
 - **Cluster identity ClusterRole (`xmc-bridge-cluster-identity-<namespace>`)**: Grants `get` on `namespaces` restricted to `resourceNames: ["kube-system"]` so `xmc-bridge` can read the cluster UID for CMS ownership fence declarations.
 - **Leader election Role (`xmc-bridge-leader-election`)**: Grants `create` on `coordination.k8s.io` leases, and `get` and `update` on the `xmc-bridge` Lease only. It is a namespaced `Role` in the release namespace, so the bridge cannot write Leases of other namespaces.
 - **Pod & Container Security**: Enforces `seccompProfile: RuntimeDefault`, read-only root filesystems, non-root execution, privilege escalation disabled, and dropping all capabilities (`ALL`).

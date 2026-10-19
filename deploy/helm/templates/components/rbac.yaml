@@ -13,8 +13,9 @@
 # limitations under the License.
 
 {{- if .Values.componentsDeployment.enabled }}
-# xmc-bridge-role is always namespaced to the release namespace, whatever rbac.clusterScope is,
-# so the bridge never gains write access outside it.
+# xmc-bridge-role is namespaced to the release namespace and lists only the requests xmc-bridge and
+# its Helm client make. create cannot be limited by resourceNames; every other verb is limited to
+# fixed object names where the bridge knows them.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -23,51 +24,72 @@ metadata:
     app.kubernetes.io/name: xmc-bridge
     app.kubernetes.io/part-of: xmanager-cloud
 rules:
+  # Components: read via the informer cache, finalizers via JSON patch, status via server-side apply.
   - apiGroups: ["xmc.dev"]
-    resources: ["components", "components/status", "components/finalizers"]
-    verbs: ["get", "list", "watch", "update", "patch"]
+    resources: ["components"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["xmc.dev"]
+    resources: ["components/status", "components/finalizers"]
+    verbs: ["update", "patch"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
-  - apiGroups: [""]
-    resources: ["pods", "serviceaccounts"]
-    verbs: ["get", "list", "watch"]
+  # 1P component Helm values (xmc-component-values).
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["create"]
   - apiGroups: [""]
-    resources: ["secrets", "services"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    resources: ["configmaps"]
+    resourceNames: ["xmc-component-values"]
+    verbs: ["get", "update"]
+  # Helm release storage (secrets driver): one Secret per revision, so the names are not fixed.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "delete"]
+  # Objects that 1P component releases render (e.g. xmc-cmp-ingestion-gateway). Helm reads, patches
+  # and deletes them by name; add their names here when a 1P chart adds or renames objects.
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["ingestion-gateway-service"]
+    verbs: ["get", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["create"]
   - apiGroups: ["apps"]
-    resources: ["statefulsets", "daemonsets", "replicasets"]
-    verbs: ["get", "list", "watch"]
+    resources: ["deployments"]
+    resourceNames: ["ingestion-gateway-deployment"]
+    verbs: ["get", "update", "patch", "delete"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # 1P component releases self-provision their reader RBAC (e.g. xmc-cmp-ingestion-gateway).
+    verbs: ["create"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    resourceNames: ["ingestion-gateway-hpa"]
+    verbs: ["get", "update", "patch", "delete"]
+  # ...their self-provisioned reader RBAC...
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
-    verbs: ["get", "list", "watch", "create"]
+    verbs: ["create"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
     resourceNames: ["ingestion-gateway-components-reader", "ingestion-gateway-components-reader-binding"]
-    verbs: ["update", "patch", "delete"]
+    verbs: ["get", "update", "patch", "delete"]
   # ...and their NetworkPolicy, so it lives and dies with the component's workload.
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
-    verbs: ["get", "list", "watch", "create"]
+    verbs: ["create"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     resourceNames: ["ingestion-gateway-network-policy"]
-    verbs: ["update", "patch", "delete"]
-  # Read-only access to configured 3P wrapper custom resources (spec.wrapperRef).
+    verbs: ["get", "update", "patch", "delete"]
+  # 3P wrapper custom resources (spec.wrapperRef), read by name in the release namespace.
   {{- range .Values.componentsDeployment.rbac.wrapperRules }}
   - apiGroups: {{ toJson .apiGroups }}
     resources: {{ toJson .resources }}
-    verbs: ["get", "list", "watch"]
+    verbs: ["get"]
   {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -86,40 +108,6 @@ roleRef:
   name: xmc-bridge-role
   apiGroup: rbac.authorization.k8s.io
 ---
-{{- if and .Values.componentsDeployment.rbac.clusterScope .Values.componentsDeployment.rbac.wrapperRules }}
-# rbac.clusterScope only adds read access to the configured 3P wrapper resources in every
-# namespace, for spec.wrapperRef targets outside the release namespace. It grants no writes.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: xmc-bridge-wrapper-reader-{{ .Release.Namespace }}
-  labels:
-    app.kubernetes.io/name: xmc-bridge
-    app.kubernetes.io/part-of: xmanager-cloud
-rules:
-  {{- range .Values.componentsDeployment.rbac.wrapperRules }}
-  - apiGroups: {{ toJson .apiGroups }}
-    resources: {{ toJson .resources }}
-    verbs: ["get", "list", "watch"]
-  {{- end }}
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: xmc-bridge-wrapper-reader-{{ .Release.Namespace }}
-  labels:
-    app.kubernetes.io/name: xmc-bridge
-    app.kubernetes.io/part-of: xmanager-cloud
-subjects:
-  - kind: ServiceAccount
-    name: xmc-bridge-sa
-    namespace: {{ .Release.Namespace }}
-roleRef:
-  kind: ClusterRole
-  name: xmc-bridge-wrapper-reader-{{ .Release.Namespace }}
-  apiGroup: rbac.authorization.k8s.io
----
-{{- end }}
 # Leader election: only the holder of the xmc-bridge Lease in the release namespace reconciles.
 # This Role is namespaced, so the bridge can write no other namespace's Leases.
 apiVersion: rbac.authorization.k8s.io/v1
