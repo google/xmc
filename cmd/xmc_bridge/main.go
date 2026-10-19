@@ -330,7 +330,7 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize cluster fence: %w", err)
 	}
-	reconciler, err := bridge.NewReconciler(cmsClient, bridgeProber, helmMgr)
+	reconciler, err := bridge.NewReconciler(cmsClient, bridgeProber, helmMgr, bridge.WithClusterFence(fence))
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}
@@ -356,6 +356,7 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 		return fmt.Errorf("failed to add cluster fence runnable: %w", err)
 	}
 	controller := bridge.NewComponentController(mgr.GetClient(), reconciler, bridge.ComponentControllerOptions{
+		Namespace:               cfg.Namespace,
 		ProbeInterval:           cfg.ProbeInterval,
 		ReconcileTimeout:        cfg.ReconcileTimeout,
 		MaxConcurrentReconciles: cfg.MaxConcurrentReconciles,
