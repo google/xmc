@@ -89,7 +89,7 @@ func TestReconcileComponent_UnchangedIntentKeepsCMSRecord(t *testing.T) {
 	}
 }
 
-func TestReconcileComponent_SourcedIntent(t *testing.T) {
+func TestReconcileComponent_SourcedIntentAndSameClusterRecreateAdoption(t *testing.T) {
 	ctx := context.Background()
 	ms := store.NewMemoryStore()
 	cmsClient := NewCMSClientAdapter(cmsserver.NewServer(ms, cmsserver.WithAuthorizer(cmsserver.NewDisabledAuthorizer())))
@@ -99,8 +99,18 @@ func TestReconcileComponent_SourcedIntent(t *testing.T) {
 		t.Fatalf("NewClusterFence() error = %v", err)
 	}
 
-	const uidA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-	r, err := NewReconciler(cmsClient, nil, nil, WithClusterFence(fence))
+	const (
+		uidA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+		uidB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	)
+	liveUID := uidA
+	r, err := NewReconciler(
+		cmsClient,
+		nil,
+		nil,
+		WithClusterFence(fence),
+		WithLiveUIDReader(func(context.Context, string, string) (string, error) { return liveUID, nil }),
+	)
 	if err != nil {
 		t.Fatalf("NewReconciler() error = %v", err)
 	}
@@ -142,18 +152,23 @@ func TestReconcileComponent_SourcedIntent(t *testing.T) {
 		t.Fatalf("pass 2 ComponentGeneration = %d, want 2", res2.ComponentGeneration)
 	}
 
-	// Pass 3a: another incarnation (uidB) of the same CR -> SourceConflict=SourceIncarnationMismatch,
-	// and the CMS record keeps its owner.
-	resOtherUID, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
-		Namespace: "xmc", Name: "redpanda", Generation: 1, UID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+	// Pass 3a: Stale local informer event from uidB while liveUID is uidA -> StaleIncarnation=true (no SourceConflict status overwrite).
+	resStaleLocal, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+		Namespace: "xmc", Name: "redpanda", Generation: 1, UID: uidB, ComponentGeneration: 2,
 		Enabled: true, Spec: specV2(),
 	})
 	if err != nil {
-		t.Fatalf("pass 3a (other incarnation): unexpected error = %v", err)
+		t.Fatalf("pass 3a (stale local incarnation): unexpected error = %v", err)
 	}
-	assertSourceConflictConditions(t, resOtherUID.Conditions, ReasonSourceIncarnationMismatch)
-	if rec, err := ms.GetComponent(ctx, "redpanda"); err != nil || rec.Owner == nil || rec.Owner.UID != uidA {
-		t.Fatalf("pass 3a CMS owner = (%+v, %v), want uidA", rec, err)
+	if !resStaleLocal.StaleIncarnation || hasSourceConflict(resStaleLocal) {
+		t.Fatalf("pass 3a StaleIncarnation=%v hasSourceConflict=%v, want true/false", resStaleLocal.StaleIncarnation, hasSourceConflict(resStaleLocal))
+	}
+	recStale, err := ms.GetComponent(ctx, "redpanda")
+	if err != nil {
+		t.Fatalf("pass 3a GetComponent() error = %v", err)
+	}
+	if recStale.Owner == nil || recStale.Owner.UID != uidA {
+		t.Fatalf("pass 3a CMS owner = %+v, want uidA: a stale incarnation must not take over the record", recStale.Owner)
 	}
 
 	// Pass 3b: Standby cluster takes over fence at epoch 2 -> primary data RPC returns CLUSTER_FENCED and notifies fence.Changes() immediately.
@@ -172,6 +187,36 @@ func TestReconcileComponent_SourcedIntent(t *testing.T) {
 	case <-fence.Changes():
 	default:
 		t.Errorf("expected data RPC CLUSTER_FENCED to notify fence.Changes() immediately")
+	}
+
+	// Re-declare primary cluster at epoch 3 so fence is active again.
+	fence, err = NewClusterFence(cmsClient, &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary", Epoch: 3}, ClusterFenceOptions{})
+	if err != nil {
+		t.Fatalf("NewClusterFence(epoch 3) error = %v", err)
+	}
+	r.fence = fence
+
+	// Pass 4: CR is recreated in-cluster (liveUID is now uidB) at CR generation 1 with v1 spec -> bumps componentGeneration to 3 and syncs observed generation.
+	liveUID = uidB
+	resAdopted, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+		Namespace: "xmc", Name: "redpanda", Generation: 1, UID: uidB, Enabled: true,
+		ExistingConditions: resFencedDataRPC.Conditions, Spec: specV1(),
+	})
+	if err != nil {
+		t.Fatalf("pass 4 (adopted recreation): ReconcileComponent() error = %v", err)
+	}
+	if resAdopted.ComponentGeneration != 3 {
+		t.Errorf("pass 4 ComponentGeneration = %d, want 3 after spec change on adoption", resAdopted.ComponentGeneration)
+	}
+	if sc := findCondition(resAdopted.Conditions, ConditionTypeSourceConflict); sc != nil {
+		t.Errorf("pass 4 SourceConflict = %+v, want pruned after adoption", sc)
+	}
+	recAdopted, err := ms.GetComponent(ctx, "redpanda")
+	if err != nil {
+		t.Fatalf("GetComponent() error = %v", err)
+	}
+	if recAdopted.ComponentID != rec1.ComponentID || recAdopted.Owner == nil || recAdopted.Owner.UID != uidB || recAdopted.ObservedGeneration == nil || *recAdopted.ObservedGeneration != 3 {
+		t.Errorf("pass 4 CMS record = (id=%d, owner=%+v, obsGen=%v), want id=%d, owner uidB, obsGen 3", recAdopted.ComponentID, recAdopted.Owner, recAdopted.ObservedGeneration, rec1.ComponentID)
 	}
 }
 
