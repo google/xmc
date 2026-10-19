@@ -483,7 +483,8 @@ func (r *Reconciler) evaluateLocalHealth(ctx context.Context, in ReconcileCompon
 // same-cluster custom resource recreation on SOURCE_INCARNATION_MISMATCH (including when the
 // retry after re-declaring returns it). If the recorded owner was deleted before that retry, the
 // call is retried once more without expected_owner_uid (see retrySameClusterTakeover).
-// STALE_GENERATION becomes a stale-snapshot error (see staleSnapshotError), never a source conflict.
+// STALE_GENERATION, from the first call or any retry, becomes a stale-snapshot error (see
+// classifyOwnershipError), never a source conflict.
 func callWithOwnership[T any](
 	ctx context.Context,
 	r *Reconciler,
@@ -510,11 +511,17 @@ func callWithOwnership[T any](
 	if info != nil && info.GetReason() == store.ReasonSourceIncarnationMismatch {
 		return retrySameClusterTakeover(ctx, r, in, src, info, err, fn)
 	}
-	if info != nil && info.GetReason() == store.ReasonStaleGeneration {
-		var zero T
-		return zero, staleSnapshotError(ctx, r, in)
+	return resp, classifyOwnershipError(ctx, r, in, err)
+}
+
+// classifyOwnershipError maps a sourced CMS error to its reconcile outcome: STALE_GENERATION becomes
+// a stale-snapshot error (see staleSnapshotError); other errors, including nil, are returned as is.
+// The fence rejections are recorded by RecordConflict at each call.
+func classifyOwnershipError(ctx context.Context, r *Reconciler, in ReconcileComponentInput, err error) error {
+	if info, _ := extractErrorInfo(err); info != nil && info.GetReason() == store.ReasonStaleGeneration {
+		return staleSnapshotError(ctx, r, in)
 	}
-	return resp, err
+	return err
 }
 
 // staleSnapshotError handles STALE_GENERATION: CMS already applied a newer generation of this
@@ -548,7 +555,8 @@ func retrySameClusterTakeover[T any](
 	var zero T
 	meta := info.GetMetadata()
 	ownerUID := meta[store.MetadataKeyOwnerUID]
-	if r.liveUIDReader == nil || ownerUID == "" || meta[store.MetadataKeyOwnerClusterUID] != src.GetCluster().GetUid() || meta[store.MetadataKeyOwnerNamespace] != in.Namespace {
+	clusterUID := src.GetCluster().GetUid()
+	if r.liveUIDReader == nil || ownerUID == "" || clusterUID == "" || meta[store.MetadataKeyOwnerClusterUID] != clusterUID || meta[store.MetadataKeyOwnerNamespace] != in.Namespace {
 		return zero, origErr
 	}
 	liveUID, err := r.liveUIDReader(ctx, in.Namespace, in.Name)
@@ -563,13 +571,13 @@ func retrySameClusterTakeover[T any](
 	resp, err := fn(ctx, retrySrc)
 	r.fence.RecordConflict(err)
 	if !isOwnerGoneRejection(err) {
-		return resp, err
+		return resp, classifyOwnershipError(ctx, r, in, err)
 	}
 	// R1: the recorded owner was deleted between the rejection and the CAS retry, so no active
 	// record exists. A plain sourced call creates a fresh record for this live incarnation.
 	resp, err = fn(ctx, src)
 	r.fence.RecordConflict(err)
-	return resp, err
+	return resp, classifyOwnershipError(ctx, r, in, err)
 }
 
 // isOwnerGoneRejection reports whether err is the SOURCE_INCARNATION_MISMATCH that CMS returns

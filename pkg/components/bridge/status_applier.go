@@ -226,9 +226,12 @@ func PersistReconcileResult(ctx context.Context, c client.Client, item *unstruct
 		}
 		return nil
 	}
-	// A Component that no longer exists or was replaced by a newer UID has no status left to persist.
-	if err := ApplyComponentStatusSSA(ctx, c, item, res); client.IgnoreNotFound(err) != nil && !apierrors.IsConflict(err) {
-		return fmt.Errorf("failed to apply status: %w", err)
+	// A Component that no longer exists has no status left to persist. The only 409 expected with
+	// ForceOwnership is the metadata.uid precondition (set when item has a UID): the Component was
+	// replaced by a newer incarnation, which has no status of ours to persist either.
+	err := ApplyComponentStatusSSA(ctx, c, item, res)
+	if err == nil || apierrors.IsNotFound(err) || (apierrors.IsConflict(err) && item.GetUID() != "") {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("failed to apply status: %w", err)
 }

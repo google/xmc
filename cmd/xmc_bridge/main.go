@@ -330,10 +330,6 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize cluster fence: %w", err)
 	}
-	reconciler, err := bridge.NewReconciler(cmsClient, bridgeProber, helmMgr, bridge.WithClusterFence(fence))
-	if err != nil {
-		return fmt.Errorf("failed to initialize Reconciler: %w", err)
-	}
 	mgr, err := ctrl.NewManager(k8sCfg, bridge.ComponentManagerOptions(bridge.ComponentManagerConfig{
 		Namespace:              cfg.Namespace,
 		LeaderElection:         true,
@@ -342,6 +338,13 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	}))
 	if err != nil {
 		return fmt.Errorf("failed to create controller manager: %w", err)
+	}
+	// The live UID reader bypasses the informer cache, so takeover and stale-incarnation checks see
+	// the current Component rather than a possibly stale cached copy.
+	reconciler, err := bridge.NewReconciler(cmsClient, bridgeProber, helmMgr, bridge.WithClusterFence(fence),
+		bridge.WithLiveUIDReader(bridge.NewAPIReaderLiveUID(mgr.GetAPIReader())))
+	if err != nil {
+		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}
 	if err := bridge.AddComponentHealthChecks(ctx, mgr); err != nil {
 		return err

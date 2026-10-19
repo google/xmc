@@ -263,6 +263,7 @@ func runControllerEnvWithStore(t *testing.T, cfg *rest.Config, mgrCfg ComponentM
 	writer := dynamic.NewForConfigOrDie(cfg)
 	cmsClient := &intentObserver{CMSClient: NewCMSClientAdapter(cms.NewServer(cmsStore, cms.WithAuthorizer(cms.NewDisabledAuthorizer())))}
 	var recOpts []ReconcilerOption
+	recOpts = append(recOpts, WithLiveUIDReader(NewAPIReaderLiveUID(mgr.GetAPIReader())))
 	var recCMS CMSClient = cmsClient
 	var fence *ClusterFence
 	var fenceCMS *epochOverrideCMS

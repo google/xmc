@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Production target: reconciler.go (callWithOwnership and applyIntentResponse).
+// Production target: reconciler.go (callWithOwnership, applyIntentResponse and NewAPIReaderLiveUID).
 //
 // Test type: Hermetic unit test suite in package bridge using a fake
 // sourceCallRecorder to script CMS ErrorInfo responses without a gRPC server
@@ -32,6 +32,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
@@ -134,6 +138,7 @@ func TestCallWithOwnership_Retries(t *testing.T) {
 		name          string
 		script        []error
 		reader        LiveUIDReader
+		cluster       *componentspb.ClusterIdentity // Defaults to the fence identity.
 		declareErr    error
 		wantErrIs     error
 		wantErr       bool
@@ -149,6 +154,9 @@ func TestCallWithOwnership_Retries(t *testing.T) {
 		{name: "owner deleted before takeover retries without expected owner", script: []error{ownedBy(sameClusterOwner), ownerGone}, reader: liveIs(retryTestLocalUID, nil), wantOwners: []string{"", retryTestOwnerUID, ""}},
 		{name: "owner deleted then plain retry rejected", script: []error{ownedBy(sameClusterOwner), ownerGone, ownedBy(sameClusterOwner)}, reader: liveIs(retryTestLocalUID, nil), wantErr: true, wantOwners: []string{"", retryTestOwnerUID, ""}},
 		{name: "takeover rejected with an owner is returned", script: []error{ownedBy(sameClusterOwner), ownedBy(withMeta("owner_uid", "cccccccc-cccc-cccc-cccc-cccccccccccc"))}, reader: liveIs(retryTestLocalUID, nil), wantErr: true, wantOwners: []string{"", retryTestOwnerUID}},
+		{name: "takeover retry with a stale generation", script: []error{ownedBy(sameClusterOwner), staleGen}, reader: liveIs(retryTestLocalUID, nil), wantErrIs: errStaleSnapshot, wantOwners: []string{"", retryTestOwnerUID}},
+		{name: "owner-gone retry with a stale generation", script: []error{ownedBy(sameClusterOwner), ownerGone, staleGen}, reader: liveIs(retryTestLocalUID, nil), wantErrIs: errStaleSnapshot, wantOwners: []string{"", retryTestOwnerUID, ""}},
+		{name: "empty cluster UID on both sides fails closed", cluster: &componentspb.ClusterIdentity{Name: "primary", Epoch: 1}, script: []error{ownedBy(withMeta("owner_cluster_uid", ""))}, reader: liveIs(retryTestLocalUID, nil), wantErr: true, wantOwners: []string{""}},
 		{name: "no live UID reader", script: []error{ownedBy(sameClusterOwner)}, wantErr: true, wantOwners: []string{""}},
 		{name: "owner UID missing", script: []error{ownedBy(withMeta("owner_uid", ""))}, reader: liveIs(retryTestLocalUID, nil), wantErr: true, wantOwners: []string{""}},
 		{name: "owner in another cluster", script: []error{ownedBy(withMeta("owner_cluster_uid", "22222222-2222-2222-2222-222222222222"))}, reader: liveIs(retryTestLocalUID, nil), wantErr: true, wantOwners: []string{""}},
@@ -177,7 +185,7 @@ func TestCallWithOwnership_Retries(t *testing.T) {
 				t.Fatalf("NewReconciler() error = %v", err)
 			}
 			rec := &sourceCallRecorder{script: tt.script}
-			in := ReconcileComponentInput{Namespace: "xmc", Name: "redpanda", Generation: 1, UID: retryTestLocalUID}
+			in := ReconcileComponentInput{Namespace: "xmc", Name: "redpanda", Generation: 1, UID: retryTestLocalUID, Cluster: tt.cluster}
 
 			_, err = callWithOwnership(context.Background(), r, in, rec.call)
 
@@ -200,6 +208,48 @@ func TestCallWithOwnership_Retries(t *testing.T) {
 			}
 			if cms.declareCalls != tt.wantDeclareCt {
 				t.Errorf("DeclareClusterEpoch calls = %d, want %d", cms.declareCalls, tt.wantDeclareCt)
+			}
+		})
+	}
+}
+
+// stubComponentReader serves Get from obj or fails it with err.
+type stubComponentReader struct {
+	client.Reader
+	obj *unstructured.Unstructured
+	err error
+}
+
+func (s stubComponentReader) Get(_ context.Context, _ client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.obj.DeepCopyInto(obj.(*unstructured.Unstructured))
+	return nil
+}
+
+func TestNewAPIReaderLiveUID(t *testing.T) {
+	if NewAPIReaderLiveUID(nil) != nil {
+		t.Error("NewAPIReaderLiveUID(nil) = non-nil, want nil (no live UID checks)")
+	}
+	live := newComponentObject()
+	live.SetUID(retryTestLocalUID)
+	readErr := errors.New("api server unavailable")
+	tests := []struct {
+		name    string
+		reader  stubComponentReader
+		wantUID string
+		wantErr error
+	}{
+		{name: "existing object", reader: stubComponentReader{obj: live}, wantUID: retryTestLocalUID},
+		{name: "deleted object reads as no live UID", reader: stubComponentReader{err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "redpanda")}},
+		{name: "other errors are returned", reader: stubComponentReader{err: readErr}, wantErr: readErr},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uid, err := NewAPIReaderLiveUID(tt.reader)(context.Background(), "xmc", "redpanda")
+			if uid != tt.wantUID || !errors.Is(err, tt.wantErr) {
+				t.Errorf("live UID = (%q, %v), want (%q, %v)", uid, err, tt.wantUID, tt.wantErr)
 			}
 		})
 	}

@@ -16,6 +16,7 @@ package bridge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -70,6 +71,8 @@ type componentWrites struct {
 	calls []string
 	// apply holds the options of the last subresource apply.
 	apply client.SubResourceApplyOptions
+	// appliedUID is the metadata.uid of the last subresource apply ("" when it carried none).
+	appliedUID string
 }
 
 // newFakeComponentClient returns a controller-runtime fake client holding objs, with the Component
@@ -105,9 +108,28 @@ func newFakeComponentClient(t *testing.T, failures map[string]error, objs ...*un
 			}
 			w.apply = client.SubResourceApplyOptions{}
 			w.apply.ApplyOpts(opts)
+			w.appliedUID = appliedUID(t, obj)
 			return c.SubResource(sub).Apply(ctx, obj, opts...)
 		},
 	}).Build(), w
+}
+
+// appliedUID returns the metadata.uid of an apply configuration.
+func appliedUID(t *testing.T, obj runtime.ApplyConfiguration) string {
+	t.Helper()
+	raw, err := json.Marshal(obj)
+	if err != nil {
+		t.Fatalf("json.Marshal(apply configuration) failed: %v", err)
+	}
+	var applied struct {
+		Metadata struct {
+			UID string `json:"uid"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(raw, &applied); err != nil {
+		t.Fatalf("json.Unmarshal(apply configuration) failed: %v", err)
+	}
+	return applied.Metadata.UID
 }
 
 // getFakeComponent returns the stored Component namespace/name of c.
@@ -246,6 +268,29 @@ func TestApplyComponentStatusSSA(t *testing.T) {
 			t.Fatal("expected error from ApplyComponentStatusSSA, got nil")
 		}
 	})
+
+	t.Run("carries the item UID as a precondition", func(t *testing.T) {
+		tests := []struct {
+			name string
+			uid  types.UID
+		}{
+			{name: "with a UID", uid: "uid-1"},
+			{name: "without a UID", uid: ""},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				item := newTestComponent("comp-1", "xmc-ns")
+				item.SetUID(tt.uid)
+				c, writes := newFakeComponentClient(t, nil, item)
+				if err := ApplyComponentStatusSSA(ctx, c, item, res); err != nil {
+					t.Fatalf("ApplyComponentStatusSSA() unexpected error: %v", err)
+				}
+				if writes.appliedUID != string(tt.uid) {
+					t.Errorf("applied metadata.uid = %q, want %q", writes.appliedUID, tt.uid)
+				}
+			})
+		}
+	})
 }
 
 func TestCleanupFinalizer(t *testing.T) {
@@ -362,9 +407,13 @@ func TestPersistReconcileResult(t *testing.T) {
 	enabled := componentsv1alpha1.ComponentState_COMPONENT_STATE_ENABLED
 	errPatch := errors.New("patch failed")
 	errApply := errors.New("apply failed")
+	// conflict is the 409 the API server returns when the applied metadata.uid precondition no
+	// longer matches: the Component was replaced by a newer incarnation.
+	conflict := apierrors.NewConflict(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "comp-persist", errors.New("uid precondition failed"))
 	tests := []struct {
 		name       string
 		nilItem    bool
+		uid        types.UID
 		res        *ReconcileResult
 		failures   map[string]error
 		wantErr    error
@@ -376,6 +425,8 @@ func TestPersistReconcileResult(t *testing.T) {
 		{name: "released finalizer skips status", res: &ReconcileResult{RemoveFinalizer: true}, wantWrites: []string{"patch"}},
 		{name: "release error is returned", res: &ReconcileResult{RemoveFinalizer: true}, failures: map[string]error{"patch": errPatch}, wantErr: errPatch, wantWrites: []string{"patch"}},
 		{name: "status error is returned", res: &ReconcileResult{State: enabled}, failures: map[string]error{"apply/status": errApply}, wantErr: errApply, wantWrites: []string{"apply/status"}},
+		{name: "conflict on a UID-guarded apply is tolerated", uid: "uid-old", res: &ReconcileResult{State: enabled}, failures: map[string]error{"apply/status": conflict}, wantWrites: []string{"apply/status"}},
+		{name: "conflict without a UID precondition is returned", res: &ReconcileResult{State: enabled}, failures: map[string]error{"apply/status": conflict}, wantErr: conflict, wantWrites: []string{"apply/status"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -383,6 +434,7 @@ func TestPersistReconcileResult(t *testing.T) {
 			c, writes := newFakeComponentClient(t, tt.failures, item)
 
 			arg := getFakeComponent(t, c, "xmc-ns", "comp-persist")
+			arg.SetUID(tt.uid)
 			if tt.nilItem {
 				arg = nil
 			}
@@ -396,6 +448,11 @@ func TestPersistReconcileResult(t *testing.T) {
 			}
 			if diff := cmp.Diff(tt.wantWrites, writes.calls); diff != "" {
 				t.Errorf("writes mismatch (-want +got):\n%s", diff)
+			}
+			if tt.failures["apply/status"] != nil {
+				if status, found, _ := unstructured.NestedMap(getFakeComponent(t, c, "xmc-ns", "comp-persist").Object, "status"); found {
+					t.Errorf("stored status after a rejected apply = %v, want unchanged (none)", status)
+				}
 			}
 		})
 	}

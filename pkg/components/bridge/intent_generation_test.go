@@ -163,6 +163,13 @@ func TestReconcileComponent_SourcedIntentAndSameClusterRecreateAdoption(t *testi
 	if !resStaleLocal.StaleIncarnation || hasSourceConflict(resStaleLocal) {
 		t.Fatalf("pass 3a StaleIncarnation=%v hasSourceConflict=%v, want true/false", resStaleLocal.StaleIncarnation, hasSourceConflict(resStaleLocal))
 	}
+	recStale, err := ms.GetComponent(ctx, "redpanda")
+	if err != nil {
+		t.Fatalf("pass 3a GetComponent() error = %v", err)
+	}
+	if recStale.Owner == nil || recStale.Owner.UID != uidA {
+		t.Fatalf("pass 3a CMS owner = %+v, want uidA: a stale incarnation must not take over the record", recStale.Owner)
+	}
 
 	// Pass 3b: Standby cluster takes over fence at epoch 2 -> primary data RPC returns CLUSTER_FENCED and notifies fence.Changes() immediately.
 	if _, err := ms.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: testStandbyClusterUID, Name: "standby", Epoch: 2}); err != nil {
