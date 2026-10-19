@@ -441,3 +441,14 @@ test('run warns about undeterminable changed files instead of reporting protecte
     fs.readFileSync = originalRead;
   }
 });
+
+test('describeError tolerates non-Error throws and appends trimmed stderr', () => {
+  const { describeError } = incrementalApproval;
+  assert.strictEqual(describeError(new Error('boom')), 'boom');
+  const withStderr = Object.assign(new Error('git failed'), { stderr: 'fatal: no merge base\n' });
+  assert.strictEqual(describeError(withStderr), 'git failed | Stderr: fatal: no merge base');
+  assert.strictEqual(describeError(null), 'null');
+  assert.strictEqual(describeError(undefined), 'undefined');
+  assert.strictEqual(describeError('plain string'), 'plain string');
+  assert.strictEqual(describeError({ stderr: 'oops' }), '[object Object] | Stderr: oops');
+});
