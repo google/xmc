@@ -1,6 +1,6 @@
 # Storage Package
 
-`internal/storage` defines the persistence interfaces for XMC services and the Cloud Spanner implementation under `internal/storage/spanner/`.
+`internal/storage` defines the persistence interfaces for XMC services and the database backend implementations under [`internal/storage/spanner/`](spanner/) and [`internal/storage/postgres/`](postgres/).
 
 ## Architecture
 
@@ -15,9 +15,17 @@ internal/storage/
          │
          │ implemented by
          ▼
-internal/storage/spanner/
-└── Cloud Spanner repositories and RunInTransaction implementation
+internal/storage/{spanner,postgres}/
+└── Backend repositories, schemas, and migrations
 ```
+
+## Schemas and Migrations
+
+Both Cloud Spanner and PostgreSQL maintain canonical full schemas (`schema/{ess,xid}-schema.sql`) and version-aligned SQL migrations (`migrations/{ess,xid}/`):
+
+- **Lockstep schema changes**: Every schema change must update both Spanner ([`spanner/schema/`](spanner/schema/) + [`spanner/migrations/`](spanner/migrations/)) and PostgreSQL ([`postgres/schema/`](postgres/schema/) + [`postgres/migrations/`](postgres/migrations/)) using the same migration version number (`<NNN>_<name>.up.sql` and `<NNN>_<name>.down.sql`).
+- **Backend-specific migrations**: If a migration only applies to one backend (such as tuning a backend-specific index), add a same-numbered no-op `.up.sql` / `.down.sql` pair in the other backend so expected schema versions (`EssExpectedSchemaVersion()`, `XidExpectedSchemaVersion()`) remain identical.
+- **Automated parity check**: [`migrations/parity_test.go`](migrations/parity_test.go) checks only that expected schema versions and canonical table names match across Spanner and PostgreSQL; it does not compare exact DDL or column definitions, which differ by SQL dialect.
 
 ## Transactions (`TransactionRunner`)
 

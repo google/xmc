@@ -21,4 +21,5 @@ Follow these rules when adding or modifying code under `internal/storage/`:
 - The root `internal/storage` package ([`storage.go`](storage.go), [`test_utils.go`](test_utils.go)) must remain 100% database-agnostic. Never import database drivers or engine-specific types into `internal/storage`.
 - Isolate all database-specific SQL dialects, mutations, schema mappings, and transaction mechanics inside dedicated engine subpackages:
   - [`internal/storage/spanner/`](spanner/) for Cloud Spanner
-  - `internal/storage/postgres/` (example future backend) for PostgreSQL
+  - [`internal/storage/postgres/`](postgres/) for PostgreSQL
+- Keep Spanner and PostgreSQL schemas and migrations in lockstep (enforced by [`parity_test.go`](migrations/parity_test.go); see [`README.md`](README.md#schemas-and-migrations) for the dual-backend workflow and no-op twin convention).
