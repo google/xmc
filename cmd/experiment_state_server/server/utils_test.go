@@ -333,6 +333,8 @@ type mockXidClient struct {
 	getXidEntryResp            *xidmsgpb.XidEntry
 	createXidEntryErr          error
 	createXidEntryResp         *xidmsgpb.XidEntry
+	createXidEntryCalls        int
+	gotCreateXidEntryReq       *xidmsgpb.CreateXidEntryRequest
 	checkUserAuthorizationErr  error
 	checkUserAuthorizationResp *xidmsgpb.CheckUserAuthorizationResponse
 	updateXidEntryErr          error
@@ -343,6 +345,8 @@ func (m *mockXidClient) GetXidEntry(ctx context.Context, in *xidmsgpb.GetXidEntr
 	return m.getXidEntryResp, m.getXidEntryErr
 }
 func (m *mockXidClient) CreateXidEntry(ctx context.Context, in *xidmsgpb.CreateXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
+	m.createXidEntryCalls++
+	m.gotCreateXidEntryReq = in
 	return m.createXidEntryResp, m.createXidEntryErr
 }
 func (m *mockXidClient) CheckUserAuthorization(ctx context.Context, in *xidmsgpb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidmsgpb.CheckUserAuthorizationResponse, error) {
@@ -354,6 +358,11 @@ func (m *mockXidClient) UpdateXidEntry(ctx context.Context, in *xidmsgpb.UpdateX
 
 type mockAuthenticator struct {
 	err error
+	// denyAuthorization makes IsUserAuthorized report the user as unauthorized.
+	denyAuthorization   bool
+	isUserAuthorizedErr error
+	// gotIsUserAuthorizedRole records the role requested by the last IsUserAuthorized call.
+	gotIsUserAuthorizedRole authz.Role
 }
 
 func (m *mockAuthenticator) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
@@ -364,7 +373,11 @@ func (m *mockAuthenticator) AuthenticateUserFromContext(ctx context.Context) (st
 }
 
 func (m *mockAuthenticator) IsUserAuthorized(ctx context.Context, user string, acls *xidmsgpb.XidAcls, role authz.Role) (bool, error) {
-	return true, nil
+	m.gotIsUserAuthorizedRole = role
+	if m.isUserAuthorizedErr != nil {
+		return false, m.isUserAuthorizedErr
+	}
+	return !m.denyAuthorization, nil
 }
 
 func (m *mockAuthenticator) IsUserAuthorizedForChart(ctx context.Context, user string, acls *xidmsgpb.XidAcls) (bool, error) {

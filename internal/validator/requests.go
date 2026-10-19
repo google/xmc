@@ -138,27 +138,30 @@ func ValidateCreateExperimentRequest(in *essmsgpb.CreateExperimentRequest) error
 }
 
 func validateExperimentMetadata(exp *essmsgpb.Experiment) error {
-	if len(exp.GetTags()) > maxTags {
-		return fmt.Errorf("experiment.tags cannot contain more than %d tags: %w", maxTags, grpcerr.ErrInvalidArgument)
+	return validateMetadataLimits("experiment", exp.GetTags(), exp.GetNotes(), exp.GetUrls())
+}
+
+// validateMetadataLimits enforces the size limits shared by experiment and work unit tags, notes,
+// and URLs. The resource prefixes the field names in error messages, e.g. "experiment.tags".
+func validateMetadataLimits(resource string, tags []string, notes string, urls []*essmsgpb.Url) error {
+	if len(tags) > maxTags {
+		return fmt.Errorf("%s.tags cannot contain more than %d tags: %w", resource, maxTags, grpcerr.ErrInvalidArgument)
 	}
-	for _, tag := range exp.GetTags() {
+	for _, tag := range tags {
 		if len(tag) > maxTagLen {
-			return fmt.Errorf("experiment.tags cannot contain tags longer than %d characters: %w", maxTagLen, grpcerr.ErrInvalidArgument)
+			return fmt.Errorf("%s.tags cannot contain tags longer than %d characters: %w", resource, maxTagLen, grpcerr.ErrInvalidArgument)
 		}
 	}
-	if len(exp.GetNotes()) > maxNotesLen {
-		return fmt.Errorf("experiment.notes cannot be longer than %d characters: %w", maxNotesLen, grpcerr.ErrInvalidArgument)
+	if len(notes) > maxNotesLen {
+		return fmt.Errorf("%s.notes cannot be longer than %d characters: %w", resource, maxNotesLen, grpcerr.ErrInvalidArgument)
 	}
-	if len(exp.GetUrls()) > maxURLs {
-		return fmt.Errorf("experiment.urls cannot contain more than %d urls: %w", maxURLs, grpcerr.ErrInvalidArgument)
+	if len(urls) > maxURLs {
+		return fmt.Errorf("%s.urls cannot contain more than %d urls: %w", resource, maxURLs, grpcerr.ErrInvalidArgument)
 	}
-	for _, url := range exp.GetUrls() {
+	for _, url := range urls {
 		if len(url.GetUrl()) > maxURLLen {
-			return fmt.Errorf("experiment.urls cannot contain urls longer than %d characters: %w", maxURLLen, grpcerr.ErrInvalidArgument)
+			return fmt.Errorf("%s.urls cannot contain urls longer than %d characters: %w", resource, maxURLLen, grpcerr.ErrInvalidArgument)
 		}
-	}
-	if exp.Acls == nil {
-		return fmt.Errorf("experiment.acls cannot be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 	return nil
 }
@@ -189,6 +192,24 @@ func FillExperimentNullValues(exp *essmsgpb.Experiment) *essmsgpb.Experiment {
 		exp.Priority = essmsgpb.Priority_LOW
 	}
 	return exp
+}
+
+// FillExperimentDefaultACLs grants the creator OWNER on an experiment whose ACLs are unset or list
+// no principals in any role. ACLs that list at least one principal are returned unchanged, so the
+// server never rewrites access that the caller specified explicitly.
+func FillExperimentDefaultACLs(exp *essmsgpb.Experiment, creator string) *essmsgpb.Experiment {
+	if hasACLPrincipals(exp.GetAcls()) {
+		return exp
+	}
+	exp.Acls = &xidmessagespb.XidAcls{
+		Owners: []*xidmessagespb.XidAcls_Role{{Principal: &xidmessagespb.XidAcls_Role_User{User: creator}}},
+	}
+	return exp
+}
+
+// hasACLPrincipals reports whether the ACLs list at least one principal in any role.
+func hasACLPrincipals(acls *xidmessagespb.XidAcls) bool {
+	return len(acls.GetOwners())+len(acls.GetWriters())+len(acls.GetReaders()) > 0
 }
 
 // FillWorkUnitNullValues fills in any null values in the WorkUnit proto with default values.
@@ -303,26 +324,7 @@ func ValidateCreateWorkUnitRequest(in *essmsgpb.CreateWorkUnitRequest) error {
 }
 
 func validateWorkUnitMetadata(wu *essmsgpb.WorkUnit) error {
-	if len(wu.GetTags()) > maxTags {
-		return fmt.Errorf("work_unit.tags cannot contain more than %d tags: %w", maxTags, grpcerr.ErrInvalidArgument)
-	}
-	for _, tag := range wu.GetTags() {
-		if len(tag) > maxTagLen {
-			return fmt.Errorf("work_unit.tags cannot contain tags longer than %d characters: %w", maxTagLen, grpcerr.ErrInvalidArgument)
-		}
-	}
-	if len(wu.GetNotes()) > maxNotesLen {
-		return fmt.Errorf("work_unit.notes cannot be longer than %d characters: %w", maxNotesLen, grpcerr.ErrInvalidArgument)
-	}
-	if len(wu.GetUrls()) > maxURLs {
-		return fmt.Errorf("work_unit.urls cannot contain more than %d urls: %w", maxURLs, grpcerr.ErrInvalidArgument)
-	}
-	for _, url := range wu.GetUrls() {
-		if len(url.GetUrl()) > maxURLLen {
-			return fmt.Errorf("work_unit.urls cannot contain urls longer than %d characters: %w", maxURLLen, grpcerr.ErrInvalidArgument)
-		}
-	}
-	return nil
+	return validateMetadataLimits("work_unit", wu.GetTags(), wu.GetNotes(), wu.GetUrls())
 }
 
 func validateJobSetExecutable(exec *essmsgpb.Executable) error {
