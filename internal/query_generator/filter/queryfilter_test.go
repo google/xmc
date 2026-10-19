@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
@@ -1107,4 +1108,617 @@ func TestHasOperatorWithSubstringMatching(t *testing.T) {
 			}
 		})
 	}
+}
+
+func postgresMemberMap(m map[string]appendix) MemberFunc {
+	return func(name []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
+		n := strings.Join(name, ".")
+		a, ok := m[n]
+		if !ok {
+			return safesql.New(""), filtervisitor.Invalid, fmt.Errorf("name %q not found", n)
+		}
+		return a.ql, a.tp, nil
+	}
+}
+
+func postgresFunctionMap(m map[string]appendix) PostgresFunctionFunc {
+	return func(name string, p *Postgres, el []*fpb.Expression) (filtervisitor.PrimType, error) {
+		a, ok := m[name]
+		if !ok {
+			return filtervisitor.Invalid, fmt.Errorf("function %q not found", name)
+		}
+		p.AppendTrustedSQL(safesql.Concat(a.ql, safesql.New("(")))
+		for i, e := range el {
+			if i > 0 {
+				p.AppendTrustedSQL(safesql.New(", "))
+			}
+			if _, err := filtervisitor.Visit(p, e); err != nil {
+				return filtervisitor.Invalid, err
+			}
+		}
+		p.AppendTrustedSQL(safesql.New(")"))
+		return a.tp, nil
+	}
+}
+
+func postgresDisjunctionMap(m map[string]appendix) DisjunctionFunc {
+	return func(name []string) (bool, safesql.TrustedSQLString, error) {
+		n := strings.Join(name, ".")
+		a, ok := m[n]
+		if !ok {
+			return false, safesql.New(""), fmt.Errorf("name %q not found", n)
+		}
+		return a.optimizable, a.ql, nil
+	}
+}
+
+func TestPostgresSingleLevelAndCoercionSuccess(t *testing.T) {
+	parsedTime := time.Date(2012, 11, 1, 22, 8, 41, 0, time.UTC)
+	baseSQL := "SELECT x.foo FROM Blah AS x WHERE "
+
+	tests := []struct {
+		name    string
+		input   string
+		m       map[string]appendix
+		options []FilterBaseOption
+		want    PostgresStatement
+	}{
+		{
+			name:  "string_equality",
+			input: `name = "42"`,
+			m: map[string]appendix{
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.name = $1)`,
+				Args: []any{"42"},
+			},
+		},
+		{
+			name:  "integer_greater_than",
+			input: `count > 12`,
+			m: map[string]appendix{
+				"count": {safesql.New("y.countz"), filtervisitor.Integer, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(y.countz > $1)`,
+				Args: []any{int64(12)},
+			},
+		},
+		{
+			name:  "uint64_coercion_on_integer_field",
+			input: `count > 16183100702751628930`,
+			m: map[string]appendix{
+				"count": {safesql.New("y.countz"), filtervisitor.Integer, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(y.countz > $1)`,
+				Args: []any{uint64(16183100702751628930)},
+			},
+		},
+		{
+			name:  "unsigned_greater_than",
+			input: `severity > 10`,
+			m: map[string]appendix{
+				"severity": {safesql.New("x.severity"), filtervisitor.Unsigned, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.severity > $1)`,
+				Args: []any{int64(10)},
+			},
+		},
+		{
+			name:  "float_less_than",
+			input: `humidity < 3.14`,
+			m: map[string]appendix{
+				"humidity": {safesql.New("x.humidity"), filtervisitor.Float, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.humidity < $1)`,
+				Args: []any{float64(3.14)},
+			},
+		},
+		{
+			name:  "float_greater_equals_integer_literal",
+			input: `humidity >= 3`,
+			m: map[string]appendix{
+				"humidity": {safesql.New("x.humidity"), filtervisitor.Float, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.humidity >= $1)`,
+				Args: []any{float64(3)},
+			},
+		},
+		{
+			name:  "enum_quoted_not_equals",
+			input: `state != "FIRST"`,
+			m: map[string]appendix{
+				"state": {safesql.New("x.state"), filtervisitor.Enum, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.state != $1)`,
+				Args: []any{"FIRST"},
+			},
+		},
+		{
+			name:  "enum_unquoted_equals",
+			input: `state = FIRST`,
+			m: map[string]appendix{
+				"state": {safesql.New("x.state"), filtervisitor.Enum, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.state = $1)`,
+				Args: []any{"FIRST"},
+			},
+		},
+		{
+			name:  "enum_member_path_coercion",
+			input: `state = pkg.FIRST`,
+			m: map[string]appendix{
+				"state": {safesql.New("x.state"), filtervisitor.Enum, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.state = $1)`,
+				Args: []any{"pkg.FIRST"},
+			},
+		},
+		{
+			name:  "boolean_unary",
+			input: `bit`,
+			m: map[string]appendix{
+				"bit": {safesql.New("x.bit"), filtervisitor.Boolean, false},
+			},
+			want: PostgresStatement{
+				SQL: baseSQL + `x.bit`,
+			},
+		},
+		{
+			name:  "boolean_equals_false",
+			input: `bit = false`,
+			m: map[string]appendix{
+				"bit": {safesql.New("x.bit"), filtervisitor.Boolean, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.bit = $1)`,
+				Args: []any{false},
+			},
+		},
+		{
+			name:  "timestamp_coercion",
+			input: `time > "2012-11-01T22:08:41Z"`,
+			m: map[string]appendix{
+				"time": {safesql.New("x.time"), filtervisitor.Timestamp, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.time > $1)`,
+				Args: []any{parsedTime},
+			},
+		},
+		{
+			name:  "proto_timestamp_coercion",
+			input: `time > "2012-11-01T22:08:41Z"`,
+			m: map[string]appendix{
+				"time": {safesql.New("x.proto.time.seconds"), filtervisitor.ProtoTimestamp, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.proto.time.seconds > $1)`,
+				Args: []any{parsedTime},
+			},
+		},
+		{
+			name:  "date_coercion",
+			input: `date > "2012-11-01"`,
+			m: map[string]appendix{
+				"date": {safesql.New("x.date"), filtervisitor.Date, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.date > $1)`,
+				Args: []any{"2012-11-01"},
+			},
+		},
+		{
+			name:  "regexp_match",
+			input: `name =~ "^match$"`,
+			m: map[string]appendix{
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.name ~ $1)`,
+				Args: []any{"^match$"},
+			},
+		},
+		{
+			name:  "regexp_not_match",
+			input: `name !~ "^match$"`,
+			m: map[string]appendix{
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(NOT (x.name ~ $1))`,
+				Args: []any{"^match$"},
+			},
+		},
+		{
+			name:  "function_regexp_not_match",
+			input: `foo(count) !~ "^match$"`,
+			m: map[string]appendix{
+				"count": {safesql.New("x.count"), filtervisitor.Integer, false},
+				"foo":   {safesql.New("bar"), filtervisitor.String, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(NOT (bar(x.count) ~ $1))`,
+				Args: []any{"^match$"},
+			},
+		},
+		{
+			name:  "array_has_operator",
+			input: `color: "blue"`,
+			m: map[string]appendix{
+				"color": {safesql.New("x.color"), filtervisitor.ArrayType(&filtervisitor.StrConst), false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `($1 = ANY(x.color))`,
+				Args: []any{"blue"},
+			},
+		},
+		{
+			name:    "string_has_operator_with_strpos",
+			input:   `name : 42`,
+			options: []FilterBaseOption{WithHasOperatorAsContains},
+			m: map[string]appendix{
+				"name": {safesql.New("z.name"), filtervisitor.String, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(STRPOS(z.name , $1) > 0)`,
+				Args: []any{"42"},
+			},
+		},
+		{
+			name:    "string_has_operator_with_member_path_rhs",
+			input:   `name:vrt.43d81b476a52`,
+			options: []FilterBaseOption{WithHasOperatorAsContains},
+			m: map[string]appendix{
+				"name": {safesql.New("z.name"), filtervisitor.String, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(STRPOS(z.name , $1) > 0)`,
+				Args: []any{"vrt.43d81b476a52"},
+			},
+		},
+		{
+			name:  "nested_function_call",
+			input: `foo(name, bar("asdf"))`,
+			m: map[string]appendix{
+				"foo":  {safesql.New("bar"), filtervisitor.Boolean, false},
+				"bar":  {safesql.New("baz"), filtervisitor.Boolean, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `bar(x.name, baz($1))`,
+				Args: []any{"asdf"},
+			},
+		},
+		{
+			name:  "bytes_equality",
+			input: `bytesfield = "bbb"`,
+			m: map[string]appendix{
+				"bytesfield": {safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.bytesfield = $1)`,
+				Args: []any{[]byte("bbb")},
+			},
+		},
+		{
+			name:  "bytes_regexp_match",
+			input: `bytesfield =~ "^match$"`,
+			m: map[string]appendix{
+				"bytesfield": {safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(x.bytesfield ~ $1)`,
+				Args: []any{[]byte("^match$")},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			options := fpb.ExpressionParserOptions_builder{EnableRegexpMatching: true}.Build()
+			exp, err := filter.ParseExpressionWithOptions(options, tc.input)
+			if err != nil {
+				t.Fatalf("ParseExpressionWithOptions(%q): %v", tc.input, err)
+			}
+			query := NewPostgresStatement(baseSQL)
+			f := Postgres{
+				MemberFunc:        postgresMemberMap(tc.m),
+				FunctionFunc:      postgresFunctionMap(tc.m),
+				Q:                 &query,
+				FilterBaseOptions: tc.options,
+			}
+			if err := f.AppendFilters(exp); err != nil {
+				t.Fatalf("AppendFilters(%q): %v", tc.input, err)
+			}
+			if diff := cmp.Diff(tc.want, query); diff != "" {
+				t.Errorf("PostgresStatement mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestPostgresComplexAndOptimizedDisjunctions(t *testing.T) {
+	baseSQL := "SELECT x.foo FROM Blah AS x WHERE "
+
+	tests := []struct {
+		name      string
+		input     string
+		optimized bool
+		m         map[string]appendix
+		want      PostgresStatement
+	}{
+		{
+			name:      "conjunction_and_positional_bindings",
+			input:     `name = "42" count > 42`,
+			optimized: false,
+			m: map[string]appendix{
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `((z.name = $1) AND (z.count > $2))`,
+				Args: []any{"42", int64(42)},
+			},
+		},
+		{
+			name:      "inverted_lhs_literal_equality",
+			input:     `"23" = name AND count > 42`,
+			optimized: false,
+			m: map[string]appendix{
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(($1 = z.name) AND (z.count > $2))`,
+				Args: []any{"23", int64(42)},
+			},
+		},
+		{
+			name:      "disjunction_with_negation",
+			input:     `name = "42" OR count != 42 OR -state=FIRST`,
+			optimized: false,
+			m: map[string]appendix{
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
+				"state": {safesql.New("z.state"), filtervisitor.Enum, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `((z.name = $1) OR (z.count != $2) OR NOT (z.state = $3))`,
+				Args: []any{"42", int64(42), "FIRST"},
+			},
+		},
+		{
+			name:      "complex_regexp_and_not_regexp_disjunction",
+			input:     `(count > 1 AND name !~ "^re") OR name =~ "re$" OR state=FIRST`,
+			optimized: false,
+			m: map[string]appendix{
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
+				"state": {safesql.New("z.state"), filtervisitor.Enum, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(((z.count > $1) AND (NOT (z.name ~ $2))) OR (z.name ~ $3) OR (z.state = $4))`,
+				Args: []any{int64(1), "^re", "re$", "FIRST"},
+			},
+		},
+		{
+			name:      "optimized_disjunction_single_group",
+			input:     `name = "42" AND nodes.count = "1" OR nodes.count = "2" OR nodes.count = "3"`,
+			optimized: true,
+			m: map[string]appendix{
+				"name":        {safesql.New("z.name"), filtervisitor.String, true},
+				"nodes.count": {safesql.New("z.count"), filtervisitor.String, true},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `((z.name = $1) AND ((z.count = ANY($2))))`,
+				Args: []any{"42", []string{"1", "2", "3"}},
+			},
+		},
+		{
+			name:      "optimized_disjunction_mixed_with_scalar",
+			input:     `name = "42" OR name = "47" OR nodes.count = "1"`,
+			optimized: true,
+			m: map[string]appendix{
+				"name":        {safesql.New("z.name"), filtervisitor.String, true},
+				"nodes.count": {safesql.New("z.count"), filtervisitor.String, true},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `((z.name = ANY($1)) OR (z.count = $2))`,
+				Args: []any{[]string{"42", "47"}, "1"},
+			},
+		},
+		{
+			name:      "optimized_disjunction_multiple_groups",
+			input:     `nodes.name = "42" OR nodes.name = "44" OR nodes.count = 1 OR nodes.count = 2 OR nodes.count = 3 OR nodes.name = "45"`,
+			optimized: true,
+			m: map[string]appendix{
+				"nodes.name":  {safesql.New("z.name"), filtervisitor.String, true},
+				"nodes.count": {safesql.New("z.count"), filtervisitor.Integer, true},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `((z.name = ANY($1)) OR (z.count = ANY($2)))`,
+				Args: []any{[]string{"42", "44", "45"}, []string{"1", "2", "3"}},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			options := fpb.ExpressionParserOptions_builder{EnableRegexpMatching: true}.Build()
+			exp, err := filter.ParseExpressionWithOptions(options, tc.input)
+			if err != nil {
+				t.Fatalf("ParseExpressionWithOptions(%q): %v", tc.input, err)
+			}
+			query := NewPostgresStatement(baseSQL)
+			f := Postgres{
+				MemberFunc:          postgresMemberMap(tc.m),
+				FunctionFunc:        postgresFunctionMap(tc.m),
+				DisjunctionFunc:     postgresDisjunctionMap(tc.m),
+				OptimizeDisjunction: tc.optimized,
+				Q:                   &query,
+			}
+			if err := f.AppendFilters(exp); err != nil {
+				t.Fatalf("AppendFilters(%q): %v", tc.input, err)
+			}
+			if diff := cmp.Diff(tc.want, query); diff != "" {
+				t.Errorf("PostgresStatement mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestPostgresFullTextSearch(t *testing.T) {
+	baseSQL := "SELECT x.foo FROM Blah AS x WHERE "
+	pgSearchCols := []safesql.TrustedSQLString{safesql.New("Title_Tokens"), safesql.New("Tags_Tokens")}
+
+	tests := []struct {
+		name      string
+		input     string
+		m         map[string]appendix
+		searchCol []safesql.TrustedSQLString
+		options   []FilterBaseOption
+		want      PostgresStatement
+		wantErr   bool
+	}{
+		{
+			name:      "phrase_full_text_search",
+			input:     `"full text search"`,
+			searchCol: pgSearchCols,
+			options:   []FilterBaseOption{WithFullTextSearchEnabled},
+			m: map[string]appendix{
+				"name": {safesql.New("z.name"), filtervisitor.String, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `(Title_Tokens @@ plainto_tsquery('simple', $1) OR Tags_Tokens @@ plainto_tsquery('simple', $2))`,
+				Args: []any{"full text search", "full text search"},
+			},
+		},
+		{
+			name:      "full_text_search_combined_with_restrictions",
+			input:     `"full text search" AND name = "42" count > 42`,
+			searchCol: pgSearchCols,
+			options:   []FilterBaseOption{WithFullTextSearchEnabled},
+			m: map[string]appendix{
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
+			},
+			want: PostgresStatement{
+				SQL:  baseSQL + `((Title_Tokens @@ plainto_tsquery('simple', $1) OR Tags_Tokens @@ plainto_tsquery('simple', $2)) AND ((z.name = $3) AND (z.count > $4)))`,
+				Args: []any{"full text search", "full text search", "42", int64(42)},
+			},
+		},
+		{
+			name:      "full_text_search_disabled_returns_error",
+			input:     `"full text search"`,
+			searchCol: pgSearchCols,
+			m: map[string]appendix{
+				"name": {safesql.New("z.name"), filtervisitor.String, false},
+			},
+			wantErr: true,
+		},
+		{
+			name:    "full_text_search_missing_columns_returns_error",
+			input:   `"full text search"`,
+			options: []FilterBaseOption{WithFullTextSearchEnabled},
+			wantErr: true,
+		},
+		{
+			name:      "full_text_search_empty_string_returns_error",
+			input:     `""`,
+			searchCol: pgSearchCols,
+			options:   []FilterBaseOption{WithFullTextSearchEnabled},
+			wantErr:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			options := fpb.ExpressionParserOptions_builder{EnableRegexpMatching: true}.Build()
+			exp, err := filter.ParseExpressionWithOptions(options, tc.input)
+			if err != nil {
+				t.Fatalf("ParseExpressionWithOptions(%q): %v", tc.input, err)
+			}
+			query := NewPostgresStatement(baseSQL)
+			f := Postgres{
+				MemberFunc:        postgresMemberMap(tc.m),
+				Q:                 &query,
+				TextSearchColumns: tc.searchCol,
+				FilterBaseOptions: tc.options,
+			}
+			err = f.AppendFilters(exp)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("AppendFilters(%q) succeeded with %q, want error", tc.input, query.SQL)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("AppendFilters(%q): %v", tc.input, err)
+			}
+			if diff := cmp.Diff(tc.want, query); diff != "" {
+				t.Errorf("PostgresStatement mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestPostgresRestrictionTranslateAndFailures(t *testing.T) {
+	t.Run("restriction_translate_rewrites_array_has", func(t *testing.T) {
+		exp, err := filter.ParseExpression(`kind : "FOO_OLD"`)
+		if err != nil {
+			t.Fatalf("ParseExpression: %v", err)
+		}
+		query := NewPostgresStatement("SELECT x.f FROM b AS x WHERE ")
+		f := Postgres{
+			MemberFunc: postgresMemberMap(map[string]appendix{
+				"kind": {safesql.New("z.kind"), filtervisitor.ArrayType(&filtervisitor.String), true},
+			}),
+			Q: &query,
+			RestrictionTranslate: func(r *fpb.Restriction) *fpb.Restriction {
+				if r.GetRhs().GetPhrase().GetValues()[0] != "FOO_OLD" {
+					return r
+				}
+				out := &fpb.Restriction{}
+				proto.Merge(out, r)
+				out.GetRhs().GetPhrase().GetValues()[0] = "FOO_NEW"
+				return out
+			},
+		}
+		if err := f.AppendFilters(exp); err != nil {
+			t.Fatalf("AppendFilters: %v", err)
+		}
+		want := PostgresStatement{
+			SQL:  "SELECT x.f FROM b AS x WHERE ($1 = ANY(z.kind))",
+			Args: []any{"FOO_NEW"},
+		}
+		if diff := cmp.Diff(want, query); diff != "" {
+			t.Errorf("PostgresStatement mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("unregistered_function_returns_error", func(t *testing.T) {
+		exp, err := filter.ParseExpression(`foo(name)`)
+		if err != nil {
+			t.Fatalf("ParseExpression: %v", err)
+		}
+		query := NewPostgresStatement("SELECT x.f FROM b AS x WHERE ")
+		f := Postgres{
+			MemberFunc: postgresMemberMap(map[string]appendix{
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
+			}),
+			Q: &query,
+		}
+		if err := f.AppendFilters(exp); err == nil {
+			t.Errorf("AppendFilters succeeded with %q, want error when FunctionFunc is nil", query.SQL)
+		}
+	})
 }

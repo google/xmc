@@ -49,6 +49,9 @@ type QueryFilterVisitor interface {
 	HandleFunction(functionName string, args []*fpb.Expression) (bool, filtervisitor.PrimType, error)
 	TranslateRestriction(r *fpb.Restriction) (bool, *fpb.Restriction)
 	HandleDisjunction(value []string) (bool, safesql.TrustedSQLString, error)
+	FormatDisjunctionPredicate(colSQL, paramSQL safesql.TrustedSQLString) safesql.TrustedSQLString
+	FormatArrayHasPredicate(lhsSQL, rhsSQL safesql.TrustedSQLString) safesql.TrustedSQLString
+	FormatRegexpPredicate(lhsSQL, rhsSQL safesql.TrustedSQLString, negated bool) safesql.TrustedSQLString
 	GetTextSearchColumns() ([]safesql.TrustedSQLString, error)
 	HandleTextSearch(col safesql.TrustedSQLString, val string) (safesql.TrustedSQLString, error)
 	GetExpOptions() *ExpOptions
@@ -213,7 +216,7 @@ func VisitDisjunction(qfv QueryFilterVisitor, exprs []*fpb.Expression) (filtervi
 			if hasFirst {
 				qfv.AppendTrustedSQL(safesql.New(" OR "))
 			}
-			qfv.AppendTrustedSQL(safesql.Concat(safesql.New("("), colSQL, safesql.New(" IN UNNEST ("), paramSQL, safesql.New("))")))
+			qfv.AppendTrustedSQL(qfv.FormatDisjunctionPredicate(colSQL, paramSQL))
 			hasFirst = true
 		}
 	}
@@ -289,7 +292,7 @@ func handleHasRestriction(qfv QueryFilterVisitor, lhs, rhs *fpb.Expression, lhsT
 		if !checkArrayHasCompatibility(lhsArrayElemType, rhsType) {
 			return filtervisitor.Invalid, fmt.Errorf("type mismatch in array HAS: array element is %v, RHS is %v", lhsArrayElemType.Name, rhsType.Name)
 		}
-		qfv.AppendTrustedSQL(safesql.Concat(safesql.New("("), rhsSQL, safesql.New(" IN "), lhsSQL, safesql.New(")")))
+		qfv.AppendTrustedSQL(qfv.FormatArrayHasPredicate(lhsSQL, rhsSQL))
 		return filtervisitor.Invalid, nil
 	}
 
@@ -308,7 +311,7 @@ func handleHasRestriction(qfv QueryFilterVisitor, lhs, rhs *fpb.Expression, lhsT
 		return filtervisitor.Invalid, nil
 	}
 
-	qfv.AppendTrustedSQL(safesql.Concat(safesql.New("(REGEXP_CONTAINS("), lhsSQL, safesql.New(" , "), rhsSQL, safesql.New("))")))
+	qfv.AppendTrustedSQL(qfv.FormatRegexpPredicate(lhsSQL, rhsSQL, false))
 	return filtervisitor.Invalid, nil
 }
 
@@ -320,11 +323,7 @@ func handleRegexpRestriction(qfv QueryFilterVisitor, op fpb.Restriction_Comparat
 		return filtervisitor.Invalid, fmt.Errorf("type mismatch in regexp match: LHS is %v, RHS is %v", lhsType.Name, rhsType.Name)
 	}
 
-	if op == fpb.Restriction_REGEXP_MATCH {
-		qfv.AppendTrustedSQL(safesql.Concat(safesql.New("(REGEXP_CONTAINS("), lhsSQL, safesql.New(" , "), rhsSQL, safesql.New("))")))
-	} else {
-		qfv.AppendTrustedSQL(safesql.Concat(safesql.New("(NOT (REGEXP_CONTAINS("), lhsSQL, safesql.New(" , "), rhsSQL, safesql.New(")))")))
-	}
+	qfv.AppendTrustedSQL(qfv.FormatRegexpPredicate(lhsSQL, rhsSQL, op != fpb.Restriction_REGEXP_MATCH))
 	return filtervisitor.Invalid, nil
 }
 
