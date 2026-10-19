@@ -187,6 +187,10 @@ describe('DashboardsListPage', () => {
     component.goToNextPage();
     expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
 
+    component.pagination.update((prev) => ({
+      ...prev,
+      nextPageToken: 'token_page_2',
+    }));
     component.isLoading.set(true);
     component.goToNextPage();
     expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
@@ -199,6 +203,11 @@ describe('DashboardsListPage', () => {
     component.goToPreviousPage();
     expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
 
+    component.pagination.update((prev) => ({
+      ...prev,
+      pageIndex: 1,
+      previousTokens: [''],
+    }));
     component.isLoading.set(true);
     component.goToPreviousPage();
     expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
@@ -284,10 +293,16 @@ describe('DashboardsListPage', () => {
     expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(2);
   });
 
-  it('should reset pagination and reload dashboards when createDashboard fails', () => {
+  it('should not reload dashboards or reset pagination when createDashboard fails', () => {
     const component = bootstrap(DashboardsListPage);
     const router = get(Router);
     spyOn(router, 'navigate');
+    state.dashboardServiceSpy.listDashboards.calls.reset();
+    component.pagination.update((prev) => ({
+      ...prev,
+      pageIndex: 2,
+      previousTokens: ['', 'token_page_2'],
+    }));
     state.dashboardServiceSpy.createDashboard.and.returnValue(
       throwError(() => new Error('Creation failed')),
     );
@@ -296,8 +311,8 @@ describe('DashboardsListPage', () => {
 
     expect(router.navigate).not.toHaveBeenCalled();
     expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith('Failed to create dashboard');
-    expect(component.pageIndex()).toBe(0);
-    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(2);
+    expect(component.pageIndex()).toBe(2);
+    expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
     expect(component.isLoading()).toBeFalse();
   });
 

@@ -203,7 +203,6 @@ export class DashboardsListPage implements OnInit {
           this.isLoading.set(false);
           this.snackbar?.open?.('Failed to create dashboard');
           console.error('Error creating dashboard:', err);
-          this.refresh();
         },
       });
   }
