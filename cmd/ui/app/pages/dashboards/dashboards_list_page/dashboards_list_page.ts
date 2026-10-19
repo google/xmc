@@ -110,7 +110,7 @@ export class DashboardsListPage implements OnInit {
     this.loadDashboards();
   }
 
-  loadDashboards(): void {
+  loadDashboards(previousState?: PaginationState): void {
     this.isLoading.set(true);
     const { pageSize, currentPageToken } = this.pagination();
     this.dashboardService
@@ -129,6 +129,9 @@ export class DashboardsListPage implements OnInit {
         },
         error: (err) => {
           this.isLoading.set(false);
+          if (previousState) {
+            this.pagination.set(previousState);
+          }
           this.snackbar?.open?.('Failed to load dashboards');
           console.error('Error loading dashboards:', err);
         },
@@ -136,29 +139,33 @@ export class DashboardsListPage implements OnInit {
   }
 
   refresh(): void {
-    this.pagination.set(getInitialPaginationState(this.pagination().pageSize));
-    this.loadDashboards();
+    const prev = this.pagination();
+    this.pagination.set(getInitialPaginationState(prev.pageSize));
+    this.loadDashboards(prev);
   }
 
   onPageSizeChange(newPageSize: number): void {
-    this.pagination.set(setPageSize({ pagination: this.pagination() }, newPageSize).pagination);
-    this.loadDashboards();
+    const prev = this.pagination();
+    this.pagination.set(setPageSize({ pagination: prev }, newPageSize).pagination);
+    this.loadDashboards(prev);
   }
 
   goToNextPage(): void {
     if (!this.hasNextPage() || this.isLoading()) {
       return;
     }
-    this.pagination.set(goToNextPage({ pagination: this.pagination() }).pagination);
-    this.loadDashboards();
+    const prev = this.pagination();
+    this.pagination.set(goToNextPage({ pagination: prev }).pagination);
+    this.loadDashboards(prev);
   }
 
   goToPreviousPage(): void {
     if (!this.hasPreviousPage() || this.isLoading()) {
       return;
     }
-    this.pagination.set(goToPreviousPage({ pagination: this.pagination() }).pagination);
-    this.loadDashboards();
+    const prev = this.pagination();
+    this.pagination.set(goToPreviousPage({ pagination: prev }).pagination);
+    this.loadDashboards(prev);
   }
 
   getDashboardId(name?: string): string {

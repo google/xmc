@@ -325,4 +325,27 @@ describe('DashboardsListPage', () => {
     expect(component.isLoading()).toBeFalse();
     expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith('Failed to load dashboards');
   });
+
+  it('should roll back pagination state when loading next page or changing page size fails', () => {
+    state.dashboardServiceSpy.listDashboards.and.returnValues(
+      of({ dashboards: createMockDashboardList(), nextPageToken: 'token_page_2' }),
+      throwError(() => new Error('Next page error')),
+      throwError(() => new Error('Page size error')),
+    );
+    const component = bootstrap(DashboardsListPage);
+    expect(component.pageIndex()).toBe(0);
+    expect(component.pageSize()).toBe(10);
+    expect(component.hasNextPage()).toBeTrue();
+
+    component.goToNextPage();
+
+    expect(component.pageIndex()).toBe(0);
+    expect(component.hasNextPage()).toBeTrue();
+    expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith('Failed to load dashboards');
+
+    component.onPageSizeChange(25);
+
+    expect(component.pageSize()).toBe(10);
+    expect(component.hasNextPage()).toBeTrue();
+  });
 });
