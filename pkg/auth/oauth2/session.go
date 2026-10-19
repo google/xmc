@@ -26,6 +26,15 @@ var (
 	ErrExpiredToken = errors.New("session token has expired")
 )
 
+const (
+	// SessionIssuer is the `iss` claim of every session token this backend mints.
+	SessionIssuer = "xmanager-cloud-backend"
+	// FrontendAudience is the `aud` claim of the browser (Dashboard) session token.
+	FrontendAudience = "xmanager-cloud-frontend"
+	// sessionClockSkew is the leeway allowed on the exp, nbf and iat claims of a session token.
+	sessionClockSkew = 30 * time.Second
+)
+
 // SessionClaims defines the schema for stateless JWT user sessions.
 type SessionClaims struct {
 	Email   string `json:"email"`
@@ -48,8 +57,8 @@ func generateSessionTokenAt(email, name, picture string, expiry time.Duration, s
 			ExpiresAt: jwt.NewNumericDate(now.Add(expiry)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
-			Issuer:    "xmanager-cloud-backend",
-			Audience:  jwt.ClaimStrings{"xmanager-cloud-frontend"},
+			Issuer:    SessionIssuer,
+			Audience:  jwt.ClaimStrings{FrontendAudience},
 		},
 	}
 
@@ -58,13 +67,25 @@ func generateSessionTokenAt(email, name, picture string, expiry time.Duration, s
 }
 
 // ParseSessionToken verifies and parses a signed JWT session token.
-func ParseSessionToken(tokenStr string, secretKey []byte) (*SessionClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &SessionClaims{}, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, ErrInvalidToken
-		}
-		return secretKey, nil
-	})
+//
+// The token must be signed with HS256, carry SessionIssuer as `iss`, an `exp` and a non-future
+// `iat` (each with a sessionClockSkew leeway), and an `aud` that contains at least one of
+// audiences. Each caller names the audiences it serves, so a token minted for one surface cannot be
+// replayed against another. Calling it without any audience rejects every token.
+func ParseSessionToken(tokenStr string, secretKey []byte, audiences ...string) (*SessionClaims, error) {
+	// jwt.WithAudience skips the audience check entirely when given no audiences, so fail closed.
+	if len(audiences) == 0 {
+		return nil, ErrInvalidToken
+	}
+	keyFunc := func(*jwt.Token) (any, error) { return secretKey, nil }
+	token, err := jwt.ParseWithClaims(tokenStr, &SessionClaims{}, keyFunc,
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(SessionIssuer),
+		jwt.WithAudience(audiences...),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuedAt(),
+		jwt.WithLeeway(sessionClockSkew),
+	)
 
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
