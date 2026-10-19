@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Sequence
 from typing import Any
 
@@ -28,10 +29,35 @@ from xdash._protos import dashboard_service_pb2, messages_pb2
 from xdash.builders import chart_id_from_name
 
 DEFAULT_DASHBOARD_ENDPOINT = "localhost:8080"
+_TOKEN_TTL_SEC = 3300.0
 
 # Hosts assumed to be a local development service, and therefore plaintext. Any other
 # host — notably cloud.xmanager.googleapis.com — requires TLS.
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0"})
+
+
+def _fetch_iam_id_token(client_sa: str, audience: str) -> str:
+    """Fetches an OIDC ID token via the IAM Credentials generateIdToken API.
+
+    Args:
+        client_sa: Service account email to impersonate.
+        audience: Target OAuth client ID audience (IAP_CLIENT_ID).
+
+    Returns:
+        The signed OIDC ID token string.
+    """
+    import google.auth
+    from google.auth.transport import requests as google_requests
+
+    credentials, _ = google.auth.default()
+    session = google_requests.AuthorizedSession(credentials)
+    url = (
+        "https://iamcredentials.googleapis.com/v1/projects/-/"
+        f"serviceAccounts/{client_sa}:generateIdToken"
+    )
+    response = session.post(url, json={"audience": audience, "includeEmail": True}, timeout=10)
+    response.raise_for_status()
+    return str(response.json()["token"])
 
 
 def _is_local_endpoint(endpoint: str) -> bool:
@@ -159,6 +185,7 @@ class DashboardClient:
         # Only a channel this constructor opened is ours to close. An injected one may be
         # shared with other clients, and tearing it down under them is not our call.
         self._owns_channel = False
+        self._cached_iam_token: tuple[tuple[str, str], str, float] | None = None
 
         if stub is not None:
             self._stub = stub
@@ -214,10 +241,29 @@ class DashboardClient:
         """Releases the gRPC channel when leaving the context manager scope."""
         self.close()
 
+    def _resolve_auth_token(self) -> str:
+        """Resolves the bearer token from env vars or IAM OIDC fallback."""
+        token = (os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN") or "").strip()
+        if token:
+            return token
+        client_sa = (os.environ.get("XMC_CLIENT_SA") or "").strip()
+        audience = (os.environ.get("IAP_CLIENT_ID") or "").strip()
+        if not client_sa or not audience:
+            return ""
+        key = (client_sa, audience)
+        now = time.monotonic()
+        if self._cached_iam_token is not None:
+            cached_key, cached_token, expires_at = self._cached_iam_token
+            if cached_key == key and now < expires_at:
+                return cached_token
+        fetched = _fetch_iam_id_token(client_sa, audience)
+        self._cached_iam_token = (key, fetched, now + _TOKEN_TTL_SEC)
+        return fetched
+
     def _execute_rpc(self, call: Any, request: Any, rpc_name: str) -> Any:
         """Executes a gRPC call and converts grpc.RpcError to XDashRPCError."""
         try:
-            token = (os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN") or "").strip()
+            token = self._resolve_auth_token()
             if token:
                 return call(request, metadata=(("authorization", f"Bearer {token}"),))
             return call(request)

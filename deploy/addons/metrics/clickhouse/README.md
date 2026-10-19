@@ -17,6 +17,14 @@ ClickHouse serves as the high-performance analytical database backend for XManag
 
 ## Deployment Instructions
 
+### Automated GKE Metrics Addons Setup (Recommended for Dev / CI)
+
+To provision the lightweight in-cluster ClickHouse and Redpanda metrics stack, create the `clickhouse-format-schemas` ConfigMap from [`api/protos/metrics/metrics.proto`](../../../../api/protos/metrics/metrics.proto), initialize the `xmc-metrics` topic, and apply [`deploy/clickhouse/schema.sql`](../../../clickhouse/schema.sql) in a single command, run [`deploy/addons/metrics/setup_metrics_addons.sh`](../setup_metrics_addons.sh):
+
+```bash
+./deploy/addons/metrics/setup_metrics_addons.sh
+```
+
 ### 1. Connect to the Target GKE Cluster
 
 Authenticate and configure `kubectl` to point to your target GKE cluster:
