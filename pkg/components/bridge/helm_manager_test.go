@@ -539,6 +539,12 @@ func TestComponentReleaseNameForRef(t *testing.T) {
 			wantRelease: "xmc-cmp-rod-data-provider",
 			wantCanon:   "rod-data-provider",
 		},
+		{
+			name:        "resource-style name canonicalizes like CMS",
+			ref:         ComponentRef{Namespace: "xmc", Name: "components/ingestion"},
+			wantRelease: "xmc-cmp-ingestion",
+			wantCanon:   "ingestion",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

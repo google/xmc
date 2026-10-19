@@ -46,6 +46,24 @@ type upgradeRequest struct {
 func (m *K8sHelmManager) setUpgradeErr(ref ComponentRef, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.setUpgradeErrLocked(ref, err)
+}
+
+// setUpgradeErrIfPending records err like setUpgradeErr, but only while req is still ref's pending upgrade, and
+// reports whether it did. A teardown or ForgetComponent that evicted the incarnation mid-upgrade, or a newer request,
+// makes the outcome obsolete, and recording it would recreate state for an evicted incarnation.
+func (m *K8sHelmManager) setUpgradeErrIfPending(req upgradeRequest, err error) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if seq, pending := m.pendingUpgrades[req.ref.String()]; !pending || seq != req.seq {
+		return false
+	}
+	m.setUpgradeErrLocked(req.ref, err)
+	return true
+}
+
+// setUpgradeErrLocked records err as ref's last upgrade error, or clears it when err is nil. Callers must hold m.mu.
+func (m *K8sHelmManager) setUpgradeErrLocked(ref ComponentRef, err error) {
 	delete(m.healthVerifiedAt, ref.String())
 	if err != nil {
 		m.upgradeErrs[ref.String()] = err
@@ -386,8 +404,11 @@ func (m *K8sHelmManager) dropPendingUpgrade(ref ComponentRef) {
 
 // recordAsyncUpgrade records err as the outcome of req and logs it.
 func (m *K8sHelmManager) recordAsyncUpgrade(ctx context.Context, req upgradeRequest, err error) {
-	m.setUpgradeErr(req.ref, err)
 	releaseName := ComponentReleaseNameForRef(req.ref)
+	if !m.setUpgradeErrIfPending(req, err) {
+		logging.Info(ctx, "Discarding outcome of evicted or superseded asynchronous Helm upgrade", "release", releaseName, "name", req.ref.Name, "namespace", req.namespace, "error", err)
+		return
+	}
 	if err != nil {
 		logging.Error(ctx, "Asynchronous Helm upgrade failed", "release", releaseName, "name", req.ref.Name, "namespace", req.namespace, "error", err)
 		return
