@@ -109,8 +109,9 @@ async function run({ github, context, core }) {
   try {
     hasProtectedFileChanges = checkProtectedFileChanges(baseRef, latestApproval.approvedSha, currentSha);
   } catch (error) {
-    const stderrInfo = error.stderr ? ` | Stderr: ${String(error.stderr).trim()}` : '';
-    core.warning(`Unable to determine files changed by PR #${prNumber} (${error.message}${stderrInfo}). Requiring manual review.`);
+    const stderrInfo = error?.stderr ? ` | Stderr: ${String(error.stderr).trim()}` : '';
+    const errMsg = error?.message || String(error);
+    core.warning(`Unable to determine files changed by PR #${prNumber} (${errMsg}${stderrInfo}). Requiring manual review.`);
     return;
   }
   if (hasProtectedFileChanges) {
