@@ -83,14 +83,14 @@ func ValidateCreateXidRequest(in *xidmessagespb.CreateXidEntryRequest) error {
 	} else if err := validateRootACLs(acls); err != nil {
 		return err
 	}
-	if acls != nil {
-		if err := validateRoles(acls.GetOwners()); err != nil {
-			return err
-		}
-		if err := validateRoles(acls.GetWriters()); err != nil {
-			return err
-		}
-		if err := validateRoles(acls.GetReaders()); err != nil {
+	return validateACLRoles(acls)
+}
+
+// validateACLRoles rejects ACLs containing a role without a principal in any role list. Nil ACLs
+// are valid.
+func validateACLRoles(acls *xidmessagespb.XidAcls) error {
+	for _, roles := range [][]*xidmessagespb.XidAcls_Role{acls.GetOwners(), acls.GetWriters(), acls.GetReaders()} {
+		if err := validateRoles(roles); err != nil {
 			return err
 		}
 	}
@@ -134,7 +134,23 @@ func ValidateCreateExperimentRequest(in *essmsgpb.CreateExperimentRequest) error
 	if exp.GetStatus() != nil {
 		return fmt.Errorf("experiment.status must be empty for CreateExperimentRequest: %w", grpcerr.ErrInvalidArgument)
 	}
+	if err := validateExperimentACLs(exp.GetAcls()); err != nil {
+		return err
+	}
 	return validateExperimentMetadata(exp)
+}
+
+// validateExperimentACLs rejects malformed ACLs on experiment creation. Unset or empty ACLs are
+// valid because FillExperimentDefaultACLs grants the creator OWNER. Otherwise, every role must name
+// a principal and, as for any root XID, at least one owner must be listed.
+func validateExperimentACLs(acls *xidmessagespb.XidAcls) error {
+	if err := validateACLRoles(acls); err != nil {
+		return fmt.Errorf("experiment.acls: %w", err)
+	}
+	if hasACLPrincipals(acls) && len(acls.GetOwners()) == 0 {
+		return fmt.Errorf("experiment.acls.owners cannot be empty when writers or readers are set: %w", grpcerr.ErrInvalidArgument)
+	}
+	return nil
 }
 
 func validateExperimentMetadata(exp *essmsgpb.Experiment) error {
@@ -196,7 +212,8 @@ func FillExperimentNullValues(exp *essmsgpb.Experiment) *essmsgpb.Experiment {
 
 // FillExperimentDefaultACLs grants the creator OWNER on an experiment whose ACLs are unset or list
 // no principals in any role. ACLs that list at least one principal are returned unchanged, so the
-// server never rewrites access that the caller specified explicitly.
+// server never rewrites access that the caller specified explicitly. Like FillExperimentNullValues,
+// it modifies exp in place and returns it.
 func FillExperimentDefaultACLs(exp *essmsgpb.Experiment, creator string) *essmsgpb.Experiment {
 	if hasACLPrincipals(exp.GetAcls()) {
 		return exp
@@ -207,7 +224,8 @@ func FillExperimentDefaultACLs(exp *essmsgpb.Experiment, creator string) *essmsg
 	return exp
 }
 
-// hasACLPrincipals reports whether the ACLs list at least one principal in any role.
+// hasACLPrincipals reports whether the ACLs list at least one role in any role list. Callers must
+// reject roles without a principal first (see validateACLRoles).
 func hasACLPrincipals(acls *xidmessagespb.XidAcls) bool {
 	return len(acls.GetOwners())+len(acls.GetWriters())+len(acls.GetReaders()) > 0
 }
@@ -493,16 +511,9 @@ func validateArtifactMetadata(art *essmsgpb.Artifact) error {
 	if len(art.GetUrl().GetUrl()) > maxURLLen {
 		return fmt.Errorf("artifact.url.url cannot be longer than %d characters: %w", maxURLLen, grpcerr.ErrInvalidArgument)
 	}
-	if len(art.GetTags()) > maxTags {
-		return fmt.Errorf("artifact.tags cannot contain more than %d tags: %w", maxTags, grpcerr.ErrInvalidArgument)
-	}
-	for _, tag := range art.GetTags() {
-		if len(tag) > maxTagLen {
-			return fmt.Errorf("artifact.tags cannot contain tags longer than %d characters: %w", maxTagLen, grpcerr.ErrInvalidArgument)
-		}
-	}
-	if len(art.GetNotes()) > maxNotesLen {
-		return fmt.Errorf("artifact.notes cannot be longer than %d characters: %w", maxNotesLen, grpcerr.ErrInvalidArgument)
+	// Artifacts carry a single URL (validated above) rather than a URL list.
+	if err := validateMetadataLimits("artifact", art.GetTags(), art.GetNotes(), nil); err != nil {
+		return err
 	}
 	if info := art.GetAdditionalInfo(); info != nil {
 		if info.GetContent() == nil {

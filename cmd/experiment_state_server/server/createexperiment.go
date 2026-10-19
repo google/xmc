@@ -74,7 +74,7 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 	xidEntry, err := h.createXid(ctx, creator, h.cfg.EndpointURL, exp.Acls, "")
 	if err != nil {
 		logging.Error(ctx, "Failed to provision XID", "error", err)
-		return nil, fmt.Errorf("failed to provision XID: %v", err)
+		return nil, xidProvisionError(err)
 	}
 
 	// 3.1. Get the XID from the XIDEntry.
@@ -134,4 +134,14 @@ func (h *ExperimentHandler) authorizeCreator(ctx context.Context, creator string
 		return fmt.Errorf("creator %s did not give themselves write permissions on the experiment: %w", creator, grpcerr.ErrPermissionDenied)
 	}
 	return nil
+}
+
+// xidProvisionError wraps a CreateXidEntry failure. gRPC status errors from the XID service (e.g.
+// InvalidArgument for malformed ACLs, Unavailable) keep their code; any other error is reported as
+// Internal.
+func xidProvisionError(err error) error {
+	if _, ok := status.FromError(err); ok {
+		return fmt.Errorf("failed to provision XID: %w", err)
+	}
+	return fmt.Errorf("failed to provision XID: %v: %w", err, grpcerr.ErrInternal)
 }

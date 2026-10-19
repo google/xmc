@@ -240,7 +240,8 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var opts []testServerOpt
+			// A valid execution environment is required to reach the XID and storage calls.
+			opts := []testServerOpt{withConfig(&config.Config{DefaultExecutionEnvironment: "gke"})}
 			if tc.storage != nil {
 				opts = append(opts, withStorage(tc.storage))
 			}
@@ -308,19 +309,30 @@ func TestCreateExperiment_CreatorAuthorization(t *testing.T) {
 		{name: "creator_writer", req: withACLs(creatorWriter), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: creatorWriter},
 		{name: "creator_domain_writer", req: withACLs(domainWriter), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: domainWriter},
 		{name: "all_authenticated_users_owner", req: withACLs(allAuthenticatedOwner), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: allAuthenticatedOwner},
-		{name: "creator_group_writer", req: withACLs(groupWriter), authorizer: &mockAuthenticator{}, wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: groupWriter},
+		{name: "group_writer_allowed_by_fake_authorizer", req: withACLs(groupWriter), authorizer: &mockAuthenticator{}, wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: groupWriter},
 		{name: "nil_acls_default_to_creator_owner", req: withACLs(nil), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: creatorOwner},
 		{name: "empty_acls_default_to_creator_owner", req: withACLs(&xidmsgpb.XidAcls{}), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: creatorOwner},
+		{name: "writers_without_owners_invalid", req: withACLs(&xidmsgpb.XidAcls{Writers: []*xidmsgpb.XidAcls_Role{userRole("test@example.com")}}), wantCode: codes.InvalidArgument},
+		{name: "role_without_principal_invalid", req: withACLs(&xidmsgpb.XidAcls{Owners: []*xidmsgpb.XidAcls_Role{{}}}), wantCode: codes.InvalidArgument},
 		{name: "creator_reader_only_denied", req: withACLs(creatorReader), wantCode: codes.PermissionDenied},
 		{name: "creator_absent_denied", req: withACLs(creatorAbsent), wantCode: codes.PermissionDenied},
 		{name: "authorizer_denies", req: baseReq, authorizer: &mockAuthenticator{denyAuthorization: true}, wantCode: codes.PermissionDenied},
 		{name: "authorizer_error", req: baseReq, authorizer: &mockAuthenticator{isUserAuthorizedErr: errors.New("invalid email")}, wantCode: codes.PermissionDenied},
 		{
-			// The XID failure is still wrapped without a status sentinel, as before this check moved.
+			// Non-status XID client errors are reported as Internal.
 			name:               "xid_creation_fails_after_authorization",
 			req:                baseReq,
 			createXidEntryErr:  errors.New("XID creation failed"),
-			wantCode:           codes.Unknown,
+			wantCode:           codes.Internal,
+			wantCreateXidCalls: 1,
+			wantXidACLs:        creatorOwner,
+		},
+		{
+			// gRPC status errors from the XID service keep their code.
+			name:               "xid_status_code_preserved",
+			req:                baseReq,
+			createXidEntryErr:  status.Error(codes.InvalidArgument, "invalid acls"),
+			wantCode:           codes.InvalidArgument,
 			wantCreateXidCalls: 1,
 			wantXidACLs:        creatorOwner,
 		},

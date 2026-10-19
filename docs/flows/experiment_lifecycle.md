@@ -38,7 +38,8 @@ requested ACLs, using the same `internal/auth` evaluation the XID Service applie
 calling `CreateXidEntry`. A creator who does not hold `WRITER` (or `OWNER`) on the requested ACLs
 gets `PERMISSION_DENIED` and no XID entry is created. If the request's `acls` is unset or lists no
 principals in any role, ESS grants the creator `OWNER`; ACLs that list any principal are passed
-through unchanged.
+through unchanged, but must name at least one owner and a principal in every role, or the request
+fails with `INVALID_ARGUMENT`.
 
 Domain rules for assembling the experiment — defaults, derived fields, validation — live in
 [`internal/domain/experiment`](../../internal/domain/experiment), separate from the RPC handler.

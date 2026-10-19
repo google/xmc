@@ -266,6 +266,32 @@ func TestValidateCreateExperimentRequest(t *testing.T) {
 			wantErr: nil,
 		},
 		{
+			name: "acls_role_without_principal",
+			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
+				r.Experiment.Acls = &xidmessagespb.XidAcls{Owners: []*xidmessagespb.XidAcls_Role{{}}}
+			}),
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "acls_writers_without_owners",
+			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
+				r.Experiment.Acls = &xidmessagespb.XidAcls{
+					Writers: []*xidmessagespb.XidAcls_Role{{Principal: &xidmessagespb.XidAcls_Role_User{User: "user@example.com"}}},
+				}
+			}),
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "acls_with_owner",
+			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
+				r.Experiment.Acls = &xidmessagespb.XidAcls{
+					Owners:  []*xidmessagespb.XidAcls_Role{{Principal: &xidmessagespb.XidAcls_Role_User{User: "user@example.com"}}},
+					Readers: []*xidmessagespb.XidAcls_Role{{Principal: &xidmessagespb.XidAcls_Role_Group{Group: "team@example.com"}}},
+				}
+			}),
+			wantErr: nil,
+		},
+		{
 			name:    "valid_request",
 			req:     validReq,
 			wantErr: nil,
