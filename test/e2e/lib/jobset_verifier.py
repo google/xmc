@@ -45,6 +45,7 @@ def build_work_unit_payload(
     command: Sequence[str] = SIMPLE_JOB_COMMAND,
     priority: str = "NORMAL",
     cpu_millicores: int = 100,
+    tags: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Builds a minimal valid CreateWorkUnit payload running command on the given queue.
 
@@ -53,11 +54,12 @@ def build_work_unit_payload(
         command: Command of the work unit's single worker container.
         priority: Priority of the work unit within its experiment, such as LOW or HIGH.
         cpu_millicores: CPU request of the worker, which Kueue charges to the queue's quota.
+        tags: Optional tags to attach to the work unit for filtering.
 
     Returns:
         The JSON body of a CreateWorkUnit request.
     """
-    return {
+    payload: dict[str, Any] = {
         "priority": priority,
         "workUnitType": "STANDARD",
         "executable": {
@@ -67,6 +69,9 @@ def build_work_unit_payload(
             "jobset": {"jobs": [_worker_job(command, cpu_millicores)]},
         },
     }
+    if tags:
+        payload["tags"] = list(tags)
+    return payload
 
 
 def _worker_job(command: Sequence[str], cpu_millicores: int) -> dict[str, Any]:

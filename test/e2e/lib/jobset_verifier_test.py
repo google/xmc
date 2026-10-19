@@ -127,8 +127,11 @@ class JobSetVerifierTest(unittest.TestCase):
 
     def test_build_work_unit_payload_sets_priority_and_cpu(self) -> None:
         """build_work_unit_payload must request the given priority and CPU millicores."""
-        payload = build_work_unit_payload("preemption-queue", priority="HIGH", cpu_millicores=400)
+        payload = build_work_unit_payload(
+            "preemption-queue", priority="HIGH", cpu_millicores=400, tags=("batch-e2e",)
+        )
         self.assertEqual(payload["priority"], "HIGH")
+        self.assertEqual(payload["tags"], ["batch-e2e"])
         resources = payload["executable"]["jobset"]["jobs"][0]["spec"]["resources"]
         self.assertEqual(
             resources["cpuResources"], {"cpuMillicores": 400, "memoryBytes": 134217728}

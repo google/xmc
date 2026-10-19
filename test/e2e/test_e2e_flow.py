@@ -96,6 +96,8 @@ PREEMPTOR_COMMAND = ("sh", "-c", "echo preempted")
 # Defined by test/e2e/manifests/preemption_queue.yaml, whose quota fits one such work unit.
 PREEMPTION_QUEUE_NAME = "preemption-queue"
 PREEMPTION_CPU_MILLICORES = 400
+BATCH_E2E_TAG = "batch-e2e"
+BATCH_E2E_FILTER = f'tags:"{BATCH_E2E_TAG}"'
 # Labels of the status chips that the experiment page shows for terminal work unit states.
 STATUS_CHIP_LABELS = {"COMPLETED": "Completed", "FAILED": "Failed", "STOPPED": "Stopped"}
 
@@ -261,11 +263,13 @@ def _fetch_work_unit_executions(page: Page, work_unit_name: str) -> list[dict[st
     return list(response.json().get("workUnitExecutions") or [])
 
 
-def _post_batch_work_unit_action(page: Page, experiment_name: str, action: str) -> None:
+def _post_batch_work_unit_action(
+    page: Page, experiment_name: str, action: str, work_unit_filter: str
+) -> None:
     """Calls a batch work unit custom method (batchStop or batchRestart) via REST."""
     response = page.request.post(
         f"{BASE_URL}/v1/{experiment_name}/workUnits:{action}",
-        data={"parent": experiment_name},
+        data={"parent": experiment_name, "filter": work_unit_filter},
         headers={"Content-Type": "application/json", "Origin": BASE_URL},
     )
     if response.status not in (200, 201):
@@ -305,21 +309,22 @@ def _verify_live_priority_and_metadata_updates(page: Page, experiment_name: str)
 
 def _verify_batch_stop_and_restart(page: Page, experiment_name: str) -> dict[str, str]:
     """Verifies batch stop, batch restart, and multi-execution history on multiple work units."""
+    payload = build_work_unit_payload(command=SLEEP_COMMAND, tags=(BATCH_E2E_TAG,))
     work_units = (
-        _create_work_unit(page, experiment_name, build_work_unit_payload(command=SLEEP_COMMAND)),
-        _create_work_unit(page, experiment_name, build_work_unit_payload(command=SLEEP_COMMAND)),
+        _create_work_unit(page, experiment_name, payload),
+        _create_work_unit(page, experiment_name, payload),
     )
     for wu in work_units:
         _verify_admitted_jobset(wu)
     for wu in work_units:
         _wait_for_work_unit_state(page, wu, "RUNNING")
 
-    _post_batch_work_unit_action(page, experiment_name, "batchStop")
+    _post_batch_work_unit_action(page, experiment_name, "batchStop", BATCH_E2E_FILTER)
     for wu in work_units:
         _wait_for_work_unit_state(page, wu, "STOPPED")
         wait_for_jobsets_deleted(wu)
 
-    _post_batch_work_unit_action(page, experiment_name, "batchRestart")
+    _post_batch_work_unit_action(page, experiment_name, "batchRestart", BATCH_E2E_FILTER)
     for wu in work_units:
         _verify_admitted_jobset(wu, execution_id=2)
     for wu in work_units:
@@ -328,7 +333,7 @@ def _verify_batch_stop_and_restart(page: Page, experiment_name: str) -> dict[str
         assert_executions_history(executions, expected_min_count=2)
         logger.info("✓ Batch restarted work unit %s execution history verified.", wu)
 
-    _post_batch_work_unit_action(page, experiment_name, "batchStop")
+    _post_batch_work_unit_action(page, experiment_name, "batchStop", BATCH_E2E_FILTER)
     for wu in work_units:
         _wait_for_work_unit_state(page, wu, "STOPPED")
         wait_for_jobsets_deleted(wu)
