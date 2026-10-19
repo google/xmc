@@ -620,7 +620,7 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 	var result *PrepareDeactivationResult
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		catalog, targetRec, err := s.lookupCatalogTargetTx(ctx, txn, prepareDeactivationOperation, canonicalName, reqSrc)
+		catalog, targetRec, err := s.lookupCatalogTargetTx(ctx, txn, operationPrepareDeactivation, canonicalName, reqSrc)
 		if err != nil {
 			return err
 		}
@@ -723,7 +723,7 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 	}
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, completeDeactivationOperation, canonicalName, reqSrc)
+		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, operationCompleteDeactivation, canonicalName, reqSrc)
 		if err != nil {
 			return err
 		}
@@ -784,14 +784,14 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		unchanged = false
-		if err := checkFence(ctx, txn, updateObservedGenerationOperation, reqSrc); err != nil {
+		if err := checkFence(ctx, txn, operationUpdateObservedGeneration, reqSrc); err != nil {
 			return err
 		}
 		rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
 		if err != nil {
 			return err
 		}
-		if err := checkSourceMutation(updateObservedGenerationOperation, canonicalName, rec.Owner, reqSrc); err != nil {
+		if err := checkSourceMutation(operationUpdateObservedGeneration, canonicalName, rec.Owner, reqSrc); err != nil {
 			return err
 		}
 

@@ -88,10 +88,12 @@ const (
 
 // Values of metadata "operation": the rejected CMS operation.
 const (
-	operationSetComponentIntent  = "SetComponentIntent"
-	operationPrepareDeactivation = "PrepareDeactivation"
-	operationExecuteDeletion     = "ExecuteDeletion"
-	operationDeclareClusterEpoch = "DeclareClusterEpoch"
+	operationSetComponentIntent       = "SetComponentIntent"
+	operationPrepareDeactivation      = "PrepareDeactivation"
+	operationCompleteDeactivation     = "CompleteDeactivation"
+	operationUpdateObservedGeneration = "UpdateObservedGeneration"
+	operationExecuteDeletion          = "ExecuteDeletion"
+	operationDeclareClusterEpoch      = "DeclareClusterEpoch"
 )
 
 // errorWithInfo returns a status error with code and msg carrying a google.rpc.ErrorInfo with

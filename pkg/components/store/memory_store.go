@@ -265,7 +265,7 @@ func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	rec, err := m.lookupMutableRecordLocked(updateObservedGenerationOperation, canonicalName, reqSrc)
+	rec, err := m.lookupMutableRecordLocked(operationUpdateObservedGeneration, canonicalName, reqSrc)
 	if err != nil {
 		return nil, err
 	}
@@ -374,7 +374,7 @@ func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requ
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	rec, err := m.lookupMutableRecordLocked(prepareDeactivationOperation, canonicalName, reqSrc)
+	rec, err := m.lookupMutableRecordLocked(operationPrepareDeactivation, canonicalName, reqSrc)
 	if err != nil {
 		return nil, err
 	}
@@ -409,7 +409,7 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, for
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	rec, err := m.lookupMutableRecordLocked(completeDeactivationOperation, canonicalName, reqSrc)
+	rec, err := m.lookupMutableRecordLocked(operationCompleteDeactivation, canonicalName, reqSrc)
 	if err != nil {
 		return err
 	}
