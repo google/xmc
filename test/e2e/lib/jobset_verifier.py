@@ -45,6 +45,7 @@ def build_work_unit_payload(
     command: Sequence[str] = SIMPLE_JOB_COMMAND,
     priority: str = "NORMAL",
     cpu_millicores: int = 100,
+    tags: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Builds a minimal valid CreateWorkUnit payload running command on the given queue.
 
@@ -53,11 +54,12 @@ def build_work_unit_payload(
         command: Command of the work unit's single worker container.
         priority: Priority of the work unit within its experiment, such as LOW or HIGH.
         cpu_millicores: CPU request of the worker, which Kueue charges to the queue's quota.
+        tags: Optional tags to attach to the work unit for filtering.
 
     Returns:
         The JSON body of a CreateWorkUnit request.
     """
-    return {
+    payload: dict[str, Any] = {
         "priority": priority,
         "workUnitType": "STANDARD",
         "executable": {
@@ -67,6 +69,9 @@ def build_work_unit_payload(
             "jobset": {"jobs": [_worker_job(command, cpu_millicores)]},
         },
     }
+    if tags:
+        payload["tags"] = list(tags)
+    return payload
 
 
 def _worker_job(command: Sequence[str], cpu_millicores: int) -> dict[str, Any]:
@@ -231,6 +236,53 @@ def wait_for_jobsets_deleted(
 
     description = f"deletion of the JobSets of {work_unit_name}"
     poll_until(probe, description, timeout_seconds, poll_interval_seconds)
+
+
+def wait_for_jobset_priority_class(
+    work_unit_name: str,
+    expected_priority_class: str,
+    namespace: str = DEFAULT_QUEUE_NAME,
+    execution_id: int | None = None,
+    kube_context: str | None = None,
+    timeout_seconds: float = DEFAULT_POLL_TIMEOUT_SECONDS,
+    poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
+) -> dict[str, Any]:
+    """Polls until the JobSet of a work unit matches the expected priority class label.
+
+    Args:
+        work_unit_name: Work unit resource name, such as experiments/1/workUnits/2.
+        expected_priority_class: Expected kueue.x-k8s.io/priority-class label value.
+        namespace: Namespace of the work unit's queue.
+        execution_id: If set, only the JobSet of this execution of the work unit counts.
+        kube_context: kubectl context; defaults to $KUBE_CONTEXT, else the KinD E2E context.
+        timeout_seconds: Seconds after which waiting gives up.
+        poll_interval_seconds: Seconds between queries.
+
+    Returns:
+        The JobSet of the work unit with the expected priority class.
+
+    Raises:
+        ValueError: If work_unit_name is not a work unit resource name.
+        PollTimeoutError: If no JobSet with the expected priority class appears before deadline.
+    """
+    selector = _work_unit_selector(work_unit_name, execution_id)
+    resolved_context = _resolve_kube_context(kube_context)
+
+    def probe() -> dict[str, Any] | None:
+        items = _list_resources(_JOBSET_RESOURCE, namespace, resolved_context, selector)
+        if not items:
+            return None
+        jobset = items[0]
+        labels = (jobset.get("metadata") or {}).get("labels") or {}
+        if labels.get("kueue.x-k8s.io/priority-class") == expected_priority_class:
+            return jobset
+        return None
+
+    description = (
+        f"JobSet in namespace {namespace!r} matching {selector!r} with "
+        f"kueue.x-k8s.io/priority-class={expected_priority_class!r}"
+    )
+    return poll_until(probe, description, timeout_seconds, poll_interval_seconds)
 
 
 def wait_for_workload_admitted(

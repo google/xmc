@@ -23,6 +23,8 @@ from unittest import mock
 from test.e2e.lib.polling import TransientProbeError
 from test.e2e.lib.work_unit_state import (
     UNSPECIFIED_STATE,
+    assert_executions_history,
+    execution_id_from_name,
     wait_for_work_unit_state,
     work_unit_fetch_error,
     work_unit_name_from_operation,
@@ -156,6 +158,104 @@ class WaitForWorkUnitStateTest(unittest.TestCase):
 
         fetch.assert_called_once()
         mock_sleep.assert_not_called()
+
+
+class ExecutionIdFromNameTest(unittest.TestCase):
+    """Tests for execution_id_from_name."""
+
+    def test_parses_valid_execution_name(self) -> None:
+        """Extracts the integer execution ID from a canonical execution resource name."""
+        self.assertEqual(
+            execution_id_from_name("experiments/42/workUnits/7/executions/2"),
+            2,
+        )
+
+    def test_rejects_invalid_execution_names(self) -> None:
+        """Rejects malformed, missing, or non-numeric execution resource names."""
+        bad_names = (
+            "",
+            "invalid",
+            "experiments/42/workUnits/7",
+            "experiments/42/workUnits/7/executions/",
+            "experiments/42/workUnits/7/executions/abc",
+            "other/42/workUnits/7/executions/1",
+        )
+        for bad_name in bad_names:
+            with self.subTest(bad_name=bad_name):
+                with self.assertRaises(ValueError):
+                    execution_id_from_name(bad_name)
+
+
+class AssertExecutionsHistoryTest(unittest.TestCase):
+    """Tests for assert_executions_history."""
+
+    def test_valid_executions_history_passes(self) -> None:
+        """Valid descending active/inactive execution sequence passes verification."""
+        valid_executions = [
+            {"name": "experiments/42/workUnits/7/executions/2", "state": "ACTIVE"},
+            {"name": "experiments/42/workUnits/7/executions/1", "state": "INACTIVE"},
+        ]
+        assert_executions_history(valid_executions, expected_min_count=2)
+
+    def test_numeric_enum_state_passes(self) -> None:
+        """Integer protobuf enum values for ACTIVE (1) and INACTIVE (2) pass verification."""
+        valid_executions = [
+            {"name": "experiments/42/workUnits/7/executions/2", "state": 1},
+            {"name": "experiments/42/workUnits/7/executions/1", "state": 2},
+        ]
+        assert_executions_history(valid_executions, expected_min_count=2)
+
+    def test_rejects_insufficient_executions(self) -> None:
+        """Fewer executions than expected_min_count raises ValueError."""
+        with self.assertRaises(ValueError):
+            assert_executions_history([], expected_min_count=2)
+        with self.assertRaises(ValueError):
+            assert_executions_history(
+                [{"name": "experiments/42/workUnits/7/executions/1", "state": "ACTIVE"}],
+                expected_min_count=2,
+            )
+
+    def test_rejects_missing_or_empty_execution_name(self) -> None:
+        """Executions without a name or with an empty name raise ValueError."""
+        for bad_execution in ({"state": "INACTIVE"}, {"name": "", "state": "INACTIVE"}):
+            with self.subTest(bad_execution=bad_execution):
+                with self.assertRaisesRegex(ValueError, "Execution is missing a name"):
+                    assert_executions_history(
+                        [
+                            {"name": "experiments/42/workUnits/7/executions/2", "state": "ACTIVE"},
+                            bad_execution,
+                        ],
+                        expected_min_count=2,
+                    )
+
+    def test_rejects_non_descending_executions(self) -> None:
+        """Ascending or equal execution IDs raise RuntimeError."""
+        ascending = [
+            {"name": "experiments/42/workUnits/7/executions/1", "state": "ACTIVE"},
+            {"name": "experiments/42/workUnits/7/executions/2", "state": "INACTIVE"},
+        ]
+        with self.assertRaisesRegex(RuntimeError, "Executions not in descending order"):
+            assert_executions_history(ascending, expected_min_count=2)
+
+    def test_rejects_inactive_primary_execution(self) -> None:
+        """Inactive latest execution raises RuntimeError."""
+        bad_primary = [
+            {"name": "experiments/42/workUnits/7/executions/2", "state": "INACTIVE"},
+            {"name": "experiments/42/workUnits/7/executions/1", "state": "INACTIVE"},
+        ]
+        with self.assertRaisesRegex(RuntimeError, "Expected primary execution 2 to be ACTIVE"):
+            assert_executions_history(bad_primary, expected_min_count=2)
+
+    def test_rejects_active_historical_execution(self) -> None:
+        """Active historical execution raises RuntimeError."""
+        bad_historical = [
+            {"name": "experiments/42/workUnits/7/executions/2", "state": "ACTIVE"},
+            {"name": "experiments/42/workUnits/7/executions/1", "state": "ACTIVE"},
+        ]
+        with self.assertRaisesRegex(
+            RuntimeError, "Expected historical execution 1 .* to be INACTIVE"
+        ):
+            assert_executions_history(bad_historical, expected_min_count=2)
 
 
 if __name__ == "__main__":

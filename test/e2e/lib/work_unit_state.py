@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from test.e2e.lib.polling import TransientProbeError, poll_until
@@ -51,6 +51,78 @@ def work_unit_name_from_operation(operation_name: str) -> str:
     if not separator or "/workUnits/" not in work_unit_name or not operation_id:
         raise ValueError(f"Invalid work unit operation name: {operation_name!r}")
     return work_unit_name
+
+
+def execution_id_from_name(execution_name: str) -> int:
+    """Extracts the integer execution ID from a WorkUnitExecution resource name.
+
+    Args:
+        execution_name: Resource name like experiments/1/workUnits/2/executions/3.
+
+    Returns:
+        The execution ID as an integer.
+
+    Raises:
+        ValueError: If execution_name is not a valid execution resource name.
+    """
+    parts = execution_name.split("/")
+    if (
+        len(parts) != 6
+        or parts[0] != "experiments"
+        or parts[2] != "workUnits"
+        or parts[4] != "executions"
+        or not parts[5].isdigit()
+    ):
+        raise ValueError(f"Invalid execution resource name: {execution_name!r}")
+    return int(parts[5])
+
+
+def assert_executions_history(
+    executions: Sequence[Mapping[str, Any]],
+    expected_min_count: int = 2,
+) -> None:
+    """Asserts that executions are strictly sorted in descending ID order with correct active state.
+
+    The first execution must be ACTIVE, and all subsequent executions must be INACTIVE.
+
+    Args:
+        executions: Sequence of WorkUnitExecution dictionaries returned from ListWorkUnitExecutions.
+        expected_min_count: Minimum expected number of executions.
+
+    Raises:
+        ValueError: If executions has fewer than expected_min_count items, or an execution has a
+            missing or invalid name.
+        RuntimeError: If ordering or active/inactive states violate the contract.
+    """
+    if len(executions) < expected_min_count:
+        raise ValueError(
+            f"Expected at least {expected_min_count} executions, but found {len(executions)}"
+        )
+
+    eids = []
+    for e in executions:
+        name = e.get("name")
+        if not name:
+            raise ValueError(f"Execution is missing a name: {e!r}")
+        eids.append(execution_id_from_name(name))
+    for i in range(len(eids) - 1):
+        if eids[i] <= eids[i + 1]:
+            raise RuntimeError(
+                f"Executions not in descending order: eid[{i}]={eids[i]} <= eid[{i + 1}]={eids[i + 1]}"
+            )
+
+    first_state = executions[0].get("state")
+    if first_state not in ("ACTIVE", 1):
+        raise RuntimeError(
+            f"Expected primary execution {eids[0]} to be ACTIVE, got {first_state!r}"
+        )
+
+    for idx, e in enumerate(executions[1:], start=1):
+        state = e.get("state")
+        if state not in ("INACTIVE", 2):
+            raise RuntimeError(
+                f"Expected historical execution {eids[idx]} (index {idx}) to be INACTIVE, got {state!r}"
+            )
 
 
 def work_unit_fetch_error(work_unit_name: str, status: int, body: str) -> RuntimeError:

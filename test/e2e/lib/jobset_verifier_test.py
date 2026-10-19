@@ -28,6 +28,7 @@ from test.e2e.lib.jobset_verifier import (
     assert_jobset_contract,
     build_work_unit_payload,
     wait_for_jobset_for_work_unit,
+    wait_for_jobset_priority_class,
     wait_for_jobsets_deleted,
     wait_for_workload_admitted,
     wait_for_workload_preempted,
@@ -126,8 +127,11 @@ class JobSetVerifierTest(unittest.TestCase):
 
     def test_build_work_unit_payload_sets_priority_and_cpu(self) -> None:
         """build_work_unit_payload must request the given priority and CPU millicores."""
-        payload = build_work_unit_payload("preemption-queue", priority="HIGH", cpu_millicores=400)
+        payload = build_work_unit_payload(
+            "preemption-queue", priority="HIGH", cpu_millicores=400, tags=("batch-e2e",)
+        )
         self.assertEqual(payload["priority"], "HIGH")
+        self.assertEqual(payload["tags"], ["batch-e2e"])
         resources = payload["executable"]["jobset"]["jobs"][0]["spec"]["resources"]
         self.assertEqual(
             resources["cpuResources"], {"cpuMillicores": 400, "memoryBytes": 134217728}
@@ -375,6 +379,42 @@ class JobSetVerifierTest(unittest.TestCase):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(RuntimeError, expected_msg):
                     assert_jobset_contract(candidate)
+
+    @mock.patch("test.e2e.lib.polling.time.sleep")
+    @mock.patch("test.e2e.lib.jobset_verifier.subprocess.run")
+    def test_wait_for_jobset_priority_class_polls_until_matched(
+        self,
+        mock_run: mock.MagicMock,
+        mock_sleep: mock.MagicMock,
+    ) -> None:
+        """wait_for_jobset_priority_class polls until the priority class label matches."""
+        initial_jobset = copy.deepcopy(_baseline_jobset())
+        initial_jobset["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] = "exp-medium-wu-low"
+        updated_jobset = copy.deepcopy(_baseline_jobset())
+        updated_jobset["metadata"]["labels"]["kueue.x-k8s.io/priority-class"] = "exp-high-wu-high"
+
+        mock_run.side_effect = [
+            _kubectl_items([initial_jobset]),
+            _kubectl_items([updated_jobset]),
+        ]
+
+        got = wait_for_jobset_priority_class(
+            _WORK_UNIT,
+            expected_priority_class="exp-high-wu-high",
+            poll_interval_seconds=0.01,
+        )
+
+        self.assertEqual(
+            got["metadata"]["labels"]["kueue.x-k8s.io/priority-class"],
+            "exp-high-wu-high",
+        )
+        self.assertEqual(mock_run.call_count, 2)
+        mock_sleep.assert_called_once()
+
+    def test_wait_for_jobset_priority_class_rejects_invalid_name(self) -> None:
+        """wait_for_jobset_priority_class rejects malformed work unit names."""
+        with self.assertRaises(ValueError):
+            wait_for_jobset_priority_class("invalid-wu", "exp-high-wu-high")
 
 
 if __name__ == "__main__":
