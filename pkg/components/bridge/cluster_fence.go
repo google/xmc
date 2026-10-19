@@ -218,12 +218,18 @@ func (f *ClusterFence) Check(ctx context.Context) (string, string, error) {
 
 // declareShared runs one bounded declaration for all concurrent callers. The shared call detaches
 // from any single caller's cancellation and is bounded by DeclareTimeout, so a hung CMS cannot stall
-// reconcile workers.
+// reconcile workers. A caller whose context ends stops waiting at once and leaves the declaration
+// running for the others.
 func (f *ClusterFence) declareShared(ctx context.Context) error {
-	_, err, _ := f.declareGroup.Do("declare", func() (any, error) {
+	ch := f.declareGroup.DoChan("declare", func() (any, error) {
 		return nil, f.declareWithTimeout(context.WithoutCancel(ctx))
 	})
-	return err
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("stopped waiting for the cluster epoch declaration: %w", ctx.Err())
+	case res := <-ch:
+		return res.Err
+	}
 }
 
 func (f *ClusterFence) nextDeclareSeq() uint64 {

@@ -343,23 +343,50 @@ func TestFenceConflictFromError_WrappedKeepsCMSMessage(t *testing.T) {
 	}
 }
 
+// declareLogs runs fence.Declare with a capturing logger and returns what it logged.
+func declareLogs(t *testing.T, fence *ClusterFence) string {
+	t.Helper()
+	var logs bytes.Buffer
+	if err := fence.Declare(logging.WithLogger(context.Background(), slog.New(slog.NewTextHandler(&logs, nil)))); err != nil {
+		t.Fatalf("Declare() = %v, want nil", err)
+	}
+	return logs.String()
+}
+
+// checkLog reports an error unless got is empty when want is empty, or is one log line containing
+// want otherwise.
+func checkLog(t *testing.T, call, got, want string) {
+	t.Helper()
+	switch {
+	case want == "" && got != "":
+		t.Errorf("%s logged %q, want no log", call, got)
+	case want != "" && (strings.Count(got, "msg=") != 1 || !strings.Contains(got, want)):
+		t.Errorf("%s logged %q, want one line containing %q", call, got, want)
+	}
+}
+
 func TestClusterFence_TransitionNotifications(t *testing.T) {
 	ctx := context.Background()
 	fenced := fenceRejection(t, store.ReasonClusterFenced)
 	regressed := fenceRejection(t, store.ReasonClusterEpochRegressed)
+	const (
+		activeLog = "level=INFO msg=\"Cluster holds the CMS ownership fence\""
+		fencedLog = "level=ERROR msg=\"Cluster is fenced out of CMS"
+	)
 	tests := []struct {
 		name          string
 		first, second error
 		wantReason    string
 		wantNotify    bool
-		// wantLog is a fragment of the one log line the second declaration writes; empty means none.
-		wantLog string
+		// wantFirstLog and wantLog are fragments of the one log line the first and second
+		// declarations write; empty means none.
+		wantFirstLog, wantLog string
 	}{
-		{name: "active to fenced", first: nil, second: fenced, wantReason: ReasonClusterFenced, wantNotify: true, wantLog: "level=ERROR msg=\"Cluster is fenced out of CMS"},
-		{name: "fenced to active", first: fenced, second: nil, wantReason: "", wantNotify: true, wantLog: "level=INFO msg=\"Cluster holds the CMS ownership fence\""},
-		{name: "fenced to regressed", first: fenced, second: regressed, wantReason: ReasonClusterEpochRegressed, wantNotify: true, wantLog: "reason=" + ReasonClusterEpochRegressed},
-		{name: "active unchanged", first: nil, second: nil, wantReason: "", wantNotify: false},
-		{name: "fenced unchanged", first: fenced, second: fenced, wantReason: ReasonClusterFenced, wantNotify: false},
+		{name: "active to fenced", first: nil, second: fenced, wantReason: ReasonClusterFenced, wantNotify: true, wantFirstLog: activeLog, wantLog: fencedLog},
+		{name: "fenced to active", first: fenced, second: nil, wantReason: "", wantNotify: true, wantFirstLog: fencedLog, wantLog: activeLog},
+		{name: "fenced to regressed", first: fenced, second: regressed, wantReason: ReasonClusterEpochRegressed, wantNotify: true, wantFirstLog: fencedLog, wantLog: "reason=" + ReasonClusterEpochRegressed},
+		{name: "active unchanged", first: nil, second: nil, wantReason: "", wantNotify: false, wantFirstLog: activeLog},
+		{name: "fenced unchanged", first: fenced, second: fenced, wantReason: ReasonClusterFenced, wantNotify: false, wantFirstLog: fencedLog},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -368,26 +395,14 @@ func TestClusterFence_TransitionNotifications(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewClusterFence() failed: %v", err)
 			}
-			if err := fence.Declare(ctx); err != nil {
-				t.Fatalf("first Declare() = %v, want nil", err)
-			}
+			checkLog(t, "first Declare()", declareLogs(t, fence), tc.wantFirstLog)
 			select {
 			case <-fence.Changes():
 			default:
 			}
 
 			cmsMock.declareErr = tc.second
-			var logs bytes.Buffer
-			logCtx := logging.WithLogger(ctx, slog.New(slog.NewTextHandler(&logs, nil)))
-			if err := fence.Declare(logCtx); err != nil {
-				t.Fatalf("second Declare() = %v, want nil", err)
-			}
-			switch got := logs.String(); {
-			case tc.wantLog == "" && got != "":
-				t.Errorf("second Declare() logged %q, want no log", got)
-			case tc.wantLog != "" && (strings.Count(got, "msg=") != 1 || !strings.Contains(got, tc.wantLog)):
-				t.Errorf("second Declare() logged %q, want one line containing %q", got, tc.wantLog)
-			}
+			checkLog(t, "second Declare()", declareLogs(t, fence), tc.wantLog)
 			gotNotify := false
 			select {
 			case <-fence.Changes():
@@ -490,7 +505,8 @@ func TestClusterFence_RetryDelay(t *testing.T) {
 }
 
 // scriptedDeclareCMS hands each DeclareClusterEpoch call's reply channel to the test via calls
-// and blocks until the test replies on it.
+// and blocks until the test replies on it. Like a real RPC, a call whose context ended meanwhile
+// fails with the context error.
 type scriptedDeclareCMS struct {
 	mockCMS
 	calls chan chan error
@@ -502,41 +518,57 @@ func (s *scriptedDeclareCMS) DeclareClusterEpoch(ctx context.Context, in *compon
 	if err := <-reply; err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return &componentspb.DeclareClusterEpochResponse{ActiveCluster: in.GetCluster()}, nil
 }
 
 // TestClusterFence_CheckSharesOneDeclaration checks that concurrent Check calls before the first
-// successful declaration send a single DeclareClusterEpoch, which is not cancelled with any one
-// caller's context.
+// successful declaration send a single DeclareClusterEpoch, and that a caller whose context ends
+// stops waiting at once without cancelling the shared declaration for the others.
 func TestClusterFence_CheckSharesOneDeclaration(t *testing.T) {
-	const callers = 5
-	cmsScripted := &scriptedDeclareCMS{calls: make(chan chan error, callers)}
+	const waiters = 4
+	cmsScripted := &scriptedDeclareCMS{calls: make(chan chan error, waiters+1)}
 	fence, err := NewClusterFence(cmsScripted, &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "prod", Epoch: 1}, ClusterFenceOptions{})
 	if err != nil {
 		t.Fatalf("NewClusterFence() failed: %v", err)
 	}
+
+	// The first caller's context is already cancelled: it starts the shared declaration and returns
+	// while that declaration is still in flight.
 	cancelledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	started := make(chan struct{}, callers)
-	errs := make(chan error, callers)
-	for i := range callers {
-		ctx := context.Background()
-		if i == 0 {
-			ctx = cancelledCtx // The shared declaration must not inherit this caller's cancellation.
+	cancelledDone := make(chan error, 1)
+	go func() {
+		_, _, err := fence.Check(cancelledCtx)
+		cancelledDone <- err
+	}()
+	select {
+	case err := <-cancelledDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Check() with a cancelled context = %v, want context.Canceled", err)
 		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Check() with a cancelled context still waiting on the shared declaration after 2s")
+	}
+	reply := <-cmsScripted.calls
+
+	started := make(chan struct{}, waiters)
+	errs := make(chan error, waiters)
+	for range waiters {
 		go func() {
 			started <- struct{}{}
-			_, _, err := fence.Check(ctx)
+			_, _, err := fence.Check(context.Background())
 			errs <- err
 		}()
 	}
-	for range callers {
+	for range waiters {
 		<-started
 	}
-	reply := <-cmsScripted.calls
-	time.Sleep(50 * time.Millisecond) // Let the other callers join the in-flight declaration.
+	time.Sleep(50 * time.Millisecond) // Let the waiters join the in-flight declaration.
 	reply <- nil
-	for range callers {
+	for range waiters {
 		if err := <-errs; err != nil {
 			t.Errorf("Check() = %v, want nil", err)
 		}
