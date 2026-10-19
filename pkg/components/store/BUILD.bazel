@@ -72,6 +72,7 @@ go_test(
         "intent_idempotency_test.go",
         "intent_source_test.go",
         "memory_store_test.go",
+        "observation_heartbeat_test.go",
         "ownership_fence_test.go",
         "rejection_error_info_test.go",
         "snapshot_resolver_test.go",

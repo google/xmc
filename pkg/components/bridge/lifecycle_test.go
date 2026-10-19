@@ -587,3 +587,42 @@ func TestReconcileComponent_DisabledSteadyStateThrottlesCMSUpdate(t *testing.T) 
 		t.Errorf("second pass within heartbeat interval called UpdateObservedGeneration(%v), want throttled", cms.lastObsReq)
 	}
 }
+
+// TestReconcileComponent_LifecycleOwnershipRejections checks that a sourced UpdateObservedGeneration
+// or CompleteDeactivation rejected by CMS ownership is projected as SourceConflict, not returned as
+// an error, and that a rejected CompleteDeactivation stops the pass before the component is
+// reported as disabled.
+func TestReconcileComponent_LifecycleOwnershipRejections(t *testing.T) {
+	ctx := context.Background()
+	conflict := errorInfoStatus(t, codes.FailedPrecondition, store.ReasonSourceNamespaceConflict, store.ErrorInfoDomain, "owned by namespace team-b")
+	healthy := Condition{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy}
+	tests := []struct {
+		name    string
+		cms     *mockCMS
+		enabled bool
+	}{
+		{name: "UpdateObservedGeneration rejected", cms: &mockCMS{obsErr: conflict}, enabled: true},
+		{name: "CompleteDeactivation rejected", cms: &mockCMS{completeErr: conflict}, enabled: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := NewReconciler(tt.cms, &mockProber{healthy: true}, &mockHelm{active: true})
+			if err != nil {
+				t.Fatalf("NewReconciler() error = %v", err)
+			}
+			res, err := r.ReconcileComponent(ctx, ReconcileComponentInput{
+				Namespace: "xmc", Name: "redpanda", Generation: 2, UID: "uid-a", Enabled: tt.enabled,
+				Cluster:            &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary", Epoch: 1},
+				ExistingConditions: []Condition{healthy},
+				Spec:               &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "1.0.0"},
+			})
+			if err != nil {
+				t.Fatalf("ReconcileComponent() error = %v, want nil (ownership rejections are reported as conditions)", err)
+			}
+			assertSourceConflictConditions(t, res.Conditions, ReasonSourceNamespaceConflict)
+			if res.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+				t.Errorf("State = %v, want the pass to stop before reporting DISABLED", res.State)
+			}
+		})
+	}
+}

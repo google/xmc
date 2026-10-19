@@ -92,8 +92,8 @@ func fenceMutation(fence *ClusterIdentity, cluster ClusterIdentity, outcome Decl
 }
 
 // checkFence reads the fence within txn and returns the rejection of src by checkClusterFence.
-// Unsourced intents (nil src) skip the read.
-func checkFence(ctx context.Context, txn *spanner.ReadWriteTransaction, src *RequestSource) error {
+// Unsourced requests (nil src) skip the read.
+func checkFence(ctx context.Context, txn *spanner.ReadWriteTransaction, operation string, src *RequestSource) error {
 	if src == nil {
 		return nil
 	}
@@ -101,7 +101,7 @@ func checkFence(ctx context.Context, txn *spanner.ReadWriteTransaction, src *Req
 	if err != nil {
 		return err
 	}
-	return checkClusterFence(operationSetComponentIntent, fence, src)
+	return checkClusterFence(operation, fence, src)
 }
 
 // readFence returns the current fence holder, or nil before the first declaration.

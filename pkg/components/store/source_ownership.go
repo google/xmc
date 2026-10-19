@@ -190,3 +190,48 @@ func ownerMetadata(operation string, owner *SourceOwner) map[string]string {
 		MetadataKeyOwnerClusterUID: owner.ClusterUID,
 	}
 }
+
+// optionalRequestSource validates and returns the single source in srcs, or nil when srcs is empty.
+// More than one source is rejected rather than silently dropped.
+func optionalRequestSource(srcs []RequestSource) (*RequestSource, error) {
+	if len(srcs) == 0 {
+		return nil, nil
+	}
+	if len(srcs) > 1 {
+		return nil, status.Errorf(codes.InvalidArgument, "at most one request source may be given, got %d", len(srcs))
+	}
+	if err := ValidateRequestSource(srcs[0]); err != nil {
+		return nil, err
+	}
+	src := srcs[0]
+	return &src, nil
+}
+
+// checkSourceMutation checks whether src may mutate the active record canonicalName owned by owner
+// in operation. A nil src bypasses ownership checks; otherwise src must pass checkSourceOwnership.
+// The owner object itself is always allowed at any generation: only SetComponentIntent returns
+// STALE_GENERATION (R3), so informer lag never blocks an observation, deactivation or deletion.
+func checkSourceMutation(operation, canonicalName string, owner *SourceOwner, src *RequestSource) error {
+	if src == nil {
+		return nil
+	}
+	return checkSourceOwnership(operation, canonicalName, owner, *src)
+}
+
+// nonIntentOwner returns the owner recorded by a non-intent mutation (UpdateObservedGeneration,
+// PrepareDeactivation, CompleteDeactivation) from src on a record currently owned by existing.
+// When existing is already owned by src.UID (R3), existing.Generation (the last committed intent's
+// CR generation) is preserved so an observation or deactivation call never advances
+// SourceGeneration past a gated SetComponentIntent. An adoption (R2 or R5) records Generation 0,
+// so the adopter's next intent is never rejected as STALE_GENERATION.
+func nonIntentOwner(existing *SourceOwner, src *RequestSource) *SourceOwner {
+	if src == nil {
+		return existing
+	}
+	next := ownerOf(*src)
+	next.Generation = 0
+	if existing != nil && existing.UID == src.UID {
+		next.Generation = existing.Generation
+	}
+	return next
+}

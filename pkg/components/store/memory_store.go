@@ -256,8 +256,8 @@ func (m *MemoryStore) ListComponents(ctx context.Context) ([]*ComponentRecord, e
 }
 
 // UpdateObservedGeneration synchronizes actual component access, generation, and state.
-func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) (*ComponentRecord, error) {
-	canonicalName, err := validateUpdateObservedArgs(name, observedGen)
+func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src ...RequestSource) (*ComponentRecord, error) {
+	canonicalName, reqSrc, err := validateUpdateObservedArgs(name, observedGen, src)
 	if err != nil {
 		return nil, err
 	}
@@ -265,9 +265,29 @@ func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	rec, exists := m.componentsByName[canonicalName]
-	if !exists || isDeletedRecord(rec) {
-		return nil, ErrComponentNotFound
+	rec, err := m.lookupMutableRecordLocked(operationUpdateObservedGeneration, canonicalName, reqSrc)
+	if err != nil {
+		return nil, err
+	}
+	rec.Owner = nonIntentOwner(rec.Owner, reqSrc)
+	if !applyObservation(rec, observedGen, access, state, statusMsg) {
+		// An unchanged heartbeat records only the owner: UpdateTime and the snapshot stay.
+		return cloneRecord(rec), nil
+	}
+
+	rec.UpdateTime = time.Now().UTC()
+	rec.Etag = generateEtag(rec)
+	m.recordSnapshotLocked(rec)
+	return cloneRecord(rec), nil
+}
+
+// applyObservation applies an UpdateObservedGeneration of observedGen, access, state and
+// statusMsg to rec, and reports whether it changed the observed generation, state or status.
+func applyObservation(rec *ComponentRecord, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) bool {
+	prevObserved, prevState := rec.ObservedGeneration, rec.State
+	var prevStatus *componentspb.ComponentAccessStatus
+	if rec.Status != nil {
+		prevStatus = proto.Clone(rec.Status).(*componentspb.ComponentAccessStatus)
 	}
 
 	rec.ObservedGeneration = &observedGen
@@ -279,21 +299,46 @@ func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string,
 	}
 	applyStatusUpdates(rec, observedGen, state, statusMsg)
 
-	rec.UpdateTime = time.Now().UTC()
-	rec.Etag = generateEtag(rec)
-	m.recordSnapshotLocked(rec)
-	return cloneRecord(rec), nil
+	return prevObserved == nil || *prevObserved != observedGen || prevState != rec.State || !proto.Equal(prevStatus, rec.Status)
 }
 
-func validateUpdateObservedArgs(name string, observedGen int64) (string, error) {
+// lookupMutableRecordLocked checks the cluster fence, finds the active record canonicalName, and
+// checks source ownership for operation.
+func (m *MemoryStore) lookupMutableRecordLocked(operation, canonicalName string, src *RequestSource) (*ComponentRecord, error) {
+	if err := checkClusterFence(operation, m.fence, src); err != nil {
+		return nil, err
+	}
+	rec, exists := m.componentsByName[canonicalName]
+	if !exists || rec == nil || isDeletedRecord(rec) {
+		return nil, ErrComponentNotFound
+	}
+	if err := checkSourceMutation(operation, canonicalName, rec.Owner, src); err != nil {
+		return nil, err
+	}
+	return rec, nil
+}
+
+func validateSourcedResourceArgs(name string, srcs []RequestSource) (string, *RequestSource, error) {
 	canonicalName, err := validateResourceName(name)
 	if err != nil {
-		return "", err
+		return "", nil, err
+	}
+	reqSrc, err := optionalRequestSource(srcs)
+	if err != nil {
+		return "", nil, err
+	}
+	return canonicalName, reqSrc, nil
+}
+
+func validateUpdateObservedArgs(name string, observedGen int64, srcs []RequestSource) (string, *RequestSource, error) {
+	canonicalName, reqSrc, err := validateSourcedResourceArgs(name, srcs)
+	if err != nil {
+		return "", nil, err
 	}
 	if observedGen < 0 {
-		return "", status.Error(codes.InvalidArgument, "observed generation cannot be negative")
+		return "", nil, status.Error(codes.InvalidArgument, "observed generation cannot be negative")
 	}
-	return canonicalName, nil
+	return canonicalName, reqSrc, nil
 }
 
 func isDeletedRecord(rec *ComponentRecord) bool {
@@ -320,8 +365,8 @@ func applyStatusUpdates(rec *ComponentRecord, observedGen int64, state component
 }
 
 // PrepareDeactivation checks deactivation safety, transitions the target and any cascaded dependents to DISABLING.
-func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool) (*PrepareDeactivationResult, error) {
-	canonicalName, err := validateResourceName(name)
+func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src ...RequestSource) (*PrepareDeactivationResult, error) {
+	canonicalName, reqSrc, err := validateSourcedResourceArgs(name, src)
 	if err != nil {
 		return nil, err
 	}
@@ -329,15 +374,16 @@ func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requ
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	rec, exists := m.componentsByName[canonicalName]
-	if !exists || rec == nil || isDeletedRecord(rec) {
-		return nil, ErrComponentNotFound
+	rec, err := m.lookupMutableRecordLocked(operationPrepareDeactivation, canonicalName, reqSrc)
+	if err != nil {
+		return nil, err
 	}
 
 	result, err := EvaluateDeactivationSafety(m.componentsByName, canonicalName, requestCascade, minDrainTimeout)
 	if err != nil {
 		return nil, err
 	}
+	rec.Owner = nonIntentOwner(rec.Owner, reqSrc)
 
 	now := time.Now().UTC()
 	transitionToDisabling(rec, now)
@@ -354,8 +400,8 @@ func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requ
 }
 
 // CompleteDeactivation marks a component in DISABLING state as DISABLED.
-func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, force bool) error {
-	canonicalName, err := validateResourceName(name)
+func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, force bool, src ...RequestSource) error {
+	canonicalName, reqSrc, err := validateSourcedResourceArgs(name, src)
 	if err != nil {
 		return err
 	}
@@ -363,12 +409,13 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, for
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	rec, exists := m.componentsByName[canonicalName]
-	if !exists || rec == nil || isDeletedRecord(rec) {
-		return ErrComponentNotFound
+	rec, err := m.lookupMutableRecordLocked(operationCompleteDeactivation, canonicalName, reqSrc)
+	if err != nil {
+		return err
 	}
 
 	if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		rec.Owner = nonIntentOwner(rec.Owner, reqSrc)
 		return nil
 	}
 	if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
@@ -381,6 +428,7 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, for
 			return status.Errorf(codes.FailedPrecondition, "cannot complete deactivation of component %s: active dependents remaining: %v", canonicalName, activeDependents)
 		}
 	}
+	rec.Owner = nonIntentOwner(rec.Owner, reqSrc)
 
 	now := time.Now().UTC()
 	rec.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED

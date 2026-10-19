@@ -167,6 +167,30 @@ func (o *epochOverrideCMS) SetComponentIntent(ctx context.Context, in *component
 	return o.CMSClient.SetComponentIntent(ctx, in, opts...)
 }
 
+func (o *epochOverrideCMS) UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error) {
+	if src := o.sourceAtEpoch(in.GetSource()); src != in.GetSource() {
+		in = proto.Clone(in).(*componentspb.UpdateObservedGenerationRequest)
+		in.Source = src
+	}
+	return o.CMSClient.UpdateObservedGeneration(ctx, in, opts...)
+}
+
+func (o *epochOverrideCMS) PrepareDeactivation(ctx context.Context, in *componentspb.PrepareDeactivationRequest, opts ...grpc.CallOption) (*componentspb.PrepareDeactivationResponse, error) {
+	if src := o.sourceAtEpoch(in.GetSource()); src != in.GetSource() {
+		in = proto.Clone(in).(*componentspb.PrepareDeactivationRequest)
+		in.Source = src
+	}
+	return o.CMSClient.PrepareDeactivation(ctx, in, opts...)
+}
+
+func (o *epochOverrideCMS) CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error) {
+	if src := o.sourceAtEpoch(in.GetSource()); src != in.GetSource() {
+		in = proto.Clone(in).(*componentspb.CompleteDeactivationRequest)
+		in.Source = src
+	}
+	return o.CMSClient.CompleteDeactivation(ctx, in, opts...)
+}
+
 // sourceAtEpoch returns a copy of src with its cluster at the overriding epoch, or src itself
 // when no epoch is set or src names no cluster.
 func (o *epochOverrideCMS) sourceAtEpoch(src *componentspb.RequestSource) *componentspb.RequestSource {

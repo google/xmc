@@ -97,6 +97,9 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg)
 	}
 	prepared, err := r.prepareDeactivation(ctx, in, canonicalName)
+	if handleOwnershipError(res, in, err) {
+		return res, nil
+	}
 	if status.Code(err) == codes.FailedPrecondition {
 		msg := fmt.Sprintf("Cannot disable %q: %s", in.Name, status.Convert(err).Message())
 		logging.Info(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
@@ -108,7 +111,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 		recordCMSSyncFailure(res, in, err)
 		return res, err
 	}
-	if err := r.teardownAndCompleteDeactivation(ctx, in, canonicalName, res, prepared); err != nil {
+	if err := r.teardownAndCompleteDeactivation(ctx, in, canonicalName, res, prepared); err != nil || shouldStopReconcile(res) {
 		return res, err
 	}
 	r.syncTracker.clearDeactivationBlock(key)
@@ -133,7 +136,12 @@ func (r *Reconciler) teardownAndCompleteDeactivation(ctx context.Context, in Rec
 	if !prepared {
 		return nil
 	}
-	if _, err := r.cmsClient.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: canonicalName}); err != nil {
+	if _, err := callWithOwnership(ctx, r, in, func(ctx context.Context, src *componentspb.RequestSource) (*componentspb.CompleteDeactivationResponse, error) {
+		return r.cmsClient.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{Name: canonicalName, Source: src})
+	}); err != nil {
+		if handleOwnershipError(res, in, err) {
+			return nil
+		}
 		err = fmt.Errorf("failed to complete deactivation in CMS: %w", err)
 		markDeactivationFailed(in, res, ReasonDeactivationIncomplete, err.Error())
 		setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
@@ -165,7 +173,9 @@ func (r *Reconciler) prepareDeactivation(ctx context.Context, in ReconcileCompon
 	if ready := findCondition(in.ExistingConditions, ConditionTypeReady); ready != nil && ready.Reason == reasonComponentDisabled && ready.ObservedGeneration == in.Generation {
 		return false, nil
 	}
-	_, err := r.cmsClient.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: canonicalName})
+	_, err := callWithOwnership(ctx, r, in, func(ctx context.Context, src *componentspb.RequestSource) (*componentspb.PrepareDeactivationResponse, error) {
+		return r.cmsClient.PrepareDeactivation(ctx, &componentspb.PrepareDeactivationRequest{Name: canonicalName, Source: src})
+	})
 	if status.Code(err) == codes.NotFound {
 		return false, nil
 	}
