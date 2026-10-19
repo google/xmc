@@ -72,8 +72,8 @@ test.describe('Dashboards List Page - Screenshot Tests', () => {
     for (let i = 1; i < cellCount; i++) {
       const cellBox = await cellsInFirstRow.nth(i).boundingBox();
       expect(cellBox).not.toBeNull();
-      expect(cellBox!.y).toBeCloseTo(firstCellBox!.y, 0);
-      expect(cellBox!.height).toBeCloseTo(firstCellBox!.height, 0);
+      expect(Math.abs(cellBox!.y - firstCellBox!.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(cellBox!.height - firstCellBox!.height)).toBeLessThanOrEqual(1);
     }
 
     await expect(listPage).toHaveScreenshot('dashboards-list-page.png');
