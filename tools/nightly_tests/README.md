@@ -59,6 +59,9 @@ When adding a new example under [`examples/`](../../examples/) or a new UI E2E c
 
 ### Step 1: Implement the Verifier in [`examples_verification/`](examples_verification/)
 
+> [!IMPORTANT]
+> **Shared Dirty-Environment Invariant**: Nightly tests run against a long-lived shared cluster (`xmc-nightly`) populated with thousands of pre-existing historical entities from previous runs. Verifiers MUST NEVER assume target entities appear on an unfiltered first page or that cluster/DB state is empty. Always scope queries by specific XID/dashboard ID, use server-side filtering, or navigate directly to the resource URL (`/experiments/<xid>`, `/dashboards/<dashboard_id>`) rather than scanning truncated list pages.
+
 Create `tools/nightly_tests/examples_verification/<example_name>_verify.py` (and a matching `<example_name>_verify_test.py` unit test) following one of the canonical patterns below:
 
 - **Pattern A — Standard CPU Workload**: For workloads that schedule onto `cpu-queue` and run to completion.

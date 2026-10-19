@@ -22,4 +22,10 @@ Follow these rules when adding or modifying code under `internal/storage/`:
 - Isolate all database-specific SQL dialects, mutations, schema mappings, and transaction mechanics inside dedicated engine subpackages:
   - [`internal/storage/spanner/`](spanner/) for Cloud Spanner
   - [`internal/storage/postgres/`](postgres/) for PostgreSQL
+
+## 4. Deterministic Default Ordering & Pagination for Unbounded Collections
+- **Explicit Newest-First Default Ordering**: `TableView` and query generators for user-created, time-series, or unbounded entities MUST define an explicit default ordering via `OrderByFieldsWithSortDirection` (typically `created DESC` with a unique primary-key tie-breaker such as `id ASC`) per [Architectural Contracts](../../.agents/rules/architectural_contracts.md#3-relational-storage--lifecycle-safety-contracts).
+- **Prohibit Default Primary-Key ASC for Feeds**: Never omit default ordering or fall back to primary-key or lexicographical `ASC` ordering on unbounded collections; in shared environments with >100 historical entities, primary-key `ASC` truncates newly created entities from the first page.
+- **Server-Side Filtering & Pagination**: Always implement server-side filtering (`AIP-160`) and page-token pagination on `List*` queries instead of expecting callers to consume single-page results.
+- **Multi-Page Pagination Test Coverage**: Unit and integration test suites for `List*` repositories MUST test pagination traversal across multiple pages and verify that default sorting (empty `orderBy`) returns newest items first across page boundaries.
 - Keep Spanner and PostgreSQL schemas and migrations in lockstep (enforced by [`parity_test.go`](migrations/parity_test.go); see [`README.md`](README.md#schemas-and-migrations) for the dual-backend workflow and no-op twin convention).
