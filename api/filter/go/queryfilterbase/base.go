@@ -306,12 +306,7 @@ func handleHasRestriction(qfv QueryFilterVisitor, lhs, rhs *fpb.Expression, lhsT
 		return filtervisitor.Invalid, fmt.Errorf("type mismatch in HAS: LHS is %v, RHS is %v", lhsType.Name, rhsType.Name)
 	}
 
-	if qfv.GetExpOptions().UseHasOperatorAsContains {
-		qfv.AppendTrustedSQL(safesql.Concat(safesql.New("(STRPOS("), lhsSQL, safesql.New(" , "), rhsSQL, safesql.New(") > 0)")))
-		return filtervisitor.Invalid, nil
-	}
-
-	qfv.AppendTrustedSQL(qfv.FormatRegexpPredicate(lhsSQL, rhsSQL, false))
+	qfv.AppendTrustedSQL(safesql.Concat(safesql.New("(STRPOS("), lhsSQL, safesql.New(" , "), rhsSQL, safesql.New(") > 0)")))
 	return filtervisitor.Invalid, nil
 }
 

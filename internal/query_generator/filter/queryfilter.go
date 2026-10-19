@@ -122,12 +122,8 @@ func (s *visitorState) resolveExpOptions(opts []FilterBaseOption) *queryfilterba
 	if s.filterBaseExpOptions == nil {
 		s.filterBaseExpOptions = &queryfilterbase.ExpOptions{}
 	}
-	if len(opts) > 0 {
-		holder := Spanner{visitorState: *s}
-		for _, opt := range opts {
-			opt(&holder)
-		}
-		s.filterBaseExpOptions = holder.filterBaseExpOptions
+	for _, opt := range opts {
+		opt(s.filterBaseExpOptions)
 	}
 	return s.filterBaseExpOptions
 }
@@ -168,21 +164,21 @@ type DisjunctionFunc func([]string) (bool, safesql.TrustedSQLString, error)
 type RestrictionTranslate func(r *fpb.Restriction) *fpb.Restriction
 
 // FilterBaseOption will set options for the queryfilterbase.
-type FilterBaseOption func(qf *Spanner)
+type FilterBaseOption func(opts *queryfilterbase.ExpOptions)
 
 // WithFullTextSearchEnabled enables full text search for the queryfilterbase.
-func WithFullTextSearchEnabled(qf *Spanner) {
-	qf.filterBaseExpOptions.UseFullTextSearch = true
+func WithFullTextSearchEnabled(opts *queryfilterbase.ExpOptions) {
+	opts.UseFullTextSearch = true
 }
 
 // WithSubstringTextSearchEnabled enables substring text search for the queryfilterbase.
-func WithSubstringTextSearchEnabled(qf *Spanner) {
-	qf.filterBaseExpOptions.UseSubstringTextSearch = true
+func WithSubstringTextSearchEnabled(opts *queryfilterbase.ExpOptions) {
+	opts.UseSubstringTextSearch = true
 }
 
 // WithHasOperatorAsContains enables the HAS operator to be used as a contains operator for string fields.
-func WithHasOperatorAsContains(qf *Spanner) {
-	qf.filterBaseExpOptions.UseHasOperatorAsContains = true
+func WithHasOperatorAsContains(opts *queryfilterbase.ExpOptions) {
+	opts.UseHasOperatorAsContains = true
 }
 
 // Spanner appends a filter expression to a spanner.Query using the provided MemberFunc for appending member accesses.
