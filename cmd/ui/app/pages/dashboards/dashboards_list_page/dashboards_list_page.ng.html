@@ -24,7 +24,13 @@ limitations under the License.
     </div>
 
     <div class="header-actions">
-      <button mat-stroked-button class="action-button" type="button" (click)="loadDashboards()">
+      <button
+        mat-stroked-button
+        class="action-button"
+        type="button"
+        [disabled]="isLoading()"
+        (click)="refresh()"
+      >
         <mat-icon>refresh</mat-icon>
         <span>Refresh</span>
       </button>
@@ -158,4 +164,34 @@ limitations under the License.
       </table>
     </div>
   </mat-card>
+
+  <!-- Pagination Controls -->
+  <div class="paginator">
+    <div class="paginator-controls">
+      <xmc-page-size-selector [pageSize]="pageSize()" (pageSizeChange)="onPageSizeChange($event)" />
+      <button
+        type="button"
+        mat-icon-button
+        aria-label="Previous page"
+        data-test-id="previous-page-button"
+        [disabled]="!hasPreviousPage() || isLoading()"
+        (click)="goToPreviousPage()"
+      >
+        <mat-icon>chevron_left</mat-icon>
+      </button>
+
+      <span class="page-label"> Page {{ pageIndex() + 1 }} </span>
+
+      <button
+        type="button"
+        mat-icon-button
+        aria-label="Next page"
+        data-test-id="next-page-button"
+        [disabled]="!hasNextPage() || isLoading()"
+        (click)="goToNextPage()"
+      >
+        <mat-icon>chevron_right</mat-icon>
+      </button>
+    </div>
+  </div>
 </div>

@@ -22,12 +22,24 @@ import { Chart, Dashboard } from 'app/service/dashboard_models';
 import { DashboardService } from 'app/service/dashboard_service';
 import { SnackbarService } from 'app/service/snackbar_service';
 import { createMockDashboardList } from 'app/testing/mock_dashboards';
-import { bootstrap, cleanState, flush, get, getEl, getEls, setupModule } from 'app/testing/test';
+import {
+  bootstrap,
+  cleanState,
+  flush,
+  get,
+  getEl,
+  getEls,
+  getHarness,
+  setupModule,
+} from 'app/testing/test';
 
 import { DashboardsListPage } from './dashboards_list_page';
+import { DashboardsListPageHarness } from './dashboards_list_page_harness';
 
 const DASHBOARD_ROW_SELECTOR = '.dashboard-row';
 const DASHBOARD_TITLE_TEXT_SELECTOR = '.dashboard-title-text';
+const SEARCH_FIELD_INPUT_SELECTOR = '.search-field input';
+const SEARCH_FIELD_CLEAR_BTN_SELECTOR = '.search-field button';
 
 /** Baseline dialog result: one chart to create alongside the dashboard. */
 function createDialogResult(charts: Chart[] = [{ title: 'Baseline', xid: 4321, wid: 1 }]) {
@@ -64,16 +76,18 @@ describe('DashboardsListPage', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should load and display dashboards on init', () => {
+  it('should load and display dashboards on init with default page size', () => {
     const component = bootstrap(DashboardsListPage);
-    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalled();
+    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledWith({
+      pageSize: 10,
+      pageToken: undefined,
+    });
     expect(component.dashboards().length).toBe(2);
     expect(component.filteredDashboards().length).toBe(2);
-  });
-
-  it('should request an explicit page size when loading dashboards', () => {
-    bootstrap(DashboardsListPage);
-    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledWith({ pageSize: 100 });
+    expect(component.pageIndex()).toBe(0);
+    expect(component.pageSize()).toBe(10);
+    expect(component.hasNextPage()).toBeFalse();
+    expect(component.hasPreviousPage()).toBeFalse();
   });
 
   it('should filter dashboards by search query', () => {
@@ -91,14 +105,15 @@ describe('DashboardsListPage', () => {
 
   it('should render accessible aria-labels on the filter input and clear button', async () => {
     const component = bootstrap(DashboardsListPage);
-    const filterInput = getEl('.search-field input');
+    const filterInput = getEl(SEARCH_FIELD_INPUT_SELECTOR);
     expect(filterInput?.getAttribute('aria-label')).toBe(
       'Filter dashboards by name or description',
     );
 
     component.searchQuery.set('vcc');
     await flush();
-    const clearButton = getEl('.search-field button');
+
+    const clearButton = getEl(SEARCH_FIELD_CLEAR_BTN_SELECTOR);
     expect(clearButton?.getAttribute('aria-label')).toBe('Clear search query');
   });
 
@@ -114,6 +129,100 @@ describe('DashboardsListPage', () => {
 
     const firstTitle = getEl(DASHBOARD_TITLE_TEXT_SELECTOR);
     expect(firstTitle?.textContent?.trim()).toBe('VCC baseline tune comparison');
+  });
+
+  it('should handle pagination next and previous controls via harness', async () => {
+    state.dashboardServiceSpy.listDashboards.and.returnValues(
+      of({ dashboards: createMockDashboardList(), nextPageToken: 'token_page_2' }),
+      of({ dashboards: createMockDashboardList() }),
+      of({ dashboards: createMockDashboardList() }),
+    );
+
+    const component = bootstrap(DashboardsListPage);
+    const harness = await getHarness(DashboardsListPageHarness);
+
+    expect(await harness.getPageLabelText()).toContain('Page 1');
+    expect(await harness.isPreviousPageDisabled()).toBeTrue();
+    expect(await harness.isNextPageDisabled()).toBeFalse();
+
+    await harness.clickNextPage();
+
+    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledWith({
+      pageSize: 10,
+      pageToken: 'token_page_2',
+    });
+    expect(component.pageIndex()).toBe(1);
+    expect(await harness.getPageLabelText()).toContain('Page 2');
+    expect(await harness.isPreviousPageDisabled()).toBeFalse();
+
+    await harness.clickPreviousPage();
+
+    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledWith({
+      pageSize: 10,
+      pageToken: undefined,
+    });
+    expect(component.pageIndex()).toBe(0);
+    expect(await harness.getPageLabelText()).toContain('Page 1');
+    expect(await harness.isPreviousPageDisabled()).toBeTrue();
+  });
+
+  it('should update page size and reload first page', () => {
+    const component = bootstrap(DashboardsListPage);
+    state.dashboardServiceSpy.listDashboards.calls.reset();
+
+    component.onPageSizeChange(25);
+
+    expect(component.pageSize()).toBe(25);
+    expect(component.pageIndex()).toBe(0);
+    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledWith({
+      pageSize: 25,
+      pageToken: undefined,
+    });
+  });
+
+  it('should not navigate to next page if hasNextPage is false or loading', () => {
+    const component = bootstrap(DashboardsListPage);
+    state.dashboardServiceSpy.listDashboards.calls.reset();
+
+    component.goToNextPage();
+    expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
+
+    component.isLoading.set(true);
+    component.goToNextPage();
+    expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
+  });
+
+  it('should not navigate to previous page if hasPreviousPage is false or loading', () => {
+    const component = bootstrap(DashboardsListPage);
+    state.dashboardServiceSpy.listDashboards.calls.reset();
+
+    component.goToPreviousPage();
+    expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
+
+    component.isLoading.set(true);
+    component.goToPreviousPage();
+    expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
+  });
+
+  it('should reset pagination to page 1 on refresh', async () => {
+    state.dashboardServiceSpy.listDashboards.and.returnValues(
+      of({ dashboards: createMockDashboardList(), nextPageToken: 'token_page_2' }),
+      of({ dashboards: createMockDashboardList() }),
+      of({ dashboards: createMockDashboardList() }),
+    );
+
+    const component = bootstrap(DashboardsListPage);
+    const harness = await getHarness(DashboardsListPageHarness);
+
+    await harness.clickNextPage();
+    expect(component.pageIndex()).toBe(1);
+
+    await harness.clickRefresh();
+    expect(component.pageIndex()).toBe(0);
+    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledWith({
+      pageSize: 10,
+      pageToken: undefined,
+    });
   });
 
   it('should send the dialog charts alongside the dashboard in a single create call', () => {
@@ -160,7 +269,7 @@ describe('DashboardsListPage', () => {
     });
   });
 
-  it('should reload dashboards when createDashboard returns dashboard without id', () => {
+  it('should reset pagination and reload dashboards when createDashboard returns dashboard without id', () => {
     const component = bootstrap(DashboardsListPage);
     const router = get(Router);
     spyOn(router, 'navigate');
@@ -171,10 +280,11 @@ describe('DashboardsListPage', () => {
     component.createDashboard(createDialogResult());
 
     expect(router.navigate).not.toHaveBeenCalled();
+    expect(component.pageIndex()).toBe(0);
     expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(2);
   });
 
-  it('should reload dashboards when createDashboard fails', () => {
+  it('should reset pagination and reload dashboards when createDashboard fails', () => {
     const component = bootstrap(DashboardsListPage);
     const router = get(Router);
     spyOn(router, 'navigate');
@@ -186,6 +296,7 @@ describe('DashboardsListPage', () => {
 
     expect(router.navigate).not.toHaveBeenCalled();
     expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith('Failed to create dashboard');
+    expect(component.pageIndex()).toBe(0);
     expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(2);
     expect(component.isLoading()).toBeFalse();
   });

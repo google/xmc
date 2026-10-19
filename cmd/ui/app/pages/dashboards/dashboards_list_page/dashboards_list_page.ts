@@ -36,20 +36,24 @@ import {
   CreateDashboardDialogComponent,
   CreateDashboardDialogResult,
 } from 'app/common/components/dashboard/create_dashboard_dialog/create_dashboard_dialog';
+import { PageSizeSelector } from 'app/common/components/page_size_selector/page_size_selector';
+import {
+  getInitialPaginationState,
+  goToNextPage,
+  goToPreviousPage,
+  PaginationState,
+  setPageSize,
+} from 'app/common/pagination/pagination';
 import { extractDashboardId } from 'app/common/resource_name_extractor';
 import { Dashboard } from 'app/service/dashboard_models';
 import { DashboardService } from 'app/service/dashboard_service';
 import { SnackbarService } from 'app/service/snackbar_service';
 
-/**
- * Page size requested when listing dashboards. This page renders the whole response at once and
- * filters it client-side, so it asks for the server maximum rather than relying on the smaller
- * server-side default, which would silently truncate the list.
- */
-const DASHBOARDS_PAGE_SIZE = 100;
+/** Default page size requested when listing dashboards. */
+const DEFAULT_PAGE_SIZE = 10;
 
 /**
- * Component displaying the list of available metrics dashboards.
+ * Component displaying the list of available metrics dashboards with pagination controls.
  */
 @Component({
   selector: 'xmc-dashboards-list-page',
@@ -69,6 +73,7 @@ const DASHBOARDS_PAGE_SIZE = 100;
     MatFormFieldModule,
     MatProgressBarModule,
     MatTableModule,
+    PageSizeSelector,
   ],
 })
 export class DashboardsListPage implements OnInit {
@@ -81,6 +86,13 @@ export class DashboardsListPage implements OnInit {
   readonly isLoading = signal<boolean>(false);
   readonly searchQuery = signal<string>('');
   readonly displayedColumns: string[] = ['title', 'description', 'chartsCount', 'actions'];
+
+  readonly pagination = signal<PaginationState>(getInitialPaginationState(DEFAULT_PAGE_SIZE));
+
+  readonly pageSize = computed(() => this.pagination().pageSize);
+  readonly pageIndex = computed(() => this.pagination().pageIndex);
+  readonly hasNextPage = computed(() => Boolean(this.pagination().nextPageToken));
+  readonly hasPreviousPage = computed(() => this.pagination().previousTokens.length > 0);
 
   readonly filteredDashboards = computed(() => {
     const query = this.searchQuery().trim().toLowerCase();
@@ -100,17 +112,57 @@ export class DashboardsListPage implements OnInit {
 
   loadDashboards(): void {
     this.isLoading.set(true);
-    this.dashboardService.listDashboards({ pageSize: DASHBOARDS_PAGE_SIZE }).subscribe({
-      next: (res) => {
-        this.dashboards.set(res.dashboards ?? []);
-        this.isLoading.set(false);
-      },
-      error: (err) => {
-        this.isLoading.set(false);
-        this.snackbar?.open?.('Failed to load dashboards');
-        console.error('Error loading dashboards:', err);
-      },
-    });
+    const { pageSize, currentPageToken } = this.pagination();
+    this.dashboardService
+      .listDashboards({
+        pageSize,
+        pageToken: currentPageToken || undefined,
+      })
+      .subscribe({
+        next: (res) => {
+          this.dashboards.set(res.dashboards ?? []);
+          this.pagination.update((prev) => ({
+            ...prev,
+            nextPageToken: res.nextPageToken,
+          }));
+          this.isLoading.set(false);
+        },
+        error: (err) => {
+          this.isLoading.set(false);
+          this.snackbar?.open?.('Failed to load dashboards');
+          console.error('Error loading dashboards:', err);
+        },
+      });
+  }
+
+  refresh(): void {
+    this.resetPagination();
+    this.loadDashboards();
+  }
+
+  onPageSizeChange(newPageSize: number): void {
+    this.pagination.set(setPageSize({ pagination: this.pagination() }, newPageSize).pagination);
+    this.loadDashboards();
+  }
+
+  goToNextPage(): void {
+    if (!this.hasNextPage() || this.isLoading()) {
+      return;
+    }
+    this.pagination.set(goToNextPage({ pagination: this.pagination() }).pagination);
+    this.loadDashboards();
+  }
+
+  goToPreviousPage(): void {
+    if (!this.hasPreviousPage() || this.isLoading()) {
+      return;
+    }
+    this.pagination.set(goToPreviousPage({ pagination: this.pagination() }).pagination);
+    this.loadDashboards();
+  }
+
+  resetPagination(): void {
+    this.pagination.set(getInitialPaginationState(this.pagination().pageSize));
   }
 
   getDashboardId(name?: string): string {
@@ -149,12 +201,14 @@ export class DashboardsListPage implements OnInit {
             this.router.navigate(['/dashboards', id]);
             return;
           }
+          this.resetPagination();
           this.loadDashboards();
         },
         error: (err) => {
           this.isLoading.set(false);
           this.snackbar?.open?.('Failed to create dashboard');
           console.error('Error creating dashboard:', err);
+          this.resetPagination();
           this.loadDashboards();
         },
       });
