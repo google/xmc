@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Production target: lifecycle.go (callWithOwnership and applyIntentResponse).
+// Production target: reconciler.go (callWithOwnership and applyIntentResponse).
 //
 // Test type: Hermetic unit test suite in package bridge using a fake
 // sourceCallRecorder to script CMS ErrorInfo responses without a gRPC server
 // or Kubernetes API server.
 //
 // Why separate from lifecycle_test.go: Isolates the RequestSource retry state
-// machine (CLUSTER_NOT_DECLARED auto-declaration, STALE_GENERATION handling,
-// and SOURCE_INCARNATION_MISMATCH live-UID takeover) from the end-to-end
-// Reconciler lifecycle tests in lifecycle_test.go.
+// machine (CLUSTER_NOT_DECLARED auto-declaration and STALE_GENERATION
+// handling) from the end-to-end Reconciler lifecycle tests in lifecycle_test.go.
 package bridge
 
 import (
@@ -41,15 +40,15 @@ const (
 )
 
 // sourceCallRecorder replays scripted CMS errors (nil entries and calls past the script succeed)
-// and records the ExpectedOwnerUid of each call made by callWithOwnership.
+// and counts the calls made by callWithOwnership.
 type sourceCallRecorder struct {
-	script         []error
-	expectedOwners []string
+	script []error
+	calls  int
 }
 
-func (s *sourceCallRecorder) call(_ context.Context, src *componentspb.RequestSource) (string, error) {
-	i := len(s.expectedOwners)
-	s.expectedOwners = append(s.expectedOwners, src.GetExpectedOwnerUid())
+func (s *sourceCallRecorder) call(_ context.Context, _ *componentspb.RequestSource) (string, error) {
+	i := s.calls
+	s.calls++
 	if i < len(s.script) && s.script[i] != nil {
 		return "", s.script[i]
 	}
@@ -102,8 +101,8 @@ func TestCallWithOwnership_WithoutFence(t *testing.T) {
 	if !errors.Is(err, notDeclared) {
 		t.Errorf("callWithOwnership() error = %v, want the CLUSTER_NOT_DECLARED rejection without a fence to redeclare", err)
 	}
-	if len(rec.expectedOwners) != 1 {
-		t.Errorf("CMS calls = %d, want 1 (no retry without a fence)", len(rec.expectedOwners))
+	if rec.calls != 1 {
+		t.Errorf("CMS calls = %d, want 1 (no retry without a fence)", rec.calls)
 	}
 }
 
@@ -154,8 +153,8 @@ func TestCallWithOwnership_Retries(t *testing.T) {
 			if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
 				t.Errorf("callWithOwnership() error = %v, want errors.Is %v", err, tt.wantErrIs)
 			}
-			if len(rec.expectedOwners) != tt.wantCalls {
-				t.Errorf("CMS calls = %d, want %d", len(rec.expectedOwners), tt.wantCalls)
+			if rec.calls != tt.wantCalls {
+				t.Errorf("CMS calls = %d, want %d", rec.calls, tt.wantCalls)
 			}
 			if cms.declareCalls != tt.wantDeclareCt {
 				t.Errorf("DeclareClusterEpoch calls = %d, want %d", cms.declareCalls, tt.wantDeclareCt)
