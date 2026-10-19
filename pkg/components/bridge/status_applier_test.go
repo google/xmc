@@ -139,8 +139,9 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 
 	t.Run("populated ReconcileResult converts access and conditions", func(t *testing.T) {
 		res := &ReconcileResult{
-			ObservedGeneration: 5,
-			State:              componentsv1alpha1.ComponentState_COMPONENT_STATE_ENABLED,
+			ObservedGeneration:  5,
+			ComponentGeneration: 2,
+			State:               componentsv1alpha1.ComponentState_COMPONENT_STATE_ENABLED,
 			Access: &AccessStatus{
 				EnvVars: map[string]string{"DB_HOST": "clickhouse.xmc.svc"},
 			},
@@ -157,9 +158,10 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 		}
 		got := BuildStatus(res)
 		want := ComponentStatus{
-			ObservedGeneration: 5,
-			State:              "COMPONENT_STATE_ENABLED",
-			Access:             &ComponentAccess{EnvVars: map[string]string{"DB_HOST": "clickhouse.xmc.svc"}},
+			ObservedGeneration:  5,
+			ComponentGeneration: 2,
+			State:               "COMPONENT_STATE_ENABLED",
+			Access:              &ComponentAccess{EnvVars: map[string]string{"DB_HOST": "clickhouse.xmc.svc"}},
 			Conditions: []ComponentCondition{
 				{
 					Type:               ConditionTypeReady,
@@ -176,8 +178,24 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 		}
 
 		gotMap := BuildStatusMap(res)
-		if gotMap["state"] != "COMPONENT_STATE_ENABLED" || gotMap["observedGeneration"] != int64(5) {
-			t.Errorf("unexpected BuildStatusMap output: %v", gotMap)
+		wantMap := map[string]any{
+			"observedGeneration":  int64(5),
+			"componentGeneration": int64(2),
+			"state":               "COMPONENT_STATE_ENABLED",
+			"access":              map[string]any{"envVars": map[string]any{"DB_HOST": "clickhouse.xmc.svc"}},
+			"conditions": []any{
+				map[string]any{
+					"type":               ConditionTypeReady,
+					"status":             ConditionStatusTrue,
+					"observedGeneration": int64(5),
+					"reason":             ReasonComponentHealthy,
+					"message":            "Ready",
+					"lastTransitionTime": "2026-10-06T12:00:00Z",
+				},
+			},
+		}
+		if diff := cmp.Diff(wantMap, gotMap); diff != "" {
+			t.Errorf("BuildStatusMap() mismatch (-want +got):\n%s", diff)
 		}
 	})
 }

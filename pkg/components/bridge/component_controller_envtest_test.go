@@ -34,6 +34,7 @@ import (
 
 	"github.com/go-logr/logr/testr"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -142,8 +143,9 @@ func (o *intentObserver) SetComponentIntent(ctx context.Context, in *componentsp
 }
 
 // epochOverrideCMS is a CMSClient that, once epoch is set, declares that epoch instead of the
-// one in each DeclareClusterEpoch request. It simulates an operator raising the bridge's
-// ownership epoch without mutating the ClusterFence's immutable identity.
+// one in each DeclareClusterEpoch request and sends sourced requests with their source cluster at
+// that epoch. It simulates an operator raising the bridge's ownership epoch without mutating the
+// ClusterFence's immutable identity.
 type epochOverrideCMS struct {
 	CMSClient
 	epoch atomic.Int64
@@ -155,6 +157,26 @@ func (o *epochOverrideCMS) DeclareClusterEpoch(ctx context.Context, in *componen
 		in = &componentspb.DeclareClusterEpochRequest{Cluster: &componentspb.ClusterIdentity{Uid: id.GetUid(), Name: id.GetName(), Epoch: epoch}}
 	}
 	return o.CMSClient.DeclareClusterEpoch(ctx, in, opts...)
+}
+
+func (o *epochOverrideCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error) {
+	if src := o.sourceAtEpoch(in.GetSource()); src != in.GetSource() {
+		in = proto.Clone(in).(*componentspb.SetComponentIntentRequest)
+		in.Source = src
+	}
+	return o.CMSClient.SetComponentIntent(ctx, in, opts...)
+}
+
+// sourceAtEpoch returns a copy of src with its cluster at the overriding epoch, or src itself
+// when no epoch is set or src names no cluster.
+func (o *epochOverrideCMS) sourceAtEpoch(src *componentspb.RequestSource) *componentspb.RequestSource {
+	epoch := o.epoch.Load()
+	if epoch <= 0 || src.GetCluster() == nil {
+		return src
+	}
+	out := proto.Clone(src).(*componentspb.RequestSource)
+	out.Cluster.Epoch = epoch
+	return out
 }
 
 // controllerEnv is a running ComponentController over one envtest namespace.
@@ -238,10 +260,12 @@ func runControllerEnvWithStore(t *testing.T, cfg *rest.Config, mgrCfg ComponentM
 	writer := dynamic.NewForConfigOrDie(cfg)
 	cmsClient := &intentObserver{CMSClient: NewCMSClientAdapter(cms.NewServer(cmsStore, cms.WithAuthorizer(cms.NewDisabledAuthorizer())))}
 	var recOpts []ReconcilerOption
+	var recCMS CMSClient = cmsClient
 	var fence *ClusterFence
 	var fenceCMS *epochOverrideCMS
 	if id != nil {
 		fenceCMS = &epochOverrideCMS{CMSClient: cmsClient}
+		recCMS = fenceCMS
 		fence, err = NewClusterFence(fenceCMS, id, ClusterFenceOptions{HeartbeatInterval: time.Hour})
 		if err != nil {
 			t.Fatalf("NewClusterFence() failed: %v", err)
@@ -251,7 +275,7 @@ func runControllerEnvWithStore(t *testing.T, cfg *rest.Config, mgrCfg ComponentM
 		}
 		recOpts = append(recOpts, WithClusterFence(fence))
 	}
-	r, err := NewReconciler(cmsClient, nil, nil, recOpts...)
+	r, err := NewReconciler(recCMS, nil, nil, recOpts...)
 	if err != nil {
 		t.Fatalf("NewReconciler() failed: %v", err)
 	}

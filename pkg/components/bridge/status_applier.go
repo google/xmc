@@ -46,10 +46,13 @@ var errNilComponentItem = errors.New("component item must not be nil")
 
 // ComponentStatus defines the structured representation of .status in the Component CRD.
 type ComponentStatus struct {
-	ObservedGeneration int64                `json:"observedGeneration,omitempty"`
-	State              string               `json:"state"`
-	Access             *ComponentAccess     `json:"access,omitempty"`
-	Conditions         []ComponentCondition `json:"conditions,omitempty"`
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// ComponentGeneration is the CMS component generation the status describes. CMS orders intents
+	// by custom resource ownership, so it is independent of ObservedGeneration. Omitted while unknown.
+	ComponentGeneration int64                `json:"componentGeneration,omitempty"`
+	State               string               `json:"state"`
+	Access              *ComponentAccess     `json:"access,omitempty"`
+	Conditions          []ComponentCondition `json:"conditions,omitempty"`
 }
 
 // ComponentAccess defines the access configuration in .status.access.
@@ -67,14 +70,16 @@ type ComponentCondition struct {
 	LastTransitionTime string `json:"lastTransitionTime"`
 }
 
-// BuildStatus converts a ReconcileResult into a typed ComponentStatus matching the Component CRD status schema.
+// BuildStatus converts a ReconcileResult into a typed ComponentStatus matching the Component CRD status schema,
+// including observedGeneration (the CR generation) and componentGeneration (the CMS generation, omitted while 0).
 func BuildStatus(res *ReconcileResult) ComponentStatus {
 	if res == nil {
 		return ComponentStatus{}
 	}
 	status := ComponentStatus{
-		ObservedGeneration: res.ObservedGeneration,
-		State:              res.State.String(),
+		ObservedGeneration:  res.ObservedGeneration,
+		ComponentGeneration: res.ComponentGeneration,
+		State:               res.State.String(),
 	}
 	if res.Access != nil && len(res.Access.EnvVars) > 0 {
 		status.Access = &ComponentAccess{EnvVars: res.Access.EnvVars}
@@ -101,8 +106,9 @@ func BuildStatusMap(res *ReconcileResult) map[string]any {
 	m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&status)
 	if err != nil {
 		fallback := ComponentStatus{
-			ObservedGeneration: status.ObservedGeneration,
-			State:              status.State,
+			ObservedGeneration:  status.ObservedGeneration,
+			ComponentGeneration: status.ComponentGeneration,
+			State:               status.State,
 		}
 		fallbackMap, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(&fallback)
 		return fallbackMap
@@ -201,10 +207,10 @@ func patchFinalizers(ctx context.Context, c client.Client, item *unstructured.Un
 }
 
 // PersistReconcileResult persists res for item: it releases the cleanup finalizer when res asks for
-// it, and otherwise applies .status with ApplyComponentStatusSSA. It is a no-op for a nil res and
-// rejects a nil item. item is not modified.
+// it, and otherwise applies .status with ApplyComponentStatusSSA. It is a no-op for a nil or stale-incarnation
+// res and rejects a nil item. item is not modified.
 func PersistReconcileResult(ctx context.Context, c client.Client, item *unstructured.Unstructured, res *ReconcileResult) error {
-	if res == nil {
+	if res == nil || res.StaleIncarnation {
 		return nil
 	}
 	if item == nil {

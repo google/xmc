@@ -124,6 +124,9 @@ func TestParseHelpers(t *testing.T) {
 	if ParseObservedGenerationFromUnstructured(nil) != 0 || ParseObservedGenerationFromUnstructured(map[string]any{"observedGeneration": int64(3)}) != 3 {
 		t.Error("unexpected ParseObservedGenerationFromUnstructured result")
 	}
+	if ParseComponentGenerationFromUnstructured(nil) != 0 || ParseComponentGenerationFromUnstructured(map[string]any{"componentGeneration": int64(4)}) != 4 {
+		t.Error("unexpected ParseComponentGenerationFromUnstructured result")
+	}
 }
 
 func TestParseSpecFromUnstructured_Dependencies(t *testing.T) {

@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -1221,7 +1222,7 @@ func TestReconcileComponent_DependencyActivationGating(t *testing.T) {
 	}
 	spec3P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, Dependencies: []string{"redpanda"}}
 	snapshot := func(items ...unstructured.Unstructured) DependencyReadiness { return NewDependencySnapshot(items) }
-	notRegisteredErr := status.Error(codes.FailedPrecondition, store.DependencyNotFoundMessagePrefix+` component "ingestion" depends on "redpanda", which is not registered`)
+	notRegisteredErr := dependencyNotRegisteredErr(t, "ingestion", "redpanda")
 	// Intent is registered with CMS even while activation is gated.
 	gated := gateOutcome{
 		State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
@@ -1454,12 +1455,34 @@ func TestReconcileComponent_DependencyBlipHoldsUpgrade(t *testing.T) {
 	}
 }
 
-func TestDependencyNotRegisteredMessage(t *testing.T) {
-	if dependencyNotFoundMessagePrefix != store.DependencyNotFoundMessagePrefix {
-		t.Fatalf("dependencyNotFoundMessagePrefix = %q, want store.DependencyNotFoundMessagePrefix %q", dependencyNotFoundMessagePrefix, store.DependencyNotFoundMessagePrefix)
+// errorInfoStatus returns a status error with code and msg carrying a google.rpc.ErrorInfo with
+// reason and domain, mirroring the store's machine-readable rejections.
+func errorInfoStatus(t *testing.T, code codes.Code, reason, domain, msg string) error {
+	t.Helper()
+	return errorInfoStatusWithMetadata(t, code, reason, domain, msg, nil)
+}
+
+// errorInfoStatusWithMetadata is errorInfoStatus with ErrorInfo metadata.
+func errorInfoStatusWithMetadata(t *testing.T, code codes.Code, reason, domain, msg string, metadata map[string]string) error {
+	t.Helper()
+	st, err := status.New(code, msg).WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: domain, Metadata: metadata})
+	if err != nil {
+		t.Fatalf("status.WithDetails() error = %v", err)
 	}
-	const msg = store.DependencyNotFoundMessagePrefix + ` component "a" depends on "b", which is not registered`
-	notRegistered := status.Error(codes.FailedPrecondition, msg)
+	return st.Err()
+}
+
+// dependencyNotRegisteredErr returns the store's DEPENDENCY_NOT_REGISTERED rejection of component
+// depending on the unregistered dep.
+func dependencyNotRegisteredErr(t *testing.T, component, dep string) error {
+	t.Helper()
+	return errorInfoStatus(t, codes.FailedPrecondition, store.ReasonDependencyNotRegistered, store.ErrorInfoDomain,
+		fmt.Sprintf("component %q depends on %q, which is not registered", component, dep))
+}
+
+func TestDependencyNotRegisteredMessage(t *testing.T) {
+	const msg = `component "a" depends on "b", which is not registered`
+	notRegistered := errorInfoStatus(t, codes.FailedPrecondition, store.ReasonDependencyNotRegistered, store.ErrorInfoDomain, msg)
 	tests := []struct {
 		name string
 		err  error
@@ -1468,14 +1491,40 @@ func TestDependencyNotRegisteredMessage(t *testing.T) {
 		{name: "nil", err: nil, want: ""},
 		{name: "unregistered dependency", err: notRegistered, want: msg},
 		{name: "wrapped unregistered dependency", err: fmt.Errorf("failed to apply component intent to CMS: %w", notRegistered), want: msg},
-		{name: "other FailedPrecondition", err: status.Error(codes.FailedPrecondition, "dependency cycle detected: a -> b -> a"), want: ""},
-		{name: "other code with the prefix", err: status.Error(codes.Unavailable, msg), want: ""},
+		{name: "legacy message prefix without ErrorInfo", err: status.Error(codes.FailedPrecondition, "dependency not found: "+msg), want: ""},
+		{name: "other reason", err: errorInfoStatus(t, codes.FailedPrecondition, store.ReasonStaleGeneration, store.ErrorInfoDomain, msg), want: ""},
+		{name: "other domain", err: errorInfoStatus(t, codes.FailedPrecondition, store.ReasonDependencyNotRegistered, "example.com", msg), want: ""},
+		{name: "other code with the reason", err: errorInfoStatus(t, codes.Unavailable, store.ReasonDependencyNotRegistered, store.ErrorInfoDomain, msg), want: ""},
 		{name: "non-status error", err: errors.New(msg), want: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := dependencyNotRegisteredMessage(tt.err); got != tt.want {
 				t.Errorf("dependencyNotRegisteredMessage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDependencyCycleMessage(t *testing.T) {
+	const msg = "dependency cycle detected: a -> b -> a"
+	cycle := errorInfoStatus(t, codes.FailedPrecondition, store.ReasonDependencyCycle, store.ErrorInfoDomain, msg)
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "nil", err: nil, want: ""},
+		{name: "dependency cycle", err: cycle, want: msg},
+		{name: "wrapped dependency cycle", err: fmt.Errorf("failed to apply component intent to CMS: %w", cycle), want: msg},
+		{name: "message text without ErrorInfo", err: status.Error(codes.FailedPrecondition, msg), want: ""},
+		{name: "other reason", err: errorInfoStatus(t, codes.FailedPrecondition, store.ReasonDependencyNotRegistered, store.ErrorInfoDomain, msg), want: ""},
+		{name: "other domain", err: errorInfoStatus(t, codes.FailedPrecondition, store.ReasonDependencyCycle, "example.com", msg), want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dependencyCycleMessage(tt.err); got != tt.want {
+				t.Errorf("dependencyCycleMessage() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -1740,7 +1789,7 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 		},
 		{
 			name:           "CMS-detected dependency cycle in SetComponentIntent reports DependencyCycle and Synced=True, preserving access and stamping observedGeneration",
-			cms:            &mockCMS{setErr: status.Error(codes.FailedPrecondition, "dependency cycle detected: ch -> b -> ch")},
+			cms:            &mockCMS{setErr: errorInfoStatus(t, codes.FailedPrecondition, store.ReasonDependencyCycle, store.ErrorInfoDomain, "dependency cycle detected: ch -> b -> ch")},
 			in:             ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, ExistingObservedGeneration: 1, Spec: spec3P, Enabled: true, ExistingConditions: prevReady, ExistingAccess: prevAccess},
 			wantErr:        true,
 			wantState:      componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
@@ -1769,7 +1818,7 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 		},
 		{
 			name:          "CMS unregistered dependency rejection finishes with err == nil and advances observedGeneration",
-			cms:           &mockCMS{setErr: status.Error(codes.FailedPrecondition, store.DependencyNotFoundMessagePrefix+` component "ch" depends on "redpanda", which is not registered`)},
+			cms:           &mockCMS{setErr: dependencyNotRegisteredErr(t, "ch", "redpanda")},
 			in:            ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 3, ExistingObservedGeneration: 1, Spec: spec3P, Enabled: true},
 			wantState:     componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantObsGen:    3,

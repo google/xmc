@@ -245,6 +245,24 @@ func (f *ClusterFence) isDeclared() bool {
 	return f.declared
 }
 
+// RecordConflict updates the in-memory fence status and notifies watchers if err is a
+// CLUSTER_FENCED or CLUSTER_EPOCH_REGRESSED error returned by a CMS data RPC. It is a no-op on a
+// nil receiver, so reconcilers without a configured fence may call it unconditionally.
+func (f *ClusterFence) RecordConflict(err error) {
+	if f == nil || err == nil {
+		return
+	}
+	reason, msg, fenced := fenceConflictFromError(err)
+	if !fenced {
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// The transition log describes the cluster, not the reconcile that observed it, so it does not
+	// need the caller's request context.
+	f.applyStateLocked(context.Background(), reason, msg, false)
+}
+
 func (f *ClusterFence) applyStateLocked(ctx context.Context, reason, msg string, recoveredFromError bool) {
 	if !f.declared || f.fencedReason != reason {
 		f.logTransition(ctx, reason, msg)
@@ -282,6 +300,25 @@ func fenceConflictFromError(err error) (string, string, bool) {
 		return ReasonClusterEpochRegressed, msg, true
 	default:
 		return "", "", false
+	}
+}
+
+func sourceConflictFromError(err error) (string, string) {
+	info, msg := extractErrorInfo(err)
+	if info == nil {
+		return "", ""
+	}
+	switch info.GetReason() {
+	case store.ReasonSourceIncarnationMismatch:
+		return ReasonSourceIncarnationMismatch, msg
+	case store.ReasonSourceNamespaceConflict:
+		return ReasonSourceNamespaceConflict, msg
+	case store.ReasonClusterFenced, store.ReasonClusterNotDeclared:
+		return ReasonClusterFenced, msg
+	case store.ReasonClusterEpochRegressed:
+		return ReasonClusterEpochRegressed, msg
+	default:
+		return "", ""
 	}
 }
 

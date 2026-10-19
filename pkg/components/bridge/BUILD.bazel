@@ -141,6 +141,7 @@ go_test(
         "release_executor_test.go",
         "release_health_test.go",
         "release_repair_test.go",
+        "request_source_retry_test.go",
         "sdk_helm_action_runner_test.go",
         "spec_parser_test.go",
         "status_applier_test.go",

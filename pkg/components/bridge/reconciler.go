@@ -23,13 +23,12 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/naming"
+	"xmanager_cloud/pkg/components/store"
 )
 
 const (
@@ -37,9 +36,6 @@ const (
 	ReasonDependenciesNotReady = "DependenciesNotReady"
 	// ReasonDependencyCycle marks an enabled component that is part of a spec.dependencies cycle.
 	ReasonDependencyCycle = "DependencyCycle"
-	// dependencyNotFoundMessagePrefix mirrors store.DependencyNotFoundMessagePrefix (pinned by a test).
-	dependencyNotFoundMessagePrefix = "dependency not found:"
-	dependencyCycleMessagePrefix    = "dependency cycle detected:"
 )
 
 // AccessStatus encapsulates network and access metadata (such as environment variables) for a component.
@@ -52,6 +48,8 @@ type AccessStatus struct {
 type ReconcileResult struct {
 	// ObservedGeneration is the custom resource metadata.generation evaluated.
 	ObservedGeneration int64
+	// ComponentGeneration is the CMS component generation committed for this resource, or 0 if unknown.
+	ComponentGeneration int64
 	// State is the resulting lifecycle state in CMS.
 	State componentspb.ComponentState
 	// Conditions is the updated list of Kubernetes status conditions.
@@ -60,10 +58,18 @@ type ReconcileResult struct {
 	Access *AccessStatus
 	// RemoveFinalizer indicates that cleanup finished and the CMS cleanup finalizer may be released.
 	RemoveFinalizer bool
+	// StaleIncarnation indicates that the evaluated custom resource snapshot is stale because CMS
+	// already applied a newer generation of it (STALE_GENERATION), so status and finalizer
+	// persistence must be skipped.
+	StaleIncarnation bool
 	// RequeueAfter optionally overrides ProbeInterval as the delay before the next pass. It is always
 	// honored, whether shorter or longer than ProbeInterval.
 	RequeueAfter time.Duration
 }
+
+// errStaleSnapshot reports that CMS rejected an intent with STALE_GENERATION because it already
+// applied a newer generation of the same custom resource than the reconciled informer snapshot.
+var errStaleSnapshot = errors.New("stale component snapshot older than the generation CMS already applied")
 
 // Reconciler executes reconciliation cycles for XMC Component custom resources.
 type Reconciler struct {
@@ -124,6 +130,13 @@ type ReconcileComponentInput struct {
 	Name string
 	// Generation is the metadata.generation of the custom resource.
 	Generation int64
+	// UID is the metadata.uid of the custom resource. When non-empty alongside a cluster identity,
+	// CMS requests carry RequestSource so CMS enforces single-writer ownership.
+	UID string
+	// Cluster optionally overrides the cluster identity sent in RequestSource (defaults to r.fence.Identity()).
+	Cluster *componentspb.ClusterIdentity
+	// ComponentGeneration is the status.componentGeneration previously reported on the custom resource.
+	ComponentGeneration int64
 	// Spec is the parsed protobuf ComponentSpec.
 	Spec *componentspb.ComponentSpec
 	// IsDeleting indicates whether the custom resource has a non-nil deletionTimestamp.
@@ -163,9 +176,13 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	in.Spec.Generation = in.Generation
 	canonicalName := naming.CanonicalComponentName(in.Name)
 	in.Spec.Dependencies = dropSelfDependency(ctx, in.Spec.GetDependencies(), canonicalName)
-	res := &ReconcileResult{ObservedGeneration: in.ExistingObservedGeneration, State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION}
+	res := &ReconcileResult{
+		ObservedGeneration:  in.ExistingObservedGeneration,
+		ComponentGeneration: in.ComponentGeneration,
+		State:               componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+	}
 	res, err := r.reconcilePass(ctx, in, canonicalName, res)
-	if generationEvaluated(res, in.Generation, err) {
+	if generationEvaluated(res, in.Generation, err) && !res.StaleIncarnation {
 		res.ObservedGeneration = in.Generation
 	}
 	return res, err
@@ -201,7 +218,7 @@ func (r *Reconciler) reconcilePass(ctx context.Context, in ReconcileComponentInp
 		return res, err
 	}
 	if !in.Enabled {
-		if err := r.applyDisabledIntent(ctx, in, canonicalName, res); err != nil {
+		if err := r.applyDisabledIntent(ctx, in, canonicalName, res); err != nil || shouldStopReconcile(res) {
 			return res, err
 		}
 		return r.reconcileDisabled(ctx, in, canonicalName, res)
@@ -239,6 +256,9 @@ func (r *Reconciler) reconcileEnabled(ctx context.Context, in ReconcileComponent
 	if err != nil {
 		preserveDependenciesReady(res, in.ExistingConditions)
 		return res, err
+	}
+	if shouldStopReconcile(res) {
+		return res, nil
 	}
 	if waitMsg != "" && !r.isActuated(in) {
 		return r.reportGated(ctx, in, canonicalName, res, ReasonDependenciesNotReady, waitMsg)
@@ -282,29 +302,24 @@ func (r *Reconciler) registerIntent(ctx context.Context, in ReconcileComponentIn
 }
 
 // dependencyNotRegisteredMessage returns the CMS status message if err (possibly wrapped) is the
-// store's FailedPrecondition for an unregistered dependency, or "" otherwise.
+// store's FailedPrecondition carrying a google.rpc.ErrorInfo with reason DEPENDENCY_NOT_REGISTERED
+// in the components domain, or "" otherwise. It matches the reason only, never the message.
 func dependencyNotRegisteredMessage(err error) string {
-	return failedPreconditionWithPrefix(err, dependencyNotFoundMessagePrefix)
+	info, msg := extractErrorInfo(err)
+	if info == nil || info.GetReason() != store.ReasonDependencyNotRegistered {
+		return ""
+	}
+	return msg
 }
 
 // dependencyCycleMessage returns the CMS status message if err (possibly wrapped) is the store's
-// FailedPrecondition for a dependency cycle, or "" otherwise.
+// DEPENDENCY_CYCLE rejection, or "" otherwise.
 func dependencyCycleMessage(err error) string {
-	return failedPreconditionWithPrefix(err, dependencyCycleMessagePrefix)
-}
-
-func failedPreconditionWithPrefix(err error, prefix string) string {
-	// Not status.FromError: for wrapped errors it replaces the message with the full err.Error(),
-	// which would defeat the prefix match below.
-	var se interface{ GRPCStatus() *status.Status }
-	if !errors.As(err, &se) {
+	info, msg := extractErrorInfo(err)
+	if info == nil || info.GetReason() != store.ReasonDependencyCycle {
 		return ""
 	}
-	st := se.GRPCStatus()
-	if st.Code() != codes.FailedPrecondition || !strings.HasPrefix(st.Message(), prefix) {
-		return ""
-	}
-	return st.Message()
+	return msg
 }
 
 // actuateAndEvaluate reconciles the workload (3P observation or 1P Helm release, with Helm upgrades
@@ -337,24 +352,48 @@ func resolveComponentRef(in ReconcileComponentInput) ComponentRef {
 }
 
 func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
-	setResp, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: canonicalName, Spec: in.Spec})
+	setResp, err := callWithOwnership(ctx, r, in, func(ctx context.Context, src *componentspb.RequestSource) (*componentspb.SetComponentIntentResponse, error) {
+		return r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+			Name:   canonicalName,
+			Spec:   in.Spec,
+			Source: src,
+		})
+	})
 	if err != nil {
 		return r.handleIntentError(ctx, in, canonicalName, res, err)
 	}
 	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
-	if setResp != nil && setResp.GetComponent() != nil && setResp.GetComponent().GetStatus() != nil {
-		res.State = setResp.GetComponent().GetStatus().GetState()
-	}
-	logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "state", res.State.String())
+	applyIntentResponse(res, setResp)
+	logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "componentGeneration", res.ComponentGeneration, "state", res.State.String())
 	return nil
 }
 
-// handleIntentError classifies a SetComponentIntent failure: an unregistered dependency keeps
-// Synced=True (CMS is reachable, and registerIntent intercepts the returned intentErr to convert it
-// into a non-error dependency wait message so the pass finishes with err == nil via reportGated and
-// advances status.observedGeneration), a dependency cycle gates the component, and any other error
-// records a CMS sync failure and refreshes the local health of an actuated workload.
+// applyIntentResponse copies the CMS state and component generation from a SetComponentIntent
+// response into res, leaving res unchanged when the response carries no component.
+func applyIntentResponse(res *ReconcileResult, setResp *componentspb.SetComponentIntentResponse) {
+	if setResp == nil || setResp.GetComponent() == nil {
+		return
+	}
+	component := setResp.GetComponent()
+	if accessStatus := component.GetStatus(); accessStatus != nil {
+		res.State = accessStatus.GetState()
+	}
+	if spec := component.GetSpec(); spec != nil && spec.GetGeneration() > 0 {
+		res.ComponentGeneration = spec.GetGeneration()
+	}
+}
+
+// handleIntentError classifies a SetComponentIntent failure: an ownership or fence rejection is
+// recorded on the result and not returned, an unregistered dependency keeps Synced=True (CMS is
+// reachable, and registerIntent intercepts the returned intentErr to convert it into a non-error
+// dependency wait message so the pass finishes with err == nil via reportGated and advances
+// status.observedGeneration), a dependency cycle gates the component, and any other error records
+// a CMS sync failure and refreshes the local health of an actuated workload. Every error except an
+// ownership rejection returns the wrapped intent error.
 func (r *Reconciler) handleIntentError(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, err error) error {
+	if handleOwnershipError(res, in, err) {
+		return nil
+	}
 	intentErr := fmt.Errorf("failed to apply component intent to CMS: %w", err)
 	if dependencyNotRegisteredMessage(err) != "" {
 		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
@@ -397,6 +436,56 @@ func (r *Reconciler) evaluateLocalHealth(ctx context.Context, in ReconcileCompon
 		return
 	}
 	_, _ = r.evaluateHealth(ctx, in, canonicalName, res)
+}
+
+// callWithOwnership invokes fn with r.requestSource(in), re-declaring the cluster epoch and
+// retrying once on CLUSTER_NOT_DECLARED. STALE_GENERATION becomes errStaleSnapshot, never a source
+// conflict: it skips status writes and requeues after staleComponentRetryDelay so the cache can
+// catch up.
+func callWithOwnership[T any](
+	ctx context.Context,
+	r *Reconciler,
+	in ReconcileComponentInput,
+	fn func(context.Context, *componentspb.RequestSource) (T, error),
+) (T, error) {
+	src := r.requestSource(in)
+	resp, err := fn(ctx, src)
+	if err == nil || src == nil {
+		return resp, err
+	}
+	r.fence.RecordConflict(err)
+	info, _ := extractErrorInfo(err)
+	if info != nil && info.GetReason() == store.ReasonClusterNotDeclared && r.fence != nil {
+		if declErr := r.fence.Declare(ctx); declErr != nil {
+			var zero T
+			return zero, fmt.Errorf("failed to redeclare cluster epoch: %w", declErr)
+		}
+		src = r.requestSource(in)
+		resp, err = fn(ctx, src)
+		r.fence.RecordConflict(err)
+		info, _ = extractErrorInfo(err)
+	}
+	if info != nil && info.GetReason() == store.ReasonStaleGeneration {
+		var zero T
+		return zero, errStaleSnapshot
+	}
+	return resp, err
+}
+
+func (r *Reconciler) requestSource(in ReconcileComponentInput) *componentspb.RequestSource {
+	cluster := in.Cluster
+	if cluster == nil && r.fence != nil {
+		cluster = r.fence.Identity()
+	}
+	if in.UID == "" || cluster == nil {
+		return nil
+	}
+	return &componentspb.RequestSource{
+		Uid:        in.UID,
+		Generation: max(in.Generation, 1),
+		Namespace:  in.Namespace,
+		Cluster:    cluster,
+	}
 }
 
 // unreadyDependenciesMessage returns "waiting on dependencies: ..." naming every unready dependency,
@@ -594,6 +683,8 @@ func (r *Reconciler) ReconcileWithDependencies(ctx context.Context, obj *unstruc
 		Namespace:                  obj.GetNamespace(),
 		Name:                       obj.GetName(),
 		Generation:                 obj.GetGeneration(),
+		UID:                        string(obj.GetUID()),
+		ComponentGeneration:        ParseComponentGenerationFromUnstructured(obj.Object["status"]),
 		Spec:                       spec,
 		IsDeleting:                 obj.GetDeletionTimestamp() != nil,
 		Enabled:                    enabled,

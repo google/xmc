@@ -25,15 +25,18 @@ import (
 	"google.golang.org/grpc/status"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/logging"
 )
 
 const defaultCMSHeartbeatInterval = 5 * time.Minute
 
 type cmsSyncEntry struct {
 	syncedAt               time.Time
+	uid                    string
 	state                  componentspb.ComponentState
 	readyStatus            string
 	generation             int64
+	componentGeneration    int64
 	deactivationCheckedAt  time.Time
 	deactivationCheckedGen int64
 	deactivationBlockedMsg string
@@ -79,6 +82,31 @@ func (t *cmsSyncTracker) recordSync(key string, state componentspb.ComponentStat
 	entry.state = state
 	entry.readyStatus = readyStatus
 	entry.generation = gen
+	t.entries[key] = entry
+}
+
+// sourceChanged reports whether the incarnation uid or a known CMS component generation compGen
+// differs from the last recorded sync, including the first time compGen becomes known after a sync
+// recorded while it was unknown (0).
+func (t *cmsSyncTracker) sourceChanged(key, uid string, compGen int64) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	entry, ok := t.entries[key]
+	if !ok || entry.uid != uid {
+		return true
+	}
+	return compGen > 0 && entry.componentGeneration != compGen
+}
+
+func (t *cmsSyncTracker) recordSource(key, uid string, compGen int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.entries == nil {
+		t.entries = make(map[string]cmsSyncEntry)
+	}
+	entry := t.entries[key]
+	entry.uid = uid
+	entry.componentGeneration = compGen
 	t.entries[key] = entry
 }
 
@@ -178,8 +206,14 @@ func (a *serverClientAdapter) DeclareClusterEpoch(ctx context.Context, in *compo
 	return a.server.DeclareClusterEpoch(ctx, in)
 }
 
-// updateObservedCMS sends an UpdateObservedGeneration RPC to CMS.
+// updateObservedCMS sends an UpdateObservedGeneration RPC to CMS reporting the CMS component
+// generation gen. It is a no-op when gen is 0 (unknown), which happens only before the first intent
+// of a resource was committed, when CMS has nothing at a known generation to report against.
 func (r *Reconciler) updateObservedCMS(ctx context.Context, name string, gen int64, state componentspb.ComponentState, statusMsg string) error {
+	if gen <= 0 {
+		logging.Debug(ctx, "Skipping CMS observed generation update; component generation unknown", "name", name)
+		return nil
+	}
 	_, err := r.cmsClient.UpdateObservedGeneration(ctx, &componentspb.UpdateObservedGenerationRequest{
 		Name: name, ObservedGeneration: gen, State: state, StatusMessage: statusMsg,
 	})
@@ -197,17 +231,23 @@ func (r *Reconciler) syncReadyToCMS(ctx context.Context, in ReconcileComponentIn
 func (r *Reconciler) syncObservedToCMS(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, readyStatus string, ignoreNotFound bool) error {
 	key := componentKey(in.Namespace, canonicalName)
 	// A CR without a Ready condition is new (possibly recreated under the same name), so it always syncs.
-	if isCMSSynced(in.ExistingConditions) && findCondition(in.ExistingConditions, ConditionTypeReady) != nil && !r.syncTracker.shouldSync(key, res.State, readyStatus, in.Generation) {
+	if isCMSSynced(in.ExistingConditions) && findCondition(in.ExistingConditions, ConditionTypeReady) != nil && !r.syncTracker.shouldSync(key, res.State, readyStatus, in.Generation) && !r.syncTracker.sourceChanged(key, in.UID, res.ComponentGeneration) && !componentGenerationChanged(in, res) {
 		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 		return nil
 	}
-	if err := r.updateObservedCMS(ctx, canonicalName, in.Generation, res.State, "Ready="+readyStatus); err != nil {
+	if err := r.updateObservedCMS(ctx, canonicalName, res.ComponentGeneration, res.State, "Ready="+readyStatus); err != nil {
 		if !ignoreNotFound || status.Code(err) != codes.NotFound {
 			setSynced(res, in, ConditionStatusFalse, ReasonCMSSyncFailed, err.Error())
 			return fmt.Errorf("failed to update observed generation in CMS: %w", err)
 		}
 	}
-	r.syncTracker.recordSync(key, res.State, readyStatus, in.Generation)
 	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
+	if res.ComponentGeneration <= 0 {
+		// updateObservedCMS skipped the RPC, so nothing was synced: recording it would delay the
+		// first real sync after the component registers until the heartbeat expires.
+		return nil
+	}
+	r.syncTracker.recordSync(key, res.State, readyStatus, in.Generation)
+	r.syncTracker.recordSource(key, in.UID, res.ComponentGeneration)
 	return nil
 }

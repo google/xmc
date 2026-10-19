@@ -218,7 +218,7 @@ func TestReconcileComponent_DeactivationGating(t *testing.T) {
 	tornDown := []Condition{{Type: ConditionTypeReady, Status: ConditionStatusFalse, ObservedGeneration: 2, Reason: ReasonDeactivationIncomplete}}
 	blockedErr := status.Error(codes.FailedPrecondition, "component redpanda has active dependents: [ingestion-gateway]")
 	blockedMsg := `Cannot disable "redpanda": component redpanda has active dependents: [ingestion-gateway]`
-	notRegisteredErr := status.Error(codes.FailedPrecondition, store.DependencyNotFoundMessagePrefix+` component "redpanda" depends on "zookeeper", which is not registered`)
+	notRegisteredErr := dependencyNotRegisteredErr(t, "redpanda", "zookeeper")
 	initialBlockLTT := time.Date(2026, 10, 12, 11, 0, 0, 0, time.UTC)
 	blockedAt := func(gen int64) []Condition {
 		return append(slices.Clone(wasReady), Condition{
@@ -496,6 +496,7 @@ func TestReconcileComponent_BlockAfterTeardownSyncsCMS(t *testing.T) {
 			r.syncTracker.now = func() time.Time { return now }
 			if tt.recorded {
 				r.syncTracker.recordSync("xmc/redpanda", componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, ConditionStatusFalse, 2)
+				r.syncTracker.recordSource("xmc/redpanda", "", 2)
 				now = base.Add(tt.age)
 			}
 			_, err := r.ReconcileComponent(context.Background(), ReconcileComponentInput{
