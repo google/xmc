@@ -17,8 +17,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-XMC_NAMESPACE="${XMC_NAMESPACE:-xmc}"
-METRICS_NAMESPACE="${METRICS_NAMESPACE:-xmc-metrics}"
+readonly XMC_NAMESPACE="xmc"
+readonly METRICS_NAMESPACE="xmc-metrics"
 
 echo "--> 1. Ensuring namespace '${METRICS_NAMESPACE}' exists..."
 kubectl create namespace "${METRICS_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -

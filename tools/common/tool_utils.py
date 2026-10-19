@@ -463,7 +463,7 @@ def deploy_component_profile(config: DeploymentConfig) -> None:
             "helm",
             "upgrade",
             "--install",
-            "--reuse-values",
+            "--reset-then-reuse-values",
             "xmc-profile",
             chart,
             "-n",

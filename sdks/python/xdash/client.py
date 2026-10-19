@@ -58,13 +58,16 @@ def _fetch_iam_id_token(client_sa: str, audience: str) -> str:
 
     credentials, _ = google.auth.default()
     session = google_requests.AuthorizedSession(credentials)
-    url = (
-        "https://iamcredentials.googleapis.com/v1/projects/-/"
-        f"serviceAccounts/{client_sa}:generateIdToken"
-    )
-    response = session.post(url, json={"audience": audience, "includeEmail": True}, timeout=10)
-    response.raise_for_status()
-    return str(response.json()["token"])
+    try:
+        url = (
+            "https://iamcredentials.googleapis.com/v1/projects/-/"
+            f"serviceAccounts/{client_sa}:generateIdToken"
+        )
+        response = session.post(url, json={"audience": audience, "includeEmail": True}, timeout=10)
+        response.raise_for_status()
+        return str(response.json()["token"])
+    finally:
+        session.close()
 
 
 def _is_local_endpoint(endpoint: str) -> bool:
@@ -296,6 +299,8 @@ class DashboardClient:
             if token:
                 return call(request, metadata=(("authorization", f"Bearer {token}"),))
             return call(request)
+        except XDashError:
+            raise
         except Exception as err:
             if grpc is not None and isinstance(err, grpc.RpcError):
                 code_fn = getattr(err, "code", None)

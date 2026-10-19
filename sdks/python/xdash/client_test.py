@@ -442,10 +442,11 @@ class DashboardClientTest(unittest.TestCase):
                 self.assertRaises(XDashError) as cm,
             ):
                 self.client.get_dashboard("dashboards/123")
-            self.assertIn(
-                "Both XMC_CLIENT_SA and IAP_CLIENT_ID must be set",
+            self.assertEqual(
                 str(cm.exception),
+                "Both XMC_CLIENT_SA and IAP_CLIENT_ID must be set for IAM OIDC fallback.",
             )
+            self.assertNotIn("Unexpected error in", str(cm.exception))
         self.mock_stub.GetDashboard.assert_not_called()
 
     def test_get_cached_or_fetch_iam_token_double_checked_locking(self) -> None:
@@ -512,6 +513,33 @@ class DashboardClientTest(unittest.TestCase):
             timeout=10,
         )
         mock_response.raise_for_status.assert_called_once()
+        mock_session.close.assert_called_once()
+
+    def test_fetch_iam_id_token_closes_session_on_post_error(self) -> None:
+        mock_google = MagicMock()
+        mock_google.auth.default.return_value = (object(), "test-proj")
+        mock_session = MagicMock()
+        mock_session.post.side_effect = RuntimeError("network failure")
+        mock_requests = mock_google.auth.transport.requests
+        mock_requests.AuthorizedSession.return_value = mock_session
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "google": mock_google,
+                    "google.auth": mock_google.auth,
+                    "google.auth.transport": mock_google.auth.transport,
+                    "google.auth.transport.requests": mock_requests,
+                },
+            ),
+            self.assertRaises(RuntimeError),
+        ):
+            _fetch_iam_id_token(
+                "sa@test-proj.iam.gserviceaccount.com",
+                "iap-client-id.apps.googleusercontent.com",
+            )
+        mock_session.close.assert_called_once()
 
     def test_fetch_iam_id_token_missing_google_auth_raises_xdash_error(self) -> None:
         with (

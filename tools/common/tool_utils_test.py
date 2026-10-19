@@ -587,7 +587,7 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         cmd = mock_run.call_args[0][0]
         self.assertEqual(
             cmd[:5],
-            ["helm", "upgrade", "--install", "--reuse-values", "xmc-profile"],
+            ["helm", "upgrade", "--install", "--reset-then-reuse-values", "xmc-profile"],
         )
         self.assertTrue(cmd[5].endswith("deploy/profiles/stable-2026a"))
         self.assertEqual(cmd[6:], ["-n", "xmc", "--wait"])
