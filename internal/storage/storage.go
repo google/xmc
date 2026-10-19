@@ -372,7 +372,7 @@ type XidTxRepository interface {
 // StatusMessageTxRepository defines status message operations scoped to a read-write transaction.
 type StatusMessageTxRepository interface {
 	// SaveStatusMessageHistory records a status message history entry within the transaction.
-	SaveStatusMessageHistory(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error
+	SaveStatusMessageHistory(ctx context.Context, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error
 }
 
 // StatusHistoryTxRepository defines status history operations scoped to a read-write transaction.

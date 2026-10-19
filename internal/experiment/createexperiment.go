@@ -61,8 +61,7 @@ func CreateExperiment(ctx context.Context, txRunner storage.TransactionRunner, e
 
 		// 4. Record the initial status message history.
 		if err := workunit.RecordStatusMessageHistory(ctx, tx.StatusMessages, xid, nil, nil, nil, exp.GetStatus().GetStructuredStatusMessage()); err != nil {
-			logging.Error(ctx, "failed to save status message history for experiment", "xid", xid, "error", err)
-			return err
+			return fmt.Errorf("failed to save status message history for experiment: %w", err)
 		}
 
 		return nil

@@ -65,8 +65,6 @@ func (m *MockXidTxRepository) UpdateXidEntry(_ context.Context, _ int64, entry *
 
 // StatusMessageHistoryCall records a single invocation of SaveStatusMessageHistory.
 type StatusMessageHistoryCall struct {
-	XID    int64
-	WID    *int64
 	EID    *int64
 	OldMsg *essmsgpb.StructuredMessage
 	NewMsg *essmsgpb.StructuredMessage
@@ -75,21 +73,19 @@ type StatusMessageHistoryCall struct {
 // MockStatusMessageTxRepository is an in-memory mock implementation of StatusMessageTxRepository for unit testing.
 type MockStatusMessageTxRepository struct {
 	SaveErr  error
-	SaveFunc func(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error
+	SaveFunc func(ctx context.Context, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error
 	Calls    []StatusMessageHistoryCall
 }
 
 // SaveStatusMessageHistory records the call and returns SaveErr if configured.
-func (m *MockStatusMessageTxRepository) SaveStatusMessageHistory(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
+func (m *MockStatusMessageTxRepository) SaveStatusMessageHistory(ctx context.Context, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
 	m.Calls = append(m.Calls, StatusMessageHistoryCall{
-		XID:    xid,
-		WID:    wid,
 		EID:    eid,
 		OldMsg: oldMsg,
 		NewMsg: newMsg,
 	})
 	if m.SaveFunc != nil {
-		return m.SaveFunc(ctx, xid, wid, eid, oldMsg, newMsg)
+		return m.SaveFunc(ctx, eid, oldMsg, newMsg)
 	}
 	return m.SaveErr
 }
@@ -439,7 +435,7 @@ func (s *MockStorage) SaveWorkUnitStatusHistory(ctx context.Context, xid, wid in
 }
 
 // SaveStatusMessageHistory mocks saving status message history.
-func (s *MockStorage) SaveStatusMessageHistory(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
+func (s *MockStorage) SaveStatusMessageHistory(ctx context.Context, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
 	return s.SaveStatusMessageHistoryErr
 }
 

@@ -315,7 +315,7 @@ func insertStatusMessage(ctx context.Context, t *testing.T, storage *spanner.Sto
 		t.Fatalf("NewRepository() failed: %v", err)
 	}
 	_, err = essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *cloudspanner.ReadWriteTransaction) error {
-		return repo.WithTx(txn).SaveStatusMessageHistory(ctx, xid, wid, nil, nil, msg)
+		return repo.WithTx(txn).SaveStatusMessageHistory(ctx, nil, nil, msg)
 	})
 	if err != nil {
 		t.Fatalf("Failed to save status message history: %v", err)

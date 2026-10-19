@@ -83,7 +83,7 @@ func RecordStatusMessageHistory(ctx context.Context, repo storage.StatusMessageT
 	if !changed {
 		return nil
 	}
-	return repo.SaveStatusMessageHistory(ctx, xid, wid, eid, prevMsg, nextMsg)
+	return repo.SaveStatusMessageHistory(ctx, eid, prevMsg, nextMsg)
 }
 
 // StateChanged reports whether newState is a state transition from currentState.

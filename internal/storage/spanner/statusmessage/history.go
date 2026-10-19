@@ -24,25 +24,22 @@ import (
 	"cloud.google.com/go/spanner"
 
 	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/logging"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 )
 
 // SaveStatusMessageHistory buffers a status message history mutation in the bound Spanner transaction.
-func (r *TxRepository) SaveStatusMessageHistory(ctx context.Context, xid int64, wid, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
+func (r *TxRepository) SaveStatusMessageHistory(ctx context.Context, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage) error {
 	if r.tx == nil {
 		return fmt.Errorf("transaction must not be nil")
 	}
 	messageID, err := generateMessageID(ctx)
 	if err != nil {
-		logging.Error(ctx, "Failed to generate MessageId", "error", err)
-		return err
+		return fmt.Errorf("failed to generate message ID: %w", err)
 	}
 
 	mutation, err := spannerdata.StatusMessageProtoToInsertMutation(newMsg, messageID, eid, oldMsg)
 	if err != nil {
-		logging.Error(ctx, "Failed to create mutation for status message", "error", err)
-		return err
+		return fmt.Errorf("failed to create mutation for status message: %w", err)
 	}
 
 	return r.tx.BufferWrite([]*spanner.Mutation{mutation})

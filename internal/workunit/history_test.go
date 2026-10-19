@@ -528,7 +528,7 @@ func TestRecordExecutionHistory_PropagatesErrors(t *testing.T) {
 		calls := 0
 		tx := &storage.Transaction{
 			StatusMessages: &storage.MockStatusMessageTxRepository{
-				SaveFunc: func(context.Context, int64, *int64, *int64, *essmsgpb.StructuredMessage, *essmsgpb.StructuredMessage) error {
+				SaveFunc: func(context.Context, *int64, *essmsgpb.StructuredMessage, *essmsgpb.StructuredMessage) error {
 					calls++
 					if calls == 2 {
 						return wantErr

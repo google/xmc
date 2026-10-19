@@ -70,7 +70,7 @@ func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
 // SaveWorkUnitStatusHistory buffers work unit status history mutations using the bound read-write transaction.
 func (r *TxRepository) SaveWorkUnitStatusHistory(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error {
 	if ctx == nil {
-		return nil
+		return fmt.Errorf("context must not be nil")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -83,7 +83,7 @@ func (r *TxRepository) SaveWorkUnitStatusHistory(ctx context.Context, xid, wid i
 		historyID := generateHistoryID()
 		mutation, err := spannerdata.WorkUnitStatusHistoryToInsertMutation(xid, wid, historyID, eid, queueName, prevState, newState, resType, units, timestamp)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create work unit status history mutation: %w", err)
 		}
 		mutations = append(mutations, mutation)
 	}

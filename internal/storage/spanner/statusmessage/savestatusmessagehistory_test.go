@@ -47,7 +47,7 @@ func TestSaveStatusMessageHistory_Success(t *testing.T) {
 	}
 
 	_, err = essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *cloudspanner.ReadWriteTransaction) error {
-		return repo.WithTx(txn).SaveStatusMessageHistory(ctx, xid, nil, nil, currentMsg, newMsg)
+		return repo.WithTx(txn).SaveStatusMessageHistory(ctx, nil, currentMsg, newMsg)
 	})
 	if err != nil {
 		t.Fatalf("SaveStatusMessageHistory() ReadWriteTransaction failed: %v", err)
@@ -79,7 +79,7 @@ func TestTxRepository_SaveStatusMessageHistory_PropagatesError(t *testing.T) {
 	}
 
 	_, err = essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *cloudspanner.ReadWriteTransaction) error {
-		return repo.WithTx(txn).SaveStatusMessageHistory(ctx, 123, nil, nil, nil, invalidMsg)
+		return repo.WithTx(txn).SaveStatusMessageHistory(ctx, nil, nil, invalidMsg)
 	})
 	if err == nil {
 		t.Fatalf("TxRepository.SaveStatusMessageHistory() with invalid parent succeeded, want error")

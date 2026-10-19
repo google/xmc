@@ -301,6 +301,12 @@ func TestTxRepository_SaveWorkUnitStatusHistory(t *testing.T) {
 	running := essmsgpb.WorkUnitStatus_RUNNING
 	eid := int64(1)
 
+	t.Run("nil context propagates error", func(t *testing.T) {
+		if err := repo.WithTx(nil).SaveWorkUnitStatusHistory(nil, 1, 1, &eid, "q1", nil, &running, map[string]int64{"": 0}, time.Now()); err == nil {
+			t.Fatalf("SaveWorkUnitStatusHistory() with nil ctx succeeded, want error")
+		}
+	})
+
 	t.Run("nil transaction propagates error", func(t *testing.T) {
 		if err := repo.WithTx(nil).SaveWorkUnitStatusHistory(ctx, 1, 1, &eid, "q1", nil, &running, map[string]int64{"": 0}, time.Now()); err == nil {
 			t.Fatalf("SaveWorkUnitStatusHistory() with nil tx succeeded, want error")
