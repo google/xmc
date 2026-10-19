@@ -187,10 +187,10 @@ describe('DashboardsListPage', () => {
     component.goToNextPage();
     expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
 
-    component.pagination.update((prev) => ({
-      ...prev,
+    component.pagination.set({
+      ...component.pagination(),
       nextPageToken: 'token_page_2',
-    }));
+    });
     component.isLoading.set(true);
     component.goToNextPage();
     expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
@@ -203,11 +203,11 @@ describe('DashboardsListPage', () => {
     component.goToPreviousPage();
     expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
 
-    component.pagination.update((prev) => ({
-      ...prev,
+    component.pagination.set({
+      ...component.pagination(),
       pageIndex: 1,
       previousTokens: [''],
-    }));
+    });
     component.isLoading.set(true);
     component.goToPreviousPage();
     expect(state.dashboardServiceSpy.listDashboards).not.toHaveBeenCalled();
@@ -298,11 +298,11 @@ describe('DashboardsListPage', () => {
     const router = get(Router);
     spyOn(router, 'navigate');
     state.dashboardServiceSpy.listDashboards.calls.reset();
-    component.pagination.update((prev) => ({
-      ...prev,
+    component.pagination.set({
+      ...component.pagination(),
       pageIndex: 2,
       previousTokens: ['', 'token_page_2'],
-    }));
+    });
     state.dashboardServiceSpy.createDashboard.and.returnValue(
       throwError(() => new Error('Creation failed')),
     );
