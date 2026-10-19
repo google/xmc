@@ -25,7 +25,7 @@ Both Cloud Spanner and PostgreSQL maintain canonical full schemas (`schema/{ess,
 
 - **Lockstep schema changes**: Every schema change must update both Spanner ([`spanner/schema/`](spanner/schema/) + [`spanner/migrations/`](spanner/migrations/)) and PostgreSQL ([`postgres/schema/`](postgres/schema/) + [`postgres/migrations/`](postgres/migrations/)) using the same migration version number (`<NNN>_<name>.up.sql` and `<NNN>_<name>.down.sql`).
 - **Backend-specific migrations**: If a migration only applies to one backend (such as tuning a backend-specific index), add a same-numbered no-op `.up.sql` / `.down.sql` pair in the other backend so expected schema versions (`EssExpectedSchemaVersion()`, `XidExpectedSchemaVersion()`) remain identical.
-- **Automated parity check**: [`migrations/parity_test.go`](migrations/parity_test.go) verifies that Spanner and PostgreSQL expected schema versions and canonical tables do not drift.
+- **Automated parity check**: [`migrations/parity_test.go`](migrations/parity_test.go) checks only that expected schema versions and canonical table names match across Spanner and PostgreSQL; it does not compare exact DDL or column definitions, which differ by SQL dialect.
 
 ## Transactions (`TransactionRunner`)
 
