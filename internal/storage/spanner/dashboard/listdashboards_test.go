@@ -83,41 +83,58 @@ func TestListDashboards_Pagination(t *testing.T) {
 		}
 	}
 
-	// Page 1: 2 items
-	page1, token1, err := repo.ListDashboards(ctx, 2, "", "", "dashboard_id asc", 0)
-	if err != nil {
-		t.Fatalf("ListDashboards page 1 failed: %v", err)
-	}
-	if len(page1) != 2 {
-		t.Fatalf("page 1: got %d items, want 2", len(page1))
-	}
-	if token1 == "" {
-		t.Fatalf("page 1: expected non-empty token")
-	}
-
-	// Page 2: 2 items
-	page2, token2, err := repo.ListDashboards(ctx, 2, token1, "", "dashboard_id asc", 0)
-	if err != nil {
-		t.Fatalf("ListDashboards page 2 failed: %v", err)
-	}
-	if len(page2) != 2 {
-		t.Fatalf("page 2: got %d items, want 2", len(page2))
-	}
-	if token2 == "" {
-		t.Fatalf("page 2: expected non-empty token")
+	testCases := []struct {
+		name      string
+		orderBy   string
+		wantNames []string
+	}{
+		{
+			name:      "default_newest_first",
+			orderBy:   "",
+			wantNames: []string{"dashboards/test-list-page-5", "dashboards/test-list-page-4", "dashboards/test-list-page-3", "dashboards/test-list-page-2", "dashboards/test-list-page-1"},
+		},
+		{
+			name:      "dashboard_id_asc",
+			orderBy:   "dashboard_id asc",
+			wantNames: []string{"dashboards/test-list-page-1", "dashboards/test-list-page-2", "dashboards/test-list-page-3", "dashboards/test-list-page-4", "dashboards/test-list-page-5"},
+		},
 	}
 
-	// Page 3: 1 item
-	page3, token3, err := repo.ListDashboards(ctx, 2, token2, "", "dashboard_id asc", 0)
-	if err != nil {
-		t.Fatalf("ListDashboards page 3 failed: %v", err)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotNames := collectPaginatedDashboardNames(ctx, t, repo, tc.orderBy, []int{2, 2, 1})
+			if !slices.Equal(gotNames, tc.wantNames) {
+				t.Errorf("paginated names = %v, want %v", gotNames, tc.wantNames)
+			}
+		})
 	}
-	if len(page3) != 1 {
-		t.Fatalf("page 3: got %d items, want 1", len(page3))
+}
+
+func collectPaginatedDashboardNames(ctx context.Context, t *testing.T, repo *Repository, orderBy string, wantPageLengths []int) []string {
+	t.Helper()
+	var gotNames []string
+	var pageToken string
+	for i, wantLen := range wantPageLengths {
+		page, nextToken, err := repo.ListDashboards(ctx, 2, pageToken, "", orderBy, 0)
+		if err != nil {
+			t.Fatalf("ListDashboards page %d failed: %v", i+1, err)
+		}
+		if len(page) != wantLen {
+			t.Fatalf("page %d: got %d items, want %d", i+1, len(page), wantLen)
+		}
+		isLastPage := i == len(wantPageLengths)-1
+		if !isLastPage && nextToken == "" {
+			t.Fatalf("page %d: expected non-empty token", i+1)
+		}
+		if isLastPage && nextToken != "" {
+			t.Errorf("page %d: expected empty token, got %q", i+1, nextToken)
+		}
+		for _, dash := range page {
+			gotNames = append(gotNames, dash.GetName())
+		}
+		pageToken = nextToken
 	}
-	if token3 != "" {
-		t.Errorf("page 3: expected empty token, got %q", token3)
-	}
+	return gotNames
 }
 
 func TestListDashboards_Filter(t *testing.T) {
