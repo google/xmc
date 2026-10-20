@@ -430,8 +430,24 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	}
 	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 	applyIntentResponse(res, setResp)
-	logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "componentGeneration", res.ComponentGeneration, "componentId", res.ComponentID, "state", res.State.String())
+	logIntentApplied(ctx, in, canonicalName, res)
 	return nil
+}
+
+// logIntentApplied logs an applied intent at Info when it committed a CMS generation or ComponentId
+// other than the one in status.componentGeneration or status.componentId, or when the custom
+// resource reports no generation yet (a new or recreated custom resource adopting a record), and at
+// Debug for the idempotent re-apply that every pass performs.
+func logIntentApplied(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) {
+	if in.ComponentGeneration == 0 || res.ComponentGeneration != in.ComponentGeneration || res.ComponentID != in.ComponentID {
+		logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation,
+			"previousComponentGeneration", in.ComponentGeneration, "componentGeneration", res.ComponentGeneration,
+			"previousComponentId", in.ComponentID, "componentId", res.ComponentID, "state", res.State.String())
+	} else {
+		logging.Debug(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation,
+			"previousComponentGeneration", in.ComponentGeneration, "componentGeneration", res.ComponentGeneration,
+			"previousComponentId", in.ComponentID, "componentId", res.ComponentID, "state", res.State.String())
+	}
 }
 
 // applyIntentResponse copies the CMS state, component generation and ComponentId from a
@@ -687,10 +703,16 @@ func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput
 		preserveExistingAccess(res, in.ExistingAccess)
 	}
 	setReadiness(res, in, ConditionStatusFalse, reason, msg)
+	// Compared before syncObservedToCMS, which rewrites Ready on a source conflict.
+	changed := healthConditionsChanged(in.ExistingConditions, res.Conditions, in.Generation)
 	if err := r.syncObservedToCMS(ctx, in, canonicalName, res, ConditionStatusFalse, true); err != nil {
 		return res, err
 	}
-	logging.Info(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "message", msg)
+	if changed {
+		logging.Info(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "detail", msg)
+	} else {
+		logging.Debug(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "detail", msg)
+	}
 	return res, nil
 }
 
@@ -754,7 +776,7 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	preserveExistingAccess(res, in.ExistingAccess)
 	if reason == ReasonHelmStatusUnavailable && preserveHealthConditions(in, res) {
 		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
-		logging.Warn(ctx, "Transient component health check failure; keeping previous health conditions", "name", canonicalName, "generation", in.Generation, "message", healthMsg)
+		logging.Warn(ctx, "Transient component health check failure; keeping previous health conditions", "name", canonicalName, "generation", in.Generation, "detail", healthMsg)
 		return res, nil
 	}
 
@@ -768,8 +790,58 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 	if err := r.syncReadyToCMS(ctx, in, canonicalName, res, readyStatus); err != nil {
 		return res, err
 	}
-	logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", isHealthy, "reason", reason)
+	logHealthEvaluated(ctx, in, canonicalName, res)
 	return res, nil
+}
+
+// logHealthEvaluated logs a health evaluation at Info when it changed the Ready, Reconciling, or
+// Stalled condition recorded in the custom resource (see healthConditionsChanged), and at Debug for
+// the unchanged result that every periodic pass over a steady component produces. A local-only
+// evaluation (in.skipCMSSync, such as a workload kept running while its deactivation is blocked)
+// compares Ready only, because its caller sets Reconciling and Stalled afterwards. It logs the final
+// Ready condition, which differs from the probe result when reporting to CMS encountered a source conflict.
+func logHealthEvaluated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) {
+	condTypes := healthConditionTypes
+	if in.skipCMSSync {
+		condTypes = []string{ConditionTypeReady}
+	}
+	var healthy bool
+	var reason string
+	if ready := findCondition(res.Conditions, ConditionTypeReady); ready != nil {
+		healthy, reason = ready.Status == ConditionStatusTrue, ready.Reason
+	}
+	if conditionsChanged(in.ExistingConditions, res.Conditions, in.Generation, condTypes) {
+		logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", healthy, "reason", reason)
+	} else {
+		logging.Debug(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", healthy, "reason", reason)
+	}
+}
+
+// healthConditionTypes are the conditions whose change makes a pass log at Info.
+var healthConditionTypes = []string{ConditionTypeReady, ConditionTypeReconciling, ConditionTypeStalled}
+
+// healthConditionsChanged reports whether the Ready, Reconciling, or Stalled condition in current
+// differs from existing in presence, status, or reason, or was last observed in existing at a
+// generation other than generation (a first evaluation, or the first one of a new custom resource generation).
+func healthConditionsChanged(existing, current []Condition, generation int64) bool {
+	return conditionsChanged(existing, current, generation, healthConditionTypes)
+}
+
+// conditionsChanged is healthConditionsChanged over the condition types condTypes.
+func conditionsChanged(existing, current []Condition, generation int64, condTypes []string) bool {
+	for _, condType := range condTypes {
+		prev, next := findCondition(existing, condType), findCondition(current, condType)
+		if (prev == nil) != (next == nil) {
+			return true
+		}
+		if prev == nil {
+			continue
+		}
+		if prev.Status != next.Status || prev.Reason != next.Reason || prev.ObservedGeneration != generation {
+			return true
+		}
+	}
+	return false
 }
 
 // preserveHealthConditions copies the existing Ready/Reconciling/Stalled conditions into res and derives the state from them.

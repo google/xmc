@@ -19,9 +19,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/store"
 )
 
@@ -2155,4 +2159,415 @@ func assertContractBrokenStatus(ctx context.Context, t *testing.T, compClient dy
 	if diff := cmp.Diff(want, seen); diff != "" {
 		t.Errorf("contract broken conditions mismatch (-want +got):\n%s", diff)
 	}
+}
+
+const (
+	appliedIntentMessage     = "Applied component intent to CMS"
+	evaluatedHealthMessage   = "Evaluated component health"
+	componentDisabledMessage = "Component disabled"
+)
+
+type loggedRecord struct {
+	level slog.Level
+	attrs map[string]any
+}
+
+type recordingHandler struct {
+	mu      sync.Mutex
+	records map[string][]loggedRecord
+}
+
+func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	attrs := make(map[string]any)
+	r.Attrs(func(a slog.Attr) bool {
+		attrs[a.Key] = a.Value.Any()
+		return true
+	})
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records[r.Message] = append(h.records[r.Message], loggedRecord{level: r.Level, attrs: attrs})
+	return nil
+}
+
+func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
+
+func recordLogs() (context.Context, *recordingHandler) {
+	h := &recordingHandler{records: make(map[string][]loggedRecord)}
+	return logging.WithLogger(context.Background(), slog.New(h)), h
+}
+
+func (h *recordingHandler) recordsFor(message string) []loggedRecord {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]loggedRecord(nil), h.records[message]...)
+}
+
+func (h *recordingHandler) singleRecord(t *testing.T, message string) loggedRecord {
+	t.Helper()
+	recs := h.recordsFor(message)
+	if len(recs) != 1 {
+		t.Fatalf("%q logged %d times, want 1", message, len(recs))
+	}
+	return recs[0]
+}
+
+func TestReconcileComponent_AppliedIntentLogLevel(t *testing.T) {
+	tests := []struct {
+		name                string
+		reported, committed int64
+		reportedID          string
+		committedID         int64
+		wantLevel           slog.Level
+		wantComponentID     string
+	}{
+		{name: "first apply without a reported generation", reported: 0, committed: 1, committedID: 1, wantLevel: slog.LevelInfo, wantComponentID: "1"},
+		{name: "unchanged generation and ComponentId re-applied every pass", reported: 4, committed: 4, reportedID: "1", committedID: 1, wantLevel: slog.LevelDebug, wantComponentID: "1"},
+		{name: "newly committed generation", reported: 4, committed: 5, reportedID: "1", committedID: 1, wantLevel: slog.LevelInfo, wantComponentID: "1"},
+		{name: "new ComponentId at the same generation", reported: 4, committed: 4, reportedID: "1", committedID: 2, wantLevel: slog.LevelInfo, wantComponentID: "2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := NewReconciler(&mockCMS{componentGen: tt.committed, componentID: tt.committedID}, nil, nil)
+			if err != nil {
+				t.Fatalf("NewReconciler() error = %v", err)
+			}
+			ctx, logs := recordLogs()
+			in := ReconcileComponentInput{
+				Namespace:           "xmc",
+				Name:                "redpanda",
+				Generation:          7,
+				UID:                 "uid-a",
+				ComponentGeneration: tt.reported,
+				ComponentID:         tt.reportedID,
+				Enabled:             true,
+				Spec:                &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+			}
+			if _, err := r.ReconcileComponent(ctx, in); err != nil {
+				t.Fatalf("ReconcileComponent() error = %v", err)
+			}
+			got := logs.singleRecord(t, appliedIntentMessage)
+			if got.level != tt.wantLevel {
+				t.Errorf("%q level = %v, want %v", appliedIntentMessage, got.level, tt.wantLevel)
+			}
+			want := map[string]any{"previousComponentGeneration": tt.reported, "previousComponentId": tt.reportedID, "componentId": tt.wantComponentID}
+			gotAttrs := make(map[string]any, len(want))
+			for key := range want {
+				gotAttrs[key] = got.attrs[key]
+			}
+			if diff := cmp.Diff(want, gotAttrs); diff != "" {
+				t.Errorf("%q attributes mismatch (-want +got):\n%s", appliedIntentMessage, diff)
+			}
+		})
+	}
+}
+
+func TestReconcileComponent_HealthLogLevel(t *testing.T) {
+	in := ReconcileComponentInput{
+		Namespace:  "xmc",
+		Name:       "redpanda",
+		Generation: 7,
+		UID:        "uid-a",
+		Enabled:    true,
+		Spec:       &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+	}
+	steady := healthyConditions(t, in)
+	tests := []struct {
+		name       string
+		existing   []Condition
+		obsErr     error
+		wantLevel  slog.Level
+		wantReason string
+	}{
+		{name: "first evaluation", wantLevel: slog.LevelInfo, wantReason: ReasonComponentHealthy},
+		{name: "unchanged health", existing: steady, wantLevel: slog.LevelDebug, wantReason: ReasonComponentHealthy},
+		{
+			name:       "Ready message only changed",
+			existing:   withCondition(steady, ConditionTypeReady, func(c *Condition) { c.Message = "previous message" }),
+			wantLevel:  slog.LevelDebug,
+			wantReason: ReasonComponentHealthy,
+		},
+		{
+			name:       "Ready reason changed",
+			existing:   withCondition(steady, ConditionTypeReady, func(c *Condition) { c.Reason = ReasonHelmStatusUnavailable }),
+			wantLevel:  slog.LevelInfo,
+			wantReason: ReasonComponentHealthy,
+		},
+		{
+			name:       "Ready status changed",
+			existing:   withCondition(steady, ConditionTypeReady, func(c *Condition) { c.Status = ConditionStatusFalse }),
+			wantLevel:  slog.LevelInfo,
+			wantReason: ReasonComponentHealthy,
+		},
+		{
+			name:       "first evaluation of a new generation",
+			existing:   withCondition(steady, ConditionTypeReady, func(c *Condition) { c.ObservedGeneration = in.Generation - 1 }),
+			wantLevel:  slog.LevelInfo,
+			wantReason: ReasonComponentHealthy,
+		},
+		{
+			name:       "source conflict on observed-state report",
+			existing:   steady,
+			obsErr:     sourceConflictTestErr(t, store.ReasonSourceIncarnationMismatch),
+			wantLevel:  slog.LevelInfo,
+			wantReason: ReasonSourceConflict,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := NewReconciler(&mockCMS{obsErr: tt.obsErr}, nil, nil)
+			if err != nil {
+				t.Fatalf("NewReconciler() error = %v", err)
+			}
+			ctx, logs := recordLogs()
+			pass := in
+			pass.ExistingConditions = tt.existing
+			if _, err := r.ReconcileComponent(ctx, pass); err != nil {
+				t.Fatalf("ReconcileComponent() error = %v", err)
+			}
+			got := logs.singleRecord(t, evaluatedHealthMessage)
+			if got.level != tt.wantLevel {
+				t.Errorf("%q level = %v, want %v", evaluatedHealthMessage, got.level, tt.wantLevel)
+			}
+			if got.attrs["reason"] != tt.wantReason {
+				t.Errorf("%q reason = %v, want %q", evaluatedHealthMessage, got.attrs["reason"], tt.wantReason)
+			}
+		})
+	}
+}
+
+func TestReconcileComponent_DisabledLogLevelAndCMSFailure(t *testing.T) {
+	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
+	in := ReconcileComponentInput{
+		Namespace:  "xmc",
+		Name:       "redpanda",
+		Generation: 2,
+		Enabled:    false,
+		Spec:       spec1P,
+	}
+
+	r, err := NewReconciler(&mockCMS{}, nil, &mockHelm{})
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
+	}
+	ctx1, logs1 := recordLogs()
+	res1, err := r.ReconcileComponent(ctx1, in)
+	if err != nil {
+		t.Fatalf("first pass error = %v", err)
+	}
+	if got := logs1.singleRecord(t, componentDisabledMessage); got.level != slog.LevelInfo {
+		t.Errorf("first disabled pass level = %v, want %v", got.level, slog.LevelInfo)
+	}
+
+	in.ExistingConditions = res1.Conditions
+	ctx2, logs2 := recordLogs()
+	if _, err := r.ReconcileComponent(ctx2, in); err != nil {
+		t.Fatalf("second pass error = %v", err)
+	}
+	if got := logs2.singleRecord(t, componentDisabledMessage); got.level != slog.LevelDebug {
+		t.Errorf("steady-state disabled pass level = %v, want %v", got.level, slog.LevelDebug)
+	}
+
+	rFail, err := NewReconciler(&mockCMS{obsErr: status.Error(codes.Unavailable, "cms down")}, nil, &mockHelm{})
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
+	}
+	ctx3, logs3 := recordLogs()
+	res3, err := rFail.ReconcileComponent(ctx3, ReconcileComponentInput{
+		Namespace: "xmc", Name: "redpanda", Generation: 3, Enabled: false, Spec: spec1P,
+	})
+	if err == nil {
+		t.Fatal("expected error when UpdateObservedGeneration fails on disabled component, got nil")
+	}
+	if ready := findCondition(res3.Conditions, ConditionTypeReady); ready == nil || ready.Reason != ReasonDeactivationIncomplete {
+		t.Errorf("Ready condition on failed disabled CMS sync = %+v, want reason %q", ready, ReasonDeactivationIncomplete)
+	}
+	if got := len(logs3.recordsFor(componentDisabledMessage)); got != 0 {
+		t.Errorf("%q logged %d times on failed CMS sync, want 0", componentDisabledMessage, got)
+	}
+}
+
+func TestReconcileComponent_DeactivationBlockedLogLevel(t *testing.T) {
+	const blockedMessage = "Component deactivation blocked by active dependents"
+	in := ReconcileComponentInput{
+		Namespace: "xmc", Name: "redpanda", Generation: 2, Enabled: false,
+		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+	}
+	cms := &mockCMS{prepareErr: status.Error(codes.FailedPrecondition, "active dependents remaining: [ingestion]"), componentGen: 1, componentID: 1}
+	newReconciler := func() *Reconciler {
+		r, err := NewReconciler(cms, nil, &mockHelm{})
+		if err != nil {
+			t.Fatalf("NewReconciler() error = %v", err)
+		}
+		return r
+	}
+	assertLevel := func(t *testing.T, logs *recordingHandler, message string, want slog.Level) {
+		t.Helper()
+		if got := logs.singleRecord(t, message); got.level != want {
+			t.Errorf("%q level = %v, want %v", message, got.level, want)
+		}
+	}
+	assertNoInfo := func(t *testing.T, logs *recordingHandler) {
+		t.Helper()
+		logs.mu.Lock()
+		defer logs.mu.Unlock()
+		for message, recs := range logs.records {
+			for _, rec := range recs {
+				if rec.level >= slog.LevelInfo {
+					t.Errorf("steady-state pass logged %q at %v, want Debug", message, rec.level)
+				}
+			}
+		}
+	}
+
+	r := newReconciler()
+	ctx1, logs1 := recordLogs()
+	res1, err := r.ReconcileComponent(ctx1, in)
+	if err != nil {
+		t.Fatalf("first pass error = %v", err)
+	}
+	assertLevel(t, logs1, blockedMessage, slog.LevelInfo)
+
+	// A pass inside the recheck interval reuses the recorded block without calling CMS.
+	in.ExistingConditions = res1.Conditions
+	in.ComponentGeneration, in.ComponentID = res1.ComponentGeneration, res1.ComponentID
+	ctx2, logs2 := recordLogs()
+	if _, err := r.ReconcileComponent(ctx2, in); err != nil {
+		t.Fatalf("cached pass error = %v", err)
+	}
+	if got := len(logs2.recordsFor(blockedMessage)); got != 0 {
+		t.Errorf("%q logged %d times on a cached pass, want 0", blockedMessage, got)
+	}
+	assertNoInfo(t, logs2)
+
+	// A recheck (fresh tracker) that finds the same block logs at Debug only.
+	ctx3, logs3 := recordLogs()
+	if _, err := newReconciler().ReconcileComponent(ctx3, in); err != nil {
+		t.Fatalf("recheck pass error = %v", err)
+	}
+	assertLevel(t, logs3, blockedMessage, slog.LevelDebug)
+	assertNoInfo(t, logs3)
+}
+
+func TestReconcileComponent_GatedLogLevel(t *testing.T) {
+	const gatedMessage = "Component reconciliation gated"
+	in := ReconcileComponentInput{
+		Namespace: "xmc", Name: "ingestion", Generation: 1, Enabled: true,
+		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: []string{"redpanda"}},
+		Dependencies: NewDependencySnapshot(nil),
+	}
+	r, err := NewReconciler(&mockCMS{}, nil, &mockHelm{})
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
+	}
+
+	ctx1, logs1 := recordLogs()
+	res1, err := r.ReconcileComponent(ctx1, in)
+	if err != nil {
+		t.Fatalf("first pass error = %v", err)
+	}
+	if got := logs1.singleRecord(t, gatedMessage); got.level != slog.LevelInfo {
+		t.Errorf("first gated pass level = %v, want %v", got.level, slog.LevelInfo)
+	}
+
+	// The same gate on the next pass leaves Ready, Reconciling and Stalled unchanged.
+	in.ExistingConditions = res1.Conditions
+	in.ComponentGeneration, in.ComponentID = res1.ComponentGeneration, res1.ComponentID
+	ctx2, logs2 := recordLogs()
+	if _, err := r.ReconcileComponent(ctx2, in); err != nil {
+		t.Fatalf("second pass error = %v", err)
+	}
+	if got := logs2.singleRecord(t, gatedMessage); got.level != slog.LevelDebug {
+		t.Errorf("steady-state gated pass level = %v, want %v", got.level, slog.LevelDebug)
+	}
+}
+
+func TestReconcileComponent_LogDetailAttr(t *testing.T) {
+	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
+	healthy := []Condition{
+		{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy},
+	}
+	tests := []struct {
+		name       string
+		helm       *mockHelm
+		in         ReconcileComponentInput
+		logMessage string
+	}{
+		{
+			name: "gated on an unregistered dependency",
+			helm: &mockHelm{},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 1, Enabled: true,
+				Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: []string{"redpanda"}},
+				Dependencies: NewDependencySnapshot(nil),
+			},
+			logMessage: "Component reconciliation gated",
+		},
+		{
+			name: "transient Helm status error",
+			helm: &mockHelm{unhealthyReason: ReasonHelmStatusUnavailable},
+			in: ReconcileComponentInput{
+				Namespace: "xmc", Name: "ingestion", Generation: 1, Spec: spec1P, Enabled: true,
+				ExistingConditions: healthy,
+			},
+			logMessage: "Transient component health check failure; keeping previous health conditions",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, err := NewReconciler(&mockCMS{}, nil, tt.helm)
+			if err != nil {
+				t.Fatalf("NewReconciler() error = %v", err)
+			}
+			ctx, logs := recordLogs()
+			if _, err := r.ReconcileComponent(ctx, tt.in); err != nil {
+				t.Fatalf("ReconcileComponent() error = %v", err)
+			}
+			got := logs.singleRecord(t, tt.logMessage)
+			if detail, _ := got.attrs["detail"].(string); detail == "" {
+				t.Errorf("%q detail = %v, want a non-empty string", tt.logMessage, got.attrs["detail"])
+			}
+			if msg, ok := got.attrs["message"]; ok {
+				t.Errorf("%q has a \"message\" attribute %v, want none", tt.logMessage, msg)
+			}
+		})
+	}
+}
+
+func healthyConditions(t *testing.T, in ReconcileComponentInput) []Condition {
+	t.Helper()
+	r, err := NewReconciler(&mockCMS{}, nil, nil)
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
+	}
+	res, err := r.ReconcileComponent(context.Background(), in)
+	if err != nil {
+		t.Fatalf("ReconcileComponent() error = %v", err)
+	}
+	if got := findCondition(res.Conditions, ConditionTypeReady); got == nil || got.Status != ConditionStatusTrue {
+		t.Fatalf("Ready condition = %+v, want status %q", got, ConditionStatusTrue)
+	}
+	return res.Conditions
+}
+
+func withCondition(conds []Condition, condType string, mutate func(c *Condition)) []Condition {
+	out := slices.Clone(conds)
+	if c := findCondition(out, condType); c != nil {
+		mutate(c)
+	}
+	return out
+}
+
+func sourceConflictTestErr(t *testing.T, reason string) error {
+	t.Helper()
+	st, err := status.New(codes.FailedPrecondition, "source conflict").WithDetails(&errdetails.ErrorInfo{
+		Reason: reason,
+		Domain: store.ErrorInfoDomain,
+	})
+	if err != nil {
+		t.Fatalf("WithDetails() error = %v", err)
+	}
+	return st.Err()
 }
