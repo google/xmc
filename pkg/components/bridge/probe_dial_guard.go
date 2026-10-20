@@ -32,21 +32,29 @@ var errBlockedProbeAddress = errors.New("health probe destination address is blo
 type probeDialControl func(network, address string, c syscall.RawConn) error
 
 var (
-	// gceMetadataAddrs are the GCE metadata server addresses, including the IPv6 ULA address that
-	// the link-local check does not cover. metadata.google.internal resolves to these addresses.
-	gceMetadataAddrs = []netip.Addr{netip.MustParseAddr("169.254.169.254"), netip.MustParseAddr("fd00:ec2::254")}
+	// metadataServerAddrs are cloud metadata server addresses that the link-local check does not
+	// cover: the GCE IPv6 address fd20:ce::254 (IPv6-only VMs), and the AWS IMDS IPv6 address
+	// fd00:ec2::254. 169.254.169.254 is listed for clarity, though link-local already covers it.
+	// metadata.google.internal resolves to these addresses.
+	metadataServerAddrs = []netip.Addr{
+		netip.MustParseAddr("169.254.169.254"),
+		netip.MustParseAddr("fd20:ce::254"),
+		netip.MustParseAddr("fd00:ec2::254"),
+	}
 	// thisNetworkPrefix is 0.0.0.0/8, which Linux routes to the local host.
 	thisNetworkPrefix = netip.MustParsePrefix("0.0.0.0/8")
 )
 
 // isBlockedProbeAddr reports whether health probes must not connect to addr: loopback, link-local
-// (including 169.254.0.0/16 and fe80::/10), unspecified, multicast, and the GCE metadata server.
+// (including 169.254.0.0/16 and fe80::/10), unspecified, multicast, and cloud metadata servers.
 // Private ranges such as 10.0.0.0/8 stay allowed because probed 3P services run in-cluster.
 func isBlockedProbeAddr(addr netip.Addr) bool {
-	addr = addr.Unmap()
+	// Drop any IPv6 zone: netip.Addr equality includes it, and Linux ignores the scope ID for
+	// non-link-local destinations, so "fd20:ce::254%eth0" still reaches the metadata server.
+	addr = addr.Unmap().WithZone("")
 	return !addr.IsValid() || addr.IsLoopback() || addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() ||
 		addr.IsInterfaceLocalMulticast() || addr.IsMulticast() || addr.IsUnspecified() ||
-		thisNetworkPrefix.Contains(addr) || slices.Contains(gceMetadataAddrs, addr)
+		thisNetworkPrefix.Contains(addr) || slices.Contains(metadataServerAddrs, addr)
 }
 
 // rejectBlockedProbeAddress is a net.Dialer Control hook that runs after DNS resolution, so it

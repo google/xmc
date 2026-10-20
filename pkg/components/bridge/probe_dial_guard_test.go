@@ -44,7 +44,9 @@ func TestIsBlockedProbeAddr(t *testing.T) {
 		{"IPv4-mapped loopback", "::ffff:127.0.0.1", true},
 		{"GCE metadata IPv4", "169.254.169.254", true},
 		{"IPv4-mapped GCE metadata", "::ffff:169.254.169.254", true},
-		{"GCE metadata IPv6", "fd00:ec2::254", true},
+		{"GCE metadata IPv6", "fd20:ce::254", true},
+		{"zoned GCE metadata IPv6", "fd20:ce::254%eth0", true},
+		{"AWS IMDS IPv6", "fd00:ec2::254", true},
 		{"IPv4 link-local", "169.254.1.1", true},
 		{"IPv6 link-local", "fe80::1", true},
 		{"IPv4 unspecified", "0.0.0.0", true},
@@ -84,6 +86,7 @@ func TestRejectBlockedProbeAddress(t *testing.T) {
 	}{
 		{"metadata server", "169.254.169.254:80", true},
 		{"zoned IPv6 link-local", "[fe80::1%eth0]:80", true},
+		{"zoned GCE metadata IPv6", "[fd20:ce::254%eth0]:80", true},
 		{"IPv6 loopback", "[::1]:443", true},
 		{"missing port", "10.0.0.1", true},
 		{"unresolved hostname", "metadata.google.internal:80", true},

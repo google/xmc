@@ -114,7 +114,9 @@ func withProbeDialControl(control probeDialControl) HealthProberOption {
 }
 
 // NewNetworkHealthProber creates a new NetworkHealthProber instance with optional configurations.
-// The dial guard and redirect policy are applied to custom dialers and HTTP clients as well.
+// The dial guard applies to custom dialers and to custom HTTP clients whose transport is an
+// *http.Transport. A client with any other RoundTripper gets only the redirect policy and must
+// filter destinations itself.
 func NewNetworkHealthProber(opts ...HealthProberOption) *NetworkHealthProber {
 	p := &NetworkHealthProber{
 		httpClient:   &http.Client{},
