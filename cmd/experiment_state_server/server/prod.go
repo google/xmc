@@ -159,6 +159,8 @@ func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to create authorizer: %w", err)
 	}
+
+	auth.SetAllowedDomains(oauthCfg.AllowedDomains)
 	if cfg.JWKSURL != "" {
 		auth.SetJWKSValidator(jwks.NewValidator(jwks.ValidatorConfig{
 			JWKSURL:          cfg.JWKSURL,

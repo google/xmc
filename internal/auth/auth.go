@@ -17,10 +17,13 @@ package auth
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"google.golang.org/api/cloudidentity/v1beta1"
+	oauth2api "google.golang.org/api/oauth2/v2"
+	"google.golang.org/api/option"
 	"xmanager_cloud/pkg/auth/jwks"
 
 	xpb "xmanager_cloud/api/protos/xid"
@@ -72,20 +75,31 @@ type TokenValidator interface {
 
 // Authorizer now includes a thread-safe cache for group memberships.
 type Authorizer struct {
-	IDService     *cloudidentity.Service
-	groupCache    map[string]cacheEntry
-	cacheLock     sync.RWMutex
-	cacheTTL      time.Duration
-	cacheErrorTTL time.Duration
-	iapAudiences  []string
-	iapIssuer     string
-	jwtSecret     []byte
-	jwksValidator TokenValidator
+	IDService      *cloudidentity.Service
+	groupCache     map[string]cacheEntry
+	cacheLock      sync.RWMutex
+	cacheTTL       time.Duration
+	cacheErrorTTL  time.Duration
+	iapAudiences   []string
+	iapIssuer      string
+	jwtSecret      []byte
+	jwksValidator  TokenValidator
+	oauth2Svc      *oauth2api.Service
+	allowedDomains []string
 }
 
 // SetJWKSValidator configures a JWKS token validator for OIDC token verification.
 func (a *Authorizer) SetJWKSValidator(v TokenValidator) {
 	a.jwksValidator = v
+}
+
+// SetAllowedDomains restricts access-token authentication to identities whose email is
+// in one of these domains (e.g. "google.com"). An empty list allows all domains.
+func (a *Authorizer) SetAllowedDomains(domains []string) {
+	a.allowedDomains = make([]string, len(domains))
+	for i, d := range domains {
+		a.allowedDomains[i] = strings.ToLower(strings.TrimSpace(d))
+	}
 }
 
 // NewAuthorizer creates a new Authorizer with an initialized group cache.
@@ -108,6 +122,11 @@ func NewAuthorizer(ctx context.Context, idService *cloudidentity.Service, cacheT
 		jwtSecret, _ = args[1].([]byte)
 	}
 
+	oauth2Svc, err := oauth2api.NewService(ctx, option.WithoutAuthentication())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create oauth2 tokeninfo service: %w", err)
+	}
+
 	return &Authorizer{
 		IDService:     idService,
 		groupCache:    make(map[string]cacheEntry),
@@ -116,5 +135,6 @@ func NewAuthorizer(ctx context.Context, idService *cloudidentity.Service, cacheT
 		iapAudiences:  iapAudiences,
 		iapIssuer:     iapIssuer,
 		jwtSecret:     jwtSecret,
+		oauth2Svc:     oauth2Svc,
 	}, nil
 }

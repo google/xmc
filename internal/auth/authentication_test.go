@@ -17,11 +17,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/api/idtoken"
+	oauth2api "google.golang.org/api/oauth2/v2"
+	"google.golang.org/api/option"
 	"google.golang.org/grpc/metadata"
 	"xmanager_cloud/pkg/auth/jwks"
 	"xmanager_cloud/pkg/auth/oauth2"
@@ -411,4 +416,68 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 			t.Errorf("AuthenticateUserFromContext succeeded, want error for numeric non-email subject")
 		}
 	})
+}
+
+func TestAuthenticateUserFromContext_AccessToken(t *testing.T) {
+	ctx := context.Background()
+	oldValidate := validate
+	defer func() { validate = oldValidate }()
+	validate = func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
+		return nil, errors.New("idtoken validation failed")
+	}
+	var tokeninfoCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokeninfoCalls.Add(1)
+		switch r.FormValue("access_token") {
+		case "good":
+			fmt.Fprint(w, `{"email":"alice@google.com","verified_email":true,"user_id":"123"}`)
+		case "unverified":
+			fmt.Fprint(w, `{"email":"alice@google.com","verified_email":false,"user_id":"123"}`)
+		case "other-domain":
+			fmt.Fprint(w, `{"email":"mallory@evil.com","verified_email":true,"user_id":"456"}`)
+		default:
+			http.Error(w, `{"error":"invalid_token"}`, http.StatusBadRequest)
+		}
+	}))
+	defer srv.Close()
+	svc, err := oauth2api.NewService(ctx, option.WithoutAuthentication(), option.WithEndpoint(srv.URL+"/"))
+	if err != nil {
+		t.Fatalf("oauth2api.NewService: %v", err)
+	}
+	a := &Authorizer{iapAudiences: []string{"test_audience"}, oauth2Svc: svc}
+	a.SetAllowedDomains([]string{" Google.COM "}) // normalized once by SetAllowedDomains
+
+	testCases := []struct {
+		token          string
+		wantEmail      string // empty means authentication must fail
+		skipsTokeninfo bool   // JWT-shaped tokens are left to the JWKS/IAP checks
+	}{
+		{token: "good", wantEmail: "alice@google.com"},
+		{token: "unverified"},
+		{token: "other-domain"},
+		{token: "invalid"},
+		{token: "header.payload.signature", skipsTokeninfo: true},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.token, func(t *testing.T) {
+			callsBefore := tokeninfoCalls.Load()
+			reqCtx := metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer "+tc.token))
+			email, userID, err := a.AuthenticateUserFromContext(reqCtx)
+			if called := tokeninfoCalls.Load() > callsBefore; called == tc.skipsTokeninfo {
+				t.Errorf("tokeninfo called = %t, want %t", called, !tc.skipsTokeninfo)
+			}
+			if tc.wantEmail == "" {
+				if err == nil {
+					t.Fatalf("AuthenticateUserFromContext() = %q, want error", email)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("AuthenticateUserFromContext() failed: %v", err)
+			}
+			if email != tc.wantEmail || userID != "123" {
+				t.Errorf("got (%q, %q), want (%q, %q)", email, userID, tc.wantEmail, "123")
+			}
+		})
+	}
 }

@@ -51,6 +51,10 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 		return jwksIdent.email, jwksIdent.userID, nil
 	}
 
+	if atIdent := a.authenticateViaAccessToken(ctx, jwt); atIdent != nil {
+		return atIdent.email, atIdent.userID, nil
+	}
+
 	payload, err := validateJWT(ctx, jwt, a.iapIssuer, a.iapAudiences)
 	if err != nil {
 		unverifiedPayload, parseErr := idtoken.ParsePayload(jwt)
@@ -79,6 +83,50 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 	logging.Info(ctx, "Authenticated request", "email", email, "user_id", userID)
 
 	return email, userID, nil
+}
+
+// Authenticates a caller from a raw Google OAuth2 access
+// token by introspecting it at Google's tokeninfo endpoint. It requires a verified
+// email and, when allowed domains are configured, that the email is in one of them.
+func (a *Authorizer) authenticateViaAccessToken(ctx context.Context, token string) *authIdentity {
+	if a.oauth2Svc == nil || strings.Count(token, ".") == 2 {
+		return nil
+	}
+	ti, err := a.oauth2Svc.Tokeninfo().AccessToken(token).Context(ctx).Do()
+	if err != nil {
+		logging.Debug(ctx, "authenticateViaAccessToken: tokeninfo validation failed", "error", err)
+		return nil
+	}
+	if ti == nil || ti.Email == "" || !ti.VerifiedEmail {
+		return nil
+	}
+	if !a.isEmailDomainAllowed(ti.Email) {
+		logging.Warn(ctx, "authenticateViaAccessToken: email domain not allowed", "email", ti.Email)
+		return nil
+	}
+	userID := ti.UserId
+	if userID == "" {
+		userID = ti.Email
+	}
+	logging.Info(ctx, "Authenticated request via access token", "email", ti.Email, "user_id", userID)
+	return &authIdentity{email: ti.Email, userID: userID}
+}
+
+func (a *Authorizer) isEmailDomainAllowed(email string) bool {
+	if len(a.allowedDomains) == 0 {
+		return true
+	}
+	at := strings.LastIndex(email, "@")
+	if at < 0 {
+		return false
+	}
+	domain := strings.ToLower(email[at+1:])
+	for _, d := range a.allowedDomains {
+		if d == domain {
+			return true
+		}
+	}
+	return false
 }
 
 type authIdentity struct {
