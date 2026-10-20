@@ -15,7 +15,6 @@
 package oauth2
 
 import (
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -29,11 +28,6 @@ import (
 func TestDeriveCLILoginMACKey(t *testing.T) {
 	// HKDF-SHA256 (RFC 5869) with an empty salt and a 32-byte output is
 	// PRK = HMAC(0^32, secret), OKM = HMAC(PRK, info || 0x01).
-	hmacSHA256 := func(key, data []byte) []byte {
-		mac := hmac.New(sha256.New, key)
-		mac.Write(data)
-		return mac.Sum(nil)
-	}
 	prk := hmacSHA256(make([]byte, sha256.Size), []byte(loginTestSecret))
 	want := hmacSHA256(prk, append([]byte(cliLoginMACInfo), 0x01))
 
@@ -64,13 +58,11 @@ func TestOpenCLILoginTicketRejects(t *testing.T) {
 	payload, mac, _ := strings.Cut(sealed, ".")
 	// signed seals an arbitrary payload with the authenticator's MAC key.
 	signed := func(payload string) string {
-		return payload + "." + base64.RawURLEncoding.EncodeToString(a.macCLILoginTicket(payload))
+		return payload + "." + base64.RawURLEncoding.EncodeToString(hmacSHA256(a.cliLoginKey, []byte(payload)))
 	}
 	// rawSecretMAC seals the genuine payload with the JWT secret instead of the HKDF sub-key.
 	rawSecretMAC := func() string {
-		m := hmac.New(sha256.New, []byte(loginTestSecret))
-		m.Write([]byte(payload))
-		return payload + "." + base64.RawURLEncoding.EncodeToString(m.Sum(nil))
+		return payload + "." + base64.RawURLEncoding.EncodeToString(hmacSHA256([]byte(loginTestSecret), []byte(payload)))
 	}
 	tampered := []byte(payload)
 	tampered[5] ^= 0x01

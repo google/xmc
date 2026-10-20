@@ -66,42 +66,49 @@ func (t cliLoginTicket) boundTo(oauthState string) bool {
 	return subtle.ConstantTimeCompare([]byte(t.OAuthStateHash), []byte(hashOAuthState(oauthState))) == 1
 }
 
-// sealCLILoginTicket encodes the ticket as base64url(JSON) "." base64url(HMAC-SHA256).
+// sealCLILoginTicket seals the ticket with the cli_login MAC key (see sealSigned).
 func (a *Authenticator) sealCLILoginTicket(t cliLoginTicket) (string, error) {
-	payload, err := json.Marshal(t)
-	if err != nil {
-		return "", fmt.Errorf("failed to encode cli_login ticket: %w", err)
-	}
-	encoded := base64.RawURLEncoding.EncodeToString(payload)
-	return encoded + "." + base64.RawURLEncoding.EncodeToString(a.macCLILoginTicket(encoded)), nil
+	return sealSigned(a.cliLoginKey, t)
 }
 
 // openCLILoginTicket verifies the MAC and expiry of a sealed ticket and decodes it.
 func (a *Authenticator) openCLILoginTicket(sealed string, now time.Time) (cliLoginTicket, error) {
-	encoded, mac, ok := strings.Cut(sealed, ".")
-	if !ok {
-		return cliLoginTicket{}, errInvalidCLILoginTicket
-	}
-	gotMAC, err := base64.RawURLEncoding.DecodeString(mac)
-	if err != nil || !hmac.Equal(gotMAC, a.macCLILoginTicket(encoded)) {
-		return cliLoginTicket{}, errInvalidCLILoginTicket
-	}
-	return decodeCLILoginTicket(encoded, now)
-}
-
-func decodeCLILoginTicket(encoded string, now time.Time) (cliLoginTicket, error) {
-	payload, err := base64.RawURLEncoding.DecodeString(encoded)
-	if err != nil {
-		return cliLoginTicket{}, errInvalidCLILoginTicket
-	}
 	var t cliLoginTicket
-	if err := json.Unmarshal(payload, &t); err != nil {
+	if !openSigned(a.cliLoginKey, sealed, &t) {
 		return cliLoginTicket{}, errInvalidCLILoginTicket
 	}
 	if now.Unix() >= t.ExpiresAt {
 		return cliLoginTicket{}, errExpiredCLILoginTicket
 	}
 	return t, nil
+}
+
+// sealSigned encodes v as base64url(JSON) "." base64url(HMAC-SHA256 of the encoded JSON).
+func sealSigned(key []byte, v any) (string, error) {
+	payload, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode signed value: %w", err)
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(payload)
+	return encoded + "." + base64.RawURLEncoding.EncodeToString(hmacSHA256(key, []byte(encoded))), nil
+}
+
+// openSigned verifies the MAC of a value sealed by sealSigned with key and decodes it into v. It
+// reports whether the value is authentic and well formed.
+func openSigned(key []byte, sealed string, v any) bool {
+	encoded, mac, ok := strings.Cut(sealed, ".")
+	if !ok {
+		return false
+	}
+	gotMAC, err := base64.RawURLEncoding.DecodeString(mac)
+	if err != nil || !hmac.Equal(gotMAC, hmacSHA256(key, []byte(encoded))) {
+		return false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return false
+	}
+	return json.Unmarshal(payload, v) == nil
 }
 
 // deriveCLILoginMACKey derives the cli_login cookie MAC key from the JWT secret with
@@ -114,8 +121,8 @@ func deriveCLILoginMACKey(jwtSecret []byte) ([]byte, error) {
 	return key, nil
 }
 
-func (a *Authenticator) macCLILoginTicket(encoded string) []byte {
-	mac := hmac.New(sha256.New, a.cliLoginKey)
-	mac.Write([]byte(encoded))
+func hmacSHA256(key, data []byte) []byte {
+	mac := hmac.New(sha256.New, key)
+	mac.Write(data)
 	return mac.Sum(nil)
 }

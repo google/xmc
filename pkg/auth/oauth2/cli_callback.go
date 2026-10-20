@@ -96,7 +96,7 @@ func (a *Authenticator) completeCLILogin(ctx context.Context, w http.ResponseWri
 		redirectToCLILoopback(w, r, ticket, url.Values{"error": {cliErrorServerError}})
 		return
 	}
-	code, err := a.issueCLILoginCode(ctx, identity, ticket.CodeChallenge, time.Now())
+	code, err := a.issueCLILoginCode(ctx, identity, ticket.CodeChallenge, cliLoopbackCodeTTL, time.Now())
 	if err != nil {
 		logging.Error(ctx, "[CLI Login] Failed to issue login code", "email", identity.email, "error", err)
 		redirectToCLILoopback(w, r, ticket, url.Values{"error": {cliErrorServerError}})
@@ -105,8 +105,8 @@ func (a *Authenticator) completeCLILogin(ctx context.Context, w http.ResponseWri
 	redirectToCLILoopback(w, r, ticket, url.Values{"code": {code}})
 }
 
-// issueCLILoginCode stores a new one-time code for identity and returns it.
-func (a *Authenticator) issueCLILoginCode(ctx context.Context, identity loginIdentity, codeChallenge string, now time.Time) (string, error) {
+// issueCLILoginCode stores a new one-time code for identity, redeemable for ttl, and returns it.
+func (a *Authenticator) issueCLILoginCode(ctx context.Context, identity loginIdentity, codeChallenge string, ttl time.Duration, now time.Time) (string, error) {
 	code, hash, err := newCLILoginCode()
 	if err != nil {
 		return "", err
@@ -116,7 +116,7 @@ func (a *Authenticator) issueCLILoginCode(ctx context.Context, identity loginIde
 		Email:         identity.email,
 		Name:          identity.name,
 		CodeChallenge: codeChallenge,
-		ExpiresAt:     now.Add(cliLoopbackCodeTTL),
+		ExpiresAt:     now.Add(ttl),
 	}
 	if err := a.cliCodes.Save(ctx, record); err != nil {
 		return "", err

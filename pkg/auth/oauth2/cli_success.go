@@ -42,8 +42,20 @@ func (a *Authenticator) HandleCLISuccess(w http.ResponseWriter, r *http.Request)
 	if r.URL.Query().Has("error") {
 		title, message = "Sign-in failed", "Return to the terminal for details."
 	}
+	writeCLIResultPage(w, http.StatusOK, title, message)
+}
+
+// writeCLIResultPage writes cliResultPage with a constant title and message.
+func writeCLIResultPage(w http.ResponseWriter, status int, title, message string) {
+	writeCLIPageHeaders(w, status)
+	fmt.Fprintf(w, cliResultPage, title, message)
+}
+
+// writeCLIPageHeaders writes the status and the headers shared by the CLI login HTML pages: they
+// are never cached and never leak the URL, which may carry an authorization code, as a referrer.
+func writeCLIPageHeaders(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	fmt.Fprintf(w, cliResultPage, title, message)
+	w.WriteHeader(status)
 }
