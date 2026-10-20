@@ -107,6 +107,13 @@ func TestVerifyUserInfo(t *testing.T) {
 	}
 }
 
+func TestVerifyUserInfoRejectsNil(t *testing.T) {
+	got := toIdentityResult(NewAuthenticator(baseLoginConfig()).verifyUserInfo(nil))
+	if diff := cmp.Diff(identityResult{NotAdmitted: true, Err: true}, got); diff != "" {
+		t.Errorf("verifyUserInfo(nil) mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestUsesGoogleSignIn(t *testing.T) {
 	tests := []struct {
 		name string

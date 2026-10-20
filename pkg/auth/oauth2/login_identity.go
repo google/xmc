@@ -56,6 +56,9 @@ func (a *Authenticator) admitLogin(ctx context.Context, info *GoogleUserInfo) (l
 // Google accounts registered with a corporate address (they carry no `hd`) while accepting users
 // whose primary Workspace domain differs from an allowlisted alias or secondary email domain.
 func (a *Authenticator) verifyUserInfo(info *GoogleUserInfo) (loginIdentity, error) {
+	if info == nil {
+		return loginIdentity{}, fmt.Errorf("%w: no userinfo", errNotAdmitted)
+	}
 	identity := loginIdentity{
 		email:   strings.ToLower(strings.TrimSpace(info.Email)),
 		name:    info.Name,
