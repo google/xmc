@@ -220,6 +220,7 @@ auth:
   adminIamRole: "roles/owner"
   # Optional OAuth & authentication overrides for non-GCP, KinD, or local dev environments:
   # jwksUrl: ""      # Explicit JWKS URL for OIDC token verification (e.g. "https://auth.example.com/.well-known/jwks.json")
+  #                  # Required for Microsoft Entra ID ("https://login.microsoftonline.com/<tenant-id>/discovery/v2.0/keys"): the issuerUrl-derived "<issuerUrl>/keys" does not match it
   # issuerUrl: ""    # OIDC issuer URL (e.g. "https://auth.example.com"); automatically derives jwksUrl if jwksUrl is not set
   # redirectUrl: ""  # Defaults to "https://{{ apiHostname }}/api/callback"
   # frontendUrl: ""  # Defaults to "https://{{ uiHostname }}"

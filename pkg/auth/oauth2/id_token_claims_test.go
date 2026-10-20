@@ -77,6 +77,13 @@ func TestNewIDTokenClaimsVerifier(t *testing.T) {
 	if _, ok := newIDTokenClaimsVerifier(entraLoginConfig()).(*jwks.Validator); !ok {
 		t.Error("newIDTokenClaimsVerifier() is not a *jwks.Validator for the upn claim")
 	}
+	for _, issuer := range []string{"", "https://cloud.google.com/iap"} {
+		cfg := entraLoginConfig()
+		cfg.IDTokenIssuer = issuer
+		if v := newIDTokenClaimsVerifier(cfg); v != nil {
+			t.Errorf("newIDTokenClaimsVerifier() = %v with issuer %q, want nil (fail closed)", v, issuer)
+		}
+	}
 }
 
 func TestApplyIDTokenClaims(t *testing.T) {

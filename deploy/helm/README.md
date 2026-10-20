@@ -164,9 +164,11 @@ accepts `email`.
 > [!WARNING]
 > Users can edit `preferred_username` in some providers, such as Keycloak and
 > Azure AD B2C, which lets them claim any address. Use it only when the provider
-> prevents this. For Entra ID, prefer `upn` with a tenant-specific issuer: the
-> issuer pins the directory (`tid`), whose `upn` suffixes are domains the tenant
-> has verified.
+> prevents this. It is refused for Entra ID, whose users can change it too: use
+> `upn` with a tenant-specific issuer, which pins the directory (`tid`), whose
+> `upn` suffixes are domains the tenant has verified.
+
+Entra ID guest accounts, whose `upn` contains `#EXT#`, cannot sign in.
 
 #### Microsoft Entra ID example
 

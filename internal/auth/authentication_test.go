@@ -629,6 +629,12 @@ func TestAuthenticateUserFromContext_JWKSEmailPolicy(t *testing.T) {
 			claims: jwks.Claims{UPN: "jdoe", RegisteredClaims: jwt.RegisteredClaims{Subject: sub}},
 			want:   unauthenticated,
 		},
+		{
+			name:   "Entra ID guest is refused without subject fallback",
+			policy: upn,
+			claims: jwks.Claims{UPN: "jdoe_contoso.com#EXT#@example.onmicrosoft.com", RegisteredClaims: jwt.RegisteredClaims{Subject: "jdoe@contoso.com"}},
+			want:   unauthenticated,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

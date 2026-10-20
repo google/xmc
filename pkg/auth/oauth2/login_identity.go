@@ -61,9 +61,9 @@ func (a *Authenticator) verifyUserInfo(info *GoogleUserInfo) (loginIdentity, err
 		return loginIdentity{}, fmt.Errorf("%w: no userinfo", errNotAdmitted)
 	}
 	identity := loginIdentity{name: info.Name, picture: info.Picture}
-	email, ok := a.Config.EmailClaim.Address(IdentityClaims{Email: info.Email, PreferredUsername: info.PreferredUsername, UPN: info.UPN})
-	if !ok {
-		return identity, fmt.Errorf("%w: no email address in the %q claim", errNotAdmitted, a.Config.EmailClaim)
+	email, err := a.Config.EmailClaim.Address(IdentityClaims{Email: info.Email, PreferredUsername: info.PreferredUsername, UPN: info.UPN})
+	if err != nil {
+		return identity, fmt.Errorf("%w: %w", errNotAdmitted, err)
 	}
 	identity.email = email
 	if a.Config.EmailClaim.isEmail() && !EmailVerifiedAccepted(info.EmailVerified, a.Config.requiresVerifiedEmail()) {

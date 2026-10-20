@@ -15,6 +15,7 @@
 package oauth2
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -73,28 +74,30 @@ func TestEmailVerifiedAccepted(t *testing.T) {
 
 func TestEmailClaimAddress(t *testing.T) {
 	claims := IdentityClaims{Email: "user@example.com", PreferredUsername: " Jane.Doe@Contoso.com ", UPN: "jdoe@contoso.com"}
-	type result struct {
-		Email string
-		OK    bool
-	}
 	tests := []struct {
-		name   string
-		claim  EmailClaim
-		claims IdentityClaims
-		want   result
+		name    string
+		claim   EmailClaim
+		claims  IdentityClaims
+		want    string
+		wantErr error
 	}{
-		{name: "email", claim: EmailClaimEmail, claims: claims, want: result{"user@example.com", true}},
-		{name: "zero claim reads email", claims: claims, want: result{"user@example.com", true}},
-		{name: "preferred_username", claim: EmailClaimPreferredUsername, claims: claims, want: result{"jane.doe@contoso.com", true}},
-		{name: "upn", claim: EmailClaimUPN, claims: claims, want: result{"jdoe@contoso.com", true}},
-		{name: "configured claim missing", claim: EmailClaimUPN, claims: IdentityClaims{Email: "user@example.com"}},
-		{name: "username that is not an email", claim: EmailClaimPreferredUsername, claims: IdentityClaims{PreferredUsername: "jdoe"}},
+		{name: "email", claim: EmailClaimEmail, claims: claims, want: "user@example.com"},
+		{name: "zero claim reads email", claims: claims, want: "user@example.com"},
+		{name: "preferred_username", claim: EmailClaimPreferredUsername, claims: claims, want: "jane.doe@contoso.com"},
+		{name: "upn", claim: EmailClaimUPN, claims: claims, want: "jdoe@contoso.com"},
+		{name: "configured claim missing", claim: EmailClaimUPN, claims: IdentityClaims{Email: "user@example.com"}, wantErr: errNoEmailAddress},
+		{name: "username that is not an email", claim: EmailClaimPreferredUsername, claims: IdentityClaims{PreferredUsername: "jdoe"}, wantErr: errNoEmailAddress},
+		{name: "Entra ID guest", claim: EmailClaimUPN, claims: IdentityClaims{UPN: "jdoe_contoso.com#EXT#@fabrikam.onmicrosoft.com"}, wantErr: ErrGuestAccount},
+		{name: "Entra ID guest in lowercase", claim: EmailClaimUPN, claims: IdentityClaims{UPN: "jdoe_contoso.com#ext#@fabrikam.onmicrosoft.com"}, wantErr: ErrGuestAccount},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			email, ok := tt.claim.Address(tt.claims)
-			if diff := cmp.Diff(tt.want, result{email, ok}); diff != "" {
-				t.Errorf("Address() mismatch (-want +got):\n%s", diff)
+			email, err := tt.claim.Address(tt.claims)
+			if !errors.Is(err, tt.wantErr) || (err != nil) != (tt.wantErr != nil) {
+				t.Fatalf("Address() error = %v, want %v", err, tt.wantErr)
+			}
+			if email != tt.want {
+				t.Errorf("Address() = %q, want %q", email, tt.want)
 			}
 		})
 	}
@@ -217,6 +220,21 @@ func TestLoadConfigEmailPolicy(t *testing.T) {
 			name:    "Entra ID alias host rejects trust-issuer for email",
 			env:     map[string]string{"AUTH_URL": "https://login.windows.net/contoso.com/oauth2/authorize", "OIDC_EMAIL_VERIFICATION": "trust-issuer"},
 			wantErr: true,
+		},
+		{name: "Entra ID refuses preferred_username", env: entraUPN(func(e map[string]string) { e["OIDC_EMAIL_CLAIM"] = "preferred_username" }), wantErr: true},
+		{
+			name: "Entra ID issuer refuses preferred_username",
+			env: entraUPN(func(e map[string]string) {
+				e["AUTH_URL"], e["OIDC_EMAIL_CLAIM"] = dexAuthURL, "preferred_username"
+			}),
+			wantErr: true,
+		},
+		{
+			name: "other provider preferred_username",
+			env: entraUPN(func(e map[string]string) {
+				e["AUTH_URL"], e["OIDC_EMAIL_CLAIM"], e["IAP_EXPECTED_ISSUER"] = dexAuthURL, "preferred_username", "https://dex.example.com"
+			}),
+			want: emailPolicy{EmailVerificationTrustIssuer, EmailClaimPreferredUsername},
 		},
 	}
 	for _, tt := range tests {

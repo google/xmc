@@ -52,9 +52,11 @@ func validateIDTokenSource(cfg *Config) error {
 }
 
 // newIDTokenClaimsVerifier returns the verifier of sign-in ID tokens, or nil when the email is
-// read from the `email` userinfo claim.
+// read from the `email` userinfo claim. It also returns nil, which makes every sign-in fail, when
+// the ID token source is not pinned (see validateIDTokenSource), in case cfg did not come from
+// LoadConfig.
 func newIDTokenClaimsVerifier(cfg *Config) IDTokenClaimsVerifier {
-	if cfg.EmailClaim.isEmail() {
+	if cfg.EmailClaim.isEmail() || validateIDTokenSource(cfg) != nil {
 		return nil
 	}
 	return jwks.NewValidator(jwks.ValidatorConfig{JWKSURL: cfg.IDTokenJWKSURL, ExpectedIssuer: cfg.IDTokenIssuer})

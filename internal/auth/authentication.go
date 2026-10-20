@@ -171,11 +171,16 @@ func (a *Authorizer) verifyJWKSEmail(ctx context.Context, claims *jwks.Claims) e
 }
 
 // jwksEmailAddress returns the lowercased email address in the token's configured email claim,
-// falling back to an email-shaped subject (as used by service account tokens).
+// falling back to an email-shaped subject (as used by service account tokens). Entra ID guest
+// accounts are refused.
 func (a *Authorizer) jwksEmailAddress(claims *jwks.Claims) (string, bool) {
 	identity := oauth2.IdentityClaims{Email: claims.Email, PreferredUsername: claims.PreferredUsername, UPN: claims.UPN}
-	if email, ok := a.jwksEmail.Claim.Address(identity); ok {
+	email, err := a.jwksEmail.Claim.Address(identity)
+	if err == nil {
 		return email, true
+	}
+	if errors.Is(err, oauth2.ErrGuestAccount) {
+		return "", false
 	}
 	return oauth2.BareEmailAddress(claims.Subject)
 }

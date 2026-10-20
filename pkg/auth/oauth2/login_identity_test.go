@@ -31,6 +31,8 @@ type identityResult struct {
 	Picture     string
 	NotAdmitted bool
 	Err         bool
+	// Guest is only set by tests that check for ErrGuestAccount.
+	Guest bool
 }
 
 func toIdentityResult(identity loginIdentity, err error) identityResult {
@@ -174,12 +176,20 @@ func TestVerifyUserInfoEmailClaim(t *testing.T) {
 		{name: "upn ignores email_verified", claim: EmailClaimUPN, info: &GoogleUserInfo{UPN: "JDoe@Contoso.com", EmailVerified: false}, want: identityResult{Email: entraLoginEmail}},
 		{name: "preferred_username", claim: EmailClaimPreferredUsername, info: &GoogleUserInfo{PreferredUsername: "jdoe@contoso.com", UPN: "other@contoso.com"}, want: identityResult{Email: entraLoginEmail}},
 		{name: "upn that is not an email", claim: EmailClaimUPN, info: &GoogleUserInfo{Email: entraLoginEmail, UPN: "jdoe"}, want: identityResult{NotAdmitted: true, Err: true}},
+		{
+			name:  "Entra ID guest",
+			claim: EmailClaimUPN,
+			info:  &GoogleUserInfo{UPN: "jdoe_contoso.com#EXT#@contoso.onmicrosoft.com"},
+			want:  identityResult{NotAdmitted: true, Err: true, Guest: true},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := entraLoginConfig()
 			cfg.EmailClaim = tt.claim
-			got := toIdentityResult(NewAuthenticator(cfg).verifyUserInfo(tt.info))
+			identity, err := NewAuthenticator(cfg).verifyUserInfo(tt.info)
+			got := toIdentityResult(identity, err)
+			got.Guest = errors.Is(err, ErrGuestAccount)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("verifyUserInfo() mismatch (-want +got):\n%s", diff)
 			}

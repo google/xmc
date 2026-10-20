@@ -17,6 +17,7 @@ package oauth2
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"net/mail"
 	"slices"
@@ -68,15 +69,35 @@ type IdentityClaims struct {
 	UPN               string
 }
 
-// Address returns the email address held in claim c of claims (see BareEmailAddress).
-func (c EmailClaim) Address(claims IdentityClaims) (string, bool) {
+// ErrGuestAccount reports a Microsoft Entra ID guest (B2B) account, whose user principal name is
+// derived from its home address, as in jdoe_contoso.com#EXT#@fabrikam.onmicrosoft.com.
+var ErrGuestAccount = errors.New("guest accounts of Microsoft Entra ID (#EXT# user principal names) are not supported")
+
+// errNoEmailAddress reports that the configured email claim is missing or not an email address.
+var errNoEmailAddress = errors.New("no email address")
+
+// Address returns the email address held in claim c of claims (see BareEmailAddress). Entra ID
+// guest accounts are refused with ErrGuestAccount.
+func (c EmailClaim) Address(claims IdentityClaims) (string, error) {
+	value := c.value(claims)
+	if strings.Contains(strings.ToUpper(value), "#EXT#") {
+		return "", ErrGuestAccount
+	}
+	email, ok := BareEmailAddress(value)
+	if !ok {
+		return "", fmt.Errorf("%w in the %q claim", errNoEmailAddress, cmp.Or(c, EmailClaimEmail))
+	}
+	return email, nil
+}
+
+func (c EmailClaim) value(claims IdentityClaims) string {
 	switch c {
 	case EmailClaimPreferredUsername:
-		return BareEmailAddress(claims.PreferredUsername)
+		return claims.PreferredUsername
 	case EmailClaimUPN:
-		return BareEmailAddress(claims.UPN)
+		return claims.UPN
 	default:
-		return BareEmailAddress(claims.Email)
+		return claims.Email
 	}
 }
 
@@ -194,7 +215,17 @@ func validateEmailClaim(cfg *Config, verification EmailVerification, claim Email
 	if verification != EmailVerificationTrustIssuer {
 		return fmt.Errorf("`OIDC_EMAIL_CLAIM=%s` requires `OIDC_EMAIL_VERIFICATION=%s`: email_verified does not cover it", claim, EmailVerificationTrustIssuer)
 	}
+	if claim == EmailClaimPreferredUsername && usesEntra(cfg) {
+		return fmt.Errorf("`OIDC_EMAIL_CLAIM=%s` cannot be used with Microsoft Entra ID, whose users can change it; use %q", claim, EmailClaimUPN)
+	}
 	return validateIDTokenSource(cfg)
+}
+
+// usesEntra reports whether the sign-in authority or the ID token issuer is Microsoft Entra ID.
+func usesEntra(cfg *Config) bool {
+	_, authority := entraTenant(cfg.AuthURL)
+	_, issuer := entraTenant(cfg.IDTokenIssuer)
+	return authority || issuer
 }
 
 func warnTrustIssuer(ctx context.Context, cfg *Config, claim EmailClaim) {
