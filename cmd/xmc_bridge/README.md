@@ -12,8 +12,8 @@ graph TD
         CRD["Component CRD<br>(xmc.dev/v1alpha1)"]
         Deploy["xmc-bridge Deployment<br>(controller daemon)"]
         CM["ConfigMap<br>(xmc-bridge-config)"]
-        RBAC["ClusterRole & Binding<br>(least-privilege RBAC)"]
-        SA["ServiceAccount<br>(xmc-bridge)"]
+        RBAC["Role & RoleBinding<br>(least-privilege, namespaced)"]
+        SA["ServiceAccount<br>(xmc-bridge-sa)"]
     end
 
     Deploy -.->|"envFrom"| CM
@@ -71,6 +71,14 @@ Configuration can be supplied via environment variables (mounted from `xmc-bridg
 
 Once elected, `xmc-bridge` invokes `HydrateFromCluster` to restore active 1P component states from the `xmc-component-values` ConfigMap, preventing redundant Helm release revision increments and ensuring post-restart deactivations execute cleanly. It runs concurrently with the first reconciles: each 1P Component also hydrates its own state before its Helm actuation, and a reconcile whose dependency gate runs before any hydration falls back to the Component's `DependenciesReady` and `Ready` conditions, so at worst one pass reports `DependenciesNotReady` instead of `HelmUpgradePending` without touching the workload. A torn-down component stays recorded as inactive, so no namespace hydration re-activates a purged or orphaned component from the ConfigMap.
 
+### Cluster Ownership Fencing & DR Takeover
+
+At startup, `xmc-bridge` reads the `kube-system` `Namespace` UID to establish a stable cluster identity `(clusterUID, --cluster-name, --ownership-epoch)` and runs a leader-elected `ClusterFence` loop that calls `DeclareClusterEpoch` immediately and every 5 minutes:
+
+- **Active writer**: When CMS accepts the declaration (`OUTCOME_CREATED`, `OUTCOME_REFRESHED`, `OUTCOME_RAISED`, or `OUTCOME_TAKEOVER`), `xmc-bridge` attaches `RequestSource` to every CMS mutation (`SetComponentIntent`, `UpdateObservedGeneration`, `PrepareDeactivation`, `CompleteDeactivation`, `ExecuteDeletion`).
+- **Cold standby (`CLUSTER_FENCED` / `CLUSTER_EPOCH_REGRESSED`)**: When another cluster holds the CMS fence at an equal or higher epoch, `xmc-bridge` enters cold standby without crashing: it performs no Helm installs/upgrades or CMS writes, surfaces `SourceConflict=True` (`Reason: ClusterFenced` or `ClusterEpochRegressed`), `Ready=False` (`Reason: SourceConflict`), and `Stalled=True` (`Reason: SourceConflict`) on local CRs, and re-evaluates all CRs every 15 minutes or immediately when the fence state changes. Deleting a CR locally in a fenced cluster cleans up only that CR's own local Helm release (`xmc-cmp-<name>`, unless a newer incarnation of the same CR is active), emits a `StaleDeletion` Warning Event, and releases the `xmc.dev/cms-cleanup` finalizer without deleting the CMS record.
+- **DR failover & failback**: To promote a standby DR cluster (or fail back to the primary cluster), commit a strictly higher `componentsDeployment.ownershipEpoch: <active_epoch + 1>` in the target cluster's GitOps values. When synced, `xmc-bridge` declares the higher epoch (`OUTCOME_TAKEOVER`), atomically reassigning all active owned components in CMS so the target cluster's CRs adopt them under their existing `ComponentId` while fencing the former primary.
+
 ### Reconciliation
 
 `xmc-bridge` runs a controller-runtime manager whose cache watches the Component CRs of `--namespace` only. Reconciles and the dependents watch read Components from that cache, so the API server sees one list and watch per bridge rather than reads per Component. Each Component is reconciled on its own work queue item:
@@ -102,11 +110,21 @@ The component bridge controller is feature-flagged under `componentsDeployment` 
 componentsDeployment:
   enabled: false                                  # Set to true to deploy xmc-bridge controller
   cmsAddress: "grpc-service:50051"                # In-cluster gRPC endpoint for ESS/CMS
+  clusterName: ""                                 # Cluster label in CMS fence declarations (defaults to release name)
+  ownershipEpoch: 1                               # Monotonic CMS ownership fencing epoch (>= 1)
   chartPath: ""                                   # Optional base Helm chart directory or fallback chart path
   probeInterval: "5s"                             # Per-Component re-probe delay after a successful pass
   probeTimeout: "2s"                              # Timeout per workload health probe
   reconcileTimeout: "60s"                         # Timeout per Component reconcile pass
   maxConcurrentReconciles: 1                      # Components reconciled in parallel
+  rbac:
+    wrapperRules:                                 # 3P wrapper CRDs xmc-bridge may get (spec.wrapperRef)
+      - apiGroups: ["clickhouse.altinity.com"]
+        resources: ["clickhouseinstallations"]
+      - apiGroups: ["cluster.redpanda.com", "redpanda.vectorized.io"]
+        resources: ["clusters", "redpandas"]
+      - apiGroups: ["ray.io"]
+        resources: ["rayclusters", "rayservices"]
 
 xmc_bridge_custom_image: ""                       # Optional custom container image override
 ```
@@ -156,10 +174,14 @@ Removing the CRD is a deliberate manual step. While `xmc-bridge` is still runnin
 
 ## Security & RBAC Least Privilege
 
-- **ServiceAccount**: `xmc-bridge` runs under a dedicated service account with `automountServiceAccountToken: true`.
-- **ClusterRole**: Grants least-privilege permissions:
-  - Full CRUD permissions on `components.xmc.dev` (including `/status` and `/finalizers`).
-  - Workload management permissions on `apps/deployments` and `core/services` for 1P components.
-  - Read-only (`get`, `list`, `watch`) discovery permissions across all API groups (`*`) to support dynamic 3P CR status detection.
-  - Security contexts enforce read-only root filesystems, non-root execution, privilege escalation disabled, and dropping all capabilities (`ALL`).
-- **Leader election Role**: `xmc-bridge-leader-election` grants `create` on `coordination.k8s.io` leases, and `get` and `update` on the `xmc-bridge` Lease only. It is a namespaced Role in the release namespace also when `componentsDeployment.rbac.clusterScope` is `true`, so the bridge cannot write Leases of other namespaces.
+- **ServiceAccount**: `xmc-bridge` runs under a dedicated service account (`xmc-bridge-sa`) with `automountServiceAccountToken: true`.
+- **Namespaced Role (`xmc-bridge-role`)**: A `Role` bound in the release namespace. It has no wildcard (`*`) API groups or resources and grants only the requests `xmc-bridge` and its Helm client make (`create` cannot be limited by `resourceNames`):
+  - `components.xmc.dev` `components`: `get`, `list`, `watch`, `patch`; `components/status`: `update`, `patch`.
+  - `core/events`: `create`, `patch`.
+  - `core/configmaps`: `create`, plus `get`, `update` on `xmc-component-values` only.
+  - `core/secrets` (Helm release storage, one Secret per revision): `get`, `list`, `create`, `update`, `delete`.
+  - `core/services`, `apps/deployments`, `autoscaling/horizontalpodautoscalers`, `rbac.authorization.k8s.io` `roles`/`rolebindings` and `networking.k8s.io` `networkpolicies`: `create`, plus `get`, `update`, `patch`, `delete` limited by `resourceNames` to the objects of the shipped 1P chart (`ingestion-gateway-deployment`, `ingestion-gateway-service`, `ingestion-gateway-hpa`, `ingestion-gateway-components-reader`, `ingestion-gateway-components-reader-binding`, `ingestion-gateway-network-policy`). A custom 1P chart loaded through `--chart-path` or `spec.parameters.chartPath` can only manage objects with these names; add its object names to `deploy/helm/templates/components/rbac.yaml` first, or its Helm install fails with `Forbidden`.
+  - `componentsDeployment.rbac.wrapperRules` (3P wrapper CRDs inspected via `spec.wrapperRef`): `get`. The defaults cover `clickhouse.altinity.com/clickhouseinstallations`, `cluster.redpanda.com` & `redpanda.vectorized.io` `clusters`/`redpandas`, and `ray.io` `rayclusters`/`rayservices`. A cross-namespace `wrapperRef` is rejected (`CrossNamespaceForbidden`), so wrapper resources are only read in the release namespace.
+- **Cluster identity ClusterRole (`xmc-bridge-cluster-identity-<namespace>`)**: Grants `get` on `namespaces` restricted to `resourceNames: ["kube-system"]` so `xmc-bridge` can read the cluster UID for CMS ownership fence declarations.
+- **Leader election Role (`xmc-bridge-leader-election`)**: Grants `create` on `coordination.k8s.io` leases, and `get` and `update` on the `xmc-bridge` Lease only. It is a namespaced `Role` in the release namespace, so the bridge cannot write Leases of other namespaces.
+- **Pod & Container Security**: Enforces `seccompProfile: RuntimeDefault`, read-only root filesystems, non-root execution, privilege escalation disabled, and dropping all capabilities (`ALL`).

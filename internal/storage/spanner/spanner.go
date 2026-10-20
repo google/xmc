@@ -26,6 +26,7 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/artifact"
+	"xmanager_cloud/internal/storage/spanner/dashboard"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/internal/storage/spanner/operation"
 	"xmanager_cloud/internal/storage/spanner/pausedtask"
@@ -43,6 +44,7 @@ type XIDRepository = xid.Repository
 type StatusMessageRepository = statusmessage.Repository
 type OperationRepository = operation.Repository
 type StatusHistoryRepository = statushistory.Repository
+type DashboardRepository = dashboard.Repository
 type PauseStateRepository = pausestate.Repository
 type PausedTaskRepository = pausedtask.Repository
 
@@ -58,6 +60,7 @@ type Storage struct {
 	*StatusMessageRepository
 	*OperationRepository
 	*StatusHistoryRepository
+	*DashboardRepository
 	pauseStateRepository *PauseStateRepository
 	pausedTaskRepository *PausedTaskRepository
 }
@@ -134,6 +137,11 @@ func NewStorage(client *spanner.Client) (*Storage, error) {
 
 	statusHistoryRepo := statushistory.NewRepository(client)
 
+	dashboardRepo, err := dashboard.NewRepository(client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dashboard repository: %w", err)
+	}
+
 	pauseStateRepo, err := pausestate.NewRepository(client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pausestate repository: %w", err)
@@ -153,6 +161,7 @@ func NewStorage(client *spanner.Client) (*Storage, error) {
 		StatusMessageRepository: statusMsgRepo,
 		OperationRepository:     opRepo,
 		StatusHistoryRepository: statusHistoryRepo,
+		DashboardRepository:     dashboardRepo,
 		pauseStateRepository:    pauseStateRepo,
 		pausedTaskRepository:    pausedTaskRepo,
 	}, nil
