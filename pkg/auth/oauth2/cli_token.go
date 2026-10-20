@@ -16,9 +16,7 @@ package oauth2
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +25,7 @@ import (
 	"regexp"
 	"time"
 
+	"golang.org/x/oauth2"
 	"xmanager_cloud/internal/logging"
 )
 
@@ -176,9 +175,7 @@ func (a *Authenticator) redeemCLILoginCode(ctx context.Context, plaintext, verif
 }
 
 func verifyPKCES256(verifier, challenge string) bool {
-	sum := sha256.Sum256([]byte(verifier))
-	computed := base64.RawURLEncoding.EncodeToString(sum[:])
-	return subtle.ConstantTimeCompare([]byte(computed), []byte(challenge)) == 1
+	return subtle.ConstantTimeCompare([]byte(oauth2.S256ChallengeFromVerifier(verifier)), []byte(challenge)) == 1
 }
 
 func (a *Authenticator) writeRedeemError(ctx context.Context, w http.ResponseWriter, err error) {

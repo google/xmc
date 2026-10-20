@@ -104,6 +104,7 @@ func NewAuthenticator(cfg *Config) *Authenticator {
 	}
 	a.IDTokenValidator = idtoken.Validate
 	a.IDTokenClaimsVerifier = newIDTokenClaimsVerifier(cfg)
+	configureMockIfEnabled(a)
 
 	return a
 }
