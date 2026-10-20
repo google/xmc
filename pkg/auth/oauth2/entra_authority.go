@@ -21,9 +21,14 @@ import (
 	"strings"
 )
 
-// entraHosts are the Microsoft Entra ID sign-in hosts of the public and sovereign clouds.
+// entraHosts are the Microsoft Entra ID sign-in and token issuer hosts of the public and
+// sovereign clouds, including the legacy aliases of login.microsoftonline.com and the v1 token
+// issuer host (sts.windows.net).
 var entraHosts = []string{
 	"login.microsoftonline.com",
+	"login.microsoft.com",
+	"login.windows.net",
+	"sts.windows.net",
 	"login.microsoftonline.us",
 	"login.partner.microsoftonline.cn",
 	"login.chinacloudapi.cn",

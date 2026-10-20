@@ -32,6 +32,9 @@ func TestEntraTenant(t *testing.T) {
 		{url: "https://login.microsoftonline.com/Contoso.onmicrosoft.com/oauth2/v2.0/authorize", want: result{"contoso.onmicrosoft.com", true}},
 		{url: "https://LOGIN.microsoftonline.us/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0", want: result{"9188040d-6c67-4c5b-b112-36a304b66dad", true}},
 		{url: "https://login.microsoftonline.com", want: result{"", true}},
+		{url: "https://login.microsoft.com/contoso.com/oauth2/v2.0/authorize", want: result{"contoso.com", true}},
+		{url: "https://login.windows.net/contoso.com/oauth2/authorize", want: result{"contoso.com", true}},
+		{url: "https://sts.windows.net/9188040d-6c67-4c5b-b112-36a304b66dad/", want: result{"9188040d-6c67-4c5b-b112-36a304b66dad", true}},
 		{url: "https://accounts.google.com/o/oauth2/v2/auth"},
 		{url: "https://dex.example.com/auth"},
 		{url: "://bad"},
@@ -57,6 +60,8 @@ func TestValidateEntraAuthority(t *testing.T) {
 		{url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize", wantErr: true},
 		{url: "https://login.microsoftonline.com/Organizations/oauth2/v2.0/authorize", wantErr: true},
 		{url: "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize", wantErr: true},
+		{url: "https://login.microsoft.com/common/oauth2/v2.0/authorize", wantErr: true},
+		{url: "https://login.windows.net/organizations/oauth2/authorize", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.url, func(t *testing.T) {

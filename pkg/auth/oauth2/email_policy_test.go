@@ -126,6 +126,7 @@ func TestLoadConfigEmailVerification(t *testing.T) {
 		{name: "unknown policy", authURL: dexAuthURL, verification: "skip", wantErr: true},
 		{name: "Entra ID default", authURL: entraAuthURL, want: EmailVerificationRequire},
 		{name: "Entra ID rejects trust-issuer (nOAuth)", authURL: entraAuthURL, verification: "trust-issuer", wantErr: true},
+		{name: "Entra ID alias host rejects trust-issuer", authURL: "https://login.windows.net/contoso.com/oauth2/authorize", verification: "trust-issuer", wantErr: true},
 		{name: "multi-tenant Entra ID authority", authURL: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize", wantErr: true},
 	}
 	for _, tt := range tests {
