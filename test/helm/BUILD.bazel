@@ -155,22 +155,6 @@ py_test(
 )
 
 py_test(
-    name = "disable_authentication_guard_test",
-    srcs = ["disable_authentication_guard_test.py"],
-    data = ["//deploy/helm:chart"],
-    imports = [
-        ".",
-        "../..",
-    ],
-    main = "disable_authentication_guard_test.py",
-    tags = [
-        "local",
-        "manual",
-    ],
-    deps = [":chart_test_lib"],
-)
-
-py_test(
     name = "mock_auth_guard_test",
     srcs = ["mock_auth_guard_test.py"],
     data = ["//deploy/helm:chart"],

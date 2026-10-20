@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Checks that mock authentication cannot be rendered outside development environments."""
+"""Checks that mockAuth and disableAuthentication cannot be rendered outside development environments."""
 
 import unittest
 
@@ -52,6 +52,44 @@ class MockAuthGuardTest(unittest.TestCase):
     def test_default_values_render(self) -> None:
         manifest = render_template(_ESS_DEPLOYMENT, {"essDeployment.enabled": "true"})
         self.assertRegex(manifest, r'- name: MOCK_AUTH\n\s+value: "false"')
+
+    def test_disable_authentication_renders_when_allowed(self) -> None:
+        cases = (
+            ("authentication enabled in production", "false", "false"),
+            ("authentication enabled in development", "false", "true"),
+            ("authentication disabled in development", "true", "true"),
+            # Non-empty strings are truthy in Go templates; the backend reads this as false.
+            ("string no in production", "no", "false"),
+        )
+        for name, disabled, dev in cases:
+            with self.subTest(name):
+                manifest = render_template(
+                    _ESS_DEPLOYMENT,
+                    {
+                        "essDeployment.enabled": "true",
+                        "auth.disableAuthentication": disabled,
+                        "isDevEnvironment": dev,
+                    },
+                )
+                self.assertRegex(
+                    manifest, rf'- name: DISABLE_AUTHENTICATION\n\s+value: "{disabled}"\n'
+                )
+
+    def test_disable_authentication_fails_outside_development(self) -> None:
+        # The backend reads DISABLE_AUTHENTICATION case-insensitively as true, 1 or yes.
+        for flag in ("true", "True", "yes", "1"):
+            with self.subTest(flag=flag):
+                with self.assertRaisesRegex(
+                    RuntimeError, "only allowed when isDevEnvironment=true"
+                ):
+                    render_template(
+                        _ESS_DEPLOYMENT,
+                        {
+                            "essDeployment.enabled": "true",
+                            "auth.disableAuthentication": flag,
+                            "isDevEnvironment": "false",
+                        },
+                    )
 
 
 if __name__ == "__main__":
