@@ -31,8 +31,6 @@ const (
 	SessionIssuer = "xmanager-cloud-backend"
 	// FrontendAudience is the `aud` claim of the browser (Dashboard) session token.
 	FrontendAudience = "xmanager-cloud-frontend"
-	// sessionClockSkew is the leeway allowed on the exp, nbf and iat claims of a session token.
-	sessionClockSkew = 30 * time.Second
 )
 
 // SessionClaims defines the schema for stateless JWT user sessions.
@@ -68,11 +66,10 @@ func generateSessionTokenAt(email, name, picture string, expiry time.Duration, s
 
 // ParseSessionToken verifies and parses a signed JWT session token.
 //
-// The token must be signed with HS256, carry SessionIssuer as `iss`, an `exp` and a non-future
-// `iat` (each with a sessionClockSkew leeway), and an `aud` that contains at least one of
-// audiences. Each caller names the audiences it serves, so a token minted for one surface cannot be
-// replayed against another. Calling it without any audience or with an empty secretKey rejects
-// every token.
+// The token must be signed with HS256, carry SessionIssuer as `iss`, an `exp`, and an `aud` that
+// contains at least one of audiences. Each caller names the audiences it serves, so a token minted
+// for one surface cannot be replayed against another. Calling it without any audience or with an
+// empty secretKey rejects every token.
 func ParseSessionToken(tokenStr string, secretKey []byte, audiences ...string) (*SessionClaims, error) {
 	// HMAC accepts an empty key, so a missing secret would let anyone mint valid tokens: fail closed.
 	if len(secretKey) == 0 {
@@ -88,8 +85,6 @@ func ParseSessionToken(tokenStr string, secretKey []byte, audiences ...string) (
 		jwt.WithIssuer(SessionIssuer),
 		jwt.WithAudience(audiences...),
 		jwt.WithExpirationRequired(),
-		jwt.WithIssuedAt(),
-		jwt.WithLeeway(sessionClockSkew),
 	)
 
 	if err != nil {
