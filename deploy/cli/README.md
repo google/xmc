@@ -43,7 +43,7 @@ Options:
   --xmc-sdk-loc <path_or_req>    pip location of the xmc SDK that provides `xmc login`. Can be a local
                                  directory or a pip requirement such as
                                  git+https://github.com/google/xmc.git@main#subdirectory=sdks/python/xmc
-                                 (default: $XMC_SDK_LOC, else local checkout if available, else GitHub main)
+                                 (default: local checkout if available, else GitHub main)
   -h, --help                     Show usage information
 ```
 
@@ -71,11 +71,11 @@ xmc --help
 Interactive users should authenticate as themselves with `xmc login` ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). This replaces the shared `XMC_CLIENT_SA` service account:
 
 ```bash
-xmc login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL and run `xmc login`.
+xmc login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL / XMC_DOMAIN and run `xmc login`.
 export XMC_AUTH_TOKEN=$(xmc print-token)
 ```
 
-The XManager CLI sends `XMC_AUTH_TOKEN` as a Bearer token and reads your email from it. Over SSH or on a headless machine, `xmc login` falls back to a copy-and-paste flow on its own. Tokens last 12 hours by default. Run `xmc status` to check yours and `xmc logout` to revoke it. See the [`xmc` SDK README](../../sdks/python/xmc/README.md#-authentication-xmc-login) for details and security notes.
+The XManager CLI sends `XMC_AUTH_TOKEN` as a Bearer token and reads your email from it. Over SSH or on a headless machine, `xmc login` falls back to a copy-and-paste flow on its own. Tokens last 12 hours by default. Run `xmc status` to check yours and `xmc logout` to clear the cached token. See the [`xmc` SDK README](../../sdks/python/xmc/README.md#-authentication-xmc-login) for details and security notes.
 
 For CI and other non-interactive use, keep using a service account: set `XMC_CLIENT_SA` and mint an ID token, for example `gcloud auth print-identity-token --impersonate-service-account="${XMC_CLIENT_SA}" --audiences="${IAP_CLIENT_ID}" --include-email`, then export it as `XMC_AUTH_TOKEN`.
 

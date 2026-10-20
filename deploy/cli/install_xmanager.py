@@ -146,11 +146,9 @@ def get_default_xmc_sdk_loc(script_path: Path) -> str:
         script_path: Absolute path to install_xmanager.py script.
 
     Returns:
-        A non-empty $XMC_SDK_LOC, else the local checkout's sdks/python/xmc,
-        else a pip `git+https` requirement for github.com/google/xmc.
+        The local checkout's sdks/python/xmc if present, else a pip `git+https`
+        requirement for github.com/google/xmc.
     """
-    if env_sdk_loc := os.environ.get("XMC_SDK_LOC"):
-        return env_sdk_loc
     local_sdk = (script_path.parent / ".." / ".." / "sdks" / "python" / "xmc").resolve()
     if (local_sdk / "pyproject.toml").is_file():
         return str(local_sdk)
@@ -202,8 +200,7 @@ def parse_args(
         default=get_default_xmc_sdk_loc(script_path),
         help=(
             "pip location of the xmc SDK providing the `xmc login` CLI "
-            "(default: $XMC_SDK_LOC, else local checkout if available, "
-            "else github.com/google/xmc)"
+            "(default: local checkout if available, else github.com/google/xmc)"
         ),
     )
     parser.add_argument(

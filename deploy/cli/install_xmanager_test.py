@@ -63,27 +63,20 @@ class TestInstallXmanager(unittest.TestCase):
             self.assertEqual(args.xmc_sdk_loc, install_xmanager.REMOTE_XMC_SDK_LOC)
 
     def test_get_default_xmc_sdk_loc(self) -> None:
-        """A non-empty XMC_SDK_LOC wins, then the local checkout, then GitHub."""
+        """Uses the local checkout if available, else GitHub."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             script = root / "deploy" / "cli" / "install_xmanager.py"
             local_sdk = root / "sdks" / "python" / "xmc"
-            with mock.patch.dict("os.environ", {}, clear=True):
-                self.assertEqual(
-                    install_xmanager.get_default_xmc_sdk_loc(script),
-                    install_xmanager.REMOTE_XMC_SDK_LOC,
-                )
-                local_sdk.mkdir(parents=True)
-                (local_sdk / "pyproject.toml").write_text("", encoding="utf-8")
-                self.assertEqual(
-                    install_xmanager.get_default_xmc_sdk_loc(script), str(local_sdk.resolve())
-                )
-            with mock.patch.dict("os.environ", {"XMC_SDK_LOC": ""}, clear=True):
-                self.assertEqual(
-                    install_xmanager.get_default_xmc_sdk_loc(script), str(local_sdk.resolve())
-                )
-            with mock.patch.dict("os.environ", {"XMC_SDK_LOC": "/custom/xmc"}, clear=True):
-                self.assertEqual(install_xmanager.get_default_xmc_sdk_loc(script), "/custom/xmc")
+            self.assertEqual(
+                install_xmanager.get_default_xmc_sdk_loc(script),
+                install_xmanager.REMOTE_XMC_SDK_LOC,
+            )
+            local_sdk.mkdir(parents=True)
+            (local_sdk / "pyproject.toml").write_text("", encoding="utf-8")
+            self.assertEqual(
+                install_xmanager.get_default_xmc_sdk_loc(script), str(local_sdk.resolve())
+            )
 
     def test_install_xmc_sdk(self) -> None:
         """The xmc SDK is pip-installed from the configured location, after `--`."""
