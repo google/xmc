@@ -54,6 +54,9 @@ type CLISessionStore interface {
 	CLISessionChecker
 	// Create records a newly issued session.
 	Create(ctx context.Context, session CLISession) error
+	// Revoke marks the session with the given jti revoked at the given time. Revoking an unknown
+	// or already revoked session succeeds and keeps the first revocation time.
+	Revoke(ctx context.Context, jti string, at time.Time) error
 }
 
 // EnableCLISessions records every CLI token minted by this Authenticator in store and rejects

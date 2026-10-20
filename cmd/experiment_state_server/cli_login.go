@@ -45,5 +45,6 @@ func registerCLILogin(ctx context.Context, httpMux *http.ServeMux, oauthAuth *oa
 	httpMux.HandleFunc("/api/cli/code", oauthAuth.HandleCLICode)
 	httpMux.HandleFunc("/api/cli/token", oauthAuth.HandleCLIToken)
 	httpMux.HandleFunc("/api/cli/success", oauthAuth.HandleCLISuccess)
+	httpMux.HandleFunc("/api/cli/logout", oauthAuth.HandleCLILogout)
 	logging.Info(ctx, "CLI login endpoints registered")
 }

@@ -105,13 +105,15 @@ func TestRepository_IsRevoked(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			repo, client := newTestRepository(t)
+			repo, _ := newTestRepository(t)
 			const jti = "jti-is-revoked"
 			if tt.create {
 				createSession(t, repo, jti)
 			}
 			if tt.revoke {
-				revokeSession(t, client, jti)
+				if err := repo.Revoke(ctx, jti, revokedAt); err != nil {
+					t.Fatalf("Revoke() unexpected error: %v", err)
+				}
 			}
 			got, err := repo.IsRevoked(ctx, jti)
 			if err != nil {
@@ -124,12 +126,25 @@ func TestRepository_IsRevoked(t *testing.T) {
 	}
 }
 
-// revokeSession sets RevokedAt directly, as an operator would.
-func revokeSession(t *testing.T, client *spanner.Client, jti string) {
-	t.Helper()
-	mutation := spanner.Update("CliSessions", []string{"Jti", "RevokedAt"}, []any{jti, revokedAt})
-	if _, err := client.Apply(context.Background(), []*spanner.Mutation{mutation}); err != nil {
-		t.Fatalf("Apply() unexpected error: %v", err)
+func TestRepository_RevokeKeepsTheFirstRevocationTime(t *testing.T) {
+	ctx := context.Background()
+	repo, client := newTestRepository(t)
+	createSession(t, repo, "jti-twice")
+	for _, at := range []time.Time{revokedAt, revokedAt.Add(time.Minute)} {
+		if err := repo.Revoke(ctx, "jti-twice", at); err != nil {
+			t.Fatalf("Revoke(%v) unexpected error: %v", at, err)
+		}
+	}
+	want := storedSession{Session: baseSession("jti-twice"), RevokedAt: spanner.NullTime{Time: revokedAt, Valid: true}}
+	if diff := cmp.Diff(want, readSession(t, client, "jti-twice")); diff != "" {
+		t.Errorf("stored session mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestRepository_RevokeUnknownSessionSucceeds(t *testing.T) {
+	repo, _ := newTestRepository(t)
+	if err := repo.Revoke(context.Background(), "jti-missing", revokedAt); err != nil {
+		t.Errorf("Revoke() unexpected error: %v", err)
 	}
 }
 
@@ -142,6 +157,9 @@ func TestRepository_FailsOnSpannerErrors(t *testing.T) {
 	}
 	if _, err := repo.IsRevoked(ctx, "jti-closed"); err == nil {
 		t.Error("IsRevoked() on a closed client error = nil, want non-nil")
+	}
+	if err := repo.Revoke(ctx, "jti-closed", revokedAt); err == nil {
+		t.Error("Revoke() on a closed client error = nil, want non-nil")
 	}
 }
 

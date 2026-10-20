@@ -33,6 +33,7 @@ type fakeCLISessionStore struct {
 	sessions  map[string]CLISession
 	revoked   map[string]time.Time
 	createErr error
+	revokeErr error
 	checkErr  error
 	checks    int
 }
@@ -65,6 +66,18 @@ func (s *fakeCLISessionStore) IsRevoked(_ context.Context, jti string) (bool, er
 	_, known := s.sessions[jti]
 	_, revoked := s.revoked[jti]
 	return !known || revoked, nil
+}
+
+func (s *fakeCLISessionStore) Revoke(_ context.Context, jti string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.revokeErr != nil {
+		return s.revokeErr
+	}
+	if _, ok := s.revoked[jti]; !ok {
+		s.revoked[jti] = at
+	}
+	return nil
 }
 
 func (s *fakeCLISessionStore) checkCount() int {

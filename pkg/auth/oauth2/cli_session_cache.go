@@ -86,6 +86,11 @@ func (c *cliSessionCache) IsRevoked(ctx context.Context, jti string) (bool, erro
 	return result.(bool), nil
 }
 
+// markRevoked caches jti as revoked, for revocations made by this process.
+func (c *cliSessionCache) markRevoked(jti string) {
+	c.store(jti, true)
+}
+
 func (c *cliSessionCache) lookup(jti string) (revoked, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -63,7 +63,8 @@ type Authenticator struct {
 	cliTokenLimiter    *rate.Limiter
 
 	// CLI session state, set by EnableCLISessions and CheckCLISessions. CLI tokens are not minted
-	// while cliSessionStore is nil and are rejected while cliSessions is nil.
+	// while cliSessionStore is nil and are rejected while cliSessions is nil. cliSessions is never
+	// nil while cliSessionStore is set.
 	cliSessionStore CLISessionStore
 	cliSessions     *cliSessionCache
 }

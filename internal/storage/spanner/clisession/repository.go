@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/grpc/codes"
@@ -36,6 +37,10 @@ const (
 	colExpiresAt = "ExpiresAt"
 	colRevokedAt = "RevokedAt"
 )
+
+// revokeSQL sets RevokedAt only on sessions that are not revoked yet, so revoking twice keeps the
+// first revocation time and revoking an unknown session changes nothing.
+const revokeSQL = `UPDATE CliSessions SET RevokedAt = @revokedAt WHERE Jti = @jti AND RevokedAt IS NULL`
 
 // Repository stores CLI sessions in Cloud Spanner.
 type Repository struct {
@@ -75,4 +80,17 @@ func (r *Repository) IsRevoked(ctx context.Context, jti string) (bool, error) {
 		return false, fmt.Errorf("failed to decode cli session: %w", err)
 	}
 	return revokedAt.Valid, nil
+}
+
+// Revoke marks the session revoked at the given time unless it is already revoked.
+func (r *Repository) Revoke(ctx context.Context, jti string, at time.Time) error {
+	stmt := spanner.Statement{SQL: revokeSQL, Params: map[string]any{"jti": jti, "revokedAt": at}}
+	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		_, err := tx.Update(ctx, stmt)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("failed to revoke cli session: %w", err)
+	}
+	return nil
 }
