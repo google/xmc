@@ -35,6 +35,7 @@ type spannerTransaction interface {
 
 var (
 	_ storage.WorkUnitStore        = (*Repository)(nil)
+	_ storage.WorkUnitQueueFetcher = (*Repository)(nil)
 	_ storage.WorkUnitTxRepository = (*TxRepository)(nil)
 )
 

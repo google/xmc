@@ -25,6 +25,7 @@ go_library(
     importpath = "xmanager_cloud/internal/storage",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//api/protos/dashboard:messages_go_proto",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
         "//api/protos/xid:messages_go_proto",

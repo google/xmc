@@ -17,33 +17,21 @@ package server
 
 import (
 	"context"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
 	xpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
 )
 
 // DashboardRepository defines the persistence contract for dashboards and charts.
-type DashboardRepository interface {
-	CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error
-	GetDashboard(ctx context.Context, dashboardId string) (*dpb.Dashboard, error)
-	ListDashboards(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error)
-	UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error)
-	DeleteDashboard(ctx context.Context, dashboardId string) error
-	CreateChart(ctx context.Context, chart *dpb.Chart) error
-	GetChart(ctx context.Context, chartId string) (*dpb.Chart, error)
-	ListCharts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error)
-	UpdateChart(ctx context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error)
-	DeleteChart(ctx context.Context, chartId string) error
-}
+type DashboardRepository = storage.DashboardStore
 
 // ChartDataEngine defines the interface for fetching analytics chart data.
 type ChartDataEngine interface {

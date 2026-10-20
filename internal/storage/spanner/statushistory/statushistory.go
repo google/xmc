@@ -28,7 +28,10 @@ import (
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 )
 
-var _ storage.StatusHistoryTxRepository = (*TxRepository)(nil)
+var (
+	_ storage.QueueVelocityFetcher      = (*Repository)(nil)
+	_ storage.StatusHistoryTxRepository = (*TxRepository)(nil)
+)
 
 // WorkUnitStatusHistoryItem represents a single WorkUnitStatusHistory record for Spanner queries and UNNEST mocks.
 type WorkUnitStatusHistoryItem struct {
