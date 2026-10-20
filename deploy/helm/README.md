@@ -89,6 +89,14 @@ account does not invalidate an existing session admitted by the domain allowlist
 
 ---
 
+## Disabling authentication
+
+`auth.disableAuthentication: true` (`DISABLE_AUTHENTICATION`) turns off authorization checks such
+as CMS authorization and admin checks. The chart refuses to render it unless `isDevEnvironment`
+is true.
+
+---
+
 ## Out-of-Cluster & Remote Kubernetes Configuration (`k8s.remote`)
 
 By default, the `actuator` and `reconciler` controllers manage `JobSet` and `Workload` resources on the Kubernetes cluster where they are deployed (using standard in-cluster service account tokens via `rest.InClusterConfig()`).

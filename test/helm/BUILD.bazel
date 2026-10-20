@@ -155,6 +155,22 @@ py_test(
 )
 
 py_test(
+    name = "disable_authentication_guard_test",
+    srcs = ["disable_authentication_guard_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "disable_authentication_guard_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
     name = "actuator_dev_oidc_config_test",
     srcs = ["actuator_dev_oidc_config_test.py"],
     data = ["//deploy/helm:chart"],
