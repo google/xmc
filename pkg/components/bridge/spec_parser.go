@@ -259,6 +259,16 @@ func ParseComponentGenerationFromUnstructured(statusObj any) int64 {
 	return extractInt(statusMap, "componentGeneration")
 }
 
+// ParseComponentIDFromUnstructured extracts status.componentId (the CMS ComponentId in decimal)
+// from the unstructured .status map, or "" when absent.
+func ParseComponentIDFromUnstructured(statusObj any) string {
+	statusMap, ok := statusObj.(map[string]any)
+	if !ok || statusMap == nil {
+		return ""
+	}
+	return extractStr(statusMap, "componentId")
+}
+
 // ParseAccessFromUnstructured extracts status.access.envVars from the unstructured .status map.
 func ParseAccessFromUnstructured(statusObj any) *AccessStatus {
 	statusMap, ok := statusObj.(map[string]any)

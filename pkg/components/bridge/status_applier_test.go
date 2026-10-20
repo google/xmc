@@ -173,6 +173,7 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 		res := &ReconcileResult{
 			ObservedGeneration:  5,
 			ComponentGeneration: 2,
+			ComponentID:         "6200370836252645701",
 			State:               componentsv1alpha1.ComponentState_COMPONENT_STATE_ENABLED,
 			Access: &AccessStatus{
 				EnvVars: map[string]string{"DB_HOST": "clickhouse.xmc.svc"},
@@ -192,6 +193,7 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 		want := ComponentStatus{
 			ObservedGeneration:  5,
 			ComponentGeneration: 2,
+			ComponentID:         "6200370836252645701",
 			State:               "COMPONENT_STATE_ENABLED",
 			Access:              &ComponentAccess{EnvVars: map[string]string{"DB_HOST": "clickhouse.xmc.svc"}},
 			Conditions: []ComponentCondition{
@@ -213,6 +215,7 @@ func TestBuildStatusAndBuildStatusMap(t *testing.T) {
 		wantMap := map[string]any{
 			"observedGeneration":  int64(5),
 			"componentGeneration": int64(2),
+			"componentId":         "6200370836252645701",
 			"state":               "COMPONENT_STATE_ENABLED",
 			"access":              map[string]any{"envVars": map[string]any{"DB_HOST": "clickhouse.xmc.svc"}},
 			"conditions": []any{

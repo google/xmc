@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +55,8 @@ type ReconcileResult struct {
 	ObservedGeneration int64
 	// ComponentGeneration is the CMS component generation committed for this resource, or 0 if unknown.
 	ComponentGeneration int64
+	// ComponentID is the CMS ComponentId of the record, in decimal, or "" if unknown.
+	ComponentID string
 	// State is the resulting lifecycle state in CMS.
 	State componentspb.ComponentState
 	// Conditions is the updated list of Kubernetes status conditions.
@@ -194,6 +197,8 @@ type ReconcileComponentInput struct {
 	Cluster *componentspb.ClusterIdentity
 	// ComponentGeneration is the status.componentGeneration previously reported on the custom resource.
 	ComponentGeneration int64
+	// ComponentID is the status.componentId (in decimal) previously reported on the custom resource.
+	ComponentID string
 	// Spec is the parsed protobuf ComponentSpec.
 	Spec *componentspb.ComponentSpec
 	// IsDeleting indicates whether the custom resource has a non-nil deletionTimestamp.
@@ -236,6 +241,7 @@ func (r *Reconciler) ReconcileComponent(ctx context.Context, in ReconcileCompone
 	res := &ReconcileResult{
 		ObservedGeneration:  in.ExistingObservedGeneration,
 		ComponentGeneration: in.ComponentGeneration,
+		ComponentID:         in.ComponentID,
 		State:               componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 	}
 	res, err := r.reconcilePass(ctx, in, canonicalName, res)
@@ -424,12 +430,13 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 	}
 	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 	applyIntentResponse(res, setResp)
-	logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "componentGeneration", res.ComponentGeneration, "state", res.State.String())
+	logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation, "componentGeneration", res.ComponentGeneration, "componentId", res.ComponentID, "state", res.State.String())
 	return nil
 }
 
-// applyIntentResponse copies the CMS state and component generation from a SetComponentIntent
-// response into res, leaving res unchanged when the response carries no component.
+// applyIntentResponse copies the CMS state, component generation and ComponentId from a
+// SetComponentIntent response into res, leaving res unchanged when the response carries no
+// component.
 func applyIntentResponse(res *ReconcileResult, setResp *componentspb.SetComponentIntentResponse) {
 	if setResp == nil || setResp.GetComponent() == nil {
 		return
@@ -440,6 +447,9 @@ func applyIntentResponse(res *ReconcileResult, setResp *componentspb.SetComponen
 	}
 	if spec := component.GetSpec(); spec != nil && spec.GetGeneration() > 0 {
 		res.ComponentGeneration = spec.GetGeneration()
+	}
+	if id := component.GetComponentId(); id > 0 {
+		res.ComponentID = strconv.FormatInt(id, 10)
 	}
 }
 
@@ -820,6 +830,7 @@ func (r *Reconciler) ReconcileWithDependencies(ctx context.Context, obj *unstruc
 		Generation:                 obj.GetGeneration(),
 		UID:                        string(obj.GetUID()),
 		ComponentGeneration:        ParseComponentGenerationFromUnstructured(obj.Object["status"]),
+		ComponentID:                ParseComponentIDFromUnstructured(obj.Object["status"]),
 		Spec:                       spec,
 		IsDeleting:                 obj.GetDeletionTimestamp() != nil,
 		Enabled:                    enabled,

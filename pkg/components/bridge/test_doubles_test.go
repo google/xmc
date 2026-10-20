@@ -37,6 +37,7 @@ type mockCMS struct {
 	declareErr              error
 	state                   componentspb.ComponentState
 	componentGen            int64
+	componentID             int64
 	lastSetReq              *componentspb.SetComponentIntentRequest
 	lastObsReq              *componentspb.UpdateObservedGenerationRequest
 	lastDelReq              *componentspb.ExecuteDeletionRequest
@@ -64,9 +65,10 @@ func (m *mockCMS) SetComponentIntent(ctx context.Context, in *componentspb.SetCo
 	}
 	return &componentspb.SetComponentIntentResponse{
 		Component: &componentspb.Component{
-			Name:   in.GetName(),
-			Spec:   &componentspb.ComponentSpec{Generation: gen},
-			Status: &componentspb.ComponentAccessStatus{State: s},
+			ComponentId: m.componentID,
+			Name:        in.GetName(),
+			Spec:        &componentspb.ComponentSpec{Generation: gen},
+			Status:      &componentspb.ComponentAccessStatus{State: s},
 		},
 	}, nil
 }

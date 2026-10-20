@@ -129,6 +129,25 @@ func TestParseHelpers(t *testing.T) {
 	}
 }
 
+func TestParseComponentIDFromUnstructured(t *testing.T) {
+	tests := []struct {
+		name   string
+		status any
+		want   string
+	}{
+		{name: "component ID set", status: map[string]any{"componentId": "6200370836252645701"}, want: "6200370836252645701"},
+		{name: "component ID absent", status: map[string]any{"componentGeneration": int64(3)}, want: ""},
+		{name: "nil status", status: nil, want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ParseComponentIDFromUnstructured(tt.status); got != tt.want {
+				t.Errorf("ParseComponentIDFromUnstructured(%v) = %q, want %q", tt.status, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseSpecFromUnstructured_Dependencies(t *testing.T) {
 	tests := []struct {
 		name string

@@ -53,10 +53,14 @@ type ComponentStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// ComponentGeneration is the CMS component generation the status describes. CMS orders intents
 	// by custom resource ownership, so it is independent of ObservedGeneration. Omitted while unknown.
-	ComponentGeneration int64                `json:"componentGeneration,omitempty"`
-	State               string               `json:"state"`
-	Access              *ComponentAccess     `json:"access,omitempty"`
-	Conditions          []ComponentCondition `json:"conditions,omitempty"`
+	ComponentGeneration int64 `json:"componentGeneration,omitempty"`
+	// ComponentID is the CMS ComponentId of the record, in decimal: a string because IDs exceed
+	// the integer precision of JSON tooling. It stays the same when a recreated custom resource
+	// adopts the record. Omitted while unknown.
+	ComponentID string               `json:"componentId,omitempty"`
+	State       string               `json:"state"`
+	Access      *ComponentAccess     `json:"access,omitempty"`
+	Conditions  []ComponentCondition `json:"conditions,omitempty"`
 }
 
 // ComponentAccess defines the access configuration in .status.access.
@@ -75,7 +79,8 @@ type ComponentCondition struct {
 }
 
 // BuildStatus converts a ReconcileResult into a typed ComponentStatus matching the Component CRD status schema,
-// including observedGeneration (the CR generation) and componentGeneration (the CMS generation, omitted while 0).
+// including observedGeneration (the CR generation), componentGeneration (the CMS generation, omitted while 0),
+// and componentId (the CMS ComponentId, omitted while unknown).
 func BuildStatus(res *ReconcileResult) ComponentStatus {
 	if res == nil {
 		return ComponentStatus{}
@@ -83,6 +88,7 @@ func BuildStatus(res *ReconcileResult) ComponentStatus {
 	status := ComponentStatus{
 		ObservedGeneration:  res.ObservedGeneration,
 		ComponentGeneration: res.ComponentGeneration,
+		ComponentID:         res.ComponentID,
 		State:               res.State.String(),
 	}
 	if res.Access != nil && len(res.Access.EnvVars) > 0 {
@@ -109,11 +115,9 @@ func BuildStatusMap(res *ReconcileResult) map[string]any {
 	status := BuildStatus(res)
 	m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&status)
 	if err != nil {
-		fallback := ComponentStatus{
-			ObservedGeneration:  status.ObservedGeneration,
-			ComponentGeneration: status.ComponentGeneration,
-			State:               status.State,
-		}
+		// Drop the composite fields so a failed conversion still reports the scalar status.
+		fallback := status
+		fallback.Access, fallback.Conditions = nil, nil
 		fallbackMap, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(&fallback)
 		return fallbackMap
 	}
