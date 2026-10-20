@@ -137,8 +137,8 @@ func TestUpdateObservedGeneration_UnchangedHeartbeat_Parity(t *testing.T) {
 }
 
 // TestSpannerStore_UpdateObservedGeneration_UnchangedHeartbeatRefreshesLastSeen checks that an
-// unchanged sourced heartbeat still refreshes SourceLastSeenTime while keeping UpdateTime.
-// MemoryStore records no SourceLastSeenTime, so this is Spanner-only.
+// unchanged sourced heartbeat still refreshes SourceLastSeenTime, and returns the stored value,
+// while keeping UpdateTime. It reads the columns directly, so it is Spanner-only.
 func TestSpannerStore_UpdateObservedGeneration_UnchangedHeartbeatRefreshesLastSeen(t *testing.T) {
 	ctx := context.Background()
 	s, client := setupTestStore(ctx, t)
@@ -146,13 +146,17 @@ func TestSpannerStore_UpdateObservedGeneration_UnchangedHeartbeatRefreshesLastSe
 	seeded := seedOwnedComponent(ctx, t, s, name, false)
 	lastSeenBefore, updateBefore := readSourceTimes(ctx, t, client, name)
 
-	if _, err := seededHeartbeat(ctx, s, name, seeded, ownerSource); err != nil {
+	rec, err := seededHeartbeat(ctx, s, name, seeded, ownerSource)
+	if err != nil {
 		t.Fatalf("UpdateObservedGeneration(unchanged) error = %v", err)
 	}
 
 	lastSeenAfter, updateAfter := readSourceTimes(ctx, t, client, name)
 	if !lastSeenAfter.After(lastSeenBefore) {
 		t.Errorf("SourceLastSeenTime = %v, want after %v", lastSeenAfter, lastSeenBefore)
+	}
+	if !rec.SourceLastSeenTime.Equal(lastSeenAfter) {
+		t.Errorf("returned SourceLastSeenTime = %v, want the stored %v", rec.SourceLastSeenTime, lastSeenAfter)
 	}
 	if !updateAfter.Equal(updateBefore) {
 		t.Errorf("UpdateTime = %v, want unchanged %v", updateAfter, updateBefore)

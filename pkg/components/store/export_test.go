@@ -21,6 +21,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"cloud.google.com/go/spanner"
 )
@@ -58,5 +59,30 @@ func OwnerByIDForTest(ctx context.Context, s Store, componentID int64) (*SourceO
 		return owner, err
 	default:
 		return nil, fmt.Errorf("unsupported store %T", s)
+	}
+}
+
+// SetSourceLastSeenTimeForTest sets the recorded SourceLastSeenTime of canonicalName in s.
+func SetSourceLastSeenTimeForTest(ctx context.Context, s Store, canonicalName string, seenAt time.Time) error {
+	switch st := s.(type) {
+	case *MemoryStore:
+		st.mu.Lock()
+		defer st.mu.Unlock()
+		if rec := st.componentsByName[canonicalName]; rec != nil {
+			rec.SourceLastSeenTime = seenAt
+		}
+		return nil
+	case *SpannerStore:
+		_, err := st.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+			stmt := spanner.Statement{
+				SQL:    `UPDATE Components SET SourceLastSeenTime = @seenAt WHERE ActiveName = @name`,
+				Params: map[string]any{"seenAt": seenAt, "name": canonicalName},
+			}
+			_, err := txn.Update(ctx, stmt)
+			return err
+		})
+		return err
+	default:
+		return nil
 	}
 }

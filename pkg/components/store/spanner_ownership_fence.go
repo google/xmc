@@ -17,6 +17,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/grpc/codes"
@@ -29,6 +30,14 @@ const (
 	// owner UID so that the cluster's next intent adopts it (R2). SourceLastSeenTime is set to the
 	// commit time, which starts the adoption grace period of the owner_stale gauge.
 	takeOverOwnersSQL = `UPDATE Components SET SourceClusterUid = @clusterUid, SourceEpoch = @epoch, SourceUid = NULL, SourceLastSeenTime = PENDING_COMMIT_TIMESTAMP() WHERE ActiveName IS NOT NULL AND SourceClusterUid IS NOT NULL`
+
+	// ownershipGaugesSQL reads the fence and counts active owned components whose last-seen
+	// timestamp is at or before @cutoff in one snapshot. Records reassigned by a takeover count
+	// only once the adoption grace period that starts at the takeover commit has ended.
+	ownershipGaugesSQL = `SELECT
+  (SELECT f.Epoch FROM ComponentOwnershipFence f WHERE f.FenceId = 1) AS FenceEpoch,
+  (SELECT f.LastSeenTime FROM ComponentOwnershipFence f WHERE f.FenceId = 1) AS FenceLastSeenTime,
+  (SELECT COUNT(*) FROM Components WHERE ActiveName IS NOT NULL AND SourceClusterUid IS NOT NULL AND SourceLastSeenTime <= @cutoff) AS StaleOwners`
 
 	// fenceColumnsSQL adds the fence holder to a query as scalar subqueries, NULL before the first
 	// declaration, so that one single-use read sees the fence and the component in one snapshot.
@@ -50,9 +59,31 @@ func (s *SpannerStore) DeclareClusterEpoch(ctx context.Context, cluster ClusterI
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
 	return res, nil
+}
+
+var _ OwnershipGaugeReader = (*SpannerStore)(nil)
+
+// ReadOwnershipGauges reads the fence and counts the stale owners in Spanner at now with one
+// single-use read, so the fence and the count come from one snapshot.
+func (s *SpannerStore) ReadOwnershipGauges(ctx context.Context, now time.Time) (OwnershipGauges, error) {
+	stmt := spanner.Statement{SQL: ownershipGaugesSQL, Params: map[string]any{"cutoff": now.Add(-OwnerStaleThreshold)}}
+	iter := s.client.Single().Query(ctx, stmt)
+	defer iter.Stop()
+	row, err := iter.Next()
+	if err != nil {
+		return OwnershipGauges{}, fmt.Errorf("failed to read the ownership gauges: %w", err)
+	}
+	var epoch spanner.NullInt64
+	var lastSeen spanner.NullTime
+	var g OwnershipGauges
+	if err := row.Columns(&epoch, &lastSeen, &g.StaleOwners); err != nil {
+		return OwnershipGauges{}, fmt.Errorf("failed to decode the ownership gauges: %w", err)
+	}
+	g.FenceDeclared, g.FenceEpoch, g.FenceLastSeenTime = epoch.Valid, epoch.Int64, lastSeen.Time
+	return g, nil
 }
 
 // declareClusterEpochTx applies a declaration by cluster within txn.

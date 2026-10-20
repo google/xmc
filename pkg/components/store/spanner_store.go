@@ -70,7 +70,7 @@ WHERE ActiveName IS NOT NULL
 ORDER BY Name ASC`
 
 	// componentColumnsSQL lists the Components columns that rowToComponentRecord reads.
-	componentColumnsSQL = `ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime, SourceUid, SourceGeneration, SourceNamespace, SourceClusterUid, SourceEpoch`
+	componentColumnsSQL = `ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime, SourceUid, SourceGeneration, SourceNamespace, SourceClusterUid, SourceEpoch, SourceLastSeenTime`
 
 	selectDependenciesByComponentIDSQL = `SELECT dep.Name
 FROM ComponentDependencies cd
@@ -188,7 +188,8 @@ func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *compone
 	deps := ExtractDependencies(spec, labels)
 	rec, ok, err := s.readUnchangedIntent(ctx, canonicalName, spec, labels, deps, desiredGen, src)
 	if err != nil {
-		return nil, err
+		// The fast path returns only fence rejections, which count as source conflicts.
+		return nil, recordSourceConflictError(err)
 	}
 	if ok {
 		return rec, nil
@@ -280,7 +281,7 @@ func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, sp
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
 
 	if plan.write == writeSpec {
@@ -289,6 +290,12 @@ func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, sp
 		}
 		finalRec.UpdateTime = commitTimestamp
 		finalRec.Etag = generateEtag(finalRec)
+	}
+	if src != nil && plan.write != writeNothing {
+		finalRec.SourceLastSeenTime = commitTimestamp
+	}
+	if plan.write != writeNothing {
+		recordOwnerAdoption(plan.prevOwner, src, plan.created)
 	}
 
 	return cloneRecord(finalRec), nil
@@ -459,6 +466,7 @@ func (s *SpannerStore) updateExistingIntentTx(
 		CreateTime:         existingRec.CreateTime,
 		Labels:             copyMap(labels),
 		Owner:              cloneSourceOwner(existingRec.Owner),
+		SourceLastSeenTime: existingRec.SourceLastSeenTime,
 	}, nil
 }
 
@@ -627,6 +635,7 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 	}
 
 	var result *PrepareDeactivationResult
+	var prevOwner *SourceOwner
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		catalog, targetRec, err := s.lookupCatalogTargetTx(ctx, txn, operationPrepareDeactivation, canonicalName, reqSrc)
@@ -651,12 +660,14 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 				return err
 			}
 		}
+		prevOwner = cloneSourceOwner(targetRec.Owner)
 		return recordNonIntentOwnerTx(txn, targetRec, reqSrc)
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
+	recordOwnerAdoption(prevOwner, reqSrc, false)
 	return result, nil
 }
 
@@ -731,6 +742,7 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 		return err
 	}
 
+	var prevOwner *SourceOwner
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, operationCompleteDeactivation, canonicalName, reqSrc)
 		if err != nil {
@@ -738,6 +750,7 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 		}
 
 		if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+			prevOwner = cloneSourceOwner(rec.Owner)
 			return recordNonIntentOwnerTx(txn, rec, reqSrc)
 		}
 		if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
@@ -775,10 +788,15 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 		if err := txn.BufferWrite([]*spanner.Mutation{mutation}); err != nil {
 			return err
 		}
+		prevOwner = cloneSourceOwner(rec.Owner)
 		return recordNonIntentOwnerTx(txn, rec, reqSrc)
 	})
 
-	return err
+	if err != nil {
+		return recordSourceConflictError(err)
+	}
+	recordOwnerAdoption(prevOwner, reqSrc, false)
+	return nil
 }
 
 // UpdateObservedGeneration synchronizes actual component access, generation, and state.
@@ -790,6 +808,7 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 
 	var finalRec *ComponentRecord
 	var unchanged bool
+	var prevOwner *SourceOwner
 
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		unchanged = false
@@ -812,6 +831,7 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 				return err
 			}
 		}
+		prevOwner = cloneSourceOwner(rec.Owner)
 		if err := recordNonIntentOwnerTx(txn, rec, reqSrc); err != nil {
 			return err
 		}
@@ -821,10 +841,17 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
+	recordOwnerAdoption(prevOwner, reqSrc, false)
 
-	if finalRec != nil && !unchanged {
+	if finalRec == nil {
+		return nil, nil
+	}
+	if reqSrc != nil {
+		finalRec.SourceLastSeenTime = commitTimestamp
+	}
+	if !unchanged {
 		finalRec.UpdateTime = commitTimestamp
 		finalRec.Etag = generateEtag(finalRec)
 	}
@@ -863,6 +890,7 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 		return err
 	}
 
+	var prevOwner *SourceOwner
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, operationExecuteDeletion, canonicalName, reqSrc)
 		if err != nil {
@@ -873,6 +901,7 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 			return err
 		}
 
+		prevOwner = cloneSourceOwner(rec.Owner)
 		var owner *SourceOwner
 		if reqSrc != nil {
 			owner = deletionOwner(rec.Owner, *reqSrc)
@@ -886,7 +915,11 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 		return txn.BufferWrite(mutations)
 	})
 
-	return err
+	if err != nil {
+		return recordSourceConflictError(err)
+	}
+	recordOwnerAdoption(prevOwner, reqSrc, false)
+	return nil
 }
 
 func collectDeletionTargets(rec *ComponentRecord, catalog map[string]*ComponentRecord, canonicalName string, policy componentspb.DeletionPolicy) []*ComponentRecord {
@@ -1215,6 +1248,7 @@ type componentRowData struct {
 	observedGen    spanner.NullInt64
 	createTime     time.Time
 	updateTime     time.Time
+	sourceLastSeen spanner.NullTime
 }
 
 func scanComponentRow(row *spanner.Row) (*componentRowData, error) {
@@ -1249,6 +1283,9 @@ func scanComponentRow(row *spanner.Row) (*componentRowData, error) {
 	if err := row.ColumnByName("UpdateTime", &d.updateTime); err != nil {
 		return nil, fmt.Errorf("failed to read UpdateTime: %w", err)
 	}
+	if err := row.ColumnByName("SourceLastSeenTime", &d.sourceLastSeen); err != nil {
+		return nil, fmt.Errorf("failed to read SourceLastSeenTime: %w", err)
+	}
 	return &d, nil
 }
 
@@ -1259,12 +1296,13 @@ func rowToComponentRecord(row *spanner.Row) (*ComponentRecord, error) {
 	}
 
 	rec := &ComponentRecord{
-		ComponentID: d.componentID,
-		Name:        d.name,
-		State:       componentspb.ComponentState(d.state),
-		Generation:  d.generation,
-		CreateTime:  d.createTime,
-		UpdateTime:  d.updateTime,
+		ComponentID:        d.componentID,
+		Name:               d.name,
+		State:              componentspb.ComponentState(d.state),
+		Generation:         d.generation,
+		CreateTime:         d.createTime,
+		UpdateTime:         d.updateTime,
+		SourceLastSeenTime: d.sourceLastSeen.Time, // Zero when NULL.
 	}
 
 	if d.observedGen.Valid {
