@@ -14,16 +14,27 @@
 
 //go:build mockauth
 
-package mock
+package oauth2
 
-import "xmanager_cloud/pkg/auth/oauth2"
+import "testing"
 
-// ConfigureIfEnabled installs the mock OAuth provider, ID token validator and IAM policy on a when
-// MOCK_AUTH is set. Every binary calls it on the Authenticator it uses for both HTTP and gRPC
-// admission, so all services admit the same principals under mock auth. Binaries built without
-// the mockauth tag get a no-op.
-func ConfigureIfEnabled(a *oauth2.Authenticator) {
-	if a.Config.MockAuth {
-		ConfigureMockAuth(a)
+func TestNewAuthenticatorMockAuthTag(t *testing.T) {
+	tests := []struct {
+		name     string
+		mockAuth bool
+		wantMock bool
+	}{
+		{name: "mock auth enabled", mockAuth: true, wantMock: true},
+		{name: "mock auth disabled", mockAuth: false, wantMock: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := NewAuthenticator(&Config{MockAuth: tt.mockAuth})
+			_, gotMock := a.OAuthProvider.(*MockOAuthProvider)
+			if gotMock != tt.wantMock {
+				t.Errorf("NewAuthenticator() installed mock provider = %v, want %v", gotMock, tt.wantMock)
+			}
+		})
 	}
 }
