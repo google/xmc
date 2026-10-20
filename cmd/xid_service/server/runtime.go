@@ -93,15 +93,15 @@ func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, a
 	}
 	audiences := oauthCfg.AcceptedAudiences(cfg.Audience, cfg.HTTPAudience, cfg.GRPCAudience)
 	auth, err := authz.NewAuthorizer(authz.AuthorizerParams{
-		IDService:                idService,
-		CacheTTL:                 10 * time.Minute,
-		CacheErrorTTL:            time.Minute,
-		IAPAudiences:             audiences,
-		IAPIssuer:                cfg.IAPIssuer,
-		JWTSecret:                []byte(oauthCfg.JWTSecret),
-		Admission:                admission,
-		CLISessions:              cliSessions,
-		RequireVerifiedJWKSEmail: len(oauthCfg.AllowedDomains) > 0,
+		IDService:     idService,
+		CacheTTL:      10 * time.Minute,
+		CacheErrorTTL: time.Minute,
+		IAPAudiences:  audiences,
+		IAPIssuer:     cfg.IAPIssuer,
+		JWTSecret:     []byte(oauthCfg.JWTSecret),
+		Admission:     admission,
+		CLISessions:   cliSessions,
+		JWKSEmail:     oauthCfg.JWKSEmailPolicy(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create authorizer: %w", err)

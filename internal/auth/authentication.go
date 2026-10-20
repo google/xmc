@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/mail"
 	"strings"
 
 	"google.golang.org/api/idtoken"
@@ -118,7 +117,7 @@ func logIDTokenValidationFailure(ctx context.Context, jwt string, err error) {
 // IAP only admits verified Google identities, so only an explicit non-true value is rejected there.
 func verifyIDTokenEmail(ctx context.Context, payload *idtoken.Payload) error {
 	verified, present := payload.Claims["email_verified"]
-	if isTrueClaim(verified) {
+	if oauth2.IsTrueClaim(verified) {
 		return nil
 	}
 	if !present && !isGoogleAccountsIssuer(payload.Issuer) {
@@ -126,19 +125,6 @@ func verifyIDTokenEmail(ctx context.Context, payload *idtoken.Payload) error {
 	}
 	logging.Warn(ctx, "Rejecting ID token without a verified email", "issuer", payload.Issuer, "email_verified", verified)
 	return fmt.Errorf("email is not verified: %w", grpcerr.ErrUnauthenticated)
-}
-
-// isTrueClaim reports whether a boolean-valued claim asserts true. Identity providers disagree on
-// whether such claims are JSON booleans or strings, so the string "true" is accepted too.
-func isTrueClaim(v any) bool {
-	switch t := v.(type) {
-	case bool:
-		return t
-	case string:
-		return strings.EqualFold(t, "true")
-	default:
-		return false
-	}
 }
 
 func isGoogleAccountsIssuer(issuer string) bool {
@@ -159,7 +145,7 @@ func (a *Authorizer) authenticateViaJWKS(ctx context.Context, jwt string) (*auth
 	if err := a.verifyJWKSEmail(ctx, claims); err != nil {
 		return nil, err
 	}
-	email, ok := jwksEmail(claims)
+	email, ok := jwksEmailAddress(claims)
 	if !ok {
 		logging.Warn(ctx, "authenticateViaJWKS: token does not contain a valid email address", "email", claims.Email, "sub", claims.Subject)
 		return nil, nil
@@ -173,30 +159,23 @@ func (a *Authorizer) authenticateViaJWKS(ctx context.Context, jwt string) (*auth
 }
 
 // verifyJWKSEmail rejects JWKS tokens whose email is not verified. Dex sets email_verified alongside
-// email, but not every OIDC provider emits the claim, so by default only an explicit non-true value
-// is rejected. With requireVerifiedJWKSEmail (set when a domain allowlist is configured) the claim
-// must be present and true, because admitting by email domain is only sound for verified emails.
+// email, but not every OIDC provider emits the claim, so a missing claim is rejected only when the
+// policy requires it (see oauth2.Config.JWKSEmailPolicy); an explicit non-true value always is.
 func (a *Authorizer) verifyJWKSEmail(ctx context.Context, claims *jwks.Claims) error {
-	if isTrueClaim(claims.EmailVerified) {
-		return nil
-	}
-	if claims.EmailVerified == nil && !a.requireVerifiedJWKSEmail {
+	if oauth2.EmailVerifiedAccepted(claims.EmailVerified, !a.jwksEmail.TrustMissingVerified) {
 		return nil
 	}
 	logging.Warn(ctx, "authenticateViaJWKS: rejecting token without a verified email", "email", claims.Email, "email_verified", claims.EmailVerified)
 	return fmt.Errorf("email is not verified: %w", grpcerr.ErrUnauthenticated)
 }
 
-// jwksEmail returns the token's email claim, falling back to an email-shaped subject (as used by
-// service account tokens).
-func jwksEmail(claims *jwks.Claims) (string, bool) {
-	if _, err := mail.ParseAddress(claims.Email); err == nil {
-		return claims.Email, true
+// jwksEmailAddress returns the token's lowercased email claim, falling back to an email-shaped
+// subject (as used by service account tokens).
+func jwksEmailAddress(claims *jwks.Claims) (string, bool) {
+	if email, ok := oauth2.BareEmailAddress(claims.Email); ok {
+		return email, true
 	}
-	if _, err := mail.ParseAddress(claims.Subject); err == nil {
-		return claims.Subject, true
-	}
-	return "", false
+	return oauth2.BareEmailAddress(claims.Subject)
 }
 
 func (a *Authorizer) parseCustomSessionToken(ctx context.Context, jwt string) (*authIdentity, error) {

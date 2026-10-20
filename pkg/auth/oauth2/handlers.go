@@ -35,8 +35,10 @@ var randReader io.Reader = rand.Reader
 
 // GoogleUserInfo holds fields returned by OpenID Connect userinfo endpoint.
 type GoogleUserInfo struct {
-	Email         string `json:"email"`
-	EmailVerified bool   `json:"email_verified"`
+	Email string `json:"email"`
+	// EmailVerified is the raw email_verified claim, or nil when the identity provider omits it.
+	// It is untyped because identity providers send either a JSON boolean or a string.
+	EmailVerified any `json:"email_verified"`
 	// HostedDomain is the Google Workspace domain (`hd`) of the account. Google omits it for
 	// consumer accounts and other identity providers do not set it.
 	HostedDomain string `json:"hd"`

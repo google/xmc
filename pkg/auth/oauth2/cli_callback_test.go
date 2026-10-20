@@ -80,6 +80,20 @@ func TestHandleCallbackCLILoginSuccess(t *testing.T) {
 	}
 }
 
+func TestHandleCallbackCLILoginEmailPolicy(t *testing.T) {
+	cfg := oidcLoginConfig()
+	cfg.EmailVerification = EmailVerificationTrustIssuer
+	a, store, provider := newCLITestAuthenticator(t, cfg)
+	provider.userInfo = oidcUserInfo()
+	resp := serveCallback(a, newCLICallbackRequest(idpCode, mustSealCLILoginTicket(t, a, baseCLITicket(loginTestOAuthState))))
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusFound)
+	}
+	if got := store.only(t).Email; got != oidcLoginEmail {
+		t.Errorf("stored code email = %q, want %q", got, oidcLoginEmail)
+	}
+}
+
 func TestHandleCallbackCLILoginErrors(t *testing.T) {
 	errStore := errors.New("spanner unavailable")
 	tests := []struct {

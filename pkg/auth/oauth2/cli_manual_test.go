@@ -132,11 +132,13 @@ func TestHandleCallbackCLIManualAsksForConfirmation(t *testing.T) {
 
 func TestHandleCallbackCLIManualEscapesIdentity(t *testing.T) {
 	a, _, provider := newCLITestAuthenticator(t, baseLoginConfig())
-	provider.userInfo.Email = "<script>alert(1)</script>@mycompany.com"
+	// Sign-in only accepts bare email addresses, so the email carries the HTML-special characters
+	// an address may contain; the name carries markup.
+	provider.userInfo.Email = "o'brien&co@mycompany.com"
 	provider.userInfo.Name = "<script>alert(2)</script>"
 	got, body := readCLIPage(serveCallback(a, newCLICallbackRequest(idpCode, mustSealCLILoginTicket(t, a, baseCLIManualTicket(loginTestOAuthState)))))
 
-	want := cliPage(http.StatusOK, "Sign in to the XMC command-line tool as &lt;script&gt;alert(1)&lt;/script&gt;@mycompany.com?")
+	want := cliPage(http.StatusOK, "Sign in to the XMC command-line tool as o&#39;brien&amp;co@mycompany.com?")
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("callback response mismatch (-want +got):\n%s", diff)
 	}

@@ -62,6 +62,23 @@ func baseLoginConfig() *Config {
 	}
 }
 
+// oidcLoginEmail is the normalized email of oidcUserInfo.
+const oidcLoginEmail = "jdoe@example.com"
+
+// oidcLoginConfig is a deployment that signs in through a non-Google OIDC provider that admits
+// example.com.
+func oidcLoginConfig() *Config {
+	cfg := baseLoginConfig()
+	cfg.AuthURL = "https://idp.example.com/auth"
+	cfg.AllowedDomains = []string{"example.com"}
+	return cfg
+}
+
+// oidcUserInfo is userinfo of a provider that does not send email_verified.
+func oidcUserInfo() *GoogleUserInfo {
+	return &GoogleUserInfo{Email: "JDoe@Example.com", Name: "Test User"}
+}
+
 // newLoginTestAuthenticator returns an Authenticator whose identity provider returns
 // baseLoginUserInfo.
 func newLoginTestAuthenticator(cfg *Config) (*Authenticator, *stubOAuthProvider) {

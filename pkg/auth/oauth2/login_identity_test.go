@@ -16,6 +16,7 @@ package oauth2
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -111,6 +112,53 @@ func TestVerifyUserInfoRejectsNil(t *testing.T) {
 	got := toIdentityResult(NewAuthenticator(baseLoginConfig()).verifyUserInfo(nil))
 	if diff := cmp.Diff(identityResult{NotAdmitted: true, Err: true}, got); diff != "" {
 		t.Errorf("verifyUserInfo(nil) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestVerifyUserInfoEmailPolicy decodes userinfo responses of a non-Google identity provider and
+// checks them against each email verification policy.
+func TestVerifyUserInfoEmailPolicy(t *testing.T) {
+	const (
+		verified      = `{"email": "JDoe@Example.com", "email_verified": true}`
+		verifiedStr   = `{"email": "jdoe@example.com", "email_verified": "true"}`
+		noClaim       = `{"email": "jdoe@example.com"}`
+		unverified    = `{"email": "jdoe@example.com", "email_verified": false}`
+		unverifiedStr = `{"email": "jdoe@example.com", "email_verified": "false"}`
+		notAnEmail    = `{"email": "jdoe", "email_verified": true}`
+	)
+	require, trust := EmailVerificationRequire, EmailVerificationTrustIssuer
+	admitted := identityResult{Email: "jdoe@example.com"}
+	rejected := identityResult{Email: "jdoe@example.com", NotAdmitted: true, Err: true}
+	tests := []struct {
+		name     string
+		policy   EmailVerification
+		userinfo string
+		want     identityResult
+	}{
+		{name: "require: verified, email is normalized", policy: require, userinfo: verified, want: admitted},
+		{name: "require: verified as string", policy: require, userinfo: verifiedStr, want: admitted},
+		{name: "require: missing claim", policy: require, userinfo: noClaim, want: rejected},
+		{name: "require: unverified", policy: require, userinfo: unverified, want: rejected},
+		{name: "zero policy behaves as require", userinfo: noClaim, want: rejected},
+		{name: "trust-issuer: verified", policy: trust, userinfo: verified, want: admitted},
+		{name: "trust-issuer: missing claim", policy: trust, userinfo: noClaim, want: admitted},
+		{name: "trust-issuer: unverified", policy: trust, userinfo: unverified, want: rejected},
+		{name: "trust-issuer: unverified as string", policy: trust, userinfo: unverifiedStr, want: rejected},
+		{name: "email that is not an address", policy: trust, userinfo: notAnEmail, want: identityResult{NotAdmitted: true, Err: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := oidcLoginConfig()
+			cfg.EmailVerification = tt.policy
+			var info GoogleUserInfo
+			if err := json.Unmarshal([]byte(tt.userinfo), &info); err != nil {
+				t.Fatalf("json.Unmarshal(%s) failed: %v", tt.userinfo, err)
+			}
+			got := toIdentityResult(NewAuthenticator(cfg).verifyUserInfo(&info))
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("verifyUserInfo() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

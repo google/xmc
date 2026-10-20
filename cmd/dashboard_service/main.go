@@ -332,15 +332,15 @@ func initAuthorizer(ctx context.Context, projectID string, oauthCfg *oauth2.Conf
 		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
 	}
 	authorizer, err := auth.NewAuthorizer(auth.AuthorizerParams{
-		IDService:                idService,
-		CacheTTL:                 10 * time.Minute,
-		CacheErrorTTL:            time.Minute,
-		IAPAudiences:             oauthCfg.AcceptedAudiences(),
-		IAPIssuer:                auth.DefaultIAPIssuer,
-		JWTSecret:                []byte(oauthCfg.JWTSecret),
-		Admission:                admission,
-		CLISessions:              cliSessions,
-		RequireVerifiedJWKSEmail: len(oauthCfg.AllowedDomains) > 0,
+		IDService:     idService,
+		CacheTTL:      10 * time.Minute,
+		CacheErrorTTL: time.Minute,
+		IAPAudiences:  oauthCfg.AcceptedAudiences(),
+		IAPIssuer:     auth.DefaultIAPIssuer,
+		JWTSecret:     []byte(oauthCfg.JWTSecret),
+		Admission:     admission,
+		CLISessions:   cliSessions,
+		JWKSEmail:     oauthCfg.JWKSEmailPolicy(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create authorizer: %w", err)

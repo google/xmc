@@ -256,7 +256,7 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("JWKSValidationSuccessWithEmailClaim", func(t *testing.T) {
-		a := &Authorizer{iapAudiences: []string{"test_audience"}, admission: &fakeAdmissionChecker{admitted: true}}
+		a := &Authorizer{iapAudiences: []string{"test_audience"}, admission: &fakeAdmissionChecker{admitted: true}, jwksEmail: oauth2.JWKSEmailPolicy{TrustMissingVerified: true}}
 		mockVal := &mockTokenValidator{
 			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
 				return &jwks.Claims{
@@ -283,7 +283,7 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 	})
 
 	t.Run("JWKSValidationSuccessWithSubjectEmailFallback", func(t *testing.T) {
-		a := &Authorizer{iapAudiences: []string{"test_audience"}, admission: &fakeAdmissionChecker{admitted: true}}
+		a := &Authorizer{iapAudiences: []string{"test_audience"}, admission: &fakeAdmissionChecker{admitted: true}, jwksEmail: oauth2.JWKSEmailPolicy{TrustMissingVerified: true}}
 		mockVal := &mockTokenValidator{
 			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
 				return &jwks.Claims{
@@ -549,11 +549,11 @@ func TestAuthenticateUserFromContext_Admission(t *testing.T) {
 				admission = AdmitAll()
 			}
 			a, err := NewAuthorizer(AuthorizerParams{
-				IAPAudiences:             []string{tokenTestAudience},
-				IAPIssuer:                DefaultIAPIssuer,
-				JWTSecret:                []byte(tokenTestSecret),
-				Admission:                admission,
-				RequireVerifiedJWKSEmail: tt.requireVerified,
+				IAPAudiences: []string{tokenTestAudience},
+				IAPIssuer:    DefaultIAPIssuer,
+				JWTSecret:    []byte(tokenTestSecret),
+				Admission:    admission,
+				JWKSEmail:    oauth2.JWKSEmailPolicy{TrustMissingVerified: !tt.requireVerified},
 			})
 			if err != nil {
 				t.Fatalf("NewAuthorizer() failed: %v", err)
@@ -566,6 +566,68 @@ func TestAuthenticateUserFromContext_Admission(t *testing.T) {
 			}})
 
 			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+tt.token))
+			email, userID, err := a.AuthenticateUserFromContext(ctx)
+
+			got := authOutcome{Email: email, UserID: userID, Code: status.Code(err), Checked: checker.checked}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("AuthenticateUserFromContext() mismatch (-want +got):\n%s\nerror: %v", diff, err)
+			}
+		})
+	}
+}
+
+// TestAuthenticateUserFromContext_JWKSEmailPolicy checks the JWKS path against the email_verified
+// policy built by oauth2.Config.JWKSEmailPolicy and the email normalization.
+func TestAuthenticateUserFromContext_JWKSEmailPolicy(t *testing.T) {
+	oldValidate := validate
+	defer func() { validate = oldValidate }()
+	validate = func(context.Context, string, string) (*idtoken.Payload, error) {
+		return nil, errors.New("not a Google ID token")
+	}
+	const sub, email = "opaque-sub", "jdoe@example.com"
+	withVerified := func(verified any) jwks.Claims {
+		return jwks.Claims{Email: " JDoe@Example.com ", EmailVerified: verified, RegisteredClaims: jwt.RegisteredClaims{Subject: sub}}
+	}
+	admitted := func(email, userID string) authOutcome {
+		return authOutcome{Email: email, UserID: userID, Checked: []string{email}}
+	}
+	unauthenticated := authOutcome{Code: codes.Unauthenticated}
+	strict, trustMissing := oauth2.JWKSEmailPolicy{}, oauth2.JWKSEmailPolicy{TrustMissingVerified: true}
+	tests := []struct {
+		name   string
+		policy oauth2.JWKSEmailPolicy
+		claims jwks.Claims
+		want   authOutcome
+	}{
+		{name: "zero policy requires email_verified", policy: strict, claims: withVerified(nil), want: unauthenticated},
+		{name: "zero policy accepts a verified email", policy: strict, claims: withVerified("true"), want: admitted(email, sub)},
+		{name: "trusted missing claim, email is normalized", policy: trustMissing, claims: withVerified(nil), want: admitted(email, sub)},
+		{name: "explicit false is rejected", policy: trustMissing, claims: withVerified(false), want: unauthenticated},
+		{
+			name:   "email with a display name",
+			policy: trustMissing,
+			claims: jwks.Claims{Email: "Jane <jdoe@example.com>", RegisteredClaims: jwt.RegisteredClaims{Subject: sub}},
+			want:   unauthenticated,
+		},
+		{
+			name:   "email-shaped subject fallback is normalized",
+			policy: trustMissing,
+			claims: jwks.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "SA@project.iam.gserviceaccount.com"}},
+			want:   admitted("sa@project.iam.gserviceaccount.com", "SA@project.iam.gserviceaccount.com"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checker := &fakeAdmissionChecker{admitted: true}
+			a, err := NewAuthorizer(AuthorizerParams{IAPAudiences: []string{tokenTestAudience}, IAPIssuer: DefaultIAPIssuer, Admission: checker, JWKSEmail: tt.policy})
+			if err != nil {
+				t.Fatalf("NewAuthorizer() failed: %v", err)
+			}
+			a.SetJWKSValidator(&mockTokenValidator{validateFn: func(context.Context, string, []string) (*jwks.Claims, error) {
+				return &tt.claims, nil
+			}})
+
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer jwks-token"))
 			email, userID, err := a.AuthenticateUserFromContext(ctx)
 
 			got := authOutcome{Email: email, UserID: userID, Code: status.Code(err), Checked: checker.checked}

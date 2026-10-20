@@ -195,6 +195,13 @@ auth:
   # admission. Shared public clients such as the gcloud SDK client are rejected at startup.
   # See "Additional OAuth client audiences" in README.md.
   additionalAudiences: []
+  # Email checks for identity providers other than Google; Google sign-in only accepts the
+  # defaults. See "Sign-in identity checks" in README.md before changing them.
+  oidc:
+    # "require" (email_verified must be true) or "trust-issuer" (a missing email_verified claim
+    # is accepted; an explicit false is still rejected). Refused for Google sign-in and
+    # Microsoft Entra ID. Passed as OIDC_EMAIL_VERIFICATION.
+    emailVerification: "require"
   allowedOrigins: ""
   mockAuth: false
   disableAuthentication: false

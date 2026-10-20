@@ -142,6 +142,8 @@ Common OAuth environment variables for XMC services.
   value: {{ .Values.auth.iap.clientId | quote }}
 - name: ADDITIONAL_AUDIENCES
   value: {{ .Values.auth.additionalAudiences | default (list) | join "," | quote }}
+- name: OIDC_EMAIL_VERIFICATION
+  value: {{ dig "oidc" "emailVerification" "require" .Values.auth | quote }}
 - name: IAP_EXPECTED_ISSUER
   value: {{ .Values.auth.iap.iapIssuer | quote }}
 - name: GCP_PROJECT_ID

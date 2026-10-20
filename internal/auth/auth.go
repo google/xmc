@@ -88,9 +88,7 @@ type Authorizer struct {
 	jwksValidator TokenValidator
 	admission     AdmissionChecker
 	cliSessions   oauth2.CLISessionChecker
-	// requireVerifiedJWKSEmail makes the JWKS path reject tokens that do not assert
-	// email_verified=true, instead of only those that explicitly deny it.
-	requireVerifiedJWKSEmail bool
+	jwksEmail     oauth2.JWKSEmailPolicy
 }
 
 // AuthorizerParams configures NewAuthorizer.
@@ -114,9 +112,10 @@ type AuthorizerParams struct {
 	// oauth2.Authenticator, so gRPC shares the HTTP middleware's session cache. Without it every CLI
 	// session token is rejected.
 	CLISessions oauth2.CLISessionChecker
-	// RequireVerifiedJWKSEmail should be set when a domain allowlist is configured: admitting by
-	// email domain is only sound for emails the identity provider has verified.
-	RequireVerifiedJWKSEmail bool
+	// JWKSEmail sets how strictly a JWKS token's email_verified claim is checked; the zero value
+	// requires it to be true. Build it with oauth2.Config.JWKSEmailPolicy. Google ID tokens and
+	// IAP assertions are not affected.
+	JWKSEmail oauth2.JWKSEmailPolicy
 }
 
 // SetJWKSValidator configures a JWKS token validator for OIDC token verification.
@@ -139,15 +138,15 @@ func NewAuthorizer(p AuthorizerParams) (*Authorizer, error) {
 	}
 
 	return &Authorizer{
-		IDService:                p.IDService,
-		groupCache:               make(map[string]cacheEntry),
-		cacheTTL:                 p.CacheTTL,
-		cacheErrorTTL:            p.CacheErrorTTL,
-		iapAudiences:             p.IAPAudiences,
-		iapIssuer:                p.IAPIssuer,
-		jwtSecret:                p.JWTSecret,
-		admission:                p.Admission,
-		cliSessions:              p.CLISessions,
-		requireVerifiedJWKSEmail: p.RequireVerifiedJWKSEmail,
+		IDService:     p.IDService,
+		groupCache:    make(map[string]cacheEntry),
+		cacheTTL:      p.CacheTTL,
+		cacheErrorTTL: p.CacheErrorTTL,
+		iapAudiences:  p.IAPAudiences,
+		iapIssuer:     p.IAPIssuer,
+		jwtSecret:     p.JWTSecret,
+		admission:     p.Admission,
+		cliSessions:   p.CLISessions,
+		jwksEmail:     p.JWKSEmail,
 	}, nil
 }

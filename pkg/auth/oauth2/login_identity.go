@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // errNotAdmitted reports that a signed-in user may not use this deployment, either because the
@@ -51,23 +50,22 @@ func (a *Authenticator) admitLogin(ctx context.Context, info *GoogleUserInfo) (l
 	return identity, nil
 }
 
-// verifyUserInfo requires a verified email and, when Google admits the user through the domain
-// allowlist, a Workspace hosted domain (`hd`) that is itself allowlisted. This refuses consumer
-// Google accounts registered with a corporate address (they carry no `hd`) while accepting users
-// whose primary Workspace domain differs from an allowlisted alias or secondary email domain.
+// verifyUserInfo requires an email address that the identity provider vouches for
+// (Config.EmailVerification) and, when Google admits the user through the domain allowlist, a
+// Workspace hosted domain (`hd`) that is itself allowlisted. This refuses consumer Google accounts
+// registered with a corporate address (they carry no `hd`) while accepting users whose primary
+// Workspace domain differs from an allowlisted alias or secondary email domain.
 func (a *Authenticator) verifyUserInfo(info *GoogleUserInfo) (loginIdentity, error) {
 	if info == nil {
 		return loginIdentity{}, fmt.Errorf("%w: no userinfo", errNotAdmitted)
 	}
-	identity := loginIdentity{
-		email:   strings.ToLower(strings.TrimSpace(info.Email)),
-		name:    info.Name,
-		picture: info.Picture,
+	identity := loginIdentity{name: info.Name, picture: info.Picture}
+	email, ok := BareEmailAddress(info.Email)
+	if !ok {
+		return identity, fmt.Errorf("%w: userinfo has no email address", errNotAdmitted)
 	}
-	if identity.email == "" {
-		return identity, fmt.Errorf("%w: userinfo has no email", errNotAdmitted)
-	}
-	if !info.EmailVerified {
+	identity.email = email
+	if !EmailVerifiedAccepted(info.EmailVerified, a.Config.requiresVerifiedEmail()) {
 		return identity, fmt.Errorf("%w: email is not verified", errNotAdmitted)
 	}
 	if a.isAllowedDomain(emailDomain(identity.email)) && a.usesGoogleSignIn() && !a.isAllowedDomain(info.HostedDomain) {

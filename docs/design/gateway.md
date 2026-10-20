@@ -134,7 +134,7 @@ The command-line interface (CLI) client bypasses the web UI entirely, communicat
    - **gRPC Requests** (such as `/experiment.ExperimentService/*`) are routed via `GRPCRoute` directly to the gRPC port of the `experiment-state-server`.
 3. **Authentication**:
    - The CLI attaches a bearer token to the call metadata: an XMC CLI session token from `xmc login` (see [CLI Login](#3-cli-login-browser-loopback)), a Google-signed ID token whose audience the deployment accepts (see [Accepted ID Token Audiences](#accepted-id-token-audiences)), for example from a service account's `generateIdToken`, a token from the configured OIDC provider, or an XMC session token.
-   - Each gRPC service verifies the token, rejects Google and OIDC tokens whose `email_verified` claim is false (Google tokens must carry the claim), and then runs the same deployment admission check as the HTTP API (see [Client Authorization](#client-authorization)) before processing the call.
+   - Each gRPC service verifies the token, rejects Google and OIDC tokens whose `email_verified` claim is false (Google tokens must carry the claim; see [Sign-in identity checks](../../deploy/helm/README.md#sign-in-identity-checks) for OIDC tokens), and then runs the same deployment admission check as the HTTP API (see [Client Authorization](#client-authorization)) before processing the call.
 
 ---
 
@@ -156,7 +156,7 @@ sequenceDiagram
     IdP->>B: 307 /api/callback?code&state
     B->>ESS: GET /api/callback
     ESS->>IdP: exchange code, read userinfo
-    ESS->>ESS: require email_verified (and an allowlisted hd for Google), run admission
+    ESS->>ESS: check email and email_verified (and an allowlisted hd for Google), run admission
     ESS->>ESS: store SHA-256 of a one-time code (60s) in CliLoginCodes
     ESS->>B: 302 http://127.0.0.1:N/callback?code&state
     B->>CLI: GET /callback

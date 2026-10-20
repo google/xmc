@@ -78,6 +78,9 @@ type Config struct {
 	// AdditionalAudiences are OAuth client IDs, besides ClientID, whose Google ID tokens are
 	// accepted (e.g. a deployer-owned Desktop client). See AcceptedAudiences.
 	AdditionalAudiences []string
+	// EmailVerification (OIDC_EMAIL_VERIFICATION) adapts the sign-in and JWKS email_verified checks
+	// to non-Google identity providers. The zero value behaves as EmailVerificationRequire.
+	EmailVerification EmailVerification
 }
 
 // LoadConfig bootstraps the configuration from environment variables.
@@ -131,7 +134,7 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	return &Config{
+	cfg := &Config{
 		Port:                  getEnv("PORT", "8080"),
 		MockAuth:              mockAuth,
 		DisableAuthentication: disableAuth,
@@ -160,7 +163,15 @@ func LoadConfig() (*Config, error) {
 		CookieDomain:          cookieDomain,
 		AllowedHosts:          allowedHosts,
 		OIDCIssuerURL:         oidcIssuerURL,
-	}, nil
+	}
+	if err := validateEntraAuthority(cfg.AuthURL); err != nil {
+		return nil, err
+	}
+	cfg.EmailVerification, err = loadEmailVerification(context.Background(), cfg)
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 func loadCLISessionTTL() (time.Duration, error) {

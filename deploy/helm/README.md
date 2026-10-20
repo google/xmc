@@ -104,6 +104,62 @@ Emails are trimmed and lowercased before admission and in issued session tokens.
 Per-experiment ACL matching is still case-sensitive, so list ACL users in
 lowercase.
 
+Some OIDC providers do not send `email_verified`. `auth.oidc.emailVerification`
+(`OIDC_EMAIL_VERIFICATION`, passed to every service) adapts the check to them:
+
+- `require` (default): `email_verified` must be true.
+- `trust-issuer`: a missing `email_verified` is accepted; an explicit `false` is
+  still rejected.
+
+```yaml
+auth:
+  oidc:
+    emailVerification: "trust-issuer"
+```
+
+The `email` claim must hold a bare email address, such as `jdoe@example.com`;
+any other value refuses the sign-in. Services fail to start when `trust-issuer`
+is set with Google sign-in, which always sends `email_verified`, or with Microsoft
+Entra ID (see below). Google ID tokens and IAP assertions are always checked
+strictly.
+
+Tokens validated against `auth.jwksUrl` on gRPC are checked as before: an
+explicit `false` is always rejected, and a missing `email_verified` is rejected
+only when `auth.allowedDomains` is set and `emailVerification` is `require`. Their
+email is trimmed and lowercased like sign-in emails.
+
+> [!WARNING]
+> `trust-issuer` relies on the identity provider to release only addresses it has
+> verified or manages. If users can set their own email, they can claim any
+> address, including one in `auth.allowedEmails`. Combine `trust-issuer` with
+> `auth.allowedDomains` only when the provider guarantees ownership of the domain;
+> the services log a warning at startup when both are set. Keep `require`
+> whenever the provider can send `email_verified`.
+
+Never trust the `email` claim of Microsoft Entra ID: it is mutable and unverified,
+so an Entra ID administrator can set it to an address they do not own (the
+"nOAuth" attack). `trust-issuer` is therefore refused when `auth.authUrl` is an
+Entra ID authority, and multi-tenant authorities (`common`, `organizations` and
+`consumers`) are refused with any setting.
+
+### Other identity providers
+
+To sign in with an OIDC provider other than Google:
+
+- Set `auth.authUrl`, `auth.tokenUrl` and `auth.apiUrl` (userinfo) to the
+  provider's endpoints, and `auth.iap.clientId` and the OAuth client secret to
+  the client you registered there.
+- Register the redirect URI `https://<UI hostname>/api/callback`. The services
+  build it from the host the sign-in starts on, so also register
+  `https://<API hostname>/api/callback` if users sign in there.
+- Admit users with `auth.allowedEmails` or `auth.allowedDomains`. The IAM stage of
+  [deployment admission](#deployment-admission) only matches Google principals.
+- Per-experiment ACLs cannot reference the provider's groups: group membership is
+  resolved through Google Cloud Identity.
+- Tokens issued by the provider itself are accepted only on gRPC, through
+  `auth.jwksUrl`. HTTP APIs accept XMC session tokens, such as those issued by
+  `xmc login`, and Google ID tokens.
+
 ---
 
 ## CLI login

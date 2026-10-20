@@ -1354,6 +1354,25 @@ func TestHandleCallbackDashboardNormalizesEmail(t *testing.T) {
 	}
 }
 
+func TestHandleCallbackDashboardEmailPolicy(t *testing.T) {
+	cfg := oidcLoginConfig()
+	cfg.EmailVerification = EmailVerificationTrustIssuer
+	a, provider := newLoginTestAuthenticator(cfg)
+	provider.userInfo = oidcUserInfo()
+	resp := serveCallback(a, newCallbackRequest("&code=idp-code"))
+	cookie := responseCookie(resp, "session_token")
+	if cookie == nil {
+		t.Fatalf("Dashboard session cookie not set; Location = %q", resp.Header.Get("Location"))
+	}
+	claims, err := ParseSessionToken(cookie.Value, []byte(loginTestSecret), FrontendAudience)
+	if err != nil {
+		t.Fatalf("ParseSessionToken() failed: %v", err)
+	}
+	if claims.Email != oidcLoginEmail {
+		t.Errorf("session email = %q, want %q", claims.Email, oidcLoginEmail)
+	}
+}
+
 func TestHandleCallbackDashboardPipelineFailure(t *testing.T) {
 	cfg := baseLoginConfig()
 	cfg.AllowedDomains = nil
