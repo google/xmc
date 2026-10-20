@@ -63,7 +63,7 @@ class TestInstallXmanager(unittest.TestCase):
             self.assertEqual(args.xmc_sdk_loc, install_xmanager.REMOTE_XMC_SDK_LOC)
 
     def test_get_default_xmc_sdk_loc(self) -> None:
-        """XMC_SDK_LOC wins, then the local checkout, then the GitHub requirement."""
+        """A non-empty XMC_SDK_LOC wins, then the local checkout, then GitHub."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             script = root / "deploy" / "cli" / "install_xmanager.py"
@@ -75,6 +75,10 @@ class TestInstallXmanager(unittest.TestCase):
                 )
                 local_sdk.mkdir(parents=True)
                 (local_sdk / "pyproject.toml").write_text("", encoding="utf-8")
+                self.assertEqual(
+                    install_xmanager.get_default_xmc_sdk_loc(script), str(local_sdk.resolve())
+                )
+            with mock.patch.dict("os.environ", {"XMC_SDK_LOC": ""}, clear=True):
                 self.assertEqual(
                     install_xmanager.get_default_xmc_sdk_loc(script), str(local_sdk.resolve())
                 )
