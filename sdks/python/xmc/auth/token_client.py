@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -57,11 +56,8 @@ class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
 
 
 def build_opener(server_origin: str) -> urllib.request.OpenerDirector:
-    """Returns an opener that verifies TLS, refuses redirects, and skips proxies for loopback."""
-    handlers: list[urllib.request.BaseHandler] = [
-        _RefuseRedirects(),
-        urllib.request.HTTPSHandler(context=ssl.create_default_context()),
-    ]
+    """Returns an opener that refuses redirects and skips proxies for loopback."""
+    handlers: list[urllib.request.BaseHandler] = [_RefuseRedirects()]
     if is_loopback_host(urllib.parse.urlsplit(server_origin).hostname or ""):
         handlers.append(urllib.request.ProxyHandler({}))
     return urllib.request.build_opener(*handlers)

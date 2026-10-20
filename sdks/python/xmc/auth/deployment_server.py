@@ -23,9 +23,7 @@ from collections.abc import Mapping
 from xmc.auth.errors import AuthError
 
 SERVER_ENV_VARS = ("XMC_API_URL", "XMANAGER_UI_URL")
-# gRPC endpoint of the XManager client, e.g. `dns:///grpc.<host>:443`.
-GRPC_ENDPOINT_ENV_VAR = "XMANAGER_ENDPOINT"
-_GRPC_HOST_LABEL = "grpc."
+DOMAIN_ENV_VAR = "XMC_DOMAIN"
 
 
 def is_loopback_host(host: str) -> bool:
@@ -40,8 +38,16 @@ def is_loopback_host(host: str) -> bool:
         return False
 
 
+def _server_from_domain(domain: str | None) -> str | None:
+    """Converts `XMC_DOMAIN` (a bare hostname or a full URL) into a server URL."""
+    cleaned = (domain or "").strip()
+    if not cleaned:
+        return None
+    return cleaned if "://" in cleaned else f"https://{cleaned}"
+
+
 def resolve_server(flag_value: str | None, env: Mapping[str, str]) -> str:
-    """Returns the origin from `--server`, XMC_API_URL, XMANAGER_UI_URL, or XMANAGER_ENDPOINT.
+    """Returns the origin from `--server`, XMC_API_URL, XMANAGER_UI_URL, or XMC_DOMAIN.
 
     Raises:
         AuthError: If no deployment is configured or its URL is invalid.
@@ -49,36 +55,15 @@ def resolve_server(flag_value: str | None, env: Mapping[str, str]) -> str:
     candidates = [
         flag_value,
         *(env.get(name) for name in SERVER_ENV_VARS),
-        server_from_grpc_endpoint(env.get(GRPC_ENDPOINT_ENV_VAR)),
+        _server_from_domain(env.get(DOMAIN_ENV_VAR)),
     ]
     raw = next((value.strip() for value in candidates if value and value.strip()), None)
     if raw is None:
         raise AuthError(
-            "No XMC server configured. Pass --server or set XMC_API_URL or XMANAGER_UI_URL."
+            "No XMC server configured. "
+            "Pass --server or set XMC_API_URL, XMANAGER_UI_URL, or XMC_DOMAIN."
         )
     return parse_server(raw)
-
-
-def server_from_grpc_endpoint(endpoint: str | None) -> str | None:
-    """Derives `https://<host>` from a `[dns:///]grpc.<host>[:port]` gRPC endpoint.
-
-    XMC serves gRPC on the `grpc.` subdomain of the Dashboard host, so the
-    Dashboard origin can be recovered from the endpoint. Endpoints whose host
-    has no `grpc.` label are ignored.
-
-    Returns:
-        The derived origin, or None if the endpoint doesn't follow that layout.
-    """
-    target = (endpoint or "").strip().removeprefix("dns:///")
-    try:
-        parts = urllib.parse.urlsplit(f"//{target}")
-        host, _ = parts.hostname or "", parts.port  # Reading .port validates it.
-    except ValueError:
-        return None
-    dashboard_host = host.removeprefix(_GRPC_HOST_LABEL)
-    if dashboard_host == host or not dashboard_host:
-        return None
-    return f"https://{dashboard_host}"
 
 
 def parse_server(raw: str) -> str:

@@ -16,19 +16,37 @@
 
 from __future__ import annotations
 
+import base64
 import dataclasses
+import hashlib
+import secrets
 import threading
 import urllib.parse
 from collections.abc import Callable
 from typing import TextIO
 
-from xmc.auth import pkce
 from xmc.auth.loopback import CallbackReceiver
 from xmc.auth.token_client import TokenGrant
 
 LOGIN_PATH = "/api/cli/login"
 SUCCESS_PATH = "/api/cli/success"
 DEFAULT_TIMEOUT_SECONDS = 300
+
+
+def s256_challenge(verifier: str) -> str:
+    """Returns BASE64URL(SHA256(verifier)) without padding (RFC 7636 section 4.2)."""
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def new_verifier() -> str:
+    """Returns a random 86-character code verifier (RFC 7636 allows 43-128)."""
+    return secrets.token_urlsafe(64)
+
+
+def new_state() -> str:
+    """Returns an unguessable OAuth `state` value carrying 256 random bits."""
+    return secrets.token_urlsafe(32)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -62,8 +80,8 @@ def run_login(
     Raises:
         AuthError: If the login fails, is denied, or times out.
     """
-    verifier, state = pkce.new_verifier(), pkce.new_state()
-    challenge = pkce.s256_challenge(verifier)
+    verifier, state = new_verifier(), new_state()
+    challenge = s256_challenge(verifier)
     with CallbackReceiver(state, server_origin + SUCCESS_PATH) as receiver:
         url = build_login_url(server_origin, state, challenge, receiver.port, login_hint)
         deps.out.write(

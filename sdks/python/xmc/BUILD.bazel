@@ -172,13 +172,6 @@ py_test(
 )
 
 py_test(
-    name = "auth_pkce_test",
-    srcs = ["auth/pkce_test.py"],
-    main = "auth/pkce_test.py",
-    deps = [":xmc"],
-)
-
-py_test(
     name = "auth_token_client_test",
     srcs = ["auth/token_client_test.py"],
     main = "auth/token_client_test.py",
