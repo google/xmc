@@ -76,8 +76,8 @@ func TestBridgeChartSingleWriter(t *testing.T) {
 	}
 }
 
-// TestBridgeChartLeaseRulesStayNamespaced asserts that the Lease rules are not part of
-// xmc-bridge-role, which becomes a ClusterRole with rbac.clusterScope.
+// TestBridgeChartLeaseRulesStayNamespaced asserts that the Lease rules live only in the
+// dedicated xmc-bridge-leader-election Role, not in xmc-bridge-role.
 func TestBridgeChartLeaseRulesStayNamespaced(t *testing.T) {
 	raw := readComponentsTemplate(t, "rbac.yaml")
 	mainRole, _, _ := strings.Cut(raw, "\n---\n")
