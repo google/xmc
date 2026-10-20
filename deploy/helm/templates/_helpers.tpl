@@ -140,6 +140,8 @@ Common OAuth environment variables for XMC services.
   value: {{ .Values.auth.trustXForwardedProto | quote }}
 - name: CLIENT_ID
   value: {{ .Values.auth.iap.clientId | quote }}
+- name: ADDITIONAL_AUDIENCES
+  value: {{ .Values.auth.additionalAudiences | default (list) | join "," | quote }}
 - name: IAP_EXPECTED_ISSUER
   value: {{ .Values.auth.iap.iapIssuer | quote }}
 - name: GCP_PROJECT_ID

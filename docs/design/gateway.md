@@ -133,7 +133,7 @@ The command-line interface (CLI) client bypasses the web UI entirely, communicat
    - **HTTP Requests** targeting `/v1/*` are routed to the ESS HTTP endpoint.
    - **gRPC Requests** (such as `/experiment.ExperimentService/*`) are routed via `GRPCRoute` directly to the gRPC port of the `experiment-state-server`.
 3. **Authentication**:
-   - The CLI attaches a bearer token to the call metadata: an XMC CLI session token from `xmc login` (see [CLI Login](#3-cli-login-browser-loopback)), a Google-signed ID token (for example from a service account's `generateIdToken`), a token from the configured OIDC provider, or an XMC session token.
+   - The CLI attaches a bearer token to the call metadata: an XMC CLI session token from `xmc login` (see [CLI Login](#3-cli-login-browser-loopback)), a Google-signed ID token whose audience the deployment accepts (see [Accepted ID Token Audiences](#accepted-id-token-audiences)), for example from a service account's `generateIdToken`, a token from the configured OIDC provider, or an XMC session token.
    - Each gRPC service verifies the token, rejects Google and OIDC tokens whose `email_verified` claim is false (Google tokens must carry the claim), and then runs the same deployment admission check as the HTTP API (see [Client Authorization](#client-authorization)) before processing the call.
 
 ---
@@ -201,3 +201,11 @@ Every authenticated caller, whether it arrives with a browser session cookie, an
 3. a direct binding of the authorized IAM role (`AUTHORIZED_IAM_ROLE`, `roles/viewer` by default) on the deployment project for the caller's `user:`, `serviceAccount:` or `domain:` principal. Owner, editor and group bindings do not satisfy this check.
 
 Callers that authenticate but are not admitted receive `PERMISSION_DENIED` on gRPC and `403` on HTTP. With `DISABLE_AUTHENTICATION=true` (local development only), gRPC skips admission. The Component Manager Service additionally admits the workload service account that `xmc-bridge` runs as (`ess_service_account`); no other service admits it by identity.
+
+### Accepted ID Token Audiences
+A Google or OIDC ID token is accepted only if its `aud` claim is one of the deployment's accepted audiences. `oauth2.Config.AcceptedAudiences` builds this list in one place, in a fixed order, for the HTTP middleware, the gRPC authorizers and the JWKS validators:
+1. service-specific audiences, on gRPC only: the IAP audiences (`IAP_EXPECTED_HTTP_AUDIENCE`, `IAP_EXPECTED_GRPC_AUDIENCE`) on the experiment state server and XID service, plus the XID audience on the XID service,
+2. the deployment's OAuth client (`CLIENT_ID`), and
+3. `ADDITIONAL_AUDIENCES` (Helm `auth.additionalAudiences`): extra OAuth client IDs that the deployer owns, such as a Desktop client used by scripts.
+
+Empty and duplicate `ADDITIONAL_AUDIENCES` entries are dropped; an unset required audience such as `CLIENT_ID` still stops the experiment state server, XID and dashboard services at startup. Accepting an audience only authenticates the caller; deployment admission still applies (see [Client Authorization](#client-authorization)). Services fail to start if `ADDITIONAL_AUDIENCES` contains a shared public Google client, such as the Google Cloud SDK client (`32555940559.apps.googleusercontent.com`) or the application-default credentials client (`764086051850-6qr4p6gpi6hn506pt8ejuq83di341hur.apps.googleusercontent.com`). Any Google user can mint ID tokens for those clients, so accepting them would leave the admission check as the only control between the deployment and every Google account.

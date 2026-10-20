@@ -166,6 +166,55 @@ clusters.
 
 ---
 
+## Additional OAuth client audiences
+
+By default the services accept Google ID tokens only when their audience (`aud`) is
+`auth.iap.clientId` (plus the IAP audiences on gRPC). `auth.additionalAudiences` lists other OAuth
+client IDs, owned by you, whose ID tokens are also accepted. The chart passes them to every service
+as the comma-separated `ADDITIONAL_AUDIENCES`.
+
+This is an advanced option for scripts and custom tools that obtain Google ID tokens themselves.
+For interactive use, prefer `xmc login` ([google/xmc#1309](https://github.com/google/xmc/issues/1309)),
+which issues an XMC session token. Service accounts need no extra audience: they can mint an ID
+token for `auth.iap.clientId` directly, for example with
+`gcloud auth print-identity-token --impersonate-service-account=SA_EMAIL --audiences=CLIENT_ID`.
+
+To let users sign in with their own tool:
+
+1. In the deployment project, create an OAuth client of type **Desktop app**
+   (**Google Auth Platform > Clients**) and download its client secret JSON.
+2. Add its client ID:
+
+   ```yaml
+   auth:
+     additionalAudiences:
+       - "123456789012-abcdef.apps.googleusercontent.com"
+   ```
+
+3. Obtain an ID token through that client with the `openid` and `email` scopes. For example, with
+   `google-auth-oauthlib`:
+
+   ```python
+   from google_auth_oauthlib.flow import InstalledAppFlow
+
+   flow = InstalledAppFlow.from_client_secrets_file(
+       "client_secret.json", scopes=["openid", "https://www.googleapis.com/auth/userinfo.email"]
+   )
+   credentials = flow.run_local_server(port=0)
+   id_token = credentials.id_token  # aud is the Desktop client ID; send as "Authorization: Bearer"
+   ```
+
+`gcloud auth print-identity-token` cannot produce such a token for a user account: the token's
+audience is always the Google Cloud SDK client, and `--audiences` is supported only for service
+accounts. Services fail to start if `auth.additionalAudiences` contains a shared public Google
+client, namely the Google Cloud SDK client (`32555940559.apps.googleusercontent.com`) or the
+application-default credentials client
+(`764086051850-6qr4p6gpi6hn506pt8ejuq83di341hur.apps.googleusercontent.com`). Any Google user can
+mint ID tokens for those clients, which would leave [deployment admission](#deployment-admission) as
+the only control. Callers using an additional audience still need to pass deployment admission.
+
+---
+
 ## Out-of-Cluster & Remote Kubernetes Configuration (`k8s.remote`)
 
 By default, the `actuator` and `reconciler` controllers manage `JobSet` and `Workload` resources on the Kubernetes cluster where they are deployed (using standard in-cluster service account tokens via `rest.InClusterConfig()`).

@@ -139,6 +139,22 @@ py_test(
 )
 
 py_test(
+    name = "additional_audiences_test",
+    srcs = ["additional_audiences_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "additional_audiences_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
     name = "session_ttl_test",
     srcs = ["session_ttl_test.py"],
     data = ["//deploy/helm:chart"],

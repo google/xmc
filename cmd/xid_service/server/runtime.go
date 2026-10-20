@@ -88,7 +88,7 @@ func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, a
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
 	}
-	audiences := []string{cfg.Audience, cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}
+	audiences := oauthCfg.AcceptedAudiences(cfg.Audience, cfg.HTTPAudience, cfg.GRPCAudience)
 	auth, err := authz.NewAuthorizer(authz.AuthorizerParams{
 		IDService:                idService,
 		CacheTTL:                 10 * time.Minute,

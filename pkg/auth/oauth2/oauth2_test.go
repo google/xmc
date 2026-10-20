@@ -643,6 +643,54 @@ func TestBearerTokenValidation(t *testing.T) {
 	})
 }
 
+func TestBearerOIDCAcceptedAudiences(t *testing.T) {
+	// audienceBoundValidator mimics idtoken.Validate: a token "<aud>|<email>" is valid only for <aud>.
+	audienceBoundValidator := func(ctx context.Context, token string, audience string) (*idtoken.Payload, error) {
+		aud, email, _ := strings.Cut(token, "|")
+		if aud != audience {
+			return nil, fmt.Errorf("audience mismatch: got %q, want %q", aud, audience)
+		}
+		return &idtoken.Payload{Issuer: "https://accounts.google.com", Audience: aud, Claims: map[string]interface{}{"email": email}}, nil
+	}
+	baseCfg := Config{
+		ClientID:            "web-client",
+		AdditionalAudiences: []string{"desktop-client"},
+		JWTSecret:           "test-jwt-secret-key-123456789-abcd",
+		AllowedDomains:      []string{"mycompany.com"},
+	}
+	tests := []struct {
+		name     string
+		clientID string
+		token    string
+		wantCode int
+	}{
+		{name: "client id audience accepted", clientID: baseCfg.ClientID, token: "web-client|user@mycompany.com", wantCode: http.StatusOK},
+		{name: "additional audience accepted", clientID: baseCfg.ClientID, token: "desktop-client|user@mycompany.com", wantCode: http.StatusOK},
+		{name: "additional audience accepted without client id", clientID: "", token: "desktop-client|user@mycompany.com", wantCode: http.StatusOK},
+		{name: "unknown audience rejected", clientID: baseCfg.ClientID, token: "other-client|user@mycompany.com", wantCode: http.StatusUnauthorized},
+		{name: "empty client id never validated as any audience", clientID: "", token: "|user@mycompany.com", wantCode: http.StatusUnauthorized},
+		{name: "additional audience still subject to admission", clientID: baseCfg.ClientID, token: "desktop-client|user@external.com", wantCode: http.StatusForbidden},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := baseCfg
+			cfg.ClientID = tc.clientID
+			a := newTestAuthenticator(&cfg)
+			a.IDTokenValidator = audienceBoundValidator
+			okHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+			req := httptest.NewRequest("GET", "/api/data", nil)
+			req.Header.Set("Authorization", "Bearer "+tc.token)
+			w := httptest.NewRecorder()
+
+			a.Authenticate(okHandler).ServeHTTP(w, req)
+
+			if w.Code != tc.wantCode {
+				t.Errorf("Authenticate() status = %d, want %d (body: %s)", w.Code, tc.wantCode, w.Body.String())
+			}
+		})
+	}
+}
+
 func TestSecurityHeadersMiddleware(t *testing.T) {
 	cfg := &Config{
 		TrustXForwardedProto: true,

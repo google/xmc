@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
@@ -279,10 +280,8 @@ func initAuthorizer(ctx context.Context, oauthCfg oauth2.Config, admission auth.
 		logging.Fatal(ctx, "Failed to create Cloud Identity service", "error", err)
 	}
 
-	var audiences []string
-	if oauthCfg.ClientID != "" {
-		audiences = append(audiences, oauthCfg.ClientID)
-	}
+	// Unlike the other services, the health service tolerates an unset CLIENT_ID.
+	audiences := slices.DeleteFunc(oauthCfg.AcceptedAudiences(), func(aud string) bool { return aud == "" })
 
 	authorizer, err := auth.NewAuthorizer(auth.AuthorizerParams{
 		IDService:                idService,

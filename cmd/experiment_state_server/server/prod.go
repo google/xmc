@@ -148,7 +148,7 @@ func NewGRPCAuthorizer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
 	}
-	audiences := []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}
+	audiences := oauthCfg.AcceptedAudiences(cfg.HTTPAudience, cfg.GRPCAudience)
 	auth, err := authz.NewAuthorizer(authz.AuthorizerParams{
 		IDService:                idService,
 		CacheTTL:                 10 * time.Minute,

@@ -323,7 +323,7 @@ func initAuthorizer(ctx context.Context, projectID string, oauthCfg *oauth2.Conf
 		IDService:                idService,
 		CacheTTL:                 10 * time.Minute,
 		CacheErrorTTL:            time.Minute,
-		IAPAudiences:             []string{oauthCfg.ClientID},
+		IAPAudiences:             oauthCfg.AcceptedAudiences(),
 		IAPIssuer:                auth.DefaultIAPIssuer,
 		JWTSecret:                []byte(oauthCfg.JWTSecret),
 		Admission:                admission,
