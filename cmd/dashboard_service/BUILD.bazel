@@ -36,7 +36,6 @@ go_library(
         "//internal/storage/spanner/clisession",
         "//internal/storage/spanner/dashboard",
         "//pkg/auth/oauth2",
-        "//pkg/auth/oauth2/mock",
         "//pkg/clickhouse",
         "//pkg/clickhouse/componentconfig",
         "//pkg/components/crreader",

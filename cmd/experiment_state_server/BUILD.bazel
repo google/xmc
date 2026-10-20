@@ -41,7 +41,6 @@ go_library(
         "//internal/storage/spanner/clisession",
         "//internal/task_queue",
         "//pkg/auth/oauth2",
-        "//pkg/auth/oauth2/mock",
         "//pkg/components/cms",
         "//pkg/components/store",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",

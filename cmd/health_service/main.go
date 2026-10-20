@@ -37,7 +37,6 @@ import (
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/pkg/auth/oauth2/mock"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	cloudidentity "google.golang.org/api/cloudidentity/v1beta1"
@@ -93,7 +92,6 @@ func main() {
 		oauthCfg.GCPProjectID = cfg.ProjectID
 	}
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
-	mock.ConfigureIfEnabled(authenticator)
 	defer authenticator.Close()
 
 	deps := initGRPCServer(ctx, cfg, *oauthCfg, authenticator)
