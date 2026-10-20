@@ -15,12 +15,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
+	"log/slog"
 	"testing"
 	"time"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/bridge"
 )
 
@@ -351,5 +354,19 @@ func TestParseConfig_Defaults(t *testing.T) {
 	}
 	if cfg.MaxConcurrentReconciles != 1 {
 		t.Errorf("cfg.MaxConcurrentReconciles = %d, want 1", cfg.MaxConcurrentReconciles)
+	}
+}
+
+func TestConfigureLogger_SetsDefaultForControllerRuntimeContexts(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	logger := slog.New(slog.NewJSONHandler(flag.CommandLine.Output(), nil))
+	ctx := configureLogger(context.Background(), logger)
+	if got := logging.FromContext(ctx); got != logger {
+		t.Errorf("logging.FromContext(ctx) = %p, want %p", got, logger)
+	}
+	if got := logging.FromContext(context.Background()); got != logger {
+		t.Errorf("logging.FromContext(context.Background()) = %p, want %p (slog.Default fallback)", got, logger)
 	}
 }
