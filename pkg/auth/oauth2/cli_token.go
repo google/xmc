@@ -105,18 +105,30 @@ func (a *Authenticator) checkCLITokenRequest(w http.ResponseWriter, r *http.Requ
 
 // checkStillAdmitted re-runs deployment admission and writes the error response if it fails.
 func (a *Authenticator) checkStillAdmitted(ctx context.Context, w http.ResponseWriter, email string) bool {
-	authorized, err := a.IsUserAuthorized(ctx, email)
+	admitted, err := a.stillAdmitted(ctx, email)
 	if err != nil {
-		logging.Error(ctx, "[CLI Token] Authorization pipeline check failed", "error", err)
 		writeTokenError(w, http.StatusInternalServerError, tokenErrorServerError)
 		return false
 	}
-	if !authorized {
-		logging.Warn(ctx, "[CLI Token] Access forbidden: user is no longer admitted", "email", email)
+	if !admitted {
 		writeTokenError(w, http.StatusForbidden, tokenErrorAccessDenied)
 		return false
 	}
 	return true
+}
+
+// stillAdmitted re-runs deployment admission for a user admitted when they signed in, which may
+// have been revoked since, and logs a failure or denial.
+func (a *Authenticator) stillAdmitted(ctx context.Context, email string) (bool, error) {
+	authorized, err := a.IsUserAuthorized(ctx, email)
+	if err != nil {
+		logging.Error(ctx, "[CLI Login] Authorization pipeline check failed", "error", err)
+		return false, err
+	}
+	if !authorized {
+		logging.Warn(ctx, "[CLI Login] Access forbidden: user is no longer admitted", "email", email)
+	}
+	return authorized, nil
 }
 
 // parseCLITokenRequest reads the form body (never the URL query) and checks every field's format
