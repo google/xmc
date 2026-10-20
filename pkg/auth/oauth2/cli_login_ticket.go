@@ -16,15 +16,14 @@ package oauth2
 
 import (
 	"crypto/hkdf"
-	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -43,7 +42,7 @@ var (
 )
 
 // cliLoginTicket is the state of a pending CLI login, carried from `/api/cli/login` to
-// `/api/callback` in the MAC'd cli_login cookie.
+// `/api/callback` in the signed cli_login cookie.
 type cliLoginTicket struct {
 	Port          int    `json:"port"`
 	State         string `json:"state"`
@@ -66,49 +65,57 @@ func (t cliLoginTicket) boundTo(oauthState string) bool {
 	return subtle.ConstantTimeCompare([]byte(t.OAuthStateHash), []byte(hashOAuthState(oauthState))) == 1
 }
 
-// sealCLILoginTicket seals the ticket with the cli_login MAC key (see sealSigned).
+// sealCLILoginTicket signs the ticket as an HS256 JWT with the cli_login key.
 func (a *Authenticator) sealCLILoginTicket(t cliLoginTicket) (string, error) {
-	return sealSigned(a.cliLoginKey, t)
+	return sealSigned(a.cliLoginKey, t, t.ExpiresAt)
 }
 
-// openCLILoginTicket verifies the MAC and expiry of a sealed ticket and decodes it.
+// openCLILoginTicket verifies the signature and expiry of a sealed ticket and decodes it.
 func (a *Authenticator) openCLILoginTicket(sealed string, now time.Time) (cliLoginTicket, error) {
-	var t cliLoginTicket
-	if !openSigned(a.cliLoginKey, sealed, &t) {
-		return cliLoginTicket{}, errInvalidCLILoginTicket
-	}
-	if now.Unix() >= t.ExpiresAt {
+	t, err := openSigned[cliLoginTicket](a.cliLoginKey, sealed, now)
+	if errors.Is(err, jwt.ErrTokenExpired) {
 		return cliLoginTicket{}, errExpiredCLILoginTicket
+	}
+	if err != nil {
+		return cliLoginTicket{}, errInvalidCLILoginTicket
 	}
 	return t, nil
 }
 
-// sealSigned encodes v as base64url(JSON) "." base64url(HMAC-SHA256 of the encoded JSON).
-func sealSigned(key []byte, v any) (string, error) {
-	payload, err := json.Marshal(v)
-	if err != nil {
-		return "", fmt.Errorf("failed to encode signed value: %w", err)
-	}
-	encoded := base64.RawURLEncoding.EncodeToString(payload)
-	return encoded + "." + base64.RawURLEncoding.EncodeToString(hmacSHA256(key, []byte(encoded))), nil
+type signedClaims[T any] struct {
+	Payload T `json:"p"`
+	jwt.RegisteredClaims
 }
 
-// openSigned verifies the MAC of a value sealed by sealSigned with key and decodes it into v. It
-// reports whether the value is authentic and well formed.
-func openSigned(key []byte, sealed string, v any) bool {
-	encoded, mac, ok := strings.Cut(sealed, ".")
-	if !ok {
-		return false
+// sealSigned encodes v into an HS256 JWT signed with key and expiring at Unix time expiresAt.
+func sealSigned[T any](key []byte, v T, expiresAt int64) (string, error) {
+	claims := signedClaims[T]{
+		Payload: v,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Unix(expiresAt, 0)),
+		},
 	}
-	gotMAC, err := base64.RawURLEncoding.DecodeString(mac)
-	if err != nil || !hmac.Equal(gotMAC, hmacSHA256(key, []byte(encoded))) {
-		return false
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(key)
+}
+
+// openSigned verifies the HS256 signature and expiry of a token sealed by sealSigned and returns
+// its payload.
+func openSigned[T any](key []byte, sealed string, now time.Time) (T, error) {
+	var zero T
+	if len(key) == 0 {
+		return zero, errInvalidCLILoginTicket
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(encoded)
-	if err != nil {
-		return false
+	var claims signedClaims[T]
+	keyFunc := func(*jwt.Token) (any, error) { return key, nil }
+	token, err := jwt.ParseWithClaims(sealed, &claims, keyFunc,
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithExpirationRequired(),
+		jwt.WithTimeFunc(func() time.Time { return time.Unix(now.Unix(), 0) }),
+	)
+	if err != nil || !token.Valid {
+		return zero, err
 	}
-	return json.Unmarshal(payload, v) == nil
+	return claims.Payload, nil
 }
 
 // deriveCLILoginMACKey derives the cli_login cookie MAC key from the JWT secret with
@@ -119,10 +126,4 @@ func deriveCLILoginMACKey(jwtSecret []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to derive cli_login key: %w", err)
 	}
 	return key, nil
-}
-
-func hmacSHA256(key, data []byte) []byte {
-	mac := hmac.New(sha256.New, key)
-	mac.Write(data)
-	return mac.Sum(nil)
 }

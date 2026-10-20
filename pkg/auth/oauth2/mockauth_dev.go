@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package mock
+//go:build mockauth
+
+package oauth2
 
 import (
 	"context"
@@ -22,7 +24,6 @@ import (
 	"cloud.google.com/go/iam/apiv1/iampb"
 	xoauth2 "golang.org/x/oauth2"
 	"google.golang.org/api/idtoken"
-	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 // MockOAuthProvider implements OAuthProvider with hardcoded credentials for local dev/testing.
@@ -38,8 +39,8 @@ func (m *MockOAuthProvider) AuthCodeURL(state string, r *http.Request, opts ...x
 }
 
 // ExchangeAndGetUserInfo returns mock user details directly without performing external HTTP network calls.
-func (m *MockOAuthProvider) ExchangeAndGetUserInfo(ctx context.Context, r *http.Request, code string) (*oauth2.GoogleUserInfo, error) {
-	return &oauth2.GoogleUserInfo{
+func (m *MockOAuthProvider) ExchangeAndGetUserInfo(ctx context.Context, r *http.Request, code string) (*GoogleUserInfo, error) {
+	return &GoogleUserInfo{
 		Email:         m.MockEmail,
 		EmailVerified: true,
 		Name:          m.MockName,
@@ -47,8 +48,16 @@ func (m *MockOAuthProvider) ExchangeAndGetUserInfo(ctx context.Context, r *http.
 	}, nil
 }
 
+// configureMockIfEnabled installs the mock OAuth provider, ID token validator and IAM policy on a
+// when MOCK_AUTH is set in binaries built with the mockauth tag.
+func configureMockIfEnabled(a *Authenticator) {
+	if a.Config != nil && a.Config.MockAuth {
+		ConfigureMockAuth(a)
+	}
+}
+
 // ConfigureMockAuth configures the authenticator with mock implementations for local dev/testing.
-func ConfigureMockAuth(a *oauth2.Authenticator) {
+func ConfigureMockAuth(a *Authenticator) {
 	a.OAuthProvider = &MockOAuthProvider{
 		MockEmail: "mock-user@mycompany.com",
 		MockName:  "Mock User",
