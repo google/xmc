@@ -156,8 +156,8 @@ func TestPlanLiveIntent(t *testing.T) {
 		wantRec    *ComponentRecord
 		wantPlan   intentPlan
 	}{
-		{name: "absent name is a create", catalog: map[string]*ComponentRecord{}, desiredGen: 0, wantPlan: intentPlan{write: writeSpec, generation: 1}},
-		{name: "soft-deleted record is a create at the desired generation", catalog: map[string]*ComponentRecord{"redpanda": softDeleted}, desiredGen: 3, wantPlan: intentPlan{write: writeSpec, generation: 3}},
+		{name: "absent name is a create", catalog: map[string]*ComponentRecord{}, desiredGen: 0, wantPlan: intentPlan{write: writeSpec, generation: 1, created: true}},
+		{name: "soft-deleted record is a create at the desired generation", catalog: map[string]*ComponentRecord{"redpanda": softDeleted}, desiredGen: 3, wantPlan: intentPlan{write: writeSpec, generation: 3, created: true}},
 		{name: "active record delegates to planIntent", catalog: map[string]*ComponentRecord{"redpanda": active}, desiredGen: 5, wantRec: active, wantPlan: intentPlan{write: writeNothing, generation: 5}},
 	}
 	for _, tt := range tests {

@@ -371,7 +371,7 @@ func TestClusterFence_TransitionNotifications(t *testing.T) {
 	regressed := fenceRejection(t, store.ReasonClusterEpochRegressed)
 	const (
 		activeLog = "level=INFO msg=\"Cluster holds the CMS ownership fence\""
-		fencedLog = "level=ERROR msg=\"Cluster is fenced out of CMS"
+		fencedLog = "level=ERROR msg=\"Cluster is fenced out of CMS; holding Components in cold standby until the ownership epoch is raised\" cluster=prod epoch=1 reason=ClusterFenced detail=\"rejected by test fence\""
 	)
 	tests := []struct {
 		name          string

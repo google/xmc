@@ -208,7 +208,7 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 	}
 	if status.Code(err) == codes.FailedPrecondition {
 		msg := fmt.Sprintf("Cannot disable %q: %s", in.Name, status.Convert(err).Message())
-		logging.Info(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
+		logDeactivationBlocked(ctx, in, canonicalName, msg)
 		r.syncTracker.recordDeactivationBlock(key, in.Generation, msg)
 		return r.reportDeactivationBlocked(ctx, in, canonicalName, res, msg)
 	}
@@ -221,12 +221,40 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 		return res, err
 	}
 	r.syncTracker.clearDeactivationBlock(key)
+	return r.reportDisabled(ctx, in, canonicalName, res)
+}
+
+// logDeactivationBlocked logs a PrepareDeactivation blocked by active dependents at Info when the
+// block is new (no DeactivationBlocked=True condition with the same message yet), and at Debug for
+// the periodic recheck of a block that has not changed.
+func logDeactivationBlocked(ctx context.Context, in ReconcileComponentInput, canonicalName, msg string) {
+	if prev := findCondition(in.ExistingConditions, ConditionTypeDeactivationBlocked); prev != nil && prev.Status == ConditionStatusTrue && prev.Message == msg {
+		logging.Debug(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
+	} else {
+		logging.Info(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
+	}
+}
+
+// reportDisabled reports the component disabled in res and to CMS. A pass that changes the Ready,
+// Reconciling, or Stalled condition (such as the first one after deactivation) logs at Info; an
+// unchanged periodic pass logs at Debug. A NotFound from CMS is tolerated; any other CMS failure
+// reports DeactivationIncomplete so the next pass retries the deactivation handshake.
+func (r *Reconciler) reportDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	setReadiness(res, in, ConditionStatusFalse, reasonComponentDisabled, "Component is disabled")
+	// Compared before syncObservedToCMS, which rewrites Ready on a source conflict.
+	changed := healthConditionsChanged(in.ExistingConditions, res.Conditions, in.Generation)
 	if err := r.syncObservedToCMS(ctx, in, canonicalName, res, ConditionStatusFalse, true); err != nil {
+		markDeactivationFailed(in, res, ReasonDeactivationIncomplete, err.Error())
 		return res, err
 	}
-	logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
+	if !hasSourceConflict(res) {
+		if changed {
+			logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
+		} else {
+			logging.Debug(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
+		}
+	}
 	// A settled disabled component has no workload to probe; spec changes requeue it immediately,
 	// so it only needs a pass per CMS heartbeat.
 	res.RequeueAfter = defaultCMSHeartbeatInterval
