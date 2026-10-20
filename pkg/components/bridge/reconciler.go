@@ -67,6 +67,13 @@ type ReconcileResult struct {
 	// already applied a newer generation of it (STALE_GENERATION), so status and finalizer
 	// persistence must be skipped.
 	StaleIncarnation bool
+	// ConflictReason and ConflictMessage record a source or cluster ownership conflict encountered
+	// during deletion when CMS deletion is skipped and only the local CR is cleaned up.
+	ConflictReason  string
+	ConflictMessage string
+	// WarningEvent, when set, is recorded as a Kubernetes Warning Event on the Component before the
+	// finalizer is released or status is applied, so it is never lost with the object.
+	WarningEvent *WarningEvent
 	// RequeueAfter optionally overrides ProbeInterval as the delay before the next pass. It is always
 	// honored, whether shorter or longer than ProbeInterval.
 	RequeueAfter time.Duration
@@ -257,10 +264,10 @@ func generationEvaluated(res *ReconcileResult, generation int64, err error) bool
 }
 
 func (r *Reconciler) reconcilePass(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	// Deletion runs before the fence check on purpose: cold standby holds only non-deleting CRs, so a
-	// fenced cluster still releases a deleted CR's finalizer.
-	// TODO(vluk): Send a sourced ExecuteDeletion so CMS rejects a fenced deletion (CLUSTER_FENCED) and
-	// leaves the active owner's record untouched; until then a fenced cluster deletes unsourced (#1240).
+	// Deletion runs before the fence check on purpose: cold standby holds only non-deleting CRs. A
+	// fenced cluster's deletion skips CMS (the local fence check, or CLUSTER_FENCED on the sourced
+	// ExecuteDeletion), so CMS keeps the active owner's record while reconcileDeletion reports
+	// StaleDeletion, tears down only the local release and releases the finalizer.
 	if in.IsDeleting {
 		return r.reconcileDeletion(ctx, in, canonicalName, res)
 	}

@@ -16,6 +16,7 @@ package bridge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/pkg/components/store"
 )
 
 const (
@@ -41,24 +43,30 @@ const (
 	// earlier pass, or never actuated) whose CMS deactivation handshake has not completed.
 	ReasonDeactivationIncomplete = "DeactivationIncomplete"
 	reasonComponentDisabled      = "ComponentDisabled"
+	// ReasonActiveDependentsExist marks Stalled=True on a deleting component whose non-cascading
+	// (Orphan policy) CMS deletion is rejected because active dependents exist; the finalizer is kept.
+	ReasonActiveDependentsExist = "ActiveDependentsExist"
 	// deactivationRecheckInterval throttles PrepareDeactivation while deactivation is blocked.
 	deactivationRecheckInterval = 30 * time.Second
 )
 
+// errDeletionBlocked reports that CMS rejected a non-cascading deletion with ACTIVE_DEPENDENTS_EXIST,
+// so the workload and the finalizer are kept until the dependents are gone.
+var errDeletionBlocked = errors.New("component deletion blocked by active dependents")
+
 // reconcileDeletion tears a deleted Component down: CMS ExecuteDeletion first (a NotFound means
-// CMS already deleted it), then the 1P workload per deletionPolicy, then the finalizer is
-// released. spec.deletionProtection is not consulted: a deletion that passed admission is final.
+// CMS already deleted it; a source or cluster fence conflict skips CMS deletion so the active
+// owner's CMS record stays intact; active dependents of a non-cascading deletion keep the workload
+// and finalizer and report Stalled=True), then this CR's own 1P workload per deletionPolicy, then
+// the finalizer is released. spec.deletionProtection is not consulted: a deletion that passed
+// admission is final.
 func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
-	if _, err := r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{Name: canonicalName, DeletionPolicy: in.Spec.GetDeletionPolicy()}); err != nil {
-		if status.Code(err) != codes.NotFound {
-			recordCMSSyncFailure(res, in, err)
-			return res, fmt.Errorf("failed to execute deletion in CMS: %w", err)
+	if err := r.executeCMSDeletion(ctx, in, canonicalName, res); err != nil {
+		if errors.Is(err, errStaleLocalIncarnation) || errors.Is(err, errDeletionBlocked) {
+			return res, nil
 		}
-		logging.Info(ctx, "Component already deleted in CMS, proceeding with workload teardown", "name", canonicalName)
-	} else {
-		logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
+		return res, err
 	}
-	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 	if err := r.teardown1PComponent(ctx, in, res); err != nil {
 		return res, err
 	}
@@ -66,6 +74,104 @@ func (r *Reconciler) reconcileDeletion(ctx context.Context, in ReconcileComponen
 	res.RemoveFinalizer = true
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
 	return res, nil
+}
+
+func (r *Reconciler) executeCMSDeletion(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) error {
+	if r.fence != nil {
+		reason, msg, err := r.fence.Check(ctx)
+		if err != nil {
+			recordCMSSyncFailure(res, in, err)
+			return fmt.Errorf("failed to check cluster fence before deletion: %w", err)
+		}
+		if reason != "" {
+			recordDeletionConflict(ctx, res, in, canonicalName, reason, msg)
+			return nil
+		}
+	}
+	_, err := callWithOwnership(ctx, r, in, func(ctx context.Context, src *componentspb.RequestSource) (*componentspb.ExecuteDeletionResponse, error) {
+		return r.cmsClient.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+			Name:           canonicalName,
+			DeletionPolicy: in.Spec.GetDeletionPolicy(),
+			Source:         src,
+		})
+	})
+	if errors.Is(err, errStaleLocalIncarnation) {
+		res.StaleIncarnation = true
+		res.RequeueAfter = staleComponentRetryDelay
+		return errStaleLocalIncarnation
+	}
+	if conflictReason, msg := deletionConflictFromError(err); conflictReason != "" {
+		recordDeletionConflict(ctx, res, in, canonicalName, conflictReason, msg)
+		return nil
+	}
+	if msg := activeDependentsMessage(err); msg != "" {
+		reportDeletionBlocked(ctx, res, in, canonicalName, msg)
+		return errDeletionBlocked
+	}
+	if err != nil {
+		if status.Code(err) != codes.NotFound {
+			recordCMSSyncFailure(res, in, err)
+			return fmt.Errorf("failed to execute deletion in CMS: %w", err)
+		}
+		logging.Info(ctx, "Component already deleted in CMS, proceeding with workload teardown", "name", canonicalName)
+	} else {
+		logging.Info(ctx, "Executed component deletion in CMS", "name", canonicalName, "policy", in.Spec.GetDeletionPolicy().String())
+	}
+	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
+	return nil
+}
+
+func recordDeletionConflict(ctx context.Context, res *ReconcileResult, in ReconcileComponentInput, canonicalName, conflictReason, msg string) {
+	skipMsg := fmt.Sprintf("Skipped CMS deletion for %q (%s): %s", canonicalName, conflictReason, msg)
+	logging.Warn(ctx, "Skipping CMS deletion due to ownership conflict; cleaning up local CR workload and finalizer only", "name", canonicalName, "namespace", in.Namespace, "uid", in.UID, "reason", conflictReason, "detail", msg)
+	recordSourceConflict(res, in, conflictReason, skipMsg)
+	res.ConflictReason = conflictReason
+	res.ConflictMessage = skipMsg
+	res.WarningEvent = &WarningEvent{Reason: ReasonStaleDeletion, Message: skipMsg, generateNameSuffix: staleDeletionEventSuffix}
+}
+
+// deletionConflictFromError returns the SourceConflict reason and CMS message when err is one of
+// the deletion conflicts that skip CMS deletion and release the finalizer: SOURCE_NAMESPACE_CONFLICT,
+// SOURCE_INCARNATION_MISMATCH, CLUSTER_FENCED or CLUSTER_EPOCH_REGRESSED. Any other rejection,
+// including CLUSTER_NOT_DECLARED left after the re-declare retry, keeps the finalizer and is retried
+// so the CMS record never leaks.
+func deletionConflictFromError(err error) (string, string) {
+	info, _ := extractErrorInfo(err)
+	if info == nil || info.GetReason() == store.ReasonClusterNotDeclared {
+		return "", ""
+	}
+	return sourceConflictFromError(err)
+}
+
+// activeDependentsMessage returns the CMS status message if err (possibly wrapped) is the store's
+// ACTIVE_DEPENDENTS_EXIST rejection, or "" otherwise.
+func activeDependentsMessage(err error) string {
+	info, msg := extractErrorInfo(err)
+	if info == nil || info.GetReason() != store.ReasonActiveDependentsExist {
+		return ""
+	}
+	return msg
+}
+
+// reportDeletionBlocked records a non-cascading (Orphan policy) deletion that CMS rejected because
+// active dependents exist: Stalled=True (ActiveDependentsExist) with Synced=True, the previous Ready
+// condition and access kept (the workload keeps serving its dependents), the finalizer kept, and a
+// recheck after deactivationRecheckInterval. A Warning Event is emitted when the block first appears.
+func reportDeletionBlocked(ctx context.Context, res *ReconcileResult, in ReconcileComponentInput, canonicalName, cmsMsg string) {
+	msg := fmt.Sprintf("Cannot delete %q while active dependents exist: %s", in.Name, cmsMsg)
+	logging.Info(ctx, "Component deletion blocked by active dependents", "name", canonicalName, "namespace", in.Namespace, "detail", cmsMsg)
+	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	res.RequeueAfter = deactivationRecheckInterval
+	preserveExistingAccess(res, in.ExistingAccess)
+	setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
+	if ready := findCondition(in.ExistingConditions, ConditionTypeReady); ready != nil {
+		upsertCondition(&res.Conditions, *ready)
+	}
+	deleteCondition(&res.Conditions, ConditionTypeReconciling)
+	setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeStalled, ConditionStatusTrue, in.Generation, ReasonActiveDependentsExist, msg)
+	if prev := findCondition(in.ExistingConditions, ConditionTypeStalled); prev == nil || prev.Status != ConditionStatusTrue || prev.Reason != ReasonActiveDependentsExist {
+		res.WarningEvent = &WarningEvent{Reason: ReasonActiveDependentsExist, Message: msg, generateNameSuffix: blockedDeletionEventSuffix}
+	}
 }
 
 func (r *Reconciler) teardown1PComponent(ctx context.Context, in ReconcileComponentInput, res *ReconcileResult) error {

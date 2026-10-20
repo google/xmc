@@ -513,6 +513,32 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 			if finalRec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLED || !cmp.Equal(finalRec.Owner, wantOwner) {
 				t.Errorf("final record = (state=%v, owner=%+v), want DISABLED owned by %+v", finalRec.State, finalRec.Owner, wantOwner)
 			}
+
+			// Rejections on ExecuteDeletion leave the component intact in the store. After the CAS
+			// takeover, the former owner ownerOnProd is another incarnation.
+			deletionRejections := []sourceRejection{
+				{name: "fenced cluster", src: fencedCluster, wantReason: store.ReasonClusterFenced},
+				{name: "other namespace", src: otherNamespace, wantReason: store.ReasonSourceNamespaceConflict},
+				{name: "former owner UID", src: ownerOnProd, wantReason: store.ReasonSourceIncarnationMismatch},
+			}
+			assertRejectedBy(t, "ExecuteDeletion", deletionRejections, func(src store.RequestSource) error {
+				return s.ExecuteDeletion(ctx, name, componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, src)
+			})
+			if _, err := s.GetComponent(ctx, name); err != nil {
+				t.Fatalf("GetComponent() after rejected ExecuteDeletion = %v, want component preserved", err)
+			}
+
+			// ExecuteDeletion by the owner object is never STALE_GENERATION, even from an informer
+			// snapshot older than the recorded generation, so the CMS row is never leaked.
+			staleDelete := casUID
+			staleDelete.ExpectedOwnerUID = ""
+			staleDelete.Generation = 2 // older than casUID.Generation (3)
+			if err := s.ExecuteDeletion(ctx, name, componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false, staleDelete); err != nil {
+				t.Fatalf("ExecuteDeletion(older owner generation) error = %v", err)
+			}
+			if _, err := s.GetComponent(ctx, name); status.Code(err) != codes.NotFound {
+				t.Errorf("GetComponent() after ExecuteDeletion = %v, want NotFound", err)
+			}
 		})
 	}
 }
@@ -570,6 +596,45 @@ func TestPrepareDeactivation_CascadeKeepsDependentOwner(t *testing.T) {
 				if lastSeenAfter, _ := readSourceTimes(ctx, t, client, dependent); !lastSeenAfter.Equal(lastSeenBefore) {
 					t.Errorf("dependent SourceLastSeenTime = %v, want unchanged %v", lastSeenAfter, lastSeenBefore)
 				}
+			}
+		})
+	}
+}
+
+// TestExecuteDeletion_OwnerNeverLowersSourceGeneration checks on both backends that a deletion
+// from the owner object at an older CR generation keeps the recorded SourceGeneration, and that a
+// newer one records its own generation.
+func TestExecuteDeletion_OwnerNeverLowersSourceGeneration(t *testing.T) {
+	tests := []struct {
+		name    string
+		delGen  int64
+		wantGen int64
+	}{
+		{name: "older informer snapshot keeps the recorded generation", delGen: 2, wantGen: 3},
+		{name: "newer generation is recorded", delGen: 5, wantGen: 5},
+	}
+	for _, backend := range intentStoreBackends() {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			s := backend.newStore(t)
+			for i, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					name := fmt.Sprintf("deletion-owner-%d", i)
+					seeded := seedOwnedComponent(ctx, t, s, name, false)
+					del := sourceWith(func(s *store.RequestSource) { s.Generation = tt.delGen })
+					if err := s.ExecuteDeletion(ctx, name, componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true, del); err != nil {
+						t.Fatalf("ExecuteDeletion(generation %d) error = %v", tt.delGen, err)
+					}
+					owner, err := store.OwnerByIDForTest(ctx, s, seeded.ComponentID)
+					if err != nil {
+						t.Fatalf("OwnerByIDForTest() error = %v", err)
+					}
+					want := ownerFor(del)
+					want.Generation = tt.wantGen
+					if !cmp.Equal(owner, want) {
+						t.Errorf("owner after ExecuteDeletion = %+v, want %+v", owner, want)
+					}
+				})
 			}
 		})
 	}

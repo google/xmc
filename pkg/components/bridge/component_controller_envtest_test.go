@@ -245,6 +245,9 @@ func TestComponentControllerEnvtest(t *testing.T) {
 	t.Run("SameClusterRecreateAdoptsCMSRecord", func(t *testing.T) {
 		testSameClusterRecreateAdoptsCMSRecord(t, cfg)
 	})
+	t.Run("ConflictingCRDeletionPreservesOwner", func(t *testing.T) {
+		testConflictingCRDeletionPreservesOwner(t, cfg)
+	})
 }
 
 // startControllerEnv creates namespace and runs a manager with a counted ComponentController for
@@ -423,6 +426,60 @@ func testSameClusterRecreateAdoptsCMSRecord(t *testing.T, cfg *rest.Config) {
 	if rec.ComponentID != seededID || rec.Owner == nil || rec.Owner.UID != liveUID {
 		t.Errorf("CMS record after recreate = (id=%d, owner=%+v), want id=%d and owner UID %q", rec.ComponentID, rec.Owner, seededID, liveUID)
 	}
+}
+
+func testConflictingCRDeletionPreservesOwner(t *testing.T, cfg *rest.Config) {
+	ctx := context.Background()
+	const nsOwner, nsDupe, name = "del-owner", "del-dupe", "env-shared-comp"
+	createEnvtestNamespace(t, cfg, nsOwner)
+	createEnvtestNamespace(t, cfg, nsDupe)
+	cmsStore := store.NewMemoryStore()
+	clusterID := &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary", Epoch: 1}
+
+	envOwner := runControllerEnvWithStore(t, cfg, ComponentManagerConfig{Namespace: nsOwner}, cmsStore, clusterID)
+	envOwner.create(t, name)
+	envOwner.waitFor(t, name, "Ready in owner namespace", func(u *unstructured.Unstructured) bool {
+		return readyReason(u) == ReasonComponentHealthy
+	})
+
+	envDupe := runControllerEnvWithStore(t, cfg, ComponentManagerConfig{Namespace: nsDupe}, cmsStore, clusterID)
+	envDupe.create(t, name)
+	envDupe.waitFor(t, name, "SourceNamespaceConflict in duplicate namespace", func(u *unstructured.Unstructured) bool {
+		return readyReason(u) == ReasonSourceConflict
+	})
+
+	// Deleting the conflicting CR in nsDupe must release its finalizer, record a Warning Event,
+	// and preserve the active CMS record owned by nsOwner.
+	if err := envDupe.client.Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
+		t.Fatalf("failed to delete conflicting Component in %s: %v", nsDupe, err)
+	}
+	envDupe.waitFor(t, name, "gone from duplicate namespace", func(u *unstructured.Unstructured) bool { return u == nil })
+
+	if _, err := cmsStore.GetComponent(ctx, name); err != nil {
+		t.Fatalf("expected CMS record %q to remain active after conflicting CR deletion, got: %v", name, err)
+	}
+	kubeClient := kubernetes.NewForConfigOrDie(cfg)
+	events, err := kubeClient.CoreV1().Events(nsDupe).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("failed to list Events in %s: %v", nsDupe, err)
+	}
+	foundWarning := false
+	for _, ev := range events.Items {
+		if ev.Type == corev1.EventTypeWarning && ev.Reason == ReasonStaleDeletion && strings.Contains(ev.Message, "Skipped CMS deletion") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Errorf("expected Warning Event with reason %q in %s, got %+v", ReasonStaleDeletion, nsDupe, events.Items)
+	}
+
+	// Deleting the active owner CR in nsOwner must delete the CMS record and release its finalizer.
+	if err := envOwner.client.Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
+		t.Fatalf("failed to delete owner Component in %s: %v", nsOwner, err)
+	}
+	envOwner.waitFor(t, name, "gone from owner namespace", func(u *unstructured.Unstructured) bool { return u == nil })
+	envOwner.assertNoCMSRecords(t)
 }
 
 // testComponentReadsAreCacheBacked checks that once the manager's cache has synced, neither

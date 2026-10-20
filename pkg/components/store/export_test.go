@@ -18,8 +18,45 @@
 // hooks and raw row inspection helpers without polluting the public Store API.
 package store
 
+import (
+	"context"
+	"fmt"
+
+	"cloud.google.com/go/spanner"
+)
+
 // SetBeforeIntentWriteForTest installs hook to run each time SetComponentIntent misses the
 // read-only fast path and falls back to its read-write transaction.
 func (s *SpannerStore) SetBeforeIntentWriteForTest(hook func()) {
 	s.beforeIntentWrite = hook
+}
+
+// OwnerByIDForTest returns the recorded owner of the record componentID in s, including a deleted
+// record, which the Store read methods hide.
+func OwnerByIDForTest(ctx context.Context, s Store, componentID int64) (*SourceOwner, error) {
+	switch st := s.(type) {
+	case *MemoryStore:
+		st.mu.RLock()
+		defer st.mu.RUnlock()
+		rec, ok := st.componentsByID[componentID]
+		if !ok || rec.Owner == nil {
+			return nil, fmt.Errorf("component %d has no recorded owner", componentID)
+		}
+		owner := *rec.Owner
+		return &owner, nil
+	case *SpannerStore:
+		stmt := spanner.Statement{SQL: `SELECT ` + componentColumnsSQL + ` FROM Components WHERE ComponentId = @id`, Params: map[string]any{"id": componentID}}
+		var owner *SourceOwner
+		err := st.client.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
+			var err error
+			owner, err = scanSourceOwner(row)
+			return err
+		})
+		if err == nil && owner == nil {
+			err = fmt.Errorf("component %d has no recorded owner", componentID)
+		}
+		return owner, err
+	default:
+		return nil, fmt.Errorf("unsupported store %T", s)
+	}
 }

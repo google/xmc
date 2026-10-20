@@ -672,6 +672,13 @@ message ExecuteDeletionRequest {
     (google.api.field_behavior) = OPTIONAL,
     json_name = "force"
   ];
+
+  // Declarative object executing the deletion. When set, CMS checks the cluster ownership fence
+  // and source ownership before deleting the component record.
+  RequestSource source = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "source"
+  ];
 }
 
 // Response message for ExecuteDeletion.

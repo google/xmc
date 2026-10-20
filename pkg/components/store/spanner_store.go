@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"time"
 
@@ -364,11 +365,19 @@ func writeOwnerColumnsTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord
 		return nil
 	}
 	rec.Owner = owner
-	return txn.BufferWrite([]*spanner.Mutation{spanner.UpdateMap("Components", map[string]any{
-		"ComponentId": rec.ComponentID, "SourceUid": owner.UID, "SourceGeneration": owner.Generation,
+	cols := ownerColumns(owner)
+	cols["ComponentId"] = rec.ComponentID
+	return txn.BufferWrite([]*spanner.Mutation{spanner.UpdateMap("Components", cols)})
+}
+
+// ownerColumns returns the Components owner columns for owner, with SourceLastSeenTime at the
+// commit timestamp.
+func ownerColumns(owner *SourceOwner) map[string]any {
+	return map[string]any{
+		"SourceUid": owner.UID, "SourceGeneration": owner.Generation,
 		"SourceNamespace": owner.Namespace, "SourceClusterUid": owner.ClusterUID, "SourceEpoch": owner.Epoch,
 		"SourceLastSeenTime": spanner.CommitTimestamp,
-	})})
+	}
 }
 
 func (s *SpannerStore) updateExistingIntentTx(
@@ -848,33 +857,32 @@ func writeObservationTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord,
 }
 
 // ExecuteDeletion deletes a component using the specified deletion policy.
-func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool) error {
-	canonicalName, err := validateResourceName(name)
+func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...RequestSource) error {
+	canonicalName, reqSrc, err := validateSourcedResourceArgs(name, src)
 	if err != nil {
 		return err
 	}
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		catalog, err := s.loadActiveCatalog(ctx, txn)
+		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, operationExecuteDeletion, canonicalName, reqSrc)
 		if err != nil {
 			return err
-		}
-
-		rec, ok := catalog[canonicalName]
-		if !ok || rec == nil || isDeletedRecord(rec) {
-			return ErrComponentNotFound
 		}
 
 		if err := ValidateDeletionSafety(catalog, canonicalName, policy, force); err != nil {
 			return err
 		}
 
+		var owner *SourceOwner
+		if reqSrc != nil {
+			owner = deletionOwner(rec.Owner, *reqSrc)
+			rec.Owner = owner
+		}
 		toDelete := collectDeletionTargets(rec, catalog, canonicalName, policy)
-		mutations, err := buildDeletionMutations(toDelete, policy, time.Now().UTC())
+		mutations, err := buildDeletionMutations(toDelete, policy, time.Now().UTC(), owner)
 		if err != nil {
 			return err
 		}
-
 		return txn.BufferWrite(mutations)
 	})
 
@@ -894,9 +902,11 @@ func collectDeletionTargets(rec *ComponentRecord, catalog map[string]*ComponentR
 	return toDelete
 }
 
-func buildDeletionMutations(toDelete []*ComponentRecord, policy componentspb.DeletionPolicy, now time.Time) ([]*spanner.Mutation, error) {
-	var mutations []*spanner.Mutation
-	for _, target := range toDelete {
+// buildDeletionMutations returns one Components update per target. A non-nil targetOwner is merged
+// into the mutation of toDelete[0] (the requested deletion target) so the row is written once.
+func buildDeletionMutations(toDelete []*ComponentRecord, policy componentspb.DeletionPolicy, now time.Time, targetOwner *SourceOwner) ([]*spanner.Mutation, error) {
+	mutations := make([]*spanner.Mutation, 0, len(toDelete))
+	for i, target := range toDelete {
 		target.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
 		if target.Status == nil {
 			target.Status = &componentspb.ComponentAccessStatus{}
@@ -923,13 +933,17 @@ func buildDeletionMutations(toDelete []*ComponentRecord, policy componentspb.Del
 			return nil, fmt.Errorf("failed to marshal access status proto: %w", err)
 		}
 
-		mutations = append(mutations, spanner.UpdateMap("Components", map[string]any{
+		cols := map[string]any{
 			"ComponentId":   target.ComponentID,
 			"ConfigProto":   configBytes,
 			"AccessPayload": accessBytes,
 			"State":         int64(componentspb.ComponentState_COMPONENT_STATE_DELETED),
 			"UpdateTime":    spanner.CommitTimestamp,
-		}))
+		}
+		if i == 0 && targetOwner != nil {
+			maps.Copy(cols, ownerColumns(targetOwner))
+		}
+		mutations = append(mutations, spanner.UpdateMap("Components", cols))
 	}
 	return mutations, nil
 }

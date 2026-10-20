@@ -20,9 +20,12 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -184,8 +187,9 @@ type jsonPatchOp struct {
 	Value any    `json:"value"`
 }
 
-// patchFinalizers sets the finalizers of item to want with a JSON patch whose test op requires the
-// stored finalizers to equal those of item. A test against null passes only while none are stored.
+// patchFinalizers sets the finalizers of item to want with a JSON patch whose test ops require the
+// stored UID (when present on item) and finalizers to equal those of item. A test against null passes
+// only while no finalizers are stored.
 func patchFinalizers(ctx context.Context, c client.Client, item *unstructured.Unstructured, want []string) (*unstructured.Unstructured, error) {
 	if c == nil {
 		return nil, errors.New("client must not be nil")
@@ -196,10 +200,15 @@ func patchFinalizers(ctx context.Context, c client.Client, item *unstructured.Un
 	if f := item.GetFinalizers(); len(f) > 0 {
 		stored = f
 	}
-	patch, err := json.Marshal([]jsonPatchOp{
-		{Op: "test", Path: "/metadata/finalizers", Value: stored},
-		{Op: "add", Path: "/metadata/finalizers", Value: want},
-	})
+	ops := make([]jsonPatchOp, 0, 3)
+	if uid := item.GetUID(); uid != "" {
+		ops = append(ops, jsonPatchOp{Op: "test", Path: "/metadata/uid", Value: string(uid)})
+	}
+	ops = append(ops,
+		jsonPatchOp{Op: "test", Path: "/metadata/finalizers", Value: stored},
+		jsonPatchOp{Op: "add", Path: "/metadata/finalizers", Value: want},
+	)
+	patch, err := json.Marshal(ops)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal finalizer patch: %w", err)
 	}
@@ -210,9 +219,10 @@ func patchFinalizers(ctx context.Context, c client.Client, item *unstructured.Un
 	return updated, nil
 }
 
-// PersistReconcileResult persists res for item: it releases the cleanup finalizer when res asks for
-// it, and otherwise applies .status with ApplyComponentStatusSSA. It is a no-op for a nil or stale-incarnation
-// res and rejects a nil item. item is not modified.
+// PersistReconcileResult persists res for item: it first records res.WarningEvent, then releases
+// the cleanup finalizer when res asks for it, and otherwise applies .status with
+// ApplyComponentStatusSSA. The Event is recorded before the finalizer is released so it is never
+// lost. It is a no-op for a nil or stale-incarnation res and rejects a nil item. item is not modified.
 func PersistReconcileResult(ctx context.Context, c client.Client, item *unstructured.Unstructured, res *ReconcileResult) error {
 	if res == nil || res.StaleIncarnation {
 		return nil
@@ -220,6 +230,7 @@ func PersistReconcileResult(ctx context.Context, c client.Client, item *unstruct
 	if item == nil {
 		return errNilComponentItem
 	}
+	recordWarningEvent(ctx, c, item, res.WarningEvent)
 	if res.RemoveFinalizer {
 		if err := ReleaseCleanupFinalizer(ctx, c, item); err != nil {
 			return fmt.Errorf("failed to release finalizer: %w", err)
@@ -234,4 +245,60 @@ func PersistReconcileResult(ctx context.Context, c client.Client, item *unstruct
 		return nil
 	}
 	return fmt.Errorf("failed to apply status: %w", err)
+}
+
+// ReasonStaleDeletion is the Kubernetes Warning Event reason emitted when CMS deletion is skipped
+// because the deleted CR is not the active CMS owner (DD §5).
+const ReasonStaleDeletion = "StaleDeletion"
+
+// Event GenerateName suffixes appended to the CR name.
+const (
+	staleDeletionEventSuffix   = ".deletion-skipped-"
+	blockedDeletionEventSuffix = ".deletion-blocked-"
+)
+
+// maxEventGenerateNameLen bounds the GenerateName prefix to the API server's generated-name base
+// length (63 minus the 5-character random suffix), well within the 253-character name limit.
+const maxEventGenerateNameLen = 58
+
+// WarningEvent is a Kubernetes Warning Event to record on the reconciled Component.
+type WarningEvent struct {
+	Reason  string
+	Message string
+	// generateNameSuffix is appended to the truncated CR name to form the Event GenerateName.
+	generateNameSuffix string
+}
+
+// eventGenerateName returns a GenerateName prefix for name that stays within
+// maxEventGenerateNameLen by truncating name while keeping suffix. Trailing '-' and '.' left by
+// truncation are trimmed so the prefix remains a valid DNS-1123 subdomain.
+func eventGenerateName(name, suffix string) string {
+	maxNameLen := maxEventGenerateNameLen - len(suffix)
+	if len(name) > maxNameLen {
+		name = strings.TrimRight(name[:maxNameLen], "-.")
+	}
+	return name + suffix
+}
+
+// recordWarningEvent creates ev as a Warning Event on item. Failures are logged, not returned, so
+// a lost Event never blocks the reconcile outcome.
+func recordWarningEvent(ctx context.Context, c client.Client, item *unstructured.Unstructured, ev *WarningEvent) {
+	if c == nil || item == nil || ev == nil {
+		return
+	}
+	now := metav1.Now()
+	event := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{GenerateName: eventGenerateName(item.GetName(), ev.generateNameSuffix), Namespace: item.GetNamespace()},
+		InvolvedObject: corev1.ObjectReference{APIVersion: item.GetAPIVersion(), Kind: item.GetKind(), Namespace: item.GetNamespace(), Name: item.GetName(), UID: item.GetUID()},
+		Reason:         ev.Reason,
+		Message:        ev.Message,
+		Source:         corev1.EventSource{Component: FieldManagerBridge},
+		FirstTimestamp: now,
+		LastTimestamp:  now,
+		Count:          1,
+		Type:           corev1.EventTypeWarning,
+	}
+	if err := c.Create(ctx, event); err != nil {
+		logging.Warn(ctx, "Failed to record warning event", "namespace", item.GetNamespace(), "name", item.GetName(), "reason", ev.Reason, "error", err)
+	}
 }
