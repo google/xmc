@@ -19,14 +19,14 @@ The check applies to the web UI, to `xmc login`, and to every gRPC request. See 
 Sign in as yourself with the `xmc` command, which [`install_xmanager.py`](../deploy/cli/README.md) installs into the XManager CLI virtual environment:
 
 ```bash
-xmc login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL and run `xmc login`.
+xmc login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL / XMC_DOMAIN and run `xmc login`.
 export XMC_AUTH_TOKEN=$(xmc print-token)
 ```
 
 The XManager CLI and the [examples](../examples/) send `XMC_AUTH_TOKEN` as a Bearer token. Once it's set, you don't need `IAP_CLIENT_ID` or `XMC_CLIENT_SA`. Experiments you create are attributed to you.
 
 - Tokens last 12 hours by default. When yours expires, run `xmc login` and export the token again.
-- Run `xmc status` to see your account and expiry. `xmc logout` removes the cached token; server-side revocation is coming in a [google/xmc#1309](https://github.com/google/xmc/issues/1309) follow-up.
+- Run `xmc status` to see your account and expiry. `xmc logout` removes the cached token from `~/.config/xmc/credentials.json`.
 - Over SSH or on a headless machine, `xmc login` switches to a copy-and-paste flow on its own.
 
 See the [`xmc` SDK README](../sdks/python/xmc/README.md#-authentication-xmc-login) for every subcommand, the credentials cache, and security notes.

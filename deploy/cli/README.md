@@ -43,7 +43,7 @@ Options:
   --xmc-sdk-loc <path_or_req>    pip location of the xmc SDK that provides `xmc login`. Can be a local
                                  directory or a pip requirement such as
                                  git+https://github.com/google/xmc.git@main#subdirectory=sdks/python/xmc
-                                 (default: $XMC_SDK_LOC, else local checkout if available, else GitHub main)
+                                 (default: local checkout if available, else GitHub main)
   -h, --help                     Show usage information
 ```
 
@@ -71,11 +71,11 @@ xmc --help
 Interactive users should authenticate as themselves with `xmc login` ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). This replaces the shared `XMC_CLIENT_SA` service account:
 
 ```bash
-xmc login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL and run `xmc login`.
+xmc login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL / XMC_DOMAIN and run `xmc login`.
 export XMC_AUTH_TOKEN=$(xmc print-token)
 ```
 
-The XManager CLI sends `XMC_AUTH_TOKEN` as a Bearer token and reads your email from it. Over SSH or on a headless machine, `xmc login` falls back to a copy-and-paste flow on its own. Tokens last 12 hours by default. Run `xmc status` to check yours. `xmc logout` removes the cached token; server-side revocation is coming in a follow-up.
+The XManager CLI sends `XMC_AUTH_TOKEN` as a Bearer token and reads your email from it. Over SSH or on a headless machine, `xmc login` falls back to a copy-and-paste flow on its own. Tokens last 12 hours by default. Run `xmc status` to check yours and `xmc logout` to remove the cached token from `~/.config/xmc/credentials.json`. See the [`xmc` SDK README](../../sdks/python/xmc/README.md#-authentication-xmc-login) for details and security notes.
 
 For CI service accounts (`XMC_CLIENT_SA`) and for sharing experiments through ACLs, see [Authentication and Experiment Access](../../docs/authentication.md).
 

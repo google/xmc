@@ -16,14 +16,15 @@
 
 from __future__ import annotations
 
+import base64
 import dataclasses
-import re
-import threading
+import hashlib
+import secrets
+import sys
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TextIO
 
-from xmc.auth import pkce
 from xmc.auth.errors import AuthError
 from xmc.auth.loopback import CallbackReceiver
 from xmc.auth.token_client import TokenGrant
@@ -31,14 +32,41 @@ from xmc.auth.token_client import TokenGrant
 LOGIN_PATH = "/api/cli/login"
 SUCCESS_PATH = "/api/cli/success"
 DEFAULT_TIMEOUT_SECONDS = 300
-# How long to wait for the browser launcher before assuming it opened.
-BROWSER_LAUNCH_WAIT_SECONDS = 3.0
 MANUAL_CODE_PROMPT = "Paste the code shown in your browser: "
 MANUAL_WARNING = (
     "WARNING: Only paste a code from a login you started yourself, just now, in this "
     "terminal. Never paste a code someone else sent you, and never share yours."
 )
-_CODE_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,256}$")
+_DESKTOP_PLATFORMS = ("darwin", "win32", "cygwin", "msys")
+
+
+def browser_likely_available(env: Mapping[str, str], platform: str = sys.platform) -> bool:
+    """Guesses whether a graphical browser can be opened on this machine.
+
+    Returns:
+        False for SSH sessions and for Unix sessions without X11 or Wayland.
+    """
+    if env.get("SSH_CONNECTION") or env.get("SSH_TTY"):
+        return False
+    if platform.startswith(_DESKTOP_PLATFORMS):
+        return True
+    return bool(env.get("DISPLAY") or env.get("WAYLAND_DISPLAY"))
+
+
+def s256_challenge(verifier: str) -> str:
+    """Returns BASE64URL(SHA256(verifier)) without padding (RFC 7636 section 4.2)."""
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def new_verifier() -> str:
+    """Returns a random 86-character code verifier (RFC 7636 allows 43-128)."""
+    return secrets.token_urlsafe(64)
+
+
+def new_state() -> str:
+    """Returns an unguessable OAuth `state` value carrying 256 random bits."""
+    return secrets.token_urlsafe(32)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -87,8 +115,8 @@ def run_login(
 
 def _new_attempt() -> tuple[str, str, str]:
     """Returns a fresh (state, verifier, S256 challenge) for one login attempt."""
-    verifier = pkce.new_verifier()
-    return pkce.new_state(), verifier, pkce.s256_challenge(verifier)
+    verifier = new_verifier()
+    return new_state(), verifier, s256_challenge(verifier)
 
 
 def _browser_attempt(
@@ -109,27 +137,11 @@ def _browser_attempt(
 
 
 def _launch_browser(open_browser: Callable[[str], bool], url: str) -> bool:
-    """Opens the browser off-thread and reports whether it launched.
-
-    Blocking browser commands (e.g. `BROWSER=w3m`) return only after loading the
-    loopback redirect, which is served only once this returns; a fast `False`
-    (no browser registered) is still caught.
-    """
-    launched = True
-    done = threading.Event()
-
-    def launch() -> None:
-        nonlocal launched
-        try:
-            launched = bool(open_browser(url))
-        except Exception:  # webbrowser raises for broken BROWSER settings.
-            launched = False
-        finally:
-            done.set()
-
-    threading.Thread(target=launch, daemon=True).start()
-    # A launcher still running after the wait is assumed to have opened a browser.
-    return launched if done.wait(BROWSER_LAUNCH_WAIT_SECONDS) else True
+    """Opens the browser and reports whether it launched."""
+    try:
+        return bool(open_browser(url))
+    except Exception:  # webbrowser raises for broken BROWSER settings.
+        return False
 
 
 def _manual_attempt(
@@ -142,6 +154,6 @@ def _manual_attempt(
         f"Open this URL in a browser on any device and sign in:\n\n  {url}\n\n{MANUAL_WARNING}\n"
     )
     code = deps.read_code(MANUAL_CODE_PROMPT).strip()
-    if not _CODE_PATTERN.match(code):
+    if not (1 <= len(code) <= 256 and not any(c.isspace() for c in code)):
         raise AuthError("No valid login code was entered. Run `xmc login` again.")
     return code, verifier

@@ -27,7 +27,6 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TextIO
 
 from xmc.auth import token_client
-from xmc.auth.browser_detection import browser_likely_available
 from xmc.auth.credentials_store import (
     CredentialsStore,
     StoredCredential,
@@ -35,7 +34,12 @@ from xmc.auth.credentials_store import (
 )
 from xmc.auth.deployment_server import resolve_server
 from xmc.auth.errors import AuthError
-from xmc.auth.login_flow import DEFAULT_TIMEOUT_SECONDS, LoginDependencies, run_login
+from xmc.auth.login_flow import (
+    DEFAULT_TIMEOUT_SECONDS,
+    LoginDependencies,
+    browser_likely_available,
+    run_login,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -45,7 +49,6 @@ class CliContext:
     env: Mapping[str, str]
     store: CredentialsStore
     login_deps: LoginDependencies
-    revoke: Callable[[str, str], None]  # token_client.revoke_session
     clock: Callable[[], float]  # Wall-clock Unix seconds.
     out: TextIO
     err: TextIO
@@ -75,10 +78,7 @@ def _build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--server",
-        help=(
-            "XMC deployment URL "
-            "(default: $XMC_API_URL, $XMANAGER_UI_URL, $XMANAGER_ENDPOINT, or cache)"
-        ),
+        help="XMC deployment URL (default: $XMC_API_URL, $XMANAGER_UI_URL, $XMC_DOMAIN, or cache)",
     )
     parser = argparse.ArgumentParser(prog="xmc", description="Authenticate to XMC as yourself.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -94,7 +94,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sub.add_parser("print-token", parents=[common], help="Print the token for XMC_AUTH_TOKEN.")
     sub.add_parser("status", parents=[common], help="Show the signed-in account.")
-    sub.add_parser("logout", parents=[common], help="Revoke and forget the cached token.")
+    sub.add_parser("logout", parents=[common], help="Forget the cached token.")
     return parser
 
 
@@ -142,15 +142,10 @@ def _status(_args: argparse.Namespace, server: str, ctx: CliContext) -> int:
 
 
 def _logout(_args: argparse.Namespace, server: str, ctx: CliContext) -> int:
-    """Runs `xmc logout`: best-effort server-side revocation, then local removal."""
-    cached = ctx.store.get(server)
-    if cached is None:
+    """Runs `xmc logout`: removes the cached token for `server`."""
+    if ctx.store.get(server) is None:
         ctx.out.write(f"Not logged in to {server}.\n")
         return 0
-    try:
-        ctx.revoke(server, cached.access_token)
-    except AuthError as e:
-        ctx.err.write(f"Warning: could not revoke the token on the server: {e}\n")
     ctx.store.remove(server)
     ctx.out.write(f"Logged out of {server}.\n")
     return 0
@@ -187,7 +182,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         env=os.environ,
         store=CredentialsStore(default_credentials_path(os.environ)),
         login_deps=login_deps,
-        revoke=token_client.revoke_session,
         clock=lambda: datetime.datetime.now(datetime.timezone.utc).timestamp(),
         out=sys.stdout,
         err=sys.stderr,
