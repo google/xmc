@@ -317,7 +317,7 @@ func initRepository(ctx context.Context, sc *spanner.Client) (server.DashboardRe
 func initAuthorizer(ctx context.Context, projectID string, oauthCfg *oauth2.Config, admission auth.AdmissionChecker) (auth.AuthorizerInterface, error) {
 	idService, err := cloudidentity.NewService(ctx, option.WithQuotaProject(projectID))
 	if err != nil {
-		logging.Info(ctx, "Cloud Identity service not available at startup", "error", err)
+		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
 	}
 	authorizer, err := auth.NewAuthorizer(auth.AuthorizerParams{
 		IDService:                idService,
