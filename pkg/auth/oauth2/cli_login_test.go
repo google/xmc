@@ -226,8 +226,8 @@ func TestParseCLILoginRequest(t *testing.T) {
 		{name: "padded challenge", mutate: func(q url.Values) { q.Set("code_challenge", cliTestChallenge[:42]+"=") }, wantErr: "code_challenge"},
 		{name: "plain method", mutate: func(q url.Values) { q.Set("code_challenge_method", "plain") }, wantErr: "code_challenge_method"},
 		{name: "missing method", mutate: func(q url.Values) { q.Del("code_challenge_method") }, wantErr: "code_challenge_method"},
-		{name: "login hint with display name", mutate: func(q url.Values) { q.Set("login_hint", "User <user@mycompany.com>") }, wantErr: "login_hint"},
-		{name: "login hint not an email", mutate: func(q url.Values) { q.Set("login_hint", "user") }, wantErr: "login_hint"},
+		{name: "login hint with control character", mutate: func(q url.Values) { q.Set("login_hint", "user\n@mycompany.com") }, wantErr: "login_hint"},
+		{name: "login hint with non-ASCII character", mutate: func(q url.Values) { q.Set("login_hint", "usér@mycompany.com") }, wantErr: "login_hint"},
 		{name: "overlong login hint", mutate: func(q url.Values) { q.Set("login_hint", strings.Repeat("a", 64)+"@"+strings.Repeat("b", 190)+".com") }, wantErr: "login_hint"},
 	}
 	for _, tt := range tests {

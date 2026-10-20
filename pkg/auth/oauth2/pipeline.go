@@ -56,8 +56,7 @@ type Authenticator struct {
 
 	// CLI login state, set by EnableCLILogin. The CLI login endpoints are disabled while cliCodes
 	// is nil.
-	cliCodes    CLICodeStore
-	cliLoginKey []byte
+	cliCodes CLICodeStore
 }
 
 // NewAuthenticator initializes a new instance of Authenticator.
