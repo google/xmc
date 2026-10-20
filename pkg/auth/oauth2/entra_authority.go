@@ -46,7 +46,7 @@ func entraTenant(rawURL string) (tenant string, ok bool) {
 	if err != nil || !slices.Contains(entraHosts, strings.ToLower(u.Hostname())) {
 		return "", false
 	}
-	tenant, _, _ = strings.Cut(strings.TrimPrefix(u.Path, "/"), "/")
+	tenant, _, _ = strings.Cut(strings.TrimLeft(u.Path, "/"), "/")
 	return strings.ToLower(tenant), true
 }
 

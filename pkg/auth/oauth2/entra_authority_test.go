@@ -58,6 +58,7 @@ func TestValidateEntraAuthority(t *testing.T) {
 		{url: "https://dex.example.com/auth"},
 		{url: ""},
 		{url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize", wantErr: true},
+		{url: "https://login.microsoftonline.com//common/oauth2/v2.0/authorize", wantErr: true},
 		{url: "https://login.microsoftonline.com/Organizations/oauth2/v2.0/authorize", wantErr: true},
 		{url: "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize", wantErr: true},
 		{url: "https://login.microsoft.com/common/oauth2/v2.0/authorize", wantErr: true},
