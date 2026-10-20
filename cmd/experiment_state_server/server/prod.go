@@ -150,14 +150,13 @@ func NewGRPCAuthorizer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.
 	}
 	audiences := []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}
 	auth, err := authz.NewAuthorizer(authz.AuthorizerParams{
-		IDService:                idService,
-		CacheTTL:                 10 * time.Minute,
-		CacheErrorTTL:            time.Minute,
-		IAPAudiences:             audiences,
-		IAPIssuer:                cfg.IAPIssuer,
-		JWTSecret:                []byte(oauthCfg.JWTSecret),
-		Admission:                admission,
-		RequireVerifiedJWKSEmail: len(oauthCfg.AllowedDomains) > 0,
+		IDService:     idService,
+		CacheTTL:      10 * time.Minute,
+		CacheErrorTTL: time.Minute,
+		IAPAudiences:  audiences,
+		IAPIssuer:     cfg.IAPIssuer,
+		JWTSecret:     []byte(oauthCfg.JWTSecret),
+		Admission:     admission,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create authorizer: %w", err)

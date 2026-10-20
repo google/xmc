@@ -20,10 +20,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 // fakeAdmissionChecker is an AdmissionChecker test double that records the emails it was asked
@@ -39,67 +37,32 @@ func (f *fakeAdmissionChecker) IsUserAuthorized(_ context.Context, email string)
 	return f.admitted, f.err
 }
 
-// admissionResult is the comparable outcome of an AdmissionChecker call.
-type admissionResult struct {
-	Admitted bool
-	Err      error
-}
-
 func TestDeploymentAdmission(t *testing.T) {
-	enabled := oauth2.NewAuthenticator(&oauth2.Config{})
-	disabled := oauth2.NewAuthenticator(&oauth2.Config{DisableAuthentication: true})
+	enabled := &fakeAdmissionChecker{admitted: true}
+	var typedNil *fakeAdmissionChecker
 	tests := []struct {
-		name          string
-		authenticator *oauth2.Authenticator
-		want          AdmissionChecker
+		name  string
+		authz UserAuthorizer
+		want  AdmissionChecker
 	}{
-		{name: "uses the authenticator", authenticator: enabled, want: enabled},
-		{name: "disabled authentication admits all", authenticator: disabled, want: AdmitAll()},
-		{name: "nil authenticator", want: nil},
+		{name: "uses the authorizer", authz: enabled, want: enabled},
+		{name: "nil interface", authz: nil, want: nil},
+		{name: "typed nil pointer", authz: typedNil, want: nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := DeploymentAdmission(tt.authenticator); got != tt.want {
+			if got := DeploymentAdmission(tt.authz); got != tt.want {
 				t.Errorf("DeploymentAdmission() = %#v, want %#v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestAdmissionCheckers(t *testing.T) {
-	crmDown := errors.New("crm unavailable")
-	tests := []struct {
-		name    string
-		checker AdmissionChecker
-		email   string
-		want    admissionResult
-	}{
-		{name: "admit all", checker: AdmitAll(), email: "anyone@example.com", want: admissionResult{Admitted: true}},
-		{name: "principal listed", checker: AdmitPrincipals("Bridge@Project.iam.gserviceaccount.com"), email: " bridge@project.iam.gserviceaccount.com ", want: admissionResult{Admitted: true}},
-		{name: "principal not listed", checker: AdmitPrincipals("bridge@project.iam.gserviceaccount.com"), email: "other@example.com"},
-		{name: "blank principals admit nobody", checker: AdmitPrincipals("", "  "), email: ""},
-		{name: "any of admits on first match", checker: AnyOf(AdmitPrincipals("a@example.com"), &fakeAdmissionChecker{err: crmDown}), email: "a@example.com", want: admissionResult{Admitted: true}},
-		{name: "any of falls through to later checker", checker: AnyOf(AdmitPrincipals("a@example.com"), &fakeAdmissionChecker{admitted: true}), email: "b@example.com", want: admissionResult{Admitted: true}},
-		{name: "any of propagates errors", checker: AnyOf(AdmitPrincipals("a@example.com"), &fakeAdmissionChecker{err: crmDown}), email: "b@example.com", want: admissionResult{Err: crmDown}},
-		{name: "any of denies when nobody admits", checker: AnyOf(AdmitPrincipals("a@example.com"), &fakeAdmissionChecker{}), email: "b@example.com"},
-		{name: "empty any of denies", checker: AnyOf(), email: "a@example.com"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			admitted, err := tt.checker.IsUserAuthorized(context.Background(), tt.email)
-			got := admissionResult{Admitted: admitted, Err: err}
-			if diff := cmp.Diff(tt.want, got, cmpopts.EquateErrors()); diff != "" {
-				t.Errorf("IsUserAuthorized(%q) mismatch (-want +got):\n%s", tt.email, diff)
-			}
-		})
-	}
-}
-
-func TestAnyOfWithNilCheckerIsNil(t *testing.T) {
-	if got := AnyOf(AdmitPrincipals("a@example.com"), DeploymentAdmission(nil)); got != nil {
-		t.Errorf("AnyOf(principals, nil) = %#v, want nil", got)
+func TestAdmitAll(t *testing.T) {
+	admitted, err := AdmitAll().IsUserAuthorized(context.Background(), "anyone@example.com")
+	if err != nil || !admitted {
+		t.Errorf("AdmitAll().IsUserAuthorized() = (%v, %v), want (true, nil)", admitted, err)
 	}
 }
 

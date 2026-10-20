@@ -283,14 +283,13 @@ func initAuthorizer(ctx context.Context, oauthCfg oauth2.Config, admission auth.
 	}
 
 	authorizer, err := auth.NewAuthorizer(auth.AuthorizerParams{
-		IDService:                idService,
-		CacheTTL:                 10 * time.Minute,
-		CacheErrorTTL:            time.Minute,
-		IAPAudiences:             audiences,
-		IAPIssuer:                auth.DefaultIAPIssuer,
-		JWTSecret:                []byte(oauthCfg.JWTSecret),
-		Admission:                admission,
-		RequireVerifiedJWKSEmail: len(oauthCfg.AllowedDomains) > 0,
+		IDService:     idService,
+		CacheTTL:      10 * time.Minute,
+		CacheErrorTTL: time.Minute,
+		IAPAudiences:  audiences,
+		IAPIssuer:     auth.DefaultIAPIssuer,
+		JWTSecret:     []byte(oauthCfg.JWTSecret),
+		Admission:     admission,
 	})
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create authorizer", "error", err)
