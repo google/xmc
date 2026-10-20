@@ -244,7 +244,8 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 		mockVal := &mockTokenValidator{
 			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
 				return &jwks.Claims{
-					Email: "jwks-user@example.com",
+					Email:         "jwks-user@example.com",
+					EmailVerified: true,
 					RegisteredClaims: jwt.RegisteredClaims{
 						Subject: "sub-12345",
 					},
@@ -271,7 +272,8 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 		mockVal := &mockTokenValidator{
 			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
 				return &jwks.Claims{
-					Email: "",
+					Email:         "",
+					EmailVerified: true,
 					RegisteredClaims: jwt.RegisteredClaims{
 						Subject: "service-account@iam.gserviceaccount.com",
 					},
@@ -496,7 +498,7 @@ func TestAuthenticateUserFromContext_EmailVerified(t *testing.T) {
 		{name: "JWKS token with verified email", token: "jwks-token", want: authOutcome{Email: dexUser, UserID: "dex-sub"}},
 		{name: "JWKS token with email_verified false", token: "jwks-unverified-token", want: authOutcome{Code: codes.Unauthenticated}},
 		{name: "JWKS token with email_verified string false", token: "jwks-unverified-string-token", want: authOutcome{Code: codes.Unauthenticated}},
-		{name: "JWKS token without email_verified", token: "jwks-no-claim-token", want: authOutcome{Email: dexUser, UserID: "dex-sub"}},
+		{name: "JWKS token without email_verified", token: "jwks-no-claim-token", want: authOutcome{Code: codes.Unauthenticated}},
 		{name: "Google ID token with verified email", token: "google-token", want: authOutcome{Email: googleSA, UserID: "google-sub"}},
 		{name: "Google ID token with email_verified false", token: "google-unverified-token", want: authOutcome{Code: codes.Unauthenticated}},
 		{name: "Google ID token without email_verified", token: "google-no-claim-token", want: authOutcome{Code: codes.Unauthenticated}},
