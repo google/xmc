@@ -35,6 +35,8 @@ DASHBOARD_VIRTUAL_IMPORT_TARGETS = (
     "dashboard_messages_proto",
     "dashboard_service_proto",
 )
+# TODO: pin to a release tag once xmc publishes releases.
+REMOTE_XMC_SDK_LOC = "git+https://github.com/google/xmc.git@main#subdirectory=sdks/python/xmc"
 
 
 def error_exit(msg: str) -> None:
@@ -137,6 +139,24 @@ def get_default_protos_loc(script_path: Path) -> str:
     return "https://github.com/google/xmc/tree/main/api/protos"
 
 
+def get_default_xmc_sdk_loc(script_path: Path) -> str:
+    """Determine where to pip-install the `xmc` SDK (and `xmc login` CLI) from.
+
+    Args:
+        script_path: Absolute path to install_xmanager.py script.
+
+    Returns:
+        $XMC_SDK_LOC, else the local checkout's sdks/python/xmc, else a pip
+        `git+https` requirement for github.com/google/xmc.
+    """
+    if "XMC_SDK_LOC" in os.environ:
+        return os.environ["XMC_SDK_LOC"]
+    local_sdk = (script_path.parent / ".." / ".." / "sdks" / "python" / "xmc").resolve()
+    if (local_sdk / "pyproject.toml").is_file():
+        return str(local_sdk)
+    return REMOTE_XMC_SDK_LOC
+
+
 def parse_args(
     args: list[str] | None = None,
     script_path: Path | None = None,
@@ -176,6 +196,14 @@ def parse_args(
         "--venv",
         default=default_venv,
         help="Virtual environment target directory (default: ./venv)",
+    )
+    parser.add_argument(
+        "--xmc-sdk-loc",
+        default=get_default_xmc_sdk_loc(script_path),
+        help=(
+            "pip location of the xmc SDK providing the `xmc login` CLI "
+            "(default: local checkout if available, else github.com/google/xmc)"
+        ),
     )
     parser.add_argument(
         "--dashboard-protos-only",
@@ -432,6 +460,20 @@ def install_xmanager_package(venv_python: Path, xmanager_dir: Path) -> None:
     )
 
 
+def install_xmc_sdk(venv_python: Path, xmc_sdk_loc: str) -> None:
+    """Install the `xmc` SDK, which provides the `xmc login` CLI.
+
+    Args:
+        venv_python: Path to virtualenv python executable.
+        xmc_sdk_loc: Local directory or pip `git+https` requirement.
+    """
+    sys.stdout.write(f"Installing xmc SDK and CLI from: {xmc_sdk_loc}\n")
+    subprocess.run(
+        [str(venv_python), "-m", "pip", "install", "--", xmc_sdk_loc],
+        check=True,
+    )
+
+
 def verify_imports(venv_python: Path) -> None:
     """Verify that xmanager_cloud and generated modules import successfully.
 
@@ -444,6 +486,7 @@ def verify_imports(venv_python: Path) -> None:
         "xmanager_cloud.experiment_state_server.experiment_state_api",
         "xmanager_cloud.experiment_state_server.proto.api_pb2",
         "xmanager_cloud.dashboard_service.proto.messages_pb2",
+        "xmc.auth.cli",
     ]
     for mod in modules:
         subprocess.run(
@@ -608,6 +651,7 @@ def _run_full_install(args: argparse.Namespace, venv_python: Path) -> None:
 
         compile_protos(venv_python, xmanager_dir, googleapis_dir)
         install_xmanager_package(venv_python, xmanager_dir)
+        install_xmc_sdk(venv_python, args.xmc_sdk_loc)
         verify_imports(venv_python)
 
 
@@ -631,6 +675,7 @@ def main(raw_args: list[str] | None = None) -> None:
 
     sys.stdout.write("=== Configuration ===\n")
     sys.stdout.write(f"Protos Location: {args.protos_loc}\n")
+    sys.stdout.write(f"xmc SDK:         {args.xmc_sdk_loc}\n")
     sys.stdout.write(
         "XManager Repo:   https://github.com/google-deepmind/xmanager.git "
         f"(branch: {args.xmanager_branch})\n"
@@ -645,6 +690,8 @@ def main(raw_args: list[str] | None = None) -> None:
     sys.stdout.write("Installation complete!\n")
     sys.stdout.write("To activate the virtual environment, run:\n")
     sys.stdout.write(f"  source {venv_dir}/bin/activate\n")
+    sys.stdout.write("Then sign in to your XMC deployment as yourself:\n")
+    sys.stdout.write("  xmc login --server https://<your-xmc-ui-host>\n")
     sys.stdout.write("==================================================\n")
 
 

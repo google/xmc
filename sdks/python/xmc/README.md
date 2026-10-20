@@ -222,6 +222,7 @@ trainer.fit(model, dataloader)
 ## 🔑 Authentication (`xmc login`)
 
 The package ships an `xmc` command that signs local clients (such as the XManager CLI) in to an XMC deployment **as you**, instead of through a shared service account ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). It needs only the Python standard library: install it with `pip install ./sdks/python/xmc` from a checkout, or run it as `bazel run //sdks/python/xmc:xmc_bin -- <subcommand>`.
+[`deploy/cli/install_xmanager.py`](../../../deploy/cli/install_xmanager.py) installs it into the XManager CLI virtual environment.
 
 ```bash
 xmc login --server https://xmc.example.com      # Opens your browser; no prompts if you are already signed in.
