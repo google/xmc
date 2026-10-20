@@ -17,12 +17,12 @@ package oauth2
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -60,19 +60,22 @@ func TestCLILoginTicketRoundTrip(t *testing.T) {
 
 func TestOpenCLILoginTicketRejects(t *testing.T) {
 	a, _, _ := newCLITestAuthenticator(t, baseLoginConfig())
-	sealed := mustSealCLILoginTicket(t, a, baseCLITicket("oauth-state"))
-	payload, mac, _ := strings.Cut(sealed, ".")
-	// signed seals an arbitrary payload with the authenticator's MAC key.
-	signed := func(payload string) string {
-		return payload + "." + base64.RawURLEncoding.EncodeToString(a.macCLILoginTicket(payload))
+	ticket := baseCLITicket("oauth-state")
+	sealed := mustSealCLILoginTicket(t, a, ticket)
+	parts := strings.Split(sealed, ".")
+	otherParts := strings.Split(mustSealCLILoginTicket(t, a, baseCLITicket("other-state")), ".")
+	rawSecretToken, err := sealSigned([]byte(loginTestSecret), ticket, ticket.ExpiresAt)
+	if err != nil {
+		t.Fatalf("sealSigned() failed: %v", err)
 	}
-	// rawSecretMAC seals the genuine payload with the JWT secret instead of the HKDF sub-key.
-	rawSecretMAC := func() string {
-		m := hmac.New(sha256.New, []byte(loginTestSecret))
-		m.Write([]byte(payload))
-		return payload + "." + base64.RawURLEncoding.EncodeToString(m.Sum(nil))
+	noneToken, err := jwt.NewWithClaims(jwt.SigningMethodNone, signedClaims[cliLoginTicket]{
+		Payload:          ticket,
+		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Unix(ticket.ExpiresAt, 0))},
+	}).SignedString(jwt.UnsafeAllowNoneSignatureType)
+	if err != nil {
+		t.Fatalf("SignedString(none) failed: %v", err)
 	}
-	tampered := []byte(payload)
+	tampered := []byte(parts[1])
 	tampered[5] ^= 0x01
 
 	tests := []struct {
@@ -82,13 +85,12 @@ func TestOpenCLILoginTicketRejects(t *testing.T) {
 		// expired reports whether the error must also match errExpiredCLILoginTicket.
 		expired bool
 	}{
-		{name: "missing separator", sealed: payload, now: time.Now()},
-		{name: "mac is not base64url", sealed: payload + ".!!!", now: time.Now()},
-		{name: "tampered payload", sealed: string(tampered) + "." + mac, now: time.Now()},
-		{name: "mac from another payload", sealed: payload + "." + strings.SplitN(signed("e30"), ".", 2)[1], now: time.Now()},
-		{name: "mac keyed with the raw jwt secret", sealed: rawSecretMAC(), now: time.Now()},
-		{name: "payload is not base64url", sealed: signed("!!!"), now: time.Now()},
-		{name: "payload is not json", sealed: signed(base64.RawURLEncoding.EncodeToString([]byte("not json"))), now: time.Now()},
+		{name: "malformed token", sealed: parts[0] + "." + parts[1], now: time.Now()},
+		{name: "signature is not base64url", sealed: parts[0] + "." + parts[1] + ".!!!", now: time.Now()},
+		{name: "tampered payload", sealed: parts[0] + "." + string(tampered) + "." + parts[2], now: time.Now()},
+		{name: "signature from another ticket", sealed: parts[0] + "." + parts[1] + "." + otherParts[2], now: time.Now()},
+		{name: "signed with the raw jwt secret", sealed: rawSecretToken, now: time.Now()},
+		{name: "alg none rejected", sealed: noneToken, now: time.Now()},
 		{name: "expired", sealed: sealed, now: time.Now().Add(cliLoginTicketTTL + time.Second), expired: true},
 	}
 	for _, tt := range tests {
