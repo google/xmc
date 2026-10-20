@@ -89,6 +89,23 @@ account does not invalidate an existing session admitted by the domain allowlist
 
 ---
 
+## Sign-in identity checks
+
+Sign-in requires the identity provider to report a verified email
+(`email_verified`). With Google sign-in, a user whose email domain is in
+`auth.allowedDomains` must also belong to a Google Workspace whose primary domain
+(the `hd` claim) is in `auth.allowedDomains`, even if the address is also in
+`auth.allowedEmails`. This refuses consumer Google accounts registered with a
+company address, and still admits Workspace users whose address uses an alias or
+secondary domain when both domains are listed. Other OIDC providers, such as Dex,
+do not set `hd`, so only `email_verified` applies to them.
+
+Emails are trimmed and lowercased before admission and in issued session tokens.
+Per-experiment ACL matching is still case-sensitive, so list ACL users in
+lowercase.
+
+---
+
 ## Deployment admission
 
 Every authenticated caller must be admitted to the deployment before any per-experiment ACL is

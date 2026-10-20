@@ -181,16 +181,8 @@ func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (boo
 	}
 
 	// 2. STAGE 2: Local Domain Allowlist Check (Fast Path)
-	if len(a.Config.AllowedDomains) > 0 {
-		parts := strings.Split(emailLower, "@")
-		if len(parts) == 2 {
-			domain := parts[1]
-			for _, allowedDomain := range a.Config.AllowedDomains {
-				if strings.ToLower(strings.TrimSpace(allowedDomain)) == domain {
-					return true, nil
-				}
-			}
-		}
+	if a.isAllowedDomain(emailDomain(emailLower)) {
+		return true, nil
 	}
 
 	// 3. STAGE 3: GCP IAM Fallback Check
@@ -199,6 +191,31 @@ func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (boo
 	}
 
 	return false, nil
+}
+
+// emailDomain returns the part after the single "@" of email, or "" when email does not have
+// exactly one "@".
+func emailDomain(email string) string {
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return ""
+	}
+	return parts[1]
+}
+
+// isAllowedDomain reports whether domain is in AllowedDomains, ignoring case and surrounding
+// spaces. An empty domain is never allowed.
+func (a *Authenticator) isAllowedDomain(domain string) bool {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		return false
+	}
+	for _, allowedDomain := range a.Config.AllowedDomains {
+		if strings.ToLower(strings.TrimSpace(allowedDomain)) == domain {
+			return true
+		}
+	}
+	return false
 }
 
 // IsUserAuthorizedViaIAM queries Google Cloud Resource Manager API to verify IAM role mappings for the default TargetIAMRole.

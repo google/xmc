@@ -445,9 +445,10 @@ func TestHandleCallbackProduction(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			res := GoogleUserInfo{
-				Email:   userEmail,
-				Name:    "Real User",
-				Picture: "https://example.com/avatar.png",
+				Email:         userEmail,
+				EmailVerified: true,
+				Name:          "Real User",
+				Picture:       "https://example.com/avatar.png",
 			}
 			_ = json.NewEncoder(w).Encode(res)
 		default:
@@ -1042,9 +1043,10 @@ func (m *testMockOAuthProvider) AuthCodeURL(state string, r *http.Request) strin
 
 func (m *testMockOAuthProvider) ExchangeAndGetUserInfo(ctx context.Context, r *http.Request, code string) (*GoogleUserInfo, error) {
 	return &GoogleUserInfo{
-		Email:   m.MockEmail,
-		Name:    m.MockName,
-		Picture: m.MockPic,
+		Email:         m.MockEmail,
+		EmailVerified: true,
+		Name:          m.MockName,
+		Picture:       m.MockPic,
 	}, nil
 }
 
@@ -1260,4 +1262,57 @@ func newTestAuthenticator(cfg *Config) *Authenticator {
 		}
 	}
 	return a
+}
+
+func TestHandleCallbackDashboardRejectsUnverifiedIdentity(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*GoogleUserInfo)
+	}{
+		{name: "unverified email", mutate: func(u *GoogleUserInfo) { u.EmailVerified = false }},
+		{name: "workspace that is not allowlisted", mutate: func(u *GoogleUserInfo) { u.HostedDomain = "other.com" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a, provider := newLoginTestAuthenticator(baseLoginConfig())
+			tt.mutate(provider.userInfo)
+			resp := serveCallback(a, newCallbackRequest("&code=idp-code"))
+			want := "https://xmc.example.com/?error=forbidden&email=" + url.QueryEscape(loginTestEmail)
+			if got := resp.Header.Get("Location"); got != want {
+				t.Errorf("Location = %q, want %q", got, want)
+			}
+			if responseCookie(resp, "session_token") != nil {
+				t.Error("unverified identity received a Dashboard session")
+			}
+		})
+	}
+}
+
+func TestHandleCallbackDashboardNormalizesEmail(t *testing.T) {
+	a, provider := newLoginTestAuthenticator(baseLoginConfig())
+	provider.userInfo.Email = " User@MyCompany.com "
+	resp := serveCallback(a, newCallbackRequest("&code=idp-code"))
+	cookie := responseCookie(resp, "session_token")
+	if cookie == nil {
+		t.Fatal("Dashboard session cookie not set")
+	}
+	claims, err := ParseSessionToken(cookie.Value, []byte(loginTestSecret), FrontendAudience)
+	if err != nil {
+		t.Fatalf("ParseSessionToken() failed: %v", err)
+	}
+	if claims.Email != loginTestEmail {
+		t.Errorf("session email = %q, want %q", claims.Email, loginTestEmail)
+	}
+}
+
+func TestHandleCallbackDashboardPipelineFailure(t *testing.T) {
+	cfg := baseLoginConfig()
+	cfg.AllowedDomains = nil
+	cfg.GCPProjectID = "test-project"
+	a, _ := newLoginTestAuthenticator(cfg)
+	a.PolicyFetcher = func(context.Context) (*iampb.Policy, error) { return nil, errors.New("iam unavailable") }
+	resp := serveCallback(a, newCallbackRequest("&code=idp-code"))
+	if got, want := resp.Header.Get("Location"), "https://xmc.example.com/?error=permission_error"; got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
 }

@@ -19,6 +19,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,9 +35,13 @@ var randReader io.Reader = rand.Reader
 
 // GoogleUserInfo holds fields returned by OpenID Connect userinfo endpoint.
 type GoogleUserInfo struct {
-	Email   string `json:"email"`
-	Name    string `json:"name"`
-	Picture string `json:"picture"`
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+	// HostedDomain is the Google Workspace domain (`hd`) of the account. Google omits it for
+	// consumer accounts and other identity providers do not set it.
+	HostedDomain string `json:"hd"`
+	Name         string `json:"name"`
+	Picture      string `json:"picture"`
 }
 
 // HandleLogin serves the initial redirection endpoint.
@@ -95,9 +100,19 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.completeDashboardLogin(ctx, w, r, userInfo)
+}
+
+func (a *Authenticator) completeDashboardLogin(ctx context.Context, w http.ResponseWriter, r *http.Request, userInfo *GoogleUserInfo) {
 	dynamicFrontendURL := a.getDynamicFrontendURL(r)
 
-	authorized, err := a.IsUserAuthorized(ctx, userInfo.Email)
+	identity, err := a.admitLogin(ctx, userInfo)
+	if errors.Is(err, errNotAdmitted) {
+		logging.Warn(ctx, "[Callback Auth] Access forbidden: user is not admitted", "email", identity.email, "error", err)
+		forbiddenURL := fmt.Sprintf("%s/?error=forbidden&email=%s", dynamicFrontendURL, url.QueryEscape(identity.email))
+		http.Redirect(w, r, forbiddenURL, http.StatusTemporaryRedirect)
+		return
+	}
 	if err != nil {
 		logging.Error(ctx, "[Callback Auth] Authorization pipeline check failed", "error", err)
 		permissionErrorURL := fmt.Sprintf("%s/?error=permission_error", dynamicFrontendURL)
@@ -105,14 +120,7 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !authorized {
-		logging.Warn(ctx, "[Callback Auth] Access forbidden: user is not authorized", "email", userInfo.Email)
-		forbiddenURL := fmt.Sprintf("%s/?error=forbidden&email=%s", dynamicFrontendURL, url.QueryEscape(userInfo.Email))
-		http.Redirect(w, r, forbiddenURL, http.StatusTemporaryRedirect)
-		return
-	}
-
-	if err := a.createSession(w, r, userInfo.Email, userInfo.Name, userInfo.Picture); err != nil {
+	if err := a.createSession(w, r, identity.email, identity.name, identity.picture); err != nil {
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
 		return
 	}
