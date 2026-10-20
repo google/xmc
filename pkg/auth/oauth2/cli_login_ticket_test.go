@@ -15,8 +15,6 @@
 package oauth2
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
 	"errors"
 	"strings"
 	"testing"
@@ -25,26 +23,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/go-cmp/cmp"
 )
-
-func TestDeriveCLILoginMACKey(t *testing.T) {
-	// HKDF-SHA256 (RFC 5869) with an empty salt and a 32-byte output is
-	// PRK = HMAC(0^32, secret), OKM = HMAC(PRK, info || 0x01).
-	hmacSHA256 := func(key, data []byte) []byte {
-		mac := hmac.New(sha256.New, key)
-		mac.Write(data)
-		return mac.Sum(nil)
-	}
-	prk := hmacSHA256(make([]byte, sha256.Size), []byte(loginTestSecret))
-	want := hmacSHA256(prk, append([]byte(cliLoginMACInfo), 0x01))
-
-	got, err := deriveCLILoginMACKey([]byte(loginTestSecret))
-	if err != nil {
-		t.Fatalf("deriveCLILoginMACKey() failed: %v", err)
-	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("deriveCLILoginMACKey() mismatch (-want +got):\n%s", diff)
-	}
-}
 
 func TestCLILoginTicketRoundTrip(t *testing.T) {
 	a, _, _ := newCLITestAuthenticator(t, baseLoginConfig())
@@ -64,13 +42,16 @@ func TestOpenCLILoginTicketRejects(t *testing.T) {
 	sealed := mustSealCLILoginTicket(t, a, ticket)
 	parts := strings.Split(sealed, ".")
 	otherParts := strings.Split(mustSealCLILoginTicket(t, a, baseCLITicket("other-state")), ".")
-	rawSecretToken, err := sealSigned([]byte(loginTestSecret), ticket, ticket.ExpiresAt)
+	wrongAudienceToken, err := sealSigned([]byte(loginTestSecret), FrontendAudience, ticket, ticket.ExpiresAt)
 	if err != nil {
 		t.Fatalf("sealSigned() failed: %v", err)
 	}
 	noneToken, err := jwt.NewWithClaims(jwt.SigningMethodNone, signedClaims[cliLoginTicket]{
-		Payload:          ticket,
-		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Unix(ticket.ExpiresAt, 0))},
+		Payload: ticket,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{cliLoginTicketAudience},
+			ExpiresAt: jwt.NewNumericDate(time.Unix(ticket.ExpiresAt, 0)),
+		},
 	}).SignedString(jwt.UnsafeAllowNoneSignatureType)
 	if err != nil {
 		t.Fatalf("SignedString(none) failed: %v", err)
@@ -89,7 +70,7 @@ func TestOpenCLILoginTicketRejects(t *testing.T) {
 		{name: "signature is not base64url", sealed: parts[0] + "." + parts[1] + ".!!!", now: time.Now()},
 		{name: "tampered payload", sealed: parts[0] + "." + string(tampered) + "." + parts[2], now: time.Now()},
 		{name: "signature from another ticket", sealed: parts[0] + "." + parts[1] + "." + otherParts[2], now: time.Now()},
-		{name: "signed with the raw jwt secret", sealed: rawSecretToken, now: time.Now()},
+		{name: "wrong audience", sealed: wrongAudienceToken, now: time.Now()},
 		{name: "alg none rejected", sealed: noneToken, now: time.Now()},
 		{name: "expired", sealed: sealed, now: time.Now().Add(cliLoginTicketTTL + time.Second), expired: true},
 	}

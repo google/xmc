@@ -79,12 +79,7 @@ func (a *Authenticator) EnableCLILogin(codes CLICodeStore) error {
 	if a.cliCodes != nil {
 		return errors.New("cli login is already enabled")
 	}
-	key, err := deriveCLILoginMACKey(a.JWTSecret)
-	if err != nil {
-		return err
-	}
 	a.cliCodes = codes
-	a.cliLoginKey = key
 	a.cliTokenLimiter = rate.NewLimiter(cliTokenRateLimit, cliTokenRateBurst)
 	return nil
 }
