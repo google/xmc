@@ -28,13 +28,45 @@ fi
 : "${GKE_CLUSTER:?Error: GKE_CLUSTER environment variable is required (set in .env or shell)}"
 : "${GCP_REGION:?Error: GCP_REGION environment variable is required (set in .env or shell)}"
 
+K8S_NAMESPACE="${K8S_NAMESPACE:-default}"
 KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/config}"
 export KUBECONFIG
+
+PROVISION_CLUSTER="${PROVISION_CLUSTER:-false}"
+if [[ "${1:-}" == "--provision-cluster" ]]; then
+  PROVISION_CLUSTER="true"
+fi
+
+if [[ "${PROVISION_CLUSTER}" == "true" ]]; then
+  : "${XMANAGER_ENV:?Error: XMANAGER_ENV environment variable is required to provision a cluster}"
+  GCLUSTER_BIN="${GCLUSTER_BIN:-${REPO_ROOT}/cluster-toolkit/gcluster}"
+  if [[ ! -x "${GCLUSTER_BIN}" ]]; then
+    echo "Error: gcluster not found or not executable at '${GCLUSTER_BIN}'." >&2
+    echo "Build it (see examples/xmc_lite_job/README.md, section 1C) or set GCLUSTER_BIN." >&2
+    exit 1
+  fi
+  GCLUSTER_VARS="project_id=${PROJECT_ID},deployment_name=${GKE_CLUSTER},region=${GCP_REGION},environment=${XMANAGER_ENV},namespace=${K8S_NAMESPACE}"
+
+  "${GCLUSTER_BIN}" create "${SCRIPT_DIR}/xmc-lite-gke.yaml" \
+    --vars "${GCLUSTER_VARS}" \
+    -o "${REPO_ROOT}/ctk-out" \
+    -l WARNING -w --force
+
+  for group in apis primary compute kubernetes_prereqs; do
+    "${GCLUSTER_BIN}" deploy "${REPO_ROOT}/ctk-out/${GKE_CLUSTER}" --only "${group}" --auto-approve
+  done
+fi
 
 mkdir -p "$(dirname "${KUBECONFIG}")"
 gcloud container clusters get-credentials "${GKE_CLUSTER}" \
   --region="${GCP_REGION}" \
   --project="${PROJECT_ID}"
+
+if [[ "${PROVISION_CLUSTER}" == "true" ]]; then
+  kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+  kubectl rollout status deployment/kueue-controller-manager -n kueue-system --timeout=300s
+  kubectl apply -n "${K8S_NAMESPACE}" -f "${SCRIPT_DIR}/kueue-queues.yaml"
+fi
 
 VENV_DIR="${VENV_DIR:-${SCRIPT_DIR}/.venv}"
 if [[ ! -d "${VENV_DIR}" ]]; then
