@@ -97,6 +97,12 @@ func TestAdmissionCheckers(t *testing.T) {
 	}
 }
 
+func TestAnyOfWithNilCheckerIsNil(t *testing.T) {
+	if got := AnyOf(AdmitPrincipals("a@example.com"), DeploymentAdmission(nil)); got != nil {
+		t.Errorf("AnyOf(principals, nil) = %#v, want nil", got)
+	}
+}
+
 func TestAdmit(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -17,6 +17,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"xmanager_cloud/internal/grpcerr"
@@ -82,8 +83,13 @@ type anyOfChecker []AdmissionChecker
 
 // AnyOf returns an AdmissionChecker that admits a principal if any of checkers does. Checkers are
 // consulted in order and the first error stops the evaluation, so put cheap, infallible checkers
-// such as AdmitPrincipals first.
+// such as AdmitPrincipals first. It returns nil when any checker is nil (for example
+// DeploymentAdmission of a nil authenticator), which NewAuthorizer rejects, so a missing checker
+// fails at startup rather than panicking or being silently skipped at request time.
 func AnyOf(checkers ...AdmissionChecker) AdmissionChecker {
+	if slices.Contains(checkers, nil) {
+		return nil
+	}
 	return anyOfChecker(checkers)
 }
 
