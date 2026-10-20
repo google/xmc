@@ -15,6 +15,7 @@
 package store
 
 import (
+	"context"
 	"slices"
 	"time"
 
@@ -35,8 +36,22 @@ const (
 )
 
 // OwnerStaleThreshold is the age after which an active component owner's last-seen timestamp is
-// counted as stale by xmc_cms_component_owner_stale.
+// counted as stale by xmc_cms_component_owner_stale. A fence takeover sets SourceLastSeenTime to
+// its commit time, so reassigned records get the same period as an adoption grace period.
 const OwnerStaleThreshold = 15 * time.Minute
+
+// OwnershipGauges is a point-in-time read of the stored state behind the CMS ownership gauges.
+type OwnershipGauges struct {
+	FenceDeclared     bool      // False before the first DeclareClusterEpoch.
+	FenceEpoch        int64     // ComponentOwnershipFence.Epoch.
+	FenceLastSeenTime time.Time // ComponentOwnershipFence.LastSeenTime.
+	StaleOwners       int64     // Active owned components with SourceLastSeenTime <= now - OwnerStaleThreshold.
+}
+
+// OwnershipGaugeReader reads the stored state behind the CMS ownership gauges at now.
+type OwnershipGaugeReader interface {
+	ReadOwnershipGauges(ctx context.Context, now time.Time) (OwnershipGauges, error)
+}
 
 // sourceConflictReasons lists the ErrorInfo reasons counted by
 // xmc_cms_component_source_conflicts_total; each is pre-registered as a label value.
@@ -50,10 +65,11 @@ var sourceConflictReasons = []string{
 }
 
 var (
-	ownerAdoptionsTotal      = newOwnerAdoptionsCounter()
-	sourceConflictsTotal     = newSourceConflictsCounter()
-	clusterFenceEpochGauge   = newClusterFenceEpochGauge()
-	componentOwnerStaleGauge = newComponentOwnerStaleGauge()
+	ownerAdoptionsTotal       = newOwnerAdoptionsCounter()
+	sourceConflictsTotal      = newSourceConflictsCounter()
+	clusterFenceEpochGauge    = newClusterFenceEpochGauge()
+	clusterFenceLastSeenGauge = newClusterFenceLastSeenGauge()
+	componentOwnerStaleGauge  = newComponentOwnerStaleGauge()
 )
 
 func newOwnerAdoptionsCounter() *prometheus.CounterVec {
@@ -90,10 +106,17 @@ func newClusterFenceEpochGauge() prometheus.Gauge {
 	})
 }
 
+func newClusterFenceLastSeenGauge() prometheus.Gauge {
+	return promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "xmc_cms_cluster_fence_last_seen_timestamp_seconds",
+		Help: "Unix time at which the active cluster last declared its ownership fence epoch to CMS.",
+	})
+}
+
 func newComponentOwnerStaleGauge() prometheus.Gauge {
 	return promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "xmc_cms_component_owner_stale",
-		Help: "Number of active owned components in CMS whose owner is unassigned after takeover or older than 15 minutes.",
+		Help: "Number of active owned components in CMS whose owner was last seen 15 minutes ago or more.",
 	})
 }
 
@@ -110,6 +133,11 @@ func SourceConflictsCounter(reason string) prometheus.Counter {
 // ClusterFenceEpochGauge returns the gauge tracking the active cluster fence epoch.
 func ClusterFenceEpochGauge() prometheus.Gauge {
 	return clusterFenceEpochGauge
+}
+
+// ClusterFenceLastSeenGauge returns the gauge tracking the fence's LastSeenTime as Unix seconds.
+func ClusterFenceLastSeenGauge() prometheus.Gauge {
+	return clusterFenceLastSeenGauge
 }
 
 // ComponentOwnerStaleGauge returns the gauge tracking active components with stale owners.
@@ -153,32 +181,36 @@ func recordSourceConflictError(err error) error {
 	return err
 }
 
-// recordClusterDeclarationMetrics updates the active fence epoch gauge and, when updateStale is
-// true, the stale component owner gauge after a committed DeclareClusterEpoch.
-func recordClusterDeclarationMetrics(epoch, staleOwners int64, updateStale bool) {
-	clusterFenceEpochGauge.Set(float64(epoch))
-	if updateStale {
-		componentOwnerStaleGauge.Set(float64(staleOwners))
+// RecordOwnershipGauges sets the CMS ownership gauges from g. The fence gauge exports the stored
+// LastSeenTime rather than its age, so an alert on its age keeps growing even when no replica can
+// refresh it. Before the first declaration both fence gauges report 0.
+func RecordOwnershipGauges(g OwnershipGauges) {
+	componentOwnerStaleGauge.Set(float64(g.StaleOwners))
+	if !g.FenceDeclared {
+		clusterFenceEpochGauge.Set(0)
+		clusterFenceLastSeenGauge.Set(0)
+		return
 	}
+	clusterFenceEpochGauge.Set(float64(g.FenceEpoch))
+	clusterFenceLastSeenGauge.Set(float64(g.FenceLastSeenTime.UnixNano()) / 1e9)
 }
 
-// isOwnerStale reports whether an active component record has an owner that is unassigned after a
-// fence takeover or has not been seen within OwnerStaleThreshold of now.
-func isOwnerStale(rec *ComponentRecord, now time.Time) bool {
-	if isDeletedRecord(rec) || rec.Owner == nil {
+// isOwnerStale reports whether rec is an active owned record whose SourceLastSeenTime is at or
+// before cutoff. It matches the WHERE clause of SpannerStore's stale-owner count.
+func isOwnerStale(rec *ComponentRecord, cutoff time.Time) bool {
+	if isDeletedRecord(rec) || rec.Owner == nil || rec.SourceLastSeenTime.IsZero() {
 		return false
 	}
-	if rec.Owner.UID == "" {
-		return true
-	}
-	return !rec.SourceLastSeenTime.IsZero() && now.Sub(rec.SourceLastSeenTime) >= OwnerStaleThreshold
+	return !rec.SourceLastSeenTime.After(cutoff)
 }
 
-// countStaleOwnedComponents returns the number of active records in catalog whose owner is stale.
+// countStaleOwnedComponents returns the number of active records in catalog whose owner is stale
+// at now.
 func countStaleOwnedComponents(catalog map[string]*ComponentRecord, now time.Time) int64 {
+	cutoff := now.Add(-OwnerStaleThreshold)
 	var count int64
 	for _, rec := range catalog {
-		if isOwnerStale(rec, now) {
+		if isOwnerStale(rec, cutoff) {
 			count++
 		}
 	}
