@@ -32,6 +32,18 @@ const {
   fetchTimelineEvents
 } = require('./pr-approval-timeline');
 
+/**
+ * Pure function: Formats a caught value for logging, tolerating non-Error throws (null, strings, objects).
+ * Appends trimmed stderr when present (e.g. from git subprocess failures).
+ * @param {*} error - Caught value.
+ * @returns {string}
+ */
+function describeError(error) {
+  const message = error?.message || String(error);
+  const stderrInfo = error?.stderr ? ` | Stderr: ${String(error.stderr).trim()}` : '';
+  return `${message}${stderrInfo}`;
+}
+
 
 /**
  * Orchestrator: Fetches PR reviews, calculates semantic delta, evaluates grace policy, and auto-reapproves.
@@ -71,7 +83,7 @@ async function run({ github, context, core }) {
       per_page: 100
     });
   } catch (reviewErr) {
-    core.setFailed(`Failed to fetch PR reviews: ${reviewErr.message}`);
+    core.setFailed(`Failed to fetch PR reviews: ${describeError(reviewErr)}`);
     return;
   }
 
@@ -88,7 +100,7 @@ async function run({ github, context, core }) {
   try {
     refStatus = ensureGitRefs(baseRef, latestApproval.approvedSha, currentSha);
   } catch (error) {
-    core.warning(`Failed to verify git references (${error.message}). Requiring manual review.`);
+    core.warning(`Failed to verify git references (${describeError(error)}). Requiring manual review.`);
     return;
   }
   if (!refStatus.success) {
@@ -105,7 +117,13 @@ async function run({ github, context, core }) {
   const isAuthorOwner = isAuthorCodeOwner(prAuthor, ownersList);
   core.info(`PR Author @${prAuthor} is code owner: ${isAuthorOwner}`);
 
-  let hasProtectedFileChanges = checkProtectedFileChanges(baseRef, latestApproval.approvedSha, currentSha);
+  let hasProtectedFileChanges;
+  try {
+    hasProtectedFileChanges = checkProtectedFileChanges(baseRef, latestApproval.approvedSha, currentSha);
+  } catch (error) {
+    core.warning(`Unable to determine files changed by PR #${prNumber} (${describeError(error)}). Requiring manual review.`);
+    return;
+  }
   if (hasProtectedFileChanges) {
     core.info(`PR #${prNumber} modifies sensitive CI workflows, scripts, ownership files, or the protobuf breaking-change baseline or its configuration (.github/, OWNERS, .githooks/, api/testdata/protos_baseline.binpb, api/buf.yaml, api/BUILD.bazel). Skipping auto-reapproval.`);
   }
@@ -114,7 +132,7 @@ async function run({ github, context, core }) {
   try {
     rangeDiffOutput = runGitRangeDiff(baseRef, latestApproval.approvedSha, currentSha);
   } catch (error) {
-    core.warning(`Unable to compute git range-diff (${error.message}). Requiring manual review.`);
+    core.warning(`Unable to compute git range-diff (${describeError(error)}). Requiring manual review.`);
     return;
   }
 
@@ -135,7 +153,7 @@ async function run({ github, context, core }) {
   try {
     addedDelta = computeAddedCommitsDelta(addedCommitShas);
   } catch (error) {
-    core.warning(`Unable to compute line delta for added commits (${error.message}). Requiring manual review.`);
+    core.warning(`Unable to compute line delta for added commits (${describeError(error)}). Requiring manual review.`);
     return;
   }
   const totalDelta = hunkDelta + addedDelta.totalDelta;
@@ -173,10 +191,11 @@ async function run({ github, context, core }) {
     });
     core.info(`Successfully auto-reapproved PR #${prNumber}`);
   } catch (error) {
-    core.setFailed(`Failed to submit re-approval review for PR #${prNumber}: ${error.message}`);
+    core.setFailed(`Failed to submit re-approval review for PR #${prNumber}: ${describeError(error)}`);
   }
 }
 
 module.exports = {
+  describeError,
   run
 };

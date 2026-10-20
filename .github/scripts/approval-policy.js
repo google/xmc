@@ -85,16 +85,12 @@ function hasProtectedFile(filePaths) {
  * @param {string} [currentSha] - Current HEAD commit SHA.
  * @param {Object} [execOptions={}] - Subprocess options.
  * @returns {boolean} True if any sensitive file was modified.
+ * @throws {Error} If git fails to list changed files (e.g. no merge base). Callers must fail closed
+ *     without misreporting the failure as a protected-file change.
  */
 function checkProtectedFileChanges(baseRefOrApprovedSha, approvedShaOrCurrentSha, currentSha, execOptions = {}) {
-  try {
-    const files = getPrChangedFiles(baseRefOrApprovedSha, approvedShaOrCurrentSha, currentSha, execOptions);
-    return hasProtectedFile(files);
-  } catch (error) {
-    const stderrInfo = error.stderr ? ' | Stderr: ' + error.stderr.trim() : '';
-    console.log('[incremental-approval] Failed to check modified files: ' + error.message + stderrInfo);
-    return true;
-  }
+  const files = getPrChangedFiles(baseRefOrApprovedSha, approvedShaOrCurrentSha, currentSha, execOptions);
+  return hasProtectedFile(files);
 }
 
 /**

@@ -45,8 +45,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           AUTH_HEADER="Authorization: Basic $(printf "x-access-token:%s" "$GITHUB_TOKEN" | base64 | tr -d '\n')"
-          # TODO: Drop `|| true` so this fetch fails loudly (refs are consumed below), per .agents/rules/github_authoring_and_prs.md §6.3.
-          git -c "http.extraheader=${AUTH_HEADER}" fetch origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" --depth=1 || true
+          # Do not pass --depth: a shallow fetch into this full clone writes .git/shallow and grafts the
+          # base tip as a root commit, which breaks merge-base lookups (`git diff base...head`) and makes
+          # the protected-file check fail closed with a false positive.
+          git -c "http.extraheader=${AUTH_HEADER}" fetch origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
           git checkout "origin/${BASE_REF}" -- .github/scripts/ .github/workflows/ OWNERS
 
       - name: 'Evaluate Incremental Approval'

@@ -373,3 +373,82 @@ test('run warns and aborts when computing delta for added commits fails', async 
   }
 });
 
+
+test('run warns about undeterminable changed files instead of reporting protected files when no merge base exists', async () => {
+  const core = createMockCore();
+  const originalExec = childProcess.execFileSync;
+  const originalExists = fs.existsSync;
+  const originalRead = fs.readFileSync;
+  let createdReview = null;
+
+  childProcess.execFileSync = (cmd, args) => {
+    if (cmd === 'git' && args[0] === 'rev-parse') {
+      return 'ok\n';
+    }
+    if (cmd === 'git' && args[0] === 'diff' && args[1] === '--name-only') {
+      const err = new Error('git diff failed (exit 128): fatal: no merge base');
+      err.stderr = 'fatal: origin/main...3333333: no merge base\n';
+      throw err;
+    }
+    throw new Error(`Unexpected command: ${cmd} ${args.join(' ')}`);
+  };
+
+  fs.existsSync = (p) => p === 'OWNERS';
+  fs.readFileSync = () => 'alice\nbob\n';
+
+  const github = {
+    paginate: async () => [
+      { id: 1, user: { login: 'bob' }, state: 'APPROVED', commit_id: '1111111111111111111111111111111111111111', submitted_at: '2026-09-01T00:00:00Z' }
+    ],
+    rest: {
+      pulls: {
+        listReviews: 'dummy',
+        createReview: async (params) => {
+          createdReview = params;
+          return { status: 200 };
+        }
+      }
+    }
+  };
+
+  try {
+    await incrementalApproval.run({
+      github,
+      context: {
+        repo: { owner: 'google', repo: 'xmc' },
+        payload: {
+          pull_request: {
+            number: 1236,
+            draft: false,
+            user: { login: 'alice' },
+            head: { sha: '3333333333333333333333333333333333333333' },
+            base: { ref: 'main' }
+          }
+        }
+      },
+      core
+    });
+
+    assert.strictEqual(core.failed.length, 0);
+    assert.strictEqual(createdReview, null);
+    assert.strictEqual(core.warnings.length, 1);
+    assert.match(core.warnings[0], /Unable to determine files changed by PR #1236/);
+    assert.match(core.warnings[0], /no merge base/);
+    assert.ok(!core.infos.some((msg) => /modifies sensitive/.test(msg)));
+  } finally {
+    childProcess.execFileSync = originalExec;
+    fs.existsSync = originalExists;
+    fs.readFileSync = originalRead;
+  }
+});
+
+test('describeError tolerates non-Error throws and appends trimmed stderr', () => {
+  const { describeError } = incrementalApproval;
+  assert.strictEqual(describeError(new Error('boom')), 'boom');
+  const withStderr = Object.assign(new Error('git failed'), { stderr: 'fatal: no merge base\n' });
+  assert.strictEqual(describeError(withStderr), 'git failed | Stderr: fatal: no merge base');
+  assert.strictEqual(describeError(null), 'null');
+  assert.strictEqual(describeError(undefined), 'undefined');
+  assert.strictEqual(describeError('plain string'), 'plain string');
+  assert.strictEqual(describeError({ stderr: 'oops' }), '[object Object] | Stderr: oops');
+});
