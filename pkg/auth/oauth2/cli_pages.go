@@ -15,9 +15,22 @@
 package oauth2
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
 )
+
+// cliResultPage is the static page shown at the end of a CLI login. It takes only constant
+// strings, so no request data is ever reflected into it.
+const cliResultPage = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>XManager CLI login</title></head>
+<body style="font-family: sans-serif; margin: 4em auto; max-width: 32em; text-align: center">
+<h1>%s</h1>
+<p>%s</p>
+</body>
+</html>
+`
 
 // cliManualPageStyle is the inline style of the manual-mode pages. They use no script, so they
 // work under the deployment's Content-Security-Policy.
@@ -62,6 +75,26 @@ type cliConfirmationPageData struct {
 	Confirmation string
 }
 
+// HandleCLISuccess serves the page the CLI sends the browser to once its loopback listener has the
+// result, so the one-time code leaves the address bar. Any `error` parameter selects the failure
+// variant; its value is not displayed.
+func (a *Authenticator) HandleCLISuccess(w http.ResponseWriter, r *http.Request) {
+	if !a.checkCLIBrowserRequest(w, r) {
+		return
+	}
+	title, message := "Signed in", "You can close this tab and return to the terminal."
+	if r.URL.Query().Has("error") {
+		title, message = "Sign-in failed", "Return to the terminal for details."
+	}
+	writeCLIResultPage(w, http.StatusOK, title, message)
+}
+
+// writeCLIResultPage writes cliResultPage with a constant title and message.
+func writeCLIResultPage(w http.ResponseWriter, status int, title, message string) {
+	writeCLIPageHeaders(w, status)
+	fmt.Fprintf(w, cliResultPage, title, message)
+}
+
 // writeCLITemplatePage writes page, executed with data, as a CLI login HTML page.
 func writeCLITemplatePage(w http.ResponseWriter, page *template.Template, data any) {
 	writeCLIPageHeaders(w, http.StatusOK)
@@ -85,4 +118,15 @@ func writeCLIManualError(w http.ResponseWriter, errCode string) {
 func writeCLIManualExpired(w http.ResponseWriter) {
 	writeCLIResultPage(w, http.StatusBadRequest, "Sign-in expired",
 		"This page has expired or was already used. Run <code>xmc login --no-browser</code> again to get a new code.")
+}
+
+// writeCLIPageHeaders writes the status and the headers shared by the CLI login HTML pages: they
+// are never cached, never leak the URL, which may carry an authorization code, as a referrer, and
+// cannot be framed or post forms elsewhere. The added CSP is enforced alongside the global one.
+func writeCLIPageHeaders(w http.ResponseWriter, status int) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Add("Content-Security-Policy", "frame-ancestors 'none'; form-action 'self'")
+	w.WriteHeader(status)
 }
