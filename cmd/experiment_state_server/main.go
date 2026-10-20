@@ -45,7 +45,6 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/tlsutil"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/pkg/auth/oauth2/mock"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
 
@@ -76,10 +75,8 @@ func main() {
 	}
 
 	// 2. Initialize the OAuth authenticator and production server. The gRPC authorizer reuses this
-	// authenticator for admission, so gRPC admits the same principals as HTTP (including under mock
-	// auth, whose fakes mock.ConfigureIfEnabled installs here).
+	// authenticator for admission, so gRPC admits the same principals as HTTP.
 	oauthAuth := oauth.NewAuthenticator(oauthCfg)
-	mock.ConfigureIfEnabled(oauthAuth)
 	defer oauthAuth.Close()
 
 	prodServer, err := server.NewProd(ctx, &cfg, oauthCfg, authz.DeploymentAdmission(oauthAuth))

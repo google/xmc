@@ -32,6 +32,8 @@ go_library(
         "handlers.go",
         "login_identity.go",
         "middleware.go",
+        "mockauth_dev.go",
+        "mockauth_prod.go",
         "pipeline.go",
         "provider.go",
         "session.go",
@@ -69,6 +71,7 @@ go_test(
         "config_test.go",
         "login_identity_test.go",
         "login_test_fixtures_test.go",
+        "mockauth_prod_test.go",
         "oauth2_test.go",
         "pipeline_test.go",
         "session_test.go",
@@ -83,4 +86,14 @@ go_test(
         "@org_golang_x_oauth2//:oauth2",
         "@org_golang_x_time//rate",
     ],
+)
+
+# Exercises the mockauth build tag variant used by *_dev binaries.
+go_test(
+    name = "oauth2_mockauth_test",
+    srcs = [
+        "mockauth_dev_test.go",
+    ],
+    embed = [":oauth2"],
+    gotags = ["mockauth"],
 )

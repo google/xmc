@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"xmanager_cloud/internal/logging"
 )
 
@@ -91,7 +92,7 @@ func (a *Authenticator) issueCLIManualConfirmation(ctx context.Context, identity
 		CodeChallenge: codeChallenge,
 		Nonce:         nonce,
 		ExpiresAt:     expiresAt.Unix(),
-	})
+	}, expiresAt.Unix())
 }
 
 func hashCLIConfirmationNonce(nonce string) []byte {
@@ -99,14 +100,14 @@ func hashCLIConfirmationNonce(nonce string) []byte {
 	return sum[:]
 }
 
-// openCLIManualConfirmation verifies the MAC and expiry of a sealed confirmation and decodes it.
+// openCLIManualConfirmation verifies the signature and expiry of a sealed confirmation and decodes it.
 func (a *Authenticator) openCLIManualConfirmation(sealed string, now time.Time) (cliManualConfirmation, error) {
-	var c cliManualConfirmation
-	if !openSigned(a.cliConfirmationKey, sealed, &c) {
-		return cliManualConfirmation{}, errInvalidCLIConfirmation
-	}
-	if now.Unix() >= c.ExpiresAt {
+	c, err := openSigned[cliManualConfirmation](a.cliConfirmationKey, sealed, now)
+	if errors.Is(err, jwt.ErrTokenExpired) {
 		return cliManualConfirmation{}, fmt.Errorf("%w: expired", errInvalidCLIConfirmation)
+	}
+	if err != nil {
+		return cliManualConfirmation{}, errInvalidCLIConfirmation
 	}
 	return c, nil
 }
