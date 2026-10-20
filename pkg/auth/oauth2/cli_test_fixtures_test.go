@@ -147,14 +147,16 @@ func newCLICallbackRequest(query, cliCookie string) *http.Request {
 type cliPageResult struct {
 	Status                       int
 	CacheControl, ReferrerPolicy string
-	Location                     string
+	// CSP is the Content-Security-Policy set by the handler; HTML pages deny framing.
+	CSP      string
+	Location string
 	// Title is the <h1> heading of an HTML page.
 	Title string
 }
 
 // cliPage is an HTML page with title, served with status.
 func cliPage(status int, title string) cliPageResult {
-	return cliPageResult{Status: status, CacheControl: "no-store", ReferrerPolicy: "no-referrer", Title: title}
+	return cliPageResult{Status: status, CacheControl: "no-store", ReferrerPolicy: "no-referrer", CSP: "frame-ancestors 'none'; form-action 'self'", Title: title}
 }
 
 // cliRedirect is a redirect to location.
@@ -169,6 +171,7 @@ func readCLIPage(resp *http.Response) (cliPageResult, string) {
 		Status:         resp.StatusCode,
 		CacheControl:   resp.Header.Get("Cache-Control"),
 		ReferrerPolicy: resp.Header.Get("Referrer-Policy"),
+		CSP:            resp.Header.Get("Content-Security-Policy"),
 		Location:       resp.Header.Get("Location"),
 		Title:          between(string(body), "<h1>", "</h1>"),
 	}, string(body)

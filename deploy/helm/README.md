@@ -131,10 +131,13 @@ continue only if they started `xmc login --no-browser` themselves. Only when the
 user selects **Continue** (a same-origin `POST /api/cli/code`, with admission
 checked again) does the server mint a code, valid for 120 seconds and shown only
 in the page body, never in a URL. The user pastes it into the terminal. Each
-confirmation page works once and for at most 5 minutes. A user can still be
-tricked into opening an attacker's link, confirming, and handing over the code
-(consent phishing). This residual risk is the same as for `gcloud auth login
---no-browser`; the confirmation page and the code page warn against it.
+confirmation page works once (**Cancel** uses it up too) and for at most 5
+minutes. A user can still be tricked into opening an attacker's link, confirming,
+and handing over the code (consent phishing). This residual risk is the same as
+for `gcloud auth login --no-browser`; the confirmation page and the code page warn
+against it. The confirmation is also not bound to the browser: for its 5 minutes,
+anyone who obtains the page's form value can mint the code once, which helps only
+an attacker who also holds the PKCE verifier, that is, one who started the login.
 
 The CLI then exchanges the code and its PKCE verifier on `/api/cli/token` for a
 CLI session token, and sends the browser to `/api/cli/success` so the code leaves

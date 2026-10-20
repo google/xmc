@@ -52,10 +52,12 @@ func writeCLIResultPage(w http.ResponseWriter, status int, title, message string
 }
 
 // writeCLIPageHeaders writes the status and the headers shared by the CLI login HTML pages: they
-// are never cached and never leak the URL, which may carry an authorization code, as a referrer.
+// are never cached, never leak the URL, which may carry an authorization code, as a referrer, and
+// cannot be framed or post forms elsewhere. The added CSP is enforced alongside the global one.
 func writeCLIPageHeaders(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Add("Content-Security-Policy", "frame-ancestors 'none'; form-action 'self'")
 	w.WriteHeader(status)
 }

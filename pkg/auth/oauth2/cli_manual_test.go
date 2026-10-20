@@ -76,7 +76,11 @@ func newCLICodeRequest(form url.Values) *http.Request {
 }
 
 func confirmForm(confirmation string) url.Values {
-	return url.Values{"action": {"continue"}, "confirmation": {confirmation}}
+	return actionForm("continue", confirmation)
+}
+
+func actionForm(action, confirmation string) url.Values {
+	return url.Values{"action": {action}, "confirmation": {confirmation}}
 }
 
 func serveCLICode(h http.Handler, req *http.Request) (cliPageResult, string) {
@@ -169,6 +173,7 @@ func TestHandleCLICodeRejects(t *testing.T) {
 	expired.ExpiresAt = time.Now().Add(-time.Second).Unix()
 	revoked := baseCLIManualConfirmation()
 	revoked.Email = "user@other.com"
+	errStore := errors.New("spanner unavailable")
 	tests := []struct {
 		name string
 		cfg  func(*Config)
@@ -183,18 +188,11 @@ func TestHandleCLICodeRejects(t *testing.T) {
 		// wantNonceKept reports whether the confirmation stays redeemable.
 		wantNonceKept bool
 	}{
-		{
-			name:          "cancel",
-			form:          func(sealed string) url.Values { return url.Values{"action": {"cancel"}, "confirmation": {sealed}} },
-			want:          cliPage(http.StatusOK, "Sign-in cancelled"),
-			wantNonceKept: true,
-		},
-		{
-			name:          "tampered confirmation",
-			form:          func(sealed string) url.Values { return confirmForm("x" + sealed) },
-			want:          cliPage(http.StatusBadRequest, "Sign-in expired"),
-			wantNonceKept: true,
-		},
+		{name: "cancel", form: func(s string) url.Values { return actionForm("cancel", s) }, want: cliPage(http.StatusOK, "Sign-in cancelled")},
+		{name: "cancel with a tampered confirmation", form: func(s string) url.Values { return actionForm("cancel", "x"+s) }, want: cliPage(http.StatusBadRequest, "Sign-in expired"), wantNonceKept: true},
+		{name: "missing action", form: func(s string) url.Values { return url.Values{"confirmation": {s}} }, want: cliPageResult{Status: http.StatusBadRequest}, wantNonceKept: true},
+		{name: "unknown action", form: func(s string) url.Values { return actionForm("approve", s) }, want: cliPageResult{Status: http.StatusBadRequest}, wantNonceKept: true},
+		{name: "tampered confirmation", form: func(s string) url.Values { return confirmForm("x" + s) }, want: cliPage(http.StatusBadRequest, "Sign-in expired"), wantNonceKept: true},
 		{name: "expired confirmation", confirmation: &expired, want: cliPage(http.StatusBadRequest, "Sign-in expired"), wantNonceKept: true},
 		{name: "admission revoked since the callback", confirmation: &revoked, want: cliPage(http.StatusForbidden, "Sign-in failed")},
 		{
@@ -205,36 +203,15 @@ func TestHandleCLICodeRejects(t *testing.T) {
 			},
 			want: cliPage(http.StatusInternalServerError, "Sign-in failed"),
 		},
-		{
-			name:          "code store failure on consume",
-			setup:         func(_ *Authenticator, s *fakeCLICodeStore) { s.consumeErr = errors.New("spanner unavailable") },
-			want:          cliPage(http.StatusInternalServerError, "Sign-in failed"),
-			wantNonceKept: true,
-		},
-		{
-			name:  "code store failure on save",
-			setup: func(_ *Authenticator, s *fakeCLICodeStore) { s.saveErr = errors.New("spanner unavailable") },
-			want:  cliPage(http.StatusInternalServerError, "Sign-in failed"),
-		},
+		{name: "code store failure on consume", setup: func(_ *Authenticator, s *fakeCLICodeStore) { s.consumeErr = errStore }, want: cliPage(http.StatusInternalServerError, "Sign-in failed"), wantNonceKept: true},
+		{name: "code store failure on save", setup: func(_ *Authenticator, s *fakeCLICodeStore) { s.saveErr = errStore }, want: cliPage(http.StatusInternalServerError, "Sign-in failed")},
 		{name: "cross-site POST", req: func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }, want: cliPageResult{Status: http.StatusForbidden}, wantNonceKept: true},
 		{name: "same-site POST", req: func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "same-site") }, want: cliPageResult{Status: http.StatusForbidden}, wantNonceKept: true},
 		{name: "submitted by script", req: func(r *http.Request) { r.Header.Set("Sec-Fetch-Dest", "empty") }, want: cliPageResult{Status: http.StatusBadRequest}, wantNonceKept: true},
 		{name: "GET", req: func(r *http.Request) { r.Method = http.MethodGet }, want: cliPageResult{Status: http.StatusMethodNotAllowed}, wantNonceKept: true},
 		{name: "not form-encoded", req: func(r *http.Request) { r.Header.Set("Content-Type", "application/json") }, want: cliPageResult{Status: http.StatusBadRequest}, wantNonceKept: true},
-		{
-			name: "oversized form",
-			form: func(sealed string) url.Values {
-				return url.Values{"confirmation": {sealed}, "pad": {strings.Repeat("a", maxCLICodeRequestBytes)}}
-			},
-			want:          cliPageResult{Status: http.StatusBadRequest},
-			wantNonceKept: true,
-		},
-		{
-			name:          "repeated confirmation",
-			form:          func(sealed string) url.Values { return url.Values{"confirmation": {sealed, sealed}} },
-			want:          cliPageResult{Status: http.StatusBadRequest},
-			wantNonceKept: true,
-		},
+		{name: "oversized form", form: func(s string) url.Values { return actionForm(strings.Repeat("a", maxCLICodeRequestBytes), s) }, want: cliPageResult{Status: http.StatusBadRequest}, wantNonceKept: true},
+		{name: "repeated confirmation", form: func(s string) url.Values { return url.Values{"confirmation": {s, s}} }, want: cliPageResult{Status: http.StatusBadRequest}, wantNonceKept: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

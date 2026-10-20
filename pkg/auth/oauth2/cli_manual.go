@@ -27,20 +27,16 @@ import (
 )
 
 const (
-	// cliManualConfirmationInfo is the HKDF info that derives the manual-mode confirmation MAC key
-	// from the JWT secret, distinct from the cli_login ticket key.
+	// cliManualConfirmationInfo is the HKDF info of the confirmation MAC key (see deriveCLIKeys).
 	cliManualConfirmationInfo = "xmc-cli-manual-confirm-v1"
-	// cliConfirmationNonceDomain prefixes a confirmation nonce before hashing it into the code
-	// store, so a nonce record can never be redeemed as a login code at `/api/cli/token`, which
-	// hashes codes without the prefix.
+	// cliConfirmationNonceDomain prefixes a nonce before hashing it into the code store, so a nonce
+	// record never matches a login code, which `/api/cli/token` hashes without the prefix.
 	cliConfirmationNonceDomain = "xmc-cli-manual-confirm-nonce-v1:"
 	// cliManualConfirmationTTL bounds how long the confirmation page can be submitted.
 	cliManualConfirmationTTL = 5 * time.Minute
-	// cliManualCodeTTL is how long a code shown in the browser stays redeemable. It is longer than
-	// cliLoopbackCodeTTL because the user copies the code to the terminal by hand.
+	// cliManualCodeTTL is longer than cliLoopbackCodeTTL: the user copies the code by hand.
 	cliManualCodeTTL = 120 * time.Second
-	// maxCLICodeRequestBytes bounds the confirmation form; it carries a sealed email, name and
-	// challenge.
+	// maxCLICodeRequestBytes bounds the form, which carries a sealed email, name and challenge.
 	maxCLICodeRequestBytes = 16 << 10
 )
 
@@ -52,8 +48,7 @@ type cliManualConfirmation struct {
 	Email         string `json:"email"`
 	Name          string `json:"name"`
 	CodeChallenge string `json:"code_challenge"`
-	// Nonce makes the confirmation single-use: the callback stores its domain-separated hash in the
-	// code store and `POST /api/cli/code` consumes it.
+	// Nonce makes the confirmation single-use (see takeCLIManualConfirmation).
 	Nonce string `json:"nonce"`
 	// ExpiresAt is the Unix time after which the confirmation is rejected.
 	ExpiresAt int64 `json:"exp"`
@@ -116,9 +111,9 @@ func (a *Authenticator) openCLIManualConfirmation(sealed string, now time.Time) 
 	return c, nil
 }
 
-// HandleCLICode serves the interstitial's form. On Continue it verifies and consumes the
-// confirmation, re-runs admission and shows a one-time code for the user to paste into the CLI;
-// on Cancel it issues nothing. The code appears only in the response body, never in a URL.
+// HandleCLICode serves the interstitial's form. Both buttons verify and use up the confirmation.
+// Continue then re-runs admission and shows a one-time code for the CLI, only in the response
+// body; Cancel issues nothing.
 func (a *Authenticator) HandleCLICode(w http.ResponseWriter, r *http.Request) {
 	if !a.checkCLICodeRequest(w, r) {
 		return
@@ -128,13 +123,13 @@ func (a *Authenticator) HandleCLICode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if form["action"] == "cancel" {
-		writeCLIResultPage(w, http.StatusOK, "Sign-in cancelled", "No code was issued. You can close this tab.")
-		return
-	}
 	ctx := r.Context()
 	confirmation, ok := a.takeCLIManualConfirmation(ctx, w, form["confirmation"])
 	if !ok {
+		return
+	}
+	if form["action"] == "cancel" {
+		writeCLIResultPage(w, http.StatusOK, "Sign-in cancelled", "No code was issued. You can close this tab.")
 		return
 	}
 	if !a.checkCLIManualStillAdmitted(ctx, w, confirmation.Email) {
@@ -184,7 +179,14 @@ func parseCLICodeForm(w http.ResponseWriter, r *http.Request) (map[string]string
 	if err := r.ParseForm(); err != nil {
 		return nil, errors.New("the CLI login form could not be read")
 	}
-	return singleValues(r.PostForm, "action", "confirmation")
+	form, err := singleValues(r.PostForm, "action", "confirmation")
+	if err != nil {
+		return nil, err
+	}
+	if form["action"] != "continue" && form["action"] != "cancel" {
+		return nil, errors.New("action must be continue or cancel")
+	}
+	return form, nil
 }
 
 // takeCLIManualConfirmation verifies the sealed confirmation and consumes its nonce, so each
@@ -215,16 +217,13 @@ func (a *Authenticator) takeCLIManualConfirmation(ctx context.Context, w http.Re
 // checkCLIManualStillAdmitted re-runs deployment admission, which may have changed since the
 // callback, and writes the error page if it fails.
 func (a *Authenticator) checkCLIManualStillAdmitted(ctx context.Context, w http.ResponseWriter, email string) bool {
-	authorized, err := a.IsUserAuthorized(ctx, email)
+	admitted, err := a.stillAdmitted(ctx, email)
 	if err != nil {
-		logging.Error(ctx, "[CLI Login] Authorization pipeline check failed", "error", err)
 		writeCLIManualError(w, cliErrorServerError)
 		return false
 	}
-	if !authorized {
-		logging.Warn(ctx, "[CLI Login] Access forbidden: user is no longer admitted", "email", email)
+	if !admitted {
 		writeCLIManualError(w, cliErrorAccessDenied)
-		return false
 	}
-	return true
+	return admitted
 }

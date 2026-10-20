@@ -25,15 +25,15 @@ import (
 
 // successResult is the comparable outcome of a request to /api/cli/success.
 type successResult struct {
-	Status                                    int
-	ContentType, CacheControl, ReferrerPolicy string
+	Status                                         int
+	ContentType, CacheControl, ReferrerPolicy, CSP string
 	// Title is the page heading; the error parameter's value must never appear in the page.
 	Title string
 }
 
 func TestHandleCLISuccess(t *testing.T) {
 	page := func(title string) successResult {
-		return successResult{http.StatusOK, "text/html; charset=utf-8", "no-store", "no-referrer", title}
+		return successResult{http.StatusOK, "text/html; charset=utf-8", "no-store", "no-referrer", "frame-ancestors 'none'; form-action 'self'", title}
 	}
 	tests := []struct {
 		name      string
@@ -64,7 +64,7 @@ func TestHandleCLISuccess(t *testing.T) {
 			got := successResult{Status: w.Code}
 			if w.Code == http.StatusOK {
 				body := w.Body.String()
-				got = successResult{w.Code, w.Header().Get("Content-Type"), w.Header().Get("Cache-Control"), w.Header().Get("Referrer-Policy"), between(body, "<h1>", "</h1>")}
+				got = successResult{w.Code, w.Header().Get("Content-Type"), w.Header().Get("Cache-Control"), w.Header().Get("Referrer-Policy"), w.Header().Get("Content-Security-Policy"), between(body, "<h1>", "</h1>")}
 				if strings.Contains(body, "script") {
 					t.Errorf("body reflects the error parameter: %q", body)
 				}
