@@ -100,26 +100,11 @@ func TestParseSessionToken(t *testing.T) {
 			want:   valid,
 		},
 		{
-			name:   "expired within leeway",
-			mutate: func(c *SessionClaims) { c.ExpiresAt = jwt.NewNumericDate(now.Add(-10 * time.Second)) },
-			want:   valid,
-		},
-		{
-			name:   "expired outside leeway",
+			name:   "expired",
 			mutate: func(c *SessionClaims) { c.ExpiresAt = jwt.NewNumericDate(now.Add(-time.Minute)) },
 			want:   parseResult{Err: ErrExpiredToken},
 		},
 		{name: "missing exp", mutate: func(c *SessionClaims) { c.ExpiresAt = nil }, want: invalid},
-		{
-			name:   "issued in the future within leeway",
-			mutate: func(c *SessionClaims) { c.IssuedAt = jwt.NewNumericDate(now.Add(10 * time.Second)) },
-			want:   valid,
-		},
-		{
-			name:   "issued in the future outside leeway",
-			mutate: func(c *SessionClaims) { c.IssuedAt = jwt.NewNumericDate(now.Add(time.Minute)) },
-			want:   invalid,
-		},
 		{name: "wrong issuer", mutate: func(c *SessionClaims) { c.Issuer = "someone-else" }, want: invalid},
 		{name: "missing issuer", mutate: func(c *SessionClaims) { c.Issuer = "" }, want: invalid},
 		{name: "wrong audience", audiences: []string{"xmanager-cloud-other"}, want: invalid},

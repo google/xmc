@@ -183,13 +183,32 @@ func newCMSAuthorizer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.C
 	return buildCMSAuthorizer(cfg, oauthCfg, userAuth, oauthAuth), nil
 }
 
+type cmsAdmissionChecker struct {
+	invokerSA string
+	delegate  authz.AdmissionChecker
+}
+
+func (c cmsAdmissionChecker) IsUserAuthorized(ctx context.Context, email string) (bool, error) {
+	if c.invokerSA != "" && strings.EqualFold(strings.TrimSpace(email), c.invokerSA) {
+		return true, nil
+	}
+	return c.delegate.IsUserAuthorized(ctx, email)
+}
+
 // cmsAdmission admits invokerSA in addition to every principal the deployment admits. invokerSA
 // (ess_service_account, the chart's gcpServiceAccount) is the workload service account that the
 // xmc-bridge-sa KSA is bound to through Workload Identity, so it is the identity xmc-bridge calls CMS
 // with; it usually holds no AUTHORIZED_IAM_ROLE binding. It is checked first, so a CRM outage does
 // not block the bridge.
 func cmsAdmission(invokerSA string, oauthAuth *oauth.Authenticator) authz.AdmissionChecker {
-	return authz.AnyOf(authz.AdmitPrincipals(invokerSA), authz.DeploymentAdmission(oauthAuth))
+	delegate := authz.DeploymentAdmission(oauthAuth)
+	if delegate == nil {
+		return nil
+	}
+	return cmsAdmissionChecker{
+		invokerSA: strings.TrimSpace(invokerSA),
+		delegate:  delegate,
+	}
 }
 
 func buildCMSAuthorizer(cfg *config.Config, oauthCfg *oauth.Config, userAuth cms.UserAuthenticator, adminChecker cms.AdminChecker) cms.CallerAuthorizer {

@@ -86,9 +86,6 @@ type Authorizer struct {
 	jwtSecret     []byte
 	jwksValidator TokenValidator
 	admission     AdmissionChecker
-	// requireVerifiedJWKSEmail makes the JWKS path reject tokens that do not assert
-	// email_verified=true, instead of only those that explicitly deny it.
-	requireVerifiedJWKSEmail bool
 }
 
 // AuthorizerParams configures NewAuthorizer.
@@ -108,9 +105,6 @@ type AuthorizerParams struct {
 	// Admission decides whether an authenticated principal may use the deployment. Required; pass
 	// AdmitAll only when authentication is disabled (see DeploymentAdmission).
 	Admission AdmissionChecker
-	// RequireVerifiedJWKSEmail should be set when a domain allowlist is configured: admitting by
-	// email domain is only sound for emails the identity provider has verified.
-	RequireVerifiedJWKSEmail bool
 }
 
 // SetJWKSValidator configures a JWKS token validator for OIDC token verification.
@@ -133,14 +127,13 @@ func NewAuthorizer(p AuthorizerParams) (*Authorizer, error) {
 	}
 
 	return &Authorizer{
-		IDService:                p.IDService,
-		groupCache:               make(map[string]cacheEntry),
-		cacheTTL:                 p.CacheTTL,
-		cacheErrorTTL:            p.CacheErrorTTL,
-		iapAudiences:             p.IAPAudiences,
-		iapIssuer:                p.IAPIssuer,
-		jwtSecret:                p.JWTSecret,
-		admission:                p.Admission,
-		requireVerifiedJWKSEmail: p.RequireVerifiedJWKSEmail,
+		IDService:     p.IDService,
+		groupCache:    make(map[string]cacheEntry),
+		cacheTTL:      p.CacheTTL,
+		cacheErrorTTL: p.CacheErrorTTL,
+		iapAudiences:  p.IAPAudiences,
+		iapIssuer:     p.IAPIssuer,
+		jwtSecret:     p.JWTSecret,
+		admission:     p.Admission,
 	}, nil
 }
