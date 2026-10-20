@@ -135,9 +135,13 @@ func shouldEvaluateRule(comp *ComponentManifest, line int, rule ComponentDepende
 	return match
 }
 
-// evaluateDependencyRequirement validates a single dependency requirement against the component map,
-// asserting presence (unless optional: true), enabled status, and SemVer compatibility.
+// evaluateDependencyRequirement validates a single dependency requirement (or a flat 1-level Or disjunction)
+// against the component map, asserting presence (unless optional: true), enabled status, and SemVer compatibility.
 func evaluateDependencyRequirement(comp *ComponentManifest, line int, ruleCompName string, req DependencyRequirement, compMap map[string]*ComponentManifest, res *ValidationResult) {
+	if len(req.Or) > 0 {
+		evaluateOrDependencyRequirement(comp, line, ruleCompName, req, compMap, res)
+		return
+	}
 	reqCompName := naming.CanonicalComponentName(req.Component)
 	reqComp, reqExists := compMap[reqCompName]
 	if !reqExists || reqComp == nil || !reqComp.IsEnabled() {
@@ -160,6 +164,99 @@ func evaluateDependencyRequirement(comp *ComponentManifest, line int, ruleCompNa
 	if !satisfied {
 		reportVersionIncompatibility(comp.FilePath, line, ruleCompName, reqCompName, req, reqComp.Spec.Version, res)
 	}
+}
+
+type orMismatch struct {
+	compName      string
+	req           DependencyRequirement
+	actualVersion string
+}
+
+func evaluateOrDependencyRequirement(comp *ComponentManifest, line int, ruleCompName string, req DependencyRequirement, compMap map[string]*ComponentManifest, res *ValidationResult) {
+	if !validateOrConstraints(comp.FilePath, line, ruleCompName, req.Or, res) {
+		return
+	}
+	satisfied, hasEnabledInvalidSemVer, mismatches := checkOrAlternatives(req, compMap)
+	if satisfied || hasEnabledInvalidSemVer {
+		return
+	}
+	if len(mismatches) > 0 {
+		for _, m := range mismatches {
+			reportVersionIncompatibility(comp.FilePath, line, ruleCompName, m.compName, m.req, m.actualVersion, res)
+		}
+		return
+	}
+	if !req.Optional && !allOrAlternativesOptional(req.Or) {
+		reportMissingOrComponents(comp.FilePath, line, ruleCompName, req, res)
+	}
+}
+
+func validateOrConstraints(filePath string, line int, ruleCompName string, alts []DependencyRequirement, res *ValidationResult) bool {
+	valid := true
+	for _, alt := range alts {
+		if alt.Version == "" {
+			continue
+		}
+		altName := naming.CanonicalComponentName(alt.Component)
+		if _, err := MatchConstraint("1.0.0", alt.Version); err != nil {
+			res.AddError(filePath, line, "INVALID_VERSION_CONSTRAINT", fmt.Sprintf("invalid version constraint %q for dependency %q in compatibility rule for %q: %v", alt.Version, altName, ruleCompName, err))
+			valid = false
+		}
+	}
+	return valid
+}
+
+func checkOrAlternatives(req DependencyRequirement, compMap map[string]*ComponentManifest) (bool, bool, []orMismatch) {
+	var hasEnabledInvalidSemVer bool
+	var mismatches []orMismatch
+	for _, alt := range req.Or {
+		altName := naming.CanonicalComponentName(alt.Component)
+		altComp, exists := compMap[altName]
+		if !exists || altComp == nil || !altComp.IsEnabled() {
+			continue
+		}
+		if alt.Version == "" || altComp.Spec.Version == "" {
+			return true, false, nil
+		}
+		if _, err := componentsemver.Parse(altComp.Spec.Version); err != nil {
+			hasEnabledInvalidSemVer = true
+			continue
+		}
+		if ok, _ := MatchConstraint(altComp.Spec.Version, alt.Version); ok {
+			return true, false, nil
+		}
+		if alt.Reason == "" {
+			alt.Reason = req.Reason
+		}
+		mismatches = append(mismatches, orMismatch{compName: altName, req: alt, actualVersion: altComp.Spec.Version})
+	}
+	return false, hasEnabledInvalidSemVer, mismatches
+}
+
+func allOrAlternativesOptional(alts []DependencyRequirement) bool {
+	for _, alt := range alts {
+		if !alt.Optional {
+			return false
+		}
+	}
+	return true
+}
+
+func reportMissingOrComponents(filePath string, line int, ruleCompName string, req DependencyRequirement, res *ValidationResult) {
+	parts := make([]string, 0, len(req.Or))
+	for _, alt := range req.Or {
+		altName := naming.CanonicalComponentName(alt.Component)
+		if alt.Version != "" {
+			parts = append(parts, fmt.Sprintf("%q (%s)", altName, alt.Version))
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%q", altName))
+	}
+	msg := fmt.Sprintf("component %q requires at least one of [%s], but all are missing or disabled", ruleCompName, strings.Join(parts, ", "))
+	if req.Reason != "" {
+		msg = fmt.Sprintf("%s; reason: %s", msg, req.Reason)
+	}
+	res.AddError(filePath, line, "REQUIRED_COMPONENT_MISSING", msg)
 }
 
 func reportMissingRequiredComponent(filePath string, line int, ruleCompName, reqCompName string, req DependencyRequirement, res *ValidationResult) {
