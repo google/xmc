@@ -219,6 +219,50 @@ trainer.fit(model, dataloader)
 
 ---
 
+## 🔑 Authentication (`xmc login`)
+
+The package ships an `xmc` command that signs local clients (such as the XManager CLI) in to an XMC deployment **as you**, instead of through a shared service account ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). It needs only the Python standard library: install it with `pip install ./sdks/python/xmc` from a checkout, or run it as `bazel run //sdks/python/xmc:xmc_bin -- <subcommand>`.
+
+```bash
+xmc login --server https://xmc.example.com      # Opens your browser; no prompts if you are already signed in.
+export XMC_AUTH_TOKEN=$(xmc print-token)        # Hands the token to the XManager CLI.
+```
+
+| Subcommand | Behavior |
+|---|---|
+| `login [--timeout SECONDS]` | Browser sign-in with PKCE. Waits up to 300 seconds by default. If no browser opens, open the printed URL yourself. Re-logins pre-select the cached account. |
+| `print-token` | Prints the cached token to stdout. Exits 1 if it is missing or expires within 60 seconds. This is the only command that prints a token. |
+
+Every subcommand accepts `--server`. Without it, the server is read from `XMC_API_URL`, then from `XMANAGER_UI_URL`. Only the origin (`https://host[:port]`) is used, and `https://` is required unless the host is a loopback IP literal (`127.0.0.1`, `[::1]`). Plain-HTTP `localhost` is also accepted, but only for local development, because it depends on name resolution. Prefer the IP literals.
+
+### Credentials cache (stable v1 format)
+
+Tokens are cached in `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config/xmc/credentials.json`). The directory is created with mode `0700` and the file with `0600`, and every write is atomic. The cache is ignored with a warning if the file is a symlink, if it or its directory is owned by another user, or if group or others can access it. Other clients may read this format directly:
+
+```json
+{
+  "version": 1,
+  "deployments": {
+    "https://xmc.example.com": {
+      "server": "https://xmc.example.com",
+      "access_token": "<CLI session token>",
+      "email": "you@example.com",
+      "expires_at": 1767225600
+    }
+  }
+}
+```
+
+Entries are keyed by the deployment origin (`scheme://host[:port]`, lowercased host), and `server` must equal its key. A token is used only for exactly that origin. `expires_at` is in Unix seconds.
+
+### Security notes
+
+- **Loopback listener:** It binds only `127.0.0.1` on an ephemeral port, and accepts only `GET /callback` with `Host: 127.0.0.1:<port>`. The `state` value is compared in constant time. Forged or mismatched requests are rejected and the CLI keeps waiting. A connection that stalls is dropped after 2 seconds, so it can't hold the login past its deadline. If the deployment reports an error such as `access_denied`, the login stops right away. Once the code or error arrives, the browser is redirected to `/api/cli/success`, so the code doesn't stay in the address bar.
+- **Token exchange:** The one-time code is redeemed with its PKCE (S256) verifier over TLS-verified HTTPS at `POST /api/cli/token`. Redirects are refused rather than followed. Loopback deployments bypass HTTP proxies. Login codes, verifiers, and tokens are never logged or printed, except by `print-token`.
+- **Exported tokens:** `XMC_AUTH_TOKEN` is inherited by every child process, so export it only in shells where you run XMC clients.
+
+---
+
 ## 🧪 Running Tests & Linters
 
 ```bash

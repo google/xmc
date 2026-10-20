@@ -12,19 +12,51 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""XMC Python SDK package."""
+"""XMC Python SDK package.
+
+Names backed by the generated metrics protos (`xmc.buffer`, `xmc.flusher`,
+`xmc.types`) are imported lazily (PEP 562), so stdlib-only subpackages such as
+`xmc.auth` (the `xmc login` CLI) work without `api.protos` installed.
+"""
+
+from __future__ import annotations
+
+import importlib
+from typing import TYPE_CHECKING, Any
 
 from xmc.autolog import autolog
-from xmc.buffer import DEFAULT_CAPACITY, BoundedMetricsBuffer, MetricTuple
 from xmc.client import Client, XMCAPIError, XMCError, XMCNetworkError
 from xmc.dist_harvest import (
     GetReplicaIDAndSilenceStatus,
     get_replica_id_and_silence_status,
 )
-from xmc.flusher import MetricsFlusher
 from xmc.network import HTTPClient, SendResult
 from xmc.resilience import ResilienceState, ResilienceStateMachine
-from xmc.types import Metric, validate_metric
+
+if TYPE_CHECKING:
+    from xmc.buffer import DEFAULT_CAPACITY, BoundedMetricsBuffer, MetricTuple
+    from xmc.flusher import MetricsFlusher
+    from xmc.types import Metric, validate_metric
+
+_LAZY_ATTRIBUTES = {
+    "BoundedMetricsBuffer": "xmc.buffer",
+    "DEFAULT_CAPACITY": "xmc.buffer",
+    "MetricTuple": "xmc.buffer",
+    "MetricsFlusher": "xmc.flusher",
+    "Metric": "xmc.types",
+    "validate_metric": "xmc.types",
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Imports proto-backed public names on first access (PEP 562)."""
+    module = _LAZY_ATTRIBUTES.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(importlib.import_module(module), name)
+    globals()[name] = value
+    return value
+
 
 __version__ = "0.1.0"
 
@@ -56,6 +88,8 @@ def init(*args, **kwargs) -> None:
     """Initializes the global SDK metrics flusher daemon."""
     global _global_flusher
     if _global_flusher is None:
+        from xmc.flusher import MetricsFlusher
+
         _global_flusher = MetricsFlusher(client=Client(*args, **kwargs))
 
 

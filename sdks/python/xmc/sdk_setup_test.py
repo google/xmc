@@ -14,6 +14,8 @@
 
 """Verifies DoD requirements: zero external runtime dependencies and clean sys.modules."""
 
+import os
+import subprocess
 import sys
 import unittest
 
@@ -52,6 +54,30 @@ class TestSDKSetupAndDependencies(unittest.TestCase):
         )
         self.assertEqual(client.base_url, "https://xmc.googleapis.com")
         self.assertEqual(client.api_key, "test-key")
+
+    def test_auth_cli_import_needs_no_protos(self) -> None:
+        """Importing the `xmc login` CLI loads neither protobuf nor api.protos."""
+        script = (
+            "import sys, xmc.auth.cli; "
+            "print(sorted(m for m in sys.modules if m.split('.')[0] in ('google', 'api')))"
+        )
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        result = subprocess.run(
+            [sys.executable, "-c", script], capture_output=True, text=True, env=env, check=True
+        )
+        self.assertEqual(result.stdout.strip(), "[]")
+
+    def test_public_attributes_resolve(self) -> None:
+        """Every name in xmc.__all__, including lazily imported ones, resolves."""
+        import xmc
+        from xmc.types import Metric
+
+        for name in xmc.__all__:
+            with self.subTest(name=name):
+                self.assertIsNotNone(getattr(xmc, name))
+        self.assertIs(xmc.Metric, Metric)
+        with self.assertRaises(AttributeError):
+            _ = xmc.does_not_exist
 
 
 if __name__ == "__main__":
