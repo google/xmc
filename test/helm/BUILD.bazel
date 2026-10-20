@@ -155,6 +155,22 @@ py_test(
 )
 
 py_test(
+    name = "xid_cli_sessions_test",
+    srcs = ["xid_cli_sessions_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "xid_cli_sessions_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
     name = "session_ttl_test",
     srcs = ["session_ttl_test.py"],
     data = ["//deploy/helm:chart"],

@@ -107,6 +107,7 @@ func TestConfig_RegisterConfigs(t *testing.T) {
 	t.Setenv("xid_grpc_port", "9090")
 	t.Setenv("xid_quota_project_id", "my-test-proj")
 	t.Setenv("xid_spanner_database_name", "projects/p/instances/i/databases/d")
+	t.Setenv("xid_ess_spanner_database_name", "projects/p/instances/i/databases/ess")
 	t.Setenv("xid_jwks_url", "https://auth.example.com/keys")
 
 	var c Config
@@ -120,6 +121,9 @@ func TestConfig_RegisterConfigs(t *testing.T) {
 	}
 	if c.SpannerDatabaseName != "projects/p/instances/i/databases/d" {
 		t.Errorf("c.SpannerDatabaseName = %q, want %q", c.SpannerDatabaseName, "projects/p/instances/i/databases/d")
+	}
+	if c.ESSSpannerDatabaseName != "projects/p/instances/i/databases/ess" {
+		t.Errorf("c.ESSSpannerDatabaseName = %q, want %q", c.ESSSpannerDatabaseName, "projects/p/instances/i/databases/ess")
 	}
 	if c.JWKSURL != "https://auth.example.com/keys" {
 		t.Errorf("c.JWKSURL = %q, want %q", c.JWKSURL, "https://auth.example.com/keys")

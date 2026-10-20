@@ -82,7 +82,7 @@ func main() {
 	mock.ConfigureIfEnabled(oauthAuth)
 	defer oauthAuth.Close()
 
-	prodServer, err := server.NewProd(ctx, &cfg, oauthCfg, authz.DeploymentAdmission(oauthAuth))
+	prodServer, err := server.NewProd(ctx, &cfg, oauthCfg, authz.DeploymentAdmission(oauthAuth), oauthAuth)
 	if err != nil {
 		logging.Fatal(ctx, "failed to initialize production server", "error", err)
 	}
@@ -178,7 +178,7 @@ func main() {
 // newCMSAuthorizer builds the Component Manager Service authorizer on a dedicated gRPC authorizer
 // whose admission is cmsAdmission, so the xmc-bridge exemption never reaches other services.
 func newCMSAuthorizer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, oauthAuth *oauth.Authenticator) (cms.CallerAuthorizer, error) {
-	userAuth, err := server.NewGRPCAuthorizer(ctx, cfg, oauthCfg, cmsAdmission(cfg.InvokerSA, oauthAuth))
+	userAuth, err := server.NewGRPCAuthorizer(ctx, cfg, oauthCfg, cmsAdmission(cfg.InvokerSA, oauthAuth), oauthAuth)
 	if err != nil {
 		return nil, err
 	}

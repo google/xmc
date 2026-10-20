@@ -36,6 +36,8 @@ import (
 
 	"xmanager_cloud/cmd/dashboard_service/server"
 	"xmanager_cloud/internal/dashboard/dataengine"
+	"xmanager_cloud/internal/storage/spanner/clisession"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/clickhouse"
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
@@ -424,6 +426,28 @@ func TestInitRepository_NilClient(t *testing.T) {
 	_, err := initRepository(ctx, nil)
 	if err == nil {
 		t.Fatal("expected error for nil spanner client, got nil")
+	}
+}
+
+func TestCheckCLISessions(t *testing.T) {
+	ctx := context.Background()
+	if err := checkCLISessions(oauth2.NewAuthenticator(&oauth2.Config{}), nil); err == nil {
+		t.Error("checkCLISessions(nil client) error = nil, want non-nil")
+	}
+	_, essClient := emulator.Setup(ctx, t)
+	sessions, err := clisession.NewRepository(essClient)
+	if err != nil {
+		t.Fatalf("NewRepository() unexpected error: %v", err)
+	}
+	if err := sessions.Create(ctx, oauth2.CLISession{JTI: "active", Email: "user@example.com", IssuedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatalf("Create() unexpected error: %v", err)
+	}
+	authenticator := oauth2.NewAuthenticator(&oauth2.Config{})
+	if err := checkCLISessions(authenticator, essClient); err != nil {
+		t.Fatalf("checkCLISessions() unexpected error: %v", err)
+	}
+	if revoked, err := authenticator.IsRevoked(ctx, "active"); err != nil || revoked {
+		t.Errorf("IsRevoked(active) = %t, %v, want false, nil", revoked, err)
 	}
 }
 

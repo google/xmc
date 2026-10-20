@@ -152,14 +152,24 @@ auth:
 ```
 
 The CLI token is accepted only as a bearer token, never as the Dashboard cookie,
-and every request re-runs [deployment admission](#deployment-admission). An issued
-CLI token cannot be revoked yet: it stays valid until it expires or the user is no
-longer admitted.
+and every request re-runs [deployment admission](#deployment-admission).
 
 Each CLI token is recorded in the `CliSessions` Spanner table (migration 017) when
-it is issued, with its ID (`jti`), email, and issue and expiry times; if the record
-cannot be written, no token is issued. Rows are deleted one day after the token
-expires.
+it is issued; if the record cannot be written, no token is issued. Every
+service that accepts CLI tokens (the experiment state server, XID, Dashboard,
+health and ROD services) rejects revoked or unrecorded sessions. They look sessions
+up in the experiment state database and cache active ones for up to 60 seconds, so
+a revoked token can still work for up to a minute. If the lookup
+fails, the request is refused (HTTP `503`, gRPC `UNAVAILABLE`). The XID service
+reads that database through `xid_ess_spanner_database_name`, which the chart sets
+from `experimentStateServer.spannerDatabaseName`; its service account already
+holds `roles/spanner.databaseUser` on that database. There is no admin command to
+revoke another user's sessions yet; an operator can revoke them in Spanner:
+
+```sql
+UPDATE CliSessions SET RevokedAt = CURRENT_TIMESTAMP()
+WHERE Email = 'user@example.com' AND RevokedAt IS NULL;
+```
 
 The CLI login endpoints are not served with `auth.mockAuth` or
 `auth.disableAuthentication`, or when the server has no Spanner database.

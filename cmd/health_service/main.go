@@ -190,7 +190,11 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		logging.Fatal(ctx, "Failed to create health checker", "error", err)
 	}
 
-	authorizer := initAuthorizer(ctx, oauthCfg, auth.DeploymentAdmission(authenticator))
+	// CLI sessions are recorded by ESS in its database, which this service already reads.
+	if err := authenticator.CheckCLISessions(lazySpanner); err != nil {
+		logging.Fatal(ctx, "Failed to enable CLI session checks", "error", err)
+	}
+	authorizer := initAuthorizer(ctx, oauthCfg, auth.DeploymentAdmission(authenticator), authenticator)
 	guard := NewAdminRoleGuard(AdminRoleGuardParams{
 		Authorizer:    authorizer,
 		Authenticator: authenticator,
@@ -273,8 +277,9 @@ func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Auth
 }
 
 // initAuthorizer builds the gRPC authorizer. admission must come from the same oauth2.Authenticator
-// the HTTP middleware uses, so gRPC and HTTP admit exactly the same principals.
-func initAuthorizer(ctx context.Context, oauthCfg oauth2.Config, admission auth.AdmissionChecker) auth.AuthorizerInterface {
+// the HTTP middleware uses, so gRPC and HTTP admit exactly the same principals, and cliSessions is
+// that Authenticator, so both reject the same revoked CLI sessions.
+func initAuthorizer(ctx context.Context, oauthCfg oauth2.Config, admission auth.AdmissionChecker, cliSessions oauth2.CLISessionChecker) auth.AuthorizerInterface {
 	idService, err := cloudidentity.NewService(ctx, option.WithScopes(cloudidentity.CloudIdentityGroupsReadonlyScope))
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create Cloud Identity service", "error", err)
@@ -291,6 +296,7 @@ func initAuthorizer(ctx context.Context, oauthCfg oauth2.Config, admission auth.
 		IAPIssuer:                auth.DefaultIAPIssuer,
 		JWTSecret:                []byte(oauthCfg.JWTSecret),
 		Admission:                admission,
+		CLISessions:              cliSessions,
 		RequireVerifiedJWKSEmail: len(oauthCfg.AllowedDomains) > 0,
 	})
 	if err != nil {

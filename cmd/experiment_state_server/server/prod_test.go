@@ -107,7 +107,7 @@ func TestNewProd_Validation(t *testing.T) {
 
 	t.Run("nil config", func(t *testing.T) {
 		t.Parallel()
-		ps, err := NewProd(t.Context(), nil, nil, nil)
+		ps, err := NewProd(t.Context(), nil, nil, nil, nil)
 		if ps != nil || err == nil {
 			t.Errorf("NewProd(nil, nil) = (%v, %v), want (nil, error)", ps, err)
 		}
@@ -115,7 +115,7 @@ func TestNewProd_Validation(t *testing.T) {
 
 	t.Run("nil oauth config", func(t *testing.T) {
 		t.Parallel()
-		ps, err := NewProd(t.Context(), &config.Config{}, nil, nil)
+		ps, err := NewProd(t.Context(), &config.Config{}, nil, nil, nil)
 		if ps != nil || err == nil {
 			t.Errorf("NewProd(cfg, nil) = (%v, %v), want (nil, error)", ps, err)
 		}

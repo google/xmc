@@ -43,6 +43,7 @@ import (
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/cmd/rod_data_provider/reconciler"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage/spanner/clisession"
 	"xmanager_cloud/internal/storage/spanner/statushistory"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/pkg/auth/oauth2"
@@ -73,18 +74,18 @@ func run(ctx context.Context, cfg *Config) error {
 		logging.Warn(ctx, "Kueue manager setup failed or running out-of-cluster", "error", err)
 	}
 
-	workUnitStore, velocityStore, err := initStorage(ctx, cfg)
+	stores, err := initStorage(ctx, cfg)
 	if err != nil {
 		return err
 	}
 
-	grpcComp, err := buildGRPCServer(cfg, kueueCache, workUnitStore, velocityStore)
+	grpcComp, err := buildGRPCServer(cfg, kueueCache, stores.workUnits, stores.velocity)
 	if err != nil {
 		return fmt.Errorf("failed to build gRPC server: %w", err)
 	}
 	lis, grpcServer := grpcComp.Listener, grpcComp.Server
 
-	httpServer, err := buildHTTPServer(ctx, cfg, kueueCache, mgr)
+	httpServer, err := buildHTTPServer(ctx, cfg, kueueCache, mgr, stores.cliSessions)
 	if err != nil {
 		return fmt.Errorf("failed to build HTTP server: %w", err)
 	}
@@ -126,10 +127,19 @@ func run(ctx context.Context, cfg *Config) error {
 	return g.Wait()
 }
 
-func initStorage(ctx context.Context, cfg *Config) (WorkUnitFetcher, QueueVelocityFetcher, error) {
+// essStores are the stores the data provider reads from the ESS database. All are nil when no
+// database is configured.
+type essStores struct {
+	workUnits WorkUnitFetcher
+	velocity  QueueVelocityFetcher
+	// cliSessions is what the HTTP middleware rejects revoked CLI sessions with.
+	cliSessions oauth2.CLISessionChecker
+}
+
+func initStorage(ctx context.Context, cfg *Config) (essStores, error) {
 	if cfg.SpannerDatabaseName == "" {
 		logging.Warn(ctx, "OPERATIONAL WARNING: Spanner database name not configured. Active WorkUnit queue queries will fail until database connection is configured.", "database", cfg.SpannerDatabaseName)
-		return nil, nil, nil
+		return essStores{}, nil
 	}
 	logging.Info(ctx, "Initializing Spanner WorkUnit storage", "database", cfg.SpannerDatabaseName)
 	var opts []option.ClientOption
@@ -138,14 +148,18 @@ func initStorage(ctx context.Context, cfg *Config) (WorkUnitFetcher, QueueVeloci
 	}
 	spannerClient, err := spanner.NewClient(ctx, cfg.SpannerDatabaseName, opts...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create spanner client for WorkUnit storage: %w", err)
+		return essStores{}, fmt.Errorf("failed to create spanner client for WorkUnit storage: %w", err)
 	}
 	wuStore, err := workunit.NewRepository(spannerClient)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create WorkUnit repository: %w", err)
+		return essStores{}, fmt.Errorf("failed to create WorkUnit repository: %w", err)
+	}
+	cliSessions, err := clisession.NewRepository(spannerClient)
+	if err != nil {
+		return essStores{}, fmt.Errorf("failed to create CLI session repository: %w", err)
 	}
 	statusHistoryRepo := statushistory.NewRepository(spannerClient)
-	return wuStore, statusHistoryRepo, nil
+	return essStores{workUnits: wuStore, velocity: statusHistoryRepo, cliSessions: cliSessions}, nil
 }
 
 // GRPCServerComponents contains the listener and gRPC server instance.
@@ -168,7 +182,9 @@ func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache, workUnitStore Wo
 	}, nil
 }
 
-func buildHTTPServer(ctx context.Context, cfg *Config, kueueCache *cache.KueueCache, mgr ctrl.Manager) (*http.Server, error) {
+// buildHTTPServer builds the authenticated gRPC gateway. Without cliSessions, CLI session tokens are
+// rejected.
+func buildHTTPServer(ctx context.Context, cfg *Config, kueueCache *cache.KueueCache, mgr ctrl.Manager, cliSessions oauth2.CLISessionChecker) (*http.Server, error) {
 	oauthCfg, err := oauth2.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load OAuth config: %w", err)
@@ -177,6 +193,11 @@ func buildHTTPServer(ctx context.Context, cfg *Config, kueueCache *cache.KueueCa
 		oauthCfg.GCPProjectID = cfg.ProjectID
 	}
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
+	if cliSessions != nil {
+		if err := authenticator.CheckCLISessions(cliSessions); err != nil {
+			return nil, fmt.Errorf("failed to enable CLI session checks: %w", err)
+		}
+	}
 
 	gwmux := gwruntime.NewServeMux(gwruntime.WithIncomingHeaderMatcher(oauth2.IncomingHeaderMatcher))
 	dialOpts := []grpc.DialOption{

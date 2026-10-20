@@ -82,8 +82,9 @@ func initSpannerClient(ctx context.Context, cfg *config.Config) (*spanner.Client
 }
 
 // initAuth builds the gRPC authorizer. admission runs the same allowlist and project IAM admission
-// pipeline the HTTP services use, so XID admits exactly the principals the rest of XMC admits.
-func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, admission authz.AdmissionChecker) (authz.AuthorizerInterface, error) {
+// pipeline the HTTP services use, so XID admits exactly the principals the rest of XMC admits, and
+// cliSessions rejects revoked CLI sessions.
+func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, admission authz.AdmissionChecker, cliSessions oauth.CLISessionChecker) (authz.AuthorizerInterface, error) {
 	idService, err := cloudidentity.NewService(ctx, option.WithQuotaProject(cfg.QuotaProjectID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
@@ -97,6 +98,7 @@ func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, a
 		IAPIssuer:                cfg.IAPIssuer,
 		JWTSecret:                []byte(oauthCfg.JWTSecret),
 		Admission:                admission,
+		CLISessions:              cliSessions,
 		RequireVerifiedJWKSEmail: len(oauthCfg.AllowedDomains) > 0,
 	})
 	if err != nil {
@@ -148,7 +150,13 @@ func NewRuntimeServer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.C
 	mock.ConfigureIfEnabled(authenticator)
 	cleanups = append(cleanups, authenticator.Close)
 
-	auth, err := initAuth(ctx, cfg, oauthCfg, authz.DeploymentAdmission(authenticator))
+	closeCLISessions, err := initCLISessions(ctx, cfg, authenticator)
+	if err != nil {
+		return nil, err
+	}
+	cleanups = append(cleanups, closeCLISessions)
+
+	auth, err := initAuth(ctx, cfg, oauthCfg, authz.DeploymentAdmission(authenticator), authenticator)
 	if err != nil {
 		return nil, err
 	}

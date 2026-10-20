@@ -21,18 +21,19 @@ import (
 	"testing"
 
 	"xmanager_cloud/cmd/rod_data_provider/cache"
+	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 func TestInitStorage(t *testing.T) {
 	ctx := context.Background()
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
 
-	wuStore, velStore, err := initStorage(ctx, cfg)
+	stores, err := initStorage(ctx, cfg)
 	if err != nil {
 		t.Fatalf("initStorage failed: %v", err)
 	}
-	if wuStore != nil || velStore != nil {
-		t.Errorf("initStorage with empty database name returned non-nil stores: wuStore=%v, velStore=%v", wuStore, velStore)
+	if stores != (essStores{}) {
+		t.Errorf("initStorage with empty database name returned non-nil stores: %+v", stores)
 	}
 }
 
@@ -43,25 +44,32 @@ func TestSetupKueueReconcilers_NilCache(t *testing.T) {
 	}
 }
 
+// activeCLISessions reports every CLI session as active.
+type activeCLISessions struct{}
+
+func (activeCLISessions) IsRevoked(context.Context, string) (bool, error) { return false, nil }
+
 func TestBuildHTTPServer(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret-at-least-32-bytes-long!")
 	ctx := context.Background()
 	cfg := &Config{Port: "0", GRPCPort: "50051", ProjectID: "test-project"}
 	kueueCache := cache.NewKueueCache()
 
-	srv, err := buildHTTPServer(ctx, cfg, kueueCache, nil)
-	if err != nil {
-		t.Fatalf("buildHTTPServer failed: %v", err)
-	}
-	if srv == nil {
-		t.Fatal("buildHTTPServer returned nil server")
-	}
+	for _, cliSessions := range []oauth2.CLISessionChecker{nil, activeCLISessions{}} {
+		srv, err := buildHTTPServer(ctx, cfg, kueueCache, nil, cliSessions)
+		if err != nil {
+			t.Fatalf("buildHTTPServer(cliSessions=%v) failed: %v", cliSessions, err)
+		}
+		if srv == nil {
+			t.Fatal("buildHTTPServer returned nil server")
+		}
 
-	req := httptest.NewRequest("GET", "/healthz", nil)
-	rec := httptest.NewRecorder()
-	srv.Handler.ServeHTTP(rec, req)
+		req := httptest.NewRequest("GET", "/healthz", nil)
+		rec := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("/healthz status = %d, want %d", rec.Code, http.StatusOK)
+		if rec.Code != http.StatusOK {
+			t.Errorf("/healthz status = %d, want %d", rec.Code, http.StatusOK)
+		}
 	}
 }

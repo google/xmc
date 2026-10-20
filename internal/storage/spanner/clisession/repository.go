@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
+	"google.golang.org/grpc/codes"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
 
@@ -33,6 +34,7 @@ const (
 	colEmail     = "Email"
 	colIssuedAt  = "IssuedAt"
 	colExpiresAt = "ExpiresAt"
+	colRevokedAt = "RevokedAt"
 )
 
 // Repository stores CLI sessions in Cloud Spanner.
@@ -57,4 +59,20 @@ func (r *Repository) Create(ctx context.Context, session oauth2.CLISession) erro
 		return fmt.Errorf("failed to create cli session: %w", err)
 	}
 	return nil
+}
+
+// IsRevoked reports whether the session is revoked. A missing session counts as revoked.
+func (r *Repository) IsRevoked(ctx context.Context, jti string) (bool, error) {
+	row, err := r.client.Single().ReadRow(ctx, tableName, spanner.Key{jti}, []string{colRevokedAt})
+	if spanner.ErrCode(err) == codes.NotFound {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to read cli session: %w", err)
+	}
+	var revokedAt spanner.NullTime
+	if err := row.Columns(&revokedAt); err != nil {
+		return false, fmt.Errorf("failed to decode cli session: %w", err)
+	}
+	return revokedAt.Valid, nil
 }

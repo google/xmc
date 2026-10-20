@@ -21,11 +21,15 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"xmanager_cloud/internal/storage/spanner/clisession"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 const (
@@ -335,5 +339,35 @@ func TestHealthServiceLazySpannerWrapper_CloseIdempotent(t *testing.T) {
 		if err := wrapper.Close(); err != nil {
 			t.Errorf("call %d: unexpected error on Close: %v", i+1, err)
 		}
+	}
+}
+
+func TestHealthServiceLazySpannerWrapper_IsRevoked(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	sessions, err := clisession.NewRepository(essClient)
+	if err != nil {
+		t.Fatalf("NewRepository() unexpected error: %v", err)
+	}
+	if err := sessions.Create(ctx, oauth2.CLISession{JTI: "active", Email: "user@example.com", IssuedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatalf("Create() unexpected error: %v", err)
+	}
+	wrapper := NewHealthServiceLazySpannerWrapper(essClient.DatabaseName(), "", nil)
+	defer wrapper.Close()
+	tests := []struct {
+		jti  string
+		want bool
+	}{
+		{jti: "active", want: false},
+		{jti: "unknown", want: true},
+	}
+	for _, tt := range tests {
+		got, err := wrapper.IsRevoked(ctx, tt.jti)
+		if err != nil || got != tt.want {
+			t.Errorf("IsRevoked(%q) = %t, %v, want %t, nil", tt.jti, got, err, tt.want)
+		}
+	}
+	if _, err := NewHealthServiceLazySpannerWrapper("", "", nil).IsRevoked(ctx, "active"); err == nil {
+		t.Error("IsRevoked() without an ESS database error = nil, want non-nil")
 	}
 }

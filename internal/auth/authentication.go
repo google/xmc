@@ -214,7 +214,25 @@ func (a *Authorizer) parseCustomSessionToken(ctx context.Context, jwt string) (*
 	if claims == nil || claims.Email == "" {
 		return nil, fmt.Errorf("email in custom session token is empty: %w", grpcerr.ErrUnauthenticated)
 	}
+	if err := a.verifyCLISession(ctx, claims); err != nil {
+		return nil, err
+	}
 	return &authIdentity{email: claims.Email, userID: claims.Email}, nil
+}
+
+// verifyCLISession rejects revoked CLI session tokens with Unauthenticated, and fails closed with
+// Unavailable when the session cannot be looked up.
+func (a *Authorizer) verifyCLISession(ctx context.Context, claims *oauth2.SessionClaims) error {
+	err := oauth2.VerifyCLISession(ctx, a.cliSessions, claims)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, oauth2.ErrCLISessionRevoked) {
+		logging.Warn(ctx, "Rejected revoked CLI session", "error", err)
+		return fmt.Errorf("cli session is revoked: %w", grpcerr.ErrUnauthenticated)
+	}
+	logging.Error(ctx, "CLI session check failed", "error", err)
+	return fmt.Errorf("cli session check failed: %w", grpcerr.ErrUnavailable)
 }
 
 // resolveUserEmail resolves the user's email strictly and exclusively from the verified JWT payload claims.

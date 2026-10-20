@@ -62,9 +62,10 @@ type Authenticator struct {
 	cliConfirmationKey []byte
 	cliTokenLimiter    *rate.Limiter
 
-	// cliSessionStore records every minted CLI token; set by EnableCLISessions. CLI tokens are not
-	// minted while it is nil.
+	// CLI session state, set by EnableCLISessions and CheckCLISessions. CLI tokens are not minted
+	// while cliSessionStore is nil and are rejected while cliSessions is nil.
 	cliSessionStore CLISessionStore
+	cliSessions     *CLISessionCache
 }
 
 // NewAuthenticator initializes a new instance of Authenticator.

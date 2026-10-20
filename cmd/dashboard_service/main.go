@@ -46,6 +46,7 @@ import (
 	commonhealth "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/dashboard/dataengine"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage/spanner/clisession"
 	"xmanager_cloud/internal/storage/spanner/dashboard"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/auth/oauth2/mock"
@@ -312,9 +313,20 @@ func initRepository(ctx context.Context, sc *spanner.Client) (server.DashboardRe
 	return spannerRepo, nil
 }
 
+// checkCLISessions makes authenticator reject revoked CLI sessions, reading the CliSessions table
+// of the ESS database that sc is connected to.
+func checkCLISessions(authenticator *oauth2.Authenticator, sc *spanner.Client) error {
+	sessions, err := clisession.NewRepository(sc)
+	if err != nil {
+		return fmt.Errorf("failed to initialize CLI session repository: %w", err)
+	}
+	return authenticator.CheckCLISessions(sessions)
+}
+
 // initAuthorizer builds the gRPC authorizer. admission must come from the same oauth2.Authenticator
-// the HTTP middleware uses, so gRPC and HTTP admit exactly the same principals.
-func initAuthorizer(ctx context.Context, projectID string, oauthCfg *oauth2.Config, admission auth.AdmissionChecker) (auth.AuthorizerInterface, error) {
+// the HTTP middleware uses, so gRPC and HTTP admit exactly the same principals, and cliSessions is
+// that Authenticator, so both reject the same revoked CLI sessions.
+func initAuthorizer(ctx context.Context, projectID string, oauthCfg *oauth2.Config, admission auth.AdmissionChecker, cliSessions oauth2.CLISessionChecker) (auth.AuthorizerInterface, error) {
 	idService, err := cloudidentity.NewService(ctx, option.WithQuotaProject(projectID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
@@ -327,6 +339,7 @@ func initAuthorizer(ctx context.Context, projectID string, oauthCfg *oauth2.Conf
 		IAPIssuer:                auth.DefaultIAPIssuer,
 		JWTSecret:                []byte(oauthCfg.JWTSecret),
 		Admission:                admission,
+		CLISessions:              cliSessions,
 		RequireVerifiedJWKSEmail: len(oauthCfg.AllowedDomains) > 0,
 	})
 	if err != nil {
@@ -461,7 +474,11 @@ func run() int {
 		logging.Error(ctx, "Failed to initialize dashboard repository", "error", err)
 		return 1
 	}
-	authorizer, err := initAuthorizer(ctx, cfg.ProjectID, oauthCfg, auth.DeploymentAdmission(authenticator))
+	if err := checkCLISessions(authenticator, sc); err != nil {
+		logging.Error(ctx, "Failed to enable CLI session checks", "error", err)
+		return 1
+	}
+	authorizer, err := initAuthorizer(ctx, cfg.ProjectID, oauthCfg, auth.DeploymentAdmission(authenticator), authenticator)
 	if err != nil {
 		logging.Error(ctx, "Failed to initialize authorizer", "error", err)
 		return 1

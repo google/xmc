@@ -17,29 +17,30 @@ package main
 import (
 	"context"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
-// unusedSessionStore is a CLISessionStore that is only installed, never called.
-type unusedSessionStore struct{}
-
-func (unusedSessionStore) Create(context.Context, oauth.CLISession) error { return nil }
-
 func TestEnableCLISessions(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
+	if _, err := essClient.Apply(ctx, []*spanner.Mutation{spanner.Insert("CliSessions",
+		[]string{"Jti", "Email", "IssuedAt", "ExpiresAt"},
+		[]any{"active", "user@example.com", time.Now(), time.Now().Add(time.Hour)})}); err != nil {
+		t.Fatalf("Apply() unexpected error: %v", err)
+	}
 	tests := []struct {
 		name          string
 		spannerClient *spanner.Client
 		calls         int
-		wantInstalled bool
+		wantRevoked   bool
 	}{
-		{name: "spanner client installs the session store", spannerClient: essClient, calls: 1, wantInstalled: true},
-		{name: "a second call keeps the first store", spannerClient: essClient, calls: 2, wantInstalled: true},
-		{name: "missing spanner client installs nothing", calls: 1, wantInstalled: false},
+		{name: "spanner client checks the session table", spannerClient: essClient, calls: 1, wantRevoked: false},
+		{name: "a second call keeps the first store", spannerClient: essClient, calls: 2, wantRevoked: false},
+		{name: "missing spanner client rejects every CLI session", calls: 1, wantRevoked: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -47,10 +48,12 @@ func TestEnableCLISessions(t *testing.T) {
 			for range tt.calls {
 				enableCLISessions(ctx, oauthAuth, tt.spannerClient)
 			}
-			// EnableCLISessions refuses to replace an installed store.
-			installed := oauthAuth.EnableCLISessions(unusedSessionStore{}) != nil
-			if installed != tt.wantInstalled {
-				t.Errorf("session store installed = %t, want %t", installed, tt.wantInstalled)
+			got, err := oauthAuth.IsRevoked(ctx, "active")
+			if err != nil {
+				t.Fatalf("IsRevoked() unexpected error: %v", err)
+			}
+			if got != tt.wantRevoked {
+				t.Errorf("IsRevoked() = %t, want %t", got, tt.wantRevoked)
 			}
 		})
 	}

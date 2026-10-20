@@ -142,8 +142,9 @@ func initDashboardClient(ctx context.Context, cfg *config.Config) (*toollibs.Das
 
 // NewGRPCAuthorizer builds a gRPC authorizer that runs admission after authenticating each caller.
 // admission is normally authz.DeploymentAdmission of the binary's HTTP oauth2.Authenticator, so
-// gRPC and HTTP admit exactly the same principals.
-func NewGRPCAuthorizer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, admission authz.AdmissionChecker) (authz.AuthorizerInterface, error) {
+// gRPC and HTTP admit exactly the same principals, and cliSessions is that Authenticator, so both
+// reject the same revoked CLI sessions.
+func NewGRPCAuthorizer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, admission authz.AdmissionChecker, cliSessions oauth.CLISessionChecker) (authz.AuthorizerInterface, error) {
 	idService, err := cloudidentity.NewService(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
@@ -157,6 +158,7 @@ func NewGRPCAuthorizer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.
 		IAPIssuer:                cfg.IAPIssuer,
 		JWTSecret:                []byte(oauthCfg.JWTSecret),
 		Admission:                admission,
+		CLISessions:              cliSessions,
 		RequireVerifiedJWKSEmail: len(oauthCfg.AllowedDomains) > 0,
 	})
 	if err != nil {
@@ -203,8 +205,9 @@ func runCleanups(cleanups []func() error) error {
 
 // NewProd creates and initializes a production Server instance along with its dependencies.
 // admission is the deployment admission check (normally authz.DeploymentAdmission of the binary's
-// oauth2.Authenticator) that every authenticated gRPC caller must pass.
-func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, admission authz.AdmissionChecker) (_ *ProdServer, retErr error) {
+// oauth2.Authenticator) that every authenticated gRPC caller must pass, and cliSessions (normally
+// that Authenticator) rejects revoked CLI sessions.
+func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, admission authz.AdmissionChecker, cliSessions oauth.CLISessionChecker) (_ *ProdServer, retErr error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config cannot be nil")
 	}
@@ -233,7 +236,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}
 
-	auth, err := NewGRPCAuthorizer(ctx, cfg, oauthCfg, admission)
+	auth, err := NewGRPCAuthorizer(ctx, cfg, oauthCfg, admission, cliSessions)
 	if err != nil {
 		return nil, err
 	}

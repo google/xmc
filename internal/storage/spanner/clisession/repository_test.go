@@ -29,6 +29,7 @@ import (
 var (
 	issuedAt  = time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
 	expiresAt = issuedAt.Add(12 * time.Hour)
+	revokedAt = issuedAt.Add(time.Hour)
 )
 
 // storedSession is a full CliSessions row.
@@ -90,11 +91,57 @@ func TestRepository_Create(t *testing.T) {
 	}
 }
 
+func TestRepository_IsRevoked(t *testing.T) {
+	tests := []struct {
+		name   string
+		create bool
+		revoke bool
+		want   bool
+	}{
+		{name: "active session", create: true, want: false},
+		{name: "revoked session", create: true, revoke: true, want: true},
+		{name: "unknown session counts as revoked", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo, client := newTestRepository(t)
+			const jti = "jti-is-revoked"
+			if tt.create {
+				createSession(t, repo, jti)
+			}
+			if tt.revoke {
+				revokeSession(t, client, jti)
+			}
+			got, err := repo.IsRevoked(ctx, jti)
+			if err != nil {
+				t.Fatalf("IsRevoked() unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("IsRevoked() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+// revokeSession sets RevokedAt directly, as an operator would.
+func revokeSession(t *testing.T, client *spanner.Client, jti string) {
+	t.Helper()
+	mutation := spanner.Update("CliSessions", []string{"Jti", "RevokedAt"}, []any{jti, revokedAt})
+	if _, err := client.Apply(context.Background(), []*spanner.Mutation{mutation}); err != nil {
+		t.Fatalf("Apply() unexpected error: %v", err)
+	}
+}
+
 func TestRepository_FailsOnSpannerErrors(t *testing.T) {
+	ctx := context.Background()
 	repo, client := newTestRepository(t)
 	client.Close()
-	if err := repo.Create(context.Background(), baseSession("jti-closed")); err == nil {
+	if err := repo.Create(ctx, baseSession("jti-closed")); err == nil {
 		t.Error("Create() on a closed client error = nil, want non-nil")
+	}
+	if _, err := repo.IsRevoked(ctx, "jti-closed"); err == nil {
+		t.Error("IsRevoked() on a closed client error = nil, want non-nil")
 	}
 }
 

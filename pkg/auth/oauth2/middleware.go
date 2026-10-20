@@ -128,6 +128,9 @@ func (a *Authenticator) authenticateSessionJWT(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		return false
 	}
+	if !a.allowCLISession(w, r, claims) {
+		return true
+	}
 
 	authorized, authErr := a.IsUserAuthorized(r.Context(), claims.Email)
 	if authErr != nil {

@@ -22,6 +22,7 @@ import (
 
 	"google.golang.org/api/cloudidentity/v1beta1"
 	"xmanager_cloud/pkg/auth/jwks"
+	"xmanager_cloud/pkg/auth/oauth2"
 
 	xpb "xmanager_cloud/api/protos/xid"
 )
@@ -86,6 +87,7 @@ type Authorizer struct {
 	jwtSecret     []byte
 	jwksValidator TokenValidator
 	admission     AdmissionChecker
+	cliSessions   oauth2.CLISessionChecker
 	// requireVerifiedJWKSEmail makes the JWKS path reject tokens that do not assert
 	// email_verified=true, instead of only those that explicitly deny it.
 	requireVerifiedJWKSEmail bool
@@ -108,6 +110,10 @@ type AuthorizerParams struct {
 	// Admission decides whether an authenticated principal may use the deployment. Required; pass
 	// AdmitAll only when authentication is disabled (see DeploymentAdmission).
 	Admission AdmissionChecker
+	// CLISessions rejects revoked CLI session tokens. It is normally the binary's
+	// oauth2.Authenticator, so gRPC shares the HTTP middleware's session cache. Without it every CLI
+	// session token is rejected.
+	CLISessions oauth2.CLISessionChecker
 	// RequireVerifiedJWKSEmail should be set when a domain allowlist is configured: admitting by
 	// email domain is only sound for emails the identity provider has verified.
 	RequireVerifiedJWKSEmail bool
@@ -141,6 +147,7 @@ func NewAuthorizer(p AuthorizerParams) (*Authorizer, error) {
 		iapIssuer:                p.IAPIssuer,
 		jwtSecret:                p.JWTSecret,
 		admission:                p.Admission,
+		cliSessions:              p.CLISessions,
 		requireVerifiedJWKSEmail: p.RequireVerifiedJWKSEmail,
 	}, nil
 }

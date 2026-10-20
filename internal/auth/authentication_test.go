@@ -73,6 +73,7 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 		iapIssuer:    "https://cloud.google.com/iap",
 		jwtSecret:    []byte("default-jwt-secret-for-local-dev-only-12345"),
 		admission:    &fakeAdmissionChecker{admitted: true},
+		cliSessions:  fakeCLISessionChecker{},
 	}
 	ctx := context.Background()
 
@@ -579,8 +580,13 @@ func TestAuthenticateUserFromContext_Admission(t *testing.T) {
 // by TestAuthenticateUserFromContext_Authenticated.
 func signTestSessionToken(t *testing.T, email, audience string) string {
 	t.Helper()
+	return signTestSessionTokenWithID(t, email, audience, "")
+}
+
+func signTestSessionTokenWithID(t *testing.T, email, audience, jti string) string {
+	t.Helper()
 	claims := &oauth2.SessionClaims{Email: email, RegisteredClaims: jwt.RegisteredClaims{
-		Issuer: oauth2.SessionIssuer, Audience: jwt.ClaimStrings{audience},
+		Issuer: oauth2.SessionIssuer, Audience: jwt.ClaimStrings{audience}, ID: jti,
 		IssuedAt: jwt.NewNumericDate(time.Now()), ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 	}}
 	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("default-jwt-secret-for-local-dev-only-12345"))
@@ -588,4 +594,48 @@ func signTestSessionToken(t *testing.T, email, audience string) string {
 		t.Fatalf("SignedString() failed: %v", err)
 	}
 	return tok
+}
+
+// fakeCLISessionChecker reports the jtis in revoked as revoked, or fails with err when it is set.
+type fakeCLISessionChecker struct {
+	revoked map[string]bool
+	err     error
+}
+
+func (f fakeCLISessionChecker) IsRevoked(_ context.Context, jti string) (bool, error) {
+	return f.revoked[jti], f.err
+}
+
+func TestAuthenticateUserFromContext_CLISessionRevocation(t *testing.T) {
+	const email = "cli-user@mycompany.com"
+	cliToken := signTestSessionTokenWithID(t, email, oauth2.CLIAudience, "jti-1")
+	dashboardToken := signTestSessionToken(t, email, oauth2.FrontendAudience)
+	failing := fakeCLISessionChecker{err: errors.New("spanner unavailable")}
+	tests := []struct {
+		name     string
+		checker  oauth2.CLISessionChecker
+		token    string
+		wantCode codes.Code
+	}{
+		{name: "active CLI session", checker: fakeCLISessionChecker{}, token: cliToken, wantCode: codes.OK},
+		{name: "revoked CLI session", checker: fakeCLISessionChecker{revoked: map[string]bool{"jti-1": true}}, token: cliToken, wantCode: codes.Unauthenticated},
+		{name: "no session checker", token: cliToken, wantCode: codes.Unauthenticated},
+		{name: "session lookup failure", checker: failing, token: cliToken, wantCode: codes.Unavailable},
+		{name: "dashboard token is not looked up", checker: failing, token: dashboardToken, wantCode: codes.OK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := &Authorizer{
+				iapIssuer:   "https://cloud.google.com/iap",
+				jwtSecret:   []byte("default-jwt-secret-for-local-dev-only-12345"),
+				admission:   &fakeAdmissionChecker{admitted: true},
+				cliSessions: tt.checker,
+			}
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+tt.token))
+			_, _, err := a.AuthenticateUserFromContext(ctx)
+			if got := status.Code(err); got != tt.wantCode {
+				t.Errorf("AuthenticateUserFromContext() code = %v, want %v (error: %v)", got, tt.wantCode, err)
+			}
+		})
+	}
 }

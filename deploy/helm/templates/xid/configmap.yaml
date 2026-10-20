@@ -22,4 +22,6 @@ data:
   xid_grpc_port: "50051"
   xid_quota_project_id: {{ .Values.projectId | quote }}
   xid_spanner_database_name: {{ .Values.xidService.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/xids-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
+  # Read only for CLI session revocation checks (CliSessions table).
+  xid_ess_spanner_database_name: {{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
   xid_jwks_url: {{ if and .Values.auth .Values.auth.jwksUrl }}{{ .Values.auth.jwksUrl | quote }}{{ else if and .Values.auth .Values.auth.issuerUrl }}{{ printf "%s/keys" (.Values.auth.issuerUrl | trimSuffix "/") | quote }}{{ else }}""{{ end }}

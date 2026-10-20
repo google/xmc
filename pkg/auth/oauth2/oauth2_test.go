@@ -1379,6 +1379,9 @@ func TestHandleLoginClearsCLILoginCookie(t *testing.T) {
 func TestSessionTokenAudiencePerTransport(t *testing.T) {
 	jwtSecret := []byte(loginTestSecret)
 	a := newTestAuthenticator(&Config{JWTSecret: loginTestSecret, AllowedDomains: []string{"mycompany.com"}})
+	if err := a.CheckCLISessions(newFakeCLISessionStore("jti")); err != nil {
+		t.Fatalf("CheckCLISessions() failed: %v", err)
+	}
 	cliToken, err := generateCLISessionTokenAt(loginTestEmail, "Test User", "jti", time.Hour, jwtSecret, time.Now())
 	if err != nil {
 		t.Fatalf("generateCLISessionTokenAt() failed: %v", err)

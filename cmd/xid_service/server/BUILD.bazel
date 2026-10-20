@@ -18,6 +18,7 @@ go_library(
     name = "server",
     srcs = [
         "checkuserauthorization.go",
+        "cli_sessions.go",
         "createxidentry.go",
         "getxidentry.go",
         "listxidentries.go",
@@ -38,6 +39,7 @@ go_library(
         "//internal/logging",
         "//internal/storage",
         "//internal/storage/spanner",
+        "//internal/storage/spanner/clisession",
         "//internal/validator",
         "//pkg/auth/jwks",
         "//pkg/auth/oauth2",
@@ -53,6 +55,7 @@ go_test(
     name = "server_test",
     srcs = [
         "checkuserauthorization_test.go",
+        "cli_sessions_test.go",
         "createxidentry_test.go",
         "getxidentry_test.go",
         "listxidentries_test.go",

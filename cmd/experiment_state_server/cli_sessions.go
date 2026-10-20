@@ -23,15 +23,17 @@ import (
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
-// enableCLISessions records the CLI tokens oauthAuth mints in the CliSessions table. It must run
-// before the servers start. Without a Spanner client no CLI tokens are minted.
+// enableCLISessions records the CLI tokens oauthAuth mints in the CliSessions table and makes it
+// reject revoked ones, on HTTP and, through the gRPC authorizers that consult oauthAuth, on gRPC.
+// It must run before either server starts. Without a Spanner client CLI tokens are neither minted
+// nor accepted.
 func enableCLISessions(ctx context.Context, oauthAuth *oauth.Authenticator, spannerClient *spanner.Client) {
 	sessions, err := clisession.NewRepository(spannerClient)
 	if err != nil {
-		logging.Warn(ctx, "CLI sessions disabled: no CLI tokens will be issued", "error", err)
+		logging.Warn(ctx, "CLI sessions disabled: CLI tokens will be rejected", "error", err)
 		return
 	}
 	if err := oauthAuth.EnableCLISessions(sessions); err != nil {
-		logging.Warn(ctx, "CLI sessions disabled: no CLI tokens will be issued", "error", err)
+		logging.Warn(ctx, "CLI sessions disabled: CLI tokens will be rejected", "error", err)
 	}
 }

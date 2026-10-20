@@ -38,6 +38,10 @@ type Config struct {
 	HTTPAudience        string
 	GRPCAudience        string
 	JWKSURL             string
+
+	// ESSSpannerDatabaseName is the ESS database, read only for CLI session revocation checks.
+	// Empty makes the service reject CLI session tokens.
+	ESSSpannerDatabaseName string
 }
 
 var cfg Config
@@ -92,6 +96,7 @@ func (c *Config) registerConfigs() {
 	configutil.StringEnv(&c.Port, "xid_grpc_port", "50051")
 	configutil.StringEnv(&c.QuotaProjectID, "xid_quota_project_id", "xmc-test-project-1")
 	configutil.StringEnv(&c.SpannerDatabaseName, "xid_spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/xids-db")
+	configutil.StringEnv(&c.ESSSpannerDatabaseName, "xid_ess_spanner_database_name", "")
 	configutil.StringEnv(&c.JWKSURL, "xid_jwks_url", "")
 }
 

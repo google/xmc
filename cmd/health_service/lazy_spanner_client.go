@@ -22,6 +22,8 @@ import (
 
 	health "xmanager_cloud/internal/common/health"
 	spannerstorage "xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/spanner/clisession"
+	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/summary"
 
@@ -43,6 +45,7 @@ var (
 	_ LazySpannerCheckerProvider = (*HealthServiceLazySpannerWrapper)(nil)
 	_ LazyComponentsProvider     = (*HealthServiceLazySpannerWrapper)(nil)
 	_ LazyStorageProvider        = (*HealthServiceLazySpannerWrapper)(nil)
+	_ oauth2.CLISessionChecker   = (*HealthServiceLazySpannerWrapper)(nil)
 )
 
 // HealthServiceLazySpannerWrapper provides thread-safe lazy initialization of Spanner clients
@@ -159,6 +162,21 @@ func (w *HealthServiceLazySpannerWrapper) Storage(ctx context.Context) (PauseSch
 
 	w.storage = st
 	return w.storage, nil
+}
+
+// IsRevoked implements oauth2.CLISessionChecker with the CliSessions table of the ESS database.
+func (w *HealthServiceLazySpannerWrapper) IsRevoked(ctx context.Context, jti string) (bool, error) {
+	w.essMu.Lock()
+	client, err := w.ensureEssClientLocked(ctx)
+	w.essMu.Unlock()
+	if err != nil {
+		return false, err
+	}
+	sessions, err := clisession.NewRepository(client)
+	if err != nil {
+		return false, err
+	}
+	return sessions.IsRevoked(ctx, jti)
 }
 
 // Close closes any initialized underlying Spanner clients and marks the wrapper as closed.
