@@ -31,7 +31,6 @@ import (
 	ss "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/pkg/auth/oauth2/mock"
 )
 
 var _ apipb.XidServiceServer = (*RuntimeServer)(nil)
@@ -145,7 +144,6 @@ func NewRuntimeServer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.C
 	}
 
 	authenticator := oauth.NewAuthenticator(oauthCfg)
-	mock.ConfigureIfEnabled(authenticator)
 	cleanups = append(cleanups, authenticator.Close)
 
 	auth, err := initAuth(ctx, cfg, oauthCfg, authz.DeploymentAdmission(authenticator))

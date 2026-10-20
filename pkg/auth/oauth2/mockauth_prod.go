@@ -14,18 +14,8 @@
 
 //go:build !mockauth
 
-package mock
+package oauth2
 
-import (
-	"testing"
-
-	"xmanager_cloud/pkg/auth/oauth2"
-)
-
-func TestConfigureIfEnabled(t *testing.T) {
-	a := oauth2.NewAuthenticator(&oauth2.Config{MockAuth: true})
-	ConfigureIfEnabled(a)
-	if _, gotMock := a.OAuthProvider.(*MockOAuthProvider); gotMock {
-		t.Error("ConfigureIfEnabled() installed the mock provider in a build without the mockauth tag")
-	}
-}
+// configureMockIfEnabled is a no-op in binaries built without the mockauth tag, so they never
+// install mock authentication even when MOCK_AUTH is set.
+func configureMockIfEnabled(*Authenticator) {}

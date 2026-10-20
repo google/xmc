@@ -57,9 +57,9 @@ func putPendingConfirmation(t *testing.T, a *Authenticator, store *fakeCLICodeSt
 	return mustSealSigned(t, a.cliConfirmationKey, c)
 }
 
-func mustSealSigned(t *testing.T, key []byte, v any) string {
+func mustSealSigned(t *testing.T, key []byte, c cliManualConfirmation) string {
 	t.Helper()
-	sealed, err := sealSigned(key, v)
+	sealed, err := sealSigned(key, c, c.ExpiresAt)
 	if err != nil {
 		t.Fatalf("sealSigned() failed: %v", err)
 	}
