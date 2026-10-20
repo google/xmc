@@ -92,6 +92,27 @@ The fence is enforced on every sourced intent before the ownership rules, in the
 
 Fence rejections are `FailedPrecondition` with metadata `operation`, `active_cluster_uid`, `active_cluster_name` and `active_epoch`; `CLUSTER_NOT_DECLARED` omits the `active_*` keys when there is no fence row. The takeover updates four columns per owned component in one commit (owner columns only: like any owner-only write it leaves the generation, `UpdateTime` and etag alone, because the owner is not part of the `Component` resource), which counts against Spanner's per-commit mutation limit (80,000): ample for the expected tens to hundreds of components, but the ceiling is about twenty thousand. It sets `SourceLastSeenTime` to its commit time, which starts the adoption grace period of the stale-owner alert. `LastSeenTime` and `DeclaredTime` are required commit timestamps for alerting only; they never move ownership. `Epoch` must be at least 1 (`CK_ComponentOwnershipFence_Epoch`); `FenceId` has no singleton CHECK because it is reserved for partitioned fences.
 
+**Sourced lifecycle mutations**: `UpdateObservedGeneration`, `PrepareDeactivation`, `CompleteDeactivation`, and `ExecuteDeletion` accept an optional `RequestSource` (`checkSourceMutation` in `pkg/components/store/source_ownership.go`). When supplied, the store enforces the cluster fence and ownership rules (R2–R6) in the same transaction before mutating state, recording the caller as owner (`SourceLastSeenTime` at commit time). A non-owner `ExecuteDeletion` fails with `FailedPrecondition` (`SOURCE_INCARNATION_MISMATCH`, `SOURCE_NAMESPACE_CONFLICT`, `CLUSTER_FENCED`, or `CLUSTER_EPOCH_REGRESSED`) and leaves the CMS record intact.
+
+**Ownership & Fence Metrics, Alerts & Runbooks (`pkg/components/store/ownership_metrics.go`)**:
+
+All labels are bounded (no per-component or per-UID label cardinality):
+
+| Metric | Type & Labels | Alert / Meaning |
+| :--- | :--- | :--- |
+| `xmc_cms_component_owner_adoptions_total` | Counter (`reason=initial\|same_cluster_recreate\|epoch_takeover\|unsourced_claim`) | Committed owner adoptions across store writes. Alert/notify on `reason="epoch_takeover"` (confirm expected DR takeover). |
+| `xmc_cms_component_source_conflicts_total` | Counter (`reason=STALE_GENERATION\|SOURCE_INCARNATION_MISMATCH\|SOURCE_NAMESPACE_CONFLICT\|CLUSTER_FENCED\|CLUSTER_EPOCH_REGRESSED\|CLUSTER_NOT_DECLARED`) | Store ownership and cluster fence rejections. Page on `CLUSTER_EPOCH_REGRESSED` or sustained `CLUSTER_FENCED` at an equal epoch (split-brain or cluster restore). |
+| `xmc_cms_cluster_fence_epoch` | Gauge | Active cluster ownership fence epoch declared in CMS. |
+| `xmc_cms_component_owner_stale` | Gauge | Active owned components whose owner UID is unassigned after a fence takeover (`SourceUid IS NULL`) or whose `SourceLastSeenTime` is older than 15 minutes (`OwnerStaleThreshold`), updated on `DeclareClusterEpoch`. Alert when `> 0` for 30 minutes (orphaned component owner). `SourceLastSeenTime` advances only on owner writes, so a component whose CR is unchanged and already synced can also count after 15 minutes; confirm its CR before acting. The gauge is per replica and only as fresh as that replica's last declaration, so aggregate with `max`. |
+
+Operational runbooks:
+- **DR failover**: Commit `componentsDeployment.ownershipEpoch: <active+1>` in the DR cluster's GitOps values overlay. Once synced, the DR `xmc-bridge` calls `DeclareClusterEpoch` (`OUTCOME_TAKEOVER`), reassigning active owned components and adopting them under their existing `ComponentId`. Any returning old primary cluster is fenced (`CLUSTER_FENCED`). The DR `xmc-bridge` must call CMS as the controller service account the experiment state server authorizes: the chart uses `gcpServiceAccount` both as `ess_service_account` and as the Workload Identity annotation on `xmc-bridge-sa`. Any other caller gets `PermissionDenied` and no takeover happens.
+- **Failback**: Bump `componentsDeployment.ownershipEpoch` on the primary cluster to `<dr_epoch+1>` in Git.
+- **Split-brain or cluster restore (`CLUSTER_FENCED`)**: Confirm which cluster is the intended writer; the unintended cluster remains in cold standby until decommissioned.
+- **Orphaned owner (`xmc_cms_component_owner_stale > 0`)**: Recreate the missing CR in the active cluster (auto-adopts via R2/R5) or issue an unsourced `ExecuteDeletion` to retire the record.
+- **Namespace conflict (`SOURCE_NAMESPACE_CONFLICT`)**: Delete the misplaced CR; `Component` CRs belong only in the configured `componentsDeployment.namespace`.
+- **Epoch regressed (`CLUSTER_EPOCH_REGRESSED`)**: Restore the higher `componentsDeployment.ownershipEpoch` in Git.
+
 Key functions:
 - `ExtractDependencies(spec *componentspb.ComponentSpec, labels map[string]string) []string`: Extracts unique canonical dependency names from all sources above.
 - `NormalizeDependencies(deps []string) []string`: Strips `components/` prefixes, deduplicates, and sorts lexicographically.

@@ -17,9 +17,12 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/grpc/codes"
+
+	"xmanager_cloud/internal/logging"
 )
 
 const (
@@ -29,6 +32,10 @@ const (
 	// owner UID so that the cluster's next intent adopts it (R2). SourceLastSeenTime is set to the
 	// commit time, which starts the adoption grace period of the owner_stale gauge.
 	takeOverOwnersSQL = `UPDATE Components SET SourceClusterUid = @clusterUid, SourceEpoch = @epoch, SourceUid = NULL, SourceLastSeenTime = PENDING_COMMIT_TIMESTAMP() WHERE ActiveName IS NOT NULL AND SourceClusterUid IS NOT NULL`
+
+	// countStaleOwnersSQL counts active owned components whose owner UID was cleared by a takeover
+	// or whose last-seen timestamp is at or before @cutoff.
+	countStaleOwnersSQL = `SELECT COUNT(*) FROM Components WHERE ActiveName IS NOT NULL AND SourceClusterUid IS NOT NULL AND (SourceUid IS NULL OR SourceLastSeenTime <= @cutoff)`
 
 	// fenceColumnsSQL adds the fence holder to a query as scalar subqueries, NULL before the first
 	// declaration, so that one single-use read sees the fence and the component in one snapshot.
@@ -50,9 +57,30 @@ func (s *SpannerStore) DeclareClusterEpoch(ctx context.Context, cluster ClusterI
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
+	stale, staleErr := queryStaleOwnerCount(ctx, s.client.Single(), time.Now().UTC())
+	if staleErr != nil {
+		logging.Warn(ctx, "Failed to count stale component owners; keeping the previous xmc_cms_component_owner_stale value", "error", staleErr)
+	}
+	recordClusterDeclarationMetrics(res.Active.Epoch, stale, staleErr == nil)
 	return res, nil
+}
+
+// queryStaleOwnerCount counts active owned components with an unassigned or stale owner at now.
+func queryStaleOwnerCount(ctx context.Context, queryable spannerQueryable, now time.Time) (int64, error) {
+	stmt := spanner.Statement{SQL: countStaleOwnersSQL, Params: map[string]any{"cutoff": now.Add(-OwnerStaleThreshold)}}
+	iter := queryable.Query(ctx, stmt)
+	defer iter.Stop()
+	row, err := iter.Next()
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	if err := row.Columns(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // declareClusterEpochTx applies a declaration by cluster within txn.
