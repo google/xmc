@@ -636,6 +636,31 @@ func TestK8sHelmManager_AsyncUpgrade_PendingUntilCompletion(t *testing.T) {
 	}
 }
 
+// TestK8sHelmManager_ForgetComponentMidUpgradeLeavesNoUpgradeError verifies that the outcome of an asynchronous upgrade
+// whose incarnation was evicted by ForgetComponent while it ran is discarded instead of recreating upgradeErrs state.
+func TestK8sHelmManager_ForgetComponentMidUpgradeLeavesNoUpgradeError(t *testing.T) {
+	ctx := context.Background()
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway", UID: "uid-forgotten"}
+	gate := make(chan struct{})
+	runner := &mockHelmActionRunner{upgradeErr: errors.New("install failed"), upgradeGate: gate, upgradeStarted: make(chan struct{}, 1)}
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner))
+
+	if err := mgr.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent failed: %v", err)
+	}
+	<-runner.upgradeStarted
+	mgr.ForgetComponent(ref.Namespace, ref.Name)
+	close(gate)
+	_ = mgr.Close() // Waits for the worker to finish the in-flight upgrade.
+
+	mgr.mu.Lock()
+	err, recorded := mgr.upgradeErrs[ref.String()]
+	mgr.mu.Unlock()
+	if recorded {
+		t.Errorf("upgradeErrs[%q] = %v after ForgetComponent, want no entry", ref.String(), err)
+	}
+}
+
 // TestK8sHelmManager_TeardownWaitsForInFlightUpgrade verifies that Delete1PComponent never uninstalls a release while
 // an asynchronous upgrade of it is still running: the uninstall waits for the upgrade to finish.
 func TestK8sHelmManager_TeardownWaitsForInFlightUpgrade(t *testing.T) {

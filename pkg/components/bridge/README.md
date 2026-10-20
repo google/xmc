@@ -183,6 +183,8 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 
 - **Per-Component Independent Release Scoping (`ComponentReleaseName`)**:
   - Each 1P component is actuated into a dedicated, decoupled Helm release formatted as `xmc-cmp-<name>` (e.g., `xmc-cmp-ray-operator`), preserving architectural blast-radius isolation from other components and the core platform release.
+  - The CRD's CEL validation limits `metadata.name` to 45 characters, so the release name stays within Helm's 53-character limit, and rejects names that start with `xmc-cmp-`, so release names are never doubly prefixed.
+  - Actuation state is tracked per CR incarnation (`<namespace>/<name>@<uid>`). Actuating a new incarnation evicts the state of superseded incarnations and the namespace-level entry hydrated from the values ConfigMap; once the CR is gone, `Reconciler.ForgetComponent` evicts the state of every incarnation.
 - **Dynamic Per-Component Chart Path Resolution (`ResolveComponentChartPath`)**:
   - Supports custom `ChartPathResolver` injection via `WithChartPathResolver` as well as deterministic filesystem candidate discovery relative to a configured base chart path:
     1. Explicit per-component override (`opts.ChartPath` from `spec.parameters["chartPath"]`, validated against path traversal and confined within `<baseChartPath>` when `<baseChartPath>` is configured).

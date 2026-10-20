@@ -20,6 +20,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -510,5 +511,302 @@ func TestK8sHelmManager_RetryFailedUpgrade_Delete(t *testing.T) {
 	runner.uninstallErr = nil
 	if err := mgr.Delete1PComponent(ctx, ref); err != nil {
 		t.Fatalf("expected retry Delete1PComponent to succeed, got %v", err)
+	}
+}
+
+func TestComponentReleaseNameForRef(t *testing.T) {
+	tests := []struct {
+		name        string
+		ref         ComponentRef
+		wantRelease string
+		wantCanon   string
+	}{
+		{
+			name:        "empty UID preserves canonical release name",
+			ref:         ComponentRef{Namespace: "xmc", Name: "ingestion"},
+			wantRelease: "xmc-cmp-ingestion",
+			wantCanon:   "ingestion",
+		},
+		{
+			name:        "UUID v4 preserves canonical release name for live upgrades and orphan adoption",
+			ref:         ComponentRef{Namespace: "xmc", Name: "ray-operator", UID: "12345678-9abc-4def-8000-112233445566"},
+			wantRelease: "xmc-cmp-ray-operator",
+			wantCanon:   "ray-operator",
+		},
+		{
+			name:        "synthetic UID preserves canonical release name",
+			ref:         ComponentRef{Namespace: "xmc", Name: "rod-data-provider", UID: "uid-owner-a"},
+			wantRelease: "xmc-cmp-rod-data-provider",
+			wantCanon:   "rod-data-provider",
+		},
+		{
+			name:        "resource-style name canonicalizes like CMS",
+			ref:         ComponentRef{Namespace: "xmc", Name: "components/ingestion"},
+			wantRelease: "xmc-cmp-ingestion",
+			wantCanon:   "ingestion",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotRelease := ComponentReleaseNameForRef(tc.ref)
+			if gotRelease != tc.wantRelease {
+				t.Errorf("ComponentReleaseNameForRef(%+v) = %q, want %q", tc.ref, gotRelease, tc.wantRelease)
+			}
+			gotCanon := componentNameFromRelease(gotRelease)
+			if gotCanon != tc.wantCanon {
+				t.Errorf("componentNameFromRelease(%q) = %q, want %q", gotRelease, gotCanon, tc.wantCanon)
+			}
+		})
+	}
+}
+
+func TestK8sHelmManager_PerCRReleaseIsolation(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(client, "xmc", "xmanager-cloud",
+		WithActionRunner(runner),
+		WithSyncExecution(true),
+	)
+	defer mgr.Close()
+
+	ownerRef := ComponentRef{Namespace: "ns-a", Name: "ingestion", UID: "11111111-aaaa-4bbb-8ccc-000000000001"}
+	dupeRef := ComponentRef{Namespace: "ns-b", Name: "ingestion", UID: "22222222-dddd-4eee-8fff-000000000002"}
+
+	if err := mgr.Ensure1PComponent(ctx, ownerRef, HelmComponentOptions{Ref: ownerRef, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent(owner) failed: %v", err)
+	}
+	if err := mgr.Ensure1PComponent(ctx, dupeRef, HelmComponentOptions{Ref: dupeRef, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent(dupe) failed: %v", err)
+	}
+
+	ownerKey := componentKey(ownerRef.Namespace, ComponentReleaseNameForRef(ownerRef))
+	dupeKey := componentKey(dupeRef.Namespace, ComponentReleaseNameForRef(dupeRef))
+	if !runner.installed[ownerKey] || !runner.installed[dupeKey] {
+		t.Fatalf("expected both %q and %q to be installed", ownerKey, dupeKey)
+	}
+
+	// Deleting the cross-namespace duplicate CR uninstalls only dupeKey and preserves ownerKey.
+	if err := mgr.Delete1PComponent(ctx, dupeRef); err != nil {
+		t.Fatalf("Delete1PComponent(dupe) failed: %v", err)
+	}
+	if runner.installed[dupeKey] {
+		t.Errorf("expected duplicate release %q to be uninstalled", dupeKey)
+	}
+	if !runner.installed[ownerKey] {
+		t.Errorf("expected owner release %q to remain installed when duplicate is deleted", ownerKey)
+	}
+
+	// Same-namespace recreate: when newRef is active in ns-a, tearing down superseded ownerRef must not
+	// uninstall ns-a/xmc-cmp-ingestion or clobber newRef's active state.
+	newRef := ComponentRef{Namespace: "ns-a", Name: "ingestion", UID: "33333333-eeee-4fff-8000-000000000003"}
+	if err := mgr.Ensure1PComponent(ctx, newRef, HelmComponentOptions{Ref: newRef, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent(newRef) failed: %v", err)
+	}
+	mgr.RecordActuation(ownerRef, 1)
+	mgr.RecordActuation(newRef, 2)
+	if err := mgr.Purge1PComponent(ctx, ownerRef); err != nil {
+		t.Fatalf("Purge1PComponent(superseded ownerRef) failed: %v", err)
+	}
+	if !runner.installed[ownerKey] {
+		t.Errorf("expected active release %q to remain installed when superseded incarnation is purged", ownerKey)
+	}
+	if mgr.IsComponentActuated(ownerRef, 1) {
+		t.Errorf("expected superseded ownerRef actuation state to be forgotten")
+	}
+	if !mgr.IsComponentActuated(newRef, 2) || !mgr.IsComponentActive(newRef) {
+		t.Errorf("expected active newRef state to remain intact")
+	}
+
+	// Cold-start / fenced-cluster Purge1PComponent (inactive in memory, no other active incarnation) still uninstalls.
+	fencedRef := ComponentRef{Namespace: "ns-c", Name: "ingestion", UID: "44444444-0000-4000-8000-000000000004"}
+	fencedKey := componentKey(fencedRef.Namespace, ComponentReleaseNameForRef(fencedRef))
+	runner.installed[fencedKey] = true
+	if err := mgr.Purge1PComponent(ctx, fencedRef); err != nil {
+		t.Fatalf("Purge1PComponent(fencedRef) failed: %v", err)
+	}
+	if runner.installed[fencedKey] {
+		t.Errorf("expected cold-start Purge1PComponent to uninstall %q", fencedKey)
+	}
+}
+
+// TestK8sHelmManager_Delete1PComponent_ColdStartUninstallsLeakedRelease verifies that a namespace-level disabled entry
+// hydrated from the values ConfigMap on cold start does not suppress uninstalling a CR incarnation's leaked release,
+// while a teardown already recorded for that incarnation keeps later Delete calls idempotent.
+func TestK8sHelmManager_Delete1PComponent_ColdStartUninstallsLeakedRelease(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientset()
+	runner := &mockHelmActionRunner{}
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "55555555-0000-4000-8000-000000000005"}
+	releaseKey := componentKey(ref.Namespace, ComponentReleaseNameForRef(ref))
+
+	first := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	if err := first.Ensure1PComponent(ctx, ref, HelmComponentOptions{Ref: ref, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent() failed: %v", err)
+	}
+	if err := first.Delete1PComponent(ctx, ref); err != nil {
+		t.Fatalf("Delete1PComponent() failed: %v", err)
+	}
+	first.Close()
+
+	// Simulate a release that survived the previous controller's teardown (e.g. an interrupted uninstall).
+	runner.installed[releaseKey] = true
+	restarted := NewK8sHelmManager(client, "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	defer restarted.Close()
+	if err := restarted.HydrateFromCluster(ctx); err != nil {
+		t.Fatalf("HydrateFromCluster() failed: %v", err)
+	}
+	if restarted.IsComponentActive(ref) {
+		t.Fatalf("IsComponentActive() = true after hydrating a disabled ConfigMap entry, want false")
+	}
+
+	if err := restarted.Delete1PComponent(ctx, ref); err != nil {
+		t.Fatalf("Delete1PComponent() after restart failed: %v", err)
+	}
+	if runner.installed[releaseKey] {
+		t.Errorf("expected cold-start Delete1PComponent to uninstall leaked release %q", releaseKey)
+	}
+
+	callsBefore := runner.uninstallCalls
+	if err := restarted.Delete1PComponent(ctx, ref); err != nil {
+		t.Fatalf("repeated Delete1PComponent() failed: %v", err)
+	}
+	if runner.uninstallCalls != callsBefore {
+		t.Errorf("repeated Delete1PComponent() uninstall calls = %d, want %d", runner.uninstallCalls, callsBefore)
+	}
+}
+
+// TestK8sHelmManager_EnsureRetiresStaleIncarnation verifies that actuating a new CR incarnation drops the state of an
+// older incarnation whose teardown never ran, so the stale entry cannot suppress the new incarnation's teardown.
+func TestK8sHelmManager_EnsureRetiresStaleIncarnation(t *testing.T) {
+	ctx := context.Background()
+	runner := &mockHelmActionRunner{}
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	defer mgr.Close()
+	staleRef := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "66666666-0000-4000-8000-000000000006"}
+	liveRef := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "77777777-0000-4000-8000-000000000007"}
+	releaseKey := componentKey(liveRef.Namespace, ComponentReleaseNameForRef(liveRef))
+
+	if err := mgr.Ensure1PComponent(ctx, staleRef, HelmComponentOptions{Ref: staleRef, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent(staleRef) failed: %v", err)
+	}
+	mgr.RecordActuation(staleRef, 1)
+	// staleRef's CR is gone without a teardown; its recreation liveRef is actuated next.
+	if err := mgr.Ensure1PComponent(ctx, liveRef, HelmComponentOptions{Ref: liveRef, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent(liveRef) failed: %v", err)
+	}
+	if mgr.IsComponentActuated(staleRef, 1) {
+		t.Errorf("IsComponentActuated(staleRef) = true after liveRef was actuated, want false")
+	}
+
+	if err := mgr.Delete1PComponent(ctx, liveRef); err != nil {
+		t.Fatalf("Delete1PComponent(liveRef) failed: %v", err)
+	}
+	if runner.installed[releaseKey] {
+		t.Errorf("expected Delete1PComponent(liveRef) to uninstall %q despite the stale incarnation", releaseKey)
+	}
+}
+
+// seedIncarnationState records state of every per-incarnation kind under key, as left behind by an incarnation whose
+// teardown never ran.
+func seedIncarnationState(m *K8sHelmManager, key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.activeState[key] = true
+	m.actuatedGenerations[key] = 3
+	m.upgradeErrs[key] = errors.New("stale upgrade failure")
+	m.pendingUpgrades[key] = 7
+	m.healthVerifiedAt[key] = time.Now()
+	m.repairNeeded[key] = true
+	m.repairBackoff[key] = repairAttempt{}
+}
+
+// incarnationStateKeys returns the keys under namespace/name (base or UID-scoped) that still hold any state.
+func incarnationStateKeys(m *K8sHelmManager, namespace, name string) []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	base := componentKey(namespace, name)
+	keys := m.incarnationKeysLocked(base + "@")
+	if _, ok := m.activeState[base]; ok {
+		keys = append(keys, base)
+	}
+	return keys
+}
+
+// TestK8sHelmManager_EnsureEvictsSupersededAndBaseKeys verifies that adopting a release with a new CR incarnation
+// evicts every kind of state held by superseded incarnations and the hydrated namespace-level entry.
+func TestK8sHelmManager_EnsureEvictsSupersededAndBaseKeys(t *testing.T) {
+	ctx := context.Background()
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
+	defer mgr.Close()
+	ghost := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "88888888-0000-4000-8000-000000000008"}
+	live := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "99999999-0000-4000-8000-000000000009"}
+	other := ComponentRef{Namespace: "xmc", Name: "ingestion-v2", UID: "aaaaaaaa-0000-4000-8000-00000000000a"}
+	seedIncarnationState(mgr, componentStateKey(ghost))
+	seedIncarnationState(mgr, componentStateKey(other))
+	mgr.mu.Lock()
+	mgr.activeState[componentKey(live.Namespace, live.Name)] = false
+	mgr.mu.Unlock()
+
+	if err := mgr.Ensure1PComponent(ctx, live, HelmComponentOptions{Ref: live, Enabled: true}); err != nil {
+		t.Fatalf("Ensure1PComponent(live) failed: %v", err)
+	}
+
+	want := []string{componentStateKey(live)}
+	if got := incarnationStateKeys(mgr, live.Namespace, live.Name); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("state keys after adoption = %v, want %v", got, want)
+	}
+	if got := incarnationStateKeys(mgr, other.Namespace, other.Name); len(got) != 1 {
+		t.Errorf("state keys of unrelated component %q = %v, want its single incarnation kept", other.Name, got)
+	}
+}
+
+// TestK8sHelmManager_ForgetComponentEvictsAllIncarnations verifies that ForgetComponent drops the state of every
+// incarnation, the base keys and the chart path override, leaving other components untouched.
+func TestK8sHelmManager_ForgetComponentEvictsAllIncarnations(t *testing.T) {
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
+	defer mgr.Close()
+	ghost := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "bbbbbbbb-0000-4000-8000-00000000000b"}
+	live := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "cccccccc-0000-4000-8000-00000000000c"}
+	base := componentKey(live.Namespace, live.Name)
+	keep := ComponentRef{Namespace: "xmc", Name: "ingestion-v2", UID: "dddddddd-0000-4000-8000-00000000000d"}
+	for _, key := range []string{componentStateKey(ghost), componentStateKey(live), base, componentStateKey(keep)} {
+		seedIncarnationState(mgr, key)
+	}
+	mgr.recordChartPathOverride(live, "/charts/ingestion")
+
+	mgr.ForgetComponent(live.Namespace, live.Name)
+
+	if got := incarnationStateKeys(mgr, live.Namespace, live.Name); len(got) != 0 {
+		t.Errorf("state keys after ForgetComponent = %v, want none", got)
+	}
+	mgr.mu.RLock()
+	_, hasChartPath := mgr.componentChartPaths[base]
+	_, hasBaseErr := mgr.upgradeErrs[base]
+	mgr.mu.RUnlock()
+	if hasChartPath || hasBaseErr {
+		t.Errorf("ForgetComponent kept base state: chartPath=%v upgradeErr=%v, want neither", hasChartPath, hasBaseErr)
+	}
+	if got := incarnationStateKeys(mgr, keep.Namespace, keep.Name); len(got) != 1 {
+		t.Errorf("state keys of unrelated component %q = %v, want its single incarnation kept", keep.Name, got)
+	}
+}
+
+// TestReconciler_ForgetComponentForwardsToHelmManager verifies that forgetting a deleted CR also evicts the Helm
+// manager's per-incarnation state.
+func TestReconciler_ForgetComponentForwardsToHelmManager(t *testing.T) {
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
+	defer mgr.Close()
+	r, err := NewReconciler(&mockCMS{}, &mockProber{healthy: true}, mgr)
+	if err != nil {
+		t.Fatalf("NewReconciler() failed: %v", err)
+	}
+	ghost := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "eeeeeeee-0000-4000-8000-00000000000e"}
+	seedIncarnationState(mgr, componentStateKey(ghost))
+
+	r.ForgetComponent(ghost.Namespace, ghost.Name)
+
+	if got := incarnationStateKeys(mgr, ghost.Namespace, ghost.Name); len(got) != 0 {
+		t.Errorf("Helm manager state keys after Reconciler.ForgetComponent = %v, want none", got)
 	}
 }

@@ -47,7 +47,7 @@ func (m *K8sHelmManager) NeedsRepair(ref ComponentRef, generation int64) bool {
 	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return false
 	}
-	key := componentKey(ref.Namespace, ref.Name)
+	key := componentStateKey(ref)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.repairNeeded[key] && m.activeState[key] && m.actuatedGenerations[key] == generation
@@ -57,7 +57,7 @@ func (m *K8sHelmManager) NeedsRepair(ref ComponentRef, generation int64) bool {
 func (m *K8sHelmManager) isRepairMarked(ref ComponentRef) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.repairNeeded[componentKey(ref.Namespace, ref.Name)]
+	return m.repairNeeded[componentStateKey(ref)]
 }
 
 // resetRepairBackoffIfStableLocked drops the repair backoff once the release has stayed healthy for repairBackoffMax
@@ -72,7 +72,7 @@ func (m *K8sHelmManager) resetRepairBackoffIfStableLocked(key string, now time.T
 
 // recordRepairAttempt consumes the component's repair marker and arms its backoff for the next repair.
 func (m *K8sHelmManager) recordRepairAttempt(ctx context.Context, ref ComponentRef) {
-	key := componentKey(ref.Namespace, ref.Name)
+	key := componentStateKey(ref)
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()

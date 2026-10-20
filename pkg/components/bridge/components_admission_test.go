@@ -31,8 +31,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
@@ -274,6 +276,100 @@ func TestCRDLifecycleAnnotations(t *testing.T) {
 	}
 }
 
+// componentCRDGVR identifies CustomResourceDefinitions, edited directly by TestCRDNameRulesAreCreateOnly.
+var componentCRDGVR = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
+
+// TestCRDNameRulesAreCreateOnly verifies that the metadata.name CEL rules apply only on create: a Component stored
+// before the rules existed (a reserved-prefix or over-long name) can still be patched, have its status written and
+// its finalizer removed, so deleting it never hangs after a CRD upgrade.
+func TestCRDNameRulesAreCreateOnly(t *testing.T) {
+	ctx := context.Background()
+	dyn := dynamic.NewForConfigOrDie(startComponentEnvtest(t))
+	crds := dyn.Resource(componentCRDGVR)
+	comps := dyn.Resource(ComponentGVR).Namespace("default")
+	const finalizer = "test.xmc.dev/hold"
+	legacyNames := []string{"xmc-cmp-legacy", strings.Repeat("b", 46)}
+
+	chartRules := setCRDNameRules(ctx, t, crds, nil)
+	for _, name := range legacyNames {
+		obj := newComponentManifest(name, map[string]any{"enabled": true, "deletionProtection": false})
+		obj.SetFinalizers([]string{finalizer})
+		pollUntil(ctx, t, fmt.Sprintf("create pre-existing %s without the name rules", name), func() bool {
+			_, err := comps.Create(ctx, obj, metav1.CreateOptions{})
+			return err == nil
+		})
+	}
+	setCRDNameRules(ctx, t, crds, chartRules)
+	pollUntil(ctx, t, "the restored name rules to reject a new reserved-prefix name", func() bool {
+		_, err := comps.Create(ctx, newComponentManifest("xmc-cmp-probe", map[string]any{"enabled": true, "deletionProtection": false}), metav1.CreateOptions{})
+		return err != nil && strings.Contains(err.Error(), "must not start with 'xmc-cmp-'")
+	})
+
+	for _, name := range legacyNames {
+		t.Run(name, func(t *testing.T) {
+			if _, err := comps.Patch(ctx, name, types.MergePatchType, []byte(`{"metadata":{"labels":{"touched":"true"}}}`), metav1.PatchOptions{}); err != nil {
+				t.Errorf("metadata patch error = %v, want nil", err)
+			}
+			if _, err := comps.Patch(ctx, name, types.MergePatchType, []byte(`{"status":{"state":"COMPONENT_STATE_ENABLED"}}`), metav1.PatchOptions{}, "status"); err != nil {
+				t.Errorf("status patch error = %v, want nil", err)
+			}
+			if _, err := comps.Patch(ctx, name, types.MergePatchType, []byte(`{"metadata":{"finalizers":null}}`), metav1.PatchOptions{}); err != nil {
+				t.Fatalf("finalizer removal error = %v, want nil", err)
+			}
+			if err := comps.Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
+				t.Fatalf("Delete error = %v, want nil", err)
+			}
+			pollUntil(ctx, t, "the deleted Component to disappear", func() bool {
+				_, err := comps.Get(ctx, name, metav1.GetOptions{})
+				return apierrors.IsNotFound(err)
+			})
+		})
+	}
+}
+
+// setCRDNameRules replaces the metadata.name rules of the Component CRD's root validations with rules (removing
+// them when rules is nil) and returns the metadata.name rules it replaced.
+func setCRDNameRules(ctx context.Context, t *testing.T, crds dynamic.NamespaceableResourceInterface, rules []any) []any {
+	t.Helper()
+	crd, err := crds.Get(ctx, ComponentGVR.GroupResource().String(), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get(Component CRD) error = %v", err)
+	}
+	versions, _, _ := unstructured.NestedSlice(crd.Object, "spec", "versions")
+	version := versions[0].(map[string]any)
+	validations, _, _ := unstructured.NestedSlice(version, "schema", "openAPIV3Schema", "x-kubernetes-validations")
+	var kept, replaced []any
+	for _, v := range validations {
+		if rule, _ := v.(map[string]any)["rule"].(string); strings.Contains(rule, "self.metadata.name") {
+			replaced = append(replaced, v)
+			continue
+		}
+		kept = append(kept, v)
+	}
+	if err := unstructured.SetNestedSlice(version, append(kept, rules...), "schema", "openAPIV3Schema", "x-kubernetes-validations"); err != nil {
+		t.Fatalf("SetNestedSlice(validations) error = %v", err)
+	}
+	versions[0] = version
+	if err := unstructured.SetNestedSlice(crd.Object, versions, "spec", "versions"); err != nil {
+		t.Fatalf("SetNestedSlice(versions) error = %v", err)
+	}
+	if _, err := crds.Update(ctx, crd, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("Update(Component CRD) error = %v", err)
+	}
+	return replaced
+}
+
+// pollUntil polls cond every 50ms for up to 10s and fails the test, naming what, if it never holds.
+func pollUntil(ctx context.Context, t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	err := wait.PollUntilContextTimeout(ctx, 50*time.Millisecond, 10*time.Second, true, func(context.Context) (bool, error) {
+		return cond(), nil
+	})
+	if err != nil {
+		t.Fatalf("timed out waiting for %s: %v", what, err)
+	}
+}
+
 func verifyCRDSchemaAndCELRules(ctx context.Context, t *testing.T, compClient dynamic.ResourceInterface) {
 	t.Helper()
 	wrapperRef := func(obsPath, readyPath string) map[string]any {
@@ -288,22 +384,30 @@ func verifyCRDSchemaAndCELRules(ctx context.Context, t *testing.T, compClient dy
 	}
 	tests := []struct {
 		name        string
+		crName      string
 		spec        map[string]any
 		wantErr     bool
 		errContains string
 	}{
-		{"rejects missing required spec.enabled", map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"}, true, "spec.enabled: Required value"},
-		{"rejects invalid deletionPolicy value", map[string]any{"enabled": true, "deletionPolicy": "Retain"}, true, "deletionPolicy"},
-		{"rejects negative lifecycleControl.drainTimeoutSeconds", map[string]any{"enabled": true, "lifecycleControl": map[string]any{"drainTimeoutSeconds": -5}}, true, "drainTimeoutSeconds"},
-		{"rejects 3P wrapper without wrapperRef or parameters", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER"}, true, "either wrapperRef or parameters must be specified when componentType is COMPONENT_TYPE_CUSTOM_3P_WRAPPER"},
-		{"accepts operatorless 3P wrapper with parameters only", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "deletionProtection": false, "parameters": map[string]any{"host": "clickhouse.xmc.svc.cluster.local"}}, false, ""},
-		{"rejects wrapperRef observedGenerationPath outside status", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("$.metadata.generation", "")}, true, "observedGenerationPath"},
-		{"rejects wrapperRef readyConditionPath outside status", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("", "$.spec.ready")}, true, "readyConditionPath"},
-		{"accepts valid 3P wrapper with status JSONPaths and applies schema defaults", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("$.status.observedGeneration", "$.status.conditions[?(@.type=='Ready')].status")}, false, ""},
+		{"rejects missing required spec.enabled", "", map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"}, true, "spec.enabled: Required value"},
+		{"rejects invalid deletionPolicy value", "", map[string]any{"enabled": true, "deletionPolicy": "Retain"}, true, "deletionPolicy"},
+		{"rejects negative lifecycleControl.drainTimeoutSeconds", "", map[string]any{"enabled": true, "lifecycleControl": map[string]any{"drainTimeoutSeconds": -5}}, true, "drainTimeoutSeconds"},
+		{"rejects 3P wrapper without wrapperRef or parameters", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER"}, true, "either wrapperRef or parameters must be specified when componentType is COMPONENT_TYPE_CUSTOM_3P_WRAPPER"},
+		{"accepts operatorless 3P wrapper with parameters only", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "deletionProtection": false, "parameters": map[string]any{"host": "clickhouse.xmc.svc.cluster.local"}}, false, ""},
+		{"rejects wrapperRef observedGenerationPath outside status", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("$.metadata.generation", "")}, true, "observedGenerationPath"},
+		{"rejects wrapperRef readyConditionPath outside status", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("", "$.spec.ready")}, true, "readyConditionPath"},
+		{"accepts valid 3P wrapper with status JSONPaths and applies schema defaults", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "wrapperRef": wrapperRef("$.status.observedGeneration", "$.status.conditions[?(@.type=='Ready')].status")}, false, ""},
+		{"accepts metadata.name of 45 characters", strings.Repeat("a", 45), map[string]any{"enabled": true, "deletionProtection": false}, false, ""},
+		{"rejects metadata.name exceeding 45 characters", strings.Repeat("a", 46), map[string]any{"enabled": true, "deletionProtection": false}, true, "metadata.name must be at most 45 characters"},
+		{"rejects metadata.name with the reserved xmc-cmp- release prefix", "xmc-cmp-foo", map[string]any{"enabled": true, "deletionProtection": false}, true, "must not start with 'xmc-cmp-'"},
+		{"accepts metadata.name containing xmc-cmp- after the start", "foo-xmc-cmp-bar", map[string]any{"enabled": true, "deletionProtection": false}, false, ""},
 	}
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			name := fmt.Sprintf("cel-case-%d", i)
+			name := tc.crName
+			if name == "" {
+				name = fmt.Sprintf("cel-case-%d", i)
+			}
 			created, err := compClient.Create(ctx, newComponentManifest(name, tc.spec), metav1.CreateOptions{})
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("Create(%s) error = %v, wantErr %v", name, err, tc.wantErr)

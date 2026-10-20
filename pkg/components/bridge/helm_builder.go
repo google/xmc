@@ -29,20 +29,27 @@ const (
 	terminationGracePeriodBufferSeconds = 5
 )
 
-// ComponentRef uniquely identifies a component within a Kubernetes cluster by its namespace and name.
+// ComponentRef uniquely identifies a component within a Kubernetes cluster by its namespace, name, and optional CR UID.
 type ComponentRef struct {
 	// Namespace is the Kubernetes namespace containing the component.
 	Namespace string `json:"namespace,omitempty"`
 	// Name is the unique name of the component within its namespace.
 	Name string `json:"name"`
+	// UID is the Kubernetes metadata.uid of the Component custom resource incarnation, when known.
+	UID string `json:"uid,omitempty"`
 }
 
-// String returns the canonical "namespace/name" (or "name" if namespace is omitted) string representation.
+// String returns the canonical "namespace/name" (or "name" if namespace is omitted) string representation,
+// suffixed with "@<uid>" when UID is set.
 func (c ComponentRef) String() string {
-	if c.Namespace == "" {
-		return c.Name
+	base := c.Name
+	if c.Namespace != "" {
+		base = c.Namespace + "/" + c.Name
 	}
-	return c.Namespace + "/" + c.Name
+	if uid := strings.TrimSpace(c.UID); uid != "" {
+		return base + "@" + uid
+	}
+	return base
 }
 
 // HelmComponentOptions defines the configuration values for managing a 1P component via Helm releases.

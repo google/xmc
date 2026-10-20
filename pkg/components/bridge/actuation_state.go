@@ -33,7 +33,7 @@ func (m *K8sHelmManager) IsComponentActuated(ref ComponentRef, generation int64)
 	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return false
 	}
-	key := componentKey(ref.Namespace, ref.Name)
+	key := componentStateKey(ref)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.activeState[key] && m.upgradeErrs[key] == nil && m.actuatedGenerations[key] == generation
@@ -45,7 +45,7 @@ func (m *K8sHelmManager) RecordActuation(ref ComponentRef, generation int64) {
 	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return
 	}
-	key := componentKey(ref.Namespace, ref.Name)
+	key := componentStateKey(ref)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.actuatedGenerations[key] != generation {
@@ -59,10 +59,23 @@ func (m *K8sHelmManager) IsComponentActive(ref ComponentRef) bool {
 	if m == nil || ref.Name == "" || ref.Namespace == "" {
 		return false
 	}
-	key := componentKey(ref.Namespace, ref.Name)
+	key := componentStateKey(ref)
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.activeState[key]
+	if active, ok := m.activeState[key]; ok {
+		return active
+	}
+	return m.activeState[componentKey(ref.Namespace, ref.Name)]
+}
+
+// isKnownInactiveIncarnation reports whether ref's own CR incarnation is recorded in memory as inactive. Unlike
+// IsComponentActive, it ignores the namespace-level entry hydrated from the values ConfigMap on cold start, which
+// cannot prove that this incarnation's release was already uninstalled.
+func (m *K8sHelmManager) isKnownInactiveIncarnation(ref ComponentRef) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	active, known := m.activeState[componentStateKey(ref)]
+	return known && !active
 }
 
 // HydrateFromCluster populates in-memory active state from the release ConfigMap (<namespace>/xmc-component-values)
@@ -85,9 +98,13 @@ func (m *K8sHelmManager) HydrateComponentState(ctx context.Context, ref Componen
 	if err := validateComponentRef(ref); err != nil {
 		return nil
 	}
-	key := componentKey(ref.Namespace, ref.Name)
+	key := componentStateKey(ref)
+	baseKey := componentKey(ref.Namespace, ref.Name)
 	m.mu.RLock()
 	_, known := m.activeState[key]
+	if !known {
+		_, known = m.activeState[baseKey]
+	}
 	m.mu.RUnlock()
 	var hydrateErr error
 	if !known {
@@ -97,7 +114,7 @@ func (m *K8sHelmManager) HydrateComponentState(ctx context.Context, ref Componen
 		logging.Warn(ctx, "Component CR reports Ready but its Helm release is missing or failed; forcing re-actuation", "name", ref.Name, "namespace", ref.Namespace, "generation", observedGeneration)
 		crReady = false
 	}
-	m.applyHydratedState(key, observedGeneration, crReady)
+	m.applyHydratedState(key, baseKey, observedGeneration, crReady)
 	return hydrateErr
 }
 
@@ -119,7 +136,7 @@ func (m *K8sHelmManager) releaseContradictsReadyCR(ctx context.Context, ref Comp
 	if m.runner == nil {
 		return true
 	}
-	rel, err := m.runner.Status(ctx, ComponentReleaseName(ref.Name), ref.Namespace)
+	rel, err := m.runner.Status(ctx, ComponentReleaseNameForRef(ref), ref.Namespace)
 	if errors.Is(err, driver.ErrReleaseNotFound) {
 		return true
 	}
@@ -133,24 +150,121 @@ func (m *K8sHelmManager) releaseContradictsReadyCR(ctx context.Context, ref Comp
 	return status != release.StatusDeployed && !status.IsPending()
 }
 
-// forgetComponentLocked drops the component's actuation and repair state after a teardown and records it as inactive,
-// so namespace hydration never re-activates it from the values ConfigMap (Orphan keeps enabled values there). Delete
-// keeps the chart path override (keepInactive); Purge and Orphan drop it. Callers must hold m.mu.
-func (m *K8sHelmManager) forgetComponentLocked(key string, keepInactive bool) {
+// forgetIncarnationLocked drops all in-memory state of the given CR incarnation without touching the namespace-level
+// component entry or chart path override. Callers must hold m.mu.
+func (m *K8sHelmManager) forgetIncarnationLocked(ref ComponentRef) {
+	m.dropIncarnationStateLocked(componentStateKey(ref))
+}
+
+// dropIncarnationStateLocked deletes the activation, actuation, upgrade, health and repair state stored under a
+// UID-scoped incarnation key. Dropping the pending upgrade marks any queued upgrade for that incarnation as
+// superseded. Callers must hold m.mu.
+func (m *K8sHelmManager) dropIncarnationStateLocked(key string) {
+	delete(m.activeState, key)
+	delete(m.actuatedGenerations, key)
+	delete(m.upgradeErrs, key)
+	delete(m.pendingUpgrades, key)
+	delete(m.healthVerifiedAt, key)
+	m.clearRepairLocked(key)
+}
+
+// retireOtherIncarnationsLocked drops the state of every incarnation of ref's component other than ref itself, and
+// the namespace-level activation entry hydrated from the values ConfigMap. Kubernetes keeps at most one live CR per
+// namespace/name, so once ref is actuated any other incarnation is stale (e.g. its teardown never ran) and must
+// neither block ref's teardown nor run a queued upgrade. Callers must hold m.mu.
+func (m *K8sHelmManager) retireOtherIncarnationsLocked(ref ComponentRef) {
+	if ref.UID == "" {
+		return
+	}
+	target := componentStateKey(ref)
+	prefix := componentKey(ref.Namespace, ref.Name) + "@"
+	for _, key := range m.incarnationKeysLocked(prefix) {
+		if key != target {
+			m.dropIncarnationStateLocked(key)
+		}
+	}
+	delete(m.activeState, componentKey(ref.Namespace, ref.Name))
+}
+
+// ForgetComponent evicts all in-memory state of every incarnation of the namespace/name component, including its
+// namespace-level activation entry and chart path override. The bridge calls it once the Component CR is gone, so
+// state of incarnations whose teardown never ran (ghost incarnations) does not leak. The Helm release and the values
+// ConfigMap are left untouched.
+func (m *K8sHelmManager) ForgetComponent(namespace, name string) {
+	if m == nil || namespace == "" || name == "" {
+		return
+	}
+	baseKey := componentKey(namespace, name)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, key := range m.incarnationKeysLocked(baseKey + "@") {
+		m.dropIncarnationStateLocked(key)
+	}
+	m.dropIncarnationStateLocked(baseKey)
+	delete(m.componentChartPaths, baseKey)
+}
+
+// incarnationKeysLocked returns the distinct UID-scoped keys with the given namespace/name@ prefix that hold any
+// per-incarnation state. Callers must hold m.mu.
+func (m *K8sHelmManager) incarnationKeysLocked(prefix string) []string {
+	seen := make(map[string]bool)
+	var keys []string
+	add := func(key string) {
+		if !seen[key] && strings.HasPrefix(key, prefix) {
+			seen[key] = true
+			keys = append(keys, key)
+		}
+	}
+	for key := range m.activeState {
+		add(key)
+	}
+	for key := range m.actuatedGenerations {
+		add(key)
+	}
+	for key := range m.upgradeErrs {
+		add(key)
+	}
+	for key := range m.pendingUpgrades {
+		add(key)
+	}
+	for key := range m.healthVerifiedAt {
+		add(key)
+	}
+	for key := range m.repairNeeded {
+		add(key)
+	}
+	for key := range m.repairBackoff {
+		add(key)
+	}
+	return keys
+}
+
+// forgetComponentLocked drops the component's actuation and repair state after a teardown and records both the CR
+// incarnation and the namespace-level entry as inactive, so namespace hydration never re-activates it from the values
+// ConfigMap (Orphan keeps enabled values there). Delete keeps the chart path override (keepInactive); Purge and Orphan
+// drop it. Callers must hold m.mu.
+func (m *K8sHelmManager) forgetComponentLocked(ref ComponentRef, keepInactive bool) {
+	key := componentStateKey(ref)
+	baseKey := componentKey(ref.Namespace, ref.Name)
 	delete(m.actuatedGenerations, key)
 	m.clearRepairLocked(key)
+	m.retireOtherIncarnationsLocked(ref)
 	m.activeState[key] = false
+	m.activeState[baseKey] = false
 	if !keepInactive {
-		delete(m.componentChartPaths, key)
+		delete(m.componentChartPaths, baseKey)
 	}
 }
 
 // applyHydratedState records the hydrated activation and actuated generation for a component, never overwriting an
 // actuation already recorded in memory.
-func (m *K8sHelmManager) applyHydratedState(key string, observedGeneration int64, crReady bool) {
+func (m *K8sHelmManager) applyHydratedState(key, baseKey string, observedGeneration int64, crReady bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	activeInCM, hasCM := m.activeState[key]
+	if !hasCM {
+		activeInCM, hasCM = m.activeState[baseKey]
+	}
 	if !crReady {
 		if observedGeneration > 0 && m.actuatedGenerations[key] == 0 {
 			m.activeState[key] = false
