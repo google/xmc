@@ -145,9 +145,9 @@ func (a *Authorizer) authenticateViaJWKS(ctx context.Context, jwt string) (*auth
 	if err := a.verifyJWKSEmail(ctx, claims); err != nil {
 		return nil, err
 	}
-	email, ok := jwksEmailAddress(claims)
+	email, ok := a.jwksEmailAddress(claims)
 	if !ok {
-		logging.Warn(ctx, "authenticateViaJWKS: token does not contain a valid email address", "email", claims.Email, "sub", claims.Subject)
+		logging.Warn(ctx, "authenticateViaJWKS: token does not contain a valid email address", "claim", a.jwksEmail.Claim, "sub", claims.Subject)
 		return nil, nil
 	}
 	userID := claims.Subject
@@ -161,18 +161,20 @@ func (a *Authorizer) authenticateViaJWKS(ctx context.Context, jwt string) (*auth
 // verifyJWKSEmail rejects JWKS tokens whose email is not verified. Dex sets email_verified alongside
 // email, but not every OIDC provider emits the claim, so a missing claim is rejected only when the
 // policy requires it (see oauth2.Config.JWKSEmailPolicy); an explicit non-true value always is.
+// email_verified is ignored when the email is read from another claim.
 func (a *Authorizer) verifyJWKSEmail(ctx context.Context, claims *jwks.Claims) error {
-	if oauth2.EmailVerifiedAccepted(claims.EmailVerified, !a.jwksEmail.TrustMissingVerified) {
+	if a.jwksEmail.AcceptsEmailVerified(claims.EmailVerified) {
 		return nil
 	}
 	logging.Warn(ctx, "authenticateViaJWKS: rejecting token without a verified email", "email", claims.Email, "email_verified", claims.EmailVerified)
 	return fmt.Errorf("email is not verified: %w", grpcerr.ErrUnauthenticated)
 }
 
-// jwksEmailAddress returns the token's lowercased email claim, falling back to an email-shaped
-// subject (as used by service account tokens).
-func jwksEmailAddress(claims *jwks.Claims) (string, bool) {
-	if email, ok := oauth2.BareEmailAddress(claims.Email); ok {
+// jwksEmailAddress returns the lowercased email address in the token's configured email claim,
+// falling back to an email-shaped subject (as used by service account tokens).
+func (a *Authorizer) jwksEmailAddress(claims *jwks.Claims) (string, bool) {
+	identity := oauth2.IdentityClaims{Email: claims.Email, PreferredUsername: claims.PreferredUsername, UPN: claims.UPN}
+	if email, ok := a.jwksEmail.Claim.Address(identity); ok {
 		return email, true
 	}
 	return oauth2.BareEmailAddress(claims.Subject)

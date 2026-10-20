@@ -202,6 +202,11 @@ auth:
     # is accepted; an explicit false is still rejected). Refused for Google sign-in and
     # Microsoft Entra ID. Passed as OIDC_EMAIL_VERIFICATION.
     emailVerification: "require"
+    # Claim carrying the user's email: "email", "preferred_username" or "upn". Claims other than
+    # "email" require emailVerification "trust-issuer", jwksUrl and iap.iapIssuer set to the
+    # provider's issuer; they are read from the verified sign-in ID token. Passed as
+    # OIDC_EMAIL_CLAIM.
+    emailClaim: "email"
   allowedOrigins: ""
   mockAuth: false
   disableAuthentication: false

@@ -51,6 +51,9 @@ type Authenticator struct {
 
 	PolicyFetcher    func(context.Context) (*iampb.Policy, error)
 	IDTokenValidator func(ctx context.Context, idToken string, audience string) (*idtoken.Payload, error)
+	// IDTokenClaimsVerifier verifies the identity provider's sign-in ID token when the email is
+	// read from a claim other than `email` (see Config.EmailClaim); nil otherwise.
+	IDTokenClaimsVerifier IDTokenClaimsVerifier
 
 	// Injected provider for OAuth client interactions.
 	OAuthProvider OAuthProvider
@@ -100,6 +103,7 @@ func NewAuthenticator(cfg *Config) *Authenticator {
 		return client.GetIamPolicy(ctx, req)
 	}
 	a.IDTokenValidator = idtoken.Validate
+	a.IDTokenClaimsVerifier = newIDTokenClaimsVerifier(cfg)
 
 	return a
 }

@@ -252,6 +252,10 @@ func (v *Validator) findKeyLocked(kid string) (*rsa.PublicKey, bool) {
 // Claims represents the OIDC token claims required for validation.
 type Claims struct {
 	Email string `json:"email"`
+	// PreferredUsername and UPN are alternative claims that some identity providers, such as
+	// Microsoft Entra ID, use for the user's email address.
+	PreferredUsername string `json:"preferred_username,omitempty"`
+	UPN               string `json:"upn,omitempty"`
 	// EmailVerified is the raw email_verified claim, or nil when the token omits it. It is kept
 	// untyped because identity providers disagree on whether it is a JSON boolean or a string.
 	EmailVerified any `json:"email_verified,omitempty"`

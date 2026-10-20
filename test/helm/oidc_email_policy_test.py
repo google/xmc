@@ -14,6 +14,7 @@
 
 """Checks that the OIDC email policy reaches every service that authenticates users."""
 
+import re
 import unittest
 
 from chart_test_lib import render_template, require_helm
@@ -35,13 +36,29 @@ class OIDCEmailPolicyTest(unittest.TestCase):
         require_helm()
 
     def test_email_policy_rendered(self) -> None:
+        entra_keys = "https://login.microsoftonline.com/contoso.onmicrosoft.com/discovery/v2.0/keys"
         cases = {
-            "default": ({}, "require"),
-            "trust-issuer": ({"auth.oidc.emailVerification": "trust-issuer"}, "trust-issuer"),
-            "oidc block removed": ({"auth.oidc": "null"}, "require"),
+            "default": ({}, "require", "email", ""),
+            "entra upn": (
+                {
+                    "auth.oidc.emailVerification": "trust-issuer",
+                    "auth.oidc.emailClaim": "upn",
+                    "auth.jwksUrl": entra_keys,
+                },
+                "trust-issuer",
+                "upn",
+                entra_keys,
+            ),
+            "jwks url from issuer": (
+                {"auth.issuerUrl": "https://dex.example.com/"},
+                "require",
+                "email",
+                "https://dex.example.com/keys",
+            ),
+            "oidc block removed": ({"auth.oidc": "null"}, "require", "email", ""),
         }
         for template, enable_key in _OAUTH_SERVICES.items():
-            for case, (overrides, verification) in cases.items():
+            for case, (overrides, verification, claim, jwks_url) in cases.items():
                 with self.subTest(template=template, case=case):
                     values = {enable_key: "true"} if enable_key else {}
                     values.update(overrides)
@@ -49,6 +66,33 @@ class OIDCEmailPolicyTest(unittest.TestCase):
                     self.assertRegex(
                         manifest, rf'- name: OIDC_EMAIL_VERIFICATION\n\s+value: "{verification}"'
                     )
+                    self.assertRegex(manifest, rf'- name: OIDC_EMAIL_CLAIM\n\s+value: "{claim}"')
+                    self.assertRegex(
+                        manifest, rf'- name: OIDC_JWKS_URL\n\s+value: "{re.escape(jwks_url)}"'
+                    )
+
+    def test_configmaps_share_the_jwks_url(self) -> None:
+        configmaps = {
+            "templates/actuator/configmap.yaml": "jwks_url",
+            "templates/ess/configmap.yaml": "ess_jwks_url",
+            "templates/xid/configmap.yaml": "xid_jwks_url",
+        }
+        cases = {
+            "unset": ({}, ""),
+            "explicit": (
+                {"auth.jwksUrl": "https://idp.example.com/jwks"},
+                "https://idp.example.com/jwks",
+            ),
+            "from issuer": (
+                {"auth.issuerUrl": "https://dex.example.com"},
+                "https://dex.example.com/keys",
+            ),
+        }
+        for template, key in configmaps.items():
+            for case, (overrides, expected) in cases.items():
+                with self.subTest(template=template, case=case):
+                    manifest = render_template(template, overrides)
+                    self.assertRegex(manifest, rf'{key}: "{re.escape(expected)}"')
 
 
 if __name__ == "__main__":

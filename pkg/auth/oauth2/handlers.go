@@ -36,6 +36,10 @@ var randReader io.Reader = rand.Reader
 // GoogleUserInfo holds fields returned by OpenID Connect userinfo endpoint.
 type GoogleUserInfo struct {
 	Email string `json:"email"`
+	// PreferredUsername and UPN are never decoded from userinfo: they are set from the verified ID
+	// token when Config.EmailClaim selects them (see Authenticator.applyIDTokenClaims).
+	PreferredUsername string `json:"-"`
+	UPN               string `json:"-"`
 	// EmailVerified is the raw email_verified claim, or nil when the identity provider omits it.
 	// It is untyped because identity providers send either a JSON boolean or a string.
 	EmailVerified any `json:"email_verified"`

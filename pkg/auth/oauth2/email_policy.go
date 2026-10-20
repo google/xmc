@@ -40,6 +40,46 @@ const (
 
 var emailVerifications = []EmailVerification{EmailVerificationRequire, EmailVerificationTrustIssuer}
 
+// EmailClaim is the OIDC_EMAIL_CLAIM setting: the claim that carries the user's email address.
+// Claims other than `email` are read from the verified ID token of the sign-in (see
+// Authenticator.applyIDTokenClaims) and are not covered by email_verified.
+type EmailClaim string
+
+const (
+	// EmailClaimEmail reads the standard `email` claim. It is the default.
+	EmailClaimEmail EmailClaim = "email"
+	// EmailClaimPreferredUsername reads `preferred_username`.
+	EmailClaimPreferredUsername EmailClaim = "preferred_username"
+	// EmailClaimUPN reads the Microsoft Entra ID user principal name, `upn`.
+	EmailClaimUPN EmailClaim = "upn"
+)
+
+var emailClaims = []EmailClaim{EmailClaimEmail, EmailClaimPreferredUsername, EmailClaimUPN}
+
+// isEmail reports whether c reads the `email` claim; the zero value does.
+func (c EmailClaim) isEmail() bool {
+	return c == "" || c == EmailClaimEmail
+}
+
+// IdentityClaims are the claims that may carry a user's email address.
+type IdentityClaims struct {
+	Email             string
+	PreferredUsername string
+	UPN               string
+}
+
+// Address returns the email address held in claim c of claims (see BareEmailAddress).
+func (c EmailClaim) Address(claims IdentityClaims) (string, bool) {
+	switch c {
+	case EmailClaimPreferredUsername:
+		return BareEmailAddress(claims.PreferredUsername)
+	case EmailClaimUPN:
+		return BareEmailAddress(claims.UPN)
+	default:
+		return BareEmailAddress(claims.Email)
+	}
+}
+
 // BareEmailAddress returns value, trimmed and lowercased, when it is a bare email address. Empty
 // values and display-name forms such as "Jane <jane@example.com>" are not.
 func BareEmailAddress(value string) (string, bool) {
@@ -75,12 +115,20 @@ func (c *Config) requiresVerifiedEmail() bool {
 	return c.EmailVerification != EmailVerificationTrustIssuer
 }
 
-// JWKSEmailPolicy is how the gRPC JWKS token path verifies a token's email. The zero value is the
-// strictest policy.
+// JWKSEmailPolicy is how the gRPC JWKS token path reads and verifies a token's email. The zero
+// value is the strictest policy.
 type JWKSEmailPolicy struct {
 	// TrustMissingVerified accepts tokens without an email_verified claim. A claim that is present
 	// but not true is always rejected.
 	TrustMissingVerified bool
+	// Claim carries the email. The zero value reads `email`.
+	Claim EmailClaim
+}
+
+// AcceptsEmailVerified reports whether a token's raw email_verified claim, nil when absent, is
+// acceptable. It only vouches for the `email` claim, so it is ignored when Claim is another claim.
+func (p JWKSEmailPolicy) AcceptsEmailVerified(emailVerified any) bool {
+	return !p.Claim.isEmail() || EmailVerifiedAccepted(emailVerified, !p.TrustMissingVerified)
 }
 
 // JWKSEmailPolicy returns the email policy of the JWKS token path. Not every OIDC provider emits
@@ -88,26 +136,33 @@ type JWKSEmailPolicy struct {
 // configured under EmailVerificationRequire: admitting by email domain is only sound for verified
 // emails.
 func (c *Config) JWKSEmailPolicy() JWKSEmailPolicy {
-	return JWKSEmailPolicy{TrustMissingVerified: !c.requiresVerifiedEmail() || len(c.AllowedDomains) == 0}
+	return JWKSEmailPolicy{
+		TrustMissingVerified: !c.requiresVerifiedEmail() || len(c.AllowedDomains) == 0,
+		Claim:                c.EmailClaim,
+	}
 }
 
-// loadEmailVerification reads OIDC_EMAIL_VERIFICATION, validates it against cfg and logs a warning
-// when it relaxes the checks. An unset or empty value selects EmailVerificationRequire.
-func loadEmailVerification(ctx context.Context, cfg *Config) (EmailVerification, error) {
+// loadEmailPolicy reads OIDC_EMAIL_VERIFICATION and OIDC_EMAIL_CLAIM, validates them against cfg
+// and logs a warning when they relax the checks. Unset or empty values select the defaults.
+func loadEmailPolicy(ctx context.Context, cfg *Config) (EmailVerification, EmailClaim, error) {
 	verification := EmailVerification(envSetting("OIDC_EMAIL_VERIFICATION", string(EmailVerificationRequire)))
-	if err := validateEmailVerification(cfg, verification); err != nil {
-		return "", err
+	claim := EmailClaim(envSetting("OIDC_EMAIL_CLAIM", string(EmailClaimEmail)))
+	if err := validateEmailVerification(cfg, verification, claim); err != nil {
+		return "", "", err
+	}
+	if err := validateEmailClaim(cfg, verification, claim); err != nil {
+		return "", "", err
 	}
 	if verification == EmailVerificationTrustIssuer {
-		warnTrustIssuer(ctx, cfg)
+		warnTrustIssuer(ctx, cfg, claim)
 	}
-	return verification, nil
+	return verification, claim, nil
 }
 
 // validateEmailVerification rejects unknown policies and `trust-issuer` where the identity
 // provider's `email` claim is not trustworthy: Google always sends email_verified, and Microsoft
-// Entra ID lets users and tenant admins set an unverified `email` (the nOAuth attack).
-func validateEmailVerification(cfg *Config, verification EmailVerification) error {
+// Entra ID lets tenant administrators set an unverified `email` (the nOAuth attack).
+func validateEmailVerification(cfg *Config, verification EmailVerification, claim EmailClaim) error {
 	if !slices.Contains(emailVerifications, verification) {
 		return fmt.Errorf("`OIDC_EMAIL_VERIFICATION` must be one of %q, got %q", emailVerifications, verification)
 	}
@@ -117,17 +172,36 @@ func validateEmailVerification(cfg *Config, verification EmailVerification) erro
 	if !cfg.IsNonProdAuth() {
 		return fmt.Errorf("`OIDC_EMAIL_VERIFICATION` must be %q with Google sign-in", EmailVerificationRequire)
 	}
-	if _, ok := entraTenant(cfg.AuthURL); ok {
-		return fmt.Errorf("`OIDC_EMAIL_VERIFICATION=%s` cannot be used with Microsoft Entra ID: its `email` claim is not verified", verification)
+	if _, ok := entraTenant(cfg.AuthURL); ok && claim.isEmail() {
+		return fmt.Errorf("`OIDC_EMAIL_VERIFICATION=%s` cannot be used with the `email` claim of Microsoft Entra ID: it is not verified", verification)
 	}
 	return nil
 }
 
-func warnTrustIssuer(ctx context.Context, cfg *Config) {
-	logging.Warn(ctx, "Accepting identity provider emails without an email_verified claim", "oidc_email_verification", EmailVerificationTrustIssuer)
+// validateEmailClaim rejects unknown claims and the configurations under which a claim other than
+// `email` would not be trustworthy: email_verified does not vouch for it, so `trust-issuer` must be
+// chosen explicitly, and it is only read from an ID token verified against a pinned issuer.
+func validateEmailClaim(cfg *Config, verification EmailVerification, claim EmailClaim) error {
+	if !slices.Contains(emailClaims, claim) {
+		return fmt.Errorf("`OIDC_EMAIL_CLAIM` must be one of %q, got %q", emailClaims, claim)
+	}
+	if claim.isEmail() {
+		return nil
+	}
+	if !cfg.IsNonProdAuth() {
+		return fmt.Errorf("`OIDC_EMAIL_CLAIM` must be %q with Google sign-in", EmailClaimEmail)
+	}
+	if verification != EmailVerificationTrustIssuer {
+		return fmt.Errorf("`OIDC_EMAIL_CLAIM=%s` requires `OIDC_EMAIL_VERIFICATION=%s`: email_verified does not cover it", claim, EmailVerificationTrustIssuer)
+	}
+	return validateIDTokenSource(cfg)
+}
+
+func warnTrustIssuer(ctx context.Context, cfg *Config, claim EmailClaim) {
+	logging.Warn(ctx, "Accepting identity provider emails without an email_verified claim", "oidc_email_verification", EmailVerificationTrustIssuer, "oidc_email_claim", claim)
 	if len(cfg.AllowedDomains) > 0 {
 		logging.Warn(ctx, "ALLOWED_DOMAINS admits every address the identity provider releases in these domains without email_verified; the provider must guarantee domain ownership",
-			"oidc_email_verification", EmailVerificationTrustIssuer, "allowed_domains", cfg.AllowedDomains)
+			"oidc_email_verification", EmailVerificationTrustIssuer, "oidc_email_claim", claim, "allowed_domains", cfg.AllowedDomains)
 	}
 }
 

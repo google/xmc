@@ -34,6 +34,7 @@ go_library(
         "entra_authority.go",
         "gateway.go",
         "handlers.go",
+        "id_token_claims.go",
         "login_identity.go",
         "middleware.go",
         "pipeline.go",
@@ -44,6 +45,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//internal/logging",
+        "//pkg/auth/jwks",
         "@com_github_golang_jwt_jwt_v5//:jwt",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_github_rs_cors//:cors",
@@ -75,6 +77,7 @@ go_test(
         "config_test.go",
         "email_policy_test.go",
         "entra_authority_test.go",
+        "id_token_claims_test.go",
         "login_identity_test.go",
         "login_test_fixtures_test.go",
         "oauth2_test.go",
@@ -83,6 +86,7 @@ go_test(
     ],
     embed = [":oauth2"],
     deps = [
+        "//pkg/auth/jwks",
         "@com_github_golang_jwt_jwt_v5//:jwt",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_cmp//cmp/cmpopts",

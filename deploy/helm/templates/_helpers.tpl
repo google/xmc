@@ -119,6 +119,18 @@ Get the UI API URL.
 {{- end -}}
 
 {{/*
+JWKS URL of the OIDC identity provider: auth.jwksUrl, else derived from auth.issuerUrl (Dex serves
+its keys at /keys), else empty.
+*/}}
+{{- define "xmanager-cloud.jwksUrl" -}}
+{{- if and .Values.auth .Values.auth.jwksUrl -}}
+{{- .Values.auth.jwksUrl -}}
+{{- else if and .Values.auth .Values.auth.issuerUrl -}}
+{{- printf "%s/keys" (.Values.auth.issuerUrl | trimSuffix "/") -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Common OAuth environment variables for XMC services.
 */}}
 {{- define "xmanager-cloud.oauthEnv" -}}
@@ -144,6 +156,10 @@ Common OAuth environment variables for XMC services.
   value: {{ .Values.auth.additionalAudiences | default (list) | join "," | quote }}
 - name: OIDC_EMAIL_VERIFICATION
   value: {{ dig "oidc" "emailVerification" "require" .Values.auth | quote }}
+- name: OIDC_EMAIL_CLAIM
+  value: {{ dig "oidc" "emailClaim" "email" .Values.auth | quote }}
+- name: OIDC_JWKS_URL
+  value: {{ include "xmanager-cloud.jwksUrl" . | quote }}
 - name: IAP_EXPECTED_ISSUER
   value: {{ .Values.auth.iap.iapIssuer | quote }}
 - name: GCP_PROJECT_ID

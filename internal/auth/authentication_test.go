@@ -576,8 +576,8 @@ func TestAuthenticateUserFromContext_Admission(t *testing.T) {
 	}
 }
 
-// TestAuthenticateUserFromContext_JWKSEmailPolicy checks the JWKS path against the email_verified
-// policy built by oauth2.Config.JWKSEmailPolicy and the email normalization.
+// TestAuthenticateUserFromContext_JWKSEmailPolicy checks the JWKS path against the email claim and
+// email_verified policy built by oauth2.Config.JWKSEmailPolicy and the email normalization.
 func TestAuthenticateUserFromContext_JWKSEmailPolicy(t *testing.T) {
 	oldValidate := validate
 	defer func() { validate = oldValidate }()
@@ -593,6 +593,11 @@ func TestAuthenticateUserFromContext_JWKSEmailPolicy(t *testing.T) {
 	}
 	unauthenticated := authOutcome{Code: codes.Unauthenticated}
 	strict, trustMissing := oauth2.JWKSEmailPolicy{}, oauth2.JWKSEmailPolicy{TrustMissingVerified: true}
+	upn := oauth2.JWKSEmailPolicy{Claim: oauth2.EmailClaimUPN}
+	// entra is an Entra ID token: the address is in upn and preferred_username, not email.
+	entra := func(verified any) jwks.Claims {
+		return jwks.Claims{UPN: "JDoe@Example.com", PreferredUsername: "Jane.Doe@example.com", EmailVerified: verified, RegisteredClaims: jwt.RegisteredClaims{Subject: sub}}
+	}
 	tests := []struct {
 		name   string
 		policy oauth2.JWKSEmailPolicy
@@ -614,6 +619,15 @@ func TestAuthenticateUserFromContext_JWKSEmailPolicy(t *testing.T) {
 			policy: trustMissing,
 			claims: jwks.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "SA@project.iam.gserviceaccount.com"}},
 			want:   admitted("sa@project.iam.gserviceaccount.com", "SA@project.iam.gserviceaccount.com"),
+		},
+		{name: "upn claim ignores email_verified", policy: upn, claims: entra(false), want: admitted(email, sub)},
+		{name: "preferred_username claim", policy: oauth2.JWKSEmailPolicy{Claim: oauth2.EmailClaimPreferredUsername}, claims: entra(nil), want: admitted("jane.doe@example.com", sub)},
+		{name: "default claim ignores upn", policy: trustMissing, claims: entra(nil), want: unauthenticated},
+		{
+			name:   "upn that is not an email",
+			policy: upn,
+			claims: jwks.Claims{UPN: "jdoe", RegisteredClaims: jwt.RegisteredClaims{Subject: sub}},
+			want:   unauthenticated,
 		},
 	}
 	for _, tt := range tests {

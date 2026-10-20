@@ -138,9 +138,59 @@ email is trimmed and lowercased like sign-in emails.
 
 Never trust the `email` claim of Microsoft Entra ID: it is mutable and unverified,
 so an Entra ID administrator can set it to an address they do not own (the
-"nOAuth" attack). `trust-issuer` is therefore refused when `auth.authUrl` is an
-Entra ID authority, and multi-tenant authorities (`common`, `organizations` and
-`consumers`) are refused with any setting.
+"nOAuth" attack). `trust-issuer` is therefore refused with the `email` claim when
+`auth.authUrl` is an Entra ID authority, and multi-tenant authorities (`common`,
+`organizations` and `consumers`) are refused with any setting. Read the email from
+`upn` instead, as described next.
+
+### Email in an ID token claim
+
+`auth.oidc.emailClaim` (`OIDC_EMAIL_CLAIM`) selects the claim that holds the
+user's email: `email` (default), `preferred_username` or `upn`. Other claims than
+`email` are read from the ID token returned by the sign-in code exchange, never
+from the unsigned userinfo response, and the services fail to start unless:
+
+- `auth.oidc.emailVerification` is `trust-issuer`: `email_verified` only vouches
+  for the `email` claim, so it is ignored for the other claims;
+- `auth.jwksUrl` is the provider's JWKS URL (passed as `OIDC_JWKS_URL`); and
+- `auth.iap.iapIssuer` (`IAP_EXPECTED_ISSUER`) is the provider's issuer, specific
+  to your tenant for Entra ID.
+
+The ID token must be signed by a key from `auth.jwksUrl`, be issued by
+`auth.iap.iapIssuer` for `auth.iap.clientId`, carry `iat` and not be expired. Tokens
+validated against `auth.jwksUrl` on gRPC read the same claim. Google sign-in only
+accepts `email`.
+
+> [!WARNING]
+> Users can edit `preferred_username` in some providers, such as Keycloak and
+> Azure AD B2C, which lets them claim any address. Use it only when the provider
+> prevents this. For Entra ID, prefer `upn` with a tenant-specific issuer: the
+> issuer pins the directory (`tid`), whose `upn` suffixes are domains the tenant
+> has verified.
+
+#### Microsoft Entra ID example
+
+Register a single-tenant application with the redirect URIs listed in
+[Other identity providers](#other-identity-providers), add the `upn` optional
+claim to its ID token (**Token configuration**), and set:
+
+```yaml
+auth:
+  authUrl: "https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/authorize"
+  tokenUrl: "https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token"
+  apiUrl: "https://graph.microsoft.com/oidc/userinfo"
+  jwksUrl: "https://login.microsoftonline.com/<tenant-id>/discovery/v2.0/keys"
+  allowedDomains: "contoso.com"
+  iap:
+    clientId: "<application-client-id>"
+    iapIssuer: "https://login.microsoftonline.com/<tenant-id>/v2.0"
+  oidc:
+    emailVerification: "trust-issuer"
+    emailClaim: "upn"
+```
+
+`auth.iap.iapIssuer` is also the issuer that gRPC accepts for JWKS tokens, so IAP
+assertions are not accepted on gRPC with this configuration.
 
 ### Other identity providers
 

@@ -162,6 +162,43 @@ func TestVerifyUserInfoEmailPolicy(t *testing.T) {
 	}
 }
 
+// TestVerifyUserInfoEmailClaim checks identity claims that applyIDTokenClaims set from a verified
+// ID token. email_verified does not apply to them.
+func TestVerifyUserInfoEmailClaim(t *testing.T) {
+	tests := []struct {
+		name  string
+		claim EmailClaim
+		info  *GoogleUserInfo
+		want  identityResult
+	}{
+		{name: "upn ignores email_verified", claim: EmailClaimUPN, info: &GoogleUserInfo{UPN: "JDoe@Contoso.com", EmailVerified: false}, want: identityResult{Email: entraLoginEmail}},
+		{name: "preferred_username", claim: EmailClaimPreferredUsername, info: &GoogleUserInfo{PreferredUsername: "jdoe@contoso.com", UPN: "other@contoso.com"}, want: identityResult{Email: entraLoginEmail}},
+		{name: "upn that is not an email", claim: EmailClaimUPN, info: &GoogleUserInfo{Email: entraLoginEmail, UPN: "jdoe"}, want: identityResult{NotAdmitted: true, Err: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := entraLoginConfig()
+			cfg.EmailClaim = tt.claim
+			got := toIdentityResult(NewAuthenticator(cfg).verifyUserInfo(tt.info))
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("verifyUserInfo() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestGoogleUserInfoIgnoresIdentityClaims checks that userinfo, which is not signed, cannot set
+// the claims read from the ID token.
+func TestGoogleUserInfoIgnoresIdentityClaims(t *testing.T) {
+	var info GoogleUserInfo
+	if err := json.Unmarshal([]byte(`{"preferred_username": "a@contoso.com", "upn": "b@contoso.com"}`), &info); err != nil {
+		t.Fatalf("json.Unmarshal() failed: %v", err)
+	}
+	if info.PreferredUsername != "" || info.UPN != "" {
+		t.Errorf("userinfo set identity claims: preferred_username %q, upn %q", info.PreferredUsername, info.UPN)
+	}
+}
+
 func TestUsesGoogleSignIn(t *testing.T) {
 	tests := []struct {
 		name string

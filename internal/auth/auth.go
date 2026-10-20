@@ -112,9 +112,10 @@ type AuthorizerParams struct {
 	// oauth2.Authenticator, so gRPC shares the HTTP middleware's session cache. Without it every CLI
 	// session token is rejected.
 	CLISessions oauth2.CLISessionChecker
-	// JWKSEmail sets how strictly a JWKS token's email_verified claim is checked; the zero value
-	// requires it to be true. Build it with oauth2.Config.JWKSEmailPolicy. Google ID tokens and
-	// IAP assertions are not affected.
+	// JWKSEmail selects the claim that carries a JWKS token's email and how strictly its
+	// email_verified claim is checked; the zero value reads `email` and requires email_verified to
+	// be true. Build it with oauth2.Config.JWKSEmailPolicy. Google ID tokens and IAP assertions are
+	// not affected.
 	JWKSEmail oauth2.JWKSEmailPolicy
 }
 

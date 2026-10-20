@@ -81,6 +81,12 @@ type Config struct {
 	// EmailVerification (OIDC_EMAIL_VERIFICATION) adapts the sign-in and JWKS email_verified checks
 	// to non-Google identity providers. The zero value behaves as EmailVerificationRequire.
 	EmailVerification EmailVerification
+	// EmailClaim (OIDC_EMAIL_CLAIM) is the claim that carries the user's email. Claims other than
+	// `email` are read from the sign-in ID token, verified with IDTokenJWKSURL (OIDC_JWKS_URL) and
+	// IDTokenIssuer (IAP_EXPECTED_ISSUER). The zero value behaves as EmailClaimEmail.
+	EmailClaim     EmailClaim
+	IDTokenJWKSURL string
+	IDTokenIssuer  string
 }
 
 // LoadConfig bootstraps the configuration from environment variables.
@@ -163,11 +169,13 @@ func LoadConfig() (*Config, error) {
 		CookieDomain:          cookieDomain,
 		AllowedHosts:          allowedHosts,
 		OIDCIssuerURL:         oidcIssuerURL,
+		IDTokenJWKSURL:        getEnv("OIDC_JWKS_URL", ""),
+		IDTokenIssuer:         getEnv("IAP_EXPECTED_ISSUER", ""),
 	}
 	if err := validateEntraAuthority(cfg.AuthURL); err != nil {
 		return nil, err
 	}
-	cfg.EmailVerification, err = loadEmailVerification(context.Background(), cfg)
+	cfg.EmailVerification, cfg.EmailClaim, err = loadEmailPolicy(context.Background(), cfg)
 	if err != nil {
 		return nil, err
 	}

@@ -277,6 +277,35 @@ func TestJWKSValidator(t *testing.T) {
 	})
 }
 
+// TestValidateClaimsAlternativeEmailClaims checks that the email-carrying claims some identity
+// providers use instead of `email` are decoded.
+func TestValidateClaimsAlternativeEmailClaims(t *testing.T) {
+	privKey, jwk := generateTestRSAKey(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(JWKS{Keys: []JWK{jwk}})
+	}))
+	defer server.Close()
+	validator := NewValidator(ValidatorConfig{JWKSURL: server.URL, HTTPClient: server.Client()})
+	minted := &Claims{
+		PreferredUsername: "Jane.Doe@contoso.com",
+		UPN:               "jdoe@contoso.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "opaque-sub",
+			Audience:  jwt.ClaimStrings{"xmc"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	}
+
+	got, err := validator.ValidateClaims(context.Background(), mintTestToken(t, privKey, jwk.Kid, minted), "xmc")
+	if err != nil {
+		t.Fatalf("ValidateClaims() failed: %v", err)
+	}
+	type identity struct{ PreferredUsername, UPN string }
+	if gotID, wantID := (identity{got.PreferredUsername, got.UPN}), (identity{minted.PreferredUsername, minted.UPN}); gotID != wantID {
+		t.Errorf("ValidateClaims() identity claims = %+v, want %+v", gotID, wantID)
+	}
+}
+
 func TestDecodeJWKToRSAPublicKeyErrors(t *testing.T) {
 	t.Run("UnsupportedKeyType", func(t *testing.T) {
 		_, err := DecodeJWKToRSAPublicKey(JWK{Kty: "EC"})

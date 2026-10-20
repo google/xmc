@@ -72,6 +72,9 @@ func (g *GoogleOAuthProvider) ExchangeAndGetUserInfo(ctx context.Context, r *htt
 	if err := json.Unmarshal(bodyBytes, &userInfo); err != nil {
 		return nil, fmt.Errorf("Failed to decode user info details: %w", err)
 	}
+	if err := g.Authenticator.applyIDTokenClaims(ctx, token, &userInfo); err != nil {
+		return nil, err
+	}
 
 	return &userInfo, nil
 }
