@@ -26,7 +26,6 @@ import (
 	resourcemanager "cloud.google.com/go/resourcemanager/apiv3"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/singleflight"
-	"golang.org/x/time/rate"
 	"google.golang.org/api/idtoken"
 	"xmanager_cloud/internal/logging"
 )
@@ -57,10 +56,7 @@ type Authenticator struct {
 
 	// CLI login state, set by EnableCLILogin. The CLI login endpoints are disabled while cliCodes
 	// is nil.
-	cliCodes           CLICodeStore
-	cliLoginKey        []byte
-	cliConfirmationKey []byte
-	cliTokenLimiter    *rate.Limiter
+	cliCodes CLICodeStore
 }
 
 // NewAuthenticator initializes a new instance of Authenticator.
@@ -170,13 +166,13 @@ func (a *Authenticator) getIamPolicy(ctx context.Context) (*iampb.Policy, error)
 
 // IsUserAuthorized implements the 3-stage Hybrid Pipeline: Local Email Allowlist -> Domain Allowlist -> GCP IAM Policy Check.
 func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (bool, error) {
+	if a.Config != nil && a.Config.DisableAuthentication {
+		return true, nil
+	}
 	emailLower := strings.ToLower(strings.TrimSpace(email))
 
-	// If all allowlists and ProjectID are blank, default to open access (allow all) only if DisableAuthentication is true.
+	// If all allowlists and ProjectID are blank, fail closed unless DisableAuthentication is true.
 	if len(a.Config.AllowedEmails) == 0 && len(a.Config.AllowedDomains) == 0 && a.Config.GCPProjectID == "" {
-		if a.Config.DisableAuthentication {
-			return true, nil
-		}
 		return false, fmt.Errorf("fail-closed: AllowedEmails, AllowedDomains, and GCPProjectID are all empty; access is denied unless DISABLE_AUTHENTICATION=true")
 	}
 

@@ -29,7 +29,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"golang.org/x/time/rate"
 )
 
 // cliTestCode is the plaintext of the one-time code stored by newCLITokenTest.
@@ -155,7 +154,6 @@ func TestHandleCLITokenRejects(t *testing.T) {
 		{name: "JSON body", mutate: func(r *http.Request) { r.Header.Set("Content-Type", "application/json") }, want: badRequest(tokenErrorInvalidRequest)},
 		{name: "oversized body", form: validTokenForm + "&pad=" + strings.Repeat("x", maxCLITokenRequestBytes), want: badRequest(tokenErrorInvalidRequest)},
 		{name: "GET", mutate: func(r *http.Request) { r.Method = http.MethodGet }, want: tokenError(http.StatusMethodNotAllowed, tokenErrorInvalidRequest)},
-		{name: "rate limited", setup: func(a *Authenticator, _ *fakeCLICodeStore) { a.cliTokenLimiter = rate.NewLimiter(0, 0) }, want: tokenError(http.StatusTooManyRequests, tokenErrorTooManyRequests)},
 		{name: "disabled", setup: func(a *Authenticator, _ *fakeCLICodeStore) { a.cliCodes = nil }, want: tokenError(http.StatusNotFound, "")},
 		{name: "code store failure", setup: func(_ *Authenticator, s *fakeCLICodeStore) { s.consumeErr = errors.New("spanner unavailable") }, want: serverError, consumed: true},
 		{name: "user de-authorized since login", setup: func(a *Authenticator, _ *fakeCLICodeStore) { a.Config.AllowedDomains = []string{"other.com"} }, want: tokenError(http.StatusForbidden, tokenErrorAccessDenied), consumed: true},
@@ -204,23 +202,6 @@ func TestHandleCLITokenCodeIsSingleUse(t *testing.T) {
 		if got, _ := serveCLIToken(h, newCLITokenRequest(validTokenForm)); got != tokenError(http.StatusBadRequest, tokenErrorInvalidGrant) {
 			t.Errorf("redemption after verifier %q = %+v, want invalid_grant", first, got)
 		}
-	}
-}
-
-// TestHandleCLITokenRateLimitSpendsOnlyWellFormedRequests checks that malformed requests are
-// rejected before the limiter, so they cannot exhaust it, while well-formed ones spend a token.
-func TestHandleCLITokenRateLimitSpendsOnlyWellFormedRequests(t *testing.T) {
-	a, _ := newCLITokenTest(t, baseLoginConfig(), time.Now().Add(cliLoopbackCodeTTL))
-	a.cliTokenLimiter = rate.NewLimiter(0, 1)
-	h := http.HandlerFunc(a.HandleCLIToken)
-	var got []int
-	for _, form := range []string{"code=short", "code=short", validTokenForm, validTokenForm} {
-		result, _ := serveCLIToken(h, newCLITokenRequest(form))
-		got = append(got, result.Status)
-	}
-	want := []int{http.StatusBadRequest, http.StatusBadRequest, http.StatusOK, http.StatusTooManyRequests}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("statuses mismatch (-want +got):\n%s", diff)
 	}
 }
 

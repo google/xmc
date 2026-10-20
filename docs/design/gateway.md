@@ -133,7 +133,7 @@ The command-line interface (CLI) client bypasses the web UI entirely, communicat
    - **HTTP Requests** targeting `/v1/*` are routed to the ESS HTTP endpoint.
    - **gRPC Requests** (such as `/experiment.ExperimentService/*`) are routed via `GRPCRoute` directly to the gRPC port of the `experiment-state-server`.
 3. **Authentication**:
-   - The CLI attaches a bearer token to the call metadata: an XMC CLI session token from `xmc login` (see [CLI Login](#3-cli-login-browser-loopback)), a Google-signed ID token whose audience the deployment accepts (see [Accepted ID Token Audiences](#accepted-id-token-audiences)), for example from a service account's `generateIdToken`, a token from the configured OIDC provider, or an XMC session token.
+   - The CLI attaches a bearer token to the call metadata: an XMC CLI session token from `xmc login` (see [CLI Login](#3-cli-login-browser-loopback)), a Google-signed ID token (for example from a service account's `generateIdToken`), a token from the configured OIDC provider, or an XMC session token.
    - Each gRPC service verifies the token, rejects Google and OIDC tokens whose `email_verified` claim is false (Google tokens must carry the claim), and then runs the same deployment admission check as the HTTP API (see [Client Authorization](#client-authorization)) before processing the call.
 
 ---
@@ -156,7 +156,7 @@ sequenceDiagram
     IdP->>B: 307 /api/callback?code&state
     B->>ESS: GET /api/callback
     ESS->>IdP: exchange code, read userinfo
-    ESS->>ESS: require email_verified (and an allowlisted hd for Google), run admission
+    ESS->>ESS: require email_verified, run admission
     ESS->>ESS: store SHA-256 of a one-time code (60s) in CliLoginCodes
     ESS->>B: 302 http://127.0.0.1:N/callback?code&state
     B->>CLI: GET /callback
@@ -166,9 +166,9 @@ sequenceDiagram
     ESS->>CLI: access_token (aud xmanager-cloud-cli, jti, CLI_SESSION_TTL)
 ```
 
-1. **Login ticket**: `/api/cli/login` accepts only a numeric loopback `port` (1024 to 65535) or `mode=manual` (see [Headless (Manual) Mode](#headless-manual-mode)), a CLI `state`, an S256 `code_challenge` and an optional `login_hint`. It stores them in the `cli_login` cookie, MAC'd with a key derived from the JWT secret by HKDF and scoped to `/api/callback`, together with the hash of the `oauth_state` it generates. To stop other sites from starting a login in the user's browser (login CSRF) or embedding it, browsers that send fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Browsers without fetch metadata are allowed, which leaves them exposed to login CSRF.
+1. **Login ticket**: `/api/cli/login` accepts only a numeric loopback `port` (1024 to 65535) or `mode=manual` (see [Headless (Manual) Mode](#headless-manual-mode)), a CLI `state`, an S256 `code_challenge` and an optional `login_hint`. It stores them in the `cli_login` cookie, signed with the JWT secret (`aud: xmanager-cloud-cli-login`) and scoped to `/api/callback`, together with the hash of the `oauth_state` it generates. To stop other sites from starting a login in the user's browser (login CSRF) or embedding it, browsers that send fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Browsers without fetch metadata are allowed, which leaves them exposed to login CSRF.
 2. **Callback**: `/api/callback` completes a CLI login only when the `cli_login` ticket is authentic, unexpired and bound to the `oauth_state` of the same round trip; otherwise it signs the user in to the Dashboard as before. `/api/login` deletes any `cli_login` cookie. In loopback mode, every outcome goes to the loopback URL, which is built from the ticket's port, never from the request: an identity provider error or cancellation, or a rejected user, is sent `error=access_denied`, and a failed code exchange or other server failure `error=server_error`. The email never appears in the URL.
-3. **Token exchange**: `/api/cli/token` rejects malformed requests before reading the store or spending rate limit, consumes the code in a Spanner read-write transaction before checking the PKCE verifier, and answers every code or verifier problem with `400 invalid_grant`. A user who lost admission since signing in gets `403 access_denied`. Responses are `no-store`, and a process-wide rate limit protects the store.
+3. **Token exchange**: `/api/cli/token` rejects malformed requests before reading the store, consumes the code in a Spanner read-write transaction before checking the PKCE verifier, and answers every code or verifier problem with `400 invalid_grant`. A user who lost admission since signing in gets `403 access_denied`. Responses are `no-store`.
 4. **Use**: the CLI token is an HS256 session token with audience `xmanager-cloud-cli`. HTTP accepts it only as a bearer token, never as the session cookie, and gRPC accepts it in call metadata. Every call re-runs deployment admission.
 
 #### Headless (Manual) Mode
@@ -188,20 +188,19 @@ sequenceDiagram
     B->>IdP: sign in
     IdP->>B: 307 /api/callback?code&state
     B->>ESS: GET /api/callback
-    ESS->>ESS: identity checks and admission, store SHA-256 of a confirmation nonce (5m)
-    ESS->>B: confirmation page naming the account, MAC'd confirmation in the form
+    ESS->>ESS: identity checks and admission
+    ESS->>B: confirmation page naming the account, signed confirmation in the form
     B->>ESS: POST /api/cli/code (Continue)
-    ESS->>ESS: verify confirmation, consume nonce, re-run admission, store SHA-256 of a one-time code (120s)
+    ESS->>ESS: verify confirmation, re-run admission, store SHA-256 of a one-time code (120s)
     ESS->>B: code page (no-store, no-referrer)
     B->>CLI: user pastes the code
     CLI->>ESS: POST /api/cli/token (code, code_verifier)
     ESS->>CLI: access_token
 ```
 
-1. **Confirmation first**: after the identity checks and admission, the callback mints no code. It shows a page naming the account and telling the user to continue only if they started `xmc login --no-browser` themselves, just now. The page's form carries a confirmation (email, name, PKCE challenge, nonce, 5-minute expiry) MAC'd with a second HKDF sub-key of the JWT secret (info `xmc-cli-manual-confirm-v1`), never a code.
-2. **Single use**: the callback stores the SHA-256 of a domain-separated nonce in `CliLoginCodes`, and `POST /api/cli/code` consumes it before minting, so each confirmation yields at most one code and a resubmitted form is rejected. **Cancel** verifies and consumes the confirmation too, and the form accepts only `action=continue` or `action=cancel`. The domain separation means a nonce can never be redeemed as a code at `/api/cli/token`.
-3. **Code delivery**: `POST /api/cli/code` accepts only same-origin form posts (`Sec-Fetch-Site: same-origin` and `Sec-Fetch-Dest: document` when sent, on top of `CrossOriginProtection`), re-runs admission, and shows a 120-second code in the page body, never in a URL. Pages are `no-store` with `Referrer-Policy: no-referrer` and an added `Content-Security-Policy: frame-ancestors 'none'; form-action 'self'`, use no script, and escape every dynamic value. Failures, including a denied user, show an error page that does not name the user, because there is no loopback listener to report them to.
-4. **Residual risk**: an attacker can still send a victim a manual-mode link built with the attacker's own PKCE challenge, and talk the victim into confirming and handing over the code (consent phishing). The confirmation page, the warnings and the short code lifetime reduce this to the same level as `gcloud auth login --no-browser`. In addition, the confirmation is a bearer value not bound to the browser session: for its 5 minutes, whoever obtains the page's form value can mint the code once. That helps only an attacker who also holds the PKCE verifier, that is, one who started the login (the same phishing case).
+1. **Confirmation first**: after the identity checks and admission, the callback mints no code. It shows a page naming the account and telling the user to continue only if they started `xmc login --no-browser` themselves, just now. The page's form carries a confirmation (email, name, PKCE challenge, 5-minute expiry) signed with the JWT secret (`aud: xmanager-cloud-cli-confirm`), never a code.
+2. **Code delivery**: `POST /api/cli/code` accepts only same-origin form posts (`Sec-Fetch-Site: same-origin` and `Sec-Fetch-Dest: document` when sent, on top of `CrossOriginProtection`), verifies the confirmation token, re-runs admission, and shows a 120-second code in the page body, never in a URL. **Cancel** verifies the confirmation too and issues no code; the form accepts only `action=continue` or `action=cancel`. Pages are `no-store` with `Referrer-Policy: no-referrer` and an added `Content-Security-Policy: frame-ancestors 'none'; form-action 'self'`, use no script, and escape every dynamic value. Failures, including a denied user, show an error page that does not name the user, because there is no loopback listener to report them to.
+3. **Residual risk**: an attacker can still send a victim a manual-mode link built with the attacker's own PKCE challenge, and talk the victim into confirming and handing over the code (consent phishing). The confirmation page, the warnings and the short code lifetime reduce this to the same level as `gcloud auth login --no-browser`. In addition, the confirmation is a bearer value not bound to the browser session: for its 5 minutes, whoever obtains the page's form value can mint a code, which is only redeemable with the PKCE verifier from the login start.
 
 The CLI login endpoints are registered only when authentication is enabled (no `MOCK_AUTH` or `DISABLE_AUTHENTICATION`) and the server has a Spanner client.
 
@@ -233,11 +232,3 @@ Every authenticated caller, whether it arrives with a browser session cookie, an
 3. a direct binding of the authorized IAM role (`AUTHORIZED_IAM_ROLE`, `roles/viewer` by default) on the deployment project for the caller's `user:`, `serviceAccount:` or `domain:` principal. Owner, editor and group bindings do not satisfy this check.
 
 Callers that authenticate but are not admitted receive `PERMISSION_DENIED` on gRPC and `403` on HTTP. With `DISABLE_AUTHENTICATION=true` (local development only), gRPC skips admission. The Component Manager Service additionally admits the workload service account that `xmc-bridge` runs as (`ess_service_account`); no other service admits it by identity.
-
-### Accepted ID Token Audiences
-A Google or OIDC ID token is accepted only if its `aud` claim is one of the deployment's accepted audiences. `oauth2.Config.AcceptedAudiences` builds this list in one place, in a fixed order, for the HTTP middleware, the gRPC authorizers and the JWKS validators:
-1. service-specific audiences, on gRPC only: the IAP audiences (`IAP_EXPECTED_HTTP_AUDIENCE`, `IAP_EXPECTED_GRPC_AUDIENCE`) on the experiment state server and XID service, plus the XID audience on the XID service,
-2. the deployment's OAuth client (`CLIENT_ID`), and
-3. `ADDITIONAL_AUDIENCES` (Helm `auth.additionalAudiences`): extra OAuth client IDs that the deployer owns, such as a Desktop client used by scripts.
-
-Empty and duplicate `ADDITIONAL_AUDIENCES` entries are dropped; an unset required audience such as `CLIENT_ID` still stops the experiment state server, XID and dashboard services at startup. Accepting an audience only authenticates the caller; deployment admission still applies (see [Client Authorization](#client-authorization)). Services fail to start if `ADDITIONAL_AUDIENCES` contains a shared public Google client, such as the Google Cloud SDK client (`32555940559.apps.googleusercontent.com`) or the application-default credentials client (`764086051850-6qr4p6gpi6hn506pt8ejuq83di341hur.apps.googleusercontent.com`). Any Google user can mint ID tokens for those clients, so accepting them would leave the admission check as the only control between the deployment and every Google account.

@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/mail"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -40,7 +39,6 @@ const (
 )
 
 var (
-	cliPortPattern  = regexp.MustCompile(`^[0-9]{1,5}$`)
 	cliStatePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 	// base64URL256BitPattern matches 256 bits in unpadded base64url: PKCE S256 challenges and
 	// one-time login codes.
@@ -174,7 +172,7 @@ func singleValues(q url.Values, names ...string) (map[string]string, error) {
 
 func parseCLILoopbackPort(raw string) (int, error) {
 	errPort := fmt.Errorf("port must be an integer between %d and %d", minCLILoopbackPort, maxCLILoopbackPort)
-	if !cliPortPattern.MatchString(raw) {
+	if raw == "" || len(raw) > 5 || raw[0] < '0' || raw[0] > '9' {
 		return 0, errPort
 	}
 	port, err := strconv.Atoi(raw)
@@ -184,17 +182,15 @@ func parseCLILoopbackPort(raw string) (int, error) {
 	return port, nil
 }
 
-// validateLoginHint accepts an empty hint or a bare email address.
+// validateLoginHint accepts an empty hint or printable ASCII up to maxLoginHintLength bytes.
 func validateLoginHint(hint string) error {
-	if hint == "" {
-		return nil
-	}
 	if len(hint) > maxLoginHintLength {
-		return errors.New("login_hint must be an email address")
+		return errors.New("login_hint must be at most 254 printable ASCII characters")
 	}
-	addr, err := mail.ParseAddress(hint)
-	if err != nil || addr.Address != hint {
-		return errors.New("login_hint must be an email address")
+	for i := 0; i < len(hint); i++ {
+		if hint[i] < 0x20 || hint[i] > 0x7e {
+			return errors.New("login_hint must be printable ASCII")
+		}
 	}
 	return nil
 }

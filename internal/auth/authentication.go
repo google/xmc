@@ -83,7 +83,7 @@ func (a *Authorizer) authenticateViaGoogleIDToken(ctx context.Context, jwt strin
 	if err != nil {
 		return nil, err
 	}
-	if err := verifyIDTokenEmail(ctx, payload); err != nil {
+	if err := verifyIDTokenEmail(ctx, payload, a.iapIssuer); err != nil {
 		return nil, err
 	}
 
@@ -114,14 +114,14 @@ func logIDTokenValidationFailure(ctx context.Context, jwt string, err error) {
 // Tokens from accounts.google.com carry email_verified whenever they carry email: user tokens,
 // service account tokens from iamcredentials generateIdToken with includeEmail, and metadata server
 // tokens with format=full (what idtoken.NewTokenSource and google-auth fetch_id_token request).
-// A missing claim is therefore rejected there. IAP-signed assertions never carry the claim because
-// IAP only admits verified Google identities, so only an explicit non-true value is rejected there.
-func verifyIDTokenEmail(ctx context.Context, payload *idtoken.Payload) error {
+// A missing claim is therefore rejected unless the token is an IAP-signed assertion (which never
+// carries email_verified because IAP only admits verified Google identities).
+func verifyIDTokenEmail(ctx context.Context, payload *idtoken.Payload, iapIssuer string) error {
 	verified, present := payload.Claims["email_verified"]
 	if isTrueClaim(verified) {
 		return nil
 	}
-	if !present && !isGoogleAccountsIssuer(payload.Issuer) {
+	if !present && payload.Issuer == iapIssuer {
 		return nil
 	}
 	logging.Warn(ctx, "Rejecting ID token without a verified email", "issuer", payload.Issuer, "email_verified", verified)
@@ -141,10 +141,6 @@ func isTrueClaim(v any) bool {
 	}
 }
 
-func isGoogleAccountsIssuer(issuer string) bool {
-	return issuer == "https://accounts.google.com" || issuer == "accounts.google.com"
-}
-
 // authenticateViaJWKS returns (nil, nil) when no validator is configured or the token does not
 // validate, so the caller falls back to the next authentication method.
 func (a *Authorizer) authenticateViaJWKS(ctx context.Context, jwt string) (*authIdentity, error) {
@@ -156,13 +152,13 @@ func (a *Authorizer) authenticateViaJWKS(ctx context.Context, jwt string) (*auth
 		logging.Debug(ctx, "authenticateViaJWKS: JWKS validation failed", "error", err)
 		return nil, nil
 	}
-	if err := a.verifyJWKSEmail(ctx, claims); err != nil {
-		return nil, err
-	}
 	email, ok := jwksEmail(claims)
 	if !ok {
 		logging.Warn(ctx, "authenticateViaJWKS: token does not contain a valid email address", "email", claims.Email, "sub", claims.Subject)
 		return nil, nil
+	}
+	if err := verifyJWKSEmail(ctx, claims); err != nil {
+		return nil, err
 	}
 	userID := claims.Subject
 	if userID == "" {
@@ -172,15 +168,9 @@ func (a *Authorizer) authenticateViaJWKS(ctx context.Context, jwt string) (*auth
 	return &authIdentity{email: email, userID: userID}, nil
 }
 
-// verifyJWKSEmail rejects JWKS tokens whose email is not verified. Dex sets email_verified alongside
-// email, but not every OIDC provider emits the claim, so by default only an explicit non-true value
-// is rejected. With requireVerifiedJWKSEmail (set when a domain allowlist is configured) the claim
-// must be present and true, because admitting by email domain is only sound for verified emails.
-func (a *Authorizer) verifyJWKSEmail(ctx context.Context, claims *jwks.Claims) error {
+// verifyJWKSEmail rejects JWKS tokens whose email is not verified.
+func verifyJWKSEmail(ctx context.Context, claims *jwks.Claims) error {
 	if isTrueClaim(claims.EmailVerified) {
-		return nil
-	}
-	if claims.EmailVerified == nil && !a.requireVerifiedJWKSEmail {
 		return nil
 	}
 	logging.Warn(ctx, "authenticateViaJWKS: rejecting token without a verified email", "email", claims.Email, "email_verified", claims.EmailVerified)
@@ -263,7 +253,7 @@ func validateJWT(ctx context.Context, jwt string, iapIssuer string, audiences []
 			failures = append(failures, fmt.Sprintf("audience %q: %v", aud, err))
 			continue
 		}
-		if payload.Issuer != iapIssuer && !isGoogleAccountsIssuer(payload.Issuer) {
+		if payload.Issuer != iapIssuer && payload.Issuer != "https://accounts.google.com" && payload.Issuer != "accounts.google.com" {
 			logging.Warn(ctx, "Invalid issuer", "issuer", payload.Issuer, "expected", iapIssuer)
 			return nil, fmt.Errorf("idtoken: invalid issuer %q, expected %q", payload.Issuer, iapIssuer)
 		}

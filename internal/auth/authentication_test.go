@@ -259,7 +259,8 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 		mockVal := &mockTokenValidator{
 			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
 				return &jwks.Claims{
-					Email: "jwks-user@example.com",
+					Email:         "jwks-user@example.com",
+					EmailVerified: true,
 					RegisteredClaims: jwt.RegisteredClaims{
 						Subject: "sub-12345",
 					},
@@ -286,7 +287,8 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 		mockVal := &mockTokenValidator{
 			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
 				return &jwks.Claims{
-					Email: "",
+					Email:         "",
+					EmailVerified: true,
 					RegisteredClaims: jwt.RegisteredClaims{
 						Subject: "service-account@iam.gserviceaccount.com",
 					},
@@ -512,9 +514,7 @@ func TestAuthenticateUserFromContext_Admission(t *testing.T) {
 		admitted bool
 		checkErr error
 		disabled bool
-		// requireVerified models a configured domain allowlist.
-		requireVerified bool
-		want            authOutcome
+		want     authOutcome
 	}{
 		{name: "session token admitted", token: sessionToken, admitted: true, want: authOutcome{Email: sessionUser, UserID: sessionUser, Checked: []string{sessionUser}}},
 		{name: "session token not admitted", token: sessionToken, want: authOutcome{Code: codes.PermissionDenied, Checked: []string{sessionUser}}},
@@ -525,7 +525,7 @@ func TestAuthenticateUserFromContext_Admission(t *testing.T) {
 		{name: "JWKS token checker error", token: "jwks-token", checkErr: crmDown, want: authOutcome{Code: codes.Internal, Checked: []string{dexUser}}},
 		{name: "JWKS token with email_verified false", token: "jwks-unverified-token", admitted: true, want: authOutcome{Code: codes.Unauthenticated}},
 		{name: "JWKS token with email_verified string false", token: "jwks-unverified-string-token", admitted: true, want: authOutcome{Code: codes.Unauthenticated}},
-		{name: "JWKS token without email_verified", token: "jwks-no-claim-token", admitted: true, want: authOutcome{Email: dexUser, UserID: "dex-sub", Checked: []string{dexUser}}},
+		{name: "JWKS token without email_verified", token: "jwks-no-claim-token", admitted: true, want: authOutcome{Code: codes.Unauthenticated}},
 		{name: "Google ID token admitted", token: "google-token", admitted: true, want: authOutcome{Email: googleSA, UserID: "google-sub", Checked: []string{googleSA}}},
 		{name: "foreign project SA ID token not admitted", token: "foreign-sa-token", want: authOutcome{Code: codes.PermissionDenied, Checked: []string{"attacker@other-project.iam.gserviceaccount.com"}}},
 		{name: "Google ID token checker error", token: "google-token", checkErr: crmDown, want: authOutcome{Code: codes.Internal, Checked: []string{googleSA}}},
@@ -536,8 +536,6 @@ func TestAuthenticateUserFromContext_Admission(t *testing.T) {
 		{name: "IAP assertion with email_verified false", token: "iap-unverified-token", admitted: true, want: authOutcome{Code: codes.Unauthenticated}},
 		{name: "disabled authentication skips admission", token: "google-token", disabled: true, want: authOutcome{Email: googleSA, UserID: "google-sub"}},
 		{name: "disabled authentication still authenticates", token: "garbage", disabled: true, want: authOutcome{Code: codes.Unauthenticated}},
-		{name: "domain allowlist: JWKS token without email_verified", token: "jwks-no-claim-token", admitted: true, requireVerified: true, want: authOutcome{Code: codes.Unauthenticated}},
-		{name: "domain allowlist: JWKS token with verified email", token: "jwks-token", admitted: true, requireVerified: true, want: authOutcome{Email: dexUser, UserID: "dex-sub", Checked: []string{dexUser}}},
 	}
 
 	for _, tt := range tests {
@@ -548,11 +546,10 @@ func TestAuthenticateUserFromContext_Admission(t *testing.T) {
 				admission = AdmitAll()
 			}
 			a, err := NewAuthorizer(AuthorizerParams{
-				IAPAudiences:             []string{tokenTestAudience},
-				IAPIssuer:                DefaultIAPIssuer,
-				JWTSecret:                []byte(tokenTestSecret),
-				Admission:                admission,
-				RequireVerifiedJWKSEmail: tt.requireVerified,
+				IAPAudiences: []string{tokenTestAudience},
+				IAPIssuer:    DefaultIAPIssuer,
+				JWTSecret:    []byte(tokenTestSecret),
+				Admission:    admission,
 			})
 			if err != nil {
 				t.Fatalf("NewAuthorizer() failed: %v", err)

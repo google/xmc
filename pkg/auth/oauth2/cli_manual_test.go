@@ -30,9 +30,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-// cliTestNonce is the nonce of baseCLIManualConfirmation.
-const cliTestNonce = "0123456789abcdef0123456789abcdef"
-
 // cliCodePagePattern extracts the one-time code from the code page.
 var cliCodePagePattern = regexp.MustCompile(`<code style="[^"]*">([A-Za-z0-9_-]{43})</code>`)
 
@@ -42,24 +39,18 @@ func baseCLIManualConfirmation() cliManualConfirmation {
 		Email:         loginTestEmail,
 		Name:          "Test User",
 		CodeChallenge: cliTestChallenge,
-		Nonce:         cliTestNonce,
 		ExpiresAt:     time.Now().Add(cliManualConfirmationTTL).Unix(),
 	}
 }
 
-// putPendingConfirmation stores the nonce record of c, as the callback does, and returns c sealed.
-func putPendingConfirmation(t *testing.T, a *Authenticator, store *fakeCLICodeStore, c cliManualConfirmation) string {
+func mustSealConfirmation(t *testing.T, a *Authenticator, c cliManualConfirmation) string {
 	t.Helper()
-	record := CLILoginCode{Hash: hashCLIConfirmationNonce(c.Nonce), Email: c.Email, Name: c.Name, CodeChallenge: c.CodeChallenge, ExpiresAt: time.Unix(c.ExpiresAt, 0)}
-	if err := store.Save(context.Background(), record); err != nil {
-		t.Fatalf("Save() failed: %v", err)
-	}
-	return mustSealSigned(t, a.cliConfirmationKey, c)
+	return mustSealSigned(t, a.JWTSecret, cliConfirmationAudience, c)
 }
 
-func mustSealSigned(t *testing.T, key []byte, c cliManualConfirmation) string {
+func mustSealSigned(t *testing.T, key []byte, audience string, c cliManualConfirmation) string {
 	t.Helper()
-	sealed, err := sealSigned(key, c, c.ExpiresAt)
+	sealed, err := sealSigned(key, audience, c, c.ExpiresAt)
 	if err != nil {
 		t.Fatalf("sealSigned() failed: %v", err)
 	}
@@ -110,17 +101,15 @@ func TestHandleCallbackCLIManualAsksForConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("interstitial confirmation does not open: %v", err)
 	}
-	if diff := cmp.Diff(baseCLIManualConfirmation(), confirmation, cmpopts.IgnoreFields(cliManualConfirmation{}, "Nonce", "ExpiresAt")); diff != "" {
+	if diff := cmp.Diff(baseCLIManualConfirmation(), confirmation, cmpopts.IgnoreFields(cliManualConfirmation{}, "ExpiresAt")); diff != "" {
 		t.Errorf("confirmation mismatch (-want +got):\n%s", diff)
 	}
 	if ttl := time.Until(time.Unix(confirmation.ExpiresAt, 0)); ttl <= 0 || ttl > cliManualConfirmationTTL {
 		t.Errorf("confirmation expires in %v, want within %v", ttl, cliManualConfirmationTTL)
 	}
-	// The store holds only the confirmation's nonce record: no login code exists before the user
-	// confirms.
-	wantRecord := CLILoginCode{Hash: hashCLIConfirmationNonce(confirmation.Nonce), Email: loginTestEmail, Name: "Test User", CodeChallenge: cliTestChallenge}
-	if diff := cmp.Diff(wantRecord, store.only(t), cmpopts.IgnoreFields(CLILoginCode{}, "ExpiresAt")); diff != "" {
-		t.Errorf("stored record mismatch (-want +got):\n%s", diff)
+	// No login code exists before the user confirms.
+	if len(store.codes) != 0 {
+		t.Errorf("store holds %d records before confirmation, want 0", len(store.codes))
 	}
 	if c := responseCookie(resp, cliLoginCookieName); c == nil || c.MaxAge != -1 {
 		t.Errorf("cli_login cookie = %v, want it deleted", c)
@@ -147,7 +136,7 @@ func TestHandleCallbackCLIManualEscapesIdentity(t *testing.T) {
 
 func TestHandleCLICodeIssuesCode(t *testing.T) {
 	a, store, _ := newCLITestAuthenticator(t, baseLoginConfig())
-	sealed := putPendingConfirmation(t, a, store, baseCLIManualConfirmation())
+	sealed := mustSealConfirmation(t, a, baseCLIManualConfirmation())
 	got, body := serveCLICode(http.HandlerFunc(a.HandleCLICode), newCLICodeRequest(confirmForm(sealed)))
 
 	if diff := cmp.Diff(cliPage(http.StatusOK, "Your sign-in code"), got); diff != "" {
@@ -157,7 +146,6 @@ func TestHandleCLICodeIssuesCode(t *testing.T) {
 	if match == nil {
 		t.Fatalf("code page shows no code:\n%s", body)
 	}
-	// The nonce record is consumed and replaced by the login code.
 	stored := store.only(t)
 	want := CLILoginCode{Hash: hashCLILoginCode(match[1]), Email: loginTestEmail, Name: "Test User", CodeChallenge: cliTestChallenge}
 	if diff := cmp.Diff(want, stored, cmpopts.IgnoreFields(CLILoginCode{}, "ExpiresAt")); diff != "" {
@@ -177,23 +165,20 @@ func TestHandleCLICodeRejects(t *testing.T) {
 	tests := []struct {
 		name string
 		cfg  func(*Config)
-		// confirmation is the pending confirmation stored and sealed; it defaults to
-		// baseCLIManualConfirmation.
+		// confirmation is the pending confirmation sealed; it defaults to baseCLIManualConfirmation.
 		confirmation *cliManualConfirmation
 		// form builds the request form from the sealed confirmation; it defaults to confirmForm.
 		form  func(sealed string) url.Values
 		req   func(*http.Request)
 		setup func(*Authenticator, *fakeCLICodeStore)
 		want  cliPageResult
-		// wantNonceKept reports whether the confirmation stays redeemable.
-		wantNonceKept bool
 	}{
 		{name: "cancel", form: func(s string) url.Values { return actionForm("cancel", s) }, want: cliPage(http.StatusOK, "Sign-in cancelled")},
-		{name: "cancel with a tampered confirmation", form: func(s string) url.Values { return actionForm("cancel", "x"+s) }, want: cliPage(http.StatusBadRequest, "Sign-in expired"), wantNonceKept: true},
-		{name: "missing action", form: func(s string) url.Values { return url.Values{"confirmation": {s}} }, want: cliPageResult{Status: http.StatusBadRequest}, wantNonceKept: true},
-		{name: "unknown action", form: func(s string) url.Values { return actionForm("approve", s) }, want: cliPageResult{Status: http.StatusBadRequest}, wantNonceKept: true},
-		{name: "tampered confirmation", form: func(s string) url.Values { return confirmForm("x" + s) }, want: cliPage(http.StatusBadRequest, "Sign-in expired"), wantNonceKept: true},
-		{name: "expired confirmation", confirmation: &expired, want: cliPage(http.StatusBadRequest, "Sign-in expired"), wantNonceKept: true},
+		{name: "cancel with a tampered confirmation", form: func(s string) url.Values { return actionForm("cancel", "x"+s) }, want: cliPage(http.StatusBadRequest, "Sign-in expired")},
+		{name: "missing action", form: func(s string) url.Values { return url.Values{"confirmation": {s}} }, want: cliPageResult{Status: http.StatusBadRequest}},
+		{name: "unknown action", form: func(s string) url.Values { return actionForm("approve", s) }, want: cliPageResult{Status: http.StatusBadRequest}},
+		{name: "tampered confirmation", form: func(s string) url.Values { return confirmForm("x" + s) }, want: cliPage(http.StatusBadRequest, "Sign-in expired")},
+		{name: "expired confirmation", confirmation: &expired, want: cliPage(http.StatusBadRequest, "Sign-in expired")},
 		{name: "admission revoked since the callback", confirmation: &revoked, want: cliPage(http.StatusForbidden, "Sign-in failed")},
 		{
 			name: "authorization pipeline failure",
@@ -203,15 +188,14 @@ func TestHandleCLICodeRejects(t *testing.T) {
 			},
 			want: cliPage(http.StatusInternalServerError, "Sign-in failed"),
 		},
-		{name: "code store failure on consume", setup: func(_ *Authenticator, s *fakeCLICodeStore) { s.consumeErr = errStore }, want: cliPage(http.StatusInternalServerError, "Sign-in failed"), wantNonceKept: true},
 		{name: "code store failure on save", setup: func(_ *Authenticator, s *fakeCLICodeStore) { s.saveErr = errStore }, want: cliPage(http.StatusInternalServerError, "Sign-in failed")},
-		{name: "cross-site POST", req: func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }, want: cliPageResult{Status: http.StatusForbidden}, wantNonceKept: true},
-		{name: "same-site POST", req: func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "same-site") }, want: cliPageResult{Status: http.StatusForbidden}, wantNonceKept: true},
-		{name: "submitted by script", req: func(r *http.Request) { r.Header.Set("Sec-Fetch-Dest", "empty") }, want: cliPageResult{Status: http.StatusBadRequest}, wantNonceKept: true},
-		{name: "GET", req: func(r *http.Request) { r.Method = http.MethodGet }, want: cliPageResult{Status: http.StatusMethodNotAllowed}, wantNonceKept: true},
-		{name: "not form-encoded", req: func(r *http.Request) { r.Header.Set("Content-Type", "application/json") }, want: cliPageResult{Status: http.StatusBadRequest}, wantNonceKept: true},
-		{name: "oversized form", form: func(s string) url.Values { return actionForm(strings.Repeat("a", maxCLICodeRequestBytes), s) }, want: cliPageResult{Status: http.StatusBadRequest}, wantNonceKept: true},
-		{name: "repeated confirmation", form: func(s string) url.Values { return url.Values{"confirmation": {s, s}} }, want: cliPageResult{Status: http.StatusBadRequest}, wantNonceKept: true},
+		{name: "cross-site POST", req: func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }, want: cliPageResult{Status: http.StatusForbidden}},
+		{name: "same-site POST", req: func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "same-site") }, want: cliPageResult{Status: http.StatusForbidden}},
+		{name: "submitted by script", req: func(r *http.Request) { r.Header.Set("Sec-Fetch-Dest", "empty") }, want: cliPageResult{Status: http.StatusBadRequest}},
+		{name: "GET", req: func(r *http.Request) { r.Method = http.MethodGet }, want: cliPageResult{Status: http.StatusMethodNotAllowed}},
+		{name: "not form-encoded", req: func(r *http.Request) { r.Header.Set("Content-Type", "application/json") }, want: cliPageResult{Status: http.StatusBadRequest}},
+		{name: "oversized form", form: func(s string) url.Values { return actionForm(strings.Repeat("a", maxCLICodeRequestBytes), s) }, want: cliPageResult{Status: http.StatusBadRequest}},
+		{name: "repeated confirmation", form: func(s string) url.Values { return url.Values{"confirmation": {s, s}} }, want: cliPageResult{Status: http.StatusBadRequest}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -224,7 +208,7 @@ func TestHandleCLICodeRejects(t *testing.T) {
 			if tt.confirmation != nil {
 				confirmation = *tt.confirmation
 			}
-			sealed := putPendingConfirmation(t, a, store, confirmation)
+			sealed := mustSealConfirmation(t, a, confirmation)
 			if tt.setup != nil {
 				tt.setup(a, store)
 			}
@@ -244,35 +228,16 @@ func TestHandleCLICodeRejects(t *testing.T) {
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("HandleCLICode() mismatch (-want +got):\n%s", diff)
 			}
-			_, nonceKept := store.codes[string(hashCLIConfirmationNonce(confirmation.Nonce))]
-			if nonceKept != tt.wantNonceKept || len(store.codes) > 1 {
-				t.Errorf("store = %d records, confirmation kept = %v; want no login code and kept = %v", len(store.codes), nonceKept, tt.wantNonceKept)
+			if len(store.codes) != 0 {
+				t.Errorf("store = %d records, want no login code", len(store.codes))
 			}
 		})
 	}
 }
 
-// TestHandleCLICodeRejectsReplay checks that a confirmation yields at most one code: submitting the
-// form again, for example after a reload, is rejected.
-func TestHandleCLICodeRejectsReplay(t *testing.T) {
-	a, store, _ := newCLITestAuthenticator(t, baseLoginConfig())
-	sealed := putPendingConfirmation(t, a, store, baseCLIManualConfirmation())
-	h := http.HandlerFunc(a.HandleCLICode)
-	if got, _ := serveCLICode(h, newCLICodeRequest(confirmForm(sealed))); got.Status != http.StatusOK {
-		t.Fatalf("first confirmation status = %d, want %d", got.Status, http.StatusOK)
-	}
-	got, _ := serveCLICode(h, newCLICodeRequest(confirmForm(sealed)))
-	if diff := cmp.Diff(cliPage(http.StatusBadRequest, "Sign-in expired"), got); diff != "" {
-		t.Errorf("replayed confirmation mismatch (-want +got):\n%s", diff)
-	}
-	if len(store.codes) != 1 {
-		t.Errorf("store holds %d records, want only the first login code", len(store.codes))
-	}
-}
-
 func TestHandleCLICodeRandomFailure(t *testing.T) {
-	a, store, _ := newCLITestAuthenticator(t, baseLoginConfig())
-	sealed := putPendingConfirmation(t, a, store, baseCLIManualConfirmation())
+	a, _, _ := newCLITestAuthenticator(t, baseLoginConfig())
+	sealed := mustSealConfirmation(t, a, baseCLIManualConfirmation())
 	withFailingRandom(t)
 	got, _ := serveCLICode(http.HandlerFunc(a.HandleCLICode), newCLICodeRequest(confirmForm(sealed)))
 	if diff := cmp.Diff(cliPage(http.StatusInternalServerError, "Sign-in failed"), got); diff != "" {
@@ -346,8 +311,8 @@ func TestOpenCLIManualConfirmationRejects(t *testing.T) {
 		sealed string
 	}{
 		{name: "malformed", sealed: "not-sealed"},
-		{name: "sealed with the ticket key", sealed: mustSealSigned(t, a.cliLoginKey, baseCLIManualConfirmation())},
-		{name: "expired", sealed: mustSealSigned(t, a.cliConfirmationKey, expired)},
+		{name: "sealed with the ticket audience", sealed: mustSealSigned(t, a.JWTSecret, cliLoginTicketAudience, baseCLIManualConfirmation())},
+		{name: "expired", sealed: mustSealSigned(t, a.JWTSecret, cliConfirmationAudience, expired)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -27,7 +27,7 @@ func TestEnableCLILogin(t *testing.T) {
 		if err := a.EnableCLILogin(nil); err == nil {
 			t.Fatal("EnableCLILogin(nil) error = nil, want non-nil")
 		}
-		if a.cliCodes != nil || a.cliTokenLimiter != nil || a.cliLoginKey != nil || a.cliConfirmationKey != nil {
+		if a.cliCodes != nil {
 			t.Error("EnableCLILogin(nil) enabled CLI login")
 		}
 	})
@@ -37,12 +37,8 @@ func TestEnableCLILogin(t *testing.T) {
 		if err := a.EnableCLILogin(store); err != nil {
 			t.Fatalf("EnableCLILogin() failed: %v", err)
 		}
-		wantTicketKey, wantConfirmationKey, err := deriveCLIKeys([]byte(loginTestSecret))
-		if err != nil {
-			t.Fatalf("deriveCLIKeys() failed: %v", err)
-		}
-		if a.cliCodes != store || a.cliTokenLimiter == nil || !cmp.Equal(a.cliLoginKey, wantTicketKey) || !cmp.Equal(a.cliConfirmationKey, wantConfirmationKey) {
-			t.Error("EnableCLILogin() did not install the store, limiter and MAC keys")
+		if a.cliCodes != store {
+			t.Error("EnableCLILogin() did not install the store")
 		}
 	})
 	t.Run("second call is rejected", func(t *testing.T) {

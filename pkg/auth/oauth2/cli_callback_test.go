@@ -85,11 +85,12 @@ func TestHandleCallbackCLILoginErrors(t *testing.T) {
 	tests := []struct {
 		name string
 		// query defaults to idpCode.
-		query  string
-		cfg    func(*Config)
-		setup  func(*Authenticator, *fakeCLICodeStore, *stubOAuthProvider)
-		random bool
-		want   string
+		query        string
+		cfg          func(*Config)
+		setup        func(*Authenticator, *fakeCLICodeStore, *stubOAuthProvider)
+		random       bool
+		loopbackOnly bool
+		want         string
 	}{
 		{name: "user cancelled at the identity provider", query: "&error=access_denied", want: cliErrorAccessDenied},
 		{name: "identity provider returned no code", query: "&unused=1", want: cliErrorAccessDenied},
@@ -111,11 +112,6 @@ func TestHandleCallbackCLILoginErrors(t *testing.T) {
 			want:  cliErrorAccessDenied,
 		},
 		{
-			name:  "consumer account on an allowlisted domain",
-			setup: func(_ *Authenticator, _ *fakeCLICodeStore, p *stubOAuthProvider) { p.userInfo.HostedDomain = "" },
-			want:  cliErrorAccessDenied,
-		},
-		{
 			name: "authorization pipeline failure",
 			cfg:  func(c *Config) { c.AllowedDomains = nil; c.GCPProjectID = "test-project" },
 			setup: func(a *Authenticator, _ *fakeCLICodeStore, _ *stubOAuthProvider) {
@@ -124,17 +120,21 @@ func TestHandleCallbackCLILoginErrors(t *testing.T) {
 			want: cliErrorServerError,
 		},
 		{
-			name:  "code store failure",
-			setup: func(_ *Authenticator, s *fakeCLICodeStore, _ *stubOAuthProvider) { s.saveErr = errStore },
-			want:  cliErrorServerError,
+			name:         "code store failure",
+			setup:        func(_ *Authenticator, s *fakeCLICodeStore, _ *stubOAuthProvider) { s.saveErr = errStore },
+			loopbackOnly: true,
+			want:         cliErrorServerError,
 		},
-		{name: "random source failure", random: true, want: cliErrorServerError},
+		{name: "random source failure", random: true, loopbackOnly: true, want: cliErrorServerError},
 	}
 	// Loopback logins report the error to the loopback listener; manual logins, which have none,
 	// show an error page.
 	manualStatus := map[string]int{cliErrorAccessDenied: http.StatusForbidden, cliErrorServerError: http.StatusInternalServerError}
 	for _, ticket := range []cliLoginTicket{baseCLITicket(loginTestOAuthState), baseCLIManualTicket(loginTestOAuthState)} {
 		for _, tt := range tests {
+			if ticket.Mode == cliLoginModeManual && tt.loopbackOnly {
+				continue
+			}
 			t.Run(ticket.Mode+"/"+tt.name, func(t *testing.T) {
 				cfg := baseLoginConfig()
 				if tt.cfg != nil {

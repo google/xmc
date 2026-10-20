@@ -16,7 +16,6 @@ package oauth2
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"mime"
@@ -28,11 +27,9 @@ import (
 )
 
 const (
-	// cliManualConfirmationInfo is the HKDF info of the confirmation MAC key (see deriveCLIKeys).
-	cliManualConfirmationInfo = "xmc-cli-manual-confirm-v1"
-	// cliConfirmationNonceDomain prefixes a nonce before hashing it into the code store, so a nonce
-	// record never matches a login code, which `/api/cli/token` hashes without the prefix.
-	cliConfirmationNonceDomain = "xmc-cli-manual-confirm-nonce-v1:"
+	// cliConfirmationAudience is the JWT audience claim that separates manual confirmation tokens
+	// from session tokens and cli_login cookie tokens.
+	cliConfirmationAudience = "xmanager-cloud-cli-confirm"
 	// cliManualConfirmationTTL bounds how long the confirmation page can be submitted.
 	cliManualConfirmationTTL = 5 * time.Minute
 	// cliManualCodeTTL is longer than cliLoopbackCodeTTL: the user copies the code by hand.
@@ -44,13 +41,12 @@ const (
 var errInvalidCLIConfirmation = errors.New("invalid cli manual confirmation")
 
 // cliManualConfirmation is the pending manual login of a signed-in, admitted user. The callback's
-// interstitial page carries it, MAC'd, to `POST /api/cli/code`. It holds no login code.
+// interstitial page carries it, signed with the JWT secret, to `POST /api/cli/code`. It holds no
+// login code.
 type cliManualConfirmation struct {
 	Email         string `json:"email"`
 	Name          string `json:"name"`
 	CodeChallenge string `json:"code_challenge"`
-	// Nonce makes the confirmation single-use (see takeCLIManualConfirmation).
-	Nonce string `json:"nonce"`
 	// ExpiresAt is the Unix time after which the confirmation is rejected.
 	ExpiresAt int64 `json:"exp"`
 }
@@ -59,7 +55,7 @@ type cliManualConfirmation struct {
 // manual login. The code is minted only once they confirm, so a link an attacker sends (consent
 // phishing) shows the victim a warning before any code exists.
 func (a *Authenticator) askCLIManualConfirmation(ctx context.Context, w http.ResponseWriter, identity loginIdentity, codeChallenge string, now time.Time) {
-	sealed, err := a.issueCLIManualConfirmation(ctx, identity, codeChallenge, now)
+	sealed, err := a.issueCLIManualConfirmation(identity, codeChallenge, now)
 	if err != nil {
 		logging.Error(ctx, "[CLI Login] Failed to issue manual login confirmation", "email", identity.email, "error", err)
 		writeCLIManualError(w, cliErrorServerError)
@@ -68,41 +64,20 @@ func (a *Authenticator) askCLIManualConfirmation(ctx context.Context, w http.Res
 	writeCLITemplatePage(w, cliConfirmationPage, cliConfirmationPageData{Email: identity.email, Confirmation: sealed})
 }
 
-// issueCLIManualConfirmation records a single-use nonce in the code store and returns the sealed
-// confirmation that carries it.
-func (a *Authenticator) issueCLIManualConfirmation(ctx context.Context, identity loginIdentity, codeChallenge string, now time.Time) (string, error) {
-	nonce, err := GenerateRandomString()
-	if err != nil {
-		return "", fmt.Errorf("failed to generate confirmation nonce: %w", err)
-	}
-	expiresAt := now.Add(cliManualConfirmationTTL)
-	record := CLILoginCode{
-		Hash:          hashCLIConfirmationNonce(nonce),
+// issueCLIManualConfirmation signs and returns a manual confirmation token.
+func (a *Authenticator) issueCLIManualConfirmation(identity loginIdentity, codeChallenge string, now time.Time) (string, error) {
+	expiresAt := now.Add(cliManualConfirmationTTL).Unix()
+	return sealSigned(a.JWTSecret, cliConfirmationAudience, cliManualConfirmation{
 		Email:         identity.email,
 		Name:          identity.name,
 		CodeChallenge: codeChallenge,
 		ExpiresAt:     expiresAt,
-	}
-	if err := a.cliCodes.Save(ctx, record); err != nil {
-		return "", err
-	}
-	return sealSigned(a.cliConfirmationKey, cliManualConfirmation{
-		Email:         identity.email,
-		Name:          identity.name,
-		CodeChallenge: codeChallenge,
-		Nonce:         nonce,
-		ExpiresAt:     expiresAt.Unix(),
-	}, expiresAt.Unix())
+	}, expiresAt)
 }
 
-func hashCLIConfirmationNonce(nonce string) []byte {
-	sum := sha256.Sum256([]byte(cliConfirmationNonceDomain + nonce))
-	return sum[:]
-}
-
-// openCLIManualConfirmation verifies the signature and expiry of a sealed confirmation and decodes it.
+// openCLIManualConfirmation verifies the signature, audience, and expiry of a sealed confirmation and decodes it.
 func (a *Authenticator) openCLIManualConfirmation(sealed string, now time.Time) (cliManualConfirmation, error) {
-	c, err := openSigned[cliManualConfirmation](a.cliConfirmationKey, sealed, now)
+	c, err := openSigned[cliManualConfirmation](a.JWTSecret, cliConfirmationAudience, sealed, now)
 	if errors.Is(err, jwt.ErrTokenExpired) {
 		return cliManualConfirmation{}, fmt.Errorf("%w: expired", errInvalidCLIConfirmation)
 	}
@@ -112,7 +87,7 @@ func (a *Authenticator) openCLIManualConfirmation(sealed string, now time.Time) 
 	return c, nil
 }
 
-// HandleCLICode serves the interstitial's form. Both buttons verify and use up the confirmation.
+// HandleCLICode serves the interstitial's form. Both buttons verify the confirmation.
 // Continue then re-runs admission and shows a one-time code for the CLI, only in the response
 // body; Cancel issues nothing.
 func (a *Authenticator) HandleCLICode(w http.ResponseWriter, r *http.Request) {
@@ -125,8 +100,10 @@ func (a *Authenticator) HandleCLICode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	confirmation, ok := a.takeCLIManualConfirmation(ctx, w, form["confirmation"])
-	if !ok {
+	confirmation, err := a.openCLIManualConfirmation(form["confirmation"], time.Now())
+	if err != nil {
+		logging.Warn(ctx, "[CLI Login] Rejected manual login confirmation", "error", err)
+		writeCLIManualExpired(w)
 		return
 	}
 	if form["action"] == "cancel" {
@@ -188,31 +165,6 @@ func parseCLICodeForm(w http.ResponseWriter, r *http.Request) (map[string]string
 		return nil, errors.New("action must be continue or cancel")
 	}
 	return form, nil
-}
-
-// takeCLIManualConfirmation verifies the sealed confirmation and consumes its nonce, so each
-// confirmation yields at most one code; it writes the error page otherwise. A resubmitted form
-// (for example after a reload) is rejected and the user starts a new login.
-func (a *Authenticator) takeCLIManualConfirmation(ctx context.Context, w http.ResponseWriter, sealed string) (cliManualConfirmation, bool) {
-	confirmation, err := a.openCLIManualConfirmation(sealed, time.Now())
-	if err != nil {
-		logging.Warn(ctx, "[CLI Login] Rejected manual login confirmation", "error", err)
-		writeCLIManualExpired(w)
-		return cliManualConfirmation{}, false
-	}
-	hash := hashCLIConfirmationNonce(confirmation.Nonce)
-	_, err = a.cliCodes.Consume(ctx, hash)
-	if errors.Is(err, ErrCLICodeNotFound) {
-		logging.Warn(ctx, "[CLI Login] Rejected used manual login confirmation", "email", confirmation.Email, "nonce_hash_prefix", codeHashPrefix(hash))
-		writeCLIManualExpired(w)
-		return cliManualConfirmation{}, false
-	}
-	if err != nil {
-		logging.Error(ctx, "[CLI Login] Failed to consume manual login confirmation", "email", confirmation.Email, "error", err)
-		writeCLIManualError(w, cliErrorServerError)
-		return cliManualConfirmation{}, false
-	}
-	return confirmation, true
 }
 
 // checkCLIManualStillAdmitted re-runs deployment admission, which may have changed since the
