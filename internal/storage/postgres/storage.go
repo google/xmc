@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/artifact"
+	"xmanager_cloud/internal/storage/postgres/dashboard"
 	"xmanager_cloud/internal/storage/postgres/experiment"
 	"xmanager_cloud/internal/storage/postgres/operation"
 	"xmanager_cloud/internal/storage/postgres/pausedtask"
@@ -39,6 +40,7 @@ type XIDRepository = xid.Repository
 type StatusMessageRepository = statusmessage.Repository
 type OperationRepository = operation.Repository
 type StatusHistoryRepository = statushistory.Repository
+type DashboardRepository = dashboard.Repository
 type PauseStateRepository = pausestate.Repository
 type PausedTaskRepository = pausedtask.Repository
 
@@ -53,6 +55,7 @@ type Storage struct {
 	*StatusMessageRepository
 	*OperationRepository
 	*StatusHistoryRepository
+	*DashboardRepository
 	pauseStateRepository *PauseStateRepository
 	pausedTaskRepository *PausedTaskRepository
 }
@@ -67,6 +70,7 @@ func NewStorage() *Storage {
 		StatusMessageRepository: statusmessage.NewRepository(),
 		OperationRepository:     operation.NewRepository(),
 		StatusHistoryRepository: statushistory.NewRepository(),
+		DashboardRepository:     dashboard.NewRepository(),
 		pauseStateRepository:    pausestate.NewRepository(),
 		pausedTaskRepository:    pausedtask.NewRepository(),
 	}
