@@ -32,14 +32,13 @@ import (
 // maxCLITokenRequestBytes bounds the token request body; a valid request is under 300 bytes.
 const maxCLITokenRequestBytes = 4096
 
-// OAuth 2.0 token endpoint error codes (RFC 6749 section 5.2), plus too_many_requests for 429.
+// OAuth 2.0 token endpoint error codes (RFC 6749 section 5.2).
 const (
 	tokenErrorInvalidRequest       = "invalid_request"
 	tokenErrorUnsupportedGrantType = "unsupported_grant_type"
 	tokenErrorInvalidGrant         = "invalid_grant"
 	tokenErrorAccessDenied         = "access_denied"
 	tokenErrorServerError          = "server_error"
-	tokenErrorTooManyRequests      = "too_many_requests"
 )
 
 // cliVerifierPattern matches a PKCE code verifier (RFC 7636 section 4.1).
@@ -67,12 +66,6 @@ func (a *Authenticator) HandleCLIToken(w http.ResponseWriter, r *http.Request) {
 	code, verifier, errCode := parseCLITokenRequest(w, r)
 	if errCode != "" {
 		writeTokenError(w, http.StatusBadRequest, errCode)
-		return
-	}
-	// Only well-formed requests spend rate limit tokens, so malformed floods cannot lock out real
-	// logins. Well-formed requests with random codes still reach the store, at most at this rate.
-	if !a.cliTokenLimiter.Allow() {
-		writeTokenError(w, http.StatusTooManyRequests, tokenErrorTooManyRequests)
 		return
 	}
 	ctx := r.Context()

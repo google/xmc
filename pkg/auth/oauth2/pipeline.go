@@ -26,7 +26,6 @@ import (
 	resourcemanager "cloud.google.com/go/resourcemanager/apiv3"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/singleflight"
-	"golang.org/x/time/rate"
 	"google.golang.org/api/idtoken"
 	"xmanager_cloud/internal/logging"
 )
@@ -57,8 +56,7 @@ type Authenticator struct {
 
 	// CLI login state, set by EnableCLILogin. The CLI login endpoints are disabled while cliCodes
 	// is nil.
-	cliCodes        CLICodeStore
-	cliTokenLimiter *rate.Limiter
+	cliCodes CLICodeStore
 }
 
 // NewAuthenticator initializes a new instance of Authenticator.
