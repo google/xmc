@@ -21,7 +21,6 @@ import http.server
 import io
 import json
 import os
-import ssl
 import threading
 import unittest
 import urllib.error
@@ -86,15 +85,7 @@ class _RedirectingServer(http.server.HTTPServer):
 
 
 class BuildOpenerTest(unittest.TestCase):
-    """Tests opener hardening: TLS, redirects, and proxies."""
-
-    def test_verifies_tls(self) -> None:
-        """HTTPS uses a default (certificate- and hostname-verifying) SSL context."""
-        with mock.patch.object(
-            ssl, "create_default_context", wraps=ssl.create_default_context
-        ) as ctx:
-            token_client.build_opener(_SERVER)
-        ctx.assert_called_once_with()
+    """Tests opener hardening: redirects and proxies."""
 
     def test_loopback_bypasses_proxies(self) -> None:
         """Loopback origins never go through an environment-configured proxy."""

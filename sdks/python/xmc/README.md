@@ -233,7 +233,7 @@ export XMC_AUTH_TOKEN=$(xmc print-token)        # Hands the token to the XManage
 | `login [--no-browser] [--timeout SECONDS]` | Browser sign-in with PKCE. Waits up to 300 seconds by default. Re-logins pre-select the cached account. |
 | `print-token` | Prints the cached token to stdout. Exits 1 if it is missing or expires within 60 seconds. This is the only command that prints a token. |
 
-Every subcommand accepts `--server`. Without it, the server is read from `XMC_API_URL`, then from `XMANAGER_UI_URL`, then derived from `XMANAGER_ENDPOINT` if its host starts with `grpc.` (`dns:///grpc.<host>:443` becomes `https://<host>`). Only the origin (`https://host[:port]`) is used, and `https://` is required unless the host is a loopback IP literal (`127.0.0.1`, `[::1]`). Plain-HTTP `localhost` is also accepted, but only for local development, because it depends on name resolution. Prefer the IP literals.
+Every subcommand accepts `--server`. Without it, the server is read from `XMC_API_URL`, then from `XMANAGER_UI_URL`, then from `XMC_DOMAIN` (`https://<domain>`). Only the origin (`https://host[:port]`) is used, and `https://` is required unless the host is a loopback IP literal (`127.0.0.1`, `[::1]`). Plain-HTTP `localhost` is also accepted, but only for local development, because it depends on name resolution. Prefer the IP literals.
 
 ### Headless machines and SSH sessions
 
@@ -244,7 +244,7 @@ Over SSH, or without `DISPLAY`/`WAYLAND_DISPLAY` on Linux, `xmc login` switches 
 
 ### Credentials cache (stable v1 format)
 
-Tokens are cached in `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config/xmc/credentials.json`). The directory is created with mode `0700` and the file with `0600`, and every write is atomic. The cache is ignored with a warning if the file is a symlink, if it or its directory is owned by another user, or if group or others can access it. Other clients may read this format directly:
+Tokens are cached in `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config/xmc/credentials.json`). The directory is created with mode `0700` and the file with `0600`, and every write is atomic. Other clients may read this format directly:
 
 ```json
 {
@@ -264,7 +264,7 @@ Entries are keyed by the deployment origin (`scheme://host[:port]`, lowercased h
 
 ### Security notes
 
-- **Loopback listener:** It binds only `127.0.0.1` on an ephemeral port, and accepts only `GET /callback` with `Host: 127.0.0.1:<port>`. The `state` value is compared in constant time. Forged or mismatched requests are rejected and the CLI keeps waiting. A connection that stalls is dropped after 2 seconds, so it can't hold the login past its deadline. If the deployment reports an error such as `access_denied`, the login stops right away. Once the code or error arrives, the browser is redirected to `/api/cli/success`, so the code doesn't stay in the address bar.
+- **Loopback listener:** It binds only `127.0.0.1` on an ephemeral port, and accepts only `GET /callback` with a constant-time `state` match. Forged or mismatched requests are rejected and the CLI keeps waiting. A connection that stalls is dropped after 2 seconds, so it can't hold the login past its deadline. If the deployment reports an error such as `access_denied`, the login stops right away. Once the code or error arrives, the browser is redirected to `/api/cli/success`, so the code doesn't stay in the address bar.
 - **Token exchange:** The one-time code is redeemed with its PKCE (S256) verifier over TLS-verified HTTPS at `POST /api/cli/token`. Redirects are refused rather than followed. Loopback deployments bypass HTTP proxies. Login codes, verifiers, and tokens are never logged or printed, except by `print-token`.
 - **Exported tokens:** `XMC_AUTH_TOKEN` is inherited by every child process, so export it only in shells where you run XMC clients.
 

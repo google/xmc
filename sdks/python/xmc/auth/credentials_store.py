@@ -37,7 +37,6 @@ CACHE_VERSION = 1
 # Tokens this close to expiry count as expired so they don't lapse mid-command.
 EXPIRY_MARGIN_SECONDS = 60
 _IS_POSIX = os.name == "posix"
-_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -78,22 +77,11 @@ def _matching(origin: str, entry: Any) -> StoredCredential | None:
     return credential if credential and credential.server == origin else None
 
 
-def _ownership_problem(path: Path, st: os.stat_result) -> str | None:
-    """Explains why a cache file (with stat `st`) or its directory is unsafe, if it is."""
-    if not _IS_POSIX:
-        return None
-    if st.st_uid != os.geteuid() or path.parent.stat().st_uid != os.geteuid():
-        return "it or its directory is owned by another user"
-    if st.st_mode & 0o077:
-        return f"it is accessible by other users; run `chmod 600 {path}`"
-    return None
-
-
 class CredentialsStore:
     """Reads and atomically writes the owner-only credentials cache."""
 
     def __init__(self, path: Path, warnings: TextIO = sys.stderr) -> None:
-        """Initializes the store at `path`, reporting unsafe files to `warnings`."""
+        """Initializes the store at `path`, reporting unreadable files to `warnings`."""
         self._path = path
         self._warnings = warnings
 
@@ -110,27 +98,24 @@ class CredentialsStore:
         self._write({**self._read(), credential.server: dataclasses.asdict(credential)})
 
     def _read(self) -> dict[str, Any]:
-        """Loads the deployments map; unsafe, corrupt, or unknown-version files read as empty."""
+        """Loads the deployments map; unreadable, corrupt, or unknown-version files read as empty."""
         try:
-            fd = os.open(self._path, os.O_RDONLY | _NOFOLLOW)
+            raw = self._path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return {}
-        except OSError as e:  # ELOOP for a symlink.
+        except OSError as e:
             return self._ignore(e.strerror or str(e))
-        with os.fdopen(fd, "rb") as f:
-            if problem := _ownership_problem(self._path, os.fstat(f.fileno())):
-                return self._ignore(problem)
-            try:
-                data = json.load(f)
-            except ValueError:
-                return self._ignore("it is not valid JSON")
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return self._ignore("it is not valid JSON")
         valid = isinstance(data, dict) and data.get("version") == CACHE_VERSION
         deployments = data.get("deployments") if valid else None
         return dict(deployments) if isinstance(deployments, dict) else {}
 
     def _ignore(self, reason: str) -> dict[str, Any]:
-        """Warns that the cache is insecure or unreadable and returns an empty map."""
-        self._warnings.write(f"Warning: ignoring insecure or unreadable {self._path}: {reason}.\n")
+        """Warns that the cache is unreadable and returns an empty map."""
+        self._warnings.write(f"Warning: ignoring unreadable {self._path}: {reason}.\n")
         return {}
 
     def _write(self, deployments: dict[str, Any]) -> None:
@@ -150,7 +135,7 @@ class CredentialsStore:
         if _IS_POSIX:
             directory.chmod(0o700)
         tmp = directory / f".{self._path.name}.{secrets.token_hex(8)}.tmp"
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump({"version": CACHE_VERSION, "deployments": deployments}, f, indent=2)

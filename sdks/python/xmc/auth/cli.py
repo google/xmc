@@ -27,7 +27,6 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TextIO
 
 from xmc.auth import token_client
-from xmc.auth.browser_detection import browser_likely_available
 from xmc.auth.credentials_store import (
     CredentialsStore,
     StoredCredential,
@@ -35,7 +34,12 @@ from xmc.auth.credentials_store import (
 )
 from xmc.auth.deployment_server import resolve_server
 from xmc.auth.errors import AuthError
-from xmc.auth.login_flow import DEFAULT_TIMEOUT_SECONDS, LoginDependencies, run_login
+from xmc.auth.login_flow import (
+    DEFAULT_TIMEOUT_SECONDS,
+    LoginDependencies,
+    browser_likely_available,
+    run_login,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -74,7 +78,7 @@ def _build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--server",
-        help="XMC deployment URL (default: $XMC_API_URL, $XMANAGER_UI_URL, $XMANAGER_ENDPOINT)",
+        help="XMC deployment URL (default: $XMC_API_URL, $XMANAGER_UI_URL, $XMC_DOMAIN)",
     )
     parser = argparse.ArgumentParser(prog="xmc", description="Authenticate to XMC as yourself.")
     sub = parser.add_subparsers(dest="command", required=True)
