@@ -75,9 +75,9 @@ xmc login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL
 export XMC_AUTH_TOKEN=$(xmc print-token)
 ```
 
-The XManager CLI sends `XMC_AUTH_TOKEN` as a Bearer token and reads your email from it. Over SSH or on a headless machine, `xmc login` falls back to a copy-and-paste flow on its own. Tokens last 12 hours by default. Run `xmc status` to check yours and `xmc logout` to revoke it. See the [`xmc` SDK README](../../sdks/python/xmc/README.md#-authentication-xmc-login) for details and security notes.
+The XManager CLI sends `XMC_AUTH_TOKEN` as a Bearer token and reads your email from it. Over SSH or on a headless machine, `xmc login` falls back to a copy-and-paste flow on its own. Tokens last 12 hours by default. Run `xmc status` to check yours. `xmc logout` removes the cached token; server-side revocation is coming in a follow-up.
 
-For CI and other non-interactive use, keep using a service account: set `XMC_CLIENT_SA` and mint an ID token, for example `gcloud auth print-identity-token --impersonate-service-account="${XMC_CLIENT_SA}" --audiences="${IAP_CLIENT_ID}" --include-email`, then export it as `XMC_AUTH_TOKEN`.
+For CI service accounts (`XMC_CLIENT_SA`) and for sharing experiments through ACLs, see [Authentication and Experiment Access](../../docs/authentication.md).
 
 ## Launching Experiments
 
@@ -93,7 +93,7 @@ cp ../../.env.example ../../.env
 Open the newly created `../../.env` file and customize it with your specific details (such as your `PROJECT_ID`, `IAP_CLIENT_ID`, and domain endpoints).
 
 ### 2. Run the Launcher
-With the Python virtual environment active and the `.env` file configured, execute the `launch.py` script:
+With the Python virtual environment active, the `.env` file configured, and `XMC_AUTH_TOKEN` exported (see [Authentication](#authentication)), execute the `launch.py` script:
 
 ```bash
 python launch.py

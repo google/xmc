@@ -28,6 +28,8 @@ This example demonstrates how to interact with the XManager on Cloud (XMC) **Exp
    export XMC_DOMAIN="<your-xmc-domain>"
    ```
 
+3. **Authentication**: Run `xmc login`, then `export XMC_AUTH_TOKEN=$(xmc print-token)`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+
 ## Running the Example
 
 Run [launch.py](launch.py) from the repository root:

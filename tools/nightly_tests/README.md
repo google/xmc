@@ -94,7 +94,7 @@ Export `<example_name>_verify.py` in `exports_files` and add the corresponding `
    ./.githooks/pre-commit --check
    ```
 2. **Run a Verifier Against a Deployed GKE Environment**:
-   Mint an IAP OIDC token (`export XMC_AUTH_TOKEN="$(gcloud auth print-identity-token --audiences=${IAP_CLIENT_ID} --include-email)"`) and invoke any module in [`examples_verification/`](examples_verification/) via `./tools/venv/bin/python3 -m tools.nightly_tests.examples_verification.<verifier_name>` with `--xid`, `--expected_queue`, `--endpoint`, `--ui_base_url`, and `--headless=false` (see flags in [`verification/verifier_cli.py`](verification/verifier_cli.py)).
+   Sign in with `xmc login` and `export XMC_AUTH_TOKEN=$(xmc print-token)` (see [Authentication and Experiment Access](../../docs/authentication.md)), then invoke any module in [`examples_verification/`](examples_verification/) via `./tools/venv/bin/python3 -m tools.nightly_tests.examples_verification.<verifier_name>` with `--xid`, `--expected_queue`, `--endpoint`, `--ui_base_url`, and `--headless=false` (see flags in [`verification/verifier_cli.py`](verification/verifier_cli.py)). Verifiers read the experiment as you, so pass the XID of an experiment you launched. Experiments launched by the nightly workflow belong to its CI service account, and only that account can read them.
 3. **Trigger a Single Scenario in GitHub Actions on Your Branch**:
    ```bash
    gh workflow run nightly-examples-e2e.yml --ref "<branch_name>" -f examples_filter="<example_id>"
