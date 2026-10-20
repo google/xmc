@@ -19,6 +19,8 @@ import (
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"google.golang.org/protobuf/proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	msgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
@@ -198,6 +200,29 @@ type MockStorage struct {
 	SaveWorkUnitStatusHistoryErr      error
 	StatusMessageTxRepository         StatusMessageTxRepository
 	StatusHistoryTxRepository         StatusHistoryTxRepository
+
+	ActiveWorkUnitsResult            *ActiveWorkUnitsResult
+	FetchActiveWorkUnitsByQueuesErr  error
+	BatchQueueVelocityResp           []QueueMetricRow
+	FetchBatchQueueVelocityErr       error
+	BatchPendingQueueMetricsResp     []QueueMetricRow
+	FetchBatchPendingQueueMetricsErr error
+	CreateDashboardErr               error
+	Dashboard                        *dpb.Dashboard
+	GetDashboardErr                  error
+	ListDashboardsResp               []*dpb.Dashboard
+	ListDashboardsErr                error
+	UpdateDashboardResp              *dpb.Dashboard
+	UpdateDashboardErr               error
+	DeleteDashboardErr               error
+	CreateChartErr                   error
+	Chart                            *dpb.Chart
+	GetChartErr                      error
+	ListChartsResp                   []*dpb.Chart
+	ListChartsErr                    error
+	UpdateChartResp                  *dpb.Chart
+	UpdateChartErr                   error
+	DeleteChartErr                   error
 
 	RunInTransactionErr error
 	// RunInTransactionAttempts is how many times RunInTransaction invokes fn, simulating
@@ -531,4 +556,99 @@ func (s *MockStorage) UpdateWorkUnitOperation(ctx context.Context, update *Opera
 // ListStatusMessages mocks listing status messages.
 func (s *MockStorage) ListStatusMessages(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.StatusMessage, string, error) {
 	return s.ListStatusMessagesResp, s.NextPageToken, s.ListStatusMessagesErr
+}
+
+// FetchActiveWorkUnitsByQueues mocks fetching active work units by queue names.
+func (s *MockStorage) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error) {
+	return s.ActiveWorkUnitsResult, s.FetchActiveWorkUnitsByQueuesErr
+}
+
+// FetchBatchQueueVelocity mocks fetching batch queue velocity metrics.
+func (s *MockStorage) FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
+	return s.BatchQueueVelocityResp, s.FetchBatchQueueVelocityErr
+}
+
+// FetchBatchPendingQueueMetrics mocks fetching batch pending queue metrics.
+func (s *MockStorage) FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]QueueMetricRow, error) {
+	return s.BatchPendingQueueMetricsResp, s.FetchBatchPendingQueueMetricsErr
+}
+
+// CreateDashboard mocks creating a dashboard and its initial charts.
+func (s *MockStorage) CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error {
+	return s.CreateDashboardErr
+}
+
+// GetDashboard mocks retrieving a dashboard by ID.
+func (s *MockStorage) GetDashboard(ctx context.Context, dashboardID string) (*dpb.Dashboard, error) {
+	if s.GetDashboardErr != nil {
+		return nil, s.GetDashboardErr
+	}
+	if s.Dashboard == nil {
+		return nil, nil
+	}
+	return proto.Clone(s.Dashboard).(*dpb.Dashboard), nil
+}
+
+// ListDashboards mocks listing dashboards.
+func (s *MockStorage) ListDashboards(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error) {
+	return s.ListDashboardsResp, s.NextPageToken, s.ListDashboardsErr
+}
+
+// UpdateDashboard mocks updating a dashboard.
+func (s *MockStorage) UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fmpb.FieldMask) (*dpb.Dashboard, error) {
+	if s.UpdateDashboardErr != nil {
+		return nil, s.UpdateDashboardErr
+	}
+	if s.UpdateDashboardResp != nil {
+		return proto.Clone(s.UpdateDashboardResp).(*dpb.Dashboard), nil
+	}
+	if dashboard == nil {
+		return nil, nil
+	}
+	return proto.Clone(dashboard).(*dpb.Dashboard), nil
+}
+
+// DeleteDashboard mocks deleting a dashboard.
+func (s *MockStorage) DeleteDashboard(ctx context.Context, dashboardID string) error {
+	return s.DeleteDashboardErr
+}
+
+// CreateChart mocks creating a chart.
+func (s *MockStorage) CreateChart(ctx context.Context, chart *dpb.Chart) error {
+	return s.CreateChartErr
+}
+
+// GetChart mocks retrieving a chart by ID.
+func (s *MockStorage) GetChart(ctx context.Context, chartID string) (*dpb.Chart, error) {
+	if s.GetChartErr != nil {
+		return nil, s.GetChartErr
+	}
+	if s.Chart == nil {
+		return nil, nil
+	}
+	return proto.Clone(s.Chart).(*dpb.Chart), nil
+}
+
+// ListCharts mocks listing charts.
+func (s *MockStorage) ListCharts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
+	return s.ListChartsResp, s.NextPageToken, s.ListChartsErr
+}
+
+// UpdateChart mocks updating a chart.
+func (s *MockStorage) UpdateChart(ctx context.Context, chart *dpb.Chart, updateMask *fmpb.FieldMask) (*dpb.Chart, error) {
+	if s.UpdateChartErr != nil {
+		return nil, s.UpdateChartErr
+	}
+	if s.UpdateChartResp != nil {
+		return proto.Clone(s.UpdateChartResp).(*dpb.Chart), nil
+	}
+	if chart == nil {
+		return nil, nil
+	}
+	return proto.Clone(chart).(*dpb.Chart), nil
+}
+
+// DeleteChart mocks deleting a chart.
+func (s *MockStorage) DeleteChart(ctx context.Context, chartID string) error {
+	return s.DeleteChartErr
 }

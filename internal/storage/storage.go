@@ -23,6 +23,7 @@ import (
 
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	dpb "xmanager_cloud/api/protos/dashboard"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
 )
@@ -171,6 +172,9 @@ type WorkUnitStore interface {
 
 	// ListWorkUnitExecutions retrieves the historical work unit executions for a given work unit.
 	ListWorkUnitExecutions(ctx context.Context, xid int64, wid int64) ([]*essmsgpb.WorkUnitExecution, error)
+
+	// FetchActiveWorkUnitsByQueues retrieves active work units associated with the requested queue names.
+	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
 }
 
 // UpdatedWorkUnits contains the original and updated work unit protos.
@@ -207,6 +211,30 @@ type QueueMetricRow struct {
 	Count        int64
 	TotalUnits   int64
 	ResourceType string
+}
+
+// StatusHistoryStore defines storage operations for work unit status history and queue metrics.
+type StatusHistoryStore interface {
+	FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]QueueMetricRow, error)
+	FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]QueueMetricRow, error)
+}
+
+// -----------------------
+// Dashboard Methods
+// -----------------------
+
+// DashboardStore defines the persistence contract for dashboards and charts.
+type DashboardStore interface {
+	CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error
+	GetDashboard(ctx context.Context, dashboardID string) (*dpb.Dashboard, error)
+	ListDashboards(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error)
+	UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fmpb.FieldMask) (*dpb.Dashboard, error)
+	DeleteDashboard(ctx context.Context, dashboardID string) error
+	CreateChart(ctx context.Context, chart *dpb.Chart) error
+	GetChart(ctx context.Context, chartID string) (*dpb.Chart, error)
+	ListCharts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error)
+	UpdateChart(ctx context.Context, chart *dpb.Chart, updateMask *fmpb.FieldMask) (*dpb.Chart, error)
+	DeleteChart(ctx context.Context, chartID string) error
 }
 
 // -----------------------
@@ -407,6 +435,8 @@ type Storage interface {
 	ExperimentStore
 	WorkUnitStore
 	StatusMessageStore
+	StatusHistoryStore
+	DashboardStore
 	ArtifactStore
 	OperationStore
 	XidEntryStore
