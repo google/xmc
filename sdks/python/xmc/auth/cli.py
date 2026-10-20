@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import datetime
+import getpass
 import os
 import sys
 import webbrowser
@@ -26,6 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TextIO
 
 from xmc.auth import token_client
+from xmc.auth.browser_detection import browser_likely_available
 from xmc.auth.credentials_store import (
     CredentialsStore,
     StoredCredential,
@@ -78,6 +80,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     login = sub.add_parser("login", parents=[common], help="Sign in with your browser.")
     login.add_argument(
+        "--no-browser", action="store_true", help="Sign in on any device and paste back a code."
+    )
+    login.add_argument(
         "--timeout",
         type=_positive_seconds,
         default=DEFAULT_TIMEOUT_SECONDS,
@@ -90,8 +95,13 @@ def _build_parser() -> argparse.ArgumentParser:
 def _login(args: argparse.Namespace, server: str, ctx: CliContext) -> int:
     """Runs `xmc login` and caches the issued token."""
     cached = ctx.store.get(server)
+    use_browser = not args.no_browser and browser_likely_available(ctx.env)
+    if not (args.no_browser or use_browser):
+        ctx.out.write(
+            "No local browser detected (SSH session or no display); using manual login.\n"
+        )
     hint = cached.email if cached else None
-    grant = run_login(server, ctx.login_deps, args.timeout, hint)
+    grant = run_login(server, ctx.login_deps, use_browser, args.timeout, hint)
     expires_at = int(ctx.clock()) + grant.expires_in
     ctx.store.put(StoredCredential(server, grant.access_token, grant.email, expires_at))
     ctx.out.write(
@@ -133,10 +143,13 @@ def run_cli(argv: Sequence[str] | None, ctx: CliContext) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Console-script entry point for `xmc`, wired to the real environment."""
+    login_deps = LoginDependencies(
+        sys.stdout, webbrowser.open, getpass.getpass, token_client.exchange_code
+    )
     ctx = CliContext(
         env=os.environ,
         store=CredentialsStore(default_credentials_path(os.environ)),
-        login_deps=LoginDependencies(sys.stdout, webbrowser.open, token_client.exchange_code),
+        login_deps=login_deps,
         clock=lambda: datetime.datetime.now(datetime.timezone.utc).timestamp(),
         out=sys.stdout,
         err=sys.stderr,

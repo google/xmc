@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import io
+import re
 import threading
 import unittest
 import urllib.error
@@ -25,6 +26,7 @@ import urllib.request
 from unittest import mock
 
 from xmc.auth import login_flow, pkce
+from xmc.auth.errors import AuthError
 from xmc.auth.login_flow import LoginDependencies
 from xmc.auth.token_client import TokenGrant
 
@@ -79,9 +81,12 @@ class BuildLoginUrlTest(unittest.TestCase):
             },
         )
 
-    def test_omits_empty_login_hint(self) -> None:
-        """No login_hint is sent without a cached email."""
-        self.assertNotIn("login_hint", _query(login_flow.build_login_url(_SERVER, "s", "c", 1)))
+    def test_manual_mode(self) -> None:
+        """Manual URLs use mode=manual and omit port and empty hints."""
+        params = _query(login_flow.build_login_url(_SERVER, "st", "ch"))
+        self.assertEqual(params["mode"], "manual")
+        self.assertNotIn("port", params)
+        self.assertNotIn("login_hint", params)
 
 
 class RunLoginTest(unittest.TestCase):
@@ -90,30 +95,69 @@ class RunLoginTest(unittest.TestCase):
     def setUp(self) -> None:
         self.out = io.StringIO()
         self.exchange = mock.Mock(return_value=_GRANT)
+        self.read_code = mock.Mock(return_value=f"  {_CODE}\n")
         self.open_browser = mock.Mock(side_effect=_follow_redirect_to_loopback)
 
-    def _run(self) -> TokenGrant:
-        deps = LoginDependencies(self.out, self.open_browser, self.exchange)
-        return login_flow.run_login(_SERVER, deps, timeout=10, login_hint="u@x.com")
+    def _deps(self) -> LoginDependencies:
+        return LoginDependencies(self.out, self.open_browser, self.read_code, self.exchange)
 
-    def _assert_exchanged_with_matching_verifier(self) -> None:
-        login_url = self.open_browser.call_args.args[0]
-        self.assertIn(login_url, self.out.getvalue())
-        self.assertEqual(_query(login_url)["login_hint"], "u@x.com")
+    def _assert_exchanged_with_matching_verifier(self, login_url: str) -> None:
         server, code, verifier = self.exchange.call_args.args
         self.assertEqual((server, code), (_SERVER, _CODE))
         self.assertEqual(pkce.s256_challenge(verifier), _query(login_url)["code_challenge"])
 
     def test_browser_flow(self) -> None:
         """The loopback flow opens the browser, receives the code, and exchanges it."""
-        self.assertEqual(self._run(), _GRANT)
-        self._assert_exchanged_with_matching_verifier()
+        grant = login_flow.run_login(_SERVER, self._deps(), use_browser=True, timeout=10)
+        self.assertEqual(grant, _GRANT)
+        login_url = self.open_browser.call_args.args[0]
+        self.assertIn(login_url, self.out.getvalue())
+        self._assert_exchanged_with_matching_verifier(login_url)
+        self.read_code.assert_not_called()
 
     def test_blocking_browser_does_not_deadlock(self) -> None:
         """A browser command that blocks on the loopback redirect still completes."""
         self.open_browser.side_effect = _deliver_redirect
-        self.assertEqual(self._run(), _GRANT)
-        self._assert_exchanged_with_matching_verifier()
+        with mock.patch.object(login_flow, "BROWSER_LAUNCH_WAIT_SECONDS", 0.1):
+            grant = login_flow.run_login(_SERVER, self._deps(), use_browser=True, timeout=10)
+        self.assertEqual(grant, _GRANT)
+        self.read_code.assert_not_called()
+
+    def test_browser_launch_error_falls_back_to_manual(self) -> None:
+        """A browser launcher that raises is treated as unavailable."""
+        self.open_browser.side_effect = RuntimeError("bad BROWSER")
+        login_flow.run_login(_SERVER, self._deps(), use_browser=True)
+        self.read_code.assert_called_once()
+
+    def test_falls_back_to_manual_when_browser_fails(self) -> None:
+        """If the browser cannot be opened, a fresh manual attempt runs instead."""
+        self.open_browser.side_effect = None
+        self.open_browser.return_value = False
+        login_flow.run_login(_SERVER, self._deps(), use_browser=True, login_hint="u@x.com")
+        self.read_code.assert_called_once_with(login_flow.MANUAL_CODE_PROMPT)
+        browser_url = self.open_browser.call_args.args[0]
+        manual_url = re.findall(r"https://\S+", self.out.getvalue())[-1]
+        self.assertEqual(_query(manual_url)["mode"], "manual")
+        self.assertEqual(_query(manual_url)["login_hint"], "u@x.com")
+        for param in ("state", "code_challenge"):
+            self.assertNotEqual(_query(manual_url)[param], _query(browser_url)[param])
+        self._assert_exchanged_with_matching_verifier(manual_url)
+
+    def test_manual_flow_warns_and_strips_code(self) -> None:
+        """Manual mode prints the anti-phishing warning and trims pasted input."""
+        login_flow.run_login(_SERVER, self._deps(), use_browser=False)
+        self.open_browser.assert_not_called()
+        self.assertIn(login_flow.MANUAL_WARNING, self.out.getvalue())
+        self.assertEqual(self.exchange.call_args.args[1], _CODE)
+
+    def test_manual_flow_rejects_invalid_code(self) -> None:
+        """Empty or malformed pasted codes fail without calling the server."""
+        for pasted in ("", "   ", "not a code!"):
+            with self.subTest(pasted=pasted):
+                self.read_code.return_value = pasted
+                with self.assertRaisesRegex(AuthError, "No valid login code"):
+                    login_flow.run_login(_SERVER, self._deps(), use_browser=False)
+        self.exchange.assert_not_called()
 
 
 if __name__ == "__main__":

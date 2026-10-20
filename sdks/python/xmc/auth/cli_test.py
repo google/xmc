@@ -32,7 +32,7 @@ from xmc.auth.token_client import TokenGrant
 
 _NOW = 1_800_000_000
 _SERVER = "https://xmc.example.com"
-_ENV = {"XMC_API_URL": _SERVER}
+_ENV = {"XMC_API_URL": _SERVER, "DISPLAY": ":0"}
 _GRANT = TokenGrant(access_token="tok-new", email="user@example.com", expires_in=43200)
 _CACHED = StoredCredential(_SERVER, "tok-cached", "cached@example.com", _NOW + 3600)
 _EXPIRED = StoredCredential(_SERVER, "tok-old", "old@example.com", _NOW)
@@ -52,7 +52,7 @@ class CliTest(unittest.TestCase):
         self.addCleanup(run_login.stop)
 
     def _run(self, *argv: str) -> int:
-        deps = LoginDependencies(self.out, mock.Mock(), mock.Mock())
+        deps = LoginDependencies(self.out, mock.Mock(), mock.Mock(), mock.Mock())
         ctx = cli.CliContext(self.env, self.store, deps, lambda: float(_NOW), self.out, self.err)
         return cli.run_cli(list(argv), ctx)
 
@@ -66,7 +66,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("user@example.com", self.out.getvalue())
         self.assertIn("export XMC_AUTH_TOKEN=$(xmc print-token)", self.out.getvalue())
         self.assertNotIn("tok-new", self.out.getvalue() + self.err.getvalue())
-        self.run_login.assert_called_once_with(_SERVER, mock.ANY, 300, None)
+        self.run_login.assert_called_once_with(_SERVER, mock.ANY, True, 300, None)
 
     def test_login_strips_control_characters_from_email(self) -> None:
         """Terminal escape sequences in a server-provided email are not printed."""
@@ -78,8 +78,18 @@ class CliTest(unittest.TestCase):
     def test_login_passes_cached_email_as_hint_and_flags(self) -> None:
         """Re-login uses the cached email as login_hint and honors flags."""
         self.store.put(_CACHED)
-        self._run("login", "--timeout", "30", "--server", "https://XMC.example.com/")
-        self.run_login.assert_called_once_with(_SERVER, mock.ANY, 30.0, "cached@example.com")
+        self._run(
+            "login", "--no-browser", "--timeout", "30", "--server", "https://XMC.example.com/"
+        )
+        self.run_login.assert_called_once_with(_SERVER, mock.ANY, False, 30.0, "cached@example.com")
+        self.assertNotIn("No local browser", self.out.getvalue())
+
+    def test_login_falls_back_without_browser(self) -> None:
+        """Without a display, login announces and uses manual mode."""
+        self.env = {"XMC_API_URL": _SERVER, "SSH_TTY": "/dev/pts/0"}
+        self._run("login")
+        self.assertIn("No local browser detected", self.out.getvalue())
+        self.assertFalse(self.run_login.call_args.args[2])
 
     def test_login_failure_exits_1(self) -> None:
         """Login errors print a message and exit 1 without caching anything."""

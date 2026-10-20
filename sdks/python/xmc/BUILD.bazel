@@ -137,6 +137,13 @@ py_binary(
 )
 
 py_test(
+    name = "auth_browser_detection_test",
+    srcs = ["auth/browser_detection_test.py"],
+    main = "auth/browser_detection_test.py",
+    deps = [":xmc"],
+)
+
+py_test(
     name = "auth_cli_test",
     srcs = ["auth/cli_test.py"],
     main = "auth/cli_test.py",
