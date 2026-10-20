@@ -55,45 +55,49 @@ func (a *Authenticator) takeCLILoginTicket(w http.ResponseWriter, r *http.Reques
 		logging.Warn(r.Context(), "[CLI Login] Ignoring cli_login cookie", "error", err)
 		return cliLoginTicket{}, false
 	}
-	if ticket.Mode != cliLoginModeLoopback || !ticket.boundTo(oauthState) {
+	if (ticket.Mode != cliLoginModeLoopback && ticket.Mode != cliLoginModeManual) || !ticket.boundTo(oauthState) {
 		logging.Warn(r.Context(), "[CLI Login] Ignoring cli_login cookie issued for another login")
 		return cliLoginTicket{}, false
 	}
 	return ticket, true
 }
 
-// handleCLICallback finishes the IdP round trip of a CLI login. Every outcome is reported to the
-// CLI's loopback listener so it never waits for a result that will not come: an IdP error or a
-// missing code (such as the user cancelling) is access_denied, and a failed code exchange is
-// server_error.
+// handleCLICallback finishes the IdP round trip of a CLI login. Every outcome is reported, so the
+// user and the CLI never wait for a result that will not come: an IdP error or a missing code
+// (such as the user cancelling) is access_denied, and a failed code exchange is server_error.
 func (a *Authenticator) handleCLICallback(ctx context.Context, w http.ResponseWriter, r *http.Request, ticket cliLoginTicket) {
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		logging.Warn(ctx, "[CLI Login] Identity provider returned no code", "idp_error", r.URL.Query().Get("error"))
-		redirectToCLILoopback(w, r, ticket, url.Values{"error": {cliErrorAccessDenied}})
+		failCLILogin(w, r, ticket, cliErrorAccessDenied)
 		return
 	}
 	userInfo, err := a.OAuthProvider.ExchangeAndGetUserInfo(ctx, r, code)
 	if err != nil {
 		logging.Error(ctx, "[CLI Login] Failed to get user info", "error", err)
-		redirectToCLILoopback(w, r, ticket, url.Values{"error": {cliErrorServerError}})
+		failCLILogin(w, r, ticket, cliErrorServerError)
 		return
 	}
 	a.completeCLILogin(ctx, w, r, ticket, userInfo)
 }
 
-// completeCLILogin admits the user and redirects the browser to the CLI's loopback listener with
-// a one-time code, or with an error. The email is never put in the loopback URL.
+// completeCLILogin admits the user and hands over a one-time code: in loopback mode by redirecting
+// the browser to the CLI's loopback listener, in manual mode only after the user confirms on an
+// interstitial page. The email is never put in a URL.
 func (a *Authenticator) completeCLILogin(ctx context.Context, w http.ResponseWriter, r *http.Request, ticket cliLoginTicket, userInfo *GoogleUserInfo) {
 	identity, err := a.admitLogin(ctx, userInfo)
 	if errors.Is(err, errNotAdmitted) {
 		logging.Warn(ctx, "[CLI Login] Access forbidden: user is not admitted", "email", identity.email, "error", err)
-		redirectToCLILoopback(w, r, ticket, url.Values{"error": {cliErrorAccessDenied}})
+		failCLILogin(w, r, ticket, cliErrorAccessDenied)
 		return
 	}
 	if err != nil {
 		logging.Error(ctx, "[CLI Login] Authorization pipeline check failed", "error", err)
-		redirectToCLILoopback(w, r, ticket, url.Values{"error": {cliErrorServerError}})
+		failCLILogin(w, r, ticket, cliErrorServerError)
+		return
+	}
+	if ticket.Mode == cliLoginModeManual {
+		a.askCLIManualConfirmation(ctx, w, identity, ticket.CodeChallenge, time.Now())
 		return
 	}
 	code, err := a.issueCLILoginCode(ctx, identity, ticket.CodeChallenge, cliLoopbackCodeTTL, time.Now())
@@ -103,6 +107,16 @@ func (a *Authenticator) completeCLILogin(ctx context.Context, w http.ResponseWri
 		return
 	}
 	redirectToCLILoopback(w, r, ticket, url.Values{"code": {code}})
+}
+
+// failCLILogin reports a failed CLI login: to the loopback listener, or in manual mode, where
+// there is no listener, on an error page in the browser.
+func failCLILogin(w http.ResponseWriter, r *http.Request, ticket cliLoginTicket, errCode string) {
+	if ticket.Mode == cliLoginModeManual {
+		writeCLIManualError(w, errCode)
+		return
+	}
+	redirectToCLILoopback(w, r, ticket, url.Values{"error": {errCode}})
 }
 
 // issueCLILoginCode stores a new one-time code for identity, redeemable for ttl, and returns it.

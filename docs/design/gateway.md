@@ -166,10 +166,42 @@ sequenceDiagram
     ESS->>CLI: access_token (aud xmanager-cloud-cli, jti, CLI_SESSION_TTL)
 ```
 
-1. **Login ticket**: `/api/cli/login` accepts only a numeric loopback `port` (1024 to 65535), a CLI `state`, an S256 `code_challenge` and an optional `login_hint`. It stores them in the `cli_login` cookie, MAC'd with a key derived from the JWT secret by HKDF and scoped to `/api/callback`, together with the hash of the `oauth_state` it generates. To stop other sites from starting a login in the user's browser (login CSRF) or embedding it, browsers that send fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Browsers without fetch metadata are allowed, which leaves them exposed to login CSRF.
-2. **Callback**: `/api/callback` completes a CLI login only when the `cli_login` ticket is authentic, unexpired and bound to the `oauth_state` of the same round trip; otherwise it signs the user in to the Dashboard as before. `/api/login` deletes any `cli_login` cookie. Every outcome goes to the loopback URL, which is built from the ticket's port, never from the request: an identity provider error or cancellation, or a rejected user, is sent `error=access_denied`, and a failed code exchange or other server failure `error=server_error`. The email never appears in the URL.
+1. **Login ticket**: `/api/cli/login` accepts only a numeric loopback `port` (1024 to 65535) or `mode=manual` (see [Headless (Manual) Mode](#headless-manual-mode)), a CLI `state`, an S256 `code_challenge` and an optional `login_hint`. It stores them in the `cli_login` cookie, MAC'd with a key derived from the JWT secret by HKDF and scoped to `/api/callback`, together with the hash of the `oauth_state` it generates. To stop other sites from starting a login in the user's browser (login CSRF) or embedding it, browsers that send fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Browsers without fetch metadata are allowed, which leaves them exposed to login CSRF.
+2. **Callback**: `/api/callback` completes a CLI login only when the `cli_login` ticket is authentic, unexpired and bound to the `oauth_state` of the same round trip; otherwise it signs the user in to the Dashboard as before. `/api/login` deletes any `cli_login` cookie. In loopback mode, every outcome goes to the loopback URL, which is built from the ticket's port, never from the request: an identity provider error or cancellation, or a rejected user, is sent `error=access_denied`, and a failed code exchange or other server failure `error=server_error`. The email never appears in the URL.
 3. **Token exchange**: `/api/cli/token` rejects malformed requests before reading the store or spending rate limit, consumes the code in a Spanner read-write transaction before checking the PKCE verifier, and answers every code or verifier problem with `400 invalid_grant`. A user who lost admission since signing in gets `403 access_denied`. Responses are `no-store`, and a process-wide rate limit protects the store.
 4. **Use**: the CLI token is an HS256 session token with audience `xmanager-cloud-cli`. HTTP accepts it only as a bearer token, never as the session cookie, and gRPC accepts it in call metadata. Every call re-runs deployment admission.
+
+#### Headless (Manual) Mode
+
+Over SSH or without a display, `xmc login --no-browser` (also chosen automatically) sends `mode=manual` instead of `port`. `/api/cli/login` requires exactly one of the two. The user opens the printed URL in a browser on any device and pastes the resulting code into the terminal.
+
+```mermaid
+sequenceDiagram
+    participant CLI as xmc login --no-browser
+    participant B as Browser (any device)
+    participant ESS as ESS /api
+    participant IdP as Google or Dex
+    CLI->>CLI: state, PKCE verifier and S256 challenge
+    CLI->>B: print /api/cli/login?mode=manual&state&code_challenge&code_challenge_method=S256
+    B->>ESS: GET /api/cli/login
+    ESS->>B: cli_login cookie (mode manual) and oauth_state cookie, 307 to IdP
+    B->>IdP: sign in
+    IdP->>B: 307 /api/callback?code&state
+    B->>ESS: GET /api/callback
+    ESS->>ESS: identity checks and admission, store SHA-256 of a confirmation nonce (5m)
+    ESS->>B: confirmation page naming the account, MAC'd confirmation in the form
+    B->>ESS: POST /api/cli/code (Continue)
+    ESS->>ESS: verify confirmation, consume nonce, re-run admission, store SHA-256 of a one-time code (120s)
+    ESS->>B: code page (no-store, no-referrer)
+    B->>CLI: user pastes the code
+    CLI->>ESS: POST /api/cli/token (code, code_verifier)
+    ESS->>CLI: access_token
+```
+
+1. **Confirmation first**: after the identity checks and admission, the callback mints no code. It shows a page naming the account and telling the user to continue only if they started `xmc login --no-browser` themselves, just now. The page's form carries a confirmation (email, name, PKCE challenge, nonce, 5-minute expiry) MAC'd with a second HKDF sub-key of the JWT secret (info `xmc-cli-manual-confirm-v1`), never a code.
+2. **Single use**: the callback stores the SHA-256 of a domain-separated nonce in `CliLoginCodes`, and `POST /api/cli/code` consumes it before minting, so each confirmation yields at most one code and a resubmitted form is rejected. The domain separation means a nonce can never be redeemed as a code at `/api/cli/token`.
+3. **Code delivery**: `POST /api/cli/code` accepts only same-origin form posts (`Sec-Fetch-Site: same-origin` and `Sec-Fetch-Dest: document` when sent, on top of `CrossOriginProtection`), re-runs admission, and shows a 120-second code in the page body, never in a URL. Pages are `no-store` with `Referrer-Policy: no-referrer`, use no script, and escape every dynamic value. Failures, including a denied user, show an error page that does not name the user, because there is no loopback listener to report them to.
+4. **Residual risk**: an attacker can still send a victim a manual-mode link built with the attacker's own PKCE challenge, and talk the victim into confirming and handing over the code (consent phishing). The confirmation page, the warnings and the short code lifetime reduce this to the same level as `gcloud auth login --no-browser`.
 
 The CLI login endpoints are registered only when authentication is enabled (no `MOCK_AUTH` or `DISABLE_AUTHENTICATION`) and the server has a Spanner client.
 

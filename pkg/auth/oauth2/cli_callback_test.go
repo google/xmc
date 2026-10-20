@@ -130,34 +130,43 @@ func TestHandleCallbackCLILoginErrors(t *testing.T) {
 		},
 		{name: "random source failure", random: true, want: cliErrorServerError},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := baseLoginConfig()
-			if tt.cfg != nil {
-				tt.cfg(cfg)
-			}
-			a, store, provider := newCLITestAuthenticator(t, cfg)
-			if tt.setup != nil {
-				tt.setup(a, store, provider)
-			}
-			query := idpCode
-			if tt.query != "" {
-				query = tt.query
-			}
-			req := newCLICallbackRequest(query, mustSealCLILoginTicket(t, a, baseCLITicket(loginTestOAuthState)))
-			if tt.random {
-				withFailingRandom(t)
-			}
-			resp := serveCallback(a, req)
+	// Loopback logins report the error to the loopback listener; manual logins, which have none,
+	// show an error page.
+	manualStatus := map[string]int{cliErrorAccessDenied: http.StatusForbidden, cliErrorServerError: http.StatusInternalServerError}
+	for _, ticket := range []cliLoginTicket{baseCLITicket(loginTestOAuthState), baseCLIManualTicket(loginTestOAuthState)} {
+		for _, tt := range tests {
+			t.Run(ticket.Mode+"/"+tt.name, func(t *testing.T) {
+				cfg := baseLoginConfig()
+				if tt.cfg != nil {
+					tt.cfg(cfg)
+				}
+				a, store, provider := newCLITestAuthenticator(t, cfg)
+				if tt.setup != nil {
+					tt.setup(a, store, provider)
+				}
+				query := idpCode
+				if tt.query != "" {
+					query = tt.query
+				}
+				req := newCLICallbackRequest(query, mustSealCLILoginTicket(t, a, ticket))
+				if tt.random {
+					withFailingRandom(t)
+				}
+				resp := serveCallback(a, req)
+				got, _ := readCLIPage(resp)
 
-			want := cliLoopback + "?" + url.Values{"error": {tt.want}, "state": {cliTestState}}.Encode()
-			if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != want {
-				t.Errorf("response = %d %q, want %d %q", resp.StatusCode, resp.Header.Get("Location"), http.StatusFound, want)
-			}
-			if len(store.codes) != 0 {
-				t.Errorf("store holds %d codes, want none", len(store.codes))
-			}
-		})
+				want := cliRedirect(cliLoopback + "?" + url.Values{"error": {tt.want}, "state": {cliTestState}}.Encode())
+				if ticket.Mode == cliLoginModeManual {
+					want = cliPage(manualStatus[tt.want], "Sign-in failed")
+				}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("response mismatch (-want +got):\n%s", diff)
+				}
+				if len(store.codes) != 0 {
+					t.Errorf("store holds %d codes, want none", len(store.codes))
+				}
+			})
+		}
 	}
 }
 
@@ -167,8 +176,8 @@ func TestHandleCallbackCLILoginErrors(t *testing.T) {
 func TestHandleCallbackIgnoresInvalidCLILoginCookie(t *testing.T) {
 	expired := baseCLITicket(loginTestOAuthState)
 	expired.ExpiresAt = time.Now().Add(-time.Second).Unix()
-	manual := baseCLITicket(loginTestOAuthState)
-	manual.Mode = "manual"
+	unsupported := baseCLITicket(loginTestOAuthState)
+	unsupported.Mode = "device"
 	tests := []struct {
 		name     string
 		cookie   func(*Authenticator) string
@@ -177,7 +186,7 @@ func TestHandleCallbackIgnoresInvalidCLILoginCookie(t *testing.T) {
 		{name: "forged", cookie: func(*Authenticator) string { return "e30.AAAA" }},
 		{name: "expired", cookie: func(a *Authenticator) string { return mustSealCLILoginTicket(t, a, expired) }},
 		{name: "another round trip", cookie: func(a *Authenticator) string { return mustSealCLILoginTicket(t, a, baseCLITicket("other-state")) }},
-		{name: "unsupported mode", cookie: func(a *Authenticator) string { return mustSealCLILoginTicket(t, a, manual) }},
+		{name: "unsupported mode", cookie: func(a *Authenticator) string { return mustSealCLILoginTicket(t, a, unsupported) }},
 		{
 			name:     "CLI login disabled",
 			cookie:   func(a *Authenticator) string { return mustSealCLILoginTicket(t, a, baseCLITicket(loginTestOAuthState)) },

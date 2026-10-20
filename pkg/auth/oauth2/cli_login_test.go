@@ -94,6 +94,35 @@ func TestHandleCLILoginSuccess(t *testing.T) {
 	}
 }
 
+// TestHandleCLILoginManualMode checks that mode=manual, given instead of a port, issues a manual
+// ticket.
+func TestHandleCLILoginManualMode(t *testing.T) {
+	a, _, _ := newCLITestAuthenticator(t, baseLoginConfig())
+	q := baseCLILoginQuery()
+	q.Del("port")
+	q.Set("mode", "manual")
+	w := httptest.NewRecorder()
+	a.HandleCLILogin(w, newCLILoginRequest(q))
+	resp := w.Result()
+
+	if resp.StatusCode != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusTemporaryRedirect)
+	}
+	stateCookie, cliCookie := responseCookie(resp, "oauth_state"), responseCookie(resp, cliLoginCookieName)
+	if stateCookie == nil || cliCookie == nil {
+		t.Fatalf("cookies = %v, want oauth_state and cli_login", resp.Cookies())
+	}
+	ticket, err := a.openCLILoginTicket(cliCookie.Value, time.Now())
+	if err != nil {
+		t.Fatalf("cli_login cookie does not open: %v", err)
+	}
+	wantTicket := baseCLIManualTicket(stateCookie.Value)
+	wantTicket.ExpiresAt = ticket.ExpiresAt
+	if diff := cmp.Diff(wantTicket, ticket); diff != "" {
+		t.Errorf("cli_login ticket mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestHandleCLILoginWithoutLoginHint(t *testing.T) {
 	a, _, _ := newCLITestAuthenticator(t, baseLoginConfig())
 	q := baseCLILoginQuery()
@@ -200,7 +229,11 @@ func TestHandleCLILoginRandomFailure(t *testing.T) {
 }
 
 func TestParseCLILoginRequest(t *testing.T) {
-	base := cliLoginRequest{port: cliTestPort, state: cliTestState, codeChallenge: cliTestChallenge, loginHint: loginTestEmail}
+	base := cliLoginRequest{mode: cliLoginModeLoopback, port: cliTestPort, state: cliTestState, codeChallenge: cliTestChallenge, loginHint: loginTestEmail}
+	manual := func(q url.Values) {
+		q.Del("port")
+		q.Set("mode", "manual")
+	}
 	tests := []struct {
 		name    string
 		mutate  func(url.Values)
@@ -208,10 +241,14 @@ func TestParseCLILoginRequest(t *testing.T) {
 		wantErr string
 	}{
 		{name: "valid", want: base},
-		{name: "lowest port", mutate: func(q url.Values) { q.Set("port", "1024") }, want: cliLoginRequest{port: 1024, state: base.state, codeChallenge: base.codeChallenge, loginHint: base.loginHint}},
-		{name: "highest port", mutate: func(q url.Values) { q.Set("port", "65535") }, want: cliLoginRequest{port: 65535, state: base.state, codeChallenge: base.codeChallenge, loginHint: base.loginHint}},
-		{name: "no login hint", mutate: func(q url.Values) { q.Del("login_hint") }, want: cliLoginRequest{port: base.port, state: base.state, codeChallenge: base.codeChallenge}},
-		{name: "missing port", mutate: func(q url.Values) { q.Del("port") }, wantErr: "port"},
+		{name: "lowest port", mutate: func(q url.Values) { q.Set("port", "1024") }, want: cliLoginRequest{mode: base.mode, port: 1024, state: base.state, codeChallenge: base.codeChallenge, loginHint: base.loginHint}},
+		{name: "highest port", mutate: func(q url.Values) { q.Set("port", "65535") }, want: cliLoginRequest{mode: base.mode, port: 65535, state: base.state, codeChallenge: base.codeChallenge, loginHint: base.loginHint}},
+		{name: "no login hint", mutate: func(q url.Values) { q.Del("login_hint") }, want: cliLoginRequest{mode: base.mode, port: base.port, state: base.state, codeChallenge: base.codeChallenge}},
+		{name: "manual mode", mutate: manual, want: cliLoginRequest{mode: cliLoginModeManual, state: base.state, codeChallenge: base.codeChallenge, loginHint: base.loginHint}},
+		{name: "port and manual mode", mutate: func(q url.Values) { q.Set("mode", "manual") }, wantErr: "exactly one of port and mode=manual"},
+		{name: "missing port", mutate: func(q url.Values) { q.Del("port") }, wantErr: "exactly one of port and mode=manual"},
+		{name: "unknown mode", mutate: func(q url.Values) { manual(q); q.Set("mode", "loopback") }, wantErr: "mode must be manual"},
+		{name: "repeated mode", mutate: func(q url.Values) { manual(q); q.Add("mode", "manual") }, wantErr: "mode must not be repeated"},
 		{name: "non-numeric port", mutate: func(q url.Values) { q.Set("port", "80a") }, wantErr: "port"},
 		{name: "signed port", mutate: func(q url.Values) { q.Set("port", "+8080") }, wantErr: "port"},
 		{name: "privileged port", mutate: func(q url.Values) { q.Set("port", "1023") }, wantErr: "port"},

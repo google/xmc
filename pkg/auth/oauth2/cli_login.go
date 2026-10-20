@@ -49,15 +49,20 @@ var (
 
 // cliLoginRequest is the validated query of `GET /api/cli/login`.
 type cliLoginRequest struct {
+	// mode is cliLoginModeLoopback or cliLoginModeManual.
+	mode string
+	// port is the loopback listener's port; it is zero in manual mode.
 	port          int
 	state         string
 	codeChallenge string
 	loginHint     string
 }
 
-// HandleCLILogin starts a CLI login: it records the CLI's loopback port, state and PKCE challenge
-// in the MAC'd cli_login cookie and redirects the browser to the identity provider. The callback
-// then delivers a one-time code to `http://127.0.0.1:<port>/callback`.
+// HandleCLILogin starts a CLI login: it records how the code reaches the CLI (its loopback port,
+// or manual mode), the CLI's state and its PKCE challenge in the MAC'd cli_login cookie and
+// redirects the browser to the identity provider. The callback then delivers a one-time code to
+// `http://127.0.0.1:<port>/callback`, or in manual mode shows it in the browser once the user
+// confirms.
 func (a *Authenticator) HandleCLILogin(w http.ResponseWriter, r *http.Request) {
 	if !a.checkCLIBrowserRequest(w, r) {
 		return
@@ -115,11 +120,11 @@ func headerAbsentOrEqual(r *http.Request, name, want string) bool {
 }
 
 func parseCLILoginRequest(q url.Values) (cliLoginRequest, error) {
-	params, err := singleValues(q, "port", "state", "code_challenge", "code_challenge_method", "login_hint")
+	params, err := singleValues(q, "port", "mode", "state", "code_challenge", "code_challenge_method", "login_hint")
 	if err != nil {
 		return cliLoginRequest{}, err
 	}
-	port, err := parseCLILoopbackPort(params["port"])
+	mode, port, err := parseCLIDelivery(params["port"], params["mode"])
 	if err != nil {
 		return cliLoginRequest{}, err
 	}
@@ -135,7 +140,24 @@ func parseCLILoginRequest(q url.Values) (cliLoginRequest, error) {
 	if err := validateLoginHint(params["login_hint"]); err != nil {
 		return cliLoginRequest{}, err
 	}
-	return cliLoginRequest{port: port, state: params["state"], codeChallenge: params["code_challenge"], loginHint: params["login_hint"]}, nil
+	return cliLoginRequest{mode: mode, port: port, state: params["state"], codeChallenge: params["code_challenge"], loginHint: params["login_hint"]}, nil
+}
+
+// parseCLIDelivery reads how the code reaches the CLI: a loopback port, or mode=manual for the user
+// to paste it. Exactly one of the two must be given. It returns the mode and the port, which is
+// zero in manual mode.
+func parseCLIDelivery(rawPort, mode string) (string, int, error) {
+	if (rawPort == "") == (mode == "") {
+		return "", 0, errors.New("exactly one of port and mode=manual is required")
+	}
+	if mode == "" {
+		port, err := parseCLILoopbackPort(rawPort)
+		return cliLoginModeLoopback, port, err
+	}
+	if mode != cliLoginModeManual {
+		return "", 0, errors.New("mode must be manual")
+	}
+	return cliLoginModeManual, 0, nil
 }
 
 // singleValues returns the named parameters, rejecting any that is repeated.
@@ -186,7 +208,7 @@ func (a *Authenticator) setCLILoginCookie(w http.ResponseWriter, r *http.Request
 		Port:           req.port,
 		State:          req.state,
 		CodeChallenge:  req.codeChallenge,
-		Mode:           cliLoginModeLoopback,
+		Mode:           req.mode,
 		OAuthStateHash: hashOAuthState(oauthState),
 		ExpiresAt:      now.Add(cliLoginTicketTTL).Unix(),
 	})

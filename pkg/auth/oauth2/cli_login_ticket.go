@@ -33,6 +33,9 @@ const (
 	cliLoginMACInfo = "xmc-cli-login-v1"
 	// cliLoginModeLoopback marks a ticket whose code is delivered to the CLI's loopback listener.
 	cliLoginModeLoopback = "loopback"
+	// cliLoginModeManual marks a ticket whose code is shown in the browser, after the user
+	// confirms, for the user to paste into the CLI.
+	cliLoginModeManual = "manual"
 )
 
 var (
@@ -111,14 +114,17 @@ func openSigned(key []byte, sealed string, v any) bool {
 	return json.Unmarshal(payload, v) == nil
 }
 
-// deriveCLILoginMACKey derives the cli_login cookie MAC key from the JWT secret with
-// HKDF-SHA256 (RFC 5869).
-func deriveCLILoginMACKey(jwtSecret []byte) ([]byte, error) {
-	key, err := hkdf.Key(sha256.New, jwtSecret, nil, cliLoginMACInfo, sha256.Size)
-	if err != nil {
-		return nil, fmt.Errorf("failed to derive cli_login key: %w", err)
+// deriveCLIKeys derives the cli_login cookie MAC key and the manual-mode confirmation MAC key from
+// the JWT secret with HKDF-SHA256 (RFC 5869). Distinct HKDF infos keep the two MACs and session
+// tokens from ever sharing a key.
+func deriveCLIKeys(jwtSecret []byte) (ticketKey, confirmationKey []byte, err error) {
+	var keys [2][]byte
+	for i, info := range [2]string{cliLoginMACInfo, cliManualConfirmationInfo} {
+		if keys[i], err = hkdf.Key(sha256.New, jwtSecret, nil, info, sha256.Size); err != nil {
+			return nil, nil, fmt.Errorf("failed to derive %s key: %w", info, err)
+		}
 	}
-	return key, nil
+	return keys[0], keys[1], nil
 }
 
 func hmacSHA256(key, data []byte) []byte {

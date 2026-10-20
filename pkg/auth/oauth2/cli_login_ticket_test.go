@@ -25,18 +25,21 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestDeriveCLILoginMACKey(t *testing.T) {
+func TestDeriveCLIKeys(t *testing.T) {
 	// HKDF-SHA256 (RFC 5869) with an empty salt and a 32-byte output is
 	// PRK = HMAC(0^32, secret), OKM = HMAC(PRK, info || 0x01).
 	prk := hmacSHA256(make([]byte, sha256.Size), []byte(loginTestSecret))
-	want := hmacSHA256(prk, append([]byte(cliLoginMACInfo), 0x01))
-
-	got, err := deriveCLILoginMACKey([]byte(loginTestSecret))
-	if err != nil {
-		t.Fatalf("deriveCLILoginMACKey() failed: %v", err)
+	want := [][]byte{
+		hmacSHA256(prk, append([]byte(cliLoginMACInfo), 0x01)),
+		hmacSHA256(prk, append([]byte(cliManualConfirmationInfo), 0x01)),
 	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("deriveCLILoginMACKey() mismatch (-want +got):\n%s", diff)
+
+	ticketKey, confirmationKey, err := deriveCLIKeys([]byte(loginTestSecret))
+	if err != nil {
+		t.Fatalf("deriveCLIKeys() failed: %v", err)
+	}
+	if diff := cmp.Diff(want, [][]byte{ticketKey, confirmationKey}); diff != "" {
+		t.Errorf("deriveCLIKeys() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -64,6 +67,10 @@ func TestOpenCLILoginTicketRejects(t *testing.T) {
 	rawSecretMAC := func() string {
 		return payload + "." + base64.RawURLEncoding.EncodeToString(hmacSHA256([]byte(loginTestSecret), []byte(payload)))
 	}
+	// confirmationKeyMAC seals the genuine payload with the manual confirmation sub-key.
+	confirmationKeyMAC := func() string {
+		return payload + "." + base64.RawURLEncoding.EncodeToString(hmacSHA256(a.cliConfirmationKey, []byte(payload)))
+	}
 	tampered := []byte(payload)
 	tampered[5] ^= 0x01
 
@@ -79,6 +86,7 @@ func TestOpenCLILoginTicketRejects(t *testing.T) {
 		{name: "tampered payload", sealed: string(tampered) + "." + mac, now: time.Now()},
 		{name: "mac from another payload", sealed: payload + "." + strings.SplitN(signed("e30"), ".", 2)[1], now: time.Now()},
 		{name: "mac keyed with the raw jwt secret", sealed: rawSecretMAC(), now: time.Now()},
+		{name: "mac keyed with the confirmation key", sealed: confirmationKeyMAC(), now: time.Now()},
 		{name: "payload is not base64url", sealed: signed("!!!"), now: time.Now()},
 		{name: "payload is not json", sealed: signed(base64.RawURLEncoding.EncodeToString([]byte("not json"))), now: time.Now()},
 		{name: "expired", sealed: sealed, now: time.Now().Add(cliLoginTicketTTL + time.Second), expired: true},
