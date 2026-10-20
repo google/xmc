@@ -52,6 +52,15 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.setOAuthStateCookie(w, r, state)
+	// A CLI login abandoned in this browser must not outlive this Dashboard login.
+	a.clearCLILoginCookie(w, r)
+
+	authURL := a.OAuthProvider.AuthCodeURL(state, r)
+	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
+}
+
+func (a *Authenticator) setOAuthStateCookie(w http.ResponseWriter, r *http.Request, state string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
 		Value:    state,
@@ -62,14 +71,12 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Secure:   a.isCookieSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
-
-	authURL := a.OAuthProvider.AuthCodeURL(state, r)
-	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
-// HandleCallback processes the authentication callback.
+// HandleCallback processes the authentication callback. A valid cli_login cookie bound to this
+// round trip completes a CLI login; otherwise the callback signs the user in to the Dashboard.
 func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	_, err := a.validateState(r)
+	oauthState, err := a.validateState(r)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("State validation failed: %v", err), http.StatusBadRequest)
 		return
@@ -84,14 +91,19 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	if ticket, ok := a.takeCLILoginTicket(w, r, oauthState); ok {
+		a.handleCLICallback(ctx, w, r, ticket)
+		return
+	}
+
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		http.Error(w, "Code parameter is missing", http.StatusBadRequest)
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
 
 	userInfo, err := a.OAuthProvider.ExchangeAndGetUserInfo(ctx, r, code)
 	if err != nil {

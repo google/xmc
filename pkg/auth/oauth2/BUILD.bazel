@@ -17,6 +17,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "oauth2",
     srcs = [
+        "cli_callback.go",
+        "cli_code_store.go",
+        "cli_login.go",
+        "cli_login_ticket.go",
         "config.go",
         "gateway.go",
         "handlers.go",
@@ -44,6 +48,11 @@ go_library(
 go_test(
     name = "oauth2_test",
     srcs = [
+        "cli_callback_test.go",
+        "cli_code_store_test.go",
+        "cli_login_test.go",
+        "cli_login_ticket_test.go",
+        "cli_test_fixtures_test.go",
         "config_test.go",
         "login_identity_test.go",
         "login_test_fixtures_test.go",

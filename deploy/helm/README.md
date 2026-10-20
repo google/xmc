@@ -106,6 +106,28 @@ lowercase.
 
 ---
 
+## CLI login
+
+`xmc login` signs the user in through the browser and stores an XMC session token
+for the CLI ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). The
+experiment state server starts the flow on `/api/cli/login` and finishes it on the
+existing `/api/callback`, reusing the Dashboard OAuth client and its redirect URI,
+so no OAuth client changes are needed. The callback applies the
+[sign-in identity checks](#sign-in-identity-checks) and
+[deployment admission](#deployment-admission), then hands the CLI a one-time code
+through its `127.0.0.1` listener. Codes live in the `CliLoginCodes` Spanner table
+(migration 016) for at most 60 seconds.
+
+`/api/cli/login` only starts a login in a page the user opened directly, such as
+the browser window the CLI launches: browsers that report fetch metadata must send
+`Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Browsers that omit these
+headers are allowed.
+
+The CLI login endpoints are not served with `auth.mockAuth` or
+`auth.disableAuthentication`, or when the server has no Spanner database.
+
+---
+
 ## Deployment admission
 
 Every authenticated caller must be admitted to the deployment before any per-experiment ACL is

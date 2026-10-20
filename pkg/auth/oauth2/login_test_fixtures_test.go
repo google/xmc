@@ -36,9 +36,9 @@ type stubOAuthProvider struct {
 	err      error
 }
 
-func (p *stubOAuthProvider) AuthCodeURL(state string, _ *http.Request) string {
+func (p *stubOAuthProvider) AuthCodeURL(state string, _ *http.Request, opts ...oauth2.AuthCodeOption) string {
 	cfg := &oauth2.Config{ClientID: "test-client", Endpoint: oauth2.Endpoint{AuthURL: loginTestIdPAuthURL}}
-	return cfg.AuthCodeURL(state)
+	return cfg.AuthCodeURL(state, opts...)
 }
 
 func (p *stubOAuthProvider) ExchangeAndGetUserInfo(context.Context, *http.Request, string) (*GoogleUserInfo, error) {

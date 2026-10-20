@@ -27,6 +27,7 @@ go_library(
         "//pkg/auth/oauth2",
         "@com_google_cloud_go_iam//apiv1/iampb",
         "@org_golang_google_api//idtoken",
+        "@org_golang_x_oauth2//:oauth2",
     ],
 )
 
