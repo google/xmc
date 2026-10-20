@@ -32,6 +32,7 @@ class BrowserLikelyAvailableTest(unittest.TestCase):
             ({}, "freebsd14", False),
             ({}, "darwin", True),
             ({}, "win32", True),
+            ({}, "msys", True),
             ({"DISPLAY": ":0", "SSH_CONNECTION": "1.2.3.4 5 6.7.8.9 22"}, "linux", False),
             ({"SSH_TTY": "/dev/pts/1"}, "darwin", False),
         ]

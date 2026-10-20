@@ -115,18 +115,21 @@ def _launch_browser(open_browser: Callable[[str], bool], url: str) -> bool:
     loopback redirect, which is served only once this returns; a fast `False`
     (no browser registered) is still caught.
     """
-    launched: list[bool] = []
+    launched = True
+    done = threading.Event()
 
     def launch() -> None:
+        nonlocal launched
         try:
-            launched.append(bool(open_browser(url)))
+            launched = bool(open_browser(url))
         except Exception:  # webbrowser raises for broken BROWSER settings.
-            launched.append(False)
+            launched = False
+        finally:
+            done.set()
 
-    thread = threading.Thread(target=launch, daemon=True)
-    thread.start()
-    thread.join(BROWSER_LAUNCH_WAIT_SECONDS)
-    return launched[0] if launched else True
+    threading.Thread(target=launch, daemon=True).start()
+    # A launcher still running after the wait is assumed to have opened a browser.
+    return launched if done.wait(BROWSER_LAUNCH_WAIT_SECONDS) else True
 
 
 def _manual_attempt(

@@ -19,7 +19,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Mapping
 
-_DESKTOP_PLATFORMS = ("darwin", "win32", "cygwin")
+_DESKTOP_PLATFORMS = ("darwin", "win32", "cygwin", "msys")
 
 
 def browser_likely_available(env: Mapping[str, str], platform: str = sys.platform) -> bool:
