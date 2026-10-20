@@ -189,8 +189,11 @@ func validateLoginHint(hint string) error {
 	if hint == "" {
 		return nil
 	}
+	if len(hint) > maxLoginHintLength {
+		return errors.New("login_hint must be an email address")
+	}
 	addr, err := mail.ParseAddress(hint)
-	if err != nil || addr.Address != hint || len(hint) > maxLoginHintLength {
+	if err != nil || addr.Address != hint {
 		return errors.New("login_hint must be an email address")
 	}
 	return nil

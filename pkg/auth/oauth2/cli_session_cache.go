@@ -20,36 +20,32 @@ import (
 	"time"
 
 	"golang.org/x/sync/singleflight"
+	"k8s.io/apimachinery/pkg/util/cache"
 )
 
 const (
 	// cliSessionActiveTTL bounds how long an active session is cached, and so how long a revocation
 	// takes to reach every replica of every service.
 	cliSessionActiveTTL = 60 * time.Second
+	// cliSessionRevokedTTL is the cache TTL for revoked sessions; revocation is permanent for the
+	// lifetime of any CLI session token.
+	cliSessionRevokedTTL = 10 * 365 * 24 * time.Hour
 	// cliSessionCacheSize bounds the number of cached sessions.
 	cliSessionCacheSize = 10000
 	// cliSessionLookupTimeout bounds a session lookup shared by concurrent requests.
 	cliSessionLookupTimeout = 10 * time.Second
 )
 
-// cliSessionCache is a CLISessionChecker that caches the answers of another one, so most requests
-// do not reach the session store. Active sessions are cached for cliSessionActiveTTL. Revocation is
-// permanent, so revoked sessions stay cached until evicted and are never downgraded to active.
-// Lookup errors are not cached. Concurrent misses for one session share a single lookup.
+// cliSessionCache is a CLISessionChecker that caches the answers of another one in a bounded
+// LRU-with-TTL cache, so most requests do not reach the session store. Active sessions are cached
+// for cliSessionActiveTTL. Revocation is permanent, so revoked sessions are never downgraded to
+// active. Lookup errors are not cached. Concurrent misses for one session share a single lookup.
 type cliSessionCache struct {
-	checker    CLISessionChecker
-	now        func() time.Time
-	maxEntries int
-	lookups    singleflight.Group
+	checker CLISessionChecker
+	lookups singleflight.Group
 
 	mu      sync.Mutex
-	entries map[string]cliSessionCacheEntry
-}
-
-type cliSessionCacheEntry struct {
-	revoked bool
-	// expiresAt is when an active entry must be looked up again. Revoked entries never expire.
-	expiresAt time.Time
+	entries *cache.LRUExpireCache
 }
 
 var _ CLISessionChecker = (*cliSessionCache)(nil)
@@ -57,17 +53,15 @@ var _ CLISessionChecker = (*cliSessionCache)(nil)
 // newCLISessionCache returns a cache in front of checker, which must not be nil.
 func newCLISessionCache(checker CLISessionChecker) *cliSessionCache {
 	return &cliSessionCache{
-		checker:    checker,
-		now:        time.Now,
-		maxEntries: cliSessionCacheSize,
-		entries:    make(map[string]cliSessionCacheEntry),
+		checker: checker,
+		entries: cache.NewLRUExpireCache(cliSessionCacheSize),
 	}
 }
 
 // IsRevoked returns the cached answer for jti, or asks the underlying checker and caches its answer.
 func (c *cliSessionCache) IsRevoked(ctx context.Context, jti string) (bool, error) {
-	if revoked, ok := c.lookup(jti); ok {
-		return revoked, nil
+	if val, ok := c.entries.Get(jti); ok {
+		return val.(bool), nil
 	}
 	// The shared lookup outlives any one caller, so it is detached from the caller's cancellation.
 	result, err, _ := c.lookups.Do(jti, func() (any, error) {
@@ -91,52 +85,15 @@ func (c *cliSessionCache) markRevoked(jti string) {
 	c.store(jti, true)
 }
 
-func (c *cliSessionCache) lookup(jti string) (revoked, ok bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	entry, ok := c.entries[jti]
-	if !ok {
-		return false, false
-	}
-	if !entry.revoked && !c.now().Before(entry.expiresAt) {
-		delete(c.entries, jti)
-		return false, false
-	}
-	return entry.revoked, true
-}
-
 func (c *cliSessionCache) store(jti string, revoked bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	existing, ok := c.entries[jti]
-	if ok && existing.revoked {
+	if existing, ok := c.entries.Get(jti); ok && existing.(bool) {
 		return
 	}
-	if !ok && len(c.entries) >= c.maxEntries {
-		c.evictLocked()
+	ttl := cliSessionActiveTTL
+	if revoked {
+		ttl = cliSessionRevokedTTL
 	}
-	entry := cliSessionCacheEntry{revoked: revoked}
-	if !revoked {
-		entry.expiresAt = c.now().Add(cliSessionActiveTTL)
-	}
-	c.entries[jti] = entry
-}
-
-// evictLocked drops the expired entries and, if the cache is still full, one arbitrary entry.
-// Evicting a live entry only costs another lookup. It scans the whole map, at most
-// cliSessionCacheSize entries, and only runs when a new session is cached into a full cache.
-func (c *cliSessionCache) evictLocked() {
-	now := c.now()
-	for jti, entry := range c.entries {
-		if !entry.revoked && !now.Before(entry.expiresAt) {
-			delete(c.entries, jti)
-		}
-	}
-	if len(c.entries) < c.maxEntries {
-		return
-	}
-	for jti := range c.entries {
-		delete(c.entries, jti)
-		return
-	}
+	c.entries.Add(jti, revoked, ttl)
 }

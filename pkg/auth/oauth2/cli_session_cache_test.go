@@ -21,14 +21,9 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
-)
 
-// newTestCLISessionCache returns a cache in front of checker whose clock is *now.
-func newTestCLISessionCache(checker CLISessionChecker, now *time.Time) *cliSessionCache {
-	c := newCLISessionCache(checker)
-	c.now = func() time.Time { return *now }
-	return c
-}
+	"k8s.io/apimachinery/pkg/util/cache"
+)
 
 // cacheStep is one lookup through the cache, after advancing the clock by advance, optionally
 // changing the store, and optionally caching a stale "active" answer as a racing lookup would.
@@ -53,7 +48,7 @@ func TestCLISessionCache(t *testing.T) {
 		{name: "active session is cached for the TTL", steps: []cacheStep{
 			{wantChecks: 1},
 			{advance: cliSessionActiveTTL - time.Second, change: revoke, wantChecks: 1},
-			{advance: time.Second, wantRevoked: true, wantChecks: 2},
+			{advance: time.Second + time.Nanosecond, wantRevoked: true, wantChecks: 2},
 		}},
 		{name: "revoked session stays cached", steps: []cacheStep{
 			{change: revoke, wantRevoked: true, wantChecks: 1},
@@ -71,54 +66,55 @@ func TestCLISessionCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			now := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
-			store := newFakeCLISessionStore("jti")
-			c := newTestCLISessionCache(store, &now)
-			for i, step := range tt.steps {
-				now = now.Add(step.advance)
-				if step.change != nil {
-					step.change(store)
+			synctest.Test(t, func(t *testing.T) {
+				store := newFakeCLISessionStore("jti")
+				c := newCLISessionCache(store)
+				for i, step := range tt.steps {
+					if step.advance > 0 {
+						time.Sleep(step.advance)
+					}
+					if step.change != nil {
+						step.change(store)
+					}
+					if step.staleActive {
+						c.store("jti", false)
+					}
+					revoked, err := c.IsRevoked(context.Background(), "jti")
+					if gotErr := err != nil; gotErr != step.wantErr || revoked != step.wantRevoked {
+						t.Errorf("step %d: IsRevoked() = %t, %v, want %t, error %t", i, revoked, err, step.wantRevoked, step.wantErr)
+					}
+					if got := store.checkCount(); got != step.wantChecks {
+						t.Errorf("step %d: store lookups = %d, want %d", i, got, step.wantChecks)
+					}
 				}
-				if step.staleActive {
-					c.store("jti", false)
-				}
-				revoked, err := c.IsRevoked(context.Background(), "jti")
-				if gotErr := err != nil; gotErr != step.wantErr || revoked != step.wantRevoked {
-					t.Errorf("step %d: IsRevoked() = %t, %v, want %t, error %t", i, revoked, err, step.wantRevoked, step.wantErr)
-				}
-				if got := store.checkCount(); got != step.wantChecks {
-					t.Errorf("step %d: store lookups = %d, want %d", i, got, step.wantChecks)
-				}
-			}
+			})
 		})
 	}
 }
 
-func TestCLISessionCacheEviction(t *testing.T) {
-	tests := []struct {
-		name string
-		// advance is how long after caching "a" and "b" the cache sees "c".
-		advance time.Duration
-		want    int
-	}{
-		{name: "all expired entries go", advance: cliSessionActiveTTL, want: 1},
-		{name: "one live entry goes when none expired", want: 2},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			now := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
-			c := newTestCLISessionCache(newFakeCLISessionStore("a", "b", "c"), &now)
-			c.maxEntries = 2
-			for _, jti := range []string{"a", "b"} {
-				mustBeActive(t, c, jti)
-			}
-			now = now.Add(tt.advance)
-			mustBeActive(t, c, "c")
-			if _, ok := c.entries["c"]; !ok || len(c.entries) != tt.want {
-				t.Errorf("cache holds %d entries (c cached: %t), want %d including c", len(c.entries), ok, tt.want)
-			}
-		})
-	}
+func TestCLISessionCacheLRUEviction(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := newFakeCLISessionStore("a", "b", "c")
+		c := &cliSessionCache{
+			checker: store,
+			entries: cache.NewLRUExpireCache(2),
+		}
+		mustBeActive(t, c, "a")
+		mustBeActive(t, c, "b")
+		// Touch "a" so "b" is the least-recently-used entry.
+		mustBeActive(t, c, "a")
+		mustBeActive(t, c, "c")
+
+		if _, ok := c.entries.Get("a"); !ok {
+			t.Error("expected recently used entry \"a\" to remain cached")
+		}
+		if _, ok := c.entries.Get("c"); !ok {
+			t.Error("expected newly added entry \"c\" to be cached")
+		}
+		if _, ok := c.entries.Get("b"); ok {
+			t.Error("expected least-recently-used entry \"b\" to be evicted")
+		}
+	})
 }
 
 func mustBeActive(t *testing.T, c *cliSessionCache, jti string) {
@@ -146,8 +142,7 @@ func (g *gatedChecker) IsRevoked(context.Context, string) (bool, error) {
 func TestCLISessionCacheSharesConcurrentLookups(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		checker := &gatedChecker{release: make(chan struct{})}
-		now := time.Now()
-		c := newTestCLISessionCache(checker, &now)
+		c := newCLISessionCache(checker)
 		var wg sync.WaitGroup
 		for range 5 {
 			wg.Go(func() {
