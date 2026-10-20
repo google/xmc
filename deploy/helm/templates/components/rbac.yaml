@@ -13,44 +13,71 @@
 # limitations under the License.
 
 {{- if .Values.componentsDeployment.enabled }}
+# xmc-bridge-role is namespaced to the release namespace and lists only the requests xmc-bridge and
+# its Helm client make. create cannot be limited by resourceNames; every other verb is limited to
+# fixed object names where the bridge knows them.
 apiVersion: rbac.authorization.k8s.io/v1
-{{- if .Values.componentsDeployment.rbac.clusterScope }}
-kind: ClusterRole
-{{- else }}
 kind: Role
-{{- end }}
 metadata:
   name: xmc-bridge-role
   labels:
     app.kubernetes.io/name: xmc-bridge
     app.kubernetes.io/part-of: xmanager-cloud
 rules:
+  # Components: read via the informer cache, finalizers via JSON patch on the main resource (CRDs have no
+  # finalizers subresource), status via server-side apply.
   - apiGroups: ["xmc.dev"]
-    resources: ["components", "components/status", "components/finalizers"]
-    verbs: ["get", "list", "watch", "update", "patch"]
+    resources: ["components"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["xmc.dev"]
+    resources: ["components/status"]
+    verbs: ["update", "patch"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+  # 1P component Helm values (xmc-component-values).
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get", "list", "watch", "create", "update"]
+    verbs: ["create"]
   - apiGroups: [""]
-    resources: ["secrets", "services"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    resources: ["configmaps"]
+    resourceNames: ["xmc-component-values"]
+    verbs: ["get", "update"]
+  # Helm release storage (secrets driver): one Secret per revision, so the names are not fixed.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "delete"]
+  # Objects that 1P component releases render (e.g. xmc-cmp-ingestion-gateway). Helm reads, patches
+  # and deletes them by name; add their names here when a 1P chart adds or renames objects.
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["ingestion-gateway-service"]
+    verbs: ["get", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["create"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["ingestion-gateway-deployment"]
+    verbs: ["get", "update", "patch", "delete"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # 1P component releases self-provision their reader RBAC (e.g. xmc-cmp-ingestion-gateway).
+    verbs: ["create"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    resourceNames: ["ingestion-gateway-hpa"]
+    verbs: ["get", "update", "patch", "delete"]
+  # ...their self-provisioned reader RBAC...
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
     verbs: ["create"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
     resourceNames: ["ingestion-gateway-components-reader", "ingestion-gateway-components-reader-binding"]
-    verbs: ["update", "patch", "delete"]
+    verbs: ["get", "update", "patch", "delete"]
   # ...and their NetworkPolicy, so it lives and dies with the component's workload.
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
@@ -58,17 +85,16 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     resourceNames: ["ingestion-gateway-network-policy"]
-    verbs: ["update", "patch", "delete"]
-  - apiGroups: ["*"]
-    resources: ["*"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "update", "patch", "delete"]
+  # 3P wrapper custom resources (spec.wrapperRef), read by name in the release namespace.
+  {{- range .Values.componentsDeployment.rbac.wrapperRules }}
+  - apiGroups: {{ toJson .apiGroups }}
+    resources: {{ toJson .resources }}
+    verbs: ["get"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-{{- if .Values.componentsDeployment.rbac.clusterScope }}
-kind: ClusterRoleBinding
-{{- else }}
 kind: RoleBinding
-{{- end }}
 metadata:
   name: xmc-bridge-rolebinding
   labels:
@@ -79,17 +105,12 @@ subjects:
     name: xmc-bridge-sa
     namespace: {{ .Release.Namespace }}
 roleRef:
-{{- if .Values.componentsDeployment.rbac.clusterScope }}
-  kind: ClusterRole
-{{- else }}
   kind: Role
-{{- end }}
   name: xmc-bridge-role
   apiGroup: rbac.authorization.k8s.io
 ---
 # Leader election: only the holder of the xmc-bridge Lease in the release namespace reconciles.
-# This Role stays namespaced when rbac.clusterScope is true, so the bridge can write no other
-# namespace's Leases.
+# This Role is namespaced, so the bridge can write no other namespace's Leases.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
