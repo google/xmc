@@ -37,16 +37,22 @@ func TestStorage(t *testing.T) {
 		{
 			name: "PauseState",
 			check: func(t *testing.T) {
-				if s.PauseState() == nil {
-					t.Error("PauseState() returned nil")
+				if s.pauseStateRepository == nil {
+					t.Error("pauseStateRepository was not initialized")
+				}
+				if s.PauseState() != s.pauseStateRepository {
+					t.Error("PauseState() did not return pauseStateRepository")
 				}
 			},
 		},
 		{
 			name: "PausedTasks",
 			check: func(t *testing.T) {
-				if s.PausedTasks() == nil {
-					t.Error("PausedTasks() returned nil")
+				if s.pausedTaskRepository == nil {
+					t.Error("pausedTaskRepository was not initialized")
+				}
+				if s.PausedTasks() != s.pausedTaskRepository {
+					t.Error("PausedTasks() did not return pausedTaskRepository")
 				}
 			},
 		},
