@@ -41,7 +41,6 @@ go_library(
         "//internal/auth",
         "//internal/dashboard/dataengine",
         "//internal/logging",
-        "//internal/storage",
         "//internal/validator",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//codes",

@@ -436,6 +436,7 @@ type Storage interface {
 	WorkUnitStore
 	StatusMessageStore
 	StatusHistoryStore
+	DashboardStore
 	ArtifactStore
 	OperationStore
 	XidEntryStore
