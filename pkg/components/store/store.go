@@ -55,6 +55,7 @@ type ComponentRecord struct {
 	Labels             map[string]string
 	Etag               string
 	Owner              *SourceOwner // Source of the last owner write, or nil when never written by a source.
+	SourceLastSeenTime time.Time    // Timestamp of the last committed owner write.
 }
 
 // PrepareDeactivationResult contains safety check outcomes for component deactivation.
