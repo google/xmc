@@ -190,11 +190,6 @@ auth:
   iap:
     iapIssuer: "https://iap.googleapis.com"
     clientId: "YOUR_IAP_CLIENT_ID"
-  # Extra OAuth client IDs, owned by you, whose Google ID tokens are accepted in addition to
-  # iap.clientId (passed as ADDITIONAL_AUDIENCES). Callers are still subject to deployment
-  # admission. Shared public clients such as the gcloud SDK client are rejected at startup.
-  # See "Additional OAuth client audiences" in README.md.
-  additionalAudiences: []
   allowedOrigins: ""
   mockAuth: false
   disableAuthentication: false

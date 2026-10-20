@@ -24,7 +24,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/cors"
-	"google.golang.org/api/idtoken"
 	"xmanager_cloud/internal/logging"
 )
 
@@ -149,13 +148,16 @@ func (a *Authenticator) authenticateSessionJWT(w http.ResponseWriter, r *http.Re
 	return true
 }
 
-// authenticateOIDC attempts to validate the token as a Google-signed OIDC ID Token whose audience
-// is ClientID or one of AdditionalAudiences.
+// authenticateOIDC attempts to validate the token as a Google-signed OIDC ID Token.
 // If it succeeds, it verifies authorization and handles the request, returning true.
 // If validation fails, it returns false.
 func (a *Authenticator) authenticateOIDC(w http.ResponseWriter, r *http.Request, tokenStr string, next http.Handler) bool {
-	payload := a.validateIDToken(r.Context(), tokenStr)
-	if payload == nil {
+	if a.Config.ClientID == "" {
+		return false
+	}
+
+	payload, idTokenErr := a.IDTokenValidator(r.Context(), tokenStr, a.Config.ClientID)
+	if idTokenErr != nil || payload == nil {
 		return false
 	}
 
@@ -189,22 +191,6 @@ func (a *Authenticator) authenticateOIDC(w http.ResponseWriter, r *http.Request,
 	ctx := context.WithValue(r.Context(), UserClaimsContextKey, googleClaims)
 	next.ServeHTTP(w, r.WithContext(ctx))
 	return true
-}
-
-// validateIDToken returns the payload of tokenStr validated against the first accepted audience
-// it matches, or nil when it matches none. Empty audiences are skipped: the validator treats an
-// empty audience as "any audience".
-func (a *Authenticator) validateIDToken(ctx context.Context, tokenStr string) *idtoken.Payload {
-	for _, aud := range a.Config.AcceptedAudiences() {
-		if aud == "" {
-			continue
-		}
-		payload, err := a.IDTokenValidator(ctx, tokenStr, aud)
-		if err == nil && payload != nil {
-			return payload
-		}
-	}
-	return nil
 }
 
 // corsMiddleware configures cross-origin access using rs/cors package.

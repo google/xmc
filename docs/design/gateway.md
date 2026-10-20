@@ -133,7 +133,7 @@ The command-line interface (CLI) client bypasses the web UI entirely, communicat
    - **HTTP Requests** targeting `/v1/*` are routed to the ESS HTTP endpoint.
    - **gRPC Requests** (such as `/experiment.ExperimentService/*`) are routed via `GRPCRoute` directly to the gRPC port of the `experiment-state-server`.
 3. **Authentication**:
-   - The CLI attaches a bearer token to the call metadata: an XMC CLI session token from `xmc login` (see [CLI Login](#3-cli-login-browser-loopback)), a Google-signed ID token whose audience the deployment accepts (see [Accepted ID Token Audiences](#accepted-id-token-audiences)), for example from a service account's `generateIdToken`, a token from the configured OIDC provider, or an XMC session token.
+   - The CLI attaches a bearer token to the call metadata: an XMC CLI session token from `xmc login` (see [CLI Login](#3-cli-login-browser-loopback)), a Google-signed ID token (for example from a service account's `generateIdToken`), a token from the configured OIDC provider, or an XMC session token.
    - Each gRPC service verifies the token, rejects Google and OIDC tokens whose `email_verified` claim is false (Google tokens must carry the claim), and then runs the same deployment admission check as the HTTP API (see [Client Authorization](#client-authorization)) before processing the call.
 
 ---
@@ -156,7 +156,7 @@ sequenceDiagram
     IdP->>B: 307 /api/callback?code&state
     B->>ESS: GET /api/callback
     ESS->>IdP: exchange code, read userinfo
-    ESS->>ESS: require email_verified (and an allowlisted hd for Google), run admission
+    ESS->>ESS: require email_verified, run admission
     ESS->>ESS: store SHA-256 of a one-time code (60s) in CliLoginCodes
     ESS->>B: 302 http://127.0.0.1:N/callback?code&state
     B->>CLI: GET /callback
@@ -166,9 +166,9 @@ sequenceDiagram
     ESS->>CLI: access_token (aud xmanager-cloud-cli, jti, CLI_SESSION_TTL)
 ```
 
-1. **Login ticket**: `/api/cli/login` accepts only a numeric loopback `port` (1024 to 65535), a CLI `state`, an S256 `code_challenge` and an optional `login_hint`. It stores them in the `cli_login` cookie, MAC'd with a key derived from the JWT secret by HKDF and scoped to `/api/callback`, together with the hash of the `oauth_state` it generates. To stop other sites from starting a login in the user's browser (login CSRF) or embedding it, browsers that send fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Browsers without fetch metadata are allowed, which leaves them exposed to login CSRF.
+1. **Login ticket**: `/api/cli/login` accepts only a numeric loopback `port` (1024 to 65535), a CLI `state`, an S256 `code_challenge` and an optional `login_hint`. It stores them in the `cli_login` cookie, signed with the JWT secret (`aud: xmanager-cloud-cli-login`) and scoped to `/api/callback`, together with the hash of the `oauth_state` it generates. To stop other sites from starting a login in the user's browser (login CSRF) or embedding it, browsers that send fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Browsers without fetch metadata are allowed, which leaves them exposed to login CSRF.
 2. **Callback**: `/api/callback` completes a CLI login only when the `cli_login` ticket is authentic, unexpired and bound to the `oauth_state` of the same round trip; otherwise it signs the user in to the Dashboard as before. `/api/login` deletes any `cli_login` cookie. Every outcome goes to the loopback URL, which is built from the ticket's port, never from the request: an identity provider error or cancellation, or a rejected user, is sent `error=access_denied`, and a failed code exchange or other server failure `error=server_error`. The email never appears in the URL.
-3. **Token exchange**: `/api/cli/token` rejects malformed requests before reading the store or spending rate limit, consumes the code in a Spanner read-write transaction before checking the PKCE verifier, and answers every code or verifier problem with `400 invalid_grant`. A user who lost admission since signing in gets `403 access_denied`. Responses are `no-store`, and a process-wide rate limit protects the store.
+3. **Token exchange**: `/api/cli/token` rejects malformed requests before reading the store, consumes the code in a Spanner read-write transaction before checking the PKCE verifier, and answers every code or verifier problem with `400 invalid_grant`. A user who lost admission since signing in gets `403 access_denied`. Responses are `no-store`.
 4. **Use**: the CLI token is an HS256 session token with audience `xmanager-cloud-cli`. HTTP accepts it only as a bearer token, never as the session cookie, and gRPC accepts it in call metadata. Every call re-runs deployment admission.
 
 The CLI login endpoints are registered only when authentication is enabled (no `MOCK_AUTH` or `DISABLE_AUTHENTICATION`) and the server has a Spanner client.
@@ -201,11 +201,3 @@ Every authenticated caller, whether it arrives with a browser session cookie, an
 3. a direct binding of the authorized IAM role (`AUTHORIZED_IAM_ROLE`, `roles/viewer` by default) on the deployment project for the caller's `user:`, `serviceAccount:` or `domain:` principal. Owner, editor and group bindings do not satisfy this check.
 
 Callers that authenticate but are not admitted receive `PERMISSION_DENIED` on gRPC and `403` on HTTP. With `DISABLE_AUTHENTICATION=true` (local development only), gRPC skips admission. The Component Manager Service additionally admits the workload service account that `xmc-bridge` runs as (`ess_service_account`); no other service admits it by identity.
-
-### Accepted ID Token Audiences
-A Google or OIDC ID token is accepted only if its `aud` claim is one of the deployment's accepted audiences. `oauth2.Config.AcceptedAudiences` builds this list in one place, in a fixed order, for the HTTP middleware, the gRPC authorizers and the JWKS validators:
-1. service-specific audiences, on gRPC only: the IAP audiences (`IAP_EXPECTED_HTTP_AUDIENCE`, `IAP_EXPECTED_GRPC_AUDIENCE`) on the experiment state server and XID service, plus the XID audience on the XID service,
-2. the deployment's OAuth client (`CLIENT_ID`), and
-3. `ADDITIONAL_AUDIENCES` (Helm `auth.additionalAudiences`): extra OAuth client IDs that the deployer owns, such as a Desktop client used by scripts.
-
-Empty and duplicate `ADDITIONAL_AUDIENCES` entries are dropped; an unset required audience such as `CLIENT_ID` still stops the experiment state server, XID and dashboard services at startup. Accepting an audience only authenticates the caller; deployment admission still applies (see [Client Authorization](#client-authorization)). Services fail to start if `ADDITIONAL_AUDIENCES` contains a shared public Google client, such as the Google Cloud SDK client (`32555940559.apps.googleusercontent.com`) or the application-default credentials client (`764086051850-6qr4p6gpi6hn506pt8ejuq83di341hur.apps.googleusercontent.com`). Any Google user can mint ID tokens for those clients, so accepting them would leave the admission check as the only control between the deployment and every Google account.

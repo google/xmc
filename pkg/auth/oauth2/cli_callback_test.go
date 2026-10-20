@@ -111,11 +111,6 @@ func TestHandleCallbackCLILoginErrors(t *testing.T) {
 			want:  cliErrorAccessDenied,
 		},
 		{
-			name:  "consumer account on an allowlisted domain",
-			setup: func(_ *Authenticator, _ *fakeCLICodeStore, p *stubOAuthProvider) { p.userInfo.HostedDomain = "" },
-			want:  cliErrorAccessDenied,
-		},
-		{
 			name: "authorization pipeline failure",
 			cfg:  func(c *Config) { c.AllowedDomains = nil; c.GCPProjectID = "test-project" },
 			setup: func(a *Authenticator, _ *fakeCLICodeStore, _ *stubOAuthProvider) {

@@ -30,6 +30,7 @@ import (
 
 	"cloud.google.com/go/iam/apiv1/iampb"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/go-cmp/cmp"
 	xoauth2 "golang.org/x/oauth2"
 	"google.golang.org/api/idtoken"
 )
@@ -641,54 +642,6 @@ func TestBearerTokenValidation(t *testing.T) {
 			t.Errorf("Expected status 403, got %d", w.Code)
 		}
 	})
-}
-
-func TestBearerOIDCAcceptedAudiences(t *testing.T) {
-	// audienceBoundValidator mimics idtoken.Validate: a token "<aud>|<email>" is valid only for <aud>.
-	audienceBoundValidator := func(ctx context.Context, token string, audience string) (*idtoken.Payload, error) {
-		aud, email, _ := strings.Cut(token, "|")
-		if aud != audience {
-			return nil, fmt.Errorf("audience mismatch: got %q, want %q", aud, audience)
-		}
-		return &idtoken.Payload{Issuer: "https://accounts.google.com", Audience: aud, Claims: map[string]interface{}{"email": email}}, nil
-	}
-	baseCfg := Config{
-		ClientID:            "web-client",
-		AdditionalAudiences: []string{"desktop-client"},
-		JWTSecret:           "test-jwt-secret-key-123456789-abcd",
-		AllowedDomains:      []string{"mycompany.com"},
-	}
-	tests := []struct {
-		name     string
-		clientID string
-		token    string
-		wantCode int
-	}{
-		{name: "client id audience accepted", clientID: baseCfg.ClientID, token: "web-client|user@mycompany.com", wantCode: http.StatusOK},
-		{name: "additional audience accepted", clientID: baseCfg.ClientID, token: "desktop-client|user@mycompany.com", wantCode: http.StatusOK},
-		{name: "additional audience accepted without client id", clientID: "", token: "desktop-client|user@mycompany.com", wantCode: http.StatusOK},
-		{name: "unknown audience rejected", clientID: baseCfg.ClientID, token: "other-client|user@mycompany.com", wantCode: http.StatusUnauthorized},
-		{name: "empty client id never validated as any audience", clientID: "", token: "|user@mycompany.com", wantCode: http.StatusUnauthorized},
-		{name: "additional audience still subject to admission", clientID: baseCfg.ClientID, token: "desktop-client|user@external.com", wantCode: http.StatusForbidden},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := baseCfg
-			cfg.ClientID = tc.clientID
-			a := newTestAuthenticator(&cfg)
-			a.IDTokenValidator = audienceBoundValidator
-			okHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-			req := httptest.NewRequest("GET", "/api/data", nil)
-			req.Header.Set("Authorization", "Bearer "+tc.token)
-			w := httptest.NewRecorder()
-
-			a.Authenticate(okHandler).ServeHTTP(w, req)
-
-			if w.Code != tc.wantCode {
-				t.Errorf("Authenticate() status = %d, want %d (body: %s)", w.Code, tc.wantCode, w.Body.String())
-			}
-		})
-	}
 }
 
 func TestSecurityHeadersMiddleware(t *testing.T) {
@@ -1313,27 +1266,188 @@ func newTestAuthenticator(cfg *Config) *Authenticator {
 	return a
 }
 
-func TestHandleCallbackDashboardRejectsUnverifiedIdentity(t *testing.T) {
+const (
+	loginTestSecret     = "login-test-secret-0123456789abcdefgh"
+	loginTestEmail      = "user@mycompany.com"
+	loginTestIdPAuthURL = "https://idp.example.com/auth"
+	loginTestOAuthState = "0123456789abcdef0123456789abcdef"
+)
+
+type stubOAuthProvider struct {
+	userInfo *GoogleUserInfo
+	err      error
+}
+
+func (p *stubOAuthProvider) AuthCodeURL(state string, _ *http.Request, opts ...xoauth2.AuthCodeOption) string {
+	cfg := &xoauth2.Config{ClientID: "test-client", Endpoint: xoauth2.Endpoint{AuthURL: loginTestIdPAuthURL}}
+	return cfg.AuthCodeURL(state, opts...)
+}
+
+func (p *stubOAuthProvider) ExchangeAndGetUserInfo(context.Context, *http.Request, string) (*GoogleUserInfo, error) {
+	return p.userInfo, p.err
+}
+
+func baseLoginUserInfo() *GoogleUserInfo {
+	return &GoogleUserInfo{Email: loginTestEmail, EmailVerified: true, Name: "Test User"}
+}
+
+func baseLoginConfig() *Config {
+	return &Config{
+		JWTSecret:      loginTestSecret,
+		AllowedDomains: []string{"mycompany.com"},
+		TargetIAMRole:  "roles/viewer",
+		AuthURL:        "https://accounts.google.com/o/oauth2/v2/auth",
+		FrontendURL:    "https://xmc.example.com",
+		AllowedHosts:   []string{"xmc.example.com"},
+	}
+}
+
+func newLoginTestAuthenticator(cfg *Config) (*Authenticator, *stubOAuthProvider) {
+	a := NewAuthenticator(cfg)
+	provider := &stubOAuthProvider{userInfo: baseLoginUserInfo()}
+	a.OAuthProvider = provider
+	return a, provider
+}
+
+func newCallbackRequest(query string, cookies ...*http.Cookie) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "https://xmc.example.com/api/callback?state="+loginTestOAuthState+query, nil)
+	req.AddCookie(&http.Cookie{Name: "oauth_state", Value: loginTestOAuthState})
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	return req
+}
+
+func serveCallback(a *Authenticator, req *http.Request) *http.Response {
+	w := httptest.NewRecorder()
+	a.HandleCallback(w, req)
+	return w.Result()
+}
+
+func responseCookie(resp *http.Response, name string) *http.Cookie {
+	for _, c := range resp.Cookies() {
+		if c.Name == name {
+			return c
+		}
+	}
+	return nil
+}
+
+type identityResult struct {
+	Email       string
+	Name        string
+	Picture     string
+	NotAdmitted bool
+	Err         bool
+}
+
+func toIdentityResult(identity loginIdentity, err error) identityResult {
+	return identityResult{
+		Email:       identity.email,
+		Name:        identity.name,
+		Picture:     identity.picture,
+		NotAdmitted: errors.Is(err, errNotAdmitted),
+		Err:         err != nil,
+	}
+}
+
+func TestVerifyUserInfo(t *testing.T) {
+	admitted := identityResult{Email: loginTestEmail, Name: "Test User", Picture: "https://example.com/p.png"}
+	rejected := admitted
+	rejected.NotAdmitted, rejected.Err = true, true
 	tests := []struct {
 		name   string
 		mutate func(*GoogleUserInfo)
+		want   identityResult
 	}{
-		{name: "unverified email", mutate: func(u *GoogleUserInfo) { u.EmailVerified = false }},
-		{name: "workspace that is not allowlisted", mutate: func(u *GoogleUserInfo) { u.HostedDomain = "other.com" }},
+		{name: "verified user", want: admitted},
+		{name: "email is normalized", mutate: func(u *GoogleUserInfo) { u.Email = " User@MyCompany.COM " }, want: admitted},
+		{name: "missing email", mutate: func(u *GoogleUserInfo) { u.Email = " " }, want: identityResult{Name: "Test User", Picture: "https://example.com/p.png", NotAdmitted: true, Err: true}},
+		{name: "unverified email", mutate: func(u *GoogleUserInfo) { u.EmailVerified = false }, want: rejected},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			a, provider := newLoginTestAuthenticator(baseLoginConfig())
-			tt.mutate(provider.userInfo)
-			resp := serveCallback(a, newCallbackRequest("&code=idp-code"))
-			want := "https://xmc.example.com/?error=forbidden&email=" + url.QueryEscape(loginTestEmail)
-			if got := resp.Header.Get("Location"); got != want {
-				t.Errorf("Location = %q, want %q", got, want)
+			info := baseLoginUserInfo()
+			info.Picture = "https://example.com/p.png"
+			if tt.mutate != nil {
+				tt.mutate(info)
 			}
-			if responseCookie(resp, "session_token") != nil {
-				t.Error("unverified identity received a Dashboard session")
+			got := toIdentityResult(NewAuthenticator(baseLoginConfig()).verifyUserInfo(info))
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("verifyUserInfo() mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestVerifyUserInfoRejectsNil(t *testing.T) {
+	got := toIdentityResult(NewAuthenticator(baseLoginConfig()).verifyUserInfo(nil))
+	if diff := cmp.Diff(identityResult{NotAdmitted: true, Err: true}, got); diff != "" {
+		t.Errorf("verifyUserInfo(nil) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestAdmitLogin(t *testing.T) {
+	admitted := identityResult{Email: loginTestEmail, Name: "Test User"}
+	tests := []struct {
+		name   string
+		cfg    func(*Config)
+		mutate func(*GoogleUserInfo)
+		setup  func(*Authenticator)
+		want   identityResult
+	}{
+		{name: "admitted", want: admitted},
+		{
+			name:   "unverified identity",
+			mutate: func(u *GoogleUserInfo) { u.EmailVerified = false },
+			want:   identityResult{Email: loginTestEmail, Name: "Test User", NotAdmitted: true, Err: true},
+		},
+		{
+			name:   "not authorized",
+			mutate: func(u *GoogleUserInfo) { u.Email = "user@other.com" },
+			want:   identityResult{Email: "user@other.com", Name: "Test User", NotAdmitted: true, Err: true},
+		},
+		{
+			name: "authorization pipeline failure",
+			cfg:  func(c *Config) { c.AllowedDomains = nil; c.GCPProjectID = "test-project" },
+			setup: func(a *Authenticator) {
+				a.PolicyFetcher = func(context.Context) (*iampb.Policy, error) { return nil, errors.New("iam unavailable") }
+			},
+			want: identityResult{Email: loginTestEmail, Name: "Test User", Err: true},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := baseLoginConfig()
+			if tt.cfg != nil {
+				tt.cfg(cfg)
+			}
+			a := NewAuthenticator(cfg)
+			if tt.setup != nil {
+				tt.setup(a)
+			}
+			info := baseLoginUserInfo()
+			if tt.mutate != nil {
+				tt.mutate(info)
+			}
+			got := toIdentityResult(a.admitLogin(context.Background(), info))
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("admitLogin() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestHandleCallbackDashboardRejectsUnverifiedIdentity(t *testing.T) {
+	a, provider := newLoginTestAuthenticator(baseLoginConfig())
+	provider.userInfo.EmailVerified = false
+	resp := serveCallback(a, newCallbackRequest("&code=idp-code"))
+	want := "https://xmc.example.com/?error=forbidden&email=" + url.QueryEscape(loginTestEmail)
+	if got := resp.Header.Get("Location"); got != want {
+		t.Errorf("Location = %q, want %q", got, want)
+	}
+	if responseCookie(resp, "session_token") != nil {
+		t.Error("unverified identity received a Dashboard session")
 	}
 }
 

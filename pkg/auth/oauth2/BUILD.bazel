@@ -17,7 +17,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "oauth2",
     srcs = [
-        "audiences.go",
         "cli_callback.go",
         "cli_code_store.go",
         "cli_login.go",
@@ -27,7 +26,6 @@ go_library(
         "config.go",
         "gateway.go",
         "handlers.go",
-        "login_identity.go",
         "middleware.go",
         "mockauth_dev.go",
         "mockauth_prod.go",
@@ -47,14 +45,12 @@ go_library(
         "@org_golang_google_api//idtoken",
         "@org_golang_x_oauth2//:oauth2",
         "@org_golang_x_sync//singleflight",
-        "@org_golang_x_time//rate",
     ],
 )
 
 go_test(
     name = "oauth2_test",
     srcs = [
-        "audiences_test.go",
         "cli_callback_test.go",
         "cli_code_store_test.go",
         "cli_login_test.go",
@@ -63,8 +59,6 @@ go_test(
         "cli_test_fixtures_test.go",
         "cli_token_test.go",
         "config_test.go",
-        "login_identity_test.go",
-        "login_test_fixtures_test.go",
         "mockauth_prod_test.go",
         "oauth2_test.go",
         "pipeline_test.go",
@@ -78,7 +72,6 @@ go_test(
         "@com_google_cloud_go_iam//apiv1/iampb",
         "@org_golang_google_api//idtoken",
         "@org_golang_x_oauth2//:oauth2",
-        "@org_golang_x_time//rate",
     ],
 )
 

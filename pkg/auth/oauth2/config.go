@@ -75,9 +75,6 @@ type Config struct {
 	OIDCIssuerURL         string
 	Username              string
 	Password              string
-	// AdditionalAudiences are OAuth client IDs, besides ClientID, whose Google ID tokens are
-	// accepted (e.g. a deployer-owned Desktop client). See AcceptedAudiences.
-	AdditionalAudiences []string
 }
 
 // LoadConfig bootstraps the configuration from environment variables.
@@ -126,11 +123,6 @@ func LoadConfig() (*Config, error) {
 		clientID = getEnv("OIDC_CLIENT_ID", "")
 	}
 
-	additionalAudiences, err := parseAdditionalAudiences(getEnv("ADDITIONAL_AUDIENCES", ""))
-	if err != nil {
-		return nil, err
-	}
-
 	return &Config{
 		Port:                  getEnv("PORT", "8080"),
 		MockAuth:              mockAuth,
@@ -142,7 +134,6 @@ func LoadConfig() (*Config, error) {
 		TargetIAMRole:         getEnv("AUTHORIZED_IAM_ROLE", "roles/viewer"),
 		AdminIAMRole:          getEnv("ADMIN_IAM_ROLE", "roles/owner"),
 		ClientID:              clientID,
-		AdditionalAudiences:   additionalAudiences,
 		ClientSecret:          clientSecret,
 		JWTSecret:             jwtSecret,
 		SessionTTL:            sessionTTL,

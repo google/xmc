@@ -17,8 +17,6 @@ package auth
 import (
 	"testing"
 	"time"
-
-	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 func TestNewAuthorizer(t *testing.T) {
@@ -39,19 +37,6 @@ func TestNewAuthorizer(t *testing.T) {
 		{name: "valid parameters"},
 		{name: "empty IAP issuer", mutate: func(p *AuthorizerParams) { p.IAPIssuer = "" }, wantErr: true},
 		{name: "empty IAP audience", mutate: func(p *AuthorizerParams) { p.IAPAudiences = []string{"aud1", ""} }, wantErr: true},
-		{
-			name: "oauth config with additional audiences",
-			mutate: func(p *AuthorizerParams) {
-				p.IAPAudiences = (&oauth2.Config{ClientID: "web", AdditionalAudiences: []string{"desktop"}}).AcceptedAudiences("aud1")
-			},
-		},
-		{
-			name: "oauth config with empty client id fails fast",
-			mutate: func(p *AuthorizerParams) {
-				p.IAPAudiences = (&oauth2.Config{AdditionalAudiences: []string{"desktop"}}).AcceptedAudiences("aud1")
-			},
-			wantErr: true,
-		},
 		{name: "missing admission", mutate: func(p *AuthorizerParams) { p.Admission = nil }, wantErr: true},
 	}
 
