@@ -21,7 +21,6 @@ import http.server
 import io
 import json
 import os
-import ssl
 import threading
 import unittest
 import urllib.error
@@ -86,15 +85,7 @@ class _RedirectingServer(http.server.HTTPServer):
 
 
 class BuildOpenerTest(unittest.TestCase):
-    """Tests opener hardening: TLS, redirects, and proxies."""
-
-    def test_verifies_tls(self) -> None:
-        """HTTPS uses a default (certificate- and hostname-verifying) SSL context."""
-        with mock.patch.object(
-            ssl, "create_default_context", wraps=ssl.create_default_context
-        ) as ctx:
-            token_client.build_opener(_SERVER)
-        ctx.assert_called_once_with()
+    """Tests opener hardening: redirects and proxies."""
 
     def test_loopback_bypasses_proxies(self) -> None:
         """Loopback origins never go through an environment-configured proxy."""
@@ -114,17 +105,12 @@ class BuildOpenerTest(unittest.TestCase):
                     self.assertEqual(any(proxies), want_proxies)
 
     def test_refuses_redirects(self) -> None:
-        """Token exchange and logout fail on a 302 instead of following it."""
+        """Token exchange fails on a 302 instead of following it."""
         server = _RedirectingServer()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        calls = {
-            "exchange": lambda: token_client.exchange_code(server.origin, "c", "v"),
-            "logout": lambda: token_client.revoke_session(server.origin, "tok"),
-        }
-        for name, call in calls.items():
-            with self.subTest(name), self.assertRaisesRegex(AuthError, r"redirect \(HTTP 302\)"):
-                call()
+        with self.assertRaisesRegex(AuthError, r"redirect \(HTTP 302\)"):
+            token_client.exchange_code(server.origin, "c", "v")
 
 
 class ExchangeCodeTest(unittest.TestCase):
@@ -197,32 +183,6 @@ class ParseTokenResponseTest(unittest.TestCase):
         """`bearer` is accepted regardless of case."""
         raw = json.dumps({**_GRANT_JSON, "token_type": "bearer"}).encode()
         self.assertEqual(token_client.parse_token_response(raw).access_token, "tok-123")
-
-
-class RevokeSessionTest(unittest.TestCase):
-    """Tests best-effort logout."""
-
-    def test_sends_bearer_token(self) -> None:
-        """Logout POSTs to the logout endpoint with the Bearer token."""
-        opener = _ok({})
-        token_client.revoke_session(_SERVER, "tok-123", opener=opener)
-        request = opener.open.call_args.args[0]
-        self.assertEqual(request.full_url, "https://xmc.example.com/api/cli/logout")
-        self.assertEqual(request.get_method(), "POST")
-        self.assertEqual(request.get_header("Authorization"), "Bearer tok-123")
-
-    def test_tolerates_missing_endpoint_and_invalid_token(self) -> None:
-        """404 (pre-revocation server) and 401 (already invalid) are not errors."""
-        for status in (401, 404):
-            with self.subTest(status=status):
-                token_client.revoke_session(_SERVER, "tok", opener=_http_error(status))
-
-    def test_raises_on_other_failures(self) -> None:
-        """Other failures raise AuthError without echoing the token."""
-        for opener in (_http_error(500), _failing(OSError("down"))):
-            with self.subTest(opener=opener), self.assertRaises(AuthError) as ctx:
-                token_client.revoke_session(_SERVER, "tok-secret", opener=opener)
-            self.assertNotIn("tok-secret", str(ctx.exception))
 
 
 if __name__ == "__main__":

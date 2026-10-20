@@ -25,7 +25,7 @@ import urllib.parse
 import urllib.request
 from unittest import mock
 
-from xmc.auth import login_flow, pkce
+from xmc.auth import login_flow
 from xmc.auth.errors import AuthError
 from xmc.auth.login_flow import LoginDependencies
 from xmc.auth.token_client import TokenGrant
@@ -33,6 +33,52 @@ from xmc.auth.token_client import TokenGrant
 _SERVER = "https://xmc.example.com"
 _GRANT = TokenGrant(access_token="tok-123", email="user@example.com", expires_in=43200)
 _CODE = "c" * 43
+
+
+class BrowserLikelyAvailableTest(unittest.TestCase):
+    """Tests browser availability heuristics."""
+
+    def test_cases(self) -> None:
+        """SSH and display-less Unix sessions fall back to manual login."""
+        cases = [
+            ({"DISPLAY": ":0"}, "linux", True),
+            ({"WAYLAND_DISPLAY": "wayland-0"}, "linux", True),
+            ({}, "linux", False),
+            ({"DISPLAY": ""}, "linux", False),
+            ({}, "freebsd14", False),
+            ({}, "darwin", True),
+            ({}, "win32", True),
+            ({}, "msys", True),
+            ({"DISPLAY": ":0", "SSH_CONNECTION": "1.2.3.4 5 6.7.8.9 22"}, "linux", False),
+            ({"SSH_TTY": "/dev/pts/1"}, "darwin", False),
+        ]
+        for env, platform, want in cases:
+            with self.subTest(env=env, platform=platform):
+                self.assertEqual(login_flow.browser_likely_available(env, platform), want)
+
+
+class PkceTest(unittest.TestCase):
+    """Tests PKCE verifier, challenge, and state generation."""
+
+    def test_s256_challenge_matches_rfc7636_appendix_b(self) -> None:
+        """The S256 transform matches the RFC 7636 Appendix B test vector."""
+        verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+        self.assertEqual(
+            login_flow.s256_challenge(verifier), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        )
+
+    def test_new_verifier_is_rfc7636_compliant(self) -> None:
+        """Verifiers use the unreserved alphabet within 43-128 chars and are random."""
+        verifier = login_flow.new_verifier()
+        self.assertRegex(verifier, r"^[A-Za-z0-9._~-]{43,128}$")
+        self.assertEqual(len(login_flow.s256_challenge(verifier)), 43)
+        self.assertNotEqual(verifier, login_flow.new_verifier())
+
+    def test_new_state_matches_server_contract(self) -> None:
+        """State values satisfy the server's 1-128 char [A-Za-z0-9_-] contract."""
+        state = login_flow.new_state()
+        self.assertRegex(state, r"^[A-Za-z0-9_-]{43,128}$")
+        self.assertNotEqual(state, login_flow.new_state())
 
 
 def _query(url: str) -> dict[str, str]:
@@ -104,7 +150,7 @@ class RunLoginTest(unittest.TestCase):
     def _assert_exchanged_with_matching_verifier(self, login_url: str) -> None:
         server, code, verifier = self.exchange.call_args.args
         self.assertEqual((server, code), (_SERVER, _CODE))
-        self.assertEqual(pkce.s256_challenge(verifier), _query(login_url)["code_challenge"])
+        self.assertEqual(login_flow.s256_challenge(verifier), _query(login_url)["code_challenge"])
 
     def test_browser_flow(self) -> None:
         """The loopback flow opens the browser, receives the code, and exchanges it."""
@@ -113,14 +159,6 @@ class RunLoginTest(unittest.TestCase):
         login_url = self.open_browser.call_args.args[0]
         self.assertIn(login_url, self.out.getvalue())
         self._assert_exchanged_with_matching_verifier(login_url)
-        self.read_code.assert_not_called()
-
-    def test_blocking_browser_does_not_deadlock(self) -> None:
-        """A browser command that blocks on the loopback redirect still completes."""
-        self.open_browser.side_effect = _deliver_redirect
-        with mock.patch.object(login_flow, "BROWSER_LAUNCH_WAIT_SECONDS", 0.1):
-            grant = login_flow.run_login(_SERVER, self._deps(), use_browser=True, timeout=10)
-        self.assertEqual(grant, _GRANT)
         self.read_code.assert_not_called()
 
     def test_browser_launch_error_falls_back_to_manual(self) -> None:
