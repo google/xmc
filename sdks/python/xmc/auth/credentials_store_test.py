@@ -180,6 +180,24 @@ class CredentialsStoreTest(unittest.TestCase):
         self.assertIsNone(self.store.get(_ORIGIN))
         self.assertEqual(self.warnings.getvalue(), "")
 
+    def test_remove(self) -> None:
+        """remove deletes only the given entry and tolerates missing ones."""
+        self.store.put(_CRED)
+        self.store.put(_OTHER)
+        self.store.remove(_ORIGIN)
+        self.store.remove(_ORIGIN)
+        self.assertIsNone(self.store.get(_ORIGIN))
+        self.assertEqual(self.store.get(_OTHER.server), _OTHER)
+
+    def test_servers(self) -> None:
+        """servers lists the origins of well-formed, self-consistent entries only."""
+        self.assertEqual(self.store.servers(), [])
+        entry = dataclasses.asdict(_CRED)
+        self._write_raw(
+            {"version": 1, "deployments": {_ORIGIN: entry, "https://x.example.com": entry}}
+        )
+        self.assertEqual(self.store.servers(), [_ORIGIN])
+
 
 if __name__ == "__main__":
     unittest.main()

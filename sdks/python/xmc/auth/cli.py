@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""`xmc` command line: login and print-token."""
+"""`xmc` command line: login, print-token, status, and logout."""
 
 from __future__ import annotations
 
@@ -45,6 +45,7 @@ class CliContext:
     env: Mapping[str, str]
     store: CredentialsStore
     login_deps: LoginDependencies
+    revoke: Callable[[str, str], None]  # token_client.revoke_session
     clock: Callable[[], float]  # Wall-clock Unix seconds.
     out: TextIO
     err: TextIO
@@ -74,7 +75,10 @@ def _build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "--server",
-        help="XMC deployment URL (default: $XMC_API_URL, $XMANAGER_UI_URL, $XMANAGER_ENDPOINT)",
+        help=(
+            "XMC deployment URL "
+            "(default: $XMC_API_URL, $XMANAGER_UI_URL, $XMANAGER_ENDPOINT, or cache)"
+        ),
     )
     parser = argparse.ArgumentParser(prog="xmc", description="Authenticate to XMC as yourself.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -89,6 +93,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help=f"Seconds to wait for the browser (default: {DEFAULT_TIMEOUT_SECONDS}).",
     )
     sub.add_parser("print-token", parents=[common], help="Print the token for XMC_AUTH_TOKEN.")
+    sub.add_parser("status", parents=[common], help="Show the signed-in account.")
+    sub.add_parser("logout", parents=[common], help="Revoke and forget the cached token.")
     return parser
 
 
@@ -121,9 +127,40 @@ def _print_token(_args: argparse.Namespace, server: str, ctx: CliContext) -> int
     return 0
 
 
+def _status(_args: argparse.Namespace, server: str, ctx: CliContext) -> int:
+    """Runs `xmc status`; exits 1 if not logged in or expired."""
+    cached = ctx.store.get(server)
+    if cached is None:
+        ctx.out.write(f"Not logged in to {server}. Run `xmc login`.\n")
+        return 1
+    email, expiry = _printable(cached.email), _format_expiry(cached.expires_at)
+    if cached.is_expired(ctx.clock()):
+        ctx.out.write(f"Login for {email} on {server} expired ({expiry}).\n")
+        return 1
+    ctx.out.write(f"Logged in to {server} as {email} until {expiry}.\n")
+    return 0
+
+
+def _logout(_args: argparse.Namespace, server: str, ctx: CliContext) -> int:
+    """Runs `xmc logout`: best-effort server-side revocation, then local removal."""
+    cached = ctx.store.get(server)
+    if cached is None:
+        ctx.out.write(f"Not logged in to {server}.\n")
+        return 0
+    try:
+        ctx.revoke(server, cached.access_token)
+    except AuthError as e:
+        ctx.err.write(f"Warning: could not revoke the token on the server: {e}\n")
+    ctx.store.remove(server)
+    ctx.out.write(f"Logged out of {server}.\n")
+    return 0
+
+
 _COMMANDS: dict[str, Callable[[argparse.Namespace, str, CliContext], int]] = {
     "login": _login,
     "print-token": _print_token,
+    "status": _status,
+    "logout": _logout,
 }
 
 
@@ -131,7 +168,7 @@ def run_cli(argv: Sequence[str] | None, ctx: CliContext) -> int:
     """Parses `argv` (None reads `sys.argv`), runs one subcommand, and returns its exit code."""
     args = _build_parser().parse_args(argv)
     try:
-        server = resolve_server(args.server, ctx.env)
+        server = resolve_server(args.server, ctx.env, ctx.store.servers())
         return _COMMANDS[args.command](args, server, ctx)
     except AuthError as e:
         ctx.err.write(f"Error: {e}\n")
@@ -150,6 +187,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         env=os.environ,
         store=CredentialsStore(default_credentials_path(os.environ)),
         login_deps=login_deps,
+        revoke=token_client.revoke_session,
         clock=lambda: datetime.datetime.now(datetime.timezone.utc).timestamp(),
         out=sys.stdout,
         err=sys.stderr,

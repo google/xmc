@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import ipaddress
 import urllib.parse
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from xmc.auth.errors import AuthError
 
@@ -40,11 +40,16 @@ def is_loopback_host(host: str) -> bool:
         return False
 
 
-def resolve_server(flag_value: str | None, env: Mapping[str, str]) -> str:
-    """Returns the origin from `--server`, XMC_API_URL, XMANAGER_UI_URL, or XMANAGER_ENDPOINT.
+def resolve_server(
+    flag_value: str | None, env: Mapping[str, str], cached_servers: Sequence[str] = ()
+) -> str:
+    """Returns the origin of the deployment to authenticate against.
+
+    Precedence: `--server`, XMC_API_URL, XMANAGER_UI_URL, the origin derived
+    from XMANAGER_ENDPOINT, then a sole cached server.
 
     Raises:
-        AuthError: If no deployment is configured or its URL is invalid.
+        AuthError: If no single deployment can be determined or its URL is invalid.
     """
     candidates = [
         flag_value,
@@ -52,11 +57,14 @@ def resolve_server(flag_value: str | None, env: Mapping[str, str]) -> str:
         server_from_grpc_endpoint(env.get(GRPC_ENDPOINT_ENV_VAR)),
     ]
     raw = next((value.strip() for value in candidates if value and value.strip()), None)
-    if raw is None:
-        raise AuthError(
-            "No XMC server configured. Pass --server or set XMC_API_URL or XMANAGER_UI_URL."
-        )
-    return parse_server(raw)
+    if raw is None and len(cached_servers) == 1:
+        raw = cached_servers[0]
+    if raw is not None:
+        return parse_server(raw)
+    cached = f" Cached deployments: {', '.join(sorted(cached_servers))}." if cached_servers else ""
+    raise AuthError(
+        f"No XMC server configured. Pass --server or set XMC_API_URL or XMANAGER_UI_URL.{cached}"
+    )
 
 
 def server_from_grpc_endpoint(endpoint: str | None) -> str | None:

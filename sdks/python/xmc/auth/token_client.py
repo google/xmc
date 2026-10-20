@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""HTTP client for the XMC `/api/cli/token` endpoint."""
+"""HTTP client for the XMC `/api/cli/token` and `/api/cli/logout` endpoints."""
 
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ from xmc.auth.deployment_server import is_loopback_host
 from xmc.auth.errors import ACCESS_DENIED_MESSAGE, AuthError
 
 TOKEN_PATH = "/api/cli/token"
+LOGOUT_PATH = "/api/cli/logout"
 _TIMEOUT_SECONDS = 30
 _MALFORMED = "The XMC server returned a malformed token response."
 _RATE_LIMITED = "Too many login attempts. Wait a minute, then run `xmc login` again."
@@ -87,6 +88,27 @@ def exchange_code(
     except urllib.error.HTTPError as e:
         raise AuthError(_token_error_message(e)) from None
     return parse_token_response(body)
+
+
+def revoke_session(
+    server_origin: str, access_token: str, opener: urllib.request.OpenerDirector | None = None
+) -> None:
+    """Asks the deployment to revoke a CLI token.
+
+    A 404 (the deployment predates server-side revocation, google/xmc#1309 PR 1c)
+    or 401 (the token is already invalid) leaves nothing to revoke.
+
+    Raises:
+        AuthError: The server is unreachable, redirected, or returned another error.
+    """
+    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        _post(server_origin, LOGOUT_PATH, b"", headers, opener)
+    except urllib.error.HTTPError as e:
+        if e.code not in (401, 404):
+            raise AuthError(
+                f"The XMC server rejected the logout request (HTTP {e.code})."
+            ) from None
 
 
 def _post(

@@ -226,14 +226,18 @@ The package ships an `xmc` command that signs local clients (such as the XManage
 ```bash
 xmc login --server https://xmc.example.com      # Opens your browser; no prompts if you are already signed in.
 export XMC_AUTH_TOKEN=$(xmc print-token)        # Hands the token to the XManager CLI.
+xmc status                                      # Shows the account and expiry; exits 1 if not logged in.
+xmc logout                                      # Revokes the token on the server and deletes it locally.
 ```
 
 | Subcommand | Behavior |
 |---|---|
 | `login [--no-browser] [--timeout SECONDS]` | Browser sign-in with PKCE. Waits up to 300 seconds by default. Re-logins pre-select the cached account. |
 | `print-token` | Prints the cached token to stdout. Exits 1 if it is missing or expires within 60 seconds. This is the only command that prints a token. |
+| `status` | Prints the account, server, and expiry. Exits 0 if logged in, otherwise 1. |
+| `logout` | Calls `POST /api/cli/logout` (best effort; deployments without it are skipped), then deletes the cached entry. |
 
-Every subcommand accepts `--server`. Without it, the server is read from `XMC_API_URL`, then from `XMANAGER_UI_URL`, then derived from `XMANAGER_ENDPOINT` if its host starts with `grpc.` (`dns:///grpc.<host>:443` becomes `https://<host>`). Only the origin (`https://host[:port]`) is used, and `https://` is required unless the host is a loopback IP literal (`127.0.0.1`, `[::1]`). Plain-HTTP `localhost` is also accepted, but only for local development, because it depends on name resolution. Prefer the IP literals.
+Every subcommand accepts `--server`. Without it, the server is read from `XMC_API_URL`, then from `XMANAGER_UI_URL`, then derived from `XMANAGER_ENDPOINT` if its host starts with `grpc.` (`dns:///grpc.<host>:443` becomes `https://<host>`), then from the credentials cache if it holds exactly one deployment (if it holds several, the error lists them). Only the origin (`https://host[:port]`) is used, and `https://` is required unless the host is a loopback IP literal (`127.0.0.1`, `[::1]`). Plain-HTTP `localhost` is also accepted, but only for local development, because it depends on name resolution. Prefer the IP literals.
 
 ### Headless machines and SSH sessions
 

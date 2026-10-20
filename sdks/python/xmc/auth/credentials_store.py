@@ -101,6 +101,10 @@ class CredentialsStore:
         """Returns the possibly expired credential issued by exactly this origin."""
         return _matching(origin, self._read().get(origin))
 
+    def servers(self) -> list[str]:
+        """Returns the origins of all well-formed cached credentials."""
+        return [origin for origin, entry in self._read().items() if _matching(origin, entry)]
+
     def put(self, credential: StoredCredential) -> None:
         """Stores or replaces the credential for `credential.server`.
 
@@ -108,6 +112,16 @@ class CredentialsStore:
             AuthError: If the cache cannot be written; the token is then lost.
         """
         self._write({**self._read(), credential.server: dataclasses.asdict(credential)})
+
+    def remove(self, origin: str) -> None:
+        """Deletes a deployment's credential, if present.
+
+        Raises:
+            AuthError: If the cache cannot be written.
+        """
+        deployments = self._read()
+        if deployments.pop(origin, None) is not None:
+            self._write(deployments)
 
     def _read(self) -> dict[str, Any]:
         """Loads the deployments map; unsafe, corrupt, or unknown-version files read as empty."""

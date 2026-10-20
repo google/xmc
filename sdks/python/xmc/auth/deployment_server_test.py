@@ -23,7 +23,7 @@ _EXAMPLE = "https://xmc.example.com"
 
 
 class ResolveServerTest(unittest.TestCase):
-    """Tests server precedence."""
+    """Tests server precedence and fallbacks."""
 
     def test_precedence(self) -> None:
         """The flag beats XMC_API_URL, which beats XMANAGER_UI_URL."""
@@ -46,8 +46,23 @@ class ResolveServerTest(unittest.TestCase):
         with self.assertRaisesRegex(AuthError, "--server"):
             deployment_server.resolve_server(None, {})
 
+    def test_falls_back_to_single_cached_server(self) -> None:
+        """With nothing configured, a sole cached deployment is used."""
+        self.assertEqual(deployment_server.resolve_server(None, {}, [_EXAMPLE]), _EXAMPLE)
+        env = {"XMC_API_URL": "https://api.example.com"}
+        got = deployment_server.resolve_server(None, env, [_EXAMPLE])
+        self.assertEqual(got, "https://api.example.com")
+
+    def test_multiple_cached_servers_are_listed(self) -> None:
+        """With several cached deployments, the error lists them."""
+        cached = ["https://b.example.com", "https://a.example.com"]
+        with self.assertRaisesRegex(
+            AuthError, "Cached deployments: https://a.example.com, https://b.example.com"
+        ):
+            deployment_server.resolve_server(None, {}, cached)
+
     def test_falls_back_to_grpc_endpoint(self) -> None:
-        """XMANAGER_ENDPOINT is used only when nothing else is configured."""
+        """XMANAGER_ENDPOINT is used only when no flag or URL variable is set."""
         endpoint = {"XMANAGER_ENDPOINT": "dns:///grpc.xmc.example.com:443"}
         ui = {"XMANAGER_UI_URL": "https://ui.example.com", **endpoint}
         cases = [
@@ -59,6 +74,12 @@ class ResolveServerTest(unittest.TestCase):
         for flag, env, want in cases:
             with self.subTest(flag=flag, env=env):
                 self.assertEqual(deployment_server.resolve_server(flag, env), want)
+
+    def test_grpc_endpoint_beats_cached_server(self) -> None:
+        """A derived XMANAGER_ENDPOINT origin wins over a sole cached deployment."""
+        env = {"XMANAGER_ENDPOINT": "dns:///grpc.xmc.example.com:443"}
+        got = deployment_server.resolve_server(None, env, ["https://cached.example.com"])
+        self.assertEqual(got, _EXAMPLE)
 
     def test_ignores_non_grpc_endpoint(self) -> None:
         """An XMANAGER_ENDPOINT without a `grpc.` host label doesn't configure a server."""

@@ -45,6 +45,7 @@ class CliTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.store = CredentialsStore(Path(tmp.name) / "credentials.json", io.StringIO())
+        self.revoke = mock.Mock()
         self.out, self.err = io.StringIO(), io.StringIO()
         self.env = dict(_ENV)
         run_login = mock.patch.object(cli, "run_login", return_value=_GRANT)
@@ -53,7 +54,9 @@ class CliTest(unittest.TestCase):
 
     def _run(self, *argv: str) -> int:
         deps = LoginDependencies(self.out, mock.Mock(), mock.Mock(), mock.Mock())
-        ctx = cli.CliContext(self.env, self.store, deps, lambda: float(_NOW), self.out, self.err)
+        ctx = cli.CliContext(
+            self.env, self.store, deps, self.revoke, lambda: float(_NOW), self.out, self.err
+        )
         return cli.run_cli(list(argv), ctx)
 
     def test_login_caches_token_without_printing_it(self) -> None:
@@ -116,7 +119,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
 
     def test_missing_server_exits_1(self) -> None:
-        """Commands fail cleanly when no server is configured."""
+        """Commands fail cleanly when no server is configured or cached."""
         self.env = {}
         self.assertEqual(self._run("print-token"), 1)
         self.assertIn("--server", self.err.getvalue())
@@ -141,6 +144,53 @@ class CliTest(unittest.TestCase):
                 self.assertEqual(self._run("print-token", "--server", server), 1)
                 self.assertEqual(self.out.getvalue(), "")
                 self.assertIn("xmc login", self.err.getvalue())
+
+    def test_falls_back_to_single_cached_deployment(self) -> None:
+        """Without --server or env, the sole cached deployment is used."""
+        self.env = {}
+        self.store.put(_CACHED)
+        self.assertEqual(self._run("print-token"), 0)
+        self.assertEqual(self.out.getvalue(), "tok-cached\n")
+
+    def test_lists_cached_deployments_when_ambiguous(self) -> None:
+        """With several cached deployments and no server, the error lists them."""
+        self.env = {}
+        self.store.put(_CACHED)
+        self.store.put(StoredCredential("https://b.example.com", "t", "e", _NOW))
+        self.assertEqual(self._run("status"), 1)
+        self.assertIn("https://b.example.com, https://xmc.example.com", self.err.getvalue())
+
+    def test_status(self) -> None:
+        """status exits 0 only for a valid login and never prints the token."""
+        self.assertEqual(self._run("status"), 1)
+        self.assertIn("Not logged in", self.out.getvalue())
+        self.store.put(_CACHED)
+        self.assertEqual(self._run("status"), 0)
+        self.assertIn(f"Logged in to {_SERVER} as cached@example.com", self.out.getvalue())
+        self.store.put(_EXPIRED)
+        self.assertEqual(self._run("status"), 1)
+        self.assertIn("expired", self.out.getvalue())
+        self.assertNotIn("tok-", self.out.getvalue())
+
+    def test_logout_revokes_and_removes(self) -> None:
+        """logout revokes server-side, then deletes the cache entry."""
+        self.store.put(_CACHED)
+        self.assertEqual(self._run("logout"), 0)
+        self.revoke.assert_called_once_with(_SERVER, "tok-cached")
+        self.assertIsNone(self.store.get(_SERVER))
+
+    def test_logout_removes_even_if_revoke_fails(self) -> None:
+        """A failed revocation warns but still removes the local token."""
+        self.store.put(_CACHED)
+        self.revoke.side_effect = AuthError("server down")
+        self.assertEqual(self._run("logout"), 0)
+        self.assertIn("Warning: could not revoke", self.err.getvalue())
+        self.assertIsNone(self.store.get(_SERVER))
+
+    def test_logout_when_not_logged_in(self) -> None:
+        """logout without a cached token is a no-op success."""
+        self.assertEqual(self._run("logout"), 0)
+        self.revoke.assert_not_called()
 
 
 class MainTest(unittest.TestCase):
