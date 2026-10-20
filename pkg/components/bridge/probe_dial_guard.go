@@ -76,7 +76,15 @@ func rejectBlockedProbeAddress(_, address string, _ syscall.RawConn) error {
 }
 
 // guardDialer returns a copy of d that runs control before any Control or ControlContext hook of d.
+// A nil d starts from a zero net.Dialer, and a nil control falls back to rejectBlockedProbeAddress,
+// so a missing argument never disables the guard.
 func guardDialer(d *net.Dialer, control probeDialControl) *net.Dialer {
+	if d == nil {
+		d = &net.Dialer{}
+	}
+	if control == nil {
+		control = rejectBlockedProbeAddress
+	}
 	guarded := *d
 	inner, innerLegacy := d.ControlContext, d.Control
 	guarded.Control = nil
@@ -98,8 +106,11 @@ func guardDialer(d *net.Dialer, control probeDialControl) *net.Dialer {
 // guardHTTPClient returns a copy of c that never follows redirects and, when its transport is an
 // *http.Transport (the default), dials through d without a proxy so the dial guard sees the target.
 // It also clears the transport's Dial, DialTLS and DialTLSContext hooks, so HTTPS connections are
-// dialed through d too.
+// dialed through d too. A nil d is replaced by a default guarded dialer, never an unguarded one.
 func guardHTTPClient(c *http.Client, d *net.Dialer) *http.Client {
+	if d == nil {
+		d = guardDialer(nil, rejectBlockedProbeAddress)
+	}
 	guarded := http.Client{}
 	if c != nil {
 		guarded = *c

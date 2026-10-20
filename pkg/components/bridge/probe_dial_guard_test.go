@@ -131,6 +131,37 @@ func TestGuardDialer_ChainsExistingHooks(t *testing.T) {
 	}
 }
 
+func TestGuardDialer_NilArgumentsFailClosed(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialer  *net.Dialer
+		control probeDialControl
+	}{
+		{"nil dialer", nil, rejectBlockedProbeAddress},
+		{"nil control", &net.Dialer{}, nil},
+		{"both nil", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			guarded := guardDialer(tt.dialer, tt.control)
+			if err := guarded.ControlContext(context.Background(), "tcp", "169.254.169.254:80", nil); !errors.Is(err, errBlockedProbeAddress) {
+				t.Errorf("ControlContext(metadata) error = %v, want errBlockedProbeAddress", err)
+			}
+		})
+	}
+}
+
+func TestGuardHTTPClient_NilDialerFailsClosed(t *testing.T) {
+	client := guardHTTPClient(&http.Client{Timeout: 5 * time.Second}, nil)
+	resp, err := client.Get("http://127.0.0.1:1/")
+	if err == nil {
+		resp.Body.Close()
+	}
+	if !errors.Is(err, errBlockedProbeAddress) {
+		t.Errorf("GET http://127.0.0.1:1/ with a nil dialer error = %v, want errBlockedProbeAddress", err)
+	}
+}
+
 func TestGuardDialer_BlocksResolvedLoopbackHostname(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
