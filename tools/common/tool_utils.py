@@ -458,5 +458,17 @@ def deploy_component_profile(config: DeploymentConfig) -> None:
     ns = config.namespace or "xmc"
     chart = str(Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a")
     log_info(f"Deploying default component profile (stable-2026a) into namespace '{ns}'...")
-    run_command(["helm", "upgrade", "--install", "xmc-profile", chart, "-n", ns, "--wait"])
+    run_command(
+        [
+            "helm",
+            "upgrade",
+            "--install",
+            "--reset-then-reuse-values",
+            "xmc-profile",
+            chart,
+            "-n",
+            ns,
+            "--wait",
+        ]
+    )
     log_success("Default component profile (stable-2026a) deployed.")

@@ -18,7 +18,13 @@ from unittest.mock import MagicMock, patch
 
 from xdash._protos import dashboard_service_pb2, messages_pb2
 from xdash.builders import DashboardBuilder
-from xdash.client import DashboardClient, XDashError, XDashRPCError, _is_local_endpoint
+from xdash.client import (
+    DashboardClient,
+    XDashError,
+    XDashRPCError,
+    _fetch_iam_id_token,
+    _is_local_endpoint,
+)
 
 
 class FakeRpcError(Exception):
@@ -342,17 +348,209 @@ class DashboardClientTest(unittest.TestCase):
         expected = messages_pb2.Dashboard(name="dashboards/123", title="Test Dash")
         self.mock_stub.GetDashboard.return_value = expected
 
-        with patch.dict("os.environ", {"XMC_AUTH_TOKEN": "test-jwt-token"}, clear=False):
+        with (
+            patch("xdash.client._fetch_iam_id_token") as mock_fetch_iam,
+            patch.dict(
+                "os.environ",
+                {
+                    "XMC_AUTH_TOKEN": "test-jwt-token",
+                    "XMC_CLIENT_SA": "sa@project.iam.gserviceaccount.com",
+                    "IAP_CLIENT_ID": "client-id.apps.googleusercontent.com",
+                },
+                clear=False,
+            ),
+        ):
             self.client.get_dashboard("dashboards/123")
+        mock_fetch_iam.assert_not_called()
         self.assertEqual(
             self.mock_stub.GetDashboard.call_args.kwargs,
             {"metadata": (("authorization", "Bearer test-jwt-token"),)},
         )
 
         self.mock_stub.GetDashboard.reset_mock()
-        with patch.dict("os.environ", {"XMC_AUTH_TOKEN": "", "AUTH_TOKEN": ""}, clear=False):
+        with patch.dict(
+            "os.environ",
+            {
+                "XMC_AUTH_TOKEN": "",
+                "AUTH_TOKEN": "",
+                "XMC_CLIENT_SA": "",
+                "IAP_CLIENT_ID": "",
+            },
+            clear=False,
+        ):
             self.client.get_dashboard("dashboards/123")
         self.assertEqual(self.mock_stub.GetDashboard.call_args.kwargs, {})
+
+    def test_execute_rpc_iam_token_fallback_and_caching(self) -> None:
+        expected = messages_pb2.Dashboard(name="dashboards/123", title="Test Dash")
+        self.mock_stub.GetDashboard.return_value = expected
+        env = {
+            "XMC_AUTH_TOKEN": "",
+            "AUTH_TOKEN": "",
+            "XMC_CLIENT_SA": "portal-sa-client@test-proj.iam.gserviceaccount.com",
+            "IAP_CLIENT_ID": "12345-abc.apps.googleusercontent.com",
+        }
+        with (
+            patch.dict("os.environ", env, clear=False),
+            patch(
+                "xdash.client._fetch_iam_id_token",
+                side_effect=["iam-token-1", "iam-token-2"],
+            ) as mock_fetch_iam,
+            patch(
+                "xdash.client.time.monotonic",
+                side_effect=[100.0, 100.0, 200.0, 3500.0, 3500.0],
+            ),
+        ):
+            self.client.get_dashboard("dashboards/123")
+            self.client.get_dashboard("dashboards/123")
+            self.assertEqual(mock_fetch_iam.call_count, 1)
+            mock_fetch_iam.assert_called_once_with(
+                "portal-sa-client@test-proj.iam.gserviceaccount.com",
+                "12345-abc.apps.googleusercontent.com",
+            )
+            for call_args in self.mock_stub.GetDashboard.call_args_list:
+                self.assertEqual(
+                    call_args.kwargs,
+                    {"metadata": (("authorization", "Bearer iam-token-1"),)},
+                )
+
+            # After TTL expires (3500.0 >= 100.0 + 3300.0), a fresh token is fetched.
+            self.client.get_dashboard("dashboards/123")
+            self.assertEqual(mock_fetch_iam.call_count, 2)
+            self.assertEqual(
+                self.mock_stub.GetDashboard.call_args.kwargs,
+                {"metadata": (("authorization", "Bearer iam-token-2"),)},
+            )
+
+    def test_execute_rpc_partial_iam_env_raises_error(self) -> None:
+        for partial_env in (
+            {
+                "XMC_AUTH_TOKEN": "",
+                "AUTH_TOKEN": "",
+                "XMC_CLIENT_SA": "sa@test-proj.iam.gserviceaccount.com",
+                "IAP_CLIENT_ID": "",
+            },
+            {
+                "XMC_AUTH_TOKEN": "",
+                "AUTH_TOKEN": "",
+                "XMC_CLIENT_SA": "",
+                "IAP_CLIENT_ID": "12345-abc.apps.googleusercontent.com",
+            },
+        ):
+            with (
+                patch.dict("os.environ", partial_env, clear=False),
+                self.assertRaises(XDashError) as cm,
+            ):
+                self.client.get_dashboard("dashboards/123")
+            self.assertEqual(
+                str(cm.exception),
+                "Both XMC_CLIENT_SA and IAP_CLIENT_ID must be set for IAM OIDC fallback.",
+            )
+            self.assertNotIn("Unexpected error in", str(cm.exception))
+        self.mock_stub.GetDashboard.assert_not_called()
+
+    def test_get_cached_or_fetch_iam_token_double_checked_locking(self) -> None:
+        sa = "portal-sa-client@test-proj.iam.gserviceaccount.com"
+        aud = "12345-abc.apps.googleusercontent.com"
+
+        class PopulateOnEnterLock:
+            def __init__(self, client: DashboardClient) -> None:
+                self._client = client
+                self.entered = False
+
+            def __enter__(self) -> None:
+                self.entered = True
+                self._client._cached_iam_token = ((sa, aud), "concurrent-token", 5000.0)
+
+            def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+                pass
+
+        lock = PopulateOnEnterLock(self.client)
+        self.client._token_lock = lock  # type: ignore[assignment]
+        with (
+            patch("xdash.client._fetch_iam_id_token") as mock_fetch_iam,
+            patch("xdash.client.time.monotonic", side_effect=[100.0, 100.0]),
+        ):
+            token = self.client._get_cached_or_fetch_iam_token(sa, aud)
+        self.assertTrue(lock.entered)
+        self.assertEqual(token, "concurrent-token")
+        mock_fetch_iam.assert_not_called()
+
+    def test_fetch_iam_id_token_calls_iam_credentials_api(self) -> None:
+        mock_google = MagicMock()
+        mock_creds = object()
+        mock_google.auth.default.return_value = (mock_creds, "test-proj")
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"token": "minted-oidc-token"}
+        mock_session.post.return_value = mock_response
+        mock_requests = mock_google.auth.transport.requests
+        mock_requests.AuthorizedSession.return_value = mock_session
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "google": mock_google,
+                "google.auth": mock_google.auth,
+                "google.auth.transport": mock_google.auth.transport,
+                "google.auth.transport.requests": mock_requests,
+            },
+        ):
+            token = _fetch_iam_id_token(
+                "sa@test-proj.iam.gserviceaccount.com",
+                "iap-client-id.apps.googleusercontent.com",
+            )
+
+        self.assertEqual(token, "minted-oidc-token")
+        mock_requests.AuthorizedSession.assert_called_once_with(mock_creds)
+        mock_session.post.assert_called_once_with(
+            "https://iamcredentials.googleapis.com/v1/projects/-/"
+            "serviceAccounts/sa@test-proj.iam.gserviceaccount.com:generateIdToken",
+            json={
+                "audience": "iap-client-id.apps.googleusercontent.com",
+                "includeEmail": True,
+            },
+            timeout=10,
+        )
+        mock_response.raise_for_status.assert_called_once()
+        mock_session.close.assert_called_once()
+
+    def test_fetch_iam_id_token_closes_session_on_post_error(self) -> None:
+        mock_google = MagicMock()
+        mock_google.auth.default.return_value = (object(), "test-proj")
+        mock_session = MagicMock()
+        mock_session.post.side_effect = RuntimeError("network failure")
+        mock_requests = mock_google.auth.transport.requests
+        mock_requests.AuthorizedSession.return_value = mock_session
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "google": mock_google,
+                    "google.auth": mock_google.auth,
+                    "google.auth.transport": mock_google.auth.transport,
+                    "google.auth.transport.requests": mock_requests,
+                },
+            ),
+            self.assertRaises(RuntimeError),
+        ):
+            _fetch_iam_id_token(
+                "sa@test-proj.iam.gserviceaccount.com",
+                "iap-client-id.apps.googleusercontent.com",
+            )
+        mock_session.close.assert_called_once()
+
+    def test_fetch_iam_id_token_missing_google_auth_raises_xdash_error(self) -> None:
+        with (
+            patch.dict("sys.modules", {"google": None, "google.auth": None}),
+            self.assertRaises(XDashError) as cm,
+        ):
+            _fetch_iam_id_token(
+                "sa@test-proj.iam.gserviceaccount.com",
+                "iap-client-id.apps.googleusercontent.com",
+            )
+        self.assertIn("google-auth", str(cm.exception))
 
 
 class ChannelSecurityTest(unittest.TestCase):
