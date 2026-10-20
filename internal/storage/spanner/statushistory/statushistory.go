@@ -29,7 +29,7 @@ import (
 )
 
 var (
-	_ storage.QueueVelocityFetcher      = (*Repository)(nil)
+	_ storage.StatusHistoryStore        = (*Repository)(nil)
 	_ storage.StatusHistoryTxRepository = (*TxRepository)(nil)
 )
 

@@ -172,6 +172,9 @@ type WorkUnitStore interface {
 
 	// ListWorkUnitExecutions retrieves the historical work unit executions for a given work unit.
 	ListWorkUnitExecutions(ctx context.Context, xid int64, wid int64) ([]*essmsgpb.WorkUnitExecution, error)
+
+	// FetchActiveWorkUnitsByQueues retrieves active work units associated with the requested queue names.
+	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
 }
 
 // UpdatedWorkUnits contains the original and updated work unit protos.
@@ -210,13 +213,8 @@ type QueueMetricRow struct {
 	ResourceType string
 }
 
-// WorkUnitQueueFetcher defines storage operations required to fetch active work units by queue name.
-type WorkUnitQueueFetcher interface {
-	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
-}
-
-// QueueVelocityFetcher defines storage operations for fetching velocity and pending queue metrics.
-type QueueVelocityFetcher interface {
+// StatusHistoryStore defines storage operations for work unit status history and queue metrics.
+type StatusHistoryStore interface {
 	FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]QueueMetricRow, error)
 	FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]QueueMetricRow, error)
 }
@@ -437,6 +435,7 @@ type Storage interface {
 	ExperimentStore
 	WorkUnitStore
 	StatusMessageStore
+	StatusHistoryStore
 	ArtifactStore
 	OperationStore
 	XidEntryStore

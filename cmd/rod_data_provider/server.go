@@ -25,7 +25,9 @@ import (
 )
 
 // WorkUnitFetcher defines storage operations required to fetch active jobs by queue name.
-type WorkUnitFetcher = storage.WorkUnitQueueFetcher
+type WorkUnitFetcher interface {
+	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error)
+}
 
 type server struct {
 	spb.UnimplementedResourceObservabilityServiceServer
