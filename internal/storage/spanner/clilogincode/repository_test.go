@@ -17,6 +17,8 @@ package clilogincode_test
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -103,5 +105,58 @@ func TestRepository_SaveDuplicate(t *testing.T) {
 	}
 	if err := repo.Save(ctx, code); err == nil {
 		t.Error("second Save() error = nil, want an already-exists error")
+	}
+}
+
+func TestRepository_ConsumeDeletesTheCode(t *testing.T) {
+	ctx := context.Background()
+	repo, _ := newTestRepository(t)
+	code := baseCode("consume")
+	if err := repo.Save(ctx, code); err != nil {
+		t.Fatalf("Save() unexpected error: %v", err)
+	}
+	got, err := repo.Consume(ctx, code.Hash)
+	if err != nil {
+		t.Fatalf("Consume() unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(code, got); diff != "" {
+		t.Errorf("Consume() mismatch (-want +got):\n%s", diff)
+	}
+	if _, err := repo.Consume(ctx, code.Hash); !errors.Is(err, oauth2.ErrCLICodeNotFound) {
+		t.Errorf("second Consume() error = %v, want %v", err, oauth2.ErrCLICodeNotFound)
+	}
+}
+
+func TestRepository_ConcurrentConsumeSucceedsOnce(t *testing.T) {
+	ctx := context.Background()
+	repo, _ := newTestRepository(t)
+	code := baseCode("concurrent")
+	if err := repo.Save(ctx, code); err != nil {
+		t.Fatalf("Save() unexpected error: %v", err)
+	}
+
+	const attempts = 5
+	errs := make([]error, attempts)
+	var wg sync.WaitGroup
+	for i := range attempts {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[i] = repo.Consume(ctx, code.Hash)
+		}()
+	}
+	wg.Wait()
+
+	var succeeded int
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			succeeded++
+		case !errors.Is(err, oauth2.ErrCLICodeNotFound):
+			t.Errorf("Consume() unexpected error: %v", err)
+		}
+	}
+	if succeeded != 1 {
+		t.Errorf("successful Consume() calls = %d, want 1", succeeded)
 	}
 }

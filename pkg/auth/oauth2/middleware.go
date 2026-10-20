@@ -118,11 +118,12 @@ func (a *Authenticator) authenticateBearer(w http.ResponseWriter, r *http.Reques
 	return false
 }
 
-// authenticateSessionJWT attempts to parse the token as a signed session JWT token.
+// authenticateSessionJWT attempts to parse the token as a signed session JWT token: a Dashboard
+// session token or a CLI session token. The session cookie accepts only the Dashboard audience.
 // If it succeeds, it verifies authorization and handles the request, returning true.
 // If parsing fails, it returns false to fall back to OIDC token verification.
 func (a *Authenticator) authenticateSessionJWT(w http.ResponseWriter, r *http.Request, tokenStr string, next http.Handler) bool {
-	claims, err := ParseSessionToken(tokenStr, a.JWTSecret, FrontendAudience)
+	claims, err := ParseSessionToken(tokenStr, a.JWTSecret, FrontendAudience, CLIAudience)
 	if err != nil {
 		return false
 	}

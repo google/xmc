@@ -203,7 +203,8 @@ func (a *Authorizer) parseCustomSessionToken(ctx context.Context, jwt string) (*
 	if len(a.jwtSecret) == 0 {
 		return nil, nil
 	}
-	claims, parseErr := oauth2.ParseSessionToken(jwt, a.jwtSecret, oauth2.FrontendAudience)
+	// The browser forwards its Dashboard session token and the CLI sends its CLI session token.
+	claims, parseErr := oauth2.ParseSessionToken(jwt, a.jwtSecret, oauth2.FrontendAudience, oauth2.CLIAudience)
 	if parseErr != nil {
 		if !errors.Is(parseErr, oauth2.ErrInvalidToken) {
 			logging.Info(ctx, "Custom session token parsing failed", "error", parseErr)

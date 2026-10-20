@@ -23,6 +23,22 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"golang.org/x/time/rate"
+)
+
+// ErrCLICodeNotFound is returned by CLICodeStore.Consume when no code has the given hash, including
+// when the code was already consumed.
+var ErrCLICodeNotFound = errors.New("cli login code not found")
+
+// CLI token endpoint flood protection. The limit is process-wide rather than per client IP: behind
+// the load balancer every request arrives from a proxy address, so per-IP keying would make users
+// share buckets and see spurious 429s. Login codes are 256-bit and malformed codes are rejected
+// before the store is read, so the limiter only shields the store from floods and is sized
+// generously.
+const (
+	cliTokenRateLimit = rate.Limit(20)
+	cliTokenRateBurst = 40
 )
 
 // cliLoginCodeBytes is the entropy of a one-time CLI login code.
@@ -47,6 +63,10 @@ type CLILoginCode struct {
 type CLICodeStore interface {
 	// Save stores a new code.
 	Save(ctx context.Context, code CLILoginCode) error
+	// Consume atomically reads and deletes the code with the given hash, whether or not it has
+	// expired, so a code can be presented at most once. It returns ErrCLICodeNotFound when no
+	// such code exists.
+	Consume(ctx context.Context, hash []byte) (CLILoginCode, error)
 }
 
 // EnableCLILogin turns on the CLI login endpoints, storing one-time login codes in codes. It is an
@@ -65,6 +85,7 @@ func (a *Authenticator) EnableCLILogin(codes CLICodeStore) error {
 	}
 	a.cliCodes = codes
 	a.cliLoginKey = key
+	a.cliTokenLimiter = rate.NewLimiter(cliTokenRateLimit, cliTokenRateBurst)
 	return nil
 }
 

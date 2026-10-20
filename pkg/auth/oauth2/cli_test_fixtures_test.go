@@ -33,9 +33,11 @@ const (
 
 // fakeCLICodeStore is an in-memory CLICodeStore.
 type fakeCLICodeStore struct {
-	mu      sync.Mutex
-	codes   map[string]CLILoginCode
-	saveErr error
+	mu           sync.Mutex
+	codes        map[string]CLILoginCode
+	saveErr      error
+	consumeErr   error
+	consumeCalls int
 }
 
 func newFakeCLICodeStore() *fakeCLICodeStore {
@@ -50,6 +52,30 @@ func (s *fakeCLICodeStore) Save(_ context.Context, code CLILoginCode) error {
 	}
 	s.codes[string(code.Hash)] = code
 	return nil
+}
+
+func (s *fakeCLICodeStore) Consume(_ context.Context, hash []byte) (CLILoginCode, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.consumeCalls++
+	if s.consumeErr != nil {
+		return CLILoginCode{}, s.consumeErr
+	}
+	code, ok := s.codes[string(hash)]
+	if !ok {
+		return CLILoginCode{}, ErrCLICodeNotFound
+	}
+	delete(s.codes, string(hash))
+	return code, nil
+}
+
+// put stores code under the hash of plaintext and returns the stored record.
+func (s *fakeCLICodeStore) put(plaintext string, code CLILoginCode) CLILoginCode {
+	code.Hash = hashCLILoginCode(plaintext)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.codes[string(code.Hash)] = code
+	return code
 }
 
 // only returns the single stored code, failing the test otherwise.

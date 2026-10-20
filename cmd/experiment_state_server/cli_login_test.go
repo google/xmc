@@ -26,7 +26,7 @@ import (
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
-var cliLoginPaths = []string{"/api/cli/login"}
+var cliLoginPaths = []string{"/api/cli/login", "/api/cli/token", "/api/cli/success"}
 
 // registeredPatterns returns the mux pattern serving each CLI login path, or "" when none does.
 func registeredPatterns(mux *http.ServeMux) []string {

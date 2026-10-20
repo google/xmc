@@ -31,6 +31,9 @@ const (
 	SessionIssuer = "xmanager-cloud-backend"
 	// FrontendAudience is the `aud` claim of the browser (Dashboard) session token.
 	FrontendAudience = "xmanager-cloud-frontend"
+	// CLIAudience is the `aud` claim of the session token issued to the CLI by `/api/cli/token`.
+	// It is accepted as a bearer token but never as the Dashboard session cookie.
+	CLIAudience = "xmanager-cloud-cli"
 	// sessionClockSkew is the leeway allowed on the exp, nbf and iat claims of a session token.
 	sessionClockSkew = 30 * time.Second
 )
@@ -49,21 +52,32 @@ func GenerateSessionToken(email, name, picture string, expiry time.Duration, sec
 }
 
 func generateSessionTokenAt(email, name, picture string, expiry time.Duration, secretKey []byte, now time.Time) (string, error) {
-	claims := &SessionClaims{
-		Email:   email,
-		Name:    name,
-		Picture: picture,
+	claims := newSessionClaims(email, name, FrontendAudience, expiry, now)
+	claims.Picture = picture
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(secretKey)
+}
+
+// generateCLISessionTokenAt issues the CLI session token: CLIAudience, `sub` set to the email and
+// `jti` set so the token can be identified in logs.
+func generateCLISessionTokenAt(email, name, jti string, expiry time.Duration, secretKey []byte, now time.Time) (string, error) {
+	claims := newSessionClaims(email, name, CLIAudience, expiry, now)
+	claims.Subject = email
+	claims.ID = jti
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(secretKey)
+}
+
+func newSessionClaims(email, name, audience string, expiry time.Duration, now time.Time) *SessionClaims {
+	return &SessionClaims{
+		Email: email,
+		Name:  name,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(expiry)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			Issuer:    SessionIssuer,
-			Audience:  jwt.ClaimStrings{FrontendAudience},
+			Audience:  jwt.ClaimStrings{audience},
 		},
 	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(secretKey)
 }
 
 // ParseSessionToken verifies and parses a signed JWT session token.

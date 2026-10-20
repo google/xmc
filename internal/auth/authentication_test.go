@@ -206,6 +206,20 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 			}(),
 			wantCode: codes.Unauthenticated,
 		},
+		{
+			name:       "CLI session token authentication success",
+			metadata:   metadata.Pairs("authorization", "Bearer "+signTestSessionToken(t, "cli-user@mycompany.com", oauth2.CLIAudience)),
+			wantEmail:  "cli-user@mycompany.com",
+			wantUserID: "cli-user@mycompany.com",
+		},
+		{
+			name:     "session token for another audience failure",
+			metadata: metadata.Pairs("authorization", "Bearer "+signTestSessionToken(t, "cli-user@mycompany.com", "xmanager-cloud-other")),
+			validator: func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
+				return nil, errors.New("not a Google ID token")
+			},
+			wantCode: codes.Unauthenticated,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -559,4 +573,19 @@ func TestAuthenticateUserFromContext_Admission(t *testing.T) {
 			}
 		})
 	}
+}
+
+// signTestSessionToken signs a session token for email and audience with the dev-only secret used
+// by TestAuthenticateUserFromContext_Authenticated.
+func signTestSessionToken(t *testing.T, email, audience string) string {
+	t.Helper()
+	claims := &oauth2.SessionClaims{Email: email, RegisteredClaims: jwt.RegisteredClaims{
+		Issuer: oauth2.SessionIssuer, Audience: jwt.ClaimStrings{audience},
+		IssuedAt: jwt.NewNumericDate(time.Now()), ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	}}
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("default-jwt-secret-for-local-dev-only-12345"))
+	if err != nil {
+		t.Fatalf("SignedString() failed: %v", err)
+	}
+	return tok
 }

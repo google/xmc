@@ -123,6 +123,23 @@ the browser window the CLI launches: browsers that report fetch metadata must se
 `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Browsers that omit these
 headers are allowed.
 
+The CLI then exchanges the code and its PKCE verifier on `/api/cli/token` for a
+CLI session token, and sends the browser to `/api/cli/success` so the code leaves
+the address bar. `auth.cliSessionTtl` sets the token's lifetime; the chart passes
+it to the backend as `CLI_SESSION_TTL`. It accepts Go duration syntax from `1m` to
+`720h`; any other value prevents the backend from starting. CLI tokens cannot be
+refreshed: the user runs `xmc login` again when the token expires.
+
+```yaml
+auth:
+  cliSessionTtl: "12h"
+```
+
+The CLI token is accepted only as a bearer token, never as the Dashboard cookie,
+and every request re-runs [deployment admission](#deployment-admission). An issued
+CLI token cannot be revoked yet: it stays valid until it expires or the user is no
+longer admitted.
+
 The CLI login endpoints are not served with `auth.mockAuth` or
 `auth.disableAuthentication`, or when the server has no Spanner database.
 

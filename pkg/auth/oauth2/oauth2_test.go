@@ -1327,3 +1327,44 @@ func TestHandleLoginClearsCLILoginCookie(t *testing.T) {
 		t.Errorf("cli_login cookie = %v, want it deleted at path /api/callback", got)
 	}
 }
+
+func TestSessionTokenAudiencePerTransport(t *testing.T) {
+	jwtSecret := []byte(loginTestSecret)
+	a := newTestAuthenticator(&Config{JWTSecret: loginTestSecret, AllowedDomains: []string{"mycompany.com"}})
+	cliToken, err := generateCLISessionTokenAt(loginTestEmail, "Test User", "jti", time.Hour, jwtSecret, time.Now())
+	if err != nil {
+		t.Fatalf("generateCLISessionTokenAt() failed: %v", err)
+	}
+	dashboardToken, err := GenerateSessionToken(loginTestEmail, "User", "", time.Hour, jwtSecret)
+	if err != nil {
+		t.Fatalf("GenerateSessionToken() failed: %v", err)
+	}
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	tests := []struct {
+		name       string
+		cookie     string
+		bearer     string
+		wantStatus int
+	}{
+		{name: "CLI token as bearer", bearer: cliToken, wantStatus: http.StatusOK},
+		{name: "Dashboard token as bearer", bearer: dashboardToken, wantStatus: http.StatusOK},
+		{name: "Dashboard token as cookie", cookie: dashboardToken, wantStatus: http.StatusOK},
+		{name: "CLI token as cookie", cookie: cliToken, wantStatus: http.StatusUnauthorized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
+			if tt.cookie != "" {
+				req.AddCookie(&http.Cookie{Name: "session_token", Value: tt.cookie})
+			}
+			if tt.bearer != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.bearer)
+			}
+			w := httptest.NewRecorder()
+			a.Authenticate(ok).ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", w.Code, tt.wantStatus)
+			}
+		})
+	}
+}

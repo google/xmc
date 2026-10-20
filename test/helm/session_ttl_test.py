@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Checks that session lifetime overrides reach the authentication backend."""
+"""Checks that session lifetime overrides (browser and CLI) reach the authentication backend."""
 
 import unittest
 
@@ -36,6 +36,16 @@ class SessionTTLTest(unittest.TestCase):
                     manifest,
                     rf'- name: SESSION_TTL\n\s+value: "{expected}"',
                 )
+
+    def test_cli_session_ttl_reaches_ess(self) -> None:
+        for ttl in (None, "1h", "720h"):
+            with self.subTest(ttl=ttl):
+                values = {"essDeployment.enabled": "true"}
+                if ttl is not None:
+                    values["auth.cliSessionTtl"] = ttl
+                manifest = render_template("templates/ess/deployment.yaml", values)
+                expected = "12h" if ttl is None else ttl
+                self.assertRegex(manifest, rf'- name: CLI_SESSION_TTL\n\s+value: "{expected}"')
 
 
 if __name__ == "__main__":
