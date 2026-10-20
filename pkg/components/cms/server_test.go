@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -1608,5 +1609,62 @@ func TestCMSServer_GetPlatformHealth_MemoryStore(t *testing.T) {
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Errorf("GetPlatformHealth(invalid filter) got code %v, want InvalidArgument", status.Code(err))
+	}
+}
+
+func TestCMSServer_OwnershipMetrics(t *testing.T) {
+	ctx := context.Background()
+	ms := store.NewMemoryStore()
+	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
+
+	prodCluster := &componentspb.ClusterIdentity{
+		Uid:   "7d3e2a10-8c4b-4f6e-b1a2-3c4d5e6f7a01",
+		Name:  "prod",
+		Epoch: 4,
+	}
+	if _, err := server.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: prodCluster}); err != nil {
+		t.Fatalf("DeclareClusterEpoch() unexpected error: %v", err)
+	}
+	if err := CollectOwnershipMetrics(ctx, ms, time.Now().UTC()); err != nil {
+		t.Fatalf("CollectOwnershipMetrics() unexpected error: %v", err)
+	}
+	if got := testutil.ToFloat64(store.ClusterFenceEpochGauge()); got != 4 {
+		t.Errorf("xmc_cms_cluster_fence_epoch = %v, want 4", got)
+	}
+
+	initialBefore := testutil.ToFloat64(store.OwnerAdoptionsCounter(store.AdoptionReasonInitial))
+	spec := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.0.0",
+	}
+	ownerSrc := &componentspb.RequestSource{
+		Uid:        "uid-1",
+		Generation: 2,
+		Namespace:  "xmc",
+		Cluster:    prodCluster,
+	}
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name:   "cms-metrics-comp",
+		Spec:   spec,
+		Source: ownerSrc,
+	}); err != nil {
+		t.Fatalf("SetComponentIntent() unexpected error: %v", err)
+	}
+	if got := testutil.ToFloat64(store.OwnerAdoptionsCounter(store.AdoptionReasonInitial)); got != initialBefore+1 {
+		t.Errorf("initial adoptions = %v, want %v", got, initialBefore+1)
+	}
+
+	mismatchBefore := testutil.ToFloat64(store.SourceConflictsCounter(store.ReasonSourceIncarnationMismatch))
+	_, _ = server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
+		Name: "cms-metrics-comp",
+		Source: &componentspb.RequestSource{
+			Uid:        "uid-other",
+			Generation: 1,
+			Namespace:  "xmc",
+			Cluster:    prodCluster,
+		},
+	})
+	if got := testutil.ToFloat64(store.SourceConflictsCounter(store.ReasonSourceIncarnationMismatch)); got != mismatchBefore+1 {
+		t.Errorf("SOURCE_INCARNATION_MISMATCH conflicts = %v, want %v", got, mismatchBefore+1)
 	}
 }

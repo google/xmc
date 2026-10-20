@@ -36,6 +36,8 @@ import (
 // Ensure MemoryStore implements Store interface at compile time.
 var _ Store = (*MemoryStore)(nil)
 
+var _ OwnershipGaugeReader = (*MemoryStore)(nil)
+
 // MemoryStore provides a thread-safe in-memory test double and local implementation of Store.
 type MemoryStore struct {
 	mu               sync.RWMutex
@@ -44,6 +46,7 @@ type MemoryStore struct {
 	nextID           int64
 	snapshots        map[string]map[int64]*SnapshotRecord
 	fence            *ClusterIdentity // Ownership fence holder; nil before the first declaration.
+	fenceLastSeen    time.Time        // Time of the last accepted declaration.
 }
 
 // NewMemoryStore creates a new thread-safe in-memory component store.
@@ -82,17 +85,20 @@ func (m *MemoryStore) setIntent(name string, spec *componentspb.ComponentSpec, l
 	defer m.mu.Unlock()
 
 	if err := checkClusterFence(operationSetComponentIntent, m.fence, src); err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
 	rec, plan, err := planLiveIntent(m.componentsByName, canonicalName, spec, labels, deps, desiredGen, src)
 	if err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
 	if _, err := validateIntentDependencies(m.componentsByName, canonicalName, deps); err != nil {
 		return nil, err
 	}
 	if rec != nil {
 		m.applyIntentPlanLocked(rec, plan, spec, labels, deps, src, now)
+		if plan.write != writeNothing {
+			recordOwnerAdoption(plan.prevOwner, src, false)
+		}
 		return cloneRecord(rec), nil
 	}
 
@@ -100,10 +106,12 @@ func (m *MemoryStore) setIntent(name string, spec *componentspb.ComponentSpec, l
 	rec = createNewIntentRecord(m.nextID, canonicalName, spec, labels, deps, plan.generation, now)
 	if src != nil {
 		rec.Owner = ownerOf(*src)
+		rec.SourceLastSeenTime = now
 	}
 	m.componentsByName[canonicalName] = rec
 	m.componentsByID[rec.ComponentID] = rec
 	m.recordSnapshotLocked(rec)
+	recordOwnerAdoption(nil, src, true)
 
 	return cloneRecord(rec), nil
 }
@@ -115,6 +123,7 @@ func (m *MemoryStore) applyIntentPlanLocked(rec *ComponentRecord, plan intentPla
 	}
 	if src != nil {
 		rec.Owner = ownerOf(*src)
+		rec.SourceLastSeenTime = now
 	}
 	if plan.write == writeSpec {
 		updateExistingIntent(rec, spec, labels, deps, plan.generation, now)
@@ -131,19 +140,34 @@ func (m *MemoryStore) DeclareClusterEpoch(ctx context.Context, cluster ClusterId
 	defer m.mu.Unlock()
 	outcome, err := planDeclaration(m.fence, cluster)
 	if err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
 	res := &DeclarationResult{Outcome: outcome, Active: cluster}
+	now := time.Now().UTC()
 	if outcome == DeclarationTakeover {
 		for _, rec := range m.componentsByName {
 			if !isDeletedRecord(rec) && rec.Owner != nil {
 				rec.Owner = takenOverOwner(rec.Owner, cluster)
+				// Starts the adoption grace period of the owner_stale gauge, as in Spanner.
+				rec.SourceLastSeenTime = now
 				res.RecordsReassigned++
 			}
 		}
 	}
 	m.fence = &cluster
+	m.fenceLastSeen = now
 	return res, nil
+}
+
+// ReadOwnershipGauges reads the fence and counts the stale owners in the in-memory store at now.
+func (m *MemoryStore) ReadOwnershipGauges(ctx context.Context, now time.Time) (OwnershipGauges, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	g := OwnershipGauges{StaleOwners: countStaleOwnedComponents(m.componentsByName, now)}
+	if m.fence != nil {
+		g.FenceDeclared, g.FenceEpoch, g.FenceLastSeenTime = true, m.fence.Epoch, m.fenceLastSeen
+	}
+	return g, nil
 }
 
 func validateResourceName(name string) (string, error) {
@@ -269,13 +293,14 @@ func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string,
 	if err != nil {
 		return nil, err
 	}
-	rec.Owner = nonIntentOwner(rec.Owner, reqSrc)
+	now := time.Now().UTC()
+	recordOwnerInMemory(rec, reqSrc, now)
 	if !applyObservation(rec, observedGen, access, state, statusMsg) {
 		// An unchanged heartbeat records only the owner: UpdateTime and the snapshot stay.
 		return cloneRecord(rec), nil
 	}
 
-	rec.UpdateTime = time.Now().UTC()
+	rec.UpdateTime = now
 	rec.Etag = generateEtag(rec)
 	m.recordSnapshotLocked(rec)
 	return cloneRecord(rec), nil
@@ -302,18 +327,30 @@ func applyObservation(rec *ComponentRecord, observedGen int64, access *component
 	return prevObserved == nil || *prevObserved != observedGen || prevState != rec.State || !proto.Equal(prevStatus, rec.Status)
 }
 
+// recordOwnerInMemory records src as the owner of rec at now (preserving Generation when already
+// owned by src.UID) and counts any owner adoption.
+func recordOwnerInMemory(rec *ComponentRecord, src *RequestSource, now time.Time) {
+	if src == nil {
+		return
+	}
+	prev := cloneSourceOwner(rec.Owner)
+	rec.Owner = nonIntentOwner(rec.Owner, src)
+	rec.SourceLastSeenTime = now
+	recordOwnerAdoption(prev, src, false)
+}
+
 // lookupMutableRecordLocked checks the cluster fence, finds the active record canonicalName, and
 // checks source ownership for operation.
 func (m *MemoryStore) lookupMutableRecordLocked(operation, canonicalName string, src *RequestSource) (*ComponentRecord, error) {
 	if err := checkClusterFence(operation, m.fence, src); err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
 	rec, exists := m.componentsByName[canonicalName]
 	if !exists || rec == nil || isDeletedRecord(rec) {
 		return nil, ErrComponentNotFound
 	}
 	if err := checkSourceMutation(operation, canonicalName, rec.Owner, src); err != nil {
-		return nil, err
+		return nil, recordSourceConflictError(err)
 	}
 	return rec, nil
 }
@@ -383,9 +420,8 @@ func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requ
 	if err != nil {
 		return nil, err
 	}
-	rec.Owner = nonIntentOwner(rec.Owner, reqSrc)
-
 	now := time.Now().UTC()
+	recordOwnerInMemory(rec, reqSrc, now)
 	transitionToDisabling(rec, now)
 
 	if requestCascade {
@@ -414,8 +450,9 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, for
 		return err
 	}
 
+	now := time.Now().UTC()
 	if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
-		rec.Owner = nonIntentOwner(rec.Owner, reqSrc)
+		recordOwnerInMemory(rec, reqSrc, now)
 		return nil
 	}
 	if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
@@ -428,9 +465,7 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, for
 			return status.Errorf(codes.FailedPrecondition, "cannot complete deactivation of component %s: active dependents remaining: %v", canonicalName, activeDependents)
 		}
 	}
-	rec.Owner = nonIntentOwner(rec.Owner, reqSrc)
-
-	now := time.Now().UTC()
+	recordOwnerInMemory(rec, reqSrc, now)
 	rec.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	if rec.Status == nil {
 		rec.Status = &componentspb.ComponentAccessStatus{}
@@ -460,11 +495,15 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 	if err := ValidateDeletionSafety(m.componentsByName, canonicalName, policy, force); err != nil {
 		return err
 	}
-	if reqSrc != nil {
-		rec.Owner = deletionOwner(rec.Owner, *reqSrc)
-	}
-
 	now := time.Now().UTC()
+	if reqSrc != nil {
+		// Like recordOwnerInMemory, but with deletionOwner: the deleting owner object keeps the
+		// larger SourceGeneration, matching SpannerStore.
+		prev := cloneSourceOwner(rec.Owner)
+		rec.Owner = deletionOwner(rec.Owner, *reqSrc)
+		rec.SourceLastSeenTime = now
+		recordOwnerAdoption(prev, reqSrc, false)
+	}
 	transitionToDeleted(rec, now)
 	if policy != componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED && rec.Spec != nil {
 		rec.Spec.DeletionPolicy = policy
@@ -608,6 +647,7 @@ func cloneRecord(r *ComponentRecord) *ComponentRecord {
 		cloned.Labels = copyMap(r.Labels)
 	}
 	cloned.Owner = cloneSourceOwner(r.Owner)
+	cloned.SourceLastSeenTime = r.SourceLastSeenTime
 	return cloned
 }
 
