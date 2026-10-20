@@ -86,6 +86,7 @@ type Authorizer struct {
 	jwksValidator  TokenValidator
 	oauth2Svc      *oauth2api.Service
 	allowedDomains []string
+	tokenCache     map[[32]byte]tokenCacheEntry
 }
 
 // SetJWKSValidator configures a JWKS token validator for OIDC token verification.

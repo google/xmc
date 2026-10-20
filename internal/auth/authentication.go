@@ -15,10 +15,12 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/mail"
 	"strings"
+	"time"
 
 	"google.golang.org/api/idtoken"
 	"google.golang.org/grpc/metadata"
@@ -92,6 +94,13 @@ func (a *Authorizer) authenticateViaAccessToken(ctx context.Context, token strin
 	if a.oauth2Svc == nil || strings.Count(token, ".") == 2 {
 		return nil
 	}
+	key := sha256.Sum256([]byte(token))
+	a.cacheLock.RLock()
+	entry, cached := a.tokenCache[key]
+	a.cacheLock.RUnlock()
+	if cached && time.Now().Before(entry.expiresAt) {
+		return entry.ident
+	}
 	ti, err := a.oauth2Svc.Tokeninfo().AccessToken(token).Context(ctx).Do()
 	if err != nil {
 		logging.Debug(ctx, "authenticateViaAccessToken: tokeninfo validation failed", "error", err)
@@ -108,8 +117,40 @@ func (a *Authorizer) authenticateViaAccessToken(ctx context.Context, token strin
 	if userID == "" {
 		userID = ti.Email
 	}
+	ident := &authIdentity{email: ti.Email, userID: userID}
+
+	// Cache only successful lookups, for at most accessTokenCacheTTL and never past the token's
+	// own expiry. A revoked token is accepted until its entry expires.
+	if ttl := min(time.Duration(ti.ExpiresIn)*time.Second, accessTokenCacheTTL); ttl > 0 {
+		a.cacheToken(key, ident, ttl)
+	}
 	logging.Info(ctx, "Authenticated request via access token", "email", ti.Email, "user_id", userID)
-	return &authIdentity{email: ti.Email, userID: userID}
+	return ident
+}
+
+// accessTokenCacheTTL bounds how long a verified access token is trusted without asking
+// tokeninfo again.
+const accessTokenCacheTTL = 5 * time.Minute
+
+type tokenCacheEntry struct {
+	ident     *authIdentity
+	expiresAt time.Time
+}
+
+// cacheToken stores a verified identity and drops expired entries.
+func (a *Authorizer) cacheToken(key [32]byte, ident *authIdentity, ttl time.Duration) {
+	now := time.Now()
+	a.cacheLock.Lock()
+	defer a.cacheLock.Unlock()
+	if a.tokenCache == nil {
+		a.tokenCache = make(map[[32]byte]tokenCacheEntry)
+	}
+	for k, e := range a.tokenCache {
+		if !now.Before(e.expiresAt) {
+			delete(a.tokenCache, k)
+		}
+	}
+	a.tokenCache[key] = tokenCacheEntry{ident: ident, expiresAt: now.Add(ttl)}
 }
 
 func (a *Authorizer) isEmailDomainAllowed(email string) bool {

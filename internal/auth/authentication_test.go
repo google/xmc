@@ -445,7 +445,7 @@ func TestAuthenticateUserFromContext_AccessToken(t *testing.T) {
 		t.Fatalf("oauth2api.NewService: %v", err)
 	}
 	a := &Authorizer{iapAudiences: []string{"test_audience"}, oauth2Svc: svc}
-	a.SetAllowedDomains([]string{" Google.COM "}) // normalized once by SetAllowedDomains
+	a.SetAllowedDomains([]string{" Google.COM "})
 
 	testCases := []struct {
 		token          string
