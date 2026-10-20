@@ -33,13 +33,14 @@ type probeDialControl func(network, address string, c syscall.RawConn) error
 
 var (
 	// metadataServerAddrs are cloud metadata server addresses that the link-local check does not
-	// cover: the GCE IPv6 address fd20:ce::254 (IPv6-only VMs), and the AWS IMDS IPv6 address
-	// fd00:ec2::254. 169.254.169.254 is listed for clarity, though link-local already covers it.
-	// metadata.google.internal resolves to these addresses.
+	// cover: the GCE IPv6 address fd20:ce::254 (IPv6-only VMs), the AWS IMDS IPv6 address
+	// fd00:ec2::254, and the OCI IMDS address 192.0.0.192. 169.254.169.254 is listed for clarity,
+	// though link-local already covers it. metadata.google.internal resolves to the GCE addresses.
 	metadataServerAddrs = []netip.Addr{
 		netip.MustParseAddr("169.254.169.254"),
 		netip.MustParseAddr("fd20:ce::254"),
 		netip.MustParseAddr("fd00:ec2::254"),
+		netip.MustParseAddr("192.0.0.192"),
 	}
 	// thisNetworkPrefix is 0.0.0.0/8, which Linux routes to the local host.
 	thisNetworkPrefix = netip.MustParsePrefix("0.0.0.0/8")
