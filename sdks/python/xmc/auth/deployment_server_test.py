@@ -46,6 +46,55 @@ class ResolveServerTest(unittest.TestCase):
         with self.assertRaisesRegex(AuthError, "--server"):
             deployment_server.resolve_server(None, {})
 
+    def test_falls_back_to_grpc_endpoint(self) -> None:
+        """XMANAGER_ENDPOINT is used only when nothing else is configured."""
+        endpoint = {"XMANAGER_ENDPOINT": "dns:///grpc.xmc.example.com:443"}
+        ui = {"XMANAGER_UI_URL": "https://ui.example.com", **endpoint}
+        cases = [
+            (None, endpoint, _EXAMPLE),
+            (None, {"XMANAGER_UI_URL": " ", **endpoint}, _EXAMPLE),
+            (None, ui, "https://ui.example.com"),
+            ("https://flag.example.com", endpoint, "https://flag.example.com"),
+        ]
+        for flag, env, want in cases:
+            with self.subTest(flag=flag, env=env):
+                self.assertEqual(deployment_server.resolve_server(flag, env), want)
+
+    def test_ignores_non_grpc_endpoint(self) -> None:
+        """An XMANAGER_ENDPOINT without a `grpc.` host label doesn't configure a server."""
+        with self.assertRaisesRegex(AuthError, "--server"):
+            deployment_server.resolve_server(None, {"XMANAGER_ENDPOINT": "xmc.example.com:443"})
+
+
+class ServerFromGrpcEndpointTest(unittest.TestCase):
+    """Tests deriving the Dashboard origin from the gRPC endpoint."""
+
+    def test_derives_origin(self) -> None:
+        """The `dns:///` scheme, the port, and the `grpc.` label are stripped."""
+        for endpoint in (
+            "dns:///grpc.xmc.example.com:443",
+            " dns:///GRPC.xmc.example.com:443 ",
+            "grpc.xmc.example.com:443",
+            "grpc.xmc.example.com",
+        ):
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(deployment_server.server_from_grpc_endpoint(endpoint), _EXAMPLE)
+
+    def test_ignores_other_layouts(self) -> None:
+        """Endpoints without a `grpc.` host label, or malformed ones, yield None."""
+        for endpoint in (
+            None,
+            "",
+            "dns:///xmc.example.com:443",
+            "localhost:50051",
+            "dns:///grpc.:443",
+            "dns:///mygrpc.example.com:443",
+            "grpc.example.com:notaport",
+            "dns:///[grpc.example.com",
+        ):
+            with self.subTest(endpoint=endpoint):
+                self.assertIsNone(deployment_server.server_from_grpc_endpoint(endpoint))
+
 
 class ParseServerTest(unittest.TestCase):
     """Tests URL normalization and HTTPS enforcement."""

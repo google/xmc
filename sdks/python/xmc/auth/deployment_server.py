@@ -23,6 +23,9 @@ from collections.abc import Mapping
 from xmc.auth.errors import AuthError
 
 SERVER_ENV_VARS = ("XMC_API_URL", "XMANAGER_UI_URL")
+# gRPC endpoint of the XManager client, e.g. `dns:///grpc.<host>:443`.
+GRPC_ENDPOINT_ENV_VAR = "XMANAGER_ENDPOINT"
+_GRPC_HOST_LABEL = "grpc."
 
 
 def is_loopback_host(host: str) -> bool:
@@ -38,18 +41,44 @@ def is_loopback_host(host: str) -> bool:
 
 
 def resolve_server(flag_value: str | None, env: Mapping[str, str]) -> str:
-    """Returns the origin from `--server`, then XMC_API_URL, then XMANAGER_UI_URL.
+    """Returns the origin from `--server`, XMC_API_URL, XMANAGER_UI_URL, or XMANAGER_ENDPOINT.
 
     Raises:
         AuthError: If no deployment is configured or its URL is invalid.
     """
-    candidates = [flag_value, *(env.get(name) for name in SERVER_ENV_VARS)]
+    candidates = [
+        flag_value,
+        *(env.get(name) for name in SERVER_ENV_VARS),
+        server_from_grpc_endpoint(env.get(GRPC_ENDPOINT_ENV_VAR)),
+    ]
     raw = next((value.strip() for value in candidates if value and value.strip()), None)
     if raw is None:
         raise AuthError(
             "No XMC server configured. Pass --server or set XMC_API_URL or XMANAGER_UI_URL."
         )
     return parse_server(raw)
+
+
+def server_from_grpc_endpoint(endpoint: str | None) -> str | None:
+    """Derives `https://<host>` from a `[dns:///]grpc.<host>[:port]` gRPC endpoint.
+
+    XMC serves gRPC on the `grpc.` subdomain of the Dashboard host, so the
+    Dashboard origin can be recovered from the endpoint. Endpoints whose host
+    has no `grpc.` label are ignored.
+
+    Returns:
+        The derived origin, or None if the endpoint doesn't follow that layout.
+    """
+    target = (endpoint or "").strip().removeprefix("dns:///")
+    try:
+        parts = urllib.parse.urlsplit(f"//{target}")
+        host, _ = parts.hostname or "", parts.port  # Reading .port validates it.
+    except ValueError:
+        return None
+    dashboard_host = host.removeprefix(_GRPC_HOST_LABEL)
+    if dashboard_host == host or not dashboard_host:
+        return None
+    return f"https://{dashboard_host}"
 
 
 def parse_server(raw: str) -> str:

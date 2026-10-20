@@ -69,7 +69,8 @@ def _build_parser() -> argparse.ArgumentParser:
     """Builds the `xmc` argument parser."""
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
-        "--server", help="XMC deployment URL (default: $XMC_API_URL, then $XMANAGER_UI_URL)"
+        "--server",
+        help="XMC deployment URL (default: $XMC_API_URL, $XMANAGER_UI_URL, $XMANAGER_ENDPOINT)",
     )
     parser = argparse.ArgumentParser(prog="xmc", description="Authenticate to XMC as yourself.")
     sub = parser.add_subparsers(dest="command", required=True)

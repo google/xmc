@@ -233,7 +233,7 @@ export XMC_AUTH_TOKEN=$(xmc print-token)        # Hands the token to the XManage
 | `login [--timeout SECONDS]` | Browser sign-in with PKCE. Waits up to 300 seconds by default. If no browser opens, open the printed URL yourself. Re-logins pre-select the cached account. |
 | `print-token` | Prints the cached token to stdout. Exits 1 if it is missing or expires within 60 seconds. This is the only command that prints a token. |
 
-Every subcommand accepts `--server`. Without it, the server is read from `XMC_API_URL`, then from `XMANAGER_UI_URL`. Only the origin (`https://host[:port]`) is used, and `https://` is required unless the host is a loopback IP literal (`127.0.0.1`, `[::1]`). Plain-HTTP `localhost` is also accepted, but only for local development, because it depends on name resolution. Prefer the IP literals.
+Every subcommand accepts `--server`. Without it, the server is read from `XMC_API_URL`, then from `XMANAGER_UI_URL`, then derived from `XMANAGER_ENDPOINT` if its host starts with `grpc.` (`dns:///grpc.<host>:443` becomes `https://<host>`). Only the origin (`https://host[:port]`) is used, and `https://` is required unless the host is a loopback IP literal (`127.0.0.1`, `[::1]`). Plain-HTTP `localhost` is also accepted, but only for local development, because it depends on name resolution. Prefer the IP literals.
 
 ### Credentials cache (stable v1 format)
 
