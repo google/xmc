@@ -117,37 +117,11 @@ class CredentialsStoreTest(unittest.TestCase):
         self.assertEqual(self.store.get(_ORIGIN), _CRED)
         self.assertEqual(os.listdir(self.path.parent), ["credentials.json"])
 
-    def test_rejects_group_or_world_accessible_file(self) -> None:
-        """An insecure cache is ignored with a warning."""
-        self.store.put(_CRED)
-        for mode in (0o640, 0o604):
-            with self.subTest(mode=oct(mode)):
-                self.path.chmod(mode)
-                self.assertIsNone(self.store.get(_ORIGIN))
-                self.assertIn("accessible by other users", self.warnings.getvalue())
-
-    def test_rejects_foreign_owner(self) -> None:
-        """A cache file or directory owned by another user is ignored."""
-        self.store.put(_CRED)
-        with mock.patch.object(os, "geteuid", return_value=os.geteuid() + 1):
-            self.assertIsNone(self.store.get(_ORIGIN))
-        self.assertIn("owned by another user", self.warnings.getvalue())
-
-    def test_rejects_symlink(self) -> None:
-        """A symlinked cache file is not followed."""
-        self.store.put(_CRED)
-        target = self.path.with_name("target.json")
-        self.path.rename(target)
-        self.path.symlink_to(target)
+    def test_read_oserror_warns_and_returns_none(self) -> None:
+        """An unreadable cache warns and reads as empty."""
+        self.path.mkdir(parents=True)
         self.assertIsNone(self.store.get(_ORIGIN))
-        self.assertIn("ignoring insecure or unreadable", self.warnings.getvalue())
-
-    def test_skips_ownership_checks_off_posix(self) -> None:
-        """Non-POSIX platforms skip the owner and mode-bit checks."""
-        self.store.put(_CRED)
-        self.path.chmod(0o644)
-        with mock.patch.object(credentials_store, "_IS_POSIX", False):
-            self.assertEqual(self.store.get(_ORIGIN), _CRED)
+        self.assertIn("ignoring unreadable", self.warnings.getvalue())
 
     def test_invalid_contents_are_treated_as_missing(self) -> None:
         """Corrupt, wrong-version, or malformed entries read as missing."""

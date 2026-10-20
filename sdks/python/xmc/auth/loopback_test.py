@@ -21,23 +21,17 @@ import socket
 import threading
 import time
 import unittest
-from unittest import mock
 
 from xmc.auth import loopback
 from xmc.auth.errors import ACCESS_DENIED_MESSAGE, AuthError
 
 _STATE = "s" * 43
 _CODE = "c" * 43
-_PORT = 5000
-_HOST = f"127.0.0.1:{_PORT}"
 _SUCCESS_URL = "https://xmc.example.com/api/cli/success"
 
 
 class ParseCallbackTest(unittest.TestCase):
     """Tests request classification in isolation."""
-
-    def _parse(self, path: str, host: str | None = _HOST) -> dict[str, str] | None:
-        return loopback.parse_callback(path, host, _PORT, _STATE)
 
     def test_genuine_redirects(self) -> None:
         """Matching redirects yield the code or the server's error."""
@@ -50,28 +44,25 @@ class ParseCallbackTest(unittest.TestCase):
         }
         for path, want in cases.items():
             with self.subTest(path=path):
-                self.assertEqual(self._parse(path), want)
+                self.assertEqual(loopback.parse_callback(path, _STATE), want)
 
     def test_ignored(self) -> None:
         """Forged, malformed, or misdirected requests are ignored."""
         good = f"code={_CODE}&state={_STATE}"
         cases = [
-            (f"/other?{good}", _HOST),
-            ("/favicon.ico", _HOST),
-            (f"/callback?{good}", "localhost:5000"),
-            (f"/callback?{good}", "attacker.example:5000"),
-            (f"/callback?{good}", None),
-            (f"/callback?code={_CODE}&state=wrong", _HOST),
-            (f"/callback?code={_CODE}", _HOST),
-            (f"/callback?{good}&state={_STATE}", _HOST),
-            (f"/callback?code=bad%20code&state={_STATE}", _HOST),
-            (f"/callback?state={_STATE}", _HOST),
-            ("/callback?error=access_denied&state=wrong", _HOST),
-            ("/callback?code=x&state=%C3%A9", _HOST),
+            f"/other?{good}",
+            "/favicon.ico",
+            f"/callback?code={_CODE}&state=wrong",
+            f"/callback?code={_CODE}",
+            f"/callback?{good}&state={_STATE}",
+            f"/callback?code={'x' * 257}&state={_STATE}",
+            f"/callback?state={_STATE}",
+            "/callback?error=access_denied&state=wrong",
+            "/callback?code=x&state=%C3%A9",
         ]
-        for path, host in cases:
-            with self.subTest(path=path, host=host):
-                self.assertIsNone(self._parse(path, host))
+        for path in cases:
+            with self.subTest(path=path):
+                self.assertIsNone(loopback.parse_callback(path, _STATE))
 
 
 class CallbackReceiverTest(unittest.TestCase):
@@ -91,10 +82,10 @@ class CallbackReceiverTest(unittest.TestCase):
         except BaseException as e:  # Surfaced to the test thread.
             self.error = e
 
-    def _get(self, path: str, host: str | None = None) -> http.client.HTTPResponse:
+    def _get(self, path: str) -> http.client.HTTPResponse:
         conn = http.client.HTTPConnection(loopback.LOOPBACK_HOST, self.receiver.port, timeout=5)
         self.addCleanup(conn.close)
-        conn.request("GET", path, headers={"Host": host or f"127.0.0.1:{self.receiver.port}"})
+        conn.request("GET", path)
         response = conn.getresponse()
         response.read()
         return response
@@ -114,11 +105,8 @@ class CallbackReceiverTest(unittest.TestCase):
         self.assertEqual(self.result, _CODE)
 
     def test_forgeries_do_not_abort_login(self) -> None:
-        """State mismatches, wrong Host headers, and wrong paths get 400; the wait continues."""
+        """State mismatches and wrong paths get 400; the wait continues."""
         self.assertEqual(self._get("/callback?code=evil&state=wrong").status, 400)
-        self.assertEqual(
-            self._get(f"/callback?code=evil&state={_STATE}", host="evil.example").status, 400
-        )
         self.assertEqual(self._get("/").status, 400)
         self.assertTrue(self.thread.is_alive())
         self._get(f"/callback?code={_CODE}&state={_STATE}")
@@ -157,13 +145,6 @@ class CallbackReceiverTimeoutTest(unittest.TestCase):
         with loopback.CallbackReceiver(_STATE, _SUCCESS_URL) as receiver:
             with self.assertRaisesRegex(AuthError, "Timed out"):
                 receiver.wait_for_code(timeout=0.05)
-
-    def test_deadline_uses_injected_clock(self) -> None:
-        """An already-expired deadline raises without serving any request."""
-        clock = mock.Mock(side_effect=[100.0, 400.0])
-        with loopback.CallbackReceiver(_STATE, _SUCCESS_URL) as receiver:
-            with self.assertRaisesRegex(AuthError, "Timed out"):
-                receiver.wait_for_code(timeout=300, clock=clock)
 
     def test_stalled_connection_cannot_extend_deadline(self) -> None:
         """A client that connects but never sends delays the deadline by at most ~2s."""

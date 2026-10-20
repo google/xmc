@@ -45,7 +45,6 @@ class CliTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.store = CredentialsStore(Path(tmp.name) / "credentials.json", io.StringIO())
-        self.revoke = mock.Mock()
         self.out, self.err = io.StringIO(), io.StringIO()
         self.env = dict(_ENV)
         run_login = mock.patch.object(cli, "run_login", return_value=_GRANT)
@@ -54,9 +53,7 @@ class CliTest(unittest.TestCase):
 
     def _run(self, *argv: str) -> int:
         deps = LoginDependencies(self.out, mock.Mock(), mock.Mock(), mock.Mock())
-        ctx = cli.CliContext(
-            self.env, self.store, deps, self.revoke, lambda: float(_NOW), self.out, self.err
-        )
+        ctx = cli.CliContext(self.env, self.store, deps, lambda: float(_NOW), self.out, self.err)
         return cli.run_cli(list(argv), ctx)
 
     def test_login_caches_token_without_printing_it(self) -> None:
@@ -172,25 +169,16 @@ class CliTest(unittest.TestCase):
         self.assertIn("expired", self.out.getvalue())
         self.assertNotIn("tok-", self.out.getvalue())
 
-    def test_logout_revokes_and_removes(self) -> None:
-        """logout revokes server-side, then deletes the cache entry."""
+    def test_logout_removes_cached_token(self) -> None:
+        """logout deletes the local cache entry."""
         self.store.put(_CACHED)
         self.assertEqual(self._run("logout"), 0)
-        self.revoke.assert_called_once_with(_SERVER, "tok-cached")
-        self.assertIsNone(self.store.get(_SERVER))
-
-    def test_logout_removes_even_if_revoke_fails(self) -> None:
-        """A failed revocation warns but still removes the local token."""
-        self.store.put(_CACHED)
-        self.revoke.side_effect = AuthError("server down")
-        self.assertEqual(self._run("logout"), 0)
-        self.assertIn("Warning: could not revoke", self.err.getvalue())
         self.assertIsNone(self.store.get(_SERVER))
 
     def test_logout_when_not_logged_in(self) -> None:
         """logout without a cached token is a no-op success."""
         self.assertEqual(self._run("logout"), 0)
-        self.revoke.assert_not_called()
+        self.assertIn("Not logged in", self.out.getvalue())
 
 
 class MainTest(unittest.TestCase):
