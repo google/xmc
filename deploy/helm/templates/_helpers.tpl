@@ -121,11 +121,16 @@ Get the UI API URL.
 {{/*
 Common OAuth environment variables for XMC services.
 DISABLE_AUTHENTICATION turns off authorization checks (for example CMS authorization and admin
-checks), so the chart refuses to render it outside development environments.
+checks), and mock authentication accepts any caller, so the chart refuses to render either
+outside development environments. The mockAuth check mirrors the backend's MOCK_AUTH parsing
+(true, 1 or yes, case-insensitive).
 */}}
 {{- define "xmanager-cloud.oauthEnv" -}}
 {{- if and .Values.auth.disableAuthentication (not .Values.isDevEnvironment) -}}
 {{- fail "auth.disableAuthentication=true is only allowed when isDevEnvironment=true" -}}
+{{- end -}}
+{{- if and (has (lower (toString .Values.auth.mockAuth)) (list "true" "1" "yes")) (not .Values.isDevEnvironment) -}}
+{{- fail "auth.mockAuth is only allowed when isDevEnvironment is true" -}}
 {{- end -}}
 - name: SESSION_TTL
   value: {{ .Values.auth.sessionTtl | quote }}

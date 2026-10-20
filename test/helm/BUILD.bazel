@@ -171,6 +171,22 @@ py_test(
 )
 
 py_test(
+    name = "mock_auth_guard_test",
+    srcs = ["mock_auth_guard_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "mock_auth_guard_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
     name = "actuator_dev_oidc_config_test",
     srcs = ["actuator_dev_oidc_config_test.py"],
     data = ["//deploy/helm:chart"],

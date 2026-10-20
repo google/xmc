@@ -181,6 +181,7 @@ auth:
     iapIssuer: "https://iap.googleapis.com"
     clientId: "YOUR_IAP_CLIENT_ID"
   allowedOrigins: ""
+  # Mock authentication is for local development only: rendering fails unless isDevEnvironment.
   mockAuth: false
   disableAuthentication: false
   # trustXForwardedProto forces the Authenticator to respect the X-Forwarded-Proto header.
