@@ -31,6 +31,8 @@ class DisableAuthenticationGuardTest(unittest.TestCase):
             ("authentication enabled in production", "false", "false"),
             ("authentication enabled in development", "false", "true"),
             ("authentication disabled in development", "true", "true"),
+            # Non-empty strings are truthy in Go templates; the backend reads this as false.
+            ("string no in production", "no", "false"),
         )
         for name, disabled, dev in cases:
             with self.subTest(name):
@@ -47,15 +49,20 @@ class DisableAuthenticationGuardTest(unittest.TestCase):
                 )
 
     def test_fails_outside_development(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "only allowed when isDevEnvironment=true"):
-            render_template(
-                _ESS_DEPLOYMENT,
-                {
-                    "essDeployment.enabled": "true",
-                    "auth.disableAuthentication": "true",
-                    "isDevEnvironment": "false",
-                },
-            )
+        # The backend reads DISABLE_AUTHENTICATION case-insensitively as true, 1 or yes.
+        for flag in ("true", "True", "yes", "1"):
+            with self.subTest(flag=flag):
+                with self.assertRaisesRegex(
+                    RuntimeError, "only allowed when isDevEnvironment=true"
+                ):
+                    render_template(
+                        _ESS_DEPLOYMENT,
+                        {
+                            "essDeployment.enabled": "true",
+                            "auth.disableAuthentication": flag,
+                            "isDevEnvironment": "false",
+                        },
+                    )
 
 
 if __name__ == "__main__":
