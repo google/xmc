@@ -439,13 +439,15 @@ func (r *Reconciler) applyIntent(ctx context.Context, in ReconcileComponentInput
 // resource reports no generation yet (a new or recreated custom resource adopting a record), and at
 // Debug for the idempotent re-apply that every pass performs.
 func logIntentApplied(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) {
-	logAt := logging.Debug
 	if in.ComponentGeneration == 0 || res.ComponentGeneration != in.ComponentGeneration || res.ComponentID != in.ComponentID {
-		logAt = logging.Info
+		logging.Info(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation,
+			"previousComponentGeneration", in.ComponentGeneration, "componentGeneration", res.ComponentGeneration,
+			"previousComponentId", in.ComponentID, "componentId", res.ComponentID, "state", res.State.String())
+	} else {
+		logging.Debug(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation,
+			"previousComponentGeneration", in.ComponentGeneration, "componentGeneration", res.ComponentGeneration,
+			"previousComponentId", in.ComponentID, "componentId", res.ComponentID, "state", res.State.String())
 	}
-	logAt(ctx, "Applied component intent to CMS", "name", canonicalName, "generation", in.Generation,
-		"previousComponentGeneration", in.ComponentGeneration, "componentGeneration", res.ComponentGeneration,
-		"previousComponentId", in.ComponentID, "componentId", res.ComponentID, "state", res.State.String())
 }
 
 // applyIntentResponse copies the CMS state, component generation and ComponentId from a
@@ -701,14 +703,16 @@ func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput
 		preserveExistingAccess(res, in.ExistingAccess)
 	}
 	setReadiness(res, in, ConditionStatusFalse, reason, msg)
-	logAt := logging.Debug
-	if healthConditionsChanged(in.ExistingConditions, res.Conditions, in.Generation) {
-		logAt = logging.Info
-	}
+	// Compared before syncObservedToCMS, which rewrites Ready on a source conflict.
+	changed := healthConditionsChanged(in.ExistingConditions, res.Conditions, in.Generation)
 	if err := r.syncObservedToCMS(ctx, in, canonicalName, res, ConditionStatusFalse, true); err != nil {
 		return res, err
 	}
-	logAt(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "detail", msg)
+	if changed {
+		logging.Info(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "detail", msg)
+	} else {
+		logging.Debug(ctx, "Component reconciliation gated", "name", canonicalName, "generation", in.Generation, "reason", reason, "detail", msg)
+	}
 	return res, nil
 }
 
@@ -797,20 +801,20 @@ func (r *Reconciler) evaluateHealth(ctx context.Context, in ReconcileComponentIn
 // compares Ready only, because its caller sets Reconciling and Stalled afterwards. It logs the final
 // Ready condition, which differs from the probe result when reporting to CMS encountered a source conflict.
 func logHealthEvaluated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) {
-	logAt := logging.Debug
 	condTypes := healthConditionTypes
 	if in.skipCMSSync {
 		condTypes = []string{ConditionTypeReady}
-	}
-	if conditionsChanged(in.ExistingConditions, res.Conditions, in.Generation, condTypes) {
-		logAt = logging.Info
 	}
 	var healthy bool
 	var reason string
 	if ready := findCondition(res.Conditions, ConditionTypeReady); ready != nil {
 		healthy, reason = ready.Status == ConditionStatusTrue, ready.Reason
 	}
-	logAt(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", healthy, "reason", reason)
+	if conditionsChanged(in.ExistingConditions, res.Conditions, in.Generation, condTypes) {
+		logging.Info(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", healthy, "reason", reason)
+	} else {
+		logging.Debug(ctx, "Evaluated component health", "name", canonicalName, "generation", in.Generation, "state", res.State.String(), "healthy", healthy, "reason", reason)
+	}
 }
 
 // healthConditionTypes are the conditions whose change makes a pass log at Info.

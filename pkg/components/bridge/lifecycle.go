@@ -228,11 +228,11 @@ func (r *Reconciler) reconcileDisabled(ctx context.Context, in ReconcileComponen
 // block is new (no DeactivationBlocked=True condition with the same message yet), and at Debug for
 // the periodic recheck of a block that has not changed.
 func logDeactivationBlocked(ctx context.Context, in ReconcileComponentInput, canonicalName, msg string) {
-	logAt := logging.Info
 	if prev := findCondition(in.ExistingConditions, ConditionTypeDeactivationBlocked); prev != nil && prev.Status == ConditionStatusTrue && prev.Message == msg {
-		logAt = logging.Debug
+		logging.Debug(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
+	} else {
+		logging.Info(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
 	}
-	logAt(ctx, "Component deactivation blocked by active dependents", "name", canonicalName, "generation", in.Generation, "detail", msg)
 }
 
 // reportDisabled reports the component disabled in res and to CMS. A pass that changes the Ready,
@@ -242,16 +242,18 @@ func logDeactivationBlocked(ctx context.Context, in ReconcileComponentInput, can
 func (r *Reconciler) reportDisabled(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult) (*ReconcileResult, error) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 	setReadiness(res, in, ConditionStatusFalse, reasonComponentDisabled, "Component is disabled")
-	logAt := logging.Debug
-	if healthConditionsChanged(in.ExistingConditions, res.Conditions, in.Generation) {
-		logAt = logging.Info
-	}
+	// Compared before syncObservedToCMS, which rewrites Ready on a source conflict.
+	changed := healthConditionsChanged(in.ExistingConditions, res.Conditions, in.Generation)
 	if err := r.syncObservedToCMS(ctx, in, canonicalName, res, ConditionStatusFalse, true); err != nil {
 		markDeactivationFailed(in, res, ReasonDeactivationIncomplete, err.Error())
 		return res, err
 	}
 	if !hasSourceConflict(res) {
-		logAt(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
+		if changed {
+			logging.Info(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
+		} else {
+			logging.Debug(ctx, "Component disabled", "name", canonicalName, "generation", in.Generation)
+		}
 	}
 	// A settled disabled component has no workload to probe; spec changes requeue it immediately,
 	// so it only needs a pass per CMS heartbeat.

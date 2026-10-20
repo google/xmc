@@ -2451,6 +2451,39 @@ func TestReconcileComponent_DeactivationBlockedLogLevel(t *testing.T) {
 	assertNoInfo(t, logs3)
 }
 
+func TestReconcileComponent_GatedLogLevel(t *testing.T) {
+	const gatedMessage = "Component reconciliation gated"
+	in := ReconcileComponentInput{
+		Namespace: "xmc", Name: "ingestion", Generation: 1, Enabled: true,
+		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Dependencies: []string{"redpanda"}},
+		Dependencies: NewDependencySnapshot(nil),
+	}
+	r, err := NewReconciler(&mockCMS{}, nil, &mockHelm{})
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
+	}
+
+	ctx1, logs1 := recordLogs()
+	res1, err := r.ReconcileComponent(ctx1, in)
+	if err != nil {
+		t.Fatalf("first pass error = %v", err)
+	}
+	if got := logs1.singleRecord(t, gatedMessage); got.level != slog.LevelInfo {
+		t.Errorf("first gated pass level = %v, want %v", got.level, slog.LevelInfo)
+	}
+
+	// The same gate on the next pass leaves Ready, Reconciling and Stalled unchanged.
+	in.ExistingConditions = res1.Conditions
+	in.ComponentGeneration, in.ComponentID = res1.ComponentGeneration, res1.ComponentID
+	ctx2, logs2 := recordLogs()
+	if _, err := r.ReconcileComponent(ctx2, in); err != nil {
+		t.Fatalf("second pass error = %v", err)
+	}
+	if got := logs2.singleRecord(t, gatedMessage); got.level != slog.LevelDebug {
+		t.Errorf("steady-state gated pass level = %v, want %v", got.level, slog.LevelDebug)
+	}
+}
+
 func TestReconcileComponent_LogDetailAttr(t *testing.T) {
 	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
 	healthy := []Condition{
