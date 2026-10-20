@@ -178,6 +178,30 @@ func TestNetworkHealthProber_DoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
+func TestGuardHTTPClient_IgnoresCustomTLSDialers(t *testing.T) {
+	var customDials atomic.Int32
+	bypass := func(context.Context, string, string) (net.Conn, error) {
+		customDials.Add(1)
+		return nil, errors.New("custom TLS dialer used")
+	}
+	transport := &http.Transport{
+		DialTLSContext: bypass,
+		DialTLS:        func(network, addr string) (net.Conn, error) { return bypass(context.Background(), network, addr) },
+	}
+	client := guardHTTPClient(&http.Client{Transport: transport, Timeout: 5 * time.Second}, guardDialer(&net.Dialer{}, rejectBlockedProbeAddress))
+
+	resp, err := client.Get("https://127.0.0.1:1/")
+	if err == nil {
+		resp.Body.Close()
+	}
+	if !errors.Is(err, errBlockedProbeAddress) {
+		t.Errorf("GET https://127.0.0.1:1/ error = %v, want errBlockedProbeAddress", err)
+	}
+	if got := customDials.Load(); got != 0 {
+		t.Errorf("custom TLS dialer calls = %d, want 0 (HTTPS must dial through the guard)", got)
+	}
+}
+
 func TestGuardHTTPClient_Transport(t *testing.T) {
 	dialer := guardDialer(&net.Dialer{}, rejectBlockedProbeAddress)
 

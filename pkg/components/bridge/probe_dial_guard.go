@@ -88,6 +88,8 @@ func guardDialer(d *net.Dialer, control probeDialControl) *net.Dialer {
 
 // guardHTTPClient returns a copy of c that never follows redirects and, when its transport is an
 // *http.Transport (the default), dials through d without a proxy so the dial guard sees the target.
+// It also clears the transport's Dial, DialTLS and DialTLSContext hooks, so HTTPS connections are
+// dialed through d too.
 func guardHTTPClient(c *http.Client, d *net.Dialer) *http.Client {
 	guarded := http.Client{}
 	if c != nil {
@@ -100,7 +102,12 @@ func guardHTTPClient(c *http.Client, d *net.Dialer) *http.Client {
 	if t, ok := guarded.Transport.(*http.Transport); ok {
 		t = t.Clone()
 		t.Proxy = nil
+		// Every connection, including the TCP connection under TLS, goes through the guarded dialer:
+		// a custom DialTLSContext or DialTLS would otherwise dial HTTPS targets unguarded.
 		t.DialContext = d.DialContext
+		t.Dial = nil
+		t.DialTLS = nil
+		t.DialTLSContext = nil
 		guarded.Transport = t
 	}
 	return &guarded
