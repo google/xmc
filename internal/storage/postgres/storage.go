@@ -33,44 +33,44 @@ import (
 	"xmanager_cloud/internal/storage/postgres/xid"
 )
 
-type ExperimentRepository = experiment.Repository
-type WorkUnitRepository = workunit.Repository
-type ArtifactRepository = artifact.Repository
-type XIDRepository = xid.Repository
-type StatusMessageRepository = statusmessage.Repository
-type OperationRepository = operation.Repository
-type StatusHistoryRepository = statushistory.Repository
-type DashboardRepository = dashboard.Repository
-type PauseStateRepository = pausestate.Repository
-type PausedTaskRepository = pausedtask.Repository
+type experimentRepository = experiment.Repository
+type workUnitRepository = workunit.Repository
+type artifactRepository = artifact.Repository
+type xidRepository = xid.Repository
+type statusMessageRepository = statusmessage.Repository
+type operationRepository = operation.Repository
+type statusHistoryRepository = statushistory.Repository
+type dashboardRepository = dashboard.Repository
+type pauseStateRepository = pausestate.Repository
+type pausedTaskRepository = pausedtask.Repository
 
 var _ storage.Storage = (*Storage)(nil)
 
 // Storage implements the storage.Storage interface using PostgreSQL.
 type Storage struct {
-	*ExperimentRepository
-	*WorkUnitRepository
-	*ArtifactRepository
-	*XIDRepository
-	*StatusMessageRepository
-	*OperationRepository
-	*StatusHistoryRepository
-	*DashboardRepository
-	pauseStateRepository *PauseStateRepository
-	pausedTaskRepository *PausedTaskRepository
+	*experimentRepository
+	*workUnitRepository
+	*artifactRepository
+	*xidRepository
+	*statusMessageRepository
+	*operationRepository
+	*statusHistoryRepository
+	*dashboardRepository
+	pauseStateRepository *pauseStateRepository
+	pausedTaskRepository *pausedTaskRepository
 }
 
 // NewStorage creates a new instance of the PostgreSQL-backed storage.
 func NewStorage() *Storage {
 	return &Storage{
-		ExperimentRepository:    experiment.NewRepository(),
-		WorkUnitRepository:      workunit.NewRepository(),
-		ArtifactRepository:      artifact.NewRepository(),
-		XIDRepository:           xid.NewRepository(),
-		StatusMessageRepository: statusmessage.NewRepository(),
-		OperationRepository:     operation.NewRepository(),
-		StatusHistoryRepository: statushistory.NewRepository(),
-		DashboardRepository:     dashboard.NewRepository(),
+		experimentRepository:    experiment.NewRepository(),
+		workUnitRepository:      workunit.NewRepository(),
+		artifactRepository:      artifact.NewRepository(),
+		xidRepository:           xid.NewRepository(),
+		statusMessageRepository: statusmessage.NewRepository(),
+		operationRepository:     operation.NewRepository(),
+		statusHistoryRepository: statushistory.NewRepository(),
+		dashboardRepository:     dashboard.NewRepository(),
 		pauseStateRepository:    pausestate.NewRepository(),
 		pausedTaskRepository:    pausedtask.NewRepository(),
 	}
