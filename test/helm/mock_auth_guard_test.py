@@ -30,7 +30,11 @@ class MockAuthGuardTest(unittest.TestCase):
         # The backend reads MOCK_AUTH case-insensitively as true, 1 or yes.
         for flag in ("true", "True", "yes", "1"):
             with self.subTest(flag=flag):
-                values = {"essDeployment.enabled": "true", "auth.mockAuth": flag}
+                values = {
+                    "essDeployment.enabled": "true",
+                    "auth.mockAuth": flag,
+                    "isDevEnvironment": "false",
+                }
                 with self.assertRaisesRegex(
                     RuntimeError, "auth.mockAuth is only allowed when isDevEnvironment"
                 ):
