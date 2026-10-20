@@ -49,7 +49,6 @@ import (
 	"xmanager_cloud/internal/storage/spanner/clisession"
 	"xmanager_cloud/internal/storage/spanner/dashboard"
 	"xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/pkg/auth/oauth2/mock"
 	"xmanager_cloud/pkg/clickhouse"
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
 	"xmanager_cloud/pkg/components/crreader"
@@ -115,7 +114,6 @@ func initAuthenticator(ctx context.Context, projectID string) (*oauth2.Authentic
 		oauthCfg.GCPProjectID = projectID
 	}
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
-	mock.ConfigureIfEnabled(authenticator)
 	return authenticator, oauthCfg, nil
 }
 

@@ -99,6 +99,7 @@ func NewAuthenticator(cfg *Config) *Authenticator {
 		return client.GetIamPolicy(ctx, req)
 	}
 	a.IDTokenValidator = idtoken.Validate
+	configureMockIfEnabled(a)
 
 	return a
 }
