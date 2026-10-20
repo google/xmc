@@ -87,6 +87,7 @@ func main() {
 		logging.Fatal(ctx, "failed to initialize production server", "error", err)
 	}
 	defer prodServer.Close()
+	enableCLISessions(ctx, oauthAuth, prodServer.SpannerClient())
 
 	// 3. Initialize TLS credentials.
 	transportCreds, err := tlsutil.NewServerCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)

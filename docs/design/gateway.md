@@ -162,14 +162,16 @@ sequenceDiagram
     B->>CLI: GET /callback
     CLI->>B: 302 /api/cli/success
     CLI->>ESS: POST /api/cli/token (code, code_verifier)
-    ESS->>ESS: consume code, verify PKCE, re-run admission, sign token
+    ESS->>ESS: consume code, verify PKCE, re-run admission, record jti in CliSessions, sign token
     ESS->>CLI: access_token (aud xmanager-cloud-cli, jti, CLI_SESSION_TTL)
 ```
 
 1. **Login ticket**: `/api/cli/login` accepts only a numeric loopback `port` (1024 to 65535) or `mode=manual` (see [Headless (Manual) Mode](#headless-manual-mode)), a CLI `state`, an S256 `code_challenge` and an optional `login_hint`. It stores them in the `cli_login` cookie, MAC'd with a key derived from the JWT secret by HKDF and scoped to `/api/callback`, together with the hash of the `oauth_state` it generates. To stop other sites from starting a login in the user's browser (login CSRF) or embedding it, browsers that send fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Browsers without fetch metadata are allowed, which leaves them exposed to login CSRF.
 2. **Callback**: `/api/callback` completes a CLI login only when the `cli_login` ticket is authentic, unexpired and bound to the `oauth_state` of the same round trip; otherwise it signs the user in to the Dashboard as before. `/api/login` deletes any `cli_login` cookie. In loopback mode, every outcome goes to the loopback URL, which is built from the ticket's port, never from the request: an identity provider error or cancellation, or a rejected user, is sent `error=access_denied`, and a failed code exchange or other server failure `error=server_error`. The email never appears in the URL.
-3. **Token exchange**: `/api/cli/token` rejects malformed requests before reading the store or spending rate limit, consumes the code in a Spanner read-write transaction before checking the PKCE verifier, and answers every code or verifier problem with `400 invalid_grant`. A user who lost admission since signing in gets `403 access_denied`. Responses are `no-store`, and a process-wide rate limit protects the store.
+3. **Token exchange**: `/api/cli/token` rejects malformed requests before reading the store or spending rate limit, consumes the code in a Spanner read-write transaction before checking the PKCE verifier, and answers every code or verifier problem with `400 invalid_grant`. A user who lost admission since signing in gets `403 access_denied`. The session (`jti`, email, issue and expiry times) is recorded in the `CliSessions` table before the token is signed; if that fails the CLI gets `500 server_error` and no token. Responses are `no-store`, and a process-wide rate limit protects the store.
 4. **Use**: the CLI token is an HS256 session token with audience `xmanager-cloud-cli`. HTTP accepts it only as a bearer token, never as the session cookie, and gRPC accepts it in call metadata. Every call re-runs deployment admission.
+
+`CliSessions` rows are deleted by a row deletion policy one day after the token expires.
 
 #### Headless (Manual) Mode
 

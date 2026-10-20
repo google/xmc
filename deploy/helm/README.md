@@ -156,6 +156,11 @@ and every request re-runs [deployment admission](#deployment-admission). An issu
 CLI token cannot be revoked yet: it stays valid until it expires or the user is no
 longer admitted.
 
+Each CLI token is recorded in the `CliSessions` Spanner table (migration 017) when
+it is issued, with its ID (`jti`), email, and issue and expiry times; if the record
+cannot be written, no token is issued. Rows are deleted one day after the token
+expires.
+
 The CLI login endpoints are not served with `auth.mockAuth` or
 `auth.disableAuthentication`, or when the server has no Spanner database.
 

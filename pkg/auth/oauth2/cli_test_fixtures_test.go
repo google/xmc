@@ -93,14 +93,18 @@ func (s *fakeCLICodeStore) only(t *testing.T) CLILoginCode {
 	return CLILoginCode{}
 }
 
-// newCLITestAuthenticator returns an Authenticator with CLI login enabled on a fake store and a
-// stub identity provider returning baseLoginUserInfo.
+// newCLITestAuthenticator returns an Authenticator with CLI login enabled on a fake store, CLI
+// sessions recorded in a fake session store (see sessionStoreOf), and a stub identity provider
+// returning baseLoginUserInfo.
 func newCLITestAuthenticator(t *testing.T, cfg *Config) (*Authenticator, *fakeCLICodeStore, *stubOAuthProvider) {
 	t.Helper()
 	a, provider := newLoginTestAuthenticator(cfg)
 	store := newFakeCLICodeStore()
 	if err := a.EnableCLILogin(store); err != nil {
 		t.Fatalf("EnableCLILogin() failed: %v", err)
+	}
+	if err := a.EnableCLISessions(newFakeCLISessionStore()); err != nil {
+		t.Fatalf("EnableCLISessions() failed: %v", err)
 	}
 	return a, store, provider
 }

@@ -19,6 +19,7 @@ go_library(
     name = "experiment_state_server_lib",
     srcs = [
         "cli_login.go",
+        "cli_sessions.go",
         "health.go",
         "main.go",
     ],
@@ -37,6 +38,7 @@ go_library(
         "//internal/security/tlsutil",
         "//internal/storage/spanner",
         "//internal/storage/spanner/clilogincode",
+        "//internal/storage/spanner/clisession",
         "//internal/task_queue",
         "//pkg/auth/oauth2",
         "//pkg/auth/oauth2/mock",
@@ -94,6 +96,17 @@ go_test(
         "//internal/storage/spanner/emulator",
         "//pkg/auth/oauth2",
         "@com_github_google_go_cmp//cmp",
+        "@com_google_cloud_go_spanner//:spanner",
+    ],
+)
+
+go_test(
+    name = "cli_sessions_test",
+    srcs = ["cli_sessions_test.go"],
+    embed = [":experiment_state_server_lib"],
+    deps = [
+        "//internal/storage/spanner/emulator",
+        "//pkg/auth/oauth2",
         "@com_google_cloud_go_spanner//:spanner",
     ],
 )

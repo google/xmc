@@ -191,7 +191,8 @@ func (a *Authenticator) writeRedeemError(ctx context.Context, w http.ResponseWri
 	writeTokenError(w, http.StatusInternalServerError, tokenErrorServerError)
 }
 
-// writeCLIToken mints the CLI session token for code and writes the token response.
+// writeCLIToken records the session of the CLI token for code, mints the token and writes the token
+// response. A token whose session cannot be recorded could not be revoked, so it is not issued.
 func (a *Authenticator) writeCLIToken(ctx context.Context, w http.ResponseWriter, code CLILoginCode, now time.Time) {
 	ttl := a.Config.CLISessionTTL
 	if ttl == 0 {
@@ -200,6 +201,12 @@ func (a *Authenticator) writeCLIToken(ctx context.Context, w http.ResponseWriter
 	jti, err := GenerateRandomString()
 	if err != nil {
 		logging.Error(ctx, "[CLI Token] Failed to generate token ID", "error", err)
+		writeTokenError(w, http.StatusInternalServerError, tokenErrorServerError)
+		return
+	}
+	session := CLISession{JTI: jti, Email: code.Email, IssuedAt: now, ExpiresAt: now.Add(ttl)}
+	if err := a.recordCLISession(ctx, session); err != nil {
+		logging.Error(ctx, "[CLI Token] Failed to record session", "jti", jti, "error", err)
 		writeTokenError(w, http.StatusInternalServerError, tokenErrorServerError)
 		return
 	}

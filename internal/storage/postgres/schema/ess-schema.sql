@@ -376,3 +376,14 @@ CREATE TABLE CliLoginCodes (
   ExpiresAt TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (CodeHash)
 );
+
+-- CLI session tokens issued by /api/cli/token. Mirrors the Spanner table; PostgreSQL has no TTL
+-- policy and no session store implementation yet.
+CREATE TABLE CliSessions (
+  Jti TEXT NOT NULL, -- The token's jti claim.
+  Email TEXT NOT NULL,
+  IssuedAt TIMESTAMPTZ NOT NULL,
+  ExpiresAt TIMESTAMPTZ NOT NULL,
+  RevokedAt TIMESTAMPTZ, -- NULL while the session is active.
+  PRIMARY KEY (Jti)
+);

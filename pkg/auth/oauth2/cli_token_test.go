@@ -161,6 +161,10 @@ func TestHandleCLITokenRejects(t *testing.T) {
 		{name: "user de-authorized since login", setup: func(a *Authenticator, _ *fakeCLICodeStore) { a.Config.AllowedDomains = []string{"other.com"} }, want: tokenError(http.StatusForbidden, tokenErrorAccessDenied), consumed: true},
 		{name: "authorization pipeline failure", setup: failingIAM, want: serverError, consumed: true},
 		{name: "random source failure", random: true, want: serverError, consumed: true},
+		{name: "session store failure", setup: func(a *Authenticator, _ *fakeCLICodeStore) {
+			a.cliSessionStore.(*fakeCLISessionStore).createErr = errors.New("spanner unavailable")
+		}, want: serverError, consumed: true},
+		{name: "no session store", setup: func(a *Authenticator, _ *fakeCLICodeStore) { a.cliSessionStore = nil }, want: serverError, consumed: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

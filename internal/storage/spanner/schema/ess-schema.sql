@@ -645,3 +645,18 @@ CREATE TABLE CliLoginCodes (
   ExpiresAt TIMESTAMP NOT NULL,
 ) PRIMARY KEY (CodeHash),
   ROW DELETION POLICY (OLDER_THAN(ExpiresAt, INTERVAL 1 DAY));
+
+-- One row per CLI session token issued by /api/cli/token, keyed by its jti.
+CREATE TABLE CliSessions (
+  -- The token's jti claim.
+  Jti STRING(64) NOT NULL,
+  -- Normalized email the token was issued to.
+  Email STRING(MAX) NOT NULL,
+  -- The token's iat claim.
+  IssuedAt TIMESTAMP NOT NULL,
+  -- The token's exp claim. Rows are pruned by the TTL policy once the token has expired.
+  ExpiresAt TIMESTAMP NOT NULL,
+  -- When the session was revoked. NULL while the session is active.
+  RevokedAt TIMESTAMP,
+) PRIMARY KEY (Jti),
+  ROW DELETION POLICY (OLDER_THAN(ExpiresAt, INTERVAL 1 DAY));
