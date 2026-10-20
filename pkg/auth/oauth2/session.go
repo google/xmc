@@ -71,8 +71,13 @@ func generateSessionTokenAt(email, name, picture string, expiry time.Duration, s
 // The token must be signed with HS256, carry SessionIssuer as `iss`, an `exp` and a non-future
 // `iat` (each with a sessionClockSkew leeway), and an `aud` that contains at least one of
 // audiences. Each caller names the audiences it serves, so a token minted for one surface cannot be
-// replayed against another. Calling it without any audience rejects every token.
+// replayed against another. Calling it without any audience or with an empty secretKey rejects
+// every token.
 func ParseSessionToken(tokenStr string, secretKey []byte, audiences ...string) (*SessionClaims, error) {
+	// HMAC accepts an empty key, so a missing secret would let anyone mint valid tokens: fail closed.
+	if len(secretKey) == 0 {
+		return nil, ErrInvalidToken
+	}
 	// jwt.WithAudience skips the audience check entirely when given no audiences, so fail closed.
 	if len(audiences) == 0 {
 		return nil, ErrInvalidToken

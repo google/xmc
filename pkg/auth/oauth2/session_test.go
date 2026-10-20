@@ -15,6 +15,7 @@
 package oauth2
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -156,5 +157,23 @@ func TestParseSessionToken(t *testing.T) {
 				t.Errorf("ParseSessionToken() mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestParseSessionTokenRejectsEmptySecret(t *testing.T) {
+	now := time.Now()
+	claims := &SessionClaims{
+		Email: "user@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    SessionIssuer,
+			Audience:  jwt.ClaimStrings{FrontendAudience},
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+		},
+	}
+	tokenStr := signSessionClaims(t, jwt.SigningMethodHS256, []byte{}, claims)
+
+	if _, err := ParseSessionToken(tokenStr, nil, FrontendAudience); !errors.Is(err, ErrInvalidToken) {
+		t.Errorf("ParseSessionToken(empty secret) error = %v, want %v", err, ErrInvalidToken)
 	}
 }
