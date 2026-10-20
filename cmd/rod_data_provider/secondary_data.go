@@ -30,10 +30,7 @@ import (
 )
 
 // QueueVelocityFetcher defines interface for fetching velocity metrics from storage.
-type QueueVelocityFetcher interface {
-	FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]storage.QueueMetricRow, error)
-	FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]storage.QueueMetricRow, error)
-}
+type QueueVelocityFetcher = storage.StatusHistoryStore
 
 // BatchGetQueueSecondaryData handles calculation and retrieval of queue velocity metrics.
 func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchGetQueueSecondaryDataRequest) (*spb.BatchGetQueueSecondaryDataResponse, error) {
