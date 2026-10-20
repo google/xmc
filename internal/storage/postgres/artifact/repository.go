@@ -1,0 +1,61 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package artifact contains the concrete PostgreSQL repository implementation for artifacts.
+package artifact
+
+import (
+	"context"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/storage"
+)
+
+var _ storage.ArtifactStore = (*Repository)(nil)
+
+// Repository manages persistence for artifact entities in PostgreSQL.
+type Repository struct{}
+
+// NewRepository creates a new PostgreSQL Artifact repository instance.
+func NewRepository() *Repository {
+	return &Repository{}
+}
+
+// CreateArtifact creates a new artifact.
+func (r *Repository) CreateArtifact(ctx context.Context, artifact *essmsgpb.Artifact) (*essmsgpb.Artifact, error) {
+	return nil, status.Error(codes.Unimplemented, "postgres artifact store: CreateArtifact is not implemented")
+}
+
+// FetchArtifact retrieves an artifact by its unique ID.
+func (r *Repository) FetchArtifact(ctx context.Context, aid int64) (*essmsgpb.Artifact, error) {
+	return nil, status.Error(codes.Unimplemented, "postgres artifact store: FetchArtifact is not implemented")
+}
+
+// ListArtifacts retrieves a list of artifacts matching the given filter.
+func (r *Repository) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Artifact, string, error) {
+	return nil, "", status.Error(codes.Unimplemented, "postgres artifact store: ListArtifacts is not implemented")
+}
+
+// UpdateArtifact updates an artifact with the given update mask.
+func (r *Repository) UpdateArtifact(ctx context.Context, update *storage.ArtifactUpdate) (storage.UpdatedArtifacts, error) {
+	return storage.UpdatedArtifacts{}, status.Error(codes.Unimplemented, "postgres artifact store: UpdateArtifact is not implemented")
+}
+
+// DeleteArtifact deletes an artifact by its unique ID.
+func (r *Repository) DeleteArtifact(ctx context.Context, aid int64) error {
+	return status.Error(codes.Unimplemented, "postgres artifact store: DeleteArtifact is not implemented")
+}

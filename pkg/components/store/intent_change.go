@@ -62,7 +62,9 @@ const (
 // intentPlan is the outcome of applying an intent: what is written and the resulting generation.
 type intentPlan struct {
 	write      intentWrite
-	generation int64 // Generation of the record after the write.
+	generation int64        // Generation of the record after the write.
+	prevOwner  *SourceOwner // Recorded owner before the intent was planned.
+	created    bool         // True when the intent creates a new active record.
 }
 
 // planIntent decides how an intent applies to the existing active record rec: by src for a sourced
@@ -122,9 +124,10 @@ func planLiveIntent(catalog map[string]*ComponentRecord, canonicalName string, s
 				return nil, intentPlan{}, err
 			}
 		}
-		return nil, intentPlan{write: writeSpec, generation: newIntentGeneration(desiredGen, src)}, nil
+		return nil, intentPlan{write: writeSpec, generation: newIntentGeneration(desiredGen, src), created: true}, nil
 	}
 	plan, err := planIntent(canonicalName, rec, spec, labels, deps, desiredGen, src)
+	plan.prevOwner = cloneSourceOwner(rec.Owner)
 	return rec, plan, err
 }
 
