@@ -466,6 +466,7 @@ func (s *SpannerStore) updateExistingIntentTx(
 		CreateTime:         existingRec.CreateTime,
 		Labels:             copyMap(labels),
 		Owner:              cloneSourceOwner(existingRec.Owner),
+		SourceLastSeenTime: existingRec.SourceLastSeenTime,
 	}, nil
 }
 

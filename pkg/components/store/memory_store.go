@@ -140,16 +140,18 @@ func (m *MemoryStore) DeclareClusterEpoch(ctx context.Context, cluster ClusterId
 		return nil, recordSourceConflictError(err)
 	}
 	res := &DeclarationResult{Outcome: outcome, Active: cluster}
+	now := time.Now().UTC()
 	if outcome == DeclarationTakeover {
 		for _, rec := range m.componentsByName {
 			if !isDeletedRecord(rec) && rec.Owner != nil {
 				rec.Owner = takenOverOwner(rec.Owner, cluster)
+				rec.SourceLastSeenTime = now // As takeOverOwnersSQL sets it to the commit timestamp.
 				res.RecordsReassigned++
 			}
 		}
 	}
 	m.fence = &cluster
-	recordClusterDeclarationMetrics(cluster.Epoch, countStaleOwnedComponents(m.componentsByName, time.Now().UTC()), true)
+	recordClusterDeclarationMetrics(cluster.Epoch, countStaleOwnedComponents(m.componentsByName, now), true)
 	return res, nil
 }
 

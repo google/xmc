@@ -132,6 +132,23 @@ func TestSourceLastSeenTime_Parity(t *testing.T) {
 			if after := getSourceLastSeenTime(ctx, t, s, "seen-comp"); !updated.SourceLastSeenTime.Equal(after) || after.Before(stored) {
 				t.Errorf("UpdateObservedGeneration SourceLastSeenTime = %v, stored = %v, want equal and not before %v", updated.SourceLastSeenTime, after, stored)
 			}
+
+			// An unsourced spec update keeps the recorded owner and reports its stored timestamp.
+			unsourced, err := s.SetComponentIntent(ctx, "seen-comp", intentSpec("v1.1.0"), nil, 0)
+			if err != nil {
+				t.Fatalf("SetComponentIntent(unsourced update) error = %v", err)
+			}
+			if after := getSourceLastSeenTime(ctx, t, s, "seen-comp"); !after.Equal(updated.SourceLastSeenTime) || !unsourced.SourceLastSeenTime.Equal(after) {
+				t.Errorf("unsourced update SourceLastSeenTime returned = %v, stored = %v, want both %v", unsourced.SourceLastSeenTime, after, updated.SourceLastSeenTime)
+			}
+
+			// A DeclareClusterEpoch takeover reassigns the component and records a new timestamp.
+			if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: drClusterUID, Name: "dr", Epoch: 3}); err != nil {
+				t.Fatalf("DeclareClusterEpoch(takeover) error = %v", err)
+			}
+			if takeover := getSourceLastSeenTime(ctx, t, s, "seen-comp"); !takeover.After(updated.SourceLastSeenTime) {
+				t.Errorf("DeclareClusterEpoch(takeover) SourceLastSeenTime = %v, want after %v", takeover, updated.SourceLastSeenTime)
+			}
 		})
 	}
 }
