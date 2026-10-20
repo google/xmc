@@ -37,11 +37,57 @@ var randReader io.Reader = rand.Reader
 type GoogleUserInfo struct {
 	Email         string `json:"email"`
 	EmailVerified bool   `json:"email_verified"`
-	// HostedDomain is the Google Workspace domain (`hd`) of the account. Google omits it for
-	// consumer accounts and other identity providers do not set it.
-	HostedDomain string `json:"hd"`
-	Name         string `json:"name"`
-	Picture      string `json:"picture"`
+	Name          string `json:"name"`
+	Picture       string `json:"picture"`
+}
+
+// errNotAdmitted reports that a signed-in user may not use this deployment, either because the
+// identity provider did not vouch for the email or because admission denied it.
+var errNotAdmitted = errors.New("user is not admitted")
+
+// loginIdentity is the identity of a user who completed the IdP round trip.
+type loginIdentity struct {
+	// email is trimmed and lowercased.
+	email   string
+	name    string
+	picture string
+}
+
+// admitLogin verifies the userinfo returned by the identity provider and runs deployment
+// admission. It returns an error wrapping errNotAdmitted when the user is rejected, and any other
+// error when admission could not be evaluated.
+func (a *Authenticator) admitLogin(ctx context.Context, info *GoogleUserInfo) (loginIdentity, error) {
+	identity, err := a.verifyUserInfo(info)
+	if err != nil {
+		return identity, err
+	}
+	authorized, err := a.IsUserAuthorized(ctx, identity.email)
+	if err != nil {
+		return identity, fmt.Errorf("authorization pipeline check failed: %w", err)
+	}
+	if !authorized {
+		return identity, fmt.Errorf("%w: not authorized for this deployment", errNotAdmitted)
+	}
+	return identity, nil
+}
+
+// verifyUserInfo requires a verified email from the identity provider and normalizes it.
+func (a *Authenticator) verifyUserInfo(info *GoogleUserInfo) (loginIdentity, error) {
+	if info == nil {
+		return loginIdentity{}, fmt.Errorf("%w: no userinfo", errNotAdmitted)
+	}
+	identity := loginIdentity{
+		email:   strings.ToLower(strings.TrimSpace(info.Email)),
+		name:    info.Name,
+		picture: info.Picture,
+	}
+	if identity.email == "" {
+		return identity, fmt.Errorf("%w: userinfo has no email", errNotAdmitted)
+	}
+	if !info.EmailVerified {
+		return identity, fmt.Errorf("%w: email is not verified", errNotAdmitted)
+	}
+	return identity, nil
 }
 
 // HandleLogin serves the initial redirection endpoint.
