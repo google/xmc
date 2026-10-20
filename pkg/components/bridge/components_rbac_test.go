@@ -204,7 +204,7 @@ func TestComponentsRBAC_LeastPrivilegeEnvtest(t *testing.T) {
 }
 
 // componentRBACCases covers the cluster identity read and Component CR access: read, finalizer patch, no
-// create, update (PUT) or delete, and nothing outside the release namespace.
+// create, update (PUT), delete or finalizers subresource, and nothing outside the release namespace.
 func componentRBACCases(kube kubernetes.Interface, dyn dynamic.Interface) []rbacCase {
 	components := dyn.Resource(ComponentGVR).Namespace("xmc")
 	missing := newComponentObject()
@@ -233,6 +233,10 @@ func componentRBACCases(kube kubernetes.Interface, dyn dynamic.Interface) []rbac
 		}, apierrors.IsNotFound},
 		{"UPDATE component is Forbidden", func(ctx context.Context) error {
 			_, err := components.Update(ctx, missing, metav1.UpdateOptions{})
+			return err
+		}, apierrors.IsForbidden},
+		{"PATCH components/finalizers is Forbidden (finalizers are patched on the main resource)", func(ctx context.Context) error {
+			_, err := components.Patch(ctx, "missing", types.MergePatchType, []byte(`{}`), metav1.PatchOptions{}, "finalizers")
 			return err
 		}, apierrors.IsForbidden},
 		{"CREATE component is Forbidden", func(ctx context.Context) error {

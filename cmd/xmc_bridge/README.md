@@ -168,7 +168,7 @@ Removing the CRD is a deliberate manual step. While `xmc-bridge` is still runnin
 
 - **ServiceAccount**: `xmc-bridge` runs under a dedicated service account (`xmc-bridge-sa`) with `automountServiceAccountToken: true`.
 - **Namespaced Role (`xmc-bridge-role`)**: A `Role` bound in the release namespace. It has no wildcard (`*`) API groups or resources and grants only the requests `xmc-bridge` and its Helm client make (`create` cannot be limited by `resourceNames`):
-  - `components.xmc.dev` `components`: `get`, `list`, `watch`, `patch`; `components/status`, `components/finalizers`: `update`, `patch`.
+  - `components.xmc.dev` `components`: `get`, `list`, `watch`, `patch`; `components/status`: `update`, `patch`.
   - `core/events`: `create`, `patch`.
   - `core/configmaps`: `create`, plus `get`, `update` on `xmc-component-values` only.
   - `core/secrets` (Helm release storage, one Secret per revision): `get`, `list`, `create`, `update`, `delete`.

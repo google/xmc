@@ -24,12 +24,13 @@ metadata:
     app.kubernetes.io/name: xmc-bridge
     app.kubernetes.io/part-of: xmanager-cloud
 rules:
-  # Components: read via the informer cache, finalizers via JSON patch, status via server-side apply.
+  # Components: read via the informer cache, finalizers via JSON patch on the main resource (CRDs have no
+  # finalizers subresource), status via server-side apply.
   - apiGroups: ["xmc.dev"]
     resources: ["components"]
     verbs: ["get", "list", "watch", "patch"]
   - apiGroups: ["xmc.dev"]
-    resources: ["components/status", "components/finalizers"]
+    resources: ["components/status"]
     verbs: ["update", "patch"]
   - apiGroups: [""]
     resources: ["events"]
