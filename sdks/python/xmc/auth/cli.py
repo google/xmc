@@ -55,7 +55,9 @@ def _printable(text: str) -> str:
 
 def _format_expiry(expires_at: int) -> str:
     """Formats a Unix timestamp in local time."""
-    return datetime.datetime.fromtimestamp(expires_at).astimezone().strftime("%Y-%m-%d %H:%M %Z")
+    # An aware UTC datetime converts unambiguously, even across DST transitions.
+    expiry = datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc)
+    return expiry.astimezone().strftime("%Y-%m-%d %H:%M %Z")
 
 
 def _positive_seconds(value: str) -> float:
