@@ -18,8 +18,9 @@ package postgres
 import (
 	"context"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/artifact"
 	"xmanager_cloud/internal/storage/postgres/dashboard"
@@ -48,6 +49,7 @@ var _ storage.Storage = (*Storage)(nil)
 
 // Storage implements the storage.Storage interface using PostgreSQL.
 type Storage struct {
+	pool *pgxpool.Pool
 	*experimentRepository
 	*workUnitRepository
 	*artifactRepository
@@ -61,8 +63,12 @@ type Storage struct {
 }
 
 // NewStorage creates a new instance of the PostgreSQL-backed storage.
-func NewStorage() *Storage {
+func NewStorage(pool *pgxpool.Pool) (*Storage, error) {
+	if pool == nil {
+		return nil, wrapStatusError("postgres pool must not be nil", grpcerr.ErrInvalidArgument, nil)
+	}
 	return &Storage{
+		pool:                    pool,
 		experimentRepository:    experiment.NewRepository(),
 		workUnitRepository:      workunit.NewRepository(),
 		artifactRepository:      artifact.NewRepository(),
@@ -73,12 +79,32 @@ func NewStorage() *Storage {
 		dashboardRepository:     dashboard.NewRepository(),
 		pauseStateRepository:    pausestate.NewRepository(),
 		pausedTaskRepository:    pausedtask.NewRepository(),
-	}
+	}, nil
 }
 
 // RunInTransaction executes the given function in a PostgreSQL read-write transaction.
 func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
-	return status.Error(codes.Unimplemented, "postgres storage: RunInTransaction is not implemented")
+	if s == nil || s.pool == nil {
+		return wrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
+	}
+	if fn == nil {
+		return wrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
+	}
+	return RunInTx(ctx, s.pool, func(txCtx context.Context, _ pgx.Tx) error {
+		return fn(txCtx, s.newTransaction())
+	})
+}
+
+func (s *Storage) newTransaction() *storage.Transaction {
+	return &storage.Transaction{
+		WorkUnits:      s.workUnitRepository.WithTx(),
+		Experiments:    s.experimentRepository.WithTx(),
+		XIDs:           s.xidRepository.WithTx(),
+		StatusMessages: s.statusMessageRepository.WithTx(),
+		StatusHistory:  s.statusHistoryRepository.WithTx(),
+		PauseState:     s.pauseStateRepository.WithTx(),
+		PausedTasks:    s.pausedTaskRepository.WithTx(),
+	}
 }
 
 // PauseState returns the repository for global pause scheduling state.
