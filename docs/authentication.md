@@ -39,7 +39,7 @@ See the [`xmc` SDK README](../sdks/python/xmc/README.md#-authentication-xmc-logi
 Jobs that can't open a browser authenticate as a service account. Mint an ID token for it and export the token:
 
 ```bash
-export XMC_CLIENT_SA="ci-runner@<project-id>.iam.gserviceaccount.com"
+export XMC_CLIENT_SA="ci-runner@your-gcp-project-id.iam.gserviceaccount.com"
 export XMC_AUTH_TOKEN="$(gcloud auth print-identity-token \
   --impersonate-service-account="${XMC_CLIENT_SA}" \
   --audiences="${IAP_CLIENT_ID}" \
