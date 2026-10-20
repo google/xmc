@@ -17,22 +17,25 @@ package oauth2
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
-// newTestCLISessionCache returns a cache in front of store whose clock is *now.
-func newTestCLISessionCache(store *fakeCLISessionStore, now *time.Time) *CLISessionCache {
-	c := NewCLISessionCache(store)
+// newTestCLISessionCache returns a cache in front of checker whose clock is *now.
+func newTestCLISessionCache(checker CLISessionChecker, now *time.Time) *cliSessionCache {
+	c := newCLISessionCache(checker)
 	c.now = func() time.Time { return *now }
 	return c
 }
 
-// cacheStep is one lookup through the cache, after advancing the clock by advance and optionally
-// changing the store.
+// cacheStep is one lookup through the cache, after advancing the clock by advance, optionally
+// changing the store, and optionally caching a stale "active" answer as a racing lookup would.
 type cacheStep struct {
 	advance     time.Duration
 	change      func(*fakeCLISessionStore)
+	staleActive bool
 	wantRevoked bool
 	wantErr     bool
 	// wantChecks is the total number of store lookups after this step.
@@ -56,6 +59,10 @@ func TestCLISessionCache(t *testing.T) {
 			{change: revoke, wantRevoked: true, wantChecks: 1},
 			{advance: 30 * 24 * time.Hour, wantRevoked: true, wantChecks: 1},
 		}},
+		{name: "a stale active answer never undoes a revocation", steps: []cacheStep{
+			{change: revoke, wantRevoked: true, wantChecks: 1},
+			{staleActive: true, wantRevoked: true, wantChecks: 1},
+		}},
 		{name: "lookup errors are not cached", steps: []cacheStep{
 			{change: fail, wantErr: true, wantChecks: 1},
 			{change: heal, wantChecks: 2},
@@ -71,6 +78,9 @@ func TestCLISessionCache(t *testing.T) {
 				now = now.Add(step.advance)
 				if step.change != nil {
 					step.change(store)
+				}
+				if step.staleActive {
+					c.store("jti", false)
 				}
 				revoked, err := c.IsRevoked(context.Background(), "jti")
 				if gotErr := err != nil; gotErr != step.wantErr || revoked != step.wantRevoked {
@@ -111,9 +121,47 @@ func TestCLISessionCacheEviction(t *testing.T) {
 	}
 }
 
-func mustBeActive(t *testing.T, c *CLISessionCache, jti string) {
+func mustBeActive(t *testing.T, c *cliSessionCache, jti string) {
 	t.Helper()
 	if revoked, err := c.IsRevoked(context.Background(), jti); err != nil || revoked {
 		t.Fatalf("IsRevoked(%q) = %t, %v, want false, nil", jti, revoked, err)
 	}
+}
+
+// gatedChecker reports every session active, but only once release is closed, and counts lookups.
+type gatedChecker struct {
+	release chan struct{}
+	mu      sync.Mutex
+	calls   int
+}
+
+func (g *gatedChecker) IsRevoked(context.Context, string) (bool, error) {
+	g.mu.Lock()
+	g.calls++
+	g.mu.Unlock()
+	<-g.release
+	return false, nil
+}
+
+func TestCLISessionCacheSharesConcurrentLookups(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		checker := &gatedChecker{release: make(chan struct{})}
+		now := time.Now()
+		c := newTestCLISessionCache(checker, &now)
+		var wg sync.WaitGroup
+		for range 5 {
+			wg.Go(func() {
+				if revoked, err := c.IsRevoked(context.Background(), "jti"); err != nil || revoked {
+					t.Errorf("IsRevoked() = %t, %v, want false, nil", revoked, err)
+				}
+			})
+		}
+		// Every caller is now blocked: one in the lookup, the others waiting for it.
+		synctest.Wait()
+		close(checker.release)
+		wg.Wait()
+		if checker.calls != 1 {
+			t.Errorf("store lookups = %d, want 1", checker.calls)
+		}
+	})
 }

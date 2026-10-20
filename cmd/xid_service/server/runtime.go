@@ -28,7 +28,9 @@ import (
 	"xmanager_cloud/cmd/xid_service/config"
 	authz "xmanager_cloud/internal/auth"
 	commonhealth "xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/logging"
 	ss "xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/spanner/clisession"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/auth/oauth2/mock"
@@ -112,6 +114,33 @@ func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, a
 		}))
 	}
 	return auth, nil
+}
+
+// initCLISessions makes authenticator reject revoked CLI sessions, reading the CliSessions table of
+// the ESS database, where ESS records them. Callers reach XID directly as well as through ESS, so
+// XID checks revocation itself. Without an ESS database CLI tokens are rejected. It returns the
+// cleanup of the ESS client.
+func initCLISessions(ctx context.Context, cfg *config.Config, authenticator *oauth.Authenticator) (func() error, error) {
+	if cfg.ESSSpannerDatabaseName == "" {
+		logging.Warn(ctx, "ESS Spanner database is not configured: CLI session tokens will be rejected")
+		return func() error { return nil }, nil
+	}
+	client, err := spanner.NewClient(ctx, cfg.ESSSpannerDatabaseName, option.WithQuotaProject(cfg.QuotaProjectID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ESS spanner client: %w", err)
+	}
+	sessions, err := clisession.NewRepository(client)
+	if err == nil {
+		err = authenticator.CheckCLISessions(sessions)
+	}
+	if err != nil {
+		client.Close()
+		return nil, fmt.Errorf("failed to enable CLI session checks: %w", err)
+	}
+	return func() error {
+		client.Close()
+		return nil
+	}, nil
 }
 
 // NewRuntimeServer creates and initializes a live runtime XIDServer instance with real cloud infrastructure dependencies (Spanner, Cloud Identity, OAuth2) and automated LIFO rollback cleanup on error.

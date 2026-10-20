@@ -18,6 +18,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -26,15 +28,19 @@ const (
 	cliSessionActiveTTL = 60 * time.Second
 	// cliSessionCacheSize bounds the number of cached sessions.
 	cliSessionCacheSize = 10000
+	// cliSessionLookupTimeout bounds a session lookup shared by concurrent requests.
+	cliSessionLookupTimeout = 10 * time.Second
 )
 
-// CLISessionCache is a CLISessionChecker that caches the answers of another one, so most requests
+// cliSessionCache is a CLISessionChecker that caches the answers of another one, so most requests
 // do not reach the session store. Active sessions are cached for cliSessionActiveTTL. Revocation is
-// permanent, so revoked sessions stay cached until evicted. Lookup errors are not cached.
-type CLISessionCache struct {
+// permanent, so revoked sessions stay cached until evicted and are never downgraded to active.
+// Lookup errors are not cached. Concurrent misses for one session share a single lookup.
+type cliSessionCache struct {
 	checker    CLISessionChecker
 	now        func() time.Time
 	maxEntries int
+	lookups    singleflight.Group
 
 	mu      sync.Mutex
 	entries map[string]cliSessionCacheEntry
@@ -46,11 +52,11 @@ type cliSessionCacheEntry struct {
 	expiresAt time.Time
 }
 
-var _ CLISessionChecker = (*CLISessionCache)(nil)
+var _ CLISessionChecker = (*cliSessionCache)(nil)
 
-// NewCLISessionCache returns a cache in front of checker.
-func NewCLISessionCache(checker CLISessionChecker) *CLISessionCache {
-	return &CLISessionCache{
+// newCLISessionCache returns a cache in front of checker, which must not be nil.
+func newCLISessionCache(checker CLISessionChecker) *cliSessionCache {
+	return &cliSessionCache{
 		checker:    checker,
 		now:        time.Now,
 		maxEntries: cliSessionCacheSize,
@@ -59,19 +65,28 @@ func NewCLISessionCache(checker CLISessionChecker) *CLISessionCache {
 }
 
 // IsRevoked returns the cached answer for jti, or asks the underlying checker and caches its answer.
-func (c *CLISessionCache) IsRevoked(ctx context.Context, jti string) (bool, error) {
+func (c *cliSessionCache) IsRevoked(ctx context.Context, jti string) (bool, error) {
 	if revoked, ok := c.lookup(jti); ok {
 		return revoked, nil
 	}
-	revoked, err := c.checker.IsRevoked(ctx, jti)
+	// The shared lookup outlives any one caller, so it is detached from the caller's cancellation.
+	result, err, _ := c.lookups.Do(jti, func() (any, error) {
+		lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cliSessionLookupTimeout)
+		defer cancel()
+		revoked, err := c.checker.IsRevoked(lookupCtx, jti)
+		if err != nil {
+			return false, err
+		}
+		c.store(jti, revoked)
+		return revoked, nil
+	})
 	if err != nil {
 		return false, err
 	}
-	c.store(jti, revoked)
-	return revoked, nil
+	return result.(bool), nil
 }
 
-func (c *CLISessionCache) lookup(jti string) (revoked, ok bool) {
+func (c *cliSessionCache) lookup(jti string) (revoked, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry, ok := c.entries[jti]
@@ -85,10 +100,14 @@ func (c *CLISessionCache) lookup(jti string) (revoked, ok bool) {
 	return entry.revoked, true
 }
 
-func (c *CLISessionCache) store(jti string, revoked bool) {
+func (c *cliSessionCache) store(jti string, revoked bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.entries[jti]; !ok && len(c.entries) >= c.maxEntries {
+	existing, ok := c.entries[jti]
+	if ok && existing.revoked {
+		return
+	}
+	if !ok && len(c.entries) >= c.maxEntries {
 		c.evictLocked()
 	}
 	entry := cliSessionCacheEntry{revoked: revoked}
@@ -99,8 +118,9 @@ func (c *CLISessionCache) store(jti string, revoked bool) {
 }
 
 // evictLocked drops the expired entries and, if the cache is still full, one arbitrary entry.
-// Evicting a live entry only costs another lookup.
-func (c *CLISessionCache) evictLocked() {
+// Evicting a live entry only costs another lookup. It scans the whole map, at most
+// cliSessionCacheSize entries, and only runs when a new session is cached into a full cache.
+func (c *cliSessionCache) evictLocked() {
 	now := c.now()
 	for jti, entry := range c.entries {
 		if !entry.revoked && !now.Before(entry.expiresAt) {

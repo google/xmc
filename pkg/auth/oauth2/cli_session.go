@@ -71,7 +71,7 @@ func (a *Authenticator) EnableCLISessions(store CLISessionStore) error {
 }
 
 // CheckCLISessions makes this Authenticator reject revoked CLI tokens, looking sessions up through
-// checker behind a CLISessionCache. It is an initialization step: call it once before the
+// checker behind a cliSessionCache. It is an initialization step: call it once before the
 // Authenticator serves requests. Without it every CLI token is rejected.
 func (a *Authenticator) CheckCLISessions(checker CLISessionChecker) error {
 	if checker == nil {
@@ -80,9 +80,11 @@ func (a *Authenticator) CheckCLISessions(checker CLISessionChecker) error {
 	if a.cliSessions != nil {
 		return errors.New("cli session checks are already enabled")
 	}
-	a.cliSessions = NewCLISessionCache(checker)
+	a.cliSessions = newCLISessionCache(checker)
 	return nil
 }
+
+var _ CLISessionChecker = (*Authenticator)(nil)
 
 // IsRevoked implements CLISessionChecker with the checker installed by CheckCLISessions, so gRPC
 // authorizers can share this Authenticator's cache. Without a checker every session counts as

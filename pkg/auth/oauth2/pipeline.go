@@ -65,7 +65,7 @@ type Authenticator struct {
 	// CLI session state, set by EnableCLISessions and CheckCLISessions. CLI tokens are not minted
 	// while cliSessionStore is nil and are rejected while cliSessions is nil.
 	cliSessionStore CLISessionStore
-	cliSessions     *CLISessionCache
+	cliSessions     *cliSessionCache
 }
 
 // NewAuthenticator initializes a new instance of Authenticator.
