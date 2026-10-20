@@ -282,7 +282,7 @@ func (f *ClusterFence) applyStateLocked(ctx context.Context, reason, msg string,
 // first declaration and once per change, never on an unchanged heartbeat.
 func (f *ClusterFence) logTransition(ctx context.Context, reason, msg string) {
 	if reason != "" {
-		logging.Error(ctx, "Cluster is fenced out of CMS; holding Components in cold standby until the ownership epoch is raised", "cluster", f.identity.GetName(), "epoch", f.identity.GetEpoch(), "reason", reason, "message", msg)
+		logging.Error(ctx, "Cluster is fenced out of CMS; holding Components in cold standby until the ownership epoch is raised", "cluster", f.identity.GetName(), "epoch", f.identity.GetEpoch(), "reason", reason, "detail", msg)
 		return
 	}
 	logging.Info(ctx, "Cluster holds the CMS ownership fence", "cluster", f.identity.GetName(), "epoch", f.identity.GetEpoch())

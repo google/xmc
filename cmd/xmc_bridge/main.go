@@ -371,14 +371,18 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	return mgr.Start(ctx)
 }
 
+func configureLogger(ctx context.Context, logger *slog.Logger) context.Context {
+	slog.SetDefault(logger)
+	ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))
+	return logging.WithLogger(ctx, logger)
+}
+
 func main() {
 	cfg, err := ParseConfig(os.Args[1:])
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	logger := logging.NewGCPLogger(slog.LevelInfo, "")
-	ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))
-	ctx = logging.WithLogger(ctx, logger)
+	ctx = configureLogger(ctx, logging.NewGCPLogger(slog.LevelInfo, ""))
 
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
