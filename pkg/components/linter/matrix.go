@@ -245,12 +245,11 @@ func allOrAlternativesOptional(alts []DependencyRequirement) bool {
 func reportMissingOrComponents(filePath string, line int, ruleCompName string, req DependencyRequirement, res *ValidationResult) {
 	parts := make([]string, 0, len(req.Or))
 	for _, alt := range req.Or {
-		altName := naming.CanonicalComponentName(alt.Component)
+		part := fmt.Sprintf("%q", naming.CanonicalComponentName(alt.Component))
 		if alt.Version != "" {
-			parts = append(parts, fmt.Sprintf("%q (%s)", altName, alt.Version))
-			continue
+			part = fmt.Sprintf("%s (%s)", part, alt.Version)
 		}
-		parts = append(parts, fmt.Sprintf("%q", altName))
+		parts = append(parts, part)
 	}
 	msg := fmt.Sprintf("component %q requires at least one of [%s], but all are missing or disabled", ruleCompName, strings.Join(parts, ", "))
 	if req.Reason != "" {
