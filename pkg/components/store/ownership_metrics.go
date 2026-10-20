@@ -65,11 +65,11 @@ var sourceConflictReasons = []string{
 }
 
 var (
-	ownerAdoptionsTotal          = newOwnerAdoptionsCounter()
-	sourceConflictsTotal         = newSourceConflictsCounter()
-	clusterFenceEpochGauge       = newClusterFenceEpochGauge()
-	clusterFenceLastSeenAgeGauge = newClusterFenceLastSeenAgeGauge()
-	componentOwnerStaleGauge     = newComponentOwnerStaleGauge()
+	ownerAdoptionsTotal       = newOwnerAdoptionsCounter()
+	sourceConflictsTotal      = newSourceConflictsCounter()
+	clusterFenceEpochGauge    = newClusterFenceEpochGauge()
+	clusterFenceLastSeenGauge = newClusterFenceLastSeenGauge()
+	componentOwnerStaleGauge  = newComponentOwnerStaleGauge()
 )
 
 func newOwnerAdoptionsCounter() *prometheus.CounterVec {
@@ -106,10 +106,10 @@ func newClusterFenceEpochGauge() prometheus.Gauge {
 	})
 }
 
-func newClusterFenceLastSeenAgeGauge() prometheus.Gauge {
+func newClusterFenceLastSeenGauge() prometheus.Gauge {
 	return promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "xmc_cms_cluster_fence_last_seen_age_seconds",
-		Help: "Seconds since the active cluster last declared its ownership fence epoch to CMS.",
+		Name: "xmc_cms_cluster_fence_last_seen_timestamp_seconds",
+		Help: "Unix time at which the active cluster last declared its ownership fence epoch to CMS.",
 	})
 }
 
@@ -135,9 +135,9 @@ func ClusterFenceEpochGauge() prometheus.Gauge {
 	return clusterFenceEpochGauge
 }
 
-// ClusterFenceLastSeenAgeGauge returns the gauge tracking the age of the fence's LastSeenTime.
-func ClusterFenceLastSeenAgeGauge() prometheus.Gauge {
-	return clusterFenceLastSeenAgeGauge
+// ClusterFenceLastSeenGauge returns the gauge tracking the fence's LastSeenTime as Unix seconds.
+func ClusterFenceLastSeenGauge() prometheus.Gauge {
+	return clusterFenceLastSeenGauge
 }
 
 // ComponentOwnerStaleGauge returns the gauge tracking active components with stale owners.
@@ -181,18 +181,18 @@ func recordSourceConflictError(err error) error {
 	return err
 }
 
-// RecordOwnershipGauges sets the CMS ownership gauges from g read at now. Before the first
-// declaration the fence gauges report 0, so the fence heartbeat alert does not fire.
-func RecordOwnershipGauges(g OwnershipGauges, now time.Time) {
+// RecordOwnershipGauges sets the CMS ownership gauges from g. The fence gauge exports the stored
+// LastSeenTime rather than its age, so an alert on its age keeps growing even when no replica can
+// refresh it. Before the first declaration both fence gauges report 0.
+func RecordOwnershipGauges(g OwnershipGauges) {
 	componentOwnerStaleGauge.Set(float64(g.StaleOwners))
 	if !g.FenceDeclared {
 		clusterFenceEpochGauge.Set(0)
-		clusterFenceLastSeenAgeGauge.Set(0)
+		clusterFenceLastSeenGauge.Set(0)
 		return
 	}
 	clusterFenceEpochGauge.Set(float64(g.FenceEpoch))
-	// Clamp clock skew between CMS and the Spanner commit timestamp to 0.
-	clusterFenceLastSeenAgeGauge.Set(max(now.Sub(g.FenceLastSeenTime).Seconds(), 0))
+	clusterFenceLastSeenGauge.Set(float64(g.FenceLastSeenTime.UnixNano()) / 1e9)
 }
 
 // isOwnerStale reports whether rec is an active owned record whose SourceLastSeenTime is at or

@@ -40,11 +40,25 @@ func (f *fakeGaugeReader) ReadOwnershipGauges(_ context.Context, now time.Time) 
 	return f.gauges, f.err
 }
 
-// ownershipGaugeValues returns the epoch, fence last-seen age and stale owner gauge values.
+// blockingGaugeReader blocks each read until its ctx is done and reports the ctx error on errs.
+type blockingGaugeReader struct {
+	errs chan error
+}
+
+func (b *blockingGaugeReader) ReadOwnershipGauges(ctx context.Context, _ time.Time) (store.OwnershipGauges, error) {
+	<-ctx.Done()
+	select {
+	case b.errs <- ctx.Err():
+	default:
+	}
+	return store.OwnershipGauges{}, ctx.Err()
+}
+
+// ownershipGaugeValues returns the epoch, fence last-seen timestamp and stale owner gauge values.
 func ownershipGaugeValues() []float64 {
 	return []float64{
 		testutil.ToFloat64(store.ClusterFenceEpochGauge()),
-		testutil.ToFloat64(store.ClusterFenceLastSeenAgeGauge()),
+		testutil.ToFloat64(store.ClusterFenceLastSeenGauge()),
 		testutil.ToFloat64(store.ComponentOwnerStaleGauge()),
 	}
 }
@@ -52,22 +66,22 @@ func ownershipGaugeValues() []float64 {
 func TestCollectOwnershipMetrics(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
-	declared := store.OwnershipGauges{FenceDeclared: true, FenceEpoch: 7, FenceLastSeenTime: now.Add(-90 * time.Second), StaleOwners: 2}
+	lastSeen := now.Add(-90 * time.Second)
+	declared := store.OwnershipGauges{FenceDeclared: true, FenceEpoch: 7, FenceLastSeenTime: lastSeen, StaleOwners: 2}
 	tests := []struct {
 		name    string
 		reader  *fakeGaugeReader
-		want    []float64 // Epoch, last-seen age seconds, stale owners.
+		want    []float64 // Epoch, last-seen Unix seconds, stale owners.
 		wantErr bool
 	}{
-		{name: "declared fence", reader: &fakeGaugeReader{gauges: declared}, want: []float64{7, 90, 2}},
+		{name: "declared fence", reader: &fakeGaugeReader{gauges: declared}, want: []float64{7, float64(lastSeen.Unix()), 2}},
 		{name: "undeclared fence reports zero", reader: &fakeGaugeReader{gauges: store.OwnershipGauges{StaleOwners: 1}}, want: []float64{0, 0, 1}},
-		{name: "future last seen clamps to zero", reader: &fakeGaugeReader{gauges: store.OwnershipGauges{FenceDeclared: true, FenceEpoch: 3, FenceLastSeenTime: now.Add(time.Second)}}, want: []float64{3, 0, 0}},
-		{name: "read error keeps previous values", reader: &fakeGaugeReader{err: errors.New("spanner unavailable")}, want: []float64{7, 90, 2}, wantErr: true},
+		{name: "read error keeps previous values", reader: &fakeGaugeReader{err: errors.New("spanner unavailable")}, want: []float64{7, float64(lastSeen.Unix()), 2}, wantErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Start from known values so that the error case can assert they are kept.
-			store.RecordOwnershipGauges(declared, now)
+			store.RecordOwnershipGauges(declared)
 			err := CollectOwnershipMetrics(ctx, tc.reader, now)
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Fatalf("CollectOwnershipMetrics() error = %v, wantErr %v", err, tc.wantErr)
@@ -101,5 +115,31 @@ func TestRunOwnershipMetricsCollector_CollectsImmediatelyAndStopsOnCancel(t *tes
 	}
 	if got := testutil.ToFloat64(store.ClusterFenceEpochGauge()); got != 9 {
 		t.Errorf("xmc_cms_cluster_fence_epoch = %v, want 9", got)
+	}
+}
+
+func TestRunOwnershipMetricsCollector_BoundsEachRead(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	reader := &blockingGaugeReader{errs: make(chan error, 1)}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		RunOwnershipMetricsCollector(ctx, reader, 10*time.Millisecond)
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	// Two timed-out reads in a row show that each read has a deadline and that the loop moves on.
+	for i := 1; i <= 2; i++ {
+		select {
+		case err := <-reader.errs:
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("read %d ctx error = %v, want %v", i, err, context.DeadlineExceeded)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("RunOwnershipMetricsCollector() read %d did not time out", i)
+		}
 	}
 }

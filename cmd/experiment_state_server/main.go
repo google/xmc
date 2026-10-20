@@ -60,8 +60,7 @@ func main() {
 	// 1. Load configuration
 	cfg := config.Load()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
-	ctx, cancel := context.WithCancel(logging.WithLogger(context.Background(), logger))
-	defer cancel()
+	ctx := logging.WithLogger(context.Background(), logger)
 
 	oauthCfg, err := oauth.LoadConfig()
 	if err != nil {
@@ -110,7 +109,10 @@ func main() {
 	spb.RegisterExperimentStateServiceServer(s, prodServer)
 	if cfg.EnableComponents {
 		cmsAuth := buildCMSAuthorizer(&cfg, oauthCfg, prodServer.Authorizer(), oauthAuth)
-		initCMS(ctx, s, healthServer, prodServer.SpannerClient(), cmsAuth)
+		stopCMS := initCMS(ctx, s, healthServer, prodServer.SpannerClient(), cmsAuth)
+		// Deferred after prodServer.Close, so it runs after s.GracefulStop and before the
+		// Spanner client is closed.
+		defer stopCMS()
 	}
 
 	reflection.Register(s)
@@ -163,7 +165,6 @@ func main() {
 	<-quit // Block until a signal is received
 
 	logging.Info(ctx, "Shutting down gRPC server")
-	cancel()
 	s.GracefulStop()
 	logging.Info(ctx, "Server gracefully stopped")
 }
@@ -179,7 +180,9 @@ func buildCMSAuthorizer(cfg *config.Config, oauthCfg *oauth.Config, userAuth cms
 	return cms.NewAuthorizer(cms.AuthorizerConfig{Authenticator: userAuth, AdminChecker: checker, AuthorizedServiceAccounts: []string{cfg.InvokerSA}})
 }
 
-func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, spannerClient *spanner.Client, auth cms.CallerAuthorizer) {
+// initCMS registers CMS on s and starts its ownership metrics collector. The returned stop
+// function cancels the collector and waits for it to exit.
+func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, spannerClient *spanner.Client, auth cms.CallerAuthorizer) (stop func()) {
 	logging.Info(ctx, "Initializing Component Manager Service (CMS)...")
 	var cmsStore interface {
 		store.Store
@@ -192,11 +195,20 @@ func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, s
 		cmsStore = store.NewMemoryStore()
 		logging.Warn(ctx, "Spanner client not initialized; using in-memory MemoryStore fallback for Component Manager Service")
 	}
-	go cms.RunOwnershipMetricsCollector(ctx, cmsStore, cms.OwnershipMetricsInterval)
+	collectorCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		cms.RunOwnershipMetricsCollector(collectorCtx, cmsStore, cms.OwnershipMetricsInterval)
+	}()
 	cmsServer := cms.NewServer(cmsStore, cms.WithAuthorizer(auth))
 	componentspb.RegisterComponentManagerServiceServer(s, cmsServer)
 	healthServer.SetServingStatus("cloud.xmanager.components.v1alpha1.ComponentManagerService", healthpb.HealthCheckResponse_SERVING)
 	logging.Info(ctx, "Component Manager Service (CMS) registered successfully")
+	return func() {
+		cancel()
+		<-done
+	}
 }
 
 func setupHTTPMux(ctx context.Context, oauthAuth *oauth.Authenticator, authenticatedGwmux http.Handler, readyHandler http.Handler, livenessHandler http.Handler) *http.ServeMux {

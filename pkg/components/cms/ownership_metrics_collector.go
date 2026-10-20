@@ -32,19 +32,20 @@ func CollectOwnershipMetrics(ctx context.Context, reader store.OwnershipGaugeRea
 	if err != nil {
 		return err
 	}
-	store.RecordOwnershipGauges(g, now)
+	store.RecordOwnershipGauges(g)
 	return nil
 }
 
 // RunOwnershipMetricsCollector refreshes the ownership gauges from reader immediately and then every
-// interval until ctx is done. The gauges are computed from the store rather than from this
-// replica's requests, so they keep reporting after the active cluster disappears and agree across
-// CMS replicas.
+// interval until ctx is done. Each read is bounded by interval, so a hung read logs a warning
+// instead of parking the loop. The gauges are computed from the store rather than from this
+// replica's requests, so they keep reporting after the active cluster disappears; each replica
+// refreshes on its own schedule, so replicas can differ for up to one interval.
 func RunOwnershipMetricsCollector(ctx context.Context, reader store.OwnershipGaugeReader, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if err := CollectOwnershipMetrics(ctx, reader, time.Now().UTC()); err != nil && ctx.Err() == nil {
+		if err := collectWithTimeout(ctx, reader, interval); err != nil && ctx.Err() == nil {
 			logging.Warn(ctx, "Failed to refresh CMS ownership gauges; keeping the previous values", "error", err)
 		}
 		select {
@@ -53,4 +54,11 @@ func RunOwnershipMetricsCollector(ctx context.Context, reader store.OwnershipGau
 		case <-ticker.C:
 		}
 	}
+}
+
+// collectWithTimeout runs CollectOwnershipMetrics at the current time with a read deadline of timeout.
+func collectWithTimeout(ctx context.Context, reader store.OwnershipGaugeReader, timeout time.Duration) error {
+	readCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return CollectOwnershipMetrics(readCtx, reader, time.Now().UTC())
 }

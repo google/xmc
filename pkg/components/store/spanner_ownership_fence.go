@@ -67,7 +67,7 @@ func (s *SpannerStore) DeclareClusterEpoch(ctx context.Context, cluster ClusterI
 var _ OwnershipGaugeReader = (*SpannerStore)(nil)
 
 // ReadOwnershipGauges reads the fence and counts the stale owners in Spanner at now with one
-// single-use read, so every CMS replica reports the same values.
+// single-use read, so the fence and the count come from one snapshot.
 func (s *SpannerStore) ReadOwnershipGauges(ctx context.Context, now time.Time) (OwnershipGauges, error) {
 	stmt := spanner.Statement{SQL: ownershipGaugesSQL, Params: map[string]any{"cutoff": now.Add(-OwnerStaleThreshold)}}
 	iter := s.client.Single().Query(ctx, stmt)
