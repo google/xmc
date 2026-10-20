@@ -35,7 +35,12 @@ const (
 	cliLoginModeLoopback = "loopback"
 )
 
-var errInvalidCLILoginTicket = errors.New("invalid cli_login ticket")
+var (
+	errInvalidCLILoginTicket = errors.New("invalid cli_login ticket")
+	// errExpiredCLILoginTicket wraps errInvalidCLILoginTicket for an authentic ticket past its
+	// expiry, which is a normal timeout rather than a sign of tampering.
+	errExpiredCLILoginTicket = fmt.Errorf("%w: expired", errInvalidCLILoginTicket)
+)
 
 // cliLoginTicket is the state of a pending CLI login, carried from `/api/cli/login` to
 // `/api/callback` in the MAC'd cli_login cookie.
@@ -94,7 +99,7 @@ func decodeCLILoginTicket(encoded string, now time.Time) (cliLoginTicket, error)
 		return cliLoginTicket{}, errInvalidCLILoginTicket
 	}
 	if now.Unix() >= t.ExpiresAt {
-		return cliLoginTicket{}, fmt.Errorf("%w: expired", errInvalidCLILoginTicket)
+		return cliLoginTicket{}, errExpiredCLILoginTicket
 	}
 	return t, nil
 }

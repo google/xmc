@@ -79,6 +79,8 @@ func TestOpenCLILoginTicketRejects(t *testing.T) {
 		name   string
 		sealed string
 		now    time.Time
+		// expired reports whether the error must also match errExpiredCLILoginTicket.
+		expired bool
 	}{
 		{name: "missing separator", sealed: payload, now: time.Now()},
 		{name: "mac is not base64url", sealed: payload + ".!!!", now: time.Now()},
@@ -87,12 +89,16 @@ func TestOpenCLILoginTicketRejects(t *testing.T) {
 		{name: "mac keyed with the raw jwt secret", sealed: rawSecretMAC(), now: time.Now()},
 		{name: "payload is not base64url", sealed: signed("!!!"), now: time.Now()},
 		{name: "payload is not json", sealed: signed(base64.RawURLEncoding.EncodeToString([]byte("not json"))), now: time.Now()},
-		{name: "expired", sealed: sealed, now: time.Now().Add(cliLoginTicketTTL + time.Second)},
+		{name: "expired", sealed: sealed, now: time.Now().Add(cliLoginTicketTTL + time.Second), expired: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := a.openCLILoginTicket(tt.sealed, tt.now); !errors.Is(err, errInvalidCLILoginTicket) {
+			_, err := a.openCLILoginTicket(tt.sealed, tt.now)
+			if !errors.Is(err, errInvalidCLILoginTicket) {
 				t.Errorf("openCLILoginTicket() error = %v, want %v", err, errInvalidCLILoginTicket)
+			}
+			if got := errors.Is(err, errExpiredCLILoginTicket); got != tt.expired {
+				t.Errorf("errors.Is(%v, errExpiredCLILoginTicket) = %t, want %t", err, got, tt.expired)
 			}
 		})
 	}

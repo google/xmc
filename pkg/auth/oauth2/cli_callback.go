@@ -47,6 +47,10 @@ func (a *Authenticator) takeCLILoginTicket(w http.ResponseWriter, r *http.Reques
 		return cliLoginTicket{}, false
 	}
 	ticket, err := a.openCLILoginTicket(cookie.Value, time.Now())
+	if errors.Is(err, errExpiredCLILoginTicket) {
+		logging.Info(r.Context(), "[CLI Login] Ignoring expired cli_login cookie")
+		return cliLoginTicket{}, false
+	}
 	if err != nil {
 		logging.Warn(r.Context(), "[CLI Login] Ignoring cli_login cookie", "error", err)
 		return cliLoginTicket{}, false
