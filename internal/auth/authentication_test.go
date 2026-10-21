@@ -21,8 +21,11 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/idtoken"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"xmanager_cloud/pkg/auth/jwks"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
@@ -57,15 +60,19 @@ func TestAuthenticateUserFromContext_Unauthenticated(t *testing.T) {
 			}
 
 			_, _, err := a.AuthenticateUserFromContext(currentCtx)
-			if err == nil {
-				t.Errorf("AuthenticateUserFromContext() succeeded, want error")
+			if diff := cmp.Diff(codes.Unauthenticated, status.Code(err)); diff != "" {
+				t.Errorf("AuthenticateUserFromContext() code mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
 func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
-	a := &Authorizer{iapAudiences: []string{"other_audience", "test_audience"}, iapIssuer: "https://cloud.google.com/iap", jwtSecret: []byte("default-jwt-secret-for-local-dev-only-12345")}
+	a := &Authorizer{
+		iapAudiences: []string{"other_audience", "test_audience"},
+		iapIssuer:    "https://cloud.google.com/iap",
+		jwtSecret:    []byte("default-jwt-secret-for-local-dev-only-12345"),
+	}
 	ctx := context.Background()
 
 	oldValidate := validate
@@ -77,7 +84,7 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 		validator  func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error)
 		wantEmail  string
 		wantUserID string
-		wantErr    bool
+		wantCode   codes.Code
 	}{
 		{
 			name:     "validation fails",
@@ -85,7 +92,7 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 			validator: func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
 				return nil, errors.New("validation failed")
 			},
-			wantErr: true,
+			wantCode: codes.Unauthenticated,
 		},
 		{
 			name:     "invalid issuer",
@@ -93,7 +100,7 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 			validator: func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
 				return &idtoken.Payload{Issuer: "invalid"}, nil
 			},
-			wantErr: true,
+			wantCode: codes.Unauthenticated,
 		},
 		{
 			name:     "missing email",
@@ -105,7 +112,7 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 					Claims:  map[string]any{},
 				}, nil
 			},
-			wantErr: true,
+			wantCode: codes.Unauthenticated,
 		},
 		{
 			name:     "non-string email",
@@ -117,7 +124,7 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 					Claims:  map[string]any{"email": 123},
 				}, nil
 			},
-			wantErr: true,
+			wantCode: codes.Unauthenticated,
 		},
 		{
 			name:     "empty email",
@@ -129,7 +136,7 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 					Claims:  map[string]any{"email": ""},
 				}, nil
 			},
-			wantErr: true,
+			wantCode: codes.Unauthenticated,
 		},
 		{
 			name:     "empty user ID",
@@ -141,7 +148,7 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 					Claims:  map[string]any{"email": "email@example.com"},
 				}, nil
 			},
-			wantErr: true,
+			wantCode: codes.Unauthenticated,
 		},
 		{
 			name:     "ignores x-goog-user-email and uses verified payload email",
@@ -196,7 +203,7 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 				}
 				return metadata.Pairs("x-goog-iap-jwt-assertion", tok)
 			}(),
-			wantErr: true,
+			wantCode: codes.Unauthenticated,
 		},
 	}
 
@@ -209,18 +216,10 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 			}
 
 			email, userID, err := a.AuthenticateUserFromContext(currentCtx)
-			if tc.wantErr {
-				if err == nil {
-					t.Errorf("AuthenticateUserFromContext() succeeded, want error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("AuthenticateUserFromContext() failed: %v", err)
-			}
-
-			if email != tc.wantEmail || userID != tc.wantUserID {
-				t.Errorf("AuthenticateUserFromContext() = (%q, %q), want (%q, %q)", email, userID, tc.wantEmail, tc.wantUserID)
+			want := authOutcome{Email: tc.wantEmail, UserID: tc.wantUserID, Code: tc.wantCode}
+			got := authOutcome{Email: email, UserID: userID, Code: status.Code(err)}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("AuthenticateUserFromContext() mismatch (-want +got):\n%s\nerror: %v", diff, err)
 			}
 		})
 	}
@@ -245,7 +244,8 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 		mockVal := &mockTokenValidator{
 			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
 				return &jwks.Claims{
-					Email: "jwks-user@example.com",
+					Email:         "jwks-user@example.com",
+					EmailVerified: true,
 					RegisteredClaims: jwt.RegisteredClaims{
 						Subject: "sub-12345",
 					},
@@ -272,7 +272,8 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 		mockVal := &mockTokenValidator{
 			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
 				return &jwks.Claims{
-					Email: "",
+					Email:         "",
+					EmailVerified: true,
 					RegisteredClaims: jwt.RegisteredClaims{
 						Subject: "service-account@iam.gserviceaccount.com",
 					},
@@ -352,8 +353,8 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 
 		reqCtx := metadata.NewIncomingContext(ctx, metadata.Pairs("x-goog-iap-jwt-assertion", "expired-jwt"))
 		_, _, err := a.AuthenticateUserFromContext(reqCtx)
-		if err == nil {
-			t.Errorf("AuthenticateUserFromContext succeeded, want error")
+		if diff := cmp.Diff(codes.Unauthenticated, status.Code(err)); diff != "" {
+			t.Errorf("AuthenticateUserFromContext() code mismatch (-want +got):\n%s", diff)
 		}
 	})
 
@@ -377,8 +378,8 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 
 		reqCtx := metadata.NewIncomingContext(ctx, metadata.Pairs("x-goog-iap-jwt-assertion", "mismatched-aud-jwt"))
 		_, _, err := a.AuthenticateUserFromContext(reqCtx)
-		if err == nil {
-			t.Errorf("AuthenticateUserFromContext succeeded, want error")
+		if diff := cmp.Diff(codes.Unauthenticated, status.Code(err)); diff != "" {
+			t.Errorf("AuthenticateUserFromContext() code mismatch (-want +got):\n%s", diff)
 		}
 	})
 
@@ -407,8 +408,123 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 
 		reqCtx := metadata.NewIncomingContext(ctx, metadata.Pairs("x-goog-iap-jwt-assertion", "numeric-sub-jwt"))
 		_, _, err := a.AuthenticateUserFromContext(reqCtx)
-		if err == nil {
-			t.Errorf("AuthenticateUserFromContext succeeded, want error for numeric non-email subject")
+		if diff := cmp.Diff(codes.Unauthenticated, status.Code(err)); diff != "" {
+			t.Errorf("AuthenticateUserFromContext() code mismatch for numeric non-email subject (-want +got):\n%s", diff)
 		}
 	})
+}
+
+const (
+	tokenTestSecret   = "default-jwt-secret-for-local-dev-only-12345"
+	tokenTestAudience = "test_audience"
+)
+
+// authOutcome is the comparable result of an AuthenticateUserFromContext call.
+type authOutcome struct {
+	Email  string
+	UserID string
+	Code   codes.Code
+}
+
+func testTokens(t *testing.T) (map[string]*jwks.Claims, map[string]*idtoken.Payload) {
+	t.Helper()
+	jwksClaims := map[string]*jwks.Claims{
+		"jwks-token":                   {Email: "dex-user@example.com", EmailVerified: true, RegisteredClaims: jwt.RegisteredClaims{Subject: "dex-sub"}},
+		"jwks-unverified-token":        {Email: "dex-user@example.com", EmailVerified: false, RegisteredClaims: jwt.RegisteredClaims{Subject: "dex-sub"}},
+		"jwks-unverified-string-token": {Email: "dex-user@example.com", EmailVerified: "false", RegisteredClaims: jwt.RegisteredClaims{Subject: "dex-sub"}},
+		"jwks-no-claim-token":          {Email: "dex-user@example.com", RegisteredClaims: jwt.RegisteredClaims{Subject: "dex-sub"}},
+	}
+	googlePayload := func(issuer, email string, verified any) *idtoken.Payload {
+		claims := map[string]any{"email": email}
+		if verified != nil {
+			claims["email_verified"] = verified
+		}
+		return &idtoken.Payload{Issuer: issuer, Subject: "google-sub", Claims: claims}
+	}
+	const google, iap = "https://accounts.google.com", DefaultIAPIssuer
+	idTokens := map[string]*idtoken.Payload{
+		"google-token":             googlePayload(google, "sa@xmc-project.iam.gserviceaccount.com", true),
+		"google-unverified-token":  googlePayload(google, "user@example.com", false),
+		"google-no-claim-token":    googlePayload(google, "user@example.com", nil),
+		"google-string-true-token": googlePayload(google, "user@example.com", "true"),
+		"iap-token":                googlePayload(iap, "user@example.com", nil),
+		"iap-unverified-token":     googlePayload(iap, "user@example.com", false),
+	}
+	return jwksClaims, idTokens
+}
+
+func signForeignAudienceSessionToken(t *testing.T) string {
+	t.Helper()
+	now := time.Now()
+	claims := &oauth2.SessionClaims{
+		Email: "session-user@example.com",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    oauth2.SessionIssuer,
+			Audience:  jwt.ClaimStrings{"some-other-audience"},
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+		},
+	}
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(tokenTestSecret))
+	if err != nil {
+		t.Fatalf("SignedString() failed: %v", err)
+	}
+	return tok
+}
+
+func TestAuthenticateUserFromContext_EmailVerified(t *testing.T) {
+	sessionToken, err := oauth2.GenerateSessionToken("session-user@example.com", "", "", time.Hour, []byte(tokenTestSecret))
+	if err != nil {
+		t.Fatalf("GenerateSessionToken() failed: %v", err)
+	}
+	jwksClaims, idTokens := testTokens(t)
+	oldValidate := validate
+	defer func() { validate = oldValidate }()
+	validate = func(_ context.Context, jwt, audience string) (*idtoken.Payload, error) {
+		if p, ok := idTokens[jwt]; ok && audience == tokenTestAudience {
+			return p, nil
+		}
+		return nil, errors.New("invalid ID token")
+	}
+	sessionUser, dexUser, googleSA := "session-user@example.com", "dex-user@example.com", "sa@xmc-project.iam.gserviceaccount.com"
+
+	tests := []struct {
+		name  string
+		token string
+		want  authOutcome
+	}{
+		{name: "session token", token: sessionToken, want: authOutcome{Email: sessionUser, UserID: sessionUser}},
+		{name: "session token for another audience", token: signForeignAudienceSessionToken(t), want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "JWKS token with verified email", token: "jwks-token", want: authOutcome{Email: dexUser, UserID: "dex-sub"}},
+		{name: "JWKS token with email_verified false", token: "jwks-unverified-token", want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "JWKS token with email_verified string false", token: "jwks-unverified-string-token", want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "JWKS token without email_verified", token: "jwks-no-claim-token", want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "Google ID token with verified email", token: "google-token", want: authOutcome{Email: googleSA, UserID: "google-sub"}},
+		{name: "Google ID token with email_verified false", token: "google-unverified-token", want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "Google ID token without email_verified", token: "google-no-claim-token", want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "Google ID token with email_verified string true", token: "google-string-true-token", want: authOutcome{Email: "user@example.com", UserID: "google-sub"}},
+		{name: "IAP assertion without email_verified", token: "iap-token", want: authOutcome{Email: "user@example.com", UserID: "google-sub"}},
+		{name: "IAP assertion with email_verified false", token: "iap-unverified-token", want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "invalid token", token: "garbage", want: authOutcome{Code: codes.Unauthenticated}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := &Authorizer{iapAudiences: []string{tokenTestAudience}, iapIssuer: DefaultIAPIssuer, jwtSecret: []byte(tokenTestSecret)}
+			a.SetJWKSValidator(&mockTokenValidator{validateFn: func(_ context.Context, tok string, _ []string) (*jwks.Claims, error) {
+				if c, ok := jwksClaims[tok]; ok {
+					return c, nil
+				}
+				return nil, jwks.ErrInvalidToken
+			}})
+
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+tt.token))
+			email, userID, err := a.AuthenticateUserFromContext(ctx)
+
+			got := authOutcome{Email: email, UserID: userID, Code: status.Code(err)}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("AuthenticateUserFromContext() mismatch (-want +got):\n%s\nerror: %v", diff, err)
+			}
+		})
+	}
 }
