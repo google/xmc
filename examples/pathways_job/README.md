@@ -23,7 +23,7 @@ In a Pathways RL post-training or distributed execution topology on JAX-on-Pathw
 
 2. **Environment Variables**: Make sure your environment is configured with `PROJECT_ID`, `QUEUE_NAME`, and `XMC_DOMAIN` inside your `.env` file, and that your Python environment (`./deploy/cli/venv`) is active.
 
-3. **Authentication**: Run `xmc login`, then `export XMC_AUTH_TOKEN=$(xmc print-token)`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+3. **Authentication**: Run `xmanager login`, then `export XMC_AUTH_TOKEN=$(xmanager login --print-token)`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ## Running the Example
 

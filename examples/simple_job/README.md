@@ -10,7 +10,7 @@ This directory contains a standalone launch script (`launch.py`) for creating a 
    pip install -r requirements.txt
    ```
 
-2. **Authentication**: Run `xmc login`, then `export XMC_AUTH_TOKEN=$(xmc print-token)`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+2. **Authentication**: Run `xmanager login`, then `export XMC_AUTH_TOKEN=$(xmanager login --print-token)`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 3. **Environment Variables**:
    Verify environment variables in your active shell or `.env`:

@@ -60,34 +60,6 @@ class TestInstallXmanager(unittest.TestCase):
             )
             self.assertEqual(args.xmanager_branch, "xm-cloud")
             self.assertEqual(args.venv, "./venv")
-            self.assertEqual(args.xmc_sdk_loc, install_xmanager.REMOTE_XMC_SDK_LOC)
-
-    def test_get_default_xmc_sdk_loc(self) -> None:
-        """Uses the local checkout if available, else GitHub."""
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            script = root / "deploy" / "cli" / "install_xmanager.py"
-            local_sdk = root / "sdks" / "python" / "xmc"
-            self.assertEqual(
-                install_xmanager.get_default_xmc_sdk_loc(script),
-                install_xmanager.REMOTE_XMC_SDK_LOC,
-            )
-            local_sdk.mkdir(parents=True)
-            (local_sdk / "pyproject.toml").write_text("", encoding="utf-8")
-            self.assertEqual(
-                install_xmanager.get_default_xmc_sdk_loc(script), str(local_sdk.resolve())
-            )
-
-    def test_install_xmc_sdk(self) -> None:
-        """The xmc SDK is pip-installed from the configured location, after `--`."""
-        with mock.patch("subprocess.run") as mock_run:
-            install_xmanager.install_xmc_sdk(
-                Path("/mock/venv/bin/python3"), "/repo/sdks/python/xmc"
-            )
-        mock_run.assert_called_once_with(
-            ["/mock/venv/bin/python3", "-m", "pip", "install", "--", "/repo/sdks/python/xmc"],
-            check=True,
-        )
 
     def test_parse_args_custom(self) -> None:
         """Test parse_args with custom CLI arguments."""
@@ -98,14 +70,11 @@ class TestInstallXmanager(unittest.TestCase):
             "custom-branch",
             "--venv",
             "/custom/venv",
-            "--xmc-sdk-loc",
-            "/custom/xmc",
         ]
         args = install_xmanager.parse_args(cli_args)
         self.assertEqual(args.protos_loc, "/custom/protos")
         self.assertEqual(args.xmanager_branch, "custom-branch")
         self.assertEqual(args.venv, "/custom/venv")
-        self.assertEqual(args.xmc_sdk_loc, "/custom/xmc")
 
     def test_check_prerequisites_success(self) -> None:
         """Test check_prerequisites when all binaries are found."""
@@ -185,7 +154,6 @@ class TestInstallXmanager(unittest.TestCase):
                 target = xm_dir / "xmanager_cloud" / "xid_service" / "proto" / "file.proto"
                 self.assertTrue(target.is_file())
 
-    @mock.patch("install_xmanager.install_xmc_sdk")
     @mock.patch("install_xmanager.install_xmanager_package")
     @mock.patch("install_xmanager.compile_protos")
     @mock.patch("install_xmanager.retrieve_protos")
@@ -206,7 +174,6 @@ class TestInstallXmanager(unittest.TestCase):
         mock_protos: mock.Mock,
         mock_compile: mock.Mock,
         mock_install: mock.Mock,
-        mock_sdk: mock.Mock,
     ) -> None:
         """Test main execution flow with mocked external operations."""
         mock_venv.return_value = Path("/mock/venv/bin/python3")
@@ -219,7 +186,7 @@ class TestInstallXmanager(unittest.TestCase):
         mock_protos.side_effect = mock_retrieve
 
         with tempfile.TemporaryDirectory() as tmp_venv:
-            install_xmanager.main(["--venv", tmp_venv, "--xmc-sdk-loc", "/repo/sdks/python/xmc"])
+            install_xmanager.main(["--venv", tmp_venv])
 
         mock_pre.assert_called_once()
         mock_git_ver.assert_called_once()
@@ -229,7 +196,6 @@ class TestInstallXmanager(unittest.TestCase):
         mock_protos.assert_called_once()
         mock_compile.assert_called_once()
         mock_install.assert_called_once()
-        mock_sdk.assert_called_once_with(Path("/mock/venv/bin/python3"), "/repo/sdks/python/xmc")
         mock_verify.assert_called_once()
 
     def test_get_venv_site_packages(self) -> None:

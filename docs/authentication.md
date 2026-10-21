@@ -12,24 +12,22 @@ A deployment admits an identity if one of these is true, checked in this order:
 2. Its email domain is in Helm `auth.allowedDomains`.
 3. It holds the `authorized_iam_role` (Helm `auth.authorizedIamRole`) on the project through a direct binding. Holding owner or editor, or getting the role through a group, doesn't count.
 
-The check applies to the web UI, to `xmc login`, and to every gRPC request. See the [Configuration Reference](../INSTALL.md#configuration-reference) for how to set these values.
+The check applies to the web UI, to `xmanager login`, and to every gRPC request. See the [Configuration Reference](../INSTALL.md#configuration-reference) for how to set these values.
 
-## Interactive Use: `xmc login`
+## Interactive Use: `xmanager login`
 
-Sign in as yourself with the `xmc` command, which [`install_xmanager.py`](../deploy/cli/README.md) installs into the XManager CLI virtual environment:
+Sign in as yourself with the `xmanager` CLI, which [`install_xmanager.py`](../deploy/cli/README.md) installs into the XManager CLI virtual environment:
 
 ```bash
-xmc login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL / XMC_DOMAIN and run `xmc login`.
-export XMC_AUTH_TOKEN=$(xmc print-token)
+xmanager login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL / XMC_DOMAIN and run `xmanager login`.
+export XMC_AUTH_TOKEN=$(xmanager login --print-token)
 ```
 
 The XManager CLI and the [examples](../examples/) send `XMC_AUTH_TOKEN` as a Bearer token. Once it's set, you don't need `IAP_CLIENT_ID` or `XMC_CLIENT_SA`. Experiments you create are attributed to you.
 
-- Tokens last 12 hours by default. When yours expires, run `xmc login` and export the token again.
-- Run `xmc status` to see your account and expiry. `xmc logout` removes the cached token from `~/.config/xmc/credentials.json`.
-- Over SSH or on a headless machine, `xmc login` switches to a copy-and-paste flow on its own.
-
-See the [`xmc` SDK README](../sdks/python/xmc/README.md#-authentication-xmc-login) for every subcommand, the credentials cache, and security notes.
+- Tokens last 12 hours by default. When yours expires, run `xmanager login` and export the token again.
+- Run `xmanager login --status` to see your account and expiry. `xmanager logout` removes the cached token from `~/.config/xmc/credentials.json`.
+- Over SSH or on a headless machine, `xmanager login` switches to a copy-and-paste flow on its own (or pass `--no-browser` explicitly).
 
 > [!WARNING]
 > Every child process inherits `XMC_AUTH_TOKEN`. Export it only in shells where you run XMC clients.
@@ -52,7 +50,7 @@ If `XMC_AUTH_TOKEN` is unset, the XManager CLI impersonates `XMC_CLIENT_SA` itse
 > - **The service account must be admitted.** Add its email to `allowed_emails`, or grant it the `authorized_iam_role` through a direct binding. Otherwise every request is rejected.
 > - **Its experiments belong to the service account, not to you.** The service account is the creator and, by default, the only owner. To let people see them, grant those people access explicitly (see [Experiment Access](#experiment-access-acls)).
 >
-> Don't share one service account among people for interactive work. Use `xmc login` so each experiment is attributed to the person who ran it.
+> Don't share one service account among people for interactive work. Use `xmanager login` so each experiment is attributed to the person who ran it.
 
 ## Experiment Access (ACLs)
 

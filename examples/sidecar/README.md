@@ -43,7 +43,7 @@ This directory contains a complete validation example demonstrating how to run *
 
 2. **Environment Variables**: Configure `PROJECT_ID`, `XMC_DOMAIN`, and `QUEUE_NAME` in your shell or `.env` file.
 
-3. **Authentication**: Run `xmc login`, then `export XMC_AUTH_TOKEN=$(xmc print-token)`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+3. **Authentication**: Run `xmanager login`, then `export XMC_AUTH_TOKEN=$(xmanager login --print-token)`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ---
 

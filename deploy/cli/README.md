@@ -13,7 +13,6 @@ The script `install_xmanager.py` automates:
 2. Cloning the official `xmanager` library (`xm-cloud` branch) and `googleapis` repository.
 3. Overwriting outdated gRPC proto definitions inside `xmanager` with the fresh XMC API protos.
 4. Compiling and installing the package inside the virtual environment.
-5. Installing the [`xmc` SDK](../../sdks/python/xmc/README.md), which provides the `xmc login` command (see [Authentication](#authentication)).
 
 ### Prerequisites
 - **Git** (version 2.25+ recommended for remote/GitHub sparse checkouts)
@@ -40,10 +39,6 @@ Options:
                                  (default: local checkout if available, else https://github.com/google/xmc/tree/main/api/protos)
   --xmanager-branch <branch>     The XManager Git branch/tag to clone (default: xm-cloud)
   --venv <path>                  Target directory for the Python virtual environment (default: ./venv)
-  --xmc-sdk-loc <path_or_req>    pip location of the xmc SDK that provides `xmc login`. Can be a local
-                                 directory or a pip requirement such as
-                                 git+https://github.com/google/xmc.git@main#subdirectory=sdks/python/xmc
-                                 (default: local checkout if available, else GitHub main)
   -h, --help                     Show usage information
 ```
 
@@ -63,19 +58,18 @@ You can verify the installation is working correctly by checking imports:
 ```bash
 python3 -c "import xmanager_cloud"
 python3 -c "import xmanager_cloud.experiment_state_server.experiment_state_api"
-xmc --help
 ```
 
 ## Authentication
 
-Interactive users should authenticate as themselves with `xmc login` ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). This replaces the shared `XMC_CLIENT_SA` service account:
+Interactive users should authenticate as themselves with `xmanager login` ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). This replaces the shared `XMC_CLIENT_SA` service account:
 
 ```bash
-xmc login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL / XMC_DOMAIN and run `xmc login`.
-export XMC_AUTH_TOKEN=$(xmc print-token)
+xmanager login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL / XMC_DOMAIN and run `xmanager login`.
+export XMC_AUTH_TOKEN=$(xmanager login --print-token)
 ```
 
-The XManager CLI sends `XMC_AUTH_TOKEN` as a Bearer token and reads your email from it. Over SSH or on a headless machine, `xmc login` falls back to a copy-and-paste flow on its own. Tokens last 12 hours by default. Run `xmc status` to check yours and `xmc logout` to remove the cached token from `~/.config/xmc/credentials.json`. See the [`xmc` SDK README](../../sdks/python/xmc/README.md#-authentication-xmc-login) for details and security notes.
+The XManager CLI sends `XMC_AUTH_TOKEN` as a Bearer token and reads your email from it. Over SSH or on a headless machine, `xmanager login` falls back to a copy-and-paste flow on its own. Tokens last 12 hours by default. Run `xmanager login --status` to check yours and `xmanager logout` to remove the cached token from `~/.config/xmc/credentials.json`.
 
 For CI service accounts (`XMC_CLIENT_SA`) and for sharing experiments through ACLs, see [Authentication and Experiment Access](../../docs/authentication.md).
 
