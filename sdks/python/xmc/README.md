@@ -224,7 +224,7 @@ trainer.fit(model, dataloader)
 The package ships an `xmc` command that signs local clients (such as the XManager CLI) in to an XMC deployment **as you**, instead of through a shared service account ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). It needs only the Python standard library: install it with `pip install ./sdks/python/xmc` from a checkout, or run it as `bazel run //sdks/python/xmc:xmc_bin -- <subcommand>`.
 
 ```bash
-xmc login --server https://xmc.example.com      # Opens your browser; no prompts if you are already signed in.
+xmc login --server https://<xmc-host>           # Opens your browser; no prompts if you are already signed in.
 export XMC_AUTH_TOKEN=$(xmc print-token)        # Hands the token to the XManager CLI.
 xmc status                                      # Shows the account and expiry; exits 1 if not logged in.
 xmc logout                                      # Deletes the cached token locally.
@@ -254,10 +254,10 @@ Tokens are cached in `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config
 {
   "version": 1,
   "deployments": {
-    "https://xmc.example.com": {
-      "server": "https://xmc.example.com",
+    "https://<xmc-host>": {
+      "server": "https://<xmc-host>",
       "access_token": "<CLI session token>",
-      "email": "you@example.com",
+      "email": "user@domain.tld",
       "expires_at": 1767225600
     }
   }

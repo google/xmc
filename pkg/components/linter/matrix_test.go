@@ -15,6 +15,7 @@
 package linter_test
 
 import (
+	"strings"
 	"testing"
 
 	"xmanager_cloud/pkg/components/linter"
@@ -993,6 +994,207 @@ spec:
 				t.Errorf("res.Valid = %v, want %v (errors: %v)", res.Valid, tc.wantValid, res.Errors)
 			}
 			assertDiagnosticRule(t, res, tc.wantRule)
+		})
+	}
+}
+
+func TestMatrix_OrRequirements(t *testing.T) {
+	t.Parallel()
+
+	orRule := func(reason string, optional bool, alts ...linter.DependencyRequirement) *linter.RulesConfig {
+		return &linter.RulesConfig{
+			CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+				ComponentDependencies: []linter.ComponentDependencyRule{
+					{
+						Component: "ingestion-gateway",
+						Requires: []linter.DependencyRequirement{
+							{
+								Or:       alts,
+								Reason:   reason,
+								Optional: optional,
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	gatewayManifest := "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: ingestion-gateway }\nspec: { version: \"0.1.0\" }\n"
+
+	tests := []struct {
+		name      string
+		rules     *linter.RulesConfig
+		manifests map[string]string
+		wantValid bool
+		wantRule  string
+		wantMsgIn string
+	}{
+		{
+			name: "satisfied when first alternative in or is enabled and matches version",
+			rules: orRule("needs message bus", false,
+				linter.DependencyRequirement{Component: "redpanda", Version: ">=0.1.0"},
+				linter.DependencyRequirement{Component: "pubsub", Version: ">=0.1.0"},
+			),
+			manifests: map[string]string{
+				"ingestion-gateway.yaml": gatewayManifest,
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { version: \"0.1.0\" }\n",
+			},
+			wantValid: true,
+		},
+		{
+			name: "satisfied when second alternative in or is enabled and first is disabled",
+			rules: orRule("needs message bus", false,
+				linter.DependencyRequirement{Component: "redpanda", Version: ">=0.1.0"},
+				linter.DependencyRequirement{Component: "pubsub", Version: ">=0.1.0"},
+			),
+			manifests: map[string]string{
+				"ingestion-gateway.yaml": gatewayManifest,
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { enabled: false, version: \"0.1.0\" }\n",
+				"pubsub.yaml":            "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: pubsub }\nspec: { enabled: true, version: \"0.2.0\" }\n",
+			},
+			wantValid: true,
+		},
+		{
+			name: "pure logical OR satisfied when one enabled alternative is incompatible and another is compatible",
+			rules: orRule("needs message bus", false,
+				linter.DependencyRequirement{Component: "redpanda", Version: ">=1.0.0"},
+				linter.DependencyRequirement{Component: "pubsub", Version: ">=0.1.0"},
+			),
+			manifests: map[string]string{
+				"ingestion-gateway.yaml": gatewayManifest,
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { enabled: true, version: \"0.1.0\" }\n",
+				"pubsub.yaml":            "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: pubsub }\nspec: { enabled: true, version: \"0.2.0\" }\n",
+			},
+			wantValid: true,
+		},
+		{
+			name: "satisfied when enabled alternative has empty version constraint or empty target version",
+			rules: orRule("", false,
+				linter.DependencyRequirement{Component: "redpanda", Version: ""},
+				linter.DependencyRequirement{Component: "pubsub", Version: ">=0.1.0"},
+			),
+			manifests: map[string]string{
+				"ingestion-gateway.yaml": gatewayManifest,
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: {}\n",
+			},
+			wantValid: true,
+		},
+		{
+			name: "fails with REQUIRED_COMPONENT_MISSING when all alternatives are missing or disabled",
+			rules: orRule("Redpanda or Pub/Sub required", false,
+				linter.DependencyRequirement{Component: "redpanda", Version: ">=0.1.0"},
+				linter.DependencyRequirement{Component: "pubsub"},
+			),
+			manifests: map[string]string{
+				"ingestion-gateway.yaml": gatewayManifest,
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { enabled: false, version: \"0.1.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "REQUIRED_COMPONENT_MISSING",
+			wantMsgIn: `requires at least one of ["redpanda" (>=0.1.0), "pubsub"], but all are missing or disabled; reason: Redpanda or Pub/Sub required`,
+		},
+		{
+			name: "optional or requirement is skipped when all alternatives are missing",
+			rules: orRule("", true,
+				linter.DependencyRequirement{Component: "redpanda", Version: ">=0.1.0"},
+				linter.DependencyRequirement{Component: "pubsub", Version: ">=0.1.0"},
+			),
+			manifests: map[string]string{
+				"ingestion-gateway.yaml": gatewayManifest,
+			},
+			wantValid: true,
+		},
+		{
+			name: "or requirement where all alternatives are marked optional is skipped when missing",
+			rules: orRule("", false,
+				linter.DependencyRequirement{Component: "redpanda", Optional: true},
+				linter.DependencyRequirement{Component: "pubsub", Optional: true},
+			),
+			manifests: map[string]string{
+				"ingestion-gateway.yaml": gatewayManifest,
+			},
+			wantValid: true,
+		},
+		{
+			name: "fails with VERSION_INCOMPATIBILITY and inherits group reason when enabled alternative fails version check",
+			rules: orRule("broker >=1.0.0 needed", false,
+				linter.DependencyRequirement{Component: "redpanda", Version: ">=1.0.0"},
+				linter.DependencyRequirement{Component: "pubsub", Version: ">=1.0.0"},
+			),
+			manifests: map[string]string{
+				"ingestion-gateway.yaml": gatewayManifest,
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { enabled: true, version: \"0.1.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "VERSION_INCOMPATIBILITY",
+			wantMsgIn: "reason: broker >=1.0.0 needed",
+		},
+		{
+			name: "fails with VERSION_INCOMPATIBILITY when all enabled alternatives fail version checks",
+			rules: orRule("group reason", false,
+				linter.DependencyRequirement{Component: "redpanda", Version: ">=1.0.0", Reason: "redpanda specific reason"},
+				linter.DependencyRequirement{Component: "pubsub", Version: ">=1.0.0"},
+			),
+			manifests: map[string]string{
+				"ingestion-gateway.yaml": gatewayManifest,
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { enabled: true, version: \"0.1.0\" }\n",
+				"pubsub.yaml":            "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: pubsub }\nspec: { enabled: true, version: \"0.2.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "VERSION_INCOMPATIBILITY",
+			wantMsgIn: "reason: redpanda specific reason",
+		},
+		{
+			name: "invalid version constraint in or alternative emits INVALID_VERSION_CONSTRAINT even when missing",
+			rules: orRule("", false,
+				linter.DependencyRequirement{Component: "redpanda", Version: ">=0.1.0"},
+				linter.DependencyRequirement{Component: "pubsub", Version: ">>invalid"},
+			),
+			manifests: map[string]string{
+				"ingestion-gateway.yaml": gatewayManifest,
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { enabled: true, version: \"0.1.0\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_VERSION_CONSTRAINT",
+		},
+		{
+			name: "invalid semver on enabled alternative in or emits INVALID_VERSION without REQUIRED_COMPONENT_MISSING",
+			rules: orRule("", false,
+				linter.DependencyRequirement{Component: "redpanda", Version: ">=0.1.0"},
+				linter.DependencyRequirement{Component: "pubsub", Version: ">=0.1.0"},
+			),
+			manifests: map[string]string{
+				"ingestion-gateway.yaml": gatewayManifest,
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { enabled: true, version: \"not-a-semver\" }\n",
+			},
+			wantValid: false,
+			wantRule:  "INVALID_VERSION",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			for fname, content := range tc.manifests {
+				writeTestManifest(t, dir, fname, content)
+			}
+			l := linter.NewLinter(tc.rules)
+			res, err := l.ValidateDirectory(dir)
+			if err != nil {
+				t.Fatalf("ValidateDirectory() unexpected error: %v", err)
+			}
+			if res.Valid != tc.wantValid {
+				t.Errorf("res.Valid = %v, want %v (errors: %v)", res.Valid, tc.wantValid, res.Errors)
+			}
+			assertDiagnosticRule(t, res, tc.wantRule)
+			if tc.wantMsgIn != "" {
+				joined := strings.Join(res.Errors, "\n")
+				if !strings.Contains(joined, tc.wantMsgIn) {
+					t.Errorf("errors %q do not contain %q", joined, tc.wantMsgIn)
+				}
+			}
 		})
 	}
 }

@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""XMC Python SDK package.
-
-Names backed by the generated metrics protos (`xmc.buffer`, `xmc.flusher`,
-`xmc.types`) are imported lazily (PEP 562), so stdlib-only subpackages such as
-`xmc.auth` (the `xmc login` CLI) work without `api.protos` installed.
-"""
+"""XMC Python SDK package (proto-backed names load lazily via PEP 562)."""
 
 from __future__ import annotations
 
@@ -50,8 +45,7 @@ _LAZY_ATTRIBUTES = {
 
 def __getattr__(name: str) -> Any:
     """Imports proto-backed public names on first access (PEP 562)."""
-    module = _LAZY_ATTRIBUTES.get(name)
-    if module is None:
+    if (module := _LAZY_ATTRIBUTES.get(name)) is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     value = getattr(importlib.import_module(module), name)
     globals()[name] = value

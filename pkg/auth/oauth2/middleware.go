@@ -71,7 +71,7 @@ func (a *Authenticator) authenticateCookie(w http.ResponseWriter, r *http.Reques
 		return false
 	}
 
-	claims, err := ParseSessionToken(cookie.Value, a.JWTSecret)
+	claims, err := ParseSessionToken(cookie.Value, a.JWTSecret, FrontendAudience)
 	if err != nil {
 		return false
 	}
@@ -122,7 +122,7 @@ func (a *Authenticator) authenticateBearer(w http.ResponseWriter, r *http.Reques
 // If it succeeds, it verifies authorization and handles the request, returning true.
 // If parsing fails, it returns false to fall back to OIDC token verification.
 func (a *Authenticator) authenticateSessionJWT(w http.ResponseWriter, r *http.Request, tokenStr string, next http.Handler) bool {
-	claims, err := ParseSessionToken(tokenStr, a.JWTSecret)
+	claims, err := ParseSessionToken(tokenStr, a.JWTSecret, FrontendAudience)
 	if err != nil {
 		return false
 	}
