@@ -11,17 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-// Package queryfilter defines a method for augmenting Spanner queries with additional WHERE
+// Package queryfilter defines a method for augmenting Spanner and PostgreSQL queries with additional WHERE
 // predicates derived from an AIP-160 filtering expression.
 package queryfilter
 
 import (
 	"errors"
-	"fmt"
-	"sync/atomic"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	"xmanager_cloud/api/filter/go/filtervisitor"
 	"xmanager_cloud/api/filter/go/queryfilterbase"
 	"xmanager_cloud/internal/safesql"
@@ -34,7 +31,7 @@ type MemberFunc func([]string) (safesql.TrustedSQLString, filtervisitor.PrimType
 
 // FunctionFunc is the callback used to process function calls when augmenting a query with a filter.
 // The filtervisitor.PrimType returned is the primitive type returned by the function (filtervisitor.Invalid on error).
-type FunctionFunc func(functionName string, s *Spanner, args []*fpb.Expression) (filtervisitor.PrimType, error)
+type FunctionFunc func(functionName string, v *Visitor, args []*fpb.Expression) (filtervisitor.PrimType, error)
 
 // DisjunctionFunc returns the member itself allowing collection of members and values in the case of a grouping.
 type DisjunctionFunc func([]string) (bool, safesql.TrustedSQLString, error)
@@ -44,26 +41,28 @@ type DisjunctionFunc func([]string) (bool, safesql.TrustedSQLString, error)
 type RestrictionTranslate func(r *fpb.Restriction) *fpb.Restriction
 
 // FilterBaseOption will set options for the queryfilterbase.
-type FilterBaseOption func(qf *Spanner)
+type FilterBaseOption func(opts *queryfilterbase.ExpOptions)
 
 // WithFullTextSearchEnabled enables full text search for the queryfilterbase.
-func WithFullTextSearchEnabled(qf *Spanner) {
-	qf.filterBaseExpOptions.UseFullTextSearch = true
+func WithFullTextSearchEnabled(opts *queryfilterbase.ExpOptions) {
+	opts.UseFullTextSearch = true
 }
 
 // WithSubstringTextSearchEnabled enables substring text search for the queryfilterbase.
-func WithSubstringTextSearchEnabled(qf *Spanner) {
-	qf.filterBaseExpOptions.UseSubstringTextSearch = true
+func WithSubstringTextSearchEnabled(opts *queryfilterbase.ExpOptions) {
+	opts.UseSubstringTextSearch = true
 }
 
 // WithHasOperatorAsContains enables the HAS operator to be used as a contains operator for string fields.
-func WithHasOperatorAsContains(qf *Spanner) {
-	qf.filterBaseExpOptions.UseHasOperatorAsContains = true
+func WithHasOperatorAsContains(opts *queryfilterbase.ExpOptions) {
+	opts.UseHasOperatorAsContains = true
 }
 
-// Spanner appends a filter expression to a spanner.Query using the provided MemberFunc for appending member accesses.
-// Implements the filtervisitor interface. This struct is not threadsafe, as it modifies the spanner query.
-type Spanner struct {
+var _ queryfilterbase.QueryFilterVisitor = (*Visitor)(nil)
+
+// Visitor appends a filter expression to a Statement using the provided MemberFunc for appending member accesses.
+// Implements the filtervisitor interface. This struct is not threadsafe, as it modifies the query.
+type Visitor struct {
 	MemberFunc   MemberFunc
 	FunctionFunc FunctionFunc
 
@@ -72,16 +71,15 @@ type Spanner struct {
 	// Provides direct access to a member before appending to the query.
 	DisjunctionFunc DisjunctionFunc
 
-	// count is used by appendBinding to uniquely name query bindings.
-	count uint64
-	Q     *spanner.Statement
+	// Q is the statement the filter is appended to. Its type selects the SQL dialect.
+	Q Statement
 
 	lastType filtervisitor.PrimType
 
 	// An optional function which rewrites restrictions.
 	RestrictionTranslate RestrictionTranslate
 
-	// TextSearchColumns is the list of columns to use for text search in spanner.
+	// TextSearchColumns is the list of columns to use for text search (Spanner token columns or PostgreSQL TSVECTOR columns).
 	// See:
 	// (internal URL)
 	TextSearchColumns []safesql.TrustedSQLString
@@ -99,67 +97,67 @@ type Spanner struct {
 //
 //	`SELECT p.foo FROM Projects p WHERE `, and
 //	`SELECT p.foo FROM Projects p WHERE p.bar != 3 AND `
-func (qf *Spanner) AppendFilters(e *fpb.Expression) error {
+func (qf *Visitor) AppendFilters(e *fpb.Expression) error {
 	return queryfilterbase.AppendFilters(qf, e)
 }
 
 // ConjunctionExp implements filtervisitor.FilterVisitor
-func (qf *Spanner) ConjunctionExp(e *fpb.ExpressionList) (filtervisitor.PrimType, error) {
+func (qf *Visitor) ConjunctionExp(e *fpb.ExpressionList) (filtervisitor.PrimType, error) {
 	return queryfilterbase.ConjunctionExp(qf, e)
 }
 
 // DisjunctionExp implements filtervisitor.FilterVisitor
-func (qf *Spanner) DisjunctionExp(e *fpb.ExpressionList) (filtervisitor.PrimType, error) {
+func (qf *Visitor) DisjunctionExp(e *fpb.ExpressionList) (filtervisitor.PrimType, error) {
 	return queryfilterbase.DisjunctionExp(qf, e)
 }
 
 // NegationExp implements filtervisitor.FilterVisitor
-func (qf *Spanner) NegationExp(e *fpb.Expression) (filtervisitor.PrimType, error) {
+func (qf *Visitor) NegationExp(e *fpb.Expression) (filtervisitor.PrimType, error) {
 	return queryfilterbase.NegationExp(qf, e)
 }
 
 // RestrictionExp implements filtervisitor.FilterVisitor
-func (qf *Spanner) RestrictionExp(e *fpb.Restriction) (filtervisitor.PrimType, error) {
+func (qf *Visitor) RestrictionExp(e *fpb.Restriction) (filtervisitor.PrimType, error) {
 	return queryfilterbase.RestrictionExp(qf, e)
 }
 
 // MemberExp implements filtervisitor.FilterVisitor
-func (qf *Spanner) MemberExp(e *fpb.ExpressionList) (filtervisitor.PrimType, error) {
+func (qf *Visitor) MemberExp(e *fpb.ExpressionList) (filtervisitor.PrimType, error) {
 	return queryfilterbase.MemberExp(qf, e)
 }
 
 // FunctionExp implements filtervisitor.FilterVisitor
-func (qf *Spanner) FunctionExp(e *fpb.Function) (filtervisitor.PrimType, error) {
+func (qf *Visitor) FunctionExp(e *fpb.Function) (filtervisitor.PrimType, error) {
 	return queryfilterbase.FunctionExp(qf, e)
 }
 
 // ValueExp implements filtervisitor.FilterVisitor
-func (qf *Spanner) ValueExp(e string) (filtervisitor.PrimType, error) {
+func (qf *Visitor) ValueExp(e string) (filtervisitor.PrimType, error) {
 	return queryfilterbase.ValueExp(qf, e)
 }
 
 // PhraseExp implements filtervisitor.FilterVisitor
-func (qf *Spanner) PhraseExp(e *fpb.Phrase) (filtervisitor.PrimType, error) {
+func (qf *Visitor) PhraseExp(e *fpb.Phrase) (filtervisitor.PrimType, error) {
 	return queryfilterbase.PhraseExp(qf, e)
 }
 
 // GetOptimizeDisjunction implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) GetOptimizeDisjunction() bool {
+func (qf *Visitor) GetOptimizeDisjunction() bool {
 	return qf.OptimizeDisjunction
 }
 
 // SetLastType implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) SetLastType(t filtervisitor.PrimType) {
+func (qf *Visitor) SetLastType(t filtervisitor.PrimType) {
 	qf.lastType = t
 }
 
 // GetLastType implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) GetLastType() filtervisitor.PrimType {
+func (qf *Visitor) GetLastType() filtervisitor.PrimType {
 	return qf.lastType
 }
 
 // HandleMember implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) HandleMember(path []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
+func (qf *Visitor) HandleMember(path []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
 	if qf.MemberFunc == nil {
 		return safesql.New(""), filtervisitor.Invalid, errors.New("handling member is not implemented")
 	}
@@ -167,7 +165,7 @@ func (qf *Spanner) HandleMember(path []string) (safesql.TrustedSQLString, filter
 }
 
 // HandleFunction implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) HandleFunction(functionName string, args []*fpb.Expression) (bool, filtervisitor.PrimType, error) {
+func (qf *Visitor) HandleFunction(functionName string, args []*fpb.Expression) (bool, filtervisitor.PrimType, error) {
 	if qf.FunctionFunc == nil {
 		return false, filtervisitor.Invalid, nil
 	}
@@ -176,7 +174,7 @@ func (qf *Spanner) HandleFunction(functionName string, args []*fpb.Expression) (
 }
 
 // TranslateRestriction implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) TranslateRestriction(r *fpb.Restriction) (bool, *fpb.Restriction) {
+func (qf *Visitor) TranslateRestriction(r *fpb.Restriction) (bool, *fpb.Restriction) {
 	if qf.RestrictionTranslate == nil {
 		return false, nil
 	}
@@ -184,15 +182,23 @@ func (qf *Spanner) TranslateRestriction(r *fpb.Restriction) (bool, *fpb.Restrict
 }
 
 // HandleDisjunction implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) HandleDisjunction(value []string) (bool, safesql.TrustedSQLString, error) {
+func (qf *Visitor) HandleDisjunction(value []string) (bool, safesql.TrustedSQLString, error) {
 	if qf.DisjunctionFunc == nil {
 		return false, safesql.New(""), errors.New("handling disjunction is not implemented")
 	}
 	return qf.DisjunctionFunc(value)
 }
 
+// Dialect implements queryfilterbase.QueryFilterVisitor
+func (qf *Visitor) Dialect() queryfilterbase.Dialect {
+	if qf.Q == nil {
+		return noopDialect{}
+	}
+	return qf.Q.Dialect()
+}
+
 // GetTextSearchColumns implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) GetTextSearchColumns() ([]safesql.TrustedSQLString, error) {
+func (qf *Visitor) GetTextSearchColumns() ([]safesql.TrustedSQLString, error) {
 	if len(qf.TextSearchColumns) == 0 {
 		return nil, errors.New("full text search column is not implemented")
 	}
@@ -200,110 +206,100 @@ func (qf *Spanner) GetTextSearchColumns() ([]safesql.TrustedSQLString, error) {
 }
 
 // GetExpOptions implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) GetExpOptions() *queryfilterbase.ExpOptions {
+func (qf *Visitor) GetExpOptions() *queryfilterbase.ExpOptions {
 	if qf.filterBaseExpOptions == nil {
 		qf.filterBaseExpOptions = &queryfilterbase.ExpOptions{}
 	}
 
 	for _, opt := range qf.FilterBaseOptions {
-		opt(qf)
+		opt(qf.filterBaseExpOptions)
 	}
 
 	return qf.filterBaseExpOptions
 }
 
-func (qf *Spanner) appendBinding(v any) {
+func (qf *Visitor) appendBinding(v any) {
 	if qf.Q == nil {
 		return
 	}
-	index := atomic.AddUint64(&qf.count, 1) - 1
-
-	// Append the binding name to the query.
-	qf.AppendTrustedSQL(safesql.NewBindingParam("@fb", index))
-
-	// Bind the value.
-	if qf.Q.Params == nil {
-		qf.Q.Params = make(map[string]any)
-	}
-	paramKey := fmt.Sprintf("fb%d", index)
-	qf.Q.Params[paramKey] = v
+	qf.AppendTrustedSQL(qf.Q.Bind(v))
 }
 
 // AppendBindingTimestamp implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) AppendBindingTimestamp(t time.Time) {
+func (qf *Visitor) AppendBindingTimestamp(t time.Time) {
 	qf.appendBinding(t)
 }
 
 // AppendBindingString implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) AppendBindingString(s string) {
+func (qf *Visitor) AppendBindingString(s string) {
 	qf.appendBinding(s)
 }
 
 // AppendBindingStringArray implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) AppendBindingStringArray(s []string) {
+func (qf *Visitor) AppendBindingStringArray(s []string) {
 	qf.appendBinding(s)
 }
 
 // AppendBindingByteArray implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) AppendBindingByteArray(b []byte) {
+func (qf *Visitor) AppendBindingByteArray(b []byte) {
 	qf.appendBinding(b)
 }
 
 // AppendBindingInt64 implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) AppendBindingInt64(i int64) {
+func (qf *Visitor) AppendBindingInt64(i int64) {
 	qf.appendBinding(i)
 }
 
 // AppendBindingUInt64 implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) AppendBindingUInt64(i uint64) {
+func (qf *Visitor) AppendBindingUInt64(i uint64) {
 	qf.appendBinding(i)
 }
 
 // AppendBindingFloat64 implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) AppendBindingFloat64(f float64) {
+func (qf *Visitor) AppendBindingFloat64(f float64) {
 	qf.appendBinding(f)
 }
 
 // AppendBindingBool implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) AppendBindingBool(b bool) {
+func (qf *Visitor) AppendBindingBool(b bool) {
 	qf.appendBinding(b)
 }
 
 // AppendBindingEnum implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) AppendBindingEnum(e string) {
+func (qf *Visitor) AppendBindingEnum(e string) {
 	qf.appendBinding(e)
 }
 
 // AppendTrustedSQL implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) AppendTrustedSQL(sql safesql.TrustedSQLString) {
+func (qf *Visitor) AppendTrustedSQL(sql safesql.TrustedSQLString) {
 	if len(qf.captureStack) > 0 {
 		top := len(qf.captureStack) - 1
 		qf.captureStack[top] = safesql.Concat(qf.captureStack[top], sql)
 		return
 	}
 	if qf.Q != nil {
-		qf.Q.SQL = qf.Q.SQL + sql.String()
+		qf.Q.AppendSQL(sql)
 	}
 }
 
-func (qf *Spanner) SetIsRHS(isRHS bool) {
+func (qf *Visitor) SetIsRHS(isRHS bool) {
 	qf.isRHS = isRHS
 }
 
-func (qf *Spanner) GetIsRHS() bool {
+func (qf *Visitor) GetIsRHS() bool {
 	return qf.isRHS
 }
 
-func (qf *Spanner) SetIsHAS(isHAS bool) {
+func (qf *Visitor) SetIsHAS(isHAS bool) {
 	qf.isHAS = isHAS
 }
 
-func (qf *Spanner) GetIsHAS() bool {
+func (qf *Visitor) GetIsHAS() bool {
 	return qf.isHAS
 }
 
 // CaptureSQL captures TrustedSQLString fragments appended during fn execution.
-func (qf *Spanner) CaptureSQL(fn func() error) (safesql.TrustedSQLString, error) {
+func (qf *Visitor) CaptureSQL(fn func() error) (safesql.TrustedSQLString, error) {
 	qf.captureStack = append(qf.captureStack, safesql.EmptyString())
 	top := len(qf.captureStack) - 1
 	defer func() {
@@ -317,7 +313,10 @@ func (qf *Spanner) CaptureSQL(fn func() error) (safesql.TrustedSQLString, error)
 	return captured, nil
 }
 
-func (qf *Spanner) HandleTextSearch(col safesql.TrustedSQLString, val string) (safesql.TrustedSQLString, error) {
+func (qf *Visitor) HandleTextSearch(col safesql.TrustedSQLString, val string) (safesql.TrustedSQLString, error) {
+	if val == "" {
+		return safesql.EmptyString(), errors.New("search query cannot be empty")
+	}
 	paramSQL, err := qf.CaptureSQL(func() error {
 		qf.AppendBindingString(val)
 		return nil
@@ -326,5 +325,5 @@ func (qf *Spanner) HandleTextSearch(col safesql.TrustedSQLString, val string) (s
 		return safesql.EmptyString(), err
 	}
 
-	return safesql.Concat(safesql.New("SEARCH("), col, safesql.New(", "), paramSQL, safesql.New(")")), nil
+	return qf.Dialect().TextSearch(col, paramSQL), nil
 }

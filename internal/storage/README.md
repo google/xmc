@@ -90,11 +90,13 @@ type TxRepository struct {
 }
 ```
 
+PostgreSQL repository subpackages (`internal/storage/postgres/<entity>/`) follow the same split: `NewRepository(pool)` binds the shared `*pgxpool.Pool`, and `Repository.WithTx(tx)` binds the active `pgx.Tx` through the `pgdb.DBTX` interface. `DBTX` and the SQLSTATE error helpers live in the leaf package [`postgres/pgdb/`](postgres/pgdb/), so repository subpackages can import them without an import cycle with `internal/storage/postgres`.
+
 Methods that only buffer mutations into an active read-write transaction (such as `SaveWorkUnitExecution`, `UpdateCurrentWorkUnitExecution`, and `UpdateExperimentStatus`) are declared on `*TxRepository` rather than `*Repository`, so they cannot be called outside `RunInTransaction`.
 
 ### Writing `RunInTransaction` Callbacks
 
-Cloud Spanner may abort and re-run the `RunInTransaction` callback when a transaction encounters lock contention:
+Cloud Spanner may abort and re-run the `RunInTransaction` callback when a transaction encounters lock contention (the PostgreSQL backend likewise re-runs it on serialization failures and deadlocks):
 
 1. **Reset state on each attempt**: Initialize or clear any slices, maps, or counters modified by `fn` at the start of the callback, not outside it.
 2. **Avoid external side effects**: Do not enqueue tasks or make external RPCs inside `fn`. Perform those after `RunInTransaction` succeeds.

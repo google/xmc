@@ -21,6 +21,8 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/storage",
+        "//internal/storage/postgres/pgdb",
+        "@com_github_jackc_pgx_v5//pgxpool",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],
@@ -32,6 +34,8 @@ go_test(
     embed = [":pausedtask"],
     deps = [
         "//internal/storage",
+        "//internal/storage/postgres/pgdb",
+        "@com_github_jackc_pgx_v5//pgxpool",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],
