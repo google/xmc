@@ -89,7 +89,7 @@ flowchart TD
    ```bash
    pip install -r requirements.txt
    ```
-6. **Authentication**: Run `xmanager login`, then `export XMC_AUTH_TOKEN=$(xmanager login --print-token)`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+6. **Authentication**: Run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ---
 

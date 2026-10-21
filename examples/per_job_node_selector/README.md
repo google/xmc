@@ -30,7 +30,7 @@ When an XMC Work Unit is created with these requirements:
 
 2. **GKE Node Pools**: Your GKE cluster must have the required node pools (`cpups` and `gpu-pool`, or modify `launch.py` to match your cluster's existing node pool names).
 3. **Environment Variables**: Ensure `PROJECT_ID`, `XMC_DOMAIN`, and optionally `QUEUE_NAME` are exported in your environment or defined in a `.env` file.
-4. **Authentication**: Run `xmanager login`, then `export XMC_AUTH_TOKEN=$(xmanager login --print-token)`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+4. **Authentication**: Run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ## Step 1: Build and Push Container Image
 

@@ -62,14 +62,13 @@ python3 -c "import xmanager_cloud.experiment_state_server.experiment_state_api"
 
 ## Authentication
 
-Interactive users should authenticate as themselves with `xmanager login` ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). This replaces the shared `XMC_CLIENT_SA` service account:
+Interactive users should authenticate as themselves with `xmanager login` ([google/xmc#1309](https://github.com/google/xmc/issues/1309), requires XMC `>= 0.16.0`). This replaces the shared `XMC_CLIENT_SA` service account:
 
 ```bash
-xmanager login   # Reads XMANAGER_UI_URL / XMANAGER_ENDPOINT / XMC_API_URL from the environment.
-export XMC_AUTH_TOKEN=$(xmanager login --print-token)
+xmanager login   # Reads XMANAGER_ENDPOINT, XMC_API_URL, XMANAGER_UI_URL, or XMC_DOMAIN from the environment.
 ```
 
-The XManager CLI sends `XMC_AUTH_TOKEN` as a Bearer token and reads your email from it. Over SSH or on a headless machine, `xmanager login` falls back to a copy-and-paste flow on its own. Tokens last 12 hours by default. Run `xmanager login --status` to check yours and `xmanager logout` to remove the cached token from `~/.config/xmc/credentials.json`.
+`xmanager login` caches your token in `$XMC_CREDENTIALS_FILE` or `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config/xmc/credentials.json`), and the XManager CLI loads it automatically as a Bearer token and reads your email from it. Over SSH or on a headless machine, `xmanager login` falls back to a copy-and-paste flow on its own (or pass `--no-browser`). Tokens last 12 hours by default. Run `xmanager login --status` to check yours and `xmanager logout` to remove the cached token.
 
 For CI service accounts (`XMC_CLIENT_SA`) and for sharing experiments through ACLs, see [Authentication and Experiment Access](../../docs/authentication.md).
 
@@ -87,7 +86,7 @@ cp ../../.env.example ../../.env
 Open the newly created `../../.env` file and customize it with your specific details (such as your `PROJECT_ID`, `IAP_CLIENT_ID`, and domain endpoints).
 
 ### 2. Run the Launcher
-With the Python virtual environment active, the `.env` file configured, and `XMC_AUTH_TOKEN` exported (see [Authentication](#authentication)), execute the `launch.py` script:
+With the Python virtual environment active, the `.env` file configured, and signed in via `xmanager login` (see [Authentication](#authentication)), execute the `launch.py` script:
 
 ```bash
 python launch.py

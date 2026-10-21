@@ -10,7 +10,7 @@ This directory contains a standalone launch script (`launch.py`) for creating a 
    pip install -r requirements.txt
    ```
 
-2. **Authentication**: Run `xmanager login`, then `export XMC_AUTH_TOKEN=$(xmanager login --print-token)`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+2. **Authentication**: Run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 3. **Environment Variables**:
    Verify environment variables in your active shell or `.env`:
@@ -19,8 +19,9 @@ This directory contains a standalone launch script (`launch.py`) for creating a 
    export XMC_DOMAIN="<your-xmc-domain>"
    export XMANAGER_ENDPOINT="dns:///grpc.<your-xmc-domain>:443"
    ```
-   Without `XMANAGER_ENDPOINT`, the client dials its built-in placeholder endpoint; without
-   `XMC_AUTH_TOKEN`, it falls back to `IAP_CLIENT_ID` / `XMC_CLIENT_SA` and prompts for them.
+   Without `XMANAGER_ENDPOINT`, the client dials its built-in placeholder endpoint; if you are not
+   signed in via `xmanager login` (and `XMC_AUTH_TOKEN` is unset), it falls back to
+   `IAP_CLIENT_ID` / `XMC_CLIENT_SA` and prompts for them.
 
 > [!IMPORTANT]
 > `--queue` takes the Kueue **LocalQueue** name (`cpu-queue`, `gpu-queue`, `tpu-queue`), not the

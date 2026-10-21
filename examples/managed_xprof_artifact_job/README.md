@@ -19,7 +19,7 @@ The worker (`worker.py`) reads the per-work-unit GCS destination from the `XMC_M
    ```bash
    ./build_and_push.sh
    ```
-5. **Authentication**: Run `xmanager login`, then `export XMC_AUTH_TOKEN=$(xmanager login --print-token)`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+5. **Authentication**: Run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ## Running the Example
 

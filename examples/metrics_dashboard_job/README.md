@@ -77,7 +77,7 @@ Metrics emitted: `train/loss`, `train/accuracy`, `eval/loss`, `eval/accuracy`, `
 
    Leave it running for the duration of the launch. Without it the WorkUnit still starts and
    streams metrics — only the dashboard step fails, with the warning described below.
-7. **Authentication**: Run `xmanager login`, then `export XMC_AUTH_TOKEN=$(xmanager login --print-token)`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+7. **Authentication**: Run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ---
 

@@ -16,21 +16,18 @@ The check applies to the web UI, to `xmanager login`, and to every gRPC request.
 
 ## Interactive Use: `xmanager login`
 
-Sign in as yourself with the `xmanager` CLI, which [`install_xmanager.py`](../deploy/cli/README.md) installs into the XManager CLI virtual environment:
+Sign in as yourself with the `xmanager` CLI (requires XMC `>= 0.16.0`), which [`install_xmanager.py`](../deploy/cli/README.md) installs into the XManager CLI virtual environment:
 
 ```bash
-xmanager login   # Reads XMANAGER_UI_URL / XMANAGER_ENDPOINT / XMC_API_URL from the environment.
-export XMC_AUTH_TOKEN=$(xmanager login --print-token)
+xmanager login   # Reads XMANAGER_ENDPOINT, XMC_API_URL, XMANAGER_UI_URL, or XMC_DOMAIN from the environment.
 ```
 
-The XManager CLI and the [examples](../examples/) send `XMC_AUTH_TOKEN` as a Bearer token. Once it's set, you don't need `IAP_CLIENT_ID` or `XMC_CLIENT_SA`. Experiments you create are attributed to you.
+`xmanager login` caches a per-deployment session token in `$XMC_CREDENTIALS_FILE` or `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config/xmc/credentials.json`, mode `0600`). The XManager CLI and the [examples](../examples/) load this cached token automatically — once you're signed in, you don't need `XMC_AUTH_TOKEN`, `IAP_CLIENT_ID`, or `XMC_CLIENT_SA`. Experiments you create are attributed to you.
 
-- Tokens last 12 hours by default. When yours expires, run `xmanager login` and export the token again.
-- Run `xmanager login --status` to see your account and expiry. `xmanager logout` removes the cached token from `~/.config/xmc/credentials.json`.
+- Tokens last 12 hours by default. When yours expires, run `xmanager login` again.
+- Run `xmanager login --status` to see your account and expiry. `xmanager logout` removes the cached token for the current deployment (`xmanager logout --all` clears all deployments).
 - Over SSH or on a headless machine, `xmanager login` switches to a copy-and-paste flow on its own (or pass `--no-browser` explicitly).
-
-> [!WARNING]
-> Every child process inherits `XMC_AUTH_TOKEN`. Export it only in shells where you run XMC clients.
+- For standalone tools that read `XMC_AUTH_TOKEN` directly (such as [`xdash`](../sdks/python/xdash/README.md)), run `export XMC_AUTH_TOKEN=$(xmanager login --print-token)` in the shell where you invoke them.
 
 ## CI and Other Non-Interactive Use: A Service Account
 
