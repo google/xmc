@@ -31,7 +31,7 @@ import (
 	"cloud.google.com/go/iam/apiv1/iampb"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/go-cmp/cmp"
-	"golang.org/x/oauth2"
+	xoauth2 "golang.org/x/oauth2"
 	"google.golang.org/api/idtoken"
 )
 
@@ -1039,7 +1039,7 @@ type testMockOAuthProvider struct {
 	MockPic   string
 }
 
-func (m *testMockOAuthProvider) AuthCodeURL(state string, r *http.Request) string {
+func (m *testMockOAuthProvider) AuthCodeURL(state string, r *http.Request, opts ...xoauth2.AuthCodeOption) string {
 	return fmt.Sprintf("/api/callback?code=mock_code_123&state=%s", state)
 }
 
@@ -1278,9 +1278,9 @@ type stubOAuthProvider struct {
 	err      error
 }
 
-func (p *stubOAuthProvider) AuthCodeURL(state string, _ *http.Request) string {
-	cfg := &oauth2.Config{ClientID: "test-client", Endpoint: oauth2.Endpoint{AuthURL: loginTestIdPAuthURL}}
-	return cfg.AuthCodeURL(state)
+func (p *stubOAuthProvider) AuthCodeURL(state string, _ *http.Request, opts ...xoauth2.AuthCodeOption) string {
+	cfg := &xoauth2.Config{ClientID: "test-client", Endpoint: xoauth2.Endpoint{AuthURL: loginTestIdPAuthURL}}
+	return cfg.AuthCodeURL(state, opts...)
 }
 
 func (p *stubOAuthProvider) ExchangeAndGetUserInfo(context.Context, *http.Request, string) (*GoogleUserInfo, error) {
@@ -1477,5 +1477,15 @@ func TestHandleCallbackDashboardPipelineFailure(t *testing.T) {
 	resp := serveCallback(a, newCallbackRequest("&code=idp-code"))
 	if got, want := resp.Header.Get("Location"), "https://xmc.example.com/?error=permission_error"; got != want {
 		t.Errorf("Location = %q, want %q", got, want)
+	}
+}
+
+func TestHandleLoginClearsCLILoginCookie(t *testing.T) {
+	a := newTestAuthenticator(baseLoginConfig())
+	w := httptest.NewRecorder()
+	a.HandleLogin(w, httptest.NewRequest(http.MethodGet, "https://xmc.example.com/api/login", nil))
+	got := responseCookie(w.Result(), cliLoginCookieName)
+	if got == nil || got.MaxAge != -1 || got.Path != "/api/callback" {
+		t.Errorf("cli_login cookie = %v, want it deleted at path /api/callback", got)
 	}
 }

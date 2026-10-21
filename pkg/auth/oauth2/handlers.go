@@ -98,6 +98,15 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.setOAuthStateCookie(w, r, state)
+	// A CLI login abandoned in this browser must not outlive this Dashboard login.
+	a.clearCLILoginCookie(w, r)
+
+	authURL := a.OAuthProvider.AuthCodeURL(state, r)
+	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
+}
+
+func (a *Authenticator) setOAuthStateCookie(w http.ResponseWriter, r *http.Request, state string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
 		Value:    state,
@@ -108,9 +117,6 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Secure:   a.isCookieSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
-
-	authURL := a.OAuthProvider.AuthCodeURL(state, r)
-	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
 // HandleCallback processes the authentication callback.

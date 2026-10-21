@@ -22,6 +22,7 @@ import (
 	"net/http"
 
 	"cloud.google.com/go/iam/apiv1/iampb"
+	xoauth2 "golang.org/x/oauth2"
 	"google.golang.org/api/idtoken"
 )
 
@@ -33,7 +34,7 @@ type MockOAuthProvider struct {
 }
 
 // AuthCodeURL returns the mock callback URL.
-func (m *MockOAuthProvider) AuthCodeURL(state string, r *http.Request) string {
+func (m *MockOAuthProvider) AuthCodeURL(state string, r *http.Request, opts ...xoauth2.AuthCodeOption) string {
 	return fmt.Sprintf("/api/callback?code=mock_code_123&state=%s", state)
 }
 

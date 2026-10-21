@@ -18,6 +18,7 @@ load("//:oci.bzl", "oci_image_for_service")
 go_library(
     name = "experiment_state_server_lib",
     srcs = [
+        "cli_login.go",
         "health.go",
         "main.go",
     ],
@@ -80,5 +81,15 @@ go_test(
     deps = [
         "//cmd/experiment_state_server/server",
         "//internal/storage/spanner/migrations/version",
+    ],
+)
+
+go_test(
+    name = "cli_login_test",
+    srcs = ["cli_login_test.go"],
+    embed = [":experiment_state_server_lib"],
+    deps = [
+        "//pkg/auth/oauth2",
+        "@com_github_google_go_cmp//cmp",
     ],
 )
