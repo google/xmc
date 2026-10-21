@@ -162,7 +162,7 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 	existing, err := r.MLRunClient.GetMLRun(ctx, existingID)
 	if err != nil {
 		logging.Warn(ctx, "MLRun already exists but could not be fetched; treating as success", "mlRunID", existingID, "error", err)
-		return constructDiagnosticsConsoleURL(r.Location, existingID, r.Project)
+		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject())
 	}
 	if mlRunOwnedByXManager(existing) && mlRunHasLabel(existing, listExistingSessionsOnlyLabel, "true") {
 		logging.Info(ctx, "MLRun already exists and is owned by XManager; treating as success", "mlRunID", existingID)
@@ -178,7 +178,7 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to update existing MLRun for ManagedXprof execution", "mlRunID", existingID, "error", err)
-		return constructDiagnosticsConsoleURL(r.Location, existingID, r.Project)
+		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject())
 	}
 	return r.mlRunURL(res, existingID)
 }
