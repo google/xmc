@@ -116,7 +116,7 @@ All standard stateless services and in-cluster caching workloads run on GKE:
    - Path `/v1/*` routes API requests to `experiment-state-server-service` (ESS HTTP API) for fetching dynamic experiment lists, user profiles, etc.
 4. **Authentication**:
    - Unauthenticated users are redirected to **Google Accounts** for OAuth2 consent.
-   - Once authenticated, the browser exchanges codes for an ID token, establishing a secure session cached in the in-cluster Redis instance.
+   - Once authenticated, the backend issues a signed, stateless session token in an HTTP-only cookie.
 
 ---
 
@@ -133,8 +133,76 @@ The command-line interface (CLI) client bypasses the web UI entirely, communicat
    - **HTTP Requests** targeting `/v1/*` are routed to the ESS HTTP endpoint.
    - **gRPC Requests** (such as `/experiment.ExperimentService/*`) are routed via `GRPCRoute` directly to the gRPC port of the `experiment-state-server`.
 3. **Authentication**:
-   - The CLI authenticates by attaching a service account credential (GCP IAM Service Account Key or federated OIDC token) to the call metadata.
-   - The ESS server parses and validates this token against configured GCP IAM roles before processing any API calls.
+   - The CLI attaches a bearer token to the call metadata: an XMC CLI session token from `xmanager login` (see [CLI Login](#3-cli-login-browser-loopback)), a Google-signed ID token (for example from a service account's `generateIdToken`), a token from the configured OIDC provider, or an XMC session token.
+   - Each gRPC service verifies the token, rejects Google and OIDC tokens whose `email_verified` claim is false (Google tokens must carry the claim), and then runs the same deployment admission check as the HTTP API (see [Client Authorization](#client-authorization)) before processing the call.
+
+---
+
+### 3. CLI Login (Browser Loopback)
+
+`xmanager login` signs the user in through the same OAuth client, identity provider and `/api/callback` redirect URI as the Dashboard ([google/xmc#1309](https://github.com/google/xmc/issues/1309)).
+
+```mermaid
+sequenceDiagram
+    participant CLI as xmanager login
+    participant B as Browser
+    participant ESS as ESS /api
+    participant IdP as Google or Dex
+    CLI->>CLI: state, PKCE verifier and S256 challenge, listen on 127.0.0.1:N
+    CLI->>B: open /api/cli/login?port=N&state&code_challenge&code_challenge_method=S256
+    B->>ESS: GET /api/cli/login
+    ESS->>B: cli_login cookie (MAC'd ticket bound to oauth_state) and oauth_state cookie, 307 to IdP
+    B->>IdP: sign in
+    IdP->>B: 307 /api/callback?code&state
+    B->>ESS: GET /api/callback
+    ESS->>IdP: exchange code, read userinfo
+    ESS->>ESS: require email_verified, run admission
+    ESS->>ESS: store SHA-256 of a one-time code (60s) in CliLoginCodes
+    ESS->>B: 302 http://127.0.0.1:N/callback?code&state
+    B->>CLI: GET /callback
+    CLI->>B: 302 /api/cli/success
+    CLI->>ESS: POST /api/cli/token (code, code_verifier)
+    ESS->>ESS: consume code, verify PKCE, re-run admission, sign token
+    ESS->>CLI: access_token (aud xmanager-cloud-cli, jti, CLI_SESSION_TTL)
+```
+
+1. **Login ticket**: `/api/cli/login` accepts only a numeric loopback `port` (1024 to 65535) or `mode=manual` (see [Headless (Manual) Mode](#headless-manual-mode)), a CLI `state`, an S256 `code_challenge` and an optional `login_hint`. It stores them in the `cli_login` cookie, signed with the JWT secret (`aud: xmanager-cloud-cli-login`) and scoped to `/api/callback`, together with the hash of the `oauth_state` it generates. To stop other web pages from starting a login in the user's browser (web-origin login CSRF) or embedding it, browsers that send fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Note that `Sec-Fetch-Site: none` is also sent for links clicked in non-browser desktop applications (such as chat or email clients) or pasted into the address bar, and browsers without fetch metadata (or plain-HTTP non-localhost origins) omit these headers.
+2. **Callback**: `/api/callback` completes a CLI login only when the `cli_login` ticket is authentic, unexpired and bound to the `oauth_state` of the same round trip; otherwise it signs the user in to the Dashboard as before. `/api/login` deletes any `cli_login` cookie. In loopback mode, every outcome goes to the loopback URL, which is built from the ticket's port, never from the request: an identity provider error or cancellation, or a rejected user, is sent `error=access_denied`, and a failed code exchange or other server failure `error=server_error`. The email never appears in the URL.
+3. **Token exchange**: `/api/cli/token` rejects malformed requests before reading the store, consumes the code in a Spanner read-write transaction before checking the PKCE verifier, and answers every code or verifier problem with `400 invalid_grant`. A user who lost admission since signing in gets `403 access_denied`. Responses are `no-store`.
+4. **Use**: the CLI token is an HS256 session token with audience `xmanager-cloud-cli`. HTTP accepts it only as a bearer token, never as the session cookie, and gRPC accepts it in call metadata. Every call re-runs deployment admission.
+
+#### Headless (Manual) Mode
+
+Over SSH or without a display, `xmanager login --no-browser` (also chosen automatically) sends `mode=manual` instead of `port`. `/api/cli/login` requires exactly one of the two. The user opens the printed URL in a browser on any device and pastes the resulting code into the terminal.
+
+```mermaid
+sequenceDiagram
+    participant CLI as xmanager login --no-browser
+    participant B as Browser (any device)
+    participant ESS as ESS /api
+    participant IdP as Google or Dex
+    CLI->>CLI: state, PKCE verifier and S256 challenge
+    CLI->>B: print /api/cli/login?mode=manual&state&code_challenge&code_challenge_method=S256
+    B->>ESS: GET /api/cli/login
+    ESS->>B: cli_login cookie (mode manual) and oauth_state cookie, 307 to IdP
+    B->>IdP: sign in
+    IdP->>B: 307 /api/callback?code&state
+    B->>ESS: GET /api/callback
+    ESS->>ESS: identity checks and admission
+    ESS->>B: confirmation page naming the account, signed confirmation in the form
+    B->>ESS: POST /api/cli/code (Continue)
+    ESS->>ESS: verify confirmation, re-run admission, store SHA-256 of a one-time code (120s)
+    ESS->>B: code page (no-store, no-referrer)
+    B->>CLI: user pastes the code
+    CLI->>ESS: POST /api/cli/token (code, code_verifier)
+    ESS->>CLI: access_token
+```
+
+1. **Confirmation first**: after the identity checks and admission, the callback mints no code. It shows a page naming the account and telling the user to continue only if they started `xmanager login --no-browser` themselves, just now. The page's form carries a confirmation (email, name, PKCE challenge, 5-minute expiry) signed with the JWT secret (`aud: xmanager-cloud-cli-confirm`), never a code.
+2. **Code delivery**: `POST /api/cli/code` accepts only same-origin form posts (`Sec-Fetch-Site: same-origin` and `Sec-Fetch-Dest: document` when sent, on top of `CrossOriginProtection`), verifies the confirmation token, re-runs admission, and shows a 120-second code in the page body, never in a URL. **Cancel** verifies the confirmation too and issues no code; the form accepts only `action=continue` or `action=cancel`. Pages are `no-store` with `Referrer-Policy: no-referrer` and an added `Content-Security-Policy: frame-ancestors 'none'; form-action 'self'`, use no script, and escape every dynamic value. Failures, including a denied user, show an error page that does not name the user, because there is no loopback listener to report them to.
+3. **Residual risk**: an attacker can still send a victim a manual-mode link built with the attacker's own PKCE challenge, and talk the victim into confirming and handing over the code (consent phishing). The confirmation page, the warnings and the short code lifetime reduce this to the same level as `gcloud auth login --no-browser`. In addition, the confirmation is a bearer value not bound to the browser session: for its 5 minutes, whoever obtains the page's form value can mint a code, which is only redeemable with the PKCE verifier from the login start.
+
+The CLI login endpoints are registered only when authentication is enabled (no `MOCK_AUTH` or `DISABLE_AUTHENTICATION`) and the server has a CLI login code store.
 
 ---
 
@@ -158,6 +226,9 @@ Each pod that interacts with Cloud Spanner or other GCP APIs runs under a dedica
 - **Resource Access**: The GCP Service Account is assigned specific IAM roles (e.g., Spanner Database User, Secret Manager Secret Accessor) providing secure, passwordless resource access.
 
 ### Client Authorization
-When the `experiment-state-server` receives authentication tokens (from either browser session cookies or CLI JWT metadata):
-- It uses Google IAM APIs to verify the calling identity's permissions.
-- Access is granted only if the identity possesses the authorized GCP IAM Role (e.g., `roles/oauth2PrototypeUser` or equivalent custom role configured in the Helm values).
+Every authenticated caller, whether it arrives with a browser session cookie, an HTTP bearer token or gRPC metadata, must be admitted to the deployment before any per-experiment ACL is evaluated. HTTP and gRPC share one admission pipeline (`oauth2.Authenticator.IsUserAuthorized`), which admits the caller if it matches, in order:
+1. the email allowlist (`ALLOWED_EMAILS`),
+2. the domain allowlist (`ALLOWED_DOMAINS`), or
+3. a direct binding of the authorized IAM role (`AUTHORIZED_IAM_ROLE`, `roles/viewer` by default) on the deployment project for the caller's `user:`, `serviceAccount:` or `domain:` principal. Owner, editor and group bindings do not satisfy this check.
+
+Callers that authenticate but are not admitted receive `PERMISSION_DENIED` on gRPC and `403` on HTTP. With `DISABLE_AUTHENTICATION=true` (local development only), gRPC skips admission. The Component Manager Service additionally admits the workload service account that `xmc-bridge` runs as (`ess_service_account`); no other service admits it by identity.

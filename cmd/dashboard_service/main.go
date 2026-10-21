@@ -112,7 +112,8 @@ func initAuthenticator(ctx context.Context, projectID string) (*oauth2.Authentic
 	if oauthCfg.GCPProjectID == "" {
 		oauthCfg.GCPProjectID = projectID
 	}
-	return oauth2.NewAuthenticator(oauthCfg), oauthCfg, nil
+	authenticator := oauth2.NewAuthenticator(oauthCfg)
+	return authenticator, oauthCfg, nil
 }
 
 type lazySecretReader struct {
@@ -309,24 +310,26 @@ func initRepository(ctx context.Context, sc *spanner.Client) (server.DashboardRe
 	return spannerRepo, nil
 }
 
-func initAuthorizer(ctx context.Context, projectID string, oauthCfg *oauth2.Config) auth.AuthorizerInterface {
+// initAuthorizer builds the gRPC authorizer. admission must come from the same oauth2.Authenticator
+// the HTTP middleware uses, so gRPC and HTTP admit exactly the same principals.
+func initAuthorizer(ctx context.Context, projectID string, oauthCfg *oauth2.Config, admission auth.AdmissionChecker) (auth.AuthorizerInterface, error) {
 	idService, err := cloudidentity.NewService(ctx, option.WithQuotaProject(projectID))
 	if err != nil {
-		logging.Info(ctx, "Cloud Identity service not available at startup", "error", err)
+		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
 	}
-	authorizer, err := auth.NewAuthorizer(
-		ctx,
-		idService,
-		10*time.Minute,
-		1*time.Minute,
-		[]string{oauthCfg.ClientID},
-		auth.DefaultIAPIssuer,
-		[]byte(oauthCfg.JWTSecret),
-	)
+	authorizer, err := auth.NewAuthorizer(auth.AuthorizerParams{
+		IDService:     idService,
+		CacheTTL:      10 * time.Minute,
+		CacheErrorTTL: time.Minute,
+		IAPAudiences:  []string{oauthCfg.ClientID},
+		IAPIssuer:     auth.DefaultIAPIssuer,
+		JWTSecret:     []byte(oauthCfg.JWTSecret),
+		Admission:     admission,
+	})
 	if err != nil {
-		logging.Info(ctx, "Authorizer initialized without full IAP configuration", "error", err)
+		return nil, fmt.Errorf("failed to create authorizer: %w", err)
 	}
-	return authorizer
+	return authorizer, nil
 }
 
 func initXidClient(addr string) (xidapipb.XidServiceClient, *grpc.ClientConn, error) {
@@ -439,6 +442,7 @@ func run() int {
 		logging.Error(ctx, "Failed to initialize authenticator", "error", err)
 		return 1
 	}
+	defer authenticator.Close()
 	de := initDataEngine(ctx, cfg)
 
 	spannerDB := getSpannerDatabaseName()
@@ -454,7 +458,11 @@ func run() int {
 		logging.Error(ctx, "Failed to initialize dashboard repository", "error", err)
 		return 1
 	}
-	authorizer := initAuthorizer(ctx, cfg.ProjectID, oauthCfg)
+	authorizer, err := initAuthorizer(ctx, cfg.ProjectID, oauthCfg, auth.DeploymentAdmission(authenticator))
+	if err != nil {
+		logging.Error(ctx, "Failed to initialize authorizer", "error", err)
+		return 1
+	}
 
 	xidClient, xidConn, err := initXidClient(cfg.XidServiceAddr)
 	if err != nil {

@@ -18,7 +18,10 @@ package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "filter",
-    srcs = ["queryfilter.go"],
+    srcs = [
+        "queryfilter.go",
+        "statement.go",
+    ],
     importpath = "xmanager_cloud/internal/query_generator/filter",
     deps = [
         # keep
@@ -26,7 +29,6 @@ go_library(
         "//api/filter/go/filtervisitor",
         "//api/filter/go/queryfilterbase",
         "//internal/safesql",
-        "@com_google_cloud_go_spanner//:spanner",
     ],
 )
 
@@ -40,6 +42,8 @@ go_test(
         "//api/filter/go/filter",
         "//api/filter/go/filtervisitor",
         "//api/filter/go/queryfilterbase",
+        "//internal/query_generator/dialect/postgres",
+        "//internal/query_generator/dialect/spanner",
         "//internal/safesql",
         "@com_github_google_go_cmp//cmp",
         "@com_google_cloud_go_spanner//:spanner",

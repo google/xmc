@@ -31,10 +31,14 @@ import (
 // validate is the function that validates the JWT. It is stubbed out for testing.
 var validate = idtoken.Validate
 
-// AuthenticateUserFromContext authenticates a user's identity from the context.
+// AuthenticateUserFromContext authenticates a user's identity from the context and then runs the
+// deployment admission check on it.
 func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
 	ident, err := a.resolveIdentity(ctx)
 	if err != nil {
+		return "", "", err
+	}
+	if err := a.admit(ctx, ident.email); err != nil {
 		return "", "", err
 	}
 	return ident.email, ident.userID, nil
@@ -189,7 +193,8 @@ func (a *Authorizer) parseCustomSessionToken(ctx context.Context, jwt string) (*
 	if len(a.jwtSecret) == 0 {
 		return nil, nil
 	}
-	claims, parseErr := oauth2.ParseSessionToken(jwt, a.jwtSecret, oauth2.FrontendAudience)
+	// The browser forwards its Dashboard session token and the CLI sends its CLI session token.
+	claims, parseErr := oauth2.ParseSessionToken(jwt, a.jwtSecret, oauth2.FrontendAudience, oauth2.CLIAudience)
 	if parseErr != nil {
 		if !errors.Is(parseErr, oauth2.ErrInvalidToken) {
 			logging.Info(ctx, "Custom session token parsing failed", "error", parseErr)

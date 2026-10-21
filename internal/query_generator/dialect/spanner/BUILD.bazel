@@ -14,14 +14,15 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//visibility:public"])
+
 go_library(
-    name = "mock",
-    srcs = ["mock.go"],
-    importpath = "xmanager_cloud/pkg/auth/oauth2/mock",
-    visibility = ["//visibility:public"],
+    name = "spanner",
+    srcs = ["spanner.go"],
+    importpath = "xmanager_cloud/internal/query_generator/dialect/spanner",
     deps = [
-        "//pkg/auth/oauth2",
-        "@com_google_cloud_go_iam//apiv1/iampb",
-        "@org_golang_google_api//idtoken",
+        "//api/filter/go/queryfilterbase",
+        "//internal/safesql",
+        "@com_google_cloud_go_spanner//:spanner",
     ],
 )

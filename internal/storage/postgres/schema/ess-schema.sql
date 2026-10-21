@@ -365,3 +365,13 @@ CREATE TABLE PausedTasks (
 -- Replay ordering index for pending paused tasks.
 CREATE INDEX PausedTasksUnprocessed ON PausedTasks (Priority DESC, CreateTime)
   INCLUDE (ActionProto, Target, OperationName, TraceId, IsPending, Xid, WorkUnitId, TaskId) WHERE IsPending IS NOT NULL;
+
+-- One-time CLI login codes issued by /api/callback and redeemed once by /api/cli/token.
+CREATE TABLE CliLoginCodes (
+  CodeHash BYTEA NOT NULL, -- SHA-256 of the code.
+  Email TEXT NOT NULL,
+  Name TEXT,
+  CodeChallenge TEXT NOT NULL, -- S256 PKCE challenge.
+  ExpiresAt TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (CodeHash)
+);

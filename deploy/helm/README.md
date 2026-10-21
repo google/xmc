@@ -89,6 +89,94 @@ account does not invalidate an existing session admitted by the domain allowlist
 
 ---
 
+## Sign-in identity checks
+
+Sign-in requires the identity provider to report a verified email
+(`email_verified`).
+
+Emails are trimmed and lowercased before admission and in issued session tokens.
+Per-experiment ACL matching is still case-sensitive, so list ACL users in
+lowercase.
+
+---
+
+## CLI login
+
+`xmanager login` signs the user in through the browser and stores an XMC session token
+for the CLI ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). The
+experiment state server starts the flow on `/api/cli/login` and finishes it on the
+existing `/api/callback`, reusing the Dashboard OAuth client and its redirect URI,
+so no OAuth client changes are needed. The callback applies the
+[sign-in identity checks](#sign-in-identity-checks) and
+[deployment admission](#deployment-admission), then hands the CLI a one-time code
+through its `127.0.0.1` listener. Codes live in the `CliLoginCodes` Spanner table
+(migration 016) for at most 60 seconds (120 seconds in manual mode).
+
+`/api/cli/login` rejects cross-site web navigations and embedded frames: browsers that
+report fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`
+(note that links opened from desktop apps or pasted URLs also send `Sec-Fetch-Site: none`,
+and browsers that omit these headers or use plain-HTTP non-localhost origins are not
+covered by fetch metadata).
+
+Over SSH, or on a machine without a display, `xmanager login --no-browser` (also chosen
+automatically) uses manual mode: the CLI prints a `/api/cli/login?mode=manual` URL
+for the user to open in a browser on any device. After sign-in and admission, the
+callback shows a confirmation page that names the account and warns the user to
+continue only if they started `xmanager login --no-browser` themselves. Only when the
+user selects **Continue** (a same-origin `POST /api/cli/code`, with admission
+checked again) does the server mint a code, valid for 120 seconds and shown only
+in the page body, never in a URL. The user pastes it into the terminal. Each
+confirmation page works once (**Cancel** uses it up too) and for at most 5
+minutes. A user can still be tricked into opening an attacker's link, confirming,
+and handing over the code (consent phishing). This residual risk is the same as
+for `gcloud auth login --no-browser`; the confirmation page and the code page warn
+against it. The confirmation is also not bound to the browser: for its 5 minutes,
+anyone who obtains the page's form value can mint the code once, which helps only
+an attacker who also holds the PKCE verifier, that is, one who started the login.
+
+The CLI then exchanges the code and its PKCE verifier on `/api/cli/token` for a
+CLI session token, and sends the browser to `/api/cli/success` so the code leaves
+the address bar. `auth.cliSessionTtl` sets the token's lifetime; the chart passes
+it to the backend as `CLI_SESSION_TTL`. It accepts Go duration syntax from `1m` to
+`720h`; any other value prevents the backend from starting. CLI tokens cannot be
+refreshed: the user runs `xmanager login` again when the token expires.
+
+```yaml
+auth:
+  cliSessionTtl: "12h"
+```
+
+The CLI token is accepted only as a bearer token, never as the Dashboard cookie,
+and every request re-runs [deployment admission](#deployment-admission). An issued
+CLI token cannot be revoked yet: it stays valid until it expires or the user is no
+longer admitted.
+
+The CLI login endpoints are not served with `auth.mockAuth` or
+`auth.disableAuthentication`, or when the server has no CLI login code store.
+
+---
+
+## Deployment admission
+
+Every authenticated caller must be admitted to the deployment before any per-experiment ACL is
+checked. This applies to browser and HTTP API requests, to gRPC calls to the experiment state
+server (exposed through the gateway), and to the in-cluster gRPC APIs of the XID, dashboard and
+health services. The rod-data-provider gRPC port is in-cluster only, is not part of its Service,
+and performs no authentication. A caller is admitted when it matches, in order:
+
+1. `auth.allowedEmails` (`ALLOWED_EMAILS`),
+2. `auth.allowedDomains` (`ALLOWED_DOMAINS`), or
+3. a direct binding of `auth.authorizedIamRole` (`AUTHORIZED_IAM_ROLE`) on `projectId` for the
+   `user:`, `serviceAccount:` or `domain:` principal. Owner, editor and group bindings do not count.
+
+Human users and service accounts that call gRPC directly, such as CI runners or workloads using
+their own ID token, need one of these entries. The Component Manager Service additionally admits
+`gcpServiceAccount`, the account `xmc-bridge` runs as; no other service admits it by identity.
+`auth.disableAuthentication: true` skips admission on gRPC; use it only on local development
+clusters.
+
+---
+
 ## Disabling authentication
 
 `auth.disableAuthentication: true` (`DISABLE_AUTHENTICATION`) turns off authorization checks such

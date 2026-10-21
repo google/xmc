@@ -72,6 +72,7 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 		iapAudiences: []string{"other_audience", "test_audience"},
 		iapIssuer:    "https://cloud.google.com/iap",
 		jwtSecret:    []byte("default-jwt-secret-for-local-dev-only-12345"),
+		admission:    &fakeAdmissionChecker{admitted: true},
 	}
 	ctx := context.Background()
 
@@ -205,6 +206,20 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 			}(),
 			wantCode: codes.Unauthenticated,
 		},
+		{
+			name:       "CLI session token authentication success",
+			metadata:   metadata.Pairs("authorization", "Bearer "+signTestSessionToken(t, "cli-user@mycompany.com", oauth2.CLIAudience)),
+			wantEmail:  "cli-user@mycompany.com",
+			wantUserID: "cli-user@mycompany.com",
+		},
+		{
+			name:     "session token for another audience failure",
+			metadata: metadata.Pairs("authorization", "Bearer "+signTestSessionToken(t, "cli-user@mycompany.com", "xmanager-cloud-other")),
+			validator: func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
+				return nil, errors.New("not a Google ID token")
+			},
+			wantCode: codes.Unauthenticated,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -240,7 +255,7 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("JWKSValidationSuccessWithEmailClaim", func(t *testing.T) {
-		a := &Authorizer{iapAudiences: []string{"test_audience"}}
+		a := &Authorizer{iapAudiences: []string{"test_audience"}, admission: &fakeAdmissionChecker{admitted: true}}
 		mockVal := &mockTokenValidator{
 			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
 				return &jwks.Claims{
@@ -268,7 +283,7 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 	})
 
 	t.Run("JWKSValidationSuccessWithSubjectEmailFallback", func(t *testing.T) {
-		a := &Authorizer{iapAudiences: []string{"test_audience"}}
+		a := &Authorizer{iapAudiences: []string{"test_audience"}, admission: &fakeAdmissionChecker{admitted: true}}
 		mockVal := &mockTokenValidator{
 			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
 				return &jwks.Claims{
@@ -299,6 +314,7 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 		a := &Authorizer{
 			iapAudiences: []string{"test_audience"},
 			iapIssuer:    "https://cloud.google.com/iap",
+			admission:    &fakeAdmissionChecker{admitted: true},
 		}
 		mockVal := &mockTokenValidator{
 			validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
@@ -419,11 +435,13 @@ const (
 	tokenTestAudience = "test_audience"
 )
 
-// authOutcome is the comparable result of an AuthenticateUserFromContext call.
+// authOutcome is the comparable result of an AuthenticateUserFromContext call, including the emails
+// the admission checker was asked about.
 type authOutcome struct {
-	Email  string
-	UserID string
-	Code   codes.Code
+	Email   string
+	UserID  string
+	Code    codes.Code
+	Checked []string
 }
 
 func testTokens(t *testing.T) (map[string]*jwks.Claims, map[string]*idtoken.Payload) {
@@ -444,6 +462,7 @@ func testTokens(t *testing.T) (map[string]*jwks.Claims, map[string]*idtoken.Payl
 	const google, iap = "https://accounts.google.com", DefaultIAPIssuer
 	idTokens := map[string]*idtoken.Payload{
 		"google-token":             googlePayload(google, "sa@xmc-project.iam.gserviceaccount.com", true),
+		"foreign-sa-token":         googlePayload(google, "attacker@other-project.iam.gserviceaccount.com", true),
 		"google-unverified-token":  googlePayload(google, "user@example.com", false),
 		"google-no-claim-token":    googlePayload(google, "user@example.com", nil),
 		"google-string-true-token": googlePayload(google, "user@example.com", "true"),
@@ -472,7 +491,7 @@ func signForeignAudienceSessionToken(t *testing.T) string {
 	return tok
 }
 
-func TestAuthenticateUserFromContext_EmailVerified(t *testing.T) {
+func TestAuthenticateUserFromContext_Admission(t *testing.T) {
 	sessionToken, err := oauth2.GenerateSessionToken("session-user@example.com", "", "", time.Hour, []byte(tokenTestSecret))
 	if err != nil {
 		t.Fatalf("GenerateSessionToken() failed: %v", err)
@@ -486,31 +505,55 @@ func TestAuthenticateUserFromContext_EmailVerified(t *testing.T) {
 		}
 		return nil, errors.New("invalid ID token")
 	}
+	crmDown := errors.New("crm unavailable")
 	sessionUser, dexUser, googleSA := "session-user@example.com", "dex-user@example.com", "sa@xmc-project.iam.gserviceaccount.com"
 
 	tests := []struct {
-		name  string
-		token string
-		want  authOutcome
+		name     string
+		token    string
+		admitted bool
+		checkErr error
+		disabled bool
+		want     authOutcome
 	}{
-		{name: "session token", token: sessionToken, want: authOutcome{Email: sessionUser, UserID: sessionUser}},
-		{name: "session token for another audience", token: signForeignAudienceSessionToken(t), want: authOutcome{Code: codes.Unauthenticated}},
-		{name: "JWKS token with verified email", token: "jwks-token", want: authOutcome{Email: dexUser, UserID: "dex-sub"}},
-		{name: "JWKS token with email_verified false", token: "jwks-unverified-token", want: authOutcome{Code: codes.Unauthenticated}},
-		{name: "JWKS token with email_verified string false", token: "jwks-unverified-string-token", want: authOutcome{Code: codes.Unauthenticated}},
-		{name: "JWKS token without email_verified", token: "jwks-no-claim-token", want: authOutcome{Code: codes.Unauthenticated}},
-		{name: "Google ID token with verified email", token: "google-token", want: authOutcome{Email: googleSA, UserID: "google-sub"}},
-		{name: "Google ID token with email_verified false", token: "google-unverified-token", want: authOutcome{Code: codes.Unauthenticated}},
-		{name: "Google ID token without email_verified", token: "google-no-claim-token", want: authOutcome{Code: codes.Unauthenticated}},
-		{name: "Google ID token with email_verified string true", token: "google-string-true-token", want: authOutcome{Email: "user@example.com", UserID: "google-sub"}},
-		{name: "IAP assertion without email_verified", token: "iap-token", want: authOutcome{Email: "user@example.com", UserID: "google-sub"}},
-		{name: "IAP assertion with email_verified false", token: "iap-unverified-token", want: authOutcome{Code: codes.Unauthenticated}},
-		{name: "invalid token", token: "garbage", want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "session token admitted", token: sessionToken, admitted: true, want: authOutcome{Email: sessionUser, UserID: sessionUser, Checked: []string{sessionUser}}},
+		{name: "session token not admitted", token: sessionToken, want: authOutcome{Code: codes.PermissionDenied, Checked: []string{sessionUser}}},
+		{name: "session token checker error", token: sessionToken, checkErr: crmDown, want: authOutcome{Code: codes.Internal, Checked: []string{sessionUser}}},
+		{name: "session token for another audience", token: signForeignAudienceSessionToken(t), admitted: true, want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "JWKS token admitted", token: "jwks-token", admitted: true, want: authOutcome{Email: dexUser, UserID: "dex-sub", Checked: []string{dexUser}}},
+		{name: "JWKS token not admitted", token: "jwks-token", want: authOutcome{Code: codes.PermissionDenied, Checked: []string{dexUser}}},
+		{name: "JWKS token checker error", token: "jwks-token", checkErr: crmDown, want: authOutcome{Code: codes.Internal, Checked: []string{dexUser}}},
+		{name: "JWKS token with email_verified false", token: "jwks-unverified-token", admitted: true, want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "JWKS token with email_verified string false", token: "jwks-unverified-string-token", admitted: true, want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "JWKS token without email_verified", token: "jwks-no-claim-token", admitted: true, want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "Google ID token admitted", token: "google-token", admitted: true, want: authOutcome{Email: googleSA, UserID: "google-sub", Checked: []string{googleSA}}},
+		{name: "foreign project SA ID token not admitted", token: "foreign-sa-token", want: authOutcome{Code: codes.PermissionDenied, Checked: []string{"attacker@other-project.iam.gserviceaccount.com"}}},
+		{name: "Google ID token checker error", token: "google-token", checkErr: crmDown, want: authOutcome{Code: codes.Internal, Checked: []string{googleSA}}},
+		{name: "Google ID token with email_verified false", token: "google-unverified-token", admitted: true, want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "Google ID token without email_verified", token: "google-no-claim-token", admitted: true, want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "Google ID token with email_verified string true", token: "google-string-true-token", admitted: true, want: authOutcome{Email: "user@example.com", UserID: "google-sub", Checked: []string{"user@example.com"}}},
+		{name: "IAP assertion without email_verified", token: "iap-token", admitted: true, want: authOutcome{Email: "user@example.com", UserID: "google-sub", Checked: []string{"user@example.com"}}},
+		{name: "IAP assertion with email_verified false", token: "iap-unverified-token", admitted: true, want: authOutcome{Code: codes.Unauthenticated}},
+		{name: "disabled authentication skips admission", token: "google-token", disabled: true, want: authOutcome{Email: googleSA, UserID: "google-sub"}},
+		{name: "disabled authentication still authenticates", token: "garbage", disabled: true, want: authOutcome{Code: codes.Unauthenticated}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			a := &Authorizer{iapAudiences: []string{tokenTestAudience}, iapIssuer: DefaultIAPIssuer, jwtSecret: []byte(tokenTestSecret)}
+			checker := &fakeAdmissionChecker{admitted: tt.admitted, err: tt.checkErr}
+			var admission AdmissionChecker = checker
+			if tt.disabled {
+				admission = AdmitAll()
+			}
+			a, err := NewAuthorizer(AuthorizerParams{
+				IAPAudiences: []string{tokenTestAudience},
+				IAPIssuer:    DefaultIAPIssuer,
+				JWTSecret:    []byte(tokenTestSecret),
+				Admission:    admission,
+			})
+			if err != nil {
+				t.Fatalf("NewAuthorizer() failed: %v", err)
+			}
 			a.SetJWKSValidator(&mockTokenValidator{validateFn: func(_ context.Context, tok string, _ []string) (*jwks.Claims, error) {
 				if c, ok := jwksClaims[tok]; ok {
 					return c, nil
@@ -521,10 +564,25 @@ func TestAuthenticateUserFromContext_EmailVerified(t *testing.T) {
 			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+tt.token))
 			email, userID, err := a.AuthenticateUserFromContext(ctx)
 
-			got := authOutcome{Email: email, UserID: userID, Code: status.Code(err)}
+			got := authOutcome{Email: email, UserID: userID, Code: status.Code(err), Checked: checker.checked}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("AuthenticateUserFromContext() mismatch (-want +got):\n%s\nerror: %v", diff, err)
 			}
 		})
 	}
+}
+
+// signTestSessionToken signs a session token for email and audience with the dev-only secret used
+// by TestAuthenticateUserFromContext_Authenticated.
+func signTestSessionToken(t *testing.T, email, audience string) string {
+	t.Helper()
+	claims := &oauth2.SessionClaims{Email: email, RegisteredClaims: jwt.RegisteredClaims{
+		Issuer: oauth2.SessionIssuer, Audience: jwt.ClaimStrings{audience},
+		IssuedAt: jwt.NewNumericDate(time.Now()), ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	}}
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("default-jwt-secret-for-local-dev-only-12345"))
+	if err != nil {
+		t.Fatalf("SignedString() failed: %v", err)
+	}
+	return tok
 }

@@ -335,7 +335,9 @@ application-level authentication bypasses in production binaries. See
 [Zero-Bypass Authentication Invariant](../../.agents/rules/architectural_contracts.md#2-zero-bypass-authentication-invariant).
 
 Authorization is a separate step: ESS calls `XidService.CheckUserAuthorization` with the required
-role (`READER` for reads, `WRITER` for mutations) before touching experiment state.
+role (`READER` for reads, `WRITER` for mutations) before touching experiment state. The one
+exception is `CreateExperiment`, which has no XID entry to check yet: ESS evaluates the requested
+ACLs locally with the same `internal/auth` logic before allocating the XID.
 Session state for browser clients is cached in Redis; pod-to-GCP access uses GKE Workload
 Identity rather than static credentials.
 

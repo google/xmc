@@ -12,17 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build mockauth
+//go:build !mockauth
 
-package main
+package oauth2
 
-import (
-	"xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/pkg/auth/oauth2/mock"
-)
+import "testing"
 
-func configureAuth(a *oauth2.Authenticator, cfg *oauth2.Config) {
-	if cfg.MockAuth {
-		mock.ConfigureMockAuth(a)
+func TestNewAuthenticatorWithoutMockAuthTag(t *testing.T) {
+	a := NewAuthenticator(&Config{MockAuth: true})
+	if _, gotGoogle := a.OAuthProvider.(*GoogleOAuthProvider); !gotGoogle {
+		t.Errorf("NewAuthenticator() installed %T in a build without the mockauth tag, want *GoogleOAuthProvider", a.OAuthProvider)
 	}
 }
