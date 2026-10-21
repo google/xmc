@@ -23,6 +23,9 @@ go_library(
     deps = [
         "//api/protos/components/v1alpha1",
         "//pkg/components/store",
+        "//pkg/components/store/dependency",
+        "//pkg/components/store/lifecycle",
+        "//pkg/components/store/ownership",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
@@ -32,7 +35,6 @@ go_library(
 
 go_test(
     name = "memory_test",
-    size = "small",
     srcs = ["memory_store_test.go"],
     embed = [":memory"],
     deps = [

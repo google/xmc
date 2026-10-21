@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package lifecycle
 
 import (
 	"fmt"
@@ -23,11 +23,12 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/semver"
+	"xmanager_cloud/pkg/components/store"
 )
 
 // ResolveComponentSnapshotFromMap resolves or caches an immutable snapshot of a component at the requested generation.
-func ResolveComponentSnapshotFromMap(components map[string]*ComponentRecord, snapshots map[string]map[int64]*SnapshotRecord, name string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	canonicalName, err := ValidateResourceName(name)
+func ResolveComponentSnapshotFromMap(components map[string]*store.ComponentRecord, snapshots map[string]map[int64]*store.SnapshotRecord, name string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	canonicalName, err := store.ValidateResourceName(name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -36,8 +37,8 @@ func ResolveComponentSnapshotFromMap(components map[string]*ComponentRecord, sna
 	}
 
 	rec, exists := components[canonicalName]
-	if !exists || rec == nil || IsDeletedRecord(rec) {
-		return nil, nil, ErrComponentNotFound
+	if !exists || rec == nil || store.IsDeletedRecord(rec) {
+		return nil, nil, store.ErrComponentNotFound
 	}
 
 	targetGen := generation
@@ -51,9 +52,9 @@ func ResolveComponentSnapshotFromMap(components map[string]*ComponentRecord, sna
 	return getOrCacheSnapshot(rec, snapshots, canonicalName, targetGen)
 }
 
-func getOrCacheSnapshot(currentRec *ComponentRecord, snapshots map[string]map[int64]*SnapshotRecord, canonicalName string, targetGen int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+func getOrCacheSnapshot(currentRec *store.ComponentRecord, snapshots map[string]map[int64]*store.SnapshotRecord, canonicalName string, targetGen int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
 	if snap, ok := snapshots[canonicalName][targetGen]; ok && snap != nil && snap.Record != nil {
-		return CloneRecord(snap.Record), CloneCoordinates(snap.Coordinates), nil
+		return store.CloneRecord(snap.Record), store.CloneCoordinates(snap.Coordinates), nil
 	}
 
 	if targetGen < currentRec.Generation {
@@ -63,27 +64,27 @@ func getOrCacheSnapshot(currentRec *ComponentRecord, snapshots map[string]map[in
 	snap := createSnapshotRecord(currentRec, targetGen)
 	if snapshots != nil {
 		if snapshots[canonicalName] == nil {
-			snapshots[canonicalName] = make(map[int64]*SnapshotRecord)
+			snapshots[canonicalName] = make(map[int64]*store.SnapshotRecord)
 		}
 		snapshots[canonicalName][targetGen] = snap
 	}
 
-	return CloneRecord(snap.Record), CloneCoordinates(snap.Coordinates), nil
+	return store.CloneRecord(snap.Record), store.CloneCoordinates(snap.Coordinates), nil
 }
 
-func createSnapshotRecord(rec *ComponentRecord, gen int64) *SnapshotRecord {
+func createSnapshotRecord(rec *store.ComponentRecord, gen int64) *store.SnapshotRecord {
 	var coords *componentspb.ResolvedComponentCoordinates
 	if rec.Status != nil && rec.Status.Coordinates != nil {
-		coords = CloneCoordinates(rec.Status.Coordinates)
+		coords = store.CloneCoordinates(rec.Status.Coordinates)
 	}
 
-	clonedRec := CloneRecord(rec)
+	clonedRec := store.CloneRecord(rec)
 	clonedRec.Generation = gen
 	if clonedRec.Spec != nil {
 		clonedRec.Spec.Generation = gen
 	}
 
-	return &SnapshotRecord{
+	return &store.SnapshotRecord{
 		Name:        rec.Name,
 		Generation:  gen,
 		Record:      clonedRec,
@@ -93,8 +94,8 @@ func createSnapshotRecord(rec *ComponentRecord, gen int64) *SnapshotRecord {
 }
 
 // ValidateComponentRequirementFromMap checks whether a required component exists, is ENABLED, and satisfies type/version constraints.
-func ValidateComponentRequirementFromMap(components map[string]*ComponentRecord, name string, reqType componentspb.ComponentType, minVersion string) (*RequirementValidationResult, error) {
-	canonicalName, err := ValidateResourceName(name)
+func ValidateComponentRequirementFromMap(components map[string]*store.ComponentRecord, name string, reqType componentspb.ComponentType, minVersion string) (*store.RequirementValidationResult, error) {
+	canonicalName, err := store.ValidateResourceName(name)
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +106,8 @@ func ValidateComponentRequirementFromMap(components map[string]*ComponentRecord,
 	}
 
 	rec, exists := components[canonicalName]
-	if !exists || rec == nil || IsDeletedRecord(rec) {
-		return &RequirementValidationResult{
+	if !exists || rec == nil || store.IsDeletedRecord(rec) {
+		return &store.RequirementValidationResult{
 			IsSatisfied:             false,
 			SatisfyingComponentName: canonicalName,
 			Reason:                  fmt.Sprintf("component %q not found", canonicalName),
@@ -117,13 +118,13 @@ func ValidateComponentRequirementFromMap(components map[string]*ComponentRecord,
 }
 
 // EvaluateComponentRequirement evaluates whether rec satisfies reqType and minVersion.
-func EvaluateComponentRequirement(rec *ComponentRecord, canonicalName string, reqType componentspb.ComponentType, minVersion string) (*RequirementValidationResult, error) {
+func EvaluateComponentRequirement(rec *store.ComponentRecord, canonicalName string, reqType componentspb.ComponentType, minVersion string) (*store.RequirementValidationResult, error) {
 	if rec.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
-		return &RequirementValidationResult{
+		return &store.RequirementValidationResult{
 			IsSatisfied:             false,
 			SatisfyingComponentName: canonicalName,
 			Reason:                  fmt.Sprintf("component %q is in state %s, required ENABLED", canonicalName, rec.State),
-			Component:               CloneRecord(rec),
+			Component:               store.CloneRecord(rec),
 		}, nil
 	}
 
@@ -133,11 +134,11 @@ func EvaluateComponentRequirement(rec *ComponentRecord, canonicalName string, re
 			if rec.Spec != nil {
 				actualType = rec.Spec.GetType()
 			}
-			return &RequirementValidationResult{
+			return &store.RequirementValidationResult{
 				IsSatisfied:             false,
 				SatisfyingComponentName: canonicalName,
 				Reason:                  fmt.Sprintf("component %q has type %s, required %s", canonicalName, actualType, reqType),
-				Component:               CloneRecord(rec),
+				Component:               store.CloneRecord(rec),
 			}, nil
 		}
 	}
@@ -145,48 +146,48 @@ func EvaluateComponentRequirement(rec *ComponentRecord, canonicalName string, re
 	return checkVersionRequirement(rec, canonicalName, minVersion)
 }
 
-func checkVersionRequirement(rec *ComponentRecord, canonicalName, minVersion string) (*RequirementValidationResult, error) {
+func checkVersionRequirement(rec *store.ComponentRecord, canonicalName, minVersion string) (*store.RequirementValidationResult, error) {
 	if minVersion == "" {
-		return &RequirementValidationResult{
+		return &store.RequirementValidationResult{
 			IsSatisfied:             true,
 			SatisfyingComponentName: canonicalName,
 			Reason:                  "requirement satisfied",
-			Component:               CloneRecord(rec),
+			Component:               store.CloneRecord(rec),
 		}, nil
 	}
 
 	if rec.Spec == nil || rec.Spec.GetVersion() == "" {
-		return &RequirementValidationResult{
+		return &store.RequirementValidationResult{
 			IsSatisfied:             false,
 			SatisfyingComponentName: canonicalName,
 			Reason:                  fmt.Sprintf("component %q has no version specified", canonicalName),
-			Component:               CloneRecord(rec),
+			Component:               store.CloneRecord(rec),
 		}, nil
 	}
 
 	satisfies, err := semver.SatisfiesMinVersion(rec.Spec.GetVersion(), minVersion)
 	if err != nil {
-		return &RequirementValidationResult{
+		return &store.RequirementValidationResult{
 			IsSatisfied:             false,
 			SatisfyingComponentName: canonicalName,
 			Reason:                  fmt.Sprintf("component %q has invalid semver %q: %v", canonicalName, rec.Spec.GetVersion(), err),
-			Component:               CloneRecord(rec),
+			Component:               store.CloneRecord(rec),
 		}, nil
 	}
 
 	if !satisfies {
-		return &RequirementValidationResult{
+		return &store.RequirementValidationResult{
 			IsSatisfied:             false,
 			SatisfyingComponentName: canonicalName,
 			Reason:                  fmt.Sprintf("component %q version %s does not satisfy minimum version %s", canonicalName, rec.Spec.GetVersion(), minVersion),
-			Component:               CloneRecord(rec),
+			Component:               store.CloneRecord(rec),
 		}, nil
 	}
 
-	return &RequirementValidationResult{
+	return &store.RequirementValidationResult{
 		IsSatisfied:             true,
 		SatisfyingComponentName: canonicalName,
 		Reason:                  "requirement satisfied",
-		Component:               CloneRecord(rec),
+		Component:               store.CloneRecord(rec),
 	}, nil
 }

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store_test
+package dependency_test
 
 import (
 	"strings"
@@ -21,7 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
-	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/dependency"
 )
 
 func TestExtractDependencies(t *testing.T) {
@@ -114,7 +114,7 @@ This is the main worker controller.
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := store.ExtractDependencies(tt.spec, tt.labels)
+			got := dependency.ExtractDependencies(tt.spec, tt.labels)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("ExtractDependencies() mismatch (-want +got):\n%s", diff)
 			}
@@ -241,7 +241,7 @@ spec:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := store.ExtractDependenciesFromManifests(tt.manifests)
+			got := dependency.ExtractDependenciesFromManifests(tt.manifests)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("ExtractDependenciesFromManifests() mismatch (-want +got):\n%s", diff)
 			}
@@ -294,7 +294,7 @@ func TestExtractDependenciesFromDescription(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := store.ExtractDependenciesFromDescription(tt.desc)
+			got := dependency.ExtractDependenciesFromDescription(tt.desc)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("ExtractDependenciesFromDescription() mismatch (-want +got):\n%s", diff)
 			}
@@ -326,7 +326,7 @@ func TestExtractDependenciesFromLabels(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := store.ExtractDependenciesFromLabels(tt.labels)
+			got := dependency.ExtractDependenciesFromLabels(tt.labels)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("ExtractDependenciesFromLabels() mismatch (-want +got):\n%s", diff)
 			}
@@ -365,7 +365,7 @@ func TestNormalizeDependencies(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := store.NormalizeDependencies(tt.rawDeps)
+			got := dependency.NormalizeDependencies(tt.rawDeps)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("NormalizeDependencies() mismatch (-want +got):\n%s", diff)
 			}

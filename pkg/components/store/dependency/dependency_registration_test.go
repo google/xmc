@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package dependency
 
 import (
 	"testing"
@@ -23,6 +23,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
+
+	"xmanager_cloud/pkg/components/store"
 )
 
 const (
@@ -32,9 +34,9 @@ const (
 
 // registrationCatalog returns a catalog with two registered components, a soft-deleted one, a nil
 // entry, and a "redpanda" -> "ingestion-gateway" edge so that the reverse edge would close a cycle.
-func registrationCatalog() map[string]*ComponentRecord {
+func registrationCatalog() map[string]*store.ComponentRecord {
 	now := time.Now().UTC()
-	return map[string]*ComponentRecord{
+	return map[string]*store.ComponentRecord{
 		"redpanda": {ComponentID: 11, Name: "redpanda", Dependencies: []string{"ingestion-gateway"}},
 		"auth":     {ComponentID: 22, Name: "auth"},
 		"gone":     {ComponentID: 33, Name: "gone", DeleteTime: &now},
@@ -112,7 +114,7 @@ func TestDependencyNotRegisteredError(t *testing.T) {
 	if want := DependencyNotFoundMessagePrefix + ` component "ingestion" depends on "redpanda", which is not registered`; st.Code() != codes.FailedPrecondition || st.Message() != want {
 		t.Errorf("status = %v %q, want %v %q", st.Code(), st.Message(), codes.FailedPrecondition, want)
 	}
-	want := []any{&errdetails.ErrorInfo{Reason: "DEPENDENCY_NOT_REGISTERED", Domain: ErrorInfoDomain, Metadata: map[string]string{"operation": "SetComponentIntent", "component": "ingestion", "dependency": "redpanda"}}}
+	want := []any{&errdetails.ErrorInfo{Reason: "DEPENDENCY_NOT_REGISTERED", Domain: store.ErrorInfoDomain, Metadata: map[string]string{"operation": "SetComponentIntent", "component": "ingestion", "dependency": "redpanda"}}}
 	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
 		t.Errorf("details mismatch (-want +got):\n%s", diff)
 	}

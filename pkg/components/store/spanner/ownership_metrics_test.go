@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/ownership"
 	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -31,10 +32,10 @@ import (
 
 var (
 	allAdoptionReasons = []string{
-		store.AdoptionReasonInitial,
-		store.AdoptionReasonSameClusterRecreate,
-		store.AdoptionReasonEpochTakeover,
-		store.AdoptionReasonUnsourcedClaim,
+		ownership.AdoptionReasonInitial,
+		ownership.AdoptionReasonSameClusterRecreate,
+		ownership.AdoptionReasonEpochTakeover,
+		ownership.AdoptionReasonUnsourcedClaim,
 	}
 	allConflictReasons = []string{
 		store.ReasonStaleGeneration,
@@ -49,7 +50,7 @@ var (
 func adoptionCounts() map[string]float64 {
 	counts := make(map[string]float64, len(allAdoptionReasons))
 	for _, r := range allAdoptionReasons {
-		counts[r] = testutil.ToFloat64(store.OwnerAdoptionsCounter(r))
+		counts[r] = testutil.ToFloat64(ownership.OwnerAdoptionsCounter(r))
 	}
 	return counts
 }
@@ -57,7 +58,7 @@ func adoptionCounts() map[string]float64 {
 func conflictCounts() map[string]float64 {
 	counts := make(map[string]float64, len(allConflictReasons))
 	for _, r := range allConflictReasons {
-		counts[r] = testutil.ToFloat64(store.SourceConflictsCounter(r))
+		counts[r] = testutil.ToFloat64(ownership.SourceConflictsCounter(r))
 	}
 	return counts
 }
@@ -118,7 +119,7 @@ func TestSourceLastSeenTime_Parity(t *testing.T) {
 
 			// An unchanged replay writes nothing, so it neither refreshes nor reports a new
 			// timestamp: an aged owner stays aged.
-			aged := time.Now().UTC().Add(-store.OwnerStaleThreshold - time.Minute).Truncate(time.Microsecond)
+			aged := time.Now().UTC().Add(-ownership.OwnerStaleThreshold - time.Minute).Truncate(time.Microsecond)
 			if err := spannerstore.SetSourceLastSeenTimeForTest(ctx, s, "seen-comp", aged); err != nil {
 				t.Fatalf("SetSourceLastSeenTimeForTest() error = %v", err)
 			}
@@ -207,7 +208,7 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 	if _, err := s.SetSourcedComponentIntent(ctx, "metrics-comp", intentSpec("v1.0.0"), nil, srcV1); err != nil {
 		t.Fatalf("SetSourcedComponentIntent(initial) error = %v", err)
 	}
-	assertAdoptionIncremented(t, beforeAdoptions, store.AdoptionReasonInitial)
+	assertAdoptionIncremented(t, beforeAdoptions, ownership.AdoptionReasonInitial)
 
 	// Unchanged replay does not increment adoptions.
 	beforeAdoptions = adoptionCounts()
@@ -262,7 +263,7 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 	if _, err := s.SetSourcedComponentIntent(ctx, "metrics-comp", intentSpec("v1.0.0"), nil, srcCAS); err != nil {
 		t.Fatalf("SetSourcedComponentIntent(CAS) error = %v", err)
 	}
-	assertAdoptionIncremented(t, beforeAdoptions, store.AdoptionReasonSameClusterRecreate)
+	assertAdoptionIncremented(t, beforeAdoptions, ownership.AdoptionReasonSameClusterRecreate)
 
 	// Unsourced record claimed by a sourced request increments unsourced_claim.
 	if _, err := s.SetComponentIntent(ctx, "metrics-unsourced", intentSpec("v1.0.0"), nil, 1); err != nil {
@@ -272,7 +273,7 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 	if _, err := s.SetSourcedComponentIntent(ctx, "metrics-unsourced", intentSpec("v1.0.0"), nil, srcCAS); err != nil {
 		t.Fatalf("SetSourcedComponentIntent(unsourced_claim) error = %v", err)
 	}
-	assertAdoptionIncremented(t, beforeAdoptions, store.AdoptionReasonUnsourcedClaim)
+	assertAdoptionIncremented(t, beforeAdoptions, ownership.AdoptionReasonUnsourcedClaim)
 
 	// A fence takeover reassigns both components and starts a 15-minute adoption grace period:
 	// they are not stale now, but are once the grace period has ended without an adoption.
@@ -283,7 +284,7 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 	if g := readOwnershipGauges(ctx, t, s, now); g.FenceEpoch != dr.Epoch || g.StaleOwners != 0 {
 		t.Errorf("ReadOwnershipGauges() after takeover = (epoch %v, stale %v), want (%v, 0)", g.FenceEpoch, g.StaleOwners, dr.Epoch)
 	}
-	if g := readOwnershipGauges(ctx, t, s, now.Add(store.OwnerStaleThreshold+time.Minute)); g.StaleOwners != 2 {
+	if g := readOwnershipGauges(ctx, t, s, now.Add(ownership.OwnerStaleThreshold+time.Minute)); g.StaleOwners != 2 {
 		t.Errorf("ReadOwnershipGauges() after the grace period StaleOwners = %v, want 2", g.StaleOwners)
 	}
 
@@ -292,7 +293,7 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 	if _, err := s.SetSourcedComponentIntent(ctx, "metrics-comp", intentSpec("v1.0.0"), nil, drSrc); err != nil {
 		t.Fatalf("SetSourcedComponentIntent(epoch_takeover) error = %v", err)
 	}
-	assertAdoptionIncremented(t, beforeAdoptions, store.AdoptionReasonEpochTakeover)
+	assertAdoptionIncremented(t, beforeAdoptions, ownership.AdoptionReasonEpochTakeover)
 	if _, err := s.SetSourcedComponentIntent(ctx, "metrics-unsourced", intentSpec("v1.0.0"), nil, drSrc); err != nil {
 		t.Fatalf("SetSourcedComponentIntent(epoch_takeover 2) error = %v", err)
 	}
@@ -302,7 +303,7 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 	if g := readOwnershipGauges(ctx, t, s, time.Now().UTC()); g.StaleOwners != 0 {
 		t.Errorf("ReadOwnershipGauges() after adoption StaleOwners = %v, want 0", g.StaleOwners)
 	}
-	if err := spannerstore.SetSourceLastSeenTimeForTest(ctx, s, "metrics-comp", time.Now().UTC().Add(-store.OwnerStaleThreshold-time.Minute)); err != nil {
+	if err := spannerstore.SetSourceLastSeenTimeForTest(ctx, s, "metrics-comp", time.Now().UTC().Add(-ownership.OwnerStaleThreshold-time.Minute)); err != nil {
 		t.Fatalf("SetSourceLastSeenTimeForTest() error = %v", err)
 	}
 	if g := readOwnershipGauges(ctx, t, s, time.Now().UTC()); g.StaleOwners != 1 {

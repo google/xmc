@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/ownership"
 )
 
 // fakeGaugeReader returns gauges or err and counts its reads.
@@ -57,9 +58,9 @@ func (b *blockingGaugeReader) ReadOwnershipGauges(ctx context.Context, _ time.Ti
 // ownershipGaugeValues returns the epoch, fence last-seen timestamp and stale owner gauge values.
 func ownershipGaugeValues() []float64 {
 	return []float64{
-		testutil.ToFloat64(store.ClusterFenceEpochGauge()),
-		testutil.ToFloat64(store.ClusterFenceLastSeenGauge()),
-		testutil.ToFloat64(store.ComponentOwnerStaleGauge()),
+		testutil.ToFloat64(ownership.ClusterFenceEpochGauge()),
+		testutil.ToFloat64(ownership.ClusterFenceLastSeenGauge()),
+		testutil.ToFloat64(ownership.ComponentOwnerStaleGauge()),
 	}
 }
 
@@ -81,7 +82,7 @@ func TestCollectOwnershipMetrics(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Start from known values so that the error case can assert they are kept.
-			store.RecordOwnershipGauges(declared)
+			ownership.RecordOwnershipGauges(declared)
 			err := CollectOwnershipMetrics(ctx, tc.reader, now)
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Fatalf("CollectOwnershipMetrics() error = %v, wantErr %v", err, tc.wantErr)
@@ -113,7 +114,7 @@ func TestRunOwnershipMetricsCollector_CollectsImmediatelyAndStopsOnCancel(t *tes
 	case <-time.After(10 * time.Second):
 		t.Fatal("RunOwnershipMetricsCollector() did not return after ctx was canceled")
 	}
-	if got := testutil.ToFloat64(store.ClusterFenceEpochGauge()); got != 9 {
+	if got := testutil.ToFloat64(ownership.ClusterFenceEpochGauge()); got != 9 {
 		t.Errorf("xmc_cms_cluster_fence_epoch = %v, want 9", got)
 	}
 }

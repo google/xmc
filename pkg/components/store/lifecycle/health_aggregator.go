@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package lifecycle
 
 import (
 	"encoding/base64"
@@ -26,6 +26,7 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/naming"
+	"xmanager_cloud/pkg/components/store"
 )
 
 const (
@@ -40,7 +41,7 @@ type filterPredicate struct {
 }
 
 // AggregatePlatformHealth filters components, computes health metrics, and paginates results per AIP-158.
-func AggregatePlatformHealth(components map[string]*ComponentRecord, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
+func AggregatePlatformHealth(components map[string]*store.ComponentRecord, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
 	effectivePageSize, err := NormalizePageSize(pageSize)
 	if err != nil {
 		return nil, err
@@ -64,7 +65,7 @@ func AggregatePlatformHealth(components map[string]*ComponentRecord, filter stri
 	pageRecords, nextToken := slicePage(matching, offset, effectivePageSize)
 	protoComponents := make([]*componentspb.Component, len(pageRecords))
 	for i, rec := range pageRecords {
-		protoComponents[i] = ToProtoComponent(rec)
+		protoComponents[i] = store.ToProtoComponent(rec)
 	}
 
 	return &componentspb.GetPlatformHealthResponse{
@@ -111,7 +112,7 @@ func parsePageToken(token string) (int, error) {
 	return offset, nil
 }
 
-func slicePage(items []*ComponentRecord, offset, pageSize int) ([]*ComponentRecord, string) {
+func slicePage(items []*store.ComponentRecord, offset, pageSize int) ([]*store.ComponentRecord, string) {
 	if offset >= len(items) {
 		return nil, ""
 	}
@@ -123,12 +124,12 @@ func slicePage(items []*ComponentRecord, offset, pageSize int) ([]*ComponentReco
 	return items[offset:end], nextToken
 }
 
-func filterAndCountComponents(components map[string]*ComponentRecord, predicates []filterPredicate) ([]*ComponentRecord, int32, int32) {
-	var matching []*ComponentRecord
+func filterAndCountComponents(components map[string]*store.ComponentRecord, predicates []filterPredicate) ([]*store.ComponentRecord, int32, int32) {
+	var matching []*store.ComponentRecord
 	var healthy, unhealthy int32
 
 	for _, rec := range components {
-		if IsDeletedRecord(rec) || !matchesAllPredicates(rec, predicates) {
+		if store.IsDeletedRecord(rec) || !matchesAllPredicates(rec, predicates) {
 			continue
 		}
 		matching = append(matching, rec)
@@ -141,7 +142,7 @@ func filterAndCountComponents(components map[string]*ComponentRecord, predicates
 	return matching, healthy, unhealthy
 }
 
-func isHealthyComponent(rec *ComponentRecord) bool {
+func isHealthyComponent(rec *store.ComponentRecord) bool {
 	if rec == nil {
 		return false
 	}
@@ -151,7 +152,7 @@ func isHealthyComponent(rec *ComponentRecord) bool {
 	return rec.Status == nil || rec.Status.Ready
 }
 
-func matchesAllPredicates(rec *ComponentRecord, predicates []filterPredicate) bool {
+func matchesAllPredicates(rec *store.ComponentRecord, predicates []filterPredicate) bool {
 	for _, p := range predicates {
 		if !matchesPredicate(rec, p) {
 			return false
@@ -160,7 +161,7 @@ func matchesAllPredicates(rec *ComponentRecord, predicates []filterPredicate) bo
 	return true
 }
 
-func matchesPredicate(rec *ComponentRecord, p filterPredicate) bool {
+func matchesPredicate(rec *store.ComponentRecord, p filterPredicate) bool {
 	switch p.key {
 	case "state":
 		return matchesStatePredicate(rec.State, p.value)
@@ -188,7 +189,7 @@ func matchesStatePredicate(state componentspb.ComponentState, expected string) b
 	return false
 }
 
-func matchesTypePredicate(rec *ComponentRecord, expected string) bool {
+func matchesTypePredicate(rec *store.ComponentRecord, expected string) bool {
 	if rec.Spec == nil {
 		return false
 	}
@@ -204,7 +205,7 @@ func matchesTypePredicate(rec *ComponentRecord, expected string) bool {
 	return false
 }
 
-func matchesReadyPredicate(rec *ComponentRecord, expected string) bool {
+func matchesReadyPredicate(rec *store.ComponentRecord, expected string) bool {
 	expectedBool, err := strconv.ParseBool(strings.TrimSpace(expected))
 	if err != nil {
 		return false
