@@ -17,7 +17,10 @@ package linter_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"xmanager_cloud/pkg/components/linter"
 )
@@ -150,4 +153,151 @@ staticChecks:
 			t.Fatalf("LoadRules() expected error for empty path, got nil")
 		}
 	})
+}
+
+func TestParseRules_OrRequirements(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		yamlData  string
+		wantCfg   *linter.RulesConfig
+		wantErrIn string
+	}{
+		{
+			name: "valid 1-level or requirement and single requirement",
+			yamlData: `
+compatibilityMatrix:
+  componentDependencies:
+    - component: ingestion-gateway
+      componentVersion: ">=0.1.0"
+      requires:
+        - or:
+            - component: redpanda
+              version: ">=0.1.0"
+            - component: pubsub
+              version: ">=0.1.0"
+          reason: "Either Redpanda or Pub/Sub is required"
+        - component: clickhouse
+          version: ">=0.1.0"
+`,
+			wantCfg: &linter.RulesConfig{
+				CompatibilityMatrix: linter.CompatibilityMatrixConfig{
+					ComponentDependencies: []linter.ComponentDependencyRule{
+						{
+							Component:        "ingestion-gateway",
+							ComponentVersion: ">=0.1.0",
+							Requires: []linter.DependencyRequirement{
+								{
+									Reason: "Either Redpanda or Pub/Sub is required",
+									Or: []linter.DependencyRequirement{
+										{Component: "redpanda", Version: ">=0.1.0"},
+										{Component: "pubsub", Version: ">=0.1.0"},
+									},
+								},
+								{
+									Component: "clickhouse",
+									Version:   ">=0.1.0",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "rejects setting both component and or",
+			yamlData: `
+compatibilityMatrix:
+  componentDependencies:
+    - component: ingestion-gateway
+      requires:
+        - component: redpanda
+          or:
+            - component: pubsub
+`,
+			wantErrIn: "cannot specify both component",
+		},
+		{
+			name: "rejects top-level version when or is used",
+			yamlData: `
+compatibilityMatrix:
+  componentDependencies:
+    - component: ingestion-gateway
+      requires:
+        - version: ">=0.1.0"
+          or:
+            - component: redpanda
+            - component: pubsub
+`,
+			wantErrIn: "cannot specify top-level version",
+		},
+		{
+			name: "rejects empty requirement with neither component nor or",
+			yamlData: `
+compatibilityMatrix:
+  componentDependencies:
+    - component: ingestion-gateway
+      requires:
+        - reason: "missing component and or"
+`,
+			wantErrIn: "must specify either component or a non-empty or list",
+		},
+		{
+			name: "rejects empty or list",
+			yamlData: `
+compatibilityMatrix:
+  componentDependencies:
+    - component: ingestion-gateway
+      requires:
+        - or: []
+`,
+			wantErrIn: "must specify either component or a non-empty or list",
+		},
+		{
+			name: "rejects nested or inside or alternative",
+			yamlData: `
+compatibilityMatrix:
+  componentDependencies:
+    - component: ingestion-gateway
+      requires:
+        - or:
+            - component: redpanda
+            - or:
+                - component: pubsub
+`,
+			wantErrIn: "nested or is not supported",
+		},
+		{
+			name: "rejects or alternative with empty component",
+			yamlData: `
+compatibilityMatrix:
+  componentDependencies:
+    - component: ingestion-gateway
+      requires:
+        - or:
+            - version: ">=0.1.0"
+`,
+			wantErrIn: "or alternative in dependency requirement for \"ingestion-gateway\" must specify a non-empty component",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := linter.ParseRules([]byte(tc.yamlData))
+			if tc.wantErrIn != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErrIn) {
+					t.Fatalf("ParseRules() error = %v, want substring %q", err, tc.wantErrIn)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseRules() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.wantCfg, got); diff != "" {
+				t.Errorf("ParseRules() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
