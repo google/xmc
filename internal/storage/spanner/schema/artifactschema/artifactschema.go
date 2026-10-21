@@ -174,12 +174,11 @@ var (
 				Indexed:      false,
 			},
 			tagsTableField: {
-				Name:            tagsTableField,
-				SelectSQLString: safesql.New("a.Tags"),
-				QueryLiteral:    safesql.New("UNNEST(a.Tags)"),
-				Type:            filtervisitor.ArrayType(&filtervisitor.String),
-				Selectable:      true,
-				Indexed:         false,
+				Name:         tagsTableField,
+				QueryLiteral: safesql.New("a.Tags"),
+				Type:         filtervisitor.ArrayType(&filtervisitor.String),
+				Selectable:   true,
+				Indexed:      false,
 			},
 			notesTableField: {
 				Name:         notesTableField,
