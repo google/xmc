@@ -42,6 +42,7 @@ var (
 )
 
 type cliLoginRequest struct {
+	mode          string
 	port          int
 	state         string
 	codeChallenge string
@@ -116,11 +117,11 @@ func headerAbsentOrEqual(r *http.Request, name, want string) bool {
 }
 
 func parseCLILoginRequest(q url.Values) (cliLoginRequest, error) {
-	params, err := singleValues(q, "port", "state", "code_challenge", "code_challenge_method", "login_hint")
+	params, err := singleValues(q, "port", "mode", "state", "code_challenge", "code_challenge_method", "login_hint")
 	if err != nil {
 		return cliLoginRequest{}, err
 	}
-	port, err := parseCLILoopbackPort(params["port"])
+	mode, port, err := parseCLIDelivery(params["port"], params["mode"])
 	if err != nil {
 		return cliLoginRequest{}, err
 	}
@@ -136,7 +137,21 @@ func parseCLILoginRequest(q url.Values) (cliLoginRequest, error) {
 	if err := validateLoginHint(params["login_hint"]); err != nil {
 		return cliLoginRequest{}, err
 	}
-	return cliLoginRequest{port: port, state: params["state"], codeChallenge: params["code_challenge"], loginHint: params["login_hint"]}, nil
+	return cliLoginRequest{mode: mode, port: port, state: params["state"], codeChallenge: params["code_challenge"], loginHint: params["login_hint"]}, nil
+}
+
+func parseCLIDelivery(rawPort, mode string) (string, int, error) {
+	if (rawPort == "") == (mode == "") {
+		return "", 0, errors.New("exactly one of port and mode=manual is required")
+	}
+	if mode == "" {
+		port, err := parseCLILoopbackPort(rawPort)
+		return cliLoginModeLoopback, port, err
+	}
+	if mode != cliLoginModeManual {
+		return "", 0, errors.New("mode must be manual")
+	}
+	return cliLoginModeManual, 0, nil
 }
 
 func singleValues(q url.Values, names ...string) (map[string]string, error) {
@@ -175,7 +190,7 @@ func (a *Authenticator) setCLILoginCookie(w http.ResponseWriter, r *http.Request
 		Port:           req.port,
 		State:          req.state,
 		CodeChallenge:  req.codeChallenge,
-		Mode:           cliLoginModeLoopback,
+		Mode:           req.mode,
 		OAuthStateHash: hashOAuthState(oauthState),
 		ExpiresAt:      now.Add(cliLoginTicketTTL).Unix(),
 	})

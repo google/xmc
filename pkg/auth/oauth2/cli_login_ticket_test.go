@@ -46,6 +46,10 @@ func TestOpenCLILoginTicketRejects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sealSigned() failed: %v", err)
 	}
+	confirmationAudienceToken, err := sealSigned([]byte(loginTestSecret), cliConfirmationAudience, ticket, ticket.ExpiresAt)
+	if err != nil {
+		t.Fatalf("sealSigned(cliConfirmationAudience) failed: %v", err)
+	}
 	noneToken, err := jwt.NewWithClaims(jwt.SigningMethodNone, signedClaims[cliLoginTicket]{
 		Payload: ticket,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -71,6 +75,7 @@ func TestOpenCLILoginTicketRejects(t *testing.T) {
 		{name: "tampered payload", sealed: parts[0] + "." + string(tampered) + "." + parts[2], now: time.Now()},
 		{name: "signature from another ticket", sealed: parts[0] + "." + parts[1] + "." + otherParts[2], now: time.Now()},
 		{name: "wrong audience", sealed: wrongAudienceToken, now: time.Now()},
+		{name: "confirmation audience", sealed: confirmationAudienceToken, now: time.Now()},
 		{name: "alg none rejected", sealed: noneToken, now: time.Now()},
 		{name: "expired", sealed: sealed, now: time.Now().Add(cliLoginTicketTTL + time.Second), expired: true},
 	}

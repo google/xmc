@@ -28,6 +28,7 @@ import (
 const (
 	cliLoginTicketAudience = "xmanager-cloud-cli-login"
 	cliLoginModeLoopback   = "loopback"
+	cliLoginModeManual     = "manual"
 )
 
 var (

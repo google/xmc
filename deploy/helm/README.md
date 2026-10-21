@@ -110,13 +110,29 @@ so no OAuth client changes are needed. The callback applies the
 [sign-in identity checks](#sign-in-identity-checks) and
 [deployment admission](#deployment-admission), then hands the CLI a one-time code
 through its `127.0.0.1` listener. Codes live in the `CliLoginCodes` Spanner table
-(migration 016) for at most 60 seconds.
+(migration 016) for at most 60 seconds (120 seconds in manual mode).
 
 `/api/cli/login` rejects cross-site web navigations and embedded frames: browsers that
 report fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`
 (note that links opened from desktop apps or pasted URLs also send `Sec-Fetch-Site: none`,
 and browsers that omit these headers or use plain-HTTP non-localhost origins are not
 covered by fetch metadata).
+
+Over SSH, or on a machine without a display, `xmanager login --no-browser` (also chosen
+automatically) uses manual mode: the CLI prints a `/api/cli/login?mode=manual` URL
+for the user to open in a browser on any device. After sign-in and admission, the
+callback shows a confirmation page that names the account and warns the user to
+continue only if they started `xmanager login --no-browser` themselves. Only when the
+user selects **Continue** (a same-origin `POST /api/cli/code`, with admission
+checked again) does the server mint a code, valid for 120 seconds and shown only
+in the page body, never in a URL. The user pastes it into the terminal. Each
+confirmation page works once (**Cancel** uses it up too) and for at most 5
+minutes. A user can still be tricked into opening an attacker's link, confirming,
+and handing over the code (consent phishing). This residual risk is the same as
+for `gcloud auth login --no-browser`; the confirmation page and the code page warn
+against it. The confirmation is also not bound to the browser: for its 5 minutes,
+anyone who obtains the page's form value can mint the code once, which helps only
+an attacker who also holds the PKCE verifier, that is, one who started the login.
 
 The CLI then exchanges the code and its PKCE verifier on `/api/cli/token` for a
 CLI session token, and sends the browser to `/api/cli/success` so the code leaves

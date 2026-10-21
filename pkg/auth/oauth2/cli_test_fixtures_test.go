@@ -16,6 +16,7 @@ package oauth2
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"sync"
 	"testing"
@@ -110,6 +111,14 @@ func baseCLITicket(oauthState string) cliLoginTicket {
 	}
 }
 
+// baseCLIManualTicket is a pending manual login bound to oauthState.
+func baseCLIManualTicket(oauthState string) cliLoginTicket {
+	ticket := baseCLITicket(oauthState)
+	ticket.Port = 0
+	ticket.Mode = cliLoginModeManual
+	return ticket
+}
+
 func mustSealCLILoginTicket(t *testing.T, a *Authenticator, ticket cliLoginTicket) string {
 	t.Helper()
 	sealed, err := a.sealCLILoginTicket(ticket)
@@ -126,6 +135,41 @@ func newCLICallbackRequest(query, cliCookie string) *http.Request {
 	return newCallbackRequest(query, &http.Cookie{Name: cliLoginCookieName, Value: cliCookie})
 }
 
+// cliPageResult is the comparable outcome of a CLI login response to the browser.
+type cliPageResult struct {
+	Status                       int
+	CacheControl, ReferrerPolicy string
+	// CSP is the Content-Security-Policy set by the handler; HTML pages deny framing.
+	CSP      string
+	Location string
+	// Title is the <h1> heading of an HTML page.
+	Title string
+}
+
+// cliPage is an HTML page with title, served with status.
+func cliPage(status int, title string) cliPageResult {
+	return cliPageResult{Status: status, CacheControl: "no-store", ReferrerPolicy: "no-referrer", CSP: "frame-ancestors 'none'; form-action 'self'", Title: title}
+}
+
+// cliRedirect is a redirect to location.
+func cliRedirect(location string) cliPageResult {
+	return cliPageResult{Status: http.StatusFound, CacheControl: "no-store", ReferrerPolicy: "no-referrer", Location: location}
+}
+
+// readCLIPage reads the outcome of resp and returns it with the body.
+func readCLIPage(resp *http.Response) (cliPageResult, string) {
+	body, _ := io.ReadAll(resp.Body)
+	return cliPageResult{
+		Status:         resp.StatusCode,
+		CacheControl:   resp.Header.Get("Cache-Control"),
+		ReferrerPolicy: resp.Header.Get("Referrer-Policy"),
+		CSP:            resp.Header.Get("Content-Security-Policy"),
+		Location:       resp.Header.Get("Location"),
+		Title:          between(string(body), "<h1>", "</h1>"),
+	}, string(body)
+}
+
+// withFailingRandom makes randReader fail for the rest of the test.
 func withFailingRandom(t *testing.T) {
 	t.Helper()
 	orig := randReader

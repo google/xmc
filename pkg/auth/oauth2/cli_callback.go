@@ -74,7 +74,7 @@ func (a *Authenticator) takeCLILoginTicket(w http.ResponseWriter, r *http.Reques
 		logging.Warn(r.Context(), "[CLI Login] Ignoring cli_login cookie", "error", err)
 		return cliLoginTicket{}, false
 	}
-	if ticket.Mode != cliLoginModeLoopback || !ticket.boundTo(oauthState) {
+	if (ticket.Mode != cliLoginModeLoopback && ticket.Mode != cliLoginModeManual) || !ticket.boundTo(oauthState) {
 		logging.Warn(r.Context(), "[CLI Login] Ignoring cli_login cookie issued for another login")
 		return cliLoginTicket{}, false
 	}
@@ -85,13 +85,13 @@ func (a *Authenticator) handleCLICallback(ctx context.Context, w http.ResponseWr
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		logging.Warn(ctx, "[CLI Login] Identity provider returned no code", "idp_error", r.URL.Query().Get("error"))
-		redirectToCLILoopback(w, r, ticket, url.Values{"error": {cliErrorAccessDenied}})
+		failCLILogin(w, r, ticket, cliErrorAccessDenied)
 		return
 	}
 	userInfo, err := a.OAuthProvider.ExchangeAndGetUserInfo(ctx, r, code)
 	if err != nil {
 		logging.Error(ctx, "[CLI Login] Failed to get user info", "error", err)
-		redirectToCLILoopback(w, r, ticket, url.Values{"error": {cliErrorServerError}})
+		failCLILogin(w, r, ticket, cliErrorServerError)
 		return
 	}
 	a.completeCLILogin(ctx, w, r, ticket, userInfo)
@@ -101,15 +101,19 @@ func (a *Authenticator) completeCLILogin(ctx context.Context, w http.ResponseWri
 	identity, err := a.admitLogin(ctx, userInfo)
 	if errors.Is(err, errNotAdmitted) {
 		logging.Warn(ctx, "[CLI Login] Access forbidden: user is not admitted", "email", identity.email, "error", err)
-		redirectToCLILoopback(w, r, ticket, url.Values{"error": {cliErrorAccessDenied}})
+		failCLILogin(w, r, ticket, cliErrorAccessDenied)
 		return
 	}
 	if err != nil {
 		logging.Error(ctx, "[CLI Login] Authorization pipeline check failed", "error", err)
-		redirectToCLILoopback(w, r, ticket, url.Values{"error": {cliErrorServerError}})
+		failCLILogin(w, r, ticket, cliErrorServerError)
 		return
 	}
-	code, err := a.issueCLILoginCode(ctx, identity, ticket.CodeChallenge, time.Now())
+	if ticket.Mode == cliLoginModeManual {
+		a.askCLIManualConfirmation(ctx, w, identity, ticket.CodeChallenge, time.Now())
+		return
+	}
+	code, err := a.issueCLILoginCode(ctx, identity, ticket.CodeChallenge, cliLoopbackCodeTTL, time.Now())
 	if err != nil {
 		logging.Error(ctx, "[CLI Login] Failed to issue login code", "email", identity.email, "error", err)
 		redirectToCLILoopback(w, r, ticket, url.Values{"error": {cliErrorServerError}})
@@ -118,12 +122,20 @@ func (a *Authenticator) completeCLILogin(ctx context.Context, w http.ResponseWri
 	redirectToCLILoopback(w, r, ticket, url.Values{"code": {code}})
 }
 
-func (a *Authenticator) issueCLILoginCode(ctx context.Context, identity loginIdentity, codeChallenge string, now time.Time) (string, error) {
+func failCLILogin(w http.ResponseWriter, r *http.Request, ticket cliLoginTicket, errCode string) {
+	if ticket.Mode == cliLoginModeManual {
+		writeCLIManualError(w, errCode)
+		return
+	}
+	redirectToCLILoopback(w, r, ticket, url.Values{"error": {errCode}})
+}
+
+func (a *Authenticator) issueCLILoginCode(ctx context.Context, identity loginIdentity, codeChallenge string, ttl time.Duration, now time.Time) (string, error) {
 	code, hash, err := newCLILoginCode()
 	if err != nil {
 		return "", err
 	}
-	record := CLILoginCode{Hash: hash, Email: identity.email, Name: identity.name, CodeChallenge: codeChallenge, ExpiresAt: now.Add(cliLoopbackCodeTTL)}
+	record := CLILoginCode{Hash: hash, Email: identity.email, Name: identity.name, CodeChallenge: codeChallenge, ExpiresAt: now.Add(ttl)}
 	if err := a.cliCodes.Save(ctx, record); err != nil {
 		return "", err
 	}
