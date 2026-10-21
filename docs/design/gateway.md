@@ -116,7 +116,7 @@ All standard stateless services and in-cluster caching workloads run on GKE:
    - Path `/v1/*` routes API requests to `experiment-state-server-service` (ESS HTTP API) for fetching dynamic experiment lists, user profiles, etc.
 4. **Authentication**:
    - Unauthenticated users are redirected to **Google Accounts** for OAuth2 consent.
-   - Once authenticated, the browser exchanges codes for an ID token, establishing a secure session cached in the in-cluster Redis instance.
+   - Once authenticated, the backend issues a signed, stateless session token in an HTTP-only cookie.
 
 ---
 
@@ -133,8 +133,8 @@ The command-line interface (CLI) client bypasses the web UI entirely, communicat
    - **HTTP Requests** targeting `/v1/*` are routed to the ESS HTTP endpoint.
    - **gRPC Requests** (such as `/experiment.ExperimentService/*`) are routed via `GRPCRoute` directly to the gRPC port of the `experiment-state-server`.
 3. **Authentication**:
-   - The CLI authenticates by attaching a service account credential (GCP IAM Service Account Key or federated OIDC token) to the call metadata.
-   - The ESS server parses and validates this token against configured GCP IAM roles before processing any API calls.
+   - The CLI attaches a bearer token to the call metadata: a Google-signed ID token (for example from a service account's `generateIdToken`), a token from the configured OIDC provider, or an XMC session token.
+   - Each gRPC service verifies the token, rejects Google and OIDC tokens whose `email_verified` claim is false (Google tokens must carry the claim), and then runs the same deployment admission check as the HTTP API (see [Client Authorization](#client-authorization)) before processing the call.
 
 ---
 
@@ -158,6 +158,9 @@ Each pod that interacts with Cloud Spanner or other GCP APIs runs under a dedica
 - **Resource Access**: The GCP Service Account is assigned specific IAM roles (e.g., Spanner Database User, Secret Manager Secret Accessor) providing secure, passwordless resource access.
 
 ### Client Authorization
-When the `experiment-state-server` receives authentication tokens (from either browser session cookies or CLI JWT metadata):
-- It uses Google IAM APIs to verify the calling identity's permissions.
-- Access is granted only if the identity possesses the authorized GCP IAM Role (e.g., `roles/oauth2PrototypeUser` or equivalent custom role configured in the Helm values).
+Every authenticated caller, whether it arrives with a browser session cookie, an HTTP bearer token or gRPC metadata, must be admitted to the deployment before any per-experiment ACL is evaluated. HTTP and gRPC share one admission pipeline (`oauth2.Authenticator.IsUserAuthorized`), which admits the caller if it matches, in order:
+1. the email allowlist (`ALLOWED_EMAILS`),
+2. the domain allowlist (`ALLOWED_DOMAINS`), or
+3. a direct binding of the authorized IAM role (`AUTHORIZED_IAM_ROLE`, `roles/viewer` by default) on the deployment project for the caller's `user:`, `serviceAccount:` or `domain:` principal. Owner, editor and group bindings do not satisfy this check.
+
+Callers that authenticate but are not admitted receive `PERMISSION_DENIED` on gRPC and `403` on HTTP. With `DISABLE_AUTHENTICATION=true` (local development only), gRPC skips admission. The Component Manager Service additionally admits the workload service account that `xmc-bridge` runs as (`ess_service_account`); no other service admits it by identity.

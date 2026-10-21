@@ -91,6 +91,7 @@ func main() {
 		oauthCfg.GCPProjectID = cfg.ProjectID
 	}
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
+	defer authenticator.Close()
 
 	deps := initGRPCServer(ctx, cfg, *oauthCfg, authenticator)
 	defer func() {
@@ -186,7 +187,7 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		logging.Fatal(ctx, "Failed to create health checker", "error", err)
 	}
 
-	authorizer := initAuthorizer(ctx, oauthCfg)
+	authorizer := initAuthorizer(ctx, oauthCfg, auth.DeploymentAdmission(authenticator))
 	guard := NewAdminRoleGuard(AdminRoleGuardParams{
 		Authorizer:    authorizer,
 		Authenticator: authenticator,
@@ -268,7 +269,9 @@ func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Auth
 	return authenticator.SecurityMiddlewares(mux)
 }
 
-func initAuthorizer(ctx context.Context, oauthCfg oauth2.Config) auth.AuthorizerInterface {
+// initAuthorizer builds the gRPC authorizer. admission must come from the same oauth2.Authenticator
+// the HTTP middleware uses, so gRPC and HTTP admit exactly the same principals.
+func initAuthorizer(ctx context.Context, oauthCfg oauth2.Config, admission auth.AdmissionChecker) auth.AuthorizerInterface {
 	idService, err := cloudidentity.NewService(ctx, option.WithScopes(cloudidentity.CloudIdentityGroupsReadonlyScope))
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create Cloud Identity service", "error", err)
@@ -279,15 +282,15 @@ func initAuthorizer(ctx context.Context, oauthCfg oauth2.Config) auth.Authorizer
 		audiences = append(audiences, oauthCfg.ClientID)
 	}
 
-	authorizer, err := auth.NewAuthorizer(
-		ctx,
-		idService,
-		10*time.Minute,
-		1*time.Minute,
-		audiences,
-		auth.DefaultIAPIssuer,
-		[]byte(oauthCfg.JWTSecret),
-	)
+	authorizer, err := auth.NewAuthorizer(auth.AuthorizerParams{
+		IDService:     idService,
+		CacheTTL:      10 * time.Minute,
+		CacheErrorTTL: time.Minute,
+		IAPAudiences:  audiences,
+		IAPIssuer:     auth.DefaultIAPIssuer,
+		JWTSecret:     []byte(oauthCfg.JWTSecret),
+		Admission:     admission,
+	})
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create authorizer", "error", err)
 	}

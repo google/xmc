@@ -86,6 +86,7 @@ func NewAuthenticator(cfg *Config) *Authenticator {
 		return client.GetIamPolicy(ctx, req)
 	}
 	a.IDTokenValidator = idtoken.Validate
+	configureMockIfEnabled(a)
 
 	return a
 }
@@ -161,13 +162,13 @@ func (a *Authenticator) getIamPolicy(ctx context.Context) (*iampb.Policy, error)
 
 // IsUserAuthorized implements the 3-stage Hybrid Pipeline: Local Email Allowlist -> Domain Allowlist -> GCP IAM Policy Check.
 func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (bool, error) {
+	if a.Config != nil && a.Config.DisableAuthentication {
+		return true, nil
+	}
 	emailLower := strings.ToLower(strings.TrimSpace(email))
 
-	// If all allowlists and ProjectID are blank, default to open access (allow all) only if DisableAuthentication is true.
+	// If all allowlists and ProjectID are blank, fail closed unless DisableAuthentication is true.
 	if len(a.Config.AllowedEmails) == 0 && len(a.Config.AllowedDomains) == 0 && a.Config.GCPProjectID == "" {
-		if a.Config.DisableAuthentication {
-			return true, nil
-		}
 		return false, fmt.Errorf("fail-closed: AllowedEmails, AllowedDomains, and GCPProjectID are all empty; access is denied unless DISABLE_AUTHENTICATION=true")
 	}
 

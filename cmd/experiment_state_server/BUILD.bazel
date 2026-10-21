@@ -18,8 +18,6 @@ load("//:oci.bzl", "oci_image_for_service")
 go_library(
     name = "experiment_state_server_lib",
     srcs = [
-        "auth_dev.go",
-        "auth_prod.go",
         "health.go",
         "main.go",
     ],
@@ -39,7 +37,6 @@ go_library(
         "//internal/storage/spanner",
         "//internal/task_queue",
         "//pkg/auth/oauth2",
-        "//pkg/auth/oauth2/mock",
         "//pkg/components/cms",
         "//pkg/components/store",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",

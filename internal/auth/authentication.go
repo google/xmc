@@ -31,10 +31,14 @@ import (
 // validate is the function that validates the JWT. It is stubbed out for testing.
 var validate = idtoken.Validate
 
-// AuthenticateUserFromContext authenticates a user's identity from the context.
+// AuthenticateUserFromContext authenticates a user's identity from the context and then runs the
+// deployment admission check on it.
 func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
 	ident, err := a.resolveIdentity(ctx)
 	if err != nil {
+		return "", "", err
+	}
+	if err := a.admit(ctx, ident.email); err != nil {
 		return "", "", err
 	}
 	return ident.email, ident.userID, nil

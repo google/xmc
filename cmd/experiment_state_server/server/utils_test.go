@@ -86,7 +86,14 @@ func (w *testAuthorizerWrapper) AuthenticateUserFromContext(ctx context.Context)
 func createTestAuthorizer(ctx context.Context, t *testing.T) authz.AuthorizerInterface {
 	t.Helper()
 	idService := &cloudidentity.Service{}
-	authorizer, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{"test-audience"}, authz.DefaultIAPIssuer, nil)
+	authorizer, err := authz.NewAuthorizer(authz.AuthorizerParams{
+		IDService:     idService,
+		CacheTTL:      10 * time.Minute,
+		CacheErrorTTL: time.Minute,
+		IAPAudiences:  []string{"test-audience"},
+		IAPIssuer:     authz.DefaultIAPIssuer,
+		Admission:     authz.AdmitAll(),
+	})
 	if err != nil {
 		t.Fatalf("Failed to create mock authorizer: %v", err)
 	}

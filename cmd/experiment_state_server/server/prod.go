@@ -49,7 +49,6 @@ var _ apipb.ExperimentStateServiceServer = (*ProdServer)(nil)
 type ProdServer struct {
 	*Server
 	spannerClient   *spanner.Client
-	authorizer      authz.AuthorizerInterface
 	xidClient       xidgrpcpb.XidServiceClient
 	taskQueueClient *tq.Client
 	bgTaskWG        *sync.WaitGroup
@@ -70,14 +69,6 @@ func (p *ProdServer) SpannerClient() *spanner.Client {
 		return nil
 	}
 	return p.spannerClient
-}
-
-// Authorizer returns the initialized AuthorizerInterface.
-func (p *ProdServer) Authorizer() authz.AuthorizerInterface {
-	if p == nil {
-		return nil
-	}
-	return p.authorizer
 }
 
 // Close closes all underlying production client connections.
@@ -149,13 +140,24 @@ func initDashboardClient(ctx context.Context, cfg *config.Config) (*toollibs.Das
 	return toollibs.NewDashboardToolClient(dashboard_pb.NewDashboardServiceClient(conn)), conn, nil
 }
 
-func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (authz.AuthorizerInterface, error) {
+// NewGRPCAuthorizer builds a gRPC authorizer that runs admission after authenticating each caller.
+// admission is normally authz.DeploymentAdmission of the binary's HTTP oauth2.Authenticator, so
+// gRPC and HTTP admit exactly the same principals.
+func NewGRPCAuthorizer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, admission authz.AdmissionChecker) (authz.AuthorizerInterface, error) {
 	idService, err := cloudidentity.NewService(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
 	}
 	audiences := []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, audiences, cfg.IAPIssuer, []byte(oauthCfg.JWTSecret))
+	auth, err := authz.NewAuthorizer(authz.AuthorizerParams{
+		IDService:     idService,
+		CacheTTL:      10 * time.Minute,
+		CacheErrorTTL: time.Minute,
+		IAPAudiences:  audiences,
+		IAPIssuer:     cfg.IAPIssuer,
+		JWTSecret:     []byte(oauthCfg.JWTSecret),
+		Admission:     admission,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create authorizer: %w", err)
 	}
@@ -199,7 +201,9 @@ func runCleanups(cleanups []func() error) error {
 }
 
 // NewProd creates and initializes a production Server instance along with its dependencies.
-func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_ *ProdServer, retErr error) {
+// admission is the deployment admission check (normally authz.DeploymentAdmission of the binary's
+// oauth2.Authenticator) that every authenticated gRPC caller must pass.
+func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, admission authz.AdmissionChecker) (_ *ProdServer, retErr error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config cannot be nil")
 	}
@@ -228,7 +232,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}
 
-	auth, err := initAuth(ctx, cfg, oauthCfg)
+	auth, err := NewGRPCAuthorizer(ctx, cfg, oauthCfg, admission)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +289,6 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 	return &ProdServer{
 		Server:          srv,
 		spannerClient:   spannerClient,
-		authorizer:      auth,
 		xidClient:       xidClient,
 		taskQueueClient: taskQueueClient,
 		bgTaskWG:        &bgTaskWG,
