@@ -18,8 +18,9 @@ package postgres
 import (
 	"context"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/artifact"
 	"xmanager_cloud/internal/storage/postgres/dashboard"
@@ -27,6 +28,7 @@ import (
 	"xmanager_cloud/internal/storage/postgres/operation"
 	"xmanager_cloud/internal/storage/postgres/pausedtask"
 	"xmanager_cloud/internal/storage/postgres/pausestate"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 	"xmanager_cloud/internal/storage/postgres/statushistory"
 	"xmanager_cloud/internal/storage/postgres/statusmessage"
 	"xmanager_cloud/internal/storage/postgres/workunit"
@@ -48,6 +50,8 @@ var _ storage.Storage = (*Storage)(nil)
 
 // Storage implements the storage.Storage interface using PostgreSQL.
 type Storage struct {
+	// beginner starts the transactions of RunInTransaction; NewStorage sets it to the pool.
+	beginner txBeginner
 	*experimentRepository
 	*workUnitRepository
 	*artifactRepository
@@ -61,8 +65,12 @@ type Storage struct {
 }
 
 // NewStorage creates a new instance of the PostgreSQL-backed storage.
-func NewStorage() *Storage {
+func NewStorage(pool *pgxpool.Pool) (*Storage, error) {
+	if pool == nil {
+		return nil, pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrInvalidArgument, nil)
+	}
 	return &Storage{
+		beginner:                pool,
 		experimentRepository:    experiment.NewRepository(),
 		workUnitRepository:      workunit.NewRepository(),
 		artifactRepository:      artifact.NewRepository(),
@@ -73,12 +81,32 @@ func NewStorage() *Storage {
 		dashboardRepository:     dashboard.NewRepository(),
 		pauseStateRepository:    pausestate.NewRepository(),
 		pausedTaskRepository:    pausedtask.NewRepository(),
-	}
+	}, nil
 }
 
 // RunInTransaction executes the given function in a PostgreSQL read-write transaction.
 func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
-	return status.Error(codes.Unimplemented, "postgres storage: RunInTransaction is not implemented")
+	if s == nil || s.beginner == nil {
+		return pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
+	}
+	if fn == nil {
+		return pgdb.WrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
+	}
+	return runInTx(ctx, s.beginner, defaultTxRetryConfig, func(txCtx context.Context, _ pgx.Tx) error {
+		return fn(txCtx, s.newTransaction())
+	})
+}
+
+func (s *Storage) newTransaction() *storage.Transaction {
+	return &storage.Transaction{
+		WorkUnits:      s.workUnitRepository.WithTx(),
+		Experiments:    s.experimentRepository.WithTx(),
+		XIDs:           s.xidRepository.WithTx(),
+		StatusMessages: s.statusMessageRepository.WithTx(),
+		StatusHistory:  s.statusHistoryRepository.WithTx(),
+		PauseState:     s.pauseStateRepository.WithTx(),
+		PausedTasks:    s.pausedTaskRepository.WithTx(),
+	}
 }
 
 // PauseState returns the repository for global pause scheduling state.
