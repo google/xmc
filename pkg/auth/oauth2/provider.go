@@ -26,8 +26,9 @@ import (
 
 // OAuthProvider abstracts the external authentication provider interactions.
 type OAuthProvider interface {
-	// AuthCodeURL returns the authentication redirect URL for the given state.
-	AuthCodeURL(state string, r *http.Request) string
+	// AuthCodeURL returns the authentication redirect URL for the given state. opts add
+	// authorization request parameters, such as `login_hint`.
+	AuthCodeURL(state string, r *http.Request, opts ...oauth2.AuthCodeOption) string
 	// ExchangeAndGetUserInfo performs token exchange and fetches the user identity.
 	ExchangeAndGetUserInfo(ctx context.Context, r *http.Request, code string) (*GoogleUserInfo, error)
 }
@@ -38,9 +39,9 @@ type GoogleOAuthProvider struct {
 }
 
 // AuthCodeURL returns the authentication redirect URL for the given state.
-func (g *GoogleOAuthProvider) AuthCodeURL(state string, r *http.Request) string {
+func (g *GoogleOAuthProvider) AuthCodeURL(state string, r *http.Request, opts ...oauth2.AuthCodeOption) string {
 	oauthConfig := g.Authenticator.getDynamicOAuthConfig(r)
-	return oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	return oauthConfig.AuthCodeURL(state, append([]oauth2.AuthCodeOption{oauth2.AccessTypeOffline}, opts...)...)
 }
 
 // ExchangeAndGetUserInfo performs token exchange and fetches the user identity from Google userinfo API.

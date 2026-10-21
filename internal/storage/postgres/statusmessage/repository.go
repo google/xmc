@@ -19,10 +19,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
 var (
@@ -31,21 +33,23 @@ var (
 )
 
 // Repository manages persistence for status message entities in PostgreSQL.
-type Repository struct{}
+type Repository struct {
+	db pgdb.DBTX
+}
 
 // TxRepository manages transactional persistence for status message entities in PostgreSQL.
 type TxRepository struct {
-	*Repository
+	tx pgdb.DBTX
 }
 
-// NewRepository creates a new PostgreSQL StatusMessage repository instance.
-func NewRepository() *Repository {
-	return &Repository{}
+// NewRepository creates a new PostgreSQL StatusMessage repository instance bound to pool.
+func NewRepository(pool *pgxpool.Pool) *Repository {
+	return &Repository{db: pgdb.FromPool(pool)}
 }
 
-// WithTx returns a wrapper bound to a read-write transaction.
-func (r *Repository) WithTx() *TxRepository {
-	return &TxRepository{Repository: r}
+// WithTx returns a wrapper bound to the read-write transaction tx.
+func (r *Repository) WithTx(tx pgdb.DBTX) *TxRepository {
+	return &TxRepository{tx: tx}
 }
 
 // ListStatusMessages retrieves a list of status messages for an experiment or work unit.

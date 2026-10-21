@@ -208,3 +208,31 @@ func TestBuildCMSAuthorizer(t *testing.T) {
 		t.Fatalf("AuthorizeMutating() unexpected error = %v", err)
 	}
 }
+
+func TestCMSAdmission(t *testing.T) {
+	const invokerSA = "xmc-wl-sa@proj.iam.gserviceaccount.com"
+	tests := []struct {
+		name     string
+		oauthCfg *oauth.Config
+		email    string
+		want     bool
+	}{
+		{name: "admits the bridge service account", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "XMC-WL-SA@proj.iam.gserviceaccount.com", want: true},
+		{name: "admits deployment principals", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "alice@example.com", want: true},
+		{name: "rejects everyone else", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "mallory@example.com", want: false},
+		{name: "disabled authentication admits all", oauthCfg: &oauth.Config{DisableAuthentication: true}, email: "anyone@example.com", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			admission := cmsAdmission(invokerSA, oauth.NewAuthenticator(tt.oauthCfg))
+			got, err := admission.IsUserAuthorized(context.Background(), tt.email)
+			if err != nil {
+				t.Fatalf("IsUserAuthorized(%q) error = %v", tt.email, err)
+			}
+			if got != tt.want {
+				t.Errorf("IsUserAuthorized(%q) = %v, want %v", tt.email, got, tt.want)
+			}
+		})
+	}
+}

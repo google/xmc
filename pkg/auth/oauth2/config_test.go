@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestGetEnvOrFile(t *testing.T) {
@@ -508,5 +510,33 @@ func TestLoadConfigSessionTTL(t *testing.T) {
 				t.Errorf("SessionTTL = %v, want %v", cfg.SessionTTL, tc.want)
 			}
 		})
+	}
+}
+
+func TestLoadConfigCLISessionTTL(t *testing.T) {
+	t.Setenv("MOCK_AUTH", "true")
+	type result struct {
+		TTL time.Duration
+		Err bool
+	}
+	for value, want := range map[string]result{
+		"1m": {TTL: time.Minute}, "720h": {TTL: 30 * 24 * time.Hour}, "": {Err: true}, "half a day": {Err: true},
+		"59s": {Err: true}, "721h": {Err: true}, "-1h": {Err: true},
+	} {
+		t.Setenv("CLI_SESSION_TTL", value)
+		cfg, err := LoadConfig()
+		got := result{Err: err != nil}
+		if err == nil {
+			got.TTL = cfg.CLISessionTTL
+		}
+		if diff := cmp.Diff(want, got); diff != "" || (err != nil && !strings.Contains(err.Error(), "CLI_SESSION_TTL")) {
+			t.Errorf("CLI_SESSION_TTL=%q: LoadConfig() mismatch (-want +got):\n%s\nerror: %v", value, diff, err)
+		}
+	}
+	if err := os.Unsetenv("CLI_SESSION_TTL"); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err := LoadConfig(); err != nil || cfg.CLISessionTTL != 12*time.Hour {
+		t.Errorf("LoadConfig() with CLI_SESSION_TTL unset = %v, %v; want 12h", cfg, err)
 	}
 }

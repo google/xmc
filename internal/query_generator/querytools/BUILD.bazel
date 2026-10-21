@@ -15,6 +15,7 @@ go_library(
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filtervisitor",
         "//internal/logging",
+        "//internal/query_generator/dialect/spanner",
         "//internal/query_generator/equalityvisitor",
         "//internal/query_generator/filter",
         "//internal/safesql",

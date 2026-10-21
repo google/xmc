@@ -19,6 +19,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,9 +35,59 @@ var randReader io.Reader = rand.Reader
 
 // GoogleUserInfo holds fields returned by OpenID Connect userinfo endpoint.
 type GoogleUserInfo struct {
-	Email   string `json:"email"`
-	Name    string `json:"name"`
-	Picture string `json:"picture"`
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+	Name          string `json:"name"`
+	Picture       string `json:"picture"`
+}
+
+// errNotAdmitted reports that a signed-in user may not use this deployment, either because the
+// identity provider did not vouch for the email or because admission denied it.
+var errNotAdmitted = errors.New("user is not admitted")
+
+// loginIdentity is the identity of a user who completed the IdP round trip.
+type loginIdentity struct {
+	// email is trimmed and lowercased.
+	email   string
+	name    string
+	picture string
+}
+
+// admitLogin verifies the userinfo returned by the identity provider and runs deployment
+// admission. It returns an error wrapping errNotAdmitted when the user is rejected, and any other
+// error when admission could not be evaluated.
+func (a *Authenticator) admitLogin(ctx context.Context, info *GoogleUserInfo) (loginIdentity, error) {
+	identity, err := a.verifyUserInfo(info)
+	if err != nil {
+		return identity, err
+	}
+	authorized, err := a.IsUserAuthorized(ctx, identity.email)
+	if err != nil {
+		return identity, fmt.Errorf("authorization pipeline check failed: %w", err)
+	}
+	if !authorized {
+		return identity, fmt.Errorf("%w: not authorized for this deployment", errNotAdmitted)
+	}
+	return identity, nil
+}
+
+// verifyUserInfo requires a verified email from the identity provider and normalizes it.
+func (a *Authenticator) verifyUserInfo(info *GoogleUserInfo) (loginIdentity, error) {
+	if info == nil {
+		return loginIdentity{}, fmt.Errorf("%w: no userinfo", errNotAdmitted)
+	}
+	identity := loginIdentity{
+		email:   strings.ToLower(strings.TrimSpace(info.Email)),
+		name:    info.Name,
+		picture: info.Picture,
+	}
+	if identity.email == "" {
+		return identity, fmt.Errorf("%w: userinfo has no email", errNotAdmitted)
+	}
+	if !info.EmailVerified {
+		return identity, fmt.Errorf("%w: email is not verified", errNotAdmitted)
+	}
+	return identity, nil
 }
 
 // HandleLogin serves the initial redirection endpoint.
@@ -47,6 +98,15 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.setOAuthStateCookie(w, r, state)
+	// A CLI login abandoned in this browser must not outlive this Dashboard login.
+	a.clearCLILoginCookie(w, r)
+
+	authURL := a.OAuthProvider.AuthCodeURL(state, r)
+	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
+}
+
+func (a *Authenticator) setOAuthStateCookie(w http.ResponseWriter, r *http.Request, state string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
 		Value:    state,
@@ -57,14 +117,11 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Secure:   a.isCookieSecure(r),
 		SameSite: http.SameSiteLaxMode,
 	})
-
-	authURL := a.OAuthProvider.AuthCodeURL(state, r)
-	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
 // HandleCallback processes the authentication callback.
 func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	_, err := a.validateState(r)
+	oauthState, err := a.validateState(r)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("State validation failed: %v", err), http.StatusBadRequest)
 		return
@@ -79,14 +136,19 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	if ticket, ok := a.takeCLILoginTicket(w, r, oauthState); ok {
+		a.handleCLICallback(ctx, w, r, ticket)
+		return
+	}
+
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		http.Error(w, "Code parameter is missing", http.StatusBadRequest)
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
 
 	userInfo, err := a.OAuthProvider.ExchangeAndGetUserInfo(ctx, r, code)
 	if err != nil {
@@ -95,9 +157,19 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.completeDashboardLogin(ctx, w, r, userInfo)
+}
+
+func (a *Authenticator) completeDashboardLogin(ctx context.Context, w http.ResponseWriter, r *http.Request, userInfo *GoogleUserInfo) {
 	dynamicFrontendURL := a.getDynamicFrontendURL(r)
 
-	authorized, err := a.IsUserAuthorized(ctx, userInfo.Email)
+	identity, err := a.admitLogin(ctx, userInfo)
+	if errors.Is(err, errNotAdmitted) {
+		logging.Warn(ctx, "[Callback Auth] Access forbidden: user is not admitted", "email", identity.email, "error", err)
+		forbiddenURL := fmt.Sprintf("%s/?error=forbidden&email=%s", dynamicFrontendURL, url.QueryEscape(identity.email))
+		http.Redirect(w, r, forbiddenURL, http.StatusTemporaryRedirect)
+		return
+	}
 	if err != nil {
 		logging.Error(ctx, "[Callback Auth] Authorization pipeline check failed", "error", err)
 		permissionErrorURL := fmt.Sprintf("%s/?error=permission_error", dynamicFrontendURL)
@@ -105,14 +177,7 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !authorized {
-		logging.Warn(ctx, "[Callback Auth] Access forbidden: user is not authorized", "email", userInfo.Email)
-		forbiddenURL := fmt.Sprintf("%s/?error=forbidden&email=%s", dynamicFrontendURL, url.QueryEscape(userInfo.Email))
-		http.Redirect(w, r, forbiddenURL, http.StatusTemporaryRedirect)
-		return
-	}
-
-	if err := a.createSession(w, r, userInfo.Email, userInfo.Name, userInfo.Picture); err != nil {
+	if err := a.createSession(w, r, identity.email, identity.name, identity.picture); err != nil {
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
 		return
 	}

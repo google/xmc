@@ -14,10 +14,8 @@
 
 //go:build !mockauth
 
-package main
+package oauth2
 
-import "xmanager_cloud/pkg/auth/oauth2"
-
-func configureAuth(a *oauth2.Authenticator, cfg *oauth2.Config) {
-	// No-op in production.
-}
+// configureMockIfEnabled is a no-op in binaries built without the mockauth tag, so they never
+// install mock authentication even when MOCK_AUTH is set.
+func configureMockIfEnabled(*Authenticator) {}

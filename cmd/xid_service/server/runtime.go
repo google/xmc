@@ -80,13 +80,23 @@ func initSpannerClient(ctx context.Context, cfg *config.Config) (*spanner.Client
 	)
 }
 
-func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (authz.AuthorizerInterface, error) {
+// initAuth builds the gRPC authorizer. admission runs the same allowlist and project IAM admission
+// pipeline the HTTP services use, so XID admits exactly the principals the rest of XMC admits.
+func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, admission authz.AdmissionChecker) (authz.AuthorizerInterface, error) {
 	idService, err := cloudidentity.NewService(ctx, option.WithQuotaProject(cfg.QuotaProjectID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
 	}
 	audiences := []string{cfg.Audience, cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, audiences, cfg.IAPIssuer, []byte(oauthCfg.JWTSecret))
+	auth, err := authz.NewAuthorizer(authz.AuthorizerParams{
+		IDService:     idService,
+		CacheTTL:      10 * time.Minute,
+		CacheErrorTTL: time.Minute,
+		IAPAudiences:  audiences,
+		IAPIssuer:     cfg.IAPIssuer,
+		JWTSecret:     []byte(oauthCfg.JWTSecret),
+		Admission:     admission,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create authorizer: %w", err)
 	}
@@ -132,7 +142,10 @@ func NewRuntimeServer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.C
 		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}
 
-	auth, err := initAuth(ctx, cfg, oauthCfg)
+	authenticator := oauth.NewAuthenticator(oauthCfg)
+	cleanups = append(cleanups, authenticator.Close)
+
+	auth, err := initAuth(ctx, cfg, oauthCfg, authz.DeploymentAdmission(authenticator))
 	if err != nil {
 		return nil, err
 	}

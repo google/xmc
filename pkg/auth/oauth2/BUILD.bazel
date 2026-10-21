@@ -17,10 +17,18 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "oauth2",
     srcs = [
+        "cli_callback.go",
+        "cli_login.go",
+        "cli_login_ticket.go",
+        "cli_manual.go",
+        "cli_pages.go",
+        "cli_token.go",
         "config.go",
         "gateway.go",
         "handlers.go",
         "middleware.go",
+        "mockauth_dev.go",
+        "mockauth_prod.go",
         "pipeline.go",
         "provider.go",
         "session.go",
@@ -43,14 +51,36 @@ go_library(
 go_test(
     name = "oauth2_test",
     srcs = [
+        "cli_callback_test.go",
+        "cli_login_test.go",
+        "cli_login_ticket_test.go",
+        "cli_manual_test.go",
+        "cli_pages_test.go",
+        "cli_test_fixtures_test.go",
+        "cli_token_test.go",
         "config_test.go",
+        "mockauth_prod_test.go",
         "oauth2_test.go",
         "pipeline_test.go",
+        "session_test.go",
     ],
     embed = [":oauth2"],
     deps = [
         "@com_github_golang_jwt_jwt_v5//:jwt",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
         "@com_google_cloud_go_iam//apiv1/iampb",
         "@org_golang_google_api//idtoken",
+        "@org_golang_x_oauth2//:oauth2",
     ],
+)
+
+# Exercises the mockauth build tag variant used by *_dev binaries.
+go_test(
+    name = "oauth2_mockauth_test",
+    srcs = [
+        "mockauth_dev_test.go",
+    ],
+    embed = [":oauth2"],
+    gotags = ["mockauth"],
 )

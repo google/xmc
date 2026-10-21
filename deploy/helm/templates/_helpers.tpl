@@ -119,11 +119,32 @@ Get the UI API URL.
 {{- end -}}
 
 {{/*
+Reports whether an auth flag value enables its setting, mirroring the backend's boolean env parsing
+(true, 1 or yes, case-insensitive, surrounding whitespace ignored). Renders "true" when enabled and
+nothing otherwise, so string overrides such as "false" or "no" are not mistaken for enabled flags.
+*/}}
+{{- define "xmanager-cloud.authFlagEnabled" -}}
+{{- if has (lower (trim (toString .))) (list "true" "1" "yes") -}}true{{- end -}}
+{{- end -}}
+
+{{/*
 Common OAuth environment variables for XMC services.
+DISABLE_AUTHENTICATION turns off authorization checks (for example CMS authorization and admin
+checks), and mock authentication accepts any caller, so the chart refuses to render either
+outside development environments. Both checks parse the flags the way the backend reads the
+DISABLE_AUTHENTICATION and MOCK_AUTH environment variables.
 */}}
 {{- define "xmanager-cloud.oauthEnv" -}}
+{{- if and (include "xmanager-cloud.authFlagEnabled" .Values.auth.disableAuthentication) (not .Values.isDevEnvironment) -}}
+{{- fail "auth.disableAuthentication=true is only allowed when isDevEnvironment=true" -}}
+{{- end -}}
+{{- if and (include "xmanager-cloud.authFlagEnabled" .Values.auth.mockAuth) (not .Values.isDevEnvironment) -}}
+{{- fail "auth.mockAuth is only allowed when isDevEnvironment is true" -}}
+{{- end -}}
 - name: SESSION_TTL
   value: {{ .Values.auth.sessionTtl | quote }}
+- name: CLI_SESSION_TTL
+  value: {{ .Values.auth.cliSessionTtl | quote }}
 - name: MOCK_AUTH
   value: {{ .Values.auth.mockAuth | quote }}
 - name: ALLOWED_ORIGINS

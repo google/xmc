@@ -41,6 +41,7 @@ import (
 	spb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/cmd/experiment_state_server/server"
+	authz "xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/tlsutil"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
@@ -73,16 +74,16 @@ func main() {
 		logging.Fatal(ctx, "failed to load configuration, invoker service account is empty")
 	}
 
-	// 2. Initialize production server and OAuth authenticator.
-	prodServer, err := server.NewProd(ctx, &cfg, oauthCfg)
+	// 2. Initialize the OAuth authenticator and production server. The gRPC authorizer reuses this
+	// authenticator for admission, so gRPC admits the same principals as HTTP.
+	oauthAuth := oauth.NewAuthenticator(oauthCfg)
+	defer oauthAuth.Close()
+
+	prodServer, err := server.NewProd(ctx, &cfg, oauthCfg, authz.DeploymentAdmission(oauthAuth))
 	if err != nil {
 		logging.Fatal(ctx, "failed to initialize production server", "error", err)
 	}
 	defer prodServer.Close()
-
-	oauthAuth := oauth.NewAuthenticator(oauthCfg)
-	configureAuth(oauthAuth, oauthCfg)
-	defer oauthAuth.Close()
 
 	// 3. Initialize TLS credentials.
 	transportCreds, err := tlsutil.NewServerCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
@@ -108,7 +109,10 @@ func main() {
 
 	spb.RegisterExperimentStateServiceServer(s, prodServer)
 	if cfg.EnableComponents {
-		cmsAuth := buildCMSAuthorizer(&cfg, oauthCfg, prodServer.Authorizer(), oauthAuth)
+		cmsAuth, err := newCMSAuthorizer(ctx, &cfg, oauthCfg, oauthAuth)
+		if err != nil {
+			logging.Fatal(ctx, "failed to initialize CMS authorizer", "error", err)
+		}
 		stopCMS := initCMS(ctx, s, healthServer, prodServer.SpannerClient(), cmsAuth)
 		// Deferred after prodServer.Close, so it runs after s.GracefulStop and before the
 		// Spanner client is closed.
@@ -143,6 +147,7 @@ func main() {
 	// 6. Create a master HTTP mux for the gRPC gateway + health checks.
 	spHealth, xidHealth, tqHealth := prodServer.HealthCheckers()
 	httpMux := setupHTTPMux(ctx, oauthAuth, oauthAuth.Authenticate(gwmux), activeHealthCheck(spHealth, xidHealth, tqHealth), livenessCheck())
+	registerCLILogin(ctx, httpMux, oauthAuth, oauthCfg, prodServer.Storage())
 
 	// 7. Apply security middlewares
 	handler := oauthAuth.SecurityMiddlewares(httpMux)
@@ -167,6 +172,44 @@ func main() {
 	logging.Info(ctx, "Shutting down gRPC server")
 	s.GracefulStop()
 	logging.Info(ctx, "Server gracefully stopped")
+}
+
+// newCMSAuthorizer builds the Component Manager Service authorizer on a dedicated gRPC authorizer
+// whose admission is cmsAdmission, so the xmc-bridge exemption never reaches other services.
+func newCMSAuthorizer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, oauthAuth *oauth.Authenticator) (cms.CallerAuthorizer, error) {
+	userAuth, err := server.NewGRPCAuthorizer(ctx, cfg, oauthCfg, cmsAdmission(cfg.InvokerSA, oauthAuth))
+	if err != nil {
+		return nil, err
+	}
+	return buildCMSAuthorizer(cfg, oauthCfg, userAuth, oauthAuth), nil
+}
+
+type cmsAdmissionChecker struct {
+	invokerSA string
+	delegate  authz.AdmissionChecker
+}
+
+func (c cmsAdmissionChecker) IsUserAuthorized(ctx context.Context, email string) (bool, error) {
+	if c.invokerSA != "" && strings.EqualFold(strings.TrimSpace(email), c.invokerSA) {
+		return true, nil
+	}
+	return c.delegate.IsUserAuthorized(ctx, email)
+}
+
+// cmsAdmission admits invokerSA in addition to every principal the deployment admits. invokerSA
+// (ess_service_account, the chart's gcpServiceAccount) is the workload service account that the
+// xmc-bridge-sa KSA is bound to through Workload Identity, so it is the identity xmc-bridge calls CMS
+// with; it usually holds no AUTHORIZED_IAM_ROLE binding. It is checked first, so a CRM outage does
+// not block the bridge.
+func cmsAdmission(invokerSA string, oauthAuth *oauth.Authenticator) authz.AdmissionChecker {
+	delegate := authz.DeploymentAdmission(oauthAuth)
+	if delegate == nil {
+		return nil
+	}
+	return cmsAdmissionChecker{
+		invokerSA: strings.TrimSpace(invokerSA),
+		delegate:  delegate,
+	}
 }
 
 func buildCMSAuthorizer(cfg *config.Config, oauthCfg *oauth.Config, userAuth cms.UserAuthenticator, adminChecker cms.AdminChecker) cms.CallerAuthorizer {

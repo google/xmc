@@ -18,8 +18,7 @@ load("//:oci.bzl", "oci_image_for_service")
 go_library(
     name = "experiment_state_server_lib",
     srcs = [
-        "auth_dev.go",
-        "auth_prod.go",
+        "cli_login.go",
         "health.go",
         "main.go",
     ],
@@ -36,10 +35,10 @@ go_library(
         "//internal/logging",
         "//internal/security/keyreloader",
         "//internal/security/tlsutil",
+        "//internal/storage",
         "//internal/storage/spanner",
         "//internal/task_queue",
         "//pkg/auth/oauth2",
-        "//pkg/auth/oauth2/mock",
         "//pkg/components/cms",
         "//pkg/components/store",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
@@ -83,5 +82,18 @@ go_test(
     deps = [
         "//cmd/experiment_state_server/server",
         "//internal/storage/spanner/migrations/version",
+    ],
+)
+
+go_test(
+    name = "cli_login_test",
+    srcs = ["cli_login_test.go"],
+    embed = [":experiment_state_server_lib"],
+    deps = [
+        "//internal/storage",
+        "//internal/storage/spanner",
+        "//internal/storage/spanner/emulator",
+        "//pkg/auth/oauth2",
+        "@com_github_google_go_cmp//cmp",
     ],
 )
