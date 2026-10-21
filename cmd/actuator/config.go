@@ -68,6 +68,7 @@ var (
 	allowPrivilegedContainers   bool
 	allowHostNetwork            bool
 	enableComponents            bool
+	jobSetManagedBy             string
 	featureFlags                featureflags.Flags
 )
 
@@ -90,6 +91,7 @@ func init() {
 	flag.BoolVar(&allowPrivilegedContainers, "allow_privileged_containers", false, "Whether to allow containers to run in privileged mode when requested.")
 	flag.BoolVar(&allowHostNetwork, "allow_host_network", false, "Whether to allow pods to run with host networking when requested.")
 	flag.BoolVar(&enableComponents, "enable_components", false, "Whether the components feature is enabled.")
+	flag.StringVar(&jobSetManagedBy, "jobset_managed_by", "", "Optional controller name to set on JobSet spec.managedBy (e.g. kueue.x-k8s.io/multikueue).")
 	flag.StringVar(&jwksURL, "jwks_url", "", "The JWKS endpoint URL for verifying OIDC tokens.")
 	flag.StringVar(&oidcIssuerURL, "oidc_issuer_url", "", "The OIDC issuer URL.")
 	registerConfigs()
@@ -110,6 +112,7 @@ func registerConfigs() {
 	configutil.DurationEnv(&redisAbandonedMessageTimeout, "redis_abandoned_message_timeout", constants.RedisAbandonedMessageTimeout)
 	configutil.Int64Env(&redisReadBatchSize, "redis_read_batch_size", constants.RedisReadBatchSize)
 	configutil.BoolEnv(&enableComponents, "enable_components", false)
+	configutil.StringEnv(&jobSetManagedBy, "jobset_managed_by", "")
 	featureFlags = featureflags.Load()
 }
 
@@ -162,6 +165,7 @@ func Load() Config {
 			AllowPrivilegedContainers:   allowPrivilegedContainers,
 			AllowHostNetwork:            allowHostNetwork,
 			EnableComponents:            enableComponents,
+			JobSetManagedBy:             jobSetManagedBy,
 		},
 		Audience:               aud,
 		XManagerServiceAccount: xmanagerServiceAccount,

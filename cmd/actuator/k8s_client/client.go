@@ -62,6 +62,9 @@ type ActuatorRuntimeConfig struct {
 
 	// Decides whether the components feature is enabled.
 	EnableComponents bool
+
+	// Optional controller name to set on JobSet spec.managedBy (e.g. kueue.x-k8s.io/multikueue).
+	JobSetManagedBy string
 }
 
 // Priorities holds experiment and work unit priorities.

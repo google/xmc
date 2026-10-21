@@ -967,6 +967,32 @@ func TestConstructJobSet_PriorityClassName(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_ManagedBy(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+
+	t.Run("Nil ManagedBy when JobSetManagedBy is empty", func(t *testing.T) {
+		client.RuntimeConfig.JobSetManagedBy = ""
+		jobSet, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+		if err != nil {
+			t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+		}
+		if jobSet.Spec.ManagedBy != nil {
+			t.Errorf("JobSet.Spec.ManagedBy = %q, want nil", *jobSet.Spec.ManagedBy)
+		}
+	})
+
+	t.Run("Explicit ManagedBy when JobSetManagedBy is configured", func(t *testing.T) {
+		client.RuntimeConfig.JobSetManagedBy = "kueue.x-k8s.io/multikueue"
+		jobSet, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+		if err != nil {
+			t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+		}
+		if jobSet.Spec.ManagedBy == nil || *jobSet.Spec.ManagedBy != "kueue.x-k8s.io/multikueue" {
+			t.Errorf("JobSet.Spec.ManagedBy = %v, want %q", jobSet.Spec.ManagedBy, "kueue.x-k8s.io/multikueue")
+		}
+	})
+}
+
 func TestConstructJobSet_ManagedXprofGCSInjection(t *testing.T) {
 	// The actuator injects the GCS destination purely from the MANAGED_XPROF_GCS_PATH
 	// env var, decoupled from the ManagedXprof artifact or any "requested" env flag.

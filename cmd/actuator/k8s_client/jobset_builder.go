@@ -221,6 +221,9 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 	xprofObjectPath := c.resolveManagedXprofObjectPath(ctx, xid, wid, operationTime)
 	replicatedJobs := c.buildReplicatedJobs(ctx, workUnit, meta.jobLabels, meta.defaultAnnotations, xprofObjectPath)
 	jobSet := buildBaseJobSet(workUnit, buildJobSetName(target), namespace, meta, replicatedJobs)
+	if c.RuntimeConfig.JobSetManagedBy != "" {
+		jobSet.Spec.ManagedBy = ptr.To(c.RuntimeConfig.JobSetManagedBy)
+	}
 
 	return c.finalizeAndValidateJobSet(ctx, workUnit, namespace, jobSet)
 }
