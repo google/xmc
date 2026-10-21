@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
 type fakeTx struct {
@@ -101,8 +102,8 @@ func TestRunInTxNilValidation(t *testing.T) {
 }
 
 func TestRunInTxExecutionAndRetries(t *testing.T) {
-	serializationErr := &pgconn.PgError{Code: SQLStateSerializationFailure, Message: "could not serialize"}
-	deadlockErr := &pgconn.PgError{Code: SQLStateDeadlockDetected, Message: "deadlock detected"}
+	serializationErr := &pgconn.PgError{Code: pgdb.SQLStateSerializationFailure, Message: "could not serialize"}
+	deadlockErr := &pgconn.PgError{Code: pgdb.SQLStateDeadlockDetected, Message: "deadlock detected"}
 	nonRetryableErr := errors.New("permanent validation failure")
 
 	t.Run("commits on first attempt success", func(t *testing.T) {
@@ -187,7 +188,7 @@ func TestRunInTxExecutionAndRetries(t *testing.T) {
 		if !errors.Is(err, grpcerr.ErrAborted) {
 			t.Errorf("errors.Is(%v, grpcerr.ErrAborted) = false, want true", err)
 		}
-		if !IsRetryableTxError(err) {
+		if !pgdb.IsRetryableTxError(err) {
 			t.Errorf("IsRetryableTxError(%v) = false, want true", err)
 		}
 		if beginner.begins != cfg.maxAttempts {
@@ -197,7 +198,7 @@ func TestRunInTxExecutionAndRetries(t *testing.T) {
 }
 
 func TestRunInTxContextAndPanicHandling(t *testing.T) {
-	serializationErr := &pgconn.PgError{Code: SQLStateSerializationFailure, Message: "could not serialize"}
+	serializationErr := &pgconn.PgError{Code: pgdb.SQLStateSerializationFailure, Message: "could not serialize"}
 
 	t.Run("respects pre-canceled context before beginning transaction", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())

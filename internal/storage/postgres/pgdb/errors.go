@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package postgres provides PostgreSQL connection pooling, transaction management,
-// and SQLSTATE error translation for XMC storage repositories.
-package postgres
+// Package pgdb provides the PostgreSQL query interface and SQLSTATE error translation shared by
+// the postgres storage package and its repository subpackages.
+package pgdb
 
 import (
 	"context"
@@ -46,7 +46,7 @@ func TranslateError(err error, entity string) error {
 	}
 	name := normalizeEntity(entity)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return wrapStatusError(fmt.Sprintf("%s not found: %v", name, err), grpcerr.ErrNotFound, err)
+		return WrapStatusError(fmt.Sprintf("%s not found: %v", name, err), grpcerr.ErrNotFound, err)
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
@@ -68,13 +68,13 @@ func isPassthroughError(err error) bool {
 func translatePgError(pgErr *pgconn.PgError, cause error, entity string) error {
 	switch pgErr.Code {
 	case SQLStateUniqueViolation:
-		return wrapStatusError(fmt.Sprintf("%s already exists: %v", entity, cause), grpcerr.ErrAlreadyExists, cause)
+		return WrapStatusError(fmt.Sprintf("%s already exists: %v", entity, cause), grpcerr.ErrAlreadyExists, cause)
 	case SQLStateForeignKeyViolation:
-		return wrapStatusError(fmt.Sprintf("%s foreign key violation: %v", entity, cause), grpcerr.ErrFailedPrecondition, cause)
+		return WrapStatusError(fmt.Sprintf("%s foreign key violation: %v", entity, cause), grpcerr.ErrFailedPrecondition, cause)
 	case SQLStateCheckViolation, SQLStateInvalidTextRepresentation:
-		return wrapStatusError(fmt.Sprintf("invalid %s: %v", entity, cause), grpcerr.ErrInvalidArgument, cause)
+		return WrapStatusError(fmt.Sprintf("invalid %s: %v", entity, cause), grpcerr.ErrInvalidArgument, cause)
 	case SQLStateSerializationFailure, SQLStateDeadlockDetected:
-		return wrapStatusError(fmt.Sprintf("%s transaction aborted: %v", entity, cause), grpcerr.ErrAborted, cause)
+		return WrapStatusError(fmt.Sprintf("%s transaction aborted: %v", entity, cause), grpcerr.ErrAborted, cause)
 	default:
 		return nil
 	}
@@ -131,7 +131,9 @@ type statusError struct {
 	cause    error
 }
 
-func wrapStatusError(msg string, sentinel, cause error) error {
+// WrapStatusError returns an error with message msg that reports the gRPC status code of sentinel
+// and unwraps to both sentinel and cause (when non-nil).
+func WrapStatusError(msg string, sentinel, cause error) error {
 	return &statusError{
 		msg:      msg,
 		sentinel: sentinel,

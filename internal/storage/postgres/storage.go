@@ -28,6 +28,7 @@ import (
 	"xmanager_cloud/internal/storage/postgres/operation"
 	"xmanager_cloud/internal/storage/postgres/pausedtask"
 	"xmanager_cloud/internal/storage/postgres/pausestate"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 	"xmanager_cloud/internal/storage/postgres/statushistory"
 	"xmanager_cloud/internal/storage/postgres/statusmessage"
 	"xmanager_cloud/internal/storage/postgres/workunit"
@@ -66,7 +67,7 @@ type Storage struct {
 // NewStorage creates a new instance of the PostgreSQL-backed storage.
 func NewStorage(pool *pgxpool.Pool) (*Storage, error) {
 	if pool == nil {
-		return nil, wrapStatusError("postgres pool must not be nil", grpcerr.ErrInvalidArgument, nil)
+		return nil, pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrInvalidArgument, nil)
 	}
 	return &Storage{
 		beginner:                pool,
@@ -86,10 +87,10 @@ func NewStorage(pool *pgxpool.Pool) (*Storage, error) {
 // RunInTransaction executes the given function in a PostgreSQL read-write transaction.
 func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
 	if s == nil || s.beginner == nil {
-		return wrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
+		return pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
 	}
 	if fn == nil {
-		return wrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
+		return pgdb.WrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
 	}
 	return runInTx(ctx, s.beginner, defaultTxRetryConfig, func(txCtx context.Context, _ pgx.Tx) error {
 		return fn(txCtx, s.newTransaction())

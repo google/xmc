@@ -17,7 +17,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "postgres",
     srcs = [
-        "errors.go",
         "pool.go",
         "storage.go",
         "tx.go",
@@ -33,22 +32,19 @@ go_library(
         "//internal/storage/postgres/operation",
         "//internal/storage/postgres/pausedtask",
         "//internal/storage/postgres/pausestate",
+        "//internal/storage/postgres/pgdb",
         "//internal/storage/postgres/statushistory",
         "//internal/storage/postgres/statusmessage",
         "//internal/storage/postgres/workunit",
         "//internal/storage/postgres/xid",
         "@com_github_jackc_pgx_v5//:pgx",
-        "@com_github_jackc_pgx_v5//pgconn",
         "@com_github_jackc_pgx_v5//pgxpool",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
     ],
 )
 
 go_test(
     name = "postgres_test",
     srcs = [
-        "errors_test.go",
         "pool_test.go",
         "storage_test.go",
         "tx_test.go",
@@ -57,6 +53,7 @@ go_test(
     deps = [
         "//internal/grpcerr",
         "//internal/storage",
+        "//internal/storage/postgres/pgdb",
         "@com_github_jackc_pgx_v5//:pgx",
         "@com_github_jackc_pgx_v5//pgconn",
         "@com_github_jackc_pgx_v5//pgxpool",

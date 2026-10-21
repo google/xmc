@@ -21,6 +21,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
 // NewPool parses the PostgreSQL DSN, configures the connection pool (applying maxConns when > 0),
@@ -44,11 +45,11 @@ func NewPool(ctx context.Context, dsn string, maxConns int32) (*pgxpool.Pool, er
 func parsePoolConfig(dsn string, maxConns int32) (*pgxpool.Config, error) {
 	trimmedDSN := strings.TrimSpace(dsn)
 	if trimmedDSN == "" {
-		return nil, wrapStatusError("postgres dsn must not be empty", grpcerr.ErrInvalidArgument, nil)
+		return nil, pgdb.WrapStatusError("postgres dsn must not be empty", grpcerr.ErrInvalidArgument, nil)
 	}
 	poolCfg, err := pgxpool.ParseConfig(trimmedDSN)
 	if err != nil {
-		return nil, wrapStatusError(fmt.Sprintf("failed to parse postgres dsn: %v", err), grpcerr.ErrInvalidArgument, err)
+		return nil, pgdb.WrapStatusError(fmt.Sprintf("failed to parse postgres dsn: %v", err), grpcerr.ErrInvalidArgument, err)
 	}
 	if maxConns > 0 {
 		poolCfg.MaxConns = maxConns

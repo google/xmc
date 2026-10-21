@@ -20,9 +20,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
 const (
@@ -32,18 +32,6 @@ const (
 	defaultInitialBackoff = 10 * time.Millisecond
 	defaultMaxBackoff     = 200 * time.Millisecond
 	rollbackTimeout       = 5 * time.Second
-)
-
-// DBTX is the common query and execution interface satisfied by both *pgxpool.Pool and pgx.Tx.
-type DBTX interface {
-	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}
-
-var (
-	_ DBTX = (*pgxpool.Pool)(nil)
-	_ DBTX = (pgx.Tx)(nil)
 )
 
 type txBeginner interface {
@@ -67,14 +55,14 @@ var defaultTxRetryConfig = txRetryConfig{
 // serialization (40001) or deadlock (40P01) errors up to DefaultMaxTxAttempts times.
 func RunInTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, tx pgx.Tx) error) error {
 	if pool == nil {
-		return wrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
+		return pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
 	}
 	return runInTx(ctx, pool, defaultTxRetryConfig, fn)
 }
 
 func runInTx(ctx context.Context, beginner txBeginner, cfg txRetryConfig, fn func(ctx context.Context, tx pgx.Tx) error) error {
 	if fn == nil {
-		return wrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
+		return pgdb.WrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
 	}
 	backoff := cfg.initialBackoff
 	var lastErr error
@@ -83,7 +71,7 @@ func runInTx(ctx context.Context, beginner txBeginner, cfg txRetryConfig, fn fun
 			return err
 		}
 		lastErr = runTxAttempt(ctx, beginner, fn)
-		if lastErr == nil || !IsRetryableTxError(lastErr) {
+		if lastErr == nil || !pgdb.IsRetryableTxError(lastErr) {
 			return lastErr
 		}
 		if attempt < cfg.maxAttempts {
@@ -93,7 +81,7 @@ func runInTx(ctx context.Context, beginner txBeginner, cfg txRetryConfig, fn fun
 			backoff = nextBackoff(backoff, cfg.maxBackoff)
 		}
 	}
-	return TranslateError(lastErr, "transaction")
+	return pgdb.TranslateError(lastErr, "transaction")
 }
 
 func runTxAttempt(ctx context.Context, beginner txBeginner, fn func(ctx context.Context, tx pgx.Tx) error) error {
