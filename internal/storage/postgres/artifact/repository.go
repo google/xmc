@@ -19,20 +19,25 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
 var _ storage.ArtifactStore = (*Repository)(nil)
 
 // Repository manages persistence for artifact entities in PostgreSQL.
-type Repository struct{}
+type Repository struct {
+	pool *pgxpool.Pool
+	db   pgdb.DBTX
+}
 
-// NewRepository creates a new PostgreSQL Artifact repository instance.
-func NewRepository() *Repository {
-	return &Repository{}
+// NewRepository creates a new PostgreSQL Artifact repository instance bound to pool.
+func NewRepository(pool *pgxpool.Pool) *Repository {
+	return &Repository{pool: pool, db: pgdb.FromPool(pool)}
 }
 
 // CreateArtifact creates a new artifact.

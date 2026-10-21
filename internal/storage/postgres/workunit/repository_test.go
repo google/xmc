@@ -18,18 +18,20 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
 func TestRepository_Unimplemented(t *testing.T) {
-	repo := NewRepository()
+	repo := NewRepository(nil)
 	if repo == nil {
 		t.Fatal("NewRepository() returned nil")
 	}
-	txRepo := repo.WithTx()
+	txRepo := repo.WithTx(nil)
 	if txRepo == nil {
 		t.Fatal("WithTx() returned nil")
 	}
@@ -136,5 +138,20 @@ func TestRepository_Unimplemented(t *testing.T) {
 				t.Errorf("%s code = %v, want %v (err: %v)", tt.name, got, codes.Unimplemented, err)
 			}
 		})
+	}
+}
+
+func TestNewRepository_BindsPoolAndTx(t *testing.T) {
+	pool := &pgxpool.Pool{}
+	repo := NewRepository(pool)
+	if repo.pool != pool || repo.db != pool {
+		t.Errorf("NewRepository(pool) = {pool: %p, db: %v}, want both bound to %p", repo.pool, repo.db, pool)
+	}
+
+	// Any DBTX implementation can stand in for the transaction handle.
+	var tx pgdb.DBTX = &pgxpool.Pool{}
+	txRepo := repo.WithTx(tx)
+	if txRepo.Repository != repo || txRepo.tx != tx {
+		t.Errorf("WithTx(tx) = {Repository: %p, tx: %v}, want {Repository: %p, tx: %v}", txRepo.Repository, txRepo.tx, repo, tx)
 	}
 }

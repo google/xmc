@@ -18,12 +18,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func TestRepository_Unimplemented(t *testing.T) {
-	repo := NewRepository()
+	repo := NewRepository(nil)
 	if repo == nil {
 		t.Fatal("NewRepository() returned nil")
 	}
@@ -108,5 +109,13 @@ func TestRepository_Unimplemented(t *testing.T) {
 				t.Errorf("%s code = %v, want %v (err: %v)", tt.name, got, codes.Unimplemented, err)
 			}
 		})
+	}
+}
+
+func TestNewRepository_BindsPool(t *testing.T) {
+	pool := &pgxpool.Pool{}
+	repo := NewRepository(pool)
+	if repo.pool != pool || repo.db != pool {
+		t.Errorf("NewRepository(pool) = {pool: %p, db: %v}, want both bound to %p", repo.pool, repo.db, pool)
 	}
 }

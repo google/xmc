@@ -33,3 +33,12 @@ var (
 	_ DBTX = (*pgxpool.Pool)(nil)
 	_ DBTX = (pgx.Tx)(nil)
 )
+
+// FromPool returns pool as a DBTX, or a nil DBTX when pool is nil, so a nil pool never becomes a
+// non-nil interface that wraps a nil pointer.
+func FromPool(pool *pgxpool.Pool) DBTX {
+	if pool == nil {
+		return nil
+	}
+	return pool
+}

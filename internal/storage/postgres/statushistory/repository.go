@@ -19,10 +19,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
 var (
@@ -31,21 +33,25 @@ var (
 )
 
 // Repository manages persistence for status history and velocity metrics in PostgreSQL.
-type Repository struct{}
+type Repository struct {
+	pool *pgxpool.Pool
+	db   pgdb.DBTX
+}
 
 // TxRepository manages transactional persistence for status history in PostgreSQL.
 type TxRepository struct {
 	*Repository
+	tx pgdb.DBTX
 }
 
-// NewRepository creates a new PostgreSQL StatusHistory repository instance.
-func NewRepository() *Repository {
-	return &Repository{}
+// NewRepository creates a new PostgreSQL StatusHistory repository instance bound to pool.
+func NewRepository(pool *pgxpool.Pool) *Repository {
+	return &Repository{pool: pool, db: pgdb.FromPool(pool)}
 }
 
-// WithTx returns a wrapper bound to a read-write transaction.
-func (r *Repository) WithTx() *TxRepository {
-	return &TxRepository{Repository: r}
+// WithTx returns a wrapper bound to the read-write transaction tx.
+func (r *Repository) WithTx(tx pgdb.DBTX) *TxRepository {
+	return &TxRepository{Repository: r, tx: tx}
 }
 
 // FetchBatchQueueVelocity queries the status history table for multiple queues and returns raw metric rows.

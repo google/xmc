@@ -18,9 +18,11 @@ package pausedtask
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
 var (
@@ -29,21 +31,25 @@ var (
 )
 
 // Repository persists paused tasks in PostgreSQL.
-type Repository struct{}
+type Repository struct {
+	pool *pgxpool.Pool
+	db   pgdb.DBTX
+}
 
 // TxRepository persists paused task writes within a bound read-write transaction.
 type TxRepository struct {
 	*Repository
+	tx pgdb.DBTX
 }
 
-// NewRepository creates a PostgreSQL-backed paused task Repository.
-func NewRepository() *Repository {
-	return &Repository{}
+// NewRepository creates a PostgreSQL-backed paused task Repository bound to pool.
+func NewRepository(pool *pgxpool.Pool) *Repository {
+	return &Repository{pool: pool, db: pgdb.FromPool(pool)}
 }
 
-// WithTx returns a repository bound to a read-write transaction.
-func (r *Repository) WithTx() *TxRepository {
-	return &TxRepository{Repository: r}
+// WithTx returns a wrapper bound to the read-write transaction tx.
+func (r *Repository) WithTx(tx pgdb.DBTX) *TxRepository {
+	return &TxRepository{Repository: r, tx: tx}
 }
 
 // ListPending retrieves pending paused tasks ordered by Priority DESC, CreateTime ASC.

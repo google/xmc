@@ -19,21 +19,26 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
 var _ storage.DashboardStore = (*Repository)(nil)
 
 // Repository manages persistence for dashboard and chart entities in PostgreSQL.
-type Repository struct{}
+type Repository struct {
+	pool *pgxpool.Pool
+	db   pgdb.DBTX
+}
 
-// NewRepository creates a new PostgreSQL Dashboard repository instance.
-func NewRepository() *Repository {
-	return &Repository{}
+// NewRepository creates a new PostgreSQL Dashboard repository instance bound to pool.
+func NewRepository(pool *pgxpool.Pool) *Repository {
+	return &Repository{pool: pool, db: pgdb.FromPool(pool)}
 }
 
 // CreateDashboard creates a new dashboard and its associated charts.

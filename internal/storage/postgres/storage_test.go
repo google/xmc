@@ -83,7 +83,8 @@ func TestStorage(t *testing.T) {
 		{
 			name: "newTransaction",
 			check: func(t *testing.T) {
-				tx := s.newTransaction()
+				// Any DBTX works for wiring checks; RunInTransaction passes the live pgx.Tx.
+				tx := s.newTransaction(&fakeTx{})
 				if tx.WorkUnits == nil || tx.Experiments == nil || tx.XIDs == nil ||
 					tx.StatusMessages == nil || tx.StatusHistory == nil ||
 					tx.PauseState == nil || tx.PausedTasks == nil {
