@@ -158,7 +158,7 @@ Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference serv
 
 ---
 
-## 1P Component Helm Values Synthesis (`helm_builder.go`)
+## 1P Component Helm Values Synthesis (`helm/helm_builder.go`)
 
 First-party (1P) components are managed natively through XMC Helm charts. Rather than constructing duplicate Kubernetes `Deployment` and `Service` manifests in Go code, the bridge translates Component CR specifications directly into structured Helm parameter values:
 
@@ -175,24 +175,24 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
   - `HydrateFromCluster(ctx context.Context) error`
   - `HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error`
   - `ComponentHealth(ctx context.Context, ref ComponentRef) (healthy bool, reason, message string)`
-- **`FakeHelmManager`**: In-memory test double supporting concurrent testing, state hydration assertions, and error injection (`EnsureErr`, `DeleteErr`, and `UnhealthyReason` for `ComponentHealth`, which defaults to healthy).
+- **`FakeHelmManager` (`helm/helmtest/fake_helm_manager.go`)**: In-memory test double supporting concurrent testing, state hydration assertions, and error injection (`EnsureErr`, `DeleteErr`, and `UnhealthyReason` for `ComponentHealth`, which defaults to healthy).
 
 ---
 
-## Kubernetes Helm Manager (`helm_manager.go` and related files)
+## Kubernetes Helm Manager (`helm/helm_manager.go` and related files)
 
-`K8sHelmManager` implements `HelmManager` by synchronizing synthesized values into Kubernetes ConfigMaps, resolving per-component chart paths, executing independent per-component Helm releases, and tracking active 1P component states. Its implementation is split by responsibility:
+`K8sHelmManager` implements `HelmManager` by synchronizing synthesized values into Kubernetes ConfigMaps, resolving per-component chart paths, executing independent per-component Helm releases, and tracking active 1P component states. Its implementation is split by responsibility in `pkg/components/bridge/helm`:
 
 | File | Responsibility |
 | :--- | :--- |
-| `helm_manager.go` | `HelmManager` interface, construction options, and the `Ensure`/`Delete`/`Purge`/`Orphan` lifecycle entry points. |
-| `chart_resolver.go` | Per-component chart path resolution and validation. |
-| `component_values.go` | Read-modify-write of the `xmc-component-values` ConfigMap. |
-| `release_executor.go` | Sync and async Helm upgrade/uninstall execution, the upgrade lock, and the debounced worker queue. |
-| `release_health.go` | `ComponentHealth`, the deployed-verdict cache, and drift detection. |
-| `release_repair.go` | Repair marking (`NeedsRepair`) and repair backoff. |
-| `actuation_state.go` | Active/actuated generation tracking and cold-start hydration. |
-| `helm_leader_runnable.go` | `NewHelmLeaderRunnable`: a leader-elected `manager.Runnable` that runs `HydrateFromCluster` once elected and, when leadership ends, `Shutdown`s the Helm manager (queued upgrades that have not started are dropped with `errManagerStopped`; the in-flight one gets `helmShutdownTimeout` before it is cancelled). `K8sHelmManager.Shutdown` and `Abort` themselves live in `helm_manager.go`. |
+| `helm/helm_manager.go` | `HelmManager` interface, construction options, and the `Ensure`/`Delete`/`Purge`/`Orphan` lifecycle entry points. |
+| `helm/chart_resolver.go` | Per-component chart path resolution and validation. |
+| `helm/component_values.go` | Read-modify-write of the `xmc-component-values` ConfigMap. |
+| `helm/release_executor.go` | Sync and async Helm upgrade/uninstall execution, the upgrade lock, and the debounced worker queue. |
+| `helm/release_health.go` | `ComponentHealth`, the deployed-verdict cache, and drift detection. |
+| `helm/release_repair.go` | Repair marking (`NeedsRepair`) and repair backoff. |
+| `helm/actuation_state.go` | Active/actuated generation tracking and cold-start hydration. |
+| `helm/helm_leader_runnable.go` | `NewHelmLeaderRunnable`: a leader-elected `manager.Runnable` that runs `HydrateFromCluster` once elected and, when leadership ends, `Shutdown`s the Helm manager (queued upgrades that have not started are dropped with `errManagerStopped`; the in-flight one gets `helmShutdownTimeout` before it is cancelled). `K8sHelmManager.Shutdown` and `Abort` themselves live in `helm/helm_manager.go`. |
 
 - **Per-Component Independent Release Scoping (`ComponentReleaseName`)**:
   - Each 1P component is actuated into a dedicated, decoupled Helm release formatted as `xmc-cmp-<name>` (e.g., `xmc-cmp-ray-operator`), preserving architectural blast-radius isolation from other components and the core platform release.
@@ -256,7 +256,7 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 
 ---
 
-## Advanced 1P Lifecycle Policies (`helm_builder.go`, `helm_manager.go`)
+## Advanced 1P Lifecycle Policies (`helm/helm_builder.go`, `helm/helm_manager.go`)
 
 Production-grade lifecycle controls and graceful deactivation policies for first-party components:
 

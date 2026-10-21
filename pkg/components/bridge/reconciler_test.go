@@ -38,13 +38,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/kubernetes/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/helm"
 	"xmanager_cloud/pkg/components/bridge/statusdetector"
 	"xmanager_cloud/pkg/components/store"
 )
@@ -643,7 +643,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 			if tt.prober != nil {
 				p = tt.prober
 			}
-			var helmMgr HelmManager
+			var helmMgr helm.HelmManager
 			if tt.helm != nil {
 				helmMgr = tt.helm
 			}
@@ -686,13 +686,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 // previously deployed revision while an async upgrade for a new generation is still in flight.
 func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T) {
 	ctx := context.Background()
-	gate := make(chan struct{})
-	runner := &mockHelmActionRunner{
-		upgradeGate:    gate,
-		upgradeStarted: make(chan struct{}, 1),
-		installed:      map[string]bool{componentKey("xmc", "xmc-cmp-ingestion"): true}, // Generation 1 is deployed.
-	}
-	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner))
+	mgr := &mockHelm{unhealthyReason: ReasonHelmUpgradePending}
 	r, err := NewReconciler(&mockCMS{}, nil, mgr)
 	if err != nil {
 		t.Fatalf("NewReconciler() failed: %v", err)
@@ -718,9 +712,7 @@ func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T
 		t.Errorf("state while upgrade in flight = %v, want PENDING_RECONCILIATION", res.State)
 	}
 
-	close(gate)
-	<-runner.upgradeStarted // Close drops queued upgrades, so wait until this one is in flight.
-	_ = mgr.Close()         // Waits for the worker to finish the in-flight upgrade.
+	mgr.unhealthyReason = ""
 	res, err = r.ReconcileComponent(ctx, in)
 	if err != nil {
 		t.Fatalf("ReconcileComponent() after upgrade failed: %v", err)
@@ -729,8 +721,8 @@ func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T
 	if diff := cmp.Diff(wantHealthy, extractHealthConditions(res.Conditions)); diff != "" {
 		t.Errorf("health conditions after upgrade mismatch (-want +got):\n%s", diff)
 	}
-	if got := runner.upgradeCalls; got != 1 {
-		t.Errorf("upgradeCalls = %d, want 1 (second pass must not re-upgrade)", got)
+	if got := mgr.ensureCalls; got != 1 {
+		t.Errorf("ensureCalls = %d, want 1 (second pass must not re-upgrade)", got)
 	}
 }
 
@@ -739,11 +731,7 @@ func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T
 // on the next pass without waiting for a new CR generation.
 func TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration(t *testing.T) {
 	ctx := context.Background()
-	runner := &mockHelmActionRunner{
-		installed: map[string]bool{componentKey("xmc", "xmc-cmp-ingestion"): true},
-		missing:   []string{"Role/ingestion-components-reader"},
-	}
-	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	mgr := &mockHelm{unhealthyReason: ReasonHelmReleaseDrifted}
 	r, err := NewReconciler(&mockCMS{}, nil, mgr)
 	if err != nil {
 		t.Fatalf("NewReconciler() failed: %v", err)
@@ -765,8 +753,8 @@ func TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration(t *testing.
 	if diff := cmp.Diff(wantDrifted, extractHealthConditions(res.Conditions)); diff != "" {
 		t.Errorf("health conditions on drift detection mismatch (-want +got):\n%s", diff)
 	}
-	if got := runner.upgradeCalls; got != 0 {
-		t.Errorf("upgradeCalls after drift detection = %d, want 0", got)
+	if got := mgr.ensureCalls; got != 0 {
+		t.Errorf("ensureCalls after drift detection = %d, want 0", got)
 	}
 
 	in.ExistingConditions = res.Conditions
@@ -778,8 +766,8 @@ func TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration(t *testing.
 	if diff := cmp.Diff(wantHealthy, extractHealthConditions(res.Conditions)); diff != "" {
 		t.Errorf("health conditions after repair mismatch (-want +got):\n%s", diff)
 	}
-	if got := runner.upgradeCalls; got != 1 {
-		t.Errorf("upgradeCalls after repair = %d, want 1 (repair must re-upgrade at the same generation)", got)
+	if got := mgr.ensureCalls; got != 1 {
+		t.Errorf("ensureCalls after repair = %d, want 1 (repair must re-upgrade at the same generation)", got)
 	}
 }
 
@@ -788,12 +776,7 @@ func TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration(t *testing.
 // an approved spec, so it is not held, and DependenciesReady=False is still reported.
 func TestReconcileComponent_DriftRepairBypassesDependencyHold(t *testing.T) {
 	ctx := context.Background()
-	runner := &mockHelmActionRunner{
-		installed: map[string]bool{componentKey("xmc", "xmc-cmp-ingestion"): true},
-		missing:   []string{"Role/ingestion-components-reader"},
-	}
-	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
-	defer mgr.Close()
+	mgr := &mockHelm{unhealthyReason: ReasonHelmReleaseDrifted}
 	r, err := NewReconciler(&mockCMS{}, nil, mgr)
 	if err != nil {
 		t.Fatalf("NewReconciler() failed: %v", err)
@@ -821,7 +804,7 @@ func TestReconcileComponent_DriftRepairBypassesDependencyHold(t *testing.T) {
 		if err != nil {
 			t.Fatalf("pass %d: ReconcileComponent() failed: %v", i, err)
 		}
-		got := outcome{Health: extractHealthConditions(res.Conditions), UpgradeCalls: runner.upgradeCalls}
+		got := outcome{Health: extractHealthConditions(res.Conditions), UpgradeCalls: mgr.ensureCalls}
 		if c := findCondition(res.Conditions, ConditionTypeDependenciesReady); c != nil {
 			got.DependenciesReady = c.Status
 		}
@@ -829,6 +812,20 @@ func TestReconcileComponent_DriftRepairBypassesDependencyHold(t *testing.T) {
 			t.Errorf("pass %d: outcome mismatch (-want +got):\n%s", i, diff)
 		}
 		in.ExistingConditions = res.Conditions
+	}
+}
+
+// TestReconciler_ForgetComponentForwardsToHelmManager verifies that forgetting a deleted CR also evicts the Helm
+// manager's per-incarnation state.
+func TestReconciler_ForgetComponentForwardsToHelmManager(t *testing.T) {
+	mgr := &mockHelm{}
+	r, err := NewReconciler(&mockCMS{}, &mockProber{healthy: true}, mgr)
+	if err != nil {
+		t.Fatalf("NewReconciler() failed: %v", err)
+	}
+	r.ForgetComponent("xmc", "ingestion")
+	if diff := cmp.Diff([]string{"xmc/ingestion"}, mgr.forgotten); diff != "" {
+		t.Errorf("ForgetComponent forwarded keys mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1009,8 +1006,8 @@ func TestDropSelfDependency(t *testing.T) {
 
 func TestReconcileComponent_1P_PopulatesEmptyHelmOptsRef(t *testing.T) {
 	ctx := context.Background()
-	helm := &mockHelm{}
-	r, err := NewReconciler(&mockCMS{}, nil, helm)
+	helmMgr := &mockHelm{}
+	r, err := NewReconciler(&mockCMS{}, nil, helmMgr)
 	if err != nil {
 		t.Fatalf("NewReconciler failed: %v", err)
 	}
@@ -1022,7 +1019,7 @@ func TestReconcileComponent_1P_PopulatesEmptyHelmOptsRef(t *testing.T) {
 		Spec: &componentspb.ComponentSpec{
 			Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		},
-		HelmOpts: HelmComponentOptions{
+		HelmOpts: helm.HelmComponentOptions{
 			// Ref intentionally empty
 		},
 	}
@@ -1032,12 +1029,12 @@ func TestReconcileComponent_1P_PopulatesEmptyHelmOptsRef(t *testing.T) {
 		t.Fatalf("ensure1PComponent failed: %v", err)
 	}
 
-	wantRef := ComponentRef{Namespace: "custom-ns", Name: "custom-comp"}
-	if helm.lastRef != wantRef {
-		t.Errorf("expected lastRef %v, got %v", wantRef, helm.lastRef)
+	wantRef := helm.ComponentRef{Namespace: "custom-ns", Name: "custom-comp"}
+	if helmMgr.lastRef != wantRef {
+		t.Errorf("expected lastRef %v, got %v", wantRef, helmMgr.lastRef)
 	}
-	if helm.lastOpts.Ref != wantRef {
-		t.Errorf("expected lastOpts.Ref %v, got %v", wantRef, helm.lastOpts.Ref)
+	if helmMgr.lastOpts.Ref != wantRef {
+		t.Errorf("expected lastOpts.Ref %v, got %v", wantRef, helmMgr.lastOpts.Ref)
 	}
 }
 
@@ -1045,49 +1042,49 @@ func TestResolveComponentRef(t *testing.T) {
 	tests := []struct {
 		name    string
 		in      ReconcileComponentInput
-		wantRef ComponentRef
+		wantRef helm.ComponentRef
 	}{
 		{
 			name: "both name and namespace empty in HelmOpts",
 			in: ReconcileComponentInput{
 				Namespace: "default-ns",
 				Name:      "default-name",
-				HelmOpts:  HelmComponentOptions{},
+				HelmOpts:  helm.HelmComponentOptions{},
 			},
-			wantRef: ComponentRef{Namespace: "default-ns", Name: "default-name"},
+			wantRef: helm.ComponentRef{Namespace: "default-ns", Name: "default-name"},
 		},
 		{
 			name: "ref name set but namespace empty in HelmOpts",
 			in: ReconcileComponentInput{
 				Namespace: "fallback-ns",
 				Name:      "original-name",
-				HelmOpts: HelmComponentOptions{
-					Ref: ComponentRef{Name: "custom-name"},
+				HelmOpts: helm.HelmComponentOptions{
+					Ref: helm.ComponentRef{Name: "custom-name"},
 				},
 			},
-			wantRef: ComponentRef{Namespace: "fallback-ns", Name: "custom-name"},
+			wantRef: helm.ComponentRef{Namespace: "fallback-ns", Name: "custom-name"},
 		},
 		{
 			name: "ref namespace set but name empty in HelmOpts",
 			in: ReconcileComponentInput{
 				Namespace: "original-ns",
 				Name:      "fallback-name",
-				HelmOpts: HelmComponentOptions{
-					Ref: ComponentRef{Namespace: "custom-ns"},
+				HelmOpts: helm.HelmComponentOptions{
+					Ref: helm.ComponentRef{Namespace: "custom-ns"},
 				},
 			},
-			wantRef: ComponentRef{Namespace: "custom-ns", Name: "fallback-name"},
+			wantRef: helm.ComponentRef{Namespace: "custom-ns", Name: "fallback-name"},
 		},
 		{
 			name: "both ref name and namespace set in HelmOpts",
 			in: ReconcileComponentInput{
 				Namespace: "ignored-ns",
 				Name:      "ignored-name",
-				HelmOpts: HelmComponentOptions{
-					Ref: ComponentRef{Namespace: "custom-ns", Name: "custom-name"},
+				HelmOpts: helm.HelmComponentOptions{
+					Ref: helm.ComponentRef{Namespace: "custom-ns", Name: "custom-name"},
 				},
 			},
-			wantRef: ComponentRef{Namespace: "custom-ns", Name: "custom-name"},
+			wantRef: helm.ComponentRef{Namespace: "custom-ns", Name: "custom-name"},
 		},
 	}
 
@@ -1882,7 +1879,7 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var helmMgr HelmManager
+			var helmMgr helm.HelmManager
 			if tt.helm != nil {
 				helmMgr = tt.helm
 			}
@@ -2050,7 +2047,7 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var helmMgr HelmManager
+			var helmMgr helm.HelmManager
 			if tt.helm != nil {
 				helmMgr = tt.helm
 			}

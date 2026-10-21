@@ -12,23 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bridge
+package helmtest
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	"xmanager_cloud/pkg/components/bridge/helm"
 )
 
 func TestFakeHelmManager(t *testing.T) {
 	ctx := context.Background()
 	mgr := NewFakeHelmManager()
 
-	ref := ComponentRef{
+	ref := helm.ComponentRef{
 		Namespace: "xmc",
 		Name:      "ingestion-gateway",
 	}
-	opts := HelmComponentOptions{
+	opts := helm.HelmComponentOptions{
 		Ref:      ref,
 		Enabled:  true,
 		ImageTag: "v1.0.0",
@@ -128,7 +130,7 @@ func TestFakeHelmManager(t *testing.T) {
 	}
 
 	// Test empty name validation
-	emptyRef := ComponentRef{Namespace: "xmc", Name: ""}
+	emptyRef := helm.ComponentRef{Namespace: "xmc", Name: ""}
 	if err := mgr.Ensure1PComponent(ctx, emptyRef, opts); err == nil {
 		t.Error("expected error on empty component name for Ensure1PComponent")
 	}
@@ -152,8 +154,8 @@ func TestFakeHelmManager(t *testing.T) {
 func TestFakeHelmManager_GetAppliedValues_CloneIsolation(t *testing.T) {
 	ctx := context.Background()
 	mgr := NewFakeHelmManager()
-	ref := ComponentRef{Namespace: "xmc", Name: "test-comp"}
-	opts := HelmComponentOptions{
+	ref := helm.ComponentRef{Namespace: "xmc", Name: "test-comp"}
+	opts := helm.HelmComponentOptions{
 		Ref:     ref,
 		Enabled: true,
 		RawValues: map[string]any{
@@ -171,7 +173,7 @@ func TestFakeHelmManager_GetAppliedValues_CloneIsolation(t *testing.T) {
 		t.Fatal("expected non-nil applied values")
 	}
 
-	depKey := ComponentNameToHelmKey(ref.Name)
+	depKey := helm.ComponentNameToHelmKey(ref.Name)
 	depMap, ok := values[depKey].(map[string]any)
 	if !ok {
 		t.Fatalf("expected values[%q] to be a map[string]any", depKey)
@@ -198,16 +200,16 @@ func TestFakeHelmManager_GetAppliedValues_CloneIsolation(t *testing.T) {
 }
 
 func TestFakeHelmManager_ComponentHealth(t *testing.T) {
-	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+	ref := helm.ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
 	tests := []struct {
 		name        string
 		mgr         *FakeHelmManager
 		wantHealthy bool
 		wantReason  string
 	}{
-		{name: "defaults to healthy", mgr: NewFakeHelmManager(), wantHealthy: true, wantReason: ReasonComponentHealthy},
-		{name: "unhealthy reason injected", mgr: &FakeHelmManager{UnhealthyReason: ReasonHelmReleaseNotFound}, wantReason: ReasonHelmReleaseNotFound},
-		{name: "nil manager", mgr: nil, wantReason: ReasonHelmRunnerUninitialized},
+		{name: "defaults to healthy", mgr: NewFakeHelmManager(), wantHealthy: true, wantReason: helm.ReasonComponentHealthy},
+		{name: "unhealthy reason injected", mgr: &FakeHelmManager{UnhealthyReason: helm.ReasonHelmReleaseNotFound}, wantReason: helm.ReasonHelmReleaseNotFound},
+		{name: "nil manager", mgr: nil, wantReason: helm.ReasonHelmRunnerUninitialized},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

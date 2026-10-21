@@ -42,6 +42,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	"xmanager_cloud/pkg/components/bridge/helm"
 )
 
 func findRepoRoot() (string, error) {
@@ -258,7 +260,7 @@ func configStorageRBACCases(kube kubernetes.Interface) []rbacCase {
 	configMaps := kube.CoreV1().ConfigMaps("xmc")
 	return []rbacCase{
 		{"UPDATE ConfigMap xmc-component-values passes RBAC (NotFound)", func(ctx context.Context) error {
-			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: ComponentValuesConfigMapName}}
+			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: helm.ComponentValuesConfigMapName}}
 			_, err := configMaps.Update(ctx, cm, metav1.UpdateOptions{})
 			return err
 		}, apierrors.IsNotFound},
@@ -270,7 +272,7 @@ func configStorageRBACCases(kube kubernetes.Interface) []rbacCase {
 			return err
 		}, apierrors.IsForbidden},
 		{"GET ConfigMap in default namespace is Forbidden", func(ctx context.Context) error {
-			_, err := kube.CoreV1().ConfigMaps("default").Get(ctx, ComponentValuesConfigMapName, metav1.GetOptions{})
+			_, err := kube.CoreV1().ConfigMaps("default").Get(ctx, helm.ComponentValuesConfigMapName, metav1.GetOptions{})
 			return err
 		}, apierrors.IsForbidden},
 		{"LIST Secrets in release namespace is allowed (Helm release storage)", func(ctx context.Context) error {
@@ -348,7 +350,7 @@ func wrapperRBACCases(dyn dynamic.Interface) []rbacCase {
 func TestComponentsRBAC_HelmLifecycleEnvtest(t *testing.T) {
 	ctx := context.Background()
 	adminCfg, adminKube := startBridgeRBACEnvtest(ctx, t, "xmc")
-	runner := NewSDKHelmActionRunner(impersonatedHelmGetter(t, adminCfg, "xmc"))
+	runner := helm.NewSDKHelmActionRunner(impersonatedHelmGetter(t, adminCfg, "xmc"))
 	const releaseName = "xmc-cmp-ingestion-gateway"
 	// The first call installs (GET, then CREATE); the second changes the HPA, so Helm PATCHes it.
 	for _, values := range []map[string]any{

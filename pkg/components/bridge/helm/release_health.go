@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bridge
+package helm
 
 import (
 	"context"
@@ -25,6 +25,31 @@ import (
 	"helm.sh/helm/v3/pkg/storage/driver"
 
 	"xmanager_cloud/internal/logging"
+)
+
+// Condition reasons reported by ComponentHealth for 1P Helm release state evaluation.
+const (
+	// ReasonComponentHealthy indicates the component is healthy (for 1P: Helm release deployed, no upgrade pending or failed).
+	ReasonComponentHealthy = "ComponentHealthy"
+	// ReasonInvalidComponentRef indicates the component reference is missing a name or namespace.
+	ReasonInvalidComponentRef = "InvalidComponentRef"
+	// ReasonHelmUpgradeFailed indicates the last Helm upgrade for the component failed.
+	ReasonHelmUpgradeFailed = "HelmUpgradeFailed"
+	// ReasonHelmUpgradePending indicates a Helm upgrade is queued or running; progress, not a terminal fault.
+	ReasonHelmUpgradePending = "HelmUpgradePending"
+	// ReasonHelmRunnerUninitialized indicates no Helm action runner is configured, so release state cannot be verified.
+	ReasonHelmRunnerUninitialized = "HelmRunnerUninitialized"
+	// ReasonHelmReleaseNotFound indicates the component's Helm release does not exist.
+	ReasonHelmReleaseNotFound = "HelmReleaseNotFound"
+	// ReasonHelmReleaseNotReady indicates the latest release revision is in a terminal non-deployed state (e.g. failed).
+	ReasonHelmReleaseNotReady = "HelmReleaseNotReady"
+	// ReasonHelmReleaseStuck indicates the release is pending-install/upgrade/rollback with no upgrade in flight in this bridge.
+	ReasonHelmReleaseStuck = "HelmReleaseStuck"
+	// ReasonHelmStatusUnavailable indicates a transient failure querying Helm release status; health is left unchanged.
+	ReasonHelmStatusUnavailable = "HelmStatusUnavailable"
+	// ReasonHelmReleaseDrifted indicates objects rendered by the deployed Helm release are missing from the cluster;
+	// the bridge re-applies the release at the current generation to recreate them.
+	ReasonHelmReleaseDrifted = "HelmReleaseDrifted"
 )
 
 // healthCacheTTL bounds how long a deployed-release verdict is reused before ComponentHealth re-queries Helm.

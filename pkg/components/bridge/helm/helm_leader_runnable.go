@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bridge
+package helm
 
 import (
 	"context"
@@ -23,12 +23,14 @@ import (
 	"xmanager_cloud/internal/logging"
 )
 
-// helmShutdownTimeout bounds how long a leader that steps down lets its in-flight Helm upgrade finish before it
+// HelmShutdownTimeout bounds how long a leader that steps down lets its in-flight Helm upgrade finish before it
 // cancels it; queued upgrades that have not started are dropped at once, and the next leader re-reconciles them. It
 // is shorter than componentGracefulShutdownTimeout, so the Helm worker normally returns before the manager releases
 // the Lease. A cancelled Helm action can return while Helm still applies resources in the background, so Helm writes
 // are bounded by the process exit that follows, not by the Lease release.
-const helmShutdownTimeout = 20 * time.Second
+const HelmShutdownTimeout = 20 * time.Second
+
+const helmShutdownTimeout = HelmShutdownTimeout
 
 // leaderHelmManager is the part of K8sHelmManager whose work must stay within the Lease.
 type leaderHelmManager interface {
