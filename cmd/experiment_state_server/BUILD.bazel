@@ -89,9 +89,7 @@ go_test(
     srcs = ["cli_login_test.go"],
     embed = [":experiment_state_server_lib"],
     deps = [
-        "//internal/storage/spanner/emulator",
         "//pkg/auth/oauth2",
         "@com_github_google_go_cmp//cmp",
-        "@com_google_cloud_go_spanner//:spanner",
     ],
 )
