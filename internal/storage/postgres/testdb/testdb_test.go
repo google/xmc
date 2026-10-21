@@ -245,6 +245,18 @@ func TestReplaceDatabaseInDSN(t *testing.T) {
 			want:    "postgres://postgres:postgres@localhost:5432/test_xid_db_abc123?sslmode=disable",
 		},
 		{
+			name:    "replaces dbname in key-value DSN",
+			baseDSN: "host=localhost port=5432 user=postgres dbname=postgres sslmode=disable",
+			dbName:  "test_xid_db_abc123",
+			want:    "host=localhost port=5432 user=postgres dbname=test_xid_db_abc123 sslmode=disable",
+		},
+		{
+			name:    "appends dbname in key-value DSN when absent",
+			baseDSN: "host=localhost port=5432 user=postgres sslmode=disable",
+			dbName:  "test_ess_db_abc123",
+			want:    "host=localhost port=5432 user=postgres sslmode=disable dbname=test_ess_db_abc123",
+		},
+		{
 			name:    "invalid URL returns error",
 			baseDSN: "://invalid-url",
 			dbName:  "test_db",
@@ -278,6 +290,18 @@ func TestErrorPaths(t *testing.T) {
 	t.Run("execAdminSQL returns error on unreachable DSN", func(t *testing.T) {
 		if err := execAdminSQL(canceledCtx, "postgres://127.0.0.1:1/postgres", "SELECT 1"); err == nil {
 			t.Error("execAdminSQL() = nil, want error on canceled context")
+		}
+	})
+
+	t.Run("openTestPool returns error on invalid DSN", func(t *testing.T) {
+		if _, err := openTestPool(canceledCtx, "://invalid-dsn"); err == nil {
+			t.Error("openTestPool() = nil, want error on invalid DSN")
+		}
+	})
+
+	t.Run("openTestPool returns error when ping fails", func(t *testing.T) {
+		if _, err := openTestPool(canceledCtx, "postgres://127.0.0.1:1/postgres"); err == nil {
+			t.Error("openTestPool() = nil, want error when ping fails")
 		}
 	})
 }

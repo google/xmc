@@ -159,6 +159,10 @@ func openTestPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pool: %w", err)
 	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("failed to ping pool: %w", err)
+	}
 	return pool, nil
 }
 
@@ -176,6 +180,9 @@ func initializeDatabaseSchema(ctx context.Context, pool *pgxpool.Pool, schemaSQL
 }
 
 func replaceDatabaseInDSN(baseDSN, dbName string) (string, error) {
+	if !strings.Contains(baseDSN, "://") && strings.Contains(baseDSN, "=") {
+		return replaceKeyValueDatabase(baseDSN, dbName), nil
+	}
 	u, err := url.Parse(baseDSN)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse base DSN: %w", err)
@@ -183,6 +190,18 @@ func replaceDatabaseInDSN(baseDSN, dbName string) (string, error) {
 	u.Path = "/" + dbName
 	u.RawPath = ""
 	return u.String(), nil
+}
+
+func replaceKeyValueDatabase(baseDSN, dbName string) string {
+	parts := strings.Fields(baseDSN)
+	for i, part := range parts {
+		if strings.HasPrefix(part, "dbname=") {
+			parts[i] = "dbname=" + dbName
+			return strings.Join(parts, " ")
+		}
+	}
+	parts = append(parts, "dbname="+dbName)
+	return strings.Join(parts, " ")
 }
 
 func execAdminSQL(ctx context.Context, baseDSN, query string) error {
@@ -235,6 +254,7 @@ func startPostgresContainer(ctx context.Context) (testcontainers.Container, stri
 			"-c", "fsync=off",
 			"-c", "synchronous_commit=off",
 			"-c", "full_page_writes=off",
+			"-c", "max_connections=500",
 		},
 		WaitingFor: wait.ForListeningPort("5432/tcp").WithStartupTimeout(60 * time.Second),
 	}
