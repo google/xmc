@@ -128,6 +128,7 @@ use_repo(
     "com_github_google_go_cmp",
     "com_github_google_uuid",
     "com_github_grpc_ecosystem_grpc_gateway_v2",
+    "com_github_jackc_pgx_v5",
     "com_github_kylelemons_godebug",
     "com_github_masterminds_semver_v3",
     "com_github_moby_moby_api",
