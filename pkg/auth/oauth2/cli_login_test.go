@@ -23,10 +23,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/go-cmp/cmp"
 )
 
-// baseCLILoginQuery is a valid `/api/cli/login` query.
 func baseCLILoginQuery() url.Values {
 	return url.Values{
 		"port":                  {strconv.Itoa(cliTestPort)},
@@ -39,6 +39,23 @@ func baseCLILoginQuery() url.Values {
 
 func newCLILoginRequest(q url.Values) *http.Request {
 	return httptest.NewRequest(http.MethodGet, "https://xmc.example.com/api/cli/login?"+q.Encode(), nil)
+}
+
+func TestEnableCLILogin(t *testing.T) {
+	a := NewAuthenticator(baseLoginConfig())
+	if err := a.EnableCLILogin(nil); err == nil {
+		t.Fatal("EnableCLILogin(nil) error = nil, want non-nil")
+	}
+	store := newFakeCLICodeStore()
+	if err := a.EnableCLILogin(store); err != nil {
+		t.Fatalf("EnableCLILogin() failed: %v", err)
+	}
+	if a.cliCodes != store {
+		t.Error("EnableCLILogin() did not enable CLI login")
+	}
+	if err := a.EnableCLILogin(newFakeCLICodeStore()); err == nil {
+		t.Fatal("second EnableCLILogin() error = nil, want non-nil")
+	}
 }
 
 func TestHandleCLILoginSuccess(t *testing.T) {
@@ -80,10 +97,11 @@ func TestHandleCLILoginSuccess(t *testing.T) {
 	if diff := cmp.Diff(wantAttrs, gotAttrs); diff != "" {
 		t.Errorf("cli_login cookie attributes mismatch (-want +got):\n%s", diff)
 	}
-	ticket, err := a.openCLILoginTicket(cliCookie.Value, time.Now())
-	if err != nil {
-		t.Fatalf("cli_login cookie does not open: %v", err)
+	var claims signedClaims[cliLoginTicket]
+	if _, err := jwt.ParseWithClaims(cliCookie.Value, &claims, func(*jwt.Token) (any, error) { return a.JWTSecret, nil }, jwt.WithAudience(cliLoginTicketAudience)); err != nil {
+		t.Fatalf("cli_login cookie does not verify: %v", err)
 	}
+	ticket := claims.Payload
 	wantTicket := baseCLITicket(stateCookie.Value)
 	wantTicket.ExpiresAt = ticket.ExpiresAt
 	if diff := cmp.Diff(wantTicket, ticket); diff != "" {
@@ -138,9 +156,6 @@ func TestHandleCLILoginWithoutLoginHint(t *testing.T) {
 	}
 }
 
-// TestHandleCLILoginFetchMetadata checks the login CSRF and embedding defenses: only top-level
-// navigations the user started (Sec-Fetch-Site "none") or from browsers without fetch metadata
-// may start a CLI login.
 func TestHandleCLILoginFetchMetadata(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -54,8 +54,7 @@ type Authenticator struct {
 	// Injected provider for OAuth client interactions.
 	OAuthProvider OAuthProvider
 
-	// CLI login state, set by EnableCLILogin. The CLI login endpoints are disabled while cliCodes
-	// is nil.
+	// CLI login state, set by EnableCLILogin.
 	cliCodes CLICodeStore
 }
 

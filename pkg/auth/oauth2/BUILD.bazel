@@ -18,7 +18,6 @@ go_library(
     name = "oauth2",
     srcs = [
         "cli_callback.go",
-        "cli_code_store.go",
         "cli_login.go",
         "cli_login_ticket.go",
         "cli_manual.go",
@@ -53,7 +52,6 @@ go_test(
     name = "oauth2_test",
     srcs = [
         "cli_callback_test.go",
-        "cli_code_store_test.go",
         "cli_login_test.go",
         "cli_login_ticket_test.go",
         "cli_manual_test.go",

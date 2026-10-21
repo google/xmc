@@ -25,8 +25,7 @@ import (
 )
 
 // registerCLILogin serves the browser-based CLI login endpoints. They are not registered under
-// mock or disabled authentication, which would let anyone mint CLI tokens, nor without Spanner,
-// which stores the one-time login codes.
+// mock or disabled authentication, which would let anyone mint CLI tokens, nor without Spanner.
 func registerCLILogin(ctx context.Context, httpMux *http.ServeMux, oauthAuth *oauth.Authenticator, oauthCfg *oauth.Config, spannerClient *spanner.Client) {
 	if oauthCfg.MockAuth || oauthCfg.DisableAuthentication {
 		logging.Warn(ctx, "CLI login disabled under non-production auth", "mock_auth", oauthCfg.MockAuth, "disable_authentication", oauthCfg.DisableAuthentication)

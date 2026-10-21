@@ -12,8 +12,7 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
--- Mirrors spanner/migrations/ess/016_cli_login_codes.up.sql. PostgreSQL has no TTL policy and no
--- code store implementation yet.
+-- Mirrors spanner/migrations/ess/016_cli_login_codes.up.sql.
 CREATE TABLE CliLoginCodes (
   CodeHash BYTEA NOT NULL, -- SHA-256 of the code.
   Email TEXT NOT NULL,

@@ -25,19 +25,11 @@ import (
 	"xmanager_cloud/pkg/auth/oauth2"
 )
 
+const tableName = "CliLoginCodes"
+
+var columns = []string{"CodeHash", "Email", "Name", "CodeChallenge", "ExpiresAt"}
+
 var _ oauth2.CLICodeStore = (*Repository)(nil)
-
-// Spanner table and columns of the CliLoginCodes table.
-const (
-	tableName        = "CliLoginCodes"
-	colCodeHash      = "CodeHash"
-	colEmail         = "Email"
-	colName          = "Name"
-	colCodeChallenge = "CodeChallenge"
-	colExpiresAt     = "ExpiresAt"
-)
-
-var columns = []string{colCodeHash, colEmail, colName, colCodeChallenge, colExpiresAt}
 
 // Repository stores one-time CLI login codes in Cloud Spanner.
 type Repository struct {
@@ -54,14 +46,8 @@ func NewRepository(client *spanner.Client) (*Repository, error) {
 
 // Save inserts a new code. Inserting a hash that already exists fails.
 func (r *Repository) Save(ctx context.Context, code oauth2.CLILoginCode) error {
-	mutation := spanner.Insert(tableName, columns, []any{
-		code.Hash,
-		code.Email,
-		spanner.NullString{StringVal: code.Name, Valid: code.Name != ""},
-		code.CodeChallenge,
-		code.ExpiresAt,
-	})
-	if _, err := r.client.Apply(ctx, []*spanner.Mutation{mutation}); err != nil {
+	vals := []any{code.Hash, code.Email, spanner.NullString{StringVal: code.Name, Valid: code.Name != ""}, code.CodeChallenge, code.ExpiresAt}
+	if _, err := r.client.Apply(ctx, []*spanner.Mutation{spanner.Insert(tableName, columns, vals)}); err != nil {
 		return fmt.Errorf("failed to save cli login code: %w", err)
 	}
 	return nil
