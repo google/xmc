@@ -102,7 +102,7 @@ lowercase.
 
 ## CLI login
 
-`xmc login` signs the user in through the browser and stores an XMC session token
+`xmanager login` signs the user in through the browser and stores an XMC session token
 for the CLI ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). The
 experiment state server starts the flow on `/api/cli/login`, reusing the
 Dashboard OAuth client and its redirect URI, so no OAuth client changes are

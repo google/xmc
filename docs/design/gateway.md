@@ -140,7 +140,7 @@ The command-line interface (CLI) client bypasses the web UI entirely, communicat
 
 ### 3. CLI Login (Browser Loopback)
 
-`xmc login` signs the user in through the same OAuth client, identity provider and `/api/callback` redirect URI as the Dashboard ([google/xmc#1309](https://github.com/google/xmc/issues/1309)).
+`xmanager login` signs the user in through the same OAuth client, identity provider and `/api/callback` redirect URI as the Dashboard ([google/xmc#1309](https://github.com/google/xmc/issues/1309)).
 
 1. **Login ticket**: `/api/cli/login` accepts only a numeric loopback `port` (1024 to 65535), a CLI `state`, an S256 `code_challenge` and an optional `login_hint`. It stores them in the `cli_login` cookie, signed with the JWT secret (`aud: xmanager-cloud-cli-login`) and scoped to `/api/callback`, together with the hash of the `oauth_state` it generates. To stop other web pages from starting a login in the user's browser (web-origin login CSRF) or embedding it, browsers that send fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Note that `Sec-Fetch-Site: none` is also sent for links clicked in non-browser desktop applications (such as chat or email clients) or pasted into the address bar, and browsers without fetch metadata (or plain-HTTP non-localhost origins) omit these headers.
 
