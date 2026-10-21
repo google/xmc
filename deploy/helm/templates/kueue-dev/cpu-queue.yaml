@@ -15,8 +15,11 @@
 {{- $limits := $queue.limits | default dict }}
 {{- $flavors := $queue.flavors | default list }}
 {{- $covered := list }}
-{{- if $flavors }}
-{{- $covered = keys (index $flavors 0).resources | sortAlpha }}
+{{- range $flavors }}
+{{- $declared := keys (.resources | default dict) | sortAlpha }}
+{{- if not $declared }}{{ fail (printf "cpu queue flavor %q declares no resources" .name) }}{{ end }}
+{{- if not $covered }}{{ $covered = $declared }}{{ end }}
+{{- if ne (toJson $declared) (toJson $covered) }}{{ fail (printf "cpu queue flavor %q declares %v, but the queue covers %v" .name $declared $covered) }}{{ end }}
 {{- end }}
 {{- range $flavors }}
 apiVersion: kueue.x-k8s.io/v1beta2
