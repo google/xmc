@@ -233,8 +233,9 @@ type MockStorage struct {
 	// UpdatedExperimentResources records the last experiment passed to UpdateExperimentResources.
 	UpdatedExperimentResources *essmsgpb.Experiment
 
-	PauseStateRepository PauseStateRepository
-	PausedTaskRepository PausedTaskRepository
+	PauseStateRepository   PauseStateRepository
+	PausedTaskRepository   PausedTaskRepository
+	CLILoginCodeRepository CLILoginCodeRepository
 	// Transaction optionally overrides Transaction.XIDs, Transaction.StatusMessages,
 	// Transaction.StatusHistory, Transaction.PauseState, and Transaction.PausedTasks
 	// passed to RunInTransaction callbacks; other fields are ignored.
@@ -449,6 +450,11 @@ func (s *MockStorage) PauseState() PauseStateRepository {
 // PausedTasks returns the configured paused task repository (nil if unset).
 func (s *MockStorage) PausedTasks() PausedTaskRepository {
 	return s.PausedTaskRepository
+}
+
+// CLILoginCodes returns the configured CLI login code repository (nil if unset).
+func (s *MockStorage) CLILoginCodes() CLILoginCodeRepository {
+	return s.CLILoginCodeRepository
 }
 
 // SaveWorkUnitExecution mocks saving a work unit execution.

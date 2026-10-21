@@ -112,13 +112,14 @@ so no OAuth client changes are needed. The callback applies the
 through its `127.0.0.1` listener. Codes live in the `CliLoginCodes` Spanner table
 (migration 016) for at most 60 seconds.
 
-`/api/cli/login` only starts a login in a page the user opened directly, such as
-the browser window the CLI launches: browsers that report fetch metadata must send
-`Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Browsers that omit these
-headers are allowed.
+`/api/cli/login` rejects cross-site web navigations and embedded frames: browsers that
+report fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`
+(note that links opened from desktop apps or pasted URLs also send `Sec-Fetch-Site: none`,
+and browsers that omit these headers or use plain-HTTP non-localhost origins are not
+covered by fetch metadata).
 
 The CLI login endpoints are not served with `auth.mockAuth` or
-`auth.disableAuthentication`, or when the server has no Spanner database.
+`auth.disableAuthentication`, or when the server has no CLI login code store.
 
 ---
 

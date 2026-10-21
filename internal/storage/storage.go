@@ -26,6 +26,7 @@ import (
 	dpb "xmanager_cloud/api/protos/dashboard"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 // ExperimentUpdate represents an update to an experiment.
@@ -359,6 +360,14 @@ type PauseSchedulingStore interface {
 	PausedTasks() PausedTaskRepository
 }
 
+// CLILoginCodeRepository defines persistence operations for one-time CLI login codes.
+type CLILoginCodeRepository = oauth2.CLICodeStore
+
+// CLILoginCodeStore exposes the repository accessor for one-time CLI login codes.
+type CLILoginCodeStore interface {
+	CLILoginCodes() CLILoginCodeRepository
+}
+
 // WorkUnitTxRepository defines work unit operations scoped to a read-write transaction.
 type WorkUnitTxRepository interface {
 	// FetchNextWorkUnitID retrieves the next available work unit ID for an experiment within the transaction.
@@ -441,4 +450,5 @@ type Storage interface {
 	OperationStore
 	XidEntryStore
 	PauseSchedulingStore
+	CLILoginCodeStore
 }

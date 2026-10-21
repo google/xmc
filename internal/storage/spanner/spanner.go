@@ -26,6 +26,7 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/artifact"
+	"xmanager_cloud/internal/storage/spanner/clilogincode"
 	"xmanager_cloud/internal/storage/spanner/dashboard"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/internal/storage/spanner/operation"
@@ -47,6 +48,7 @@ type StatusHistoryRepository = statushistory.Repository
 type DashboardRepository = dashboard.Repository
 type PauseStateRepository = pausestate.Repository
 type PausedTaskRepository = pausedtask.Repository
+type CLILoginCodeRepository = clilogincode.Repository
 
 var _ storage.Storage = (*Storage)(nil)
 
@@ -61,8 +63,9 @@ type Storage struct {
 	*OperationRepository
 	*StatusHistoryRepository
 	*DashboardRepository
-	pauseStateRepository *PauseStateRepository
-	pausedTaskRepository *PausedTaskRepository
+	pauseStateRepository   *PauseStateRepository
+	pausedTaskRepository   *PausedTaskRepository
+	cliLoginCodeRepository *CLILoginCodeRepository
 }
 
 // RunInTransaction executes the given function in a Spanner read-write transaction,
@@ -97,6 +100,11 @@ func (s *Storage) PauseState() storage.PauseStateRepository {
 // PausedTasks returns the repository for pending paused actuation tasks.
 func (s *Storage) PausedTasks() storage.PausedTaskRepository {
 	return s.pausedTaskRepository
+}
+
+// CLILoginCodes returns the repository for one-time CLI login codes.
+func (s *Storage) CLILoginCodes() storage.CLILoginCodeRepository {
+	return s.cliLoginCodeRepository
 }
 
 // NewStorage creates a new instance of the Spanner-backed storage.
@@ -152,6 +160,11 @@ func NewStorage(client *spanner.Client) (*Storage, error) {
 		return nil, fmt.Errorf("failed to create pausedtask repository: %w", err)
 	}
 
+	cliLoginCodeRepo, err := clilogincode.NewRepository(client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create clilogincode repository: %w", err)
+	}
+
 	return &Storage{
 		client:                  client,
 		ExperimentRepository:    expRepo,
@@ -164,5 +177,6 @@ func NewStorage(client *spanner.Client) (*Storage, error) {
 		DashboardRepository:     dashboardRepo,
 		pauseStateRepository:    pauseStateRepo,
 		pausedTaskRepository:    pausedTaskRepo,
+		cliLoginCodeRepository:  cliLoginCodeRepo,
 	}, nil
 }

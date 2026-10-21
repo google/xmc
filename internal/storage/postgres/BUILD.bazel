@@ -22,6 +22,7 @@ go_library(
     deps = [
         "//internal/storage",
         "//internal/storage/postgres/artifact",
+        "//internal/storage/postgres/clilogincode",
         "//internal/storage/postgres/dashboard",
         "//internal/storage/postgres/experiment",
         "//internal/storage/postgres/operation",
