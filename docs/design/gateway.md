@@ -173,11 +173,11 @@ sequenceDiagram
 
 #### Headless (Manual) Mode
 
-Over SSH or without a display, `xmc login --no-browser` (also chosen automatically) sends `mode=manual` instead of `port`. `/api/cli/login` requires exactly one of the two. The user opens the printed URL in a browser on any device and pastes the resulting code into the terminal.
+Over SSH or without a display, `xmanager login --no-browser` (also chosen automatically) sends `mode=manual` instead of `port`. `/api/cli/login` requires exactly one of the two. The user opens the printed URL in a browser on any device and pastes the resulting code into the terminal.
 
 ```mermaid
 sequenceDiagram
-    participant CLI as xmc login --no-browser
+    participant CLI as xmanager login --no-browser
     participant B as Browser (any device)
     participant ESS as ESS /api
     participant IdP as Google or Dex
@@ -198,7 +198,7 @@ sequenceDiagram
     ESS->>CLI: access_token
 ```
 
-1. **Confirmation first**: after the identity checks and admission, the callback mints no code. It shows a page naming the account and telling the user to continue only if they started `xmc login --no-browser` themselves, just now. The page's form carries a confirmation (email, name, PKCE challenge, 5-minute expiry) signed with the JWT secret (`aud: xmanager-cloud-cli-confirm`), never a code.
+1. **Confirmation first**: after the identity checks and admission, the callback mints no code. It shows a page naming the account and telling the user to continue only if they started `xmanager login --no-browser` themselves, just now. The page's form carries a confirmation (email, name, PKCE challenge, 5-minute expiry) signed with the JWT secret (`aud: xmanager-cloud-cli-confirm`), never a code.
 2. **Code delivery**: `POST /api/cli/code` accepts only same-origin form posts (`Sec-Fetch-Site: same-origin` and `Sec-Fetch-Dest: document` when sent, on top of `CrossOriginProtection`), verifies the confirmation token, re-runs admission, and shows a 120-second code in the page body, never in a URL. **Cancel** verifies the confirmation too and issues no code; the form accepts only `action=continue` or `action=cancel`. Pages are `no-store` with `Referrer-Policy: no-referrer` and an added `Content-Security-Policy: frame-ancestors 'none'; form-action 'self'`, use no script, and escape every dynamic value. Failures, including a denied user, show an error page that does not name the user, because there is no loopback listener to report them to.
 3. **Residual risk**: an attacker can still send a victim a manual-mode link built with the attacker's own PKCE challenge, and talk the victim into confirming and handing over the code (consent phishing). The confirmation page, the warnings and the short code lifetime reduce this to the same level as `gcloud auth login --no-browser`. In addition, the confirmation is a bearer value not bound to the browser session: for its 5 minutes, whoever obtains the page's form value can mint a code, which is only redeemable with the PKCE verifier from the login start.
 

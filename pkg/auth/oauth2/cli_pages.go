@@ -32,7 +32,7 @@ var cliConfirmationPage = template.Must(template.New("confirmation").Parse(`<!DO
 <html lang="en"><head><meta charset="utf-8"><title>XManager CLI login</title></head>
 <body style="` + cliManualPageStyle + `">
 <h1>Sign in to the XMC command-line tool as {{.Email}}?</h1>
-<p><strong>Only continue if you started <code>xmc login --no-browser</code> yourself, in your own terminal, just now.</strong>
+<p><strong>Only continue if you started <code>xmanager login --no-browser</code> yourself, in your own terminal, just now.</strong>
 If someone sent you this link or asked you to open it, select Cancel.</p>
 <p>The next page shows a sign-in code. Never share the code with anyone.</p>
 <form method="post" action="/api/cli/code">
@@ -46,7 +46,7 @@ var cliCodePage = template.Must(template.New("code").Parse(`<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>XManager CLI login</title></head>
 <body style="` + cliManualPageStyle + `">
 <h1>Your sign-in code</h1>
-<p>Copy this code and paste it into the terminal where you ran <code>xmc login --no-browser</code>.
+<p>Copy this code and paste it into the terminal where you ran <code>xmanager login --no-browser</code>.
 It works once and expires in 2 minutes.</p>
 <p><code style="display: block; font-size: 1.6em; padding: 0.6em; border: 1px solid #888; user-select: all; word-break: break-all">{{.}}</code></p>
 <p><strong>Never share this code with anyone or paste it anywhere else.</strong>
@@ -83,16 +83,16 @@ func writeCLITemplatePage(w http.ResponseWriter, page *template.Template, data a
 func writeCLIManualError(w http.ResponseWriter, errCode string) {
 	if errCode == cliErrorAccessDenied {
 		writeCLIResultPage(w, http.StatusForbidden, "Sign-in failed",
-			"Sign-in was cancelled, or this account may not use this XManager deployment. Run <code>xmc login --no-browser</code> again to retry.")
+			"Sign-in was cancelled, or this account may not use this XManager deployment. Run <code>xmanager login --no-browser</code> again to retry.")
 		return
 	}
 	writeCLIResultPage(w, http.StatusInternalServerError, "Sign-in failed",
-		"Something went wrong. Run <code>xmc login --no-browser</code> again to retry.")
+		"Something went wrong. Run <code>xmanager login --no-browser</code> again to retry.")
 }
 
 func writeCLIManualExpired(w http.ResponseWriter) {
 	writeCLIResultPage(w, http.StatusBadRequest, "Sign-in expired",
-		"This page has expired or was already used. Run <code>xmc login --no-browser</code> again to get a new code.")
+		"This page has expired or was already used. Run <code>xmanager login --no-browser</code> again to get a new code.")
 }
 
 func writeCLIPageHeaders(w http.ResponseWriter, status int) {

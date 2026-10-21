@@ -118,11 +118,11 @@ report fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: docu
 and browsers that omit these headers or use plain-HTTP non-localhost origins are not
 covered by fetch metadata).
 
-Over SSH, or on a machine without a display, `xmc login --no-browser` (also chosen
+Over SSH, or on a machine without a display, `xmanager login --no-browser` (also chosen
 automatically) uses manual mode: the CLI prints a `/api/cli/login?mode=manual` URL
 for the user to open in a browser on any device. After sign-in and admission, the
 callback shows a confirmation page that names the account and warns the user to
-continue only if they started `xmc login --no-browser` themselves. Only when the
+continue only if they started `xmanager login --no-browser` themselves. Only when the
 user selects **Continue** (a same-origin `POST /api/cli/code`, with admission
 checked again) does the server mint a code, valid for 120 seconds and shown only
 in the page body, never in a URL. The user pastes it into the terminal. Each
