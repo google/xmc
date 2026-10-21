@@ -95,6 +95,14 @@ func TestStorage(t *testing.T) {
 			},
 		},
 		{
+			name: "CLILoginCodes",
+			check: func(t *testing.T) {
+				if s.cliLoginCodeRepository == nil || s.CLILoginCodes() != s.cliLoginCodeRepository {
+					t.Error("CLILoginCodes() did not return initialized cliLoginCodeRepository")
+				}
+			},
+		},
+		{
 			name: "RunInTransaction nil pool",
 			check: func(t *testing.T) {
 				err := (&Storage{}).RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {

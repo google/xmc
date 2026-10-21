@@ -49,11 +49,14 @@ type cliLoginRequest struct {
 }
 
 // EnableCLILogin turns on the CLI login endpoints. Call it once during initialization before serving requests.
-func (a *Authenticator) EnableCLILogin() error {
-	if a.cliLoginEnabled {
+func (a *Authenticator) EnableCLILogin(codes CLICodeStore) error {
+	if codes == nil {
+		return errors.New("cli login code store must not be nil")
+	}
+	if a.cliCodes != nil {
 		return errors.New("cli login is already enabled")
 	}
-	a.cliLoginEnabled = true
+	a.cliCodes = codes
 	return nil
 }
 
@@ -91,7 +94,7 @@ func (a *Authenticator) HandleCLILogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Authenticator) checkCLIBrowserRequest(w http.ResponseWriter, r *http.Request) bool {
-	if !a.cliLoginEnabled {
+	if a.cliCodes == nil {
 		http.NotFound(w, r)
 		return false
 	}

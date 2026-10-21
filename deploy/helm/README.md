@@ -104,9 +104,13 @@ lowercase.
 
 `xmanager login` signs the user in through the browser and stores an XMC session token
 for the CLI ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). The
-experiment state server starts the flow on `/api/cli/login`, reusing the
-Dashboard OAuth client and its redirect URI, so no OAuth client changes are
-needed.
+experiment state server starts the flow on `/api/cli/login` and finishes it on the
+existing `/api/callback`, reusing the Dashboard OAuth client and its redirect URI,
+so no OAuth client changes are needed. The callback applies the
+[sign-in identity checks](#sign-in-identity-checks) and
+[deployment admission](#deployment-admission), then hands the CLI a one-time code
+through its `127.0.0.1` listener. Codes live in the `CliLoginCodes` Spanner table
+(migration 016) for at most 60 seconds.
 
 `/api/cli/login` rejects cross-site web navigations and embedded frames: browsers that
 report fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`
@@ -115,7 +119,7 @@ and browsers that omit these headers or use plain-HTTP non-localhost origins are
 covered by fetch metadata).
 
 The CLI login endpoints are not served with `auth.mockAuth` or
-`auth.disableAuthentication`.
+`auth.disableAuthentication`, or when the server has no CLI login code store.
 
 ---
 

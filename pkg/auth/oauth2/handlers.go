@@ -121,7 +121,7 @@ func (a *Authenticator) setOAuthStateCookie(w http.ResponseWriter, r *http.Reque
 
 // HandleCallback processes the authentication callback.
 func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	_, err := a.validateState(r)
+	oauthState, err := a.validateState(r)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("State validation failed: %v", err), http.StatusBadRequest)
 		return
@@ -136,14 +136,19 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	if ticket, ok := a.takeCLILoginTicket(w, r, oauthState); ok {
+		a.handleCLICallback(ctx, w, r, ticket)
+		return
+	}
+
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		http.Error(w, "Code parameter is missing", http.StatusBadRequest)
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
 
 	userInfo, err := a.OAuthProvider.ExchangeAndGetUserInfo(ctx, r, code)
 	if err != nil {

@@ -631,3 +631,12 @@ CREATE TABLE PausedTasks (
 -- Unsharded because task buffering only occurs during maintenance windows at low rates.
 CREATE INDEX PausedTasksUnprocessed ON PausedTasks (Priority DESC, CreateTime) STORING (ActionProto, Target, OperationName, TraceId, IsPending) WHERE IsPending IS NOT NULL;
 
+-- One-time CLI login codes issued by /api/callback and redeemed once by /api/cli/token.
+CREATE TABLE CliLoginCodes (
+  CodeHash BYTES(32) NOT NULL, -- SHA-256 of the code.
+  Email STRING(MAX) NOT NULL,
+  Name STRING(MAX),
+  CodeChallenge STRING(64) NOT NULL, -- S256 PKCE challenge.
+  ExpiresAt TIMESTAMP NOT NULL,
+) PRIMARY KEY (CodeHash),
+  ROW DELETION POLICY (OLDER_THAN(ExpiresAt, INTERVAL 1 DAY));

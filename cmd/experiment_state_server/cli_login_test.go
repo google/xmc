@@ -21,6 +21,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
@@ -37,32 +40,46 @@ func registeredPatterns(mux *http.ServeMux) []string {
 
 func TestRegisterCLILogin(t *testing.T) {
 	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	spannerStorage, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage() failed: %v", err)
+	}
 	none := make([]string, len(cliLoginPaths))
 	tests := []struct {
-		name string
-		cfg  oauth.Config
-		want []string
+		name  string
+		cfg   oauth.Config
+		store storage.Storage
+		want  []string
 	}{
 		{
-			name: "production auth registers the endpoints",
+			name:  "production auth with storage registers the endpoints",
+			cfg:   oauth.Config{JWTSecret: "cli-login-test-secret-0123456789abcdef"},
+			store: spannerStorage,
+			want:  cliLoginPaths,
+		},
+		{
+			name:  "mock auth skips the endpoints",
+			cfg:   oauth.Config{MockAuth: true},
+			store: spannerStorage,
+			want:  none,
+		},
+		{
+			name:  "disabled auth skips the endpoints",
+			cfg:   oauth.Config{DisableAuthentication: true},
+			store: spannerStorage,
+			want:  none,
+		},
+		{
+			name: "missing storage skips the endpoints",
 			cfg:  oauth.Config{JWTSecret: "cli-login-test-secret-0123456789abcdef"},
-			want: cliLoginPaths,
-		},
-		{
-			name: "mock auth skips the endpoints",
-			cfg:  oauth.Config{MockAuth: true},
-			want: none,
-		},
-		{
-			name: "disabled auth skips the endpoints",
-			cfg:  oauth.Config{DisableAuthentication: true},
 			want: none,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mux := http.NewServeMux()
-			registerCLILogin(ctx, mux, oauth.NewAuthenticator(&tt.cfg), &tt.cfg)
+			registerCLILogin(ctx, mux, oauth.NewAuthenticator(&tt.cfg), &tt.cfg, tt.store)
 			if diff := cmp.Diff(tt.want, registeredPatterns(mux)); diff != "" {
 				t.Errorf("registered patterns mismatch (-want +got):\n%s", diff)
 			}

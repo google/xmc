@@ -35,6 +35,7 @@ go_library(
         "//internal/logging",
         "//internal/security/keyreloader",
         "//internal/security/tlsutil",
+        "//internal/storage",
         "//internal/storage/spanner",
         "//internal/task_queue",
         "//pkg/auth/oauth2",
@@ -89,6 +90,9 @@ go_test(
     srcs = ["cli_login_test.go"],
     embed = [":experiment_state_server_lib"],
     deps = [
+        "//internal/storage",
+        "//internal/storage/spanner",
+        "//internal/storage/spanner/emulator",
         "//pkg/auth/oauth2",
         "@com_github_google_go_cmp//cmp",
     ],

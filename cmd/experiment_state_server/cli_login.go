@@ -19,17 +19,22 @@ import (
 	"net/http"
 
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
 // registerCLILogin serves the browser-based CLI login endpoints. They are not registered under
-// mock or disabled authentication, which would let anyone mint CLI tokens.
-func registerCLILogin(ctx context.Context, httpMux *http.ServeMux, oauthAuth *oauth.Authenticator, oauthCfg *oauth.Config) {
+// mock or disabled authentication, which would let anyone mint CLI tokens, nor without storage.
+func registerCLILogin(ctx context.Context, httpMux *http.ServeMux, oauthAuth *oauth.Authenticator, oauthCfg *oauth.Config, store storage.Storage) {
 	if oauthCfg.MockAuth || oauthCfg.DisableAuthentication {
 		logging.Warn(ctx, "CLI login disabled under non-production auth", "mock_auth", oauthCfg.MockAuth, "disable_authentication", oauthCfg.DisableAuthentication)
 		return
 	}
-	if err := oauthAuth.EnableCLILogin(); err != nil {
+	if store == nil {
+		logging.Warn(ctx, "CLI login disabled: no storage")
+		return
+	}
+	if err := oauthAuth.EnableCLILogin(store.CLILoginCodes()); err != nil {
 		logging.Warn(ctx, "CLI login disabled", "error", err)
 		return
 	}

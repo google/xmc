@@ -43,19 +43,23 @@ func newCLILoginRequest(q url.Values) *http.Request {
 
 func TestEnableCLILogin(t *testing.T) {
 	a := NewAuthenticator(baseLoginConfig())
-	if err := a.EnableCLILogin(); err != nil {
+	if err := a.EnableCLILogin(nil); err == nil {
+		t.Fatal("EnableCLILogin(nil) error = nil, want non-nil")
+	}
+	store := newFakeCLICodeStore()
+	if err := a.EnableCLILogin(store); err != nil {
 		t.Fatalf("EnableCLILogin() failed: %v", err)
 	}
-	if !a.cliLoginEnabled {
+	if a.cliCodes != store {
 		t.Error("EnableCLILogin() did not enable CLI login")
 	}
-	if err := a.EnableCLILogin(); err == nil {
+	if err := a.EnableCLILogin(newFakeCLICodeStore()); err == nil {
 		t.Fatal("second EnableCLILogin() error = nil, want non-nil")
 	}
 }
 
 func TestHandleCLILoginSuccess(t *testing.T) {
-	a, _ := newCLITestAuthenticator(t, baseLoginConfig())
+	a, _, _ := newCLITestAuthenticator(t, baseLoginConfig())
 	req := newCLILoginRequest(baseCLILoginQuery())
 	req.Header.Set("Sec-Fetch-Dest", "document")
 	req.Header.Set("Sec-Fetch-Site", "none")
@@ -109,7 +113,7 @@ func TestHandleCLILoginSuccess(t *testing.T) {
 }
 
 func TestHandleCLILoginWithoutLoginHint(t *testing.T) {
-	a, _ := newCLITestAuthenticator(t, baseLoginConfig())
+	a, _, _ := newCLITestAuthenticator(t, baseLoginConfig())
 	q := baseCLILoginQuery()
 	q.Del("login_hint")
 	w := httptest.NewRecorder()
@@ -141,7 +145,7 @@ func TestHandleCLILoginFetchMetadata(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			a, _ := newCLITestAuthenticator(t, baseLoginConfig())
+			a, _, _ := newCLITestAuthenticator(t, baseLoginConfig())
 			req := newCLILoginRequest(baseCLILoginQuery())
 			for name, values := range tt.headers {
 				for _, v := range values {
@@ -175,9 +179,9 @@ func TestHandleCLILoginRejects(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			a, _ := newCLITestAuthenticator(t, baseLoginConfig())
+			a, _, _ := newCLITestAuthenticator(t, baseLoginConfig())
 			if tt.disabled {
-				a.cliLoginEnabled = false
+				a.cliCodes = nil
 			}
 			q := baseCLILoginQuery()
 			if tt.mutate != nil {
@@ -201,7 +205,7 @@ func TestHandleCLILoginRejects(t *testing.T) {
 }
 
 func TestHandleCLILoginRandomFailure(t *testing.T) {
-	a, _ := newCLITestAuthenticator(t, baseLoginConfig())
+	a, _, _ := newCLITestAuthenticator(t, baseLoginConfig())
 	withFailingRandom(t)
 	w := httptest.NewRecorder()
 	a.HandleCLILogin(w, newCLILoginRequest(baseCLILoginQuery()))

@@ -48,6 +48,7 @@ var _ apipb.ExperimentStateServiceServer = (*ProdServer)(nil)
 // ProdServer encapsulates the production Server instance along with its underlying infrastructure dependencies and lifecycle.
 type ProdServer struct {
 	*Server
+	storage         storage.Storage
 	spannerClient   *spanner.Client
 	xidClient       xidgrpcpb.XidServiceClient
 	taskQueueClient *tq.Client
@@ -69,6 +70,14 @@ func (p *ProdServer) SpannerClient() *spanner.Client {
 		return nil
 	}
 	return p.spannerClient
+}
+
+// Storage returns the underlying storage implementation.
+func (p *ProdServer) Storage() storage.Storage {
+	if p == nil {
+		return nil
+	}
+	return p.storage
 }
 
 // Close closes all underlying production client connections.
@@ -288,6 +297,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 
 	return &ProdServer{
 		Server:          srv,
+		storage:         storage,
 		spannerClient:   spannerClient,
 		xidClient:       xidClient,
 		taskQueueClient: taskQueueClient,

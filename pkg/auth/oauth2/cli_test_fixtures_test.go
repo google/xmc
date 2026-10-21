@@ -15,6 +15,9 @@
 package oauth2
 
 import (
+	"context"
+	"net/http"
+	"sync"
 	"testing"
 	"time"
 )
@@ -26,13 +29,47 @@ const (
 	cliTestChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
 )
 
-func newCLITestAuthenticator(t *testing.T, cfg *Config) (*Authenticator, *stubOAuthProvider) {
+type fakeCLICodeStore struct {
+	mu      sync.Mutex
+	codes   map[string]CLILoginCode
+	saveErr error
+}
+
+func newFakeCLICodeStore() *fakeCLICodeStore {
+	return &fakeCLICodeStore{codes: make(map[string]CLILoginCode)}
+}
+
+func (s *fakeCLICodeStore) Save(_ context.Context, code CLILoginCode) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.saveErr != nil {
+		return s.saveErr
+	}
+	s.codes[string(code.Hash)] = code
+	return nil
+}
+
+func (s *fakeCLICodeStore) only(t *testing.T) CLILoginCode {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.codes) != 1 {
+		t.Fatalf("store holds %d codes, want 1", len(s.codes))
+	}
+	for _, code := range s.codes {
+		return code
+	}
+	return CLILoginCode{}
+}
+
+func newCLITestAuthenticator(t *testing.T, cfg *Config) (*Authenticator, *fakeCLICodeStore, *stubOAuthProvider) {
 	t.Helper()
 	a, provider := newLoginTestAuthenticator(cfg)
-	if err := a.EnableCLILogin(); err != nil {
+	store := newFakeCLICodeStore()
+	if err := a.EnableCLILogin(store); err != nil {
 		t.Fatalf("EnableCLILogin() failed: %v", err)
 	}
-	return a, provider
+	return a, store, provider
 }
 
 func baseCLITicket(oauthState string) cliLoginTicket {
@@ -44,6 +81,22 @@ func baseCLITicket(oauthState string) cliLoginTicket {
 		OAuthStateHash: hashOAuthState(oauthState),
 		ExpiresAt:      time.Now().Add(cliLoginTicketTTL).Unix(),
 	}
+}
+
+func mustSealCLILoginTicket(t *testing.T, a *Authenticator, ticket cliLoginTicket) string {
+	t.Helper()
+	sealed, err := a.sealCLILoginTicket(ticket)
+	if err != nil {
+		t.Fatalf("sealCLILoginTicket() failed: %v", err)
+	}
+	return sealed
+}
+
+func newCLICallbackRequest(query, cliCookie string) *http.Request {
+	if cliCookie == "" {
+		return newCallbackRequest(query)
+	}
+	return newCallbackRequest(query, &http.Cookie{Name: cliLoginCookieName, Value: cliCookie})
 }
 
 func withFailingRandom(t *testing.T) {
