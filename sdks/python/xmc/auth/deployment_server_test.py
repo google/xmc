@@ -16,8 +16,7 @@
 
 import unittest
 
-from xmc.auth import deployment_server
-from xmc.auth.errors import AuthError
+from xmc.auth import AuthError, deployment_server
 
 _EXAMPLE = "https://xmc.example.com"
 

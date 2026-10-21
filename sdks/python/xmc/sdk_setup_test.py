@@ -56,7 +56,7 @@ class TestSDKSetupAndDependencies(unittest.TestCase):
         self.assertEqual(client.api_key, "test-key")
 
     def test_auth_cli_import_needs_no_protos(self) -> None:
-        """Importing the `xmc login` CLI loads neither protobuf nor api.protos."""
+        """Importing the `xmc` CLI loads neither protobuf nor api.protos."""
         script = (
             "import sys, xmc.auth.cli; "
             "print(sorted(m for m in sys.modules if m.split('.')[0] in ('google', 'api')))"

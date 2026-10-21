@@ -24,9 +24,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from xmc.auth import cli
+from xmc.auth import AuthError, cli
 from xmc.auth.credentials_store import CredentialsStore, StoredCredential
-from xmc.auth.errors import AuthError
 from xmc.auth.login_flow import LoginDependencies
 from xmc.auth.token_client import TokenGrant
 

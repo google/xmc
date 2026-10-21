@@ -26,14 +26,9 @@ import webbrowser
 from collections.abc import Callable, Mapping, Sequence
 from typing import TextIO
 
-from xmc.auth import token_client
-from xmc.auth.credentials_store import (
-    CredentialsStore,
-    StoredCredential,
-    default_credentials_path,
-)
+from xmc.auth import AuthError, token_client
+from xmc.auth.credentials_store import CredentialsStore, StoredCredential, default_credentials_path
 from xmc.auth.deployment_server import resolve_server
-from xmc.auth.errors import AuthError
 from xmc.auth.login_flow import (
     DEFAULT_TIMEOUT_SECONDS,
     LoginDependencies,
@@ -61,9 +56,8 @@ def _printable(text: str) -> str:
 
 def _format_expiry(expires_at: int) -> str:
     """Formats a Unix timestamp in local time."""
-    # An aware UTC datetime converts unambiguously, even across DST transitions.
-    expiry = datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc)
-    return expiry.astimezone().strftime("%Y-%m-%d %H:%M %Z")
+    utc = datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc)
+    return utc.astimezone().strftime("%Y-%m-%d %H:%M %Z")
 
 
 def _positive_seconds(value: str) -> float:
@@ -86,12 +80,7 @@ def _build_parser() -> argparse.ArgumentParser:
     login.add_argument(
         "--no-browser", action="store_true", help="Sign in on any device and paste back a code."
     )
-    login.add_argument(
-        "--timeout",
-        type=_positive_seconds,
-        default=DEFAULT_TIMEOUT_SECONDS,
-        help=f"Seconds to wait for the browser (default: {DEFAULT_TIMEOUT_SECONDS}).",
-    )
+    login.add_argument("--timeout", type=_positive_seconds, default=DEFAULT_TIMEOUT_SECONDS)
     sub.add_parser("print-token", parents=[common], help="Print the token for XMC_AUTH_TOKEN.")
     return parser
 
@@ -104,12 +93,14 @@ def _login(args: argparse.Namespace, server: str, ctx: CliContext) -> int:
         ctx.out.write(
             "No local browser detected (SSH session or no display); using manual login.\n"
         )
-    hint = cached.email if cached else None
-    grant = run_login(server, ctx.login_deps, use_browser, args.timeout, hint)
+    grant = run_login(
+        server, ctx.login_deps, use_browser, args.timeout, cached.email if cached else None
+    )
     expires_at = int(ctx.clock()) + grant.expires_in
     ctx.store.put(StoredCredential(server, grant.access_token, grant.email, expires_at))
+    email, expiry = _printable(grant.email), _format_expiry(expires_at)
     ctx.out.write(
-        f"Logged in to {server} as {_printable(grant.email)} until {_format_expiry(expires_at)}.\n"
+        f"Logged in to {server} as {email} until {expiry}.\n"
         "To use it with XManager: export XMC_AUTH_TOKEN=$(xmc print-token)\n"
     )
     return 0
@@ -159,3 +150,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         err=sys.stderr,
     )
     return run_cli(argv, ctx)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -12,4 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Per-user CLI authentication (`xmc login`), using only the standard library."""
+"""Per-user CLI authentication (`xmc`), using only the standard library."""
+
+ACCESS_DENIED_MESSAGE = (
+    "Your account is not authorized for this XMC deployment. "
+    "Ask a deployment administrator for access."
+)
+
+
+class AuthError(Exception):
+    """An authentication failure whose message is shown to the user verbatim."""
