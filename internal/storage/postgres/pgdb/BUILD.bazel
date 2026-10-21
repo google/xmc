@@ -34,12 +34,16 @@ go_library(
 
 go_test(
     name = "pgdb_test",
-    srcs = ["errors_test.go"],
+    srcs = [
+        "dbtx_test.go",
+        "errors_test.go",
+    ],
     embed = [":pgdb"],
     deps = [
         "//internal/grpcerr",
         "@com_github_jackc_pgx_v5//:pgx",
         "@com_github_jackc_pgx_v5//pgconn",
+        "@com_github_jackc_pgx_v5//pgxpool",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],
