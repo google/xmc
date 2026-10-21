@@ -63,11 +63,11 @@ const (
 
 // google.rpc.ErrorInfo metadata keys of store rejections, part of the contract callers match.
 const (
-	metadataKeyOperation  = "operation"
-	metadataKeyComponent  = "component"
-	metadataKeyDependency = "dependency"
-	metadataKeyCycle      = "cycle"
-	metadataKeyDependents = "dependents"
+	MetadataKeyOperation  = "operation"
+	MetadataKeyComponent  = "component"
+	MetadataKeyDependency = "dependency"
+	MetadataKeyCycle      = "cycle"
+	MetadataKeyDependents = "dependents"
 )
 
 // ErrorInfo metadata keys naming the recorded owner in source-ownership rejections. Callers such as
@@ -81,24 +81,24 @@ const (
 
 // ErrorInfo metadata keys naming the fence holder in cluster fence rejections.
 const (
-	metadataKeyActiveClusterUID  = "active_cluster_uid"
-	metadataKeyActiveClusterName = "active_cluster_name"
-	metadataKeyActiveEpoch       = "active_epoch"
+	MetadataKeyActiveClusterUID  = "active_cluster_uid"
+	MetadataKeyActiveClusterName = "active_cluster_name"
+	MetadataKeyActiveEpoch       = "active_epoch"
 )
 
 // Values of metadata "operation": the rejected CMS operation.
 const (
-	operationSetComponentIntent       = "SetComponentIntent"
-	operationPrepareDeactivation      = "PrepareDeactivation"
-	operationCompleteDeactivation     = "CompleteDeactivation"
-	operationUpdateObservedGeneration = "UpdateObservedGeneration"
-	operationExecuteDeletion          = "ExecuteDeletion"
-	operationDeclareClusterEpoch      = "DeclareClusterEpoch"
+	OperationSetComponentIntent       = "SetComponentIntent"
+	OperationPrepareDeactivation      = "PrepareDeactivation"
+	OperationCompleteDeactivation     = "CompleteDeactivation"
+	OperationUpdateObservedGeneration = "UpdateObservedGeneration"
+	OperationExecuteDeletion          = "ExecuteDeletion"
+	OperationDeclareClusterEpoch      = "DeclareClusterEpoch"
 )
 
-// errorWithInfo returns a status error with code and msg carrying a google.rpc.ErrorInfo with
+// ErrorWithInfo returns a status error with code and msg carrying a google.rpc.ErrorInfo with
 // reason, ErrorInfoDomain and metadata.
-func errorWithInfo(code codes.Code, reason string, metadata map[string]string, msg string) error {
+func ErrorWithInfo(code codes.Code, reason string, metadata map[string]string, msg string) error {
 	st := status.New(code, msg)
 	detailed, err := st.WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: ErrorInfoDomain, Metadata: metadata})
 	if err != nil {

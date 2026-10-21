@@ -18,7 +18,7 @@
 // Test type: hermetic Spanner emulator test in package store_test. Kept in a dedicated file to
 // avoid further growing spanner_store_test.go (~1,400 lines) and to isolate fast-path fallback
 // counting via SetBeforeIntentWriteForTest.
-package store_test
+package spanner_test
 
 import (
 	"context"
@@ -34,6 +34,7 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
+	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 )
 
 // TestSpannerStore_SetComponentIntent_ReadOnlyFastPath seeds a component at generation 1 that
@@ -127,7 +128,7 @@ func TestSpannerStore_SetComponentIntent_ConcurrentChangeBeforeFallback(t *testi
 	}
 	ctx := context.Background()
 	s, client := setupTestStore(ctx, t)
-	other := store.NewSpannerStore(client)
+	other := spannerstore.NewSpannerStore(client)
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dep, name := fmt.Sprintf("concurrent-fast-path-dep-%d", i), fmt.Sprintf("concurrent-fast-path-%d", i)

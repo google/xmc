@@ -18,7 +18,7 @@
 // MemoryStore and SpannerStore backed by the in-process Spanner emulator). Kept in a dedicated file
 // rather than memory_store_test.go or spanner_store_test.go because each case asserts identical
 // behavior across both Store implementations.
-package store_test
+package spanner_test
 
 import (
 	"context"
@@ -27,6 +27,7 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/memory"
 )
 
 // idempotencyDependency and idempotencyDependencyB are registered in every backend before the rows
@@ -46,7 +47,7 @@ type intentStoreBackend struct {
 // rows against both implementations.
 func intentStoreBackends() []intentStoreBackend {
 	return []intentStoreBackend{
-		{name: "memory", newStore: func(*testing.T) store.Store { return store.NewMemoryStore() }},
+		{name: "memory", newStore: func(*testing.T) store.Store { return memory.NewMemoryStore() }},
 		{name: "spanner", newStore: func(t *testing.T) store.Store {
 			s, _ := setupTestStore(context.Background(), t)
 			return s

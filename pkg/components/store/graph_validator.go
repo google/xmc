@@ -35,7 +35,7 @@ type DependencyGraph = graph.DependencyGraph
 func BuildDependencyGraph(records []*ComponentRecord) DependencyGraph {
 	depGraph := make(DependencyGraph, len(records))
 	for _, rec := range records {
-		if rec == nil || isDeletedRecord(rec) {
+		if rec == nil || IsDeletedRecord(rec) {
 			continue
 		}
 		canonical := naming.CanonicalComponentName(rec.Name)
@@ -54,7 +54,7 @@ func BuildDependencyGraph(records []*ComponentRecord) DependencyGraph {
 func BuildDependencyGraphFromMap(records map[string]*ComponentRecord) DependencyGraph {
 	depGraph := make(DependencyGraph, len(records))
 	for _, rec := range records {
-		if rec == nil || isDeletedRecord(rec) {
+		if rec == nil || IsDeletedRecord(rec) {
 			continue
 		}
 		canonical := naming.CanonicalComponentName(rec.Name)
@@ -73,7 +73,7 @@ func BuildDependencyGraphFromMap(records map[string]*ComponentRecord) Dependency
 func BuildDependentsGraph(records []*ComponentRecord) DependencyGraph {
 	dependents := make(DependencyGraph)
 	for _, rec := range records {
-		if rec == nil || isDeletedRecord(rec) {
+		if rec == nil || IsDeletedRecord(rec) {
 			continue
 		}
 		canonical := naming.CanonicalComponentName(rec.Name)
@@ -148,8 +148,8 @@ func validateProspectiveGraph(depGraph DependencyGraph, canonicalTarget string, 
 func dependencyCycleError(canonicalTarget string, cycle []string) error {
 	cycleStr := graph.FormatCycle(cycle)
 	logging.Warn(context.Background(), "Prospective dependency cycle detected", "target", canonicalTarget, "cycle", cycleStr)
-	return errorWithInfo(codes.FailedPrecondition, ReasonDependencyCycle,
-		map[string]string{metadataKeyOperation: operationSetComponentIntent, metadataKeyComponent: canonicalTarget, metadataKeyCycle: strings.Join(cycle[:len(cycle)-1], ",")},
+	return ErrorWithInfo(codes.FailedPrecondition, ReasonDependencyCycle,
+		map[string]string{MetadataKeyOperation: OperationSetComponentIntent, MetadataKeyComponent: canonicalTarget, MetadataKeyCycle: strings.Join(cycle[:len(cycle)-1], ",")},
 		"dependency cycle detected: "+cycleStr)
 }
 

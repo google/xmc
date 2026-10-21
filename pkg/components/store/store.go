@@ -18,6 +18,9 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -82,6 +85,90 @@ type SnapshotRecord struct {
 	Record      *ComponentRecord
 	Coordinates *componentspb.ResolvedComponentCoordinates
 	CreatedAt   time.Time
+}
+
+// RequestSource identifies the declarative object (Kubernetes CR) that sent a request. The owner
+// of a record is the (cluster, namespace) of the object that last wrote it, and UID is the
+// object's incarnation within that owner. Generation orders requests within one UID.
+type RequestSource struct {
+	UID, Namespace, ClusterUID string
+	Generation, Epoch          int64
+	// ClusterName is the human-readable name of the source's cluster, used only in messages. It is
+	// optional and never recorded.
+	ClusterName string
+	// ExpectedOwnerUID is a compare-and-swap guard: when it names the owner UID, a source with
+	// another UID in the owner's namespace and cluster takes the record over. It is never recorded.
+	ExpectedOwnerUID string
+}
+
+// SourceOwner is the recorded owner of a component: the source of its last owner write.
+type SourceOwner struct {
+	UID, Namespace, ClusterUID string
+	Generation, Epoch          int64
+}
+
+// OwnerOf returns the owner that an owner write from src records.
+func OwnerOf(src RequestSource) *SourceOwner {
+	return &SourceOwner{UID: src.UID, Generation: src.Generation, Namespace: src.Namespace, ClusterUID: src.ClusterUID, Epoch: src.Epoch}
+}
+
+// Records reports whether o already records src. A nil o records nothing.
+func (o *SourceOwner) Records(src RequestSource) bool {
+	return o != nil && *o == *OwnerOf(src)
+}
+
+// IsOlderGeneration reports whether src is an older generation of the owner object o (same UID). A
+// nil o has no generations.
+func (o *SourceOwner) IsOlderGeneration(src RequestSource) bool {
+	return o != nil && o.UID == src.UID && src.Generation < o.Generation
+}
+
+// CloneSourceOwner returns a copy of o, or nil for a nil o.
+func CloneSourceOwner(o *SourceOwner) *SourceOwner {
+	if o == nil {
+		return nil
+	}
+	cp := *o
+	return &cp
+}
+
+// ClusterIdentity identifies a Kubernetes cluster that writes Component intents: the UID of its
+// kube-system Namespace, a human-readable name used only in messages, and its fencing epoch.
+type ClusterIdentity struct {
+	UID, Name string
+	Epoch     int64
+}
+
+// DeclarationOutcome is how an accepted DeclareClusterEpoch changed the ownership fence: created,
+// refreshed (heartbeat and any changed name), raised, or took over every active owned component.
+type DeclarationOutcome int
+
+const (
+	DeclarationCreated DeclarationOutcome = iota + 1
+	DeclarationRefreshed
+	DeclarationRaised
+	DeclarationTakeover
+)
+
+// DeclarationResult is the result of an accepted DeclareClusterEpoch: the outcome, the resulting
+// fence holder, and the number of active components whose owner moved in a takeover.
+type DeclarationResult struct {
+	Outcome           DeclarationOutcome
+	Active            ClusterIdentity
+	RecordsReassigned int64
+}
+
+// OwnershipGauges is a point-in-time read of the stored state behind the CMS ownership gauges.
+type OwnershipGauges struct {
+	FenceDeclared     bool      // False before the first DeclareClusterEpoch.
+	FenceEpoch        int64     // ComponentOwnershipFence.Epoch.
+	FenceLastSeenTime time.Time // ComponentOwnershipFence.LastSeenTime.
+	StaleOwners       int64     // Active owned components with SourceLastSeenTime <= now - OwnerStaleThreshold.
+}
+
+// OwnershipGaugeReader reads the stored state behind the CMS ownership gauges at now.
+type OwnershipGaugeReader interface {
+	ReadOwnershipGauges(ctx context.Context, now time.Time) (OwnershipGauges, error)
 }
 
 // Store defines the storage interface for XMC Components System.
@@ -172,7 +259,7 @@ func ToProtoComponent(r *ComponentRecord) *componentspb.Component {
 	comp.Status = buildProtoStatus(r)
 	populateProtoTimestamps(comp, r)
 	if len(r.Labels) > 0 {
-		comp.Labels = copyMap(r.Labels)
+		comp.Labels = CopyMap(r.Labels)
 	}
 	return comp
 }
@@ -219,8 +306,8 @@ func populateProtoTimestamps(comp *componentspb.Component, r *ComponentRecord) {
 	}
 }
 
-// copyMap creates a shallow copy of a string key-value map.
-func copyMap(m map[string]string) map[string]string {
+// CopyMap creates a shallow copy of a string key-value map.
+func CopyMap(m map[string]string) map[string]string {
 	if m == nil {
 		return nil
 	}
@@ -229,4 +316,119 @@ func copyMap(m map[string]string) map[string]string {
 		cp[k] = v
 	}
 	return cp
+}
+
+// IsDeletedRecord reports whether rec is nil, in DELETED state, or has a DeleteTime set.
+func IsDeletedRecord(rec *ComponentRecord) bool {
+	return rec == nil || rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED || rec.DeleteTime != nil
+}
+
+// CloneRecord returns a deep copy of r, or nil when r is nil.
+func CloneRecord(r *ComponentRecord) *ComponentRecord {
+	if r == nil {
+		return nil
+	}
+	cp := *r
+	if r.Spec != nil {
+		cp.Spec = proto.Clone(r.Spec).(*componentspb.ComponentSpec)
+	}
+	if r.Status != nil {
+		cp.Status = proto.Clone(r.Status).(*componentspb.ComponentAccessStatus)
+	}
+	if r.ObservedGeneration != nil {
+		gen := *r.ObservedGeneration
+		cp.ObservedGeneration = &gen
+	}
+	if r.DeleteTime != nil {
+		dt := *r.DeleteTime
+		cp.DeleteTime = &dt
+	}
+	cp.Dependencies = nil
+	if len(r.Dependencies) > 0 {
+		cp.Dependencies = make([]string, len(r.Dependencies))
+		copy(cp.Dependencies, r.Dependencies)
+	}
+	cp.Labels = nil
+	if len(r.Labels) > 0 {
+		cp.Labels = CopyMap(r.Labels)
+	}
+	cp.Owner = CloneSourceOwner(r.Owner)
+	return &cp
+}
+
+// CloneCoordinates returns a deep copy of coords, or nil when coords is nil.
+func CloneCoordinates(coords *componentspb.ResolvedComponentCoordinates) *componentspb.ResolvedComponentCoordinates {
+	if coords == nil {
+		return nil
+	}
+	return proto.Clone(coords).(*componentspb.ResolvedComponentCoordinates)
+}
+
+// GenerateEtag generates a deterministic 16-character hex hash based on record state.
+func GenerateEtag(rec *ComponentRecord) string {
+	h := sha256.New()
+	_, _ = fmt.Fprintf(h, "%d:%s:%d:%d", rec.ComponentID, rec.Name, rec.Generation, rec.UpdateTime.UnixNano())
+	return hex.EncodeToString(h.Sum(nil)[:8])
+}
+
+// ValidateResourceName validates and returns the canonical component name of name.
+func ValidateResourceName(name string) (string, error) {
+	canonicalName := naming.CanonicalComponentName(name)
+	if canonicalName == "" {
+		return "", status.Error(codes.InvalidArgument, "component name is required")
+	}
+	if !naming.IsValidComponentName(canonicalName) {
+		return "", status.Errorf(codes.InvalidArgument, "invalid component name %q", name)
+	}
+	return canonicalName, nil
+}
+
+// ValidateIntentArgs validates the component name and spec of an intent request.
+func ValidateIntentArgs(name string, spec *componentspb.ComponentSpec) (string, error) {
+	canonicalName, err := ValidateResourceName(name)
+	if err != nil {
+		return "", err
+	}
+	if spec == nil {
+		return "", status.Error(codes.InvalidArgument, "component spec is required")
+	}
+	return canonicalName, nil
+}
+
+// ApplyObservation applies an UpdateObservedGeneration of observedGen, access, state and
+// statusMsg to rec, and reports whether it changed the observed generation, state or status.
+func ApplyObservation(rec *ComponentRecord, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string) bool {
+	prevObserved, prevState := rec.ObservedGeneration, rec.State
+	var prevStatus *componentspb.ComponentAccessStatus
+	if rec.Status != nil {
+		prevStatus = proto.Clone(rec.Status).(*componentspb.ComponentAccessStatus)
+	}
+
+	rec.ObservedGeneration = &observedGen
+	if access != nil {
+		rec.Status = proto.Clone(access).(*componentspb.ComponentAccessStatus)
+	}
+	if state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
+		rec.State = state
+	}
+	ApplyStatusUpdates(rec, observedGen, state, statusMsg)
+
+	return prevObserved == nil || *prevObserved != observedGen || prevState != rec.State || !proto.Equal(prevStatus, rec.Status)
+}
+
+// ApplyStatusUpdates mutates rec.Status in place with observedGen, state, and statusMsg.
+func ApplyStatusUpdates(rec *ComponentRecord, observedGen int64, state componentspb.ComponentState, statusMsg string) {
+	if rec.Status == nil && (observedGen > 0 || statusMsg != "" || state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED) {
+		rec.Status = &componentspb.ComponentAccessStatus{}
+	}
+	if rec.Status == nil {
+		return
+	}
+	rec.Status.ObservedGeneration = observedGen
+	if state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
+		rec.Status.State = state
+	}
+	if statusMsg != "" {
+		rec.Status.HealthMessage = statusMsg
+	}
 }

@@ -22,7 +22,7 @@ import (
 
 	health "xmanager_cloud/internal/common/health"
 	spannerstorage "xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/pkg/components/store"
+	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 	"xmanager_cloud/pkg/components/summary"
 
 	"cloud.google.com/go/spanner"
@@ -128,7 +128,7 @@ func (w *HealthServiceLazySpannerWrapper) ComponentsProvider(ctx context.Context
 		return nil, err
 	}
 
-	compStore := store.NewSpannerStore(client)
+	compStore := spannerstore.NewSpannerStore(client)
 	provider, err := summary.NewStoreComponentsProvider(compStore)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create custom components info provider: %w", err)

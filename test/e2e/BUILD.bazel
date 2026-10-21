@@ -55,7 +55,7 @@ _KIND_3P_DEPS = [
     "//api/protos/components/v1alpha1",
     "//pkg/components/bridge",
     "//pkg/components/cms",
-    "//pkg/components/store",
+    "//pkg/components/store/memory",
     "@com_github_go_logr_logr//testr",
     "@io_k8s_api//core/v1:core",
     "@io_k8s_apimachinery//pkg/api/errors",

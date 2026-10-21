@@ -128,7 +128,7 @@ func filterAndCountComponents(components map[string]*ComponentRecord, predicates
 	var healthy, unhealthy int32
 
 	for _, rec := range components {
-		if isDeletedRecord(rec) || !matchesAllPredicates(rec, predicates) {
+		if IsDeletedRecord(rec) || !matchesAllPredicates(rec, predicates) {
 			continue
 		}
 		matching = append(matching, rec)

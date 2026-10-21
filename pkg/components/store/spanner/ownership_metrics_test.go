@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store_test
+package spanner_test
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"xmanager_cloud/pkg/components/store"
+	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -118,7 +119,7 @@ func TestSourceLastSeenTime_Parity(t *testing.T) {
 			// An unchanged replay writes nothing, so it neither refreshes nor reports a new
 			// timestamp: an aged owner stays aged.
 			aged := time.Now().UTC().Add(-store.OwnerStaleThreshold - time.Minute).Truncate(time.Microsecond)
-			if err := store.SetSourceLastSeenTimeForTest(ctx, s, "seen-comp", aged); err != nil {
+			if err := spannerstore.SetSourceLastSeenTimeForTest(ctx, s, "seen-comp", aged); err != nil {
 				t.Fatalf("SetSourceLastSeenTimeForTest() error = %v", err)
 			}
 			replay, err := s.SetSourcedComponentIntent(ctx, "seen-comp", intentSpec("v1.0.0"), nil, src)
@@ -301,7 +302,7 @@ func verifyAdoptionAndStaleOwnerMetrics(ctx context.Context, t *testing.T, s sto
 	if g := readOwnershipGauges(ctx, t, s, time.Now().UTC()); g.StaleOwners != 0 {
 		t.Errorf("ReadOwnershipGauges() after adoption StaleOwners = %v, want 0", g.StaleOwners)
 	}
-	if err := store.SetSourceLastSeenTimeForTest(ctx, s, "metrics-comp", time.Now().UTC().Add(-store.OwnerStaleThreshold-time.Minute)); err != nil {
+	if err := spannerstore.SetSourceLastSeenTimeForTest(ctx, s, "metrics-comp", time.Now().UTC().Add(-store.OwnerStaleThreshold-time.Minute)); err != nil {
 		t.Fatalf("SetSourceLastSeenTimeForTest() error = %v", err)
 	}
 	if g := readOwnershipGauges(ctx, t, s, time.Now().UTC()); g.StaleOwners != 1 {

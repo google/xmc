@@ -28,7 +28,7 @@ import (
 
 const (
 	labelDeletionProtection = "xmc.dev/deletion-protection"
-	minDrainTimeout         = 30 * time.Second
+	MinDrainTimeout         = 30 * time.Second
 )
 
 // IsDeletionProtected checks if a component record is marked with deletion protection labels.
@@ -53,8 +53,8 @@ func CalculateDrainTimeout(rec *ComponentRecord, cascaded []*ComponentRecord, re
 		}
 	}
 
-	if maxDuration < minDrainTimeout {
-		return minDrainTimeout
+	if maxDuration < MinDrainTimeout {
+		return MinDrainTimeout
 	}
 	return maxDuration
 }
@@ -83,17 +83,17 @@ func extractRecordDrainTimeout(rec *ComponentRecord) time.Duration {
 func EvaluateDeactivationSafety(components map[string]*ComponentRecord, targetName string, requestCascade bool, minDrainFloor time.Duration) (*PrepareDeactivationResult, error) {
 	canonicalName := naming.CanonicalComponentName(targetName)
 	targetRec, exists := components[canonicalName]
-	if !exists || targetRec == nil || isDeletedRecord(targetRec) {
+	if !exists || targetRec == nil || IsDeletedRecord(targetRec) {
 		return nil, ErrComponentNotFound
 	}
 
-	activeDependents, cascadedRecs := findActiveDependents(components, canonicalName)
+	activeDependents, cascadedRecs := FindActiveDependents(components, canonicalName)
 	if len(activeDependents) > 0 && !requestCascade {
 		return &PrepareDeactivationResult{
 			IsSafeToDeactivate: false,
 			BlockingDependents: activeDependents,
 			RejectionReason:    "component has active dependents",
-		}, activeDependentsError(operationPrepareDeactivation, canonicalName, activeDependents)
+		}, activeDependentsError(OperationPrepareDeactivation, canonicalName, activeDependents)
 	}
 
 	drainTimeout := CalculateDrainTimeout(targetRec, cascadedRecs, nil)
@@ -108,11 +108,11 @@ func EvaluateDeactivationSafety(components map[string]*ComponentRecord, targetNa
 	}, nil
 }
 
-// findActiveDependents collects names and records of all active, non-disabled transitive dependents.
-func findActiveDependents(components map[string]*ComponentRecord, rootCanonical string) ([]string, []*ComponentRecord) {
+// FindActiveDependents collects names and records of all active, non-disabled transitive dependents.
+func FindActiveDependents(components map[string]*ComponentRecord, rootCanonical string) ([]string, []*ComponentRecord) {
 	records := make([]*ComponentRecord, 0, len(components))
 	for _, r := range components {
-		if !isDeletedRecord(r) {
+		if !IsDeletedRecord(r) {
 			records = append(records, r)
 		}
 	}
@@ -124,7 +124,7 @@ func findActiveDependents(components map[string]*ComponentRecord, rootCanonical 
 	var activeRecords []*ComponentRecord
 	for _, depName := range transitive {
 		depRec, ok := components[depName]
-		if !ok || depRec == nil || isDeletedRecord(depRec) || depRec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
+		if !ok || depRec == nil || IsDeletedRecord(depRec) || depRec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
 			continue
 		}
 		activeNames = append(activeNames, depName)
@@ -133,11 +133,11 @@ func findActiveDependents(components map[string]*ComponentRecord, rootCanonical 
 	return activeNames, activeRecords
 }
 
-// findAllDependents collects names and records of all transitive dependents (both active and disabled).
-func findAllDependents(components map[string]*ComponentRecord, rootCanonical string) ([]string, []*ComponentRecord) {
+// FindAllDependents collects names and records of all transitive dependents (both active and disabled).
+func FindAllDependents(components map[string]*ComponentRecord, rootCanonical string) ([]string, []*ComponentRecord) {
 	records := make([]*ComponentRecord, 0, len(components))
 	for _, r := range components {
-		if !isDeletedRecord(r) {
+		if !IsDeletedRecord(r) {
 			records = append(records, r)
 		}
 	}
@@ -149,7 +149,7 @@ func findAllDependents(components map[string]*ComponentRecord, rootCanonical str
 	var recs []*ComponentRecord
 	for _, depName := range transitive {
 		depRec, ok := components[depName]
-		if !ok || depRec == nil || isDeletedRecord(depRec) {
+		if !ok || depRec == nil || IsDeletedRecord(depRec) {
 			continue
 		}
 		names = append(names, depName)
@@ -162,7 +162,7 @@ func findAllDependents(components map[string]*ComponentRecord, rootCanonical str
 func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName string, policy componentspb.DeletionPolicy, force bool) error {
 	canonicalName := naming.CanonicalComponentName(targetName)
 	targetRec, exists := components[canonicalName]
-	if !exists || targetRec == nil || isDeletedRecord(targetRec) {
+	if !exists || targetRec == nil || IsDeletedRecord(targetRec) {
 		return ErrComponentNotFound
 	}
 	if force {
@@ -175,7 +175,7 @@ func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName s
 	// Per api/protos/components/v1alpha1/components.proto (line 44), DELETION_POLICY_UNSPECIFIED
 	// defaults to DELETION_POLICY_DELETE (cascading resource deletion across dependents).
 	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE || policy == componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED {
-		_, allRecords := findAllDependents(components, canonicalName)
+		_, allRecords := FindAllDependents(components, canonicalName)
 		for _, depRec := range allRecords {
 			if IsDeletionProtected(depRec) {
 				return ErrDeletionProtected
@@ -184,9 +184,9 @@ func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName s
 		return nil
 	}
 
-	activeDependents, _ := findActiveDependents(components, canonicalName)
+	activeDependents, _ := FindActiveDependents(components, canonicalName)
 	if len(activeDependents) > 0 {
-		return activeDependentsError(operationExecuteDeletion, canonicalName, activeDependents)
+		return activeDependentsError(OperationExecuteDeletion, canonicalName, activeDependents)
 	}
 	return nil
 }
@@ -194,7 +194,7 @@ func ValidateDeletionSafety(components map[string]*ComponentRecord, targetName s
 // activeDependentsError returns the FailedPrecondition ACTIVE_DEPENDENTS_EXIST rejection of
 // operation on canonicalName, which the active dependents still depend on.
 func activeDependentsError(operation, canonicalName string, dependents []string) error {
-	return errorWithInfo(codes.FailedPrecondition, ReasonActiveDependentsExist,
-		map[string]string{metadataKeyOperation: operation, metadataKeyComponent: canonicalName, metadataKeyDependents: strings.Join(dependents, ",")},
+	return ErrorWithInfo(codes.FailedPrecondition, ReasonActiveDependentsExist,
+		map[string]string{MetadataKeyOperation: operation, MetadataKeyComponent: canonicalName, MetadataKeyDependents: strings.Join(dependents, ",")},
 		fmt.Sprintf("component %s has active dependents: %v", canonicalName, dependents))
 }

@@ -59,7 +59,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/bridge"
 	"xmanager_cloud/pkg/components/cms"
-	"xmanager_cloud/pkg/components/store"
+	storememory "xmanager_cloud/pkg/components/store/memory"
 )
 
 const harnessBridgeSA = "xmc-bridge-sa@xmc-test.iam.gserviceaccount.com"
@@ -192,7 +192,7 @@ func buildClusterClients(t *testing.T, clusterName, kubeconfig string) *kindClus
 		t.Fatalf("failed to create dynamic client: %v", err)
 	}
 	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(clientset.Discovery()))
-	cmsServer := cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer(harnessBridgeSA)))
+	cmsServer := cms.NewServer(storememory.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer(harnessBridgeSA)))
 	prober := &kindNodePortProber{clientset: clientset, delegate: bridge.NewNetworkHealthProber(bridge.WithHealthProbeTimeout(5 * time.Second))}
 	reconciler, err := bridge.NewReconciler(bridge.NewCMSClientAdapter(cmsServer), bridge.NewBridgeProber(bridge.NewK8sStatusDetector(dynClient, mapper), prober, 5*time.Second), nil)
 	if err != nil {
@@ -692,18 +692,18 @@ func verifyHarnessCMSAuth(t *testing.T) {
 		Name: "components/clickhouse",
 		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, Version: "v1.0.0"},
 	}
-	unauthSrv := cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer("")))
+	unauthSrv := cms.NewServer(storememory.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer("")))
 	if _, err := unauthSrv.SetComponentIntent(ctx, req); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("unauthenticated SetComponentIntent code = %v, want Unauthenticated", status.Code(err))
 	}
-	viewerSrv := cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer("viewer@xmc.local")))
+	viewerSrv := cms.NewServer(storememory.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer("viewer@xmc.local")))
 	if _, err := viewerSrv.SetComponentIntent(ctx, req); status.Code(err) != codes.PermissionDenied {
 		t.Errorf("viewer SetComponentIntent code = %v, want PermissionDenied", status.Code(err))
 	}
 	if _, err := viewerSrv.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{}); err != nil {
 		t.Errorf("viewer GetPlatformHealth unexpected error = %v", err)
 	}
-	bridgeSrv := cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer(harnessBridgeSA)))
+	bridgeSrv := cms.NewServer(storememory.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer(harnessBridgeSA)))
 	if _, err := bridgeSrv.SetComponentIntent(ctx, req); err != nil {
 		t.Errorf("bridge SA SetComponentIntent unexpected error = %v", err)
 	}

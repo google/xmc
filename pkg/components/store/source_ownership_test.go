@@ -87,19 +87,19 @@ func TestOptionalRequestSource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := optionalRequestSource(tt.srcs)
+			got, err := OptionalRequestSource(tt.srcs)
 			if status.Code(err) != tt.wantCode {
-				t.Fatalf("optionalRequestSource() error = %v, want code %v", err, tt.wantCode)
+				t.Fatalf("OptionalRequestSource() error = %v, want code %v", err, tt.wantCode)
 			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("optionalRequestSource() mismatch (-want +got):\n%s", diff)
+				t.Errorf("OptionalRequestSource() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
 func TestSourceOwnerRelations(t *testing.T) {
-	owner := ownerOf(baseRequestSource)
+	owner := OwnerOf(baseRequestSource)
 	tests := []struct {
 		name                string
 		owner               *SourceOwner
@@ -117,18 +117,18 @@ func TestSourceOwnerRelations(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.owner.records(tt.src); got != tt.wantRecords {
-				t.Errorf("records() = %t, want %t", got, tt.wantRecords)
+			if got := tt.owner.Records(tt.src); got != tt.wantRecords {
+				t.Errorf("Records() = %t, want %t", got, tt.wantRecords)
 			}
-			if got := tt.owner.isOlderGeneration(tt.src); got != tt.wantOlderGeneration {
-				t.Errorf("isOlderGeneration() = %t, want %t", got, tt.wantOlderGeneration)
+			if got := tt.owner.IsOlderGeneration(tt.src); got != tt.wantOlderGeneration {
+				t.Errorf("IsOlderGeneration() = %t, want %t", got, tt.wantOlderGeneration)
 			}
 		})
 	}
 }
 
 func TestStaleGenerationError(t *testing.T) {
-	st := status.Convert(staleGenerationError("redpanda", ownerOf(baseRequestSource), modifiedSource(func(s *RequestSource) { s.Generation = 1 })))
+	st := status.Convert(StaleGenerationError("redpanda", OwnerOf(baseRequestSource), modifiedSource(func(s *RequestSource) { s.Generation = 1 })))
 
 	if st.Code() != codes.FailedPrecondition {
 		t.Errorf("code = %v, want %v", st.Code(), codes.FailedPrecondition)
@@ -146,7 +146,7 @@ func TestStaleGenerationError(t *testing.T) {
 }
 
 func TestCheckSourceOwnership(t *testing.T) {
-	owner := ownerOf(baseRequestSource)
+	owner := OwnerOf(baseRequestSource)
 	tests := []struct {
 		name       string
 		owner      *SourceOwner
@@ -183,10 +183,10 @@ func TestCheckSourceOwnership(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := checkSourceOwnership("SetComponentIntent", "redpanda", tt.owner, tt.src)
+			err := CheckSourceOwnership("SetComponentIntent", "redpanda", tt.owner, tt.src)
 			if tt.wantReason == "" {
 				if err != nil {
-					t.Fatalf("checkSourceOwnership() error = %v, want nil", err)
+					t.Fatalf("CheckSourceOwnership() error = %v, want nil", err)
 				}
 				return
 			}
@@ -197,31 +197,31 @@ func TestCheckSourceOwnership(t *testing.T) {
 				Metadata: map[string]string{"operation": "SetComponentIntent", "owner_namespace": "xmc", "owner_uid": tt.owner.UID, "owner_cluster_uid": tt.owner.ClusterUID},
 			}}
 			if st.Code() != codes.FailedPrecondition {
-				t.Errorf("checkSourceOwnership() code = %v, want %v", st.Code(), codes.FailedPrecondition)
+				t.Errorf("CheckSourceOwnership() code = %v, want %v", st.Code(), codes.FailedPrecondition)
 			}
 			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
-				t.Errorf("checkSourceOwnership() details mismatch (-want +got):\n%s", diff)
+				t.Errorf("CheckSourceOwnership() details mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
 func TestCheckSourceCreation(t *testing.T) {
-	if err := checkSourceCreation("SetComponentIntent", "redpanda", baseRequestSource); err != nil {
-		t.Errorf("checkSourceCreation() without a CAS guard error = %v, want nil (R1 creates)", err)
+	if err := CheckSourceCreation("SetComponentIntent", "redpanda", baseRequestSource); err != nil {
+		t.Errorf("CheckSourceCreation() without a CAS guard error = %v, want nil (R1 creates)", err)
 	}
 
 	casAdopter := modifiedSource(func(s *RequestSource) { s.UID, s.ExpectedOwnerUID = "uid-b", "uid-a" })
-	st := status.Convert(checkSourceCreation("SetComponentIntent", "redpanda", casAdopter))
+	st := status.Convert(CheckSourceCreation("SetComponentIntent", "redpanda", casAdopter))
 	want := []any{&errdetails.ErrorInfo{
 		Reason:   "SOURCE_INCARNATION_MISMATCH",
 		Domain:   ErrorInfoDomain,
 		Metadata: map[string]string{"operation": "SetComponentIntent", "owner_namespace": "", "owner_uid": "", "owner_cluster_uid": ""},
 	}}
 	if st.Code() != codes.FailedPrecondition {
-		t.Errorf("checkSourceCreation() with a CAS guard code = %v, want %v", st.Code(), codes.FailedPrecondition)
+		t.Errorf("CheckSourceCreation() with a CAS guard code = %v, want %v", st.Code(), codes.FailedPrecondition)
 	}
 	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
-		t.Errorf("checkSourceCreation() with a CAS guard details mismatch (-want +got):\n%s", diff)
+		t.Errorf("CheckSourceCreation() with a CAS guard details mismatch (-want +got):\n%s", diff)
 	}
 }

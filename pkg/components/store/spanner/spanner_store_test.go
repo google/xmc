@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store_test
+package spanner_test
 
 import (
 	"context"
@@ -35,13 +35,13 @@ import (
 	"xmanager_cloud/internal/storage/data"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/emulator"
-	"xmanager_cloud/pkg/components/store"
+	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 )
 
-func setupTestStore(ctx context.Context, t *testing.T) (*store.SpannerStore, *spanner.Client) {
+func setupTestStore(ctx context.Context, t *testing.T) (*spannerstore.SpannerStore, *spanner.Client) {
 	t.Helper()
 	_, essClient := emulator.Setup(ctx, t)
-	return store.NewSpannerStore(essClient), essClient
+	return spannerstore.NewSpannerStore(essClient), essClient
 }
 
 func TestSpannerStore_SetComponentIntent_Success(t *testing.T) {

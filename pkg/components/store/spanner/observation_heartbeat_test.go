@@ -23,7 +23,7 @@
 // cross-backend parity tests for non-intent SourceGeneration adoption resets
 // and no-op UpdateObservedGeneration heartbeats (preserving UpdateTime/etag
 // while refreshing SourceLastSeenTime).
-package store_test
+package spanner_test
 
 import (
 	"context"

@@ -1,0 +1,79 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "spanner",
+    srcs = [
+        "spanner_ownership_fence.go",
+        "spanner_store.go",
+    ],
+    importpath = "xmanager_cloud/pkg/components/store/spanner",
+    deps = [
+        "//api/protos/components/v1alpha1",
+        "//internal/logging",
+        "//pkg/components/graph",
+        "//pkg/components/naming",
+        "//pkg/components/semver",
+        "//pkg/components/store",
+        "@com_github_google_uuid//:uuid",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//iterator",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "spanner_test",
+    srcs = [
+        "export_test.go",
+        "intent_dependency_registration_test.go",
+        "intent_idempotency_test.go",
+        "intent_source_test.go",
+        "observation_heartbeat_test.go",
+        "ownership_metrics_test.go",
+        "rejection_error_info_test.go",
+        "spanner_intent_fast_path_test.go",
+        "spanner_ownership_fence_test.go",
+        "spanner_store_test.go",
+    ],
+    embed = [":spanner"],
+    deps = [
+        "//api/protos/components/v1alpha1",
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/storage/data",
+        "//internal/storage/spanner/data",
+        "//internal/storage/spanner/emulator",
+        "//pkg/components/store",
+        "//pkg/components/store/memory",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+        "@com_github_prometheus_client_golang//prometheus/testutil",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
