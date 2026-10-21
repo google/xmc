@@ -53,6 +53,9 @@ type Authenticator struct {
 
 	// Injected provider for OAuth client interactions.
 	OAuthProvider OAuthProvider
+
+	// CLI login state, set by EnableCLILogin.
+	cliLoginEnabled bool
 }
 
 // NewAuthenticator initializes a new instance of Authenticator.
