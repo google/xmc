@@ -1,0 +1,61 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+genrule(
+    name = "copy_ess_schema",
+    srcs = ["//internal/storage/postgres/schema:ess-schema.sql"],
+    outs = ["ess-schema.sql"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "copy_xid_schema",
+    srcs = ["//internal/storage/postgres/schema:xid-schema.sql"],
+    outs = ["xid-schema.sql"],
+    cmd = "cp $< $@",
+)
+
+go_library(
+    name = "testdb",
+    testonly = True,
+    srcs = ["testdb.go"],
+    embedsrcs = [
+        "ess-schema.sql",
+        "xid-schema.sql",
+    ],
+    importpath = "xmanager_cloud/internal/storage/postgres/testdb",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/storage/postgres/migrations/version",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@com_github_testcontainers_testcontainers_go//:testcontainers-go",
+        "@com_github_testcontainers_testcontainers_go//wait",
+    ],
+)
+
+go_test(
+    name = "testdb_test",
+    srcs = ["testdb_test.go"],
+    embed = [":testdb"],
+    tags = ["local"],
+    deps = [
+        "//internal/storage/postgres/migrations/version",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgxpool",
+    ],
+)
