@@ -27,33 +27,22 @@ import (
 )
 
 const (
-	// cliConfirmationAudience is the JWT audience claim that separates manual confirmation tokens
-	// from session tokens and cli_login cookie tokens.
-	cliConfirmationAudience = "xmanager-cloud-cli-confirm"
-	// cliManualConfirmationTTL bounds how long the confirmation page can be submitted.
+	cliConfirmationAudience  = "xmanager-cloud-cli-confirm"
 	cliManualConfirmationTTL = 5 * time.Minute
-	// cliManualCodeTTL is longer than cliLoopbackCodeTTL: the user copies the code by hand.
-	cliManualCodeTTL = 120 * time.Second
-	// maxCLICodeRequestBytes bounds the form, which carries a sealed email, name and challenge.
-	maxCLICodeRequestBytes = 16 << 10
+	cliManualCodeTTL         = 120 * time.Second
+	maxCLICodeRequestBytes   = 16 << 10
 )
 
 var errInvalidCLIConfirmation = errors.New("invalid cli manual confirmation")
 
-// cliManualConfirmation is the pending manual login of a signed-in, admitted user. The callback's
-// interstitial page carries it, signed with the JWT secret, to `POST /api/cli/code`. It holds no
-// login code.
+// cliManualConfirmation is the signed payload carried from the interstitial page to POST /api/cli/code.
 type cliManualConfirmation struct {
 	Email         string `json:"email"`
 	Name          string `json:"name"`
 	CodeChallenge string `json:"code_challenge"`
-	// ExpiresAt is the Unix time after which the confirmation is rejected.
-	ExpiresAt int64 `json:"exp"`
+	ExpiresAt     int64  `json:"exp"`
 }
 
-// askCLIManualConfirmation shows the admitted user an interstitial page asking them to confirm the
-// manual login. The code is minted only once they confirm, so a link an attacker sends (consent
-// phishing) shows the victim a warning before any code exists.
 func (a *Authenticator) askCLIManualConfirmation(ctx context.Context, w http.ResponseWriter, identity loginIdentity, codeChallenge string, now time.Time) {
 	sealed, err := a.issueCLIManualConfirmation(identity, codeChallenge, now)
 	if err != nil {
@@ -64,18 +53,12 @@ func (a *Authenticator) askCLIManualConfirmation(ctx context.Context, w http.Res
 	writeCLITemplatePage(w, cliConfirmationPage, cliConfirmationPageData{Email: identity.email, Confirmation: sealed})
 }
 
-// issueCLIManualConfirmation signs and returns a manual confirmation token.
 func (a *Authenticator) issueCLIManualConfirmation(identity loginIdentity, codeChallenge string, now time.Time) (string, error) {
 	expiresAt := now.Add(cliManualConfirmationTTL).Unix()
-	return sealSigned(a.JWTSecret, cliConfirmationAudience, cliManualConfirmation{
-		Email:         identity.email,
-		Name:          identity.name,
-		CodeChallenge: codeChallenge,
-		ExpiresAt:     expiresAt,
-	}, expiresAt)
+	c := cliManualConfirmation{Email: identity.email, Name: identity.name, CodeChallenge: codeChallenge, ExpiresAt: expiresAt}
+	return sealSigned(a.JWTSecret, cliConfirmationAudience, c, expiresAt)
 }
 
-// openCLIManualConfirmation verifies the signature, audience, and expiry of a sealed confirmation and decodes it.
 func (a *Authenticator) openCLIManualConfirmation(sealed string, now time.Time) (cliManualConfirmation, error) {
 	c, err := openSigned[cliManualConfirmation](a.JWTSecret, cliConfirmationAudience, sealed, now)
 	if errors.Is(err, jwt.ErrTokenExpired) {
@@ -87,9 +70,7 @@ func (a *Authenticator) openCLIManualConfirmation(sealed string, now time.Time) 
 	return c, nil
 }
 
-// HandleCLICode serves the interstitial's form. Both buttons verify the confirmation.
-// Continue then re-runs admission and shows a one-time code for the CLI, only in the response
-// body; Cancel issues nothing.
+// HandleCLICode serves the manual login confirmation form, re-running admission and issuing a one-time code on continue.
 func (a *Authenticator) HandleCLICode(w http.ResponseWriter, r *http.Request) {
 	if !a.checkCLICodeRequest(w, r) {
 		return
@@ -123,10 +104,6 @@ func (a *Authenticator) HandleCLICode(w http.ResponseWriter, r *http.Request) {
 	writeCLITemplatePage(w, cliCodePage, code)
 }
 
-// checkCLICodeRequest admits same-origin form POSTs of the enabled CLI login flow and writes the
-// error response otherwise. CrossOriginProtection already rejects cross-origin POSTs; requiring
-// Sec-Fetch-Site same-origin also rejects same-site ones. Browsers that send Sec-Fetch-Dest must
-// send "document", so the form cannot be submitted by script to read the code.
 func (a *Authenticator) checkCLICodeRequest(w http.ResponseWriter, r *http.Request) bool {
 	if a.cliCodes == nil {
 		http.NotFound(w, r)
@@ -148,7 +125,6 @@ func (a *Authenticator) checkCLICodeRequest(w http.ResponseWriter, r *http.Reque
 	return true
 }
 
-// parseCLICodeForm reads the confirmation form from the request body, never the URL query.
 func parseCLICodeForm(w http.ResponseWriter, r *http.Request) (map[string]string, error) {
 	if mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mediaType != "application/x-www-form-urlencoded" {
 		return nil, errors.New("the CLI login form must be form-encoded")
@@ -167,8 +143,6 @@ func parseCLICodeForm(w http.ResponseWriter, r *http.Request) (map[string]string
 	return form, nil
 }
 
-// checkCLIManualStillAdmitted re-runs deployment admission, which may have changed since the
-// callback, and writes the error page if it fails.
 func (a *Authenticator) checkCLIManualStillAdmitted(ctx context.Context, w http.ResponseWriter, email string) bool {
 	admitted, err := a.stillAdmitted(ctx, email)
 	if err != nil {

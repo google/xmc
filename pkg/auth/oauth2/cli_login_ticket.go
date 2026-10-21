@@ -27,11 +27,8 @@ import (
 
 const (
 	cliLoginTicketAudience = "xmanager-cloud-cli-login"
-	// cliLoginModeLoopback marks a ticket whose code is delivered to the CLI's loopback listener.
-	cliLoginModeLoopback = "loopback"
-	// cliLoginModeManual marks a ticket whose code is shown in the browser, after the user
-	// confirms, for the user to paste into the CLI.
-	cliLoginModeManual = "manual"
+	cliLoginModeLoopback   = "loopback"
+	cliLoginModeManual     = "manual"
 )
 
 var (

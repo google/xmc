@@ -42,9 +42,7 @@ var (
 )
 
 type cliLoginRequest struct {
-	// mode is cliLoginModeLoopback or cliLoginModeManual.
-	mode string
-	// port is the loopback listener's port; it is zero in manual mode.
+	mode          string
 	port          int
 	state         string
 	codeChallenge string
@@ -63,11 +61,8 @@ func (a *Authenticator) EnableCLILogin(codes CLICodeStore) error {
 	return nil
 }
 
-// HandleCLILogin starts a CLI login: it records how the code reaches the CLI (its loopback port,
-// or manual mode), the CLI's state and its PKCE challenge in the MAC'd cli_login cookie and
-// redirects the browser to the identity provider. The callback then delivers a one-time code to
-// `http://127.0.0.1:<port>/callback`, or in manual mode shows it in the browser once the user
-// confirms.
+// HandleCLILogin records the CLI's loopback port, state, and PKCE challenge in the MAC'd
+// cli_login cookie and redirects the browser to the identity provider.
 func (a *Authenticator) HandleCLILogin(w http.ResponseWriter, r *http.Request) {
 	if !a.checkCLIBrowserRequest(w, r) {
 		return
@@ -145,9 +140,6 @@ func parseCLILoginRequest(q url.Values) (cliLoginRequest, error) {
 	return cliLoginRequest{mode: mode, port: port, state: params["state"], codeChallenge: params["code_challenge"], loginHint: params["login_hint"]}, nil
 }
 
-// parseCLIDelivery reads how the code reaches the CLI: a loopback port, or mode=manual for the user
-// to paste it. Exactly one of the two must be given. It returns the mode and the port, which is
-// zero in manual mode.
 func parseCLIDelivery(rawPort, mode string) (string, int, error) {
 	if (rawPort == "") == (mode == "") {
 		return "", 0, errors.New("exactly one of port and mode=manual is required")
