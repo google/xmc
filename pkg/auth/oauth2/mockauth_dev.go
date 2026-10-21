@@ -40,9 +40,10 @@ func (m *MockOAuthProvider) AuthCodeURL(state string, r *http.Request) string {
 // ExchangeAndGetUserInfo returns mock user details directly without performing external HTTP network calls.
 func (m *MockOAuthProvider) ExchangeAndGetUserInfo(ctx context.Context, r *http.Request, code string) (*GoogleUserInfo, error) {
 	return &GoogleUserInfo{
-		Email:   m.MockEmail,
-		Name:    m.MockName,
-		Picture: m.MockPic,
+		Email:         m.MockEmail,
+		EmailVerified: true,
+		Name:          m.MockName,
+		Picture:       m.MockPic,
 	}, nil
 }
 

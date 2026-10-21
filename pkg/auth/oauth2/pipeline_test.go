@@ -262,3 +262,45 @@ func TestIsAdmin(t *testing.T) {
 		}
 	})
 }
+
+func TestEmailDomain(t *testing.T) {
+	tests := []struct {
+		name  string
+		email string
+		want  string
+	}{
+		{name: "address", email: "user@mycompany.com", want: "mycompany.com"},
+		{name: "no at sign", email: "mycompany.com", want: ""},
+		{name: "two at signs", email: "a@b@mycompany.com", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := emailDomain(tt.email); got != tt.want {
+				t.Errorf("emailDomain(%q) = %q, want %q", tt.email, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsAllowedDomain(t *testing.T) {
+	a := NewAuthenticator(&Config{AllowedDomains: []string{" MyCompany.com ", "other.org"}})
+	tests := []struct {
+		name   string
+		domain string
+		want   bool
+	}{
+		{name: "allowlisted domain", domain: "mycompany.com", want: true},
+		{name: "case and spaces are ignored", domain: " MYCOMPANY.com", want: true},
+		{name: "second allowlisted domain", domain: "other.org", want: true},
+		{name: "other domain", domain: "example.com", want: false},
+		{name: "subdomain", domain: "eng.mycompany.com", want: false},
+		{name: "empty", domain: "", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := a.isAllowedDomain(tt.domain); got != tt.want {
+				t.Errorf("isAllowedDomain(%q) = %v, want %v", tt.domain, got, tt.want)
+			}
+		})
+	}
+}
