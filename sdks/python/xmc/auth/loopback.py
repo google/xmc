@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""One-shot loopback listener that receives the browser's login redirect.
-
-It binds 127.0.0.1 on an ephemeral port and accepts only `GET /callback` with a
-constant-time `state` match. Anything else gets a 400 and is ignored, so a
-forged request cannot cancel a login in progress.
-"""
+"""One-shot loopback listener on 127.0.0.1 for the browser's login redirect."""
 
 from __future__ import annotations
 
@@ -25,46 +20,32 @@ import hmac
 import http.server
 import time
 import urllib.parse
-from types import TracebackType
 from typing import Any
 
-from xmc.auth.errors import ACCESS_DENIED_MESSAGE, AuthError
+from xmc.auth import ACCESS_DENIED_MESSAGE, AuthError
 
 LOOPBACK_HOST = "127.0.0.1"
-_CONNECTION_TIMEOUT_SECONDS = 2
-_ERROR_MESSAGES = {
-    "access_denied": ACCESS_DENIED_MESSAGE,
-    "server_error": "The XMC server failed to complete sign-in. Run `xmc login` again.",
-}
+_SERVER_ERR = "The XMC server failed to complete sign-in. Run `xmc login` again."
+_ERROR_MESSAGES = {"access_denied": ACCESS_DENIED_MESSAGE, "server_error": _SERVER_ERR}
 
 
 def parse_callback(path: str, expected_state: str) -> dict[str, str] | None:
-    """Returns `{"code": ...}` or `{"error": ...}` for the genuine redirect, else None.
-
-    Any `error` (RFC 6749 section 4.1.2.1) with a matching state is terminal;
-    values outside a safe charset are reported as `unknown_error`.
-
-    Args:
-        path: Raw request target, e.g. `/callback?code=...&state=...`.
-        expected_state: The `state` generated for this login attempt.
-    """
+    """Returns `{"code": ...}` or `{"error": ...}` for the genuine redirect, else None."""
     target = urllib.parse.urlsplit(path)
     query = urllib.parse.parse_qs(target.query)
     params = {name: values[0] for name, values in query.items() if len(values) == 1}
-    if target.path != "/callback":
-        return None
-    if not hmac.compare_digest(params.get("state", "").encode(), expected_state.encode()):
+    state_ok = hmac.compare_digest(params.get("state", "").encode(), expected_state.encode())
+    if target.path != "/callback" or not state_ok:
         return None
     if "error" in query:
-        error = params.get("error", "")
-        valid_error = 1 <= len(error) <= 64 and error.replace("_", "").isalnum()
-        return {"error": error if valid_error else "unknown_error"}
-    code = params.get("code", "")
-    return {"code": code} if 1 <= len(code) <= 256 else None
+        err = params.get("error", "")
+        valid = 1 <= len(err) <= 64 and err.replace("_", "").isalnum()
+        return {"error": err if valid else "unknown_error"}
+    return {"code": code} if 1 <= len(code := params.get("code", "")) <= 256 else None
 
 
 class _QuietHTTPServer(http.server.HTTPServer):
-    def handle_error(self, request: Any, client_address: Any) -> None:
+    def handle_error(self, *_: Any) -> None:
         """Drops per-connection errors such as a browser closing the socket early."""
 
 
@@ -73,20 +54,25 @@ class CallbackReceiver:
 
     def __init__(self, expected_state: str, success_url: str) -> None:
         """Binds the listener; the browser is sent to `success_url` once the code arrives."""
-        self._expected_state = expected_state
-        self._success_url = success_url
         self._result: dict[str, str] | None = None
         receiver = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            # A stalled connection can delay the deadline by at most this long.
-            timeout = _CONNECTION_TIMEOUT_SECONDS
+            timeout = 2
 
             def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API.
-                receiver._on_request(self)
+                result = parse_callback(self.path, expected_state)
+                self.send_response(400 if result is None else 302)
+                if result is not None:
+                    receiver._result = result
+                    suffix = f"?{urllib.parse.urlencode(result)}" if "error" in result else ""
+                    self.send_header("Location", success_url + suffix)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
 
             def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
-                pass  # The default logs the request line, which carries the code.
+                pass
 
         self._server = _QuietHTTPServer((LOOPBACK_HOST, 0), Handler)
 
@@ -95,32 +81,13 @@ class CallbackReceiver:
         """The ephemeral port the listener is bound to."""
         return int(self._server.server_address[1])
 
-    def _on_request(self, handler: http.server.BaseHTTPRequestHandler) -> None:
-        """Replies 302 to the genuine redirect (recording it) and 400 to anything else."""
-        result = parse_callback(handler.path, self._expected_state)
-        handler.send_response(400 if result is None else 302)
-        if result is not None:
-            self._result = result
-            query = f"?{urllib.parse.urlencode(result)}" if "error" in result else ""
-            handler.send_header("Location", self._success_url + query)
-        handler.send_header("Cache-Control", "no-store")
-        handler.send_header("Content-Length", "0")
-        handler.end_headers()
-
     def wait_for_code(self, timeout: float) -> str:
-        """Serves requests until the genuine redirect arrives and returns its code.
-
-        Raises:
-            AuthError: The deployment denied or failed the login, or time ran out.
-        """
+        """Serves requests until the genuine redirect arrives and returns its code."""
         deadline = time.monotonic() + timeout
         while self._result is None:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise AuthError(
-                    f"Timed out after {timeout:.0f}s waiting for the browser login. "
-                    "Run `xmc login` again."
-                )
+            if (remaining := deadline - time.monotonic()) <= 0:
+                msg = f"Timed out after {timeout:.0f}s waiting for the browser login."
+                raise AuthError(f"{msg} Run `xmc login` again.")
             self._server.timeout = remaining
             self._server.handle_request()
         if "code" in self._result:
@@ -135,10 +102,5 @@ class CallbackReceiver:
     def __enter__(self) -> CallbackReceiver:
         return self
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
+    def __exit__(self, *_: object) -> None:
         self.close()

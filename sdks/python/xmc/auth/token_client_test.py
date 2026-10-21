@@ -29,8 +29,7 @@ import urllib.request
 from typing import Any
 from unittest import mock
 
-from xmc.auth import token_client
-from xmc.auth.errors import AuthError
+from xmc.auth import AuthError, token_client
 from xmc.auth.token_client import TokenGrant
 
 _SERVER = "https://xmc.example.com"

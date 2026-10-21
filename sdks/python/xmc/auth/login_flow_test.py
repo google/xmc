@@ -25,8 +25,7 @@ import urllib.parse
 import urllib.request
 from unittest import mock
 
-from xmc.auth import login_flow
-from xmc.auth.errors import AuthError
+from xmc.auth import AuthError, login_flow
 from xmc.auth.login_flow import LoginDependencies
 from xmc.auth.token_client import TokenGrant
 

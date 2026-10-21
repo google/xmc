@@ -25,7 +25,7 @@
     "@angular/material": "^22.0.2",
     "@angular/platform-browser": "^22.0.2",
     "@angular/platform-browser-dynamic": "^22.0.2",
-    "@angular/router": "^22.2.0",
+    "@angular/router": "^22.2.1",
     "@ngrx/component-store": "^18.0.0",
     "echarts": "^6.1.0",
     "rxjs": "~7.8.0",

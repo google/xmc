@@ -25,13 +25,11 @@ import urllib.parse
 from collections.abc import Callable, Mapping
 from typing import TextIO
 
-from xmc.auth.errors import AuthError
+from xmc.auth import AuthError
 from xmc.auth.loopback import CallbackReceiver
 from xmc.auth.token_client import TokenGrant
 
-LOGIN_PATH = "/api/cli/login"
-SUCCESS_PATH = "/api/cli/success"
-DEFAULT_TIMEOUT_SECONDS = 300
+LOGIN_PATH, SUCCESS_PATH, DEFAULT_TIMEOUT_SECONDS = "/api/cli/login", "/api/cli/success", 300
 MANUAL_CODE_PROMPT = "Paste the code shown in your browser: "
 MANUAL_WARNING = (
     "WARNING: Only paste a code from a login you started yourself, just now, in this "
@@ -74,9 +72,9 @@ class LoginDependencies:
     """Side-effecting collaborators of the login flow, injectable for tests."""
 
     out: TextIO
-    open_browser: Callable[[str], bool]  # webbrowser.open
-    read_code: Callable[[str], str]  # getpass.getpass
-    exchange: Callable[[str, str, str], TokenGrant]  # token_client.exchange_code
+    open_browser: Callable[[str], bool]
+    read_code: Callable[[str], str]
+    exchange: Callable[[str, str, str], TokenGrant]
 
 
 def build_login_url(
@@ -87,10 +85,9 @@ def build_login_url(
     login_hint: str | None = None,
 ) -> str:
     """Builds the `GET /api/cli/login` URL; `port=None` selects manual mode."""
+    hint = {"login_hint": login_hint} if login_hint else {}
     params = {"port": str(port)} if port is not None else {"mode": "manual"}
-    params |= {"state": state, "code_challenge": challenge, "code_challenge_method": "S256"}
-    if login_hint:
-        params["login_hint"] = login_hint
+    params |= {"state": state, "code_challenge": challenge, "code_challenge_method": "S256", **hint}
     return f"{server_origin}{LOGIN_PATH}?{urllib.parse.urlencode(params)}"
 
 
@@ -126,10 +123,8 @@ def _browser_attempt(
     state, verifier, challenge = _new_attempt()
     with CallbackReceiver(state, server_origin + SUCCESS_PATH) as receiver:
         url = build_login_url(server_origin, state, challenge, receiver.port, login_hint)
-        deps.out.write(
-            f"Opening your browser to sign in to {server_origin}.\n"
-            f"If it does not open, visit:\n\n  {url}\n\n"
-        )
+        prompt = f"Opening your browser to sign in to {server_origin}.\nIf it does not open, visit:"
+        deps.out.write(f"{prompt}\n\n  {url}\n\n")
         if not _launch_browser(deps.open_browser, url):
             deps.out.write("Could not open a browser; switching to manual login.\n")
             return None
