@@ -130,8 +130,8 @@ py_binary(
 
 py_binary(
     name = "xmc_bin",
-    srcs = ["__main__.py"],
-    main = "__main__.py",
+    srcs = ["auth/cli.py"],
+    main = "auth/cli.py",
     visibility = ["//visibility:public"],
     deps = [":xmc"],
 )

@@ -252,6 +252,9 @@ func (v *Validator) findKeyLocked(kid string) (*rsa.PublicKey, bool) {
 // Claims represents the OIDC token claims required for validation.
 type Claims struct {
 	Email string `json:"email"`
+	// EmailVerified is the raw email_verified claim, or nil when the token omits it. It is kept
+	// untyped because identity providers disagree on whether it is a JSON boolean or a string.
+	EmailVerified any `json:"email_verified,omitempty"`
 	jwt.RegisteredClaims
 }
 

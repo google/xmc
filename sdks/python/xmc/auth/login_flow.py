@@ -28,9 +28,7 @@ from typing import TextIO
 from xmc.auth.loopback import CallbackReceiver
 from xmc.auth.token_client import TokenGrant
 
-LOGIN_PATH = "/api/cli/login"
-SUCCESS_PATH = "/api/cli/success"
-DEFAULT_TIMEOUT_SECONDS = 300
+LOGIN_PATH, SUCCESS_PATH, DEFAULT_TIMEOUT_SECONDS = "/api/cli/login", "/api/cli/success", 300
 
 
 def s256_challenge(verifier: str) -> str:
@@ -54,42 +52,29 @@ class LoginDependencies:
     """Side-effecting collaborators of the login flow, injectable for tests."""
 
     out: TextIO
-    open_browser: Callable[[str], bool]  # webbrowser.open
-    exchange: Callable[[str, str, str], TokenGrant]  # token_client.exchange_code
+    open_browser: Callable[[str], bool]
+    exchange: Callable[[str, str, str], TokenGrant]
 
 
 def build_login_url(
     server_origin: str, state: str, challenge: str, port: int, login_hint: str | None = None
 ) -> str:
     """Builds the `GET /api/cli/login` URL for a loopback listener on `port`."""
+    hint = {"login_hint": login_hint} if login_hint else {}
     params = {"port": str(port), "state": state, "code_challenge": challenge}
-    params["code_challenge_method"] = "S256"
-    if login_hint:
-        params["login_hint"] = login_hint
+    params |= {"code_challenge_method": "S256", **hint}
     return f"{server_origin}{LOGIN_PATH}?{urllib.parse.urlencode(params)}"
 
 
 def run_login(
-    server_origin: str,
-    deps: LoginDependencies,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
-    login_hint: str | None = None,
+    origin: str, deps: LoginDependencies, timeout: float = 300, login_hint: str | None = None
 ) -> TokenGrant:
-    """Runs one browser login and returns the issued token.
-
-    Raises:
-        AuthError: If the login fails, is denied, or times out.
-    """
+    """Runs one browser login and returns the issued token."""
     verifier, state = new_verifier(), new_state()
-    challenge = s256_challenge(verifier)
-    with CallbackReceiver(state, server_origin + SUCCESS_PATH) as receiver:
-        url = build_login_url(server_origin, state, challenge, receiver.port, login_hint)
-        deps.out.write(
-            f"Opening your browser to sign in to {server_origin}.\n"
-            f"If it does not open, visit:\n\n  {url}\n\n"
-        )
-        # Off-thread: blocking browser commands (e.g. `BROWSER=w3m`) return only
-        # after loading the loopback redirect, which wait_for_code serves.
+    with CallbackReceiver(state, origin + SUCCESS_PATH) as receiver:
+        url = build_login_url(origin, state, s256_challenge(verifier), receiver.port, login_hint)
+        prompt = f"Opening your browser to sign in to {origin}.\nIf it does not open, visit:"
+        deps.out.write(f"{prompt}\n\n  {url}\n\n")
         threading.Thread(target=deps.open_browser, args=(url,), daemon=True).start()
         code = receiver.wait_for_code(timeout)
-    return deps.exchange(server_origin, code, verifier)
+    return deps.exchange(origin, code, verifier)

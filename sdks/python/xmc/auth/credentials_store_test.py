@@ -26,9 +26,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from xmc.auth import credentials_store
+from xmc.auth import AuthError, credentials_store
 from xmc.auth.credentials_store import CredentialsStore, StoredCredential
-from xmc.auth.errors import AuthError
 
 _ORIGIN = "https://xmc.example.com"
 _CRED = StoredCredential(

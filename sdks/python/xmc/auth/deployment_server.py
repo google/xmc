@@ -20,18 +20,14 @@ import ipaddress
 import urllib.parse
 from collections.abc import Mapping
 
-from xmc.auth.errors import AuthError
+from xmc.auth import AuthError
 
 SERVER_ENV_VARS = ("XMC_API_URL", "XMANAGER_UI_URL")
 DOMAIN_ENV_VAR = "XMC_DOMAIN"
 
 
 def is_loopback_host(host: str) -> bool:
-    """Reports whether `host` is a loopback IP literal or `localhost`.
-
-    `localhost` is accepted for local development only: it depends on name
-    resolution, so prefer `127.0.0.1` or `[::1]`.
-    """
+    """Reports whether `host` is a loopback IP literal or `localhost`."""
     try:
         return host.lower() == "localhost" or ipaddress.ip_address(host).is_loopback
     except ValueError:
@@ -47,16 +43,12 @@ def _server_from_domain(domain: str | None) -> str | None:
 
 
 def resolve_server(flag_value: str | None, env: Mapping[str, str]) -> str:
-    """Returns the origin from `--server`, XMC_API_URL, XMANAGER_UI_URL, or XMC_DOMAIN.
-
-    Raises:
-        AuthError: If no deployment is configured or its URL is invalid.
-    """
-    candidates = [
+    """Returns the origin from `--server`, XMC_API_URL, XMANAGER_UI_URL, or XMC_DOMAIN."""
+    candidates = (
         flag_value,
         *(env.get(name) for name in SERVER_ENV_VARS),
         _server_from_domain(env.get(DOMAIN_ENV_VAR)),
-    ]
+    )
     raw = next((value.strip() for value in candidates if value and value.strip()), None)
     if raw is None:
         raise AuthError(
@@ -67,11 +59,7 @@ def resolve_server(flag_value: str | None, env: Mapping[str, str]) -> str:
 
 
 def parse_server(raw: str) -> str:
-    """Normalizes a URL to its origin (`scheme://host[:port]`); https unless loopback.
-
-    Raises:
-        AuthError: If the URL is malformed, carries credentials, or is insecure.
-    """
+    """Normalizes a URL to its origin (`scheme://host[:port]`); https unless loopback."""
     parts = urllib.parse.urlsplit(raw)
     try:
         host, port = (parts.hostname or "").lower(), parts.port

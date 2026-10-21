@@ -22,8 +22,7 @@ import threading
 import time
 import unittest
 
-from xmc.auth import loopback
-from xmc.auth.errors import ACCESS_DENIED_MESSAGE, AuthError
+from xmc.auth import ACCESS_DENIED_MESSAGE, AuthError, loopback
 
 _STATE = "s" * 43
 _CODE = "c" * 43
