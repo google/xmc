@@ -133,18 +133,18 @@ The command-line interface (CLI) client bypasses the web UI entirely, communicat
    - **HTTP Requests** targeting `/v1/*` are routed to the ESS HTTP endpoint.
    - **gRPC Requests** (such as `/experiment.ExperimentService/*`) are routed via `GRPCRoute` directly to the gRPC port of the `experiment-state-server`.
 3. **Authentication**:
-   - The CLI attaches a bearer token to the call metadata: an XMC CLI session token from `xmc login` (see [CLI Login](#3-cli-login-browser-loopback)), a Google-signed ID token (for example from a service account's `generateIdToken`), a token from the configured OIDC provider, or an XMC session token.
+   - The CLI attaches a bearer token to the call metadata: an XMC CLI session token from `xmanager login` (see [CLI Login](#3-cli-login-browser-loopback)), a Google-signed ID token (for example from a service account's `generateIdToken`), a token from the configured OIDC provider, or an XMC session token.
    - Each gRPC service verifies the token, rejects Google and OIDC tokens whose `email_verified` claim is false (Google tokens must carry the claim), and then runs the same deployment admission check as the HTTP API (see [Client Authorization](#client-authorization)) before processing the call.
 
 ---
 
 ### 3. CLI Login (Browser Loopback)
 
-`xmc login` signs the user in through the same OAuth client, identity provider and `/api/callback` redirect URI as the Dashboard ([google/xmc#1309](https://github.com/google/xmc/issues/1309)).
+`xmanager login` signs the user in through the same OAuth client, identity provider and `/api/callback` redirect URI as the Dashboard ([google/xmc#1309](https://github.com/google/xmc/issues/1309)).
 
 ```mermaid
 sequenceDiagram
-    participant CLI as xmc login
+    participant CLI as xmanager login
     participant B as Browser
     participant ESS as ESS /api
     participant IdP as Google or Dex
