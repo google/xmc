@@ -646,7 +646,7 @@ def main(raw_args: list[str] | None = None) -> None:
     sys.stdout.write("To activate the virtual environment, run:\n")
     sys.stdout.write(f"  source {venv_dir}/bin/activate\n")
     sys.stdout.write("Then sign in to your XMC deployment as yourself:\n")
-    sys.stdout.write("  xmanager login --server https://<your-xmc-ui-host>\n")
+    sys.stdout.write("  xmanager login\n")
     sys.stdout.write("==================================================\n")
 
 

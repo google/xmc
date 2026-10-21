@@ -65,7 +65,7 @@ python3 -c "import xmanager_cloud.experiment_state_server.experiment_state_api"
 Interactive users should authenticate as themselves with `xmanager login` ([google/xmc#1309](https://github.com/google/xmc/issues/1309)). This replaces the shared `XMC_CLIENT_SA` service account:
 
 ```bash
-xmanager login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL / XMC_DOMAIN and run `xmanager login`.
+xmanager login   # Reads XMANAGER_UI_URL / XMANAGER_ENDPOINT / XMC_API_URL from the environment.
 export XMC_AUTH_TOKEN=$(xmanager login --print-token)
 ```
 

@@ -19,7 +19,7 @@ The check applies to the web UI, to `xmanager login`, and to every gRPC request.
 Sign in as yourself with the `xmanager` CLI, which [`install_xmanager.py`](../deploy/cli/README.md) installs into the XManager CLI virtual environment:
 
 ```bash
-xmanager login --server "${XMANAGER_UI_URL}"   # Or set XMC_API_URL / XMANAGER_UI_URL / XMC_DOMAIN and run `xmanager login`.
+xmanager login   # Reads XMANAGER_UI_URL / XMANAGER_ENDPOINT / XMC_API_URL from the environment.
 export XMC_AUTH_TOKEN=$(xmanager login --print-token)
 ```
 
