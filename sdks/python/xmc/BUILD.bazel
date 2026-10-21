@@ -30,7 +30,10 @@ py_library(
         "network.py",
         "resilience.py",
         "types.py",
-    ],
+    ] + glob(
+        ["auth/*.py"],
+        exclude = ["auth/*_test.py"],
+    ),
     data = [
         "README.md",
         "py.typed",
@@ -122,5 +125,34 @@ py_binary(
     name = "basic_client_example",
     srcs = ["examples/basic_client.py"],
     main = "examples/basic_client.py",
+    deps = [":xmc"],
+)
+
+py_binary(
+    name = "xmc_bin",
+    srcs = ["auth/cli.py"],
+    main = "auth/cli.py",
+    visibility = ["//visibility:public"],
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "auth_cli_test",
+    srcs = ["auth/cli_test.py"],
+    main = "auth/cli_test.py",
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "auth_credentials_store_test",
+    srcs = ["auth/credentials_store_test.py"],
+    main = "auth/credentials_store_test.py",
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "auth_deployment_server_test",
+    srcs = ["auth/deployment_server_test.py"],
+    main = "auth/deployment_server_test.py",
     deps = [":xmc"],
 )

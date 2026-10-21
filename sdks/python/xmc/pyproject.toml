@@ -48,11 +48,15 @@ lightning = [
 ]
 
 
+[project.scripts]
+xmc = "xmc.auth.cli:main"
+
 [tool.setuptools]
-packages = ["xmc", "xmc.integrations"]
+packages = ["xmc", "xmc.auth", "xmc.integrations"]
 
 [tool.setuptools.package-dir]
 "xmc" = "."
+"xmc.auth" = "auth"
 "xmc.integrations" = "integrations"
 
 [tool.setuptools.package-data]
