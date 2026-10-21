@@ -144,7 +144,7 @@ The command-line interface (CLI) client bypasses the web UI entirely, communicat
 
 ```mermaid
 sequenceDiagram
-    participant CLI as xmc login
+    participant CLI as xmanager login
     participant B as Browser
     participant ESS as ESS /api
     participant IdP as Google or Dex
