@@ -38,3 +38,8 @@ func NewRepository() *Repository {
 func (r *Repository) Save(ctx context.Context, code oauth2.CLILoginCode) error {
 	return status.Error(codes.Unimplemented, "postgres clilogincode repository: Save is not implemented")
 }
+
+// Consume atomically reads and deletes the CLI login code matching hash.
+func (r *Repository) Consume(ctx context.Context, hash []byte) (oauth2.CLILoginCode, error) {
+	return oauth2.CLILoginCode{}, status.Error(codes.Unimplemented, "postgres clilogincode repository: Consume is not implemented")
+}

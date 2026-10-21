@@ -28,8 +28,11 @@ func TestRepository_Unimplemented(t *testing.T) {
 	if repo == nil {
 		t.Fatal("NewRepository() returned nil")
 	}
-	err := repo.Save(context.Background(), oauth2.CLILoginCode{})
-	if got := status.Code(err); got != codes.Unimplemented {
-		t.Errorf("Save() code = %v, want %v (err: %v)", got, codes.Unimplemented, err)
+	ctx := context.Background()
+	if err := repo.Save(ctx, oauth2.CLILoginCode{}); status.Code(err) != codes.Unimplemented {
+		t.Errorf("Save() code = %v, want %v (err: %v)", status.Code(err), codes.Unimplemented, err)
+	}
+	if _, err := repo.Consume(ctx, []byte("hash")); status.Code(err) != codes.Unimplemented {
+		t.Errorf("Consume() code = %v, want %v (err: %v)", status.Code(err), codes.Unimplemented, err)
 	}
 }
