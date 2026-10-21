@@ -251,21 +251,32 @@ ui:
   apiUrl: "https://YOUR_API_HOSTNAME/v1"
   refreshIntervalMs: "30000"
 
-# Per-container defaults and ceilings for the queue namespaces, applied as a
-# `LimitRange`.
+# Shape of the two Kueue queues XMC submits to: what they admit, what they
+# admit it against, and where it runs.
 #
-# `ResourceSet` puts `cpu_resources` and `gpu_resources` in a `oneof`, so a job
-# asking for a GPU cannot also ask for CPU or memory. Its pod arrives with no
-# request for either, which makes it BestEffort, and the kubelet evicts
-# BestEffort pods first. `defaultRequest` supplies what the client could not
-# send. It reaches only containers naming no request of their own, and sets no
-# limit, so a job may still burst above it.
+# The `flavors` defaults name no hardware and grant a quota larger than any
+# cluster, so a fresh install admits every workload the moment it arrives. A
+# queue that never fills never queues, and priority only orders workloads that
+# are waiting. To make Kueue schedule instead, list one flavor per class of node
+# a job can land on, each holding the real count of that node in the fleet. A
+# flavor's `nodeLabels` are matched against the labels the workload's pods
+# select, so a GPU flavor needs `cloud.google.com/gke-accelerator`. Flavors are
+# tried in the order listed, every flavor in a queue must name the same set of
+# resources, and quotas are strings because YAML reads a large bare number as a
+# float, which is not a quantity Kubernetes accepts.
 #
-# `max` is not a promise that a container fits. Quota is a sum over the fleet,
-# so a container can be admitted against quota and still find no single node
-# with room. Set it to the capacity of the largest node the queue can reach,
-# which at least rejects what nothing could ever host. A deployment whose pools
-# differ in size can only state the larger.
+# `limits` becomes a `LimitRange`. `ResourceSet` puts `cpu_resources` and
+# `gpu_resources` in a `oneof`, so a job asking for a GPU cannot also ask for
+# CPU or memory, and its pod arrives with no request for either, which makes it
+# BestEffort and the first thing the kubelet evicts. `max` is not a promise that
+# a container fits: quota is a sum over the fleet, so set it to the capacity of
+# the largest node the queue can reach, which at least rejects what nothing
+# could ever host.
+#
+# `preemption.withinClusterQueue: LowerPriority` lets a higher-priority workload
+# evict a running one, which requeues it from the start rather than pausing it,
+# so it suits jobs that checkpoint. Under the default `Never`, priority orders
+# only what is queued.
 queues:
   cpu:
     limits:
@@ -275,6 +286,19 @@ queues:
       max:
         cpu: "4"
         memory: "16Gi"
+    preemption:
+      withinClusterQueue: Never
+    # Worker clusters to dispatch to through MultiKueue. Empty means the queue
+    # admits and runs work on this cluster, which is what a worker itself does.
+    # A deployment that sets this becomes a manager and runs none of its own.
+    multikueue:
+      clusters: []
+    flavors:
+      - name: cpu-flavor
+        nodeLabels: {}
+        resources:
+          cpu: "100000000"
+          memory: "100000000Gi"
   gpu:
     limits:
       defaultRequest:
@@ -283,6 +307,20 @@ queues:
       max:
         cpu: "384"
         memory: "1440Gi"
+    preemption:
+      withinClusterQueue: Never
+    # Worker clusters to dispatch to through MultiKueue. Empty means the queue
+    # admits and runs work on this cluster, which is what a worker itself does.
+    # A deployment that sets this becomes a manager and runs none of its own.
+    multikueue:
+      clusters: []
+    flavors:
+      - name: gpu-flavor
+        nodeLabels: {}
+        resources:
+          nvidia.com/gpu: "100000000"
+          cpu: "100000000"
+          memory: "100000000Gi"
 
 # Pass configuration to Kueue sub-chart
 kueue:

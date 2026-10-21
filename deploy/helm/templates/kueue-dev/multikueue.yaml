@@ -1,0 +1,83 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+{{- /*
+Each queue dispatches to the workers it names, through its own MultiKueueConfig
+and AdmissionCheck. A queue that names none admits and runs work locally, which
+is what a worker cluster itself does.
+
+The MultiKueueCluster objects are shared. Two queues naming the same worker
+describe one cluster, and rendering it twice would collide on the name.
+*/ -}}
+{{- $dispatching := dict }}
+{{- range $queue := list "cpu" "gpu" }}
+{{- $clusters := ((index ($.Values.queues | default dict) $queue).multikueue).clusters | default list }}
+{{- if $clusters }}
+{{- $_ := set $dispatching $queue $clusters }}
+{{- end }}
+{{- end }}
+{{- $workers := dict }}
+{{- range $queue, $clusters := $dispatching }}
+{{- range $clusters }}
+{{- $_ := set $workers .name . }}
+{{- end }}
+{{- end }}
+{{- range $name := (keys $workers | sortAlpha) }}
+{{- $worker := index $workers $name }}
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: MultiKueueCluster
+metadata:
+  name: {{ $worker.name }}
+  # Recorded as the cluster that ran the work unit, so these must be the GKE
+  # cluster's own project, location, and name.
+  labels:
+    xmc.google.com/project: {{ $worker.project | quote }}
+    xmc.google.com/location: {{ $worker.location | quote }}
+    xmc.google.com/cluster-name: {{ $worker.cluster_name | quote }}
+spec:
+  clusterSource:
+    kubeConfig:
+      locationType: Secret
+      # Holds a token for the worker's API server, so it is created outside
+      # this chart, in the namespace Kueue runs in rather than this one. Kueue
+      # leaves a cluster whose Secret is missing inactive.
+      location: {{ $worker.credentials_secret | quote }}
+{{- end }}
+{{- range $queue := (keys $dispatching | sortAlpha) }}
+{{- $clusters := index $dispatching $queue }}
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: MultiKueueConfig
+metadata:
+  name: {{ $queue }}-workers
+spec:
+  # Not a preference. The default AllAtOnce dispatcher offers a workload to
+  # every cluster at once and the first to admit it wins, so placement follows
+  # which worker has a matching flavor.
+  clusters:
+  {{- range $clusters }}
+  - {{ .name | quote }}
+  {{- end }}
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: AdmissionCheck
+metadata:
+  name: multikueue-{{ $queue }}
+spec:
+  controllerName: kueue.x-k8s.io/multikueue
+  parameters:
+    apiGroup: kueue.x-k8s.io
+    kind: MultiKueueConfig
+    name: {{ $queue }}-workers
+{{- end }}
