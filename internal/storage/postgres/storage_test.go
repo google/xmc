@@ -57,6 +57,17 @@ func TestStorage(t *testing.T) {
 			},
 		},
 		{
+			name: "CLILoginCodes",
+			check: func(t *testing.T) {
+				if s.cliLoginCodeRepository == nil {
+					t.Error("cliLoginCodeRepository was not initialized")
+				}
+				if s.CLILoginCodes() != s.cliLoginCodeRepository {
+					t.Error("CLILoginCodes() did not return cliLoginCodeRepository")
+				}
+			},
+		},
+		{
 			name: "RunInTransaction",
 			check: func(t *testing.T) {
 				err := s.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {

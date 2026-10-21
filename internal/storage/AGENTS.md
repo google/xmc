@@ -19,6 +19,8 @@ Follow these rules when adding or modifying code under `internal/storage/`:
 
 ## 3. Keep Database-Specific Logic in Dedicated Subpackages
 - The root `internal/storage` package ([`storage.go`](storage.go), [`test_utils.go`](test_utils.go)) must remain 100% database-agnostic. Never import database drivers or engine-specific types into `internal/storage`.
+- Service and command layers (`cmd/`, `internal/`) must depend on `internal/storage` (`storage.Storage` or its domain sub-interfaces) rather than importing `internal/storage/spanner/<domain>` or `internal/storage/postgres/<domain>` directly.
+- Every new domain repository must be wired into `storage.Storage` ([`storage.go`](storage.go)), [`internal/storage/spanner/spanner.go`](spanner/spanner.go), [`internal/storage/postgres/storage.go`](postgres/storage.go) (returning `codes.Unimplemented` in PostgreSQL if not yet implemented), and `storage.MockStorage` ([`test_utils.go`](test_utils.go)).
 - Isolate all database-specific SQL dialects, mutations, schema mappings, and transaction mechanics inside dedicated engine subpackages:
   - [`internal/storage/spanner/`](spanner/) for Cloud Spanner
   - [`internal/storage/postgres/`](postgres/) for PostgreSQL

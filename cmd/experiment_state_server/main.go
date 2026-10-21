@@ -147,7 +147,7 @@ func main() {
 	// 6. Create a master HTTP mux for the gRPC gateway + health checks.
 	spHealth, xidHealth, tqHealth := prodServer.HealthCheckers()
 	httpMux := setupHTTPMux(ctx, oauthAuth, oauthAuth.Authenticate(gwmux), activeHealthCheck(spHealth, xidHealth, tqHealth), livenessCheck())
-	registerCLILogin(ctx, httpMux, oauthAuth, oauthCfg, prodServer.SpannerClient())
+	registerCLILogin(ctx, httpMux, oauthAuth, oauthCfg, prodServer.Storage())
 
 	// 7. Apply security middlewares
 	handler := oauthAuth.SecurityMiddlewares(httpMux)

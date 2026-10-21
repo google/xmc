@@ -18,25 +18,23 @@ import (
 	"context"
 	"net/http"
 
-	"cloud.google.com/go/spanner"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/clilogincode"
+	"xmanager_cloud/internal/storage"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
 // registerCLILogin serves the browser-based CLI login endpoints. They are not registered under
-// mock or disabled authentication, which would let anyone mint CLI tokens, nor without Spanner.
-func registerCLILogin(ctx context.Context, httpMux *http.ServeMux, oauthAuth *oauth.Authenticator, oauthCfg *oauth.Config, spannerClient *spanner.Client) {
+// mock or disabled authentication, which would let anyone mint CLI tokens, nor without storage.
+func registerCLILogin(ctx context.Context, httpMux *http.ServeMux, oauthAuth *oauth.Authenticator, oauthCfg *oauth.Config, store storage.Storage) {
 	if oauthCfg.MockAuth || oauthCfg.DisableAuthentication {
 		logging.Warn(ctx, "CLI login disabled under non-production auth", "mock_auth", oauthCfg.MockAuth, "disable_authentication", oauthCfg.DisableAuthentication)
 		return
 	}
-	codes, err := clilogincode.NewRepository(spannerClient)
-	if err != nil {
-		logging.Warn(ctx, "CLI login disabled: no login code store", "error", err)
+	if store == nil {
+		logging.Warn(ctx, "CLI login disabled: no storage")
 		return
 	}
-	if err := oauthAuth.EnableCLILogin(codes); err != nil {
+	if err := oauthAuth.EnableCLILogin(store.CLILoginCodes()); err != nil {
 		logging.Warn(ctx, "CLI login disabled", "error", err)
 		return
 	}
