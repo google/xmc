@@ -38,6 +38,14 @@ const minJWTSecretLen = 32
 
 const defaultSessionTTL = time.Hour
 
+// CLI session token lifetime bounds (CLI_SESSION_TTL). CLI tokens cannot be refreshed, so the
+// default covers a working day; the maximum caps how long a copied token stays usable.
+const (
+	defaultCLISessionTTL = 12 * time.Hour
+	minCLISessionTTL     = time.Minute
+	maxCLISessionTTL     = 30 * 24 * time.Hour
+)
+
 // Config holds the configuration properties for OAuth2 and the authorization checks.
 type Config struct {
 	Port                  string
@@ -53,6 +61,7 @@ type Config struct {
 	ClientSecret          string
 	JWTSecret             string
 	SessionTTL            time.Duration
+	CLISessionTTL         time.Duration
 	RedirectURL           string
 	AuthURL               string
 	TokenURL              string
@@ -94,6 +103,10 @@ func LoadConfig() (*Config, error) {
 	if sessionTTL < time.Second {
 		return nil, fmt.Errorf("`SESSION_TTL` must be at least `1s`")
 	}
+	cliSessionTTL, err := loadCLISessionTTL()
+	if err != nil {
+		return nil, err
+	}
 
 	username, _ := getEnvOrFile("OIDC_USERNAME", getEnv("AUTH_USERNAME", ""))
 	password, _ := getEnvOrFile("OIDC_PASSWORD", getEnv("AUTH_PASSWORD", ""))
@@ -124,6 +137,7 @@ func LoadConfig() (*Config, error) {
 		ClientSecret:          clientSecret,
 		JWTSecret:             jwtSecret,
 		SessionTTL:            sessionTTL,
+		CLISessionTTL:         cliSessionTTL,
 		Username:              username,
 		Password:              password,
 		RedirectURL:           redirectURL,
@@ -138,6 +152,17 @@ func LoadConfig() (*Config, error) {
 		AllowedHosts:          allowedHosts,
 		OIDCIssuerURL:         oidcIssuerURL,
 	}, nil
+}
+
+func loadCLISessionTTL() (time.Duration, error) {
+	ttl, err := time.ParseDuration(getEnv("CLI_SESSION_TTL", defaultCLISessionTTL.String()))
+	if err != nil {
+		return 0, fmt.Errorf("invalid `CLI_SESSION_TTL`: %w", err)
+	}
+	if ttl < minCLISessionTTL || ttl > maxCLISessionTTL {
+		return 0, fmt.Errorf("`CLI_SESSION_TTL` must be between `%s` and `%s`", minCLISessionTTL, maxCLISessionTTL)
+	}
+	return ttl, nil
 }
 
 func loadClientSecret() (string, error) {

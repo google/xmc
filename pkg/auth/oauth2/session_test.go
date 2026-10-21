@@ -67,6 +67,25 @@ func TestGenerateSessionToken(t *testing.T) {
 	}
 }
 
+func TestGenerateCLISessionToken(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	tokenStr, err := generateCLISessionTokenAt("user@example.com", "User", "0123abcd", 12*time.Hour, testSessionSecret, now)
+	if err != nil {
+		t.Fatalf("generateCLISessionTokenAt() failed: %v", err)
+	}
+	got, err := ParseSessionToken(tokenStr, testSessionSecret, CLIAudience)
+	if err != nil {
+		t.Fatalf("ParseSessionToken(CLIAudience) failed: %v", err)
+	}
+	want := &SessionClaims{Email: "user@example.com", Name: "User", RegisteredClaims: jwt.RegisteredClaims{
+		Issuer: SessionIssuer, Subject: "user@example.com", Audience: jwt.ClaimStrings{CLIAudience}, ID: "0123abcd",
+		ExpiresAt: jwt.NewNumericDate(now.Add(12 * time.Hour)), NotBefore: jwt.NewNumericDate(now), IssuedAt: jwt.NewNumericDate(now),
+	}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("ParseSessionToken() claims mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestParseSessionToken(t *testing.T) {
 	now := time.Now()
 	baseClaims := func() *SessionClaims {

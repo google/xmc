@@ -143,6 +143,8 @@ DISABLE_AUTHENTICATION and MOCK_AUTH environment variables.
 {{- end -}}
 - name: SESSION_TTL
   value: {{ .Values.auth.sessionTtl | quote }}
+- name: CLI_SESSION_TTL
+  value: {{ .Values.auth.cliSessionTtl | quote }}
 - name: MOCK_AUTH
   value: {{ .Values.auth.mockAuth | quote }}
 - name: ALLOWED_ORIGINS

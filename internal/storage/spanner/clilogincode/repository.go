@@ -21,8 +21,13 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
+	"google.golang.org/grpc/codes"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
+
+const tableName = "CliLoginCodes"
+
+var columns = []string{"CodeHash", "Email", "Name", "CodeChallenge", "ExpiresAt"}
 
 var _ oauth2.CLICodeStore = (*Repository)(nil)
 
@@ -41,10 +46,42 @@ func NewRepository(client *spanner.Client) (*Repository, error) {
 
 // Save inserts a new code. Inserting a hash that already exists fails.
 func (r *Repository) Save(ctx context.Context, code oauth2.CLILoginCode) error {
-	cols := []string{"CodeHash", "Email", "Name", "CodeChallenge", "ExpiresAt"}
 	vals := []any{code.Hash, code.Email, spanner.NullString{StringVal: code.Name, Valid: code.Name != ""}, code.CodeChallenge, code.ExpiresAt}
-	if _, err := r.client.Apply(ctx, []*spanner.Mutation{spanner.Insert("CliLoginCodes", cols, vals)}); err != nil {
+	if _, err := r.client.Apply(ctx, []*spanner.Mutation{spanner.Insert(tableName, columns, vals)}); err != nil {
 		return fmt.Errorf("failed to save cli login code: %w", err)
 	}
 	return nil
+}
+
+// Consume reads and deletes the code with the given hash in one read-write transaction, so
+// concurrent redemptions of the same code succeed at most once.
+func (r *Repository) Consume(ctx context.Context, hash []byte) (oauth2.CLILoginCode, error) {
+	var code oauth2.CLILoginCode
+	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		row, err := tx.ReadRow(ctx, tableName, spanner.Key{hash}, columns)
+		if spanner.ErrCode(err) == codes.NotFound {
+			return oauth2.ErrCLICodeNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read cli login code: %w", err)
+		}
+		if code, err = rowToCode(row); err != nil {
+			return err
+		}
+		return tx.BufferWrite([]*spanner.Mutation{spanner.Delete(tableName, spanner.Key{hash})})
+	})
+	if err != nil {
+		return oauth2.CLILoginCode{}, err
+	}
+	return code, nil
+}
+
+func rowToCode(row *spanner.Row) (oauth2.CLILoginCode, error) {
+	var code oauth2.CLILoginCode
+	var name spanner.NullString
+	if err := row.Columns(&code.Hash, &code.Email, &name, &code.CodeChallenge, &code.ExpiresAt); err != nil {
+		return oauth2.CLILoginCode{}, fmt.Errorf("failed to decode cli login code: %w", err)
+	}
+	code.Name = name.StringVal
+	return code, nil
 }

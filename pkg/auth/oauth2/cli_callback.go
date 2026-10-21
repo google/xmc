@@ -38,6 +38,10 @@ const (
 	cliErrorServerError  = "server_error"
 )
 
+// ErrCLICodeNotFound is returned by CLICodeStore.Consume when no code has the given hash, including
+// when the code was already consumed.
+var ErrCLICodeNotFound = errors.New("cli login code not found")
+
 // CLILoginCode is a one-time CLI login code issued by the callback and redeemed by the token endpoint.
 type CLILoginCode struct {
 	Hash                       []byte
@@ -48,6 +52,7 @@ type CLILoginCode struct {
 // CLICodeStore persists one-time CLI login codes.
 type CLICodeStore interface {
 	Save(ctx context.Context, code CLILoginCode) error
+	Consume(ctx context.Context, hash []byte) (CLILoginCode, error)
 }
 
 // takeCLILoginTicket deletes any cli_login cookie and returns its ticket when authentic, unexpired, and bound to oauthState.

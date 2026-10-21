@@ -133,7 +133,7 @@ The command-line interface (CLI) client bypasses the web UI entirely, communicat
    - **HTTP Requests** targeting `/v1/*` are routed to the ESS HTTP endpoint.
    - **gRPC Requests** (such as `/experiment.ExperimentService/*`) are routed via `GRPCRoute` directly to the gRPC port of the `experiment-state-server`.
 3. **Authentication**:
-   - The CLI attaches a bearer token to the call metadata: a Google-signed ID token (for example from a service account's `generateIdToken`), a token from the configured OIDC provider, or an XMC session token.
+   - The CLI attaches a bearer token to the call metadata: an XMC CLI session token from `xmanager login` (see [CLI Login](#3-cli-login-browser-loopback)), a Google-signed ID token (for example from a service account's `generateIdToken`), a token from the configured OIDC provider, or an XMC session token.
    - Each gRPC service verifies the token, rejects Google and OIDC tokens whose `email_verified` claim is false (Google tokens must carry the claim), and then runs the same deployment admission check as the HTTP API (see [Client Authorization](#client-authorization)) before processing the call.
 
 ---
@@ -160,10 +160,16 @@ sequenceDiagram
     ESS->>ESS: store SHA-256 of a one-time code (60s) in CliLoginCodes
     ESS->>B: 302 http://127.0.0.1:N/callback?code&state
     B->>CLI: GET /callback
+    CLI->>B: 302 /api/cli/success
+    CLI->>ESS: POST /api/cli/token (code, code_verifier)
+    ESS->>ESS: consume code, verify PKCE, re-run admission, sign token
+    ESS->>CLI: access_token (aud xmanager-cloud-cli, jti, CLI_SESSION_TTL)
 ```
 
 1. **Login ticket**: `/api/cli/login` accepts only a numeric loopback `port` (1024 to 65535), a CLI `state`, an S256 `code_challenge` and an optional `login_hint`. It stores them in the `cli_login` cookie, signed with the JWT secret (`aud: xmanager-cloud-cli-login`) and scoped to `/api/callback`, together with the hash of the `oauth_state` it generates. To stop other web pages from starting a login in the user's browser (web-origin login CSRF) or embedding it, browsers that send fetch metadata must send `Sec-Fetch-Site: none` and `Sec-Fetch-Dest: document`. Note that `Sec-Fetch-Site: none` is also sent for links clicked in non-browser desktop applications (such as chat or email clients) or pasted into the address bar, and browsers without fetch metadata (or plain-HTTP non-localhost origins) omit these headers.
 2. **Callback**: `/api/callback` completes a CLI login only when the `cli_login` ticket is authentic, unexpired and bound to the `oauth_state` of the same round trip; otherwise it signs the user in to the Dashboard as before. `/api/login` deletes any `cli_login` cookie. Every outcome goes to the loopback URL, which is built from the ticket's port, never from the request: an identity provider error or cancellation, or a rejected user, is sent `error=access_denied`, and a failed code exchange or other server failure `error=server_error`. The email never appears in the URL.
+3. **Token exchange**: `/api/cli/token` rejects malformed requests before reading the store, consumes the code in a Spanner read-write transaction before checking the PKCE verifier, and answers every code or verifier problem with `400 invalid_grant`. A user who lost admission since signing in gets `403 access_denied`. Responses are `no-store`.
+4. **Use**: the CLI token is an HS256 session token with audience `xmanager-cloud-cli`. HTTP accepts it only as a bearer token, never as the session cookie, and gRPC accepts it in call metadata. Every call re-runs deployment admission.
 
 The CLI login endpoints are registered only when authentication is enabled (no `MOCK_AUTH` or `DISABLE_AUTHENTICATION`) and the server has a CLI login code store.
 
