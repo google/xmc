@@ -68,6 +68,9 @@ const (
 	// suffixBytes is the number of random bytes, hex-encoded, that make test database names unique
 	// across tests and across processes sharing one server.
 	suffixBytes = 8
+	// maxPoolConns caps the connections of each pool so that parallel tests sharing one server stay
+	// well below its default max_connections of 100.
+	maxPoolConns = 10
 )
 
 const (
@@ -233,9 +236,15 @@ func postgresContainerRequest() testcontainers.ContainerRequest {
 	}
 }
 
-// openPool opens a connection pool to dsn and verifies that the database is reachable.
+// openPool opens a connection pool to dsn, capped at maxPoolConns connections, and verifies that
+// the database is reachable.
 func openPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
-	pool, err := pgxpool.New(ctx, dsn)
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse connection pool config: %w", err)
+	}
+	cfg.MaxConns = maxPoolConns
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}
@@ -289,6 +298,7 @@ func (s *server) dropDatabase(t *testing.T, name string) {
 func (s *server) databaseDSN(name string) string {
 	u := *s.adminURL
 	u.Path = "/" + name
+	u.RawPath = ""
 	return u.String()
 }
 
