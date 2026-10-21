@@ -135,5 +135,8 @@ func TestProdServer_HealthCheckers(t *testing.T) {
 		if ps.SpannerClient() != nil {
 			t.Errorf("SpannerClient() on nil ProdServer = %v, want nil", ps.SpannerClient())
 		}
+		if ps.Storage() != nil {
+			t.Errorf("Storage() on nil ProdServer = %v, want nil", ps.Storage())
+		}
 	})
 }

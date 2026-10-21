@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/artifact"
+	"xmanager_cloud/internal/storage/postgres/clilogincode"
 	"xmanager_cloud/internal/storage/postgres/dashboard"
 	"xmanager_cloud/internal/storage/postgres/experiment"
 	"xmanager_cloud/internal/storage/postgres/operation"
@@ -43,6 +44,7 @@ type statusHistoryRepository = statushistory.Repository
 type dashboardRepository = dashboard.Repository
 type pauseStateRepository = pausestate.Repository
 type pausedTaskRepository = pausedtask.Repository
+type cliLoginCodeRepository = clilogincode.Repository
 
 var _ storage.Storage = (*Storage)(nil)
 
@@ -56,8 +58,9 @@ type Storage struct {
 	*operationRepository
 	*statusHistoryRepository
 	*dashboardRepository
-	pauseStateRepository *pauseStateRepository
-	pausedTaskRepository *pausedTaskRepository
+	pauseStateRepository   *pauseStateRepository
+	pausedTaskRepository   *pausedTaskRepository
+	cliLoginCodeRepository *cliLoginCodeRepository
 }
 
 // NewStorage creates a new instance of the PostgreSQL-backed storage.
@@ -73,6 +76,7 @@ func NewStorage() *Storage {
 		dashboardRepository:     dashboard.NewRepository(),
 		pauseStateRepository:    pausestate.NewRepository(),
 		pausedTaskRepository:    pausedtask.NewRepository(),
+		cliLoginCodeRepository:  clilogincode.NewRepository(),
 	}
 }
 
@@ -89,4 +93,9 @@ func (s *Storage) PauseState() storage.PauseStateRepository {
 // PausedTasks returns the repository for pending paused actuation tasks.
 func (s *Storage) PausedTasks() storage.PausedTaskRepository {
 	return s.pausedTaskRepository
+}
+
+// CLILoginCodes returns the repository for one-time CLI login codes.
+func (s *Storage) CLILoginCodes() storage.CLILoginCodeRepository {
+	return s.cliLoginCodeRepository
 }
