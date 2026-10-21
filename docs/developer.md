@@ -99,7 +99,7 @@ Refreshing the baseline, or changing `api/buf.yaml` or `api/BUILD.bazel`, needs 
 
 ## Custom AIP-160 Filter & Parser Engine
 
-The repository includes a custom, zero-dependency AIP-160 compliant filter parsing and query translation engine under `//api/filter/go/filter` and `//api/filter/go/queryfilterbase`. This parser replaces legacy dependencies with standard Go stubs and includes custom priority logical operator parsing (implicit space-conjunction, explicit `AND`, explicit `OR`), type safety verification, regular expression constraints, and disjunction IN list optimizations.
+The repository includes a custom, zero-dependency AIP-160 compliant filter parsing and query translation engine under `//api/filter/go/filter` and `//api/filter/go/queryfilterbase`. This parser replaces legacy dependencies with standard Go stubs and includes custom priority logical operator parsing (implicit space-conjunction, explicit `AND`, explicit `OR`), type safety verification, regular expression constraints, and disjunction IN list optimizations. SQL syntax that differs by backend is isolated behind `queryfilterbase.Dialect`, implemented in `//internal/query_generator/dialect/spanner` and `//internal/query_generator/dialect/postgres`.
 
 ### Build and Test Commands
 
@@ -116,7 +116,7 @@ bazel test //internal/query_generator/... --nocache_test_results
 This will run and pass the following test suites:
 - `//internal/query_generator:equalityvisitor_test` (LHS/RHS equivalence verification)
 - `//internal/query_generator:querytools_test` (Heuristic and table index candidate selection stubs)
-- `//internal/query_generator/filter:filter_test` (Spanner filter visitor and type safety integration)
+- `//internal/query_generator/filter:filter_test` (database-agnostic filter visitor with Spanner and PostgreSQL dialect coverage, type safety integration)
 - `//internal/query_generator/normalizer:normalizer_test` (Filter normalization visitor)
 - `//internal/query_generator:liststatement_test` (End-to-end list statements translation integration)
 

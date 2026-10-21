@@ -19,20 +19,24 @@ import (
 	"context"
 
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
 var _ storage.OperationStore = (*Repository)(nil)
 
 // Repository manages persistence for operation entities in PostgreSQL.
-type Repository struct{}
+type Repository struct {
+	db pgdb.DBTX
+}
 
-// NewRepository creates a new PostgreSQL Operation repository instance.
-func NewRepository() *Repository {
-	return &Repository{}
+// NewRepository creates a new PostgreSQL Operation repository instance bound to pool.
+func NewRepository(pool *pgxpool.Pool) *Repository {
+	return &Repository{db: pgdb.FromPool(pool)}
 }
 
 // AddWorkUnitOperation adds an operation to a work unit.

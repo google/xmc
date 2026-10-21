@@ -18,13 +18,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 func TestRepository_Unimplemented(t *testing.T) {
-	repo := NewRepository()
+	repo := NewRepository(nil)
 	if repo == nil {
 		t.Fatal("NewRepository() returned nil")
 	}
@@ -34,5 +35,13 @@ func TestRepository_Unimplemented(t *testing.T) {
 	}
 	if _, err := repo.Consume(ctx, []byte("hash")); status.Code(err) != codes.Unimplemented {
 		t.Errorf("Consume() code = %v, want %v (err: %v)", status.Code(err), codes.Unimplemented, err)
+	}
+}
+
+func TestNewRepository_BindsPool(t *testing.T) {
+	pool := &pgxpool.Pool{}
+	repo := NewRepository(pool)
+	if repo.db != pool {
+		t.Errorf("NewRepository(pool).db = %v, want %p", repo.db, pool)
 	}
 }
