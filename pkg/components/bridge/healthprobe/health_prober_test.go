@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bridge
+package healthprobe_test
 
 import (
 	"context"
@@ -23,6 +23,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/healthprobe/healthprobetest"
 )
 
 func TestNetworkHealthProber_ProbeHTTP_And_TCP(t *testing.T) {
@@ -36,10 +39,10 @@ func TestNetworkHealthProber_ProbeHTTP_And_TCP(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	prober := NewNetworkHealthProber(
-		WithHealthHTTPClient(ts.Client()),
-		WithHealthDialer(&net.Dialer{}),
-		WithHealthProbeTimeout(2*time.Second),
+	prober := healthprobe.NewNetworkHealthProber(
+		healthprobe.WithHealthHTTPClient(ts.Client()),
+		healthprobe.WithHealthDialer(&net.Dialer{}),
+		healthprobe.WithHealthProbeTimeout(2*time.Second),
 	)
 	ctx := context.Background()
 
@@ -155,7 +158,7 @@ func TestNetworkHealthProber_ProbeHTTP_And_TCP(t *testing.T) {
 				}, nil
 			}),
 		}
-		p := NewNetworkHealthProber(WithHealthHTTPClient(client))
+		p := healthprobe.NewNetworkHealthProber(healthprobe.WithHealthHTTPClient(client))
 		res, err := p.ProbeHTTP(ctx, "http://example.com/health", time.Second)
 		if err != nil {
 			t.Fatalf("unexpected probe error: %v", err)
@@ -194,11 +197,11 @@ func TestNetworkHealthProber_DefaultProberHTTP_TCP(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
 	defer ts.Close()
 
-	p := NewNetworkHealthProber(
+	p := healthprobe.NewNetworkHealthProber(
 		nil,
-		WithHealthHTTPClient(nil),
-		WithHealthDialer(nil),
-		WithHealthProbeTimeout(0),
+		healthprobe.WithHealthHTTPClient(nil),
+		healthprobe.WithHealthDialer(nil),
+		healthprobe.WithHealthProbeTimeout(0),
 	)
 	ctx := context.Background()
 
@@ -219,7 +222,7 @@ func TestNetworkHealthProber_DefaultProberHTTP_TCP(t *testing.T) {
 }
 
 func TestNetworkHealthProber_NilReceiverSafety(t *testing.T) {
-	var nilProber *NetworkHealthProber
+	var nilProber *healthprobe.NetworkHealthProber
 	ctx := context.Background()
 
 	if _, err := nilProber.Probe(ctx, "http://localhost", time.Second); err == nil {
@@ -232,7 +235,7 @@ func TestNetworkHealthProber_NilReceiverSafety(t *testing.T) {
 		t.Error("expected error from nil NetworkHealthProber.ProbeTCP")
 	}
 
-	var nilFake *FakeHealthProber
+	var nilFake *healthprobetest.FakeHealthProber
 	nilFake.SetResult("http://localhost", nil) // should not panic
 	if _, err := nilFake.Probe(ctx, "http://localhost", time.Second); err == nil {
 		t.Error("expected error from nil FakeHealthProber.Probe")
@@ -246,7 +249,7 @@ func TestNetworkHealthProber_NilReceiverSafety(t *testing.T) {
 }
 
 func TestFakeHealthProber(t *testing.T) {
-	fake := NewFakeHealthProber()
+	fake := healthprobetest.NewFakeHealthProber()
 	ctx := context.Background()
 
 	// Default success
@@ -256,7 +259,7 @@ func TestFakeHealthProber(t *testing.T) {
 	}
 
 	// Preconfigured result
-	fake.SetResult("http://target:8080", &HealthProbeResult{
+	fake.SetResult("http://target:8080", &healthprobe.HealthProbeResult{
 		Healthy: false, StatusCode: 503, Message: "Service Unavailable",
 	})
 	res, err = fake.ProbeHTTP(ctx, "http://target:8080", time.Second)

@@ -24,6 +24,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/healthprobe/healthprobetest"
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
+	"xmanager_cloud/pkg/components/bridge/statusdetector/statusdetectortest"
 )
 
 func TestReconcileComponent_3PWrapperAdvanced(t *testing.T) {
@@ -36,17 +40,17 @@ func TestReconcileComponent_3PWrapperAdvanced(t *testing.T) {
 	}
 
 	t.Run("preserves component observed generation and does not overwrite with 3p resource gen", func(t *testing.T) {
-		detector := NewFakeStatusDetector()
-		detector.SetStatus("xmc/ray-1", &ResourceStatus{
+		detector := statusdetectortest.NewFakeStatusDetector()
+		detector.SetStatus("xmc/ray-1", &statusdetector.ResourceStatus{
 			Found:              true,
 			Ready:              true,
 			ObservedGeneration: 999,
 			Endpoint:           "http://ray-head.xmc.svc.cluster.local:8265",
 			ConnectionSecret:   "ray-secret",
 		})
-		prober := NewFakeHealthProber()
-		prober.SetResult("http://ray-head.xmc.svc.cluster.local:8265", &HealthProbeResult{Healthy: true, Message: "HTTP 200"})
-		bp := NewBridgeProber(detector, prober, time.Second)
+		prober := healthprobetest.NewFakeHealthProber()
+		prober.SetResult("http://ray-head.xmc.svc.cluster.local:8265", &healthprobe.HealthProbeResult{Healthy: true, Message: "HTTP 200"})
+		bp := healthprobe.NewBridgeProber(detector, prober, time.Second)
 
 		cms := &mockCMS{}
 		r, _ := NewReconciler(cms, bp, nil)
@@ -80,18 +84,18 @@ func TestReconcileComponent_3PWrapperAdvanced(t *testing.T) {
 	})
 
 	t.Run("handles resource not found vs crd not found", func(t *testing.T) {
-		detector := NewFakeStatusDetector()
-		detector.SetStatus("xmc/missing-res", &ResourceStatus{
+		detector := statusdetectortest.NewFakeStatusDetector()
+		detector.SetStatus("xmc/missing-res", &statusdetector.ResourceStatus{
 			Found:   false,
 			Ready:   false,
 			Message: "resource xmc/missing-res not found",
 		})
-		detector.SetStatus("xmc/missing-crd", &ResourceStatus{
+		detector.SetStatus("xmc/missing-crd", &statusdetector.ResourceStatus{
 			Found:   false,
 			Ready:   false,
 			Message: "CRD not installed: no matches for kind \"Foo\"",
 		})
-		bp := NewBridgeProber(detector, nil, time.Second)
+		bp := healthprobe.NewBridgeProber(detector, nil, time.Second)
 		r, _ := NewReconciler(&mockCMS{}, bp, nil)
 
 		// Case 1: ResourceNotFound
@@ -193,7 +197,7 @@ func TestReconcile3PWrapper_InvalidWrapperSpec(t *testing.T) {
 		Spec: &componentspb.ComponentSpec{
 			Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
 		},
-		WrapperOpts: WrapperRef{
+		WrapperOpts: statusdetector.WrapperRef{
 			Group:              "ray.io",
 			Version:            "v1",
 			Kind:               "RayCluster",
@@ -225,7 +229,7 @@ func TestReconcile3PWrapper_InvalidWrapperSpec(t *testing.T) {
 
 func TestPopulateAccessEnvVars(t *testing.T) {
 	t.Run("nil result or nil status does not panic", func(t *testing.T) {
-		populateAccessEnvVars(nil, &ResourceStatus{})
+		populateAccessEnvVars(nil, &statusdetector.ResourceStatus{})
 		res := &ReconcileResult{}
 		populateAccessEnvVars(res, nil)
 		if res.Access != nil {
@@ -235,7 +239,7 @@ func TestPopulateAccessEnvVars(t *testing.T) {
 
 	t.Run("populates access with uninitialized EnvVars map", func(t *testing.T) {
 		res := &ReconcileResult{}
-		status := &ResourceStatus{
+		status := &statusdetector.ResourceStatus{
 			Endpoint:         "http://service.prod:8080",
 			ConnectionSecret: "db-secret",
 		}
@@ -259,7 +263,7 @@ func TestReconcile_OperatorlessProfile3(t *testing.T) {
 	ctx := context.Background()
 	cms := &mockCMS{}
 	prober := &mockProber{
-		probeRes: &HealthProbeResult{Healthy: true, Message: "Service operational"},
+		probeRes: &healthprobe.HealthProbeResult{Healthy: true, Message: "Service operational"},
 	}
 	r, err := NewReconciler(cms, prober, nil)
 	if err != nil {
@@ -277,7 +281,7 @@ func TestReconcile_OperatorlessProfile3(t *testing.T) {
 		Generation: 1,
 		Spec:       specProfile3,
 		Enabled:    true,
-		WrapperOpts: WrapperRef{
+		WrapperOpts: statusdetector.WrapperRef{
 			EndpointJSONPath: "http://external-db.example.com:5432",
 		},
 	}
@@ -295,7 +299,7 @@ func TestReconcile_OperatorlessProfile3(t *testing.T) {
 
 	// Case 2: Operator-less component with failing endpoint probes unready
 	unhealthyProber := &mockProber{
-		probeRes: &HealthProbeResult{Healthy: false, Message: "Connection timed out"},
+		probeRes: &healthprobe.HealthProbeResult{Healthy: false, Message: "Connection timed out"},
 	}
 	rUnhealthy, _ := NewReconciler(cms, unhealthyProber, nil)
 	resUnhealthy, err := rUnhealthy.ReconcileComponent(ctx, in)
@@ -321,7 +325,7 @@ func TestVerifyEndpointHealth(t *testing.T) {
 		want     verdict
 	}{
 		{name: "empty endpoint skips probe", prober: &mockProber{probeErr: errors.New("unused")}, want: verdict{OK: true}},
-		{name: "healthy discards probe message", endpoint: endpoint, prober: &mockProber{probeRes: &HealthProbeResult{Healthy: true, Message: "HTTP 200"}}, want: verdict{OK: true}},
+		{name: "healthy discards probe message", endpoint: endpoint, prober: &mockProber{probeRes: &healthprobe.HealthProbeResult{Healthy: true, Message: "HTTP 200"}}, want: verdict{OK: true}},
 		{
 			name:     "probe error",
 			endpoint: endpoint,
@@ -337,13 +341,13 @@ func TestVerifyEndpointHealth(t *testing.T) {
 		{
 			name:     "unhealthy without message",
 			endpoint: endpoint,
-			prober:   &mockProber{probeRes: &HealthProbeResult{}},
+			prober:   &mockProber{probeRes: &healthprobe.HealthProbeResult{}},
 			want:     verdict{Reason: "ProbeUnhealthy", Message: "Health probe unhealthy for http://svc.xmc:8080"},
 		},
 		{
 			name:     "unhealthy with message",
 			endpoint: endpoint,
-			prober:   &mockProber{probeRes: &HealthProbeResult{Message: "HTTP 503 (unhealthy status)"}},
+			prober:   &mockProber{probeRes: &healthprobe.HealthProbeResult{Message: "HTTP 503 (unhealthy status)"}},
 			want:     verdict{Reason: "ProbeUnhealthy", Message: "HTTP 503 (unhealthy status)"},
 		},
 	}
@@ -367,7 +371,7 @@ func TestResolveOperatorlessEndpointAndIPv6(t *testing.T) {
 		{
 			name: "JSONPath EndpointJSONPath is ignored when wrapperRef is nil",
 			in: ReconcileComponentInput{
-				WrapperOpts: WrapperRef{EndpointJSONPath: "$.status.endpoint"},
+				WrapperOpts: statusdetector.WrapperRef{EndpointJSONPath: "$.status.endpoint"},
 				Spec: &componentspb.ComponentSpec{
 					Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
 					Parameters: map[string]string{"endpoint": "http://clickhouse:8123"},
@@ -378,7 +382,7 @@ func TestResolveOperatorlessEndpointAndIPv6(t *testing.T) {
 		{
 			name: "Static EndpointJSONPath override is returned",
 			in: ReconcileComponentInput{
-				WrapperOpts: WrapperRef{EndpointJSONPath: "http://static:8123"},
+				WrapperOpts: statusdetector.WrapperRef{EndpointJSONPath: "http://static:8123"},
 			},
 			want: "http://static:8123",
 		},
@@ -437,10 +441,10 @@ func TestResolveOperatorlessEndpointAndIPv6(t *testing.T) {
 		"httpPort":            "8123",
 		"healthCheckEndpoint": "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping",
 	}
-	if got := resolveProbeEndpoint(params); got != "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping" {
-		t.Errorf("resolveProbeEndpoint() = %q, want healthCheckEndpoint", got)
+	if got := healthprobe.ResolveProbeEndpoint(params); got != "http://clickhouse.xmc-metrics.svc.cluster.local:8123/ping" {
+		t.Errorf("ResolveProbeEndpoint() = %q, want healthCheckEndpoint", got)
 	}
-	if got := resolveConnectionEndpoint(params); got != "clickhouse.xmc-metrics.svc.cluster.local:9000" {
-		t.Errorf("resolveConnectionEndpoint() = %q, want clickhouse.xmc-metrics.svc.cluster.local:9000", got)
+	if got := healthprobe.ResolveConnectionEndpoint(params); got != "clickhouse.xmc-metrics.svc.cluster.local:9000" {
+		t.Errorf("ResolveConnectionEndpoint() = %q, want clickhouse.xmc-metrics.svc.cluster.local:9000", got)
 	}
 }

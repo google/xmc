@@ -12,7 +12,7 @@ graph TD
     Bridge -->|"ComponentController.Reconcile"| Reconciler["Bridge Reconciler<br>(pkg/components/bridge)"]
     Reconciler <-->|"gRPC Intent & Status Sync"| CMS["Component Manager Service<br>(ESS)"]
     Reconciler <-->|"Helm Values Synthesis"| Helm["1P Helm Parameters & Values Synthesis"]
-    Reconciler <-->|"Dynamic CRD Status Detection"| Detector["3P Dynamic Status Detector<br>(status_detector.go)"]
+    Reconciler <-->|"Dynamic CRD Status Detection"| Detector["3P Dynamic Status Detector<br>(statusdetector/status_detector.go)"]
 ```
 
 ---
@@ -140,7 +140,7 @@ The bridge reconciler ingests Kubernetes Custom Resource manifests and unmarshal
 
 ---
 
-## 3P Custom Wrapper Status Detection (`status_detector.go`, `k8s_status_detector.go`, `fake_status_detector.go`)
+## 3P Custom Wrapper Status Detection (`statusdetector`, `statusdetectortest`)
 
 Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference services, and ClickHouse installations) are managed via external Kubernetes Custom Resource Definitions (CRDs). The GitOps bridge reconciler defines an extensible status detection contract to evaluate their health without hardcoding proprietary schemas:
 
@@ -151,8 +151,8 @@ Third-party (3P) ecosystem components (such as Ray clusters, vLLM inference serv
 - **`StatusDetector` Interface & Implementations**:
   - `DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error)`
   - `UnimplementedStatusDetector`: A truthful baseline implementation reporting that dynamic status detection is pending implementation.
-  - `FakeStatusDetector`: In-memory test double supporting synthetic status mapping and error injection for unit testing.
-  - `K8sStatusDetector`: Production implementation (`k8s_status_detector.go`) using client-go `dynamic.Interface` and `meta.RESTMapper` with automatic GVR discovery, resilient missing-CRD handling (`meta.IsNoMatchError`), structural contract validation (`validateStatusPayload` returning `ErrContractBreach` when `.status` is not an object map, `.status.conditions` is not a list of maps, or a condition lacks a non-empty string `type`), and normalized JSONPath evaluation. Companion tests in `k8s_status_detector_test.go`.
+  - `FakeStatusDetector` (`statusdetectortest/fake_status_detector.go`): In-memory test double supporting synthetic status mapping and error injection for unit testing.
+  - `K8sStatusDetector`: Production implementation (`statusdetector/k8s_status_detector.go`) using client-go `dynamic.Interface` and `meta.RESTMapper` with automatic GVR discovery, resilient missing-CRD handling (`meta.IsNoMatchError`), structural contract validation (`validateStatusPayload` returning `ErrContractBreach` when `.status` is not an object map, `.status.conditions` is not a list of maps, or a condition lacks a non-empty string `type`), and normalized JSONPath evaluation. Companion tests in `statusdetector/k8s_status_detector_test.go`.
 - **Dynamic JSONPath Engine (`EvaluateJSONPath`)**: Evaluates arbitrary JSONPath queries against unstructured objects with automatic syntax normalization (`{.field}`, `field`, `$[0]`) and sibling condition failure message discovery.
 - **Reconciler Lifecycle Integration**: Integrates 3P wrapper reconciliation into `wrapper_reconciler.go` (`reconcile3PWrapper`), setting `Ready=False` and `Reconciling=True` or `Stalled=True` with explicit reason codes (`ResourceNotFound`, `CRDNotFound`, `InvalidWrapperSpec`, `ContractBroken`, `StatusDetectionPending`) when unready, and propagating state to CMS.
 
@@ -279,14 +279,14 @@ Parses discovered endpoints and connection secrets from third-party operator CRD
 
 ---
 
-## Active Network Health Probing (`health_prober.go`)
+## Active Network Health Probing (`healthprobe`, `healthprobetest`)
 
 To supplement Kubernetes CR condition checks with real data plane health verification, the bridge performs active network health probes:
 
 - **Bounded HTTP GET Probing (`ProbeHTTP`)**: Executes HTTP/HTTPS health checks with context timeouts, closing connections cleanly and draining response bodies up to a bounded 64KB limit. Supports custom clients via `WithHealthHTTPClient`.
 - **TCP Socket Probing (`ProbeTCP`)**: Dials target socket addresses with deadline enforcement and closes sockets immediately upon connect.
 - **Protocol-Agnostic Probing (`Probe`)**: Automatically sniffs URL schemes (`http://`, `https://`, `tcp://`, or bare `host:port`) and dispatches to HTTP vs TCP probe implementations.
-- **`HealthProber` Interface & `FakeHealthProber`**: Enables dependency injection and deterministic health simulation in reconciler unit tests.
+- **`HealthProber` Interface & `FakeHealthProber` (`healthprobetest/fake_health_prober.go`)**: Enables dependency injection and deterministic health simulation in reconciler unit tests.
 
 ---
 

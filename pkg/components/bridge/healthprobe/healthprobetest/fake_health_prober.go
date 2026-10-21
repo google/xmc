@@ -12,47 +12,49 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package bridge provides an in-memory test double for active network health probing.
-package bridge
+// Package healthprobetest provides an in-memory test double for active network health probing.
+package healthprobetest
 
 import (
 	"context"
 	"errors"
 	"sync"
 	"time"
+
+	"xmanager_cloud/pkg/components/bridge/healthprobe"
 )
 
 // FakeHealthProber is an in-memory test double for HealthProber.
 type FakeHealthProber struct {
 	mu       sync.Mutex
-	Results  map[string]*HealthProbeResult
+	Results  map[string]*healthprobe.HealthProbeResult
 	ProbeErr error
 }
 
-var _ HealthProber = (*FakeHealthProber)(nil)
+var _ healthprobe.HealthProber = (*FakeHealthProber)(nil)
 
 // NewFakeHealthProber creates a new FakeHealthProber.
 func NewFakeHealthProber() *FakeHealthProber {
 	return &FakeHealthProber{
-		Results: make(map[string]*HealthProbeResult),
+		Results: make(map[string]*healthprobe.HealthProbeResult),
 	}
 }
 
 // SetResult records the probe result for a given target.
-func (f *FakeHealthProber) SetResult(target string, res *HealthProbeResult) {
+func (f *FakeHealthProber) SetResult(target string, res *healthprobe.HealthProbeResult) {
 	if f == nil {
 		return
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.Results == nil {
-		f.Results = make(map[string]*HealthProbeResult)
+		f.Results = make(map[string]*healthprobe.HealthProbeResult)
 	}
 	f.Results[target] = res
 }
 
 // Probe returns the preconfigured probe result for target.
-func (f *FakeHealthProber) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
+func (f *FakeHealthProber) Probe(ctx context.Context, target string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	if f == nil {
 		return nil, errors.New("fake health prober is nil")
 	}
@@ -64,15 +66,15 @@ func (f *FakeHealthProber) Probe(ctx context.Context, target string, timeout tim
 	if res, ok := f.Results[target]; ok {
 		return res, nil
 	}
-	return &HealthProbeResult{Healthy: true, Message: "Probe succeeded"}, nil
+	return &healthprobe.HealthProbeResult{Healthy: true, Message: "Probe succeeded"}, nil
 }
 
 // ProbeHTTP delegates to Probe.
-func (f *FakeHealthProber) ProbeHTTP(ctx context.Context, targetURL string, timeout time.Duration) (*HealthProbeResult, error) {
+func (f *FakeHealthProber) ProbeHTTP(ctx context.Context, targetURL string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	return f.Probe(ctx, targetURL, timeout)
 }
 
 // ProbeTCP delegates to Probe.
-func (f *FakeHealthProber) ProbeTCP(ctx context.Context, address string, timeout time.Duration) (*HealthProbeResult, error) {
+func (f *FakeHealthProber) ProbeTCP(ctx context.Context, address string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	return f.Probe(ctx, address, timeout)
 }

@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package bridge provides a test double for 3P custom resource status detection.
-package bridge
+// Package statusdetectortest provides a test double for 3P custom resource status detection.
+package statusdetectortest
 
 import (
 	"context"
 	"sync"
+
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 )
 
 // FakeStatusDetector is an in-memory test double for StatusDetector intended exclusively
@@ -25,26 +27,26 @@ import (
 // or K8sStatusDetector.
 type FakeStatusDetector struct {
 	mu        sync.Mutex
-	Statuses  map[string]*ResourceStatus
+	Statuses  map[string]*statusdetector.ResourceStatus
 	DetectErr error
-	Calls     []WrapperRef
+	Calls     []statusdetector.WrapperRef
 }
 
-var _ StatusDetector = (*FakeStatusDetector)(nil)
+var _ statusdetector.StatusDetector = (*FakeStatusDetector)(nil)
 
 // NewFakeStatusDetector creates a new FakeStatusDetector.
 func NewFakeStatusDetector() *FakeStatusDetector {
 	return &FakeStatusDetector{
-		Statuses: make(map[string]*ResourceStatus),
+		Statuses: make(map[string]*statusdetector.ResourceStatus),
 	}
 }
 
 // SetStatus records the status to return for a given component key.
-func (f *FakeStatusDetector) SetStatus(key string, status *ResourceStatus) {
+func (f *FakeStatusDetector) SetStatus(key string, status *statusdetector.ResourceStatus) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.Statuses == nil {
-		f.Statuses = make(map[string]*ResourceStatus)
+		f.Statuses = make(map[string]*statusdetector.ResourceStatus)
 	}
 	f.Statuses[key] = status
 }
@@ -57,16 +59,16 @@ func (f *FakeStatusDetector) SetError(err error) {
 }
 
 // GetCalls returns a thread-safe copy of all WrapperRefs queried.
-func (f *FakeStatusDetector) GetCalls() []WrapperRef {
+func (f *FakeStatusDetector) GetCalls() []statusdetector.WrapperRef {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	copied := make([]WrapperRef, len(f.Calls))
+	copied := make([]statusdetector.WrapperRef, len(f.Calls))
 	copy(copied, f.Calls)
 	return copied
 }
 
 // DetectStatus returns the preconfigured status or error for the requested resource.
-func (f *FakeStatusDetector) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
+func (f *FakeStatusDetector) DetectStatus(ctx context.Context, ref statusdetector.WrapperRef) (*statusdetector.ResourceStatus, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, ref)
@@ -83,5 +85,5 @@ func (f *FakeStatusDetector) DetectStatus(ctx context.Context, ref WrapperRef) (
 	if st, ok := f.Statuses[ref.Name]; ok {
 		return st, nil
 	}
-	return &ResourceStatus{Found: false, Ready: false, Message: "resource not found"}, nil
+	return &statusdetector.ResourceStatus{Found: false, Ready: false, Message: "resource not found"}, nil
 }
