@@ -56,7 +56,6 @@ func (s *Statement) Dialect() queryfilterbase.Dialect {
 }
 
 // Dialect renders Cloud Spanner SQL filter predicates.
-// It expects array members to be referenced as UNNEST(column).
 type Dialect struct{}
 
 var _ queryfilterbase.Dialect = Dialect{}
@@ -68,7 +67,7 @@ func (Dialect) InArray(col, arr safesql.TrustedSQLString) safesql.TrustedSQLStri
 
 // ArrayContains implements queryfilterbase.Dialect.
 func (Dialect) ArrayContains(arr, elem safesql.TrustedSQLString) safesql.TrustedSQLString {
-	return safesql.Concat(safesql.New("("), elem, safesql.New(" IN "), arr, safesql.New(")"))
+	return safesql.Concat(safesql.New("("), elem, safesql.New(" IN UNNEST("), arr, safesql.New("))"))
 }
 
 // RegexpMatch implements queryfilterbase.Dialect.

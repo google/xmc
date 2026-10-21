@@ -38,7 +38,7 @@ type ExpOptions struct {
 type Dialect interface {
 	// InArray matches rows where col equals any element of the bound array parameter arr.
 	InArray(col, arr safesql.TrustedSQLString) safesql.TrustedSQLString
-	// ArrayContains matches rows where the array expression arr contains elem.
+	// ArrayContains matches rows where the array column arr contains elem.
 	ArrayContains(arr, elem safesql.TrustedSQLString) safesql.TrustedSQLString
 	// RegexpMatch matches rows where lhs matches the regular expression rhs.
 	RegexpMatch(lhs, rhs safesql.TrustedSQLString) safesql.TrustedSQLString

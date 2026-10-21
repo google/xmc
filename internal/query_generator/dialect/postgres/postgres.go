@@ -48,8 +48,8 @@ func (s *Statement) Dialect() queryfilterbase.Dialect {
 }
 
 // Dialect renders PostgreSQL SQL filter predicates.
-// It expects array members to be referenced as plain array columns and full-text search columns to
-// be TSVECTOR columns built with the 'simple' text search configuration.
+// It expects full-text search columns to be TSVECTOR columns built with the 'simple' text search
+// configuration.
 type Dialect struct{}
 
 var _ queryfilterbase.Dialect = Dialect{}
@@ -60,11 +60,14 @@ func (Dialect) InArray(col, arr safesql.TrustedSQLString) safesql.TrustedSQLStri
 }
 
 // ArrayContains implements queryfilterbase.Dialect.
+// PostgreSQL array columns in XMC schemas are NOT NULL; on nullable arrays, `elem = ANY(NULL)`
+// evaluates to NULL (whereas GoogleSQL `elem IN UNNEST(NULL)` evaluates to FALSE).
 func (Dialect) ArrayContains(arr, elem safesql.TrustedSQLString) safesql.TrustedSQLString {
 	return safesql.Concat(safesql.New("("), elem, safesql.New(" = ANY("), arr, safesql.New("))"))
 }
 
 // RegexpMatch implements queryfilterbase.Dialect.
+// PostgreSQL `~` uses POSIX ARE (not RE2) and is only defined for text-like operands.
 func (Dialect) RegexpMatch(lhs, rhs safesql.TrustedSQLString) safesql.TrustedSQLString {
 	return safesql.Concat(safesql.New("("), lhs, safesql.New(" ~ "), rhs, safesql.New(")"))
 }

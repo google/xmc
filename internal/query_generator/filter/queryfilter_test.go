@@ -312,7 +312,7 @@ func TestSingleLevelAppendSuccess(t *testing.T) {
 			m: map[string]appendix{
 				"color": {safesql.New("x.color"), filtervisitor.ArrayType(&filtervisitor.StrConst), false},
 			},
-			output: []string{`(@fb0 IN x.color)`},
+			output: []string{`(@fb0 IN UNNEST(x.color))`},
 		},
 		{
 			input: `foo(name)`,
@@ -753,7 +753,7 @@ func TestRestrictionTranslate(t *testing.T) {
 				"kind": {safesql.New("z.kind"), filtervisitor.ArrayType(&filtervisitor.String), true},
 			},
 			map[string]string{"FOO_OLD": "FOO_NEW"},
-			"SELECT x.f FROM b AS x WHERE(@fb0 IN z.kind)",
+			"SELECT x.f FROM b AS x WHERE(@fb0 IN UNNEST(z.kind))",
 			map[string]any{"fb0": "FOO_NEW"},
 		},
 		{
@@ -935,6 +935,7 @@ func TestRestrictionWithFullTextSearch(t *testing.T) {
 		m        map[string]appendix
 		output   []string
 		bindings map[string]any
+		wantErr  bool
 	}{
 		{
 			input: `"full text search"`,
@@ -1003,6 +1004,10 @@ func TestRestrictionWithFullTextSearch(t *testing.T) {
 			},
 			output: []string{`((SEARCH(TokenizedText, @fb0) OR SEARCH(TokenizedText2, @fb1)) AND z.a AND (z.b OR z.c) AND (z.d OR z.e))`},
 		},
+		{
+			input:   `""`,
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1029,6 +1034,12 @@ func TestRestrictionWithFullTextSearch(t *testing.T) {
 				}
 
 				err = f.AppendFilters(exp)
+				if tc.wantErr {
+					if err == nil {
+						t.Errorf("got nil, want error")
+					}
+					continue
+				}
 				if err != nil && ftsEnabled {
 					success := false
 					for _, out := range tc.output {
@@ -1141,6 +1152,7 @@ func TestPostgresSingleLevelAndCoercionSuccess(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
+		initial *postgresdialect.Statement
 		m       map[string]appendix
 		options []FilterBaseOption
 		want    postgresdialect.Statement
@@ -1257,6 +1269,12 @@ func TestPostgresSingleLevelAndCoercionSuccess(t *testing.T) {
 			want:  postgresdialect.Statement{SQL: baseSQL + `($1 = ANY(x.color))`, Args: []any{"blue"}},
 		},
 		{
+			name:  "negated_array_has_operator",
+			input: `-color: "blue"`,
+			m:     map[string]appendix{"color": {safesql.New("x.color"), filtervisitor.ArrayType(&filtervisitor.StrConst), false}},
+			want:  postgresdialect.Statement{SQL: baseSQL + `NOT ($1 = ANY(x.color))`, Args: []any{"blue"}},
+		},
+		{
 			name:    "string_has_operator_with_strpos",
 			input:   `name : 42`,
 			options: []FilterBaseOption{WithHasOperatorAsContains},
@@ -1287,10 +1305,11 @@ func TestPostgresSingleLevelAndCoercionSuccess(t *testing.T) {
 			want:  postgresdialect.Statement{SQL: baseSQL + `(x.bytesfield = $1)`, Args: []any{[]byte("bbb")}},
 		},
 		{
-			name:  "bytes_regexp_match",
-			input: `bytesfield =~ "^match$"`,
-			m:     map[string]appendix{"bytesfield": {safesql.New("x.bytesfield"), filtervisitor.Bytes, false}},
-			want:  postgresdialect.Statement{SQL: baseSQL + `(x.bytesfield ~ $1)`, Args: []any{[]byte("^match$")}},
+			name:    "existing_args_continue_numbering",
+			input:   `name = "a"`,
+			initial: &postgresdialect.Statement{SQL: baseSQL + "x.tenant = $1 AND ", Args: []any{"t"}},
+			m:       map[string]appendix{"name": {safesql.New("x.name"), filtervisitor.String, false}},
+			want:    postgresdialect.Statement{SQL: baseSQL + `x.tenant = $1 AND (x.name = $2)`, Args: []any{"t", "a"}},
 		},
 	}
 
@@ -1302,6 +1321,9 @@ func TestPostgresSingleLevelAndCoercionSuccess(t *testing.T) {
 				t.Fatalf("ParseExpressionWithOptions(%q): %v", tc.input, err)
 			}
 			query := postgresdialect.NewStatement(baseSQL)
+			if tc.initial != nil {
+				query = tc.initial
+			}
 			f := Visitor{
 				MemberFunc:        postgresMemberMap(tc.m),
 				FunctionFunc:      functionMap(tc.m),
@@ -1498,6 +1520,13 @@ func TestPostgresFullTextSearch(t *testing.T) {
 			input:   `"full text search"`,
 			options: []FilterBaseOption{WithFullTextSearchEnabled},
 			wantErr: true,
+		},
+		{
+			name:      "empty_search_query_returns_error",
+			input:     `""`,
+			searchCol: pgSearchCols,
+			options:   []FilterBaseOption{WithFullTextSearchEnabled},
+			wantErr:   true,
 		},
 	}
 

@@ -37,6 +37,8 @@ filegroup(
         "//internal/grpcerr",
         "//internal/kubernetes/common/labels",
         "//internal/logging",
+        "//internal/query_generator/dialect/postgres",
+        "//internal/query_generator/dialect/spanner",
         "//internal/query_generator/equalityvisitor",
         "//internal/query_generator/filter",
         "//internal/query_generator/liststatement",

@@ -14,14 +14,7 @@
 package querytools
 
 import (
-	"strings"
-
 	"cloud.google.com/go/spanner"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	fpb "xmanager_cloud/api/filter"
-	"xmanager_cloud/api/filter/go/filtervisitor"
-	"xmanager_cloud/internal/query_generator/filter"
 	"xmanager_cloud/internal/safesql"
 )
 
@@ -107,34 +100,4 @@ func (unr *unnester) Patch(st any, row *spanner.Row) error {
 		}
 	}
 	return nil
-}
-
-// NewUnnester returns a new object implementing Unnester based on the "unnest"s discovered by processing the provided filter expression
-// with the provided member/function maps.
-func NewUnnester(members map[string]Member, functions map[string]Function, filterPredicate *fpb.Expression) (Unnester, error) {
-	unr := &unnester{
-		seen: make(map[*Unnest]bool),
-	}
-	// We should do nothing in the case where there is no filter.
-	if filterPredicate == nil {
-		return unr, nil
-	}
-	// Do a preliminary walk over the filterPredicate expression, so that we can scout what members it accesses.
-	qf := queryfilter.Visitor{
-		MemberFunc: func(name []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
-			n := strings.Join(name, ".")
-			m, ok := members[n]
-			if !ok {
-				return safesql.New(""), filtervisitor.Invalid, status.Errorf(codes.InvalidArgument, "unsupported filter field in query: %q", n)
-			}
-			unr.seen[m.UnnestClause] = true
-			return safesql.New(""), m.Type, nil
-		},
-		FunctionFunc: FunctionMap(functions),
-	}
-	err := qf.AppendFilters(filterPredicate)
-	if err != nil {
-		return nil, err
-	}
-	return unr, nil
 }

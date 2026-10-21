@@ -578,9 +578,9 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	equalityFilters := map[TableField]bool{}
 
 	// Do a walk over the userFilterExp expression so that we can scout
-	// what Members it accesses. We use a "dummy query" here to recycle the
-	// logic in queryfilter.Visitor that walks the expression and calls us
-	// back on Members.
+	// what Members it accesses. We reuse queryfilter.Visitor with a nil
+	// Statement (rendered SQL is discarded) so it walks the expression and
+	// calls us back on Members.
 	if err := q.scoutUserFilterMembers(userFilterExp, fullTextFields, userFilters, equalityFilters); err != nil {
 		return nil, nil, nil, err
 	}
