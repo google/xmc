@@ -265,6 +265,12 @@ compatibilityMatrix:
       requires:
         - component: storage-driver
           version: ">=2.0.0 <3.0.0"
+        - or:
+            - component: redpanda
+              version: ">=0.1.0"
+            - component: pubsub
+              version: ">=0.1.0"
+          reason: "Either Redpanda or Pub/Sub event-streaming broker is required."
 
   # Platform-level integration rules
   platformRequirements:
@@ -274,6 +280,7 @@ compatibilityMatrix:
         kubernetesVersion: ">=1.28.0 <1.32.0"
 ```
 
+- **Disjunctive Requirements (`or`)**: Each entry in `requires` can specify either a single `component` (and optional `version`) or a flat 1-level `or` list of alternative requirements. An `or` requirement is satisfied when at least one alternative is present, enabled, and satisfies its version constraint. If enabled alternatives exist and all of them fail their version constraints, `VERSION_INCOMPATIBILITY` is reported; if all alternatives are missing or disabled (and `optional: true` is not set), `REQUIRED_COMPONENT_MISSING` is reported.
 - **Disabled Component Handling**: If a component declared in `rules.yaml` is present but marked `spec.enabled: false`, it is ignored to prevent false-positive validation errors during gradual rollouts or deprecations.
 
 ---
