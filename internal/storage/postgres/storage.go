@@ -49,7 +49,8 @@ var _ storage.Storage = (*Storage)(nil)
 
 // Storage implements the storage.Storage interface using PostgreSQL.
 type Storage struct {
-	pool *pgxpool.Pool
+	// beginner starts the transactions of RunInTransaction; NewStorage sets it to the pool.
+	beginner txBeginner
 	*experimentRepository
 	*workUnitRepository
 	*artifactRepository
@@ -68,7 +69,7 @@ func NewStorage(pool *pgxpool.Pool) (*Storage, error) {
 		return nil, wrapStatusError("postgres pool must not be nil", grpcerr.ErrInvalidArgument, nil)
 	}
 	return &Storage{
-		pool:                    pool,
+		beginner:                pool,
 		experimentRepository:    experiment.NewRepository(),
 		workUnitRepository:      workunit.NewRepository(),
 		artifactRepository:      artifact.NewRepository(),
@@ -84,13 +85,13 @@ func NewStorage(pool *pgxpool.Pool) (*Storage, error) {
 
 // RunInTransaction executes the given function in a PostgreSQL read-write transaction.
 func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
-	if s == nil || s.pool == nil {
+	if s == nil || s.beginner == nil {
 		return wrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
 	}
 	if fn == nil {
 		return wrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
 	}
-	return RunInTx(ctx, s.pool, func(txCtx context.Context, _ pgx.Tx) error {
+	return runInTx(ctx, s.beginner, defaultTxRetryConfig, func(txCtx context.Context, _ pgx.Tx) error {
 		return fn(txCtx, s.newTransaction())
 	})
 }

@@ -106,7 +106,7 @@ func runTxAttempt(ctx context.Context, beginner txBeginner, fn func(ctx context.
 		if committed {
 			return
 		}
-		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+		rollbackCtx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
 		defer cancel()
 		_ = tx.Rollback(rollbackCtx)
 	}()
