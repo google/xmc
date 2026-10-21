@@ -16,7 +16,12 @@ package oauth2
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -26,17 +31,26 @@ import (
 	"xmanager_cloud/internal/logging"
 )
 
-// cliLoopbackCodeTTL is how long a code delivered to the loopback listener stays redeemable.
-const cliLoopbackCodeTTL = 60 * time.Second
-
-// OAuth 2.0 error codes (RFC 6749 section 4.1.2.1) sent to the CLI's loopback listener.
 const (
+	cliLoginCodeBytes    = 32
+	cliLoopbackCodeTTL   = 60 * time.Second
 	cliErrorAccessDenied = "access_denied"
 	cliErrorServerError  = "server_error"
 )
 
-// takeCLILoginTicket deletes any cli_login cookie and returns its ticket when the cookie is
-// authentic, unexpired and bound to oauthState. Otherwise the callback is a Dashboard login.
+// CLILoginCode is a one-time CLI login code issued by the callback and redeemed by the token endpoint.
+type CLILoginCode struct {
+	Hash                       []byte
+	Email, Name, CodeChallenge string
+	ExpiresAt                  time.Time
+}
+
+// CLICodeStore persists one-time CLI login codes.
+type CLICodeStore interface {
+	Save(ctx context.Context, code CLILoginCode) error
+}
+
+// takeCLILoginTicket deletes any cli_login cookie and returns its ticket when authentic, unexpired, and bound to oauthState.
 func (a *Authenticator) takeCLILoginTicket(w http.ResponseWriter, r *http.Request, oauthState string) (cliLoginTicket, bool) {
 	cookie, err := r.Cookie(cliLoginCookieName)
 	if err != nil {
@@ -62,10 +76,6 @@ func (a *Authenticator) takeCLILoginTicket(w http.ResponseWriter, r *http.Reques
 	return ticket, true
 }
 
-// handleCLICallback finishes the IdP round trip of a CLI login. Every outcome is reported to the
-// CLI's loopback listener so it never waits for a result that will not come: an IdP error or a
-// missing code (such as the user cancelling) is access_denied, and a failed code exchange is
-// server_error.
 func (a *Authenticator) handleCLICallback(ctx context.Context, w http.ResponseWriter, r *http.Request, ticket cliLoginTicket) {
 	code := r.URL.Query().Get("code")
 	if code == "" {
@@ -82,8 +92,6 @@ func (a *Authenticator) handleCLICallback(ctx context.Context, w http.ResponseWr
 	a.completeCLILogin(ctx, w, r, ticket, userInfo)
 }
 
-// completeCLILogin admits the user and redirects the browser to the CLI's loopback listener with
-// a one-time code, or with an error. The email is never put in the loopback URL.
 func (a *Authenticator) completeCLILogin(ctx context.Context, w http.ResponseWriter, r *http.Request, ticket cliLoginTicket, userInfo *GoogleUserInfo) {
 	identity, err := a.admitLogin(ctx, userInfo)
 	if errors.Is(err, errNotAdmitted) {
@@ -105,19 +113,12 @@ func (a *Authenticator) completeCLILogin(ctx context.Context, w http.ResponseWri
 	redirectToCLILoopback(w, r, ticket, url.Values{"code": {code}})
 }
 
-// issueCLILoginCode stores a new one-time code for identity and returns it.
 func (a *Authenticator) issueCLILoginCode(ctx context.Context, identity loginIdentity, codeChallenge string, now time.Time) (string, error) {
 	code, hash, err := newCLILoginCode()
 	if err != nil {
 		return "", err
 	}
-	record := CLILoginCode{
-		Hash:          hash,
-		Email:         identity.email,
-		Name:          identity.name,
-		CodeChallenge: codeChallenge,
-		ExpiresAt:     now.Add(cliLoopbackCodeTTL),
-	}
+	record := CLILoginCode{Hash: hash, Email: identity.email, Name: identity.name, CodeChallenge: codeChallenge, ExpiresAt: now.Add(cliLoopbackCodeTTL)}
 	if err := a.cliCodes.Save(ctx, record); err != nil {
 		return "", err
 	}
@@ -125,16 +126,27 @@ func (a *Authenticator) issueCLILoginCode(ctx context.Context, identity loginIde
 	return code, nil
 }
 
-// redirectToCLILoopback sends the browser to `http://127.0.0.1:<port>/callback` with params and the
-// CLI's state. The URL is built from the ticket only, never from the request.
+func newCLILoginCode() (string, []byte, error) {
+	b := make([]byte, cliLoginCodeBytes)
+	if _, err := io.ReadFull(randReader, b); err != nil {
+		return "", nil, fmt.Errorf("failed to generate cli login code: %w", err)
+	}
+	code := base64.RawURLEncoding.EncodeToString(b)
+	return code, hashCLILoginCode(code), nil
+}
+
+func hashCLILoginCode(code string) []byte {
+	sum := sha256.Sum256([]byte(code))
+	return sum[:]
+}
+
+func codeHashPrefix(hash []byte) string {
+	return hex.EncodeToString(hash[:min(len(hash), 4)])
+}
+
 func redirectToCLILoopback(w http.ResponseWriter, r *http.Request, ticket cliLoginTicket, params url.Values) {
 	params.Set("state", ticket.State)
-	target := url.URL{
-		Scheme:   "http",
-		Host:     net.JoinHostPort("127.0.0.1", strconv.Itoa(ticket.Port)),
-		Path:     "/callback",
-		RawQuery: params.Encode(),
-	}
+	target := url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(ticket.Port)), Path: "/callback", RawQuery: params.Encode()}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	http.Redirect(w, r, target.String(), http.StatusFound)

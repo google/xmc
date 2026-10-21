@@ -366,8 +366,7 @@ CREATE TABLE PausedTasks (
 CREATE INDEX PausedTasksUnprocessed ON PausedTasks (Priority DESC, CreateTime)
   INCLUDE (ActionProto, Target, OperationName, TraceId, IsPending, Xid, WorkUnitId, TaskId) WHERE IsPending IS NOT NULL;
 
--- One-time CLI login codes issued by /api/callback and redeemed once by /api/cli/token. Mirrors the
--- Spanner table; PostgreSQL has no TTL policy and no code store implementation yet.
+-- One-time CLI login codes issued by /api/callback and redeemed once by /api/cli/token.
 CREATE TABLE CliLoginCodes (
   CodeHash BYTEA NOT NULL, -- SHA-256 of the code.
   Email TEXT NOT NULL,

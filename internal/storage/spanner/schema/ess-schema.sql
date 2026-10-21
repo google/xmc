@@ -633,15 +633,10 @@ CREATE INDEX PausedTasksUnprocessed ON PausedTasks (Priority DESC, CreateTime) S
 
 -- One-time CLI login codes issued by /api/callback and redeemed once by /api/cli/token.
 CREATE TABLE CliLoginCodes (
-  -- SHA-256 of the code. The code itself is never stored.
-  CodeHash BYTES(32) NOT NULL,
-  -- Normalized email of the admitted user.
+  CodeHash BYTES(32) NOT NULL, -- SHA-256 of the code.
   Email STRING(MAX) NOT NULL,
-  -- Display name returned by the identity provider.
   Name STRING(MAX),
-  -- S256 PKCE challenge the redeeming verifier must match.
-  CodeChallenge STRING(64) NOT NULL,
-  -- The code is rejected after this time. Expired rows are pruned by the TTL policy.
+  CodeChallenge STRING(64) NOT NULL, -- S256 PKCE challenge.
   ExpiresAt TIMESTAMP NOT NULL,
 ) PRIMARY KEY (CodeHash),
   ROW DELETION POLICY (OLDER_THAN(ExpiresAt, INTERVAL 1 DAY));

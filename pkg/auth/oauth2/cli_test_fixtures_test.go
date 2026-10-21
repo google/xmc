@@ -22,16 +22,13 @@ import (
 	"time"
 )
 
-// Shared fixtures for the CLI login tests.
 const (
-	cliTestPort  = 51234
-	cliTestState = "cli-state_123"
-	// RFC 7636 appendix B example verifier and its S256 challenge.
+	cliTestPort      = 51234
+	cliTestState     = "cli-state_123"
 	cliTestVerifier  = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 	cliTestChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
 )
 
-// fakeCLICodeStore is an in-memory CLICodeStore.
 type fakeCLICodeStore struct {
 	mu      sync.Mutex
 	codes   map[string]CLILoginCode
@@ -52,7 +49,6 @@ func (s *fakeCLICodeStore) Save(_ context.Context, code CLILoginCode) error {
 	return nil
 }
 
-// only returns the single stored code, failing the test otherwise.
 func (s *fakeCLICodeStore) only(t *testing.T) CLILoginCode {
 	t.Helper()
 	s.mu.Lock()
@@ -66,8 +62,6 @@ func (s *fakeCLICodeStore) only(t *testing.T) CLILoginCode {
 	return CLILoginCode{}
 }
 
-// newCLITestAuthenticator returns an Authenticator with CLI login enabled on a fake store and a
-// stub identity provider returning baseLoginUserInfo.
 func newCLITestAuthenticator(t *testing.T, cfg *Config) (*Authenticator, *fakeCLICodeStore, *stubOAuthProvider) {
 	t.Helper()
 	a, provider := newLoginTestAuthenticator(cfg)
@@ -78,7 +72,6 @@ func newCLITestAuthenticator(t *testing.T, cfg *Config) (*Authenticator, *fakeCL
 	return a, store, provider
 }
 
-// baseCLITicket is a pending loopback login bound to oauthState.
 func baseCLITicket(oauthState string) cliLoginTicket {
 	return cliLoginTicket{
 		Port:           cliTestPort,
@@ -99,8 +92,6 @@ func mustSealCLILoginTicket(t *testing.T, a *Authenticator, ticket cliLoginTicke
 	return sealed
 }
 
-// newCLICallbackRequest is the identity provider's redirect to /api/callback with query, carrying
-// cliCookie as the cli_login cookie when it is not empty.
 func newCLICallbackRequest(query, cliCookie string) *http.Request {
 	if cliCookie == "" {
 		return newCallbackRequest(query)
@@ -108,7 +99,6 @@ func newCLICallbackRequest(query, cliCookie string) *http.Request {
 	return newCallbackRequest(query, &http.Cookie{Name: cliLoginCookieName, Value: cliCookie})
 }
 
-// withFailingRandom makes randReader fail for the rest of the test.
 func withFailingRandom(t *testing.T) {
 	t.Helper()
 	orig := randReader
