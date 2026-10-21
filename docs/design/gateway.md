@@ -140,7 +140,7 @@ The command-line interface (CLI) client bypasses the web UI entirely, communicat
 
 ### 3. CLI Login (Browser Loopback)
 
-`xmc login` signs the user in through the same OAuth client, identity provider and `/api/callback` redirect URI as the Dashboard ([google/xmc#1309](https://github.com/google/xmc/issues/1309)).
+`xmanager login` signs the user in through the same OAuth client, identity provider and `/api/callback` redirect URI as the Dashboard ([google/xmc#1309](https://github.com/google/xmc/issues/1309)).
 
 ```mermaid
 sequenceDiagram
