@@ -23,14 +23,11 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from xmc.auth import ACCESS_DENIED_MESSAGE, AuthError
 from xmc.auth.deployment_server import is_loopback_host
-from xmc.auth.errors import ACCESS_DENIED_MESSAGE, AuthError
 
-TOKEN_PATH = "/api/cli/token"
-_TIMEOUT_SECONDS = 30
+TOKEN_PATH, _TIMEOUT_SECONDS = "/api/cli/token", 30
 _MALFORMED = "The XMC server returned a malformed token response."
-_RATE_LIMITED = "Too many login attempts. Wait a minute, then run `xmc login` again."
-_INVALID_GRANT = "The login code is invalid, expired, or already used. Run `xmc login` again."
 
 
 @dataclasses.dataclass(frozen=True)
@@ -45,14 +42,10 @@ class TokenGrant:
 class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
     """Fails instead of following redirects, which could forward secrets cross-origin."""
 
-    def redirect_request(
-        self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
-    ) -> None:
+    def redirect_request(self, req: Any, fp: Any, code: int, *_: Any) -> None:
         """Raises for every redirect."""
-        raise AuthError(
-            f"The XMC server answered with a redirect (HTTP {code}); refusing to follow it. "
-            "Check that --server points at the deployment itself."
-        )
+        msg = f"The XMC server answered with a redirect (HTTP {code}); refusing to follow it."
+        raise AuthError(f"{msg} Check that --server points at the deployment itself.")
 
 
 def build_opener(server_origin: str) -> urllib.request.OpenerDirector:
@@ -64,46 +57,19 @@ def build_opener(server_origin: str) -> urllib.request.OpenerDirector:
 
 
 def exchange_code(
-    server_origin: str,
-    code: str,
-    verifier: str,
-    opener: urllib.request.OpenerDirector | None = None,
+    origin: str, code: str, verifier: str, opener: urllib.request.OpenerDirector | None = None
 ) -> TokenGrant:
-    """Redeems a one-time login code and its PKCE verifier for a CLI token.
-
-    Raises:
-        AuthError: The code was rejected, the account is denied, the request was
-            rate limited or redirected, or the server is unreachable.
-    """
+    """Redeems a one-time login code and its PKCE verifier for a CLI token."""
     form = {"grant_type": "authorization_code", "code": code, "code_verifier": verifier}
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    data = urllib.parse.urlencode(form).encode()
-    try:
-        body = _post(server_origin, TOKEN_PATH, data, headers, opener)
-    except urllib.error.HTTPError as e:
-        raise AuthError(_token_error_message(e)) from None
-    return parse_token_response(body)
-
-
-def _post(
-    server_origin: str,
-    path: str,
-    data: bytes,
-    headers: dict[str, str],
-    opener: urllib.request.OpenerDirector | None,
-) -> bytes:
-    """POSTs to the deployment; HTTP errors propagate, network errors become AuthError."""
-    request = urllib.request.Request(
-        server_origin + path,
-        data=data,
-        method="POST",
-        headers={"Accept": "application/json", **headers},
+    headers = {"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}
+    req = urllib.request.Request(
+        origin + TOKEN_PATH, urllib.parse.urlencode(form).encode(), headers, method="POST"
     )
     try:
-        with (opener or build_opener(server_origin)).open(request, timeout=_TIMEOUT_SECONDS) as r:
-            return bytes(r.read())
-    except urllib.error.HTTPError:
-        raise
+        with (opener or build_opener(origin)).open(req, timeout=_TIMEOUT_SECONDS) as resp:
+            return parse_token_response(bytes(resp.read()))
+    except urllib.error.HTTPError as e:
+        raise AuthError(_token_error_message(e)) from None
     except (urllib.error.URLError, OSError) as e:
         raise AuthError(f"Could not reach the XMC server: {getattr(e, 'reason', e)}") from None
 
@@ -117,28 +83,24 @@ def _token_error_message(response: urllib.error.HTTPError) -> str:
     if response.code == 403 or error == "access_denied":
         return ACCESS_DENIED_MESSAGE
     if response.code == 429 or error == "too_many_requests":
-        return _RATE_LIMITED
+        return "Too many login attempts. Wait a minute, then run `xmc login` again."
     if error == "invalid_grant":
-        return _INVALID_GRANT
+        return "The login code is invalid, expired, or already used. Run `xmc login` again."
     return f"The XMC server rejected the token request (HTTP {response.code})."
 
 
 def parse_token_response(payload: bytes) -> TokenGrant:
-    """Validates a token endpoint JSON response.
-
-    Raises:
-        AuthError: If the response is not a well-formed Bearer token grant.
-    """
+    """Validates a token endpoint JSON response."""
     try:
         data = json.loads(payload)
     except ValueError:
         raise AuthError(_MALFORMED) from None
     if not isinstance(data, dict):
         raise AuthError(_MALFORMED)
-    token, email, expires_in = data.get("access_token"), data.get("email"), data.get("expires_in")
-    if not isinstance(token, str) or not isinstance(email, str) or not isinstance(expires_in, int):
-        raise AuthError(_MALFORMED)
+    token, email, ttl = data.get("access_token"), data.get("email"), data.get("expires_in")
     bearer = str(data.get("token_type", "")).lower() == "bearer"
-    if not token or not email or not bearer or isinstance(expires_in, bool) or expires_in <= 0:
+    if not (isinstance(token, str) and isinstance(email, str) and type(ttl) is int):
         raise AuthError(_MALFORMED)
-    return TokenGrant(access_token=token, email=email, expires_in=expires_in)
+    if not (token and email and bearer and ttl > 0):
+        raise AuthError(_MALFORMED)
+    return TokenGrant(access_token=token, email=email, expires_in=ttl)

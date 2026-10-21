@@ -225,7 +225,7 @@ The package ships an `xmc` command that signs local clients (such as the XManage
 [`deploy/cli/install_xmanager.py`](../../../deploy/cli/install_xmanager.py) installs it into the XManager CLI virtual environment.
 
 ```bash
-xmc login --server https://xmc.example.com      # Opens your browser; no prompts if you are already signed in.
+xmc login --server https://<xmc-host>           # Opens your browser; no prompts if you are already signed in.
 export XMC_AUTH_TOKEN=$(xmc print-token)        # Hands the token to the XManager CLI.
 xmc status                                      # Shows the account and expiry; exits 1 if not logged in.
 xmc logout                                      # Deletes the cached token locally.
@@ -255,10 +255,10 @@ Tokens are cached in `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config
 {
   "version": 1,
   "deployments": {
-    "https://xmc.example.com": {
-      "server": "https://xmc.example.com",
+    "https://<xmc-host>": {
+      "server": "https://<xmc-host>",
       "access_token": "<CLI session token>",
-      "email": "you@example.com",
+      "email": "user@domain.tld",
       "expires_at": 1767225600
     }
   }

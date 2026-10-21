@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -32,12 +33,14 @@ type StaticChecksConfig struct {
 	MaxDrainTimeoutSeconds    int  `yaml:"maxDrainTimeoutSeconds" json:"maxDrainTimeoutSeconds"`
 }
 
-// DependencyRequirement defines a required dependency and its SemVer constraint.
+// DependencyRequirement defines a required dependency and its SemVer constraint,
+// or a flat 1-level disjunction (Or) of alternative dependency requirements.
 type DependencyRequirement struct {
-	Component string `yaml:"component" json:"component"`
-	Version   string `yaml:"version" json:"version"`
-	Optional  bool   `yaml:"optional,omitempty" json:"optional,omitempty"`
-	Reason    string `yaml:"reason,omitempty" json:"reason,omitempty"`
+	Component string                  `yaml:"component,omitempty" json:"component,omitempty"`
+	Version   string                  `yaml:"version,omitempty" json:"version,omitempty"`
+	Optional  bool                    `yaml:"optional,omitempty" json:"optional,omitempty"`
+	Reason    string                  `yaml:"reason,omitempty" json:"reason,omitempty"`
+	Or        []DependencyRequirement `yaml:"or,omitempty" json:"or,omitempty"`
 }
 
 // ComponentDependencyRule specifies version requirements for a component's dependencies.
@@ -99,5 +102,47 @@ func ParseRules(data []byte) (*RulesConfig, error) {
 		}
 		return nil, fmt.Errorf("failed to parse rules configuration: %w", err)
 	}
+	if err := validateRulesConfig(&cfg); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
+}
+
+func validateRulesConfig(cfg *RulesConfig) error {
+	for _, rule := range cfg.CompatibilityMatrix.ComponentDependencies {
+		for _, req := range rule.Requires {
+			if err := validateDependencyRequirement(rule.Component, req); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateDependencyRequirement(ruleComp string, req DependencyRequirement) error {
+	if len(req.Or) > 0 {
+		return validateOrRequirement(ruleComp, req)
+	}
+	if strings.TrimSpace(req.Component) == "" {
+		return fmt.Errorf("dependency requirement for %q must specify either component or a non-empty or list", ruleComp)
+	}
+	return nil
+}
+
+func validateOrRequirement(ruleComp string, req DependencyRequirement) error {
+	if strings.TrimSpace(req.Component) != "" {
+		return fmt.Errorf("dependency requirement for %q cannot specify both component %q and or", ruleComp, req.Component)
+	}
+	if strings.TrimSpace(req.Version) != "" {
+		return fmt.Errorf("dependency requirement for %q cannot specify top-level version %q when or is used", ruleComp, req.Version)
+	}
+	for _, alt := range req.Or {
+		if len(alt.Or) > 0 {
+			return fmt.Errorf("nested or is not supported in dependency requirement for %q", ruleComp)
+		}
+		if strings.TrimSpace(alt.Component) == "" {
+			return fmt.Errorf("or alternative in dependency requirement for %q must specify a non-empty component", ruleComp)
+		}
+	}
+	return nil
 }
