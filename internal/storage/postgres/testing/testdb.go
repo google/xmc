@@ -123,13 +123,13 @@ type server struct {
 // completes.
 func Setup(ctx context.Context, t *testing.T) (*pgxpool.Pool, *pgxpool.Pool) {
 	t.Helper()
-	pools := SetupWithPools(ctx, t)
+	pools := SetupWithDSNs(ctx, t)
 	return pools.XIDPool, pools.ESSPool
 }
 
-// SetupWithPools is like Setup but also returns the DSNs of both databases, for code under test
+// SetupWithDSNs is like Setup but also returns the DSNs of both databases, for code under test
 // that opens its own connections.
-func SetupWithPools(ctx context.Context, t *testing.T) TestPools {
+func SetupWithDSNs(ctx context.Context, t *testing.T) TestPools {
 	t.Helper()
 	pools := SetupEmpty(ctx, t)
 	applySchema(ctx, t, pools.XIDPool, schema{name: "xid", ddl: xidSchemaDDL, version: version.XidExpectedSchemaVersion()})
@@ -142,6 +142,25 @@ func SetupWithPools(ctx context.Context, t *testing.T) TestPools {
 // completes.
 func SetupEmpty(ctx context.Context, t *testing.T) TestPools {
 	t.Helper()
+	srv, suffix := serverWithSuffix(t)
+	xidPool, xidDSN := srv.newDatabase(ctx, t, "test_xid_db_"+suffix)
+	essPool, essDSN := srv.newDatabase(ctx, t, "test_ess_db_"+suffix)
+	return TestPools{XIDPool: xidPool, ESSPool: essPool, XIDDSN: xidDSN, ESSDSN: essDSN}
+}
+
+// NewEmptyDatabase creates a single isolated database without any tables and returns a pool
+// connected to it together with its DSN, for tests that need one database rather than an XID and
+// ESS pair, such as migration tests. The database is dropped when the test completes.
+func NewEmptyDatabase(ctx context.Context, t *testing.T) (*pgxpool.Pool, string) {
+	t.Helper()
+	srv, suffix := serverWithSuffix(t)
+	return srv.newDatabase(ctx, t, "test_db_"+suffix)
+}
+
+// serverWithSuffix returns the shared server together with a fresh random suffix for unique test
+// database names, failing the test if either is unavailable.
+func serverWithSuffix(t *testing.T) (*server, string) {
+	t.Helper()
 	srv, err := sharedServer()
 	if err != nil {
 		t.Fatalf("failed to start postgres test server: %v", err)
@@ -150,9 +169,7 @@ func SetupEmpty(ctx context.Context, t *testing.T) TestPools {
 	if err != nil {
 		t.Fatalf("failed to generate test database suffix: %v", err)
 	}
-	xidPool, xidDSN := srv.newDatabase(ctx, t, "test_xid_db_"+suffix)
-	essPool, essDSN := srv.newDatabase(ctx, t, "test_ess_db_"+suffix)
-	return TestPools{XIDPool: xidPool, ESSPool: essPool, XIDDSN: xidDSN, ESSDSN: essDSN}
+	return srv, suffix
 }
 
 // startServer connects to the server named by POSTGRES_TEST_DSN or, when it is unset, to a newly

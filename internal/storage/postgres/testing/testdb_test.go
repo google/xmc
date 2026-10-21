@@ -123,9 +123,9 @@ func TestSetup_CleanupClosesPoolsAndDropsDatabases(t *testing.T) {
 	}
 }
 
-func TestSetupWithPools(t *testing.T) {
+func TestSetupWithDSNs(t *testing.T) {
 	ctx := t.Context()
-	pools := SetupWithPools(ctx, t)
+	pools := SetupWithDSNs(ctx, t)
 	xidDB := currentDatabase(ctx, t, pools.XIDPool)
 	essDB := currentDatabase(ctx, t, pools.ESSPool)
 
@@ -172,11 +172,31 @@ func TestSetupEmpty(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tables := queryRows(ctx, t, tt.pool, "SELECT table_name::text FROM information_schema.tables WHERE table_schema = current_schema()", pgx.RowTo[string])
-			if len(tables) != 0 {
+			if tables := schemaTables(ctx, t, tt.pool); len(tables) != 0 {
 				t.Errorf("SetupEmpty() created tables %v in the %s database, want none", tables, tt.name)
 			}
 		})
+	}
+}
+
+func TestNewEmptyDatabase(t *testing.T) {
+	ctx := t.Context()
+	pool, dsn := NewEmptyDatabase(ctx, t)
+	db := currentDatabase(ctx, t, pool)
+
+	if !regexp.MustCompile(fmt.Sprintf(`^test_db_[0-9a-f]{%d}$`, 2*suffixBytes)).MatchString(db) {
+		t.Errorf("database name = %q, want test_db_<%d hex digits>", db, 2*suffixBytes)
+	}
+	if tables := schemaTables(ctx, t, pool); len(tables) != 0 {
+		t.Errorf("NewEmptyDatabase() created tables %v, want none", tables)
+	}
+	dsnPool, err := openPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("openPool(dsn) failed: %v", err)
+	}
+	t.Cleanup(dsnPool.Close)
+	if got := currentDatabase(ctx, t, dsnPool); got != db {
+		t.Errorf("current_database() via the DSN = %q, want %q", got, db)
 	}
 }
 
@@ -255,6 +275,12 @@ func TestServerDatabaseDSN(t *testing.T) {
 func currentDatabase(ctx context.Context, t *testing.T, pool *pgxpool.Pool) string {
 	t.Helper()
 	return queryValue[string](ctx, t, pool, "SELECT current_database()")
+}
+
+// schemaTables returns the names of all tables in the current schema of pool's database.
+func schemaTables(ctx context.Context, t *testing.T, pool *pgxpool.Pool) []string {
+	t.Helper()
+	return queryRows(ctx, t, pool, "SELECT table_name::text FROM information_schema.tables WHERE table_schema = current_schema()", pgx.RowTo[string])
 }
 
 // presentTables returns the tables among candidates that exist in pool's database, in candidate
