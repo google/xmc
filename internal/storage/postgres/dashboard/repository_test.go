@@ -115,7 +115,7 @@ func TestRepository_Unimplemented(t *testing.T) {
 func TestNewRepository_BindsPool(t *testing.T) {
 	pool := &pgxpool.Pool{}
 	repo := NewRepository(pool)
-	if repo.pool != pool || repo.db != pool {
-		t.Errorf("NewRepository(pool) = {pool: %p, db: %v}, want both bound to %p", repo.pool, repo.db, pool)
+	if repo.db != pool {
+		t.Errorf("NewRepository(pool).db = %v, want %p", repo.db, pool)
 	}
 }

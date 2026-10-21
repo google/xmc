@@ -31,13 +31,12 @@ var _ storage.ArtifactStore = (*Repository)(nil)
 
 // Repository manages persistence for artifact entities in PostgreSQL.
 type Repository struct {
-	pool *pgxpool.Pool
-	db   pgdb.DBTX
+	db pgdb.DBTX
 }
 
 // NewRepository creates a new PostgreSQL Artifact repository instance bound to pool.
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool, db: pgdb.FromPool(pool)}
+	return &Repository{db: pgdb.FromPool(pool)}
 }
 
 // CreateArtifact creates a new artifact.

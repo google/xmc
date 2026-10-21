@@ -31,13 +31,12 @@ var _ storage.OperationStore = (*Repository)(nil)
 
 // Repository manages persistence for operation entities in PostgreSQL.
 type Repository struct {
-	pool *pgxpool.Pool
-	db   pgdb.DBTX
+	db pgdb.DBTX
 }
 
 // NewRepository creates a new PostgreSQL Operation repository instance bound to pool.
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool, db: pgdb.FromPool(pool)}
+	return &Repository{db: pgdb.FromPool(pool)}
 }
 
 // AddWorkUnitOperation adds an operation to a work unit.

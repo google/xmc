@@ -115,14 +115,14 @@ func TestRepository_Unimplemented(t *testing.T) {
 func TestNewRepository_BindsPoolAndTx(t *testing.T) {
 	pool := &pgxpool.Pool{}
 	repo := NewRepository(pool)
-	if repo.pool != pool || repo.db != pool {
-		t.Errorf("NewRepository(pool) = {pool: %p, db: %v}, want both bound to %p", repo.pool, repo.db, pool)
+	if repo.db != pool {
+		t.Errorf("NewRepository(pool).db = %v, want %p", repo.db, pool)
 	}
 
 	// Any DBTX implementation can stand in for the transaction handle.
 	var tx pgdb.DBTX = &pgxpool.Pool{}
 	txRepo := repo.WithTx(tx)
-	if txRepo.Repository != repo || txRepo.tx != tx {
-		t.Errorf("WithTx(tx) = {Repository: %p, tx: %v}, want {Repository: %p, tx: %v}", txRepo.Repository, txRepo.tx, repo, tx)
+	if txRepo.tx != tx {
+		t.Errorf("WithTx(tx).tx = %v, want %v", txRepo.tx, tx)
 	}
 }

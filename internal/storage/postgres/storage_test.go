@@ -83,7 +83,9 @@ func TestStorage(t *testing.T) {
 		{
 			name: "newTransaction",
 			check: func(t *testing.T) {
-				// Any DBTX works for wiring checks; RunInTransaction passes the live pgx.Tx.
+				// Populating all 7 Transaction fields is verified here; binding the DBTX
+				// handle into each wrapper's unexported tx field is covered by the
+				// per-subpackage TestNewRepository_BindsPoolAndTx tests.
 				tx := s.newTransaction(&fakeTx{})
 				if tx.WorkUnits == nil || tx.Experiments == nil || tx.XIDs == nil ||
 					tx.StatusMessages == nil || tx.StatusHistory == nil ||

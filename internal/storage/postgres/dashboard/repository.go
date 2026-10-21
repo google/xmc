@@ -32,13 +32,12 @@ var _ storage.DashboardStore = (*Repository)(nil)
 
 // Repository manages persistence for dashboard and chart entities in PostgreSQL.
 type Repository struct {
-	pool *pgxpool.Pool
-	db   pgdb.DBTX
+	db pgdb.DBTX
 }
 
 // NewRepository creates a new PostgreSQL Dashboard repository instance bound to pool.
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool, db: pgdb.FromPool(pool)}
+	return &Repository{db: pgdb.FromPool(pool)}
 }
 
 // CreateDashboard creates a new dashboard and its associated charts.
