@@ -185,7 +185,7 @@ experimentStateServer:
 auth:
   # Absolute lifetime for the session token and cookie, in Go duration syntax.
   sessionTtl: "1h"
-  # Lifetime of the session token issued by `xmc login`, in Go duration syntax (1m to 720h).
+  # Lifetime of the session token issued by `xmanager login`, in Go duration syntax (1m to 720h).
   cliSessionTtl: "12h"
   iap:
     iapIssuer: "https://iap.googleapis.com"

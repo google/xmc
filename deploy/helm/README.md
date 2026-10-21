@@ -123,7 +123,7 @@ CLI session token, and sends the browser to `/api/cli/success` so the code leave
 the address bar. `auth.cliSessionTtl` sets the token's lifetime; the chart passes
 it to the backend as `CLI_SESSION_TTL`. It accepts Go duration syntax from `1m` to
 `720h`; any other value prevents the backend from starting. CLI tokens cannot be
-refreshed: the user runs `xmc login` again when the token expires.
+refreshed: the user runs `xmanager login` again when the token expires.
 
 ```yaml
 auth:
