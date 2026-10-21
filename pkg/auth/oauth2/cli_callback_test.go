@@ -16,6 +16,7 @@ package oauth2
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"net/http"
 	"net/url"
@@ -27,11 +28,10 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-// cliLoopback is the loopback callback URL the browser is sent to for the shared test ticket.
-const cliLoopback = "http://127.0.0.1:51234/callback"
-
-// idpCode is the query of an identity provider redirect that carries an authorization code.
-const idpCode = "&code=idp-code"
+const (
+	cliLoopback = "http://127.0.0.1:51234/callback"
+	idpCode     = "&code=idp-code"
+)
 
 func TestHandleCallbackCLILoginSuccess(t *testing.T) {
 	a, store, provider := newCLITestAuthenticator(t, baseLoginConfig())
@@ -83,8 +83,7 @@ func TestHandleCallbackCLILoginSuccess(t *testing.T) {
 func TestHandleCallbackCLILoginErrors(t *testing.T) {
 	errStore := errors.New("spanner unavailable")
 	tests := []struct {
-		name string
-		// query defaults to idpCode.
+		name   string
 		query  string
 		cfg    func(*Config)
 		setup  func(*Authenticator, *fakeCLICodeStore, *stubOAuthProvider)
@@ -156,9 +155,6 @@ func TestHandleCallbackCLILoginErrors(t *testing.T) {
 	}
 }
 
-// TestHandleCallbackIgnoresInvalidCLILoginCookie checks that a cli_login cookie that is forged,
-// expired, bound to another round trip or unusable never takes the CLI branch: the callback stays a
-// Dashboard login and the cookie is deleted.
 func TestHandleCallbackIgnoresInvalidCLILoginCookie(t *testing.T) {
 	expired := baseCLITicket(loginTestOAuthState)
 	expired.ExpiresAt = time.Now().Add(-time.Second).Unix()
@@ -204,8 +200,6 @@ func TestHandleCallbackIgnoresInvalidCLILoginCookie(t *testing.T) {
 	}
 }
 
-// TestHandleCallbackDashboardErrorsUnchanged checks that without a CLI ticket the callback keeps
-// its Dashboard error responses.
 func TestHandleCallbackDashboardErrorsUnchanged(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -235,5 +229,39 @@ func TestHandleCallbackDashboardLeavesNoCLICookie(t *testing.T) {
 	}
 	if c := responseCookie(resp, cliLoginCookieName); c != nil {
 		t.Errorf("Dashboard login without a cli_login cookie wrote one: %v", c)
+	}
+}
+
+func TestNewCLILoginCode(t *testing.T) {
+	code, hash, err := newCLILoginCode()
+	if err != nil {
+		t.Fatalf("newCLILoginCode() failed: %v", err)
+	}
+	if !base64URL256BitPattern.MatchString(code) {
+		t.Errorf("newCLILoginCode() code = %q, want 43 base64url characters", code)
+	}
+	wantHash := sha256.Sum256([]byte(code))
+	if diff := cmp.Diff(wantHash[:], hash); diff != "" {
+		t.Errorf("newCLILoginCode() hash mismatch (-want +got):\n%s", diff)
+	}
+	other, _, err := newCLILoginCode()
+	if err != nil {
+		t.Fatalf("newCLILoginCode() failed: %v", err)
+	}
+	if other == code {
+		t.Error("newCLILoginCode() returned the same code twice")
+	}
+}
+
+func TestNewCLILoginCodeRandomFailure(t *testing.T) {
+	withFailingRandom(t)
+	if _, _, err := newCLILoginCode(); err == nil {
+		t.Error("newCLILoginCode() error = nil, want a random source error")
+	}
+}
+
+func TestCodeHashPrefix(t *testing.T) {
+	if got, want := codeHashPrefix(hashCLILoginCode("code")), "5694d08a"; got != want {
+		t.Errorf("codeHashPrefix() = %q, want %q", got, want)
 	}
 }

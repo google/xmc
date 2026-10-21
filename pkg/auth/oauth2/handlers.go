@@ -119,8 +119,7 @@ func (a *Authenticator) setOAuthStateCookie(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// HandleCallback processes the authentication callback. A valid cli_login cookie bound to this
-// round trip completes a CLI login; otherwise the callback signs the user in to the Dashboard.
+// HandleCallback processes the authentication callback.
 func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	oauthState, err := a.validateState(r)
 	if err != nil {
