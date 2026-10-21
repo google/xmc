@@ -29,14 +29,14 @@ genrule(
 )
 
 go_library(
-    name = "testdb",
+    name = "testing",
     testonly = True,
     srcs = ["testdb.go"],
     embedsrcs = [
         "ess-schema.sql",
         "xid-schema.sql",
     ],
-    importpath = "xmanager_cloud/internal/storage/postgres/testdb",
+    importpath = "xmanager_cloud/internal/storage/postgres/testing",
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/storage/postgres/migrations/version",
@@ -48,9 +48,9 @@ go_library(
 )
 
 go_test(
-    name = "testdb_test",
+    name = "testing_test",
     srcs = ["testdb_test.go"],
-    embed = [":testdb"],
+    embed = [":testing"],
     tags = ["local"],
     deps = [
         "//internal/storage/postgres/migrations/version",

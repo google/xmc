@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package testdb gives PostgreSQL repository tests isolated, real databases. It is the PostgreSQL
-// counterpart of internal/storage/spanner/emulator: Setup creates a fresh pair of XID and ESS
-// databases with the canonical schemas applied and drops both when the test completes.
+// Package postgrestest gives PostgreSQL repository tests isolated, real databases. It is the
+// PostgreSQL counterpart of internal/storage/spanner/emulator: Setup creates a fresh pair of XID
+// and ESS databases with the canonical schemas applied and drops both when the test completes.
 //
 // The databases live on a postgres:16-alpine container that testcontainers starts once per test
 // process and its Ryuk reaper removes when the process exits, so Bazel test targets need
@@ -22,7 +22,7 @@
 // (for example with bazel test --test_env) to a postgres:// URL whose user can create databases.
 //
 // All functions are safe for use by parallel tests.
-package testdb
+package postgrestest
 
 import (
 	"context"
