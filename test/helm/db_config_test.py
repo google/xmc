@@ -20,6 +20,7 @@ import unittest
 from chart_test_lib import render_template, require_helm
 
 DB_CONFIG_TEMPLATE = "templates/db-config.yaml"
+HEALTH_DEPLOYMENT = "templates/health-service/deployment.yaml"
 
 WORKLOAD_DEPLOYMENTS: tuple[str, ...] = (
     "templates/actuator/deployment.yaml",
@@ -244,6 +245,15 @@ class DbConfigChartTest(unittest.TestCase):
                     self.assertIsNotNone(expected_quota)
                     self.assertIn(f"{legacy_db_key}: {expected_db.group(1)}", svc_manifest)
                     self.assertIn(f"{legacy_quota_key}: {expected_quota.group(1)}", svc_manifest)
+
+    def test_health_service_mounts_db_config(self) -> None:
+        """health-service mounts db-config under /config/db so the admin UI can list it."""
+        manifest = render_template(HEALTH_DEPLOYMENT, {})
+
+        self.assertIn(
+            "- name: db-config-volume\n          configMap:\n            name: db-config", manifest
+        )
+        self.assertIn("- name: db-config-volume\n            mountPath: /config/db", manifest)
 
 
 if __name__ == "__main__":

@@ -39,6 +39,7 @@ func TestListConfigs(t *testing.T) {
 			fsys: fstest.MapFS{
 				"ess/ess_key":           &fstest.MapFile{Data: []byte("ess_val")},
 				"health-service/hs_key": &fstest.MapFile{Data: []byte("hs_val")},
+				"db/DB_BACKEND":         &fstest.MapFile{Data: []byte("spanner")},
 			},
 			want: []*spb.ConfigGroup{
 				{
@@ -51,6 +52,12 @@ func TestListConfigs(t *testing.T) {
 					DisplayName: "Health Service Config",
 					Configs: []*spb.ConfigInfo{
 						{Key: "hs_key", Value: "hs_val"},
+					},
+				},
+				{
+					DisplayName: "Database Config",
+					Configs: []*spb.ConfigInfo{
+						{Key: "DB_BACKEND", Value: "spanner"},
 					},
 				},
 			},
