@@ -22,12 +22,12 @@ Sign in as yourself with the `xmanager` CLI (requires XMC `>= 0.16.0`), which [`
 xmanager login   # Reads XMANAGER_ENDPOINT, XMC_API_URL, XMANAGER_UI_URL, or XMC_DOMAIN from the environment.
 ```
 
-`xmanager login` caches a per-deployment session token in `$XMC_CREDENTIALS_FILE` or `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config/xmc/credentials.json`, mode `0600`). The XManager CLI and the [examples](../examples/) load this cached token automatically — once you're signed in, you don't need `XMC_AUTH_TOKEN`, `IAP_CLIENT_ID`, or `XMC_CLIENT_SA`. Experiments you create are attributed to you.
+`xmanager login` caches a per-deployment session token in `$XMC_CREDENTIALS_FILE` or `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config/xmc/credentials.json`, mode `0600`). The XManager CLI (`xm_cloud`) loads this cached token automatically — once you're signed in, experiment and work unit calls don't need `XMC_AUTH_TOKEN`, `IAP_CLIENT_ID`, or `XMC_CLIENT_SA`, and experiments you create are attributed to you.
 
 - Tokens last 12 hours by default. When yours expires, run `xmanager login` again.
 - Run `xmanager login --status` to see your account and expiry. `xmanager logout` removes the cached token for the current deployment (`xmanager logout --all` clears all deployments).
 - Over SSH or on a headless machine, `xmanager login` switches to a copy-and-paste flow on its own (or pass `--no-browser` explicitly).
-- For standalone tools that read `XMC_AUTH_TOKEN` directly (such as [`xdash`](../sdks/python/xdash/README.md)), run `export XMC_AUTH_TOKEN=$(xmanager login --print-token)` in the shell where you invoke them.
+- For [`xdash`](../sdks/python/xdash/README.md) and the dashboard-creating examples ([`chart_artifact_job`](../examples/chart_artifact_job/), [`clickhouse_metrics_job`](../examples/clickhouse_metrics_job/), [`metrics_dashboard_job`](../examples/metrics_dashboard_job/)), which read `XMC_AUTH_TOKEN` directly for `DashboardService` calls, also run `export XMC_AUTH_TOKEN=$(xmanager login --print-token)` in your shell.
 
 ## CI and Other Non-Interactive Use: A Service Account
 
