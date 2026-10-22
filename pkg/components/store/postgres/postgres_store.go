@@ -52,7 +52,8 @@ const (
 
 // PostgresStore provides a PostgreSQL-backed production implementation of store.Store.
 type PostgresStore struct {
-	pool *pgxpool.Pool
+	pool              *pgxpool.Pool
+	beforeIntentWrite func()
 }
 
 // NewPostgresStore creates a new PostgreSQL-backed component store.
@@ -63,16 +64,6 @@ func NewPostgresStore(pool *pgxpool.Pool) (*PostgresStore, error) {
 	return &PostgresStore{
 		pool: pool,
 	}, nil
-}
-
-// SetComponentIntent applies or updates component intent within PostgreSQL.
-func (s *PostgresStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*store.ComponentRecord, error) {
-	return nil, status.Error(codes.Unimplemented, "postgres component store: SetComponentIntent is not implemented")
-}
-
-// SetSourcedComponentIntent applies an intent sent by src within PostgreSQL.
-func (s *PostgresStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src store.RequestSource) (*store.ComponentRecord, error) {
-	return nil, status.Error(codes.Unimplemented, "postgres component store: SetSourcedComponentIntent is not implemented")
 }
 
 // GetComponent retrieves a component record by canonical or full resource name.

@@ -72,20 +72,6 @@ func TestPostgresStore_Unimplemented(t *testing.T) {
 		call func() error
 	}{
 		{
-			name: "SetComponentIntent",
-			call: func() error {
-				_, err := s.SetComponentIntent(ctx, "comp-a", nil, nil, 1)
-				return err
-			},
-		},
-		{
-			name: "SetSourcedComponentIntent",
-			call: func() error {
-				_, err := s.SetSourcedComponentIntent(ctx, "comp-a", nil, nil, store.RequestSource{})
-				return err
-			},
-		},
-		{
 			name: "PrepareDeactivation",
 			call: func() error {
 				_, err := s.PrepareDeactivation(ctx, "comp-a", false)

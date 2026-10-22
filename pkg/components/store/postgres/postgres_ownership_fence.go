@@ -67,6 +67,12 @@ ON CONFLICT (FenceId) DO UPDATE SET
   Epoch = EXCLUDED.Epoch,
   DeclaredTime = EXCLUDED.DeclaredTime,
   LastSeenTime = EXCLUDED.LastSeenTime`
+
+	// fenceColumnsSQL adds the fence holder to a query as scalar subqueries, NULL before the first
+	// declaration, so that one single-query read sees the fence and the component in one snapshot.
+	fenceColumnsSQL = `(SELECT f.ActiveClusterUid FROM ComponentOwnershipFence f WHERE f.FenceId = 1) AS FenceClusterUid,
+  (SELECT f.ActiveClusterName FROM ComponentOwnershipFence f WHERE f.FenceId = 1) AS FenceClusterName,
+  (SELECT f.Epoch FROM ComponentOwnershipFence f WHERE f.FenceId = 1) AS FenceEpoch`
 )
 
 // Ensure PostgresStore implements OwnershipGaugeReader at compile time.
@@ -138,6 +144,19 @@ func writeFenceTx(ctx context.Context, tx pgx.Tx, cluster store.ClusterIdentity,
 	}
 	_, err := tx.Exec(ctx, upsertFenceSQL, fenceID, cluster.UID, cluster.Name, cluster.Epoch, commitTime)
 	return err
+}
+
+// checkFence reads the fence within q and returns the rejection of src by CheckClusterFence.
+// Unsourced requests (nil src) skip the read.
+func checkFence(ctx context.Context, q pgdb.DBTX, operation string, src *store.RequestSource) error {
+	if src == nil {
+		return nil
+	}
+	fence, err := readFence(ctx, q)
+	if err != nil {
+		return err
+	}
+	return ownership.CheckClusterFence(operation, fence, src)
 }
 
 // readFence returns the current fence holder, or nil before the first declaration.

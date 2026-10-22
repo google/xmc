@@ -19,6 +19,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "postgres",
     srcs = [
+        "postgres_intent.go",
         "postgres_ownership_fence.go",
         "postgres_store.go",
     ],
@@ -26,9 +27,12 @@ go_library(
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/grpcerr",
+        "//internal/logging",
         "//internal/storage/postgres/pgdb",
+        "//pkg/components/naming",
         "//pkg/components/semver",
         "//pkg/components/store",
+        "//pkg/components/store/dependency",
         "//pkg/components/store/lifecycle",
         "//pkg/components/store/ownership",
         "@com_github_jackc_pgx_v5//:pgx",
@@ -43,6 +47,7 @@ go_library(
 go_test(
     name = "postgres_test",
     srcs = [
+        "postgres_intent_test.go",
         "postgres_ownership_fence_test.go",
         "postgres_store_test.go",
     ],
