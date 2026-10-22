@@ -86,6 +86,7 @@ SELECT p.proname, pg_catalog.pg_get_functiondef(p.oid)
 FROM pg_catalog.pg_proc p
 JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = current_schema()
+  AND p.prokind IN ('f', 'p')
 ORDER BY p.proname, pg_catalog.pg_get_function_identity_arguments(p.oid)
 `
 )
