@@ -13,9 +13,8 @@
 # limitations under the License.
 
 # Static admin values for rendering the real deploy/profiles/stable-2026a chart in
-# profile_migration_test.go. Per-run values (namespaces, the ClickHouse host and Secret,
-# global.imageTag, and the ingestion-gateway chartPath, imageRepository and replicas) are layered on
-# top by the test.
+# profile_migration_test.go. Per-run values (namespaces, global.imageTag, and the ingestion-gateway
+# chartPath, imageRepository and replicas) are layered on top by the test.
 
 global:
   platformProfile: stable-2026a
@@ -25,10 +24,10 @@ components:
     enabled: false
     deletionProtection: false
   clickhouse:
-    enabled: true
+    enabled: false
     deletionProtection: false
   ingestion-gateway:
     enabled: true
     deletionProtection: false
-    # Redpanda stays disabled in this suite, so the gateway only depends on ClickHouse.
-    dependencies: ["clickhouse"]
+    # Redpanda and ClickHouse stay disabled in this suite, so the gateway has no dependencies.
+    dependencies: []

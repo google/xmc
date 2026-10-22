@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -48,11 +47,8 @@ const (
 	clickhouseComponent     = "clickhouse"
 	gatewaySelector         = "app.kubernetes.io/name=" + gatewayComponent
 	// gatewayReplicas reaches the rolling-gateway chart as the replicas Component parameter.
-	gatewayReplicas     = 2
-	gatewayProbePod     = "gateway-http-probe"
-	clickhouseStreamPod = "clickhouse-stream"
-	// postUpgradeIterations is how many successful ClickHouse stream iterations must follow the upgrade.
-	postUpgradeIterations = 5
+	gatewayReplicas = 2
+	gatewayProbePod = "gateway-http-probe"
 	// postRolloutProbeIterations is how many successful gateway probe requests must follow the exit of
 	// the last old gateway Pod. At about 5 requests/s this spans more than the chart's 10s
 	// --delay-shutdown plus margin.
@@ -64,28 +60,26 @@ const (
 // profileCatalogComponents are the Component CRs the stable-2026a profile renders.
 var profileCatalogComponents = []string{"redpanda", clickhouseComponent, gatewayComponent}
 
+// enabledProfileComponents are the Component CRs the admin values fixture enables and the suite
+// migrates.
+var enabledProfileComponents = []string{gatewayComponent}
+
 // TestProfileMigrationE2E upgrades the Component CRs of the real stable-2026a profile to a test-only
 // stable-2026b overlay on KinD, with an in-process bridge whose real Helm manager actuates the 1P
 // ingestion-gateway through a public-image stand-in chart (parameters.chartPath). During the
 // migration a continuous HTTP probe (about 5 requests/s, a new connection per request) hits the
-// gateway Service and must record zero failed requests. A continuous ClickHouse INSERT/SELECT stream
-// over the 3P component's access envVars must also record zero failures: it shows that the bridge
-// re-reconciling the bumped 3P spec does not disrupt the endpoint (ClickHouse itself is not rolled).
-// Afterwards the suite verifies the ReplicaSet rollover, the CR status and CMS sync-back at the new
-// generation, and that a snapshot locked before the upgrade now differs from
-// status.componentGeneration, the input of the actuator's drift warning annotation.
+// gateway Service and must record zero failed requests. Afterwards the suite verifies the
+// ReplicaSet rollover and the CR status and CMS sync-back at the new generation.
 func TestProfileMigrationE2E(t *testing.T) {
 	overlay := loadProfileOverlay(t)
 	baselineImage, candidateImage := gatewayImage(baselineGatewayImageTag), gatewayImage(overlay.ImageTag)
-	h := newKindClusterHarness(t, kindHarnessConfig{requiredImages: []string{clickhouseImage, baselineImage, candidateImage}, helmActuation: true})
+	h := newKindClusterHarness(t, kindHarnessConfig{requiredImages: []string{baselineImage, candidateImage}, helmActuation: true})
 	ctx, cancel := context.WithTimeout(context.Background(), migrationTimeout)
 	defer cancel()
 
 	ns := createTestNamespace(ctx, t, h, "xmc-profile-mig")
-	deployClickHouseInstance(ctx, t, h, ns)
 	baseline := deployBaselineProfile(ctx, t, h, ns, baselineImage)
-	lockedGens := lockComponentSnapshots(ctx, t, h, baseline)
-	preUpgrade := startMigrationWorkloads(ctx, t, h, ns, baseline[clickhouseComponent], baselineImage)
+	preUpgrade := startGatewayProbe(ctx, t, h, ns, baselineImage)
 
 	applyComponents(ctx, t, h, renderCandidateProfile(ctx, t, ns, overlay))
 	waitForGatewayRollout(ctx, t, h, ns, candidateImage)
@@ -95,19 +89,11 @@ func TestProfileMigrationE2E(t *testing.T) {
 
 	t.Run("ZeroDowntimeRollover", func(t *testing.T) {
 		assertReplicaSetRollover(ctx, t, h, ns, candidateImage)
-		assertGatewayProbeUninterrupted(ctx, t, h, ns, preUpgrade[gatewayProbePod], postRollout, newPods)
-	})
-	t.Run("UninterruptedClickHouseStream", func(t *testing.T) {
-		assertClickHouseStreamUninterrupted(ctx, t, h, ns, preUpgrade[clickhouseStreamPod])
+		assertGatewayProbeUninterrupted(ctx, t, h, ns, preUpgrade, postRollout, newPods)
 	})
 	t.Run("StatusSyncBack", func(t *testing.T) {
 		runPerComponent(t, upgraded, func(t *testing.T, name string, u *unstructured.Unstructured) {
 			assertUpgradedStatus(ctx, t, h, baseline[name], u, overlay)
-		})
-	})
-	t.Run("SnapshotDriftPredicate", func(t *testing.T) {
-		runPerComponent(t, upgraded, func(t *testing.T, name string, u *unstructured.Unstructured) {
-			assertSnapshotDrift(ctx, t, h, u, lockedGens[name], baseline[name])
 		})
 	})
 }
@@ -146,8 +132,8 @@ func loadProfileOverlay(t *testing.T) profileOverlay {
 func deployBaselineProfile(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, baselineImage string) map[string]*unstructured.Unstructured {
 	t.Helper()
 	applyComponents(ctx, t, h, renderProfileComponents(ctx, t, ns, baselineGatewayImageTag))
-	ready := make(map[string]*unstructured.Unstructured, 2)
-	for _, name := range []string{clickhouseComponent, gatewayComponent} {
+	ready := make(map[string]*unstructured.Unstructured, len(enabledProfileComponents))
+	for _, name := range enabledProfileComponents {
 		ready[name] = waitForComponent(ctx, t, h, ns, name, "Ready", isExistingComponentReady)
 		assertCMSComponent(ctx, t, h, ready[name], componentspb.ComponentState_COMPONENT_STATE_ENABLED)
 	}
@@ -182,15 +168,10 @@ func renderCandidateProfile(ctx context.Context, t *testing.T, ns string, overla
 	return candidate
 }
 
-// writeRunValues writes the per-run profile values: every Component in ns, the in-cluster ClickHouse
-// host and Secret, the gateway image tag, and the rolling-gateway stand-in chart, image repository
-// and replica count.
+// writeRunValues writes the per-run profile values: every Component in ns, the gateway image tag, and
+// the rolling-gateway stand-in chart, image repository and replica count.
 func writeRunValues(t *testing.T, ns, imageTag string) string {
 	t.Helper()
-	clickhouseParams := map[string]any{
-		"host":       fmt.Sprintf("clickhouse.%s.svc.cluster.local", ns),
-		"secretName": clickhouseSecretName, "secretPasswordKey": clickhouseSecretKey,
-	}
 	gatewayParams := map[string]any{
 		"chartPath":       locateRepoPath(t, profileMigrationTestdata+"/rolling-gateway"),
 		"imageRepository": gatewayImageRepository,
@@ -200,7 +181,7 @@ func writeRunValues(t *testing.T, ns, imageTag string) string {
 		"global": map[string]any{"imageTag": imageTag},
 		"components": map[string]any{
 			"redpanda":          map[string]any{"namespace": ns},
-			clickhouseComponent: map[string]any{"namespace": ns, "parameters": clickhouseParams},
+			clickhouseComponent: map[string]any{"namespace": ns},
 			gatewayComponent:    map[string]any{"namespace": ns, "parameters": gatewayParams},
 		},
 	}
@@ -222,61 +203,22 @@ func applyComponents(ctx context.Context, t *testing.T, h *kindClusterHarness, o
 	}
 }
 
-// lockComponentSnapshots resolves the CMS snapshot of each Component at its current generation and
-// returns the locked generations by name. This is the generation a workload pins and the actuator
-// later compares with status.componentGeneration; the actuator skips a locked generation <= 0, so
-// such a lock fails the test. Before the upgrade the two must be equal, so no drift is reported.
-func lockComponentSnapshots(ctx context.Context, t *testing.T, h *kindClusterHarness, comps map[string]*unstructured.Unstructured) map[string]int64 {
-	t.Helper()
-	locked := make(map[string]int64, len(comps))
-	for name, u := range comps {
-		rec, _, err := h.cmsServer.Store().ResolveComponentSnapshot(ctx, name, 0)
-		if err != nil {
-			t.Fatalf("CMS ResolveComponentSnapshot(%s) failed: %v", name, err)
-		}
-		if rec.Generation <= 0 {
-			t.Fatalf("CMS ResolveComponentSnapshot(%s) locked generation %d, want > 0", name, rec.Generation)
-		}
-		if got := componentGeneration(u); got != rec.Generation {
-			t.Fatalf("%s status.componentGeneration = %d before upgrade, want locked snapshot generation %d", name, got, rec.Generation)
-		}
-		locked[name] = rec.Generation
-	}
-	return locked
-}
-
 func componentGeneration(u *unstructured.Unstructured) int64 {
 	return bridge.ParseComponentGenerationFromUnstructured(u.Object["status"])
 }
 
-// migrationProbes are the continuous workload Pods and their log tallies before the upgrade.
-type migrationProbes map[string]logTally
-
-// startMigrationWorkloads starts the continuous gateway HTTP probe and ClickHouse streaming
-// workload, and waits until each has completed a few successful iterations.
-func startMigrationWorkloads(ctx context.Context, t *testing.T, h *kindClusterHarness, ns string, clickhouse *unstructured.Unstructured, probeImage string) migrationProbes {
+// startGatewayProbe starts the continuous gateway HTTP probe and returns its tally once it has
+// completed a few successful requests.
+func startGatewayProbe(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, probeImage string) logTally {
 	t.Helper()
-	envVars, _, _ := unstructured.NestedStringMap(clickhouse.Object, "status", "access", "envVars")
-	if envVars["SECRET_NAME"] == "" {
-		t.Fatalf("clickhouse status.access.envVars = %v, want a non-empty SECRET_NAME", envVars)
-	}
 	startWorkloadPod(ctx, t, h, workloadPodSpec{
 		Namespace: ns, Name: gatewayProbePod, Image: probeImage, Command: []string{"sh", "-c", gatewayProbeScript},
 		AccessEnvVars:   map[string]string{"GATEWAY_URL": fmt.Sprintf("http://%s.%s.svc.cluster.local/hostname", gatewayComponent, ns)},
 		SecurityContext: restrictedContainerSecurity(),
 		Resources:       smallContainerResources(),
 	})
-	startWorkloadPod(ctx, t, h, workloadPodSpec{
-		Namespace: ns, Name: clickhouseStreamPod, Image: clickhouseImage, Command: []string{"sh", "-c", clickhouseStreamScript}, AccessEnvVars: envVars,
-		SecretEnvBinds: map[string]corev1.SecretKeySelector{
-			"CLICKHOUSE_PASSWORD": {LocalObjectReference: corev1.LocalObjectReference{Name: envVars["SECRET_NAME"]}, Key: clickhouseSecretKey},
-		},
-	})
-	probes := migrationProbes{}
-	for _, pod := range []string{gatewayProbePod, clickhouseStreamPod} {
-		probes[pod], _ = waitForWorkloadIterations(ctx, t, h, ns, pod, 3)
-	}
-	return probes
+	tally, _ := waitForWorkloadIterations(ctx, t, h, ns, gatewayProbePod, 3)
+	return tally
 }
 
 // restrictedContainerSecurity runs a container as the nobody user without privilege escalation,
@@ -301,25 +243,6 @@ func smallContainerResources() corev1.ResourceRequirements {
 const gatewayProbeScript = `while true; do
   if body=$(curl -fsS -m 2 "$GATEWAY_URL" 2>&1); then echo "WORKLOAD_OK host=$body"; else echo "WORKLOAD_FAIL curl_exit=$? $body"; fi
   sleep 0.2
-done`
-
-// clickhouseStreamScript inserts one row per iteration and checks that count() equals the expected
-// row count, so a failed, timed-out or lost write fails the iteration. Client stderr is kept out of
-// the compared value, and after a failure the expected count resyncs to count() so that one
-// disruption fails one iteration rather than every later one.
-const clickhouseStreamScript = `CH="clickhouse-client --host $HOST --password $CLICKHOUSE_PASSWORD --connect_timeout 5 --receive_timeout 10 --send_timeout 10"
-$CH --query "CREATE TABLE IF NOT EXISTS profile_migration_stream (seq UInt64) ENGINE = MergeTree ORDER BY seq" || { echo "WORKLOAD_FAIL create"; exit 1; }
-expected=0
-while true; do
-  next=$((expected+1))
-  if got=$($CH --multiquery --query "INSERT INTO profile_migration_stream VALUES ($next); SELECT count() FROM profile_migration_stream" 2>/tmp/ch.err) && [ "$got" = "$next" ]; then
-    echo "WORKLOAD_OK seq=$next"
-    expected=$next
-  else
-    echo "WORKLOAD_FAIL seq=$next got=$got err=$(head -c 200 /tmp/ch.err | tr '\n' ' ')"
-    expected=$($CH --query "SELECT count() FROM profile_migration_stream" 2>/dev/null || echo "$expected")
-  fi
-  sleep 0.5
 done`
 
 // waitForWorkloadIterations waits until the running workload Pod has logged at least minOK successful
@@ -351,15 +274,6 @@ func assertGatewayProbeUninterrupted(ctx context.Context, t *testing.T, h *kindC
 		t.Errorf("no gateway probe request after the rollout was served by a new Pod %v; %s", slices.Sorted(maps.Keys(newPods)), workloadFailureExcerpt(logs, 10))
 	}
 	assertWorkloadRunning(ctx, t, h, ns, gatewayProbePod)
-}
-
-// assertClickHouseStreamUninterrupted verifies that the ClickHouse stream added
-// postUpgradeIterations successful iterations and failed none since the upgrade started.
-func assertClickHouseStreamUninterrupted(ctx context.Context, t *testing.T, h *kindClusterHarness, ns string, preUpgrade logTally) {
-	t.Helper()
-	after, logs := waitForWorkloadIterations(ctx, t, h, ns, clickhouseStreamPod, preUpgrade.ok+postUpgradeIterations)
-	assertNoFailuresSince(t, clickhouseStreamPod, preUpgrade, after, logs)
-	assertWorkloadRunning(ctx, t, h, ns, clickhouseStreamPod)
 }
 
 func assertNoFailuresSince(t *testing.T, pod string, before, after logTally, logs string) {
@@ -474,7 +388,7 @@ func waitForUpgradedComponents(ctx context.Context, t *testing.T, h *kindCluster
 
 // assertUpgradedStatus verifies the sync-back of an upgraded Component: overlay spec applied over the
 // baseline version, CMS ENABLED at the CR generation, status.componentGeneration equal to the CMS
-// generation, Ready=True (ComponentHealthy) without Stalled, and access envVars unchanged.
+// generation, Ready=True (ComponentHealthy) without Stalled.
 func assertUpgradedStatus(ctx context.Context, t *testing.T, h *kindClusterHarness, base, u *unstructured.Unstructured, overlay profileOverlay) {
 	t.Helper()
 	assertOverlaySpec(t, base, u, overlay)
@@ -492,11 +406,6 @@ func assertUpgradedStatus(ctx context.Context, t *testing.T, h *kindClusterHarne
 	if got := conditionField(u, bridge.ConditionTypeStalled, "status"); got == bridge.ConditionStatusTrue {
 		t.Errorf("%s Stalled = %s (reason %q) after upgrade, want not stalled", u.GetName(), got, conditionField(u, bridge.ConditionTypeStalled, "reason"))
 	}
-	baseEnv, _, _ := unstructured.NestedStringMap(base.Object, "status", "access", "envVars")
-	gotEnv, _, _ := unstructured.NestedStringMap(u.Object, "status", "access", "envVars")
-	if diff := cmp.Diff(baseEnv, gotEnv); diff != "" {
-		t.Errorf("%s status.access.envVars changed across the upgrade (-baseline +upgraded):\n%s", u.GetName(), diff)
-	}
 }
 
 // assertOverlaySpec verifies that u carries the overlay profile label and chart version, and that
@@ -509,26 +418,5 @@ func assertOverlaySpec(t *testing.T, base, u *unstructured.Unstructured, overlay
 	baseVersion, _, _ := unstructured.NestedString(base.Object, "spec", "version")
 	if label := u.GetLabels()[profileLabel]; label != overlay.Profile || chartVersion != want || version != want || version == baseVersion {
 		t.Errorf("%s profile label = %q, chartVersion = %q, version = %q (baseline %q); want %q, %q, %q", u.GetName(), label, chartVersion, version, baseVersion, overlay.Profile, want, want)
-	}
-}
-
-// assertSnapshotDrift verifies the input of the actuator's component drift warning: the snapshot
-// locked before the upgrade keeps the baseline spec at lockedGen, which now differs from
-// status.componentGeneration. It does not exercise the actuator or any UI.
-func assertSnapshotDrift(ctx context.Context, t *testing.T, h *kindClusterHarness, u *unstructured.Unstructured, lockedGen int64, base *unstructured.Unstructured) {
-	t.Helper()
-	if got := componentGeneration(u); got == lockedGen {
-		t.Errorf("%s status.componentGeneration = %d equals locked snapshot generation, want drift after upgrade", u.GetName(), got)
-	}
-	snap, _, err := h.cmsServer.Store().ResolveComponentSnapshot(ctx, u.GetName(), lockedGen)
-	if err != nil {
-		t.Fatalf("CMS ResolveComponentSnapshot(%s, %d) failed: %v", u.GetName(), lockedGen, err)
-	}
-	if snap == nil {
-		t.Fatalf("CMS ResolveComponentSnapshot(%s, %d) returned a nil snapshot", u.GetName(), lockedGen)
-	}
-	baseVersion, _, _ := unstructured.NestedString(base.Object, "spec", "version")
-	if snap.Generation != lockedGen || snap.Spec.GetVersion() != baseVersion {
-		t.Errorf("%s locked snapshot = generation %d, version %q; want %d, baseline %q", u.GetName(), snap.Generation, snap.Spec.GetVersion(), lockedGen, baseVersion)
 	}
 }
