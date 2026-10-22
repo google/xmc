@@ -137,7 +137,7 @@ func TestPostgresStore_Unimplemented(t *testing.T) {
 	}
 }
 
-func seedTestComponent(t *testing.T, ctx context.Context, pool *pgxpool.Pool, id int64, name string, compType componentspb.ComponentType, version string, state componentspb.ComponentState, gen int64, obsGen *int64, labels map[string]string, owner *store.SourceOwner) time.Time {
+func seedTestComponent(ctx context.Context, t *testing.T, pool *pgxpool.Pool, id int64, name string, compType componentspb.ComponentType, version string, state componentspb.ComponentState, gen int64, obsGen *int64, labels map[string]string, owner *store.SourceOwner) time.Time {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	spec := &componentspb.ComponentSpec{
@@ -179,7 +179,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`
 	return now
 }
 
-func seedTestDependency(t *testing.T, ctx context.Context, pool *pgxpool.Pool, compID, depID int64) {
+func seedTestDependency(ctx context.Context, t *testing.T, pool *pgxpool.Pool, compID, depID int64) {
 	t.Helper()
 	if _, err := pool.Exec(ctx, `INSERT INTO ComponentDependencies (ComponentId, DependencyComponentId) VALUES ($1, $2)`, compID, depID); err != nil {
 		t.Fatalf("insert dependency (%d -> %d) failed: %v", compID, depID, err)
@@ -198,13 +198,13 @@ func TestGetComponentAndGetComponentByID(t *testing.T) {
 	owner := &store.SourceOwner{
 		UID: "uid-1", Generation: 3, Namespace: "xmc-system", ClusterUID: "7d3e2a10-8c4b-4f6e-b1a2-3c4d5e6f7a01", Epoch: 1,
 	}
-	seedTestComponent(t, ctx, pool, 10, "dep-b", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "0.8.0", componentspb.ComponentState_COMPONENT_STATE_ENABLED, 1, nil, nil, nil)
-	seedTestComponent(t, ctx, pool, 20, "dep-a", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, "0.6.0", componentspb.ComponentState_COMPONENT_STATE_ENABLED, 1, nil, nil, nil)
-	seedTestComponent(t, ctx, pool, 30, "dep-deleted", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "1.0.0", componentspb.ComponentState_COMPONENT_STATE_DELETED, 1, nil, nil, nil)
-	ts := seedTestComponent(t, ctx, pool, 100, "trainer-comp", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "1.8.0", componentspb.ComponentState_COMPONENT_STATE_ENABLED, 2, &obsGen, map[string]string{"env": "prod"}, owner)
-	seedTestDependency(t, ctx, pool, 100, 10)
-	seedTestDependency(t, ctx, pool, 100, 20)
-	seedTestDependency(t, ctx, pool, 100, 30)
+	seedTestComponent(ctx, t, pool, 10, "dep-b", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "0.8.0", componentspb.ComponentState_COMPONENT_STATE_ENABLED, 1, nil, nil, nil)
+	seedTestComponent(ctx, t, pool, 20, "dep-a", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, "0.6.0", componentspb.ComponentState_COMPONENT_STATE_ENABLED, 1, nil, nil, nil)
+	seedTestComponent(ctx, t, pool, 30, "dep-deleted", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "1.0.0", componentspb.ComponentState_COMPONENT_STATE_DELETED, 1, nil, nil, nil)
+	ts := seedTestComponent(ctx, t, pool, 100, "trainer-comp", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "1.8.0", componentspb.ComponentState_COMPONENT_STATE_ENABLED, 2, &obsGen, map[string]string{"env": "prod"}, owner)
+	seedTestDependency(ctx, t, pool, 100, 10)
+	seedTestDependency(ctx, t, pool, 100, 20)
+	seedTestDependency(ctx, t, pool, 100, 30)
 
 	// GetComponent by full resource name returns active dependencies sorted alphabetically.
 	rec, err := s.GetComponent(ctx, "components/trainer-comp")
@@ -264,10 +264,10 @@ func TestListComponentsAndValidateRequirement(t *testing.T) {
 		t.Fatalf("NewPostgresStore() failed: %v", err)
 	}
 
-	seedTestComponent(t, ctx, pool, 1, "zebra", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "0.8.1", componentspb.ComponentState_COMPONENT_STATE_ENABLED, 1, nil, nil, nil)
-	seedTestComponent(t, ctx, pool, 2, "alpha", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, "0.5.0", componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, 1, nil, nil, nil)
-	seedTestComponent(t, ctx, pool, 3, "deleted-comp", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "1.0.0", componentspb.ComponentState_COMPONENT_STATE_DELETED, 1, nil, nil, nil)
-	seedTestDependency(t, ctx, pool, 1, 2)
+	seedTestComponent(ctx, t, pool, 1, "zebra", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "0.8.1", componentspb.ComponentState_COMPONENT_STATE_ENABLED, 1, nil, nil, nil)
+	seedTestComponent(ctx, t, pool, 2, "alpha", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, "0.5.0", componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, 1, nil, nil, nil)
+	seedTestComponent(ctx, t, pool, 3, "deleted-comp", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "1.0.0", componentspb.ComponentState_COMPONENT_STATE_DELETED, 1, nil, nil, nil)
+	seedTestDependency(ctx, t, pool, 1, 2)
 
 	list, err := s.ListComponents(ctx)
 	if err != nil {
