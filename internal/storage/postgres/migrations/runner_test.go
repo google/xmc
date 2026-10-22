@@ -17,179 +17,25 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
-	"fmt"
-	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/google/go-cmp/cmp"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"xmanager_cloud/internal/storage/migrations"
+	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
 )
 
-const testPostgresImage = "postgres:16-alpine"
-
-var (
-	postgresOnce            sync.Once
-	sharedPostgresDSN       string
-	sharedPostgresErr       error
-	sharedPostgresContainer testcontainers.Container
-	dbCounter               atomic.Uint64
-)
-
-func TestMain(m *testing.M) {
-	code := m.Run()
-	if sharedPostgresContainer != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		_ = sharedPostgresContainer.Terminate(ctx)
-		cancel()
-	}
-	os.Exit(code)
-}
-
-func ensurePostgresInstance() (string, error) {
-	if dsn := strings.TrimSpace(os.Getenv("POSTGRES_TEST_DSN")); dsn != "" {
-		return dsn, nil
-	}
-	postgresOnce.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
-
-		req := testcontainers.ContainerRequest{
-			Image:        testPostgresImage,
-			ExposedPorts: []string{"5432/tcp"},
-			Env: map[string]string{
-				"POSTGRES_USER":     "postgres",
-				"POSTGRES_PASSWORD": "postgres",
-				"POSTGRES_DB":       "postgres",
-			},
-			Cmd: []string{
-				"-c", "fsync=off",
-				"-c", "synchronous_commit=off",
-				"-c", "full_page_writes=off",
-			},
-			WaitingFor: wait.ForListeningPort("5432/tcp").WithStartupTimeout(60 * time.Second),
-		}
-		c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-			ContainerRequest: req,
-			Started:          true,
-		})
-		if err != nil {
-			// GenericContainer can return a created container together with an
-			// error (e.g. when the wait strategy times out). Terminate it here
-			// because TestMain only cleans up sharedPostgresContainer, and CI
-			// runs without the Ryuk reaper.
-			if termErr := testcontainers.TerminateContainer(c); termErr != nil {
-				err = errors.Join(err, fmt.Errorf("terminate partially started container: %w", termErr))
-			}
-			sharedPostgresErr = fmt.Errorf("failed to start postgres testcontainer: %w", err)
-			return
-		}
-		sharedPostgresContainer = c
-		dsn, err := containerDSN(ctx, c)
-		if err != nil {
-			sharedPostgresErr = err
-			return
-		}
-		if err := waitForPostgresReady(ctx, dsn); err != nil {
-			sharedPostgresErr = err
-			return
-		}
-		sharedPostgresDSN = dsn
-	})
-	return sharedPostgresDSN, sharedPostgresErr
-}
-
-func containerDSN(ctx context.Context, c testcontainers.Container) (string, error) {
-	host, err := c.Host(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get container host: %w", err)
-	}
-	port, err := c.MappedPort(ctx, "5432/tcp")
-	if err != nil {
-		return "", fmt.Errorf("failed to get mapped postgres port: %w", err)
-	}
-	addr := net.JoinHostPort(host, port.Port())
-	return fmt.Sprintf("postgres://postgres:postgres@%s/postgres?sslmode=disable", addr), nil
-}
-
-func waitForPostgresReady(ctx context.Context, dsn string) error {
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		if err := db.PingContext(ctx); err == nil {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for postgres readiness: %w", ctx.Err())
-		case <-ticker.C:
-		}
-	}
-}
-
-func randomHexSuffix(t *testing.T) string {
-	t.Helper()
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		t.Fatalf("rand.Read: %v", err)
-	}
-	return hex.EncodeToString(b)
-}
-
+// newTestDatabase creates an empty database on the shared postgrestest server, dropped when the
+// test completes, and returns its DSN.
 func newTestDatabase(t *testing.T) string {
 	t.Helper()
-	baseDSN, err := ensurePostgresInstance()
-	if err != nil {
-		t.Fatalf("ensurePostgresInstance: %v", err)
-	}
-	adminDB, err := sql.Open("postgres", baseDSN)
-	if err != nil {
-		t.Fatalf("sql.Open(admin): %v", err)
-	}
-	defer adminDB.Close()
-
-	dbName := fmt.Sprintf("test_db_%d_%s", dbCounter.Add(1), randomHexSuffix(t))
-	if _, err := adminDB.ExecContext(t.Context(), fmt.Sprintf("CREATE DATABASE %s", dbName)); err != nil {
-		t.Fatalf("failed to create test database %s: %v", dbName, err)
-	}
-
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		cleanDB, err := sql.Open("postgres", baseDSN)
-		if err != nil {
-			return
-		}
-		defer cleanDB.Close()
-		_, _ = cleanDB.ExecContext(cleanupCtx, fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE)", dbName))
-	})
-
-	u, err := url.Parse(baseDSN)
-	if err != nil {
-		t.Fatalf("url.Parse(baseDSN): %v", err)
-	}
-	u.Path = "/" + dbName
-	return u.String()
+	_, dsn := postgrestest.NewEmptyDatabase(t.Context(), t)
+	return dsn
 }
 
 // applySchema runs the full ../schema/<migrationsDir>-schema.sql on the database at dsn without
