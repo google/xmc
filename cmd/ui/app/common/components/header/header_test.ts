@@ -14,7 +14,7 @@
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 
-import { EmptyComponent } from 'app/common/testing_utils/empty_component';
+import { EmptyComponent } from 'app/testing/empty_component';
 import { bootstrap, get, getEl, setupModule, trigger } from 'app/testing/test';
 
 import { Header } from './header';

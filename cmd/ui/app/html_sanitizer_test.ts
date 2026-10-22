@@ -1,10 +1,22 @@
 // Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 import { SafeHtml, unwrapHtml } from 'safevalues';
 
-import { HtmlSanitizerBuilder, trySanitizeUrl } from './safevalues_helper';
+import { HtmlSanitizerBuilder, setElementInnerHtml, trySanitizeUrl } from './html_sanitizer';
 
-describe('SafeValues Helper', () => {
+describe('html_sanitizer', () => {
   describe('HtmlSanitizerBuilder', () => {
     it('should sanitize unsafe HTML', () => {
       const sanitizer = new HtmlSanitizerBuilder().allowClassAttributes().build();
@@ -27,6 +39,18 @@ describe('SafeValues Helper', () => {
       const unwrapped = unwrapHtml(sanitized).toString();
 
       expect(unwrapped).toContain('class="test-class"');
+    });
+  });
+
+  describe('setElementInnerHtml', () => {
+    it('should set sanitized HTML on an element', () => {
+      const sanitizer = new HtmlSanitizerBuilder().allowClassAttributes().build();
+      const element = document.createElement('div');
+      const sanitized = sanitizer.sanitize('<span class="safe">Safe Content</span>');
+
+      setElementInnerHtml(element, sanitized);
+
+      expect(element.innerHTML).toBe('<span class="safe">Safe Content</span>');
     });
   });
 
