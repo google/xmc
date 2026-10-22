@@ -12,7 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { HtmlSanitizerBuilder as RealHtmlSanitizerBuilder, SafeHtml } from 'safevalues';
+import {
+  HtmlSanitizer,
+  HtmlSanitizerBuilder as RealHtmlSanitizerBuilder,
+  SafeHtml,
+} from 'safevalues';
 import { safeElement } from 'safevalues/dom';
 
 export class HtmlSanitizerBuilder {
@@ -23,13 +27,8 @@ export class HtmlSanitizerBuilder {
     return this;
   }
 
-  build(): { sanitize(html: string): SafeHtml } {
-    const sanitizer = this.builder.build();
-    return {
-      sanitize(html: string): SafeHtml {
-        return sanitizer.sanitize(html);
-      },
-    };
+  build(): HtmlSanitizer {
+    return this.builder.build();
   }
 }
 
