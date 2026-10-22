@@ -19,6 +19,7 @@ package factory
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"cloud.google.com/go/spanner"
 	"xmanager_cloud/internal/common/health"
@@ -48,6 +49,7 @@ type Store struct {
 	schemaVersion   health.SchemaVersionClient
 	expectedVersion int64
 	closeFn         func()
+	closeOnce       sync.Once
 }
 
 // CheckReady returns an error unless the database is reachable and migrated to the schema version
@@ -56,10 +58,11 @@ func (s *Store) CheckReady(ctx context.Context) error {
 	return health.CheckSchemaVersion(ctx, s.schemaVersion, s.expectedVersion)
 }
 
-// Close releases the database connections. The Store must not be used afterwards.
+// Close releases the database connections. Later calls do nothing, and the Store must not be used
+// afterwards.
 func (s *Store) Close() {
 	if s.closeFn != nil {
-		s.closeFn()
+		s.closeOnce.Do(s.closeFn)
 	}
 }
 

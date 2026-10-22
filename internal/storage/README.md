@@ -33,7 +33,7 @@ Services get their storage from [`factory.Open(ctx, cfg, db)`](factory/factory.g
 
 - serves `storage.Storage` from the backend that `cfg.Backend` selects;
 - reports readiness with `CheckReady(ctx)`, which compares the database's schema version with the version that the binary expects for that backend;
-- releases its connections on `Close()`;
+- releases its connections on `Close()`, which is safe to call more than once;
 - exposes `SpannerClient` on the Spanner backend only, for the components store, which has no PostgreSQL implementation yet.
 
 ## Schemas and Migrations

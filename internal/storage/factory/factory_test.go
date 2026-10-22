@@ -151,11 +151,12 @@ func TestStore_CheckReady(t *testing.T) {
 }
 
 func TestStore_Close(t *testing.T) {
-	closed := false
-	store := &Store{closeFn: func() { closed = true }}
+	calls := 0
+	store := &Store{closeFn: func() { calls++ }}
 	store.Close()
-	if !closed {
-		t.Error("Close() did not release the connections")
+	store.Close()
+	if calls != 1 {
+		t.Errorf("Close() twice released the connections %d times, want 1", calls)
 	}
 
 	// A Store that was not opened through Open, such as a test double, has nothing to release.
