@@ -68,13 +68,13 @@ func TestCheckSpanner(t *testing.T) {
 	})
 }
 
-type mockSpannerHealthClient struct {
+type mockSchemaVersionClient struct {
 	version int64
 	dirty   bool
 	err     error
 }
 
-func (m mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
+func (m mockSchemaVersionClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
 	return m.version, m.dirty, m.err
 }
 
@@ -217,7 +217,7 @@ func TestCheckSpannerServices(t *testing.T) {
 				t.Run(tc.name, func(t *testing.T) {
 					var client SpannerHealthClient
 					if !tc.isNil {
-						client = mockSpannerHealthClient{
+						client = mockSchemaVersionClient{
 							version: svc.expectedVersion + tc.versionOff,
 							dirty:   tc.dirty,
 							err:     tc.dbErr,

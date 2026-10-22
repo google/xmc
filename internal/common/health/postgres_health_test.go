@@ -49,21 +49,6 @@ func TestCheckPostgres(t *testing.T) {
 			t.Error("CheckPostgres(ctx, closedPool) succeeded, want error")
 		}
 	})
-
-	t.Run("realPostgresHealthClient Close closes underlying pool", func(t *testing.T) {
-		pool, _ := postgrestest.NewEmptyDatabase(ctx, t)
-		healthCl := NewPostgresHealthClient(pool)
-		closer, ok := healthCl.(interface{ Close() error })
-		if !ok {
-			t.Fatal("expected realPostgresHealthClient to implement Close()")
-		}
-		if err := closer.Close(); err != nil {
-			t.Fatalf("unexpected error on Close: %v", err)
-		}
-		if err := CheckPostgres(ctx, pool); err == nil {
-			t.Error("CheckPostgres(ctx, pool) after Close() succeeded, want error")
-		}
-	})
 }
 
 func TestPostgresHealthClientWithLiveDatabase(t *testing.T) {
@@ -214,7 +199,7 @@ func TestCheckPostgresServices(t *testing.T) {
 				t.Run(tc.name, func(t *testing.T) {
 					var client PostgresHealthClient
 					if !tc.isNil {
-						client = mockSpannerHealthClient{
+						client = mockSchemaVersionClient{
 							version: svc.expectedVersion + tc.versionOff,
 							dirty:   tc.dirty,
 							err:     tc.dbErr,
@@ -230,7 +215,7 @@ func TestCheckPostgresServices(t *testing.T) {
 	}
 
 	t.Run("fails when expected version is non-positive", func(t *testing.T) {
-		client := mockSpannerHealthClient{version: 1}
+		client := mockSchemaVersionClient{version: 1}
 		if err := checkPostgresWithVersion(ctx, client, 0); err == nil {
 			t.Error("checkPostgresWithVersion(ctx, client, 0) succeeded, want error")
 		}

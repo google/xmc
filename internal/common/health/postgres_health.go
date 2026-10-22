@@ -56,10 +56,3 @@ func (c *realPostgresHealthClient) QuerySchemaVersion(ctx context.Context) (vers
 	return versionVal, dirtyVal, nil
 }
 
-// Close closes the underlying PostgreSQL connection pool if non-nil.
-func (c *realPostgresHealthClient) Close() error {
-	if c.pool != nil {
-		c.pool.Close()
-	}
-	return nil
-}
