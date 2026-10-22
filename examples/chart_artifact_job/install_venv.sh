@@ -28,11 +28,11 @@ PIP_BIN="${VENV_DIR}/bin/pip"
 
 echo "--> [2/3] Installing dependencies from requirements.txt..."
 "${PIP_BIN}" install --upgrade pip
+"${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
 if [[ -n "${XMANAGER_VERSION:-}" ]]; then
   echo "--> Installing parameterized xmanager version ${XMANAGER_VERSION}..."
   "${PIP_BIN}" install "xmanager==${XMANAGER_VERSION}"
 fi
-"${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
 
 echo "--> [3/3] Installing xdash and xmc SDKs in editable mode..."
 "${PIP_BIN}" install -e "${REPO_ROOT}/sdks/python/xdash"

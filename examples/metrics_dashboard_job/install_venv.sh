@@ -28,11 +28,11 @@ PIP_BIN="${VENV_DIR}/bin/pip"
 
 echo "--> [2/3] Installing launch-script runtime dependencies..."
 "${PIP_BIN}" install --upgrade pip
+"${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
 if [[ -n "${XMANAGER_VERSION:-}" ]]; then
   echo "--> Installing parameterized xmanager version ${XMANAGER_VERSION}..."
   "${PIP_BIN}" install "xmanager==${XMANAGER_VERSION}"
 fi
-"${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
 
 # Editable installs, so a change to either SDK is picked up without reinstalling. xdash
 # builds and registers the charts; xmc is not needed to launch, but having it here lets
