@@ -62,7 +62,7 @@ Metrics emitted: `train/loss`, `train/accuracy`, `eval/loss`, `eval/accuracy`, `
 1. **A GKE cluster with XMC deployed** — Experiment State Server, Ingestion Gateway and Dashboard Service running.
 2. **The metrics pipeline enabled** — Ingestion Gateway plus its backing Redpanda/Pub-Sub and ClickHouse.
 3. **`gcloud` and Docker** — authenticated against the project's Artifact Registry.
-4. **Bazel and Python 3.11+** — to generate the dashboard proto bindings.
+4. **Python 3.11+** — installed on your workstation.
 5. **Client-Side Dependencies (`requirements.txt`)**: Install host Python dependencies required by `launch.py`:
    ```bash
    pip install -r requirements.txt

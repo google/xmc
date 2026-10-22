@@ -60,6 +60,21 @@ class TestInstallXmanager(unittest.TestCase):
             "xmanager==0.8.4",
         )
 
+    def test_resolve_xmanager_spec_comparison_operators(self) -> None:
+        """Test resolve_xmanager_spec prefixes leading comparison operators."""
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec("==0.8.2"),
+            "xmanager==0.8.2",
+        )
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec(">=0.8.2"),
+            "xmanager>=0.8.2",
+        )
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec("~=0.8.2"),
+            "xmanager~=0.8.2",
+        )
+
     def test_parse_args_defaults(self) -> None:
         """Test parse_args default options when environment is empty."""
         with mock.patch.dict("os.environ", {}, clear=True):
@@ -110,9 +125,17 @@ class TestInstallXmanager(unittest.TestCase):
         """Test setup_virtualenv runs venv.create when python binary is absent."""
         with tempfile.TemporaryDirectory() as tmp_str:
             venv_dir = Path(tmp_str)
+
+            def _create_venv(target_dir: Path, with_pip: bool = False) -> None:
+                del with_pip
+                python_bin = target_dir / "bin" / "python3"
+                python_bin.parent.mkdir(parents=True, exist_ok=True)
+                python_bin.write_text("", encoding="utf-8")
+
+            mock_create.side_effect = _create_venv
             result = install_xmanager.setup_virtualenv(venv_dir)
             mock_create.assert_called_once_with(venv_dir, with_pip=True)
-            self.assertEqual(result, venv_dir / "bin" / "python")
+            self.assertEqual(result, venv_dir / "bin" / "python3")
 
     @mock.patch("venv.create")
     def test_setup_virtualenv_reuses_existing_python3(
@@ -123,6 +146,21 @@ class TestInstallXmanager(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_str:
             venv_dir = Path(tmp_str)
             python_bin = venv_dir / "bin" / "python3"
+            python_bin.parent.mkdir(parents=True)
+            python_bin.write_text("", encoding="utf-8")
+            result = install_xmanager.setup_virtualenv(venv_dir)
+            mock_create.assert_not_called()
+            self.assertEqual(result, python_bin)
+
+    @mock.patch("venv.create")
+    def test_setup_virtualenv_falls_back_to_python_binary(
+        self,
+        mock_create: mock.Mock,
+    ) -> None:
+        """Test setup_virtualenv falls back to bin/python when bin/python3 is absent."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            venv_dir = Path(tmp_str)
+            python_bin = venv_dir / "bin" / "python"
             python_bin.parent.mkdir(parents=True)
             python_bin.write_text("", encoding="utf-8")
             result = install_xmanager.setup_virtualenv(venv_dir)

@@ -31,5 +31,5 @@ Create your virtual environment, install dependencies, and run the launch script
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python3 examples/pathways_job/launch.py
+python3 launch.py
 ```

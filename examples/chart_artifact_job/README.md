@@ -83,7 +83,7 @@ flowchart TD
    [ClickHouse Addon README](../../deploy/addons/metrics/clickhouse/README.md)).
 3. **Google Cloud CLI (`gcloud`) & Docker**: Authenticated to push container images to
    your project's Artifact Registry.
-4. **Bazel & Python 3.11+**: Installed on your workstation to build proto bindings.
+4. **Python 3.11+**: Installed on your workstation.
 5. **Client-Side Dependencies (`requirements.txt`)**: Host Python dependencies needed to execute `launch.py`:
    ```bash
    pip install -r requirements.txt

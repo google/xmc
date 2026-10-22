@@ -32,7 +32,7 @@ RUNTIME_DEPENDENCIES = (
     "grpcio>=1.62.0",
     "protobuf>=4.25.0",
     "python-dotenv>=1.0.0",
-    "requests",
+    "requests>=2.32.0",
 )
 
 VERIFIED_MODULES = (
@@ -82,6 +82,8 @@ def resolve_xmanager_spec(version: str) -> str:
         return DEFAULT_XMANAGER_SPEC
     if cleaned.startswith("xmanager"):
         return cleaned
+    if cleaned.startswith(("==", ">=", "<=", "~=", "!=", ">", "<")):
+        return f"xmanager{cleaned}"
     return f"xmanager=={cleaned}"
 
 
