@@ -20,6 +20,11 @@ build:ci --experimental_remote_cache_compression=true
 # Setting --jobs=14 maximizes parallel action execution across test shards while reserving
 # headroom (1-2 cores) for the Spanner emulator service container and system daemons.
 build:ci --jobs=14
+# Disable the testcontainers Ryuk reaper on CI. Ryuk startup inside the DinD sidecar
+# intermittently exceeds the container start deadline ("reaper: context deadline
+# exceeded"), and ephemeral runner pods discard leaked containers with the DinD
+# storage. Local runs keep Ryuk enabled so developer machines don't leak containers.
+test:ci --test_env=TESTCONTAINERS_RYUK_DISABLED=true
 
 # Deterministic test execution environment
 test --test_env=PYTHONHASHSEED=0

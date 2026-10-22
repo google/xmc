@@ -53,6 +53,7 @@ XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Acti
      build:ci --experimental_remote_cache_compression=true
      ```
    - Workflows override `--remote_upload_local_results=true` on trusted `refs/heads/main` pushes and `merge_group` runs while keeping `pull_request` runs read-only.
+   - `test:ci --test_env=TESTCONTAINERS_RYUK_DISABLED=true` disables the testcontainers Ryuk reaper on CI, because Ryuk startup inside the DinD sidecar intermittently times out. Tests that use testcontainers must terminate their containers explicitly (for example, in `TestMain`), because nothing reaps them until the ephemeral runner pod is deleted.
 
 ---
 
