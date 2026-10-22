@@ -37,7 +37,7 @@ import (
 
 const (
 	updateComponentStateSQL       = `UPDATE Components SET State = $2, AccessPayload = $3, UpdateTime = $4 WHERE ComponentId = $1`
-	updateComponentObservationSQL = `UPDATE Components SET ObservedGeneration = $2, AccessPayload = $3, State = CASE WHEN $4 = 0 THEN State ELSE $4 END, UpdateTime = $5 WHERE ComponentId = $1`
+	updateComponentObservationSQL = `UPDATE Components SET ObservedGeneration = $2, AccessPayload = $3, State = $4, UpdateTime = $5 WHERE ComponentId = $1`
 	updateComponentDeletionSQL    = `UPDATE Components SET ConfigProto = $2, AccessPayload = $3, State = $4, UpdateTime = $5 WHERE ComponentId = $1`
 
 	selectSnapshotByComponentIDAndGenSQL = `SELECT s.ComponentId, s.LockedGeneration, s.ConfigProto, s.AccessPayload, c.CreateTime, c.UpdateTime FROM ExperimentComponentSnapshots s JOIN Components c ON s.ComponentId = c.ComponentId WHERE s.ComponentId = $1 AND s.LockedGeneration = $2 LIMIT 1`
@@ -128,7 +128,7 @@ func (s *PostgresStore) applyObservationTx(ctx context.Context, tx pgx.Tx, canon
 	}
 	unchanged := !store.ApplyObservation(rec, observedGen, access, state, statusMsg)
 	if !unchanged {
-		if err := writeObservationTx(ctx, tx, rec, observedGen, state, commitTime); err != nil {
+		if err := writeObservationTx(ctx, tx, rec, observedGen, commitTime); err != nil {
 			return observationResult{}, err
 		}
 	}
@@ -139,7 +139,7 @@ func (s *PostgresStore) applyObservationTx(ctx context.Context, tx pgx.Tx, canon
 	return observationResult{rec: store.CloneRecord(rec), prevOwner: prevOwner, unchanged: unchanged}, nil
 }
 
-func writeObservationTx(ctx context.Context, tx pgx.Tx, rec *store.ComponentRecord, observedGen int64, state componentspb.ComponentState, commitTime time.Time) error {
+func writeObservationTx(ctx context.Context, tx pgx.Tx, rec *store.ComponentRecord, observedGen int64, commitTime time.Time) error {
 	var accessBytes []byte
 	if rec.Status != nil {
 		var err error
@@ -147,7 +147,7 @@ func writeObservationTx(ctx context.Context, tx pgx.Tx, rec *store.ComponentReco
 			return fmt.Errorf("failed to marshal access status proto: %w", err)
 		}
 	}
-	_, err := tx.Exec(ctx, updateComponentObservationSQL, rec.ComponentID, observedGen, accessBytes, int64(state), commitTime)
+	_, err := tx.Exec(ctx, updateComponentObservationSQL, rec.ComponentID, observedGen, accessBytes, int64(rec.State), commitTime)
 	return err
 }
 
