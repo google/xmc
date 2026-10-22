@@ -122,31 +122,6 @@ func (s *PostgresStore) ListComponents(ctx context.Context) ([]*store.ComponentR
 	return results, nil
 }
 
-// PrepareDeactivation checks deactivation safety and cascading requirements.
-func (s *PostgresStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src ...store.RequestSource) (*store.PrepareDeactivationResult, error) {
-	return nil, status.Error(codes.Unimplemented, "postgres component store: PrepareDeactivation is not implemented")
-}
-
-// CompleteDeactivation marks a component in DISABLING state as DISABLED.
-func (s *PostgresStore) CompleteDeactivation(ctx context.Context, name string, force bool, src ...store.RequestSource) error {
-	return status.Error(codes.Unimplemented, "postgres component store: CompleteDeactivation is not implemented")
-}
-
-// UpdateObservedGeneration synchronizes actual component access and state, returning the updated record.
-func (s *PostgresStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src ...store.RequestSource) (*store.ComponentRecord, error) {
-	return nil, status.Error(codes.Unimplemented, "postgres component store: UpdateObservedGeneration is not implemented")
-}
-
-// ExecuteDeletion deletes a component using the specified deletion policy.
-func (s *PostgresStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...store.RequestSource) error {
-	return status.Error(codes.Unimplemented, "postgres component store: ExecuteDeletion is not implemented")
-}
-
-// ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
-func (s *PostgresStore) ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	return nil, nil, status.Error(codes.Unimplemented, "postgres component store: ResolveComponentSnapshot is not implemented")
-}
-
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
 func (s *PostgresStore) ValidateComponentRequirement(ctx context.Context, name string, reqType componentspb.ComponentType, minVersion string) (*store.RequirementValidationResult, error) {
 	canonicalName, err := store.ValidateResourceName(name)

@@ -72,39 +72,6 @@ func TestPostgresStore_Unimplemented(t *testing.T) {
 		call func() error
 	}{
 		{
-			name: "PrepareDeactivation",
-			call: func() error {
-				_, err := s.PrepareDeactivation(ctx, "comp-a", false)
-				return err
-			},
-		},
-		{
-			name: "CompleteDeactivation",
-			call: func() error {
-				return s.CompleteDeactivation(ctx, "comp-a", false)
-			},
-		},
-		{
-			name: "UpdateObservedGeneration",
-			call: func() error {
-				_, err := s.UpdateObservedGeneration(ctx, "comp-a", 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "ok")
-				return err
-			},
-		},
-		{
-			name: "ExecuteDeletion",
-			call: func() error {
-				return s.ExecuteDeletion(ctx, "comp-a", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false)
-			},
-		},
-		{
-			name: "ResolveComponentSnapshot",
-			call: func() error {
-				_, _, err := s.ResolveComponentSnapshot(ctx, "comp-a", 1)
-				return err
-			},
-		},
-		{
 			name: "GetPlatformHealth",
 			call: func() error {
 				_, err := s.GetPlatformHealth(ctx, "", 10, "")
