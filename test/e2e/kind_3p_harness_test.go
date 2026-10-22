@@ -327,8 +327,8 @@ func applyThirdPartyComponentCR(ctx context.Context, t *testing.T, h *kindCluste
 		existing.SetFinalizers(nil)
 		_, _ = compRes.Update(ctx, existing, metav1.UpdateOptions{})
 		_ = compRes.Delete(ctx, name, metav1.DeleteOptions{})
-		if !waitUntil(ctx, 15*time.Second, 100*time.Millisecond, func() bool {
-			_, getErr := compRes.Get(ctx, name, metav1.GetOptions{})
+		if !waitUntil(ctx, 15*time.Second, 100*time.Millisecond, func(pollCtx context.Context) bool {
+			_, getErr := compRes.Get(pollCtx, name, metav1.GetOptions{})
 			return apierrors.IsNotFound(getErr)
 		}) {
 			t.Fatalf("timed out waiting for previous Component %s/%s deletion", ns, name)
@@ -415,16 +415,18 @@ func resolveObjectGVR(gvk schema.GroupVersionKind) schema.GroupVersionResource {
 	}
 }
 
-func waitUntil(ctx context.Context, timeout, interval time.Duration, cond func() bool) bool {
-	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(context.Context) (bool, error) {
-		return cond(), nil
+// waitUntil polls cond every interval until it returns true or timeout elapses. cond receives the
+// poll context, which is bounded by timeout, so API calls in cond must use it rather than ctx.
+func waitUntil(ctx context.Context, timeout, interval time.Duration, cond func(pollCtx context.Context) bool) bool {
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(pollCtx context.Context) (bool, error) {
+		return cond(pollCtx), nil
 	}) == nil
 }
 
 func waitForCRDEstablished(ctx context.Context, t *testing.T, h *kindClusterHarness, crdName string) {
 	t.Helper()
-	ok := waitUntil(ctx, 30*time.Second, 250*time.Millisecond, func() bool {
-		u, err := h.dynClient.Resource(crdGVR).Get(ctx, crdName, metav1.GetOptions{})
+	ok := waitUntil(ctx, 30*time.Second, 250*time.Millisecond, func(pollCtx context.Context) bool {
+		u, err := h.dynClient.Resource(crdGVR).Get(pollCtx, crdName, metav1.GetOptions{})
 		return err == nil && hasConditionTrue(u, "Established")
 	})
 	if !ok {
@@ -458,8 +460,8 @@ func waitForComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, 
 	t.Helper()
 	var last *unstructured.Unstructured
 	var lastErr error
-	ok := waitUntil(ctx, componentTransitionTimeout, 500*time.Millisecond, func() bool {
-		u, err := h.dynClient.Resource(componentGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
+	ok := waitUntil(ctx, componentTransitionTimeout, 500*time.Millisecond, func(pollCtx context.Context) bool {
+		u, err := h.dynClient.Resource(componentGVR).Namespace(ns).Get(pollCtx, name, metav1.GetOptions{})
 		switch {
 		case apierrors.IsNotFound(err):
 			last = nil
@@ -643,8 +645,8 @@ func waitForComponentReady(ctx context.Context, t *testing.T, h *kindClusterHarn
 	var envVars map[string]string
 	var last *unstructured.Unstructured
 	var lastErr error
-	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func() bool {
-		last, lastErr = h.dynClient.Resource(componentGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func(pollCtx context.Context) bool {
+		last, lastErr = h.dynClient.Resource(componentGVR).Namespace(namespace).Get(pollCtx, name, metav1.GetOptions{})
 		if lastErr != nil || !isComponentReady(last) {
 			return false
 		}
@@ -659,8 +661,8 @@ func waitForComponentReady(ctx context.Context, t *testing.T, h *kindClusterHarn
 
 func waitForPodReady(ctx context.Context, t *testing.T, h *kindClusterHarness, namespace, podName string) {
 	t.Helper()
-	ok := waitUntil(ctx, 90*time.Second, time.Second, func() bool {
-		pod, err := h.clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	ok := waitUntil(ctx, 90*time.Second, time.Second, func(pollCtx context.Context) bool {
+		pod, err := h.clientset.CoreV1().Pods(namespace).Get(pollCtx, podName, metav1.GetOptions{})
 		if err != nil {
 			return false
 		}
@@ -722,8 +724,8 @@ func startWorkloadPod(ctx context.Context, t *testing.T, h *kindClusterHarness, 
 func waitForPodSucceededLogs(ctx context.Context, t *testing.T, h *kindClusterHarness, namespace, podName string) string {
 	t.Helper()
 	var failed bool
-	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func() bool {
-		pod, err := h.clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func(pollCtx context.Context) bool {
+		pod, err := h.clientset.CoreV1().Pods(namespace).Get(pollCtx, podName, metav1.GetOptions{})
 		if err != nil {
 			return false
 		}

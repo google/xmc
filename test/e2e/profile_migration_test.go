@@ -369,7 +369,7 @@ func waitForWorkloadIterations(ctx context.Context, t *testing.T, h *kindCluster
 	t.Helper()
 	var tally logTally
 	var logs string
-	ok := waitUntil(ctx, 2*time.Minute, time.Second, func() bool {
+	ok := waitUntil(ctx, 2*time.Minute, time.Second, func(context.Context) bool {
 		logs = fetchPodLogs(h, ns, pod)
 		tally = tallyWorkloadLogs(logs)
 		return tally.ok >= minOK
@@ -435,9 +435,9 @@ func firstContainerImage(spec corev1.PodSpec) string {
 func waitForGatewayRollout(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, wantImage string) {
 	t.Helper()
 	var dep *appsv1.Deployment
-	ok := waitUntil(ctx, 3*time.Minute, time.Second, func() bool {
+	ok := waitUntil(ctx, 3*time.Minute, time.Second, func(pollCtx context.Context) bool {
 		var err error
-		dep, err = h.clientset.AppsV1().Deployments(ns).Get(ctx, gatewayComponent, metav1.GetOptions{})
+		dep, err = h.clientset.AppsV1().Deployments(ns).Get(pollCtx, gatewayComponent, metav1.GetOptions{})
 		return err == nil && firstContainerImage(dep.Spec.Template.Spec) == wantImage && isDeploymentRolledOut(dep)
 	})
 	if !ok {
@@ -457,8 +457,8 @@ func waitForOldGatewayPodsGone(ctx context.Context, t *testing.T, h *kindCluster
 	t.Helper()
 	var current map[string]bool
 	var stale []string
-	ok := waitUntil(ctx, 2*time.Minute, time.Second, func() bool {
-		list, err := h.clientset.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: gatewaySelector})
+	ok := waitUntil(ctx, 2*time.Minute, time.Second, func(pollCtx context.Context) bool {
+		list, err := h.clientset.CoreV1().Pods(ns).List(pollCtx, metav1.ListOptions{LabelSelector: gatewaySelector})
 		if err != nil {
 			return false
 		}
