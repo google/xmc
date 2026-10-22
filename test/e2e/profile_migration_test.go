@@ -221,13 +221,14 @@ func startGatewayProbe(ctx context.Context, t *testing.T, h *kindClusterHarness,
 	return tally
 }
 
-// restrictedContainerSecurity runs a container as the nobody user without privilege escalation,
-// capabilities or an unconfined seccomp profile.
+// restrictedContainerSecurity runs a container as the nobody user on a read-only root filesystem
+// without privilege escalation, capabilities or an unconfined seccomp profile.
 func restrictedContainerSecurity() *corev1.SecurityContext {
 	return &corev1.SecurityContext{
 		RunAsNonRoot: ptr.To(true), RunAsUser: ptr.To[int64](65534), AllowPrivilegeEscalation: ptr.To(false),
-		Capabilities:   &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+		Capabilities:           &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+		SeccompProfile:         &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+		ReadOnlyRootFilesystem: ptr.To(true),
 	}
 }
 
