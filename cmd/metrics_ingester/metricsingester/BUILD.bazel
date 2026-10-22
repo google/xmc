@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//visibility:private"])
 
-compat_go_library(
+go_library(
     name = "metricsingester",
     srcs = [
         "config.go",
@@ -37,7 +37,7 @@ compat_go_library(
     ],
 )
 
-compat_go_test(
+go_test(
     name = "metricsingester_test",
     srcs = [
         "ingester_test.go",
@@ -51,8 +51,8 @@ compat_go_test(
         "@com_google_cloud_go_pubsub//:pubsub",
         "@com_google_cloud_go_pubsub//pstest",
         "@org_golang_google_api//option",
-        "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//credentials/insecure:go_default_library",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
     ],
