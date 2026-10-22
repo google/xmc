@@ -64,6 +64,8 @@ func postgresConfig(t *testing.T, essDSN, xidDSN string) dbconfig.Postgres {
 		t.Fatalf("invalid port in %q: %v", ess.Redacted(), err)
 	}
 	password, _ := ess.User.Password()
+	t.Setenv("POSTGRES_PASSWORD", password)
+	t.Setenv("POSTGRES_PASSWORD_FILE", "")
 	sslMode := ess.Query().Get("sslmode")
 	if sslMode == "" {
 		sslMode = "prefer"
@@ -72,7 +74,6 @@ func postgresConfig(t *testing.T, essDSN, xidDSN string) dbconfig.Postgres {
 		Host:        ess.Hostname(),
 		Port:        port,
 		User:        ess.User.Username(),
-		Password:    password,
 		EssDatabase: strings.TrimPrefix(ess.Path, "/"),
 		XidDatabase: strings.TrimPrefix(xid.Path, "/"),
 		SSLMode:     sslMode,

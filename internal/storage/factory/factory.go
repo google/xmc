@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package factory opens the storage backend that the shared database settings select, so that
-// services get a storage.Storage without building Spanner clients or PostgreSQL pools themselves.
+// Package factory opens the storage backend that the db-config settings select.
 package factory
 
 import (
@@ -37,13 +36,11 @@ const (
 	XID Database = "xid"
 )
 
-// Store is an open XMC database. Besides serving storage.Storage, it reports readiness and
-// releases its connections.
+// Store is an open XMC database: its storage, a readiness check and Close.
 type Store struct {
 	storage.Storage
 
-	// SpannerClient is the client behind Storage when the backend is Spanner, and nil otherwise.
-	// Only the components store uses it, because that store has no PostgreSQL implementation yet.
+	// SpannerClient is set only on the Spanner backend, for the components store.
 	SpannerClient *spanner.Client
 
 	schemaVersion   health.SchemaVersionClient

@@ -59,8 +59,7 @@ func spannerDatabase(cfg dbconfig.Spanner, db Database) (string, int64) {
 	return cfg.EssDatabase, spannerversion.EssExpectedSchemaVersion()
 }
 
-// spannerClientConfig returns the session pool settings that the XMC services share: track session
-// handles and warn about transactions left inactive.
+// spannerClientConfig tracks session handles and warns about inactive transactions.
 func spannerClientConfig() spanner.ClientConfig {
 	return spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{
 		TrackSessionHandles: true,
