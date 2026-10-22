@@ -207,7 +207,6 @@ func querySingleComponentWithDeps(ctx context.Context, q pgdb.DBTX, querySQL str
 		return nil, fmt.Errorf("failed to fetch dependencies for component %q: %w", rec.Name, err)
 	}
 	rec.Dependencies = deps
-	rec.Etag = store.GenerateEtag(rec)
 	return rec, nil
 }
 
@@ -218,9 +217,6 @@ func (s *PostgresStore) loadActiveCatalog(ctx context.Context, q pgdb.DBTX) (map
 	}
 	if err := loadCatalogDependencies(ctx, q, componentsByID); err != nil {
 		return nil, err
-	}
-	for _, rec := range componentsByName {
-		rec.Etag = store.GenerateEtag(rec)
 	}
 	return componentsByName, nil
 }
