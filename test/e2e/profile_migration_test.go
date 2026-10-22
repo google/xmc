@@ -89,7 +89,8 @@ func TestProfileMigrationE2E(t *testing.T) {
 	deployClickHouseInstance(ctx, t, h, ns)
 	baseline := deployBaselineProfile(ctx, t, h, ns, baselineImage)
 	preUpgrade := startGatewayProbe(ctx, t, h, ns, baselineImage)
-	thirdParty := captureThirdPartyBaseline(ctx, t, h, ns, baseline)
+	lockedGens := lockComponentSnapshots(ctx, t, h, baseline)
+	preUpgradeStream := startClickHouseStream(ctx, t, h, ns, requireComponent(t, baseline, clickhouseComponent))
 	applyComponents(ctx, t, h, renderCandidateProfile(ctx, t, ns, overlay))
 	waitForGatewayRollout(ctx, t, h, ns, candidateImage)
 	newPods := waitForOldGatewayPodsGone(ctx, t, h, ns, candidateImage)
@@ -102,26 +103,12 @@ func TestProfileMigrationE2E(t *testing.T) {
 	})
 	t.Run("StatusSyncBack", func(t *testing.T) {
 		runPerComponent(t, upgraded, func(t *testing.T, name string, u *unstructured.Unstructured) {
-			assertUpgradedStatus(ctx, t, h, baseline[name], u, overlay)
+			assertUpgradedStatus(ctx, t, h, requireComponent(t, baseline, name), u, overlay)
 			assertAccessEnvVarsUnchanged(t, requireComponent(t, baseline, name), u)
 		})
 	})
-	runThirdPartySubtests(ctx, t, h, ns, baseline, upgraded, thirdParty)
-}
-
-// thirdPartyBaseline is the 3P state captured before the upgrade: the CMS snapshot generations locked
-// per Component and the ClickHouse stream tally.
-type thirdPartyBaseline struct {
-	lockedGens map[string]int64
-	stream     logTally
-}
-
-// captureThirdPartyBaseline locks the CMS snapshot of each baseline Component and starts the
-// ClickHouse stream.
-func captureThirdPartyBaseline(ctx context.Context, t *testing.T, h *kindClusterHarness, ns string, baseline map[string]*unstructured.Unstructured) thirdPartyBaseline {
-	t.Helper()
-	lockedGens := lockComponentSnapshots(ctx, t, h, baseline)
-	return thirdPartyBaseline{lockedGens: lockedGens, stream: startClickHouseStream(ctx, t, h, ns, requireComponent(t, baseline, clickhouseComponent))}
+	runClickHouseStreamSubtest(ctx, t, h, ns, preUpgradeStream)
+	runSnapshotDriftSubtest(ctx, t, h, baseline, upgraded, lockedGens)
 }
 
 // requireComponent returns the Component name from comps, failing the test if it is absent. The
@@ -136,14 +123,20 @@ func requireComponent(t *testing.T, comps map[string]*unstructured.Unstructured,
 	return u
 }
 
-// runThirdPartySubtests verifies that the ClickHouse stream ran uninterrupted through the migration
-// and that each upgraded Component drifted from its locked snapshot.
-func runThirdPartySubtests(ctx context.Context, t *testing.T, h *kindClusterHarness, ns string, baseline, upgraded map[string]*unstructured.Unstructured, thirdParty thirdPartyBaseline) {
+// runClickHouseStreamSubtest verifies that the ClickHouse stream started before the upgrade, with
+// tally preUpgrade, ran uninterrupted through the migration.
+func runClickHouseStreamSubtest(ctx context.Context, t *testing.T, h *kindClusterHarness, ns string, preUpgrade logTally) {
 	t.Helper()
-	t.Run("UninterruptedClickHouseStream", func(t *testing.T) { assertClickHouseStreamUninterrupted(ctx, t, h, ns, thirdParty.stream) })
+	t.Run("UninterruptedClickHouseStream", func(t *testing.T) { assertClickHouseStreamUninterrupted(ctx, t, h, ns, preUpgrade) })
+}
+
+// runSnapshotDriftSubtest verifies, for every upgraded Component, that it drifted from the CMS
+// snapshot generation locked in lockedGens before the upgrade.
+func runSnapshotDriftSubtest(ctx context.Context, t *testing.T, h *kindClusterHarness, baseline, upgraded map[string]*unstructured.Unstructured, lockedGens map[string]int64) {
+	t.Helper()
 	t.Run("SnapshotDriftPredicate", func(t *testing.T) {
 		runPerComponent(t, upgraded, func(t *testing.T, name string, u *unstructured.Unstructured) {
-			assertSnapshotDrift(ctx, t, h, u, thirdParty.lockedGens[name], requireComponent(t, baseline, name))
+			assertSnapshotDrift(ctx, t, h, u, lockedGens[name], requireComponent(t, baseline, name))
 		})
 	})
 }
@@ -347,18 +340,21 @@ done`
 // clickhouseStreamScript inserts one row per iteration and checks that count() equals the expected
 // row count, so a failed, timed-out or lost write fails the iteration. Client stderr is kept out of
 // the compared value, and after a failure the expected count resyncs to count() so that one
-// disruption fails one iteration rather than every later one.
-const clickhouseStreamScript = `CH="clickhouse-client --host $HOST --password $CLICKHOUSE_PASSWORD --connect_timeout 5 --receive_timeout 10 --send_timeout 10"
-$CH --query "CREATE TABLE IF NOT EXISTS profile_migration_stream (seq UInt64) ENGINE = MergeTree ORDER BY seq" || { echo "WORKLOAD_FAIL create"; exit 1; }
+// disruption fails one iteration rather than every later one. The ch function passes HOST and
+// CLICKHOUSE_PASSWORD as quoted arguments, so their values are never word-split or globbed.
+const clickhouseStreamScript = `ch() {
+  clickhouse-client --host "$HOST" --password "$CLICKHOUSE_PASSWORD" --connect_timeout 5 --receive_timeout 10 --send_timeout 10 "$@"
+}
+ch --query "CREATE TABLE IF NOT EXISTS profile_migration_stream (seq UInt64) ENGINE = MergeTree ORDER BY seq" || { echo "WORKLOAD_FAIL create"; exit 1; }
 expected=0
 while true; do
   next=$((expected+1))
-  if got=$($CH --multiquery --query "INSERT INTO profile_migration_stream VALUES ($next); SELECT count() FROM profile_migration_stream" 2>/tmp/ch.err) && [ "$got" = "$next" ]; then
+  if got=$(ch --multiquery --query "INSERT INTO profile_migration_stream VALUES ($next); SELECT count() FROM profile_migration_stream" 2>/tmp/ch.err) && [ "$got" = "$next" ]; then
     echo "WORKLOAD_OK seq=$next"
     expected=$next
   else
     echo "WORKLOAD_FAIL seq=$next got=$got err=$(head -c 200 /tmp/ch.err | tr '\n' ' ')"
-    expected=$($CH --query "SELECT count() FROM profile_migration_stream" 2>/dev/null || echo "$expected")
+    expected=$(ch --query "SELECT count() FROM profile_migration_stream" 2>/dev/null || echo "$expected")
   fi
   sleep 0.5
 done`
