@@ -257,6 +257,9 @@ type migrationProbes map[string]logTally
 func startMigrationWorkloads(ctx context.Context, t *testing.T, h *kindClusterHarness, ns string, clickhouse *unstructured.Unstructured, probeImage string) migrationProbes {
 	t.Helper()
 	envVars, _, _ := unstructured.NestedStringMap(clickhouse.Object, "status", "access", "envVars")
+	if envVars["SECRET_NAME"] == "" {
+		t.Fatalf("clickhouse status.access.envVars = %v, want a non-empty SECRET_NAME", envVars)
+	}
 	startWorkloadPod(ctx, t, h, workloadPodSpec{
 		Namespace: ns, Name: gatewayProbePod, Image: probeImage, Command: []string{"sh", "-c", gatewayProbeScript},
 		AccessEnvVars:   map[string]string{"GATEWAY_URL": fmt.Sprintf("http://%s.%s.svc.cluster.local/hostname", gatewayComponent, ns)},
@@ -479,6 +482,9 @@ func assertUpgradedStatus(ctx context.Context, t *testing.T, h *kindClusterHarne
 	if err != nil {
 		t.Fatalf("CMS GetComponent(%s) failed: %v", u.GetName(), err)
 	}
+	if rec == nil {
+		t.Fatalf("CMS GetComponent(%s) returned a nil record", u.GetName())
+	}
 	if rec.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED || rec.Generation != u.GetGeneration() || componentGeneration(u) != rec.Generation {
 		t.Errorf("%s CMS state = %v, generation = %d; CR generation = %d, status.componentGeneration = %d; want ENABLED with all generations equal", u.GetName(), rec.State, rec.Generation, u.GetGeneration(), componentGeneration(u))
 	}
@@ -517,6 +523,9 @@ func assertSnapshotDrift(ctx context.Context, t *testing.T, h *kindClusterHarnes
 	snap, _, err := h.cmsServer.Store().ResolveComponentSnapshot(ctx, u.GetName(), lockedGen)
 	if err != nil {
 		t.Fatalf("CMS ResolveComponentSnapshot(%s, %d) failed: %v", u.GetName(), lockedGen, err)
+	}
+	if snap == nil {
+		t.Fatalf("CMS ResolveComponentSnapshot(%s, %d) returned a nil snapshot", u.GetName(), lockedGen)
 	}
 	baseVersion, _, _ := unstructured.NestedString(base.Object, "spec", "version")
 	if snap.Generation != lockedGen || snap.Spec.GetVersion() != baseVersion {
