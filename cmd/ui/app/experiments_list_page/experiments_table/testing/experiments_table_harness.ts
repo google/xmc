@@ -24,6 +24,24 @@ export class ExperimentsTableHarness extends ComponentHarness {
   private readonly _table = this.locatorForOptional(MatTableHarness);
   private readonly _noExperimentsMessage = this.locatorForOptional('.no-experiments-message');
   private readonly _tableContainer = this.locatorForOptional('.table-container');
+  private readonly _errorMessageText = this.locatorFor('xmc-status-message .error-message .text');
+
+  async getTableWidth(): Promise<number> {
+    const table = await this.locatorFor(MatTableHarness)();
+    return (await (await table.host()).getDimensions()).width;
+  }
+
+  async getErrorMessageText(): Promise<string> {
+    return (await this._errorMessageText()).text();
+  }
+
+  async getErrorMessageHorizontalOverflow(): Promise<number> {
+    const text = await this._errorMessageText();
+    return (
+      (await text.getProperty<number>('scrollWidth')) -
+      (await text.getProperty<number>('clientWidth'))
+    );
+  }
 
   async hasLoadingBar(): Promise<boolean> {
     return !!(await this._loadingBar());
