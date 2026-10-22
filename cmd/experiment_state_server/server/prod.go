@@ -153,7 +153,9 @@ func initDashboardClient(ctx context.Context, cfg *config.Config) (*toollibs.Das
 // admission is normally authz.DeploymentAdmission of the binary's HTTP oauth2.Authenticator, so
 // gRPC and HTTP admit exactly the same principals.
 func NewGRPCAuthorizer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, admission authz.AdmissionChecker) (authz.AuthorizerInterface, error) {
-	idService, err := cloudidentity.NewService(ctx)
+	// Match the XID service's Cloud Identity client so that group-based ACL grants resolve the same
+	// way when CreateExperiment authorizes the creator locally before provisioning an XID.
+	idService, err := cloudidentity.NewService(ctx, option.WithQuotaProject(cfg.QuotaProjectID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
 	}

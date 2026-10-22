@@ -67,6 +67,20 @@ python3 -c "import xmanager.xm_cloud; import xmanager_cloud.experiment_state_ser
 
 ---
 
+## Authentication
+
+Interactive users should authenticate as themselves with `xmanager login` ([google/xmc#1309](https://github.com/google/xmc/issues/1309), requires XMC `>= 0.16.0`). This replaces the shared `XMC_CLIENT_SA` service account:
+
+```bash
+xmanager login   # Reads XMANAGER_ENDPOINT, XMC_API_URL, XMANAGER_UI_URL, or XMC_DOMAIN from the environment.
+```
+
+`xmanager login` caches your token in `$XMC_CREDENTIALS_FILE` or `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config/xmc/credentials.json`), and the XManager CLI loads it automatically as a Bearer token and reads your email from it. Over SSH or on a headless machine, `xmanager login` falls back to a copy-and-paste flow on its own (or pass `--no-browser`). Tokens last 12 hours by default. Run `xmanager login --status` to check yours and `xmanager logout` to remove the cached token.
+
+For CI service accounts (`XMC_CLIENT_SA`) and for sharing experiments through ACLs, see [Authentication and Experiment Access](../../docs/authentication.md).
+
+---
+
 ## Launching Experiments
 
 The directory includes a toy experiment launcher `launch.py` to test and interact with XManager on Cloud (XMC).
@@ -81,7 +95,7 @@ cp ../../.env.example ../../.env
 Open the newly created `../../.env` file and customize it with your specific details (such as your `PROJECT_ID`, `IAP_CLIENT_ID`, and domain endpoints).
 
 ### 2. Run the Launcher
-With the Python virtual environment active and the `.env` file configured, execute the `launch.py` script:
+With the Python virtual environment active, the `.env` file configured, and signed in via `xmanager login` (see [Authentication](#authentication)), execute the `launch.py` script:
 
 ```bash
 python3 launch.py

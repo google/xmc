@@ -258,11 +258,38 @@ func TestValidateCreateExperimentRequest(t *testing.T) {
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
+			// Unset ACLs are defaulted to the creator by FillExperimentDefaultACLs.
 			name: "nil_acls",
 			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
 				r.Experiment.Acls = nil
 			}),
+			wantErr: nil,
+		},
+		{
+			name: "acls_role_without_principal",
+			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
+				r.Experiment.Acls = &xidmessagespb.XidAcls{Owners: []*xidmessagespb.XidAcls_Role{{}}}
+			}),
 			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "acls_writers_without_owners",
+			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
+				r.Experiment.Acls = &xidmessagespb.XidAcls{
+					Writers: []*xidmessagespb.XidAcls_Role{{Principal: &xidmessagespb.XidAcls_Role_User{User: "user@example.com"}}},
+				}
+			}),
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "acls_with_owner",
+			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
+				r.Experiment.Acls = &xidmessagespb.XidAcls{
+					Owners:  []*xidmessagespb.XidAcls_Role{{Principal: &xidmessagespb.XidAcls_Role_User{User: "user@example.com"}}},
+					Readers: []*xidmessagespb.XidAcls_Role{{Principal: &xidmessagespb.XidAcls_Role_Group{Group: "team@example.com"}}},
+				}
+			}),
+			wantErr: nil,
 		},
 		{
 			name:    "valid_request",
@@ -343,6 +370,44 @@ func TestFillExperimentNullValues(t *testing.T) {
 	}
 	if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
 		t.Errorf("FillExperimentNullValues(%v) returned unexpected diff (-got +want):\n%s", exp, diff)
+	}
+}
+
+func TestFillExperimentDefaultACLs(t *testing.T) {
+	const creator = "creator@example.com"
+	creatorOwner := &xidmessagespb.XidAcls{
+		Owners: []*xidmessagespb.XidAcls_Role{{Principal: &xidmessagespb.XidAcls_Role_User{User: creator}}},
+	}
+	groupReaders := &xidmessagespb.XidAcls{
+		Readers: []*xidmessagespb.XidAcls_Role{{Principal: &xidmessagespb.XidAcls_Role_Group{Group: "team@example.com"}}},
+	}
+	otherWriter := &xidmessagespb.XidAcls{
+		Writers: []*xidmessagespb.XidAcls_Role{{Principal: &xidmessagespb.XidAcls_Role_User{User: "other@example.com"}}},
+	}
+	baseExp := &essmsgpb.Experiment{Title: "title"}
+
+	tests := []struct {
+		name     string
+		acls     *xidmessagespb.XidAcls
+		wantACLs *xidmessagespb.XidAcls
+	}{
+		{name: "nil_acls_default_to_creator_owner", acls: nil, wantACLs: creatorOwner},
+		{name: "empty_acls_default_to_creator_owner", acls: &xidmessagespb.XidAcls{}, wantACLs: creatorOwner},
+		{name: "readers_only_unchanged", acls: groupReaders, wantACLs: groupReaders},
+		{name: "writers_without_creator_unchanged", acls: otherWriter, wantACLs: otherWriter},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			exp := prototest.Modify(baseExp, func(e *essmsgpb.Experiment) { e.Acls = tc.acls })
+			want := prototest.Modify(baseExp, func(e *essmsgpb.Experiment) { e.Acls = tc.wantACLs })
+
+			got := FillExperimentDefaultACLs(exp, creator)
+
+			if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("FillExperimentDefaultACLs() returned unexpected diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

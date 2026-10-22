@@ -23,6 +23,8 @@ In a Pathways RL post-training or distributed execution topology on JAX-on-Pathw
 
 2. **Environment Variables**: Make sure your environment is configured with `PROJECT_ID`, `QUEUE_NAME`, and `XMC_DOMAIN` inside your `.env` file.
 
+3. **Authentication**: Run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+
 ## Running the Example
 
 Create your virtual environment, install dependencies, compile local XMC protos, and run the launch script:

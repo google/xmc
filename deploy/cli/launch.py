@@ -68,7 +68,7 @@ def main(argv: Sequence[str]) -> None:
     # Create an experiment.
     with xm_cloud.create_experiment(
         experiment_title=(f"My XMC experiment - {os.environ.get('USER', 'unknown')}"),
-        acls=xm_cloud.Acls(owners=[xm_cloud.Acls.Role(all_authenticated_users=True)]),
+        # No `acls`: XMC makes you (the creator) the owner. See docs/authentication.md.
         urls=[
             xm_cloud.Url(
                 url="https://www.google.com",
