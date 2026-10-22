@@ -17,16 +17,21 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-VENV_DIR="${SCRIPT_DIR}/.venv"
+VENV_DIR="${VENV_DIR:-${SCRIPT_DIR}/.venv}"
 
-echo "--> [1/3] Initializing virtual environment and installing Bazel Dashboard Service protobuf modules..."
-cd "${REPO_ROOT}"
-python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}" --dashboard-protos-only
+if [[ ! -d "${VENV_DIR}" ]]; then
+  echo "--> [1/3] Creating virtual environment at ${VENV_DIR}..."
+  python3 -m venv "${VENV_DIR}"
+fi
 
 PIP_BIN="${VENV_DIR}/bin/pip"
 
-echo "--> [2/3] Upgrading pip and installing grpcio, protobuf & googleapis-common-protos..."
+echo "--> [2/3] Upgrading pip and installing dependencies..."
 "${PIP_BIN}" install --upgrade pip
+if [[ -n "${XMANAGER_VERSION:-}" ]]; then
+  echo "--> Installing parameterized xmanager version ${XMANAGER_VERSION}..."
+  "${PIP_BIN}" install "xmanager==${XMANAGER_VERSION}"
+fi
 "${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
 
 echo "--> [3/3] Installing xdash SDK in editable mode..."

@@ -45,9 +45,10 @@ This directory contains a complete validation example for running **Init Contain
 ```
 
 ### 2. Launch the Init Container Experiment
-Ensure you have installed the XManager CLI, activate your virtual environment, and install dependencies:
+Create your virtual environment, install dependencies, and launch:
 ```bash
-source ../../deploy/cli/venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 python3 launch.py
 ```

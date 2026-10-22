@@ -41,7 +41,7 @@ Steps 3 and 4 are independent: the dashboard is registered while the WorkUnit is
 
 | File | Purpose |
 | :--- | :--- |
-| [`install_venv.sh`](./install_venv.sh) | Builds the Python tooling into a local `.venv`: XManager, the Bazel-generated dashboard protos, and the `xdash` and `xmc` SDKs in editable mode. |
+| [`install_venv.sh`](./install_venv.sh) | Sets up a local `.venv` with dependencies from `requirements.txt` (including XManager) and the `xdash` and `xmc` SDKs in editable mode. |
 | [`launch.py`](./launch.py) | Creates the Experiment and WorkUnit, then the Charts and Dashboard for the XID/WID just assigned. |
 | [`worker.py`](./worker.py) | Runs inside the WorkUnit. Simulates training and logs metrics via `xmc.log_metric()`. |
 | [`metric_names.py`](./metric_names.py) | The metric names, declared once and imported by **both** `worker.py` and `launch.py`. |

@@ -42,4 +42,7 @@ if [[ ! -d "${VENV_DIR}" ]]; then
 fi
 
 "${VENV_DIR}/bin/pip" install --upgrade pip
+if [[ -n "${XMANAGER_VERSION:-}" ]]; then
+  "${VENV_DIR}/bin/pip" install "xmanager==${XMANAGER_VERSION}"
+fi
 "${VENV_DIR}/bin/pip" install -r "${SCRIPT_DIR}/requirements.txt"

@@ -13,10 +13,11 @@ This example demonstrates how to interact with the XManager on Cloud (XMC) **Exp
 
 ## Prerequisites
 
-1. Activate the XMC virtual environment and install dependencies:
+1. Create a Python virtual environment and install dependencies:
 
    ```bash
-   source deploy/cli/venv/bin/activate
+   python3 -m venv .venv
+   source .venv/bin/activate
    pip install -r requirements.txt
    ```
 

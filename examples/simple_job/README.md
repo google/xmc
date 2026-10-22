@@ -4,9 +4,10 @@ This directory contains a standalone launch script (`launch.py`) for creating a 
 
 ## Prerequisites
 
-1. Activate the XMC virtual environment and install dependencies:
+1. Create a Python virtual environment and install dependencies:
    ```bash
-   source deploy/cli/venv/bin/activate
+   python3 -m venv .venv
+   source .venv/bin/activate
    pip install -r requirements.txt
    ```
 

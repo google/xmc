@@ -21,14 +21,15 @@ In a Pathways RL post-training or distributed execution topology on JAX-on-Pathw
    pip install -r requirements.txt
    ```
 
-2. **Environment Variables**: Make sure your environment is configured with `PROJECT_ID`, `QUEUE_NAME`, and `XMC_DOMAIN` inside your `.env` file, and that your Python environment (`./deploy/cli/venv`) is active.
+2. **Environment Variables**: Make sure your environment is configured with `PROJECT_ID`, `QUEUE_NAME`, and `XMC_DOMAIN` inside your `.env` file.
 
 ## Running the Example
 
-Activate your virtual environment, install dependencies, and run the launch script:
+Create your virtual environment, install dependencies, and run the launch script:
 
 ```bash
-source deploy/cli/venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 python3 examples/pathways_job/launch.py
 ```

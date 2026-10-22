@@ -17,25 +17,27 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-VENV_DIR="${SCRIPT_DIR}/.venv"
+VENV_DIR="${VENV_DIR:-${SCRIPT_DIR}/.venv}"
 
-echo "--> [1/4] Installing XManager and the xmanager_cloud proto bindings..."
-cd "${REPO_ROOT}"
-python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}"
+if [[ ! -d "${VENV_DIR}" ]]; then
+  echo "--> [1/3] Creating virtual environment at ${VENV_DIR}..."
+  python3 -m venv "${VENV_DIR}"
+fi
 
 PIP_BIN="${VENV_DIR}/bin/pip"
 
-echo "--> [2/4] Installing launch-script runtime dependencies..."
+echo "--> [2/3] Installing launch-script runtime dependencies..."
 "${PIP_BIN}" install --upgrade pip
+if [[ -n "${XMANAGER_VERSION:-}" ]]; then
+  echo "--> Installing parameterized xmanager version ${XMANAGER_VERSION}..."
+  "${PIP_BIN}" install "xmanager==${XMANAGER_VERSION}"
+fi
 "${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
-
-echo "--> [3/4] Installing Bazel-generated Dashboard Service Python protobuf modules..."
-python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}" --dashboard-protos-only
 
 # Editable installs, so a change to either SDK is picked up without reinstalling. xdash
 # builds and registers the charts; xmc is not needed to launch, but having it here lets
 # you exercise the worker locally against a gateway before building the image.
-echo "--> [4/4] Installing the xdash and xmc SDKs in editable mode..."
+echo "--> [3/3] Installing the xdash and xmc SDKs in editable mode..."
 "${PIP_BIN}" install -e "${REPO_ROOT}/sdks/python/xdash"
 "${PIP_BIN}" install -e "${REPO_ROOT}/sdks/python/xmc"
 

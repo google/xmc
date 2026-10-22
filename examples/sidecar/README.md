@@ -53,9 +53,10 @@ This directory contains a complete validation example demonstrating how to run *
 ```
 
 ### 2. Launch the Experiment
-Ensure you have installed the XManager CLI, activate your virtual environment, and install dependencies:
+Create your virtual environment, install dependencies, and launch:
 ```bash
-source ../../deploy/cli/venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 python3 launch.py
 ```

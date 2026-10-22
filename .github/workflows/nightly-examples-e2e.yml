@@ -40,6 +40,11 @@ on:
         required: false
         type: boolean
         default: false
+      xmanager_version:
+        description: 'Optional xmanager PyPI version override (e.g. 0.8.2 or 0.8.4; defaults to requirements.txt)'
+        required: false
+        default: ''
+        type: string
   workflow_call:
     inputs:
       queue_name:
@@ -62,6 +67,11 @@ on:
         required: false
         type: boolean
         default: false
+      xmanager_version:
+        description: 'Optional xmanager PyPI version override (e.g. 0.8.2 or 0.8.4; defaults to requirements.txt)'
+        required: false
+        default: ''
+        type: string
     outputs:
       launched_xids:
         description: 'A JSON string map of launched Example IDs to their XIDs / Dashboard IDs'
@@ -71,6 +81,35 @@ permissions:
   contents: read
 
 jobs:
+  verify-cli-build-from-source:
+    name: 'Verify CLI Build from Source'
+    runs-on: 'arc-runner-set'
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: 'Checkout Repository'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: 'Set up Python 3.13'
+        uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
+        with:
+          python-version: '3.13'
+
+      - name: 'Build and Verify XManager CLI from Source'
+        run: |
+          python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv-source"
+          "${GITHUB_WORKSPACE}/.venv-source/bin/python3" -c "
+          import xmanager
+          import xmanager.xm_cloud
+          import xmanager_cloud.experiment_state_server.experiment_state_api
+          print('XManager CLI source build verified successfully!')
+          "
+
   build-example-images:
     name: 'Build Example Container Images'
     runs-on: 'arc-runner-set'
@@ -321,13 +360,20 @@ jobs:
         env:
           EXAMPLE_PATH: '${{ matrix.example.example_path }}'
           VERIFY_UI: '${{ matrix.example.verify_ui }}'
+          XMANAGER_VERSION: '${{ inputs.xmanager_version }}'
         run: |
-          python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv"
+          python3 -m venv "${GITHUB_WORKSPACE}/.venv"
+          "${GITHUB_WORKSPACE}/.venv/bin/pip" install --upgrade pip
+          if [ -n "${XMANAGER_VERSION:-}" ]; then
+            "${GITHUB_WORKSPACE}/.venv/bin/pip" install "xmanager==${XMANAGER_VERSION}"
+          fi
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xdash
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install absl-py python-dotenv
           if [ -n "${EXAMPLE_PATH:-}" ] && [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt"
+          else
+            "${GITHUB_WORKSPACE}/.venv/bin/pip" install "xmanager>=0.8.2"
           fi
           if [ "${VERIFY_UI:-}" = "true" ]; then
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install "playwright==1.51.0"
@@ -577,8 +623,8 @@ jobs:
   report-nightly-failure:
     name: '3. Report Failure & Alert OWNERS'
     runs-on: 'ubuntu-latest'
-    needs: [build-example-images, run-and-verify-examples, aggregate-results]
-    if: always() && github.ref == 'refs/heads/main' && (needs.build-example-images.result == 'failure' || needs.build-example-images.result == 'cancelled' || needs.run-and-verify-examples.result == 'failure' || needs.run-and-verify-examples.result == 'cancelled' || needs.aggregate-results.result == 'failure' || needs.aggregate-results.result == 'cancelled')
+    needs: [build-example-images, run-and-verify-examples, aggregate-results, verify-cli-build-from-source]
+    if: always() && github.ref == 'refs/heads/main' && (needs.build-example-images.result == 'failure' || needs.build-example-images.result == 'cancelled' || needs.run-and-verify-examples.result == 'failure' || needs.run-and-verify-examples.result == 'cancelled' || needs.aggregate-results.result == 'failure' || needs.aggregate-results.result == 'cancelled' || needs.verify-cli-build-from-source.result == 'failure' || needs.verify-cli-build-from-source.result == 'cancelled')
 
     permissions:
       contents: read

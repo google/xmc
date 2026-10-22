@@ -41,8 +41,8 @@ try:
 except ImportError:
     dotenv: Any = None  # type: ignore[no-redef]
 
-# Graceful fallback: xmanager_cloud is an external wheel installed at runtime
-# via install_xmanager.py. Allowing ImportError enables Bazel unit tests to run
+# Graceful fallback: xmanager_cloud is an external package installed at runtime
+# via pip install xmanager or install_xmanager.py. Allowing ImportError enables Bazel unit tests to run
 # hermetically using mocks without requiring external wheel installation.
 try:
     from xmanager_cloud.experiment_state_server import experiment_state_api as ess_api
