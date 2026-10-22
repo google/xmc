@@ -56,11 +56,6 @@ func (s *PostgresStore) SetSourcedComponentIntent(ctx context.Context, name stri
 	return nil, status.Error(codes.Unimplemented, "postgres component store: SetSourcedComponentIntent is not implemented")
 }
 
-// DeclareClusterEpoch declares cluster the writer of sourced intents within PostgreSQL.
-func (s *PostgresStore) DeclareClusterEpoch(ctx context.Context, cluster store.ClusterIdentity) (*store.DeclarationResult, error) {
-	return nil, status.Error(codes.Unimplemented, "postgres component store: DeclareClusterEpoch is not implemented")
-}
-
 // GetComponent retrieves a component record by canonical or full resource name.
 func (s *PostgresStore) GetComponent(ctx context.Context, name string) (*store.ComponentRecord, error) {
 	return nil, status.Error(codes.Unimplemented, "postgres component store: GetComponent is not implemented")

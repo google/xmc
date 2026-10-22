@@ -80,13 +80,6 @@ func TestPostgresStore_Unimplemented(t *testing.T) {
 			},
 		},
 		{
-			name: "DeclareClusterEpoch",
-			call: func() error {
-				_, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{})
-				return err
-			},
-		},
-		{
 			name: "GetComponent",
 			call: func() error {
 				_, err := s.GetComponent(ctx, "comp-a")
