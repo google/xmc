@@ -44,13 +44,7 @@ type Config struct {
 }
 
 // Flags holds the CLI flag value bindings for FlagSet registration.
-type Flags struct {
-	Port           string
-	ProjectID      string
-	SubscriptionID string
-	BatchSize      int
-	BatchInterval  time.Duration
-}
+type Flags Config
 
 // RegisterFlags registers the metrics ingester CLI flags on fs and returns their bindings.
 //
