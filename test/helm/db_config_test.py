@@ -113,7 +113,7 @@ class DbConfigChartTest(unittest.TestCase):
         self.assertIn('database.backend must be "spanner" or "postgres"', str(raised.exception))
 
     def test_workloads_load_db_config(self) -> None:
-        """Every control-plane workload loads db-config as environment variables."""
+        """Each workload that uses a database loads db-config as environment variables."""
         for template in WORKLOAD_DEPLOYMENTS:
             with self.subTest(template=template):
                 manifest = render_template(template, ENABLE_OPTIONAL_DEPLOYMENTS)
