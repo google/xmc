@@ -340,7 +340,7 @@ jobs:
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt"
           fi
           if [ -n "${XMANAGER_VERSION:-}" ]; then
-            "${GITHUB_WORKSPACE}/.venv/bin/pip" install "xmanager==${XMANAGER_VERSION}"
+            python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv" --xmanager-version "${XMANAGER_VERSION}"
           fi
           if [ "${VERIFY_UI:-}" = "true" ]; then
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install "playwright==1.51.0"

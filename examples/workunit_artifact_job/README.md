@@ -31,10 +31,10 @@ This example demonstrates how to interact with the XManager on Cloud (XMC) **Exp
 
 ## Running the Example
 
-Run [launch.py](launch.py) from the repository root:
+Run [launch.py](launch.py):
 
 ```bash
-python3 examples/workunit_artifact_job/launch.py
+python3 launch.py
 ```
 
 Optional CLI flags:

@@ -59,6 +59,10 @@ class TestInstallXmanager(unittest.TestCase):
             install_xmanager.resolve_xmanager_spec("xmanager==0.8.4"),
             "xmanager==0.8.4",
         )
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec("XManager>=0.8.2"),
+            "XManager>=0.8.2",
+        )
 
     def test_resolve_xmanager_spec_comparison_operators(self) -> None:
         """Test resolve_xmanager_spec prefixes leading comparison operators."""

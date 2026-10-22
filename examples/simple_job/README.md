@@ -33,19 +33,19 @@ This directory contains a standalone launch script (`launch.py`) for creating a 
 
 ### Default (3 WorkUnits for 60 Seconds on the CPU Queue)
 ```bash
-python3 examples/simple_job/launch.py --queue=cpu-queue --num_work_units=3 --duration=60 --gpus=0
+python3 launch.py --queue=cpu-queue --num_work_units=3 --duration=60 --gpus=0
 ```
 
 ### Targeted at the GPU Queue with High Priority
 ```bash
-python3 examples/simple_job/launch.py --queue=gpu-queue --gpus=1 --priority=HIGH
+python3 launch.py --queue=gpu-queue --gpus=1 --priority=HIGH
 ```
 
 ### Custom WorkUnit Count & Duration
 ```bash
-python3 examples/simple_job/launch.py --queue=cpu-queue --num_work_units=5 --duration=120
+python3 launch.py --queue=cpu-queue --num_work_units=5 --duration=120
 ```
 
 ## Workflow
-1. Run `python3 examples/simple_job/launch.py --queue=cpu-queue --num_work_units=3 --duration=60 --gpus=0`.
+1. Run `python3 launch.py --queue=cpu-queue --num_work_units=3 --duration=60 --gpus=0`.
 2. Inspect the created experiment and WorkUnits in the XMC Web UI (`https://<your-xmc-domain>/experiments/:xid`).

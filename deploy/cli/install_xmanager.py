@@ -80,7 +80,7 @@ def resolve_xmanager_spec(version: str) -> str:
     cleaned = version.strip()
     if not cleaned:
         return DEFAULT_XMANAGER_SPEC
-    if cleaned.startswith("xmanager"):
+    if cleaned.lower().startswith("xmanager"):
         return cleaned
     if cleaned.startswith(("==", ">=", "<=", "~=", "!=", ">", "<")):
         return f"xmanager{cleaned}"

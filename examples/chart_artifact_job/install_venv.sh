@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 VENV_DIR="${VENV_DIR:-${SCRIPT_DIR}/.venv}"
 
-if [[ ! -d "${VENV_DIR}" ]]; then
+if [[ ! -x "${VENV_DIR}/bin/pip" ]]; then
   echo "--> [1/3] Creating virtual environment at ${VENV_DIR}..."
   python3 -m venv "${VENV_DIR}"
 fi
@@ -30,8 +30,7 @@ echo "--> [2/3] Installing dependencies from requirements.txt..."
 "${PIP_BIN}" install --upgrade pip
 "${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
 if [[ -n "${XMANAGER_VERSION:-}" ]]; then
-  echo "--> Installing parameterized xmanager version ${XMANAGER_VERSION}..."
-  "${PIP_BIN}" install "xmanager==${XMANAGER_VERSION}"
+  python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}" --xmanager-version "${XMANAGER_VERSION}"
 fi
 
 echo "--> [3/3] Installing xdash and xmc SDKs in editable mode..."
