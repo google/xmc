@@ -30,10 +30,12 @@ import (
 )
 
 type postgresSchemaSnapshot struct {
-	Tables  []string
-	Columns []string
-	Views   []string
-	Indexes []string
+	Tables      []string
+	Columns     []string
+	Constraints []string
+	Views       []string
+	Indexes     []string
+	Functions   []string
 }
 
 const (
@@ -46,12 +48,22 @@ ORDER BY table_name
 `
 
 	inspectColumnsQuery = `
-SELECT table_name, column_name, data_type, udt_name, is_nullable,
+SELECT table_name, column_name, data_type, udt_name, COALESCE(character_maximum_length::text, ''), is_nullable,
        COALESCE(column_default, ''), COALESCE(is_generated, ''), COALESCE(generation_expression, '')
 FROM information_schema.columns
 WHERE table_schema = current_schema()
   AND table_name != 'schema_migrations'
 ORDER BY table_name, column_name
+`
+
+	inspectConstraintsQuery = `
+SELECT r.relname, c.conname, c.contype::text, pg_catalog.pg_get_constraintdef(c.oid, true)
+FROM pg_catalog.pg_constraint c
+JOIN pg_catalog.pg_class r ON r.oid = c.conrelid
+JOIN pg_catalog.pg_namespace n ON n.oid = r.relnamespace
+WHERE n.nspname = current_schema()
+  AND r.relname != 'schema_migrations'
+ORDER BY r.relname, c.conname
 `
 
 	inspectViewsQuery = `
@@ -67,6 +79,14 @@ FROM pg_catalog.pg_indexes
 WHERE schemaname = current_schema()
   AND tablename != 'schema_migrations'
 ORDER BY tablename, indexname
+`
+
+	inspectFunctionsQuery = `
+SELECT p.proname, pg_catalog.pg_get_functiondef(p.oid)
+FROM pg_catalog.pg_proc p
+JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = current_schema()
+ORDER BY p.proname, pg_catalog.pg_get_function_identity_arguments(p.oid)
 `
 )
 
@@ -129,6 +149,9 @@ func TestSchemaSynchronization(t *testing.T) {
 			// 4. Compare schemas.
 			if len(schemaAfterMigrations.Tables) == 0 {
 				t.Errorf("expected non-empty table list for %s schema", tc.schemaDir)
+			}
+			if len(schemaAfterMigrations.Constraints) == 0 {
+				t.Errorf("expected non-empty constraint list for %s schema", tc.schemaDir)
 			}
 			if diff := cmp.Diff(schemaFromFullDDL, schemaAfterMigrations); diff != "" {
 				t.Errorf("schema mismatch (-baseline +migrations):\n%s", diff)
@@ -218,29 +241,23 @@ func mustFetchPostgresSchema(ctx context.Context, t *testing.T, dsn string) post
 	}
 	defer db.Close()
 
-	tables, err := queryFormattedRows(ctx, db, inspectTablesQuery, 2)
-	if err != nil {
-		t.Fatalf("failed to query tables: %v", err)
-	}
-	columns, err := queryFormattedRows(ctx, db, inspectColumnsQuery, 8)
-	if err != nil {
-		t.Fatalf("failed to query columns: %v", err)
-	}
-	views, err := queryFormattedRows(ctx, db, inspectViewsQuery, 2)
-	if err != nil {
-		t.Fatalf("failed to query views: %v", err)
-	}
-	indexes, err := queryFormattedRows(ctx, db, inspectIndexesQuery, 3)
-	if err != nil {
-		t.Fatalf("failed to query indexes: %v", err)
-	}
-
 	return postgresSchemaSnapshot{
-		Tables:  tables,
-		Columns: columns,
-		Views:   views,
-		Indexes: indexes,
+		Tables:      mustQueryFormattedRows(ctx, t, db, "tables", inspectTablesQuery, 2),
+		Columns:     mustQueryFormattedRows(ctx, t, db, "columns", inspectColumnsQuery, 9),
+		Constraints: mustQueryFormattedRows(ctx, t, db, "constraints", inspectConstraintsQuery, 4),
+		Views:       mustQueryFormattedRows(ctx, t, db, "views", inspectViewsQuery, 2),
+		Indexes:     mustQueryFormattedRows(ctx, t, db, "indexes", inspectIndexesQuery, 3),
+		Functions:   mustQueryFormattedRows(ctx, t, db, "functions", inspectFunctionsQuery, 2),
 	}
+}
+
+func mustQueryFormattedRows(ctx context.Context, t *testing.T, db *sql.DB, kind, query string, numCols int) []string {
+	t.Helper()
+	rows, err := queryFormattedRows(ctx, db, query, numCols)
+	if err != nil {
+		t.Fatalf("failed to query %s: %v", kind, err)
+	}
+	return rows
 }
 
 func queryFormattedRows(ctx context.Context, db *sql.DB, query string, numCols int) ([]string, error) {
