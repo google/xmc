@@ -162,6 +162,7 @@ go_test(
         "//api/protos/components/v1alpha1",
         "//pkg/components/cms",
         "//pkg/components/store",
+        "//pkg/components/store/memory",
         "@com_github_go_logr_logr//testr",
         "@com_github_google_go_cmp//cmp",
         "@io_k8s_api//admissionregistration/v1:admissionregistration",

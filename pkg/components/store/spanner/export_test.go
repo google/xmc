@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Test-only package exports for external black-box tests in package store_test.
+// Test-only package exports for external black-box tests in package spanner_test.
 // Production targets: spanner_store.go and memory_store.go.
-// Test type: standard Go export_test.go bridge (compiled only into store_test) exposing unexported
+// Test type: standard Go export_test.go bridge (compiled only into spanner_test) exposing unexported
 // hooks and raw row inspection helpers without polluting the public Store API.
-package store
+package spanner
 
 import (
 	"context"
@@ -24,6 +24,9 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+
+	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/memory"
 )
 
 // SetBeforeIntentWriteForTest installs hook to run each time SetComponentIntent misses the
@@ -34,20 +37,13 @@ func (s *SpannerStore) SetBeforeIntentWriteForTest(hook func()) {
 
 // OwnerByIDForTest returns the recorded owner of the record componentID in s, including a deleted
 // record, which the Store read methods hide.
-func OwnerByIDForTest(ctx context.Context, s Store, componentID int64) (*SourceOwner, error) {
+func OwnerByIDForTest(ctx context.Context, s store.Store, componentID int64) (*store.SourceOwner, error) {
 	switch st := s.(type) {
-	case *MemoryStore:
-		st.mu.RLock()
-		defer st.mu.RUnlock()
-		rec, ok := st.componentsByID[componentID]
-		if !ok || rec.Owner == nil {
-			return nil, fmt.Errorf("component %d has no recorded owner", componentID)
-		}
-		owner := *rec.Owner
-		return &owner, nil
+	case *memory.MemoryStore:
+		return st.OwnerByIDForTest(componentID)
 	case *SpannerStore:
 		stmt := spanner.Statement{SQL: `SELECT ` + componentColumnsSQL + ` FROM Components WHERE ComponentId = @id`, Params: map[string]any{"id": componentID}}
-		var owner *SourceOwner
+		var owner *store.SourceOwner
 		err := st.client.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
 			var err error
 			owner, err = scanSourceOwner(row)
@@ -63,14 +59,10 @@ func OwnerByIDForTest(ctx context.Context, s Store, componentID int64) (*SourceO
 }
 
 // SetSourceLastSeenTimeForTest sets the recorded SourceLastSeenTime of canonicalName in s.
-func SetSourceLastSeenTimeForTest(ctx context.Context, s Store, canonicalName string, seenAt time.Time) error {
+func SetSourceLastSeenTimeForTest(ctx context.Context, s store.Store, canonicalName string, seenAt time.Time) error {
 	switch st := s.(type) {
-	case *MemoryStore:
-		st.mu.Lock()
-		defer st.mu.Unlock()
-		if rec := st.componentsByName[canonicalName]; rec != nil {
-			rec.SourceLastSeenTime = seenAt
-		}
+	case *memory.MemoryStore:
+		st.SetSourceLastSeenTimeForTest(canonicalName, seenAt)
 		return nil
 	case *SpannerStore:
 		_, err := st.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {

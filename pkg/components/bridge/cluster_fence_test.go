@@ -39,6 +39,7 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/memory"
 )
 
 func TestReadClusterUID(t *testing.T) {
@@ -109,7 +110,7 @@ const (
 
 func TestReconciler_ClusterFenceColdStandby(t *testing.T) {
 	ctx := context.Background()
-	cmsStore := store.NewMemoryStore()
+	cmsStore := memory.NewMemoryStore()
 	cmsClient := NewCMSClientAdapter(cms.NewServer(cmsStore, cms.WithAuthorizer(cms.NewDisabledAuthorizer())))
 
 	// Primary cluster claims epoch 2.
@@ -289,7 +290,7 @@ func TestClusterFence_StartAndTransitionNotification(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cmsStore := store.NewMemoryStore()
+	cmsStore := memory.NewMemoryStore()
 	cmsClient := NewCMSClientAdapter(cms.NewServer(cmsStore, cms.WithAuthorizer(cms.NewDisabledAuthorizer())))
 	if _, err := cmsClient.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{
 		Cluster: &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary", Epoch: 2},

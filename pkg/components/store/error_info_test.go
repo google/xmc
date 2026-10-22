@@ -26,7 +26,7 @@ import (
 )
 
 func TestErrorWithInfo(t *testing.T) {
-	err := errorWithInfo(codes.FailedPrecondition, ReasonDependencyNotRegistered, map[string]string{"dependency": "redpanda"}, "dependency missing")
+	err := ErrorWithInfo(codes.FailedPrecondition, ReasonDependencyNotRegistered, map[string]string{"dependency": "redpanda"}, "dependency missing")
 
 	st := status.Convert(err)
 	if st.Code() != codes.FailedPrecondition || st.Message() != "dependency missing" {
@@ -49,7 +49,7 @@ func TestErrorInfoReason(t *testing.T) {
 	}{
 		{name: "non-status error", err: errors.New("boom"), want: ""},
 		{name: "ErrorInfo in a foreign domain", err: foreign.Err(), want: ""},
-		{name: "store rejection", err: errorWithInfo(codes.FailedPrecondition, ReasonClusterFenced, nil, "fenced"), want: ReasonClusterFenced},
+		{name: "store rejection", err: ErrorWithInfo(codes.FailedPrecondition, ReasonClusterFenced, nil, "fenced"), want: ReasonClusterFenced},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

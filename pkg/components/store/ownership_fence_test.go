@@ -87,10 +87,10 @@ func TestPlanDeclaration(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := planDeclaration(tt.fence, tt.c)
+			got, err := PlanDeclaration(tt.fence, tt.c)
 			if tt.wantReason == "" {
 				if err != nil || got != tt.want {
-					t.Errorf("planDeclaration() = %v, %v; want %v, nil", got, err, tt.want)
+					t.Errorf("PlanDeclaration() = %v, %v; want %v, nil", got, err, tt.want)
 				}
 				return
 			}
@@ -101,10 +101,10 @@ func TestPlanDeclaration(t *testing.T) {
 				Metadata: map[string]string{"operation": "DeclareClusterEpoch", "active_cluster_uid": baseCluster.UID, "active_cluster_name": "prod", "active_epoch": "3"},
 			}}
 			if st.Code() != codes.FailedPrecondition {
-				t.Errorf("planDeclaration() code = %v, want %v", st.Code(), codes.FailedPrecondition)
+				t.Errorf("PlanDeclaration() code = %v, want %v", st.Code(), codes.FailedPrecondition)
 			}
 			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
-				t.Errorf("planDeclaration() details mismatch (-want +got):\n%s", diff)
+				t.Errorf("PlanDeclaration() details mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -113,11 +113,11 @@ func TestPlanDeclaration(t *testing.T) {
 func TestTakenOverOwner(t *testing.T) {
 	owner := &SourceOwner{UID: "uid-a", Generation: 7, Namespace: "xmc", ClusterUID: clusterAUID, Epoch: 3}
 	want := &SourceOwner{Generation: 7, Namespace: "xmc", ClusterUID: clusterBUID, Epoch: 4}
-	if diff := cmp.Diff(want, takenOverOwner(owner, ClusterIdentity{UID: clusterBUID, Name: "dr", Epoch: 4})); diff != "" {
-		t.Errorf("takenOverOwner() mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff(want, TakenOverOwner(owner, ClusterIdentity{UID: clusterBUID, Name: "dr", Epoch: 4})); diff != "" {
+		t.Errorf("TakenOverOwner() mismatch (-want +got):\n%s", diff)
 	}
-	if got := takenOverOwner(nil, baseCluster); got != nil {
-		t.Errorf("takenOverOwner(nil) = %+v, want nil", got)
+	if got := TakenOverOwner(nil, baseCluster); got != nil {
+		t.Errorf("TakenOverOwner(nil) = %+v, want nil", got)
 	}
 }
 
@@ -146,23 +146,23 @@ func TestCheckClusterFence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := checkClusterFence("SetComponentIntent", tt.fence, tt.src)
+			err := CheckClusterFence("SetComponentIntent", tt.fence, tt.src)
 			if tt.wantReason == "" {
 				if err != nil {
-					t.Fatalf("checkClusterFence() error = %v, want nil", err)
+					t.Fatalf("CheckClusterFence() error = %v, want nil", err)
 				}
 				return
 			}
 			st := status.Convert(err)
 			want := []any{&errdetails.ErrorInfo{Reason: tt.wantReason, Domain: ErrorInfoDomain, Metadata: tt.wantMeta}}
 			if st.Code() != codes.FailedPrecondition {
-				t.Errorf("checkClusterFence() code = %v, want %v", st.Code(), codes.FailedPrecondition)
+				t.Errorf("CheckClusterFence() code = %v, want %v", st.Code(), codes.FailedPrecondition)
 			}
 			if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
-				t.Errorf("checkClusterFence() details mismatch (-want +got):\n%s", diff)
+				t.Errorf("CheckClusterFence() details mismatch (-want +got):\n%s", diff)
 			}
 			if !strings.Contains(st.Message(), tt.wantInMessage) {
-				t.Errorf("checkClusterFence() message = %q, want it to contain %q", st.Message(), tt.wantInMessage)
+				t.Errorf("CheckClusterFence() message = %q, want it to contain %q", st.Message(), tt.wantInMessage)
 			}
 		})
 	}

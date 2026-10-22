@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+// Package spanner provides a Cloud Spanner implementation of store.Store.
+package spanner
 
 import (
 	"context"
@@ -35,10 +36,11 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/naming"
 	"xmanager_cloud/pkg/components/semver"
+	"xmanager_cloud/pkg/components/store"
 )
 
 // Ensure SpannerStore implements Store interface at compile time.
-var _ Store = (*SpannerStore)(nil)
+var _ store.Store = (*SpannerStore)(nil)
 
 const (
 	selectComponentByActiveNameSQL = `SELECT ` + componentColumnsSQL + `
@@ -102,7 +104,7 @@ type spannerQueryable interface {
 	Query(ctx context.Context, statement spanner.Statement) *spanner.RowIterator
 }
 
-func queryComponentWithDeps(ctx context.Context, queryable spannerQueryable, canonicalName string) (*ComponentRecord, error) {
+func queryComponentWithDeps(ctx context.Context, queryable spannerQueryable, canonicalName string) (*store.ComponentRecord, error) {
 	stmt := spanner.Statement{
 		SQL: selectComponentByActiveNameSQL,
 		Params: map[string]any{
@@ -116,7 +118,7 @@ func queryComponentWithDeps(ctx context.Context, queryable spannerQueryable, can
 	row, err := iter.Next()
 	if err != nil {
 		if err == iterator.Done {
-			return nil, ErrComponentNotFound
+			return nil, store.ErrComponentNotFound
 		}
 		return nil, fmt.Errorf("failed to query component %q: %w", canonicalName, err)
 	}
@@ -140,7 +142,7 @@ func queryComponentWithDeps(ctx context.Context, queryable spannerQueryable, can
 		return nil, fmt.Errorf("failed to fetch dependencies for component %q: %w", canonicalName, err)
 	}
 	rec.Dependencies = deps
-	rec.Etag = generateEtag(rec)
+	rec.Etag = store.GenerateEtag(rec)
 
 	return rec, nil
 }
@@ -164,32 +166,32 @@ func NewSpannerStore(client *spanner.Client) *SpannerStore {
 // dependencies are all registered and active is answered from a strong read-only read without a
 // read-write transaction; anything else, including every changed or new intent (which therefore
 // pays the extra read), is decided by the read-write transaction.
-func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*ComponentRecord, error) {
+func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*store.ComponentRecord, error) {
 	return s.setIntent(ctx, name, spec, labels, desiredGen, nil)
 }
 
 // SetSourcedComponentIntent applies an intent sent by src within Spanner, with the same read-only
 // fast path as SetComponentIntent. Recording a new owner, and every rejection except a fence
 // rejection seen by the fast-path read, is decided by the read-write transaction.
-func (s *SpannerStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src RequestSource) (*ComponentRecord, error) {
-	if err := ValidateRequestSource(src); err != nil {
+func (s *SpannerStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src store.RequestSource) (*store.ComponentRecord, error) {
+	if err := store.ValidateRequestSource(src); err != nil {
 		return nil, err
 	}
 	return s.setIntent(ctx, name, spec, labels, 0, &src)
 }
 
 // setIntent applies an intent ordered by desiredGen when src is nil and by src otherwise.
-func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64, src *RequestSource) (*ComponentRecord, error) {
-	canonicalName, err := validateIntentArgs(name, spec)
+func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64, src *store.RequestSource) (*store.ComponentRecord, error) {
+	canonicalName, err := store.ValidateIntentArgs(name, spec)
 	if err != nil {
 		return nil, err
 	}
 
-	deps := ExtractDependencies(spec, labels)
+	deps := store.ExtractDependencies(spec, labels)
 	rec, ok, err := s.readUnchangedIntent(ctx, canonicalName, spec, labels, deps, desiredGen, src)
 	if err != nil {
 		// The fast path returns only fence rejections, which count as source conflicts.
-		return nil, recordSourceConflictError(err)
+		return nil, store.RecordSourceConflictError(err)
 	}
 	if ok {
 		return rec, nil
@@ -206,29 +208,29 @@ func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *compone
 // the latest committed fence, so it is authoritative and fenced clusters replaying intents cost no
 // read-write transaction. On any other outcome, including read errors and other rejections, it
 // returns false so that the read-write transaction decides authoritatively.
-func (s *SpannerStore) readUnchangedIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *RequestSource) (*ComponentRecord, bool, error) {
+func (s *SpannerStore) readUnchangedIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *store.RequestSource) (*store.ComponentRecord, bool, error) {
 	rec, fence, err := queryComponentWithActiveDependencies(ctx, s.client.Single(), canonicalName)
 	if err != nil {
 		logFastPathReadError(ctx, canonicalName, err)
 		return nil, false, nil
 	}
-	if err := checkClusterFence(operationSetComponentIntent, fence, src); err != nil {
+	if err := store.CheckClusterFence(store.OperationSetComponentIntent, fence, src); err != nil {
 		return nil, false, err
 	}
 	// The read returns only registered, non-deleted dependencies, so a deregistered dependency
 	// makes the intent's dependencies differ and the plan a write; the read-write fallback then
 	// rejects it authoritatively.
-	if plan, err := planIntent(canonicalName, rec, spec, labels, deps, desiredGen, src); err != nil || plan.write != writeNothing {
+	if plan, err := store.PlanIntent(canonicalName, rec, spec, labels, deps, desiredGen, src); err != nil || plan.Write != store.WriteNothing {
 		return nil, false, nil
 	}
-	return cloneRecord(rec), true, nil
+	return store.CloneRecord(rec), true, nil
 }
 
 // logFastPathReadError logs a failed fast-path read before the read-write fallback. A missing
 // component is expected for new intents and is not logged; cancellation is logged at Debug.
 func logFastPathReadError(ctx context.Context, canonicalName string, err error) {
 	switch {
-	case errors.Is(err, ErrComponentNotFound):
+	case errors.Is(err, store.ErrComponentNotFound):
 	case ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
 		logging.Debug(ctx, "Intent fast-path read canceled; falling back to read-write transaction", "name", canonicalName, "error", err)
 	default:
@@ -240,13 +242,13 @@ func logFastPathReadError(ctx context.Context, canonicalName string, err error) 
 // transaction, and returns the active record of canonicalName with Dependencies set to its
 // registered, non-deleted dependencies (nil when there are none, as on the read-write path),
 // together with the fence holder in the same snapshot (nil before the first declaration).
-func queryComponentWithActiveDependencies(ctx context.Context, queryable spannerQueryable, canonicalName string) (*ComponentRecord, *ClusterIdentity, error) {
+func queryComponentWithActiveDependencies(ctx context.Context, queryable spannerQueryable, canonicalName string) (*store.ComponentRecord, *store.ClusterIdentity, error) {
 	iter := queryable.Query(ctx, spanner.Statement{SQL: selectComponentWithActiveDependenciesSQL, Params: map[string]any{"name": canonicalName}})
 	defer iter.Stop()
 
 	row, err := iter.Next()
 	if errors.Is(err, iterator.Done) {
-		return nil, nil, ErrComponentNotFound
+		return nil, nil, store.ErrComponentNotFound
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to query component %q: %w", canonicalName, err)
@@ -270,9 +272,9 @@ func queryComponentWithActiveDependencies(ctx context.Context, queryable spanner
 
 // writeIntent applies the intent in a read-write transaction. It returns the existing record, with
 // any newly recorded owner, when the intent writes neither the spec nor the generation.
-func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *RequestSource) (*ComponentRecord, error) {
-	var finalRec *ComponentRecord
-	var plan intentPlan
+func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *store.RequestSource) (*store.ComponentRecord, error) {
+	var finalRec *store.ComponentRecord
+	var plan store.IntentPlan
 
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		// Assign both results on every attempt because the transaction body may be retried.
@@ -281,29 +283,29 @@ func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, sp
 		return err
 	})
 	if err != nil {
-		return nil, recordSourceConflictError(err)
+		return nil, store.RecordSourceConflictError(err)
 	}
 
-	if plan.write == writeSpec {
+	if plan.Write == store.WriteSpec {
 		if finalRec.CreateTime.IsZero() {
 			finalRec.CreateTime = commitTimestamp
 		}
 		finalRec.UpdateTime = commitTimestamp
-		finalRec.Etag = generateEtag(finalRec)
+		finalRec.Etag = store.GenerateEtag(finalRec)
 	}
-	if src != nil && plan.write != writeNothing {
+	if src != nil && plan.Write != store.WriteNothing {
 		finalRec.SourceLastSeenTime = commitTimestamp
 	}
-	if plan.write != writeNothing {
-		recordOwnerAdoption(plan.prevOwner, src, plan.created)
+	if plan.Write != store.WriteNothing {
+		store.RecordOwnerAdoption(plan.PrevOwner, src, plan.Created)
 	}
 
-	return cloneRecord(finalRec), nil
+	return store.CloneRecord(finalRec), nil
 }
 
 // applyIntentTx validates the intent against the active catalog, buffers the mutations that
 // create or update the component and record src as its owner, and returns the resulting record
-// with the applied plan. A created component is reported as a writeSpec plan.
+// with the applied plan. A created component is reported as a WriteSpec plan.
 func (s *SpannerStore) applyIntentTx(
 	ctx context.Context,
 	txn *spanner.ReadWriteTransaction,
@@ -312,37 +314,37 @@ func (s *SpannerStore) applyIntentTx(
 	labels map[string]string,
 	deps []string,
 	desiredGen int64,
-	src *RequestSource,
-) (*ComponentRecord, intentPlan, error) {
-	if err := checkFence(ctx, txn, operationSetComponentIntent, src); err != nil {
-		return nil, intentPlan{}, err
+	src *store.RequestSource,
+) (*store.ComponentRecord, store.IntentPlan, error) {
+	if err := checkFence(ctx, txn, store.OperationSetComponentIntent, src); err != nil {
+		return nil, store.IntentPlan{}, err
 	}
 	catalog, err := s.loadActiveCatalog(ctx, txn)
 	if err != nil {
-		return nil, intentPlan{}, err
+		return nil, store.IntentPlan{}, err
 	}
-	existingRec, plan, err := planLiveIntent(catalog, canonicalName, spec, labels, deps, desiredGen, src)
+	existingRec, plan, err := store.PlanLiveIntent(catalog, canonicalName, spec, labels, deps, desiredGen, src)
 	if err != nil {
-		return nil, intentPlan{}, err
+		return nil, store.IntentPlan{}, err
 	}
-	depIDs, err := validateIntentDependencies(catalog, canonicalName, deps)
+	depIDs, err := store.ValidateIntentDependencies(catalog, canonicalName, deps)
 	if err != nil {
-		return nil, intentPlan{}, err
+		return nil, store.IntentPlan{}, err
 	}
 
-	var rec *ComponentRecord
+	var rec *store.ComponentRecord
 	switch {
-	case plan.write == writeNothing:
+	case plan.Write == store.WriteNothing:
 		return existingRec, plan, nil
-	case plan.write == writeOwnerOnly:
-		rec = cloneRecord(existingRec)
+	case plan.Write == store.WriteOwnerOnly:
+		rec = store.CloneRecord(existingRec)
 	case existingRec != nil:
-		rec, err = s.updateExistingIntentTx(txn, existingRec, canonicalName, spec, labels, deps, plan.generation, depIDs)
+		rec, err = s.updateExistingIntentTx(txn, existingRec, canonicalName, spec, labels, deps, plan.Generation, depIDs)
 	default:
-		rec, err = s.createNewIntentTx(txn, canonicalName, spec, labels, deps, plan.generation, depIDs)
+		rec, err = s.createNewIntentTx(txn, canonicalName, spec, labels, deps, plan.Generation, depIDs)
 	}
 	if err != nil {
-		return nil, intentPlan{}, err
+		return nil, store.IntentPlan{}, err
 	}
 	return rec, plan, recordOwnerTx(txn, rec, src)
 }
@@ -351,23 +353,23 @@ func (s *SpannerStore) applyIntentTx(
 // timestamp, and sets rec.Owner. A nil src keeps the recorded owner. SourceLastSeenTime is the
 // commit time of the last request accepted from the recorded owner; it only feeds owner-staleness
 // observability and never decides ownership.
-func recordOwnerTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord, src *RequestSource) error {
+func recordOwnerTx(txn *spanner.ReadWriteTransaction, rec *store.ComponentRecord, src *store.RequestSource) error {
 	if src == nil {
 		return nil
 	}
-	return writeOwnerColumnsTx(txn, rec, ownerOf(*src))
+	return writeOwnerColumnsTx(txn, rec, store.OwnerOf(*src))
 }
 
-func recordNonIntentOwnerTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord, src *RequestSource) error {
+func recordNonIntentOwnerTx(txn *spanner.ReadWriteTransaction, rec *store.ComponentRecord, src *store.RequestSource) error {
 	if src == nil {
 		return nil
 	}
-	return writeOwnerColumnsTx(txn, rec, nonIntentOwner(rec.Owner, src))
+	return writeOwnerColumnsTx(txn, rec, store.NonIntentOwner(rec.Owner, src))
 }
 
 // writeOwnerColumnsTx buffers a write of owner into rec's source columns, with SourceLastSeenTime
 // at the commit timestamp, and sets rec.Owner. A nil owner is a no-op that keeps the recorded owner.
-func writeOwnerColumnsTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord, owner *SourceOwner) error {
+func writeOwnerColumnsTx(txn *spanner.ReadWriteTransaction, rec *store.ComponentRecord, owner *store.SourceOwner) error {
 	if owner == nil {
 		return nil
 	}
@@ -379,7 +381,7 @@ func writeOwnerColumnsTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord
 
 // ownerColumns returns the Components owner columns for owner, with SourceLastSeenTime at the
 // commit timestamp.
-func ownerColumns(owner *SourceOwner) map[string]any {
+func ownerColumns(owner *store.SourceOwner) map[string]any {
 	return map[string]any{
 		"SourceUid": owner.UID, "SourceGeneration": owner.Generation,
 		"SourceNamespace": owner.Namespace, "SourceClusterUid": owner.ClusterUID, "SourceEpoch": owner.Epoch,
@@ -389,21 +391,21 @@ func ownerColumns(owner *SourceOwner) map[string]any {
 
 func (s *SpannerStore) updateExistingIntentTx(
 	txn *spanner.ReadWriteTransaction,
-	existingRec *ComponentRecord,
+	existingRec *store.ComponentRecord,
 	canonicalName string,
 	spec *componentspb.ComponentSpec,
 	labels map[string]string,
 	deps []string,
 	newGen int64,
 	depIDs map[string]int64,
-) (*ComponentRecord, error) {
+) (*store.ComponentRecord, error) {
 	specClone := proto.Clone(spec).(*componentspb.ComponentSpec)
 	specClone.Generation = newGen
 
 	compProto := &componentspb.Component{
 		Name:   naming.FullComponentName(canonicalName),
 		Spec:   specClone,
-		Labels: copyMap(labels),
+		Labels: store.CopyMap(labels),
 	}
 	configBytes, err := proto.Marshal(compProto)
 	if err != nil {
@@ -454,7 +456,7 @@ func (s *SpannerStore) updateExistingIntentTx(
 		return nil, err
 	}
 
-	return &ComponentRecord{
+	return &store.ComponentRecord{
 		ComponentID:        existingRec.ComponentID,
 		Name:               canonicalName,
 		Spec:               specClone,
@@ -464,8 +466,8 @@ func (s *SpannerStore) updateExistingIntentTx(
 		ObservedGeneration: existingRec.ObservedGeneration,
 		Dependencies:       deps,
 		CreateTime:         existingRec.CreateTime,
-		Labels:             copyMap(labels),
-		Owner:              cloneSourceOwner(existingRec.Owner),
+		Labels:             store.CopyMap(labels),
+		Owner:              store.CloneSourceOwner(existingRec.Owner),
 		SourceLastSeenTime: existingRec.SourceLastSeenTime,
 	}, nil
 }
@@ -478,7 +480,7 @@ func (s *SpannerStore) createNewIntentTx(
 	deps []string,
 	gen int64,
 	depIDs map[string]int64,
-) (*ComponentRecord, error) {
+) (*store.ComponentRecord, error) {
 	id, err := generateRandomID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate component ID: %w", err)
@@ -490,7 +492,7 @@ func (s *SpannerStore) createNewIntentTx(
 	compProto := &componentspb.Component{
 		Name:   naming.FullComponentName(canonicalName),
 		Spec:   specClone,
-		Labels: copyMap(labels),
+		Labels: store.CopyMap(labels),
 	}
 	configBytes, err := proto.Marshal(compProto)
 	if err != nil {
@@ -522,7 +524,7 @@ func (s *SpannerStore) createNewIntentTx(
 		return nil, err
 	}
 
-	return &ComponentRecord{
+	return &store.ComponentRecord{
 		ComponentID:  id,
 		Name:         canonicalName,
 		Spec:         specClone,
@@ -530,13 +532,13 @@ func (s *SpannerStore) createNewIntentTx(
 		State:        componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		Generation:   gen,
 		Dependencies: deps,
-		Labels:       copyMap(labels),
+		Labels:       store.CopyMap(labels),
 	}, nil
 }
 
 // GetComponent retrieves a component record by canonical or full resource name.
-func (s *SpannerStore) GetComponent(ctx context.Context, name string) (*ComponentRecord, error) {
-	canonicalName, err := validateResourceName(name)
+func (s *SpannerStore) GetComponent(ctx context.Context, name string) (*store.ComponentRecord, error) {
+	canonicalName, err := store.ValidateResourceName(name)
 	if err != nil {
 		return nil, err
 	}
@@ -549,11 +551,11 @@ func (s *SpannerStore) GetComponent(ctx context.Context, name string) (*Componen
 		return nil, err
 	}
 
-	return cloneRecord(rec), nil
+	return store.CloneRecord(rec), nil
 }
 
 // GetComponentByID retrieves a component record by its unique database identifier.
-func (s *SpannerStore) GetComponentByID(ctx context.Context, componentID int64) (*ComponentRecord, error) {
+func (s *SpannerStore) GetComponentByID(ctx context.Context, componentID int64) (*store.ComponentRecord, error) {
 	if componentID <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "invalid component ID")
 	}
@@ -574,7 +576,7 @@ func (s *SpannerStore) GetComponentByID(ctx context.Context, componentID int64) 
 	row, err := iter.Next()
 	if err != nil {
 		if err == iterator.Done {
-			return nil, ErrComponentNotFound
+			return nil, store.ErrComponentNotFound
 		}
 		return nil, fmt.Errorf("failed to query component by ID %d: %w", componentID, err)
 	}
@@ -598,13 +600,13 @@ func (s *SpannerStore) GetComponentByID(ctx context.Context, componentID int64) 
 		return nil, fmt.Errorf("failed to fetch dependencies for component ID %d: %w", componentID, err)
 	}
 	rec.Dependencies = deps
-	rec.Etag = generateEtag(rec)
+	rec.Etag = store.GenerateEtag(rec)
 
-	return cloneRecord(rec), nil
+	return store.CloneRecord(rec), nil
 }
 
 // ListComponents returns all non-deleted components in the catalog sorted by name.
-func (s *SpannerStore) ListComponents(ctx context.Context) ([]*ComponentRecord, error) {
+func (s *SpannerStore) ListComponents(ctx context.Context) ([]*store.ComponentRecord, error) {
 	txn := s.client.ReadOnlyTransaction()
 	defer txn.Close()
 
@@ -613,10 +615,10 @@ func (s *SpannerStore) ListComponents(ctx context.Context) ([]*ComponentRecord, 
 		return nil, err
 	}
 
-	results := make([]*ComponentRecord, 0, len(catalog))
+	results := make([]*store.ComponentRecord, 0, len(catalog))
 	for _, rec := range catalog {
-		if !isDeletedRecord(rec) {
-			results = append(results, cloneRecord(rec))
+		if !store.IsDeletedRecord(rec) {
+			results = append(results, store.CloneRecord(rec))
 		}
 	}
 
@@ -628,22 +630,22 @@ func (s *SpannerStore) ListComponents(ctx context.Context) ([]*ComponentRecord, 
 }
 
 // PrepareDeactivation checks deactivation safety and transitions target (and cascaded dependents) to DISABLING.
-func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src ...RequestSource) (*PrepareDeactivationResult, error) {
-	canonicalName, reqSrc, err := validateSourcedResourceArgs(name, src)
+func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src ...store.RequestSource) (*store.PrepareDeactivationResult, error) {
+	canonicalName, reqSrc, err := store.ValidateSourcedResourceArgs(name, src)
 	if err != nil {
 		return nil, err
 	}
 
-	var result *PrepareDeactivationResult
-	var prevOwner *SourceOwner
+	var result *store.PrepareDeactivationResult
+	var prevOwner *store.SourceOwner
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		catalog, targetRec, err := s.lookupCatalogTargetTx(ctx, txn, operationPrepareDeactivation, canonicalName, reqSrc)
+		catalog, targetRec, err := s.lookupCatalogTargetTx(ctx, txn, store.OperationPrepareDeactivation, canonicalName, reqSrc)
 		if err != nil {
 			return err
 		}
 
-		res, err := EvaluateDeactivationSafety(catalog, canonicalName, requestCascade, minDrainTimeout)
+		res, err := store.EvaluateDeactivationSafety(catalog, canonicalName, requestCascade, store.MinDrainTimeout)
 		if err != nil {
 			return err
 		}
@@ -660,20 +662,20 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 				return err
 			}
 		}
-		prevOwner = cloneSourceOwner(targetRec.Owner)
+		prevOwner = store.CloneSourceOwner(targetRec.Owner)
 		return recordNonIntentOwnerTx(txn, targetRec, reqSrc)
 	})
 
 	if err != nil {
-		return nil, recordSourceConflictError(err)
+		return nil, store.RecordSourceConflictError(err)
 	}
-	recordOwnerAdoption(prevOwner, reqSrc, false)
+	store.RecordOwnerAdoption(prevOwner, reqSrc, false)
 	return result, nil
 }
 
 // lookupCatalogTargetTx checks the cluster fence, loads the active catalog, finds canonicalName,
 // and checks source ownership for operation.
-func (s *SpannerStore) lookupCatalogTargetTx(ctx context.Context, txn *spanner.ReadWriteTransaction, operation, canonicalName string, src *RequestSource) (map[string]*ComponentRecord, *ComponentRecord, error) {
+func (s *SpannerStore) lookupCatalogTargetTx(ctx context.Context, txn *spanner.ReadWriteTransaction, operation, canonicalName string, src *store.RequestSource) (map[string]*store.ComponentRecord, *store.ComponentRecord, error) {
 	if err := checkFence(ctx, txn, operation, src); err != nil {
 		return nil, nil, err
 	}
@@ -682,29 +684,29 @@ func (s *SpannerStore) lookupCatalogTargetTx(ctx context.Context, txn *spanner.R
 		return nil, nil, err
 	}
 	rec, ok := catalog[canonicalName]
-	if !ok || rec == nil || isDeletedRecord(rec) {
-		return nil, nil, ErrComponentNotFound
+	if !ok || rec == nil || store.IsDeletedRecord(rec) {
+		return nil, nil, store.ErrComponentNotFound
 	}
-	if err := checkSourceMutation(operation, canonicalName, rec.Owner, src); err != nil {
+	if err := store.CheckSourceMutation(operation, canonicalName, rec.Owner, src); err != nil {
 		return nil, nil, err
 	}
 	return catalog, rec, nil
 }
 
-func collectDeactivationTargets(targetRec *ComponentRecord, catalog map[string]*ComponentRecord, cascaded []string, requestCascade bool) []*ComponentRecord {
-	targets := []*ComponentRecord{targetRec}
+func collectDeactivationTargets(targetRec *store.ComponentRecord, catalog map[string]*store.ComponentRecord, cascaded []string, requestCascade bool) []*store.ComponentRecord {
+	targets := []*store.ComponentRecord{targetRec}
 	if !requestCascade {
 		return targets
 	}
 	for _, depName := range cascaded {
-		if depRec, ok := catalog[depName]; ok && depRec != nil && !isDeletedRecord(depRec) {
+		if depRec, ok := catalog[depName]; ok && depRec != nil && !store.IsDeletedRecord(depRec) {
 			targets = append(targets, depRec)
 		}
 	}
 	return targets
 }
 
-func buildDisablingMutations(toTransition []*ComponentRecord, now time.Time) ([]*spanner.Mutation, error) {
+func buildDisablingMutations(toTransition []*store.ComponentRecord, now time.Time) ([]*spanner.Mutation, error) {
 	var mutations []*spanner.Mutation
 	for _, rec := range toTransition {
 		if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLING || rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
@@ -736,29 +738,29 @@ func buildDisablingMutations(toTransition []*ComponentRecord, now time.Time) ([]
 }
 
 // CompleteDeactivation marks a component in DISABLING state as DISABLED.
-func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, force bool, src ...RequestSource) error {
-	canonicalName, reqSrc, err := validateSourcedResourceArgs(name, src)
+func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, force bool, src ...store.RequestSource) error {
+	canonicalName, reqSrc, err := store.ValidateSourcedResourceArgs(name, src)
 	if err != nil {
 		return err
 	}
 
-	var prevOwner *SourceOwner
+	var prevOwner *store.SourceOwner
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, operationCompleteDeactivation, canonicalName, reqSrc)
+		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, store.OperationCompleteDeactivation, canonicalName, reqSrc)
 		if err != nil {
 			return err
 		}
 
 		if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
-			prevOwner = cloneSourceOwner(rec.Owner)
+			prevOwner = store.CloneSourceOwner(rec.Owner)
 			return recordNonIntentOwnerTx(txn, rec, reqSrc)
 		}
 		if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
-			return ErrInvalidStateTransition
+			return store.ErrInvalidStateTransition
 		}
 
 		if !force {
-			activeDependents, _ := findActiveDependents(catalog, canonicalName)
+			activeDependents, _ := store.FindActiveDependents(catalog, canonicalName)
 			if len(activeDependents) > 0 {
 				return status.Errorf(codes.FailedPrecondition, "cannot complete deactivation of component %s: active dependents remaining: %v", canonicalName, activeDependents)
 			}
@@ -788,62 +790,62 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 		if err := txn.BufferWrite([]*spanner.Mutation{mutation}); err != nil {
 			return err
 		}
-		prevOwner = cloneSourceOwner(rec.Owner)
+		prevOwner = store.CloneSourceOwner(rec.Owner)
 		return recordNonIntentOwnerTx(txn, rec, reqSrc)
 	})
 
 	if err != nil {
-		return recordSourceConflictError(err)
+		return store.RecordSourceConflictError(err)
 	}
-	recordOwnerAdoption(prevOwner, reqSrc, false)
+	store.RecordOwnerAdoption(prevOwner, reqSrc, false)
 	return nil
 }
 
 // UpdateObservedGeneration synchronizes actual component access, generation, and state.
-func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src ...RequestSource) (*ComponentRecord, error) {
-	canonicalName, reqSrc, err := validateUpdateObservedArgs(name, observedGen, src)
+func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src ...store.RequestSource) (*store.ComponentRecord, error) {
+	canonicalName, reqSrc, err := store.ValidateUpdateObservedArgs(name, observedGen, src)
 	if err != nil {
 		return nil, err
 	}
 
-	var finalRec *ComponentRecord
+	var finalRec *store.ComponentRecord
 	var unchanged bool
-	var prevOwner *SourceOwner
+	var prevOwner *store.SourceOwner
 
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		unchanged = false
-		if err := checkFence(ctx, txn, operationUpdateObservedGeneration, reqSrc); err != nil {
+		if err := checkFence(ctx, txn, store.OperationUpdateObservedGeneration, reqSrc); err != nil {
 			return err
 		}
 		rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
 		if err != nil {
 			return err
 		}
-		if err := checkSourceMutation(operationUpdateObservedGeneration, canonicalName, rec.Owner, reqSrc); err != nil {
+		if err := store.CheckSourceMutation(store.OperationUpdateObservedGeneration, canonicalName, rec.Owner, reqSrc); err != nil {
 			return err
 		}
 
 		// An unchanged heartbeat writes only the owner columns, refreshing SourceLastSeenTime of a
 		// sourced call, and keeps UpdateTime.
-		unchanged = !applyObservation(rec, observedGen, access, state, statusMsg)
+		unchanged = !store.ApplyObservation(rec, observedGen, access, state, statusMsg)
 		if !unchanged {
 			if err := writeObservationTx(txn, rec, observedGen, state); err != nil {
 				return err
 			}
 		}
-		prevOwner = cloneSourceOwner(rec.Owner)
+		prevOwner = store.CloneSourceOwner(rec.Owner)
 		if err := recordNonIntentOwnerTx(txn, rec, reqSrc); err != nil {
 			return err
 		}
 
-		finalRec = cloneRecord(rec)
+		finalRec = store.CloneRecord(rec)
 		return nil
 	})
 
 	if err != nil {
-		return nil, recordSourceConflictError(err)
+		return nil, store.RecordSourceConflictError(err)
 	}
-	recordOwnerAdoption(prevOwner, reqSrc, false)
+	store.RecordOwnerAdoption(prevOwner, reqSrc, false)
 
 	if finalRec == nil {
 		return nil, nil
@@ -853,15 +855,15 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 	}
 	if !unchanged {
 		finalRec.UpdateTime = commitTimestamp
-		finalRec.Etag = generateEtag(finalRec)
+		finalRec.Etag = store.GenerateEtag(finalRec)
 	}
 
-	return cloneRecord(finalRec), nil
+	return store.CloneRecord(finalRec), nil
 }
 
 // writeObservationTx buffers a write of rec's observed generation, access status and, unless
 // state is UNSPECIFIED, state, with UpdateTime at the commit timestamp.
-func writeObservationTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord, observedGen int64, state componentspb.ComponentState) error {
+func writeObservationTx(txn *spanner.ReadWriteTransaction, rec *store.ComponentRecord, observedGen int64, state componentspb.ComponentState) error {
 	var accessBytes []byte
 	if rec.Status != nil {
 		bytes, err := proto.Marshal(rec.Status)
@@ -884,27 +886,27 @@ func writeObservationTx(txn *spanner.ReadWriteTransaction, rec *ComponentRecord,
 }
 
 // ExecuteDeletion deletes a component using the specified deletion policy.
-func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...RequestSource) error {
-	canonicalName, reqSrc, err := validateSourcedResourceArgs(name, src)
+func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...store.RequestSource) error {
+	canonicalName, reqSrc, err := store.ValidateSourcedResourceArgs(name, src)
 	if err != nil {
 		return err
 	}
 
-	var prevOwner *SourceOwner
+	var prevOwner *store.SourceOwner
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, operationExecuteDeletion, canonicalName, reqSrc)
+		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, store.OperationExecuteDeletion, canonicalName, reqSrc)
 		if err != nil {
 			return err
 		}
 
-		if err := ValidateDeletionSafety(catalog, canonicalName, policy, force); err != nil {
+		if err := store.ValidateDeletionSafety(catalog, canonicalName, policy, force); err != nil {
 			return err
 		}
 
-		prevOwner = cloneSourceOwner(rec.Owner)
-		var owner *SourceOwner
+		prevOwner = store.CloneSourceOwner(rec.Owner)
+		var owner *store.SourceOwner
 		if reqSrc != nil {
-			owner = deletionOwner(rec.Owner, *reqSrc)
+			owner = store.DeletionOwner(rec.Owner, *reqSrc)
 			rec.Owner = owner
 		}
 		toDelete := collectDeletionTargets(rec, catalog, canonicalName, policy)
@@ -916,18 +918,18 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 	})
 
 	if err != nil {
-		return recordSourceConflictError(err)
+		return store.RecordSourceConflictError(err)
 	}
-	recordOwnerAdoption(prevOwner, reqSrc, false)
+	store.RecordOwnerAdoption(prevOwner, reqSrc, false)
 	return nil
 }
 
-func collectDeletionTargets(rec *ComponentRecord, catalog map[string]*ComponentRecord, canonicalName string, policy componentspb.DeletionPolicy) []*ComponentRecord {
-	toDelete := []*ComponentRecord{rec}
+func collectDeletionTargets(rec *store.ComponentRecord, catalog map[string]*store.ComponentRecord, canonicalName string, policy componentspb.DeletionPolicy) []*store.ComponentRecord {
+	toDelete := []*store.ComponentRecord{rec}
 	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE || policy == componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED {
-		allDependents, _ := findAllDependents(catalog, canonicalName)
+		allDependents, _ := store.FindAllDependents(catalog, canonicalName)
 		for _, depName := range allDependents {
-			if depRec, ok := catalog[depName]; ok && depRec != nil && !isDeletedRecord(depRec) {
+			if depRec, ok := catalog[depName]; ok && depRec != nil && !store.IsDeletedRecord(depRec) {
 				toDelete = append(toDelete, depRec)
 			}
 		}
@@ -937,7 +939,7 @@ func collectDeletionTargets(rec *ComponentRecord, catalog map[string]*ComponentR
 
 // buildDeletionMutations returns one Components update per target. A non-nil targetOwner is merged
 // into the mutation of toDelete[0] (the requested deletion target) so the row is written once.
-func buildDeletionMutations(toDelete []*ComponentRecord, policy componentspb.DeletionPolicy, now time.Time, targetOwner *SourceOwner) ([]*spanner.Mutation, error) {
+func buildDeletionMutations(toDelete []*store.ComponentRecord, policy componentspb.DeletionPolicy, now time.Time, targetOwner *store.SourceOwner) ([]*spanner.Mutation, error) {
 	mutations := make([]*spanner.Mutation, 0, len(toDelete))
 	for i, target := range toDelete {
 		target.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
@@ -954,7 +956,7 @@ func buildDeletionMutations(toDelete []*ComponentRecord, policy componentspb.Del
 		compProto := &componentspb.Component{
 			Name:   naming.FullComponentName(target.Name),
 			Spec:   target.Spec,
-			Labels: copyMap(target.Labels),
+			Labels: store.CopyMap(target.Labels),
 		}
 		configBytes, err := proto.Marshal(compProto)
 		if err != nil {
@@ -982,8 +984,8 @@ func buildDeletionMutations(toDelete []*ComponentRecord, policy componentspb.Del
 }
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
-func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	canonicalName, err := validateResourceName(name)
+func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	canonicalName, err := store.ValidateResourceName(name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -996,7 +998,7 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 
 	rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
 	if err != nil {
-		if errors.Is(err, ErrComponentNotFound) && generation > 0 {
+		if errors.Is(err, store.ErrComponentNotFound) && generation > 0 {
 			return s.resolveHistoricalSnapshotByName(ctx, txn, canonicalName, generation)
 		}
 		return nil, nil, err
@@ -1024,9 +1026,9 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 	if targetGen == rec.Generation {
 		var coords *componentspb.ResolvedComponentCoordinates
 		if rec.Status != nil && rec.Status.Coordinates != nil {
-			coords = cloneCoordinates(rec.Status.Coordinates)
+			coords = store.CloneCoordinates(rec.Status.Coordinates)
 		}
-		return cloneRecord(rec), coords, nil
+		return store.CloneRecord(rec), coords, nil
 	}
 
 	return s.resolveHistoricalSnapshot(ctx, txn, rec, targetGen, canonicalName)
@@ -1077,8 +1079,8 @@ func scanSnapshotRow(row *spanner.Row) (*snapshotRowData, error) {
 // snapshotRowToRecord hydrates a historical ComponentRecord and its coordinates from a scanned
 // snapshot row. Timestamps are supplied by the caller because snapshots do not store their own;
 // the record is built from scratch so no active component state leaks into the historical view.
-func snapshotRowToRecord(d *snapshotRowData, canonicalName string, createTime, updateTime time.Time) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	snapRec := &ComponentRecord{
+func snapshotRowToRecord(d *snapshotRowData, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	snapRec := &store.ComponentRecord{
 		ComponentID: d.componentID,
 		Name:        canonicalName,
 		Generation:  d.lockedGen,
@@ -1096,19 +1098,19 @@ func snapshotRowToRecord(d *snapshotRowData, canonicalName string, createTime, u
 		obsGen := snapRec.Status.ObservedGeneration
 		snapRec.ObservedGeneration = &obsGen
 	}
-	snapRec.Dependencies = ExtractDependencies(snapRec.Spec, snapRec.Labels)
-	snapRec.Etag = generateEtag(snapRec)
+	snapRec.Dependencies = store.ExtractDependencies(snapRec.Spec, snapRec.Labels)
+	snapRec.Etag = store.GenerateEtag(snapRec)
 
 	var coords *componentspb.ResolvedComponentCoordinates
 	if snapRec.Status != nil && snapRec.Status.Coordinates != nil {
-		coords = cloneCoordinates(snapRec.Status.Coordinates)
+		coords = store.CloneCoordinates(snapRec.Status.Coordinates)
 	}
 	return snapRec, coords, nil
 }
 
 // resolveHistoricalSnapshot resolves a snapshot of an active component by its ComponentId,
 // inheriting the timestamps of the owning active record.
-func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, queryable spannerQueryable, rec *ComponentRecord, targetGen int64, canonicalName string) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, queryable spannerQueryable, rec *store.ComponentRecord, targetGen int64, canonicalName string) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
 	stmt := spanner.Statement{
 		SQL: selectSnapshotByComponentIDAndGenSQL,
 		Params: map[string]any{
@@ -1130,7 +1132,7 @@ func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, queryable 
 // resolveHistoricalSnapshotByName resolves a snapshot by component name, covering soft-deleted or
 // recreated incarnations whose active record is unavailable. Timestamps come from the joined
 // Components row of the incarnation that owns the snapshot.
-func (s *SpannerStore) resolveHistoricalSnapshotByName(ctx context.Context, queryable spannerQueryable, canonicalName string, targetGen int64) (*ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+func (s *SpannerStore) resolveHistoricalSnapshotByName(ctx context.Context, queryable spannerQueryable, canonicalName string, targetGen int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
 	stmt := spanner.Statement{
 		SQL: selectSnapshotByNameAndGenSQL,
 		Params: map[string]any{
@@ -1158,8 +1160,8 @@ func (s *SpannerStore) resolveHistoricalSnapshotByName(ctx context.Context, quer
 }
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
-func (s *SpannerStore) ValidateComponentRequirement(ctx context.Context, name string, reqType componentspb.ComponentType, minVersion string) (*RequirementValidationResult, error) {
-	canonicalName, err := validateResourceName(name)
+func (s *SpannerStore) ValidateComponentRequirement(ctx context.Context, name string, reqType componentspb.ComponentType, minVersion string) (*store.RequirementValidationResult, error) {
+	canonicalName, err := store.ValidateResourceName(name)
 	if err != nil {
 		return nil, err
 	}
@@ -1172,7 +1174,7 @@ func (s *SpannerStore) ValidateComponentRequirement(ctx context.Context, name st
 	rec, err := s.GetComponent(ctx, canonicalName)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
-			return &RequirementValidationResult{
+			return &store.RequirementValidationResult{
 				IsSatisfied:             false,
 				SatisfyingComponentName: canonicalName,
 				Reason:                  fmt.Sprintf("component %q not found", canonicalName),
@@ -1181,7 +1183,7 @@ func (s *SpannerStore) ValidateComponentRequirement(ctx context.Context, name st
 		return nil, err
 	}
 
-	return evaluateComponentRequirement(rec, canonicalName, reqType, minVersion)
+	return store.EvaluateComponentRequirement(rec, canonicalName, reqType, minVersion)
 }
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
@@ -1189,12 +1191,12 @@ func (s *SpannerStore) GetPlatformHealth(ctx context.Context, filter string, pag
 	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented in SpannerStore")
 }
 
-func (s *SpannerStore) loadActiveCatalog(ctx context.Context, queryable spannerQueryable) (map[string]*ComponentRecord, error) {
+func (s *SpannerStore) loadActiveCatalog(ctx context.Context, queryable spannerQueryable) (map[string]*store.ComponentRecord, error) {
 	compIter := queryable.Query(ctx, spanner.Statement{SQL: selectAllActiveComponentsSQL})
 	defer compIter.Stop()
 
-	componentsByName := make(map[string]*ComponentRecord)
-	componentsByID := make(map[int64]*ComponentRecord)
+	componentsByName := make(map[string]*store.ComponentRecord)
+	componentsByID := make(map[int64]*store.ComponentRecord)
 
 	if err := compIter.Do(func(row *spanner.Row) error {
 		rec, err := rowToComponentRecord(row)
@@ -1231,7 +1233,7 @@ func (s *SpannerStore) loadActiveCatalog(ctx context.Context, queryable spannerQ
 	}
 
 	for _, rec := range componentsByName {
-		rec.Etag = generateEtag(rec)
+		rec.Etag = store.GenerateEtag(rec)
 	}
 
 	return componentsByName, nil
@@ -1289,13 +1291,13 @@ func scanComponentRow(row *spanner.Row) (*componentRowData, error) {
 	return &d, nil
 }
 
-func rowToComponentRecord(row *spanner.Row) (*ComponentRecord, error) {
+func rowToComponentRecord(row *spanner.Row) (*store.ComponentRecord, error) {
 	d, err := scanComponentRow(row)
 	if err != nil {
 		return nil, err
 	}
 
-	rec := &ComponentRecord{
+	rec := &store.ComponentRecord{
 		ComponentID:        d.componentID,
 		Name:               d.name,
 		State:              componentspb.ComponentState(d.state),
@@ -1325,12 +1327,12 @@ func rowToComponentRecord(row *spanner.Row) (*ComponentRecord, error) {
 		rec.DeleteTime = &t
 	}
 
-	rec.Etag = generateEtag(rec)
+	rec.Etag = store.GenerateEtag(rec)
 	return rec, nil
 }
 
 // scanSourceOwner reads the recorded owner of a component row, or nil when SourceClusterUid is NULL.
-func scanSourceOwner(row *spanner.Row) (*SourceOwner, error) {
+func scanSourceOwner(row *spanner.Row) (*store.SourceOwner, error) {
 	var uid, namespace, clusterUID spanner.NullString
 	var generation, epoch spanner.NullInt64
 	for _, col := range [...]struct {
@@ -1346,10 +1348,10 @@ func scanSourceOwner(row *spanner.Row) (*SourceOwner, error) {
 	if !clusterUID.Valid {
 		return nil, nil
 	}
-	return &SourceOwner{UID: uid.StringVal, Generation: generation.Int64, Namespace: namespace.StringVal, ClusterUID: clusterUID.StringVal, Epoch: epoch.Int64}, nil
+	return &store.SourceOwner{UID: uid.StringVal, Generation: generation.Int64, Namespace: namespace.StringVal, ClusterUID: clusterUID.StringVal, Epoch: epoch.Int64}, nil
 }
 
-func unmarshalConfigProto(configBytes []byte, rec *ComponentRecord) error {
+func unmarshalConfigProto(configBytes []byte, rec *store.ComponentRecord) error {
 	if len(configBytes) == 0 {
 		return nil
 	}
@@ -1357,7 +1359,7 @@ func unmarshalConfigProto(configBytes []byte, rec *ComponentRecord) error {
 	if err := proto.Unmarshal(configBytes, &comp); err == nil && (comp.Spec != nil || len(comp.Labels) > 0) {
 		rec.Spec = comp.Spec
 		if len(comp.Labels) > 0 {
-			rec.Labels = copyMap(comp.Labels)
+			rec.Labels = store.CopyMap(comp.Labels)
 		}
 		return nil
 	}
@@ -1369,7 +1371,7 @@ func unmarshalConfigProto(configBytes []byte, rec *ComponentRecord) error {
 	return nil
 }
 
-func unmarshalAccessStatus(accessBytes []byte, rec *ComponentRecord) error {
+func unmarshalAccessStatus(accessBytes []byte, rec *store.ComponentRecord) error {
 	if len(accessBytes) == 0 {
 		rec.Status = nil
 		return nil

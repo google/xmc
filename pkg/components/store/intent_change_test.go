@@ -15,7 +15,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -56,8 +55,8 @@ func TestIsUnchangedIntent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isUnchangedIntent(tt.rec, tt.spec, tt.labels, tt.deps, tt.desiredGen); got != tt.want {
-				t.Errorf("isUnchangedIntent() = %v, want %v", got, tt.want)
+			if got := IsUnchangedIntent(tt.rec, tt.spec, tt.labels, tt.deps, tt.desiredGen); got != tt.want {
+				t.Errorf("IsUnchangedIntent() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -81,25 +80,11 @@ func TestSpecWithoutGeneration(t *testing.T) {
 	}
 }
 
-func TestMemoryStore_UnchangedIntentRecordsNoSnapshot(t *testing.T) {
-	ctx := context.Background()
-	ms := NewMemoryStore()
-	spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"}
-	for range 3 {
-		if _, err := ms.SetComponentIntent(ctx, "redpanda", spec, nil, 3); err != nil {
-			t.Fatalf("SetComponentIntent() error = %v", err)
-		}
-	}
-	if got := len(ms.snapshots["redpanda"]); got != 1 {
-		t.Errorf("snapshots after repeated unchanged intent = %d, want 1", got)
-	}
-}
-
 func TestPlanIntent(t *testing.T) {
 	spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"}
 	changedSpec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.1.0"}
 	rec := &ComponentRecord{Generation: 5, Spec: spec}
-	owned := &ComponentRecord{Generation: 5, Spec: spec, Owner: ownerOf(baseRequestSource)}
+	owned := &ComponentRecord{Generation: 5, Spec: spec, Owner: OwnerOf(baseRequestSource)}
 	older := modifiedSource(func(s *RequestSource) { s.Generation = 2 })
 	anotherObject := modifiedSource(func(s *RequestSource) { s.UID, s.Generation = "uid-b", 1 })
 	casAdopter := modifiedSource(func(s *RequestSource) { s.UID, s.Generation, s.ExpectedOwnerUID = "uid-b", 1, "uid-a" })
@@ -111,39 +96,39 @@ func TestPlanIntent(t *testing.T) {
 		deps       []string
 		desiredGen int64
 		src        *RequestSource
-		want       intentPlan
+		want       IntentPlan
 		wantReason string
 	}{
-		{name: "unchanged intent writes nothing", rec: rec, spec: spec, desiredGen: 5, want: intentPlan{write: writeNothing, generation: 5}},
-		{name: "older desired generation with an equal spec writes nothing", rec: rec, spec: spec, desiredGen: 3, want: intentPlan{write: writeNothing, generation: 5}},
-		{name: "newer desired generation jumps to it", rec: rec, spec: spec, desiredGen: 9, want: intentPlan{write: writeSpec, generation: 9}},
-		{name: "changed spec at an older desired generation bumps by one", rec: rec, spec: changedSpec, desiredGen: 3, want: intentPlan{write: writeSpec, generation: 6}},
-		{name: "labels-only change writes the spec", rec: rec, spec: spec, labels: map[string]string{"tier": "backend"}, desiredGen: 5, want: intentPlan{write: writeSpec, generation: 6}},
-		{name: "dependencies-only change writes the spec", rec: rec, spec: spec, deps: []string{"redpanda"}, desiredGen: 5, want: intentPlan{write: writeSpec, generation: 6}},
-		{name: "sourced intent ignores a newer spec generation", rec: owned, spec: changedSpec, desiredGen: 9, src: &baseRequestSource, want: intentPlan{write: writeSpec, generation: 6}},
-		{name: "sourced intent adopts a record without an owner without a bump", rec: rec, spec: spec, src: &baseRequestSource, want: intentPlan{write: writeOwnerOnly, generation: 5}},
-		{name: "sourced replay writes nothing", rec: owned, spec: spec, src: &baseRequestSource, want: intentPlan{write: writeNothing, generation: 5}},
-		{name: "older unchanged replay writes nothing", rec: owned, spec: spec, src: &older, want: intentPlan{write: writeNothing, generation: 5}},
+		{name: "unchanged intent writes nothing", rec: rec, spec: spec, desiredGen: 5, want: IntentPlan{Write: WriteNothing, Generation: 5}},
+		{name: "older desired generation with an equal spec writes nothing", rec: rec, spec: spec, desiredGen: 3, want: IntentPlan{Write: WriteNothing, Generation: 5}},
+		{name: "newer desired generation jumps to it", rec: rec, spec: spec, desiredGen: 9, want: IntentPlan{Write: WriteSpec, Generation: 9}},
+		{name: "changed spec at an older desired generation bumps by one", rec: rec, spec: changedSpec, desiredGen: 3, want: IntentPlan{Write: WriteSpec, Generation: 6}},
+		{name: "labels-only change writes the spec", rec: rec, spec: spec, labels: map[string]string{"tier": "backend"}, desiredGen: 5, want: IntentPlan{Write: WriteSpec, Generation: 6}},
+		{name: "dependencies-only change writes the spec", rec: rec, spec: spec, deps: []string{"redpanda"}, desiredGen: 5, want: IntentPlan{Write: WriteSpec, Generation: 6}},
+		{name: "sourced intent ignores a newer spec generation", rec: owned, spec: changedSpec, desiredGen: 9, src: &baseRequestSource, want: IntentPlan{Write: WriteSpec, Generation: 6}},
+		{name: "sourced intent adopts a record without an owner without a bump", rec: rec, spec: spec, src: &baseRequestSource, want: IntentPlan{Write: WriteOwnerOnly, Generation: 5}},
+		{name: "sourced replay writes nothing", rec: owned, spec: spec, src: &baseRequestSource, want: IntentPlan{Write: WriteNothing, Generation: 5}},
+		{name: "older unchanged replay writes nothing", rec: owned, spec: spec, src: &older, want: IntentPlan{Write: WriteNothing, Generation: 5}},
 		{name: "older changed intent is stale", rec: owned, spec: changedSpec, src: &older, wantReason: ReasonStaleGeneration},
 		{name: "another object without a CAS guard is rejected", rec: owned, spec: spec, src: &anotherObject, wantReason: ReasonSourceIncarnationMismatch},
-		{name: "another object naming the owner adopts the record", rec: owned, spec: spec, src: &casAdopter, want: intentPlan{write: writeOwnerOnly, generation: 5}},
+		{name: "another object naming the owner adopts the record", rec: owned, spec: spec, src: &casAdopter, want: IntentPlan{Write: WriteOwnerOnly, Generation: 5}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := planIntent("redpanda", tt.rec, tt.spec, tt.labels, tt.deps, tt.desiredGen, tt.src)
+			got, err := PlanIntent("redpanda", tt.rec, tt.spec, tt.labels, tt.deps, tt.desiredGen, tt.src)
 			if reason := ErrorInfoReason(err); reason != tt.wantReason || (err == nil) != (tt.wantReason == "") {
-				t.Fatalf("planIntent() error = %v, want reason %q", err, tt.wantReason)
+				t.Fatalf("PlanIntent() error = %v, want reason %q", err, tt.wantReason)
 			}
 			if got != tt.want {
-				t.Errorf("planIntent() = %+v, want %+v", got, tt.want)
+				t.Errorf("PlanIntent() = %+v, want %+v", got, tt.want)
 			}
 		})
 	}
 }
 
 // TestPlanLiveIntent checks the create-versus-update dispatch both stores rely on: a missing or
-// soft-deleted record is planned as a create at newIntentGeneration, and an active record is
-// returned with the planIntent outcome.
+// soft-deleted record is planned as a create at NewIntentGeneration, and an active record is
+// returned with the PlanIntent outcome.
 func TestPlanLiveIntent(t *testing.T) {
 	spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"}
 	active := &ComponentRecord{Name: "redpanda", Generation: 5, Spec: spec}
@@ -154,23 +139,23 @@ func TestPlanLiveIntent(t *testing.T) {
 		catalog    map[string]*ComponentRecord
 		desiredGen int64
 		wantRec    *ComponentRecord
-		wantPlan   intentPlan
+		wantPlan   IntentPlan
 	}{
-		{name: "absent name is a create", catalog: map[string]*ComponentRecord{}, desiredGen: 0, wantPlan: intentPlan{write: writeSpec, generation: 1, created: true}},
-		{name: "soft-deleted record is a create at the desired generation", catalog: map[string]*ComponentRecord{"redpanda": softDeleted}, desiredGen: 3, wantPlan: intentPlan{write: writeSpec, generation: 3, created: true}},
-		{name: "active record delegates to planIntent", catalog: map[string]*ComponentRecord{"redpanda": active}, desiredGen: 5, wantRec: active, wantPlan: intentPlan{write: writeNothing, generation: 5}},
+		{name: "absent name is a create", catalog: map[string]*ComponentRecord{}, desiredGen: 0, wantPlan: IntentPlan{Write: WriteSpec, Generation: 1, Created: true}},
+		{name: "soft-deleted record is a create at the desired generation", catalog: map[string]*ComponentRecord{"redpanda": softDeleted}, desiredGen: 3, wantPlan: IntentPlan{Write: WriteSpec, Generation: 3, Created: true}},
+		{name: "active record delegates to PlanIntent", catalog: map[string]*ComponentRecord{"redpanda": active}, desiredGen: 5, wantRec: active, wantPlan: IntentPlan{Write: WriteNothing, Generation: 5}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec, plan, err := planLiveIntent(tt.catalog, "redpanda", spec, nil, nil, tt.desiredGen, nil)
+			rec, plan, err := PlanLiveIntent(tt.catalog, "redpanda", spec, nil, nil, tt.desiredGen, nil)
 			if err != nil {
-				t.Fatalf("planLiveIntent() error = %v", err)
+				t.Fatalf("PlanLiveIntent() error = %v", err)
 			}
 			if rec != tt.wantRec {
-				t.Errorf("planLiveIntent() record = %p, want %p", rec, tt.wantRec)
+				t.Errorf("PlanLiveIntent() record = %p, want %p", rec, tt.wantRec)
 			}
 			if plan != tt.wantPlan {
-				t.Errorf("planLiveIntent() plan = %+v, want %+v", plan, tt.wantPlan)
+				t.Errorf("PlanLiveIntent() plan = %+v, want %+v", plan, tt.wantPlan)
 			}
 		})
 	}
@@ -190,8 +175,8 @@ func TestNewIntentGeneration(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := newIntentGeneration(tt.desiredGen, tt.src); got != tt.want {
-				t.Errorf("newIntentGeneration(%d, %v) = %d, want %d", tt.desiredGen, tt.src, got, tt.want)
+			if got := NewIntentGeneration(tt.desiredGen, tt.src); got != tt.want {
+				t.Errorf("NewIntentGeneration(%d, %v) = %d, want %d", tt.desiredGen, tt.src, got, tt.want)
 			}
 		})
 	}

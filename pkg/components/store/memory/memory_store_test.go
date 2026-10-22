@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package memory
 
 import (
 	"context"
@@ -29,6 +29,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/store"
 )
 
 // sampleDependency is the dependency that sampleSpec declares through a manifest annotation.
@@ -70,7 +71,7 @@ func TestMemoryStore_SetComponentIntent_NewComponent(t *testing.T) {
 		t.Fatalf("SetComponentIntent() unexpected error: %v", err)
 	}
 
-	wantRec := &ComponentRecord{
+	wantRec := &store.ComponentRecord{
 		ComponentID:  2,
 		Name:         "my-comp",
 		Generation:   1,
@@ -90,7 +91,7 @@ func TestMemoryStore_SetComponentIntent_NewComponent(t *testing.T) {
 			State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 	}
-	if diff := cmp.Diff(wantRec, rec, protocmp.Transform(), cmpopts.IgnoreFields(ComponentRecord{}, "CreateTime", "UpdateTime", "Etag")); diff != "" {
+	if diff := cmp.Diff(wantRec, rec, protocmp.Transform(), cmpopts.IgnoreFields(store.ComponentRecord{}, "CreateTime", "UpdateTime", "Etag")); diff != "" {
 		t.Errorf("ComponentRecord mismatch (-want +got):\n%s", diff)
 	}
 
@@ -130,7 +131,7 @@ func TestMemoryStore_SetComponentIntent_UpdateExisting(t *testing.T) {
 		t.Fatalf("Second SetComponentIntent() failed: %v", err)
 	}
 
-	wantRec2 := &ComponentRecord{
+	wantRec2 := &store.ComponentRecord{
 		ComponentID:  2,
 		Name:         "my-comp",
 		Generation:   2,
@@ -147,7 +148,7 @@ func TestMemoryStore_SetComponentIntent_UpdateExisting(t *testing.T) {
 			State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 	}
-	if diff := cmp.Diff(wantRec2, rec2, protocmp.Transform(), cmpopts.IgnoreFields(ComponentRecord{}, "CreateTime", "UpdateTime", "Etag")); diff != "" {
+	if diff := cmp.Diff(wantRec2, rec2, protocmp.Transform(), cmpopts.IgnoreFields(store.ComponentRecord{}, "CreateTime", "UpdateTime", "Etag")); diff != "" {
 		t.Errorf("ComponentRecord mismatch (-want +got):\n%s", diff)
 	}
 
@@ -169,7 +170,7 @@ func TestMemoryStore_SetComponentIntent_DesiredGeneration(t *testing.T) {
 		t.Fatalf("SetComponentIntent() unexpected error: %v", err)
 	}
 
-	wantRec := &ComponentRecord{
+	wantRec := &store.ComponentRecord{
 		ComponentID:  2,
 		Name:         "my-comp",
 		Generation:   5,
@@ -188,7 +189,7 @@ func TestMemoryStore_SetComponentIntent_DesiredGeneration(t *testing.T) {
 			State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		},
 	}
-	if diff := cmp.Diff(wantRec, rec, protocmp.Transform(), cmpopts.IgnoreFields(ComponentRecord{}, "CreateTime", "UpdateTime", "Etag")); diff != "" {
+	if diff := cmp.Diff(wantRec, rec, protocmp.Transform(), cmpopts.IgnoreFields(store.ComponentRecord{}, "CreateTime", "UpdateTime", "Etag")); diff != "" {
 		t.Errorf("ComponentRecord mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -1117,5 +1118,19 @@ func TestMemoryStore_GetPlatformHealth(t *testing.T) {
 	}
 	if resp.GetNextPageToken() == "" {
 		t.Error("NextPageToken is empty, want token")
+	}
+}
+
+func TestMemoryStore_UnchangedIntentRecordsNoSnapshot(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+	spec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0"}
+	for range 3 {
+		if _, err := ms.SetComponentIntent(ctx, "redpanda", spec, nil, 3); err != nil {
+			t.Fatalf("SetComponentIntent() error = %v", err)
+		}
+	}
+	if got := len(ms.snapshots["redpanda"]); got != 1 {
+		t.Errorf("snapshots after repeated unchanged intent = %d, want 1", got)
 	}
 }

@@ -472,8 +472,8 @@ func TestValidateComponentRequirementFromMap_Immutability(t *testing.T) {
 }
 
 func TestSnapshotResolver_NilCoordinates(t *testing.T) {
-	if coords := cloneCoordinates(nil); coords != nil {
-		t.Errorf("cloneCoordinates(nil) = %v, want nil", coords)
+	if coords := CloneCoordinates(nil); coords != nil {
+		t.Errorf("CloneCoordinates(nil) = %v, want nil", coords)
 	}
 
 	components := map[string]*ComponentRecord{

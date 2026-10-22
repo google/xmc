@@ -29,6 +29,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	cmsserver "xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/memory"
 )
 
 func TestReconcileComponent_DeletionOrderingAndIdempotency(t *testing.T) {
@@ -268,7 +269,7 @@ func TestReconciler_ColdStartDeactivation_DeletesPreviouslyActiveComponent(t *te
 // dependency is blocked.
 func TestReconcileComponent_GatedDependentBlocksDeactivationInCMS(t *testing.T) {
 	ctx := context.Background()
-	r, err := NewReconciler(NewCMSClientAdapter(cmsserver.NewServer(store.NewMemoryStore(), cmsserver.WithAuthorizer(cmsserver.NewDisabledAuthorizer()))), nil, nil)
+	r, err := NewReconciler(NewCMSClientAdapter(cmsserver.NewServer(memory.NewMemoryStore(), cmsserver.WithAuthorizer(cmsserver.NewDisabledAuthorizer()))), nil, nil)
 	if err != nil {
 		t.Fatalf("NewReconciler() error = %v", err)
 	}

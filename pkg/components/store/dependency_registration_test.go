@@ -57,18 +57,18 @@ func TestResolveDependencyIDs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolveDependencyIDs(registrationCatalog(), "ingestion-gateway", tt.deps)
+			got, err := ResolveDependencyIDs(registrationCatalog(), "ingestion-gateway", tt.deps)
 			if tt.wantErr != "" {
 				if err == nil || err.Error() != tt.wantErr {
-					t.Fatalf("resolveDependencyIDs() error = %v, want %q", err, tt.wantErr)
+					t.Fatalf("ResolveDependencyIDs() error = %v, want %q", err, tt.wantErr)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("resolveDependencyIDs() unexpected error: %v", err)
+				t.Fatalf("ResolveDependencyIDs() unexpected error: %v", err)
 			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("resolveDependencyIDs() mismatch (-want +got):\n%s", diff)
+				t.Errorf("ResolveDependencyIDs() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -89,18 +89,18 @@ func TestValidateIntentDependencies(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := validateIntentDependencies(registrationCatalog(), tt.target, tt.deps)
+			got, err := ValidateIntentDependencies(registrationCatalog(), tt.target, tt.deps)
 			if tt.wantErr != "" {
 				if err == nil || err.Error() != tt.wantErr {
-					t.Fatalf("validateIntentDependencies() error = %v, want %q", err, tt.wantErr)
+					t.Fatalf("ValidateIntentDependencies() error = %v, want %q", err, tt.wantErr)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("validateIntentDependencies() unexpected error: %v", err)
+				t.Fatalf("ValidateIntentDependencies() unexpected error: %v", err)
 			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("validateIntentDependencies() mismatch (-want +got):\n%s", diff)
+				t.Errorf("ValidateIntentDependencies() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

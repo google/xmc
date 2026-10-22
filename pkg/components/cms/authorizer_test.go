@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
-	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/memory"
 )
 
 type fakeUserAuthenticator struct {
@@ -217,7 +217,7 @@ func TestServer_AuthorizationEnforcement(t *testing.T) {
 func TestServer_DeclareClusterEpochAuthorization(t *testing.T) {
 	ctx := context.Background()
 	const bridgeSA = "xmc-bridge@proj.iam.gserviceaccount.com"
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	newServer := func(caller string) *Server {
 		return NewServer(ms, WithAuthorizer(NewAuthorizer(AuthorizerConfig{
 			Authenticator:             &fakeUserAuthenticator{email: caller},

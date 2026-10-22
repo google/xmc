@@ -15,7 +15,6 @@
 package store
 
 import (
-	"context"
 	"slices"
 	"time"
 
@@ -39,19 +38,6 @@ const (
 // counted as stale by xmc_cms_component_owner_stale. A fence takeover sets SourceLastSeenTime to
 // its commit time, so reassigned records get the same period as an adoption grace period.
 const OwnerStaleThreshold = 15 * time.Minute
-
-// OwnershipGauges is a point-in-time read of the stored state behind the CMS ownership gauges.
-type OwnershipGauges struct {
-	FenceDeclared     bool      // False before the first DeclareClusterEpoch.
-	FenceEpoch        int64     // ComponentOwnershipFence.Epoch.
-	FenceLastSeenTime time.Time // ComponentOwnershipFence.LastSeenTime.
-	StaleOwners       int64     // Active owned components with SourceLastSeenTime <= now - OwnerStaleThreshold.
-}
-
-// OwnershipGaugeReader reads the stored state behind the CMS ownership gauges at now.
-type OwnershipGaugeReader interface {
-	ReadOwnershipGauges(ctx context.Context, now time.Time) (OwnershipGauges, error)
-}
 
 // sourceConflictReasons lists the ErrorInfo reasons counted by
 // xmc_cms_component_source_conflicts_total; each is pre-registered as a label value.
@@ -164,17 +150,17 @@ func adoptionReason(prev *SourceOwner, src *RequestSource, created bool) string 
 	}
 }
 
-// recordOwnerAdoption increments xmc_cms_component_owner_adoptions_total when a committed write
+// RecordOwnerAdoption increments xmc_cms_component_owner_adoptions_total when a committed write
 // adopts a component record under src.
-func recordOwnerAdoption(prev *SourceOwner, src *RequestSource, created bool) {
+func RecordOwnerAdoption(prev *SourceOwner, src *RequestSource, created bool) {
 	if reason := adoptionReason(prev, src, created); reason != "" {
 		ownerAdoptionsTotal.WithLabelValues(reason).Inc()
 	}
 }
 
-// recordSourceConflictError increments xmc_cms_component_source_conflicts_total when err carries a
+// RecordSourceConflictError increments xmc_cms_component_source_conflicts_total when err carries a
 // source ownership or cluster fence conflict reason, and returns err unchanged.
-func recordSourceConflictError(err error) error {
+func RecordSourceConflictError(err error) error {
 	if reason := ErrorInfoReason(err); slices.Contains(sourceConflictReasons, reason) {
 		sourceConflictsTotal.WithLabelValues(reason).Inc()
 	}
@@ -198,15 +184,15 @@ func RecordOwnershipGauges(g OwnershipGauges) {
 // isOwnerStale reports whether rec is an active owned record whose SourceLastSeenTime is at or
 // before cutoff. It matches the WHERE clause of SpannerStore's stale-owner count.
 func isOwnerStale(rec *ComponentRecord, cutoff time.Time) bool {
-	if isDeletedRecord(rec) || rec.Owner == nil || rec.SourceLastSeenTime.IsZero() {
+	if IsDeletedRecord(rec) || rec.Owner == nil || rec.SourceLastSeenTime.IsZero() {
 		return false
 	}
 	return !rec.SourceLastSeenTime.After(cutoff)
 }
 
-// countStaleOwnedComponents returns the number of active records in catalog whose owner is stale
+// CountStaleOwnedComponents returns the number of active records in catalog whose owner is stale
 // at now.
-func countStaleOwnedComponents(catalog map[string]*ComponentRecord, now time.Time) int64 {
+func CountStaleOwnedComponents(catalog map[string]*ComponentRecord, now time.Time) int64 {
 	cutoff := now.Add(-OwnerStaleThreshold)
 	var count int64
 	for _, rec := range catalog {
