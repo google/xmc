@@ -87,6 +87,13 @@ func ensurePostgresInstance() (string, error) {
 			Started:          true,
 		})
 		if err != nil {
+			// GenericContainer can return a created container together with an
+			// error (e.g. when the wait strategy times out). Terminate it here
+			// because TestMain only cleans up sharedPostgresContainer, and CI
+			// runs without the Ryuk reaper.
+			if termErr := testcontainers.TerminateContainer(c); termErr != nil {
+				err = errors.Join(err, fmt.Errorf("terminate partially started container: %w", termErr))
+			}
 			sharedPostgresErr = fmt.Errorf("failed to start postgres testcontainer: %w", err)
 			return
 		}
