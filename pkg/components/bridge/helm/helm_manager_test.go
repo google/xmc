@@ -12,19 +12,144 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bridge
+package helm
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/storage/driver"
 )
+
+type mockHelmActionRunner struct {
+	mu              sync.Mutex
+	lastRelease     string
+	lastNS          string
+	lastChart       *chart.Chart
+	lastValues      map[string]any
+	upgradeErr      error
+	upgradeCalls    int
+	uninstallCalls  int
+	uninstallErr    error
+	lastUninstall   string
+	lastUninstallNS string
+	panicOnUpgrade  bool
+	// installed tracks releases (keyed by namespace/release) created by successful Upgrade calls and removed by Uninstall.
+	installed map[string]bool
+	// statusErr, when set, is returned by Status for every release.
+	statusErr error
+	// releaseStatus overrides the reported status of installed releases (defaults to release.StatusDeployed) until
+	// the next successful Upgrade.
+	releaseStatus release.Status
+	statusCalls   int
+	// upgradeGate, when non-nil, blocks Upgrade until the channel is closed or the call's context ends (waited on
+	// before taking mu so Status stays callable). An Upgrade whose context ends first records nothing.
+	upgradeGate chan struct{}
+	// upgradeStarted, when non-nil, receives a value as each Upgrade call starts, before it waits on upgradeGate.
+	upgradeStarted chan struct{}
+	// ops records "upgrade" and "uninstall" in the order the release operations completed.
+	ops []string
+	// missing lists "Kind/name" objects reported absent by MissingResources until the next successful Upgrade.
+	missing      []string
+	missingErr   error
+	missingCalls int
+}
+
+func (m *mockHelmActionRunner) Upgrade(ctx context.Context, releaseName, namespace string, chartObj *chart.Chart, values map[string]any) (*release.Release, error) {
+	if m.upgradeStarted != nil {
+		m.upgradeStarted <- struct{}{}
+	}
+	if m.upgradeGate != nil {
+		select {
+		case <-m.upgradeGate:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.panicOnUpgrade {
+		panic("simulated runner panic")
+	}
+	m.upgradeCalls++
+	m.ops = append(m.ops, "upgrade")
+	m.lastRelease = releaseName
+	m.lastNS = namespace
+	m.lastChart = chartObj
+	m.lastValues = values
+	if m.upgradeErr != nil {
+		return nil, m.upgradeErr
+	}
+	m.missing = nil
+	m.releaseStatus = ""
+	if m.installed == nil {
+		m.installed = make(map[string]bool)
+	}
+	m.installed[componentKey(namespace, releaseName)] = true
+	return &release.Release{Name: releaseName, Namespace: namespace}, nil
+}
+
+func (m *mockHelmActionRunner) Uninstall(ctx context.Context, releaseName, namespace string) (*release.UninstallReleaseResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.uninstallCalls++
+	m.ops = append(m.ops, "uninstall")
+	m.lastUninstall = releaseName
+	m.lastUninstallNS = namespace
+	if m.uninstallErr != nil {
+		return nil, m.uninstallErr
+	}
+	delete(m.installed, componentKey(namespace, releaseName))
+	return &release.UninstallReleaseResponse{Release: &release.Release{Name: releaseName, Namespace: namespace}}, nil
+}
+
+func (m *mockHelmActionRunner) Status(ctx context.Context, releaseName, namespace string) (*release.Release, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.statusCalls++
+	if m.statusErr != nil {
+		return nil, m.statusErr
+	}
+	if !m.installed[componentKey(namespace, releaseName)] {
+		return nil, fmt.Errorf("mock status: %w", driver.ErrReleaseNotFound)
+	}
+	status := release.StatusDeployed
+	if m.releaseStatus != "" {
+		status = m.releaseStatus
+	}
+	return &release.Release{Name: releaseName, Namespace: namespace, Info: &release.Info{Status: status}}, nil
+}
+
+// MissingResources reports the configured missing objects (or missingErr). Successful Upgrade calls clear the
+// missing list, mirroring Helm recreating absent objects on upgrade.
+func (m *mockHelmActionRunner) MissingResources(ctx context.Context, rel *release.Release) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.missingCalls++
+	if m.missingErr != nil {
+		return nil, m.missingErr
+	}
+	return slices.Clone(m.missing), nil
+}
+
+// recordedOps returns a snapshot of the release operations completed so far.
+func (m *mockHelmActionRunner) recordedOps() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.ops)
+}
 
 func TestComponentReleaseName(t *testing.T) {
 	tests := []struct {
@@ -789,24 +914,5 @@ func TestK8sHelmManager_ForgetComponentEvictsAllIncarnations(t *testing.T) {
 	}
 	if got := incarnationStateKeys(mgr, keep.Namespace, keep.Name); len(got) != 1 {
 		t.Errorf("state keys of unrelated component %q = %v, want its single incarnation kept", keep.Name, got)
-	}
-}
-
-// TestReconciler_ForgetComponentForwardsToHelmManager verifies that forgetting a deleted CR also evicts the Helm
-// manager's per-incarnation state.
-func TestReconciler_ForgetComponentForwardsToHelmManager(t *testing.T) {
-	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
-	defer mgr.Close()
-	r, err := NewReconciler(&mockCMS{}, &mockProber{healthy: true}, mgr)
-	if err != nil {
-		t.Fatalf("NewReconciler() failed: %v", err)
-	}
-	ghost := ComponentRef{Namespace: "xmc", Name: "ingestion", UID: "eeeeeeee-0000-4000-8000-00000000000e"}
-	seedIncarnationState(mgr, componentStateKey(ghost))
-
-	r.ForgetComponent(ghost.Namespace, ghost.Name)
-
-	if got := incarnationStateKeys(mgr, ghost.Namespace, ghost.Name); len(got) != 0 {
-		t.Errorf("Helm manager state keys after Reconciler.ForgetComponent = %v, want none", got)
 	}
 }

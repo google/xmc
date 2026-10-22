@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bridge
+package helmtest
 
 import (
 	"context"
 	"errors"
 	"sync"
+
+	"xmanager_cloud/pkg/components/bridge/helm"
 )
 
 // FakeHelmManager provides an in-memory double of HelmManager for unit tests.
@@ -34,7 +36,7 @@ type FakeHelmManager struct {
 	RepairNeeded map[string]bool
 }
 
-var _ HelmManager = (*FakeHelmManager)(nil)
+var _ helm.HelmManager = (*FakeHelmManager)(nil)
 
 // NewFakeHelmManager creates an initialized FakeHelmManager.
 func NewFakeHelmManager() *FakeHelmManager {
@@ -46,7 +48,7 @@ func NewFakeHelmManager() *FakeHelmManager {
 }
 
 // Ensure1PComponent records component enablement and synthesized Helm values.
-func (f *FakeHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef, opts HelmComponentOptions) error {
+func (f *FakeHelmManager) Ensure1PComponent(ctx context.Context, ref helm.ComponentRef, opts helm.HelmComponentOptions) error {
 	if f == nil {
 		return nil
 	}
@@ -65,13 +67,13 @@ func (f *FakeHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRe
 		f.AppliedValues = make(map[string]map[string]any)
 	}
 	f.ActiveComponents[ref.String()] = opts.Enabled
-	f.AppliedValues[ref.String()] = BuildHelmValues(opts)
+	f.AppliedValues[ref.String()] = helm.BuildHelmValues(opts)
 	delete(f.RepairNeeded, ref.String())
 	return nil
 }
 
 // Delete1PComponent records component disabling in memory while retaining values with enabled: false.
-func (f *FakeHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRef) error {
+func (f *FakeHelmManager) Delete1PComponent(ctx context.Context, ref helm.ComponentRef) error {
 	if f == nil {
 		return nil
 	}
@@ -96,7 +98,7 @@ func (f *FakeHelmManager) Delete1PComponent(ctx context.Context, ref ComponentRe
 }
 
 func (f *FakeHelmManager) disableAppliedValues(name, key string) {
-	deploymentKey := ComponentNameToHelmKey(name)
+	deploymentKey := helm.ComponentNameToHelmKey(name)
 	val, exists := f.AppliedValues[key]
 	if !exists {
 		f.AppliedValues[key] = map[string]any{
@@ -112,7 +114,7 @@ func (f *FakeHelmManager) disableAppliedValues(name, key string) {
 	dep["enabled"] = false
 }
 
-func (f *FakeHelmManager) detachComponentLocked(ref ComponentRef) error {
+func (f *FakeHelmManager) detachComponentLocked(ref helm.ComponentRef) error {
 	if f.DeleteErr != nil {
 		return f.DeleteErr
 	}
@@ -126,7 +128,7 @@ func (f *FakeHelmManager) detachComponentLocked(ref ComponentRef) error {
 }
 
 // Purge1PComponent permanently removes component values and tracking in memory.
-func (f *FakeHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef) error {
+func (f *FakeHelmManager) Purge1PComponent(ctx context.Context, ref helm.ComponentRef) error {
 	if f == nil {
 		return nil
 	}
@@ -145,7 +147,7 @@ func (f *FakeHelmManager) Purge1PComponent(ctx context.Context, ref ComponentRef
 }
 
 // Orphan1PComponent detaches tracking without removing values.
-func (f *FakeHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRef) error {
+func (f *FakeHelmManager) Orphan1PComponent(ctx context.Context, ref helm.ComponentRef) error {
 	if f == nil {
 		return nil
 	}
@@ -158,7 +160,7 @@ func (f *FakeHelmManager) Orphan1PComponent(ctx context.Context, ref ComponentRe
 }
 
 // IsComponentActive checks whether the component is recorded as active.
-func (f *FakeHelmManager) IsComponentActive(ref ComponentRef) bool {
+func (f *FakeHelmManager) IsComponentActive(ref helm.ComponentRef) bool {
 	if f == nil || ref.Name == "" {
 		return false
 	}
@@ -168,7 +170,7 @@ func (f *FakeHelmManager) IsComponentActive(ref ComponentRef) bool {
 }
 
 // IsComponentActuated checks whether the component was actuated at the given generation.
-func (f *FakeHelmManager) IsComponentActuated(ref ComponentRef, generation int64) bool {
+func (f *FakeHelmManager) IsComponentActuated(ref helm.ComponentRef, generation int64) bool {
 	if f == nil || ref.Name == "" {
 		return false
 	}
@@ -182,7 +184,7 @@ func (f *FakeHelmManager) IsComponentActuated(ref ComponentRef, generation int64
 }
 
 // NeedsRepair reports whether the component is marked in RepairNeeded and is active at the given actuated generation.
-func (f *FakeHelmManager) NeedsRepair(ref ComponentRef, generation int64) bool {
+func (f *FakeHelmManager) NeedsRepair(ref helm.ComponentRef, generation int64) bool {
 	if f == nil || ref.Name == "" {
 		return false
 	}
@@ -193,7 +195,7 @@ func (f *FakeHelmManager) NeedsRepair(ref ComponentRef, generation int64) bool {
 }
 
 // RecordActuation records the generation at which the component was actuated.
-func (f *FakeHelmManager) RecordActuation(ref ComponentRef, generation int64) {
+func (f *FakeHelmManager) RecordActuation(ref helm.ComponentRef, generation int64) {
 	if f == nil || ref.Name == "" {
 		return
 	}
@@ -206,7 +208,7 @@ func (f *FakeHelmManager) RecordActuation(ref ComponentRef, generation int64) {
 }
 
 // HydrateComponentState synchronizes in-memory active and actuated generation state on cold start.
-func (f *FakeHelmManager) HydrateComponentState(ctx context.Context, ref ComponentRef, observedGeneration int64, crReady bool) error {
+func (f *FakeHelmManager) HydrateComponentState(ctx context.Context, ref helm.ComponentRef, observedGeneration int64, crReady bool) error {
 	if f == nil || ref.Name == "" {
 		return nil
 	}
@@ -236,20 +238,20 @@ func (f *FakeHelmManager) HydrateComponentState(ctx context.Context, ref Compone
 }
 
 // ComponentHealth reports the component as healthy unless UnhealthyReason is set.
-func (f *FakeHelmManager) ComponentHealth(ctx context.Context, ref ComponentRef) (bool, string, string) {
+func (f *FakeHelmManager) ComponentHealth(ctx context.Context, ref helm.ComponentRef) (bool, string, string) {
 	if f == nil {
-		return false, ReasonHelmRunnerUninitialized, "fake Helm manager is nil"
+		return false, helm.ReasonHelmRunnerUninitialized, "fake Helm manager is nil"
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.UnhealthyReason != "" {
 		return false, f.UnhealthyReason, "fake component unhealthy"
 	}
-	return true, ReasonComponentHealthy, "fake component healthy"
+	return true, helm.ReasonComponentHealthy, "fake component healthy"
 }
 
 // GetAppliedValues returns a thread-safe deep copy of the applied Helm values for a component.
-func (f *FakeHelmManager) GetAppliedValues(ref ComponentRef) map[string]any {
+func (f *FakeHelmManager) GetAppliedValues(ref helm.ComponentRef) map[string]any {
 	if f == nil || ref.Name == "" {
 		return nil
 	}

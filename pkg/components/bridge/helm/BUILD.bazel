@@ -1,0 +1,92 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "helm",
+    srcs = [
+        "actuation_state.go",
+        "chart_resolver.go",
+        "component_values.go",
+        "helm_builder.go",
+        "helm_leader_runnable.go",
+        "helm_manager.go",
+        "release_executor.go",
+        "release_health.go",
+        "release_repair.go",
+        "sdk_helm_action_runner.go",
+    ],
+    importpath = "xmanager_cloud/pkg/components/bridge/helm",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/protos/components/v1alpha1",
+        "//deploy/profiles/stable-2026a:stable2026a",
+        "//internal/logging",
+        "//pkg/components/naming",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_cli_runtime//pkg/genericclioptions",
+        "@io_k8s_cli_runtime//pkg/resource",
+        "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//util/retry",
+        "@io_k8s_sigs_controller_runtime//pkg/manager",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@sh_helm_helm_v3//pkg/action",
+        "@sh_helm_helm_v3//pkg/chart",
+        "@sh_helm_helm_v3//pkg/chart/loader",
+        "@sh_helm_helm_v3//pkg/cli",
+        "@sh_helm_helm_v3//pkg/release",
+        "@sh_helm_helm_v3//pkg/storage/driver",
+    ],
+)
+
+go_test(
+    name = "helm_test",
+    size = "small",
+    srcs = [
+        "actuation_state_test.go",
+        "chart_resolver_test.go",
+        "component_values_test.go",
+        "helm_builder_test.go",
+        "helm_leader_runnable_test.go",
+        "helm_manager_test.go",
+        "release_executor_test.go",
+        "release_health_test.go",
+        "release_repair_test.go",
+        "sdk_helm_action_runner_test.go",
+    ],
+    embed = [":helm"],
+    deps = [
+        "//api/protos/components/v1alpha1",
+        "@com_github_google_go_cmp//cmp",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/api/meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_cli_runtime//pkg/genericclioptions",
+        "@io_k8s_cli_runtime//pkg/resource",
+        "@io_k8s_client_go//kubernetes/fake",
+        "@io_k8s_client_go//testing",
+        "@org_golang_google_protobuf//types/known/durationpb",
+        "@sh_helm_helm_v3//pkg/action",
+        "@sh_helm_helm_v3//pkg/chart",
+        "@sh_helm_helm_v3//pkg/release",
+        "@sh_helm_helm_v3//pkg/storage/driver",
+    ],
+)

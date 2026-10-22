@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bridge
+package helm
 
 import (
 	"fmt"
@@ -239,10 +239,10 @@ func applyUnstructuredSpec(opts *HelmComponentOptions, specMap map[string]any) {
 	if dt := parseDrainingTimeout(specMap["lifecycleControl"]); dt > 0 {
 		opts.DrainTimeoutSeconds = dt
 	}
-	if rel := extractStr(specMap, "releaseName"); rel != "" {
+	if rel, ok := specMap["releaseName"].(string); ok && rel != "" {
 		opts.ReleaseName = rel
 	}
-	if tag := extractStr(specMap, "imageTag"); tag != "" {
+	if tag, ok := specMap["imageTag"].(string); ok && tag != "" {
 		opts.ImageTag = tag
 	}
 	extractParams(specMap["parameters"], opts.Parameters)
