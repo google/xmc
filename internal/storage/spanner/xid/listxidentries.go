@@ -57,8 +57,8 @@ func (r *Repository) ListXidEntries(ctx context.Context, pageSize int32, pageTok
 	}
 
 	// Generate the statement with pagination
-	stmt, err := liststatement.ListStatement(ctx, spannerdialect.NewStatement(nil), listParams)
-	if err != nil {
+	stmt := spannerdialect.NewStatement(nil)
+	if err := liststatement.ListStatement(ctx, stmt, listParams); err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
 

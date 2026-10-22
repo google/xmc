@@ -68,8 +68,7 @@ func (p *ListParams) DecodePageToken(pageToken string) error {
 }
 
 // ListStatement populates stmt with the generated SQL query and bound parameters for the given list parameters.
-func ListStatement[S queryfilter.Statement](ctx context.Context, stmt S, params ListParams) (S, error) {
-	var zero S
+func ListStatement(ctx context.Context, stmt queryfilter.Statement, params ListParams) error {
 	// 1. Parse the filter as an EBNF expression.
 	exp, err := aipfilter.ParseExpressionWithOptions(fepb.ExpressionParserOptions_builder{
 		RejectLegacyOperatorPrecedence: true,
@@ -77,7 +76,7 @@ func ListStatement[S queryfilter.Statement](ctx context.Context, stmt S, params 
 		EnforceValidStrings:            true,
 	}.Build(), params.Filter)
 	if err != nil {
-		return zero, fmt.Errorf("failed to parse filter %s, %v: %w", params.Filter, err, grpcerr.ErrInvalidArgument)
+		return fmt.Errorf("failed to parse filter %s, %v: %w", params.Filter, err, grpcerr.ErrInvalidArgument)
 	}
 
 	logging.Info(ctx, "Parsed filter", "filter", exp)
@@ -85,7 +84,7 @@ func ListStatement[S queryfilter.Statement](ctx context.Context, stmt S, params 
 	// 2. Convert the orderBy string to a list of ordered indices.
 	orderedIndices, err := generateOrderBy(ctx, params.OrderBy, params.ValidOrderByFields)
 	if err != nil {
-		return zero, fmt.Errorf("failed to parse orderBy %s, %v: %w", params.OrderBy, err, grpcerr.ErrInvalidArgument)
+		return fmt.Errorf("failed to parse orderBy %s, %v: %w", params.OrderBy, err, grpcerr.ErrInvalidArgument)
 	}
 
 	// 3. Generate the query.
@@ -101,10 +100,10 @@ func ListStatement[S queryfilter.Statement](ctx context.Context, stmt S, params 
 
 	_, _, err = params.QueryGen.GenerateQuery(stmt, params.DefaultSelectFields, params.DefaultFullTextFields, nil, exp, orderedIndices, int(pageSizeWithExtra), 0, ptFields, nil)
 	if err != nil {
-		return zero, fmt.Errorf("failed to generate query: %w", err)
+		return fmt.Errorf("failed to generate query: %w", err)
 	}
 
-	return stmt, nil
+	return nil
 }
 
 // generateOrderBy splits the orderBy string by commas, trims whitespace, and returns an error for invalid segments.

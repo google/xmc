@@ -69,8 +69,8 @@ func (r *Repository) ListStatusMessages(ctx context.Context, parent string, page
 		return nil, "", err
 	}
 
-	stmt, err := ls.ListStatement(ctx, spannerdialect.NewStatement(nil), listParams)
-	if err != nil {
+	stmt := spannerdialect.NewStatement(nil)
+	if err := ls.ListStatement(ctx, stmt, listParams); err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
 

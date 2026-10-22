@@ -210,7 +210,8 @@ func TestListStatement(t *testing.T) {
 				t.Fatalf("Failed to create query generator: %v", err)
 			}
 			tc.params.QueryGen = qg
-			stmt, err := ListStatement(ctx, spannerdialect.NewStatement(nil), tc.params)
+			stmt := spannerdialect.NewStatement(nil)
+			err = ListStatement(ctx, stmt, tc.params)
 
 			if tc.wantErr {
 				if err == nil {
@@ -283,7 +284,8 @@ func TestListPostgresStatement(t *testing.T) {
 				t.Fatalf("Failed to create query generator: %v", err)
 			}
 			tc.params.QueryGen = qg
-			stmt, err := ListStatement(ctx, postgresdialect.NewStatement(""), tc.params)
+			stmt := postgresdialect.NewStatement("")
+			err = ListStatement(ctx, stmt, tc.params)
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("ListStatement() got nil error, want non-nil")
