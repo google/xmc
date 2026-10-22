@@ -99,9 +99,6 @@ func (s *PostgresStore) UpdateObservedGeneration(ctx context.Context, name strin
 		return nil, ownership.RecordSourceConflictError(err)
 	}
 	ownership.RecordOwnerAdoption(obsRes.prevOwner, reqSrc, false)
-	if obsRes.rec == nil {
-		return nil, nil
-	}
 	if reqSrc != nil {
 		obsRes.rec.SourceLastSeenTime = commitTimestamp
 	}
@@ -145,11 +142,10 @@ func (s *PostgresStore) applyObservationTx(ctx context.Context, tx pgx.Tx, canon
 func writeObservationTx(ctx context.Context, tx pgx.Tx, rec *store.ComponentRecord, observedGen int64, state componentspb.ComponentState, commitTime time.Time) error {
 	var accessBytes []byte
 	if rec.Status != nil {
-		bytes, err := proto.Marshal(rec.Status)
-		if err != nil {
+		var err error
+		if accessBytes, err = proto.Marshal(rec.Status); err != nil {
 			return fmt.Errorf("failed to marshal access status proto: %w", err)
 		}
-		accessBytes = bytes
 	}
 	_, err := tx.Exec(ctx, updateComponentObservationSQL, rec.ComponentID, observedGen, accessBytes, int64(state), commitTime)
 	return err
@@ -210,7 +206,7 @@ func (s *PostgresStore) resolveSnapshotInTx(ctx context.Context, q pgdb.DBTX, ca
 	}
 	if targetGen == rec.Generation {
 		var coords *componentspb.ResolvedComponentCoordinates
-		if rec.Status != nil && rec.Status.Coordinates != nil {
+		if rec.Status != nil {
 			coords = store.CloneCoordinates(rec.Status.Coordinates)
 		}
 		return store.CloneRecord(rec), coords, nil
@@ -385,16 +381,14 @@ func snapshotRowToRecord(compID, lockedGen int64, configProto, accessPayload []b
 	if err := unmarshalAccessStatus(accessPayload, snapRec); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal historical access status: %w", err)
 	}
+	var coords *componentspb.ResolvedComponentCoordinates
 	if snapRec.Status != nil {
 		snapRec.State = snapRec.Status.State
 		obsGen := snapRec.Status.ObservedGeneration
 		snapRec.ObservedGeneration = &obsGen
+		coords = store.CloneCoordinates(snapRec.Status.Coordinates)
 	}
 	snapRec.Dependencies = dependency.ExtractDependencies(snapRec.Spec, snapRec.Labels)
 	snapRec.Etag = store.GenerateEtag(snapRec)
-	var coords *componentspb.ResolvedComponentCoordinates
-	if snapRec.Status != nil && snapRec.Status.Coordinates != nil {
-		coords = store.CloneCoordinates(snapRec.Status.Coordinates)
-	}
 	return snapRec, coords, nil
 }
