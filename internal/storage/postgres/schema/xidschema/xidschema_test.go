@@ -76,7 +76,8 @@ func TestXidsTableView(t *testing.T) {
 				t.Fatalf("Normalize(%q) failed: %v", tc.filter, err)
 			}
 
-			stmt, err := liststatement.ListStatement(ctx, postgresdialect.NewStatement(""), liststatement.ListParams{
+			stmt := postgresdialect.NewStatement("")
+			err = liststatement.ListStatement(ctx, stmt, liststatement.ListParams{
 				PageSize:              10,
 				Filter:                normalizedFilter,
 				OrderBy:               tc.orderBy,
