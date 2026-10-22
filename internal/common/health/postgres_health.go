@@ -23,8 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// postgresSchemaVersionQuery reads the table that the PostgreSQL migration runner (golang-migrate)
-// keeps in every migrated database.
+// postgresSchemaVersionQuery reads the version table that golang-migrate keeps.
 const postgresSchemaVersionQuery = "SELECT version, dirty FROM schema_migrations LIMIT 1"
 
 // rowQuerier is the subset of *pgxpool.Pool that the PostgreSQL health client uses.
@@ -38,8 +37,8 @@ type postgresHealthClient struct {
 	db rowQuerier
 }
 
-// NewPostgresHealthClient creates a SchemaVersionClient that reads the schema_migrations table
-// through pool. The caller keeps ownership of pool and closes it.
+// NewPostgresHealthClient creates a SchemaVersionClient that reads schema_migrations through pool.
+// The caller owns pool.
 func NewPostgresHealthClient(pool *pgxpool.Pool) SchemaVersionClient {
 	if pool == nil {
 		return &postgresHealthClient{}
