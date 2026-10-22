@@ -21,15 +21,22 @@ import (
 	"fmt"
 
 	"xmanager_cloud/internal/logging"
+	pgversion "xmanager_cloud/internal/storage/postgres/migrations/version"
 	"xmanager_cloud/internal/storage/spanner/migrations/version"
 
 	"cloud.google.com/go/spanner"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/api/iterator"
 	"k8s.io/client-go/kubernetes"
 )
 
 // ErrNilClient is returned when a client is nil.
 var ErrNilClient = errors.New("client is nil")
+
+// SchemaVersionClient defines the subset of database functionality needed for schema version health checks.
+type SchemaVersionClient interface {
+	QuerySchemaVersion(ctx context.Context) (version int64, dirty bool, err error)
+}
 
 // CheckSpanner validates that a Spanner client is connected and ready using a simple query.
 func CheckSpanner(ctx context.Context, sc *spanner.Client) error {
@@ -44,6 +51,20 @@ func CheckSpanner(ctx context.Context, sc *spanner.Client) error {
 		return fmt.Errorf("spanner reachability: %w", err)
 	}
 	logging.Debug(ctx, "Spanner health check completed successfully")
+	return nil
+}
+
+// CheckPostgres validates that a PostgreSQL connection pool is connected and ready using a simple query.
+func CheckPostgres(ctx context.Context, pool *pgxpool.Pool) error {
+	if pool == nil {
+		return fmt.Errorf("postgres: %w", ErrNilClient)
+	}
+
+	var one int
+	if err := pool.QueryRow(ctx, "SELECT 1").Scan(&one); err != nil {
+		return fmt.Errorf("postgres reachability: %w", err)
+	}
+	logging.Debug(ctx, "Postgres health check completed successfully")
 	return nil
 }
 
@@ -69,15 +90,34 @@ func CheckSpannerXID(ctx context.Context, sc SpannerHealthClient) error {
 	return checkSpannerWithVersion(ctx, sc, version.XidExpectedSchemaVersion())
 }
 
+// CheckPostgresESS checks PostgreSQL readiness against the ESS expected schema version.
+func CheckPostgresESS(ctx context.Context, client PostgresHealthClient) error {
+	return checkPostgresWithVersion(ctx, client, pgversion.EssExpectedSchemaVersion())
+}
+
+// CheckPostgresXID checks PostgreSQL readiness against the XID expected schema version.
+func CheckPostgresXID(ctx context.Context, client PostgresHealthClient) error {
+	return checkPostgresWithVersion(ctx, client, pgversion.XidExpectedSchemaVersion())
+}
+
 // checkSpannerWithVersion validates that Spanner is connected, ready, and has the expected schema version by querying the SchemaMigrations table.
 func checkSpannerWithVersion(ctx context.Context, sc SpannerHealthClient, expectedVersion int64) error {
-	if sc == nil {
-		return fmt.Errorf("spanner: %w", ErrNilClient)
+	return checkSchemaVersion(ctx, "spanner", sc, expectedVersion)
+}
+
+// checkPostgresWithVersion validates that PostgreSQL is connected, ready, and has the expected schema version by querying the schema_migrations table.
+func checkPostgresWithVersion(ctx context.Context, client PostgresHealthClient, expectedVersion int64) error {
+	return checkSchemaVersion(ctx, "postgres", client, expectedVersion)
+}
+
+func checkSchemaVersion(ctx context.Context, backend string, client SchemaVersionClient, expectedVersion int64) error {
+	if client == nil {
+		return fmt.Errorf("%s: %w", backend, ErrNilClient)
 	}
 	if expectedVersion <= 0 {
 		return fmt.Errorf("invalid expected schema version: %d", expectedVersion)
 	}
-	versionVal, dirty, err := sc.QuerySchemaVersion(ctx)
+	versionVal, dirty, err := client.QuerySchemaVersion(ctx)
 	if err != nil {
 		return err
 	}

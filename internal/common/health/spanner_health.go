@@ -23,9 +23,9 @@ import (
 )
 
 // SpannerHealthClient defines the subset of Spanner functionality needed for health checks.
-type SpannerHealthClient interface {
-	QuerySchemaVersion(ctx context.Context) (version int64, dirty bool, err error)
-}
+type SpannerHealthClient = SchemaVersionClient
+
+var _ SpannerHealthClient = (*realSpannerHealthClient)(nil)
 
 type realSpannerHealthClient struct {
 	client *spanner.Client
