@@ -12,19 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bridge
+package statusdetectortest
 
 import (
 	"context"
 	"errors"
 	"testing"
+
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 )
 
 func TestFakeStatusDetector_Lifecycle(t *testing.T) {
 	ctx := context.Background()
 	fake := NewFakeStatusDetector()
 
-	ref := WrapperRef{Group: "ray.io", Version: "v1", Kind: "RayCluster", Namespace: "default", Name: "ray-cluster"}
+	ref := statusdetector.WrapperRef{Group: "ray.io", Version: "v1", Kind: "RayCluster", Namespace: "default", Name: "ray-cluster"}
 
 	// Initial query returns not found
 	st, err := fake.DetectStatus(ctx, ref)
@@ -36,7 +38,7 @@ func TestFakeStatusDetector_Lifecycle(t *testing.T) {
 	}
 
 	// Configure status
-	fake.SetStatus("default/ray-cluster", &ResourceStatus{Found: true, Ready: true, Message: "healthy"})
+	fake.SetStatus("default/ray-cluster", &statusdetector.ResourceStatus{Found: true, Ready: true, Message: "healthy"})
 	st, err = fake.DetectStatus(ctx, ref)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -62,8 +64,8 @@ func TestFakeStatusDetector_Lifecycle(t *testing.T) {
 
 func TestUnimplementedStatusDetector(t *testing.T) {
 	ctx := context.Background()
-	detector := NewUnimplementedStatusDetector()
-	ref := WrapperRef{Group: "vllm.ai", Version: "v1alpha1", Kind: "VLLMService", Namespace: "xmc", Name: "llama3"}
+	detector := statusdetector.NewUnimplementedStatusDetector()
+	ref := statusdetector.WrapperRef{Group: "vllm.ai", Version: "v1alpha1", Kind: "VLLMService", Namespace: "xmc", Name: "llama3"}
 
 	st, err := detector.DetectStatus(ctx, ref)
 	if err != nil {

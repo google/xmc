@@ -21,13 +21,15 @@ import (
 	"strings"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 )
 
 // resolveAndValidateWrapperRef resolves WrapperRef from input and validates namespace isolation and JSONPath syntax.
-func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, string, string) {
+func resolveAndValidateWrapperRef(in ReconcileComponentInput) (statusdetector.WrapperRef, string, string) {
 	ref := in.WrapperOpts
 	if ref.Name == "" && in.Spec.GetWrapperRef() != nil {
-		ref = ToBridgeWrapperRef(in.Spec.GetWrapperRef(), in.Namespace)
+		ref = statusdetector.ToBridgeWrapperRef(in.Spec.GetWrapperRef(), in.Namespace)
 	}
 	if ref.Name == "" && resolveOperatorlessEndpoint(in) == "" {
 		return ref, "InvalidWrapperRef", "3P wrapper target name is empty"
@@ -36,7 +38,7 @@ func resolveAndValidateWrapperRef(in ReconcileComponentInput) (WrapperRef, strin
 		return ref, "CrossNamespaceForbidden", fmt.Sprintf("cross-namespace wrapperRef is forbidden (component in %q cannot target %q)", in.Namespace, ref.Namespace)
 	}
 	if ref.Name != "" {
-		if err := ValidateWrapperRefJSONPaths(ref); err != nil {
+		if err := statusdetector.ValidateWrapperRefJSONPaths(ref); err != nil {
 			return ref, ReasonInvalidWrapperSpec, err.Error()
 		}
 	}
@@ -50,7 +52,7 @@ func resolveOperatorlessEndpoint(in ReconcileComponentInput) string {
 	if in.Spec == nil || in.Spec.GetWrapperRef() != nil {
 		return ""
 	}
-	return resolveProbeEndpoint(in.Spec.GetParameters())
+	return healthprobe.ResolveProbeEndpoint(in.Spec.GetParameters())
 }
 
 // reconcile3PWrapper executes the reconciliation lifecycle for a third-party custom resource wrapper,
@@ -91,7 +93,7 @@ func (r *Reconciler) reconcile3PWrapper(ctx context.Context, in ReconcileCompone
 	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
 }
 
-func (r *Reconciler) handle3PStatusDetectionFailure(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, ref WrapperRef, err error) (*ReconcileResult, error) {
+func (r *Reconciler) handle3PStatusDetectionFailure(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, ref statusdetector.WrapperRef, err error) (*ReconcileResult, error) {
 	if err == nil {
 		errmsg := "status detector returned nil status"
 		if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, ReasonStatusDetectionFailed, errmsg); cmsErr != nil {
@@ -100,9 +102,9 @@ func (r *Reconciler) handle3PStatusDetectionFailure(ctx context.Context, in Reco
 		return res, fmt.Errorf("failed to detect 3P status for %s/%s: %s", ref.Namespace, ref.Name, errmsg)
 	}
 	reason := ReasonStatusDetectionFailed
-	if errors.Is(err, ErrInvalidWrapperSpec) {
+	if errors.Is(err, statusdetector.ErrInvalidWrapperSpec) {
 		reason = ReasonInvalidWrapperSpec
-	} else if errors.Is(err, ErrContractBreach) {
+	} else if errors.Is(err, statusdetector.ErrContractBreach) {
 		reason = ReasonContractBroken
 	}
 	if _, cmsErr := r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, err.Error()); cmsErr != nil {
@@ -120,12 +122,12 @@ func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in Reconc
 	connEndpoint := probeEndpoint
 	var secretName string
 	if in.Spec != nil && in.Spec.GetParameters() != nil {
-		if ce := resolveConnectionEndpoint(in.Spec.GetParameters()); ce != "" {
+		if ce := healthprobe.ResolveConnectionEndpoint(in.Spec.GetParameters()); ce != "" {
 			connEndpoint = ce
 		}
 		secretName = in.Spec.GetParameters()["secretName"]
 	}
-	resStatus := &ResourceStatus{
+	resStatus := &statusdetector.ResourceStatus{
 		Found:            true,
 		Ready:            true,
 		Endpoint:         connEndpoint,
@@ -138,8 +140,8 @@ func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in Reconc
 // verifyEndpointHealth performs an active probe against endpoint (if non-empty) to verify data-plane availability.
 // A zero timeout defers to the prober's configured default.
 func (r *Reconciler) verifyEndpointHealth(ctx context.Context, endpoint string) (bool, string, string) {
-	probeRes, err := probeEndpointHealth(ctx, r.prober, endpoint, 0)
-	if errors.Is(err, errNilProbeResult) {
+	probeRes, err := healthprobe.ProbeEndpointHealth(ctx, r.prober, endpoint, 0)
+	if errors.Is(err, healthprobe.ErrNilProbeResult) {
 		return false, "ProbeFailed", fmt.Sprintf("Health probe returned nil result for %s", endpoint)
 	}
 	if err != nil {
@@ -166,7 +168,7 @@ func (r *Reconciler) handle3PUnreadyStatus(ctx context.Context, in ReconcileComp
 }
 
 // handle3PReadyStatus transitions component state to COMPONENT_STATE_ENABLED and populates Ready=True conditions.
-func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, resStatus *ResourceStatus) (*ReconcileResult, error) {
+func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, resStatus *statusdetector.ResourceStatus) (*ReconcileResult, error) {
 	msg := "3P wrapper resource is operational and ready"
 	if resStatus != nil && resStatus.Message != "" {
 		msg = resStatus.Message
@@ -181,7 +183,7 @@ func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileCompon
 	return res, r.syncReadyToCMS(ctx, in, canonicalName, res, ConditionStatusTrue)
 }
 
-func populateAccessEnvVars(res *ReconcileResult, resStatus *ResourceStatus) {
+func populateAccessEnvVars(res *ReconcileResult, resStatus *statusdetector.ResourceStatus) {
 	if res == nil || resStatus == nil {
 		return
 	}

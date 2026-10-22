@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bridge
+package healthprobe
 
 import (
 	"context"
@@ -22,12 +22,13 @@ import (
 	"time"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 )
 
 // StatusDetectorHealthProber defines the status detection and active health checking interface for 3P custom resources.
 type StatusDetectorHealthProber interface {
 	// DetectStatus queries the target 3P custom resource to determine readiness and extract access coordinates.
-	DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error)
+	DetectStatus(ctx context.Context, ref statusdetector.WrapperRef) (*statusdetector.ResourceStatus, error)
 	// Probe executes an active HTTP/TCP probe against target.
 	Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error)
 	// ProbeHealth evaluates the runtime health of a component based on its spec and default namespace, returning health status and message.
@@ -36,7 +37,7 @@ type StatusDetectorHealthProber interface {
 
 // BridgeProber combines StatusDetector and HealthProber into StatusDetectorHealthProber.
 type BridgeProber struct {
-	detector     StatusDetector
+	detector     statusdetector.StatusDetector
 	healthProber HealthProber
 	probeTimeout time.Duration
 }
@@ -44,7 +45,7 @@ type BridgeProber struct {
 var _ StatusDetectorHealthProber = (*BridgeProber)(nil)
 
 // NewBridgeProber creates a BridgeProber combining detector and health prober.
-func NewBridgeProber(detector StatusDetector, prober HealthProber, probeTimeout time.Duration) *BridgeProber {
+func NewBridgeProber(detector statusdetector.StatusDetector, prober HealthProber, probeTimeout time.Duration) *BridgeProber {
 	if probeTimeout <= 0 {
 		probeTimeout = 5 * time.Second
 	}
@@ -56,7 +57,7 @@ func NewBridgeProber(detector StatusDetector, prober HealthProber, probeTimeout 
 }
 
 // DetectStatus queries the target 3P resource via the underlying dynamic StatusDetector.
-func (p *BridgeProber) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
+func (p *BridgeProber) DetectStatus(ctx context.Context, ref statusdetector.WrapperRef) (*statusdetector.ResourceStatus, error) {
 	if p.detector == nil {
 		return nil, errors.New("status detector is uninitialized")
 	}
@@ -88,7 +89,7 @@ func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.Compo
 	if spec.GetWrapperRef() == nil {
 		return p.probeOperatorlessHealth(ctx, spec)
 	}
-	wRef := ToBridgeWrapperRef(spec.GetWrapperRef(), defaultNamespace)
+	wRef := statusdetector.ToBridgeWrapperRef(spec.GetWrapperRef(), defaultNamespace)
 	if p.detector == nil {
 		return false, "status detector is uninitialized"
 	}
@@ -109,7 +110,7 @@ func (p *BridgeProber) ProbeHealth(ctx context.Context, spec *componentspb.Compo
 }
 
 func (p *BridgeProber) probeOperatorlessHealth(ctx context.Context, spec *componentspb.ComponentSpec) (bool, string) {
-	endpoint := resolveProbeEndpoint(spec.GetParameters())
+	endpoint := ResolveProbeEndpoint(spec.GetParameters())
 	if endpoint == "" {
 		return false, "no wrapperRef or connection endpoint parameters configured"
 	}
@@ -131,8 +132,8 @@ func (p *BridgeProber) endpointVerdict(ctx context.Context, endpoint, healthyMsg
 
 // probe3PEndpoint actively probes endpoint and returns the verdict with the probe's message.
 func (p *BridgeProber) probe3PEndpoint(ctx context.Context, endpoint string) (bool, string) {
-	probeRes, err := probeEndpointHealth(ctx, p.healthProber, endpoint, p.probeTimeout)
-	if errors.Is(err, errNilProbeResult) {
+	probeRes, err := ProbeEndpointHealth(ctx, p.healthProber, endpoint, p.probeTimeout)
+	if errors.Is(err, ErrNilProbeResult) {
 		return false, err.Error()
 	}
 	if err != nil {
@@ -153,17 +154,19 @@ func firstNonEmptyToken(val string) string {
 	return ""
 }
 
-func resolveProbeEndpoint(params map[string]string) string {
+// ResolveProbeEndpoint returns the health check or connection endpoint from component parameters.
+func ResolveProbeEndpoint(params map[string]string) string {
 	if len(params) == 0 {
 		return ""
 	}
 	if ep := firstNonEmptyToken(params["healthCheckEndpoint"]); ep != "" {
 		return ep
 	}
-	return resolveConnectionEndpoint(params)
+	return ResolveConnectionEndpoint(params)
 }
 
-func resolveConnectionEndpoint(params map[string]string) string {
+// ResolveConnectionEndpoint returns the primary connection endpoint from component parameters.
+func ResolveConnectionEndpoint(params map[string]string) string {
 	if len(params) == 0 {
 		return ""
 	}

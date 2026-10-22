@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package bridge implements active network health probing and coordinate
+// Package healthprobe implements active network health probing and coordinate
 // resolution for XMC components.
-package bridge
+package healthprobe
 
 import (
 	"context"

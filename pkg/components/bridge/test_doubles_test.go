@@ -29,6 +29,8 @@ import (
 	"helm.sh/helm/v3/pkg/storage/driver"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 )
 
 type mockCMS struct {
@@ -106,17 +108,17 @@ func (m *mockCMS) DeclareClusterEpoch(ctx context.Context, in *componentspb.Decl
 type mockProber struct {
 	healthy     bool
 	msg         string
-	status      *ResourceStatus
+	status      *statusdetector.ResourceStatus
 	detectErr   error
 	nilStatus   bool
 	probeErr    error
-	probeRes    *HealthProbeResult
+	probeRes    *healthprobe.HealthProbeResult
 	hasProbeRes bool
 }
 
-func (m *mockProber) DetectStatus(ctx context.Context, ref WrapperRef) (*ResourceStatus, error) {
+func (m *mockProber) DetectStatus(ctx context.Context, ref statusdetector.WrapperRef) (*statusdetector.ResourceStatus, error) {
 	if m == nil {
-		return &ResourceStatus{Found: true, Ready: true}, nil
+		return &statusdetector.ResourceStatus{Found: true, Ready: true}, nil
 	}
 	if m.detectErr != nil {
 		return nil, m.detectErr
@@ -127,12 +129,12 @@ func (m *mockProber) DetectStatus(ctx context.Context, ref WrapperRef) (*Resourc
 	if m.status != nil {
 		return m.status, nil
 	}
-	return &ResourceStatus{Found: true, Ready: m.healthy, Message: m.msg}, nil
+	return &statusdetector.ResourceStatus{Found: true, Ready: m.healthy, Message: m.msg}, nil
 }
 
-func (m *mockProber) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
+func (m *mockProber) Probe(ctx context.Context, target string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	if m == nil {
-		return &HealthProbeResult{Healthy: true}, nil
+		return &healthprobe.HealthProbeResult{Healthy: true}, nil
 	}
 	if m.probeErr != nil {
 		return nil, m.probeErr
@@ -140,7 +142,7 @@ func (m *mockProber) Probe(ctx context.Context, target string, timeout time.Dura
 	if m.hasProbeRes || m.probeRes != nil {
 		return m.probeRes, nil
 	}
-	return &HealthProbeResult{Healthy: true}, nil
+	return &healthprobe.HealthProbeResult{Healthy: true}, nil
 }
 
 func (m *mockProber) ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec, defaultNamespace string) (bool, string) {

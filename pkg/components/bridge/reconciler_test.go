@@ -44,6 +44,8 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 	"xmanager_cloud/pkg/components/store"
 )
 
@@ -121,7 +123,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name: "active 3P with coordinate injection",
 			cms:  &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{
+			prober: &mockProber{status: &statusdetector.ResourceStatus{
 				Found:            true,
 				Ready:            true,
 				Endpoint:         "http://chi-prod.analytics.svc.cluster.local:8123",
@@ -137,7 +139,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "active 3P with status detector not ready",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: false, Message: "Waiting for pods"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: false, Message: "Waiting for pods"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
 				Enabled: true,
@@ -147,7 +149,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "active 3P with status detector resource not found",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: false, Message: "CRD not installed: clickhouses.clickhouse.altinity.com"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: false, Message: "CRD not installed: clickhouses.clickhouse.altinity.com"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
 				Enabled: true,
@@ -190,7 +192,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "active 3P with empty target name",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1,
 				Spec: &componentspb.ComponentSpec{
@@ -528,7 +530,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper resource not found",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: false, Ready: false, Message: "resource not found"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: false, Ready: false, Message: "resource not found"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -537,7 +539,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper unready with empty message fallback",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: false, Ready: false, Message: ""}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: false, Ready: false, Message: ""}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -546,7 +548,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper resource not ready",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: false, Message: "reconciling pods"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: false, Message: "reconciling pods"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -555,7 +557,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper active probe error",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, probeErr: errors.New("connection refused")},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, probeErr: errors.New("connection refused")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -564,7 +566,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper active probe unhealthy",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, probeRes: &HealthProbeResult{Healthy: false, Message: "503 Service Unavailable"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, probeRes: &healthprobe.HealthProbeResult{Healthy: false, Message: "503 Service Unavailable"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -582,7 +584,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper prober returns nil probe result without error",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, hasProbeRes: true, probeRes: nil},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, hasProbeRes: true, probeRes: nil},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -609,7 +611,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper handle3PUnreadyStatus CMS error",
 			cms:    &mockCMS{obsErr: errors.New("cms update failed")},
-			prober: &mockProber{status: &ResourceStatus{Found: false, Ready: false}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: false, Ready: false}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -618,7 +620,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper handle3PReadyStatus CMS error",
 			cms:    &mockCMS{obsErr: errors.New("cms update failed")},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -637,7 +639,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var p StatusDetectorHealthProber
+			var p healthprobe.StatusDetectorHealthProber
 			if tt.prober != nil {
 				p = tt.prober
 			}
@@ -1719,7 +1721,7 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 		WrapperRef: &componentspb.WrapperRef{CrdGroup: "clickhouse.altinity.com", CrdVersion: "v1", CrdKind: "ClickHouseInstallation", TargetName: "ch"},
 	}
 	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
-	prober := &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123", ConnectionSecret: "ch-sec"}}
+	prober := &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123", ConnectionSecret: "ch-sec"}}
 	prevAccess := &AccessStatus{EnvVars: map[string]string{"ENDPOINT": "http://ch.xmc:8123", "HOST": "ch.xmc", "PORT": "8123", "SCHEME": "http", "SECRET_NAME": "ch-sec"}}
 	prevReady := []Condition{
 		{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy, Message: "Ready"},
@@ -1979,7 +1981,7 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 	}{
 		{
 			name:         "actuated 3P wrapper that became unready surfaces the local failure",
-			prober:       &mockProber{status: &ResourceStatus{Found: true, Ready: false, Message: "pods crashing"}},
+			prober:       &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: false, Message: "pods crashing"}},
 			in:           ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true, ExistingConditions: prevReady, ExistingAccess: prevAccess},
 			wantState:    componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantReady:    ConditionStatusFalse,
@@ -2008,7 +2010,7 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 		},
 		{
 			name:         "disabled component does not keep Ready=True",
-			prober:       &mockProber{status: &ResourceStatus{Found: true, Ready: true}},
+			prober:       &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true}},
 			in:           ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: false, ExistingConditions: prevReady, ExistingAccess: prevAccess},
 			wantState:    componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantReady:    ConditionStatusUnknown,
@@ -2018,7 +2020,7 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 		},
 		{
 			name:   "actuated 3P wrapper without dependencies that became unready on outage pass 1 recovers to Ready=True on outage pass 2",
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true,
 				ExistingConditions: []Condition{
@@ -2033,7 +2035,7 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 		},
 		{
 			name:   "never-actuated 3P wrapper gated on DependenciesNotReady is not probed during CMS outage",
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true,
 				ExistingConditions: []Condition{
@@ -2122,13 +2124,13 @@ func reconcileMalformedWrapper(ctx context.Context, t *testing.T, dynClient dyna
 	t.Helper()
 	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "ray.io", Version: "v1"}})
 	mapper.Add(schema.GroupVersionKind{Group: "ray.io", Version: "v1", Kind: "RayCluster"}, meta.RESTScopeNamespace)
-	prober := NewBridgeProber(NewK8sStatusDetector(dynClient, mapper), nil, time.Second)
+	prober := healthprobe.NewBridgeProber(statusdetector.NewK8sStatusDetector(dynClient, mapper), nil, time.Second)
 	rec, err := NewReconciler(&mockCMS{}, prober, nil)
 	if err != nil {
 		t.Fatalf("NewReconciler failed: %v", err)
 	}
 	res, err := rec.ReconcileWithDependencies(ctx, live, nil)
-	if !errors.Is(err, ErrContractBreach) {
+	if !errors.Is(err, statusdetector.ErrContractBreach) {
 		t.Fatalf("expected ErrContractBreach from ReconcileWithDependencies, got %v", err)
 	}
 	if err := ApplyComponentStatusSSA(ctx, c, live, res); err != nil {

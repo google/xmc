@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package bridge implements dynamic 3P status detection for XMC components.
-package bridge
+package statusdetector
 
 import (
 	"context"

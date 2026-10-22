@@ -22,6 +22,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 )
 
 func TestParseHelpers(t *testing.T) {
@@ -351,7 +352,7 @@ func TestParseWrapperRef(t *testing.T) {
 		},
 	}
 	ref := ParseWrapperRef(spec, "fallback-ns")
-	wantRef := WrapperRef{
+	wantRef := statusdetector.WrapperRef{
 		Group:                    "ray.io",
 		Version:                  "v1",
 		Kind:                     "RayCluster",
@@ -382,7 +383,7 @@ func TestParseWrapperRef(t *testing.T) {
 		},
 	}
 	refCamel := ParseWrapperRef(specCamel, "default-ns")
-	wantCamel := WrapperRef{
+	wantCamel := statusdetector.WrapperRef{
 		Group:                    "clickhouse.altinity.com",
 		Version:                  "v1",
 		Kind:                     "ClickHouseInstallation",
@@ -403,10 +404,10 @@ func TestParseWrapperRef_KeyAliases(t *testing.T) {
 	tests := []struct {
 		name string
 		spec map[string]any
-		want WrapperRef
+		want statusdetector.WrapperRef
 	}{
-		{name: "missing wrapperRef", spec: map[string]any{}, want: WrapperRef{}},
-		{name: "wrapperRef not a map", spec: map[string]any{"wrapperRef": "chi-cluster"}, want: WrapperRef{}},
+		{name: "missing wrapperRef", spec: map[string]any{}, want: statusdetector.WrapperRef{}},
+		{name: "wrapperRef not a map", spec: map[string]any{"wrapperRef": "chi-cluster"}, want: statusdetector.WrapperRef{}},
 		{
 			name: "camelCase key wins over alias",
 			spec: map[string]any{"wrapperRef": map[string]any{
@@ -414,14 +415,14 @@ func TestParseWrapperRef_KeyAliases(t *testing.T) {
 				"targetName": "chi-cluster", "name": "ignored",
 				"targetNamespace": "clickhouse-ns", "namespace": "ignored-ns",
 			}},
-			want: WrapperRef{Kind: "ClickHouseInstallation", Name: "chi-cluster", Namespace: "clickhouse-ns"},
+			want: statusdetector.WrapperRef{Kind: "ClickHouseInstallation", Name: "chi-cluster", Namespace: "clickhouse-ns"},
 		},
 		{
 			name: "empty camelCase key falls back to alias",
 			spec: map[string]any{"wrapperRef": map[string]any{
 				"crdGroup": "", "group": "ray.io", "targetNamespace": "", "namespace": "ray-ns",
 			}},
-			want: WrapperRef{Group: "ray.io", Namespace: "ray-ns"},
+			want: statusdetector.WrapperRef{Group: "ray.io", Namespace: "ray-ns"},
 		},
 		{
 			name: "snake_case JSONPath aliases",
@@ -433,7 +434,7 @@ func TestParseWrapperRef_KeyAliases(t *testing.T) {
 				"endpoint_json_path":          "status.url",
 				"connection_secret_json_path": "status.secret",
 			}},
-			want: WrapperRef{
+			want: statusdetector.WrapperRef{
 				Name:                     "my-ray",
 				Namespace:                "default-ns",
 				ObservedGenerationPath:   "status.obsGen",

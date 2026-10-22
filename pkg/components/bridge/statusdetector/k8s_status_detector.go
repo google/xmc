@@ -14,7 +14,7 @@
 
 // Package bridge implements dynamic 3P status detection and JSONPath evaluation
 // for XMC components.
-package bridge
+package statusdetector
 
 import (
 	"bytes"

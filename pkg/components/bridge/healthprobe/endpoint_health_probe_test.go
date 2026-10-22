@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bridge
+package healthprobe_test
 
 import (
 	"context"
@@ -21,22 +21,24 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+
+	"xmanager_cloud/pkg/components/bridge/healthprobe"
 )
 
-// probeCall records the arguments of a single endpointProber.Probe invocation.
+// probeCall records the arguments of a single EndpointProber.Probe invocation.
 type probeCall struct {
 	Target  string
 	Timeout time.Duration
 }
 
-// recordingEndpointProber is an endpointProber that returns a canned outcome and records its calls.
+// recordingEndpointProber is an EndpointProber that returns a canned outcome and records its calls.
 type recordingEndpointProber struct {
-	res   *HealthProbeResult
+	res   *healthprobe.HealthProbeResult
 	err   error
 	calls []probeCall
 }
 
-func (p *recordingEndpointProber) Probe(_ context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
+func (p *recordingEndpointProber) Probe(_ context.Context, target string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	p.calls = append(p.calls, probeCall{Target: target, Timeout: timeout})
 	return p.res, p.err
 }
@@ -53,39 +55,39 @@ func TestProbeEndpointHealth(t *testing.T) {
 		name      string
 		nilProber bool
 		endpoint  string
-		probeRes  *HealthProbeResult
+		probeRes  *healthprobe.HealthProbeResult
 		probeErr  error
-		want      *HealthProbeResult
+		want      *healthprobe.HealthProbeResult
 		wantErr   error
 		wantCalls []probeCall
 	}{
-		{name: "empty endpoint skips probe", want: &HealthProbeResult{Healthy: true}},
-		{name: "nil prober skips probe", nilProber: true, endpoint: endpoint, want: &HealthProbeResult{Healthy: true}},
+		{name: "empty endpoint skips probe", want: &healthprobe.HealthProbeResult{Healthy: true}},
+		{name: "nil prober skips probe", nilProber: true, endpoint: endpoint, want: &healthprobe.HealthProbeResult{Healthy: true}},
 		{name: "probe error is returned", endpoint: endpoint, probeErr: errDial, wantErr: errDial, wantCalls: probed},
-		{name: "nil result is reported as error", endpoint: endpoint, wantErr: errNilProbeResult, wantCalls: probed},
+		{name: "nil result is reported as error", endpoint: endpoint, wantErr: healthprobe.ErrNilProbeResult, wantCalls: probed},
 		{
 			name:      "unhealthy result is returned",
 			endpoint:  endpoint,
-			probeRes:  &HealthProbeResult{StatusCode: 503, Message: "HTTP 503 (unhealthy status)"},
-			want:      &HealthProbeResult{StatusCode: 503, Message: "HTTP 503 (unhealthy status)"},
+			probeRes:  &healthprobe.HealthProbeResult{StatusCode: 503, Message: "HTTP 503 (unhealthy status)"},
+			want:      &healthprobe.HealthProbeResult{StatusCode: 503, Message: "HTTP 503 (unhealthy status)"},
 			wantCalls: probed,
 		},
 		{
 			name:      "healthy result is returned",
 			endpoint:  endpoint,
-			probeRes:  &HealthProbeResult{Healthy: true, StatusCode: 200, Message: "HTTP 200"},
-			want:      &HealthProbeResult{Healthy: true, StatusCode: 200, Message: "HTTP 200"},
+			probeRes:  &healthprobe.HealthProbeResult{Healthy: true, StatusCode: 200, Message: "HTTP 200"},
+			want:      &healthprobe.HealthProbeResult{Healthy: true, StatusCode: 200, Message: "HTTP 200"},
 			wantCalls: probed,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := &recordingEndpointProber{res: tt.probeRes, err: tt.probeErr}
-			var prober endpointProber = recorder
+			var prober healthprobe.EndpointProber = recorder
 			if tt.nilProber {
 				prober = nil
 			}
-			got, err := probeEndpointHealth(context.Background(), prober, tt.endpoint, timeout)
+			got, err := healthprobe.ProbeEndpointHealth(context.Background(), prober, tt.endpoint, timeout)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("probeEndpointHealth() error = %v, want %v", err, tt.wantErr)
 			}

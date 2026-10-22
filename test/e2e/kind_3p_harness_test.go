@@ -58,6 +58,8 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/bridge"
+	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 	"xmanager_cloud/pkg/components/cms"
 	storememory "xmanager_cloud/pkg/components/store/memory"
 )
@@ -83,9 +85,9 @@ func newHarnessCMSAuthorizer(callerEmail string) *cms.Authorizer {
 }
 
 var (
-	crdGVR                           = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
-	componentGVR                     = schema.GroupVersionResource{Group: "xmc.dev", Version: "v1alpha1", Resource: "components"}
-	_            bridge.HealthProber = (*kindNodePortProber)(nil)
+	crdGVR                                = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
+	componentGVR                          = schema.GroupVersionResource{Group: "xmc.dev", Version: "v1alpha1", Resource: "components"}
+	_            healthprobe.HealthProber = (*kindNodePortProber)(nil)
 )
 
 // kindBridgeProbeInterval is the re-probe interval of the per-namespace bridge controller. It is
@@ -193,8 +195,8 @@ func buildClusterClients(t *testing.T, clusterName, kubeconfig string) *kindClus
 	}
 	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(clientset.Discovery()))
 	cmsServer := cms.NewServer(storememory.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer(harnessBridgeSA)))
-	prober := &kindNodePortProber{clientset: clientset, delegate: bridge.NewNetworkHealthProber(bridge.WithHealthProbeTimeout(5 * time.Second))}
-	reconciler, err := bridge.NewReconciler(bridge.NewCMSClientAdapter(cmsServer), bridge.NewBridgeProber(bridge.NewK8sStatusDetector(dynClient, mapper), prober, 5*time.Second), nil)
+	prober := &kindNodePortProber{clientset: clientset, delegate: healthprobe.NewNetworkHealthProber(healthprobe.WithHealthProbeTimeout(5 * time.Second))}
+	reconciler, err := bridge.NewReconciler(bridge.NewCMSClientAdapter(cmsServer), healthprobe.NewBridgeProber(statusdetector.NewK8sStatusDetector(dynClient, mapper), prober, 5*time.Second), nil)
 	if err != nil {
 		t.Fatalf("failed to create bridge reconciler: %v", err)
 	}
@@ -581,10 +583,10 @@ func fetchPodLogs(h *kindClusterHarness, namespace, podName string) string {
 
 type kindNodePortProber struct {
 	clientset kubernetes.Interface
-	delegate  bridge.HealthProber
+	delegate  healthprobe.HealthProber
 }
 
-func (p *kindNodePortProber) Probe(ctx context.Context, target string, timeout time.Duration) (*bridge.HealthProbeResult, error) {
+func (p *kindNodePortProber) Probe(ctx context.Context, target string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	trimmed := strings.TrimSpace(target)
 	if lower := strings.ToLower(trimmed); strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
 		return p.ProbeHTTP(ctx, trimmed, timeout)
@@ -592,7 +594,7 @@ func (p *kindNodePortProber) Probe(ctx context.Context, target string, timeout t
 	return p.ProbeTCP(ctx, trimmed, timeout)
 }
 
-func (p *kindNodePortProber) ProbeHTTP(ctx context.Context, endpoint string, timeout time.Duration) (*bridge.HealthProbeResult, error) {
+func (p *kindNodePortProber) ProbeHTTP(ctx context.Context, endpoint string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || parsed.Host == "" {
 		return p.delegate.ProbeHTTP(ctx, endpoint, timeout)
@@ -605,7 +607,7 @@ func (p *kindNodePortProber) ProbeHTTP(ctx context.Context, endpoint string, tim
 	return p.delegate.ProbeHTTP(ctx, parsed.String(), timeout)
 }
 
-func (p *kindNodePortProber) ProbeTCP(ctx context.Context, endpoint string, timeout time.Duration) (*bridge.HealthProbeResult, error) {
+func (p *kindNodePortProber) ProbeTCP(ctx context.Context, endpoint string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	rewritten, err := p.translateHostPort(ctx, strings.TrimSpace(endpoint))
 	if err != nil {
 		return nil, err

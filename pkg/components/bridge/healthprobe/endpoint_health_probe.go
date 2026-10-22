@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bridge
+package healthprobe
 
 import (
 	"context"
@@ -20,20 +20,20 @@ import (
 	"time"
 )
 
-// endpointProber is the active-probe capability shared by HealthProber and StatusDetectorHealthProber.
-type endpointProber interface {
+// EndpointProber is the active-probe capability shared by HealthProber and StatusDetectorHealthProber.
+type EndpointProber interface {
 	// Probe executes an active HTTP/TCP probe against target.
 	Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error)
 }
 
-// errNilProbeResult reports that a prober returned neither a result nor an error.
-var errNilProbeResult = errors.New("health prober returned nil result")
+// ErrNilProbeResult reports that a prober returned neither a result nor an error.
+var ErrNilProbeResult = errors.New("health prober returned nil result")
 
-// probeEndpointHealth runs an active health probe against endpoint and returns the prober's result.
+// ProbeEndpointHealth runs an active health probe against endpoint and returns the prober's result.
 // Probing is skipped, reporting a healthy result without a message, when endpoint is empty or prober
-// is nil. A probe error is returned as is, and a nil probe result is reported as errNilProbeResult,
+// is nil. A probe error is returned as is, and a nil probe result is reported as ErrNilProbeResult,
 // so a nil error always comes with a non-nil result. Callers own how outcomes map to messages.
-func probeEndpointHealth(ctx context.Context, prober endpointProber, endpoint string, timeout time.Duration) (*HealthProbeResult, error) {
+func ProbeEndpointHealth(ctx context.Context, prober EndpointProber, endpoint string, timeout time.Duration) (*HealthProbeResult, error) {
 	if endpoint == "" || prober == nil {
 		return &HealthProbeResult{Healthy: true}, nil
 	}
@@ -42,7 +42,7 @@ func probeEndpointHealth(ctx context.Context, prober endpointProber, endpoint st
 		return nil, err
 	}
 	if res == nil {
-		return nil, errNilProbeResult
+		return nil, ErrNilProbeResult
 	}
 	return res, nil
 }
