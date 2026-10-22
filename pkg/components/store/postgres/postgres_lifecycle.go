@@ -40,23 +40,14 @@ const (
 	updateComponentObservationSQL = `UPDATE Components SET ObservedGeneration = $2, AccessPayload = $3, State = CASE WHEN $4 = 0 THEN State ELSE $4 END, UpdateTime = $5 WHERE ComponentId = $1`
 	updateComponentDeletionSQL    = `UPDATE Components SET ConfigProto = $2, AccessPayload = $3, State = $4, UpdateTime = $5 WHERE ComponentId = $1`
 
-	selectSnapshotByComponentIDAndGenSQL = `SELECT ComponentId, LockedGeneration, ConfigProto, AccessPayload FROM ExperimentComponentSnapshots WHERE ComponentId = $1 AND LockedGeneration = $2 LIMIT 1`
+	selectSnapshotByComponentIDAndGenSQL = `SELECT s.ComponentId, s.LockedGeneration, s.ConfigProto, s.AccessPayload, c.CreateTime, c.UpdateTime FROM ExperimentComponentSnapshots s JOIN Components c ON s.ComponentId = c.ComponentId WHERE s.ComponentId = $1 AND s.LockedGeneration = $2 LIMIT 1`
 	selectSnapshotByNameAndGenSQL        = `SELECT s.ComponentId, s.LockedGeneration, s.ConfigProto, s.AccessPayload, c.CreateTime, c.UpdateTime FROM ExperimentComponentSnapshots s JOIN Components c ON s.ComponentId = c.ComponentId WHERE c.Name = $1 AND s.LockedGeneration = $2 ORDER BY c.CreateTime DESC, c.ComponentId DESC LIMIT 1`
 )
 
 // PrepareDeactivation checks deactivation safety and transitions target (and cascaded dependents) to DISABLING.
 func (s *PostgresStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src ...store.RequestSource) (*store.PrepareDeactivationResult, error) {
-	canonicalName, reqSrc, err := ownership.ValidateSourcedResourceArgs(name, src)
-	if err != nil {
-		return nil, err
-	}
 	var result *store.PrepareDeactivationResult
-	var prevOwner *store.SourceOwner
-	_, err = s.runInTx(ctx, func(ctx context.Context, tx pgx.Tx, commitTime time.Time) error {
-		catalog, targetRec, err := s.lookupCatalogTargetTx(ctx, tx, store.OperationPrepareDeactivation, canonicalName, reqSrc)
-		if err != nil {
-			return err
-		}
+	err := s.runCatalogTargetMutation(ctx, store.OperationPrepareDeactivation, name, src, func(ctx context.Context, tx pgx.Tx, catalog map[string]*store.ComponentRecord, targetRec *store.ComponentRecord, canonicalName string, reqSrc *store.RequestSource, commitTime time.Time) error {
 		res, err := lifecycle.EvaluateDeactivationSafety(catalog, canonicalName, requestCascade, lifecycle.MinDrainTimeout)
 		if err != nil {
 			return err
@@ -66,30 +57,15 @@ func (s *PostgresStore) PrepareDeactivation(ctx context.Context, name string, re
 		if err := applyDisablingTransitionsTx(ctx, tx, targets, commitTime); err != nil {
 			return err
 		}
-		prevOwner = store.CloneSourceOwner(targetRec.Owner)
 		return recordNonIntentOwnerTx(ctx, tx, targetRec, reqSrc, commitTime)
 	})
-	if err != nil {
-		return nil, ownership.RecordSourceConflictError(err)
-	}
-	ownership.RecordOwnerAdoption(prevOwner, reqSrc, false)
-	return result, nil
+	return result, err
 }
 
 // CompleteDeactivation marks a component in DISABLING state as DISABLED.
 func (s *PostgresStore) CompleteDeactivation(ctx context.Context, name string, force bool, src ...store.RequestSource) error {
-	canonicalName, reqSrc, err := ownership.ValidateSourcedResourceArgs(name, src)
-	if err != nil {
-		return err
-	}
-	var prevOwner *store.SourceOwner
-	_, err = s.runInTx(ctx, func(ctx context.Context, tx pgx.Tx, commitTime time.Time) error {
-		catalog, rec, err := s.lookupCatalogTargetTx(ctx, tx, store.OperationCompleteDeactivation, canonicalName, reqSrc)
-		if err != nil {
-			return err
-		}
+	return s.runCatalogTargetMutation(ctx, store.OperationCompleteDeactivation, name, src, func(ctx context.Context, tx pgx.Tx, catalog map[string]*store.ComponentRecord, rec *store.ComponentRecord, canonicalName string, reqSrc *store.RequestSource, commitTime time.Time) error {
 		if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
-			prevOwner = store.CloneSourceOwner(rec.Owner)
 			return recordNonIntentOwnerTx(ctx, tx, rec, reqSrc, commitTime)
 		}
 		if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
@@ -103,14 +79,8 @@ func (s *PostgresStore) CompleteDeactivation(ctx context.Context, name string, f
 		if err := transitionComponentStateTx(ctx, tx, rec, componentspb.ComponentState_COMPONENT_STATE_DISABLED, commitTime); err != nil {
 			return err
 		}
-		prevOwner = store.CloneSourceOwner(rec.Owner)
 		return recordNonIntentOwnerTx(ctx, tx, rec, reqSrc, commitTime)
 	})
-	if err != nil {
-		return ownership.RecordSourceConflictError(err)
-	}
-	ownership.RecordOwnerAdoption(prevOwner, reqSrc, false)
-	return nil
 }
 
 // UpdateObservedGeneration synchronizes actual component access, generation, and state.
@@ -187,20 +157,10 @@ func writeObservationTx(ctx context.Context, tx pgx.Tx, rec *store.ComponentReco
 
 // ExecuteDeletion deletes a component using the specified deletion policy.
 func (s *PostgresStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...store.RequestSource) error {
-	canonicalName, reqSrc, err := ownership.ValidateSourcedResourceArgs(name, src)
-	if err != nil {
-		return err
-	}
-	var prevOwner *store.SourceOwner
-	_, err = s.runInTx(ctx, func(ctx context.Context, tx pgx.Tx, commitTime time.Time) error {
-		catalog, rec, err := s.lookupCatalogTargetTx(ctx, tx, store.OperationExecuteDeletion, canonicalName, reqSrc)
-		if err != nil {
-			return err
-		}
+	return s.runCatalogTargetMutation(ctx, store.OperationExecuteDeletion, name, src, func(ctx context.Context, tx pgx.Tx, catalog map[string]*store.ComponentRecord, rec *store.ComponentRecord, canonicalName string, reqSrc *store.RequestSource, commitTime time.Time) error {
 		if err := lifecycle.ValidateDeletionSafety(catalog, canonicalName, policy, force); err != nil {
 			return err
 		}
-		prevOwner = store.CloneSourceOwner(rec.Owner)
 		var owner *store.SourceOwner
 		if reqSrc != nil {
 			owner = ownership.DeletionOwner(rec.Owner, *reqSrc)
@@ -209,11 +169,6 @@ func (s *PostgresStore) ExecuteDeletion(ctx context.Context, name string, policy
 		toDelete := collectDeletionTargets(rec, catalog, canonicalName, policy)
 		return applyDeletionMutationsTx(ctx, tx, toDelete, policy, commitTime, owner)
 	})
-	if err != nil {
-		return ownership.RecordSourceConflictError(err)
-	}
-	ownership.RecordOwnerAdoption(prevOwner, reqSrc, false)
-	return nil
 }
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
@@ -239,7 +194,7 @@ func (s *PostgresStore) resolveSnapshotInTx(ctx context.Context, q pgdb.DBTX, ca
 	rec, err := queryComponentWithDeps(ctx, q, canonicalName)
 	if err != nil {
 		if errors.Is(err, store.ErrComponentNotFound) && generation > 0 {
-			return resolveHistoricalSnapshotByName(ctx, q, canonicalName, generation)
+			return queryHistoricalSnapshot(ctx, q, selectSnapshotByNameAndGenSQL, canonicalName, generation, canonicalName)
 		}
 		return nil, nil, err
 	}
@@ -248,7 +203,7 @@ func (s *PostgresStore) resolveSnapshotInTx(ctx context.Context, q pgdb.DBTX, ca
 		targetGen = rec.Generation
 	}
 	if targetGen > rec.Generation {
-		if snapRec, coords, err := resolveHistoricalSnapshotByName(ctx, q, canonicalName, targetGen); err == nil || status.Code(err) != codes.NotFound {
+		if snapRec, coords, err := queryHistoricalSnapshot(ctx, q, selectSnapshotByNameAndGenSQL, canonicalName, targetGen, canonicalName); err == nil || status.Code(err) != codes.NotFound {
 			return snapRec, coords, err
 		}
 		return nil, nil, status.Errorf(codes.NotFound, "snapshot for generation %d of component %s not found (current generation is %d)", targetGen, canonicalName, rec.Generation)
@@ -260,7 +215,28 @@ func (s *PostgresStore) resolveSnapshotInTx(ctx context.Context, q pgdb.DBTX, ca
 		}
 		return store.CloneRecord(rec), coords, nil
 	}
-	return resolveHistoricalSnapshot(ctx, q, rec, targetGen, canonicalName)
+	return queryHistoricalSnapshot(ctx, q, selectSnapshotByComponentIDAndGenSQL, rec.ComponentID, targetGen, canonicalName)
+}
+
+func (s *PostgresStore) runCatalogTargetMutation(ctx context.Context, operation, name string, src []store.RequestSource, fn func(ctx context.Context, tx pgx.Tx, catalog map[string]*store.ComponentRecord, rec *store.ComponentRecord, canonicalName string, reqSrc *store.RequestSource, commitTime time.Time) error) error {
+	canonicalName, reqSrc, err := ownership.ValidateSourcedResourceArgs(name, src)
+	if err != nil {
+		return err
+	}
+	var prevOwner *store.SourceOwner
+	_, err = s.runInTx(ctx, func(ctx context.Context, tx pgx.Tx, commitTime time.Time) error {
+		catalog, rec, err := s.lookupCatalogTargetTx(ctx, tx, operation, canonicalName, reqSrc)
+		if err != nil {
+			return err
+		}
+		prevOwner = store.CloneSourceOwner(rec.Owner)
+		return fn(ctx, tx, catalog, rec, canonicalName, reqSrc, commitTime)
+	})
+	if err != nil {
+		return ownership.RecordSourceConflictError(err)
+	}
+	ownership.RecordOwnerAdoption(prevOwner, reqSrc, false)
+	return nil
 }
 
 func (s *PostgresStore) lookupCatalogTargetTx(ctx context.Context, tx pgx.Tx, operation, canonicalName string, src *store.RequestSource) (map[string]*store.ComponentRecord, *store.ComponentRecord, error) {
@@ -381,50 +357,32 @@ func deleteSingleComponentTx(ctx context.Context, tx pgx.Tx, target *store.Compo
 	return err
 }
 
-type snapshotRowData struct {
-	componentID   int64
-	lockedGen     int64
-	configProto   []byte
-	accessPayload []byte
-}
-
-func resolveHistoricalSnapshot(ctx context.Context, q pgdb.DBTX, rec *store.ComponentRecord, targetGen int64, canonicalName string) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	var d snapshotRowData
-	err := q.QueryRow(ctx, selectSnapshotByComponentIDAndGenSQL, rec.ComponentID, targetGen).Scan(&d.componentID, &d.lockedGen, &d.configProto, &d.accessPayload)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil, status.Errorf(codes.NotFound, "historical snapshot for generation %d of component %s not found", targetGen, canonicalName)
-		}
-		return nil, nil, fmt.Errorf("failed to query experiment component snapshots: %w", err)
-	}
-	return snapshotRowToRecord(&d, canonicalName, rec.CreateTime, rec.UpdateTime)
-}
-
-func resolveHistoricalSnapshotByName(ctx context.Context, q pgdb.DBTX, canonicalName string, targetGen int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	var d snapshotRowData
+func queryHistoricalSnapshot(ctx context.Context, q pgdb.DBTX, querySQL string, arg any, targetGen int64, canonicalName string) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	var compID, lockedGen int64
+	var configProto, accessPayload []byte
 	var createTime, updateTime time.Time
-	err := q.QueryRow(ctx, selectSnapshotByNameAndGenSQL, canonicalName, targetGen).Scan(&d.componentID, &d.lockedGen, &d.configProto, &d.accessPayload, &createTime, &updateTime)
+	err := q.QueryRow(ctx, querySQL, arg, targetGen).Scan(&compID, &lockedGen, &configProto, &accessPayload, &createTime, &updateTime)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil, status.Errorf(codes.NotFound, "historical snapshot for generation %d of component %s not found", targetGen, canonicalName)
 		}
 		return nil, nil, fmt.Errorf("failed to query experiment component snapshots: %w", err)
 	}
-	return snapshotRowToRecord(&d, canonicalName, createTime.UTC(), updateTime.UTC())
+	return snapshotRowToRecord(compID, lockedGen, configProto, accessPayload, canonicalName, createTime.UTC(), updateTime.UTC())
 }
 
-func snapshotRowToRecord(d *snapshotRowData, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+func snapshotRowToRecord(compID, lockedGen int64, configProto, accessPayload []byte, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
 	snapRec := &store.ComponentRecord{
-		ComponentID: d.componentID,
+		ComponentID: compID,
 		Name:        canonicalName,
-		Generation:  d.lockedGen,
+		Generation:  lockedGen,
 		CreateTime:  createTime,
 		UpdateTime:  updateTime,
 	}
-	if err := unmarshalConfigProto(d.configProto, snapRec); err != nil {
+	if err := unmarshalConfigProto(configProto, snapRec); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal historical config proto: %w", err)
 	}
-	if err := unmarshalAccessStatus(d.accessPayload, snapRec); err != nil {
+	if err := unmarshalAccessStatus(accessPayload, snapRec); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal historical access status: %w", err)
 	}
 	if snapRec.Status != nil {
