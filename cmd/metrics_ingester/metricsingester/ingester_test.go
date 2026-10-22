@@ -45,22 +45,24 @@ const (
 // malformedPayload is not valid protobuf wire format: a field tag whose varint is truncated.
 var malformedPayload = []byte{0xff}
 
-// fakeWriter records each written batch and fails the first failures calls. When set, beforeWrite
-// runs at the start of every call, outside the lock.
+// fakeWriter records each written batch, checks ctx.Err(), and fails the first failures calls.
+// When set, beforeWrite runs at the start of every call, outside the lock.
 type fakeWriter struct {
-	mu          sync.Mutex
-	batches     [][]*pb.Metric
-	failures    int
-	written     chan struct{}
-	beforeWrite func()
-	calls       atomic.Int32
+	mu           sync.Mutex
+	batches      [][]*pb.Metric
+	ctxErrs      []error
+	hasDeadlines []bool
+	failures     int
+	written      chan struct{}
+	beforeWrite  func()
+	calls        atomic.Int32
 }
 
 func newFakeWriter(failures int) *fakeWriter {
 	return &fakeWriter{failures: failures, written: make(chan struct{}, 100)}
 }
 
-func (w *fakeWriter) Write(_ context.Context, metrics []*pb.Metric) error {
+func (w *fakeWriter) Write(ctx context.Context, metrics []*pb.Metric) error {
 	w.calls.Add(1)
 	if w.beforeWrite != nil {
 		w.beforeWrite()
@@ -70,7 +72,14 @@ func (w *fakeWriter) Write(_ context.Context, metrics []*pb.Metric) error {
 		w.mu.Unlock()
 		w.written <- struct{}{}
 	}()
+	_, hasDeadline := ctx.Deadline()
+	ctxErr := ctx.Err()
 	w.batches = append(w.batches, metrics)
+	w.ctxErrs = append(w.ctxErrs, ctxErr)
+	w.hasDeadlines = append(w.hasDeadlines, hasDeadline)
+	if ctxErr != nil {
+		return ctxErr
+	}
 	if len(w.batches) <= w.failures {
 		return errors.New("clickhouse unavailable")
 	}
@@ -81,6 +90,12 @@ func (w *fakeWriter) snapshot() [][]*pb.Metric {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return append([][]*pb.Metric(nil), w.batches...)
+}
+
+func (w *fakeWriter) deadlines() []bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]bool(nil), w.hasDeadlines...)
 }
 
 // awaitCalls blocks until Write has been entered n times, even if those calls have not returned.
@@ -158,11 +173,10 @@ func publishMetric(t *testing.T, srv *pstest.Server, m *pb.Metric) string {
 	return srv.Publish(testTopicName, data, nil)
 }
 
-// startIngester runs an Ingester in the background and returns a function that stops it and
+// startConfiguredIngester runs in in the background and returns a function that stops it and
 // returns Run's error.
-func startIngester(t *testing.T, source MessageSource, writer MetricWriter, batchSize int, interval time.Duration) (*Ingester, func() error) {
+func startConfiguredIngester(t *testing.T, in *Ingester) func() error {
 	t.Helper()
-	in := NewIngester(source, writer, &Config{BatchSize: batchSize, BatchInterval: interval})
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() { errCh <- in.Run(ctx) }()
@@ -181,7 +195,16 @@ func startIngester(t *testing.T, source MessageSource, writer MetricWriter, batc
 		return runErr
 	}
 	t.Cleanup(func() { _ = stop() })
-	return in, stop
+	return stop
+}
+
+// startIngester constructs and runs an Ingester in the background.
+func startIngester(t *testing.T, source MessageSource, writer MetricWriter, batchSize int, interval time.Duration) (*Ingester, func() error) {
+	t.Helper()
+	in := NewIngester(source, writer, &Config{BatchSize: batchSize, BatchInterval: interval})
+	in.retryInitial = 5 * time.Millisecond
+	in.retryMax = 20 * time.Millisecond
+	return in, startConfiguredIngester(t, in)
 }
 
 // awaitAcks blocks until the pstest message with id has been acked at least once.
@@ -198,16 +221,16 @@ func awaitAcks(t *testing.T, srv *pstest.Server, ids ...string) {
 	}
 }
 
-// awaitModack blocks until the server has received at least one modack for the message with id.
-func awaitModack(t *testing.T, srv *pstest.Server, id string) {
+// awaitModacks blocks until the server has received at least count modacks for message id.
+func awaitModacks(t *testing.T, srv *pstest.Server, id string, count int) {
 	t.Helper()
 	deadline := time.Now().Add(waitTimeout)
-	for len(srv.Message(id).Modacks) == 0 {
+	for len(srv.Message(id).Modacks) < count {
 		if time.Now().After(deadline) {
-			t.Errorf("timed out waiting for a modack on message %s", id)
+			t.Errorf("timed out waiting for %d modacks on message %s, got %d", count, id, len(srv.Message(id).Modacks))
 			return
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -230,6 +253,9 @@ func TestIngesterWritesFullBatchAndAcks(t *testing.T) {
 	got := writer.snapshot()
 	if len(got) != 1 || len(got[0]) != 3 {
 		t.Fatalf("writes = %v, want one batch of 3", got)
+	}
+	if diff := cmp.Diff([]bool{true}, writer.deadlines()); diff != "" {
+		t.Errorf("write deadlines mismatch (-want +got):\n%s", diff)
 	}
 	if err := stop(); err != nil {
 		t.Errorf("Run() error = %v, want nil", err)
@@ -255,7 +281,11 @@ func TestIngesterAcksAndSkipsMalformedMessages(t *testing.T) {
 	ctx := context.Background()
 	srv, _, sub := newFakeSubscription(ctx, t)
 	writer := newFakeWriter(0)
-	startIngester(t, sub, writer, 2, neverTick)
+	in, _ := startIngester(t, sub, writer, 2, neverTick)
+
+	onlyBad1 := srv.Publish(testTopicName, malformedPayload, nil)
+	onlyBad2 := srv.Publish(testTopicName, malformedPayload, nil)
+	awaitAcks(t, srv, onlyBad1, onlyBad2)
 
 	badID := srv.Publish(testTopicName, malformedPayload, nil)
 	goodID := publishMetric(t, srv, testMetric())
@@ -264,6 +294,9 @@ func TestIngesterAcksAndSkipsMalformedMessages(t *testing.T) {
 
 	if diff := cmp.Diff([][]*pb.Metric{{testMetric()}}, writer.snapshot(), protocmp.Transform()); diff != "" {
 		t.Errorf("writes mismatch (-want +got):\n%s", diff)
+	}
+	if got := in.DroppedMessages(); got != 3 {
+		t.Errorf("DroppedMessages() = %d, want 3", got)
 	}
 }
 
@@ -275,7 +308,7 @@ func TestIngesterNacksFailedWriteForRedelivery(t *testing.T) {
 	// The client library modacks each message on receipt, asynchronously. If the nack reaches the
 	// server first, that receipt modack re-leases the message and redelivery waits out the whole ack
 	// deadline. Holding the failing write until the receipt modack lands keeps the test fast.
-	writer.beforeWrite = func() { awaitModack(t, srv, id) }
+	writer.beforeWrite = func() { awaitModacks(t, srv, id, 1) }
 	startIngester(t, sub, writer, 1, neverTick)
 
 	writer.awaitWrites(t, 2)
@@ -287,6 +320,109 @@ func TestIngesterNacksFailedWriteForRedelivery(t *testing.T) {
 	}
 	if got := srv.Message(id).Deliveries; got < 2 {
 		t.Errorf("Deliveries = %d, want at least 2 after a nack", got)
+	}
+}
+
+func TestIngesterBacksOffAfterFailedWrites(t *testing.T) {
+	ctx := context.Background()
+	srv, _, sub := newFakeSubscription(ctx, t)
+	id := publishMetric(t, srv, testMetric())
+	writer := newFakeWriter(2)
+	// Each failed attempt adds 2 modacks (1 receipt lease + 1 zero-deadline nack), so attempt k waits
+	// for 2k-1 modacks to ensure attempt k's receipt lease landed before nacking.
+	writer.beforeWrite = func() { awaitModacks(t, srv, id, int(2*writer.calls.Load()-1)) }
+
+	in := NewIngester(sub, writer, &Config{BatchSize: 1, BatchInterval: neverTick})
+	in.retryInitial = 25 * time.Millisecond
+	in.retryMax = 50 * time.Millisecond
+	start := time.Now()
+	startConfiguredIngester(t, in)
+
+	writer.awaitWrites(t, 3)
+	awaitAcks(t, srv, id)
+	if elapsed := time.Since(start); elapsed < 70*time.Millisecond {
+		t.Errorf("3 attempts completed in %v, want at least ~75ms of retry backoff (25ms + 50ms)", elapsed)
+	}
+}
+
+func TestIngesterCancelsRetryBackoffOnShutdown(t *testing.T) {
+	ctx := context.Background()
+	srv, _, sub := newFakeSubscription(ctx, t)
+	id := publishMetric(t, srv, testMetric())
+	writer := newFakeWriter(1)
+	writer.beforeWrite = func() { awaitModacks(t, srv, id, 1) }
+
+	in := NewIngester(sub, writer, &Config{BatchSize: 1, BatchInterval: neverTick})
+	in.retryInitial = time.Hour
+	in.retryMax = time.Hour
+	stop := startConfiguredIngester(t, in)
+
+	writer.awaitWrites(t, 1)
+	if err := stop(); err != nil {
+		t.Fatalf("Run() error = %v, want nil when cancelled during retry backoff", err)
+	}
+}
+
+func TestIngesterInFlightWriteSurvivesCancellation(t *testing.T) {
+	ctx := context.Background()
+	srv, _, sub := newFakeSubscription(ctx, t)
+	gate := make(chan struct{})
+	writer := newFakeWriter(0)
+	writer.beforeWrite = func() { <-gate }
+	_, stop := startIngester(t, sub, writer, 1, neverTick)
+
+	id := publishMetric(t, srv, testMetric())
+	writer.awaitCalls(t, 1)
+
+	stopped := make(chan error, 1)
+	go func() { stopped <- stop() }()
+	close(gate)
+
+	if err := <-stopped; err != nil {
+		t.Fatalf("Run() error = %v, want nil", err)
+	}
+	awaitAcks(t, srv, id)
+	if diff := cmp.Diff([][]*pb.Metric{{testMetric()}}, writer.snapshot(), protocmp.Transform()); diff != "" {
+		t.Errorf("writes mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestNextBackoff(t *testing.T) {
+	tests := []struct {
+		name     string
+		cur      time.Duration
+		initial  time.Duration
+		maxDelay time.Duration
+		want     time.Duration
+	}{
+		{name: "first failure uses initial", cur: 0, initial: 250 * time.Millisecond, maxDelay: 30 * time.Second, want: 250 * time.Millisecond},
+		{name: "initial capped by max", cur: 0, initial: time.Minute, maxDelay: 30 * time.Second, want: 30 * time.Second},
+		{name: "doubles below max", cur: 500 * time.Millisecond, initial: 250 * time.Millisecond, maxDelay: 30 * time.Second, want: time.Second},
+		{name: "caps at max", cur: 20 * time.Second, initial: 250 * time.Millisecond, maxDelay: 30 * time.Second, want: 30 * time.Second},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := nextBackoff(tc.cur, tc.initial, tc.maxDelay); got != tc.want {
+				t.Errorf("nextBackoff(%v, %v, %v) = %v, want %v", tc.cur, tc.initial, tc.maxDelay, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWaitBackoff(t *testing.T) {
+	if !waitBackoff(context.Background(), 0) {
+		t.Error("waitBackoff(live, 0) = false, want true")
+	}
+	if !waitBackoff(context.Background(), time.Millisecond) {
+		t.Error("waitBackoff(live, 1ms) = false, want true")
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if waitBackoff(cancelled, 0) {
+		t.Error("waitBackoff(cancelled, 0) = true, want false")
+	}
+	if waitBackoff(cancelled, time.Hour) {
+		t.Error("waitBackoff(cancelled, 1h) = true, want false")
 	}
 }
 
@@ -387,6 +523,43 @@ func TestIngesterNacksPendingBatchOnShutdown(t *testing.T) {
 	}
 	if acks := srv.Message(id).Acks; acks != 0 {
 		t.Errorf("Acks = %d, want 0 for a message nacked on shutdown", acks)
+	}
+}
+
+func TestFlushOrStopNacksPendingWhenContextAlreadyDone(t *testing.T) {
+	writer := newFakeWriter(0)
+	in := NewIngester(nil, writer, &Config{BatchSize: 10, BatchInterval: neverTick})
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	msgCh := make(chan *pubsub.Message, 1)
+	msgCh <- metricMessage(t, "2", 2)
+	close(msgCh)
+
+	var backoff time.Duration
+	if in.flushOrStop(cancelled, msgCh, []*pubsub.Message{metricMessage(t, "1", 1)}, &backoff) {
+		t.Error("flushOrStop(cancelled) = true, want false")
+	}
+	if got := writer.snapshot(); len(got) != 0 {
+		t.Errorf("writes = %v, want none when context is already cancelled", got)
+	}
+}
+
+func TestFlushEmptyIsNoOp(t *testing.T) {
+	writer := newFakeWriter(0)
+	in := NewIngester(nil, writer, &Config{BatchSize: 10, BatchInterval: neverTick})
+	var backoff time.Duration
+	if !in.flushOrStop(context.Background(), nil, nil, &backoff) {
+		t.Error("flushOrStop(empty) = false, want true")
+	}
+	if !in.flushBounded(context.Background(), nil) {
+		t.Error("flushBounded(empty) = false, want true")
+	}
+	if !in.flush(context.Background(), nil) {
+		t.Error("flush(empty) = false, want true")
+	}
+	if got := writer.snapshot(); len(got) != 0 {
+		t.Errorf("writes = %v, want none", got)
 	}
 }
 

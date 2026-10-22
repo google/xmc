@@ -25,7 +25,7 @@ import "time"
 const (
 	// DefaultBatchSize is the default maximum number of messages per ClickHouse insert.
 	DefaultBatchSize = 1000
-	// DefaultBatchInterval mirrors the Kafka table's kafka_flush_interval_ms.
+	// DefaultBatchInterval matches the Kafka table's kafka_flush_interval_ms.
 	DefaultBatchInterval = time.Second
 )
 

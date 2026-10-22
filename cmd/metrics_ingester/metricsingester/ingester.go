@@ -16,12 +16,23 @@ package metricsingester
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/pubsub"
 	"google.golang.org/protobuf/proto"
 	pb "xmanager_cloud/api/protos/metrics"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
+)
+
+const (
+	// writeTimeout bounds each ClickHouse batch insert so a stalled connection cannot block the
+	// batch loop indefinitely, while detaching in-flight writes from SIGTERM cancellation.
+	writeTimeout = 10 * time.Second
+	// defaultRetryInitial and defaultRetryMax bound exponential backoff after a failed write so
+	// an unreachable ClickHouse does not spin through Receive -> PrepareBatch -> Nack at line rate.
+	defaultRetryInitial = 250 * time.Millisecond
+	defaultRetryMax     = 30 * time.Second
 )
 
 // MessageSource delivers Pub/Sub messages to f until ctx is done. *pubsub.Subscription satisfies it.
@@ -40,10 +51,14 @@ type MetricWriter interface {
 // redelivery when the write fails. A crash between a successful write and the ack therefore
 // re-inserts that batch, the same guarantee ClickHouse's Kafka engine gives the Redpanda path.
 type Ingester struct {
-	source        MessageSource
-	writer        MetricWriter
-	batchSize     int
-	batchInterval time.Duration
+	source          MessageSource
+	writer          MetricWriter
+	batchSize       int
+	batchInterval   time.Duration
+	writeTimeout    time.Duration
+	retryInitial    time.Duration
+	retryMax        time.Duration
+	droppedMessages atomic.Uint64
 }
 
 // NewIngester returns an Ingester that batches according to cfg.
@@ -53,7 +68,16 @@ func NewIngester(source MessageSource, writer MetricWriter, cfg *Config) *Ingest
 		writer:        writer,
 		batchSize:     cfg.BatchSize,
 		batchInterval: cfg.BatchInterval,
+		writeTimeout:  writeTimeout,
+		retryInitial:  defaultRetryInitial,
+		retryMax:      defaultRetryMax,
 	}
+}
+
+// DroppedMessages returns the number of messages acked and dropped because their payload failed
+// protobuf wire unmarshaling.
+func (in *Ingester) DroppedMessages() uint64 {
+	return in.droppedMessages.Load()
 }
 
 // Run receives and writes messages until ctx is done or the source fails permanently, returning the
@@ -91,21 +115,26 @@ func (in *Ingester) batchLoop(ctx context.Context, msgCh <-chan *pubsub.Message)
 	defer ticker.Stop()
 
 	var pending []*pubsub.Message
+	var backoff time.Duration
 	for {
 		select {
 		case msg, ok := <-msgCh:
 			if !ok {
-				in.flush(ctx, pending)
+				in.flushBounded(ctx, pending)
 				return
 			}
 			pending = append(pending, msg)
 			if len(pending) >= in.batchSize {
-				in.flush(ctx, pending)
+				if !in.flushOrStop(ctx, msgCh, pending, &backoff) {
+					return
+				}
 				pending = nil
 				ticker.Reset(in.batchInterval)
 			}
 		case <-ticker.C:
-			in.flush(ctx, pending)
+			if !in.flushOrStop(ctx, msgCh, pending, &backoff) {
+				return
+			}
 			pending = nil
 		case <-ctx.Done():
 			nackAll(pending)
@@ -115,34 +144,76 @@ func (in *Ingester) batchLoop(ctx context.Context, msgCh <-chan *pubsub.Message)
 	}
 }
 
+// flushOrStop flushes pending and backs off on write failure, returning false once shutdown has
+// begun and msgCh is drained. Checking ctx.Err() first avoids flushing when select chose msgCh or
+// ticker over an already-ready ctx.Done.
+func (in *Ingester) flushOrStop(ctx context.Context, msgCh <-chan *pubsub.Message, pending []*pubsub.Message, backoff *time.Duration) bool {
+	if ctx.Err() != nil {
+		nackAll(pending)
+		nackUntilClosed(msgCh)
+		return false
+	}
+	if len(pending) == 0 {
+		return true
+	}
+	if in.flushBounded(ctx, pending) {
+		*backoff = 0
+		return true
+	}
+	*backoff = nextBackoff(*backoff, in.retryInitial, in.retryMax)
+	if !waitBackoff(ctx, *backoff) {
+		nackUntilClosed(msgCh)
+		return false
+	}
+	return true
+}
+
+// flushBounded runs flush on a context detached from Run's cancellation and bounded by writeTimeout,
+// so SIGTERM does not abort an in-flight ClickHouse insert mid-Send.
+func (in *Ingester) flushBounded(ctx context.Context, msgs []*pubsub.Message) bool {
+	if len(msgs) == 0 {
+		return true
+	}
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), in.writeTimeout)
+	defer cancel()
+	return in.flush(writeCtx, msgs)
+}
+
 // flush writes msgs as one batch, acking them on success and nacking them for redelivery on failure.
-func (in *Ingester) flush(ctx context.Context, msgs []*pubsub.Message) {
-	metrics, decoded := decodeBatch(ctx, msgs)
+// It reports whether the batch settled without a write error.
+func (in *Ingester) flush(ctx context.Context, msgs []*pubsub.Message) bool {
+	if len(msgs) == 0 {
+		return true
+	}
+	metrics, decoded := in.decodeBatch(ctx, msgs)
 	if len(decoded) == 0 {
-		return
+		return true
 	}
 	if err := in.writer.Write(ctx, metrics); err != nil {
 		logging.Error(ctx, "Failed to write metrics batch, nacking for redelivery", "messages", len(decoded), "error", err)
 		nackAll(decoded)
-		return
+		return false
 	}
 	for _, msg := range decoded {
 		msg.Ack()
 	}
+	return true
 }
 
 // decodeBatch unmarshals msgs, returning the metrics alongside the messages they came from.
 //
-// A payload that fails to unmarshal will fail on every redelivery, so it is acked and dropped here
-// instead of being nacked into an endless retry loop. This mirrors kafka_skip_broken_messages on the
-// Redpanda path. Semantic validation (zero IDs, bad timestamps) is left to xmc_metrics_pubsub_mv.
-func decodeBatch(ctx context.Context, msgs []*pubsub.Message) ([]*pb.Metric, []*pubsub.Message) {
+// A payload that fails wire unmarshaling will fail on every redelivery, so it is acked and dropped
+// (unbounded, unlike kafka_skip_broken_messages, which caps skips at 100 per block). Note that
+// proto3 unmarshaling is lenient, so corrupt bytes that still form valid wire tags decode into a
+// near-empty Metric and are filtered out silently by xmc_metrics_pubsub_mv.
+func (in *Ingester) decodeBatch(ctx context.Context, msgs []*pubsub.Message) ([]*pb.Metric, []*pubsub.Message) {
 	metrics := make([]*pb.Metric, 0, len(msgs))
 	decoded := make([]*pubsub.Message, 0, len(msgs))
 	for _, msg := range msgs {
 		m := &pb.Metric{}
 		if err := proto.Unmarshal(msg.Data, m); err != nil {
-			logging.Warn(ctx, "Dropping malformed metric message", "message_id", msg.ID, "error", err)
+			dropped := in.droppedMessages.Add(1)
+			logging.Warn(ctx, "Dropping malformed metric message", "message_id", msg.ID, "dropped_total", dropped, "error", err)
 			msg.Ack()
 			continue
 		}
@@ -150,6 +221,27 @@ func decodeBatch(ctx context.Context, msgs []*pubsub.Message) ([]*pb.Metric, []*
 		decoded = append(decoded, msg)
 	}
 	return metrics, decoded
+}
+
+func nextBackoff(cur, initial, maxDelay time.Duration) time.Duration {
+	if cur <= 0 {
+		return min(initial, maxDelay)
+	}
+	return min(cur*2, maxDelay)
+}
+
+func waitBackoff(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // nackAll nacks msgs for redelivery.
