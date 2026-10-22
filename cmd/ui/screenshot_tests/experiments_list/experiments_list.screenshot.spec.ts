@@ -14,7 +14,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { setupMockRoutes, setupScreenshotEnvironment } from '../test_utils';
+import { MOCK_EXPERIMENTS_LIST, setupMockRoutes, setupScreenshotEnvironment } from '../test_utils';
 
 test.describe('Experiments List Page - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
@@ -65,4 +65,50 @@ test.describe('Experiments List Page - Screenshot Tests', () => {
 
     await expect(listPage).toHaveScreenshot('experiments-list-page.png');
   });
+
+  for (const [name, message] of [
+    ['long error text', 'Failed to create work unit: insufficient resources. '.repeat(80)],
+    ['unbroken error text', `Failed to load /${'very_long_resource_name_'.repeat(200)}`],
+  ]) {
+    test(`should wrap ${name} without widening the table`, async ({ page }) => {
+      const table = page.locator('xmc-experiments-table table');
+      const errorText = table.locator('xmc-status-message .error-message .text');
+      await expect(errorText).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      const originalWidth = await table.evaluate(
+        (element) => element.getBoundingClientRect().width,
+      );
+
+      await page.route(/\/experiments(?:\?.*)?$/, async (route) => {
+        if (route.request().resourceType() === 'document') {
+          await route.fallback();
+          return;
+        }
+        await route.fulfill({
+          json: {
+            ...MOCK_EXPERIMENTS_LIST,
+            experiments: MOCK_EXPERIMENTS_LIST.experiments?.map((experiment) => ({
+              ...experiment,
+              status: {
+                ...experiment.status,
+                structuredStatusMessage: {
+                  ...experiment.status?.structuredStatusMessage,
+                  userFacingText: message,
+                },
+              },
+            })),
+          },
+        });
+      });
+      await page.getByRole('columnheader', { name: 'Created' }).click();
+
+      await expect(errorText).toHaveText(message.trim());
+      expect(
+        await table.evaluate((element) => element.getBoundingClientRect().width),
+      ).toBeLessThanOrEqual(originalWidth + 1);
+      expect(
+        await errorText.evaluate((element) => element.scrollWidth - element.clientWidth),
+      ).toBeLessThanOrEqual(1);
+    });
+  }
 });
