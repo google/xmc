@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -95,6 +96,11 @@ var (
 // event.
 const kindBridgeProbeInterval = time.Second
 
+// componentTransitionTimeout bounds each Component status transition awaited by waitForComponent. It
+// exceeds the bridge's 30s DeactivationBlocked recheck interval, which gates how soon a blocked
+// deactivation is retried.
+const componentTransitionTimeout = 90 * time.Second
+
 type kindClusterHarness struct {
 	clusterName, kubeconfig string
 	restCfg                 *rest.Config
@@ -158,6 +164,23 @@ func runCommand(t *testing.T, name string, args ...string) string {
 	return string(out)
 }
 
+// renderHelmTemplate runs `helm template args...` within ctx, bounded to 2 minutes, and returns
+// its stdout only, because helm logs warnings such as symlinked chart files in Bazel runfiles to
+// stderr.
+func renderHelmTemplate(ctx context.Context, t *testing.T, args ...string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, resolveBinaryPath("helm"), append([]string{"template"}, args...)...)
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("helm template %v failed: %v\nStderr:\n%s", args, err, stderr.String())
+	}
+	return string(out)
+}
+
 func resolveBinaryPath(name string) string {
 	if p, err := exec.LookPath(name); err == nil {
 		return p
@@ -206,16 +229,33 @@ func buildClusterClients(t *testing.T, clusterName, kubeconfig string) *kindClus
 func installComponentCRD(ctx context.Context, t *testing.T, h *kindClusterHarness) {
 	t.Helper()
 	chartRoot := filepath.Dir(filepath.Dir(filepath.Dir(locateHelmComponentCRDPath(t))))
-	renderedYAML := runCommand(t, "helm", "template", "xmc-e2e", chartRoot, "--set", "componentsDeployment.enabled=true", "--show-only", "templates/components/crd.yaml")
-	if idx := strings.Index(renderedYAML, "\napiVersion:"); idx >= 0 {
-		renderedYAML = renderedYAML[idx+1:]
+	renderedYAML := renderHelmTemplate(ctx, t, "xmc-e2e", chartRoot, "--set", "componentsDeployment.enabled=true", "--show-only", "templates/components/crd.yaml")
+	objs, err := decodeYAMLDocuments(renderedYAML)
+	if err != nil || len(objs) != 1 {
+		t.Fatalf("failed to decode CRD YAML into exactly one object (got %d): %v", len(objs), err)
 	}
-	var obj map[string]any
-	if err := k8syaml.Unmarshal([]byte(renderedYAML), &obj); err != nil {
-		t.Fatalf("failed to unmarshal CRD YAML: %v", err)
-	}
-	applyUnstructuredObject(ctx, t, h, obj)
+	applyUnstructuredObject(ctx, t, h, objs[0])
 	waitForCRDEstablished(ctx, t, h, "components.xmc.dev")
+}
+
+// decodeYAMLDocuments decodes every non-empty document of a multi-document YAML stream, such as
+// `helm template` output.
+func decodeYAMLDocuments(rendered string) ([]map[string]any, error) {
+	decoder := k8syaml.NewYAMLOrJSONDecoder(strings.NewReader(rendered), 4096)
+	var objs []map[string]any
+	for {
+		var obj map[string]any
+		err := decoder.Decode(&obj)
+		if errors.Is(err, io.EOF) {
+			return objs, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode YAML document: %w", err)
+		}
+		if len(obj) > 0 {
+			objs = append(objs, obj)
+		}
+	}
 }
 
 func installThirdPartyCRD(ctx context.Context, t *testing.T, h *kindClusterHarness, group, version, kind, plural string) {
@@ -255,8 +295,8 @@ func applyThirdPartyComponentCR(ctx context.Context, t *testing.T, h *kindCluste
 		existing.SetFinalizers(nil)
 		_, _ = compRes.Update(ctx, existing, metav1.UpdateOptions{})
 		_ = compRes.Delete(ctx, name, metav1.DeleteOptions{})
-		if !waitUntil(ctx, 15*time.Second, 100*time.Millisecond, func() bool {
-			_, getErr := compRes.Get(ctx, name, metav1.GetOptions{})
+		if !waitUntil(ctx, 15*time.Second, 100*time.Millisecond, func(pollCtx context.Context) bool {
+			_, getErr := compRes.Get(pollCtx, name, metav1.GetOptions{})
 			return apierrors.IsNotFound(getErr)
 		}) {
 			t.Fatalf("timed out waiting for previous Component %s/%s deletion", ns, name)
@@ -283,17 +323,29 @@ func assertComponentEnvVars(t *testing.T, envVars map[string]string, wantEndpoin
 
 func locateHelmComponentCRDPath(t *testing.T) string {
 	t.Helper()
+	return locateRepoPath(t, "deploy/helm/templates/components/crd.yaml")
+}
+
+// locateRepoPath returns the absolute path of the repository-relative path relPath, resolved from
+// Bazel runfiles when present and otherwise from the working directory or its ancestors.
+func locateRepoPath(t *testing.T, relPath string) string {
+	t.Helper()
 	candidates := []string{".", "../..", "../../.."}
 	if srcDir, ws := os.Getenv("TEST_SRCDIR"), os.Getenv("TEST_WORKSPACE"); srcDir != "" && ws != "" {
 		candidates = append([]string{filepath.Join(srcDir, ws)}, candidates...)
 	}
 	for _, root := range candidates {
-		p := filepath.Join(root, "deploy", "helm", "templates", "components", "crd.yaml")
-		if _, err := os.Stat(p); err == nil {
-			return p
+		p := filepath.Join(root, filepath.FromSlash(relPath))
+		if _, err := os.Stat(p); err != nil {
+			continue
 		}
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			t.Fatalf("failed to resolve absolute path of %s: %v", p, err)
+		}
+		return abs
 	}
-	t.Fatalf("could not locate deploy/helm/templates/components/crd.yaml in %v", candidates)
+	t.Fatalf("could not locate %s in %v", relPath, candidates)
 	return ""
 }
 
@@ -331,16 +383,18 @@ func resolveObjectGVR(gvk schema.GroupVersionKind) schema.GroupVersionResource {
 	}
 }
 
-func waitUntil(ctx context.Context, timeout, interval time.Duration, cond func() bool) bool {
-	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(context.Context) (bool, error) {
-		return cond(), nil
+// waitUntil polls cond every interval until it returns true or timeout elapses. cond receives the
+// poll context, which is bounded by timeout, so API calls in cond must use it rather than ctx.
+func waitUntil(ctx context.Context, timeout, interval time.Duration, cond func(pollCtx context.Context) bool) bool {
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(pollCtx context.Context) (bool, error) {
+		return cond(pollCtx), nil
 	}) == nil
 }
 
 func waitForCRDEstablished(ctx context.Context, t *testing.T, h *kindClusterHarness, crdName string) {
 	t.Helper()
-	ok := waitUntil(ctx, 30*time.Second, 250*time.Millisecond, func() bool {
-		u, err := h.dynClient.Resource(crdGVR).Get(ctx, crdName, metav1.GetOptions{})
+	ok := waitUntil(ctx, 30*time.Second, 250*time.Millisecond, func(pollCtx context.Context) bool {
+		u, err := h.dynClient.Resource(crdGVR).Get(pollCtx, crdName, metav1.GetOptions{})
 		return err == nil && hasConditionTrue(u, "Established")
 	})
 	if !ok {
@@ -366,6 +420,81 @@ func isComponentReady(u *unstructured.Unstructured) bool {
 	obsGen, _, _ := unstructured.NestedInt64(u.Object, "status", "observedGeneration")
 	state, _, _ := unstructured.NestedString(u.Object, "status", "state")
 	return obsGen == u.GetGeneration() && state == "COMPONENT_STATE_ENABLED" && hasConditionTrue(u, "Ready")
+}
+
+// waitForComponent waits until cond holds for the named Component, as persisted by the namespace
+// bridge, described by desc in failures. cond receives nil once the Component no longer exists.
+func waitForComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, name, desc string, cond func(*unstructured.Unstructured) bool) *unstructured.Unstructured {
+	t.Helper()
+	var last *unstructured.Unstructured
+	var lastErr error
+	ok := waitUntil(ctx, componentTransitionTimeout, 500*time.Millisecond, func(pollCtx context.Context) bool {
+		u, err := h.dynClient.Resource(componentGVR).Namespace(ns).Get(pollCtx, name, metav1.GetOptions{})
+		switch {
+		case apierrors.IsNotFound(err):
+			last = nil
+		case err != nil:
+			lastErr = err
+			return false
+		default:
+			last = u
+		}
+		return cond(last)
+	})
+	if !ok {
+		t.Fatalf("timed out waiting for Component %s/%s to be %s (last err: %v); last object: %v", ns, name, desc, lastErr, last)
+	}
+	return last
+}
+
+func isObservedComponent(u *unstructured.Unstructured) bool {
+	if u == nil {
+		return false
+	}
+	obsGen, _, _ := unstructured.NestedInt64(u.Object, "status", "observedGeneration")
+	return obsGen == u.GetGeneration()
+}
+
+func isExistingComponentReady(u *unstructured.Unstructured) bool {
+	return u != nil && isComponentReady(u)
+}
+
+// conditionField returns field of the status condition condType, or "" if u is nil or the condition
+// is absent.
+func conditionField(u *unstructured.Unstructured, condType, field string) string {
+	if u == nil {
+		return ""
+	}
+	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
+	for _, raw := range conds {
+		if m, ok := raw.(map[string]any); ok && m["type"] == condType {
+			v, _ := m[field].(string)
+			return v
+		}
+	}
+	return ""
+}
+
+// assertCondition verifies that the status condition condType of u has wantStatus and wantReason.
+func assertCondition(t *testing.T, u *unstructured.Unstructured, condType, wantStatus, wantReason string) {
+	t.Helper()
+	gotStatus, gotReason := conditionField(u, condType, "status"), conditionField(u, condType, "reason")
+	if gotStatus != wantStatus || gotReason != wantReason {
+		t.Errorf("%s %s condition = %s/%s, want %s/%s", u.GetName(), condType, gotStatus, gotReason, wantStatus, wantReason)
+	}
+}
+
+// assertCMSComponent verifies that the CMS record of the Component u is in wantState at the CR
+// generation. Repeated bridge passes must not bump the CMS generation past the CR generation.
+func assertCMSComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, u *unstructured.Unstructured, wantState componentspb.ComponentState) {
+	t.Helper()
+	rec, err := h.cmsServer.Store().GetComponent(ctx, u.GetName())
+	if err != nil {
+		t.Fatalf("CMS GetComponent(%s) failed: %v", u.GetName(), err)
+	}
+	if rec.State != wantState || rec.Generation != u.GetGeneration() {
+		t.Errorf("%s CMS state = %v, generation = %d; want %v, CR generation %d", u.GetName(), rec.State, rec.Generation, wantState, u.GetGeneration())
+	}
 }
 
 // createTestNamespace creates a namespace named after prefix and runs a bridge controller over it
@@ -484,8 +613,8 @@ func waitForComponentReady(ctx context.Context, t *testing.T, h *kindClusterHarn
 	var envVars map[string]string
 	var last *unstructured.Unstructured
 	var lastErr error
-	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func() bool {
-		last, lastErr = h.dynClient.Resource(componentGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func(pollCtx context.Context) bool {
+		last, lastErr = h.dynClient.Resource(componentGVR).Namespace(namespace).Get(pollCtx, name, metav1.GetOptions{})
 		if lastErr != nil || !isComponentReady(last) {
 			return false
 		}
@@ -500,8 +629,8 @@ func waitForComponentReady(ctx context.Context, t *testing.T, h *kindClusterHarn
 
 func waitForPodReady(ctx context.Context, t *testing.T, h *kindClusterHarness, namespace, podName string) {
 	t.Helper()
-	ok := waitUntil(ctx, 90*time.Second, time.Second, func() bool {
-		pod, err := h.clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	ok := waitUntil(ctx, 90*time.Second, time.Second, func(pollCtx context.Context) bool {
+		pod, err := h.clientset.CoreV1().Pods(namespace).Get(pollCtx, podName, metav1.GetOptions{})
 		if err != nil {
 			return false
 		}
@@ -526,6 +655,14 @@ type workloadPodSpec struct {
 
 func runMockMLWorkloadPod(ctx context.Context, t *testing.T, h *kindClusterHarness, spec workloadPodSpec) string {
 	t.Helper()
+	startWorkloadPod(ctx, t, h, spec)
+	return waitForPodSucceededLogs(ctx, t, h, spec.Namespace, spec.Name)
+}
+
+// startWorkloadPod creates the never-restarting workload Pod described by spec and returns without
+// waiting for it.
+func startWorkloadPod(ctx context.Context, t *testing.T, h *kindClusterHarness, spec workloadPodSpec) {
+	t.Helper()
 	envList := make([]corev1.EnvVar, 0, len(spec.AccessEnvVars)+len(spec.SecretEnvBinds))
 	for _, k := range slices.Sorted(maps.Keys(spec.AccessEnvVars)) {
 		envList = append(envList, corev1.EnvVar{Name: k, Value: spec.AccessEnvVars[k]})
@@ -542,16 +679,15 @@ func runMockMLWorkloadPod(ctx context.Context, t *testing.T, h *kindClusterHarne
 		},
 	}
 	if _, err := h.clientset.CoreV1().Pods(spec.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
-		t.Fatalf("failed to create mock ML workload pod %s/%s: %v", spec.Namespace, spec.Name, err)
+		t.Fatalf("failed to create workload pod %s/%s: %v", spec.Namespace, spec.Name, err)
 	}
-	return waitForPodSucceededLogs(ctx, t, h, spec.Namespace, spec.Name)
 }
 
 func waitForPodSucceededLogs(ctx context.Context, t *testing.T, h *kindClusterHarness, namespace, podName string) string {
 	t.Helper()
 	var failed bool
-	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func() bool {
-		pod, err := h.clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func(pollCtx context.Context) bool {
+		pod, err := h.clientset.CoreV1().Pods(namespace).Get(pollCtx, podName, metav1.GetOptions{})
 		if err != nil {
 			return false
 		}
