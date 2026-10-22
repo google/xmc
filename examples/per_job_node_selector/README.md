@@ -44,6 +44,7 @@ export PROJECT_ID="my-gcp-project"
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python3 ../../deploy/cli/install_xmanager.py --venv .venv
 python3 launch.py
 ```
 

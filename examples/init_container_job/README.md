@@ -45,11 +45,12 @@ This directory contains a complete validation example for running **Init Contain
 ```
 
 ### 2. Launch the Init Container Experiment
-Create your virtual environment, install dependencies, and launch:
+Create your virtual environment, install dependencies, compile local XMC protos, and launch:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python3 ../../deploy/cli/install_xmanager.py --venv .venv
 python3 launch.py
 ```
 

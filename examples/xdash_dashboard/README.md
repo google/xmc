@@ -10,7 +10,7 @@ This example demonstrates how to use the **`xdash`** Python SDK to programmatica
     `DashboardBuilder` — `CreateDashboard` stores chart IDs and never creates the charts itself.
   - Connect to the XMC Dashboard Service via `DashboardClient`.
   - Inspect evaluated chart metrics data from the DataEngine.
-- **`install_venv.sh`**: Shell script that creates a local Python virtual environment (`.venv`), installs runtime dependencies (`xmanager`, `grpcio`, `protobuf`), and installs `xdash` in editable mode.
+- **`install_venv.sh`**: Shell script that creates a local Python virtual environment (`.venv`), installs runtime dependencies (`xmanager`, `grpcio`, `protobuf`), compiles local XMC protos from `api/protos`, and installs `xdash` in editable mode.
 - **`requirements.txt`**: Python dependencies list.
 
 ## 1. Installation & Dependencies

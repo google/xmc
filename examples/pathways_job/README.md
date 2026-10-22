@@ -25,11 +25,12 @@ In a Pathways RL post-training or distributed execution topology on JAX-on-Pathw
 
 ## Running the Example
 
-Create your virtual environment, install dependencies, and run the launch script:
+Create your virtual environment, install dependencies, compile local XMC protos, and run the launch script:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python3 ../../deploy/cli/install_xmanager.py --venv .venv
 python3 launch.py
 ```

@@ -26,12 +26,10 @@ fi
 
 PIP_BIN="${VENV_DIR}/bin/pip"
 
-echo "--> [2/3] Installing launch-script runtime dependencies..."
+echo "--> [2/3] Installing launch-script runtime dependencies and compiling local XMC protos..."
 "${PIP_BIN}" install --upgrade pip
 "${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
-if [[ -n "${XMANAGER_VERSION:-}" ]]; then
-  python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}" --xmanager-version "${XMANAGER_VERSION}"
-fi
+python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}" --xmanager-version "${XMANAGER_VERSION:-}"
 
 # Editable installs, so a change to either SDK is picked up without reinstalling. xdash
 # builds and registers the charts; xmc is not needed to launch, but having it here lets

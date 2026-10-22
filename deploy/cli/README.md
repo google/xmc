@@ -10,28 +10,15 @@ The published `xmanager` package on PyPI (`xmanager>=0.8.2`) bundles `xmanager.x
 
 ## Installation
 
-### Option 1: Direct `pip` Installation
+### Recommended: Automated Setup & Local Proto Compilation (`install_xmanager.py`)
 
-Create and activate a Python virtual environment, then install `xmanager` from PyPI:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install "xmanager>=0.8.2"
-
-# To pin a specific version:
-# pip install "xmanager==0.8.2"
-```
-
-### Option 2: Automated Setup Script (`install_xmanager.py`)
-
-You can also use [`install_xmanager.py`](install_xmanager.py) to set up a virtual environment and install `xmanager` along with the XMC runtime client dependencies (`absl-py`, `google-auth`, `googleapis-common-protos`, `grpcio`, `protobuf`, `python-dotenv`, `requests`).
+Use [`install_xmanager.py`](install_xmanager.py) to set up a virtual environment, install `xmanager` and XMC runtime client dependencies (`absl-py`, `google-auth`, `googleapis-common-protos`, `grpcio`, `grpcio-tools`, `protobuf`, `python-dotenv`, `requests`) from PyPI, and compile the fresh local XMC `.proto` definitions from [`api/protos`](../../api/protos) (`experiment`, `xid`, and `dashboard`) into the virtual environment's `xmanager_cloud` package.
 
 It automates:
 1. Creating a Python virtual environment (default: `./venv`).
 2. Upgrading `pip` and installing `xmanager` and XMC client dependencies from PyPI.
-3. Verifying that `xmanager.xm_cloud` and the bundled XMC gRPC proto modules import cleanly.
+3. Compiling the local XMC API protos from `api/protos` (`experiment`, `xid`, and `dashboard`) directly into `site-packages/xmanager_cloud` via `grpc_tools.protoc` so local proto changes take effect immediately without waiting for a PyPI release.
+4. Verifying that `xmanager.xm_cloud` and the compiled XMC gRPC proto modules import cleanly.
 
 #### Prerequisites
 - **Python 3** (with `venv` and `pip`)
@@ -59,6 +46,17 @@ Options:
 #### Example: Pinning a Specific Version
 ```bash
 python3 deploy/cli/install_xmanager.py --venv ./my_env --xmanager-version 0.8.2
+```
+
+### Direct `pip` Installation (Without Local Proto Overlay)
+
+If you do not need unreleased local `.proto` changes from `api/protos`, you can also install `xmanager` directly from PyPI:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install "xmanager>=0.8.2"
 ```
 
 ### Verification

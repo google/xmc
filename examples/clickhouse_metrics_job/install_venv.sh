@@ -26,12 +26,10 @@ fi
 
 PIP_BIN="${VENV_DIR}/bin/pip"
 
-echo "--> [2/3] Installing clickhouse-connect, grpcio and runtime dependencies..."
+echo "--> [2/3] Installing clickhouse-connect, grpcio, runtime dependencies, and compiling local XMC protos..."
 "${PIP_BIN}" install --upgrade pip
 "${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
-if [[ -n "${XMANAGER_VERSION:-}" ]]; then
-  python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}" --xmanager-version "${XMANAGER_VERSION}"
-fi
+python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}" --xmanager-version "${XMANAGER_VERSION:-}"
 
 echo "--> [3/3] Installing xdash and xmc SDKs in editable mode..."
 "${PIP_BIN}" install -e "${REPO_ROOT}/sdks/python/xdash"

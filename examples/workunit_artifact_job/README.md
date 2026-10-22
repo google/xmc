@@ -13,12 +13,13 @@ This example demonstrates how to interact with the XManager on Cloud (XMC) **Exp
 
 ## Prerequisites
 
-1. Create a Python virtual environment and install dependencies:
+1. Create a Python virtual environment, install dependencies, and compile local XMC protos:
 
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
+   python3 ../../deploy/cli/install_xmanager.py --venv .venv
    ```
 
 2. **Environment Variables**:

@@ -53,7 +53,8 @@ flowchart TD
 ## File Structure
 
 - **`install_venv.sh`**: Setup script creating a `.venv`, installing dependencies from
-  `requirements.txt` (including `xmanager`), and installing `xdash` and `xmc` SDKs in editable mode.
+  `requirements.txt` (including `xmanager`), compiling local XMC protos from `api/protos`,
+  and installing `xdash` and `xmc` SDKs in editable mode.
 - **`launch.py`**: Client-side launch script creating the experiment, launching the
   WorkUnit, intercepting runtime IDs, creating the dashboard and attaching the artifacts.
 - **`training_metrics.py`**: Metric names and the randomized sampler, shared by the

@@ -43,6 +43,4 @@ fi
 
 "${VENV_DIR}/bin/pip" install --upgrade pip
 "${VENV_DIR}/bin/pip" install -r "${SCRIPT_DIR}/requirements.txt"
-if [[ -n "${XMANAGER_VERSION:-}" ]]; then
-  python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}" --xmanager-version "${XMANAGER_VERSION}"
-fi
+python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}" --xmanager-version "${XMANAGER_VERSION:-}"

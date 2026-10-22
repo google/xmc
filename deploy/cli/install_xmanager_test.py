@@ -16,6 +16,7 @@
 """Unit tests for install_xmanager script."""
 
 import io
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -194,6 +195,97 @@ class TestInstallXmanager(unittest.TestCase):
             check=True,
         )
 
+    def test_resolve_venv_proto_paths_copies_operations_proto(self) -> None:
+        """Test resolve_venv_proto_paths returns paths and copies operations.proto."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            site_pkgs = Path(tmp_str) / "site-packages"
+            grpc_proto = site_pkgs / "grpc_tools" / "_proto"
+            longrunning_dir = site_pkgs / "google" / "longrunning"
+            longrunning_dir.mkdir(parents=True)
+            (longrunning_dir / "operations_proto.proto").write_text(
+                "syntax = 'proto3';",
+                encoding="utf-8",
+            )
+
+            mock_res = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=f"{site_pkgs}\n{grpc_proto}\n",
+                stderr="",
+            )
+            with mock.patch("subprocess.run", return_value=mock_res):
+                resolved_site, resolved_grpc = install_xmanager.resolve_venv_proto_paths(
+                    Path("/mock/venv/bin/python3")
+                )
+
+            self.assertEqual(resolved_site, site_pkgs)
+            self.assertEqual(resolved_grpc, grpc_proto)
+            self.assertTrue((longrunning_dir / "operations.proto").exists())
+
+    def test_stage_local_protos_success(self) -> None:
+        """Test stage_local_protos copies .proto files and creates __init__.py."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            root = Path(tmp_str)
+            repo_root = root / "repo"
+            site_pkgs = root / "site-packages"
+
+            for src_subdir, _ in install_xmanager.PROTO_PACKAGE_DIRS:
+                proto_dir = repo_root / "api" / "protos" / src_subdir
+                proto_dir.mkdir(parents=True)
+                (proto_dir / "api.proto").write_text("syntax = 'proto3';", encoding="utf-8")
+
+            staged = install_xmanager.stage_local_protos(repo_root, site_pkgs)
+            self.assertEqual(len(staged), 3)
+            for _, dst_pkg in install_xmanager.PROTO_PACKAGE_DIRS:
+                dst_dir = site_pkgs / "xmanager_cloud" / dst_pkg / "proto"
+                self.assertTrue((dst_dir / "__init__.py").exists())
+                self.assertTrue((dst_dir / "api.proto").exists())
+
+    def test_stage_local_protos_missing_dir(self) -> None:
+        """Test stage_local_protos exits when api/protos directory is missing."""
+        with (
+            tempfile.TemporaryDirectory() as tmp_str,
+            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+            self.assertRaises(SystemExit),
+        ):
+            root = Path(tmp_str)
+            install_xmanager.stage_local_protos(root / "empty_repo", root / "site-packages")
+        self.assertIn("Local proto directory not found", stderr.getvalue())
+
+    def test_compile_local_protos(self) -> None:
+        """Test compile_local_protos invokes grpc_tools.protoc with staged protos."""
+        venv_python = Path("/mock/venv/bin/python3")
+        site_pkgs = Path("/mock/site-packages")
+        grpc_proto = Path("/mock/grpc_proto")
+        staged_files = ["/mock/site-packages/xmanager_cloud/xid_service/proto/api.proto"]
+
+        with (
+            mock.patch(
+                "install_xmanager.resolve_venv_proto_paths",
+                return_value=(site_pkgs, grpc_proto),
+            ),
+            mock.patch(
+                "install_xmanager.stage_local_protos",
+                return_value=staged_files,
+            ),
+            mock.patch("subprocess.run") as mock_run,
+        ):
+            install_xmanager.compile_local_protos(venv_python, Path("/mock/repo"))
+
+        mock_run.assert_called_once_with(
+            [
+                "/mock/venv/bin/python3",
+                "-m",
+                "grpc_tools.protoc",
+                "-I/mock/site-packages",
+                "-I/mock/grpc_proto",
+                "--python_out=/mock/site-packages",
+                "--grpc_python_out=/mock/site-packages",
+                *staged_files,
+            ],
+            check=True,
+        )
+
     def test_verify_imports(self) -> None:
         """Test verify_imports checks all required XManager and proto modules."""
         venv_python = Path("/mock/venv/bin/python3")
@@ -208,6 +300,7 @@ class TestInstallXmanager(unittest.TestCase):
             )
 
     @mock.patch("install_xmanager.verify_imports")
+    @mock.patch("install_xmanager.compile_local_protos")
     @mock.patch("install_xmanager.install_xmanager_package")
     @mock.patch("install_xmanager.setup_virtualenv")
     @mock.patch("install_xmanager.check_prerequisites")
@@ -216,6 +309,7 @@ class TestInstallXmanager(unittest.TestCase):
         mock_pre: mock.Mock,
         mock_venv: mock.Mock,
         mock_install: mock.Mock,
+        mock_compile: mock.Mock,
         mock_verify: mock.Mock,
     ) -> None:
         """Test main execution flow with mocked external operations."""
@@ -229,6 +323,10 @@ class TestInstallXmanager(unittest.TestCase):
         mock_install.assert_called_once_with(
             Path("/mock/venv/bin/python3"),
             "xmanager==0.8.2",
+        )
+        mock_compile.assert_called_once_with(
+            Path("/mock/venv/bin/python3"),
+            install_xmanager.REPO_ROOT,
         )
         mock_verify.assert_called_once_with(Path("/mock/venv/bin/python3"))
 

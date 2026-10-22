@@ -35,7 +35,7 @@ flowchart TD
 
 ## File Structure
 
-- **`install_venv.sh`**: Setup script creating a `.venv`, installing dependencies (`clickhouse-connect`, `grpcio`, `xmanager`, etc.), and installing `xdash` and `xmc` SDKs in editable mode.
+- **`install_venv.sh`**: Setup script creating a `.venv`, installing dependencies (`clickhouse-connect`, `grpcio`, `xmanager`, etc.), compiling local XMC protos from `api/protos`, and installing `xdash` and `xmc` SDKs in editable mode.
 - **`launch.py`**: Client-side launch script creating the experiment, launching the WorkUnit, intercepting runtime IDs, and creating the dashboard.
 - **`worker.env`**: Environment configuration file pre-configured for the `xmcv2` GKE cluster and in-cluster ClickHouse instance (`clickhouse.xmc-metrics.svc.cluster.local`).
 - **`worker.py`**: WorkUnit container script generating synthetic DataEngine metrics and inserting them into ClickHouse.
