@@ -37,7 +37,6 @@ from xmanager_cloud.experiment_state_server.proto import (
     resources_pb2,
     work_unit_pb2,
 )
-from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 # Skip git push snapshot during local test launch so SSH passphrase is not prompted
 snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
@@ -62,9 +61,7 @@ def main(argv: Sequence[str]) -> None:
 
     with xm_cloud.create_experiment(
         experiment_title="Multi-Pod & Sidecar Validation Experiment",
-        acls=xid_messages_pb2.XidAcls(
-            owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
-        ),
+        # No `acls`: XMC makes you (the creator) the owner. See docs/authentication.md.
     ) as experiment:
         stub = experiment._experiment_state_stub  # pylint: disable=protected-access
 
