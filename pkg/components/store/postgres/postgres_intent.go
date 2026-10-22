@@ -211,12 +211,12 @@ func writeOwnerColumnsTx(ctx context.Context, tx pgx.Tx, rec *store.ComponentRec
 }
 
 func updateExistingIntentTx(ctx context.Context, tx pgx.Tx, existingRec *store.ComponentRecord, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, newGen int64, depIDs map[string]int64, commitTime time.Time) (*store.ComponentRecord, error) {
-	specClone, statusProto, configBytes, accessBytes, err := marshalIntentPayloads(canonicalName, spec, labels, existingRec.Status, newGen)
+	p, err := marshalIntentPayloads(canonicalName, spec, labels, existingRec.Status, newGen)
 	if err != nil {
 		return nil, err
 	}
 	state := int64(componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION)
-	if _, err := tx.Exec(ctx, updateComponentIntentSQL, existingRec.ComponentID, determineComponentClass(specClone), configBytes, accessBytes, state, newGen, commitTime); err != nil {
+	if _, err := tx.Exec(ctx, updateComponentIntentSQL, existingRec.ComponentID, determineComponentClass(p.spec), p.configBytes, p.accessBytes, state, newGen, commitTime); err != nil {
 		return nil, fmt.Errorf("failed to update component intent: %w", err)
 	}
 	if err := replaceDependenciesTx(ctx, tx, existingRec.ComponentID, deps, depIDs, true); err != nil {
@@ -225,8 +225,8 @@ func updateExistingIntentTx(ctx context.Context, tx pgx.Tx, existingRec *store.C
 	return &store.ComponentRecord{
 		ComponentID:        existingRec.ComponentID,
 		Name:               canonicalName,
-		Spec:               specClone,
-		Status:             statusProto,
+		Spec:               p.spec,
+		Status:             p.status,
 		State:              componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		Generation:         newGen,
 		ObservedGeneration: existingRec.ObservedGeneration,
@@ -243,12 +243,12 @@ func createNewIntentTx(ctx context.Context, tx pgx.Tx, canonicalName string, spe
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate component ID: %w", err)
 	}
-	specClone, statusProto, configBytes, accessBytes, err := marshalIntentPayloads(canonicalName, spec, labels, nil, gen)
+	p, err := marshalIntentPayloads(canonicalName, spec, labels, nil, gen)
 	if err != nil {
 		return nil, err
 	}
 	state := int64(componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION)
-	if _, err := tx.Exec(ctx, insertComponentSQL, id, canonicalName, determineComponentClass(specClone), configBytes, accessBytes, state, gen, commitTime); err != nil {
+	if _, err := tx.Exec(ctx, insertComponentSQL, id, canonicalName, determineComponentClass(p.spec), p.configBytes, p.accessBytes, state, gen, commitTime); err != nil {
 		return nil, fmt.Errorf("failed to insert component: %w", err)
 	}
 	if err := replaceDependenciesTx(ctx, tx, id, deps, depIDs, false); err != nil {
@@ -257,8 +257,8 @@ func createNewIntentTx(ctx context.Context, tx pgx.Tx, canonicalName string, spe
 	return &store.ComponentRecord{
 		ComponentID:  id,
 		Name:         canonicalName,
-		Spec:         specClone,
-		Status:       statusProto,
+		Spec:         p.spec,
+		Status:       p.status,
 		State:        componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 		Generation:   gen,
 		Dependencies: deps,
@@ -266,7 +266,14 @@ func createNewIntentTx(ctx context.Context, tx pgx.Tx, canonicalName string, spe
 	}, nil
 }
 
-func marshalIntentPayloads(canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, existingStatus *componentspb.ComponentAccessStatus, gen int64) (*componentspb.ComponentSpec, *componentspb.ComponentAccessStatus, []byte, []byte, error) {
+type intentPayloads struct {
+	spec        *componentspb.ComponentSpec
+	status      *componentspb.ComponentAccessStatus
+	configBytes []byte
+	accessBytes []byte
+}
+
+func marshalIntentPayloads(canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, existingStatus *componentspb.ComponentAccessStatus, gen int64) (intentPayloads, error) {
 	specClone := proto.Clone(spec).(*componentspb.ComponentSpec)
 	specClone.Generation = gen
 	configBytes, err := proto.Marshal(&componentspb.Component{
@@ -275,7 +282,7 @@ func marshalIntentPayloads(canonicalName string, spec *componentspb.ComponentSpe
 		Labels: store.CopyMap(labels),
 	})
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to marshal component proto: %w", err)
+		return intentPayloads{}, fmt.Errorf("failed to marshal component proto: %w", err)
 	}
 	statusProto := &componentspb.ComponentAccessStatus{}
 	if existingStatus != nil {
@@ -284,9 +291,9 @@ func marshalIntentPayloads(canonicalName string, spec *componentspb.ComponentSpe
 	statusProto.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
 	accessBytes, err := proto.Marshal(statusProto)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to marshal access status proto: %w", err)
+		return intentPayloads{}, fmt.Errorf("failed to marshal access status proto: %w", err)
 	}
-	return specClone, statusProto, configBytes, accessBytes, nil
+	return intentPayloads{spec: specClone, status: statusProto, configBytes: configBytes, accessBytes: accessBytes}, nil
 }
 
 func replaceDependenciesTx(ctx context.Context, tx pgx.Tx, componentID int64, deps []string, depIDs map[string]int64, isUpdate bool) error {
