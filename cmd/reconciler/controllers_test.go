@@ -135,7 +135,7 @@ func TestAddBackgroundRunnables(t *testing.T) {
 
 func TestNewMLRunCreator(t *testing.T) {
 	ctx := context.Background()
-	client := newMLRunCreator(ctx, "test-proj", "test-env", "us-central1")
+	client := newMLRunCreator(ctx, "test-proj", "test-env", "us-central1", "test-sa@test-proj.iam.gserviceaccount.com")
 	// Hypercompute client creation returns nil or valid client without panic.
 	if client == nil {
 		t.Log("newMLRunCreator returned nil interface in test environment as expected")
