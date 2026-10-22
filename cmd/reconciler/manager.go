@@ -234,7 +234,7 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 		})
 	}
 
-	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, storage, spannerClient)
+	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, storage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}

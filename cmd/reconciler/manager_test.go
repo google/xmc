@@ -54,7 +54,7 @@ func TestManager_HealthCheckers_NilManager(t *testing.T) {
 }
 
 func TestManager_HealthCheckers_NonNilManager(t *testing.T) {
-	k8sClient := k8sclient.NewWithClients(nil, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil, nil)
+	k8sClient := k8sclient.NewWithClients(nil, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil)
 	m := &Manager{
 		k8sClient:     k8sClient,
 		spannerClient: nil,
