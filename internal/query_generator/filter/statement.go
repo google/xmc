@@ -19,16 +19,23 @@ import (
 	"xmanager_cloud/internal/safesql"
 )
 
-// Statement is the parameterized SQL statement that a Visitor appends a filter to. Its
-// implementation defines how parameters are bound and which database Dialect renders
-// backend-specific SQL predicates.
+// Statement is the parameterized SQL statement that a Visitor or QueryGenerator appends SQL to.
+// Its implementation defines how parameters are bound and which database Dialect renders
+// backend-specific SQL predicates and clauses.
 type Statement interface {
 	// AppendSQL appends trusted SQL to the statement.
 	AppendSQL(sql safesql.TrustedSQLString)
 	// Bind records v as a query parameter and returns its placeholder.
 	Bind(v any) safesql.TrustedSQLString
+	// BindCursor records v as a pagination cursor parameter for field idx out of numFields
+	// and returns its placeholder.
+	BindCursor(numFields, idx int, v any) safesql.TrustedSQLString
 	// Dialect returns the database dialect used to render backend-specific SQL predicates.
 	Dialect() queryfilterbase.Dialect
+	// SQLString returns the SQL query string accumulated so far.
+	SQLString() string
+	// SetSQL replaces the accumulated SQL query string.
+	SetSQL(sql string)
 }
 
 // noopDialect is used when Visitor.Q is nil (for example, during AST member scouting when
@@ -50,5 +57,9 @@ func (noopDialect) RegexpMatch(_, _ safesql.TrustedSQLString) safesql.TrustedSQL
 }
 
 func (noopDialect) TextSearch(_, _ safesql.TrustedSQLString) safesql.TrustedSQLString {
+	return safesql.EmptyString()
+}
+
+func (noopDialect) OrderByClause(_ safesql.TrustedSQLString, _, _ bool) safesql.TrustedSQLString {
 	return safesql.EmptyString()
 }

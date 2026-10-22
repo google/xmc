@@ -11,12 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-// Package liststatement provides a function for generating a Spanner statement for a list query.
+// Package liststatement provides a function for generating a SQL statement for a list query.
 package liststatement
 
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -24,12 +26,9 @@ import (
 	aipfilter "xmanager_cloud/api/filter/go/filter"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
+	queryfilter "xmanager_cloud/internal/query_generator/filter"
 	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/safesql"
-
-	"cloud.google.com/go/spanner"
-	"encoding/base64"
-	"encoding/json"
 )
 
 // ListParams contains the parameters for a list query.
@@ -68,8 +67,9 @@ func (p *ListParams) DecodePageToken(pageToken string) error {
 	return nil
 }
 
-// ListStatement returns a Spanner statement for the given list parameters.
-func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, error) {
+// ListStatement populates stmt with the generated SQL query and bound parameters for the given list parameters.
+func ListStatement[S queryfilter.Statement](ctx context.Context, stmt S, params ListParams) (S, error) {
+	var zero S
 	// 1. Parse the filter as an EBNF expression.
 	exp, err := aipfilter.ParseExpressionWithOptions(fepb.ExpressionParserOptions_builder{
 		RejectLegacyOperatorPrecedence: true,
@@ -77,7 +77,7 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 		EnforceValidStrings:            true,
 	}.Build(), params.Filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse filter %s, %v: %w", params.Filter, err, grpcerr.ErrInvalidArgument)
+		return zero, fmt.Errorf("failed to parse filter %s, %v: %w", params.Filter, err, grpcerr.ErrInvalidArgument)
 	}
 
 	logging.Info(ctx, "Parsed filter", "filter", exp)
@@ -85,7 +85,7 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 	// 2. Convert the orderBy string to a list of ordered indices.
 	orderedIndices, err := generateOrderBy(ctx, params.OrderBy, params.ValidOrderByFields)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse orderBy %s, %v: %w", params.OrderBy, err, grpcerr.ErrInvalidArgument)
+		return zero, fmt.Errorf("failed to parse orderBy %s, %v: %w", params.OrderBy, err, grpcerr.ErrInvalidArgument)
 	}
 
 	// 3. Generate the query.
@@ -99,9 +99,9 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 		}
 	}
 
-	stmt, _, _, err := params.QueryGen.GenerateQuery(params.DefaultSelectFields, params.DefaultFullTextFields, nil, exp, orderedIndices, int(pageSizeWithExtra), 0, ptFields, nil)
+	_, _, err = params.QueryGen.GenerateQuery(stmt, params.DefaultSelectFields, params.DefaultFullTextFields, nil, exp, orderedIndices, int(pageSizeWithExtra), 0, ptFields, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate query: %w", err)
+		return zero, fmt.Errorf("failed to generate query: %w", err)
 	}
 
 	// 5. Ensure the query does not have duplicated select fields. This is a workaround; the query generator
@@ -109,13 +109,13 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 	// selects are not considered a problem, but I think it's extremely bad practice to allow it, and
 	// it causes the column parsing logic to be more complex in the row -> proto conversion logic.
 	// However, this is not trivial, and our SQL logic is very simple, so we just do it here for now.
-	stmt.SQL, err = deduplicateSelectColumns(stmt.SQL)
+	dedupedSQL, err := deduplicateSelectColumns(stmt.SQLString())
 	if err != nil {
-		return nil, fmt.Errorf("failed to deduplicate select columns: %w", err)
+		return zero, fmt.Errorf("failed to deduplicate select columns: %w", err)
 	}
+	stmt.SetSQL(dedupedSQL)
 
-	logging.Info(ctx, "Generated query SQL", "sql", stmt.SQL)
-	logging.Info(ctx, "Generated query params", "params", stmt.Params)
+	logging.Info(ctx, "Generated query SQL", "sql", dedupedSQL)
 
 	// 6. Return the results.
 	return stmt, nil

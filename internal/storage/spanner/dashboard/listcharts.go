@@ -23,6 +23,7 @@ import (
 
 	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/logging"
+	spannerdialect "xmanager_cloud/internal/query_generator/dialect/spanner"
 	ls "xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 	storagedata "xmanager_cloud/internal/storage/data"
@@ -59,7 +60,7 @@ func (r *Repository) ListCharts(ctx context.Context, parent string, pageSize int
 		return nil, "", err
 	}
 
-	stmt, err := ls.ListStatement(ctx, listParams)
+	stmt, err := ls.ListStatement(ctx, spannerdialect.NewStatement(nil), listParams)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
@@ -67,7 +68,7 @@ func (r *Repository) ListCharts(ctx context.Context, parent string, pageSize int
 	txn := r.client.ReadOnlyTransaction().WithTimestampBound(spanner.ExactStaleness(staleness))
 	defer txn.Close()
 
-	iter := txn.Query(ctx, *stmt)
+	iter := txn.Query(ctx, *stmt.Spanner())
 	defer iter.Stop()
 
 	var charts []*dpb.Chart

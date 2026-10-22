@@ -15,6 +15,7 @@ package querytools
 
 import (
 	"cloud.google.com/go/spanner"
+	"xmanager_cloud/internal/query_generator/filter"
 	"xmanager_cloud/internal/safesql"
 )
 
@@ -25,7 +26,7 @@ type Unnester interface {
 	// Apply takes a query consisting of just a "SELECT ..." that may be augmented
 	// with the re-aggregated unnests, and a "FROM ..." clause that may be augmented with
 	// the "UNNEST ..." statements.
-	Apply(q *spanner.Statement, from []safesql.TrustedSQLString) error
+	Apply(q queryfilter.Statement, from []safesql.TrustedSQLString) error
 	// Patch takes the proto we're unnesting / filtering and a result row, it then
 	// delegates to each of the unnests to patch their re-aggregation column back into
 	// the pristine proto column so that only the filtered results are returned.
@@ -57,17 +58,17 @@ type unnester struct {
 }
 
 // Apply implements Unnester
-func (unr *unnester) Apply(q *spanner.Statement, from []safesql.TrustedSQLString) error {
+func (unr *unnester) Apply(q queryfilter.Statement, from []safesql.TrustedSQLString) error {
 	// Add re-aggregation fields to the SELECT
 	for unnest := range unr.seen {
 		if unnest == nil || unnest.Aggregator == safesql.New("") {
 			continue
 		}
-		q.SQL = q.SQL + ", " + unnest.Aggregator.String()
+		q.AppendSQL(safesql.Concat(safesql.New(", "), unnest.Aggregator))
 	}
 	// Add the base FROM statement.
 	for _, f := range from {
-		q.SQL = q.SQL + f.String()
+		q.AppendSQL(f)
 	}
 	// Add UNNESTs to FROM
 	for unnest := range unr.seen {
@@ -75,13 +76,7 @@ func (unr *unnester) Apply(q *spanner.Statement, from []safesql.TrustedSQLString
 			continue
 		}
 		if unnest.Clause != safesql.New("") {
-			q.SQL = q.SQL + ", " + unnest.Clause.String()
-		}
-		if q.Params == nil {
-			q.Params = make(map[string]any)
-		}
-		for k, v := range unnest.Bindings {
-			q.Params[k] = v
+			q.AppendSQL(safesql.Concat(safesql.New(", "), unnest.Clause))
 		}
 	}
 	return nil

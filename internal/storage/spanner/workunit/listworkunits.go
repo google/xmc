@@ -22,6 +22,7 @@ import (
 	"cloud.google.com/go/spanner"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
+	spannerdialect "xmanager_cloud/internal/query_generator/dialect/spanner"
 	ls "xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 	"xmanager_cloud/internal/storage/spanner/data"
@@ -67,15 +68,15 @@ func (r *Repository) ListWorkUnits(ctx context.Context, parent string, pageSize 
 		return nil, "", err
 	}
 
-	stmt, err := ls.ListStatement(ctx, listParams)
+	stmt, err := ls.ListStatement(ctx, spannerdialect.NewStatement(nil), listParams)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
 
-	logging.Debug(ctx, "Generated list statement", "stmt", stmt)
+	logging.Debug(ctx, "Generated list statement", "stmt", stmt.Spanner())
 
 	// 3. Execute the query.
-	wuIter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt)
+	wuIter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt.Spanner())
 	defer wuIter.Stop()
 
 	// 4. Convert the rows to WorkUnit protos.

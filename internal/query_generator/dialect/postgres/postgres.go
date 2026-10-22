@@ -42,9 +42,24 @@ func (s *Statement) Bind(v any) safesql.TrustedSQLString {
 	return safesql.NewBindingParam("$", uint64(len(s.Args)))
 }
 
+// BindCursor records v as a positional $N pagination parameter and returns its placeholder.
+func (s *Statement) BindCursor(_, _ int, v any) safesql.TrustedSQLString {
+	return s.Bind(v)
+}
+
 // Dialect returns the PostgreSQL SQL dialect.
 func (s *Statement) Dialect() queryfilterbase.Dialect {
 	return Dialect{}
+}
+
+// SQLString returns the accumulated PostgreSQL query string.
+func (s *Statement) SQLString() string {
+	return s.SQL
+}
+
+// SetSQL replaces the PostgreSQL query string.
+func (s *Statement) SetSQL(sql string) {
+	s.SQL = sql
 }
 
 // Dialect renders PostgreSQL SQL filter predicates.
@@ -75,4 +90,20 @@ func (Dialect) RegexpMatch(lhs, rhs safesql.TrustedSQLString) safesql.TrustedSQL
 // TextSearch implements queryfilterbase.Dialect.
 func (Dialect) TextSearch(col, queryParam safesql.TrustedSQLString) safesql.TrustedSQLString {
 	return safesql.Concat(col, safesql.New(" @@ plainto_tsquery('simple', "), queryParam, safesql.New(")"))
+}
+
+// OrderByClause implements queryfilterbase.Dialect.
+// PostgreSQL sorts NULLs last on ASC and first on DESC by default, so nullable columns emit
+// explicit NULLS FIRST / NULLS LAST to match pagination cursor predicates.
+func (Dialect) OrderByClause(col safesql.TrustedSQLString, desc, nullable bool) safesql.TrustedSQLString {
+	if desc {
+		if nullable {
+			return safesql.Concat(col, safesql.New(" DESC NULLS LAST"))
+		}
+		return safesql.Concat(col, safesql.New(" DESC"))
+	}
+	if nullable {
+		return safesql.Concat(col, safesql.New(" ASC NULLS FIRST"))
+	}
+	return col
 }

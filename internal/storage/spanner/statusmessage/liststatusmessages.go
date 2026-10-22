@@ -22,6 +22,7 @@ import (
 	"cloud.google.com/go/spanner"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
+	spannerdialect "xmanager_cloud/internal/query_generator/dialect/spanner"
 	ls "xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 	"xmanager_cloud/internal/storage/spanner/data"
@@ -68,12 +69,12 @@ func (r *Repository) ListStatusMessages(ctx context.Context, parent string, page
 		return nil, "", err
 	}
 
-	stmt, err := ls.ListStatement(ctx, listParams)
+	stmt, err := ls.ListStatement(ctx, spannerdialect.NewStatement(nil), listParams)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
 
-	iter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt)
+	iter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt.Spanner())
 	defer iter.Stop()
 
 	var messages []*essmsgpb.StatusMessage

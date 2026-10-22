@@ -44,6 +44,9 @@ type Dialect interface {
 	RegexpMatch(lhs, rhs safesql.TrustedSQLString) safesql.TrustedSQLString
 	// TextSearch matches rows where the full-text search column col matches queryParam.
 	TextSearch(col, queryParam safesql.TrustedSQLString) safesql.TrustedSQLString
+	// OrderByClause renders a single ORDER BY column expression with sort direction and
+	// dialect-appropriate NULL ordering (NULLS FIRST for ASC, NULLS LAST for DESC).
+	OrderByClause(col safesql.TrustedSQLString, desc, nullable bool) safesql.TrustedSQLString
 }
 
 type QueryFilterVisitor interface {

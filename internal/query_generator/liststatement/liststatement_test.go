@@ -21,6 +21,8 @@ import (
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	postgresdialect "xmanager_cloud/internal/query_generator/dialect/postgres"
+	spannerdialect "xmanager_cloud/internal/query_generator/dialect/spanner"
 	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/safesql"
 )
@@ -208,7 +210,7 @@ func TestListStatement(t *testing.T) {
 				t.Fatalf("Failed to create query generator: %v", err)
 			}
 			tc.params.QueryGen = qg
-			stmt, err := ListStatement(ctx, tc.params)
+			stmt, err := ListStatement(ctx, spannerdialect.NewStatement(nil), tc.params)
 
 			if tc.wantErr {
 				if err == nil {
@@ -221,6 +223,76 @@ func TestListStatement(t *testing.T) {
 				t.Fatalf("ListStatement() returned an unexpected error: %v", err)
 			}
 
+			if diff := cmp.Diff(tc.wantStmt, stmt.Spanner(), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("ListStatement() returned diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestListPostgresStatement(t *testing.T) {
+	testCases := []struct {
+		name     string
+		params   ListParams
+		tables   []querytools.TableView
+		wantStmt *postgresdialect.Statement
+		wantErr  bool
+	}{
+		{
+			name: "filter, full text search, and after cursor",
+			params: ListParams{
+				PageSize: 10,
+				Filter:   `AlbumTitle = "foo" AND "bar"`,
+				AfterCursor: map[string]any{
+					string(querytools.SingerIDTableField): "singer1",
+					string(querytools.AlbumIDTableField):  "album1",
+				},
+				DefaultSelectFields: []querytools.TableField{
+					querytools.AlbumTitleTableField,
+				},
+				DefaultFullTextFields: []safesql.TrustedSQLString{
+					safesql.New("a.SearchTokens"),
+				},
+				ValidOrderByFields: []querytools.UserOrderedIndex{
+					{TableField: querytools.AlbumTitleTableField},
+					{TableField: querytools.ReleaseDateTableField},
+				},
+			},
+			tables: querytools.AlbumsTables[:1],
+			wantStmt: &postgresdialect.Statement{
+				SQL:  "SELECT a.AlbumTitle, a.SingerId, a.AlbumId FROM Albums a WHERE ((a.AlbumTitle = $1) AND (a.SearchTokens @@ plainto_tsquery('simple', $2))) AND ((a.SingerId = $3 AND a.AlbumId > $4) OR (a.SingerId > $5)) ORDER BY a.SingerId, a.AlbumId LIMIT 11",
+				Args: []any{"foo", "bar", "singer1", "album1", "singer1"},
+			},
+		},
+		{
+			name: "invalid filter returns error",
+			params: ListParams{
+				PageSize: 10,
+				Filter:   `invalid = field`,
+			},
+			tables:  querytools.AlbumsTables[:1],
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			qg, err := querytools.NewQueryGenerator(tc.tables, nil, nil, nil)
+			if err != nil {
+				t.Fatalf("Failed to create query generator: %v", err)
+			}
+			tc.params.QueryGen = qg
+			stmt, err := ListStatement(ctx, postgresdialect.NewStatement(""), tc.params)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("ListStatement() got nil error, want non-nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ListStatement() returned an unexpected error: %v", err)
+			}
 			if diff := cmp.Diff(tc.wantStmt, stmt, cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("ListStatement() returned diff (-want +got):\n%s", diff)
 			}

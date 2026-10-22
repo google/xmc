@@ -31,8 +31,17 @@ type Statement struct {
 }
 
 // NewStatement returns a Statement that appends to the Cloud Spanner statement q.
+// If q is nil, a new spanner.Statement is allocated.
 func NewStatement(q *spanner.Statement) *Statement {
+	if q == nil {
+		q = &spanner.Statement{}
+	}
 	return &Statement{q: q}
+}
+
+// Spanner returns the underlying Cloud Spanner statement.
+func (s *Statement) Spanner() *spanner.Statement {
+	return s.q
 }
 
 // AppendSQL appends trusted SQL to the underlying Cloud Spanner statement.
@@ -50,9 +59,29 @@ func (s *Statement) Bind(v any) safesql.TrustedSQLString {
 	return safesql.NewBindingParam("@fb", index)
 }
 
+// BindCursor records v as a named @val<numFields><idx> pagination parameter and returns its placeholder.
+func (s *Statement) BindCursor(numFields, idx int, v any) safesql.TrustedSQLString {
+	paramName := fmt.Sprintf("val%d%d", numFields, idx)
+	if s.q.Params == nil {
+		s.q.Params = make(map[string]any)
+	}
+	s.q.Params[paramName] = v
+	return safesql.Concat(safesql.NewBindingParam("@val", uint64(numFields)), safesql.NewBindingParam("", uint64(idx)))
+}
+
 // Dialect returns the Cloud Spanner SQL dialect.
 func (s *Statement) Dialect() queryfilterbase.Dialect {
 	return Dialect{}
+}
+
+// SQLString returns the accumulated Cloud Spanner SQL query string.
+func (s *Statement) SQLString() string {
+	return s.q.SQL
+}
+
+// SetSQL replaces the Cloud Spanner SQL query string.
+func (s *Statement) SetSQL(sql string) {
+	s.q.SQL = sql
 }
 
 // Dialect renders Cloud Spanner SQL filter predicates.
@@ -78,4 +107,13 @@ func (Dialect) RegexpMatch(lhs, rhs safesql.TrustedSQLString) safesql.TrustedSQL
 // TextSearch implements queryfilterbase.Dialect.
 func (Dialect) TextSearch(col, queryParam safesql.TrustedSQLString) safesql.TrustedSQLString {
 	return safesql.Concat(safesql.New("SEARCH("), col, safesql.New(", "), queryParam, safesql.New(")"))
+}
+
+// OrderByClause implements queryfilterbase.Dialect.
+// Cloud Spanner sorts NULLs first on ASC and last on DESC by default.
+func (Dialect) OrderByClause(col safesql.TrustedSQLString, desc, _ bool) safesql.TrustedSQLString {
+	if desc {
+		return safesql.Concat(col, safesql.New(" DESC"))
+	}
+	return col
 }

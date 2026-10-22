@@ -21,6 +21,8 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"xmanager_cloud/api/filter/go/filter"
 	"xmanager_cloud/api/filter/go/filtervisitor"
+	postgresdialect "xmanager_cloud/internal/query_generator/dialect/postgres"
+	spannerdialect "xmanager_cloud/internal/query_generator/dialect/spanner"
 	"xmanager_cloud/internal/query_generator/predicate"
 	"xmanager_cloud/internal/safesql"
 
@@ -251,12 +253,13 @@ func TestGenerateQuery(t *testing.T) {
 				t.Fatalf("Error parsing user filter expression %q: %v", tt.userFilter, err)
 			}
 
-			q, _, _, err := qg.GenerateQuery(tt.selectFields, nil, tt.baseFilterExp, exp, tt.orderByFields, tt.pageSize, tt.offset, nil, tt.preamble)
+			q := spannerdialect.NewStatement(nil)
+			_, _, err = qg.GenerateQuery(q, tt.selectFields, nil, tt.baseFilterExp, exp, tt.orderByFields, tt.pageSize, tt.offset, nil, tt.preamble)
 			if err != nil {
 				t.Fatalf("Error generating query: %v", err)
 			}
-			if q.SQL != tt.wantQuery.SQL {
-				t.Errorf("Got query %q, want %q", q.SQL, tt.wantQuery.SQL)
+			if q.SQLString() != tt.wantQuery.SQL {
+				t.Errorf("Got query %q, want %q", q.SQLString(), tt.wantQuery.SQL)
 			}
 		})
 	}
@@ -378,7 +381,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 				t.Fatalf("Error parsing user filter expression %q: %v", tt.userFilter, err)
 			}
 
-			_, _, _, err = qg.GenerateQuery(tt.selectFields, nil, tt.baseFilterExp, exp, tt.orderByFields, 0, 0, nil, nil)
+			_, _, err = qg.GenerateQuery(spannerdialect.NewStatement(nil), tt.selectFields, nil, tt.baseFilterExp, exp, tt.orderByFields, 0, 0, nil, nil)
 			t.Logf("Got error: %v", err)
 			if c := status.Code(err); c != tt.wantErrCode {
 				t.Errorf("Generating query got err code %v, want %v", c, tt.wantErrCode)
@@ -533,7 +536,7 @@ func TestGenerateQueryPageTokens(t *testing.T) {
 
 			// Initial query without specifying page token fields, ensure we get the correct page token
 			// fields back for the next query (if we need to page.)
-			_, ptFields, _, err := qg.GenerateQuery(tt.selectFields, nil, tt.baseFilterExp, exp, tt.userOrderBy, 0, 0, nil, nil)
+			ptFields, _, err := qg.GenerateQuery(spannerdialect.NewStatement(nil), tt.selectFields, nil, tt.baseFilterExp, exp, tt.userOrderBy, 0, 0, nil, nil)
 			if err != nil {
 				t.Errorf("Generating query got err %v, want success", err)
 			}
@@ -549,7 +552,8 @@ func TestGenerateQueryPageTokens(t *testing.T) {
 				// string page token field types for this test.
 				pageToken[ptField] = "0"
 			}
-			q, ptFields2, _, err := qg.GenerateQuery(tt.selectFields, nil, tt.baseFilterExp, exp, tt.userOrderBy, 0, 0, pageToken, nil)
+			q := spannerdialect.NewStatement(nil)
+			ptFields2, _, err := qg.GenerateQuery(q, tt.selectFields, nil, tt.baseFilterExp, exp, tt.userOrderBy, 0, 0, pageToken, nil)
 			if err != nil {
 				t.Errorf("Generating query with page token %v got err %v, want success", pageToken, err)
 			}
@@ -557,8 +561,8 @@ func TestGenerateQueryPageTokens(t *testing.T) {
 			if !cmp.Equal(ptFields2, tt.wantPTFields, cmpopts.EquateEmpty()) {
 				t.Errorf("Generating query with page token %v got page token fields %v, want %v", pageToken, ptFields2, tt.wantPTFields)
 			}
-			if q.SQL != tt.wantQuery.SQL {
-				t.Errorf("Got query (using page token %v) %q, want %q", pageToken, q.SQL, tt.wantQuery.SQL)
+			if q.SQLString() != tt.wantQuery.SQL {
+				t.Errorf("Got query (using page token %v) %q, want %q", pageToken, q.SQLString(), tt.wantQuery.SQL)
 			}
 		})
 	}
@@ -660,7 +664,7 @@ func TestGenerateQueryChoosesCorrectIndex(t *testing.T) {
 				t.Fatalf("Error parsing user filter expression %q: %v", tt.userFilter, err)
 			}
 
-			if _, _, _, err = qg.GenerateQuery([]TableField{AlbumSingerIDTableField}, nil, tt.baseFilterExp, exp, nil, 10, 0, nil, nil); err != nil {
+			if _, _, err = qg.GenerateQuery(spannerdialect.NewStatement(nil), []TableField{AlbumSingerIDTableField}, nil, tt.baseFilterExp, exp, nil, 10, 0, nil, nil); err != nil {
 				t.Fatalf("Error generating query: %v", err)
 			}
 
@@ -687,7 +691,8 @@ func TestRewritePhrases(t *testing.T) {
 		t.Fatalf("NewQueryGenerator() got error %v, expected success", err)
 	}
 
-	q, _, _, err := qg.GenerateQuery([]TableField{SingerIDTableField}, nil, nil, exp, nil, 0, 0, nil, nil)
+	q := spannerdialect.NewStatement(nil)
+	_, _, err = qg.GenerateQuery(q, []TableField{SingerIDTableField}, nil, nil, exp, nil, 0, 0, nil, nil)
 	if err != nil {
 		t.Errorf("GenerateQuery() got error %v expected success", err)
 	}
@@ -697,11 +702,11 @@ func TestRewritePhrases(t *testing.T) {
 		"fb0": "Ringo",
 		"fb1": "FOO_NEW",
 	}
-	if q.SQL != wantSQL {
-		t.Errorf("Incorrect query output: got %q, wanted %q", q.SQL, wantSQL)
+	if q.Spanner().SQL != wantSQL {
+		t.Errorf("Incorrect query output: got %q, wanted %q", q.Spanner().SQL, wantSQL)
 	}
-	if !cmp.Equal(q.Params, wantParams) {
-		t.Errorf("Incorrect query params: got %v, wanted %v", q.Params, wantParams)
+	if !cmp.Equal(q.Spanner().Params, wantParams) {
+		t.Errorf("Incorrect query params: got %v, wanted %v", q.Spanner().Params, wantParams)
 	}
 }
 
@@ -1065,7 +1070,7 @@ func TestGenerateQueryPageTokensWithSortDirectionReturnsExpectedConditionsAndOrd
 			}
 
 			// Initial query without specifying page token fields
-			_, pageTokensMap, _, err := qg.GenerateQuery(selectFields, nil, nil, nil, tt.userOrderBy, 0, 0, nil, nil)
+			pageTokensMap, _, err := qg.GenerateQuery(spannerdialect.NewStatement(nil), selectFields, nil, nil, nil, tt.userOrderBy, 0, 0, nil, nil)
 			if err != nil {
 				t.Fatalf("Initial GenerateQuery() returned error %v", err)
 			}
@@ -1081,7 +1086,8 @@ func TestGenerateQueryPageTokensWithSortDirectionReturnsExpectedConditionsAndOrd
 				// string page token field types for this test.
 				pageTokens[ptField] = "0"
 			}
-			q, pageTokensMap, _, err := qg.GenerateQuery(selectFields, nil, nil, nil, tt.userOrderBy, 0, 0, pageTokens, nil)
+			q := spannerdialect.NewStatement(nil)
+			pageTokensMap, _, err = qg.GenerateQuery(q, selectFields, nil, nil, nil, tt.userOrderBy, 0, 0, pageTokens, nil)
 			if err != nil {
 				t.Fatalf("Subequent GenerateQuery() returned error %v", err)
 			}
@@ -1089,8 +1095,8 @@ func TestGenerateQueryPageTokensWithSortDirectionReturnsExpectedConditionsAndOrd
 			if diff := cmp.Diff(tt.wantPageTokens, pageTokensMap, protocmp.Transform()); diff != "" {
 				t.Errorf("Subequent GenerateQuery() returned unexpected page tokens (-want +got):\n%s", diff)
 			}
-			if q.SQL != tt.wantQuery.SQL {
-				t.Errorf("Subequent GenerateQuery() returned query %q, want %q", q.SQL, tt.wantQuery.SQL)
+			if q.SQLString() != tt.wantQuery.SQL {
+				t.Errorf("Subequent GenerateQuery() returned query %q, want %q", q.SQLString(), tt.wantQuery.SQL)
 			}
 		})
 	}
@@ -1143,7 +1149,7 @@ func TestUserOrderDifferentFromOrderedIndicesWithOrderOptimizierFails(t *testing
 			if err != nil {
 				t.Fatalf("NewQueryGenerator() returned error %v", err)
 			}
-			_, _, _, err = qg.GenerateQuery([]TableField{SingerIDTableField}, nil, nil, nil, userOrderByFields, 0, 0, nil, nil)
+			_, _, err = qg.GenerateQuery(spannerdialect.NewStatement(nil), []TableField{SingerIDTableField}, nil, nil, nil, userOrderByFields, 0, 0, nil, nil)
 			if err == nil { // if NO error
 				t.Errorf("GenerateQuery() with orderByFields %v succeeded unexpectedly, want error", userOrderByFields)
 			}
@@ -1178,7 +1184,7 @@ func TestUserOrderDifferentFromOrderedIndicesWithoutOrderOptimizierSucceeds(t *t
 			if err != nil {
 				t.Fatalf("NewQueryGenerator() returned error %v", err)
 			}
-			_, _, _, err = qg.GenerateQuery([]TableField{SingerIDTableField}, nil, nil, nil, userOrderByFields, 0, 0, nil, nil)
+			_, _, err = qg.GenerateQuery(spannerdialect.NewStatement(nil), []TableField{SingerIDTableField}, nil, nil, nil, userOrderByFields, 0, 0, nil, nil)
 			if err != nil {
 				t.Errorf("GenerateQuery() with orderByFields %v returned error %v", userOrderByFields, err)
 			}
@@ -1199,15 +1205,16 @@ func TestUserOrderNotInSelectStatementReturnsExcpectedColumnsAndPageTokens(t *te
 		t.Fatalf("NewOptimizableGenerator() returned error %v", err)
 	}
 
-	q, pageTokensMap, _, err := qg.GenerateQuery(selectFields, nil, nil, nil, userOrder, 0, 0, nil, nil)
+	q := spannerdialect.NewStatement(nil)
+	pageTokensMap, _, err := qg.GenerateQuery(q, selectFields, nil, nil, nil, userOrder, 0, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("GenerateQuery() returned error %v", err)
 	}
 	if diff := cmp.Diff(wantPageTokens, pageTokensMap, protocmp.Transform()); diff != "" {
 		t.Errorf("GenerateQuery() returned unexpected page tokens (-want +got):\n%s", diff)
 	}
-	if q.SQL != wantQuery.SQL {
-		t.Errorf("GenerateQuery() returned query %q, want %q", q.SQL, wantQuery.SQL)
+	if q.SQLString() != wantQuery.SQL {
+		t.Errorf("GenerateQuery() returned query %q, want %q", q.SQLString(), wantQuery.SQL)
 	}
 }
 
@@ -1285,7 +1292,8 @@ func TestGenerateQuery_PageTokenValidationAndNullableCursors(t *testing.T) {
 	}
 
 	t.Run("missing required sort field in page token returns InvalidArgument", func(t *testing.T) {
-		_, _, _, err := qg.GenerateQuery(
+		_, _, err := qg.GenerateQuery(
+			spannerdialect.NewStatement(nil),
 			[]TableField{SingerIDTableField},
 			nil,
 			nil,
@@ -1303,7 +1311,8 @@ func TestGenerateQuery_PageTokenValidationAndNullableCursors(t *testing.T) {
 	})
 
 	t.Run("missing required index tie-breaker field in page token returns InvalidArgument", func(t *testing.T) {
-		_, _, _, err := qg.GenerateQuery(
+		_, _, err := qg.GenerateQuery(
+			spannerdialect.NewStatement(nil),
 			[]TableField{SingerIDTableField},
 			nil,
 			nil,
@@ -1321,7 +1330,9 @@ func TestGenerateQuery_PageTokenValidationAndNullableCursors(t *testing.T) {
 	})
 
 	t.Run("nullable sort field ASC with nil cursor value generates IS NULL / IS NOT NULL", func(t *testing.T) {
-		stmt, _, _, err := qg.GenerateQuery(
+		stmt := spannerdialect.NewStatement(nil)
+		_, _, err := qg.GenerateQuery(
+			stmt,
 			[]TableField{SingerIDTableField},
 			nil,
 			&fpb.Expression{},
@@ -1336,13 +1347,15 @@ func TestGenerateQuery_PageTokenValidationAndNullableCursors(t *testing.T) {
 			t.Fatalf("GenerateQuery() failed: %v", err)
 		}
 		wantSQL := "SELECT a.SingerId, a.ReleaseDate, a.SingerId FROM NullableAlbums a WHERE ((a.ReleaseDate IS NULL AND a.SingerId > @val21) OR (a.ReleaseDate IS NOT NULL)) ORDER BY a.ReleaseDate, a.SingerId LIMIT 10"
-		if stmt.SQL != wantSQL {
-			t.Errorf("GenerateQuery() SQL = %q, want %q", stmt.SQL, wantSQL)
+		if stmt.SQLString() != wantSQL {
+			t.Errorf("GenerateQuery() SQL = %q, want %q", stmt.SQLString(), wantSQL)
 		}
 	})
 
 	t.Run("nullable sort field DESC with non-nil cursor value includes OR IS NULL", func(t *testing.T) {
-		stmt, _, _, err := qg.GenerateQuery(
+		stmt := spannerdialect.NewStatement(nil)
+		_, _, err := qg.GenerateQuery(
+			stmt,
 			[]TableField{SingerIDTableField},
 			nil,
 			nil,
@@ -1357,13 +1370,15 @@ func TestGenerateQuery_PageTokenValidationAndNullableCursors(t *testing.T) {
 			t.Fatalf("GenerateQuery() failed: %v", err)
 		}
 		wantSQL := "SELECT a.SingerId, a.ReleaseDate, a.SingerId FROM NullableAlbums a WHERE ((a.ReleaseDate = @val20 AND a.SingerId > @val21) OR ((a.ReleaseDate < @val10 OR a.ReleaseDate IS NULL))) ORDER BY a.ReleaseDate DESC, a.SingerId LIMIT 10"
-		if stmt.SQL != wantSQL {
-			t.Errorf("GenerateQuery() SQL = %q, want %q", stmt.SQL, wantSQL)
+		if stmt.SQLString() != wantSQL {
+			t.Errorf("GenerateQuery() SQL = %q, want %q", stmt.SQLString(), wantSQL)
 		}
 	})
 
 	t.Run("nullable sort field DESC with nil cursor value generates IS NULL and FALSE", func(t *testing.T) {
-		stmt, _, _, err := qg.GenerateQuery(
+		stmt := spannerdialect.NewStatement(nil)
+		_, _, err := qg.GenerateQuery(
+			stmt,
 			[]TableField{SingerIDTableField},
 			nil,
 			nil,
@@ -1378,8 +1393,147 @@ func TestGenerateQuery_PageTokenValidationAndNullableCursors(t *testing.T) {
 			t.Fatalf("GenerateQuery() failed: %v", err)
 		}
 		wantSQL := "SELECT a.SingerId, a.ReleaseDate, a.SingerId FROM NullableAlbums a WHERE ((a.ReleaseDate IS NULL AND a.SingerId > @val21) OR (FALSE)) ORDER BY a.ReleaseDate DESC, a.SingerId LIMIT 10"
-		if stmt.SQL != wantSQL {
-			t.Errorf("GenerateQuery() SQL = %q, want %q", stmt.SQL, wantSQL)
+		if stmt.SQLString() != wantSQL {
+			t.Errorf("GenerateQuery() SQL = %q, want %q", stmt.SQLString(), wantSQL)
 		}
 	})
+}
+
+func TestGeneratePostgresQuery(t *testing.T) {
+	pgAlbumsTable := TableView{
+		Name:       "Albums",
+		NameClause: safesql.New("Albums a"),
+		Fields: map[TableField]Member{
+			SingerIDTableField: {
+				Name:         SingerIDTableField,
+				QueryLiteral: safesql.New("a.SingerId"),
+				Type:         filtervisitor.Integer,
+				Selectable:   true,
+				Indexed:      true,
+			},
+			AlbumIDTableField: {
+				Name:         AlbumIDTableField,
+				QueryLiteral: safesql.New("a.AlbumId"),
+				Type:         filtervisitor.Integer,
+				Selectable:   true,
+				Indexed:      true,
+			},
+			AlbumTitleTableField: {
+				Name:                   AlbumTitleTableField,
+				QueryLiteral:           safesql.New("a.AlbumTitle"),
+				Type:                   filtervisitor.String,
+				Selectable:             true,
+				DisjunctionOptimizable: true,
+			},
+			ReleaseDateTableField: {
+				Name:         ReleaseDateTableField,
+				QueryLiteral: safesql.New("a.ReleaseDate"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Nullable:     true,
+			},
+		},
+		OrderedIndexTableFields: []TableField{SingerIDTableField, AlbumIDTableField},
+	}
+
+	tests := []struct {
+		name              string
+		baseFilters       []TableField
+		baseFilterExp     *fpb.Expression
+		userFilter        string
+		fullTextFields    []safesql.TrustedSQLString
+		orderByFields     []UserOrderedIndex
+		pageSize          int
+		offset            int
+		ptFields          map[TableField]any
+		wantStmt          *postgresdialect.Statement
+		wantFieldToIdxMap map[TableField]int
+	}{
+		{
+			name:          "base filter, user disjunction filter, and cursor pagination bind positional args in order",
+			baseFilters:   []TableField{SingerIDTableField},
+			baseFilterExp: predicate.Conjunction(predicate.Int64{Field: string(SingerIDTableField), Value: 7}),
+			userFilter:    `AlbumTitle = "foo" OR AlbumTitle = "bar"`,
+			pageSize:      10,
+			offset:        5,
+			ptFields:      map[TableField]any{AlbumIDTableField: int64(42)},
+			wantStmt: &postgresdialect.Statement{
+				SQL:  "SELECT a.AlbumTitle, a.AlbumId FROM Albums a WHERE (a.SingerId = $1) AND ((a.AlbumTitle = ANY($2))) AND ((a.AlbumId > $3)) ORDER BY a.SingerId, a.AlbumId LIMIT 10 OFFSET 5",
+				Args: []any{int64(7), []string{"foo", "bar"}, int64(42)},
+			},
+			wantFieldToIdxMap: map[TableField]int{AlbumIDTableField: 1},
+		},
+		{
+			name:           "full text search and nullable ASC order by with nil cursor value",
+			userFilter:     `" unplugged "`,
+			fullTextFields: []safesql.TrustedSQLString{safesql.New("a.SearchTokens")},
+			orderByFields:  []UserOrderedIndex{{TableField: ReleaseDateTableField, SortOrder: Asc}},
+			pageSize:       5,
+			ptFields:       map[TableField]any{ReleaseDateTableField: nil, SingerIDTableField: int64(10), AlbumIDTableField: int64(20)},
+			wantStmt: &postgresdialect.Statement{
+				SQL:  "SELECT a.AlbumTitle, a.ReleaseDate, a.SingerId, a.AlbumId FROM Albums a WHERE (a.SearchTokens @@ plainto_tsquery('simple', $1)) AND ((a.ReleaseDate IS NULL AND a.SingerId = $2 AND a.AlbumId > $3) OR (a.ReleaseDate IS NULL AND a.SingerId > $4) OR (a.ReleaseDate IS NOT NULL)) ORDER BY a.ReleaseDate ASC NULLS FIRST, a.SingerId, a.AlbumId LIMIT 5",
+				Args: []any{" unplugged ", int64(10), int64(20), int64(10)},
+			},
+			wantFieldToIdxMap: map[TableField]int{
+				ReleaseDateTableField: 1,
+				SingerIDTableField:    2,
+				AlbumIDTableField:     3,
+			},
+		},
+		{
+			name:          "nullable DESC order by emits DESC NULLS LAST and cursor (< $N OR IS NULL)",
+			orderByFields: []UserOrderedIndex{{TableField: ReleaseDateTableField, SortOrder: Desc}},
+			pageSize:      5,
+			ptFields:      map[TableField]any{ReleaseDateTableField: "2026-01-01", SingerIDTableField: int64(10), AlbumIDTableField: int64(20)},
+			wantStmt: &postgresdialect.Statement{
+				SQL:  "SELECT a.AlbumTitle, a.ReleaseDate, a.SingerId, a.AlbumId FROM Albums a WHERE ((a.ReleaseDate = $1 AND a.SingerId = $2 AND a.AlbumId > $3) OR (a.ReleaseDate = $4 AND a.SingerId > $5) OR ((a.ReleaseDate < $6 OR a.ReleaseDate IS NULL))) ORDER BY a.ReleaseDate DESC NULLS LAST, a.SingerId, a.AlbumId LIMIT 5",
+				Args: []any{"2026-01-01", int64(10), int64(20), "2026-01-01", int64(10), "2026-01-01"},
+			},
+			wantFieldToIdxMap: map[TableField]int{
+				ReleaseDateTableField: 1,
+				SingerIDTableField:    2,
+				AlbumIDTableField:     3,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			qg, err := NewOptimizableGenerator([]TableView{pgAlbumsTable}, nil, tc.baseFilters, nil, true, false, DeduplicateSelects(true))
+			if err != nil {
+				t.Fatalf("NewOptimizableGenerator() failed: %v", err)
+			}
+			var userFilterExp *fpb.Expression
+			if tc.userFilter != "" {
+				userFilterExp, err = filter.ParseExpressionWithOptions(fpb.ExpressionParserOptions_builder{
+					EnableSimpleQuotedStrings: true,
+				}.Build(), tc.userFilter)
+				if err != nil {
+					t.Fatalf("filter.ParseExpressionWithOptions(%q) failed: %v", tc.userFilter, err)
+				}
+			}
+			gotStmt := postgresdialect.NewStatement("")
+			gotIdxMap, _, err := qg.GenerateQuery(
+				gotStmt,
+				[]TableField{AlbumTitleTableField},
+				tc.fullTextFields,
+				tc.baseFilterExp,
+				userFilterExp,
+				tc.orderByFields,
+				tc.pageSize,
+				tc.offset,
+				tc.ptFields,
+				nil,
+			)
+			if err != nil {
+				t.Fatalf("GenerateQuery() unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.wantStmt, gotStmt, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("GenerateQuery() statement diff (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantFieldToIdxMap, gotIdxMap, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("GenerateQuery() field index map diff (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
