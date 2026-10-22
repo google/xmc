@@ -52,6 +52,8 @@ spec:
             name: actuator-config
         - configMapRef:
             name: feature-flags-config
+        - configMapRef:
+            name: db-config
         env:
         - name: REDIS_PASSWORD
           valueFrom:

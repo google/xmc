@@ -60,6 +60,8 @@ spec:
         envFrom:
         - configMapRef:
             name: rod-data-provider-config
+        - configMapRef:
+            name: db-config
         env:
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
         readinessProbe:

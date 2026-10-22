@@ -241,6 +241,13 @@ templates/metrics/clickhouse-secret.yaml out of a Helm value.
 {{- end -}}
 
 {{/*
+Database backend selected for the shared db-config ConfigMap: "spanner" (default) or "postgres".
+*/}}
+{{- define "xmanager-cloud.dbBackend" -}}
+{{- (default (dict) .Values.database).backend | default "spanner" -}}
+{{- end -}}
+
+{{/*
 Common GCP Secrets Volume definition.
 */}}
 {{- define "xmanager-cloud.gcpSecretsVolume" -}}

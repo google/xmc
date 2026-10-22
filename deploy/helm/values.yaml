@@ -299,3 +299,21 @@ kueue:
 remoteK8s:
   enabled: false
   secretName: "remote-k8s-config"
+
+# Shared configuration for both XMC databases (Spanner and PostgreSQL), rendered into the db-config
+# ConfigMap (DB_BACKEND plus the selected backend's settings) that every control-plane service loads.
+# The Spanner settings come from experimentStateServer.spannerDatabaseName,
+# xidService.spannerDatabaseName and projectId, so they match the per-service ConfigMaps.
+database:
+  # Supported values: "spanner" or "postgres". Services do not read db-config yet: they move to it
+  # one by one and keep running on Spanner until then.
+  backend: "spanner"
+  postgres:
+    # No password here: db-config is shown in the admin UI. The password will come from a Secret
+    # once services connect to PostgreSQL.
+    host: "postgres.xmc.svc.cluster.local"
+    port: "5432"
+    user: "postgres"
+    essDatabase: "ess"
+    xidDatabase: "xid"
+    sslMode: "disable"
