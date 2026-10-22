@@ -27,6 +27,15 @@ The Helm chart renders the `database.*` values into the `db-config` ConfigMap, w
 - `Config.Spanner` carries `SPANNER_ESS_DATABASE`, `SPANNER_XID_DATABASE`, and `SPANNER_QUOTA_PROJECT_ID`.
 - `Config.Postgres` carries `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_ESS_DATABASE`, `POSTGRES_XID_DATABASE`, and `POSTGRES_SSLMODE` from `db-config`, plus the optional `POSTGRES_MAX_CONNS` environment override (`0` uses the driver default). Only the port (`5432`) and sslmode (`verify-full`) have defaults, and `EssDSN()` / `XidDSN()` fail when the host, the user or the database is not set. The password never goes into `db-config`: `dbconfig` reads it from `POSTGRES_PASSWORD_FILE` (preferred) or `POSTGRES_PASSWORD`.
 
+## Opening Storage (`factory`)
+
+Services get their storage from [`factory.Open(ctx, cfg, db)`](factory/factory.go) instead of building Spanner clients or PostgreSQL pools themselves. `cfg` comes from `dbconfig.Load()`, and `db` is `factory.ESS` or `factory.XID`. The returned `*factory.Store`:
+
+- serves `storage.Storage` from the backend that `cfg.Backend` selects;
+- reports readiness with `CheckReady(ctx)`, which compares the database's schema version with the version that the binary expects for that backend;
+- releases its connections on `Close()`;
+- exposes `SpannerClient` on the Spanner backend only, for the components store, which has no PostgreSQL implementation yet.
+
 ## Schemas and Migrations
 
 Both Cloud Spanner and PostgreSQL maintain canonical full schemas (`schema/{ess,xid}-schema.sql`) and version-aligned SQL migrations (`migrations/{ess,xid}/`):
