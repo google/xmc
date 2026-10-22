@@ -497,7 +497,7 @@ func NewOptimizableGenerator(tables []TableView, members map[string]Member, base
 		}
 	}
 
-	o := options{}
+	o := options{deduplicateSelects: true}
 	for _, opt := range opts {
 		opt.set(&o)
 	}
@@ -1040,7 +1040,7 @@ func appendCursorFieldComparison(fromTable TableView, fieldToValue map[TableFiel
 	if err != nil {
 		return err
 	}
-	paramPlaceholder := stmt.BindCursor(len(orderedFields), idx, coercedVal)
+	paramPlaceholder := stmt.Bind(coercedVal)
 	if !isLast {
 		stmt.AppendSQL(safesql.Concat(f.QueryLiteral, safesql.New(" = "), paramPlaceholder))
 		return nil

@@ -104,20 +104,6 @@ func ListStatement[S queryfilter.Statement](ctx context.Context, stmt S, params 
 		return zero, fmt.Errorf("failed to generate query: %w", err)
 	}
 
-	// 5. Ensure the query does not have duplicated select fields. This is a workaround; the query generator
-	// should be updated to do this natively. The fundamental problem seems to be that that duplicate
-	// selects are not considered a problem, but I think it's extremely bad practice to allow it, and
-	// it causes the column parsing logic to be more complex in the row -> proto conversion logic.
-	// However, this is not trivial, and our SQL logic is very simple, so we just do it here for now.
-	dedupedSQL, err := deduplicateSelectColumns(stmt.SQLString())
-	if err != nil {
-		return zero, fmt.Errorf("failed to deduplicate select columns: %w", err)
-	}
-	stmt.SetSQL(dedupedSQL)
-
-	logging.Info(ctx, "Generated query SQL", "sql", dedupedSQL)
-
-	// 6. Return the results.
 	return stmt, nil
 }
 
@@ -179,56 +165,6 @@ func generateOrderBy(ctx context.Context, orderBy string, validFields []querytoo
 	}
 
 	return orderedIndices, nil
-}
-
-// deduplicateSelectColumns takes a SQL query string and removes duplicate columns
-// from the SELECT clause. It preserves the order of the first appearance of each column.
-// Note: This is a simplified parser and works for basic "SELECT ... FROM ..." queries.
-// It does not handle complex cases like subqueries in the SELECT clause.
-func deduplicateSelectColumns(query string) (string, error) {
-	// 1. Normalize the query to uppercase for case-insensitive matching of keywords.
-	upperQuery := strings.ToUpper(query)
-
-	// 2. Find the start of the SELECT columns and the end (start of FROM).
-	selectIndex := strings.Index(upperQuery, "SELECT ")
-	fromIndex := strings.Index(upperQuery, " FROM ")
-
-	if selectIndex == -1 || fromIndex == -1 {
-		return "", fmt.Errorf("query must contain SELECT and FROM clauses")
-	}
-
-	// Adjust selectIndex to point to the start of the column list.
-	selectIndex += len("SELECT ")
-
-	// 3. Extract the parts of the query.
-	selectClause := query[:selectIndex]        // "SELECT "
-	columnsStr := query[selectIndex:fromIndex] // "A, B, C, A"
-	fromAndRestClause := query[fromIndex:]     // " FROM ..."
-
-	// 4. Split the columns string into a slice.
-	columns := strings.Split(columnsStr, ",")
-
-	// 5. Use a map to track seen columns and a slice to store unique columns.
-	// This preserves the original order of the columns.
-	seen := make(map[string]bool)
-	var uniqueColumns []string
-
-	for _, col := range columns {
-		// Trim whitespace from the column name.
-		trimmedCol := strings.TrimSpace(col)
-
-		// If we haven't seen this column before, add it to our unique list and mark it as seen.
-		if _, ok := seen[trimmedCol]; !ok {
-			seen[trimmedCol] = true
-			uniqueColumns = append(uniqueColumns, trimmedCol)
-		}
-	}
-
-	// 6. Join the unique columns back into a single string.
-	uniqueColumnsStr := strings.Join(uniqueColumns, ", ")
-
-	// 7. Reconstruct and return the final query.
-	return selectClause + uniqueColumnsStr + fromAndRestClause, nil
 }
 
 // DecodeAfterCursorPageToken extracts the cursor map from a page token.

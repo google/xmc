@@ -27,15 +27,8 @@ type Statement interface {
 	AppendSQL(sql safesql.TrustedSQLString)
 	// Bind records v as a query parameter and returns its placeholder.
 	Bind(v any) safesql.TrustedSQLString
-	// BindCursor records v as a pagination cursor parameter for field idx out of numFields
-	// and returns its placeholder.
-	BindCursor(numFields, idx int, v any) safesql.TrustedSQLString
 	// Dialect returns the database dialect used to render backend-specific SQL predicates.
 	Dialect() queryfilterbase.Dialect
-	// SQLString returns the SQL query string accumulated so far.
-	SQLString() string
-	// SetSQL replaces the accumulated SQL query string.
-	SetSQL(sql string)
 }
 
 // noopDialect is used when Visitor.Q is nil (for example, during AST member scouting when

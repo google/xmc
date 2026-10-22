@@ -171,11 +171,11 @@ func TestListStatement(t *testing.T) {
 			},
 			tables: querytools.AlbumsTables,
 			wantStmt: &spanner.Statement{
-				SQL: "SELECT a.AlbumTitle, a.SingerId, a.AlbumId FROM Albums a WHERE ((a.SingerId = @val20 AND a.AlbumId > @val21) OR (a.SingerId > @val10)) ORDER BY a.SingerId, a.AlbumId LIMIT 11",
+				SQL: "SELECT a.AlbumTitle, a.SingerId, a.AlbumId FROM Albums a WHERE ((a.SingerId = @fb0 AND a.AlbumId > @fb1) OR (a.SingerId > @fb2)) ORDER BY a.SingerId, a.AlbumId LIMIT 11",
 				Params: map[string]any{
-					"val10": "singer1",
-					"val20": "singer1",
-					"val21": "album1",
+					"fb0": "singer1",
+					"fb1": "album1",
+					"fb2": "singer1",
 				},
 			},
 		},
