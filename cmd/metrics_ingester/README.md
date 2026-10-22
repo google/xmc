@@ -33,12 +33,12 @@ sequenceDiagram
 
 ## Delivery Semantics
 
-- **At least once.** A batch is acked only after its INSERT succeeds. If the INSERT fails, every message in the batch is nacked and Pub/Sub redelivers it, so a record can be written twice after a partial failure or a crash.
+- **At least once.** A batch is acked only after its INSERT succeeds. If the INSERT fails, every message in the batch is nacked for redelivery and the batch loop backs off exponentially (`250ms` to `30s`), so a record can be written twice after a partial failure or a crash. Configure a subscription `RetryPolicy` minimum backoff (for example `10s`–`600s`) as well so Pub/Sub spaces redeliveries across replicas during prolonged ClickHouse outages.
 - **Batching.** A batch is flushed when it reaches `-batch_size` messages or when `-batch_interval` passes, whichever happens first. The defaults are 1000 messages and 1s. The interval matches the Kafka table's `kafka_flush_interval_ms`.
-- **Malformed payloads** that don't decode as `cloud.xmanager.v1.Metric` are logged, acked and dropped, the same way `kafka_skip_broken_messages` handles them. Records that decode but fail validation, such as `xid = 0`, are dropped by the view.
+- **Malformed payloads** that fail protobuf wire unmarshaling as `cloud.xmanager.v1.Metric` are logged with a running drop count (`DroppedMessages`), acked, and dropped (unbounded, unlike `kafka_skip_broken_messages`, which caps skips at 100 per block). Because proto3 wire decoding is lenient, corrupt payloads that still form valid wire tags decode into near-empty messages and are filtered out by `xmc_metrics_pubsub_mv` (for example `xid = 0`).
 - **Ordering** doesn't matter here. `xmc_metrics` is sorted by its `ORDER BY` key, so the subscription doesn't need message ordering enabled.
 - **Flow control.** The client leases at most `2 × -batch_size` messages at a time.
-- **Shutdown.** On SIGINT/SIGTERM the pending batch is flushed, with a 10s limit. Any message that arrives after that flush is nacked.
+- **Shutdown.** On SIGINT/SIGTERM, pending and already-buffered messages are flushed in `-batch_size` chunks within a shared 10s limit; any message arriving after the buffer drain (including during the flush) is nacked for redelivery. Total shutdown covers this 10s flush, Pub/Sub `Receive` teardown, and the 5s health server shutdown, so Kubernetes `terminationGracePeriodSeconds` must comfortably exceed ~15s (such as the 30s default).
 
 ---
 
@@ -52,7 +52,7 @@ Each setting is read from its flag first, then from its environment variable, th
 | `-project_id` | `GOOGLE_CLOUD_PROJECT` | *(required)* | GCP project that owns the subscription. |
 | `-subscription_id` | `PUBSUB_SUBSCRIPTION_ID` | *(required)* | Subscription on the metrics topic. |
 | `-batch_size` | — | `1000` | Maximum number of messages per INSERT. |
-| `-batch_interval` | — | `1s` | Longest time a partial batch waits before it is flushed. |
+| `-batch_interval` | — | `1s` | Target time a received message waits before its batch is inserted; longer if a previous insert is still running. |
 
 The ClickHouse connection comes from the shared `pkg/clickhouse` environment variables: `CLICKHOUSE_DSN`, or else `CLICKHOUSE_HOST`, `CLICKHOUSE_PORT`, `CLICKHOUSE_DATABASE`, `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD` / `CLICKHOUSE_PASSWORD_FILE`.
 

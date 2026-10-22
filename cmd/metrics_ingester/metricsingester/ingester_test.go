@@ -234,6 +234,23 @@ func awaitModacks(t *testing.T, srv *pstest.Server, id string, count int) {
 	}
 }
 
+// awaitNack blocks until pstest records a zero-deadline modack (Nack) for message id.
+func awaitNack(t *testing.T, srv *pstest.Server, id string) {
+	t.Helper()
+	deadline := time.Now().Add(waitTimeout)
+	for {
+		for _, m := range srv.Message(id).Modacks {
+			if m.AckDeadline == 0 {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for nack (AckDeadline=0) on message %s; modacks=%+v", id, srv.Message(id).Modacks)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func metricWithStep(step int64) *pb.Metric {
 	m := testMetric()
 	m.Step = step
@@ -452,6 +469,9 @@ func TestIngesterFlushesPendingBatchOnShutdown(t *testing.T) {
 	if diff := cmp.Diff([][]*pb.Metric{{testMetric()}}, writer.snapshot(), protocmp.Transform()); diff != "" {
 		t.Errorf("writes mismatch (-want +got):\n%s", diff)
 	}
+	if diff := cmp.Diff([]bool{true}, writer.deadlines()); diff != "" {
+		t.Errorf("shutdown write deadlines mismatch (-want +got):\n%s", diff)
+	}
 	awaitAcks(t, srv, id)
 }
 
@@ -550,16 +570,39 @@ func TestIngesterNacksInsteadOfBlockingWhenCallbackContextIsDone(t *testing.T) {
 }
 
 func TestIngesterNacksMessagesArrivingAfterShutdownFlush(t *testing.T) {
+	srv, _, sub := newFakeSubscription(context.Background(), t)
+	id1 := publishMetric(t, srv, metricWithStep(1))
+	id2 := publishMetric(t, srv, metricWithStep(2))
+
 	writer := newFakeWriter(0)
 	ctx, cancel := context.WithCancel(context.Background())
-	source := &scriptedSource{script: func(ctx context.Context, f func(context.Context, *pubsub.Message)) error {
-		f(ctx, metricMessage(t, "1", 1))
-		cancel()
-		writer.awaitWrites(t, 1) // The shutdown flush, which runs after the buffer is drained.
-		// A callback still in flight: its context is live, so it enqueues rather than nacking, and
-		// nackUntilClosed must settle it.
-		f(context.Background(), metricMessage(t, "2", 2))
-		return nil
+	defer cancel()
+
+	var leased atomic.Int32
+	bothLeased := make(chan struct{})
+	source := &scriptedSource{script: func(rCtx context.Context, f func(context.Context, *pubsub.Message)) error {
+		return sub.Receive(rCtx, func(cbCtx context.Context, msg *pubsub.Message) {
+			awaitModacks(t, srv, msg.ID, 1)
+			if leased.Add(1) == 2 {
+				close(bothLeased)
+			}
+			select {
+			case <-bothLeased:
+			case <-time.After(waitTimeout):
+				t.Errorf("timed out waiting for both messages to be leased")
+				msg.Nack()
+				return
+			}
+			if msg.ID == id1 {
+				f(cbCtx, msg)
+				cancel()
+				return
+			}
+			writer.awaitWrites(t, 1) // Wait for the shutdown flush of id1 after buffer drain.
+			// Deliver with a live callback context so Run's callback enqueues into msgCh and
+			// nackUntilClosed must settle msg2 with an explicit Nack.
+			f(context.Background(), msg)
+		})
 	}}
 
 	if err := NewIngester(source, writer, &Config{BatchSize: 100, BatchInterval: neverTick}).Run(ctx); err != nil {
@@ -569,9 +612,14 @@ func TestIngesterNacksMessagesArrivingAfterShutdownFlush(t *testing.T) {
 	if diff := cmp.Diff([][]*pb.Metric{{metricWithStep(1)}}, writer.snapshot(), protocmp.Transform()); diff != "" {
 		t.Errorf("writes mismatch (-want +got):\n%s", diff)
 	}
+	awaitAcks(t, srv, id1)
+	awaitNack(t, srv, id2)
+	if got := srv.Message(id2).Acks; got != 0 {
+		t.Errorf("message %s Acks = %d, want 0", id2, got)
+	}
 }
 
-func TestFlushOrStopNacksPendingWhenContextAlreadyDone(t *testing.T) {
+func TestFlushOrStopFlushesPendingOnShutdownWhenContextDone(t *testing.T) {
 	writer := newFakeWriter(0)
 	in := NewIngester(nil, writer, &Config{BatchSize: 10, BatchInterval: neverTick})
 	cancelled, cancel := context.WithCancel(context.Background())
@@ -585,8 +633,37 @@ func TestFlushOrStopNacksPendingWhenContextAlreadyDone(t *testing.T) {
 	if in.flushOrStop(cancelled, msgCh, []*pubsub.Message{metricMessage(t, "1", 1)}, &backoff) {
 		t.Error("flushOrStop(cancelled) = true, want false")
 	}
+	want := [][]*pb.Metric{{metricWithStep(1), metricWithStep(2)}}
+	if diff := cmp.Diff(want, writer.snapshot(), protocmp.Transform()); diff != "" {
+		t.Errorf("shutdown writes mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]bool{true}, writer.deadlines()); diff != "" {
+		t.Errorf("shutdown write deadlines mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestFlushOnShutdownChunksByBatchSize(t *testing.T) {
+	writer := newFakeWriter(0)
+	in := NewIngester(nil, writer, &Config{BatchSize: 2, BatchInterval: neverTick})
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	in.flushOnShutdown(cancelled, nil)
 	if got := writer.snapshot(); len(got) != 0 {
-		t.Errorf("writes = %v, want none when context is already cancelled", got)
+		t.Fatalf("flushOnShutdown(nil) writes = %v, want none", got)
+	}
+
+	in.flushOnShutdown(cancelled, []*pubsub.Message{
+		metricMessage(t, "1", 1),
+		metricMessage(t, "2", 2),
+		metricMessage(t, "3", 3),
+	})
+	want := [][]*pb.Metric{{metricWithStep(1), metricWithStep(2)}, {metricWithStep(3)}}
+	if diff := cmp.Diff(want, writer.snapshot(), protocmp.Transform()); diff != "" {
+		t.Errorf("chunked shutdown writes mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]bool{true, true}, writer.deadlines()); diff != "" {
+		t.Errorf("chunked shutdown deadlines mismatch (-want +got):\n%s", diff)
 	}
 }
 

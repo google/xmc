@@ -35,8 +35,9 @@ const (
 	defaultRetryMax     = 30 * time.Second
 )
 
-// shutdownFlushTimeout bounds the final insert attempted when Run's context is cancelled, keeping
-// shutdown well inside the default 30s Kubernetes termination grace period.
+// shutdownFlushTimeout bounds the final flushes attempted when Run's context is cancelled.
+// Total shutdown (10s flush + Pub/Sub Receive teardown + 5s health server shutdown) fits inside
+// a terminationGracePeriodSeconds comfortably above ~15s (such as Kubernetes's 30s default).
 const shutdownFlushTimeout = 10 * time.Second
 
 // MessageSource delivers Pub/Sub messages to f until ctx is done. *pubsub.Subscription satisfies it.
@@ -149,20 +150,18 @@ func (in *Ingester) batchLoop(ctx context.Context, msgCh <-chan *pubsub.Message)
 			}
 			pending = nil
 		case <-ctx.Done():
-			in.flushOnShutdown(ctx, drainBuffered(msgCh, pending))
-			nackUntilClosed(msgCh)
+			in.shutdown(ctx, msgCh, pending)
 			return
 		}
 	}
 }
 
 // flushOrStop flushes pending and backs off on write failure, returning false once shutdown has
-// begun and msgCh is drained. Checking ctx.Err() first avoids flushing when select chose msgCh or
-// ticker over an already-ready ctx.Done.
+// begun and msgCh is drained. Routing an already-cancelled ctx through shutdown ensures pending
+// and buffered messages still flush when select chose msgCh or ticker over a ready ctx.Done.
 func (in *Ingester) flushOrStop(ctx context.Context, msgCh <-chan *pubsub.Message, pending []*pubsub.Message, backoff *time.Duration) bool {
 	if ctx.Err() != nil {
-		nackAll(pending)
-		nackUntilClosed(msgCh)
+		in.shutdown(ctx, msgCh, pending)
 		return false
 	}
 	if len(pending) == 0 {
@@ -174,7 +173,7 @@ func (in *Ingester) flushOrStop(ctx context.Context, msgCh <-chan *pubsub.Messag
 	}
 	*backoff = nextBackoff(*backoff, in.retryInitial, in.retryMax)
 	if !waitBackoff(ctx, *backoff) {
-		nackUntilClosed(msgCh)
+		in.shutdown(ctx, msgCh, nil)
 		return false
 	}
 	return true
@@ -191,11 +190,26 @@ func (in *Ingester) flushBounded(ctx context.Context, msgs []*pubsub.Message) bo
 	return in.flush(writeCtx, msgs)
 }
 
-// flushOnShutdown writes the final batch with a fresh, bounded context, since ctx is already done.
+// shutdown drains buffered messages, flushes them within shutdownFlushTimeout, and nacks any
+// late-arriving callbacks until Run closes msgCh.
+func (in *Ingester) shutdown(ctx context.Context, msgCh <-chan *pubsub.Message, pending []*pubsub.Message) {
+	in.flushOnShutdown(ctx, drainBuffered(msgCh, pending))
+	nackUntilClosed(msgCh)
+}
+
+// flushOnShutdown writes pending in batchSize chunks sharing a single bounded context detached
+// from Run's cancellation, keeping every INSERT within -batch_size during shutdown.
 func (in *Ingester) flushOnShutdown(ctx context.Context, pending []*pubsub.Message) {
+	if len(pending) == 0 {
+		return
+	}
 	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownFlushTimeout)
 	defer cancel()
-	in.flush(flushCtx, pending)
+	chunkSize := max(in.batchSize, 1)
+	for start := 0; start < len(pending); start += chunkSize {
+		end := min(start+chunkSize, len(pending))
+		in.flush(flushCtx, pending[start:end])
+	}
 }
 
 // flush writes msgs as one batch, acking them on success and nacking them for redelivery on failure.
