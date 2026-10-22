@@ -33,17 +33,19 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_XMANAGER_SPEC = "xmanager>=0.8.2"
 
-# Upper bounds keep protoc gencode and protobuf runtime compatible:
-# - googleapis-common-protos<1.75.4 requires protobuf<7.0.0 (matching xmanager's
-#   protobuf 6.x dependency constraints).
-# - grpcio-tools<1.79.0 embeds protoc for protobuf 6.x (whereas >=1.79.0
-#   generates protobuf 7.x gencode that raises VersionError on protobuf 6.x).
+# Upper bounds keep proto descriptor registration and protobuf runtime compatible:
+# - googleapis-common-protos<1.75.4 avoids the 1.75.4 operations_proto.proto /
+#   operations_proto_pb2 DescriptorPool registration conflict when importing
+#   modules compiled against google/longrunning/operations.proto (see 941b7b7325).
+# - protobuf<7.0.0 keeps the environment on protobuf 6.x (matching xmanager)
+#   and prevents pip from selecting grpcio-tools releases that require
+#   protobuf>=7.0.0.
 RUNTIME_DEPENDENCIES = (
     "absl-py>=2.1.0",
     "google-auth>=2.28.0",
     "googleapis-common-protos>=1.63.0,<1.75.4",
     "grpcio>=1.62.0",
-    "grpcio-tools>=1.62.0,<1.79.0",
+    "grpcio-tools>=1.62.0",
     "protobuf>=4.25.0,<7.0.0",
     "python-dotenv>=1.0.0",
     "requests>=2.32.0",

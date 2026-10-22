@@ -5,7 +5,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+#      http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,21 +17,21 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+ENV_FILE="${ENV_FILE:-${REPO_ROOT}/.env}"
 
-if [[ -f "${REPO_ROOT}/.env" ]]; then
-  set -o allexport
-  # shellcheck disable=SC1091
-  source "${REPO_ROOT}/.env"
-  set +o allexport
+if [[ -f "${ENV_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
 fi
 
-: "${PROJECT_ID:?Set PROJECT_ID in .env or environment}"
-: "${GKE_CLUSTER:?Set GKE_CLUSTER in .env or environment}"
-: "${GCP_REGION:?Set GCP_REGION in .env or environment}"
+: "${PROJECT_ID:?Error: PROJECT_ID environment variable is required (set in .env or shell)}"
+: "${GKE_CLUSTER:?Error: GKE_CLUSTER environment variable is required (set in .env or shell)}"
+: "${GCP_REGION:?Error: GCP_REGION environment variable is required (set in .env or shell)}"
 
-export KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/config.${XMANAGER_ENV:-xmc-lite}}"
+KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/config}"
+export KUBECONFIG
+
 mkdir -p "$(dirname "${KUBECONFIG}")"
-
 gcloud container clusters get-credentials "${GKE_CLUSTER}" \
   --region="${GCP_REGION}" \
   --project="${PROJECT_ID}"

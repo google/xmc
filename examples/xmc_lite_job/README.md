@@ -75,7 +75,7 @@ Configure `KUBECONFIG` for the existing cluster and create the local Python virt
 ```bash
 ./examples/xmc_lite_job/setup.sh
 ```
-To pin a specific `xmanager` release or version specifier, set `XMANAGER_VERSION`:
+To pin a specific `xmanager` release (bare version only, e.g. `0.8.2`), set `XMANAGER_VERSION`:
 ```bash
 XMANAGER_VERSION="0.8.2" ./examples/xmc_lite_job/setup.sh
 ```
