@@ -4,68 +4,61 @@
 
 [XManager CLI](https://github.com/google-deepmind/xmanager) is a Python library for interacting with XManager on Cloud (`xm_cloud`) and other XManager execution backends.
 
+The published `xmanager` package on PyPI (`xmanager>=0.8.2`) bundles `xmanager.xm_cloud` and the precompiled gRPC proto bindings (`xmanager_cloud.experiment_state_server.proto.*`, `xmanager_cloud.xid_service.proto.*`, and `xmanager_cloud.dashboard_service.proto.*`).
+
 ---
 
-## Canonical Installation (PyPI)
+## Installation
 
-For users, workloads, and examples interacting with XMC, the standard and recommended installation method is directly from PyPI via **`pip`**:
+### Option 1: Direct `pip` Installation
+
+Create and activate a Python virtual environment, then install `xmanager` from PyPI:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install xmanager
+pip install "xmanager>=0.8.2"
 
-# To pin or override a specific version:
+# To pin a specific version:
 # pip install "xmanager==0.8.2"
 ```
 
-The published `xmanager` package bundles `xmanager.xm_cloud` and the precompiled gRPC proto bindings (`xmanager_cloud.experiment_state_server.proto.*`, `xmanager_cloud.xid_service.proto.*`, and `xmanager_cloud.dashboard_service.proto.*`).
+### Option 2: Automated Setup Script (`install_xmanager.py`)
 
----
-
-## Developer Utility: Building from Source (`install_xmanager.py`)
-
-The script `install_xmanager.py` is a **developer and CI utility** used when developing against unreleased local proto changes (`api/protos`) before they have been published to PyPI.
+You can also use [`install_xmanager.py`](install_xmanager.py) to set up a virtual environment and install `xmanager` along with the XMC runtime client dependencies (`absl-py`, `google-auth`, `googleapis-common-protos`, `grpcio`, `protobuf`, `python-dotenv`, `requests`).
 
 It automates:
-1. Creating a Python virtual environment.
-2. Cloning the official `xmanager` repository (`xm-cloud` branch) and `googleapis` repository.
-3. Compiling the fresh XMC API protos from `api/protos` into the local `xmanager` source tree.
-4. Installing the package into the virtual environment in editable mode.
+1. Creating a Python virtual environment (default: `./venv`).
+2. Upgrading `pip` and installing `xmanager` and XMC client dependencies from PyPI.
+3. Verifying that `xmanager.xm_cloud` and the bundled XMC gRPC proto modules import cleanly.
 
-### Prerequisites for Building from Source
-- **Git** (version 2.25+ recommended for remote/GitHub sparse checkouts)
-- **Python 3**
+#### Prerequisites
+- **Python 3** (with `venv` and `pip`)
 
-### Basic Usage
+#### Basic Usage
 
 From the root of your local clone of the `xmc` repository:
 ```bash
 python3 deploy/cli/install_xmanager.py
 ```
-This automatically locates your local `api/protos` definitions and compiles them inside `./venv`.
 
-### Options
-
-The script accepts several command-line flags to customize the installation:
+#### Options
 
 ```bash
 python3 deploy/cli/install_xmanager.py [options]
 
 Options:
-  --protos-loc <url_or_path>     Location of XMC protos. Can be a local directory path or a 
-                                 GitHub repository tree URL.
-                                 (default: local checkout if available, else https://github.com/google/xmc/tree/main/api/protos)
-  --xmanager-branch <branch>     The XManager Git branch/tag to clone (default: xm-cloud)
-  --venv <path>                  Target directory for the Python virtual environment (default: ./venv)
-  --dashboard-protos-only        Only build and install the Bazel Dashboard Service protobuf modules
+  --venv <path>                  Target directory for the Python virtual environment
+                                 (default: ./venv, or VENV_DIR environment variable)
+  --xmanager-version <version>   Optional XManager PyPI version tag to pin (e.g. 0.8.2)
+                                 (default: XMANAGER_VERSION env var, or xmanager>=0.8.2)
   -h, --help                     Show usage information
 ```
 
-#### Example: Installing with Remote Protos
+#### Example: Pinning a Specific Version
 ```bash
-python3 deploy/cli/install_xmanager.py --venv ./my_env --protos-loc https://github.com/google/xmc/tree/main/api/protos
+python3 deploy/cli/install_xmanager.py --venv ./my_env --xmanager-version 0.8.2
 ```
 
 ### Verification

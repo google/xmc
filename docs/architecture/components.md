@@ -336,7 +336,7 @@ declarations fail the build rather than a deployment.
 
 | Client | Source | Purpose |
 | :--- | :--- | :--- |
-| XManager CLI | installed from PyPI via `pip install xmanager` (build from source via [`deploy/cli`](../../deploy/cli) for unreleased local `.proto` changes) | The user-facing CLI from [google-deepmind/xmanager](https://github.com/google-deepmind/xmanager) (`xm-cloud` branch), wired to XMC's protos. Launches and manages experiments over gRPC. |
+| XManager CLI | installed from PyPI via `pip install xmanager` (or [`deploy/cli`](../../deploy/cli)) | The user-facing CLI from [google-deepmind/xmanager](https://github.com/google-deepmind/xmanager). Launches and manages experiments over gRPC. |
 | `xmc` Python SDK | [`sdks/python/xmc`](../../sdks/python/xmc) | Metrics client embedded in training jobs. Separates the training hot path from a background flusher thread so logging never stalls the training loop, and posts batches to the Ingestion Gateway with bounded buffering and exponential backoff. |
 | `xdash` Python SDK & CLI | [`sdks/python/xdash`](../../sdks/python/xdash) | Fluent builders and a gRPC client for creating and inspecting dashboards and charts against the Dashboard Service. |
 
