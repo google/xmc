@@ -20,20 +20,26 @@ sequenceDiagram
 
     Client->>ESS: 1. CreateExperiment(req)
     ESS->>ESS: 2. Authenticate & Validate
-    ESS->>XID: 3. CreateXidEntry
-    XID-->>ESS: 4. XidEntry (XID)
-    ESS->>XID: 5. CheckAuth(WRITER)
-    XID-->>ESS: 6. Authorized
-    ESS->>ESS: 7. Assemble Experiment
-    ESS->>Spanner: 8. CreateExperiment
-    Spanner-->>ESS: 9. Success
-    ESS-->>Client: 10. Experiment
+    ESS->>ESS: 3. Default ACLs & Authorize(WRITER)
+    ESS->>XID: 4. CreateXidEntry
+    XID-->>ESS: 5. XidEntry (XID)
+    ESS->>ESS: 6. Assemble Experiment
+    ESS->>Spanner: 7. CreateExperiment
+    Spanner-->>ESS: 8. Success
+    ESS-->>Client: 9. Experiment
 ```
 
 The ordering here is worth noting: the `xid` is allocated by the XID Service **before** the
-experiment row exists. The XID entry is what carries ownership and access control, so authorization
-is checked against a freshly created entry rather than against the experiment itself. That keeps a
+experiment row exists. The XID entry is what carries ownership and access control, which keeps a
 single source of truth for "who may touch experiment N" across every subsequent call.
+
+Because there is no XID entry to check against yet, ESS authorizes the creator directly against the
+requested ACLs, using the same `internal/auth` evaluation the XID Service applies, **before**
+calling `CreateXidEntry`. A creator who does not hold `WRITER` (or `OWNER`) on the requested ACLs
+gets `PERMISSION_DENIED` and no XID entry is created. If the request's `acls` is unset or lists no
+principals in any role, ESS grants the creator `OWNER`; ACLs that list any principal are passed
+through unchanged, but must name at least one owner and a principal in every role, or the request
+fails with `INVALID_ARGUMENT`.
 
 Domain rules for assembling the experiment — defaults, derived fields, validation — live in
 [`internal/domain/experiment`](../../internal/domain/experiment), separate from the RPC handler.
