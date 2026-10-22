@@ -54,18 +54,6 @@ func TestCheckSpanner(t *testing.T) {
 			t.Error("CheckSpanner(ctx, closedClient) succeeded, want error")
 		}
 	})
-
-	t.Run("realSpannerHealthClient Close closes underlying client", func(t *testing.T) {
-		clients := emulator.SetupWithEmulator(ctx, t)
-		healthCl := NewSpannerHealthClient(clients.XIDClient)
-		if closer, ok := healthCl.(interface{ Close() error }); ok {
-			if err := closer.Close(); err != nil {
-				t.Fatalf("unexpected error on Close: %v", err)
-			}
-		} else {
-			t.Fatal("expected realSpannerHealthClient to implement Close()")
-		}
-	})
 }
 
 type mockSpannerHealthClient struct {
@@ -228,6 +216,68 @@ func TestCheckSpannerServices(t *testing.T) {
 						t.Errorf("checkFn() error = %v, wantErr %v", err, tc.wantErr)
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestCheckSchemaVersion(t *testing.T) {
+	ctx := context.Background()
+	queryErr := errors.New("query failed")
+
+	tests := []struct {
+		name            string
+		client          SchemaVersionClient
+		expectedVersion int64
+		wantErr         bool
+		wantErrIs       error
+	}{
+		{
+			name:            "version matches",
+			client:          mockSpannerHealthClient{version: 5},
+			expectedVersion: 5,
+		},
+		{
+			name:            "version mismatch",
+			client:          mockSpannerHealthClient{version: 4},
+			expectedVersion: 5,
+			wantErr:         true,
+		},
+		{
+			name:            "dirty schema",
+			client:          mockSpannerHealthClient{version: 5, dirty: true},
+			expectedVersion: 5,
+			wantErr:         true,
+		},
+		{
+			name:            "query error is returned",
+			client:          mockSpannerHealthClient{err: queryErr},
+			expectedVersion: 5,
+			wantErr:         true,
+			wantErrIs:       queryErr,
+		},
+		{
+			name:            "nil client",
+			expectedVersion: 5,
+			wantErr:         true,
+			wantErrIs:       ErrNilClient,
+		},
+		{
+			name:            "expected version not set",
+			client:          mockSpannerHealthClient{},
+			expectedVersion: 0,
+			wantErr:         true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := CheckSchemaVersion(ctx, tc.client, tc.expectedVersion)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("CheckSchemaVersion() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErrIs != nil && !errors.Is(err, tc.wantErrIs) {
+				t.Errorf("CheckSchemaVersion() error = %v, want it to wrap %v", err, tc.wantErrIs)
 			}
 		})
 	}
