@@ -22,7 +22,7 @@ import (
 	"google.golang.org/api/iterator"
 )
 
-// SpannerHealthClient is an alias of SchemaVersionClient for callers that still check Spanner directly.
+// SpannerHealthClient is an alias of SchemaVersionClient.
 type SpannerHealthClient = SchemaVersionClient
 
 type realSpannerHealthClient struct {

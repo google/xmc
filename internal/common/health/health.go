@@ -77,14 +77,13 @@ func checkSpannerWithVersion(ctx context.Context, sc SpannerHealthClient, expect
 	return CheckSchemaVersion(ctx, sc, expectedVersion)
 }
 
-// SchemaVersionClient reads the migration state of a database: the applied schema version and
-// whether the last migration left the schema dirty. Each storage backend provides one.
+// SchemaVersionClient reads a database's schema version and whether its last migration is dirty.
 type SchemaVersionClient interface {
 	QuerySchemaVersion(ctx context.Context) (version int64, dirty bool, err error)
 }
 
-// CheckSchemaVersion validates that the database behind client is reachable, that its last
-// migration is not dirty, and that its schema version equals expectedVersion.
+// CheckSchemaVersion returns an error unless the database is reachable, its last migration is not
+// dirty, and its schema version is expectedVersion.
 func CheckSchemaVersion(ctx context.Context, client SchemaVersionClient, expectedVersion int64) error {
 	if client == nil {
 		return fmt.Errorf("schema version client: %w", ErrNilClient)
