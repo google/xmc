@@ -103,7 +103,7 @@ func TestProfileMigrationE2E(t *testing.T) {
 	t.Run("StatusSyncBack", func(t *testing.T) {
 		runPerComponent(t, upgraded, func(t *testing.T, name string, u *unstructured.Unstructured) {
 			assertUpgradedStatus(ctx, t, h, baseline[name], u, overlay)
-			assertAccessEnvVarsUnchanged(t, baseline[name], u)
+			assertAccessEnvVarsUnchanged(t, requireComponent(t, baseline, name), u)
 		})
 	})
 	runThirdPartySubtests(ctx, t, h, ns, baseline, upgraded, thirdParty)
@@ -121,7 +121,19 @@ type thirdPartyBaseline struct {
 func captureThirdPartyBaseline(ctx context.Context, t *testing.T, h *kindClusterHarness, ns string, baseline map[string]*unstructured.Unstructured) thirdPartyBaseline {
 	t.Helper()
 	lockedGens := lockComponentSnapshots(ctx, t, h, baseline)
-	return thirdPartyBaseline{lockedGens: lockedGens, stream: startClickHouseStream(ctx, t, h, ns, baseline[clickhouseComponent])}
+	return thirdPartyBaseline{lockedGens: lockedGens, stream: startClickHouseStream(ctx, t, h, ns, requireComponent(t, baseline, clickhouseComponent))}
+}
+
+// requireComponent returns the Component name from comps, failing the test if it is absent. The
+// maps are filled by waitForComponent with a non-nil readiness predicate, so a nil entry only means a
+// lookup of a Component that was not deployed.
+func requireComponent(t *testing.T, comps map[string]*unstructured.Unstructured, name string) *unstructured.Unstructured {
+	t.Helper()
+	u := comps[name]
+	if u == nil {
+		t.Fatalf("Component %s is not in the deployed set %v", name, slices.Sorted(maps.Keys(comps)))
+	}
+	return u
 }
 
 // runThirdPartySubtests verifies that the ClickHouse stream ran uninterrupted through the migration
@@ -131,7 +143,7 @@ func runThirdPartySubtests(ctx context.Context, t *testing.T, h *kindClusterHarn
 	t.Run("UninterruptedClickHouseStream", func(t *testing.T) { assertClickHouseStreamUninterrupted(ctx, t, h, ns, thirdParty.stream) })
 	t.Run("SnapshotDriftPredicate", func(t *testing.T) {
 		runPerComponent(t, upgraded, func(t *testing.T, name string, u *unstructured.Unstructured) {
-			assertSnapshotDrift(ctx, t, h, u, thirdParty.lockedGens[name], baseline[name])
+			assertSnapshotDrift(ctx, t, h, u, thirdParty.lockedGens[name], requireComponent(t, baseline, name))
 		})
 	})
 }
