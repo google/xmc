@@ -55,6 +55,7 @@ _KIND_3P_DEPS = [
     "//api/protos/components/v1alpha1",
     "//pkg/components/bridge",
     "//pkg/components/bridge/healthprobe",
+    "//pkg/components/bridge/helm",
     "//pkg/components/bridge/statusdetector",
     "//pkg/components/cms",
     "//pkg/components/store/memory",
@@ -89,6 +90,8 @@ go_test(
     srcs = [
         "kind_3p_harness_test.go",
         "kind_3p_harness_yaml_unit_test.go",
+        "profile_migration_fixture_test.go",
+        "profile_migration_fixture_unit_test.go",
     ],
     data = ["//deploy/helm:chart"],
     deps = _KIND_3P_DEPS + ["@com_github_google_go_cmp//cmp"],
@@ -155,5 +158,39 @@ go_test(
     deps = _KIND_3P_DEPS + [
         "//cmd/ingestion_gateway/ingestiongateway",
         "//pkg/components/crreader",
+    ],
+)
+
+# Test-only fixtures of profile_migration_test: admin values, the stable-2026b overlay and the
+# rolling-gateway stand-in chart.
+filegroup(
+    name = "profile_migration_testdata",
+    srcs = glob(["testdata/profile_migration/**"]),
+)
+
+go_test(
+    name = "profile_migration_test",
+    size = "large",
+    timeout = "long",
+    srcs = [
+        "kind_3p_harness_test.go",
+        "profile_migration_fixture_test.go",
+        "profile_migration_test.go",
+    ],
+    data = [
+        ":profile_migration_testdata",
+        "//deploy/helm:chart",
+        "//deploy/profiles/stable-2026a:chart",
+    ],
+    tags = [
+        "e2e",
+        "exclusive",
+        "external",
+        "local",
+        "manual",
+    ],
+    deps = _KIND_3P_DEPS + [
+        "@io_k8s_api//apps/v1:apps",
+        "@io_k8s_apimachinery//pkg/api/resource",
     ],
 )

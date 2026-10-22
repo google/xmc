@@ -60,6 +60,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/bridge"
 	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/helm"
 	"xmanager_cloud/pkg/components/bridge/statusdetector"
 	"xmanager_cloud/pkg/components/cms"
 	storememory "xmanager_cloud/pkg/components/store/memory"
@@ -111,14 +112,29 @@ type kindClusterHarness struct {
 	reconciler              *bridge.Reconciler
 }
 
+// kindHarnessConfig configures newKindClusterHarness.
+type kindHarnessConfig struct {
+	// requiredImages are preloaded into the KinD node before the harness starts.
+	requiredImages []string
+	// helmActuation wires a real in-process bridge.K8sHelmManager into the reconciler so 1P
+	// Components install and upgrade their Helm releases. When false the HelmManager is nil and 1P
+	// Components are reconciled without workloads.
+	helmActuation bool
+}
+
 func setupKindClusterHarness(t *testing.T, requiredImages ...string) *kindClusterHarness {
+	t.Helper()
+	return newKindClusterHarness(t, kindHarnessConfig{requiredImages: requiredImages})
+}
+
+func newKindClusterHarness(t *testing.T, cfg kindHarnessConfig) *kindClusterHarness {
 	t.Helper()
 	ctrl.SetLogger(testr.New(t))
 	clusterName, kubeconfig := acquireKindCluster(t)
-	for _, img := range requiredImages {
+	for _, img := range cfg.requiredImages {
 		preloadImageIntoKind(t, clusterName, img)
 	}
-	harness := buildClusterClients(t, clusterName, kubeconfig)
+	harness := buildClusterClients(t, clusterName, kubeconfig, cfg.helmActuation)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	installComponentCRD(ctx, t, harness)
@@ -202,7 +218,7 @@ func resolveBinaryPath(name string) string {
 	return name
 }
 
-func buildClusterClients(t *testing.T, clusterName, kubeconfig string) *kindClusterHarness {
+func buildClusterClients(t *testing.T, clusterName, kubeconfig string, helmActuation bool) *kindClusterHarness {
 	t.Helper()
 	restCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
@@ -219,11 +235,27 @@ func buildClusterClients(t *testing.T, clusterName, kubeconfig string) *kindClus
 	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(clientset.Discovery()))
 	cmsServer := cms.NewServer(storememory.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer(harnessBridgeSA)))
 	prober := &kindNodePortProber{clientset: clientset, delegate: healthprobe.NewNetworkHealthProber(healthprobe.WithHealthProbeTimeout(5 * time.Second))}
-	reconciler, err := bridge.NewReconciler(bridge.NewCMSClientAdapter(cmsServer), healthprobe.NewBridgeProber(statusdetector.NewK8sStatusDetector(dynClient, mapper), prober, 5*time.Second), nil)
+	reconciler, err := bridge.NewReconciler(bridge.NewCMSClientAdapter(cmsServer), healthprobe.NewBridgeProber(statusdetector.NewK8sStatusDetector(dynClient, mapper), prober, 5*time.Second), newHarnessHelmManager(t, clientset, kubeconfig, helmActuation))
 	if err != nil {
 		t.Fatalf("failed to create bridge reconciler: %v", err)
 	}
 	return &kindClusterHarness{clusterName: clusterName, kubeconfig: kubeconfig, restCfg: restCfg, clientset: clientset, dynClient: dynClient, restMapper: mapper, cmsServer: cmsServer, reconciler: reconciler}
+}
+
+// newHarnessHelmManager returns the HelmManager of the harness reconciler: nil unless enabled, else a
+// helm.K8sHelmManager that runs Helm SDK actions through kubeconfig, as cmd/xmc_bridge wires it. The
+// manager is aborted when the test ends, after every namespace bridge has stopped. Unlike
+// cmd/xmc_bridge with --chart-path, it sets no helm.WithChartPath base, so an absolute
+// parameters.chartPath override is accepted without the base-directory containment check; suites
+// using it do not prove the production chartPath resolution.
+func newHarnessHelmManager(t *testing.T, clientset kubernetes.Interface, kubeconfig string, enabled bool) helm.HelmManager {
+	t.Helper()
+	if !enabled {
+		return nil
+	}
+	helmMgr := helm.NewK8sHelmManager(clientset, helm.DefaultNamespace, helm.DefaultHelmReleaseName, helm.WithKubeconfig(kubeconfig))
+	t.Cleanup(helmMgr.Abort)
+	return helmMgr
 }
 
 func installComponentCRD(ctx context.Context, t *testing.T, h *kindClusterHarness) {
@@ -651,6 +683,9 @@ type workloadPodSpec struct {
 	Command                []string
 	AccessEnvVars          map[string]string
 	SecretEnvBinds         map[string]corev1.SecretKeySelector
+	// SecurityContext and Resources, when set, apply to the workload container.
+	SecurityContext *corev1.SecurityContext
+	Resources       corev1.ResourceRequirements
 }
 
 func runMockMLWorkloadPod(ctx context.Context, t *testing.T, h *kindClusterHarness, spec workloadPodSpec) string {
@@ -675,7 +710,10 @@ func startWorkloadPod(ctx context.Context, t *testing.T, h *kindClusterHarness, 
 		ObjectMeta: metav1.ObjectMeta{Name: spec.Name, Namespace: spec.Namespace},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
-			Containers:    []corev1.Container{{Name: "workload", Image: spec.Image, ImagePullPolicy: corev1.PullIfNotPresent, Command: spec.Command, Env: envList}},
+			Containers: []corev1.Container{{
+				Name: "workload", Image: spec.Image, ImagePullPolicy: corev1.PullIfNotPresent, Command: spec.Command, Env: envList,
+				SecurityContext: spec.SecurityContext, Resources: spec.Resources,
+			}},
 		},
 	}
 	if _, err := h.clientset.CoreV1().Pods(spec.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
