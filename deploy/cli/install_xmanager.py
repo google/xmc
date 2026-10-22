@@ -125,11 +125,11 @@ def setup_virtualenv(venv_dir: Path) -> Path:
     Returns:
         Path to python executable inside virtual environment.
     """
-    if not (venv_dir / "bin" / "python3").exists() and not (venv_dir / "bin" / "python").exists():
+    venv_python = venv_dir / "bin" / "python3"
+    if not venv_python.exists() and not (venv_dir / "bin" / "python").exists():
         sys.stdout.write(f"Creating virtual environment at {venv_dir}...\n")
         venv.create(venv_dir, with_pip=True)
 
-    venv_python = venv_dir / "bin" / "python3"
     if not venv_python.exists():
         venv_python = venv_dir / "bin" / "python"
     return venv_python
