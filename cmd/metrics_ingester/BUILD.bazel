@@ -23,7 +23,6 @@ go_library(
     importpath = "xmanager_cloud/cmd/metrics_ingester",
     deps = [
         "//cmd/metrics_ingester/metricsingester",
-        "//internal/compat/google",
         "//internal/logging",
         "//pkg/clickhouse",
         "@com_google_cloud_go_pubsub//:pubsub",

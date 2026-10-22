@@ -26,19 +26,17 @@ import (
 	"syscall"
 
 	"cloud.google.com/go/pubsub"
-	google "go/google"
 	"xmanager_cloud/cmd/metrics_ingester/metricsingester"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/clickhouse"
 )
 
 func main() {
-	google.Init()
 	cfg := &metricsingester.Config{}
 	flag.StringVar(&cfg.ProjectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP project ID that owns the subscription.")
 	flag.StringVar(&cfg.SubscriptionID, "subscription_id", os.Getenv("PUBSUB_SUBSCRIPTION_ID"), "Pub/Sub subscription ID on the metrics topic.")
 	flag.IntVar(&cfg.BatchSize, "batch_size", metricsingester.DefaultBatchSize, "Maximum number of messages per ClickHouse insert.")
-	flag.DurationVar(&cfg.BatchInterval, "batch_interval", metricsingester.DefaultBatchInterval, "Maximum time a received message waits before its batch is inserted.")
+	flag.DurationVar(&cfg.BatchInterval, "batch_interval", metricsingester.DefaultBatchInterval, "Target time a received message waits before its batch is inserted; longer if a previous insert is still running.")
 	flag.Parse()
 
 	if cfg.ProjectID == "" || cfg.SubscriptionID == "" {
