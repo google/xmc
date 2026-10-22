@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+// Package ownership enforces component source ownership, cluster fencing, intent change planning,
+// and ownership metrics for the XMC Component Store.
+package ownership
 
 import (
 	"fmt"
@@ -23,6 +25,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/validation"
+
+	"xmanager_cloud/pkg/components/store"
 )
 
 // maxSourceUIDLength is the width of the SourceUid column of Components.
@@ -33,7 +37,7 @@ const maxSourceUIDLength = 64
 // DNS-1123 label, whose cluster UID is not a canonical UUID (validateClusterUID), or with a
 // non-positive generation or epoch. The cluster name is optional, but the caller controls it and
 // it is echoed in rejection messages, so a set name is bounded like ValidateClusterIdentity's.
-func ValidateRequestSource(src RequestSource) error {
+func ValidateRequestSource(src store.RequestSource) error {
 	switch {
 	case !fitsColumn(src.UID, maxSourceUIDLength):
 		return status.Errorf(codes.InvalidArgument, "request source uid must have 1 to %d bytes", maxSourceUIDLength)
@@ -82,10 +86,10 @@ func fitsColumn(s string, maxLen int) bool {
 // intent from src, an older generation of the owner object. Only SetComponentIntent orders
 // requests by generation (R3): every other sourced RPC from the owner object is always allowed, so
 // that informer lag never blocks an observation, a deactivation or a deletion.
-func StaleGenerationError(canonicalName string, owner *SourceOwner, src RequestSource) error {
-	metadata := ownerMetadata(OperationSetComponentIntent, owner)
-	metadata[MetadataKeyOwnerGeneration] = strconv.FormatInt(owner.Generation, 10)
-	return ErrorWithInfo(codes.FailedPrecondition, ReasonStaleGeneration, metadata, fmt.Sprintf(
+func StaleGenerationError(canonicalName string, owner *store.SourceOwner, src store.RequestSource) error {
+	metadata := ownerMetadata(store.OperationSetComponentIntent, owner)
+	metadata[store.MetadataKeyOwnerGeneration] = strconv.FormatInt(owner.Generation, 10)
+	return store.ErrorWithInfo(codes.FailedPrecondition, store.ReasonStaleGeneration, metadata, fmt.Sprintf(
 		"component %q is owned by generation %d of source %q, newer than the generation %d of the changed request",
 		canonicalName, owner.Generation, owner.UID, src.Generation))
 }
@@ -94,11 +98,11 @@ func StaleGenerationError(canonicalName string, owner *SourceOwner, src RequestS
 // no active record. A CAS guard (ExpectedOwnerUID) names an owner that no longer exists, so the
 // request is rejected with SOURCE_INCARNATION_MISMATCH, with empty owner metadata, instead of
 // silently creating a record.
-func CheckSourceCreation(operation, canonicalName string, src RequestSource) error {
+func CheckSourceCreation(operation, canonicalName string, src store.RequestSource) error {
 	if src.ExpectedOwnerUID == "" {
 		return nil
 	}
-	return ErrorWithInfo(codes.FailedPrecondition, ReasonSourceIncarnationMismatch, ownerMetadata(operation, &SourceOwner{}), fmt.Sprintf(
+	return store.ErrorWithInfo(codes.FailedPrecondition, store.ReasonSourceIncarnationMismatch, ownerMetadata(operation, &store.SourceOwner{}), fmt.Sprintf(
 		"component %q has no active record, so source %q cannot take it over from expected owner %q",
 		canonicalName, src.UID, src.ExpectedOwnerUID))
 }
@@ -117,12 +121,12 @@ func CheckSourceCreation(operation, canonicalName string, src RequestSource) err
 //   - R6: any other incarnation is rejected: SOURCE_INCARNATION_MISMATCH.
 //
 // R1 (no active record) is CheckSourceCreation.
-func CheckSourceOwnership(operation, canonicalName string, owner *SourceOwner, src RequestSource) error {
+func CheckSourceOwnership(operation, canonicalName string, owner *store.SourceOwner, src store.RequestSource) error {
 	switch {
 	case owner == nil:
 		return nil
 	case owner.Namespace != src.Namespace:
-		return ErrorWithInfo(codes.FailedPrecondition, ReasonSourceNamespaceConflict, ownerMetadata(operation, owner), fmt.Sprintf(
+		return store.ErrorWithInfo(codes.FailedPrecondition, store.ReasonSourceNamespaceConflict, ownerMetadata(operation, owner), fmt.Sprintf(
 			"component %q is owned by source %q in namespace %q; the request comes from namespace %q",
 			canonicalName, owner.UID, owner.Namespace, src.Namespace))
 	case owner.UID == "" && owner.ClusterUID == src.ClusterUID, owner.UID == src.UID:
@@ -130,25 +134,25 @@ func CheckSourceOwnership(operation, canonicalName string, owner *SourceOwner, s
 	case owner.UID == src.ExpectedOwnerUID && owner.ClusterUID == src.ClusterUID:
 		return nil
 	}
-	return ErrorWithInfo(codes.FailedPrecondition, ReasonSourceIncarnationMismatch, ownerMetadata(operation, owner), fmt.Sprintf(
+	return store.ErrorWithInfo(codes.FailedPrecondition, store.ReasonSourceIncarnationMismatch, ownerMetadata(operation, owner), fmt.Sprintf(
 		"component %q is owned by source %q in cluster %q; source %q must name it in expected_owner_uid, from the same cluster, to take it over",
 		canonicalName, owner.UID, owner.ClusterUID, src.UID))
 }
 
 // ownerMetadata returns the ErrorInfo metadata of an ownership rejection of operation, naming the
 // recorded owner.
-func ownerMetadata(operation string, owner *SourceOwner) map[string]string {
+func ownerMetadata(operation string, owner *store.SourceOwner) map[string]string {
 	return map[string]string{
-		MetadataKeyOperation:       operation,
-		MetadataKeyOwnerNamespace:  owner.Namespace,
-		MetadataKeyOwnerUID:        owner.UID,
-		MetadataKeyOwnerClusterUID: owner.ClusterUID,
+		store.MetadataKeyOperation:       operation,
+		store.MetadataKeyOwnerNamespace:  owner.Namespace,
+		store.MetadataKeyOwnerUID:        owner.UID,
+		store.MetadataKeyOwnerClusterUID: owner.ClusterUID,
 	}
 }
 
 // OptionalRequestSource validates and returns the single source in srcs, or nil when srcs is empty.
 // More than one source is rejected rather than silently dropped.
-func OptionalRequestSource(srcs []RequestSource) (*RequestSource, error) {
+func OptionalRequestSource(srcs []store.RequestSource) (*store.RequestSource, error) {
 	if len(srcs) == 0 {
 		return nil, nil
 	}
@@ -163,8 +167,8 @@ func OptionalRequestSource(srcs []RequestSource) (*RequestSource, error) {
 }
 
 // ValidateSourcedResourceArgs validates a component resource name and optional request source.
-func ValidateSourcedResourceArgs(name string, srcs []RequestSource) (string, *RequestSource, error) {
-	canonicalName, err := ValidateResourceName(name)
+func ValidateSourcedResourceArgs(name string, srcs []store.RequestSource) (string, *store.RequestSource, error) {
+	canonicalName, err := store.ValidateResourceName(name)
 	if err != nil {
 		return "", nil, err
 	}
@@ -173,7 +177,7 @@ func ValidateSourcedResourceArgs(name string, srcs []RequestSource) (string, *Re
 }
 
 // ValidateUpdateObservedArgs validates arguments for UpdateObservedGeneration.
-func ValidateUpdateObservedArgs(name string, observedGen int64, srcs []RequestSource) (string, *RequestSource, error) {
+func ValidateUpdateObservedArgs(name string, observedGen int64, srcs []store.RequestSource) (string, *store.RequestSource, error) {
 	canonicalName, reqSrc, err := ValidateSourcedResourceArgs(name, srcs)
 	if err != nil {
 		return "", nil, err
@@ -188,7 +192,7 @@ func ValidateUpdateObservedArgs(name string, observedGen int64, srcs []RequestSo
 // in operation. A nil src bypasses ownership checks; otherwise src must pass CheckSourceOwnership.
 // The owner object itself is always allowed at any generation: only SetComponentIntent returns
 // STALE_GENERATION (R3), so informer lag never blocks an observation, deactivation or deletion.
-func CheckSourceMutation(operation, canonicalName string, owner *SourceOwner, src *RequestSource) error {
+func CheckSourceMutation(operation, canonicalName string, owner *store.SourceOwner, src *store.RequestSource) error {
 	if src == nil {
 		return nil
 	}
@@ -201,11 +205,11 @@ func CheckSourceMutation(operation, canonicalName string, owner *SourceOwner, sr
 // CR generation) is preserved so an observation or deactivation call never advances
 // SourceGeneration past a gated SetComponentIntent. An adoption (R2 or R5) records Generation 0,
 // so the adopter's next intent is never rejected as STALE_GENERATION.
-func NonIntentOwner(existing *SourceOwner, src *RequestSource) *SourceOwner {
+func NonIntentOwner(existing *store.SourceOwner, src *store.RequestSource) *store.SourceOwner {
 	if src == nil {
 		return existing
 	}
-	next := OwnerOf(*src)
+	next := store.OwnerOf(*src)
 	next.Generation = 0
 	if existing != nil && existing.UID == src.UID {
 		next.Generation = existing.Generation
@@ -217,8 +221,8 @@ func NonIntentOwner(existing *SourceOwner, src *RequestSource) *SourceOwner {
 // owned by existing. It records src, except that the owner object itself (same UID) never lowers
 // the recorded SourceGeneration: a deletion sent from an informer snapshot older than the last
 // committed intent keeps the larger generation, as in both stores.
-func DeletionOwner(existing *SourceOwner, src RequestSource) *SourceOwner {
-	next := OwnerOf(src)
+func DeletionOwner(existing *store.SourceOwner, src store.RequestSource) *store.SourceOwner {
+	next := store.OwnerOf(src)
 	if existing != nil && existing.UID == src.UID {
 		next.Generation = max(next.Generation, existing.Generation)
 	}

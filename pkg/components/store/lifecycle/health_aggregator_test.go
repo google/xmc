@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package lifecycle
 
 import (
 	"encoding/base64"
@@ -24,13 +24,14 @@ import (
 	"google.golang.org/grpc/status"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/store"
 )
 
-func createTestComponentsMap() map[string]*ComponentRecord {
+func createTestComponentsMap() map[string]*store.ComponentRecord {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	delTime := now.Add(1 * time.Hour)
 
-	return map[string]*ComponentRecord{
+	return map[string]*store.ComponentRecord{
 		"comp-healthy-1": {
 			Name:  "comp-healthy-1",
 			State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
@@ -271,10 +272,10 @@ func TestAggregatePlatformHealth_FilteringAndCounts(t *testing.T) {
 }
 
 func TestAggregatePlatformHealth_Pagination(t *testing.T) {
-	components := make(map[string]*ComponentRecord)
+	components := make(map[string]*store.ComponentRecord)
 	for i := 0; i < 25; i++ {
 		name := fmt.Sprintf("comp-%02d", i)
-		components[name] = &ComponentRecord{
+		components[name] = &store.ComponentRecord{
 			Name:  name,
 			State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 			Spec: &componentspb.ComponentSpec{
@@ -483,12 +484,12 @@ func TestHealthAggregator_InternalHelpers(t *testing.T) {
 		t.Error("isHealthyComponent(nil) = true, want false")
 	}
 
-	recNilSpec := &ComponentRecord{Name: "nil-spec", Spec: nil}
+	recNilSpec := &store.ComponentRecord{Name: "nil-spec", Spec: nil}
 	if matchesTypePredicate(recNilSpec, "CUSTOM_1P_COMPONENT") {
 		t.Error("matchesTypePredicate with nil Spec = true, want false")
 	}
 
-	rec := &ComponentRecord{Name: "dummy"}
+	rec := &store.ComponentRecord{Name: "dummy"}
 	if matchesPredicate(rec, filterPredicate{key: "unknown", value: "val"}) {
 		t.Error("matchesPredicate with unknown key = true, want false")
 	}

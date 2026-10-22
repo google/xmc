@@ -12,22 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package dependency
 
 import (
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/store"
 )
 
 func TestBuildDependencyGraph(t *testing.T) {
 	now := time.Now().UTC()
-	records := []*ComponentRecord{
+	records := []*store.ComponentRecord{
 		{
 			Name:         "components/comp-a",
 			Dependencies: []string{"comp-b", "comp-c"},
@@ -66,7 +69,7 @@ func TestBuildDependencyGraph(t *testing.T) {
 
 func TestBuildDependencyGraphFromMap(t *testing.T) {
 	now := time.Now().UTC()
-	recordMap := map[string]*ComponentRecord{
+	recordMap := map[string]*store.ComponentRecord{
 		"comp-a": {
 			Name:         "components/comp-a",
 			Dependencies: []string{"comp-b", "comp-c"},
@@ -105,7 +108,7 @@ func TestBuildDependencyGraphFromMap(t *testing.T) {
 }
 
 func TestBuildDependentsGraph(t *testing.T) {
-	records := []*ComponentRecord{
+	records := []*store.ComponentRecord{
 		{
 			Name:         "comp-a",
 			Dependencies: []string{"comp-b", "comp-c"},
@@ -146,7 +149,7 @@ func TestDetectCycles_DelegatesToGraphPackage(t *testing.T) {
 }
 
 func TestValidateProspectiveDependencies(t *testing.T) {
-	existing := []*ComponentRecord{
+	existing := []*store.ComponentRecord{
 		{
 			Name:         "comp-a",
 			Dependencies: []string{"comp-b"},
@@ -191,7 +194,7 @@ func TestValidateProspectiveDependencies(t *testing.T) {
 }
 
 func TestValidateProspectiveDependenciesFromMap(t *testing.T) {
-	existingMap := map[string]*ComponentRecord{
+	existingMap := map[string]*store.ComponentRecord{
 		"comp-a": {
 			Name:         "comp-a",
 			Dependencies: []string{"comp-b"},
@@ -236,7 +239,7 @@ func TestValidateProspectiveDependenciesFromMap(t *testing.T) {
 }
 
 func TestFindTransitiveDependents_CanonicalizesRoot(t *testing.T) {
-	records := []*ComponentRecord{
+	records := []*store.ComponentRecord{
 		{
 			Name:         "components/comp-a",
 			Dependencies: []string{"comp-b"},
@@ -257,5 +260,38 @@ func TestFindTransitiveDependents_CanonicalizesRoot(t *testing.T) {
 	want := []string{"comp-a", "comp-b"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("FindTransitiveDependents(components/comp-c) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestDependencyCycleErrorInfo(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantMsg  string
+		wantInfo *errdetails.ErrorInfo
+	}{
+		{
+			name:     "self dependency cycle",
+			err:      dependencyCycleError("a", []string{"a", "a"}),
+			wantMsg:  "dependency cycle detected: a -> a",
+			wantInfo: &errdetails.ErrorInfo{Reason: store.ReasonDependencyCycle, Domain: store.ErrorInfoDomain, Metadata: map[string]string{"operation": "SetComponentIntent", "component": "a", "cycle": "a"}},
+		},
+		{
+			name:     "transitive dependency cycle",
+			err:      dependencyCycleError("b", []string{"a", "b", "c", "a"}),
+			wantMsg:  "dependency cycle detected: a -> b -> c -> a",
+			wantInfo: &errdetails.ErrorInfo{Reason: store.ReasonDependencyCycle, Domain: store.ErrorInfoDomain, Metadata: map[string]string{"operation": "SetComponentIntent", "component": "b", "cycle": "a,b,c"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := status.Convert(tt.err)
+			if st.Code() != codes.FailedPrecondition || st.Message() != tt.wantMsg {
+				t.Errorf("status = %v %q, want %v %q", st.Code(), st.Message(), codes.FailedPrecondition, tt.wantMsg)
+			}
+			if diff := cmp.Diff([]any{tt.wantInfo}, st.Details(), protocmp.Transform()); diff != "" {
+				t.Errorf("details mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

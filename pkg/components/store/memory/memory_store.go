@@ -30,6 +30,9 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/dependency"
+	"xmanager_cloud/pkg/components/store/lifecycle"
+	"xmanager_cloud/pkg/components/store/ownership"
 )
 
 // Ensure MemoryStore implements Store interface at compile time.
@@ -64,7 +67,7 @@ func (m *MemoryStore) SetComponentIntent(ctx context.Context, name string, spec 
 
 // SetSourcedComponentIntent applies an intent sent by src within the in-memory store.
 func (m *MemoryStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src store.RequestSource) (*store.ComponentRecord, error) {
-	if err := store.ValidateRequestSource(src); err != nil {
+	if err := ownership.ValidateRequestSource(src); err != nil {
 		return nil, err
 	}
 	return m.setIntent(name, spec, labels, 0, &src)
@@ -77,26 +80,26 @@ func (m *MemoryStore) setIntent(name string, spec *componentspb.ComponentSpec, l
 		return nil, err
 	}
 
-	deps := store.ExtractDependencies(spec, labels)
+	deps := dependency.ExtractDependencies(spec, labels)
 	now := time.Now().UTC()
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if err := store.CheckClusterFence(store.OperationSetComponentIntent, m.fence, src); err != nil {
-		return nil, store.RecordSourceConflictError(err)
+	if err := ownership.CheckClusterFence(store.OperationSetComponentIntent, m.fence, src); err != nil {
+		return nil, ownership.RecordSourceConflictError(err)
 	}
-	rec, plan, err := store.PlanLiveIntent(m.componentsByName, canonicalName, spec, labels, deps, desiredGen, src)
+	rec, plan, err := ownership.PlanLiveIntent(m.componentsByName, canonicalName, spec, labels, deps, desiredGen, src)
 	if err != nil {
-		return nil, store.RecordSourceConflictError(err)
+		return nil, ownership.RecordSourceConflictError(err)
 	}
-	if _, err := store.ValidateIntentDependencies(m.componentsByName, canonicalName, deps); err != nil {
+	if _, err := dependency.ValidateIntentDependencies(m.componentsByName, canonicalName, deps); err != nil {
 		return nil, err
 	}
 	if rec != nil {
 		m.applyIntentPlanLocked(rec, plan, spec, labels, deps, src, now)
-		if plan.Write != store.WriteNothing {
-			store.RecordOwnerAdoption(plan.PrevOwner, src, false)
+		if plan.Write != ownership.WriteNothing {
+			ownership.RecordOwnerAdoption(plan.PrevOwner, src, false)
 		}
 		return store.CloneRecord(rec), nil
 	}
@@ -110,21 +113,21 @@ func (m *MemoryStore) setIntent(name string, spec *componentspb.ComponentSpec, l
 	m.componentsByName[canonicalName] = rec
 	m.componentsByID[rec.ComponentID] = rec
 	m.recordSnapshotLocked(rec)
-	store.RecordOwnerAdoption(nil, src, true)
+	ownership.RecordOwnerAdoption(nil, src, true)
 
 	return store.CloneRecord(rec), nil
 }
 
 // applyIntentPlanLocked applies plan to the existing record rec. A nil src keeps rec.Owner.
-func (m *MemoryStore) applyIntentPlanLocked(rec *store.ComponentRecord, plan store.IntentPlan, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, src *store.RequestSource, now time.Time) {
-	if plan.Write == store.WriteNothing {
+func (m *MemoryStore) applyIntentPlanLocked(rec *store.ComponentRecord, plan ownership.IntentPlan, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, src *store.RequestSource, now time.Time) {
+	if plan.Write == ownership.WriteNothing {
 		return
 	}
 	if src != nil {
 		rec.Owner = store.OwnerOf(*src)
 		rec.SourceLastSeenTime = now
 	}
-	if plan.Write == store.WriteSpec {
+	if plan.Write == ownership.WriteSpec {
 		updateExistingIntent(rec, spec, labels, deps, plan.Generation, now)
 		m.recordSnapshotLocked(rec)
 	}
@@ -132,21 +135,21 @@ func (m *MemoryStore) applyIntentPlanLocked(rec *store.ComponentRecord, plan sto
 
 // DeclareClusterEpoch declares cluster the writer of sourced intents within the in-memory store.
 func (m *MemoryStore) DeclareClusterEpoch(ctx context.Context, cluster store.ClusterIdentity) (*store.DeclarationResult, error) {
-	if err := store.ValidateClusterIdentity(cluster); err != nil {
+	if err := ownership.ValidateClusterIdentity(cluster); err != nil {
 		return nil, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	outcome, err := store.PlanDeclaration(m.fence, cluster)
+	outcome, err := ownership.PlanDeclaration(m.fence, cluster)
 	if err != nil {
-		return nil, store.RecordSourceConflictError(err)
+		return nil, ownership.RecordSourceConflictError(err)
 	}
 	res := &store.DeclarationResult{Outcome: outcome, Active: cluster}
 	now := time.Now().UTC()
 	if outcome == store.DeclarationTakeover {
 		for _, rec := range m.componentsByName {
 			if !store.IsDeletedRecord(rec) && rec.Owner != nil {
-				rec.Owner = store.TakenOverOwner(rec.Owner, cluster)
+				rec.Owner = ownership.TakenOverOwner(rec.Owner, cluster)
 				// Starts the adoption grace period of the owner_stale gauge, as in Spanner.
 				rec.SourceLastSeenTime = now
 				res.RecordsReassigned++
@@ -162,7 +165,7 @@ func (m *MemoryStore) DeclareClusterEpoch(ctx context.Context, cluster store.Clu
 func (m *MemoryStore) ReadOwnershipGauges(ctx context.Context, now time.Time) (store.OwnershipGauges, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	g := store.OwnershipGauges{StaleOwners: store.CountStaleOwnedComponents(m.componentsByName, now)}
+	g := store.OwnershipGauges{StaleOwners: ownership.CountStaleOwnedComponents(m.componentsByName, now)}
 	if m.fence != nil {
 		g.FenceDeclared, g.FenceEpoch, g.FenceLastSeenTime = true, m.fence.Epoch, m.fenceLastSeen
 	}
@@ -258,7 +261,7 @@ func (m *MemoryStore) ListComponents(ctx context.Context) ([]*store.ComponentRec
 
 // UpdateObservedGeneration synchronizes actual component access, generation, and state.
 func (m *MemoryStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src ...store.RequestSource) (*store.ComponentRecord, error) {
-	canonicalName, reqSrc, err := store.ValidateUpdateObservedArgs(name, observedGen, src)
+	canonicalName, reqSrc, err := ownership.ValidateUpdateObservedArgs(name, observedGen, src)
 	if err != nil {
 		return nil, err
 	}
@@ -290,30 +293,30 @@ func recordOwnerInMemory(rec *store.ComponentRecord, src *store.RequestSource, n
 		return
 	}
 	prev := store.CloneSourceOwner(rec.Owner)
-	rec.Owner = store.NonIntentOwner(rec.Owner, src)
+	rec.Owner = ownership.NonIntentOwner(rec.Owner, src)
 	rec.SourceLastSeenTime = now
-	store.RecordOwnerAdoption(prev, src, false)
+	ownership.RecordOwnerAdoption(prev, src, false)
 }
 
 // lookupMutableRecordLocked checks the cluster fence, finds the active record canonicalName, and
 // checks source ownership for operation.
 func (m *MemoryStore) lookupMutableRecordLocked(operation, canonicalName string, src *store.RequestSource) (*store.ComponentRecord, error) {
-	if err := store.CheckClusterFence(operation, m.fence, src); err != nil {
-		return nil, store.RecordSourceConflictError(err)
+	if err := ownership.CheckClusterFence(operation, m.fence, src); err != nil {
+		return nil, ownership.RecordSourceConflictError(err)
 	}
 	rec, exists := m.componentsByName[canonicalName]
 	if !exists || rec == nil || store.IsDeletedRecord(rec) {
 		return nil, store.ErrComponentNotFound
 	}
-	if err := store.CheckSourceMutation(operation, canonicalName, rec.Owner, src); err != nil {
-		return nil, store.RecordSourceConflictError(err)
+	if err := ownership.CheckSourceMutation(operation, canonicalName, rec.Owner, src); err != nil {
+		return nil, ownership.RecordSourceConflictError(err)
 	}
 	return rec, nil
 }
 
 // PrepareDeactivation checks deactivation safety, transitions the target and any cascaded dependents to DISABLING.
 func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src ...store.RequestSource) (*store.PrepareDeactivationResult, error) {
-	canonicalName, reqSrc, err := store.ValidateSourcedResourceArgs(name, src)
+	canonicalName, reqSrc, err := ownership.ValidateSourcedResourceArgs(name, src)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +329,7 @@ func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requ
 		return nil, err
 	}
 
-	result, err := store.EvaluateDeactivationSafety(m.componentsByName, canonicalName, requestCascade, store.MinDrainTimeout)
+	result, err := lifecycle.EvaluateDeactivationSafety(m.componentsByName, canonicalName, requestCascade, lifecycle.MinDrainTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +350,7 @@ func (m *MemoryStore) PrepareDeactivation(ctx context.Context, name string, requ
 
 // CompleteDeactivation marks a component in DISABLING state as DISABLED.
 func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, force bool, src ...store.RequestSource) error {
-	canonicalName, reqSrc, err := store.ValidateSourcedResourceArgs(name, src)
+	canonicalName, reqSrc, err := ownership.ValidateSourcedResourceArgs(name, src)
 	if err != nil {
 		return err
 	}
@@ -370,7 +373,7 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, for
 	}
 
 	if !force {
-		activeDependents, _ := store.FindActiveDependents(m.componentsByName, canonicalName)
+		activeDependents, _ := lifecycle.FindActiveDependents(m.componentsByName, canonicalName)
 		if len(activeDependents) > 0 {
 			return status.Errorf(codes.FailedPrecondition, "cannot complete deactivation of component %s: active dependents remaining: %v", canonicalName, activeDependents)
 		}
@@ -389,7 +392,7 @@ func (m *MemoryStore) CompleteDeactivation(ctx context.Context, name string, for
 
 // ExecuteDeletion deletes a component using the specified deletion policy.
 func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...store.RequestSource) error {
-	canonicalName, reqSrc, err := store.ValidateSourcedResourceArgs(name, src)
+	canonicalName, reqSrc, err := ownership.ValidateSourcedResourceArgs(name, src)
 	if err != nil {
 		return err
 	}
@@ -402,7 +405,7 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 		return err
 	}
 
-	if err := store.ValidateDeletionSafety(m.componentsByName, canonicalName, policy, force); err != nil {
+	if err := lifecycle.ValidateDeletionSafety(m.componentsByName, canonicalName, policy, force); err != nil {
 		return err
 	}
 	now := time.Now().UTC()
@@ -410,9 +413,9 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 		// Like recordOwnerInMemory, but with DeletionOwner: the deleting owner object keeps the
 		// larger SourceGeneration, matching SpannerStore.
 		prev := store.CloneSourceOwner(rec.Owner)
-		rec.Owner = store.DeletionOwner(rec.Owner, *reqSrc)
+		rec.Owner = ownership.DeletionOwner(rec.Owner, *reqSrc)
 		rec.SourceLastSeenTime = now
-		store.RecordOwnerAdoption(prev, reqSrc, false)
+		ownership.RecordOwnerAdoption(prev, reqSrc, false)
 	}
 	transitionToDeleted(rec, now)
 	if policy != componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED && rec.Spec != nil {
@@ -423,7 +426,7 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 	// Per api/protos/components/v1alpha1/components.proto (line 44), DELETION_POLICY_UNSPECIFIED
 	// defaults to DELETION_POLICY_DELETE (cascading resource deletion across dependents).
 	if policy == componentspb.DeletionPolicy_DELETION_POLICY_DELETE || policy == componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED {
-		allDependents, _ := store.FindAllDependents(m.componentsByName, canonicalName)
+		allDependents, _ := lifecycle.FindAllDependents(m.componentsByName, canonicalName)
 		for _, depName := range allDependents {
 			if depRec, ok := m.componentsByName[depName]; ok && depRec != nil && !store.IsDeletedRecord(depRec) {
 				transitionToDeleted(depRec, now)
@@ -484,21 +487,21 @@ func transitionToDeleted(rec *store.ComponentRecord, now time.Time) {
 func (m *MemoryStore) ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return store.ResolveComponentSnapshotFromMap(m.componentsByName, m.snapshots, name, generation)
+	return lifecycle.ResolveComponentSnapshotFromMap(m.componentsByName, m.snapshots, name, generation)
 }
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
 func (m *MemoryStore) ValidateComponentRequirement(ctx context.Context, name string, reqType componentspb.ComponentType, minVersion string) (*store.RequirementValidationResult, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return store.ValidateComponentRequirementFromMap(m.componentsByName, name, reqType, minVersion)
+	return lifecycle.ValidateComponentRequirementFromMap(m.componentsByName, name, reqType, minVersion)
 }
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
 func (m *MemoryStore) GetPlatformHealth(ctx context.Context, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return store.AggregatePlatformHealth(m.componentsByName, filter, pageSize, pageToken)
+	return lifecycle.AggregatePlatformHealth(m.componentsByName, filter, pageSize, pageToken)
 }
 
 func (m *MemoryStore) recordSnapshotLocked(rec *store.ComponentRecord) {

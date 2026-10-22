@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package ownership
 
 import (
 	"maps"
@@ -21,6 +21,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/store"
 )
 
 // IsUnchangedIntent reports whether applying an intent to the existing record rec would change
@@ -32,7 +33,7 @@ import (
 // A stale desired generation with an equal spec is a no-op, so records whose generation was bumped
 // by earlier non-idempotent writes stop growing once callers pass their own generation. A changed
 // intent is not an unchanged one and is bumped to max(desiredGen, rec.Generation+1) by the stores.
-func IsUnchangedIntent(rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) bool {
+func IsUnchangedIntent(rec *store.ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) bool {
 	// TODO(b/548436300): reject a changed spec with 0 < desiredGen < rec.Generation (stale writer) once legacy-inflated generations are remediated.
 	if desiredGen > rec.Generation {
 		return false
@@ -62,14 +63,14 @@ const (
 // IntentPlan is the outcome of applying an intent: what is written and the resulting generation.
 type IntentPlan struct {
 	Write      IntentWrite
-	Generation int64        // Generation of the record after the write.
-	PrevOwner  *SourceOwner // Recorded owner before the intent was planned.
-	Created    bool         // True when the intent creates a new active record.
+	Generation int64              // Generation of the record after the write.
+	PrevOwner  *store.SourceOwner // Recorded owner before the intent was planned.
+	Created    bool               // True when the intent creates a new active record.
 }
 
 // PlanIntent decides how an intent applies to the existing active record rec: by src for a sourced
 // intent (SetSourcedComponentIntent) and by desiredGen otherwise (SetComponentIntent).
-func PlanIntent(canonicalName string, rec *ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *RequestSource) (IntentPlan, error) {
+func PlanIntent(canonicalName string, rec *store.ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *store.RequestSource) (IntentPlan, error) {
 	if src != nil {
 		return PlanSourcedIntent(canonicalName, rec, !IsUnchangedIntent(rec, spec, labels, deps, 0), *src)
 	}
@@ -83,8 +84,8 @@ func PlanIntent(canonicalName string, rec *ComponentRecord, spec *componentspb.C
 // intent from the owner object (same UID) at an older generation is stale when changed and a no-op
 // otherwise. Any other intent, including an adoption, is current: a changed one bumps the
 // generation by 1, and an unchanged one records src as owner.
-func PlanSourcedIntent(canonicalName string, rec *ComponentRecord, changed bool, src RequestSource) (IntentPlan, error) {
-	if err := CheckSourceOwnership(OperationSetComponentIntent, canonicalName, rec.Owner, src); err != nil {
+func PlanSourcedIntent(canonicalName string, rec *store.ComponentRecord, changed bool, src store.RequestSource) (IntentPlan, error) {
+	if err := CheckSourceOwnership(store.OperationSetComponentIntent, canonicalName, rec.Owner, src); err != nil {
 		return IntentPlan{}, err
 	}
 	plan := IntentPlan{Write: WriteNothing, Generation: rec.Generation}
@@ -105,7 +106,7 @@ func PlanSourcedIntent(canonicalName string, rec *ComponentRecord, changed bool,
 
 // NewIntentGeneration returns the generation of a newly created component: 1 for a sourced intent,
 // else max(desiredGen, 1).
-func NewIntentGeneration(desiredGen int64, src *RequestSource) int64 {
+func NewIntentGeneration(desiredGen int64, src *store.RequestSource) int64 {
 	if src != nil {
 		return 1
 	}
@@ -116,18 +117,18 @@ func NewIntentGeneration(desiredGen int64, src *RequestSource) int64 {
 // and the plan for applying the intent to it; a missing or soft-deleted record is planned as a
 // create unless CheckSourceCreation rejects src. Both stores call it before validating
 // dependencies so source rejections take precedence.
-func PlanLiveIntent(catalog map[string]*ComponentRecord, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *RequestSource) (*ComponentRecord, IntentPlan, error) {
+func PlanLiveIntent(catalog map[string]*store.ComponentRecord, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *store.RequestSource) (*store.ComponentRecord, IntentPlan, error) {
 	rec := catalog[canonicalName]
-	if IsDeletedRecord(rec) {
+	if store.IsDeletedRecord(rec) {
 		if src != nil {
-			if err := CheckSourceCreation(OperationSetComponentIntent, canonicalName, *src); err != nil {
+			if err := CheckSourceCreation(store.OperationSetComponentIntent, canonicalName, *src); err != nil {
 				return nil, IntentPlan{}, err
 			}
 		}
 		return nil, IntentPlan{Write: WriteSpec, Generation: NewIntentGeneration(desiredGen, src), Created: true}, nil
 	}
 	plan, err := PlanIntent(canonicalName, rec, spec, labels, deps, desiredGen, src)
-	plan.PrevOwner = CloneSourceOwner(rec.Owner)
+	plan.PrevOwner = store.CloneSourceOwner(rec.Owner)
 	return rec, plan, err
 }
 

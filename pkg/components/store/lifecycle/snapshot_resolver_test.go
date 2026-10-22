@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package lifecycle
 
 import (
 	"testing"
@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/store"
 )
 
 func TestResolveComponentSnapshotFromMap(t *testing.T) {
@@ -33,7 +34,7 @@ func TestResolveComponentSnapshotFromMap(t *testing.T) {
 		Port:        8080,
 	}
 
-	compRecGen2 := &ComponentRecord{
+	compRecGen2 := &store.ComponentRecord{
 		ComponentID: 1,
 		Name:        "comp-a",
 		Generation:  2,
@@ -52,10 +53,10 @@ func TestResolveComponentSnapshotFromMap(t *testing.T) {
 		UpdateTime: now,
 	}
 
-	compRecGen1Snapshot := &SnapshotRecord{
+	compRecGen1Snapshot := &store.SnapshotRecord{
 		Name:       "comp-a",
 		Generation: 1,
-		Record: &ComponentRecord{
+		Record: &store.ComponentRecord{
 			ComponentID: 1,
 			Name:        "comp-a",
 			Generation:  1,
@@ -73,7 +74,7 @@ func TestResolveComponentSnapshotFromMap(t *testing.T) {
 		CreatedAt:   now,
 	}
 
-	components := map[string]*ComponentRecord{
+	components := map[string]*store.ComponentRecord{
 		"comp-a": compRecGen2,
 		"comp-del": {
 			Name:       "comp-del",
@@ -82,7 +83,7 @@ func TestResolveComponentSnapshotFromMap(t *testing.T) {
 		},
 	}
 
-	snapshots := map[string]map[int64]*SnapshotRecord{
+	snapshots := map[string]map[int64]*store.SnapshotRecord{
 		"comp-a": {
 			1: compRecGen1Snapshot,
 		},
@@ -185,7 +186,7 @@ func TestResolveComponentSnapshotFromMap(t *testing.T) {
 }
 
 func TestResolveComponentSnapshotFromMap_HistoricalMissing(t *testing.T) {
-	compRecGen3 := &ComponentRecord{
+	compRecGen3 := &store.ComponentRecord{
 		Name:       "comp-b",
 		Generation: 3,
 		State:      componentspb.ComponentState_COMPONENT_STATE_ENABLED,
@@ -194,10 +195,10 @@ func TestResolveComponentSnapshotFromMap_HistoricalMissing(t *testing.T) {
 			Generation: 3,
 		},
 	}
-	components := map[string]*ComponentRecord{
+	components := map[string]*store.ComponentRecord{
 		"comp-b": compRecGen3,
 	}
-	snapshots := map[string]map[int64]*SnapshotRecord{}
+	snapshots := map[string]map[int64]*store.SnapshotRecord{}
 
 	_, _, err := ResolveComponentSnapshotFromMap(components, snapshots, "comp-b", 1)
 	if status.Code(err) != codes.NotFound {
@@ -211,7 +212,7 @@ func TestResolveComponentSnapshotFromMap_Immutability(t *testing.T) {
 		ClusterName: "cluster-1",
 		ServiceName: "original-svc",
 	}
-	rec := &ComponentRecord{
+	rec := &store.ComponentRecord{
 		Name:       "comp-imm",
 		Generation: 1,
 		State:      componentspb.ComponentState_COMPONENT_STATE_ENABLED,
@@ -227,8 +228,8 @@ func TestResolveComponentSnapshotFromMap_Immutability(t *testing.T) {
 		UpdateTime: now,
 	}
 
-	components := map[string]*ComponentRecord{"comp-imm": rec}
-	snapshots := map[string]map[int64]*SnapshotRecord{}
+	components := map[string]*store.ComponentRecord{"comp-imm": rec}
+	snapshots := map[string]map[int64]*store.SnapshotRecord{}
 
 	snapRec, snapCoords, err := ResolveComponentSnapshotFromMap(components, snapshots, "comp-imm", 1)
 	if err != nil {
@@ -265,7 +266,7 @@ func TestResolveComponentSnapshotFromMap_Immutability(t *testing.T) {
 
 func TestValidateComponentRequirementFromMap(t *testing.T) {
 	now := time.Now().UTC()
-	components := map[string]*ComponentRecord{
+	components := map[string]*store.ComponentRecord{
 		"comp-valid": {
 			Name:  "comp-valid",
 			State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
@@ -442,7 +443,7 @@ func TestValidateComponentRequirementFromMap(t *testing.T) {
 }
 
 func TestValidateComponentRequirementFromMap_Immutability(t *testing.T) {
-	components := map[string]*ComponentRecord{
+	components := map[string]*store.ComponentRecord{
 		"comp-val-imm": {
 			Name:  "comp-val-imm",
 			State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
@@ -472,11 +473,11 @@ func TestValidateComponentRequirementFromMap_Immutability(t *testing.T) {
 }
 
 func TestSnapshotResolver_NilCoordinates(t *testing.T) {
-	if coords := CloneCoordinates(nil); coords != nil {
+	if coords := store.CloneCoordinates(nil); coords != nil {
 		t.Errorf("CloneCoordinates(nil) = %v, want nil", coords)
 	}
 
-	components := map[string]*ComponentRecord{
+	components := map[string]*store.ComponentRecord{
 		"comp-no-coords": {
 			Name:       "comp-no-coords",
 			Generation: 1,
@@ -487,7 +488,7 @@ func TestSnapshotResolver_NilCoordinates(t *testing.T) {
 			Status: nil,
 		},
 	}
-	snapshots := map[string]map[int64]*SnapshotRecord{}
+	snapshots := map[string]map[int64]*store.SnapshotRecord{}
 
 	rec, coords, err := ResolveComponentSnapshotFromMap(components, snapshots, "comp-no-coords", 1)
 	if err != nil {

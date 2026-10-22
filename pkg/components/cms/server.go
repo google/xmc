@@ -30,6 +30,8 @@ import (
 	"xmanager_cloud/pkg/components/naming"
 	"xmanager_cloud/pkg/components/semver"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/lifecycle"
+	"xmanager_cloud/pkg/components/store/ownership"
 )
 
 // ServerOption configures optional dependencies on a CMS Server.
@@ -203,7 +205,7 @@ func requestSourceFromProto(src *componentspb.RequestSource) (*store.RequestSour
 		ClusterUID: src.GetCluster().GetUid(), Epoch: src.GetCluster().GetEpoch(),
 		ClusterName: src.GetCluster().GetName(), ExpectedOwnerUID: src.GetExpectedOwnerUid(),
 	}
-	if err := store.ValidateRequestSource(storeSrc); err != nil {
+	if err := ownership.ValidateRequestSource(storeSrc); err != nil {
 		return nil, err
 	}
 	return &storeSrc, nil
@@ -449,7 +451,7 @@ func (s *Server) GetPlatformHealth(ctx context.Context, req *componentspb.GetPla
 	if err := s.checkStoreReady(); err != nil {
 		return nil, err
 	}
-	if _, err := store.NormalizePageSize(req.GetPageSize()); err != nil {
+	if _, err := lifecycle.NormalizePageSize(req.GetPageSize()); err != nil {
 		return nil, err
 	}
 

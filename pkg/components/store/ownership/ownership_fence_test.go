@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package ownership
 
 import (
 	"strings"
@@ -23,6 +23,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
+
+	"xmanager_cloud/pkg/components/store"
 )
 
 // UIDs of the kube-system Namespaces of two test clusters.
@@ -32,10 +34,10 @@ const (
 )
 
 // baseCluster is a valid cluster that test cases modify.
-var baseCluster = ClusterIdentity{UID: clusterAUID, Name: "prod", Epoch: 3}
+var baseCluster = store.ClusterIdentity{UID: clusterAUID, Name: "prod", Epoch: 3}
 
 // modifiedCluster returns a copy of baseCluster changed by modify.
-func modifiedCluster(modify func(*ClusterIdentity)) ClusterIdentity {
+func modifiedCluster(modify func(*store.ClusterIdentity)) store.ClusterIdentity {
 	c := baseCluster
 	modify(&c)
 	return c
@@ -44,18 +46,18 @@ func modifiedCluster(modify func(*ClusterIdentity)) ClusterIdentity {
 func TestValidateClusterIdentity(t *testing.T) {
 	tests := []struct {
 		name    string
-		c       ClusterIdentity
+		c       store.ClusterIdentity
 		wantErr bool
 	}{
 		{name: "valid cluster", c: baseCluster},
-		{name: "empty uid", c: modifiedCluster(func(c *ClusterIdentity) { c.UID = "" }), wantErr: true},
-		{name: "uid that is not a UUID", c: modifiedCluster(func(c *ClusterIdentity) { c.UID = "cluster-a" }), wantErr: true},
-		{name: "uppercase uid", c: modifiedCluster(func(c *ClusterIdentity) { c.UID = strings.ToUpper(clusterAUID) }), wantErr: true},
-		{name: "uid in braces", c: modifiedCluster(func(c *ClusterIdentity) { c.UID = "{" + clusterAUID + "}" }), wantErr: true},
-		{name: "empty name", c: modifiedCluster(func(c *ClusterIdentity) { c.Name = "" }), wantErr: true},
-		{name: "name that is not a DNS-1123 label", c: modifiedCluster(func(c *ClusterIdentity) { c.Name = "Prod_1" }), wantErr: true},
-		{name: "name longer than a label", c: modifiedCluster(func(c *ClusterIdentity) { c.Name = strings.Repeat("n", 64) }), wantErr: true},
-		{name: "zero epoch", c: modifiedCluster(func(c *ClusterIdentity) { c.Epoch = 0 }), wantErr: true},
+		{name: "empty uid", c: modifiedCluster(func(c *store.ClusterIdentity) { c.UID = "" }), wantErr: true},
+		{name: "uid that is not a UUID", c: modifiedCluster(func(c *store.ClusterIdentity) { c.UID = "cluster-a" }), wantErr: true},
+		{name: "uppercase uid", c: modifiedCluster(func(c *store.ClusterIdentity) { c.UID = strings.ToUpper(clusterAUID) }), wantErr: true},
+		{name: "uid in braces", c: modifiedCluster(func(c *store.ClusterIdentity) { c.UID = "{" + clusterAUID + "}" }), wantErr: true},
+		{name: "empty name", c: modifiedCluster(func(c *store.ClusterIdentity) { c.Name = "" }), wantErr: true},
+		{name: "name that is not a DNS-1123 label", c: modifiedCluster(func(c *store.ClusterIdentity) { c.Name = "Prod_1" }), wantErr: true},
+		{name: "name longer than a label", c: modifiedCluster(func(c *store.ClusterIdentity) { c.Name = strings.Repeat("n", 64) }), wantErr: true},
+		{name: "zero epoch", c: modifiedCluster(func(c *store.ClusterIdentity) { c.Epoch = 0 }), wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -69,19 +71,21 @@ func TestValidateClusterIdentity(t *testing.T) {
 
 func TestPlanDeclaration(t *testing.T) {
 	fence := &baseCluster
-	dr := func(epoch int64) ClusterIdentity { return ClusterIdentity{UID: clusterBUID, Name: "dr", Epoch: epoch} }
+	dr := func(epoch int64) store.ClusterIdentity {
+		return store.ClusterIdentity{UID: clusterBUID, Name: "dr", Epoch: epoch}
+	}
 	tests := []struct {
 		name       string
-		fence      *ClusterIdentity
-		c          ClusterIdentity
-		want       DeclarationOutcome
+		fence      *store.ClusterIdentity
+		c          store.ClusterIdentity
+		want       store.DeclarationOutcome
 		wantReason string
 	}{
-		{name: "first declaration creates the fence", c: baseCluster, want: DeclarationCreated},
-		{name: "active cluster at the same epoch refreshes", fence: fence, c: modifiedCluster(func(c *ClusterIdentity) { c.Name = "prod-renamed" }), want: DeclarationRefreshed},
-		{name: "active cluster at a higher epoch raises it", fence: fence, c: modifiedCluster(func(c *ClusterIdentity) { c.Epoch = 4 }), want: DeclarationRaised},
-		{name: "active cluster at a lower epoch regressed", fence: fence, c: modifiedCluster(func(c *ClusterIdentity) { c.Epoch = 2 }), wantReason: "CLUSTER_EPOCH_REGRESSED"},
-		{name: "another cluster at a higher epoch takes over", fence: fence, c: dr(4), want: DeclarationTakeover},
+		{name: "first declaration creates the fence", c: baseCluster, want: store.DeclarationCreated},
+		{name: "active cluster at the same epoch refreshes", fence: fence, c: modifiedCluster(func(c *store.ClusterIdentity) { c.Name = "prod-renamed" }), want: store.DeclarationRefreshed},
+		{name: "active cluster at a higher epoch raises it", fence: fence, c: modifiedCluster(func(c *store.ClusterIdentity) { c.Epoch = 4 }), want: store.DeclarationRaised},
+		{name: "active cluster at a lower epoch regressed", fence: fence, c: modifiedCluster(func(c *store.ClusterIdentity) { c.Epoch = 2 }), wantReason: "CLUSTER_EPOCH_REGRESSED"},
+		{name: "another cluster at a higher epoch takes over", fence: fence, c: dr(4), want: store.DeclarationTakeover},
 		{name: "another cluster at the same epoch is fenced", fence: fence, c: dr(3), wantReason: "CLUSTER_FENCED"},
 		{name: "another cluster at a lower epoch is fenced", fence: fence, c: dr(1), wantReason: "CLUSTER_FENCED"},
 	}
@@ -97,7 +101,7 @@ func TestPlanDeclaration(t *testing.T) {
 			st := status.Convert(err)
 			want := []any{&errdetails.ErrorInfo{
 				Reason:   tt.wantReason,
-				Domain:   ErrorInfoDomain,
+				Domain:   store.ErrorInfoDomain,
 				Metadata: map[string]string{"operation": "DeclareClusterEpoch", "active_cluster_uid": baseCluster.UID, "active_cluster_name": "prod", "active_epoch": "3"},
 			}}
 			if st.Code() != codes.FailedPrecondition {
@@ -111,9 +115,9 @@ func TestPlanDeclaration(t *testing.T) {
 }
 
 func TestTakenOverOwner(t *testing.T) {
-	owner := &SourceOwner{UID: "uid-a", Generation: 7, Namespace: "xmc", ClusterUID: clusterAUID, Epoch: 3}
-	want := &SourceOwner{Generation: 7, Namespace: "xmc", ClusterUID: clusterBUID, Epoch: 4}
-	if diff := cmp.Diff(want, TakenOverOwner(owner, ClusterIdentity{UID: clusterBUID, Name: "dr", Epoch: 4})); diff != "" {
+	owner := &store.SourceOwner{UID: "uid-a", Generation: 7, Namespace: "xmc", ClusterUID: clusterAUID, Epoch: 3}
+	want := &store.SourceOwner{Generation: 7, Namespace: "xmc", ClusterUID: clusterBUID, Epoch: 4}
+	if diff := cmp.Diff(want, TakenOverOwner(owner, store.ClusterIdentity{UID: clusterBUID, Name: "dr", Epoch: 4})); diff != "" {
 		t.Errorf("TakenOverOwner() mismatch (-want +got):\n%s", diff)
 	}
 	if got := TakenOverOwner(nil, baseCluster); got != nil {
@@ -123,14 +127,14 @@ func TestTakenOverOwner(t *testing.T) {
 
 func TestCheckClusterFence(t *testing.T) {
 	fence := &baseCluster
-	src := func(clusterUID, clusterName string, epoch int64) *RequestSource {
-		return &RequestSource{UID: "uid-a", Generation: 1, Namespace: "xmc", ClusterUID: clusterUID, ClusterName: clusterName, Epoch: epoch}
+	src := func(clusterUID, clusterName string, epoch int64) *store.RequestSource {
+		return &store.RequestSource{UID: "uid-a", Generation: 1, Namespace: "xmc", ClusterUID: clusterUID, ClusterName: clusterName, Epoch: epoch}
 	}
 	activeMeta := map[string]string{"operation": "SetComponentIntent", "active_cluster_uid": baseCluster.UID, "active_cluster_name": "prod", "active_epoch": "3"}
 	tests := []struct {
 		name          string
-		fence         *ClusterIdentity
-		src           *RequestSource
+		fence         *store.ClusterIdentity
+		src           *store.RequestSource
 		wantReason    string
 		wantMeta      map[string]string
 		wantInMessage string
@@ -154,7 +158,7 @@ func TestCheckClusterFence(t *testing.T) {
 				return
 			}
 			st := status.Convert(err)
-			want := []any{&errdetails.ErrorInfo{Reason: tt.wantReason, Domain: ErrorInfoDomain, Metadata: tt.wantMeta}}
+			want := []any{&errdetails.ErrorInfo{Reason: tt.wantReason, Domain: store.ErrorInfoDomain, Metadata: tt.wantMeta}}
 			if st.Code() != codes.FailedPrecondition {
 				t.Errorf("CheckClusterFence() code = %v, want %v", st.Code(), codes.FailedPrecondition)
 			}

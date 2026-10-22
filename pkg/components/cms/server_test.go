@@ -34,6 +34,7 @@ import (
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/memory"
+	"xmanager_cloud/pkg/components/store/ownership"
 )
 
 // stubStore implements store.Store for unit testing CMS scaffolding.
@@ -1629,11 +1630,11 @@ func TestCMSServer_OwnershipMetrics(t *testing.T) {
 	if err := CollectOwnershipMetrics(ctx, ms, time.Now().UTC()); err != nil {
 		t.Fatalf("CollectOwnershipMetrics() unexpected error: %v", err)
 	}
-	if got := testutil.ToFloat64(store.ClusterFenceEpochGauge()); got != 4 {
+	if got := testutil.ToFloat64(ownership.ClusterFenceEpochGauge()); got != 4 {
 		t.Errorf("xmc_cms_cluster_fence_epoch = %v, want 4", got)
 	}
 
-	initialBefore := testutil.ToFloat64(store.OwnerAdoptionsCounter(store.AdoptionReasonInitial))
+	initialBefore := testutil.ToFloat64(ownership.OwnerAdoptionsCounter(ownership.AdoptionReasonInitial))
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -1651,11 +1652,11 @@ func TestCMSServer_OwnershipMetrics(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetComponentIntent() unexpected error: %v", err)
 	}
-	if got := testutil.ToFloat64(store.OwnerAdoptionsCounter(store.AdoptionReasonInitial)); got != initialBefore+1 {
+	if got := testutil.ToFloat64(ownership.OwnerAdoptionsCounter(ownership.AdoptionReasonInitial)); got != initialBefore+1 {
 		t.Errorf("initial adoptions = %v, want %v", got, initialBefore+1)
 	}
 
-	mismatchBefore := testutil.ToFloat64(store.SourceConflictsCounter(store.ReasonSourceIncarnationMismatch))
+	mismatchBefore := testutil.ToFloat64(ownership.SourceConflictsCounter(store.ReasonSourceIncarnationMismatch))
 	_, _ = server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
 		Name: "cms-metrics-comp",
 		Source: &componentspb.RequestSource{
@@ -1665,7 +1666,7 @@ func TestCMSServer_OwnershipMetrics(t *testing.T) {
 			Cluster:    prodCluster,
 		},
 	})
-	if got := testutil.ToFloat64(store.SourceConflictsCounter(store.ReasonSourceIncarnationMismatch)); got != mismatchBefore+1 {
+	if got := testutil.ToFloat64(ownership.SourceConflictsCounter(store.ReasonSourceIncarnationMismatch)); got != mismatchBefore+1 {
 		t.Errorf("SOURCE_INCARNATION_MISMATCH conflicts = %v, want %v", got, mismatchBefore+1)
 	}
 }

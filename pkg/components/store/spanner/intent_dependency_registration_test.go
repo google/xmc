@@ -34,6 +34,7 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/dependency"
 )
 
 // TestSetComponentIntent_DependencyRegistration runs the same rows against MemoryStore and
@@ -70,8 +71,8 @@ func TestSetComponentIntent_DependencyRegistration(t *testing.T) {
 						}
 						return
 					}
-					if status.Code(err) != codes.FailedPrecondition || !strings.HasPrefix(status.Convert(err).Message(), store.DependencyNotFoundMessagePrefix) {
-						t.Errorf("SetComponentIntent() error = %v, want FailedPrecondition starting with %q", err, store.DependencyNotFoundMessagePrefix)
+					if status.Code(err) != codes.FailedPrecondition || !strings.HasPrefix(status.Convert(err).Message(), dependency.DependencyNotFoundMessagePrefix) {
+						t.Errorf("SetComponentIntent() error = %v, want FailedPrecondition starting with %q", err, dependency.DependencyNotFoundMessagePrefix)
 					}
 				})
 			}

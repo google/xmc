@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/ownership"
 )
 
 const (
@@ -51,7 +52,7 @@ const (
 // DeclareClusterEpoch declares cluster the writer of sourced intents within Spanner, reading the
 // fence, reassigning owners on a takeover, and writing the fence in one read-write transaction.
 func (s *SpannerStore) DeclareClusterEpoch(ctx context.Context, cluster store.ClusterIdentity) (*store.DeclarationResult, error) {
-	if err := store.ValidateClusterIdentity(cluster); err != nil {
+	if err := ownership.ValidateClusterIdentity(cluster); err != nil {
 		return nil, err
 	}
 	var res *store.DeclarationResult
@@ -61,7 +62,7 @@ func (s *SpannerStore) DeclareClusterEpoch(ctx context.Context, cluster store.Cl
 		return err
 	})
 	if err != nil {
-		return nil, store.RecordSourceConflictError(err)
+		return nil, ownership.RecordSourceConflictError(err)
 	}
 	return res, nil
 }
@@ -71,7 +72,7 @@ var _ store.OwnershipGaugeReader = (*SpannerStore)(nil)
 // ReadOwnershipGauges reads the fence and counts the stale owners in Spanner at now with one
 // single-use read, so the fence and the count come from one snapshot.
 func (s *SpannerStore) ReadOwnershipGauges(ctx context.Context, now time.Time) (store.OwnershipGauges, error) {
-	stmt := spanner.Statement{SQL: ownershipGaugesSQL, Params: map[string]any{"cutoff": now.Add(-store.OwnerStaleThreshold)}}
+	stmt := spanner.Statement{SQL: ownershipGaugesSQL, Params: map[string]any{"cutoff": now.Add(-ownership.OwnerStaleThreshold)}}
 	iter := s.client.Single().Query(ctx, stmt)
 	defer iter.Stop()
 	row, err := iter.Next()
@@ -94,7 +95,7 @@ func declareClusterEpochTx(ctx context.Context, txn *spanner.ReadWriteTransactio
 	if err != nil {
 		return nil, err
 	}
-	outcome, err := store.PlanDeclaration(fence, cluster)
+	outcome, err := ownership.PlanDeclaration(fence, cluster)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +135,7 @@ func checkFence(ctx context.Context, txn *spanner.ReadWriteTransaction, operatio
 	if err != nil {
 		return err
 	}
-	return store.CheckClusterFence(operation, fence, src)
+	return ownership.CheckClusterFence(operation, fence, src)
 }
 
 // readFence returns the current fence holder, or nil before the first declaration.

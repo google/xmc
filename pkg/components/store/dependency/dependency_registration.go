@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package dependency
 
 import (
 	"fmt"
 
 	"google.golang.org/grpc/codes"
+
+	"xmanager_cloud/pkg/components/store"
 )
 
 // DependencyNotFoundMessagePrefix starts the FailedPrecondition message returned when a component
@@ -29,7 +31,7 @@ const DependencyNotFoundMessagePrefix = "dependency not found:"
 // the dependency graph acyclic and are all registered in catalog. MemoryStore and SpannerStore both
 // call it before applying an intent so they reject the same intents with the same errors. It
 // returns the ComponentID of each dependency.
-func ValidateIntentDependencies(catalog map[string]*ComponentRecord, canonicalName string, deps []string) (map[string]int64, error) {
+func ValidateIntentDependencies(catalog map[string]*store.ComponentRecord, canonicalName string, deps []string) (map[string]int64, error) {
 	if err := ValidateProspectiveDependenciesFromMap(catalog, canonicalName, deps); err != nil {
 		return nil, err
 	}
@@ -38,11 +40,11 @@ func ValidateIntentDependencies(catalog map[string]*ComponentRecord, canonicalNa
 
 // ResolveDependencyIDs maps each dependency name to the ComponentID of its registered, non-deleted record.
 // It returns a FailedPrecondition error naming the first dependency that is not registered.
-func ResolveDependencyIDs(catalog map[string]*ComponentRecord, canonicalName string, deps []string) (map[string]int64, error) {
+func ResolveDependencyIDs(catalog map[string]*store.ComponentRecord, canonicalName string, deps []string) (map[string]int64, error) {
 	depIDs := make(map[string]int64, len(deps))
 	for _, dep := range deps {
 		depRec, ok := catalog[dep]
-		if !ok || depRec == nil || IsDeletedRecord(depRec) {
+		if !ok || depRec == nil || store.IsDeletedRecord(depRec) {
 			return nil, dependencyNotRegisteredError(canonicalName, dep)
 		}
 		depIDs[dep] = depRec.ComponentID
@@ -53,7 +55,7 @@ func ResolveDependencyIDs(catalog map[string]*ComponentRecord, canonicalName str
 // dependencyNotRegisteredError returns the FailedPrecondition DEPENDENCY_NOT_REGISTERED rejection
 // of an intent for canonicalName that depends on the unregistered dep.
 func dependencyNotRegisteredError(canonicalName, dep string) error {
-	return ErrorWithInfo(codes.FailedPrecondition, ReasonDependencyNotRegistered,
-		map[string]string{MetadataKeyOperation: OperationSetComponentIntent, MetadataKeyComponent: canonicalName, MetadataKeyDependency: dep},
+	return store.ErrorWithInfo(codes.FailedPrecondition, store.ReasonDependencyNotRegistered,
+		map[string]string{store.MetadataKeyOperation: store.OperationSetComponentIntent, store.MetadataKeyComponent: canonicalName, store.MetadataKeyDependency: dep},
 		fmt.Sprintf(DependencyNotFoundMessagePrefix+" component %q depends on %q, which is not registered", canonicalName, dep))
 }

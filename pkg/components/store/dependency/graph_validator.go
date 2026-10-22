@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package dependency
 
 import (
 	"context"
@@ -25,6 +25,7 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/graph"
 	"xmanager_cloud/pkg/components/naming"
+	"xmanager_cloud/pkg/components/store"
 )
 
 // DependencyGraph represents an adjacency mapping of component names to their dependencies or dependents.
@@ -32,10 +33,10 @@ type DependencyGraph = graph.DependencyGraph
 
 // BuildDependencyGraph constructs an adjacency map of component -> list of its dependencies.
 // Soft-deleted and deleted components are excluded from the graph.
-func BuildDependencyGraph(records []*ComponentRecord) DependencyGraph {
+func BuildDependencyGraph(records []*store.ComponentRecord) DependencyGraph {
 	depGraph := make(DependencyGraph, len(records))
 	for _, rec := range records {
-		if rec == nil || IsDeletedRecord(rec) {
+		if rec == nil || store.IsDeletedRecord(rec) {
 			continue
 		}
 		canonical := naming.CanonicalComponentName(rec.Name)
@@ -51,10 +52,10 @@ func BuildDependencyGraph(records []*ComponentRecord) DependencyGraph {
 
 // BuildDependencyGraphFromMap constructs an adjacency map of component -> list of its dependencies directly from a component record map.
 // Soft-deleted and deleted components are excluded from the graph.
-func BuildDependencyGraphFromMap(records map[string]*ComponentRecord) DependencyGraph {
+func BuildDependencyGraphFromMap(records map[string]*store.ComponentRecord) DependencyGraph {
 	depGraph := make(DependencyGraph, len(records))
 	for _, rec := range records {
-		if rec == nil || IsDeletedRecord(rec) {
+		if rec == nil || store.IsDeletedRecord(rec) {
 			continue
 		}
 		canonical := naming.CanonicalComponentName(rec.Name)
@@ -70,10 +71,10 @@ func BuildDependencyGraphFromMap(records map[string]*ComponentRecord) Dependency
 
 // BuildDependentsGraph constructs an inverted adjacency map of component -> list of its dependents.
 // Soft-deleted and deleted components are excluded from the graph.
-func BuildDependentsGraph(records []*ComponentRecord) DependencyGraph {
+func BuildDependentsGraph(records []*store.ComponentRecord) DependencyGraph {
 	dependents := make(DependencyGraph)
 	for _, rec := range records {
-		if rec == nil || IsDeletedRecord(rec) {
+		if rec == nil || store.IsDeletedRecord(rec) {
 			continue
 		}
 		canonical := naming.CanonicalComponentName(rec.Name)
@@ -104,7 +105,7 @@ func DetectCycles(depGraph DependencyGraph) ([]string, bool) {
 
 // ValidateProspectiveDependencies validates that adding or updating dependencies on targetName
 // will not introduce self-cycles or transitive cycles into the component dependency graph.
-func ValidateProspectiveDependencies(existing []*ComponentRecord, targetName string, newDeps []string) error {
+func ValidateProspectiveDependencies(existing []*store.ComponentRecord, targetName string, newDeps []string) error {
 	canonicalTarget := naming.CanonicalComponentName(targetName)
 	if canonicalTarget == "" {
 		return status.Error(codes.InvalidArgument, "target component name is required")
@@ -117,7 +118,7 @@ func ValidateProspectiveDependencies(existing []*ComponentRecord, targetName str
 
 // ValidateProspectiveDependenciesFromMap validates prospective dependencies directly from a component record map
 // avoiding intermediate slice allocations.
-func ValidateProspectiveDependenciesFromMap(existing map[string]*ComponentRecord, targetName string, newDeps []string) error {
+func ValidateProspectiveDependenciesFromMap(existing map[string]*store.ComponentRecord, targetName string, newDeps []string) error {
 	canonicalTarget := naming.CanonicalComponentName(targetName)
 	if canonicalTarget == "" {
 		return status.Error(codes.InvalidArgument, "target component name is required")
@@ -148,8 +149,8 @@ func validateProspectiveGraph(depGraph DependencyGraph, canonicalTarget string, 
 func dependencyCycleError(canonicalTarget string, cycle []string) error {
 	cycleStr := graph.FormatCycle(cycle)
 	logging.Warn(context.Background(), "Prospective dependency cycle detected", "target", canonicalTarget, "cycle", cycleStr)
-	return ErrorWithInfo(codes.FailedPrecondition, ReasonDependencyCycle,
-		map[string]string{MetadataKeyOperation: OperationSetComponentIntent, MetadataKeyComponent: canonicalTarget, MetadataKeyCycle: strings.Join(cycle[:len(cycle)-1], ",")},
+	return store.ErrorWithInfo(codes.FailedPrecondition, store.ReasonDependencyCycle,
+		map[string]string{store.MetadataKeyOperation: store.OperationSetComponentIntent, store.MetadataKeyComponent: canonicalTarget, store.MetadataKeyCycle: strings.Join(cycle[:len(cycle)-1], ",")},
 		"dependency cycle detected: "+cycleStr)
 }
 

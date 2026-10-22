@@ -12,18 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package lifecycle
 
 import (
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/store"
 )
 
 func TestIsDeletionProtected(t *testing.T) {
@@ -66,9 +69,9 @@ func TestIsDeletionProtected(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var rec *ComponentRecord
+			var rec *store.ComponentRecord
 			if tc.labels != nil || tc.name != "NilRecord" {
-				rec = &ComponentRecord{Labels: tc.labels}
+				rec = &store.ComponentRecord{Labels: tc.labels}
 			}
 			if got := IsDeletionProtected(rec); got != tc.want {
 				t.Errorf("IsDeletionProtected() = %v, want %v", got, tc.want)
@@ -82,8 +85,8 @@ func TestCalculateDrainTimeout(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		rec        *ComponentRecord
-		cascaded   []*ComponentRecord
+		rec        *store.ComponentRecord
+		cascaded   []*store.ComponentRecord
 		reqTimeout *durationpb.Duration
 		want       time.Duration
 	}{
@@ -94,12 +97,12 @@ func TestCalculateDrainTimeout(t *testing.T) {
 		},
 		{
 			name: "DefaultMinimum30sWhenUnspecified",
-			rec:  &ComponentRecord{Name: "comp-a"},
+			rec:  &store.ComponentRecord{Name: "comp-a"},
 			want: 30 * time.Second,
 		},
 		{
 			name: "TargetRecordDrainingTimeout",
-			rec: &ComponentRecord{
+			rec: &store.ComponentRecord{
 				Name: "comp-b",
 				Spec: &componentspb.ComponentSpec{
 					LifecycleControl: &componentspb.LifecycleControl{
@@ -111,7 +114,7 @@ func TestCalculateDrainTimeout(t *testing.T) {
 		},
 		{
 			name: "CascadedDependentWithHigherGracePeriod",
-			rec: &ComponentRecord{
+			rec: &store.ComponentRecord{
 				Name: "comp-b",
 				Spec: &componentspb.ComponentSpec{
 					LifecycleControl: &componentspb.LifecycleControl{
@@ -119,7 +122,7 @@ func TestCalculateDrainTimeout(t *testing.T) {
 					},
 				},
 			},
-			cascaded: []*ComponentRecord{
+			cascaded: []*store.ComponentRecord{
 				{
 					Name: "comp-c",
 					Spec: &componentspb.ComponentSpec{
@@ -146,7 +149,7 @@ func TestCalculateDrainTimeout(t *testing.T) {
 func TestEvaluateDeactivationSafety(t *testing.T) {
 	t.Parallel()
 
-	components := map[string]*ComponentRecord{
+	components := map[string]*store.ComponentRecord{
 		"root": {
 			Name:  "root",
 			State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
@@ -232,7 +235,7 @@ func TestEvaluateDeactivationSafety(t *testing.T) {
 }
 
 func TestValidateDeletionSafety(t *testing.T) {
-	components := map[string]*ComponentRecord{
+	components := map[string]*store.ComponentRecord{
 		"comp-safe": {
 			Name:  "comp-safe",
 			State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
@@ -333,5 +336,19 @@ func TestValidateDeletionSafety(t *testing.T) {
 	err = ValidateDeletionSafety(components, "nonexistent", componentspb.DeletionPolicy_DELETION_POLICY_UNSPECIFIED, false)
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("ValidateDeletionSafety(nonexistent) got code %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestActiveDependentsErrorInfo(t *testing.T) {
+	err := activeDependentsError("ExecuteDeletion", "redpanda", []string{"ingestion", "query"})
+	wantMsg := "component redpanda has active dependents: [ingestion query]"
+	wantInfo := &errdetails.ErrorInfo{Reason: store.ReasonActiveDependentsExist, Domain: store.ErrorInfoDomain, Metadata: map[string]string{"operation": "ExecuteDeletion", "component": "redpanda", "dependents": "ingestion,query"}}
+
+	st := status.Convert(err)
+	if st.Code() != codes.FailedPrecondition || st.Message() != wantMsg {
+		t.Errorf("status = %v %q, want %v %q", st.Code(), st.Message(), codes.FailedPrecondition, wantMsg)
+	}
+	if diff := cmp.Diff([]any{wantInfo}, st.Details(), protocmp.Transform()); diff != "" {
+		t.Errorf("details mismatch (-want +got):\n%s", diff)
 	}
 }

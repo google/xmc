@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+package ownership
 
 import (
 	"slices"
@@ -20,6 +20,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"xmanager_cloud/pkg/components/store"
 )
 
 // Values of the reason label on xmc_cms_component_owner_adoptions_total.
@@ -42,12 +44,12 @@ const OwnerStaleThreshold = 15 * time.Minute
 // sourceConflictReasons lists the ErrorInfo reasons counted by
 // xmc_cms_component_source_conflicts_total; each is pre-registered as a label value.
 var sourceConflictReasons = []string{
-	ReasonStaleGeneration,
-	ReasonSourceIncarnationMismatch,
-	ReasonSourceNamespaceConflict,
-	ReasonClusterFenced,
-	ReasonClusterEpochRegressed,
-	ReasonClusterNotDeclared,
+	store.ReasonStaleGeneration,
+	store.ReasonSourceIncarnationMismatch,
+	store.ReasonSourceNamespaceConflict,
+	store.ReasonClusterFenced,
+	store.ReasonClusterEpochRegressed,
+	store.ReasonClusterNotDeclared,
 }
 
 var (
@@ -132,7 +134,7 @@ func ComponentOwnerStaleGauge() prometheus.Gauge {
 }
 
 // adoptionReason classifies how a committed sourced write changed the record owner from prev.
-func adoptionReason(prev *SourceOwner, src *RequestSource, created bool) string {
+func adoptionReason(prev *store.SourceOwner, src *store.RequestSource, created bool) string {
 	if src == nil {
 		return ""
 	}
@@ -152,7 +154,7 @@ func adoptionReason(prev *SourceOwner, src *RequestSource, created bool) string 
 
 // RecordOwnerAdoption increments xmc_cms_component_owner_adoptions_total when a committed write
 // adopts a component record under src.
-func RecordOwnerAdoption(prev *SourceOwner, src *RequestSource, created bool) {
+func RecordOwnerAdoption(prev *store.SourceOwner, src *store.RequestSource, created bool) {
 	if reason := adoptionReason(prev, src, created); reason != "" {
 		ownerAdoptionsTotal.WithLabelValues(reason).Inc()
 	}
@@ -161,7 +163,7 @@ func RecordOwnerAdoption(prev *SourceOwner, src *RequestSource, created bool) {
 // RecordSourceConflictError increments xmc_cms_component_source_conflicts_total when err carries a
 // source ownership or cluster fence conflict reason, and returns err unchanged.
 func RecordSourceConflictError(err error) error {
-	if reason := ErrorInfoReason(err); slices.Contains(sourceConflictReasons, reason) {
+	if reason := store.ErrorInfoReason(err); slices.Contains(sourceConflictReasons, reason) {
 		sourceConflictsTotal.WithLabelValues(reason).Inc()
 	}
 	return err
@@ -170,7 +172,7 @@ func RecordSourceConflictError(err error) error {
 // RecordOwnershipGauges sets the CMS ownership gauges from g. The fence gauge exports the stored
 // LastSeenTime rather than its age, so an alert on its age keeps growing even when no replica can
 // refresh it. Before the first declaration both fence gauges report 0.
-func RecordOwnershipGauges(g OwnershipGauges) {
+func RecordOwnershipGauges(g store.OwnershipGauges) {
 	componentOwnerStaleGauge.Set(float64(g.StaleOwners))
 	if !g.FenceDeclared {
 		clusterFenceEpochGauge.Set(0)
@@ -183,8 +185,8 @@ func RecordOwnershipGauges(g OwnershipGauges) {
 
 // isOwnerStale reports whether rec is an active owned record whose SourceLastSeenTime is at or
 // before cutoff. It matches the WHERE clause of SpannerStore's stale-owner count.
-func isOwnerStale(rec *ComponentRecord, cutoff time.Time) bool {
-	if IsDeletedRecord(rec) || rec.Owner == nil || rec.SourceLastSeenTime.IsZero() {
+func isOwnerStale(rec *store.ComponentRecord, cutoff time.Time) bool {
+	if store.IsDeletedRecord(rec) || rec.Owner == nil || rec.SourceLastSeenTime.IsZero() {
 		return false
 	}
 	return !rec.SourceLastSeenTime.After(cutoff)
@@ -192,7 +194,7 @@ func isOwnerStale(rec *ComponentRecord, cutoff time.Time) bool {
 
 // CountStaleOwnedComponents returns the number of active records in catalog whose owner is stale
 // at now.
-func CountStaleOwnedComponents(catalog map[string]*ComponentRecord, now time.Time) int64 {
+func CountStaleOwnedComponents(catalog map[string]*store.ComponentRecord, now time.Time) int64 {
 	cutoff := now.Add(-OwnerStaleThreshold)
 	var count int64
 	for _, rec := range catalog {

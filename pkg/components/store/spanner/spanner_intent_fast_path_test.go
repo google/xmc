@@ -34,6 +34,7 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/dependency"
 	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 )
 
@@ -144,8 +145,8 @@ func TestSpannerStore_SetComponentIntent_ConcurrentChangeBeforeFallback(t *testi
 			if status.Code(err) != tt.wantCode {
 				t.Fatalf("SetComponentIntent() error = %v, want code %v", err, tt.wantCode)
 			}
-			if err != nil && !strings.HasPrefix(status.Convert(err).Message(), store.DependencyNotFoundMessagePrefix) {
-				t.Errorf("SetComponentIntent() error = %v, want message starting with %q", err, store.DependencyNotFoundMessagePrefix)
+			if err != nil && !strings.HasPrefix(status.Convert(err).Message(), dependency.DependencyNotFoundMessagePrefix) {
+				t.Errorf("SetComponentIntent() error = %v, want message starting with %q", err, dependency.DependencyNotFoundMessagePrefix)
 			}
 			assertStoredGeneration(ctx, t, s, name, tt.wantGen)
 		})
