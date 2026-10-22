@@ -333,14 +333,13 @@ jobs:
           VERIFY_UI: '${{ matrix.example.verify_ui }}'
           XMANAGER_VERSION: '${{ inputs.xmanager_version }}'
         run: |
-          python3 -m venv "${GITHUB_WORKSPACE}/.venv"
-          "${GITHUB_WORKSPACE}/.venv/bin/pip" install --upgrade pip
+          req_args=()
+          if [ -n "${EXAMPLE_PATH:-}" ] && [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
+            req_args=(--requirements "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt")
+          fi
+          python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv" "${req_args[@]}"
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xdash
-          if [ -n "${EXAMPLE_PATH:-}" ] && [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
-            "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt"
-          fi
-          python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv" --xmanager-version "${XMANAGER_VERSION:-}"
           if [ "${VERIFY_UI:-}" = "true" ]; then
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install "playwright==1.51.0"
             "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium --with-deps

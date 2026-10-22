@@ -64,6 +64,11 @@ class TestInstallXmanager(unittest.TestCase):
             install_xmanager.resolve_xmanager_spec("XManager>=0.8.2"),
             "XManager>=0.8.2",
         )
+        git_req = "xmanager @ git+https://github.com/google-deepmind/xmanager@xm-cloud"
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec(git_req),
+            git_req,
+        )
 
     def test_resolve_xmanager_spec_comparison_operators(self) -> None:
         """Test resolve_xmanager_spec prefixes leading comparison operators."""
@@ -72,8 +77,8 @@ class TestInstallXmanager(unittest.TestCase):
             "xmanager==0.8.2",
         )
         self.assertEqual(
-            install_xmanager.resolve_xmanager_spec(">=0.8.2"),
-            "xmanager>=0.8.2",
+            install_xmanager.resolve_xmanager_spec(">=0.8.2,<0.9"),
+            "xmanager>=0.8.2,<0.9",
         )
         self.assertEqual(
             install_xmanager.resolve_xmanager_spec("~=0.8.2"),
@@ -86,6 +91,7 @@ class TestInstallXmanager(unittest.TestCase):
             args = install_xmanager.parse_args([])
             self.assertEqual(args.venv, "./venv")
             self.assertEqual(args.xmanager_version, "")
+            self.assertEqual(args.requirements, [])
 
     def test_parse_args_env_overrides(self) -> None:
         """Test parse_args respects VENV_DIR and XMANAGER_VERSION env vars."""
@@ -96,31 +102,21 @@ class TestInstallXmanager(unittest.TestCase):
             self.assertEqual(args.xmanager_version, "0.8.2")
 
     def test_parse_args_custom_cli(self) -> None:
-        """Test parse_args with explicit CLI arguments."""
+        """Test parse_args with explicit CLI arguments including repeatable --requirements."""
         cli_args = [
             "--venv",
             "/custom/venv",
             "--xmanager-version",
             "0.8.4",
+            "--requirements",
+            "req1.txt",
+            "-r",
+            "req2.txt",
         ]
         args = install_xmanager.parse_args(cli_args)
         self.assertEqual(args.venv, "/custom/venv")
         self.assertEqual(args.xmanager_version, "0.8.4")
-
-    def test_check_prerequisites_success(self) -> None:
-        """Test check_prerequisites when python3 binary is found."""
-        with mock.patch("shutil.which", return_value="/usr/bin/python3"):
-            install_xmanager.check_prerequisites()
-
-    def test_check_prerequisites_missing(self) -> None:
-        """Test check_prerequisites exits when python3 is missing."""
-        with (
-            mock.patch("shutil.which", return_value=None),
-            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
-            self.assertRaises(SystemExit),
-        ):
-            install_xmanager.check_prerequisites()
-        self.assertIn("python3 is required", stderr.getvalue())
+        self.assertEqual(args.requirements, ["req1.txt", "req2.txt"])
 
     @mock.patch("venv.create")
     def test_setup_virtualenv_creates_when_missing_python(
@@ -173,33 +169,81 @@ class TestInstallXmanager(unittest.TestCase):
             self.assertEqual(result, python_bin)
 
     def test_install_xmanager_package(self) -> None:
-        """Test install_xmanager_package upgrades pip and installs packages."""
+        """Test install_xmanager_package upgrades pip, installs requirements, then xmanager."""
         venv_python = Path("/mock/venv/bin/python3")
         with mock.patch("subprocess.run") as mock_run:
+            install_xmanager.install_xmanager_package(
+                venv_python,
+                "xmanager==0.8.2",
+                ["/path/to/requirements.txt"],
+            )
+
+        self.assertEqual(
+            mock_run.call_args_list,
+            [
+                mock.call(
+                    ["/mock/venv/bin/python3", "-m", "pip", "install", "--upgrade", "pip"],
+                    check=True,
+                ),
+                mock.call(
+                    [
+                        "/mock/venv/bin/python3",
+                        "-m",
+                        "pip",
+                        "install",
+                        "-r",
+                        "/path/to/requirements.txt",
+                    ],
+                    check=True,
+                ),
+                mock.call(
+                    [
+                        "/mock/venv/bin/python3",
+                        "-m",
+                        "pip",
+                        "install",
+                        "xmanager==0.8.2",
+                        *install_xmanager.RUNTIME_DEPENDENCIES,
+                    ],
+                    check=True,
+                ),
+            ],
+        )
+
+    def test_install_xmanager_package_failure_propagates(self) -> None:
+        """Test install_xmanager_package propagates CalledProcessError on pip failure."""
+        venv_python = Path("/mock/venv/bin/python3")
+        with (
+            mock.patch(
+                "subprocess.run",
+                side_effect=subprocess.CalledProcessError(1, ["pip"]),
+            ),
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
             install_xmanager.install_xmanager_package(venv_python, "xmanager==0.8.2")
 
-        self.assertEqual(mock_run.call_count, 2)
-        mock_run.assert_any_call(
-            ["/mock/venv/bin/python3", "-m", "pip", "install", "--upgrade", "pip"],
-            check=True,
+    def test_resolve_venv_proto_paths(self) -> None:
+        """Test resolve_venv_proto_paths returns site-packages and grpc_tools _proto paths."""
+        site_pkgs = Path("/mock/site-packages")
+        grpc_proto = site_pkgs / "grpc_tools" / "_proto"
+        mock_res = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=f"{site_pkgs}\n{grpc_proto}\n",
+            stderr="",
         )
-        mock_run.assert_any_call(
-            [
-                "/mock/venv/bin/python3",
-                "-m",
-                "pip",
-                "install",
-                "xmanager==0.8.2",
-                *install_xmanager.RUNTIME_DEPENDENCIES,
-            ],
-            check=True,
-        )
+        with mock.patch("subprocess.run", return_value=mock_res):
+            resolved_site, resolved_grpc = install_xmanager.resolve_venv_proto_paths(
+                Path("/mock/venv/bin/python3")
+            )
 
-    def test_resolve_venv_proto_paths_copies_operations_proto(self) -> None:
-        """Test resolve_venv_proto_paths returns paths and copies operations.proto."""
+        self.assertEqual(resolved_site, site_pkgs)
+        self.assertEqual(resolved_grpc, grpc_proto)
+
+    def test_ensure_longrunning_operations_proto(self) -> None:
+        """Test _ensure_longrunning_operations_proto copies operations_proto.proto when needed."""
         with tempfile.TemporaryDirectory() as tmp_str:
             site_pkgs = Path(tmp_str) / "site-packages"
-            grpc_proto = site_pkgs / "grpc_tools" / "_proto"
             longrunning_dir = site_pkgs / "google" / "longrunning"
             longrunning_dir.mkdir(parents=True)
             (longrunning_dir / "operations_proto.proto").write_text(
@@ -207,27 +251,20 @@ class TestInstallXmanager(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            mock_res = subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=f"{site_pkgs}\n{grpc_proto}\n",
-                stderr="",
-            )
-            with mock.patch("subprocess.run", return_value=mock_res):
-                resolved_site, resolved_grpc = install_xmanager.resolve_venv_proto_paths(
-                    Path("/mock/venv/bin/python3")
-                )
-
-            self.assertEqual(resolved_site, site_pkgs)
-            self.assertEqual(resolved_grpc, grpc_proto)
+            install_xmanager._ensure_longrunning_operations_proto(site_pkgs)
             self.assertTrue((longrunning_dir / "operations.proto").exists())
 
-    def test_stage_local_protos_success(self) -> None:
-        """Test stage_local_protos copies .proto files and creates __init__.py."""
+    def test_stage_local_protos_success_and_removes_stale(self) -> None:
+        """Test stage_local_protos removes stale .proto files, copies fresh ones, and touches __init__.py."""
         with tempfile.TemporaryDirectory() as tmp_str:
             root = Path(tmp_str)
             repo_root = root / "repo"
             site_pkgs = root / "site-packages"
+
+            stale_dir = site_pkgs / "xmanager_cloud" / "xid_service" / "proto"
+            stale_dir.mkdir(parents=True)
+            stale_proto = stale_dir / "obsolete.proto"
+            stale_proto.write_text("syntax = 'proto3';", encoding="utf-8")
 
             for src_subdir, _ in install_xmanager.PROTO_PACKAGE_DIRS:
                 proto_dir = repo_root / "api" / "protos" / src_subdir
@@ -236,6 +273,7 @@ class TestInstallXmanager(unittest.TestCase):
 
             staged = install_xmanager.stage_local_protos(repo_root, site_pkgs)
             self.assertEqual(len(staged), 3)
+            self.assertFalse(stale_proto.exists())
             for _, dst_pkg in install_xmanager.PROTO_PACKAGE_DIRS:
                 dst_dir = site_pkgs / "xmanager_cloud" / dst_pkg / "proto"
                 self.assertTrue((dst_dir / "__init__.py").exists())
@@ -253,7 +291,7 @@ class TestInstallXmanager(unittest.TestCase):
         self.assertIn("Local proto directory not found", stderr.getvalue())
 
     def test_compile_local_protos(self) -> None:
-        """Test compile_local_protos invokes grpc_tools.protoc with staged protos."""
+        """Test compile_local_protos ensures operations.proto and invokes grpc_tools.protoc."""
         venv_python = Path("/mock/venv/bin/python3")
         site_pkgs = Path("/mock/site-packages")
         grpc_proto = Path("/mock/grpc_proto")
@@ -265,6 +303,9 @@ class TestInstallXmanager(unittest.TestCase):
                 return_value=(site_pkgs, grpc_proto),
             ),
             mock.patch(
+                "install_xmanager._ensure_longrunning_operations_proto",
+            ) as mock_ensure_ops,
+            mock.patch(
                 "install_xmanager.stage_local_protos",
                 return_value=staged_files,
             ),
@@ -272,6 +313,7 @@ class TestInstallXmanager(unittest.TestCase):
         ):
             install_xmanager.compile_local_protos(venv_python, Path("/mock/repo"))
 
+        mock_ensure_ops.assert_called_once_with(site_pkgs)
         mock_run.assert_called_once_with(
             [
                 "/mock/venv/bin/python3",
@@ -285,6 +327,26 @@ class TestInstallXmanager(unittest.TestCase):
             ],
             check=True,
         )
+
+    def test_compile_local_protos_protoc_failure_propagates(self) -> None:
+        """Test compile_local_protos propagates CalledProcessError when protoc fails."""
+        venv_python = Path("/mock/venv/bin/python3")
+        site_pkgs = Path("/mock/site-packages")
+        grpc_proto = Path("/mock/grpc_proto")
+        with (
+            mock.patch(
+                "install_xmanager.resolve_venv_proto_paths",
+                return_value=(site_pkgs, grpc_proto),
+            ),
+            mock.patch("install_xmanager._ensure_longrunning_operations_proto"),
+            mock.patch("install_xmanager.stage_local_protos", return_value=["api.proto"]),
+            mock.patch(
+                "subprocess.run",
+                side_effect=subprocess.CalledProcessError(1, ["protoc"]),
+            ),
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            install_xmanager.compile_local_protos(venv_python, Path("/mock/repo"))
 
     def test_verify_imports(self) -> None:
         """Test verify_imports checks all required XManager and proto modules."""
@@ -303,10 +365,8 @@ class TestInstallXmanager(unittest.TestCase):
     @mock.patch("install_xmanager.compile_local_protos")
     @mock.patch("install_xmanager.install_xmanager_package")
     @mock.patch("install_xmanager.setup_virtualenv")
-    @mock.patch("install_xmanager.check_prerequisites")
     def test_main_execution(
         self,
-        mock_pre: mock.Mock,
         mock_venv: mock.Mock,
         mock_install: mock.Mock,
         mock_compile: mock.Mock,
@@ -316,13 +376,22 @@ class TestInstallXmanager(unittest.TestCase):
         mock_venv.return_value = Path("/mock/venv/bin/python3")
 
         with tempfile.TemporaryDirectory() as tmp_venv:
-            install_xmanager.main(["--venv", tmp_venv, "--xmanager-version", "0.8.2"])
+            install_xmanager.main(
+                [
+                    "--venv",
+                    tmp_venv,
+                    "--xmanager-version",
+                    "0.8.2",
+                    "--requirements",
+                    "requirements.txt",
+                ]
+            )
 
-        mock_pre.assert_called_once()
         mock_venv.assert_called_once_with(Path(tmp_venv).resolve())
         mock_install.assert_called_once_with(
             Path("/mock/venv/bin/python3"),
             "xmanager==0.8.2",
+            ["requirements.txt"],
         )
         mock_compile.assert_called_once_with(
             Path("/mock/venv/bin/python3"),

@@ -5,7 +5,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#      http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,27 +19,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 VENV_DIR="${VENV_DIR:-${SCRIPT_DIR}/.venv}"
 
-if [[ ! -x "${VENV_DIR}/bin/pip" ]]; then
-  echo "--> [1/3] Creating virtual environment at ${VENV_DIR}..."
-  python3 -m venv "${VENV_DIR}"
-fi
+echo "--> [1/2] Setting up virtual environment, installing dependencies, and compiling local XMC protos..."
+python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" \
+  --venv "${VENV_DIR}" \
+  --requirements "${SCRIPT_DIR}/requirements.txt"
 
 PIP_BIN="${VENV_DIR}/bin/pip"
-
-echo "--> [2/3] Installing launch-script runtime dependencies and compiling local XMC protos..."
-"${PIP_BIN}" install --upgrade pip
-"${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
-python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}" --xmanager-version "${XMANAGER_VERSION:-}"
 
 # Editable installs, so a change to either SDK is picked up without reinstalling. xdash
 # builds and registers the charts; xmc is not needed to launch, but having it here lets
 # you exercise the worker locally against a gateway before building the image.
-echo "--> [3/3] Installing the xdash and xmc SDKs in editable mode..."
+echo "--> [2/2] Installing the xdash and xmc SDKs in editable mode..."
 "${PIP_BIN}" install -e "${REPO_ROOT}/sdks/python/xdash"
 "${PIP_BIN}" install -e "${REPO_ROOT}/sdks/python/xmc"
 
 echo ""
-echo "=== ✅ Python environment successfully initialized! ==="
-echo "Activate it and launch the example with:"
+echo "=== ✅ Python environment ready ==="
 echo "  source ${VENV_DIR}/bin/activate"
 echo "  python3 ${SCRIPT_DIR}/launch.py"

@@ -13,7 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Installation and local proto compilation script for XManager CLI via pip."""
+"""Installation and local proto compilation script for XManager CLI via pip.
+
+Note: Because this script overlays compiled local `api/protos` directly into
+`site-packages/xmanager_cloud` over the files shipped by the `xmanager` wheel,
+it must be re-run after any `pip` operation (such as `pip install -U xmanager`
+or `--force-reinstall`) that modifies `xmanager`.
+"""
 
 import argparse
 import os
@@ -21,11 +27,17 @@ import shutil
 import subprocess
 import sys
 import venv
+from collections.abc import Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_XMANAGER_SPEC = "xmanager>=0.8.2"
 
+# Upper bounds keep protoc gencode and protobuf runtime compatible:
+# - googleapis-common-protos<1.75.4 requires protobuf<7.0.0 (matching xmanager's
+#   protobuf 6.x dependency constraints).
+# - grpcio-tools<1.79.0 embeds protoc for protobuf 6.x (whereas >=1.79.0
+#   generates protobuf 7.x gencode that raises VersionError on protobuf 6.x).
 RUNTIME_DEPENDENCIES = (
     "absl-py>=2.1.0",
     "google-auth>=2.28.0",
@@ -68,21 +80,12 @@ def error_exit(msg: str) -> None:
     sys.exit(1)
 
 
-def check_prerequisites() -> None:
-    """Verify python3 binary is installed.
-
-    Raises:
-        SystemExit: If python3 binary is not found in PATH.
-    """
-    if not shutil.which("python3"):
-        error_exit("python3 is required but not installed.")
-
-
 def resolve_xmanager_spec(version: str) -> str:
     """Resolve the pip package requirement specifier for xmanager.
 
     Args:
-        version: Optional version tag or specifier string (e.g., '0.8.2').
+        version: Optional version tag, version specifier (e.g. '>=0.8.2,<0.9'),
+            or full PEP 508 requirement string.
 
     Returns:
         A pip requirement string such as 'xmanager==0.8.2' or 'xmanager>=0.8.2'.
@@ -124,8 +127,20 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         "--xmanager-version",
         default=default_version,
         help=(
-            "Optional XManager PyPI version tag to pin (e.g. 0.8.2). "
+            "Optional xmanager version (e.g. 0.8.2), specifier (e.g. '>=0.8.2,<0.9'), "
+            "or full requirement (e.g. 'xmanager @ git+https://github.com/google-deepmind/xmanager@xm-cloud'). "
             f"Defaults to XMANAGER_VERSION env var or '{DEFAULT_XMANAGER_SPEC}'."
+        ),
+    )
+    parser.add_argument(
+        "-r",
+        "--requirements",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help=(
+            "Optional requirements file to install before applying xmanager and "
+            "runtime dependency pins (repeatable)."
         ),
     )
     return parser.parse_args(args)
@@ -150,18 +165,29 @@ def setup_virtualenv(venv_dir: Path) -> Path:
     return venv_python
 
 
-def install_xmanager_package(venv_python: Path, xmanager_spec: str) -> None:
-    """Upgrade pip and install xmanager and runtime dependencies from PyPI.
+def install_xmanager_package(
+    venv_python: Path,
+    xmanager_spec: str,
+    requirements: Sequence[str | Path] = (),
+) -> None:
+    """Upgrade pip, install optional requirements files, and install xmanager.
 
     Args:
         venv_python: Path to virtualenv python executable.
         xmanager_spec: Pip package requirement specifier for xmanager.
+        requirements: Optional sequence of requirements.txt paths to install first.
     """
     sys.stdout.write("Upgrading pip...\n")
     subprocess.run(
         [str(venv_python), "-m", "pip", "install", "--upgrade", "pip"],
         check=True,
     )
+    for req_path in requirements:
+        sys.stdout.write(f"Installing requirements from {req_path}...\n")
+        subprocess.run(
+            [str(venv_python), "-m", "pip", "install", "-r", str(req_path)],
+            check=True,
+        )
     sys.stdout.write(f"Installing {xmanager_spec} and runtime dependencies via pip...\n")
     subprocess.run(
         [
@@ -197,15 +223,20 @@ def resolve_venv_proto_paths(venv_python: Path) -> tuple[Path, Path]:
         text=True,
     )
     lines = res.stdout.strip().splitlines()
-    site_packages = Path(lines[0].strip())
-    grpc_proto_include = Path(lines[1].strip())
+    return Path(lines[0].strip()), Path(lines[1].strip())
 
+
+def _ensure_longrunning_operations_proto(site_packages: Path) -> None:
+    """Ensure google/longrunning/operations.proto exists in site-packages.
+
+    Recent googleapis-common-protos releases (e.g. 1.75.3) ship only
+    operations_proto.proto on disk while operations_proto_pb2 registers itself
+    in the descriptor pool as google/longrunning/operations.proto.
+    """
     ops_proto = site_packages / "google" / "longrunning" / "operations.proto"
     ops_src = site_packages / "google" / "longrunning" / "operations_proto.proto"
     if not ops_proto.exists() and ops_src.exists():
         shutil.copy2(ops_src, ops_proto)
-
-    return site_packages, grpc_proto_include
 
 
 def stage_local_protos(repo_root: Path, site_packages: Path) -> list[str]:
@@ -225,6 +256,8 @@ def stage_local_protos(repo_root: Path, site_packages: Path) -> list[str]:
             error_exit(f"Local proto directory not found: {src_dir}")
         dst_dir = site_packages / "xmanager_cloud" / dst_pkg / "proto"
         dst_dir.mkdir(parents=True, exist_ok=True)
+        for stale in dst_dir.glob("*.proto"):
+            stale.unlink()
         (dst_dir / "__init__.py").touch()
         for proto_file in sorted(src_dir.glob("*.proto")):
             dst_file = dst_dir / proto_file.name
@@ -242,6 +275,7 @@ def compile_local_protos(venv_python: Path, repo_root: Path = REPO_ROOT) -> None
     """
     sys.stdout.write("Compiling local XMC protos from api/protos into virtualenv...\n")
     site_packages, grpc_proto_include = resolve_venv_proto_paths(venv_python)
+    _ensure_longrunning_operations_proto(site_packages)
     proto_files = stage_local_protos(repo_root, site_packages)
     subprocess.run(
         [
@@ -282,8 +316,6 @@ def main(raw_args: list[str] | None = None) -> None:
     venv_dir = Path(args.venv).resolve()
     xmanager_spec = resolve_xmanager_spec(args.xmanager_version)
 
-    check_prerequisites()
-
     sys.stdout.write("=== Configuration ===\n")
     sys.stdout.write(f"XManager Package: {xmanager_spec}\n")
     sys.stdout.write(f"Local Protos:     {REPO_ROOT / 'api' / 'protos'}\n")
@@ -291,7 +323,7 @@ def main(raw_args: list[str] | None = None) -> None:
     sys.stdout.write("=====================\n")
 
     venv_python = setup_virtualenv(venv_dir)
-    install_xmanager_package(venv_python, xmanager_spec)
+    install_xmanager_package(venv_python, xmanager_spec, args.requirements)
     compile_local_protos(venv_python, REPO_ROOT)
     verify_imports(venv_python)
 

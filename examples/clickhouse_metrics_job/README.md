@@ -51,11 +51,7 @@ flowchart TD
 2. **ClickHouse Addon Deployed**: ClickHouse deployed in the cluster (see `deploy/addons/metrics/clickhouse/README.md`).
 3. **Google Cloud CLI (`gcloud`) & Docker**: Authenticated to push container images to your project's Artifact Registry.
 4. **Python 3.11+**: Installed on your workstation.
-5. **Client-Side Dependencies (`requirements.txt`)**: Host Python dependencies needed to execute `launch.py`:
-   ```bash
-   pip install -r requirements.txt
-   ```
-6. **Authentication**: Run `xmanager login` and `export XMC_AUTH_TOKEN=$(xmanager login --print-token)` (used by the `DashboardService` step). You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+5. **Authentication**: After initializing and activating `.venv` (`./install_venv.sh && source .venv/bin/activate`), run `xmanager login` and `export XMC_AUTH_TOKEN=$(xmanager login --print-token)` (used by the `DashboardService` step). You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ---
 
@@ -92,11 +88,13 @@ The example includes a pre-configured [`worker.env`](worker.env) file containing
 
 ### 1. Initialize Local Virtual Environment
 
-Run the automated setup script to create `.venv` and install required dependencies and SDKs:
+Run the automated setup script to create `.venv`, install required dependencies and SDKs, and authenticate:
 
 ```bash
 ./install_venv.sh
 source .venv/bin/activate
+xmanager login
+export XMC_AUTH_TOKEN=$(xmanager login --print-token)
 ```
 
 ### 2. Build and Push the Worker Container Image

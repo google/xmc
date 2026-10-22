@@ -16,10 +16,8 @@ This example demonstrates how to interact with the XManager on Cloud (XMC) **Exp
 1. Create a Python virtual environment, install dependencies, and compile local XMC protos:
 
    ```bash
-   python3 -m venv .venv
+   python3 ../../deploy/cli/install_xmanager.py --venv .venv --requirements requirements.txt
    source .venv/bin/activate
-   pip install -r requirements.txt
-   python3 ../../deploy/cli/install_xmanager.py --venv .venv
    ```
 
 2. **Environment Variables**:
@@ -30,7 +28,7 @@ This example demonstrates how to interact with the XManager on Cloud (XMC) **Exp
    export XMC_DOMAIN="<your-xmc-domain>"
    ```
 
-3. **Authentication**: Run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+3. **Authentication**: With `.venv` activated, run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ## Running the Example
 

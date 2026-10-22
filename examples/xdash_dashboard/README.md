@@ -25,10 +25,11 @@ Run the installation script from this directory to create `.venv` and install de
 
 ### Option B: Manual Virtual Environment & Dependencies
 
-If managing an existing virtual environment:
+If managing an existing virtual environment, run `install_xmanager.py` (which installs `requirements.txt` and `xmanager` and compiles local XMC protos) and install `xdash`:
 
 ```bash
-pip install -r requirements.txt
+python3 ../../deploy/cli/install_xmanager.py --venv <your-venv> --requirements requirements.txt
+<your-venv>/bin/pip install -e ../../sdks/python/xdash
 ```
 
 ## 2. Running the Example

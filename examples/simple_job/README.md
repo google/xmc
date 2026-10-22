@@ -6,13 +6,11 @@ This directory contains a standalone launch script (`launch.py`) for creating a 
 
 1. Create a Python virtual environment, install dependencies, and compile local XMC protos:
    ```bash
-   python3 -m venv .venv
+   python3 ../../deploy/cli/install_xmanager.py --venv .venv --requirements requirements.txt
    source .venv/bin/activate
-   pip install -r requirements.txt
-   python3 ../../deploy/cli/install_xmanager.py --venv .venv
    ```
 
-2. **Authentication**: Run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+2. **Authentication**: With `.venv` activated, run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 3. **Environment Variables**:
    Verify environment variables in your active shell or `.env`:
