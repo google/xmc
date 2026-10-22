@@ -52,7 +52,7 @@ func TestStatusMessagesTableView(t *testing.T) {
 			filter:  "xid = 55",
 			orderBy: "",
 			wantSubstrings: []string{
-				"SELECT s.Xid, s.WorkUnitId, s.MessageId, s.Severity, s.Source, s.UserFacingText, s.UserFacingUrl, s.ExecutionId, s.CreateTime, s.PreviousMessage, s.AuxiliaryInfo",
+				"SELECT s.Xid, s.WorkUnitId, s.MessageId, s.Severity, s.Source, s.UserFacingText, s.UserFacingUrl, s.ExecutionId, s.CreateTime, s.AuxiliaryInfo",
 				"FROM StatusMessages s",
 				"WHERE (s.Xid = $1)",
 				"ORDER BY s.Xid, s.CreateTime DESC, s.WorkUnitId ASC NULLS FIRST, s.MessageId LIMIT 11",

@@ -22,21 +22,22 @@ import (
 )
 
 const (
-	statusMessagesTableName   = querytools.TableName("StatusMessages")
-	xidTableField             = querytools.TableField("xid")
-	workUnitIDTableField      = querytools.TableField("work_unit_id")
-	messageIDTableField       = querytools.TableField("message_id")
-	severityTableField        = querytools.TableField("severity")
-	sourceTableField          = querytools.TableField("source")
-	userFacingTextTableField  = querytools.TableField("user_facing_text")
-	userFacingURLTableField   = querytools.TableField("user_facing_url")
-	executionIDTableField     = querytools.TableField("execution_id")
-	createTimeTableField      = querytools.TableField("create_time")
-	previousMessageTableField = querytools.TableField("previous_message")
-	auxiliaryInfoTableField   = querytools.TableField("auxiliary_info")
+	statusMessagesTableName  = querytools.TableName("StatusMessages")
+	xidTableField            = querytools.TableField("xid")
+	workUnitIDTableField     = querytools.TableField("work_unit_id")
+	messageIDTableField      = querytools.TableField("message_id")
+	severityTableField       = querytools.TableField("severity")
+	sourceTableField         = querytools.TableField("source")
+	userFacingTextTableField = querytools.TableField("user_facing_text")
+	userFacingURLTableField  = querytools.TableField("user_facing_url")
+	executionIDTableField    = querytools.TableField("execution_id")
+	createTimeTableField     = querytools.TableField("create_time")
+	auxiliaryInfoTableField  = querytools.TableField("auxiliary_info")
 )
 
 // StatusMessageColumns is the full list of columns in the PostgreSQL StatusMessages table.
+// PreviousMessage is write-only: it is set on insert but not selected, as it is not part of the
+// StatusMessage proto.
 var StatusMessageColumns = []string{
 	"Xid", "WorkUnitId", "MessageId", "ExecutionId", "Severity", "Source",
 	"UserFacingText", "UserFacingUrl", "CreateTime", "PreviousMessage", "AuxiliaryInfo",
@@ -51,17 +52,16 @@ var (
 		NameClause: safesql.New("StatusMessages s"),
 		Cost:       30,
 		Fields: map[querytools.TableField]querytools.Member{
-			xidTableField:             {Name: xidTableField, QueryLiteral: safesql.New("s.Xid"), Type: filtervisitor.Integer, Selectable: true, Indexed: true},
-			workUnitIDTableField:      {Name: workUnitIDTableField, QueryLiteral: safesql.New("s.WorkUnitId"), Type: filtervisitor.Integer, Selectable: true, Indexed: true, Nullable: true},
-			messageIDTableField:       {Name: messageIDTableField, QueryLiteral: safesql.New("s.MessageId"), Type: filtervisitor.Integer, Selectable: true, Indexed: true},
-			severityTableField:        {Name: severityTableField, QueryLiteral: safesql.New("s.Severity"), Type: filtervisitor.Integer, Selectable: true},
-			sourceTableField:          {Name: sourceTableField, QueryLiteral: safesql.New("s.Source"), Type: filtervisitor.Integer, Selectable: true},
-			userFacingTextTableField:  {Name: userFacingTextTableField, QueryLiteral: safesql.New("s.UserFacingText"), Type: filtervisitor.String, Selectable: true},
-			userFacingURLTableField:   {Name: userFacingURLTableField, QueryLiteral: safesql.New("s.UserFacingUrl"), Selectable: true},
-			executionIDTableField:     {Name: executionIDTableField, QueryLiteral: safesql.New("s.ExecutionId"), Type: filtervisitor.Integer, Selectable: true, Nullable: true},
-			createTimeTableField:      {Name: createTimeTableField, QueryLiteral: safesql.New("s.CreateTime"), Type: filtervisitor.Timestamp, Selectable: true},
-			previousMessageTableField: {Name: previousMessageTableField, QueryLiteral: safesql.New("s.PreviousMessage"), Selectable: true},
-			auxiliaryInfoTableField:   {Name: auxiliaryInfoTableField, QueryLiteral: safesql.New("s.AuxiliaryInfo"), Selectable: true},
+			xidTableField:            {Name: xidTableField, QueryLiteral: safesql.New("s.Xid"), Type: filtervisitor.Integer, Selectable: true, Indexed: true},
+			workUnitIDTableField:     {Name: workUnitIDTableField, QueryLiteral: safesql.New("s.WorkUnitId"), Type: filtervisitor.Integer, Selectable: true, Indexed: true, Nullable: true},
+			messageIDTableField:      {Name: messageIDTableField, QueryLiteral: safesql.New("s.MessageId"), Type: filtervisitor.Integer, Selectable: true, Indexed: true},
+			severityTableField:       {Name: severityTableField, QueryLiteral: safesql.New("s.Severity"), Type: filtervisitor.Integer, Selectable: true},
+			sourceTableField:         {Name: sourceTableField, QueryLiteral: safesql.New("s.Source"), Type: filtervisitor.Integer, Selectable: true},
+			userFacingTextTableField: {Name: userFacingTextTableField, QueryLiteral: safesql.New("s.UserFacingText"), Type: filtervisitor.String, Selectable: true},
+			userFacingURLTableField:  {Name: userFacingURLTableField, QueryLiteral: safesql.New("s.UserFacingUrl"), Selectable: true},
+			executionIDTableField:    {Name: executionIDTableField, QueryLiteral: safesql.New("s.ExecutionId"), Type: filtervisitor.Integer, Selectable: true, Nullable: true},
+			createTimeTableField:     {Name: createTimeTableField, QueryLiteral: safesql.New("s.CreateTime"), Type: filtervisitor.Timestamp, Selectable: true},
+			auxiliaryInfoTableField:  {Name: auxiliaryInfoTableField, QueryLiteral: safesql.New("s.AuxiliaryInfo"), Selectable: true},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
 			{TableField: xidTableField, SortOrder: querytools.Asc},
@@ -79,7 +79,7 @@ var (
 		xidTableField, workUnitIDTableField, messageIDTableField,
 		severityTableField, sourceTableField, userFacingTextTableField,
 		userFacingURLTableField, executionIDTableField, createTimeTableField,
-		previousMessageTableField, auxiliaryInfoTableField,
+		auxiliaryInfoTableField,
 	}
 
 	// StatusMessagesOrderByFields is the list of fields that can be used for ordering StatusMessages queries.

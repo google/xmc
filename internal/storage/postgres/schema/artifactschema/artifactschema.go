@@ -43,7 +43,9 @@ const (
 	updatedTableField           = querytools.TableField("updated")
 )
 
-// ArtifactColumns is the full list of columns in the PostgreSQL Artifacts table.
+// ArtifactColumns is the full list of columns in the PostgreSQL Artifacts table. Protos are stored
+// as BYTEA and proto enums as BIGINT, so PayloadType is populated on write from the Payload oneof
+// instead of being derived in SQL as in the Spanner schema.
 var ArtifactColumns = []string{
 	"Xid", "WorkUnitId", "ArtifactId", "Url", "Icon", "DisplayName", "Priority", "Tags", "Notes",
 	"LifecyclePhase", "DataType", "MimeType", "AdditionalInfo", "Payload", "PayloadType", "SearchableContent", "CreateTime", "UpdateTime",
