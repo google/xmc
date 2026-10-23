@@ -722,7 +722,7 @@ users:
 		tmpFile.Close()
 
 		t.Setenv("KUBECONFIG", tmpFile.Name())
-		client, err := New(ActuatorRuntimeConfig{}, nil, nil)
+		client, err := New(ActuatorRuntimeConfig{}, nil)
 		if err != nil {
 			t.Fatalf("New() with valid KUBECONFIG failed: %v", err)
 		}
@@ -733,7 +733,7 @@ users:
 
 	t.Run("invalid kubeconfig path", func(t *testing.T) {
 		t.Setenv("KUBECONFIG", "/non/existent/path/kubeconfig")
-		_, err := New(ActuatorRuntimeConfig{}, nil, nil)
+		_, err := New(ActuatorRuntimeConfig{}, nil)
 		if err == nil {
 			t.Fatal("New() with non-existent KUBECONFIG succeeded, want error")
 		}

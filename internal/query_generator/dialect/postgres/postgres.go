@@ -76,3 +76,19 @@ func (Dialect) RegexpMatch(lhs, rhs safesql.TrustedSQLString) safesql.TrustedSQL
 func (Dialect) TextSearch(col, queryParam safesql.TrustedSQLString) safesql.TrustedSQLString {
 	return safesql.Concat(col, safesql.New(" @@ plainto_tsquery('simple', "), queryParam, safesql.New(")"))
 }
+
+// OrderByClause implements queryfilterbase.Dialect.
+// PostgreSQL sorts NULLs last on ASC and first on DESC by default, so nullable columns emit
+// explicit NULLS FIRST / NULLS LAST to match pagination cursor predicates.
+func (Dialect) OrderByClause(col safesql.TrustedSQLString, desc, nullable bool) safesql.TrustedSQLString {
+	if desc {
+		if nullable {
+			return safesql.Concat(col, safesql.New(" DESC NULLS LAST"))
+		}
+		return safesql.Concat(col, safesql.New(" DESC"))
+	}
+	if nullable {
+		return safesql.Concat(col, safesql.New(" ASC NULLS FIRST"))
+	}
+	return col
+}

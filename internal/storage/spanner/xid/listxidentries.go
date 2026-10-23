@@ -24,6 +24,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
 	"xmanager_cloud/internal/storage/spanner/utils"
 
+	spannerdialect "xmanager_cloud/internal/query_generator/dialect/spanner"
 	"xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 
@@ -56,13 +57,13 @@ func (r *Repository) ListXidEntries(ctx context.Context, pageSize int32, pageTok
 	}
 
 	// Generate the statement with pagination
-	stmt, err := liststatement.ListStatement(ctx, listParams)
-	if err != nil {
+	stmt := spannerdialect.NewStatement(nil)
+	if err := liststatement.ListStatement(ctx, stmt, listParams); err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
 
 	// 2. Execute the query.
-	xidIter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt)
+	xidIter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt.Spanner())
 	defer xidIter.Stop()
 
 	// 3. Convert the rows to XidEntry protos.

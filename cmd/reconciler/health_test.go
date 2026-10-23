@@ -99,7 +99,7 @@ func TestActiveHealthChecker_Combinations(t *testing.T) {
 			}
 		},
 	}
-	k8sClientSuccess := k8sclient.NewWithClients(mockCSSuccess, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil, nil)
+	k8sClientSuccess := k8sclient.NewWithClients(mockCSSuccess, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil)
 
 	mockCSFailure := mockClientset{
 		discoveryFunc: func() discovery.DiscoveryInterface {
@@ -110,7 +110,7 @@ func TestActiveHealthChecker_Combinations(t *testing.T) {
 			}
 		},
 	}
-	k8sClientFailure := k8sclient.NewWithClients(mockCSFailure, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil, nil)
+	k8sClientFailure := k8sclient.NewWithClients(mockCSFailure, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil)
 
 	tests := []struct {
 		name      string

@@ -234,7 +234,7 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 		})
 	}
 
-	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, storage, spannerClient)
+	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, storage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
@@ -245,8 +245,16 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 	}
 
 	cqCache := clusterqueue.NewNameCache()
+	mlRunProject := cfg.MLRunProject
+	if mlRunProject == "" {
+		mlRunProject = gceMeta.ProjectID
+	}
+	mlRunLocation := cfg.MLRunLocation
+	if mlRunLocation == "" {
+		mlRunLocation = gceMeta.Location
+	}
 	mlRunClient := jobset.NewInstrumentedMLRunCreator(
-		newMLRunCreator(ctx, gceMeta.ProjectID, cfg.MldiagnosticsEnvironment, gceMeta.Location))
+		newMLRunCreator(ctx, mlRunProject, cfg.MldiagnosticsEnvironment, mlRunLocation, cfg.MLRunImpersonateSA))
 
 	batcher, err := registerControllers(ctx, controllerRegistrationParams{
 		mgr:         ctrlMgr,

@@ -84,6 +84,8 @@ type Params struct {
 	Project                  string
 	Location                 string
 	ClusterName              string
+	MLRunProject             string
+	MLRunLocation            string
 	MaxConcurrentReconciles  int
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
@@ -98,6 +100,8 @@ type Reconciler struct {
 	Project                  string
 	Location                 string
 	ClusterName              string
+	MLRunProject             string
+	MLRunLocation            string
 	MaxConcurrentReconciles  int
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
@@ -126,6 +130,8 @@ func NewReconciler(p Params) (*Reconciler, error) {
 		Project:                  p.Project,
 		Location:                 p.Location,
 		ClusterName:              p.ClusterName,
+		MLRunProject:             p.MLRunProject,
+		MLRunLocation:            p.MLRunLocation,
 		MaxConcurrentReconciles:  p.MaxConcurrentReconciles,
 		StartupPodErrorCheckTime: p.StartupPodErrorCheckTime,
 		Storage:                  p.Storage,

@@ -25,6 +25,7 @@ import (
 	aipfilter "xmanager_cloud/api/filter/go/filter"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
+	spannerdialect "xmanager_cloud/internal/query_generator/dialect/spanner"
 	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
@@ -78,7 +79,9 @@ func (r *Repository) deleteArtifactChartReferences(ctx context.Context, tx *span
 		return nil, fmt.Errorf("failed to parse filter for artifact charts: %w", err)
 	}
 
-	stmt, _, _, err := r.artifactChartsQueryGen.GenerateQuery(
+	stmt := spannerdialect.NewStatement(nil)
+	if _, _, err := r.artifactChartsQueryGen.GenerateQuery(
+		stmt,
 		[]querytools.TableField{
 			dashboardschema.BitReversedXidTableField,
 			dashboardschema.WorkUnitIDTableField,
@@ -86,12 +89,11 @@ func (r *Repository) deleteArtifactChartReferences(ctx context.Context, tx *span
 			dashboardschema.ArtifactChartIDTableField,
 		},
 		nil, nil, filterExp, nil, 0, 0, nil, nil,
-	)
-	if err != nil {
+	); err != nil {
 		return nil, fmt.Errorf("failed to generate artifact charts query: %w", err)
 	}
 
-	iter := tx.Query(ctx, *stmt)
+	iter := tx.Query(ctx, *stmt.Spanner())
 	defer iter.Stop()
 
 	var muts []*spanner.Mutation
@@ -122,18 +124,19 @@ func (r *Repository) deleteDashboardChartReferences(ctx context.Context, tx *spa
 		return nil, fmt.Errorf("failed to parse filter for dashboard charts: %w", err)
 	}
 
-	stmt, _, _, err := r.dashboardChartsQueryGen.GenerateQuery(
+	stmt := spannerdialect.NewStatement(nil)
+	if _, _, err := r.dashboardChartsQueryGen.GenerateQuery(
+		stmt,
 		[]querytools.TableField{
 			dashboardschema.DashboardIDTableField,
 			dashboardschema.DashboardChartIDTableField,
 		},
 		nil, nil, filterExp, nil, 0, 0, nil, nil,
-	)
-	if err != nil {
+	); err != nil {
 		return nil, fmt.Errorf("failed to generate dashboard charts query: %w", err)
 	}
 
-	iter := tx.Query(ctx, *stmt)
+	iter := tx.Query(ctx, *stmt.Spanner())
 	defer iter.Stop()
 
 	var muts []*spanner.Mutation

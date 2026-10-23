@@ -42,7 +42,6 @@ go_library(
         "//internal/validator",
         "//pkg/components/crreader",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
-        "@com_google_cloud_go_spanner//:spanner",
         "@io_k8s_api//batch/v1:batch",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",
