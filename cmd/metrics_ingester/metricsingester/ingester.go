@@ -74,12 +74,6 @@ func NewIngester(source MessageSource, writer MetricWriter, cfg *Config) *Ingest
 	}
 }
 
-// DroppedMessages returns the number of messages acked and dropped because their payload failed
-// protobuf wire unmarshaling.
-func (in *Ingester) DroppedMessages() uint64 {
-	return in.droppedMessages.Load()
-}
-
 // Run receives and writes messages until ctx is done or the source fails permanently, returning the
 // source's error. Every message it received is acked or nacked before it returns.
 func (in *Ingester) Run(ctx context.Context) error {
