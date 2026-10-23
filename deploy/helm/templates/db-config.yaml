@@ -31,9 +31,7 @@ data:
   POSTGRES_XID_DATABASE: {{ default "xid" $pg.xidDatabase | quote }}
   POSTGRES_SSLMODE: {{ default "disable" $pg.sslMode | quote }}
 {{- else }}
-{{- $ess := default (dict) .Values.experimentStateServer }}
-{{- $xid := default (dict) .Values.xidService }}
-  SPANNER_ESS_DATABASE: {{ $ess.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
-  SPANNER_XID_DATABASE: {{ $xid.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/xids-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
+  SPANNER_ESS_DATABASE: {{ include "xmanager-cloud.essSpannerDatabase" . | quote }}
+  SPANNER_XID_DATABASE: {{ include "xmanager-cloud.xidSpannerDatabase" . | quote }}
   SPANNER_QUOTA_PROJECT_ID: {{ .Values.projectId | quote }}
 {{- end }}

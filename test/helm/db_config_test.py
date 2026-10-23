@@ -14,12 +14,14 @@
 
 """Helm template tests for the shared db-config ConfigMap and workload wiring."""
 
+import re
 import unittest
 
 from chart_test_lib import render_template, require_helm
 
 DB_CONFIG_TEMPLATE = "templates/db-config.yaml"
 ESS_CONFIGMAP = "templates/ess/configmap.yaml"
+XID_CONFIGMAP = "templates/xid/configmap.yaml"
 
 WORKLOAD_DEPLOYMENTS: tuple[str, ...] = (
     "templates/actuator/deployment.yaml",
@@ -39,6 +41,14 @@ ENABLE_OPTIONAL_DEPLOYMENTS: dict[str, str] = {
 }
 
 
+def configmap_value(manifest: str, key: str) -> str:
+    """Returns the quoted value of key in a rendered ConfigMap."""
+    match = re.search(rf'^\s*{re.escape(key)}: (".*")$', manifest, re.MULTILINE)
+    if match is None:
+        raise AssertionError(f"{key} not found in the rendered manifest")
+    return match.group(1)
+
+
 class DbConfigChartTest(unittest.TestCase):
     """Verifies db-config rendering for each backend and its wiring into the workloads."""
 
@@ -47,23 +57,20 @@ class DbConfigChartTest(unittest.TestCase):
         require_helm()
 
     def test_default_values_render_spanner_settings(self) -> None:
-        """Default values select Spanner and render only the Spanner keys."""
+        """Default values select Spanner, with the settings the per-service ConfigMaps use."""
         manifest = render_template(DB_CONFIG_TEMPLATE, {})
+        ess_configmap = render_template(ESS_CONFIGMAP, {})
+        xid_configmap = render_template(XID_CONFIGMAP, {})
+        ess_database = configmap_value(ess_configmap, "ess_spanner_database_name")
+        xid_database = configmap_value(xid_configmap, "xid_spanner_database_name")
+        quota_project = configmap_value(xid_configmap, "xid_quota_project_id")
 
         self.assertIn("kind: ConfigMap", manifest)
         self.assertIn("name: db-config", manifest)
         self.assertIn('DB_BACKEND: "spanner"', manifest)
-        self.assertIn(
-            'SPANNER_ESS_DATABASE: "projects/YOUR_GCP_PROJECT_ID/instances/'
-            'YOUR_SPANNER_INSTANCE/databases/YOUR_SPANNER_DATABASE"',
-            manifest,
-        )
-        self.assertIn(
-            'SPANNER_XID_DATABASE: "projects/YOUR_GCP_PROJECT_ID/instances/'
-            'xmc-YOUR_ENVIRONMENT_NAME/databases/xids-db-YOUR_ENVIRONMENT_NAME"',
-            manifest,
-        )
-        self.assertIn('SPANNER_QUOTA_PROJECT_ID: "YOUR_GCP_PROJECT_ID"', manifest)
+        self.assertIn(f"SPANNER_ESS_DATABASE: {ess_database}", manifest)
+        self.assertIn(f"SPANNER_XID_DATABASE: {xid_database}", manifest)
+        self.assertIn(f"SPANNER_QUOTA_PROJECT_ID: {quota_project}", manifest)
         self.assertNotIn("POSTGRES_", manifest)
 
     def test_spanner_settings_follow_per_service_values(self) -> None:
@@ -117,7 +124,7 @@ class DbConfigChartTest(unittest.TestCase):
         for template in WORKLOAD_DEPLOYMENTS:
             with self.subTest(template=template):
                 manifest = render_template(template, ENABLE_OPTIONAL_DEPLOYMENTS)
-                self.assertIn("- configMapRef:\n            name: db-config", manifest)
+                self.assertRegex(manifest, r"(?m)^\s*- configMapRef:\s*\n\s*name: db-config$")
 
 
 if __name__ == "__main__":
