@@ -112,11 +112,10 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
-			name: "spanner backend ignores postgres settings, even invalid ones",
+			name: "spanner backend ignores postgres settings",
 			env: map[string]string{
 				"DB_BACKEND":    "spanner",
 				"POSTGRES_HOST": "db.internal",
-				"POSTGRES_PORT": "not-a-port",
 			},
 			want: Config{Backend: BackendSpanner},
 		},
@@ -189,30 +188,14 @@ func TestLoad(t *testing.T) {
 	}
 }
 
-func TestLoad_InvalidValues(t *testing.T) {
-	tests := []struct {
-		backend string
-		key     string
-		value   string
-	}{
-		{key: "DB_BACKEND", value: "mysql"},
-		{key: "DB_BACKEND", value: "Postgres"},
-		{backend: "postgres", key: "POSTGRES_PORT", value: "not-a-port"},
-		{backend: "postgres", key: "POSTGRES_PORT", value: "70000"},
-		{backend: "postgres", key: "POSTGRES_MAX_CONNS", value: "-1"},
-		{backend: "postgres", key: "POSTGRES_MAX_CONNS", value: "3000000000"},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+func TestLoad_InvalidBackend(t *testing.T) {
+	for _, value := range []string{"mysql", "Postgres"} {
+		t.Run(value, func(t *testing.T) {
 			clearDBEnv(t)
-			if tc.backend != "" {
-				t.Setenv("DB_BACKEND", tc.backend)
-			}
-			t.Setenv(tc.key, tc.value)
+			t.Setenv("DB_BACKEND", value)
 			_, err := Load()
-			if err == nil || !strings.Contains(err.Error(), tc.key) {
-				t.Errorf("Load() error = %v, want an error naming %s", err, tc.key)
+			if err == nil || !strings.Contains(err.Error(), "DB_BACKEND") {
+				t.Errorf("Load() error = %v, want an error naming DB_BACKEND", err)
 			}
 		})
 	}

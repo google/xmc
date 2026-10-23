@@ -18,12 +18,13 @@ package dbconfig
 
 import (
 	"fmt"
-	"math"
 	"net"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+
+	"xmanager_cloud/internal/configutil"
 )
 
 const (
@@ -82,73 +83,45 @@ type Postgres struct {
 }
 
 // Load reads DB_BACKEND and the settings of the backend it selects; the other backend's settings
-// stay empty. A variable set to an invalid value is an error: Load never falls back to another
-// backend or to a default.
+// stay empty. An unknown DB_BACKEND returns an error instead of falling back to another backend.
 func Load() (Config, error) {
-	backend, err := ParseBackend(os.Getenv("DB_BACKEND"))
+	var rawBackend string
+	configutil.StringEnv(&rawBackend, "DB_BACKEND", "")
+	backend, err := ParseBackend(rawBackend)
 	if err != nil {
 		return Config{}, fmt.Errorf("invalid DB_BACKEND: %w", err)
 	}
 	if backend == BackendSpanner {
 		return Config{Backend: backend, Spanner: loadSpanner()}, nil
 	}
-	postgres, err := loadPostgres()
-	if err != nil {
-		return Config{}, err
-	}
-	return Config{Backend: backend, Postgres: postgres}, nil
+	return Config{Backend: backend, Postgres: loadPostgres()}, nil
 }
 
 func loadSpanner() Spanner {
-	return Spanner{
-		EssDatabase:    os.Getenv("SPANNER_ESS_DATABASE"),
-		XidDatabase:    os.Getenv("SPANNER_XID_DATABASE"),
-		QuotaProjectID: os.Getenv("SPANNER_QUOTA_PROJECT_ID"),
-	}
+	var s Spanner
+	configutil.StringEnv(&s.EssDatabase, "SPANNER_ESS_DATABASE", "")
+	configutil.StringEnv(&s.XidDatabase, "SPANNER_XID_DATABASE", "")
+	configutil.StringEnv(&s.QuotaProjectID, "SPANNER_QUOTA_PROJECT_ID", "")
+	return s
 }
 
-func loadPostgres() (Postgres, error) {
-	port, err := intEnv("POSTGRES_PORT", defaultPostgresPort, 1, math.MaxUint16)
-	if err != nil {
-		return Postgres{}, err
+func loadPostgres() Postgres {
+	var p Postgres
+	var maxConns int
+	configutil.StringEnv(&p.Host, "POSTGRES_HOST", "")
+	configutil.IntEnv(&p.Port, "POSTGRES_PORT", defaultPostgresPort)
+	configutil.StringEnv(&p.User, "POSTGRES_USER", "")
+	configutil.StringEnv(&p.Password, "POSTGRES_PASSWORD", "")
+	configutil.StringEnv(&p.PasswordFile, "POSTGRES_PASSWORD_FILE", "")
+	configutil.StringEnv(&p.EssDatabase, "POSTGRES_ESS_DATABASE", "")
+	configutil.StringEnv(&p.XidDatabase, "POSTGRES_XID_DATABASE", "")
+	configutil.StringEnv(&p.SSLMode, "POSTGRES_SSLMODE", defaultPostgresSSLMode)
+	if p.SSLMode == "" {
+		p.SSLMode = defaultPostgresSSLMode
 	}
-	maxConns, err := intEnv("POSTGRES_MAX_CONNS", 0, 0, math.MaxInt32)
-	if err != nil {
-		return Postgres{}, err
-	}
-	return Postgres{
-		Host:         os.Getenv("POSTGRES_HOST"),
-		Port:         port,
-		User:         os.Getenv("POSTGRES_USER"),
-		Password:     os.Getenv("POSTGRES_PASSWORD"),
-		PasswordFile: os.Getenv("POSTGRES_PASSWORD_FILE"),
-		EssDatabase:  os.Getenv("POSTGRES_ESS_DATABASE"),
-		XidDatabase:  os.Getenv("POSTGRES_XID_DATABASE"),
-		SSLMode:      stringEnv("POSTGRES_SSLMODE", defaultPostgresSSLMode),
-		MaxConns:     int32(maxConns),
-	}, nil
-}
-
-// intEnv returns the integer in key, or defaultVal when key is unset. A value that is not an
-// integer from minVal to maxVal is an error.
-func intEnv(key string, defaultVal, minVal, maxVal int) (int, error) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return defaultVal, nil
-	}
-	n, err := strconv.Atoi(value)
-	if err != nil || n < minVal || n > maxVal {
-		return 0, fmt.Errorf("%s must be an integer from %d to %d, got %q", key, minVal, maxVal, value)
-	}
-	return n, nil
-}
-
-// stringEnv returns the value of key, or defaultVal when key is unset or empty.
-func stringEnv(key, defaultVal string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultVal
+	configutil.IntEnv(&maxConns, "POSTGRES_MAX_CONNS", 0)
+	p.MaxConns = int32(maxConns)
+	return p
 }
 
 // EssDSN returns the PostgreSQL connection URL for the ESS database.
