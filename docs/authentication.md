@@ -16,7 +16,7 @@ The check applies to the web UI, to `xmanager login`, and to every gRPC request.
 
 ## Interactive Use: `xmanager login`
 
-Sign in as yourself with the `xmanager` CLI (requires XMC `>= 0.16.0`), which [`install_xmanager.py`](../deploy/cli/README.md) installs into the XManager CLI virtual environment:
+Sign in as yourself with the `xmanager` CLI (requires `xmanager >= 0.8.5.post1` and XMC `>= 0.16.0`), installed via `pip install "xmanager>=0.8.5.post1"` or [`install_xmanager.py`](../deploy/cli/README.md):
 
 ```bash
 xmanager login   # Reads XMANAGER_ENDPOINT, XMC_API_URL, XMANAGER_UI_URL, or XMC_DOMAIN from the environment.

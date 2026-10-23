@@ -31,7 +31,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_XMANAGER_SPEC = "xmanager>=0.8.2"
+DEFAULT_XMANAGER_SPEC = "xmanager>=0.8.5.post1"
 
 # Upper bounds keep proto descriptor registration and protobuf runtime compatible:
 # - googleapis-common-protos<1.75.4 avoids the 1.75.4 operations_proto.proto /
@@ -86,11 +86,11 @@ def resolve_xmanager_spec(version: str) -> str:
     """Resolve the pip package requirement specifier for xmanager.
 
     Args:
-        version: Optional version tag, version specifier (e.g. '>=0.8.2,<0.9'),
+        version: Optional version tag, version specifier (e.g. '>=0.8.5.post1,<0.9'),
             or full PEP 508 requirement string.
 
     Returns:
-        A pip requirement string such as 'xmanager==0.8.2' or 'xmanager>=0.8.2'.
+        A pip requirement string such as 'xmanager==0.8.5.post1' or 'xmanager>=0.8.5.post1'.
     """
     cleaned = version.strip()
     if not cleaned:
@@ -129,8 +129,8 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         "--xmanager-version",
         default=default_version,
         help=(
-            "Optional xmanager version (e.g. 0.8.2), specifier (e.g. '>=0.8.2,<0.9'), "
-            "or full requirement (e.g. 'xmanager @ git+https://github.com/google-deepmind/xmanager@xm-cloud'). "
+            "Optional xmanager version (e.g. 0.8.5.post1), specifier (e.g. '>=0.8.5.post1,<0.9'), "
+            "or full requirement (e.g. 'xmanager @ git+https://github.com/google-deepmind/xmanager@main'). "
             f"Defaults to XMANAGER_VERSION env var or '{DEFAULT_XMANAGER_SPEC}'."
         ),
     )
