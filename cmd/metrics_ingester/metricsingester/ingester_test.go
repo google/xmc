@@ -451,6 +451,32 @@ func TestWaitBackoff(t *testing.T) {
 	}
 }
 
+func TestIngesterFlushesPendingBatchOnShutdown(t *testing.T) {
+	ctx := context.Background()
+	srv, _, sub := newFakeSubscription(ctx, t)
+	writer := newFakeWriter(0)
+	source := &signallingSource{MessageSource: sub, handedOver: make(chan struct{}, 10)}
+	_, stop := startIngester(t, source, writer, 100, neverTick)
+
+	id := publishMetric(t, srv, testMetric())
+	select {
+	case <-source.handedOver:
+	case <-time.After(waitTimeout):
+		t.Fatal("timed out waiting for the message to be received")
+	}
+	if err := stop(); err != nil {
+		t.Fatalf("Run() error = %v, want nil", err)
+	}
+
+	if diff := cmp.Diff([][]*pb.Metric{{testMetric()}}, writer.snapshot(), protocmp.Transform()); diff != "" {
+		t.Errorf("writes mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]bool{true}, writer.deadlines()); diff != "" {
+		t.Errorf("shutdown write deadlines mismatch (-want +got):\n%s", diff)
+	}
+	awaitAcks(t, srv, id)
+}
+
 // failingSource invokes f once per message and then fails permanently, as Receive does on a
 // non-retryable service error.
 type failingSource struct {
@@ -483,6 +509,22 @@ func TestIngesterReturnsSourceErrorAfterFlushing(t *testing.T) {
 	}
 	if in.IsRunning() {
 		t.Error("IsRunning() = true after Run returned")
+	}
+}
+
+func TestDrainBuffered(t *testing.T) {
+	msgCh := make(chan *pubsub.Message, 3)
+	first, second := &pubsub.Message{ID: "1"}, &pubsub.Message{ID: "2"}
+	msgCh <- second
+
+	got := drainBuffered(msgCh, []*pubsub.Message{first})
+	if len(got) != 2 || got[0] != first || got[1] != second {
+		t.Errorf("drainBuffered() = %v, want [first second]", got)
+	}
+
+	close(msgCh)
+	if got := drainBuffered(msgCh, nil); len(got) != 0 {
+		t.Errorf("drainBuffered(closed) = %v, want empty", got)
 	}
 }
 
@@ -532,32 +574,7 @@ func TestIngesterNacksInsteadOfBlockingWhenCallbackContextIsDone(t *testing.T) {
 	}
 }
 
-func TestIngesterNacksPendingBatchOnShutdown(t *testing.T) {
-	ctx := context.Background()
-	srv, _, sub := newFakeSubscription(ctx, t)
-	writer := newFakeWriter(0)
-	source := &signallingSource{MessageSource: sub, handedOver: make(chan struct{}, 10)}
-	_, stop := startIngester(t, source, writer, 100, neverTick)
-
-	id := publishMetric(t, srv, testMetric())
-	select {
-	case <-source.handedOver:
-	case <-time.After(waitTimeout):
-		t.Fatal("timed out waiting for the message to be received")
-	}
-	if err := stop(); err != nil {
-		t.Fatalf("Run() error = %v, want nil", err)
-	}
-
-	if got := writer.snapshot(); len(got) != 0 {
-		t.Errorf("writes = %v, want none: pending messages are nacked on shutdown", got)
-	}
-	if acks := srv.Message(id).Acks; acks != 0 {
-		t.Errorf("Acks = %d, want 0 for a message nacked on shutdown", acks)
-	}
-}
-
-func TestFlushOrStopNacksPendingWhenContextAlreadyDone(t *testing.T) {
+func TestFlushOrStopFlushesPendingOnShutdownWhenContextDone(t *testing.T) {
 	writer := newFakeWriter(0)
 	in := NewIngester(nil, writer, &Config{BatchSize: 10, BatchInterval: neverTick})
 	cancelled, cancel := context.WithCancel(context.Background())
@@ -571,8 +588,37 @@ func TestFlushOrStopNacksPendingWhenContextAlreadyDone(t *testing.T) {
 	if in.flushOrStop(cancelled, msgCh, []*pubsub.Message{metricMessage(t, "1", 1)}, &backoff) {
 		t.Error("flushOrStop(cancelled) = true, want false")
 	}
+	want := [][]*pb.Metric{{metricWithStep(1), metricWithStep(2)}}
+	if diff := cmp.Diff(want, writer.snapshot(), protocmp.Transform()); diff != "" {
+		t.Errorf("shutdown writes mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]bool{true}, writer.deadlines()); diff != "" {
+		t.Errorf("shutdown write deadlines mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestFlushOnShutdownChunksByBatchSize(t *testing.T) {
+	writer := newFakeWriter(0)
+	in := NewIngester(nil, writer, &Config{BatchSize: 2, BatchInterval: neverTick})
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	in.flushOnShutdown(cancelled, nil)
 	if got := writer.snapshot(); len(got) != 0 {
-		t.Errorf("writes = %v, want none when context is already cancelled", got)
+		t.Fatalf("flushOnShutdown(nil) writes = %v, want none", got)
+	}
+
+	in.flushOnShutdown(cancelled, []*pubsub.Message{
+		metricMessage(t, "1", 1),
+		metricMessage(t, "2", 2),
+		metricMessage(t, "3", 3),
+	})
+	want := [][]*pb.Metric{{metricWithStep(1), metricWithStep(2)}, {metricWithStep(3)}}
+	if diff := cmp.Diff(want, writer.snapshot(), protocmp.Transform()); diff != "" {
+		t.Errorf("chunked shutdown writes mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]bool{true, true}, writer.deadlines()); diff != "" {
+		t.Errorf("chunked shutdown deadlines mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -627,7 +673,7 @@ func takeLeasedMessage(t *testing.T, srv *pstest.Server, ch <-chan *pubsub.Messa
 	}
 }
 
-func TestIngesterNacksMessagesArrivingAfterCancellation(t *testing.T) {
+func TestIngesterNacksMessagesArrivingAfterShutdownFlush(t *testing.T) {
 	srv, _, sub := newFakeSubscription(context.Background(), t)
 	leased := receiveLeasedMessages(t, sub)
 	id1 := publishMetric(t, srv, metricWithStep(1))
@@ -641,7 +687,7 @@ func TestIngesterNacksMessagesArrivingAfterCancellation(t *testing.T) {
 	source := &scriptedSource{script: func(rCtx context.Context, f func(context.Context, *pubsub.Message)) error {
 		f(rCtx, first1)
 		cancel()
-		awaitNack(t, srv, id1) // batchLoop entered ctx.Done() and is now in nackUntilClosed.
+		writer.awaitWrites(t, 1) // Wait for the shutdown flush of id1 after buffer drain.
 		f(context.Background(), first2)
 		return nil
 	}}
@@ -649,17 +695,17 @@ func TestIngesterNacksMessagesArrivingAfterCancellation(t *testing.T) {
 	if err := NewIngester(source, writer, &Config{BatchSize: 100, BatchInterval: neverTick}).Run(ctx); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if got := writer.snapshot(); len(got) != 0 {
-		t.Fatalf("writes = %v, want none on cancelled shutdown", got)
+	if diff := cmp.Diff([][]*pb.Metric{{metricWithStep(1)}}, writer.snapshot(), protocmp.Transform()); diff != "" {
+		t.Errorf("writes mismatch (-want +got):\n%s", diff)
 	}
+	awaitAcks(t, srv, id1)
 	awaitNack(t, srv, id2)
 	if got := srv.Message(id2).Acks; got != 0 {
 		t.Errorf("message %s Acks = %d, want 0", id2, got)
 	}
 
 	takeLeasedMessage(t, srv, leased).Ack()
-	takeLeasedMessage(t, srv, leased).Ack()
-	awaitAcks(t, srv, id1, id2)
+	awaitAcks(t, srv, id2)
 	if got := srv.Message(id2).Deliveries; got < 2 {
 		t.Errorf("message %s Deliveries = %d, want at least 2 after nack", id2, got)
 	}
