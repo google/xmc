@@ -53,8 +53,8 @@ type Flags Config
 
 // RegisterFlags registers the metrics ingester CLI flags on fs and returns their bindings.
 //
-// The string flags default to empty so that LoadConfig can tell an unset flag from an explicit one
-// and fall back to the environment only for the former.
+// String flags default to empty so that LoadConfig can fall back to environment variables when
+// flags are omitted.
 func RegisterFlags(fs *flag.FlagSet) *Flags {
 	f := &Flags{}
 	fs.StringVar(&f.Port, "port", "", "The HTTP health server port (default $PORT, then 8080).")
