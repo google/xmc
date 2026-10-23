@@ -19,6 +19,8 @@ import (
 	"xmanager_cloud/api/filter/go/filtervisitor"
 	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/safesql"
+
+	pb "xmanager_cloud/api/protos/experiment"
 )
 
 const (
@@ -52,6 +54,7 @@ var ArtifactColumns = []string{
 }
 
 // ArtifactUpdateColumns is the list of columns that can be mutated in the Artifacts table.
+// PayloadType is updated alongside Payload so payload_type filters stay in sync.
 var ArtifactUpdateColumns = []string{
 	"Xid", "WorkUnitId", "ArtifactId", "Url", "Icon", "DisplayName", "Priority", "Tags", "Notes",
 	"LifecyclePhase", "DataType", "MimeType", "AdditionalInfo", "Payload", "PayloadType", "SearchableContent", "UpdateTime",
@@ -77,8 +80,8 @@ var (
 			priorityTableField:          {Name: priorityTableField, QueryLiteral: safesql.New("a.Priority"), Type: filtervisitor.Integer, Selectable: true},
 			tagsTableField:              {Name: tagsTableField, QueryLiteral: safesql.New("a.Tags"), Type: filtervisitor.ArrayType(&filtervisitor.String), Selectable: true},
 			notesTableField:             {Name: notesTableField, QueryLiteral: safesql.New("a.Notes"), Type: filtervisitor.String, Selectable: true},
-			lifecyclePhaseTableField:    {Name: lifecyclePhaseTableField, QueryLiteral: safesql.New("a.LifecyclePhase"), Type: filtervisitor.Integer, Selectable: true},
-			dataTypeTableField:          {Name: dataTypeTableField, QueryLiteral: safesql.New("a.DataType"), Type: filtervisitor.Integer, Selectable: true},
+			lifecyclePhaseTableField:    {Name: lifecyclePhaseTableField, QueryLiteral: safesql.New("a.LifecyclePhase"), Type: filtervisitor.Integer, Selectable: true, EnumValues: pb.Artifact_LifecyclePhase_value},
+			dataTypeTableField:          {Name: dataTypeTableField, QueryLiteral: safesql.New("a.DataType"), Type: filtervisitor.Integer, Selectable: true, EnumValues: pb.Artifact_DataType_value},
 			mimeTypeTableField:          {Name: mimeTypeTableField, QueryLiteral: safesql.New("a.MimeType"), Type: filtervisitor.String, Selectable: true},
 			additionalInfoTableField:    {Name: additionalInfoTableField, QueryLiteral: safesql.New("a.AdditionalInfo"), Selectable: true},
 			payloadTableField:           {Name: payloadTableField, QueryLiteral: safesql.New("a.Payload"), Selectable: true},

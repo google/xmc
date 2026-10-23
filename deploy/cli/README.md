@@ -4,7 +4,7 @@
 
 [XManager CLI](https://github.com/google-deepmind/xmanager) is a Python library for interacting with XManager on Cloud (`xm_cloud`) and other XManager execution backends.
 
-The published `xmanager` package on PyPI (`xmanager>=0.8.2`) bundles `xmanager.xm_cloud` and the precompiled gRPC proto bindings (`xmanager_cloud.experiment_state_server.proto.*`, `xmanager_cloud.xid_service.proto.*`, and `xmanager_cloud.dashboard_service.proto.*`).
+The published `xmanager` package on PyPI (`xmanager>=0.8.5.post1`) bundles `xmanager.xm_cloud` and the precompiled gRPC proto bindings (`xmanager_cloud.experiment_state_server.proto.*`, `xmanager_cloud.xid_service.proto.*`, and `xmanager_cloud.dashboard_service.proto.*`).
 
 ---
 
@@ -41,10 +41,10 @@ python3 deploy/cli/install_xmanager.py [options]
 Options:
   --venv <path>                  Target directory for the Python virtual environment
                                  (default: ./venv, or VENV_DIR environment variable)
-  --xmanager-version <spec>      Optional xmanager version (e.g. 0.8.2), specifier
-                                 (e.g. '>=0.8.2,<0.9'), or full PEP 508 requirement
-                                 (e.g. 'xmanager @ git+https://github.com/google-deepmind/xmanager@xm-cloud')
-                                 (default: XMANAGER_VERSION env var, or xmanager>=0.8.2)
+  --xmanager-version <spec>      Optional xmanager version (e.g. 0.8.5.post1), specifier
+                                 (e.g. '>=0.8.5.post1,<0.9'), or full PEP 508 requirement
+                                 (e.g. 'xmanager @ git+https://github.com/google-deepmind/xmanager@main')
+                                 (default: XMANAGER_VERSION env var, or xmanager>=0.8.5.post1)
   -r, --requirements <path>      Optional requirements file to install before applying
                                  xmanager and runtime dependency pins (repeatable)
   -h, --help                     Show usage information
@@ -52,7 +52,7 @@ Options:
 
 #### Example: Pinning a Specific Version or Requirements File
 ```bash
-python3 deploy/cli/install_xmanager.py --venv ./my_env --xmanager-version 0.8.2 --requirements requirements.txt
+python3 deploy/cli/install_xmanager.py --venv ./my_env --xmanager-version 0.8.5.post1 --requirements requirements.txt
 ```
 
 ### Direct `pip` Installation (Without Local Proto Overlay)
@@ -63,7 +63,7 @@ If you do not need unreleased local `.proto` changes from `api/protos`, you can 
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install "xmanager>=0.8.2"
+pip install "xmanager>=0.8.5.post1"
 ```
 
 ### Verification

@@ -20,6 +20,8 @@ import (
 	"xmanager_cloud/api/filter/go/filtervisitor"
 	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/safesql"
+
+	pb "xmanager_cloud/api/protos/experiment"
 )
 
 const (
@@ -83,8 +85,8 @@ var (
 			notesTableField:       {Name: notesTableField, QueryLiteral: safesql.New("e.Notes"), Type: filtervisitor.String, Selectable: true},
 			resourcesTableField:   {Name: resourcesTableField, QueryLiteral: safesql.New("e.Resources"), Type: filtervisitor.Bytes, Selectable: true},
 			statusTableField:      {Name: statusTableField, QueryLiteral: safesql.New("e.Status"), Type: filtervisitor.Bytes, Selectable: true},
-			activeStateTableField: {Name: activeStateTableField, QueryLiteral: safesql.New("e.ActiveState"), Type: filtervisitor.Integer, Selectable: true},
-			launchStateTableField: {Name: launchStateTableField, QueryLiteral: safesql.New("e.LaunchState"), Type: filtervisitor.Integer, Selectable: true},
+			activeStateTableField: {Name: activeStateTableField, QueryLiteral: safesql.New("e.ActiveState"), Type: filtervisitor.Integer, Selectable: true, EnumValues: pb.ExperimentStatus_ActiveState_value},
+			launchStateTableField: {Name: launchStateTableField, QueryLiteral: safesql.New("e.LaunchState"), Type: filtervisitor.Integer, Selectable: true, EnumValues: pb.ExperimentStatus_LaunchState_value},
 			createdTableField:     {Name: createdTableField, QueryLiteral: safesql.New("e.CreateTime"), Type: filtervisitor.Timestamp, Selectable: true},
 			updatedTableField:     {Name: updatedTableField, QueryLiteral: safesql.New("e.UpdateTime"), Type: filtervisitor.Timestamp, Selectable: true},
 			completedTableField:   {Name: completedTableField, QueryLiteral: safesql.New("e.CompleteTime"), Type: filtervisitor.Timestamp, Selectable: true, Nullable: true},

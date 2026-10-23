@@ -25,6 +25,8 @@ import (
 	"xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 	"xmanager_cloud/internal/query_generator/querytools"
+
+	pb "xmanager_cloud/api/protos/experiment"
 )
 
 func TestExperimentsTableView(t *testing.T) {
@@ -99,6 +101,19 @@ func TestExperimentsTableView(t *testing.T) {
 				time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
 				int64(42),
 				time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+			},
+		},
+		{
+			name:    "symbolic enum filter on active_state and launch_state",
+			filter:  `active_state = ACTIVE AND launch_state = "completed"`,
+			orderBy: "",
+			wantSubstrings: []string{
+				"(e.ActiveState = $1)",
+				"(e.LaunchState = $2)",
+			},
+			wantArgs: []any{
+				int64(pb.ExperimentStatus_ACTIVE),
+				int64(pb.ExperimentStatus_COMPLETED),
 			},
 		},
 	}

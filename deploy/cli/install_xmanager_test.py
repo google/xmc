@@ -64,7 +64,7 @@ class TestInstallXmanager(unittest.TestCase):
             install_xmanager.resolve_xmanager_spec("XManager>=0.8.2"),
             "XManager>=0.8.2",
         )
-        git_req = "xmanager @ git+https://github.com/google-deepmind/xmanager@xm-cloud"
+        git_req = "xmanager @ git+https://github.com/google-deepmind/xmanager@main"
         self.assertEqual(
             install_xmanager.resolve_xmanager_spec(git_req),
             git_req,
