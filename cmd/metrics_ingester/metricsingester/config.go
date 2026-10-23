@@ -25,19 +25,87 @@
 // autoscaling.
 package metricsingester
 
-import "time"
-
-const (
-	// DefaultBatchSize is the default maximum number of messages per ClickHouse insert.
-	DefaultBatchSize = 1000
-	// DefaultBatchInterval matches the Kafka table's kafka_flush_interval_ms.
-	DefaultBatchInterval = time.Second
+import (
+	"errors"
+	"flag"
+	"os"
+	"strings"
+	"time"
 )
 
-// Config holds the runtime configuration for the metrics ingester.
+const (
+	defaultPort          = "8080"
+	defaultBatchSize     = 1000
+	defaultBatchInterval = time.Second
+)
+
+// Config holds the validated runtime configuration for the metrics ingester.
 type Config struct {
+	Port           string
 	ProjectID      string
 	SubscriptionID string
 	BatchSize      int
 	BatchInterval  time.Duration
+}
+
+// Flags holds the CLI flag value bindings for FlagSet registration.
+type Flags Config
+
+// RegisterFlags registers the metrics ingester CLI flags on fs and returns their bindings.
+//
+// String flags default to empty so that LoadConfig can fall back to environment variables when
+// flags are omitted.
+func RegisterFlags(fs *flag.FlagSet) *Flags {
+	f := &Flags{}
+	fs.StringVar(&f.Port, "port", "", "The HTTP health server port (default $PORT, then 8080).")
+	fs.StringVar(&f.ProjectID, "project_id", "", "GCP project ID that owns the subscription (default $GOOGLE_CLOUD_PROJECT).")
+	fs.StringVar(&f.SubscriptionID, "subscription_id", "", "Pub/Sub subscription ID on the metrics topic (default $PUBSUB_SUBSCRIPTION_ID).")
+	// The interval matches kafka_flush_interval_ms on xmc_metrics_queue so both message buses trade
+	// the same latency for ClickHouse insert batching.
+	fs.IntVar(&f.BatchSize, "batch_size", defaultBatchSize, "Maximum number of messages per ClickHouse insert.")
+	fs.DurationVar(&f.BatchInterval, "batch_interval", defaultBatchInterval, "Target time a received message waits before its batch is inserted; longer if a previous insert is still running.")
+	return f
+}
+
+// LoadConfig resolves f against the environment and validates the result.
+//
+// Precedence for string settings is flag, then environment variable, then built-in default.
+func LoadConfig(f *Flags) (*Config, error) {
+	cfg := &Config{
+		Port:           firstNonEmpty(f.Port, os.Getenv("PORT"), defaultPort),
+		ProjectID:      firstNonEmpty(f.ProjectID, os.Getenv("GOOGLE_CLOUD_PROJECT")),
+		SubscriptionID: firstNonEmpty(f.SubscriptionID, os.Getenv("PUBSUB_SUBSCRIPTION_ID")),
+		BatchSize:      f.BatchSize,
+		BatchInterval:  f.BatchInterval,
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func (c *Config) validate() error {
+	if c.ProjectID == "" {
+		return errors.New("project_id is required (flag -project_id or GOOGLE_CLOUD_PROJECT)")
+	}
+	if c.SubscriptionID == "" {
+		return errors.New("subscription_id is required (flag -subscription_id or PUBSUB_SUBSCRIPTION_ID)")
+	}
+	if c.BatchSize <= 0 {
+		return errors.New("batch_size must be positive")
+	}
+	if c.BatchInterval <= 0 {
+		return errors.New("batch_interval must be positive")
+	}
+	return nil
+}
+
+// firstNonEmpty returns the first of values that is non-empty after trimming whitespace.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }

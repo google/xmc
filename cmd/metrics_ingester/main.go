@@ -17,13 +17,14 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"cloud.google.com/go/pubsub"
 	"xmanager_cloud/cmd/metrics_ingester/metricsingester"
@@ -32,15 +33,12 @@ import (
 )
 
 func main() {
-	cfg := &metricsingester.Config{}
-	flag.StringVar(&cfg.ProjectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "GCP project ID that owns the subscription.")
-	flag.StringVar(&cfg.SubscriptionID, "subscription_id", os.Getenv("PUBSUB_SUBSCRIPTION_ID"), "Pub/Sub subscription ID on the metrics topic.")
-	flag.IntVar(&cfg.BatchSize, "batch_size", metricsingester.DefaultBatchSize, "Maximum number of messages per ClickHouse insert.")
-	flag.DurationVar(&cfg.BatchInterval, "batch_interval", metricsingester.DefaultBatchInterval, "Target time a received message waits before its batch is inserted; longer if a previous insert is still running.")
+	flags := metricsingester.RegisterFlags(flag.CommandLine)
 	flag.Parse()
 
-	if cfg.ProjectID == "" || cfg.SubscriptionID == "" {
-		fmt.Fprintln(os.Stderr, "project_id and subscription_id are required")
+	cfg, err := metricsingester.LoadConfig(flags)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -56,11 +54,8 @@ func main() {
 }
 
 // run connects both ends of the pipeline and ingests until SIGINT/SIGTERM or a permanent receive
-// failure.
+// failure. Dependencies are checked up front so misconfiguration fails at startup.
 func run(ctx context.Context, cfg *metricsingester.Config) error {
-	if cfg.BatchSize <= 0 || cfg.BatchInterval <= 0 {
-		return errors.New("batch_size and batch_interval must be positive")
-	}
 	chConn, err := clickhouse.Connect(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to clickhouse: %w", err)
@@ -73,8 +68,36 @@ func run(ctx context.Context, cfg *metricsingester.Config) error {
 	}
 	defer psClient.Close()
 
-	ingester := metricsingester.NewIngester(psClient.Subscription(cfg.SubscriptionID), metricsingester.NewClickHouseWriter(chConn), cfg)
+	sub, err := metricsingester.OpenSubscription(ctx, psClient, cfg)
+	if err != nil {
+		return err
+	}
+
+	ingester := metricsingester.NewIngester(sub, metricsingester.NewClickHouseWriter(chConn), cfg)
+	server := startHealthServer(ctx, cfg.Port, metricsingester.NewHealthMux(ingester, chConn))
+	defer shutdownHealthServer(ctx, server)
+
 	runCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	return ingester.Run(runCtx)
+}
+
+func startHealthServer(ctx context.Context, port string, handler http.Handler) *http.Server {
+	server := &http.Server{Addr: ":" + port, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		logging.Info(ctx, "Health server listening", "port", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logging.Fatal(ctx, "Health server listener error", "error", err)
+		}
+	}()
+	return server
+}
+
+func shutdownHealthServer(ctx context.Context, server *http.Server) {
+	logging.Info(ctx, "Shutting down Metrics Ingester")
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logging.Error(ctx, "Health server shutdown error", "error", err)
+	}
 }

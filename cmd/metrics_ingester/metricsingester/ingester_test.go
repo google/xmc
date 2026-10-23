@@ -261,12 +261,15 @@ func TestIngesterWritesFullBatchAndAcks(t *testing.T) {
 	ctx := context.Background()
 	srv, _, sub := newFakeSubscription(ctx, t)
 	writer := newFakeWriter(0)
-	_, stop := startIngester(t, sub, writer, 3, neverTick)
+	in, stop := startIngester(t, sub, writer, 3, neverTick)
 
 	ids := []string{publishMetric(t, srv, metricWithStep(1)), publishMetric(t, srv, metricWithStep(2)), publishMetric(t, srv, metricWithStep(3))}
 	writer.awaitWrites(t, 1)
 	awaitAcks(t, srv, ids...)
 
+	if !in.IsRunning() {
+		t.Error("IsRunning() = false while Run is active")
+	}
 	got := writer.snapshot()
 	if len(got) != 1 || len(got[0]) != 3 {
 		t.Fatalf("writes = %v, want one batch of 3", got)
@@ -276,6 +279,9 @@ func TestIngesterWritesFullBatchAndAcks(t *testing.T) {
 	}
 	if err := stop(); err != nil {
 		t.Errorf("Run() error = %v, want nil", err)
+	}
+	if in.IsRunning() {
+		t.Error("IsRunning() = true after Run returned")
 	}
 }
 
@@ -474,6 +480,9 @@ func TestIngesterReturnsSourceErrorAfterFlushing(t *testing.T) {
 	}
 	if diff := cmp.Diff([][]*pb.Metric{{testMetric()}}, writer.snapshot(), protocmp.Transform()); diff != "" {
 		t.Errorf("writes mismatch (-want +got):\n%s", diff)
+	}
+	if in.IsRunning() {
+		t.Error("IsRunning() = true after Run returned")
 	}
 }
 

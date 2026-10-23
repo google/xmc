@@ -3,7 +3,7 @@
 The **Metrics Ingester** delivers metrics from Google Cloud Pub/Sub into ClickHouse when the [Ingestion Gateway](../ingestion_gateway/README.md) runs with `-message_bus=pubsub` (in Redpanda mode, ClickHouse consumes the topic directly via `ENGINE = Kafka`). Running it as a separate service keeps ClickHouse credentials and egress off workload-reachable gateway pods and lets a small consumer replica count batch large inserts independently of gateway HTTP autoscaling.
 
 > [!NOTE]
-> Helm and Terraform wiring are not in place yet; create the Pub/Sub topic, subscription, and IAM bindings (`roles/pubsub.subscriber` via Workload Identity / ADC) manually.
+> Helm and Terraform wiring are not in place yet; create the Pub/Sub topic, subscription, and IAM bindings (`roles/pubsub.subscriber` plus `pubsub.subscriptions.get` for the startup check, via Workload Identity / ADC) manually.
 
 ## Data Flow & Delivery Semantics
 
@@ -13,10 +13,11 @@ The ingester pulls `cloud.xmanager.v1.Metric` protobuf messages from the subscri
 - **Malformed payloads**: Payloads failing protobuf wire unmarshaling are logged with `dropped_total`, acked, and dropped (unbounded, unlike `kafka_skip_broken_messages`); valid wire tags that decode near-empty are filtered by `xmc_metrics_pubsub_mv` (`xid = 0`).
 - **Shutdown**: In-flight writes finish within `10s`; un-flushed pending messages are nacked on `SIGINT`/`SIGTERM` for redelivery.
 
-## Configuration & Testing
+## Configuration, Health & Testing
 
 | Flag | Environment Default | Built-in Default | Description |
 | :--- | :--- | :--- | :--- |
+| `-port` | `PORT` | `8080` | Port for `/healthz` (receive loop running) and `/readyz` (receive loop running and ClickHouse answers a ping). |
 | `-project_id` | `GOOGLE_CLOUD_PROJECT` | *(required)* | GCP project owning the subscription. |
 | `-subscription_id` | `PUBSUB_SUBSCRIPTION_ID` | *(required)* | Subscription ID on the metrics topic. |
 | `-batch_size` | — | `1000` | Maximum messages per ClickHouse `INSERT`. |
@@ -25,5 +26,6 @@ The ingester pulls `cloud.xmanager.v1.Metric` protobuf messages from the subscri
 ClickHouse connection settings come from `pkg/clickhouse`: `CLICKHOUSE_DSN`, or `CLICKHOUSE_HOST`, `CLICKHOUSE_PORT`, `CLICKHOUSE_DATABASE`, `CLICKHOUSE_USER`, and `CLICKHOUSE_PASSWORD` / `CLICKHOUSE_PASSWORD_FILE`.
 
 ```bash
-bazel test //cmd/metrics_ingester/...
+bazel test //cmd/metrics_ingester/... //deploy/clickhouse:schema_test
+bazel test //test/metrics:clickhouse_pipeline_test --test_filter=TestPubSubPipelineIngestion
 ```

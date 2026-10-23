@@ -59,6 +59,7 @@ type Ingester struct {
 	retryInitial    time.Duration
 	retryMax        time.Duration
 	droppedMessages atomic.Uint64
+	running         atomic.Bool
 }
 
 // NewIngester returns an Ingester that batches according to cfg.
@@ -74,9 +75,17 @@ func NewIngester(source MessageSource, writer MetricWriter, cfg *Config) *Ingest
 	}
 }
 
+// IsRunning reports whether Run's receive loop is active.
+func (in *Ingester) IsRunning() bool {
+	return in.running.Load()
+}
+
 // Run receives and writes messages until ctx is done or the source fails permanently, returning the
 // source's error. Every message it received is acked or nacked before it returns.
 func (in *Ingester) Run(ctx context.Context) error {
+	in.running.Store(true)
+	defer in.running.Store(false)
+
 	msgCh := make(chan *pubsub.Message, in.batchSize)
 	loopDone := make(chan struct{})
 	go func() {

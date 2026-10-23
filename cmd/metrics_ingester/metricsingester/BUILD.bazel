@@ -20,12 +20,15 @@ go_library(
     name = "metricsingester",
     srcs = [
         "config.go",
+        "health.go",
         "ingester.go",
+        "subscription.go",
         "writer.go",
     ],
     importpath = "xmanager_cloud/cmd/metrics_ingester/metricsingester",
     visibility = [
         "//cmd/metrics_ingester:__subpackages__",
+        "//test/metrics:__pkg__",
     ],
     deps = [
         "//api/protos/metrics:metrics_go_proto",
@@ -39,7 +42,10 @@ go_library(
 go_test(
     name = "metricsingester_test",
     srcs = [
+        "config_test.go",
+        "health_test.go",
         "ingester_test.go",
+        "subscription_test.go",
         "writer_test.go",
     ],
     embed = [":metricsingester"],
