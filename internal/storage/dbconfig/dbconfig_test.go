@@ -83,16 +83,7 @@ func TestParseBackend(t *testing.T) {
 }
 
 func TestLoad(t *testing.T) {
-	baseConfig := Config{
-		Backend:  BackendSpanner,
-		Postgres: Postgres{Port: 5432, SSLMode: "verify-full"},
-	}
-
-	modifyConfig := func(mutator func(*Config)) Config {
-		cfg := baseConfig
-		mutator(&cfg)
-		return cfg
-	}
+	postgresDefaults := Postgres{Port: 5432, SSLMode: "verify-full"}
 
 	tests := []struct {
 		name string
@@ -100,8 +91,8 @@ func TestLoad(t *testing.T) {
 		want Config
 	}{
 		{
-			name: "defaults when unset",
-			want: baseConfig,
+			name: "unset backend selects spanner",
+			want: Config{Backend: BackendSpanner},
 		},
 		{
 			name: "spanner backend settings from db-config",
@@ -111,13 +102,31 @@ func TestLoad(t *testing.T) {
 				"SPANNER_XID_DATABASE":     "projects/p/instances/i/databases/xid-db",
 				"SPANNER_QUOTA_PROJECT_ID": "quota-proj",
 			},
-			want: modifyConfig(func(c *Config) {
-				c.Spanner = Spanner{
+			want: Config{
+				Backend: BackendSpanner,
+				Spanner: Spanner{
 					EssDatabase:    "projects/p/instances/i/databases/ess-db",
 					XidDatabase:    "projects/p/instances/i/databases/xid-db",
 					QuotaProjectID: "quota-proj",
-				}
-			}),
+				},
+			},
+		},
+		{
+			name: "spanner backend ignores postgres settings, even invalid ones",
+			env: map[string]string{
+				"DB_BACKEND":    "spanner",
+				"POSTGRES_HOST": "db.internal",
+				"POSTGRES_PORT": "not-a-port",
+			},
+			want: Config{Backend: BackendSpanner},
+		},
+		{
+			name: "postgres defaults, ignoring spanner settings",
+			env: map[string]string{
+				"DB_BACKEND":           "postgres",
+				"SPANNER_ESS_DATABASE": "projects/p/instances/i/databases/ess-db",
+			},
+			want: Config{Backend: BackendPostgres, Postgres: postgresDefaults},
 		},
 		{
 			name: "postgres backend settings from db-config",
@@ -130,28 +139,36 @@ func TestLoad(t *testing.T) {
 				"POSTGRES_XID_DATABASE": "xid_custom",
 				"POSTGRES_SSLMODE":      "require",
 			},
-			want: modifyConfig(func(c *Config) {
-				c.Backend = BackendPostgres
-				c.Postgres.Host = "postgres.xmc.svc.cluster.local"
-				c.Postgres.Port = 5433
-				c.Postgres.User = "xmc_user"
-				c.Postgres.EssDatabase = "ess_custom"
-				c.Postgres.XidDatabase = "xid_custom"
-				c.Postgres.SSLMode = "require"
-			}),
+			want: Config{
+				Backend: BackendPostgres,
+				Postgres: Postgres{
+					Host:        "postgres.xmc.svc.cluster.local",
+					Port:        5433,
+					User:        "xmc_user",
+					EssDatabase: "ess_custom",
+					XidDatabase: "xid_custom",
+					SSLMode:     "require",
+				},
+			},
 		},
 		{
 			name: "postgres secrets and pool size",
 			env: map[string]string{
+				"DB_BACKEND":             "postgres",
 				"POSTGRES_PASSWORD":      "env-secret",
 				"POSTGRES_PASSWORD_FILE": "/etc/gcp-secrets/postgres-password",
 				"POSTGRES_MAX_CONNS":     "25",
 			},
-			want: modifyConfig(func(c *Config) {
-				c.Postgres.Password = "env-secret"
-				c.Postgres.PasswordFile = "/etc/gcp-secrets/postgres-password"
-				c.Postgres.MaxConns = 25
-			}),
+			want: Config{
+				Backend: BackendPostgres,
+				Postgres: Postgres{
+					Port:         5432,
+					SSLMode:      "verify-full",
+					Password:     "env-secret",
+					PasswordFile: "/etc/gcp-secrets/postgres-password",
+					MaxConns:     25,
+				},
+			},
 		},
 	}
 
@@ -174,20 +191,24 @@ func TestLoad(t *testing.T) {
 
 func TestLoad_InvalidValues(t *testing.T) {
 	tests := []struct {
-		key   string
-		value string
+		backend string
+		key     string
+		value   string
 	}{
 		{key: "DB_BACKEND", value: "mysql"},
 		{key: "DB_BACKEND", value: "Postgres"},
-		{key: "POSTGRES_PORT", value: "not-a-port"},
-		{key: "POSTGRES_PORT", value: "70000"},
-		{key: "POSTGRES_MAX_CONNS", value: "-1"},
-		{key: "POSTGRES_MAX_CONNS", value: "3000000000"},
+		{backend: "postgres", key: "POSTGRES_PORT", value: "not-a-port"},
+		{backend: "postgres", key: "POSTGRES_PORT", value: "70000"},
+		{backend: "postgres", key: "POSTGRES_MAX_CONNS", value: "-1"},
+		{backend: "postgres", key: "POSTGRES_MAX_CONNS", value: "3000000000"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
 			clearDBEnv(t)
+			if tc.backend != "" {
+				t.Setenv("DB_BACKEND", tc.backend)
+			}
 			t.Setenv(tc.key, tc.value)
 			_, err := Load()
 			if err == nil || !strings.Contains(err.Error(), tc.key) {
@@ -197,9 +218,10 @@ func TestLoad_InvalidValues(t *testing.T) {
 	}
 }
 
-// setRequiredPostgresEnv sets the PostgreSQL variables that the connection URLs require.
+// setRequiredPostgresEnv selects PostgreSQL and sets the variables that the connection URLs require.
 func setRequiredPostgresEnv(t *testing.T) {
 	t.Helper()
+	t.Setenv("DB_BACKEND", "postgres")
 	t.Setenv("POSTGRES_HOST", "db.internal")
 	t.Setenv("POSTGRES_USER", "xmc")
 	t.Setenv("POSTGRES_ESS_DATABASE", "ess")

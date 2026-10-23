@@ -53,7 +53,7 @@ func ParseBackend(value string) (Backend, error) {
 	}
 }
 
-// Config holds the database settings for both backends.
+// Config holds the database settings. Only the selected backend's settings are set.
 type Config struct {
 	Backend  Backend
 	Spanner  Spanner
@@ -81,18 +81,22 @@ type Postgres struct {
 	MaxConns     int32
 }
 
-// Load reads the database settings from environment variables. A variable set to an invalid value
-// is an error: Load never falls back to another backend or to a default.
+// Load reads DB_BACKEND and the settings of the backend it selects; the other backend's settings
+// stay empty. A variable set to an invalid value is an error: Load never falls back to another
+// backend or to a default.
 func Load() (Config, error) {
 	backend, err := ParseBackend(os.Getenv("DB_BACKEND"))
 	if err != nil {
 		return Config{}, fmt.Errorf("invalid DB_BACKEND: %w", err)
 	}
+	if backend == BackendSpanner {
+		return Config{Backend: backend, Spanner: loadSpanner()}, nil
+	}
 	postgres, err := loadPostgres()
 	if err != nil {
 		return Config{}, err
 	}
-	return Config{Backend: backend, Spanner: loadSpanner(), Postgres: postgres}, nil
+	return Config{Backend: backend, Postgres: postgres}, nil
 }
 
 func loadSpanner() Spanner {
