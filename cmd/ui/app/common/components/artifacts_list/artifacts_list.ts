@@ -24,7 +24,7 @@ import {
   groupAndSortArtifacts,
   sortArtifactsByPriority,
   toTypedArtifact,
-} from 'app/common/artifacts/artifact_utils';
+} from 'app/common/artifacts/artifact_mapper';
 import { ArtifactListItem, ChartTypedArtifact, PayloadType } from 'app/common/artifacts/interfaces';
 import { parseWorkUnitName } from 'app/common/resource_name_extractor';
 import { Artifact, ListArtifactsResponse } from 'app/protos/experiment_state_server';

@@ -29,6 +29,8 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"xmanager_cloud/pkg/components/bridge/helm"
 )
 
 func TestComponentManagerOptions(t *testing.T) {
@@ -60,8 +62,8 @@ func TestComponentManagerOptions(t *testing.T) {
 			if opts.GracefulShutdownTimeout == nil || *opts.GracefulShutdownTimeout != componentGracefulShutdownTimeout {
 				t.Errorf("GracefulShutdownTimeout = %v, want %v", opts.GracefulShutdownTimeout, componentGracefulShutdownTimeout)
 			}
-			if helmShutdownTimeout >= componentGracefulShutdownTimeout {
-				t.Errorf("helmShutdownTimeout = %v, want less than the graceful shutdown timeout %v so Helm work stops before the Lease is released", helmShutdownTimeout, componentGracefulShutdownTimeout)
+			if helm.HelmShutdownTimeout >= componentGracefulShutdownTimeout {
+				t.Errorf("HelmShutdownTimeout = %v, want less than the graceful shutdown timeout %v so Helm work stops before the Lease is released", helm.HelmShutdownTimeout, componentGracefulShutdownTimeout)
 			}
 		})
 	}

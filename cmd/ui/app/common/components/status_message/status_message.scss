@@ -56,6 +56,8 @@
   flex: 1 1 0;
   padding: $small-padding;
   font-size: $font-size-medium;
+  // Include token breaks in table minimum-width calculations.
+  overflow-wrap: anywhere;
 }
 
 .fatal-message {

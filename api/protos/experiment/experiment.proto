@@ -45,8 +45,11 @@ message Experiment {
   string creator = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
   // ACLs to control access to the experiment. These are passed to the XID
   // service when creating the XID. The XID service will use these ACLs to
-  // enforce access control on the XID.
-  XidAcls acls = 4 [(google.api.field_behavior) = REQUIRED];
+  // enforce access control on the XID. On creation, the caller must hold
+  // WRITER (or OWNER) in these ACLs, and ACLs that list any principal must
+  // list at least one owner; if they are unset or list no principals, the
+  // caller is made the sole OWNER.
+  XidAcls acls = 4 [(google.api.field_behavior) = OPTIONAL];
   // The priority of the experiment.
   Priority priority = 5 [(google.api.field_behavior) = REQUIRED];
   // Time when the experiment was created.

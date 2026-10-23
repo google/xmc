@@ -33,6 +33,8 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/memory"
+	"xmanager_cloud/pkg/components/store/ownership"
 )
 
 // stubStore implements store.Store for unit testing CMS scaffolding.
@@ -477,7 +479,7 @@ func TestCMSServer_UninitializedStore(t *testing.T) {
 
 func TestCMSServer_SetComponentIntent_MemoryStore(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	spec := &componentspb.ComponentSpec{
@@ -576,7 +578,7 @@ func TestCMSServer_SetComponentIntent_UnchangedIntentIsNoop(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			server := NewServer(store.NewMemoryStore(), WithAuthorizer(NewDisabledAuthorizer()))
+			server := NewServer(memory.NewMemoryStore(), WithAuthorizer(NewDisabledAuthorizer()))
 			for _, req := range []*componentspb.SetComponentIntentRequest{
 				{Name: "redpanda", Spec: spec("v1.0.0", 1)},
 				{Name: "gateway", Spec: spec("v1.0.0", 3, "redpanda")},
@@ -686,7 +688,7 @@ func TestCMSServer_SetComponentIntent_Source(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			ms := store.NewMemoryStore()
+			ms := memory.NewMemoryStore()
 			server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 			if !tt.undeclared {
 				if _, err := ms.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: "11111111-1111-4111-8111-111111111111", Name: "prod", Epoch: 1}); err != nil {
@@ -765,7 +767,7 @@ func TestCMSServer_DeclareClusterEpoch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			server := NewServer(store.NewMemoryStore(), WithAuthorizer(NewDisabledAuthorizer()))
+			server := NewServer(memory.NewMemoryStore(), WithAuthorizer(NewDisabledAuthorizer()))
 			if _, err := server.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: prod}); err != nil {
 				t.Fatalf("seed DeclareClusterEpoch() error = %v", err)
 			}
@@ -790,7 +792,7 @@ func TestCMSServer_DeclareClusterEpoch(t *testing.T) {
 
 func TestCMSServer_SetComponentIntent_FencedCluster(t *testing.T) {
 	ctx := context.Background()
-	server := NewServer(store.NewMemoryStore(), WithAuthorizer(NewDisabledAuthorizer()))
+	server := NewServer(memory.NewMemoryStore(), WithAuthorizer(NewDisabledAuthorizer()))
 	prod := &componentspb.ClusterIdentity{Uid: "5a6b7c8d-1e2f-4a3b-8c4d-5e6f7a8b9c01", Name: "prod", Epoch: 2}
 	if _, err := server.DeclareClusterEpoch(ctx, &componentspb.DeclareClusterEpochRequest{Cluster: prod}); err != nil {
 		t.Fatalf("DeclareClusterEpoch() error = %v", err)
@@ -876,7 +878,7 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ms := store.NewMemoryStore()
+			ms := memory.NewMemoryStore()
 			server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 			if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{Name: "redpanda", Spec: specWithDeps()}); err != nil {
 				t.Fatalf("SetComponentIntent(redpanda) unexpected error: %v", err)
@@ -915,7 +917,7 @@ func TestCMSServer_SetComponentIntent_SpecDependencies(t *testing.T) {
 
 func TestCMSServer_UpdateObservedGeneration_MemoryStore(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	spec := &componentspb.ComponentSpec{
@@ -1011,7 +1013,7 @@ func TestCMSServer_UpdateObservedGeneration_MemoryStore(t *testing.T) {
 
 func TestCMSServer_SetComponentIntent_UpdateMask(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	// Create initial component
@@ -1069,7 +1071,7 @@ func TestCMSServer_SetComponentIntent_UpdateMask(t *testing.T) {
 
 func TestCMSServer_PrepareDeactivation_MemoryStore(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	// Create root component
@@ -1199,7 +1201,7 @@ func TestCMSServer_PrepareDeactivation_MemoryStore(t *testing.T) {
 
 func TestCMSServer_CompleteDeactivation_MemoryStore(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	spec := &componentspb.ComponentSpec{
@@ -1303,7 +1305,7 @@ func TestCMSServer_CompleteDeactivation_MemoryStore(t *testing.T) {
 
 func TestCMSServer_ExecuteDeletion_MemoryStore(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	// Create protected component
@@ -1418,7 +1420,7 @@ func TestCMSServer_ExecuteDeletion_MemoryStore(t *testing.T) {
 
 func TestCMSServer_ResolveComponentSnapshot_MemoryStore(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	spec := &componentspb.ComponentSpec{
@@ -1481,7 +1483,7 @@ func TestCMSServer_ResolveComponentSnapshot_MemoryStore(t *testing.T) {
 
 func TestCMSServer_ValidateComponentRequirement_MemoryStore(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	spec := &componentspb.ComponentSpec{
@@ -1549,7 +1551,7 @@ func TestCMSServer_ValidateComponentRequirement_MemoryStore(t *testing.T) {
 
 func TestCMSServer_GetPlatformHealth_MemoryStore(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	for i := 0; i < 3; i++ {
@@ -1614,7 +1616,7 @@ func TestCMSServer_GetPlatformHealth_MemoryStore(t *testing.T) {
 
 func TestCMSServer_OwnershipMetrics(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
 
 	prodCluster := &componentspb.ClusterIdentity{
@@ -1628,11 +1630,11 @@ func TestCMSServer_OwnershipMetrics(t *testing.T) {
 	if err := CollectOwnershipMetrics(ctx, ms, time.Now().UTC()); err != nil {
 		t.Fatalf("CollectOwnershipMetrics() unexpected error: %v", err)
 	}
-	if got := testutil.ToFloat64(store.ClusterFenceEpochGauge()); got != 4 {
+	if got := testutil.ToFloat64(ownership.ClusterFenceEpochGauge()); got != 4 {
 		t.Errorf("xmc_cms_cluster_fence_epoch = %v, want 4", got)
 	}
 
-	initialBefore := testutil.ToFloat64(store.OwnerAdoptionsCounter(store.AdoptionReasonInitial))
+	initialBefore := testutil.ToFloat64(ownership.OwnerAdoptionsCounter(ownership.AdoptionReasonInitial))
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -1650,11 +1652,11 @@ func TestCMSServer_OwnershipMetrics(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetComponentIntent() unexpected error: %v", err)
 	}
-	if got := testutil.ToFloat64(store.OwnerAdoptionsCounter(store.AdoptionReasonInitial)); got != initialBefore+1 {
+	if got := testutil.ToFloat64(ownership.OwnerAdoptionsCounter(ownership.AdoptionReasonInitial)); got != initialBefore+1 {
 		t.Errorf("initial adoptions = %v, want %v", got, initialBefore+1)
 	}
 
-	mismatchBefore := testutil.ToFloat64(store.SourceConflictsCounter(store.ReasonSourceIncarnationMismatch))
+	mismatchBefore := testutil.ToFloat64(ownership.SourceConflictsCounter(store.ReasonSourceIncarnationMismatch))
 	_, _ = server.ExecuteDeletion(ctx, &componentspb.ExecuteDeletionRequest{
 		Name: "cms-metrics-comp",
 		Source: &componentspb.RequestSource{
@@ -1664,7 +1666,7 @@ func TestCMSServer_OwnershipMetrics(t *testing.T) {
 			Cluster:    prodCluster,
 		},
 	})
-	if got := testutil.ToFloat64(store.SourceConflictsCounter(store.ReasonSourceIncarnationMismatch)); got != mismatchBefore+1 {
+	if got := testutil.ToFloat64(ownership.SourceConflictsCounter(store.ReasonSourceIncarnationMismatch)); got != mismatchBefore+1 {
 		t.Errorf("SOURCE_INCARNATION_MISMATCH conflicts = %v, want %v", got, mismatchBefore+1)
 	}
 }

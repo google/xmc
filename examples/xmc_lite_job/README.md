@@ -55,7 +55,7 @@ This example uses the same `.env` variable conventions as the root repository.
 | `GCP_REGION` | **Yes** | `"europe-west1"` | GCP region where the GKE cluster resides. |
 | `XMANAGER_ENV` | Optional | `"dev-1"` | Environment name, handy for keeping one `KUBECONFIG` per environment (see below). |
 | `KUBECONFIG` | Optional | `"${HOME}/.kube/config.${XMANAGER_ENV}"` | Kubeconfig file written by `setup.sh` and used by `launch.py` and `kubectl`. Defaults to `~/.kube/config`. |
-| `XMC_BASE_DOMAIN`, `IAP_CLIENT_ID`, `XMC_CLIENT_SA`, `XMANAGER_ENDPOINT` | **No** *(Full XMC only)* | N/A | Required only by Full XMC (`xm_cloud`) for IAP/gRPC ingress; **unused** in XMC Lite. |
+| `XMC_BASE_DOMAIN`, `IAP_CLIENT_ID`, `XMC_CLIENT_SA`, `XMC_AUTH_TOKEN`, `XMANAGER_ENDPOINT` | **No** *(Full XMC only)* | N/A | Required only by Full XMC (`xm_cloud`) for IAP/gRPC ingress and [authentication](../../docs/authentication.md); **unused** in XMC Lite. |
 
 Example `.env` (same `KEY="VALUE"` format as the root [`.env.example`](../../.env.example)):
 ```bash
@@ -71,9 +71,13 @@ KUBECONFIG="${HOME}/.kube/config.${XMANAGER_ENV}"
 ## 4. Setup & Running the Example
 
 ### Step 1: Run `setup.sh`
-Configure `KUBECONFIG` for the existing cluster and create the local Python virtual environment (`.venv`):
+Configure `KUBECONFIG` for the existing cluster and create the local Python virtual environment (`.venv`), installing `requirements.txt` (`xmanager>=0.8.5.post1`, `absl-py`):
 ```bash
 ./examples/xmc_lite_job/setup.sh
+```
+To pin a specific `xmanager` release (bare version only, e.g. `0.8.5.post1`), set `XMANAGER_VERSION`:
+```bash
+XMANAGER_VERSION="0.8.5.post1" ./examples/xmc_lite_job/setup.sh
 ```
 
 ### Step 2: Launch an Experiment

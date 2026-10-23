@@ -16,4 +16,4 @@ absl-py>=2.1.0
 kubernetes>=29.0.0
 protobuf>=4.25.0
 python-dotenv>=1.0.0
-xmanager>=0.8.2
+xmanager>=0.8.5.post1

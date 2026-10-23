@@ -24,6 +24,7 @@ import (
 	fepb "xmanager_cloud/api/filter"
 	aipfilter "xmanager_cloud/api/filter/go/filter"
 	dpb "xmanager_cloud/api/protos/dashboard"
+	spannerdialect "xmanager_cloud/internal/query_generator/dialect/spanner"
 	"xmanager_cloud/internal/query_generator/querytools"
 	storagedata "xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
@@ -95,12 +96,13 @@ func (r *Repository) buildChartPlotsStatement(chartIDs []string) (*spanner.State
 		return nil, fmt.Errorf("failed to parse filter for chart plots: %w", err)
 	}
 
-	stmt, _, _, err := r.chartPlotsQueryGen.GenerateQuery(
+	stmt := spannerdialect.NewStatement(nil)
+	if _, _, err := r.chartPlotsQueryGen.GenerateQuery(
+		stmt,
 		[]querytools.TableField{dashboardschema.ChartIDTableField, dashboardschema.PlotSpecTableField},
 		nil, nil, filterExp, nil, 0, 0, nil, nil,
-	)
-	if err != nil {
+	); err != nil {
 		return nil, fmt.Errorf("failed to generate chart plots query: %w", err)
 	}
-	return stmt, nil
+	return stmt.Spanner(), nil
 }

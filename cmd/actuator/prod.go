@@ -103,7 +103,7 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		})
 	}
 
-	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, storageClient, spannerClient)
+	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, storageClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}

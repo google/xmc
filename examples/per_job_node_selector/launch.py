@@ -37,7 +37,6 @@ from xmanager_cloud.experiment_state_server.proto import (
     resources_pb2,
     work_unit_pb2,
 )
-from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 logging.getLogger("dotenv.main").setLevel(logging.ERROR)
 dotenv.load_dotenv()
@@ -64,9 +63,7 @@ def main(argv: Sequence[str]) -> None:
 
     with xm_cloud.create_experiment(
         experiment_title="Per-Job nodeSelector Validation Experiment",
-        acls=xid_messages_pb2.XidAcls(
-            owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
-        ),
+        # No `acls`: XMC makes you (the creator) the owner. See docs/authentication.md.
     ) as experiment:
         stub = experiment._experiment_state_stub  # pylint: disable=protected-access
 

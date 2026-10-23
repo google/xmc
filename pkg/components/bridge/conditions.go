@@ -21,6 +21,7 @@ import (
 	"time"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/bridge/helm"
 )
 
 const (
@@ -64,28 +65,28 @@ const (
 	// ReasonUpgradePending indicates a Helm upgrade is queued, in flight, or held on unready dependencies.
 	ReasonUpgradePending = "UpgradePending"
 	// ReasonComponentHealthy indicates the component is healthy (for 1P: Helm release deployed, no upgrade pending or failed).
-	ReasonComponentHealthy = "ComponentHealthy"
+	ReasonComponentHealthy = helm.ReasonComponentHealthy
 	// ReasonHealthProbeFailed indicates the prober-based health check failed.
 	ReasonHealthProbeFailed = "HealthProbeFailed"
 	// ReasonInvalidComponentRef indicates the component reference is missing a name or namespace.
-	ReasonInvalidComponentRef = "InvalidComponentRef"
+	ReasonInvalidComponentRef = helm.ReasonInvalidComponentRef
 	// ReasonHelmUpgradeFailed indicates the last Helm upgrade for the component failed.
-	ReasonHelmUpgradeFailed = "HelmUpgradeFailed"
+	ReasonHelmUpgradeFailed = helm.ReasonHelmUpgradeFailed
 	// ReasonHelmUpgradePending indicates a Helm upgrade is queued or running; progress, not a terminal fault.
-	ReasonHelmUpgradePending = "HelmUpgradePending"
+	ReasonHelmUpgradePending = helm.ReasonHelmUpgradePending
 	// ReasonHelmRunnerUninitialized indicates no Helm action runner is configured, so release state cannot be verified.
-	ReasonHelmRunnerUninitialized = "HelmRunnerUninitialized"
+	ReasonHelmRunnerUninitialized = helm.ReasonHelmRunnerUninitialized
 	// ReasonHelmReleaseNotFound indicates the component's Helm release does not exist.
-	ReasonHelmReleaseNotFound = "HelmReleaseNotFound"
+	ReasonHelmReleaseNotFound = helm.ReasonHelmReleaseNotFound
 	// ReasonHelmReleaseNotReady indicates the latest release revision is in a terminal non-deployed state (e.g. failed).
-	ReasonHelmReleaseNotReady = "HelmReleaseNotReady"
+	ReasonHelmReleaseNotReady = helm.ReasonHelmReleaseNotReady
 	// ReasonHelmReleaseStuck indicates the release is pending-install/upgrade/rollback with no upgrade in flight in this bridge.
-	ReasonHelmReleaseStuck = "HelmReleaseStuck"
+	ReasonHelmReleaseStuck = helm.ReasonHelmReleaseStuck
 	// ReasonHelmStatusUnavailable indicates a transient failure querying Helm release status; health is left unchanged.
-	ReasonHelmStatusUnavailable = "HelmStatusUnavailable"
+	ReasonHelmStatusUnavailable = helm.ReasonHelmStatusUnavailable
 	// ReasonHelmReleaseDrifted indicates objects rendered by the deployed Helm release are missing from the cluster;
 	// the bridge re-applies the release at the current generation to recreate them.
-	ReasonHelmReleaseDrifted = "HelmReleaseDrifted"
+	ReasonHelmReleaseDrifted = helm.ReasonHelmReleaseDrifted
 	// ReasonContractBroken indicates that a 3P wrapper target resource violated the status contract
 	// (e.g. malformed status payload, unparseable observedGeneration, or JSONPath execution failure against the target object).
 	ReasonContractBroken = "ContractBroken"

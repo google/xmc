@@ -18,12 +18,12 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Params, provideRouter } from '@angular/router';
 import { BehaviorSubject, NEVER, of } from 'rxjs';
 
-import { EmptyComponent } from 'app/common/testing_utils/empty_component';
 import { ListExperimentsResponse } from 'app/protos/experiment_state_server';
 import { AUTO_REFRESH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from 'app/service/constants';
 import { ExperimentService } from 'app/service/experiment_service';
 import { FeatureFlagService } from 'app/service/feature_flag_service';
 import { HealthService } from 'app/service/health_service';
+import { EmptyComponent } from 'app/testing/empty_component';
 import { bootstrap, cleanState, hasEl, setupModule, useAutoTick } from 'app/testing/test';
 
 import { ExperimentsListPage } from './experiments_list_page';

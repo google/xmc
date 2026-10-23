@@ -26,6 +26,7 @@ go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/logging",
+        "//internal/query_generator/dialect/spanner",
         "//internal/query_generator/liststatement",
         "//internal/query_generator/normalizer",
         "//internal/query_generator/querytools",

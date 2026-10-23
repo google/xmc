@@ -20,6 +20,7 @@ import (
 
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/ownership"
 )
 
 // OwnershipMetricsInterval is how often RunOwnershipMetricsCollector refreshes the ownership gauges.
@@ -32,7 +33,7 @@ func CollectOwnershipMetrics(ctx context.Context, reader store.OwnershipGaugeRea
 	if err != nil {
 		return err
 	}
-	store.RecordOwnershipGauges(g)
+	ownership.RecordOwnershipGauges(g)
 	return nil
 }
 

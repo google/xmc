@@ -38,12 +38,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/kubernetes/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/helm"
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 	"xmanager_cloud/pkg/components/store"
 )
 
@@ -121,7 +123,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name: "active 3P with coordinate injection",
 			cms:  &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{
+			prober: &mockProber{status: &statusdetector.ResourceStatus{
 				Found:            true,
 				Ready:            true,
 				Endpoint:         "http://chi-prod.analytics.svc.cluster.local:8123",
@@ -137,7 +139,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "active 3P with status detector not ready",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: false, Message: "Waiting for pods"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: false, Message: "Waiting for pods"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
 				Enabled: true,
@@ -147,7 +149,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "active 3P with status detector resource not found",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: false, Message: "CRD not installed: clickhouses.clickhouse.altinity.com"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: false, Message: "CRD not installed: clickhouses.clickhouse.altinity.com"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef,
 				Enabled: true,
@@ -190,7 +192,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "active 3P with empty target name",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1,
 				Spec: &componentspb.ComponentSpec{
@@ -528,7 +530,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper resource not found",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: false, Ready: false, Message: "resource not found"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: false, Ready: false, Message: "resource not found"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -537,7 +539,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper unready with empty message fallback",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: false, Ready: false, Message: ""}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: false, Ready: false, Message: ""}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -546,7 +548,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper resource not ready",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: false, Message: "reconciling pods"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: false, Message: "reconciling pods"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -555,7 +557,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper active probe error",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, probeErr: errors.New("connection refused")},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, probeErr: errors.New("connection refused")},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -564,7 +566,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper active probe unhealthy",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, probeRes: &HealthProbeResult{Healthy: false, Message: "503 Service Unavailable"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, probeRes: &healthprobe.HealthProbeResult{Healthy: false, Message: "503 Service Unavailable"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -582,7 +584,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper prober returns nil probe result without error",
 			cms:    &mockCMS{},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, hasProbeRes: true, probeRes: nil},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true, Endpoint: "http://clickhouse.xmc:8123"}, hasProbeRes: true, probeRes: nil},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -609,7 +611,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper handle3PUnreadyStatus CMS error",
 			cms:    &mockCMS{obsErr: errors.New("cms update failed")},
-			prober: &mockProber{status: &ResourceStatus{Found: false, Ready: false}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: false, Ready: false}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -618,7 +620,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 		{
 			name:   "3P wrapper handle3PReadyStatus CMS error",
 			cms:    &mockCMS{obsErr: errors.New("cms update failed")},
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "clickhouse", Generation: 1, Spec: spec3PWithRef, Enabled: true,
 			},
@@ -637,11 +639,11 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var p StatusDetectorHealthProber
+			var p healthprobe.StatusDetectorHealthProber
 			if tt.prober != nil {
 				p = tt.prober
 			}
-			var helmMgr HelmManager
+			var helmMgr helm.HelmManager
 			if tt.helm != nil {
 				helmMgr = tt.helm
 			}
@@ -684,13 +686,7 @@ func TestReconcileComponent_Scenarios(t *testing.T) {
 // previously deployed revision while an async upgrade for a new generation is still in flight.
 func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T) {
 	ctx := context.Background()
-	gate := make(chan struct{})
-	runner := &mockHelmActionRunner{
-		upgradeGate:    gate,
-		upgradeStarted: make(chan struct{}, 1),
-		installed:      map[string]bool{componentKey("xmc", "xmc-cmp-ingestion"): true}, // Generation 1 is deployed.
-	}
-	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner))
+	mgr := &mockHelm{unhealthyReason: ReasonHelmUpgradePending}
 	r, err := NewReconciler(&mockCMS{}, nil, mgr)
 	if err != nil {
 		t.Fatalf("NewReconciler() failed: %v", err)
@@ -716,9 +712,7 @@ func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T
 		t.Errorf("state while upgrade in flight = %v, want PENDING_RECONCILIATION", res.State)
 	}
 
-	close(gate)
-	<-runner.upgradeStarted // Close drops queued upgrades, so wait until this one is in flight.
-	_ = mgr.Close()         // Waits for the worker to finish the in-flight upgrade.
+	mgr.unhealthyReason = ""
 	res, err = r.ReconcileComponent(ctx, in)
 	if err != nil {
 		t.Fatalf("ReconcileComponent() after upgrade failed: %v", err)
@@ -727,8 +721,8 @@ func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T
 	if diff := cmp.Diff(wantHealthy, extractHealthConditions(res.Conditions)); diff != "" {
 		t.Errorf("health conditions after upgrade mismatch (-want +got):\n%s", diff)
 	}
-	if got := runner.upgradeCalls; got != 1 {
-		t.Errorf("upgradeCalls = %d, want 1 (second pass must not re-upgrade)", got)
+	if got := mgr.ensureCalls; got != 1 {
+		t.Errorf("ensureCalls = %d, want 1 (second pass must not re-upgrade)", got)
 	}
 }
 
@@ -737,11 +731,7 @@ func TestReconcileComponent_AsyncUpgradeReportsPendingUntilComplete(t *testing.T
 // on the next pass without waiting for a new CR generation.
 func TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration(t *testing.T) {
 	ctx := context.Background()
-	runner := &mockHelmActionRunner{
-		installed: map[string]bool{componentKey("xmc", "xmc-cmp-ingestion"): true},
-		missing:   []string{"Role/ingestion-components-reader"},
-	}
-	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
+	mgr := &mockHelm{unhealthyReason: ReasonHelmReleaseDrifted}
 	r, err := NewReconciler(&mockCMS{}, nil, mgr)
 	if err != nil {
 		t.Fatalf("NewReconciler() failed: %v", err)
@@ -763,8 +753,8 @@ func TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration(t *testing.
 	if diff := cmp.Diff(wantDrifted, extractHealthConditions(res.Conditions)); diff != "" {
 		t.Errorf("health conditions on drift detection mismatch (-want +got):\n%s", diff)
 	}
-	if got := runner.upgradeCalls; got != 0 {
-		t.Errorf("upgradeCalls after drift detection = %d, want 0", got)
+	if got := mgr.ensureCalls; got != 0 {
+		t.Errorf("ensureCalls after drift detection = %d, want 0", got)
 	}
 
 	in.ExistingConditions = res.Conditions
@@ -776,8 +766,8 @@ func TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration(t *testing.
 	if diff := cmp.Diff(wantHealthy, extractHealthConditions(res.Conditions)); diff != "" {
 		t.Errorf("health conditions after repair mismatch (-want +got):\n%s", diff)
 	}
-	if got := runner.upgradeCalls; got != 1 {
-		t.Errorf("upgradeCalls after repair = %d, want 1 (repair must re-upgrade at the same generation)", got)
+	if got := mgr.ensureCalls; got != 1 {
+		t.Errorf("ensureCalls after repair = %d, want 1 (repair must re-upgrade at the same generation)", got)
 	}
 }
 
@@ -786,12 +776,7 @@ func TestReconcileComponent_DriftedReleaseIsRepairedAtSameGeneration(t *testing.
 // an approved spec, so it is not held, and DependenciesReady=False is still reported.
 func TestReconcileComponent_DriftRepairBypassesDependencyHold(t *testing.T) {
 	ctx := context.Background()
-	runner := &mockHelmActionRunner{
-		installed: map[string]bool{componentKey("xmc", "xmc-cmp-ingestion"): true},
-		missing:   []string{"Role/ingestion-components-reader"},
-	}
-	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(runner), WithSyncExecution(true))
-	defer mgr.Close()
+	mgr := &mockHelm{unhealthyReason: ReasonHelmReleaseDrifted}
 	r, err := NewReconciler(&mockCMS{}, nil, mgr)
 	if err != nil {
 		t.Fatalf("NewReconciler() failed: %v", err)
@@ -819,7 +804,7 @@ func TestReconcileComponent_DriftRepairBypassesDependencyHold(t *testing.T) {
 		if err != nil {
 			t.Fatalf("pass %d: ReconcileComponent() failed: %v", i, err)
 		}
-		got := outcome{Health: extractHealthConditions(res.Conditions), UpgradeCalls: runner.upgradeCalls}
+		got := outcome{Health: extractHealthConditions(res.Conditions), UpgradeCalls: mgr.ensureCalls}
 		if c := findCondition(res.Conditions, ConditionTypeDependenciesReady); c != nil {
 			got.DependenciesReady = c.Status
 		}
@@ -827,6 +812,20 @@ func TestReconcileComponent_DriftRepairBypassesDependencyHold(t *testing.T) {
 			t.Errorf("pass %d: outcome mismatch (-want +got):\n%s", i, diff)
 		}
 		in.ExistingConditions = res.Conditions
+	}
+}
+
+// TestReconciler_ForgetComponentForwardsToHelmManager verifies that forgetting a deleted CR also evicts the Helm
+// manager's per-incarnation state.
+func TestReconciler_ForgetComponentForwardsToHelmManager(t *testing.T) {
+	mgr := &mockHelm{}
+	r, err := NewReconciler(&mockCMS{}, &mockProber{healthy: true}, mgr)
+	if err != nil {
+		t.Fatalf("NewReconciler() failed: %v", err)
+	}
+	r.ForgetComponent("xmc", "ingestion")
+	if diff := cmp.Diff([]string{"xmc/ingestion"}, mgr.forgotten); diff != "" {
+		t.Errorf("ForgetComponent forwarded keys mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -1007,8 +1006,8 @@ func TestDropSelfDependency(t *testing.T) {
 
 func TestReconcileComponent_1P_PopulatesEmptyHelmOptsRef(t *testing.T) {
 	ctx := context.Background()
-	helm := &mockHelm{}
-	r, err := NewReconciler(&mockCMS{}, nil, helm)
+	helmMgr := &mockHelm{}
+	r, err := NewReconciler(&mockCMS{}, nil, helmMgr)
 	if err != nil {
 		t.Fatalf("NewReconciler failed: %v", err)
 	}
@@ -1020,7 +1019,7 @@ func TestReconcileComponent_1P_PopulatesEmptyHelmOptsRef(t *testing.T) {
 		Spec: &componentspb.ComponentSpec{
 			Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		},
-		HelmOpts: HelmComponentOptions{
+		HelmOpts: helm.HelmComponentOptions{
 			// Ref intentionally empty
 		},
 	}
@@ -1030,12 +1029,12 @@ func TestReconcileComponent_1P_PopulatesEmptyHelmOptsRef(t *testing.T) {
 		t.Fatalf("ensure1PComponent failed: %v", err)
 	}
 
-	wantRef := ComponentRef{Namespace: "custom-ns", Name: "custom-comp"}
-	if helm.lastRef != wantRef {
-		t.Errorf("expected lastRef %v, got %v", wantRef, helm.lastRef)
+	wantRef := helm.ComponentRef{Namespace: "custom-ns", Name: "custom-comp"}
+	if helmMgr.lastRef != wantRef {
+		t.Errorf("expected lastRef %v, got %v", wantRef, helmMgr.lastRef)
 	}
-	if helm.lastOpts.Ref != wantRef {
-		t.Errorf("expected lastOpts.Ref %v, got %v", wantRef, helm.lastOpts.Ref)
+	if helmMgr.lastOpts.Ref != wantRef {
+		t.Errorf("expected lastOpts.Ref %v, got %v", wantRef, helmMgr.lastOpts.Ref)
 	}
 }
 
@@ -1043,49 +1042,49 @@ func TestResolveComponentRef(t *testing.T) {
 	tests := []struct {
 		name    string
 		in      ReconcileComponentInput
-		wantRef ComponentRef
+		wantRef helm.ComponentRef
 	}{
 		{
 			name: "both name and namespace empty in HelmOpts",
 			in: ReconcileComponentInput{
 				Namespace: "default-ns",
 				Name:      "default-name",
-				HelmOpts:  HelmComponentOptions{},
+				HelmOpts:  helm.HelmComponentOptions{},
 			},
-			wantRef: ComponentRef{Namespace: "default-ns", Name: "default-name"},
+			wantRef: helm.ComponentRef{Namespace: "default-ns", Name: "default-name"},
 		},
 		{
 			name: "ref name set but namespace empty in HelmOpts",
 			in: ReconcileComponentInput{
 				Namespace: "fallback-ns",
 				Name:      "original-name",
-				HelmOpts: HelmComponentOptions{
-					Ref: ComponentRef{Name: "custom-name"},
+				HelmOpts: helm.HelmComponentOptions{
+					Ref: helm.ComponentRef{Name: "custom-name"},
 				},
 			},
-			wantRef: ComponentRef{Namespace: "fallback-ns", Name: "custom-name"},
+			wantRef: helm.ComponentRef{Namespace: "fallback-ns", Name: "custom-name"},
 		},
 		{
 			name: "ref namespace set but name empty in HelmOpts",
 			in: ReconcileComponentInput{
 				Namespace: "original-ns",
 				Name:      "fallback-name",
-				HelmOpts: HelmComponentOptions{
-					Ref: ComponentRef{Namespace: "custom-ns"},
+				HelmOpts: helm.HelmComponentOptions{
+					Ref: helm.ComponentRef{Namespace: "custom-ns"},
 				},
 			},
-			wantRef: ComponentRef{Namespace: "custom-ns", Name: "fallback-name"},
+			wantRef: helm.ComponentRef{Namespace: "custom-ns", Name: "fallback-name"},
 		},
 		{
 			name: "both ref name and namespace set in HelmOpts",
 			in: ReconcileComponentInput{
 				Namespace: "ignored-ns",
 				Name:      "ignored-name",
-				HelmOpts: HelmComponentOptions{
-					Ref: ComponentRef{Namespace: "custom-ns", Name: "custom-name"},
+				HelmOpts: helm.HelmComponentOptions{
+					Ref: helm.ComponentRef{Namespace: "custom-ns", Name: "custom-name"},
 				},
 			},
-			wantRef: ComponentRef{Namespace: "custom-ns", Name: "custom-name"},
+			wantRef: helm.ComponentRef{Namespace: "custom-ns", Name: "custom-name"},
 		},
 	}
 
@@ -1719,7 +1718,7 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 		WrapperRef: &componentspb.WrapperRef{CrdGroup: "clickhouse.altinity.com", CrdVersion: "v1", CrdKind: "ClickHouseInstallation", TargetName: "ch"},
 	}
 	spec1P := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}
-	prober := &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123", ConnectionSecret: "ch-sec"}}
+	prober := &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123", ConnectionSecret: "ch-sec"}}
 	prevAccess := &AccessStatus{EnvVars: map[string]string{"ENDPOINT": "http://ch.xmc:8123", "HOST": "ch.xmc", "PORT": "8123", "SCHEME": "http", "SECRET_NAME": "ch-sec"}}
 	prevReady := []Condition{
 		{Type: ConditionTypeReady, Status: ConditionStatusTrue, ObservedGeneration: 1, Reason: ReasonComponentHealthy, Message: "Ready"},
@@ -1880,7 +1879,7 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var helmMgr HelmManager
+			var helmMgr helm.HelmManager
 			if tt.helm != nil {
 				helmMgr = tt.helm
 			}
@@ -1979,7 +1978,7 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 	}{
 		{
 			name:         "actuated 3P wrapper that became unready surfaces the local failure",
-			prober:       &mockProber{status: &ResourceStatus{Found: true, Ready: false, Message: "pods crashing"}},
+			prober:       &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: false, Message: "pods crashing"}},
 			in:           ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true, ExistingConditions: prevReady, ExistingAccess: prevAccess},
 			wantState:    componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantReady:    ConditionStatusFalse,
@@ -2008,7 +2007,7 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 		},
 		{
 			name:         "disabled component does not keep Ready=True",
-			prober:       &mockProber{status: &ResourceStatus{Found: true, Ready: true}},
+			prober:       &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true}},
 			in:           ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: false, ExistingConditions: prevReady, ExistingAccess: prevAccess},
 			wantState:    componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 			wantReady:    ConditionStatusUnknown,
@@ -2018,7 +2017,7 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 		},
 		{
 			name:   "actuated 3P wrapper without dependencies that became unready on outage pass 1 recovers to Ready=True on outage pass 2",
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true,
 				ExistingConditions: []Condition{
@@ -2033,7 +2032,7 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 		},
 		{
 			name:   "never-actuated 3P wrapper gated on DependenciesNotReady is not probed during CMS outage",
-			prober: &mockProber{status: &ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123"}},
+			prober: &mockProber{status: &statusdetector.ResourceStatus{Found: true, Ready: true, Endpoint: "http://ch.xmc:8123"}},
 			in: ReconcileComponentInput{
 				Namespace: "xmc", Name: "ch", Generation: 2, Spec: spec3P, Enabled: true,
 				ExistingConditions: []Condition{
@@ -2048,7 +2047,7 @@ func TestReconcileComponent_CMSOutageRefreshesLocalHealth(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var helmMgr HelmManager
+			var helmMgr helm.HelmManager
 			if tt.helm != nil {
 				helmMgr = tt.helm
 			}
@@ -2122,13 +2121,13 @@ func reconcileMalformedWrapper(ctx context.Context, t *testing.T, dynClient dyna
 	t.Helper()
 	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "ray.io", Version: "v1"}})
 	mapper.Add(schema.GroupVersionKind{Group: "ray.io", Version: "v1", Kind: "RayCluster"}, meta.RESTScopeNamespace)
-	prober := NewBridgeProber(NewK8sStatusDetector(dynClient, mapper), nil, time.Second)
+	prober := healthprobe.NewBridgeProber(statusdetector.NewK8sStatusDetector(dynClient, mapper), nil, time.Second)
 	rec, err := NewReconciler(&mockCMS{}, prober, nil)
 	if err != nil {
 		t.Fatalf("NewReconciler failed: %v", err)
 	}
 	res, err := rec.ReconcileWithDependencies(ctx, live, nil)
-	if !errors.Is(err, ErrContractBreach) {
+	if !errors.Is(err, statusdetector.ErrContractBreach) {
 		t.Fatalf("expected ErrContractBreach from ReconcileWithDependencies, got %v", err)
 	}
 	if err := ApplyComponentStatusSSA(ctx, c, live, res); err != nil {

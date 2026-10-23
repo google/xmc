@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -58,8 +59,11 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/bridge"
+	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/helm"
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 	"xmanager_cloud/pkg/components/cms"
-	"xmanager_cloud/pkg/components/store"
+	storememory "xmanager_cloud/pkg/components/store/memory"
 )
 
 const harnessBridgeSA = "xmc-bridge-sa@xmc-test.iam.gserviceaccount.com"
@@ -83,15 +87,20 @@ func newHarnessCMSAuthorizer(callerEmail string) *cms.Authorizer {
 }
 
 var (
-	crdGVR                           = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
-	componentGVR                     = schema.GroupVersionResource{Group: "xmc.dev", Version: "v1alpha1", Resource: "components"}
-	_            bridge.HealthProber = (*kindNodePortProber)(nil)
+	crdGVR                                = schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
+	componentGVR                          = schema.GroupVersionResource{Group: "xmc.dev", Version: "v1alpha1", Resource: "components"}
+	_            healthprobe.HealthProber = (*kindNodePortProber)(nil)
 )
 
 // kindBridgeProbeInterval is the re-probe interval of the per-namespace bridge controller. It is
 // short because 3P readiness follows external CR and workload status, which emit no Component
 // event.
 const kindBridgeProbeInterval = time.Second
+
+// componentTransitionTimeout bounds each Component status transition awaited by waitForComponent. It
+// exceeds the bridge's 30s DeactivationBlocked recheck interval, which gates how soon a blocked
+// deactivation is retried.
+const componentTransitionTimeout = 90 * time.Second
 
 type kindClusterHarness struct {
 	clusterName, kubeconfig string
@@ -103,14 +112,29 @@ type kindClusterHarness struct {
 	reconciler              *bridge.Reconciler
 }
 
+// kindHarnessConfig configures newKindClusterHarness.
+type kindHarnessConfig struct {
+	// requiredImages are preloaded into the KinD node before the harness starts.
+	requiredImages []string
+	// helmActuation wires a real in-process bridge.K8sHelmManager into the reconciler so 1P
+	// Components install and upgrade their Helm releases. When false the HelmManager is nil and 1P
+	// Components are reconciled without workloads.
+	helmActuation bool
+}
+
 func setupKindClusterHarness(t *testing.T, requiredImages ...string) *kindClusterHarness {
+	t.Helper()
+	return newKindClusterHarness(t, kindHarnessConfig{requiredImages: requiredImages})
+}
+
+func newKindClusterHarness(t *testing.T, cfg kindHarnessConfig) *kindClusterHarness {
 	t.Helper()
 	ctrl.SetLogger(testr.New(t))
 	clusterName, kubeconfig := acquireKindCluster(t)
-	for _, img := range requiredImages {
+	for _, img := range cfg.requiredImages {
 		preloadImageIntoKind(t, clusterName, img)
 	}
-	harness := buildClusterClients(t, clusterName, kubeconfig)
+	harness := buildClusterClients(t, clusterName, kubeconfig, cfg.helmActuation)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	installComponentCRD(ctx, t, harness)
@@ -156,6 +180,23 @@ func runCommand(t *testing.T, name string, args ...string) string {
 	return string(out)
 }
 
+// renderHelmTemplate runs `helm template args...` within ctx, bounded to 2 minutes, and returns
+// its stdout only, because helm logs warnings such as symlinked chart files in Bazel runfiles to
+// stderr.
+func renderHelmTemplate(ctx context.Context, t *testing.T, args ...string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, resolveBinaryPath("helm"), append([]string{"template"}, args...)...)
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("helm template %v failed: %v\nStderr:\n%s", args, err, stderr.String())
+	}
+	return string(out)
+}
+
 func resolveBinaryPath(name string) string {
 	if p, err := exec.LookPath(name); err == nil {
 		return p
@@ -177,7 +218,7 @@ func resolveBinaryPath(name string) string {
 	return name
 }
 
-func buildClusterClients(t *testing.T, clusterName, kubeconfig string) *kindClusterHarness {
+func buildClusterClients(t *testing.T, clusterName, kubeconfig string, helmActuation bool) *kindClusterHarness {
 	t.Helper()
 	restCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
@@ -192,28 +233,61 @@ func buildClusterClients(t *testing.T, clusterName, kubeconfig string) *kindClus
 		t.Fatalf("failed to create dynamic client: %v", err)
 	}
 	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(clientset.Discovery()))
-	cmsServer := cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer(harnessBridgeSA)))
-	prober := &kindNodePortProber{clientset: clientset, delegate: bridge.NewNetworkHealthProber(bridge.WithHealthProbeTimeout(5 * time.Second))}
-	reconciler, err := bridge.NewReconciler(bridge.NewCMSClientAdapter(cmsServer), bridge.NewBridgeProber(bridge.NewK8sStatusDetector(dynClient, mapper), prober, 5*time.Second), nil)
+	cmsServer := cms.NewServer(storememory.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer(harnessBridgeSA)))
+	prober := &kindNodePortProber{clientset: clientset, delegate: healthprobe.NewNetworkHealthProber(healthprobe.WithHealthProbeTimeout(5 * time.Second))}
+	reconciler, err := bridge.NewReconciler(bridge.NewCMSClientAdapter(cmsServer), healthprobe.NewBridgeProber(statusdetector.NewK8sStatusDetector(dynClient, mapper), prober, 5*time.Second), newHarnessHelmManager(t, clientset, kubeconfig, helmActuation))
 	if err != nil {
 		t.Fatalf("failed to create bridge reconciler: %v", err)
 	}
 	return &kindClusterHarness{clusterName: clusterName, kubeconfig: kubeconfig, restCfg: restCfg, clientset: clientset, dynClient: dynClient, restMapper: mapper, cmsServer: cmsServer, reconciler: reconciler}
 }
 
+// newHarnessHelmManager returns the HelmManager of the harness reconciler: nil unless enabled, else a
+// helm.K8sHelmManager that runs Helm SDK actions through kubeconfig, as cmd/xmc_bridge wires it. The
+// manager is aborted when the test ends, after every namespace bridge has stopped. Unlike
+// cmd/xmc_bridge with --chart-path, it sets no helm.WithChartPath base, so an absolute
+// parameters.chartPath override is accepted without the base-directory containment check; suites
+// using it do not prove the production chartPath resolution.
+func newHarnessHelmManager(t *testing.T, clientset kubernetes.Interface, kubeconfig string, enabled bool) helm.HelmManager {
+	t.Helper()
+	if !enabled {
+		return nil
+	}
+	helmMgr := helm.NewK8sHelmManager(clientset, helm.DefaultNamespace, helm.DefaultHelmReleaseName, helm.WithKubeconfig(kubeconfig))
+	t.Cleanup(helmMgr.Abort)
+	return helmMgr
+}
+
 func installComponentCRD(ctx context.Context, t *testing.T, h *kindClusterHarness) {
 	t.Helper()
 	chartRoot := filepath.Dir(filepath.Dir(filepath.Dir(locateHelmComponentCRDPath(t))))
-	renderedYAML := runCommand(t, "helm", "template", "xmc-e2e", chartRoot, "--set", "componentsDeployment.enabled=true", "--show-only", "templates/components/crd.yaml")
-	if idx := strings.Index(renderedYAML, "\napiVersion:"); idx >= 0 {
-		renderedYAML = renderedYAML[idx+1:]
+	renderedYAML := renderHelmTemplate(ctx, t, "xmc-e2e", chartRoot, "--set", "componentsDeployment.enabled=true", "--show-only", "templates/components/crd.yaml")
+	objs, err := decodeYAMLDocuments(renderedYAML)
+	if err != nil || len(objs) != 1 {
+		t.Fatalf("failed to decode CRD YAML into exactly one object (got %d): %v", len(objs), err)
 	}
-	var obj map[string]any
-	if err := k8syaml.Unmarshal([]byte(renderedYAML), &obj); err != nil {
-		t.Fatalf("failed to unmarshal CRD YAML: %v", err)
-	}
-	applyUnstructuredObject(ctx, t, h, obj)
+	applyUnstructuredObject(ctx, t, h, objs[0])
 	waitForCRDEstablished(ctx, t, h, "components.xmc.dev")
+}
+
+// decodeYAMLDocuments decodes every non-empty document of a multi-document YAML stream, such as
+// `helm template` output.
+func decodeYAMLDocuments(rendered string) ([]map[string]any, error) {
+	decoder := k8syaml.NewYAMLOrJSONDecoder(strings.NewReader(rendered), 4096)
+	var objs []map[string]any
+	for {
+		var obj map[string]any
+		err := decoder.Decode(&obj)
+		if errors.Is(err, io.EOF) {
+			return objs, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode YAML document: %w", err)
+		}
+		if len(obj) > 0 {
+			objs = append(objs, obj)
+		}
+	}
 }
 
 func installThirdPartyCRD(ctx context.Context, t *testing.T, h *kindClusterHarness, group, version, kind, plural string) {
@@ -253,8 +327,8 @@ func applyThirdPartyComponentCR(ctx context.Context, t *testing.T, h *kindCluste
 		existing.SetFinalizers(nil)
 		_, _ = compRes.Update(ctx, existing, metav1.UpdateOptions{})
 		_ = compRes.Delete(ctx, name, metav1.DeleteOptions{})
-		if !waitUntil(ctx, 15*time.Second, 100*time.Millisecond, func() bool {
-			_, getErr := compRes.Get(ctx, name, metav1.GetOptions{})
+		if !waitUntil(ctx, 15*time.Second, 100*time.Millisecond, func(pollCtx context.Context) bool {
+			_, getErr := compRes.Get(pollCtx, name, metav1.GetOptions{})
 			return apierrors.IsNotFound(getErr)
 		}) {
 			t.Fatalf("timed out waiting for previous Component %s/%s deletion", ns, name)
@@ -281,17 +355,29 @@ func assertComponentEnvVars(t *testing.T, envVars map[string]string, wantEndpoin
 
 func locateHelmComponentCRDPath(t *testing.T) string {
 	t.Helper()
+	return locateRepoPath(t, "deploy/helm/templates/components/crd.yaml")
+}
+
+// locateRepoPath returns the absolute path of the repository-relative path relPath, resolved from
+// Bazel runfiles when present and otherwise from the working directory or its ancestors.
+func locateRepoPath(t *testing.T, relPath string) string {
+	t.Helper()
 	candidates := []string{".", "../..", "../../.."}
 	if srcDir, ws := os.Getenv("TEST_SRCDIR"), os.Getenv("TEST_WORKSPACE"); srcDir != "" && ws != "" {
 		candidates = append([]string{filepath.Join(srcDir, ws)}, candidates...)
 	}
 	for _, root := range candidates {
-		p := filepath.Join(root, "deploy", "helm", "templates", "components", "crd.yaml")
-		if _, err := os.Stat(p); err == nil {
-			return p
+		p := filepath.Join(root, filepath.FromSlash(relPath))
+		if _, err := os.Stat(p); err != nil {
+			continue
 		}
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			t.Fatalf("failed to resolve absolute path of %s: %v", p, err)
+		}
+		return abs
 	}
-	t.Fatalf("could not locate deploy/helm/templates/components/crd.yaml in %v", candidates)
+	t.Fatalf("could not locate %s in %v", relPath, candidates)
 	return ""
 }
 
@@ -329,16 +415,18 @@ func resolveObjectGVR(gvk schema.GroupVersionKind) schema.GroupVersionResource {
 	}
 }
 
-func waitUntil(ctx context.Context, timeout, interval time.Duration, cond func() bool) bool {
-	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(context.Context) (bool, error) {
-		return cond(), nil
+// waitUntil polls cond every interval until it returns true or timeout elapses. cond receives the
+// poll context, which is bounded by timeout, so API calls in cond must use it rather than ctx.
+func waitUntil(ctx context.Context, timeout, interval time.Duration, cond func(pollCtx context.Context) bool) bool {
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(pollCtx context.Context) (bool, error) {
+		return cond(pollCtx), nil
 	}) == nil
 }
 
 func waitForCRDEstablished(ctx context.Context, t *testing.T, h *kindClusterHarness, crdName string) {
 	t.Helper()
-	ok := waitUntil(ctx, 30*time.Second, 250*time.Millisecond, func() bool {
-		u, err := h.dynClient.Resource(crdGVR).Get(ctx, crdName, metav1.GetOptions{})
+	ok := waitUntil(ctx, 30*time.Second, 250*time.Millisecond, func(pollCtx context.Context) bool {
+		u, err := h.dynClient.Resource(crdGVR).Get(pollCtx, crdName, metav1.GetOptions{})
 		return err == nil && hasConditionTrue(u, "Established")
 	})
 	if !ok {
@@ -364,6 +452,81 @@ func isComponentReady(u *unstructured.Unstructured) bool {
 	obsGen, _, _ := unstructured.NestedInt64(u.Object, "status", "observedGeneration")
 	state, _, _ := unstructured.NestedString(u.Object, "status", "state")
 	return obsGen == u.GetGeneration() && state == "COMPONENT_STATE_ENABLED" && hasConditionTrue(u, "Ready")
+}
+
+// waitForComponent waits until cond holds for the named Component, as persisted by the namespace
+// bridge, described by desc in failures. cond receives nil once the Component no longer exists.
+func waitForComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, name, desc string, cond func(*unstructured.Unstructured) bool) *unstructured.Unstructured {
+	t.Helper()
+	var last *unstructured.Unstructured
+	var lastErr error
+	ok := waitUntil(ctx, componentTransitionTimeout, 500*time.Millisecond, func(pollCtx context.Context) bool {
+		u, err := h.dynClient.Resource(componentGVR).Namespace(ns).Get(pollCtx, name, metav1.GetOptions{})
+		switch {
+		case apierrors.IsNotFound(err):
+			last = nil
+		case err != nil:
+			lastErr = err
+			return false
+		default:
+			last = u
+		}
+		return cond(last)
+	})
+	if !ok {
+		t.Fatalf("timed out waiting for Component %s/%s to be %s (last err: %v); last object: %v", ns, name, desc, lastErr, last)
+	}
+	return last
+}
+
+func isObservedComponent(u *unstructured.Unstructured) bool {
+	if u == nil {
+		return false
+	}
+	obsGen, _, _ := unstructured.NestedInt64(u.Object, "status", "observedGeneration")
+	return obsGen == u.GetGeneration()
+}
+
+func isExistingComponentReady(u *unstructured.Unstructured) bool {
+	return u != nil && isComponentReady(u)
+}
+
+// conditionField returns field of the status condition condType, or "" if u is nil or the condition
+// is absent.
+func conditionField(u *unstructured.Unstructured, condType, field string) string {
+	if u == nil {
+		return ""
+	}
+	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
+	for _, raw := range conds {
+		if m, ok := raw.(map[string]any); ok && m["type"] == condType {
+			v, _ := m[field].(string)
+			return v
+		}
+	}
+	return ""
+}
+
+// assertCondition verifies that the status condition condType of u has wantStatus and wantReason.
+func assertCondition(t *testing.T, u *unstructured.Unstructured, condType, wantStatus, wantReason string) {
+	t.Helper()
+	gotStatus, gotReason := conditionField(u, condType, "status"), conditionField(u, condType, "reason")
+	if gotStatus != wantStatus || gotReason != wantReason {
+		t.Errorf("%s %s condition = %s/%s, want %s/%s", u.GetName(), condType, gotStatus, gotReason, wantStatus, wantReason)
+	}
+}
+
+// assertCMSComponent verifies that the CMS record of the Component u is in wantState at the CR
+// generation. Repeated bridge passes must not bump the CMS generation past the CR generation.
+func assertCMSComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, u *unstructured.Unstructured, wantState componentspb.ComponentState) {
+	t.Helper()
+	rec, err := h.cmsServer.Store().GetComponent(ctx, u.GetName())
+	if err != nil {
+		t.Fatalf("CMS GetComponent(%s) failed: %v", u.GetName(), err)
+	}
+	if rec.State != wantState || rec.Generation != u.GetGeneration() {
+		t.Errorf("%s CMS state = %v, generation = %d; want %v, CR generation %d", u.GetName(), rec.State, rec.Generation, wantState, u.GetGeneration())
+	}
 }
 
 // createTestNamespace creates a namespace named after prefix and runs a bridge controller over it
@@ -482,8 +645,8 @@ func waitForComponentReady(ctx context.Context, t *testing.T, h *kindClusterHarn
 	var envVars map[string]string
 	var last *unstructured.Unstructured
 	var lastErr error
-	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func() bool {
-		last, lastErr = h.dynClient.Resource(componentGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func(pollCtx context.Context) bool {
+		last, lastErr = h.dynClient.Resource(componentGVR).Namespace(namespace).Get(pollCtx, name, metav1.GetOptions{})
 		if lastErr != nil || !isComponentReady(last) {
 			return false
 		}
@@ -498,8 +661,8 @@ func waitForComponentReady(ctx context.Context, t *testing.T, h *kindClusterHarn
 
 func waitForPodReady(ctx context.Context, t *testing.T, h *kindClusterHarness, namespace, podName string) {
 	t.Helper()
-	ok := waitUntil(ctx, 90*time.Second, time.Second, func() bool {
-		pod, err := h.clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	ok := waitUntil(ctx, 90*time.Second, time.Second, func(pollCtx context.Context) bool {
+		pod, err := h.clientset.CoreV1().Pods(namespace).Get(pollCtx, podName, metav1.GetOptions{})
 		if err != nil {
 			return false
 		}
@@ -520,9 +683,20 @@ type workloadPodSpec struct {
 	Command                []string
 	AccessEnvVars          map[string]string
 	SecretEnvBinds         map[string]corev1.SecretKeySelector
+	// SecurityContext and Resources, when set, apply to the workload container.
+	SecurityContext *corev1.SecurityContext
+	Resources       corev1.ResourceRequirements
 }
 
 func runMockMLWorkloadPod(ctx context.Context, t *testing.T, h *kindClusterHarness, spec workloadPodSpec) string {
+	t.Helper()
+	startWorkloadPod(ctx, t, h, spec)
+	return waitForPodSucceededLogs(ctx, t, h, spec.Namespace, spec.Name)
+}
+
+// startWorkloadPod creates the never-restarting workload Pod described by spec and returns without
+// waiting for it.
+func startWorkloadPod(ctx context.Context, t *testing.T, h *kindClusterHarness, spec workloadPodSpec) {
 	t.Helper()
 	envList := make([]corev1.EnvVar, 0, len(spec.AccessEnvVars)+len(spec.SecretEnvBinds))
 	for _, k := range slices.Sorted(maps.Keys(spec.AccessEnvVars)) {
@@ -536,20 +710,22 @@ func runMockMLWorkloadPod(ctx context.Context, t *testing.T, h *kindClusterHarne
 		ObjectMeta: metav1.ObjectMeta{Name: spec.Name, Namespace: spec.Namespace},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
-			Containers:    []corev1.Container{{Name: "workload", Image: spec.Image, ImagePullPolicy: corev1.PullIfNotPresent, Command: spec.Command, Env: envList}},
+			Containers: []corev1.Container{{
+				Name: "workload", Image: spec.Image, ImagePullPolicy: corev1.PullIfNotPresent, Command: spec.Command, Env: envList,
+				SecurityContext: spec.SecurityContext, Resources: spec.Resources,
+			}},
 		},
 	}
 	if _, err := h.clientset.CoreV1().Pods(spec.Namespace).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
-		t.Fatalf("failed to create mock ML workload pod %s/%s: %v", spec.Namespace, spec.Name, err)
+		t.Fatalf("failed to create workload pod %s/%s: %v", spec.Namespace, spec.Name, err)
 	}
-	return waitForPodSucceededLogs(ctx, t, h, spec.Namespace, spec.Name)
 }
 
 func waitForPodSucceededLogs(ctx context.Context, t *testing.T, h *kindClusterHarness, namespace, podName string) string {
 	t.Helper()
 	var failed bool
-	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func() bool {
-		pod, err := h.clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	ok := waitUntil(ctx, 60*time.Second, 500*time.Millisecond, func(pollCtx context.Context) bool {
+		pod, err := h.clientset.CoreV1().Pods(namespace).Get(pollCtx, podName, metav1.GetOptions{})
 		if err != nil {
 			return false
 		}
@@ -581,10 +757,10 @@ func fetchPodLogs(h *kindClusterHarness, namespace, podName string) string {
 
 type kindNodePortProber struct {
 	clientset kubernetes.Interface
-	delegate  bridge.HealthProber
+	delegate  healthprobe.HealthProber
 }
 
-func (p *kindNodePortProber) Probe(ctx context.Context, target string, timeout time.Duration) (*bridge.HealthProbeResult, error) {
+func (p *kindNodePortProber) Probe(ctx context.Context, target string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	trimmed := strings.TrimSpace(target)
 	if lower := strings.ToLower(trimmed); strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
 		return p.ProbeHTTP(ctx, trimmed, timeout)
@@ -592,7 +768,7 @@ func (p *kindNodePortProber) Probe(ctx context.Context, target string, timeout t
 	return p.ProbeTCP(ctx, trimmed, timeout)
 }
 
-func (p *kindNodePortProber) ProbeHTTP(ctx context.Context, endpoint string, timeout time.Duration) (*bridge.HealthProbeResult, error) {
+func (p *kindNodePortProber) ProbeHTTP(ctx context.Context, endpoint string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || parsed.Host == "" {
 		return p.delegate.ProbeHTTP(ctx, endpoint, timeout)
@@ -605,7 +781,7 @@ func (p *kindNodePortProber) ProbeHTTP(ctx context.Context, endpoint string, tim
 	return p.delegate.ProbeHTTP(ctx, parsed.String(), timeout)
 }
 
-func (p *kindNodePortProber) ProbeTCP(ctx context.Context, endpoint string, timeout time.Duration) (*bridge.HealthProbeResult, error) {
+func (p *kindNodePortProber) ProbeTCP(ctx context.Context, endpoint string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	rewritten, err := p.translateHostPort(ctx, strings.TrimSpace(endpoint))
 	if err != nil {
 		return nil, err
@@ -692,18 +868,18 @@ func verifyHarnessCMSAuth(t *testing.T) {
 		Name: "components/clickhouse",
 		Spec: &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, Version: "v1.0.0"},
 	}
-	unauthSrv := cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer("")))
+	unauthSrv := cms.NewServer(storememory.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer("")))
 	if _, err := unauthSrv.SetComponentIntent(ctx, req); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("unauthenticated SetComponentIntent code = %v, want Unauthenticated", status.Code(err))
 	}
-	viewerSrv := cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer("viewer@xmc.local")))
+	viewerSrv := cms.NewServer(storememory.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer("viewer@xmc.local")))
 	if _, err := viewerSrv.SetComponentIntent(ctx, req); status.Code(err) != codes.PermissionDenied {
 		t.Errorf("viewer SetComponentIntent code = %v, want PermissionDenied", status.Code(err))
 	}
 	if _, err := viewerSrv.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{}); err != nil {
 		t.Errorf("viewer GetPlatformHealth unexpected error = %v", err)
 	}
-	bridgeSrv := cms.NewServer(store.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer(harnessBridgeSA)))
+	bridgeSrv := cms.NewServer(storememory.NewMemoryStore(), cms.WithAuthorizer(newHarnessCMSAuthorizer(harnessBridgeSA)))
 	if _, err := bridgeSrv.SetComponentIntent(ctx, req); err != nil {
 		t.Errorf("bridge SA SetComponentIntent unexpected error = %v", err)
 	}

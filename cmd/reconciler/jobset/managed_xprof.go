@@ -196,6 +196,23 @@ func ensureProfilesTab(rawURL string) string {
 	return parsed.String()
 }
 
+// consoleProject and consoleLocation return the target project and location
+// where the MLRun resource is created, falling back to the reconciler's default
+// Project and Location when unset.
+func (r *Reconciler) consoleProject() string {
+	if r.MLRunProject != "" {
+		return r.MLRunProject
+	}
+	return r.Project
+}
+
+func (r *Reconciler) consoleLocation() string {
+	if r.MLRunLocation != "" {
+		return r.MLRunLocation
+	}
+	return r.Location
+}
+
 // mlRunURL returns the URL to surface for an MLRun: the API-provided url (with the
 // profiles tab preselected) when present, otherwise the deterministic Cloud
 // Console diagnostics URL for the id.
@@ -205,7 +222,7 @@ func (r *Reconciler) mlRunURL(res map[string]any, mlRunID string) string {
 			return ensureProfilesTab(urlVal)
 		}
 	}
-	return constructDiagnosticsConsoleURL(r.Location, mlRunID, r.Project)
+	return constructDiagnosticsConsoleURL(r.consoleLocation(), mlRunID, r.consoleProject())
 }
 
 // constructDiagnosticsConsoleURL constructs the standard ML Diagnostics detail view

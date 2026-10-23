@@ -41,6 +41,8 @@ go_library(
         "//pkg/auth/oauth2",
         "//pkg/components/cms",
         "//pkg/components/store",
+        "//pkg/components/store/memory",
+        "//pkg/components/store/spanner",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
         "@com_google_cloud_go_spanner//:spanner",

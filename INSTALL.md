@@ -570,7 +570,7 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `iap_client_id` | **Yes** | - | Google OAuth Client ID for identity verification |
 | `iap_client_secret`| **Yes** | - | Google OAuth Client Secret for identity verification |
 | `jwt_secret` | **Yes** | - | Secret key used by ESS backend to sign session cookies |
-| `allowed_emails` | Conditional | - | Comma-separated list of user emails authorized to log in - required when `authorized_iam_role` is not provided |
+| `allowed_emails` | Conditional | - | Comma-separated list of emails authorized to log in, including CI service accounts (see [Authentication](docs/authentication.md)) - required when `authorized_iam_role` is not provided |
 | `authorized_iam_role`| Conditional | - | GCP IAM role for user workload access - required when `allowed_emails` is not provided |
 | `admin_iam_role` | No | `"roles/owner"` | GCP IAM role required for administrative access (Health Service, Admin Panel) |
 | `certs_email` | **Yes** | - | Owner email registered with Google Trust Services (GTS) |

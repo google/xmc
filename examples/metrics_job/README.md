@@ -32,12 +32,9 @@ This directory contains a complete validation example for logging training metri
 
 ## Prerequisites & Dependencies
 
-1. **Client-Side Dependencies**: Install host Python dependencies required to execute `launch.py`:
-   ```bash
-   pip install -r requirements.txt
-   ```
+1. **Environment Variables**: Configure `PROJECT_ID`, `XMC_DOMAIN`, and `QUEUE_NAME` in your shell or `.env` file.
 
-2. **Environment Variables**: Configure `PROJECT_ID`, `XMC_DOMAIN`, and `QUEUE_NAME` in your shell or `.env` file.
+2. **Authentication**: After creating and activating your `.venv` (see below), run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ---
 
@@ -53,10 +50,11 @@ chmod +x build_and_push.sh
 
 ### 2. Launch the Multi-Job Metrics Experiment
 
-Ensure you have your virtual environment active, dependencies installed, and `.env` configured:
+Create your virtual environment, install dependencies, compile local XMC protos, authenticate, and launch:
 ```bash
-source ../../deploy/cli/venv/bin/activate
-pip install -r requirements.txt
+python3 ../../deploy/cli/install_xmanager.py --venv .venv --requirements requirements.txt
+source .venv/bin/activate
+xmanager login
 python3 launch.py
 ```
 

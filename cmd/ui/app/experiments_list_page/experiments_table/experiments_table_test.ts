@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
+import { TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 
-import { EmptyComponent } from 'app/common/testing_utils/empty_component';
 import { ListExperimentsResponse } from 'app/protos/experiment_state_server';
-import { bootstrapTemplate, setupModule } from 'app/testing/test';
+import { StatusMessageFilterService } from 'app/service/status_message_filter_service';
+import { EmptyComponent } from 'app/testing/empty_component';
+import { bootstrapTemplate, cleanState, setupModule } from 'app/testing/test';
 
 import { ExperimentsTable } from './experiments_table';
 import { ExperimentsTableHarness } from './testing/experiments_table_harness';
@@ -88,6 +91,63 @@ describe('ExperimentsTable Component', () => {
 
     expect(await harness.hasLoadingBar()).toBeFalse();
     expect(await harness.hasNoExperimentsMessage()).toBeFalse();
+  });
+
+  describe('Status message layout', () => {
+    const state = cleanState(async () => {
+      setupModule({
+        imports: [ExperimentsTable, NoopAnimationsModule],
+        providers: [provideRouter([{ path: 'experiments/:xid', component: EmptyComponent }])],
+      });
+      const filters = TestBed.inject(StatusMessageFilterService);
+      filters.severitiesSubject.next(new Set(['ERROR']));
+      filters.sourcesSubject.next(new Set(['KUBERNETES']));
+
+      const fixture = TestBed.createComponent(ExperimentsTable);
+      fixture.nativeElement.style.cssText = 'display: block; width: 1400px';
+      fixture.componentRef.setInput('pageResult', MOCK_EXPERIMENTS);
+      fixture.componentRef.setInput('isFetching', false);
+      const harness = await TestbedHarnessEnvironment.harnessForFixture(
+        fixture,
+        ExperimentsTableHarness,
+      );
+      return { fixture, harness };
+    }, beforeEach);
+
+    afterEach(() => state.fixture.destroy());
+
+    for (const [name, message] of [
+      ['long error text', 'Failed to create work unit: insufficient resources. '.repeat(80)],
+      ['unbroken error text', `Failed to load /${'very_long_resource_name_'.repeat(200)}`],
+    ]) {
+      it(`should wrap ${name} without widening the table`, async () => {
+        const originalWidth = await state.harness.getTableWidth();
+        expect(originalWidth).toBeGreaterThan(0);
+
+        const [experiment, ...otherExperiments] = MOCK_EXPERIMENTS.experiments!;
+        state.fixture.componentRef.setInput('pageResult', {
+          ...MOCK_EXPERIMENTS,
+          experiments: [
+            {
+              ...experiment,
+              status: {
+                ...experiment.status,
+                structuredStatusMessage: {
+                  severity: 'ERROR',
+                  source: 'KUBERNETES',
+                  userFacingText: message,
+                },
+              },
+            },
+            ...otherExperiments,
+          ],
+        });
+
+        expect(await state.harness.getErrorMessageText()).toBe(message.trim());
+        expect(await state.harness.getTableWidth()).toBeLessThanOrEqual(originalWidth + 1);
+        expect(await state.harness.getErrorMessageHorizontalOverflow()).toBeLessThanOrEqual(1);
+      });
+    }
   });
 
   describe('Loading states', () => {

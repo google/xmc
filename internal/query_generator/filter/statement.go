@@ -19,9 +19,9 @@ import (
 	"xmanager_cloud/internal/safesql"
 )
 
-// Statement is the parameterized SQL statement that a Visitor appends a filter to. Its
-// implementation defines how parameters are bound and which database Dialect renders
-// backend-specific SQL predicates.
+// Statement is the parameterized SQL statement that a Visitor or QueryGenerator appends SQL to.
+// Its implementation defines how parameters are bound and which database Dialect renders
+// backend-specific SQL predicates and clauses.
 type Statement interface {
 	// AppendSQL appends trusted SQL to the statement.
 	AppendSQL(sql safesql.TrustedSQLString)
@@ -50,5 +50,9 @@ func (noopDialect) RegexpMatch(_, _ safesql.TrustedSQLString) safesql.TrustedSQL
 }
 
 func (noopDialect) TextSearch(_, _ safesql.TrustedSQLString) safesql.TrustedSQLString {
+	return safesql.EmptyString()
+}
+
+func (noopDialect) OrderByClause(_ safesql.TrustedSQLString, _, _ bool) safesql.TrustedSQLString {
 	return safesql.EmptyString()
 }

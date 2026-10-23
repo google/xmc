@@ -67,7 +67,7 @@ func newTestScheme(t *testing.T) *runtime.Scheme {
 
 func TestRegisterControllers_Validation(t *testing.T) {
 	scheme := newTestScheme(t)
-	k8sClient := k8sclient.NewWithClients(nil, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil, nil)
+	k8sClient := k8sclient.NewWithClients(nil, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil)
 	cqCache := clusterqueue.NewNameCache()
 
 	t.Run("nil manager returns error", func(t *testing.T) {
@@ -96,8 +96,8 @@ func TestRegisterControllers_Validation(t *testing.T) {
 
 func TestAddBackgroundRunnables(t *testing.T) {
 	scheme := newTestScheme(t)
-	withClientset := k8sclient.NewWithClients(kubernetesfake.NewClientset(), nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil, nil)
-	withoutClientset := k8sclient.NewWithClients(nil, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil, nil)
+	withClientset := k8sclient.NewWithClients(kubernetesfake.NewClientset(), nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil)
+	withoutClientset := k8sclient.NewWithClients(nil, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil)
 	batcher := shared.NewUpdateBatcher(context.Background(), &shared.BatcherConfig{}, nil)
 
 	tests := []struct {
@@ -135,7 +135,7 @@ func TestAddBackgroundRunnables(t *testing.T) {
 
 func TestNewMLRunCreator(t *testing.T) {
 	ctx := context.Background()
-	client := newMLRunCreator(ctx, "test-proj", "test-env", "us-central1")
+	client := newMLRunCreator(ctx, "test-proj", "test-env", "us-central1", "test-sa@test-proj.iam.gserviceaccount.com")
 	// Hypercompute client creation returns nil or valid client without panic.
 	if client == nil {
 		t.Log("newMLRunCreator returned nil interface in test environment as expected")

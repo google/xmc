@@ -48,19 +48,38 @@ type ControlPlaneClient struct {
 	httpClient  *http.Client
 }
 
+// Option customizes a ControlPlaneClient.
+type Option func(*clientOptions)
+
+type clientOptions struct {
+	tokenSource oauth2.TokenSource
+}
+
+func WithTokenSource(ts oauth2.TokenSource) Option {
+	return func(o *clientOptions) { o.tokenSource = ts }
+}
+
 // NewControlPlaneClient creates a new ControlPlaneClient.
 //
 // environment must be one of "autopush", "staging", or "prod".
 // location defaults to "us-central1" when empty.
-func NewControlPlaneClient(ctx context.Context, projectID, environment, location string) (*ControlPlaneClient, error) {
+func NewControlPlaneClient(ctx context.Context, projectID, environment, location string, opts ...Option) (*ControlPlaneClient, error) {
 	cfg, err := resolveEndpoint(projectID, environment, location)
 	if err != nil {
 		return nil, err
 	}
 
-	ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/cloud-platform")
-	if err != nil {
-		return nil, fmt.Errorf("get default token source: %w", err)
+	var o clientOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	ts := o.tokenSource
+	if ts == nil {
+		ts, err = google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/cloud-platform")
+		if err != nil {
+			return nil, fmt.Errorf("get default token source: %w", err)
+		}
 	}
 
 	return &ControlPlaneClient{
