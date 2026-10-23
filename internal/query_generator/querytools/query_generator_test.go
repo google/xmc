@@ -1506,18 +1506,19 @@ func TestGeneratePostgresQuery(t *testing.T) {
 		},
 		{
 			name:       "EnumRewrites runs before Member.EnumValues validation and lookup",
-			userFilter: `SingerId = "LEGACY_ACTIVE"`,
+			userFilter: `SingerId = LEGACY_ACTIVE OR SingerId = "LEGACY_ACTIVE"`,
 			options: []Option{
 				EnumRewrites(map[string]map[string]string{
 					"SingerId": {"LEGACY_ACTIVE": "ACTIVE"},
 				}),
 			},
 			wantStmt: &postgresdialect.Statement{
-				SQL:  "SELECT a.AlbumTitle, a.AlbumId FROM Albums a WHERE (a.SingerId = $1) ORDER BY a.SingerId, a.AlbumId",
-				Args: []any{int64(1)},
+				SQL:  "SELECT a.AlbumTitle, a.SingerId, a.AlbumId FROM Albums a WHERE ((a.SingerId = $1) OR (a.SingerId = $2)) ORDER BY a.SingerId, a.AlbumId",
+				Args: []any{int64(1), int64(1)},
 			},
 			wantFieldToIdxMap: map[TableField]int{
-				AlbumIDTableField: 1,
+				SingerIDTableField: 1,
+				AlbumIDTableField:  2,
 			},
 		},
 		{

@@ -187,12 +187,12 @@ func PhraseMap(rewrites map[string]map[string]string) queryfilter.RestrictionTra
 }
 
 func tryRewritePhraseRestrictionSide(r *fpb.Restriction, fieldExpr, valExpr *fpb.Expression, lhsIsLiteral bool, rewrites map[string]map[string]string) (*fpb.Restriction, bool) {
-	values := valExpr.GetPhrase().GetValues()
-	if fieldExpr.GetValue() == "" || len(values) != 1 {
+	literal, ok := extractLiteralString(valExpr)
+	if fieldExpr.GetValue() == "" || !ok {
 		return nil, false
 	}
-	newphrase, ok := rewrites[fieldExpr.GetValue()][values[0]]
-	if !ok || newphrase == values[0] {
+	newphrase, ok := rewrites[fieldExpr.GetValue()][literal]
+	if !ok || newphrase == literal {
 		return nil, false
 	}
 	lhs, rhs := r.GetLhs(), fpb.Expression_builder{Phrase: fpb.Phrase_builder{Values: []string{newphrase}}.Build()}.Build()
