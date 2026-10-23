@@ -92,6 +92,9 @@ type SpannerStore struct {
 
 // NewSpannerStore creates a new Spanner-backed component store.
 func NewSpannerStore(client *spanner.Client, st storage.Storage) *SpannerStore {
+	if st == nil {
+		panic("st (storage.Storage) cannot be nil")
+	}
 	return &SpannerStore{client: client, storage: st, repo: component.NewRepository(client)}
 }
 
