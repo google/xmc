@@ -16,7 +16,7 @@
 """Unit tests for install_xmanager script."""
 
 import io
-import stat
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,317 +28,95 @@ import install_xmanager
 class TestInstallXmanager(unittest.TestCase):
     """Test cases for install_xmanager functions."""
 
-    def test_parse_github_url_valid_tree(self) -> None:
-        """Test parse_github_url with standard tree URL."""
-        url = "https://github.com/google/xmc/tree/main/api/protos"
-        repo, branch, subdir = install_xmanager.parse_github_url(url)
-        self.assertEqual(repo, "https://github.com/google/xmc.git")
-        self.assertEqual(branch, "main")
-        self.assertEqual(subdir, "api/protos")
+    def test_resolve_xmanager_spec_default(self) -> None:
+        """Test resolve_xmanager_spec returns default specifier when empty."""
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec(""),
+            install_xmanager.DEFAULT_XMANAGER_SPEC,
+        )
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec("   "),
+            install_xmanager.DEFAULT_XMANAGER_SPEC,
+        )
 
-    def test_parse_github_url_valid_root(self) -> None:
-        """Test parse_github_url with repo root URL."""
-        url = "https://github.com/google/xmc"
-        repo, branch, subdir = install_xmanager.parse_github_url(url)
-        self.assertEqual(repo, "https://github.com/google/xmc.git")
-        self.assertEqual(branch, "main")
-        self.assertEqual(subdir, "api/protos")
+    def test_resolve_xmanager_spec_version_tag(self) -> None:
+        """Test resolve_xmanager_spec formats version tag as exact pin."""
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec("0.8.4"),
+            "xmanager==0.8.4",
+        )
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec(" 0.8.2 "),
+            "xmanager==0.8.2",
+        )
 
-    def test_parse_github_url_invalid(self) -> None:
-        """Test parse_github_url with invalid URL format."""
-        with self.assertRaises(SystemExit):
-            install_xmanager.parse_github_url("invalid-url")
+    def test_resolve_xmanager_spec_full_requirement(self) -> None:
+        """Test resolve_xmanager_spec preserves full xmanager requirement specifier."""
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec("xmanager>=0.8.2"),
+            "xmanager>=0.8.2",
+        )
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec("xmanager==0.8.4"),
+            "xmanager==0.8.4",
+        )
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec("XManager>=0.8.2"),
+            "XManager>=0.8.2",
+        )
+        git_req = "xmanager @ git+https://github.com/google-deepmind/xmanager@xm-cloud"
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec(git_req),
+            git_req,
+        )
+
+    def test_resolve_xmanager_spec_comparison_operators(self) -> None:
+        """Test resolve_xmanager_spec prefixes leading comparison operators."""
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec("==0.8.2"),
+            "xmanager==0.8.2",
+        )
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec(">=0.8.2,<0.9"),
+            "xmanager>=0.8.2,<0.9",
+        )
+        self.assertEqual(
+            install_xmanager.resolve_xmanager_spec("~=0.8.2"),
+            "xmanager~=0.8.2",
+        )
 
     def test_parse_args_defaults(self) -> None:
-        """Test parse_args default options."""
-        dummy_path = Path("/dummy/deploy/cli/install_xmanager.py")
+        """Test parse_args default options when environment is empty."""
         with mock.patch.dict("os.environ", {}, clear=True):
-            args = install_xmanager.parse_args([], script_path=dummy_path)
-            self.assertEqual(
-                args.protos_loc,
-                "https://github.com/google/xmc/tree/main/api/protos",
-            )
-            self.assertEqual(args.xmanager_branch, "xm-cloud")
+            args = install_xmanager.parse_args([])
             self.assertEqual(args.venv, "./venv")
+            self.assertEqual(args.xmanager_version, "")
+            self.assertEqual(args.requirements, [])
 
-    def test_parse_args_custom(self) -> None:
-        """Test parse_args with custom CLI arguments."""
+    def test_parse_args_env_overrides(self) -> None:
+        """Test parse_args respects VENV_DIR and XMANAGER_VERSION env vars."""
+        env = {"VENV_DIR": "/env/venv", "XMANAGER_VERSION": "0.8.2"}
+        with mock.patch.dict("os.environ", env, clear=True):
+            args = install_xmanager.parse_args([])
+            self.assertEqual(args.venv, "/env/venv")
+            self.assertEqual(args.xmanager_version, "0.8.2")
+
+    def test_parse_args_custom_cli(self) -> None:
+        """Test parse_args with explicit CLI arguments including repeatable --requirements."""
         cli_args = [
-            "--protos-loc",
-            "/custom/protos",
-            "--xmanager-branch",
-            "custom-branch",
             "--venv",
             "/custom/venv",
+            "--xmanager-version",
+            "0.8.4",
+            "--requirements",
+            "req1.txt",
+            "-r",
+            "req2.txt",
         ]
         args = install_xmanager.parse_args(cli_args)
-        self.assertEqual(args.protos_loc, "/custom/protos")
-        self.assertEqual(args.xmanager_branch, "custom-branch")
         self.assertEqual(args.venv, "/custom/venv")
-
-    def test_check_prerequisites_success(self) -> None:
-        """Test check_prerequisites when all binaries are found."""
-        with mock.patch("shutil.which", return_value="/usr/bin/mock"):
-            install_xmanager.check_prerequisites()
-
-    def test_check_prerequisites_missing(self) -> None:
-        """Test check_prerequisites when git is missing."""
-        with mock.patch("shutil.which", return_value=None), self.assertRaises(SystemExit):
-            install_xmanager.check_prerequisites()
-
-    def test_check_git_version_ok(self) -> None:
-        """Test check_git_version with version 2.30.0."""
-        mock_res = mock.Mock(stdout="git version 2.30.0")
-        with mock.patch("subprocess.run", return_value=mock_res):
-            with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
-                install_xmanager.check_git_version()
-                self.assertEqual(stderr.getvalue(), "")
-
-    def test_check_git_version_macos(self) -> None:
-        """Test check_git_version with macOS git version format."""
-        mock_res = mock.Mock(stdout="git version 2.39.3 (Apple Git-146)")
-        with mock.patch("subprocess.run", return_value=mock_res):
-            with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
-                install_xmanager.check_git_version()
-                self.assertEqual(stderr.getvalue(), "")
-
-    def test_check_git_version_old(self) -> None:
-        """Test check_git_version with old version 2.20.0."""
-        mock_res = mock.Mock(stdout="git version 2.20.0")
-        with mock.patch("subprocess.run", return_value=mock_res):
-            with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
-                install_xmanager.check_git_version()
-                self.assertIn("Warning: Git version is 2.20.0", stderr.getvalue())
-
-    def test_retrieve_protos_local(self) -> None:
-        """Test retrieve_protos with local directory containing required protos."""
-        with tempfile.TemporaryDirectory() as tmp_src_str:
-            with tempfile.TemporaryDirectory() as tmp_dst_str:
-                src = Path(tmp_src_str)
-                dst = Path(tmp_dst_str)
-                (src / "experiment").mkdir()
-                (src / "xid").mkdir()
-                (src / "dashboard").mkdir()
-                install_xmanager.retrieve_protos(str(src), dst)
-                self.assertTrue((dst / "experiment").is_dir())
-                self.assertTrue((dst / "xid").is_dir())
-                self.assertTrue((dst / "dashboard").is_dir())
-
-    def test_retrieve_protos_nonexistent_local(self) -> None:
-        """Test retrieve_protos with non-existent local directory path."""
-        with tempfile.TemporaryDirectory() as tmp_dst_str:
-            dst = Path(tmp_dst_str)
-            non_existent_src = dst / "does_not_exist"
-            with self.assertRaises(SystemExit):
-                install_xmanager.retrieve_protos(str(non_existent_src), dst)
-
-    def test_retrieve_protos_missing_dirs(self) -> None:
-        """Test retrieve_protos raises SystemExit when experiment or xid missing."""
-        with tempfile.TemporaryDirectory() as tmp_src_str:
-            with tempfile.TemporaryDirectory() as tmp_dst_str:
-                src = Path(tmp_src_str)
-                dst = Path(tmp_dst_str)
-                (src / "experiment").mkdir()
-                with self.assertRaises(SystemExit):
-                    install_xmanager.retrieve_protos(str(src), dst)
-
-    def test_copy_protos_to_service(self) -> None:
-        """Test copy_protos_to_service places files into xmanager_cloud package."""
-        with tempfile.TemporaryDirectory() as tmp_xmc_str:
-            with tempfile.TemporaryDirectory() as tmp_xm_str:
-                xmc_dir = Path(tmp_xmc_str)
-                xm_dir = Path(tmp_xm_str)
-                (xmc_dir / "xid").mkdir()
-                (xmc_dir / "xid" / "file.proto").write_text("content", encoding="utf-8")
-                install_xmanager.copy_protos_to_service(xmc_dir, "xid", "xid_service", xm_dir)
-                target = xm_dir / "xmanager_cloud" / "xid_service" / "proto" / "file.proto"
-                self.assertTrue(target.is_file())
-
-    @mock.patch("install_xmanager.install_xmanager_package")
-    @mock.patch("install_xmanager.compile_protos")
-    @mock.patch("install_xmanager.retrieve_protos")
-    @mock.patch("install_xmanager.clone_repositories")
-    @mock.patch("install_xmanager.install_dependencies")
-    @mock.patch("install_xmanager.setup_virtualenv")
-    @mock.patch("install_xmanager.check_git_version")
-    @mock.patch("install_xmanager.check_prerequisites")
-    @mock.patch("install_xmanager.verify_imports")
-    def test_main_execution(
-        self,
-        mock_verify: mock.Mock,
-        mock_pre: mock.Mock,
-        mock_git_ver: mock.Mock,
-        mock_venv: mock.Mock,
-        mock_deps: mock.Mock,
-        mock_clones: mock.Mock,
-        mock_protos: mock.Mock,
-        mock_compile: mock.Mock,
-        mock_install: mock.Mock,
-    ) -> None:
-        """Test main execution flow with mocked external operations."""
-        mock_venv.return_value = Path("/mock/venv/bin/python3")
-
-        def mock_retrieve(loc: str, dst: Path) -> None:
-            (dst / "xid").mkdir(parents=True, exist_ok=True)
-            (dst / "experiment").mkdir(parents=True, exist_ok=True)
-            (dst / "dashboard").mkdir(parents=True, exist_ok=True)
-
-        mock_protos.side_effect = mock_retrieve
-
-        with tempfile.TemporaryDirectory() as tmp_venv:
-            install_xmanager.main(["--venv", tmp_venv])
-
-        mock_pre.assert_called_once()
-        mock_git_ver.assert_called_once()
-        mock_venv.assert_called_once()
-        mock_deps.assert_called_once()
-        mock_clones.assert_called_once()
-        mock_protos.assert_called_once()
-        mock_compile.assert_called_once()
-        mock_install.assert_called_once()
-        mock_verify.assert_called_once()
-
-    def test_get_venv_site_packages(self) -> None:
-        """Test get_venv_site_packages queries sysconfig purelib."""
-        mock_res = mock.Mock(stdout="/mock/venv/lib/python3.13/site-packages\n")
-        with mock.patch("subprocess.run", return_value=mock_res) as mock_run:
-            result = install_xmanager.get_venv_site_packages(Path("/mock/venv/bin/python3"))
-        self.assertEqual(result, Path("/mock/venv/lib/python3.13/site-packages"))
-        mock_run.assert_called_once_with(
-            [
-                "/mock/venv/bin/python3",
-                "-c",
-                "import sysconfig; print(sysconfig.get_path('purelib'))",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-    def test_build_bazel_dashboard_protos(self) -> None:
-        """Test build_bazel_dashboard_protos builds targets and resolves bazel-bin."""
-        repo_root = Path("/mock/repo")
-        mock_info = mock.Mock(stdout="/mock/bazel-out/k8-fastbuild/bin\n")
-        with (
-            mock.patch("shutil.which", return_value="/usr/bin/bazel"),
-            mock.patch("subprocess.run", side_effect=[mock.Mock(), mock_info]) as mock_run,
-        ):
-            result = install_xmanager.build_bazel_dashboard_protos(repo_root)
-        self.assertEqual(
-            result,
-            Path("/mock/bazel-out/k8-fastbuild/bin/api/protos/dashboard/_virtual_imports"),
-        )
-        self.assertEqual(mock_run.call_count, 2)
-        mock_run.assert_any_call(
-            ["bazel", "build", *install_xmanager.DASHBOARD_BAZEL_TARGETS],
-            cwd=repo_root,
-            check=True,
-        )
-        mock_run.assert_any_call(
-            ["bazel", "info", "bazel-bin"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-    def test_build_bazel_dashboard_protos_missing_bazel_exits(self) -> None:
-        """Test build_bazel_dashboard_protos exits when bazel is not in PATH."""
-        with mock.patch("shutil.which", return_value=None), self.assertRaises(SystemExit):
-            install_xmanager.build_bazel_dashboard_protos(Path("/mock/repo"))
-
-    def test_copy_virtual_imports_to_site_packages(self) -> None:
-        """Test copying read-only Bazel virtual imports and preserving sibling packages."""
-        with tempfile.TemporaryDirectory() as tmp_str:
-            tmp_dir = Path(tmp_str)
-            virtual_imports = tmp_dir / "_virtual_imports"
-            site_packages = tmp_dir / "site-packages"
-
-            for target, filename in (
-                ("dashboard_messages_proto", "messages_pb2.py"),
-                ("dashboard_service_proto", "dashboard_service_pb2.py"),
-            ):
-                xm_dir = virtual_imports / target / "xmanager_cloud"
-                svc_dir = xm_dir / "dashboard_service"
-                proto_dir = svc_dir / "proto"
-                proto_dir.mkdir(parents=True)
-                proto_file = proto_dir / filename
-                proto_file.write_text("# generated", encoding="utf-8")
-                proto_file.chmod(stat.S_IRUSR)
-                proto_dir.chmod(stat.S_IRUSR | stat.S_IXUSR)
-                svc_dir.chmod(stat.S_IRUSR | stat.S_IXUSR)
-                xm_dir.chmod(stat.S_IRUSR | stat.S_IXUSR)
-
-            sibling_file = (
-                site_packages
-                / "xmanager_cloud"
-                / "experiment_state_server"
-                / "proto"
-                / "api_pb2.py"
-            )
-            sibling_file.parent.mkdir(parents=True)
-            sibling_file.write_text("# sibling", encoding="utf-8")
-            sibling_file.chmod(stat.S_IRUSR)
-
-            stale_dir = site_packages / "xmanager_cloud" / "dashboard_service" / "proto"
-            stale_dir.mkdir(parents=True)
-            stale_file = stale_dir / "obsolete_pb2.py"
-            stale_file.write_text("# stale", encoding="utf-8")
-            stale_file.chmod(stat.S_IRUSR)
-
-            try:
-                install_xmanager.copy_virtual_imports_to_site_packages(
-                    virtual_imports, site_packages
-                )
-                install_xmanager.copy_virtual_imports_to_site_packages(
-                    virtual_imports, site_packages
-                )
-
-                dest_proto = site_packages / "xmanager_cloud" / "dashboard_service" / "proto"
-                self.assertFalse((dest_proto / "obsolete_pb2.py").exists())
-                self.assertTrue((dest_proto / "messages_pb2.py").is_file())
-                self.assertTrue((dest_proto / "dashboard_service_pb2.py").is_file())
-                self.assertTrue(sibling_file.is_file())
-                self.assertFalse(bool(sibling_file.stat().st_mode & stat.S_IWUSR))
-                self.assertTrue(
-                    bool((dest_proto / "messages_pb2.py").stat().st_mode & stat.S_IWUSR)
-                )
-            finally:
-                install_xmanager._make_tree_user_writable(virtual_imports)
-                install_xmanager._make_tree_user_writable(site_packages)
-
-    def test_copy_virtual_imports_missing_target_exits(self) -> None:
-        """Test copy_virtual_imports_to_site_packages exits when virtual imports are missing."""
-        with tempfile.TemporaryDirectory() as tmp_str:
-            tmp_dir = Path(tmp_str)
-            install_xmanager._make_tree_user_writable(tmp_dir / "non_existent")
-            with self.assertRaises(SystemExit):
-                install_xmanager.copy_virtual_imports_to_site_packages(
-                    tmp_dir / "missing", tmp_dir / "site-packages"
-                )
-
-    @mock.patch("install_xmanager.copy_virtual_imports_to_site_packages")
-    @mock.patch("install_xmanager.get_venv_site_packages")
-    @mock.patch("install_xmanager.build_bazel_dashboard_protos")
-    def test_install_bazel_dashboard_protos(
-        self,
-        mock_build: mock.Mock,
-        mock_site: mock.Mock,
-        mock_copy: mock.Mock,
-    ) -> None:
-        """Test install_bazel_dashboard_protos coordinates build and copy."""
-        mock_build.return_value = Path("/mock/virtual_imports")
-        mock_site.return_value = Path("/mock/site-packages")
-        venv_python = Path("/mock/venv/bin/python3")
-        repo_root = Path("/mock/repo")
-
-        install_xmanager.install_bazel_dashboard_protos(venv_python, repo_root)
-
-        mock_build.assert_called_once_with(repo_root)
-        mock_site.assert_called_once_with(venv_python)
-        mock_copy.assert_called_once_with(
-            Path("/mock/virtual_imports"), Path("/mock/site-packages")
-        )
+        self.assertEqual(args.xmanager_version, "0.8.4")
+        self.assertEqual(args.requirements, ["req1.txt", "req2.txt"])
 
     @mock.patch("venv.create")
     def test_setup_virtualenv_creates_when_missing_python(
@@ -348,9 +126,17 @@ class TestInstallXmanager(unittest.TestCase):
         """Test setup_virtualenv runs venv.create when python binary is absent."""
         with tempfile.TemporaryDirectory() as tmp_str:
             venv_dir = Path(tmp_str)
+
+            def _create_venv(target_dir: Path, with_pip: bool = False) -> None:
+                del with_pip
+                python_bin = target_dir / "bin" / "python3"
+                python_bin.parent.mkdir(parents=True, exist_ok=True)
+                python_bin.write_text("", encoding="utf-8")
+
+            mock_create.side_effect = _create_venv
             result = install_xmanager.setup_virtualenv(venv_dir)
             mock_create.assert_called_once_with(venv_dir, with_pip=True)
-            self.assertEqual(result, venv_dir / "bin" / "python")
+            self.assertEqual(result, venv_dir / "bin" / "python3")
 
     @mock.patch("venv.create")
     def test_setup_virtualenv_reuses_existing_python3(
@@ -367,22 +153,251 @@ class TestInstallXmanager(unittest.TestCase):
             mock_create.assert_not_called()
             self.assertEqual(result, python_bin)
 
-    @mock.patch("install_xmanager.install_bazel_dashboard_protos")
-    @mock.patch("install_xmanager.setup_virtualenv")
-    @mock.patch("install_xmanager.check_prerequisites")
-    def test_main_dashboard_protos_only(
+    @mock.patch("venv.create")
+    def test_setup_virtualenv_falls_back_to_python_binary(
         self,
-        mock_pre: mock.Mock,
-        mock_venv: mock.Mock,
-        mock_install_dashboard: mock.Mock,
+        mock_create: mock.Mock,
     ) -> None:
-        """Test main with --dashboard-protos-only skips full clone and installs protos."""
+        """Test setup_virtualenv falls back to bin/python when bin/python3 is absent."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            venv_dir = Path(tmp_str)
+            python_bin = venv_dir / "bin" / "python"
+            python_bin.parent.mkdir(parents=True)
+            python_bin.write_text("", encoding="utf-8")
+            result = install_xmanager.setup_virtualenv(venv_dir)
+            mock_create.assert_not_called()
+            self.assertEqual(result, python_bin)
+
+    def test_install_xmanager_package(self) -> None:
+        """Test install_xmanager_package upgrades pip, installs requirements, then xmanager."""
+        venv_python = Path("/mock/venv/bin/python3")
+        with mock.patch("subprocess.run") as mock_run:
+            install_xmanager.install_xmanager_package(
+                venv_python,
+                "xmanager==0.8.2",
+                ["/path/to/requirements.txt"],
+            )
+
+        self.assertEqual(
+            mock_run.call_args_list,
+            [
+                mock.call(
+                    ["/mock/venv/bin/python3", "-m", "pip", "install", "--upgrade", "pip"],
+                    check=True,
+                ),
+                mock.call(
+                    [
+                        "/mock/venv/bin/python3",
+                        "-m",
+                        "pip",
+                        "install",
+                        "-r",
+                        "/path/to/requirements.txt",
+                    ],
+                    check=True,
+                ),
+                mock.call(
+                    [
+                        "/mock/venv/bin/python3",
+                        "-m",
+                        "pip",
+                        "install",
+                        "xmanager==0.8.2",
+                        *install_xmanager.RUNTIME_DEPENDENCIES,
+                    ],
+                    check=True,
+                ),
+            ],
+        )
+
+    def test_install_xmanager_package_failure_propagates(self) -> None:
+        """Test install_xmanager_package propagates CalledProcessError on pip failure."""
+        venv_python = Path("/mock/venv/bin/python3")
+        with (
+            mock.patch(
+                "subprocess.run",
+                side_effect=subprocess.CalledProcessError(1, ["pip"]),
+            ),
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            install_xmanager.install_xmanager_package(venv_python, "xmanager==0.8.2")
+
+    def test_resolve_venv_proto_paths(self) -> None:
+        """Test resolve_venv_proto_paths returns site-packages and grpc_tools _proto paths."""
+        site_pkgs = Path("/mock/site-packages")
+        grpc_proto = site_pkgs / "grpc_tools" / "_proto"
+        mock_res = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=f"{site_pkgs}\n{grpc_proto}\n",
+            stderr="",
+        )
+        with mock.patch("subprocess.run", return_value=mock_res):
+            resolved_site, resolved_grpc = install_xmanager.resolve_venv_proto_paths(
+                Path("/mock/venv/bin/python3")
+            )
+
+        self.assertEqual(resolved_site, site_pkgs)
+        self.assertEqual(resolved_grpc, grpc_proto)
+
+    def test_ensure_longrunning_operations_proto(self) -> None:
+        """Test _ensure_longrunning_operations_proto copies operations_proto.proto when needed."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            site_pkgs = Path(tmp_str) / "site-packages"
+            longrunning_dir = site_pkgs / "google" / "longrunning"
+            longrunning_dir.mkdir(parents=True)
+            (longrunning_dir / "operations_proto.proto").write_text(
+                "syntax = 'proto3';",
+                encoding="utf-8",
+            )
+
+            install_xmanager._ensure_longrunning_operations_proto(site_pkgs)
+            self.assertTrue((longrunning_dir / "operations.proto").exists())
+
+    def test_stage_local_protos_success_and_removes_stale(self) -> None:
+        """Test stage_local_protos removes stale .proto files, copies fresh ones, and touches __init__.py."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            root = Path(tmp_str)
+            repo_root = root / "repo"
+            site_pkgs = root / "site-packages"
+
+            stale_dir = site_pkgs / "xmanager_cloud" / "xid_service" / "proto"
+            stale_dir.mkdir(parents=True)
+            stale_proto = stale_dir / "obsolete.proto"
+            stale_proto.write_text("syntax = 'proto3';", encoding="utf-8")
+
+            for src_subdir, _ in install_xmanager.PROTO_PACKAGE_DIRS:
+                proto_dir = repo_root / "api" / "protos" / src_subdir
+                proto_dir.mkdir(parents=True)
+                (proto_dir / "api.proto").write_text("syntax = 'proto3';", encoding="utf-8")
+
+            staged = install_xmanager.stage_local_protos(repo_root, site_pkgs)
+            self.assertEqual(len(staged), 3)
+            self.assertFalse(stale_proto.exists())
+            for _, dst_pkg in install_xmanager.PROTO_PACKAGE_DIRS:
+                dst_dir = site_pkgs / "xmanager_cloud" / dst_pkg / "proto"
+                self.assertTrue((dst_dir / "__init__.py").exists())
+                self.assertTrue((dst_dir / "api.proto").exists())
+
+    def test_stage_local_protos_missing_dir(self) -> None:
+        """Test stage_local_protos exits when api/protos directory is missing."""
+        with (
+            tempfile.TemporaryDirectory() as tmp_str,
+            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+            self.assertRaises(SystemExit),
+        ):
+            root = Path(tmp_str)
+            install_xmanager.stage_local_protos(root / "empty_repo", root / "site-packages")
+        self.assertIn("Local proto directory not found", stderr.getvalue())
+
+    def test_compile_local_protos(self) -> None:
+        """Test compile_local_protos ensures operations.proto and invokes grpc_tools.protoc."""
+        venv_python = Path("/mock/venv/bin/python3")
+        site_pkgs = Path("/mock/site-packages")
+        grpc_proto = Path("/mock/grpc_proto")
+        staged_files = ["/mock/site-packages/xmanager_cloud/xid_service/proto/api.proto"]
+
+        with (
+            mock.patch(
+                "install_xmanager.resolve_venv_proto_paths",
+                return_value=(site_pkgs, grpc_proto),
+            ),
+            mock.patch(
+                "install_xmanager._ensure_longrunning_operations_proto",
+            ) as mock_ensure_ops,
+            mock.patch(
+                "install_xmanager.stage_local_protos",
+                return_value=staged_files,
+            ),
+            mock.patch("subprocess.run") as mock_run,
+        ):
+            install_xmanager.compile_local_protos(venv_python, Path("/mock/repo"))
+
+        mock_ensure_ops.assert_called_once_with(site_pkgs)
+        mock_run.assert_called_once_with(
+            [
+                "/mock/venv/bin/python3",
+                "-m",
+                "grpc_tools.protoc",
+                "-I/mock/site-packages",
+                "-I/mock/grpc_proto",
+                "--python_out=/mock/site-packages",
+                "--grpc_python_out=/mock/site-packages",
+                *staged_files,
+            ],
+            check=True,
+        )
+
+    def test_compile_local_protos_protoc_failure_propagates(self) -> None:
+        """Test compile_local_protos propagates CalledProcessError when protoc fails."""
+        venv_python = Path("/mock/venv/bin/python3")
+        site_pkgs = Path("/mock/site-packages")
+        grpc_proto = Path("/mock/grpc_proto")
+        with (
+            mock.patch(
+                "install_xmanager.resolve_venv_proto_paths",
+                return_value=(site_pkgs, grpc_proto),
+            ),
+            mock.patch("install_xmanager._ensure_longrunning_operations_proto"),
+            mock.patch("install_xmanager.stage_local_protos", return_value=["api.proto"]),
+            mock.patch(
+                "subprocess.run",
+                side_effect=subprocess.CalledProcessError(1, ["protoc"]),
+            ),
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            install_xmanager.compile_local_protos(venv_python, Path("/mock/repo"))
+
+    def test_verify_imports(self) -> None:
+        """Test verify_imports checks all required XManager and proto modules."""
+        venv_python = Path("/mock/venv/bin/python3")
+        with mock.patch("subprocess.run") as mock_run:
+            install_xmanager.verify_imports(venv_python)
+
+        self.assertEqual(mock_run.call_count, len(install_xmanager.VERIFIED_MODULES))
+        for mod in install_xmanager.VERIFIED_MODULES:
+            mock_run.assert_any_call(
+                ["/mock/venv/bin/python3", "-c", f"import {mod}"],
+                check=True,
+            )
+
+    @mock.patch("install_xmanager.verify_imports")
+    @mock.patch("install_xmanager.compile_local_protos")
+    @mock.patch("install_xmanager.install_xmanager_package")
+    @mock.patch("install_xmanager.setup_virtualenv")
+    def test_main_execution(
+        self,
+        mock_venv: mock.Mock,
+        mock_install: mock.Mock,
+        mock_compile: mock.Mock,
+        mock_verify: mock.Mock,
+    ) -> None:
+        """Test main execution flow with mocked external operations."""
         mock_venv.return_value = Path("/mock/venv/bin/python3")
+
         with tempfile.TemporaryDirectory() as tmp_venv:
-            install_xmanager.main(["--venv", tmp_venv, "--dashboard-protos-only"])
-        mock_venv.assert_called_once()
-        mock_install_dashboard.assert_called_once()
-        mock_pre.assert_not_called()
+            install_xmanager.main(
+                [
+                    "--venv",
+                    tmp_venv,
+                    "--xmanager-version",
+                    "0.8.2",
+                    "--requirements",
+                    "requirements.txt",
+                ]
+            )
+
+        mock_venv.assert_called_once_with(Path(tmp_venv).resolve())
+        mock_install.assert_called_once_with(
+            Path("/mock/venv/bin/python3"),
+            "xmanager==0.8.2",
+            ["requirements.txt"],
+        )
+        mock_compile.assert_called_once_with(
+            Path("/mock/venv/bin/python3"),
+            install_xmanager.REPO_ROOT,
+        )
+        mock_verify.assert_called_once_with(Path("/mock/venv/bin/python3"))
 
 
 if __name__ == "__main__":

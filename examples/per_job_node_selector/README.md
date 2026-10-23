@@ -23,14 +23,9 @@ When an XMC Work Unit is created with these requirements:
 
 ## Prerequisites
 
-1. **Client-Side Dependencies**: Install the host Python dependencies required to execute `launch.py`:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **GKE Node Pools**: Your GKE cluster must have the required node pools (`cpups` and `gpu-pool`, or modify `launch.py` to match your cluster's existing node pool names).
-3. **Environment Variables**: Ensure `PROJECT_ID`, `XMC_DOMAIN`, and optionally `QUEUE_NAME` are exported in your environment or defined in a `.env` file.
-4. **Authentication**: Run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+1. **GKE Node Pools**: Your GKE cluster must have the required node pools (`cpups` and `gpu-pool`, or modify `launch.py` to match your cluster's existing node pool names).
+2. **Environment Variables**: Ensure `PROJECT_ID`, `XMC_DOMAIN`, and optionally `QUEUE_NAME` are exported in your environment or defined in a `.env` file.
+3. **Authentication**: After creating and activating your `.venv` (see Step 2 below), run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ## Step 1: Build and Push Container Image
 
@@ -42,8 +37,9 @@ export PROJECT_ID="my-gcp-project"
 ## Step 2: Launch the Experiment
 
 ```bash
-source ../../deploy/cli/venv/bin/activate
-pip install -r requirements.txt
+python3 ../../deploy/cli/install_xmanager.py --venv .venv --requirements requirements.txt
+source .venv/bin/activate
+xmanager login
 python3 launch.py
 ```
 

@@ -2,63 +2,77 @@
 
 ## Introduction
 
+[XManager CLI](https://github.com/google-deepmind/xmanager) is a Python library for interacting with XManager on Cloud (`xm_cloud`) and other XManager execution backends.
 
-[XManager CLI](https://github.com/google-deepmind/xmanager) is a python library for interacting with Xmanager Cloud (and other Xmanager flavors). This directory is aimed at helping with Xmanager CLI installation specifically for working with XMC backend. 
+The published `xmanager` package on PyPI (`xmanager>=0.8.2`) bundles `xmanager.xm_cloud` and the precompiled gRPC proto bindings (`xmanager_cloud.experiment_state_server.proto.*`, `xmanager_cloud.xid_service.proto.*`, and `xmanager_cloud.dashboard_service.proto.*`).
 
+---
 
 ## Installation
 
-The script `install_xmanager.py` automates:
-1. Creating a Python virtual environment.
-2. Cloning the official `xmanager` library (`xm-cloud` branch) and `googleapis` repository.
-3. Overwriting outdated gRPC proto definitions inside `xmanager` with the fresh XMC API protos.
-4. Compiling and installing the package inside the virtual environment.
+### Recommended: Automated Setup & Local Proto Compilation (`install_xmanager.py`)
 
-### Prerequisites
-- **Git** (version 2.25+ recommended for remote/GitHub sparse checkouts)
-- **Python 3**
+Use [`install_xmanager.py`](install_xmanager.py) to set up a virtual environment, install optional `requirements.txt` files, install `xmanager` and XMC runtime client dependencies (`absl-py`, `google-auth`, `googleapis-common-protos`, `grpcio`, `grpcio-tools`, `protobuf`, `python-dotenv`, `requests`) from PyPI, and compile the fresh local XMC `.proto` definitions from [`api/protos`](../../api/protos) (`experiment`, `xid`, and `dashboard`) into the virtual environment's `xmanager_cloud` package.
 
-### Basic Usage
+> [!NOTE]
+> Because `install_xmanager.py` overwrites the `*_pb2.py` and `*_pb2_grpc.py` modules shipped by the `xmanager` wheel inside `site-packages/xmanager_cloud`, you must re-run `install_xmanager.py` after any `pip` operation (such as `pip install -U xmanager` or `--force-reinstall`) that modifies `xmanager`.
 
-If you are running the script from a local clone of the `xmc` repository:
+It automates:
+1. Creating a Python virtual environment (default: `./venv`).
+2. Upgrading `pip`, installing any `-r` / `--requirements` files, and installing `xmanager` and XMC client dependencies from PyPI.
+3. Compiling the local XMC API protos from `api/protos` (`experiment`, `xid`, and `dashboard`) directly into `site-packages/xmanager_cloud` via `grpc_tools.protoc` so local proto changes take effect immediately without waiting for a PyPI release.
+4. Verifying that `xmanager.xm_cloud` and the compiled XMC gRPC proto modules import cleanly.
+
+#### Prerequisites
+- **Python 3** (with `venv` and `pip`)
+
+#### Basic Usage
+
+From the root of your local clone of the `xmc` repository:
 ```bash
-python3 install_xmanager.py
+python3 deploy/cli/install_xmanager.py
 ```
-This automatically locates your local `api/protos` definitions and builds them inside `./venv`.
 
-### Options
-
-The script accepts several command-line flags to customize the installation:
+#### Options
 
 ```bash
-python3 install_xmanager.py [options]
+python3 deploy/cli/install_xmanager.py [options]
 
 Options:
-  --protos-loc <url_or_path>     Location of XMC protos. Can be a local directory path or a 
-                                 GitHub repository tree URL.
-                                 (default: local checkout if available, else https://github.com/google/xmc/tree/main/api/protos)
-  --xmanager-branch <branch>     The XManager Git branch/tag to clone (default: xm-cloud)
-  --venv <path>                  Target directory for the Python virtual environment (default: ./venv)
+  --venv <path>                  Target directory for the Python virtual environment
+                                 (default: ./venv, or VENV_DIR environment variable)
+  --xmanager-version <spec>      Optional xmanager version (e.g. 0.8.2), specifier
+                                 (e.g. '>=0.8.2,<0.9'), or full PEP 508 requirement
+                                 (e.g. 'xmanager @ git+https://github.com/google-deepmind/xmanager@xm-cloud')
+                                 (default: XMANAGER_VERSION env var, or xmanager>=0.8.2)
+  -r, --requirements <path>      Optional requirements file to install before applying
+                                 xmanager and runtime dependency pins (repeatable)
   -h, --help                     Show usage information
 ```
 
-#### Example: Installing with Remote Protos
+#### Example: Pinning a Specific Version or Requirements File
 ```bash
-python3 install_xmanager.py --venv ./my_env --protos-loc https://github.com/google/xmc/tree/main/api/protos
+python3 deploy/cli/install_xmanager.py --venv ./my_env --xmanager-version 0.8.2 --requirements requirements.txt
 ```
 
-### Activating the Virtual Environment
-After installation completes successfully, activate the environment:
+### Direct `pip` Installation (Without Local Proto Overlay)
+
+If you do not need unreleased local `.proto` changes from `api/protos`, you can also install `xmanager` directly from PyPI:
+
 ```bash
-source ./venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install "xmanager>=0.8.2"
 ```
 
 ### Verification
 You can verify the installation is working correctly by checking imports:
 ```bash
-python3 -c "import xmanager_cloud"
-python3 -c "import xmanager_cloud.experiment_state_server.experiment_state_api"
+python3 -c "import xmanager.xm_cloud; import xmanager_cloud.experiment_state_server.experiment_state_api; print('Verified!')"
 ```
+
+---
 
 ## Authentication
 
@@ -71,6 +85,8 @@ xmanager login   # Reads XMANAGER_ENDPOINT, XMC_API_URL, XMANAGER_UI_URL, or XMC
 `xmanager login` caches your token in `$XMC_CREDENTIALS_FILE` or `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config/xmc/credentials.json`), and the XManager CLI loads it automatically as a Bearer token and reads your email from it. Over SSH or on a headless machine, `xmanager login` falls back to a copy-and-paste flow on its own (or pass `--no-browser`). Tokens last 12 hours by default. Run `xmanager login --status` to check yours and `xmanager logout` to remove the cached token.
 
 For CI service accounts (`XMC_CLIENT_SA`) and for sharing experiments through ACLs, see [Authentication and Experiment Access](../../docs/authentication.md).
+
+---
 
 ## Launching Experiments
 
@@ -89,7 +105,7 @@ Open the newly created `../../.env` file and customize it with your specific det
 With the Python virtual environment active, the `.env` file configured, and signed in via `xmanager login` (see [Authentication](#authentication)), execute the `launch.py` script:
 
 ```bash
-python launch.py
+python3 launch.py
 ```
 
 `launch.py` automatically uses `python-dotenv` to locate the `.env` file in parent directories, load the variables, and start the experiment without needing manual prompt input.

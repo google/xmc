@@ -20,7 +20,7 @@ Runs:
    containers).
 2. `secondary-counter` (1 replica running a second distinct pod role in the same
    WorkUnit).
-Leverages the XManager CLI library installed in ./deploy/cli/venv.
+Leverages the XManager library (`pip install xmanager`).
 """
 
 import logging
