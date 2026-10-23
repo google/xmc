@@ -18,6 +18,11 @@
 // metrics.Metric messages to a topic, and this package inserts them into the Null-engine
 // xmc_metrics_pubsub_queue table, whose materialized view populates xmc_metrics. It plays the role
 // that ClickHouse's native Kafka table engine plays for the Redpanda message bus.
+//
+// Running this consumer as a separate service rather than inside the Ingestion Gateway keeps
+// ClickHouse credentials and egress off the workload-reachable gateway pods, and lets the consumer
+// run a small replica count tuned for large ClickHouse batch inserts independently of gateway HTTP
+// autoscaling.
 package metricsingester
 
 import "time"
