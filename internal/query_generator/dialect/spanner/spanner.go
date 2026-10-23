@@ -31,8 +31,17 @@ type Statement struct {
 }
 
 // NewStatement returns a Statement that appends to the Cloud Spanner statement q.
+// If q is nil, a new spanner.Statement is allocated.
 func NewStatement(q *spanner.Statement) *Statement {
+	if q == nil {
+		q = &spanner.Statement{}
+	}
 	return &Statement{q: q}
+}
+
+// Spanner returns the underlying Cloud Spanner statement.
+func (s *Statement) Spanner() *spanner.Statement {
+	return s.q
 }
 
 // AppendSQL appends trusted SQL to the underlying Cloud Spanner statement.
@@ -78,4 +87,13 @@ func (Dialect) RegexpMatch(lhs, rhs safesql.TrustedSQLString) safesql.TrustedSQL
 // TextSearch implements queryfilterbase.Dialect.
 func (Dialect) TextSearch(col, queryParam safesql.TrustedSQLString) safesql.TrustedSQLString {
 	return safesql.Concat(safesql.New("SEARCH("), col, safesql.New(", "), queryParam, safesql.New(")"))
+}
+
+// OrderByClause implements queryfilterbase.Dialect.
+// Cloud Spanner sorts NULLs first on ASC and last on DESC by default.
+func (Dialect) OrderByClause(col safesql.TrustedSQLString, desc, _ bool) safesql.TrustedSQLString {
+	if desc {
+		return safesql.Concat(col, safesql.New(" DESC"))
+	}
+	return col
 }

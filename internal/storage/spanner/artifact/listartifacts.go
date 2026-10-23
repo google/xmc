@@ -22,6 +22,7 @@ import (
 	"cloud.google.com/go/spanner"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
+	spannerdialect "xmanager_cloud/internal/query_generator/dialect/spanner"
 	ls "xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 	"xmanager_cloud/internal/storage/spanner/data"
@@ -60,15 +61,15 @@ func (r *Repository) ListArtifacts(ctx context.Context, parent string, pageSize 
 		return nil, "", err
 	}
 
-	stmt, err := ls.ListStatement(ctx, listParams)
-	if err != nil {
+	stmt := spannerdialect.NewStatement(nil)
+	if err := ls.ListStatement(ctx, stmt, listParams); err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
 
-	logging.Debug(ctx, "Generated list statement", "stmt", stmt)
+	logging.Debug(ctx, "Generated list statement", "stmt", stmt.Spanner())
 
 	// 3. Execute the query.
-	expIter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt)
+	expIter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt.Spanner())
 	defer expIter.Stop()
 
 	// 4. Convert the rows to Artifact protos.

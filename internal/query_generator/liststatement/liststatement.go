@@ -11,12 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-// Package liststatement provides a function for generating a Spanner statement for a list query.
+// Package liststatement provides a function for generating a SQL statement for a list query.
 package liststatement
 
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -24,12 +26,9 @@ import (
 	aipfilter "xmanager_cloud/api/filter/go/filter"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
+	queryfilter "xmanager_cloud/internal/query_generator/filter"
 	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/safesql"
-
-	"cloud.google.com/go/spanner"
-	"encoding/base64"
-	"encoding/json"
 )
 
 // ListParams contains the parameters for a list query.
@@ -68,8 +67,8 @@ func (p *ListParams) DecodePageToken(pageToken string) error {
 	return nil
 }
 
-// ListStatement returns a Spanner statement for the given list parameters.
-func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, error) {
+// ListStatement populates stmt with the generated SQL query and bound parameters for the given list parameters.
+func ListStatement(ctx context.Context, stmt queryfilter.Statement, params ListParams) error {
 	// 1. Parse the filter as an EBNF expression.
 	exp, err := aipfilter.ParseExpressionWithOptions(fepb.ExpressionParserOptions_builder{
 		RejectLegacyOperatorPrecedence: true,
@@ -77,7 +76,7 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 		EnforceValidStrings:            true,
 	}.Build(), params.Filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse filter %s, %v: %w", params.Filter, err, grpcerr.ErrInvalidArgument)
+		return fmt.Errorf("failed to parse filter %s, %v: %w", params.Filter, err, grpcerr.ErrInvalidArgument)
 	}
 
 	logging.Info(ctx, "Parsed filter", "filter", exp)
@@ -85,7 +84,7 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 	// 2. Convert the orderBy string to a list of ordered indices.
 	orderedIndices, err := generateOrderBy(ctx, params.OrderBy, params.ValidOrderByFields)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse orderBy %s, %v: %w", params.OrderBy, err, grpcerr.ErrInvalidArgument)
+		return fmt.Errorf("failed to parse orderBy %s, %v: %w", params.OrderBy, err, grpcerr.ErrInvalidArgument)
 	}
 
 	// 3. Generate the query.
@@ -99,26 +98,12 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 		}
 	}
 
-	stmt, _, _, err := params.QueryGen.GenerateQuery(params.DefaultSelectFields, params.DefaultFullTextFields, nil, exp, orderedIndices, int(pageSizeWithExtra), 0, ptFields, nil)
+	_, _, err = params.QueryGen.GenerateQuery(stmt, params.DefaultSelectFields, params.DefaultFullTextFields, nil, exp, orderedIndices, int(pageSizeWithExtra), 0, ptFields, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate query: %w", err)
+		return fmt.Errorf("failed to generate query: %w", err)
 	}
 
-	// 5. Ensure the query does not have duplicated select fields. This is a workaround; the query generator
-	// should be updated to do this natively. The fundamental problem seems to be that that duplicate
-	// selects are not considered a problem, but I think it's extremely bad practice to allow it, and
-	// it causes the column parsing logic to be more complex in the row -> proto conversion logic.
-	// However, this is not trivial, and our SQL logic is very simple, so we just do it here for now.
-	stmt.SQL, err = deduplicateSelectColumns(stmt.SQL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to deduplicate select columns: %w", err)
-	}
-
-	logging.Info(ctx, "Generated query SQL", "sql", stmt.SQL)
-	logging.Info(ctx, "Generated query params", "params", stmt.Params)
-
-	// 6. Return the results.
-	return stmt, nil
+	return nil
 }
 
 // generateOrderBy splits the orderBy string by commas, trims whitespace, and returns an error for invalid segments.
@@ -179,56 +164,6 @@ func generateOrderBy(ctx context.Context, orderBy string, validFields []querytoo
 	}
 
 	return orderedIndices, nil
-}
-
-// deduplicateSelectColumns takes a SQL query string and removes duplicate columns
-// from the SELECT clause. It preserves the order of the first appearance of each column.
-// Note: This is a simplified parser and works for basic "SELECT ... FROM ..." queries.
-// It does not handle complex cases like subqueries in the SELECT clause.
-func deduplicateSelectColumns(query string) (string, error) {
-	// 1. Normalize the query to uppercase for case-insensitive matching of keywords.
-	upperQuery := strings.ToUpper(query)
-
-	// 2. Find the start of the SELECT columns and the end (start of FROM).
-	selectIndex := strings.Index(upperQuery, "SELECT ")
-	fromIndex := strings.Index(upperQuery, " FROM ")
-
-	if selectIndex == -1 || fromIndex == -1 {
-		return "", fmt.Errorf("query must contain SELECT and FROM clauses")
-	}
-
-	// Adjust selectIndex to point to the start of the column list.
-	selectIndex += len("SELECT ")
-
-	// 3. Extract the parts of the query.
-	selectClause := query[:selectIndex]        // "SELECT "
-	columnsStr := query[selectIndex:fromIndex] // "A, B, C, A"
-	fromAndRestClause := query[fromIndex:]     // " FROM ..."
-
-	// 4. Split the columns string into a slice.
-	columns := strings.Split(columnsStr, ",")
-
-	// 5. Use a map to track seen columns and a slice to store unique columns.
-	// This preserves the original order of the columns.
-	seen := make(map[string]bool)
-	var uniqueColumns []string
-
-	for _, col := range columns {
-		// Trim whitespace from the column name.
-		trimmedCol := strings.TrimSpace(col)
-
-		// If we haven't seen this column before, add it to our unique list and mark it as seen.
-		if _, ok := seen[trimmedCol]; !ok {
-			seen[trimmedCol] = true
-			uniqueColumns = append(uniqueColumns, trimmedCol)
-		}
-	}
-
-	// 6. Join the unique columns back into a single string.
-	uniqueColumnsStr := strings.Join(uniqueColumns, ", ")
-
-	// 7. Reconstruct and return the final query.
-	return selectClause + uniqueColumnsStr + fromAndRestClause, nil
 }
 
 // DecodeAfterCursorPageToken extracts the cursor map from a page token.
