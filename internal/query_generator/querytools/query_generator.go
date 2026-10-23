@@ -187,31 +187,19 @@ func PhraseMap(rewrites map[string]map[string]string) queryfilter.RestrictionTra
 }
 
 func tryRewritePhraseRestrictionSide(r *fpb.Restriction, fieldExpr, valExpr *fpb.Expression, lhsIsLiteral bool, rewrites map[string]map[string]string) (*fpb.Restriction, bool) {
-	field := fieldExpr.GetValue()
-	if field == "" || valExpr.GetPhrase() == nil {
-		return nil, false
-	}
 	values := valExpr.GetPhrase().GetValues()
-	if len(values) != 1 {
+	if fieldExpr.GetValue() == "" || len(values) != 1 {
 		return nil, false
 	}
-	newphrase, ok := rewrites[field][values[0]]
+	newphrase, ok := rewrites[fieldExpr.GetValue()][values[0]]
 	if !ok || newphrase == values[0] {
 		return nil, false
 	}
-	newValExpr := fpb.Expression_builder{Phrase: fpb.Phrase_builder{Values: []string{newphrase}}.Build()}.Build()
+	lhs, rhs := r.GetLhs(), fpb.Expression_builder{Phrase: fpb.Phrase_builder{Values: []string{newphrase}}.Build()}.Build()
 	if lhsIsLiteral {
-		return fpb.Restriction_builder{
-			Comparator: r.GetComparator(),
-			Lhs:        newValExpr,
-			Rhs:        r.GetRhs(),
-		}.Build(), true
+		lhs, rhs = rhs, r.GetRhs()
 	}
-	return fpb.Restriction_builder{
-		Comparator: r.GetComparator(),
-		Lhs:        r.GetLhs(),
-		Rhs:        newValExpr,
-	}.Build(), true
+	return fpb.Restriction_builder{Comparator: r.GetComparator(), Lhs: lhs, Rhs: rhs}.Build(), true
 }
 
 func (q *queryGen) translateRestriction(r *fpb.Restriction) *fpb.Restriction {
@@ -244,9 +232,6 @@ func (q *queryGen) translateRestrictionWithValidation(r *fpb.Restriction) (*fpb.
 }
 
 func rewriteRestrictionRhsValue(r *fpb.Restriction, val string) *fpb.Restriction {
-	if r.GetRhs().WhichExpression() == fpb.Expression_Value_case && r.GetRhs().GetValue() == val {
-		return r
-	}
 	return fpb.Restriction_builder{
 		Comparator: r.GetComparator(),
 		Lhs:        r.GetLhs(),
