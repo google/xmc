@@ -390,6 +390,8 @@ func TestIngesterInFlightWriteSurvivesCancellation(t *testing.T) {
 	ctx := context.Background()
 	srv, _, sub := newFakeSubscription(ctx, t)
 	gate := make(chan struct{})
+	closeGate := sync.OnceFunc(func() { close(gate) })
+	t.Cleanup(closeGate)
 	writer := newFakeWriter(0)
 	writer.beforeWrite = func() { <-gate }
 	_, stop := startIngester(t, sub, writer, 1, neverTick)
@@ -399,7 +401,7 @@ func TestIngesterInFlightWriteSurvivesCancellation(t *testing.T) {
 
 	stopped := make(chan error, 1)
 	go func() { stopped <- stop() }()
-	close(gate)
+	closeGate()
 
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run() error = %v, want nil", err)
@@ -546,6 +548,8 @@ func metricMessage(t *testing.T, id string, step int64) *pubsub.Message {
 
 func TestIngesterNacksInsteadOfBlockingWhenCallbackContextIsDone(t *testing.T) {
 	gate := make(chan struct{})
+	closeGate := sync.OnceFunc(func() { close(gate) })
+	t.Cleanup(closeGate)
 	writer := newFakeWriter(0)
 	writer.beforeWrite = func() { <-gate }
 	cancelled, cancel := context.WithCancel(context.Background())
@@ -555,7 +559,7 @@ func TestIngesterNacksInsteadOfBlockingWhenCallbackContextIsDone(t *testing.T) {
 		writer.awaitCalls(t, 1)
 		f(ctx, metricMessage(t, "2", 2))       // Fills the one-slot buffer.
 		f(cancelled, metricMessage(t, "3", 3)) // Buffer full and callback context done: nacked.
-		close(gate)
+		closeGate()
 		return nil
 	}}
 
@@ -566,56 +570,6 @@ func TestIngesterNacksInsteadOfBlockingWhenCallbackContextIsDone(t *testing.T) {
 	want := [][]*pb.Metric{{metricWithStep(1)}, {metricWithStep(2)}}
 	if diff := cmp.Diff(want, writer.snapshot(), protocmp.Transform()); diff != "" {
 		t.Errorf("writes mismatch (-want +got):\n%s", diff)
-	}
-}
-
-func TestIngesterNacksMessagesArrivingAfterShutdownFlush(t *testing.T) {
-	srv, _, sub := newFakeSubscription(context.Background(), t)
-	id1 := publishMetric(t, srv, metricWithStep(1))
-	id2 := publishMetric(t, srv, metricWithStep(2))
-
-	writer := newFakeWriter(0)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var leased atomic.Int32
-	bothLeased := make(chan struct{})
-	source := &scriptedSource{script: func(rCtx context.Context, f func(context.Context, *pubsub.Message)) error {
-		return sub.Receive(rCtx, func(cbCtx context.Context, msg *pubsub.Message) {
-			awaitModacks(t, srv, msg.ID, 1)
-			if leased.Add(1) == 2 {
-				close(bothLeased)
-			}
-			select {
-			case <-bothLeased:
-			case <-time.After(waitTimeout):
-				t.Errorf("timed out waiting for both messages to be leased")
-				msg.Nack()
-				return
-			}
-			if msg.ID == id1 {
-				f(cbCtx, msg)
-				cancel()
-				return
-			}
-			writer.awaitWrites(t, 1) // Wait for the shutdown flush of id1 after buffer drain.
-			// Deliver with a live callback context so Run's callback enqueues into msgCh and
-			// nackUntilClosed must settle msg2 with an explicit Nack.
-			f(context.Background(), msg)
-		})
-	}}
-
-	if err := NewIngester(source, writer, &Config{BatchSize: 100, BatchInterval: neverTick}).Run(ctx); err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
-
-	if diff := cmp.Diff([][]*pb.Metric{{metricWithStep(1)}}, writer.snapshot(), protocmp.Transform()); diff != "" {
-		t.Errorf("writes mismatch (-want +got):\n%s", diff)
-	}
-	awaitAcks(t, srv, id1)
-	awaitNack(t, srv, id2)
-	if got := srv.Message(id2).Acks; got != 0 {
-		t.Errorf("message %s Acks = %d, want 0", id2, got)
 	}
 }
 
@@ -685,14 +639,73 @@ func TestFlushEmptyIsNoOp(t *testing.T) {
 	}
 }
 
-func TestNackUntilClosedDrainsChannel(t *testing.T) {
-	msgCh := make(chan *pubsub.Message, 2)
-	msgCh <- &pubsub.Message{ID: "1"}
-	msgCh <- &pubsub.Message{ID: "2"}
-	close(msgCh)
+// receiveLeasedMessages opens a persistent subscription stream and forwards each delivered message
+// onto the returned channel.
+func receiveLeasedMessages(t *testing.T, sub *pubsub.Subscription) <-chan *pubsub.Message {
+	t.Helper()
+	subCtx, stopSub := context.WithCancel(context.Background())
+	leased := make(chan *pubsub.Message, 10)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = sub.Receive(subCtx, func(_ context.Context, msg *pubsub.Message) {
+			leased <- msg
+		})
+	}()
+	t.Cleanup(func() {
+		stopSub()
+		<-done
+	})
+	return leased
+}
 
-	nackUntilClosed(msgCh)
-	if n := len(msgCh); n != 0 {
-		t.Errorf("len(msgCh) = %d after nackUntilClosed, want 0", n)
+// takeLeasedMessage waits for the next message from ch and ensures its receipt modack landed.
+func takeLeasedMessage(t *testing.T, srv *pstest.Server, ch <-chan *pubsub.Message) *pubsub.Message {
+	t.Helper()
+	select {
+	case msg := <-ch:
+		awaitModacks(t, srv, msg.ID, 1)
+		return msg
+	case <-time.After(waitTimeout):
+		t.Fatal("timed out waiting for leased message")
+		return nil
+	}
+}
+
+func TestIngesterNacksMessagesArrivingAfterShutdownFlush(t *testing.T) {
+	srv, _, sub := newFakeSubscription(context.Background(), t)
+	leased := receiveLeasedMessages(t, sub)
+	id1 := publishMetric(t, srv, metricWithStep(1))
+	first1 := takeLeasedMessage(t, srv, leased)
+	id2 := publishMetric(t, srv, metricWithStep(2))
+	first2 := takeLeasedMessage(t, srv, leased)
+
+	writer := newFakeWriter(0)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	source := &scriptedSource{script: func(rCtx context.Context, f func(context.Context, *pubsub.Message)) error {
+		f(rCtx, first1)
+		cancel()
+		writer.awaitWrites(t, 1) // Wait for the shutdown flush of id1 after buffer drain.
+		f(context.Background(), first2)
+		return nil
+	}}
+
+	if err := NewIngester(source, writer, &Config{BatchSize: 100, BatchInterval: neverTick}).Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if diff := cmp.Diff([][]*pb.Metric{{metricWithStep(1)}}, writer.snapshot(), protocmp.Transform()); diff != "" {
+		t.Errorf("writes mismatch (-want +got):\n%s", diff)
+	}
+	awaitAcks(t, srv, id1)
+	awaitNack(t, srv, id2)
+	if got := srv.Message(id2).Acks; got != 0 {
+		t.Errorf("message %s Acks = %d, want 0", id2, got)
+	}
+
+	takeLeasedMessage(t, srv, leased).Ack()
+	awaitAcks(t, srv, id2)
+	if got := srv.Message(id2).Deliveries; got < 2 {
+		t.Errorf("message %s Deliveries = %d, want at least 2 after nack", id2, got)
 	}
 }

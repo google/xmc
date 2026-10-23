@@ -45,7 +45,7 @@ type MessageSource interface {
 	Receive(ctx context.Context, f func(context.Context, *pubsub.Message)) error
 }
 
-// MetricWriter persists a batch of decoded metrics, all or nothing.
+// MetricWriter persists a batch of decoded metrics with at-least-once semantics.
 type MetricWriter interface {
 	Write(ctx context.Context, metrics []*pb.Metric) error
 }

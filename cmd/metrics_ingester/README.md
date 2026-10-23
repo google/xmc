@@ -2,6 +2,8 @@
 
 The **Metrics Ingester** delivers metrics from Google Cloud Pub/Sub into ClickHouse. It is only needed when the [Ingestion Gateway](../ingestion_gateway/README.md) runs with `-message_bus=pubsub`. In Redpanda mode, ClickHouse consumes the topic itself through its `ENGINE = Kafka` table. ClickHouse has no Pub/Sub table engine, so this service fills that role.
 
+Running the consumer as a separate service rather than inside the Ingestion Gateway keeps ClickHouse credentials and network egress off workload-reachable gateway pods, and lets a small consumer replica count batch large ClickHouse inserts independently of gateway HTTP autoscaling.
+
 > [!NOTE]
 > There is no Helm chart or Terraform for this service yet, so for now the topic, subscription and IAM bindings must be created by hand.
 
