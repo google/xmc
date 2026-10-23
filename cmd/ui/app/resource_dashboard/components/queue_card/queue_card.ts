@@ -37,14 +37,14 @@ import {
   MaxSchedulableDisplayPipe,
   QueueStatusBadgePipe,
 } from 'app/resource_dashboard/pipes/resource_dashboard_pipes';
-import { matchesResourceFilter } from 'app/resource_dashboard/utils/resource_filter';
+import { matchesResourceFilter } from 'app/resource_dashboard/resource_filter';
 import {
   calculateJobVelocity,
   calculatePendingRequestsDisplay,
   calculateResourceVelocity,
   findQueuePredictability,
   getPendingJobsCount,
-} from 'app/resource_dashboard/utils/resource_velocity';
+} from 'app/resource_dashboard/resource_velocity';
 import { ResourceService } from 'app/service/resource_service';
 
 export interface PredictabilityViewModel {

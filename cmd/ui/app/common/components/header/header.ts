@@ -22,7 +22,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { Router, RouterLink } from '@angular/router';
 
-import { experimentFiltersToQueryParams } from 'app/experiments_list_page/utils/query_params';
+import { experimentFiltersToQueryParams } from 'app/experiments_list_page/query_params';
 
 /**
  * Header component for the XMC UI.

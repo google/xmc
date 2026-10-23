@@ -13,7 +13,7 @@
 // limitations under the License.
 import { ResourceSet } from 'app/protos/experiment_state_server';
 
-import { ResourceType } from '../resource_chip';
+import { ResourceType } from './resource_chip';
 import {
   ResourceChipData,
   resourceSetsToResourceChipsData,

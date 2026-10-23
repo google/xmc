@@ -23,7 +23,7 @@ import { RouterLink } from '@angular/router';
 import {
   getArtifactDisplayProperties,
   hasPayloadContent,
-} from 'app/common/artifacts/artifact_utils';
+} from 'app/common/artifacts/artifact_mapper';
 import { PayloadType, TypedArtifact } from 'app/common/artifacts/interfaces';
 import { SafeUrlPipe, SplitPipe } from 'app/common/pipes/pipes';
 import { parseWorkUnitName } from 'app/common/resource_name_extractor';

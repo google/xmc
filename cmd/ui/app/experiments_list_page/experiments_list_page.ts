@@ -27,7 +27,7 @@ import { PageSizeSelector } from '../common/components/page_size_selector/page_s
 import { SchedulingPausedBanner } from '../common/components/scheduling_paused_banner/scheduling_paused_banner';
 import { ExperimentsListPageStore } from './experiments_list_page_store';
 import { ExperimentsTable } from './experiments_table/experiments_table';
-import { queryParamsToExperimentFilters } from './utils/query_params';
+import { queryParamsToExperimentFilters } from './query_params';
 
 /**
  * Experiments list page for the XMC UI.

@@ -23,7 +23,7 @@ import {
   getPendingJobsCount,
 } from './resource_velocity';
 
-describe('Resource Velocity Utilities', () => {
+describe('Resource Velocity', () => {
   const mockSecondaryData: ClusterQueueSecondaryMetrics = {
     queuePredictability: [
       {

@@ -17,9 +17,9 @@ import { TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 
-import { EmptyComponent } from 'app/common/testing_utils/empty_component';
 import { ListExperimentsResponse } from 'app/protos/experiment_state_server';
 import { StatusMessageFilterService } from 'app/service/status_message_filter_service';
+import { EmptyComponent } from 'app/testing/empty_component';
 import { bootstrapTemplate, cleanState, setupModule } from 'app/testing/test';
 
 import { ExperimentsTable } from './experiments_table';

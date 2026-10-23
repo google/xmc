@@ -25,7 +25,7 @@ import { provideRouter } from '@angular/router';
 
 import { routes } from './app_routes';
 import { AUTH_ERROR_STYLES } from './auth-error.styles';
-import { HtmlSanitizerBuilder, setElementInnerHtml } from './safevalues_helper';
+import { HtmlSanitizerBuilder, setElementInnerHtml } from './html_sanitizer';
 import { ArtifactService } from './service/artifact_service';
 import {
   AUTO_REFRESH_INTERVAL_MS,
