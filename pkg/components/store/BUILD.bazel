@@ -21,6 +21,7 @@ go_library(
     srcs = [
         "error_info.go",
         "field_mask.go",
+        "repository.go",
         "store.go",
     ],
     importpath = "xmanager_cloud/pkg/components/store",

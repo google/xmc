@@ -42,12 +42,18 @@ func OwnerByIDForTest(ctx context.Context, s store.Store, componentID int64) (*s
 	case *memory.MemoryStore:
 		return st.OwnerByIDForTest(componentID)
 	case *SpannerStore:
-		stmt := spanner.Statement{SQL: `SELECT ` + componentColumnsSQL + ` FROM Components WHERE ComponentId = @id`, Params: map[string]any{"id": componentID}}
+		stmt := spanner.Statement{SQL: `SELECT SourceUid, SourceGeneration, SourceNamespace, SourceClusterUid, SourceEpoch FROM Components WHERE ComponentId = @id`, Params: map[string]any{"id": componentID}}
 		var owner *store.SourceOwner
 		err := st.client.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
-			var err error
-			owner, err = scanSourceOwner(row)
-			return err
+			var uid, namespace, clusterUID spanner.NullString
+			var generation, epoch spanner.NullInt64
+			if err := row.Columns(&uid, &generation, &namespace, &clusterUID, &epoch); err != nil {
+				return err
+			}
+			if clusterUID.Valid {
+				owner = &store.SourceOwner{UID: uid.StringVal, Generation: generation.Int64, Namespace: namespace.StringVal, ClusterUID: clusterUID.StringVal, Epoch: epoch.Int64}
+			}
+			return nil
 		})
 		if err == nil && owner == nil {
 			err = fmt.Errorf("component %d has no recorded owner", componentID)
