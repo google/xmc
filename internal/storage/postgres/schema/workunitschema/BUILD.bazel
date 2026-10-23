@@ -22,6 +22,7 @@ go_library(
     importpath = "xmanager_cloud/internal/storage/postgres/schema/workunitschema",
     deps = [
         "//api/filter/go/filtervisitor",
+        "//api/protos/experiment:messages_go_proto",
         "//internal/query_generator/querytools",
         "//internal/safesql",
     ],
@@ -32,10 +33,13 @@ go_test(
     srcs = ["workunitschema_test.go"],
     embed = [":workunitschema"],
     deps = [
+        "//api/protos/experiment:messages_go_proto",
         "//internal/query_generator/dialect/postgres",
         "//internal/query_generator/liststatement",
         "//internal/query_generator/normalizer",
         "//internal/query_generator/querytools",
         "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )

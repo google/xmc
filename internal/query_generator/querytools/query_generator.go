@@ -154,6 +154,9 @@ type Member struct {
 	DisjunctionOptimizable bool
 	// Nullable indicates whether the underlying Spanner column can be NULL.
 	Nullable bool
+	// EnumValues maps symbolic proto enum names (e.g., pb.WorkUnitStatus_WorkUnitState_value)
+	// to their integer column values for Integer-typed enum columns.
+	EnumValues map[string]int32
 }
 
 // MemberMap takes a map of name=>Member and produces a MemberFunc
@@ -173,49 +176,125 @@ func MemberMap(members map[string]Member) queryfilter.MemberFunc {
 // PhraseMap takes a map of type kinds to a map of original string and new strings. It is used to rewrite restriction expressions where the literal passed by the user needs to be rewritten.
 func PhraseMap(rewrites map[string]map[string]string) queryfilter.RestrictionTranslate {
 	return func(r *fpb.Restriction) *fpb.Restriction {
-		field, phrase, ok := extractFieldAndPhrase(r)
-		if !ok {
-			return r
+		if rewritten, ok := tryRewritePhraseRestrictionSide(r, r.GetLhs(), r.GetRhs(), false, rewrites); ok {
+			return rewritten
 		}
-
-		m, ok := rewrites[field]
-		if !ok {
-			return r
+		if rewritten, ok := tryRewritePhraseRestrictionSide(r, r.GetRhs(), r.GetLhs(), true, rewrites); ok {
+			return rewritten
 		}
-
-		newphrase, ok := m[phrase]
-		if !ok {
-			return r
-		}
-		out := &fpb.Restriction{}
-		proto.Merge(out, r)
-		if r.GetLhs().GetPhrase() != nil {
-			out.GetLhs().GetPhrase().GetValues()[0] = newphrase
-		} else {
-			out.GetRhs().GetPhrase().GetValues()[0] = newphrase
-		}
-		return out
+		return r
 	}
 }
 
-func extractFieldAndPhrase(r *fpb.Restriction) (string, string, bool) {
-	if r.GetLhs().GetValue() != "" && r.GetRhs().GetPhrase() != nil {
-		field := r.GetLhs().GetValue()
-		phrase := ""
-		if values := r.GetRhs().GetPhrase().GetValues(); len(values) > 0 {
-			phrase = values[0]
-		}
-		return field, phrase, true
+func tryRewritePhraseRestrictionSide(r *fpb.Restriction, fieldExpr, valExpr *fpb.Expression, lhsIsLiteral bool, rewrites map[string]map[string]string) (*fpb.Restriction, bool) {
+	literal, ok := extractLiteralString(valExpr)
+	if fieldExpr.GetValue() == "" || !ok {
+		return nil, false
 	}
-	if r.GetRhs().GetValue() != "" && r.GetLhs().GetPhrase() != nil {
-		field := r.GetRhs().GetValue()
-		phrase := ""
-		if values := r.GetLhs().GetPhrase().GetValues(); len(values) > 0 {
-			phrase = values[0]
-		}
-		return field, phrase, true
+	newphrase, ok := rewrites[fieldExpr.GetValue()][literal]
+	if !ok || newphrase == literal {
+		return nil, false
 	}
-	return "", "", false
+	lhs, rhs := r.GetLhs(), fpb.Expression_builder{Phrase: fpb.Phrase_builder{Values: []string{newphrase}}.Build()}.Build()
+	if lhsIsLiteral {
+		lhs, rhs = rhs, r.GetRhs()
+	}
+	return fpb.Restriction_builder{Comparator: r.GetComparator(), Lhs: lhs, Rhs: rhs}.Build(), true
+}
+
+func (q *queryGen) translateRestriction(r *fpb.Restriction) *fpb.Restriction {
+	rewritten, _ := q.translateRestrictionWithValidation(r)
+	return rewritten
+}
+
+func (q *queryGen) translateRestrictionWithValidation(r *fpb.Restriction) (*fpb.Restriction, error) {
+	if len(q.options.rewrites) > 0 {
+		r = PhraseMap(q.options.rewrites)(r)
+	}
+	field, m, ok := q.extractEnumMember(r)
+	if !ok {
+		return r, nil
+	}
+	literal, ok := extractLiteralString(r.GetRhs())
+	if !ok {
+		return r, nil
+	}
+	if num, ok := lookupEnumValue(m.EnumValues, literal); ok {
+		return rewriteRestrictionRhsValue(r, strconv.FormatInt(int64(num), 10)), nil
+	}
+	if _, err := strconv.ParseInt(literal, 10, 64); err == nil {
+		if r.GetRhs().GetPhrase() != nil {
+			return rewriteRestrictionRhsValue(r, literal), nil
+		}
+		return r, nil
+	}
+	return r, status.Errorf(codes.InvalidArgument, "invalid enum literal %q for field %q", literal, field)
+}
+
+func rewriteRestrictionRhsValue(r *fpb.Restriction, val string) *fpb.Restriction {
+	return fpb.Restriction_builder{
+		Comparator: r.GetComparator(),
+		Lhs:        r.GetLhs(),
+		Rhs:        fpb.Expression_builder{Value: proto.String(val)}.Build(),
+	}.Build()
+}
+
+func (q *queryGen) extractEnumMember(r *fpb.Restriction) (string, Member, bool) {
+	if r.GetLhs() == nil || r.GetRhs() == nil || r.GetLhs().GetPhrase() != nil {
+		return "", Member{}, false
+	}
+	field, ok := extractLiteralString(r.GetLhs())
+	if !ok {
+		return "", Member{}, false
+	}
+	m, ok := q.members[field]
+	if !ok || m.Type != filtervisitor.Integer || len(m.EnumValues) == 0 {
+		return "", Member{}, false
+	}
+	return field, m, true
+}
+
+func extractLiteralString(valExpr *fpb.Expression) (string, bool) {
+	switch valExpr.WhichExpression() {
+	case fpb.Expression_Phrase_case:
+		values := valExpr.GetPhrase().GetValues()
+		if len(values) == 0 {
+			return "", false
+		}
+		return strings.Join(values, " "), true
+	case fpb.Expression_Value_case:
+		if valExpr.GetValue() == "" {
+			return "", false
+		}
+		return valExpr.GetValue(), true
+	case fpb.Expression_Member_case:
+		return joinMemberValues(valExpr.GetMember())
+	default:
+		return "", false
+	}
+}
+
+func joinMemberValues(el *fpb.ExpressionList) (string, bool) {
+	exprs := el.GetExpressions()
+	if len(exprs) == 0 {
+		return "", false
+	}
+	parts := make([]string, 0, len(exprs))
+	for _, elem := range exprs {
+		if elem.WhichExpression() != fpb.Expression_Value_case {
+			return "", false
+		}
+		parts = append(parts, elem.GetValue())
+	}
+	return strings.Join(parts, "."), true
+}
+
+func lookupEnumValue(enumValues map[string]int32, literal string) (int32, bool) {
+	if num, ok := enumValues[literal]; ok {
+		return num, true
+	}
+	num, ok := enumValues[strings.ToUpper(literal)]
+	return num, ok
 }
 
 func fetchMember(name []string, members map[string]Member) (Member, error) {
@@ -900,7 +979,7 @@ func (q *queryGen) GenerateQuery(stmt queryfilter.Statement, selectFields []Tabl
 		DisjunctionFunc:      DisjunctionMemberMap(filters),
 		OptimizeDisjunction:  q.optimizeFilters,
 		Q:                    stmt,
-		RestrictionTranslate: PhraseMap(q.options.rewrites),
+		RestrictionTranslate: q.translateRestriction,
 		TextSearchColumns:    fullTextFields,
 		FilterBaseOptions:    []queryfilter.FilterBaseOption{queryfilter.WithFullTextSearchEnabled},
 	}
@@ -1036,7 +1115,7 @@ func appendCursorFieldComparison(fromTable TableView, fieldToValue map[TableFiel
 		appendNullCursorComparison(f, orderedField.SortOrder, isLast, stmt)
 		return nil
 	}
-	coercedVal, err := coerceCursorValue(f.Type, v)
+	coercedVal, err := coerceCursorValue(f.Type, f.EnumValues, v)
 	if err != nil {
 		return err
 	}
@@ -1073,7 +1152,7 @@ func appendNullCursorComparison(f Member, sortOrder SortOrder, isLast bool, stmt
 
 // coerceCursorValue converts JSON-unmarshaled cursor values (e.g. RFC3339 strings for Timestamp, numeric strings/json.Number for Integer)
 // into native Go types expected by the Cloud Spanner driver.
-func coerceCursorValue(fieldType filtervisitor.PrimType, v any) (any, error) {
+func coerceCursorValue(fieldType filtervisitor.PrimType, enumValues map[string]int32, v any) (any, error) {
 	if fieldType == filtervisitor.Timestamp {
 		if s, ok := v.(string); ok {
 			t, err := time.Parse(time.RFC3339Nano, s)
@@ -1084,13 +1163,13 @@ func coerceCursorValue(fieldType filtervisitor.PrimType, v any) (any, error) {
 		}
 	}
 	if fieldType == filtervisitor.Integer {
-		return coerceIntegerCursorValue(v)
+		return coerceIntegerCursorValue(v, enumValues)
 	}
 	return v, nil
 }
 
-// coerceIntegerCursorValue converts int, json.Number, or base-10 string cursor values into int64.
-func coerceIntegerCursorValue(v any) (any, error) {
+// coerceIntegerCursorValue converts int, json.Number, symbolic enum strings, or base-10 string cursor values into int64.
+func coerceIntegerCursorValue(v any, enumValues map[string]int32) (any, error) {
 	switch val := v.(type) {
 	case int64:
 		return val, nil
@@ -1103,6 +1182,9 @@ func coerceIntegerCursorValue(v any) (any, error) {
 		}
 		return i, nil
 	case string:
+		if num, ok := lookupEnumValue(enumValues, val); ok {
+			return int64(num), nil
+		}
 		i, err := strconv.ParseInt(val, 10, 64)
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid integer cursor value %q: %v", val, err)
@@ -1326,6 +1408,7 @@ func (q *queryGen) scoutUserFilterMembers(userFilterExp *fpb.Expression, fullTex
 		return nil
 	}
 
+	var enumErr error
 	qf := queryfilter.Visitor{
 		MemberFunc: func(name []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
 			n := strings.Join(name, ".")
@@ -1336,12 +1419,22 @@ func (q *queryGen) scoutUserFilterMembers(userFilterExp *fpb.Expression, fullTex
 			userFilters[n] = m.Name
 			return safesql.New(""), m.Type, nil
 		},
-		FunctionFunc:      FunctionMap(q.functions),
+		FunctionFunc: FunctionMap(q.functions),
+		RestrictionTranslate: func(r *fpb.Restriction) *fpb.Restriction {
+			rewritten, err := q.translateRestrictionWithValidation(r)
+			if err != nil && enumErr == nil {
+				enumErr = err
+			}
+			return rewritten
+		},
 		TextSearchColumns: fullTextFields,
 		FilterBaseOptions: []queryfilter.FilterBaseOption{queryfilter.WithFullTextSearchEnabled},
 	}
 
 	err := qf.AppendFilters(userFilterExp)
+	if enumErr != nil {
+		return enumErr
+	}
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "error processing filters: %v", err)
 	}
@@ -1354,7 +1447,7 @@ func (q *queryGen) scoutUserFilterMembers(userFilterExp *fpb.Expression, fullTex
 			n := strings.Join(name, ".")
 			a, ok := q.members[n]
 			if !ok {
-				return filtervisitor.Invalid, status.Errorf(codes.InvalidArgument, "unsupported field name in query: %q", n)
+				return filtervisitor.String, nil
 			}
 			equalityFilters[a.Name] = true
 			return a.Type, nil

@@ -19,6 +19,8 @@ import (
 	"xmanager_cloud/api/filter/go/filtervisitor"
 	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/safesql"
+
+	pb "xmanager_cloud/api/protos/experiment"
 )
 
 const (
@@ -55,8 +57,8 @@ var (
 			xidTableField:            {Name: xidTableField, QueryLiteral: safesql.New("s.Xid"), Type: filtervisitor.Integer, Selectable: true, Indexed: true},
 			workUnitIDTableField:     {Name: workUnitIDTableField, QueryLiteral: safesql.New("s.WorkUnitId"), Type: filtervisitor.Integer, Selectable: true, Indexed: true, Nullable: true},
 			messageIDTableField:      {Name: messageIDTableField, QueryLiteral: safesql.New("s.MessageId"), Type: filtervisitor.Integer, Selectable: true, Indexed: true},
-			severityTableField:       {Name: severityTableField, QueryLiteral: safesql.New("s.Severity"), Type: filtervisitor.Integer, Selectable: true},
-			sourceTableField:         {Name: sourceTableField, QueryLiteral: safesql.New("s.Source"), Type: filtervisitor.Integer, Selectable: true},
+			severityTableField:       {Name: severityTableField, QueryLiteral: safesql.New("s.Severity"), Type: filtervisitor.Integer, Selectable: true, EnumValues: pb.StructuredMessage_Severity_value},
+			sourceTableField:         {Name: sourceTableField, QueryLiteral: safesql.New("s.Source"), Type: filtervisitor.Integer, Selectable: true, EnumValues: pb.StructuredMessage_Source_value},
 			userFacingTextTableField: {Name: userFacingTextTableField, QueryLiteral: safesql.New("s.UserFacingText"), Type: filtervisitor.String, Selectable: true},
 			userFacingURLTableField:  {Name: userFacingURLTableField, QueryLiteral: safesql.New("s.UserFacingUrl"), Selectable: true},
 			executionIDTableField:    {Name: executionIDTableField, QueryLiteral: safesql.New("s.ExecutionId"), Type: filtervisitor.Integer, Selectable: true, Nullable: true},
