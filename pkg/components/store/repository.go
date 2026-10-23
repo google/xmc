@@ -16,7 +16,12 @@ package store
 
 import (
 	"context"
+	"errors"
 )
+
+// ErrSnapshotNotFound is returned by ComponentReader snapshot reads when no snapshot is stored for
+// the requested generation. Callers translate it into the NotFound status they report.
+var ErrSnapshotNotFound = errors.New("component snapshot not found")
 
 // ComponentRepository is the persistence contract behind a database-backed Store. Implementations
 // run queries and mutations only; every catalog rule stays with the caller.
@@ -38,4 +43,13 @@ type ComponentReader interface {
 
 	// ListActiveComponents returns every active record, with its active dependencies, by name.
 	ListActiveComponents(ctx context.Context) (map[string]*ComponentRecord, error)
+
+	// GetSnapshot returns the stored snapshot of componentID at generation with only ComponentID,
+	// Generation, Spec, Labels and Status set, or ErrSnapshotNotFound.
+	GetSnapshot(ctx context.Context, componentID, generation int64) (*ComponentRecord, error)
+
+	// GetSnapshotByName returns the latest stored snapshot of canonicalName at generation across
+	// incarnations, like GetSnapshot plus CreateTime and UpdateTime of the owning incarnation, or
+	// ErrSnapshotNotFound.
+	GetSnapshotByName(ctx context.Context, canonicalName string, generation int64) (*ComponentRecord, error)
 }

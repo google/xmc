@@ -18,12 +18,16 @@ package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "dbstore",
-    srcs = ["dbstore.go"],
+    srcs = [
+        "dbstore.go",
+        "snapshot.go",
+    ],
     importpath = "xmanager_cloud/pkg/components/store/dbstore",
     deps = [
         "//api/protos/components/v1alpha1",
         "//pkg/components/semver",
         "//pkg/components/store",
+        "//pkg/components/store/dependency",
         "//pkg/components/store/lifecycle",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
@@ -35,6 +39,7 @@ go_test(
     srcs = [
         "dbstore_test.go",
         "memory_repository_test.go",
+        "snapshot_test.go",
     ],
     embed = [":dbstore"],
     deps = [

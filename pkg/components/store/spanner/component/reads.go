@@ -255,10 +255,10 @@ func RowToComponentRecord(row *spanner.Row) (*store.ComponentRecord, error) {
 		return nil, err
 	}
 
-	if err := UnmarshalConfigProto(d.configProto, rec); err != nil {
+	if err := unmarshalConfigProto(d.configProto, rec); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config proto: %w", err)
 	}
-	if err := UnmarshalAccessStatus(d.accessPayload, rec); err != nil {
+	if err := unmarshalAccessStatus(d.accessPayload, rec); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal access status: %w", err)
 	}
 
@@ -291,9 +291,7 @@ func scanSourceOwner(row *spanner.Row) (*store.SourceOwner, error) {
 	return &store.SourceOwner{UID: uid.StringVal, Generation: generation.Int64, Namespace: namespace.StringVal, ClusterUID: clusterUID.StringVal, Epoch: epoch.Int64}, nil
 }
 
-// UnmarshalConfigProto decodes a ConfigProto column into rec.Spec and rec.Labels. It is exported
-// only while SpannerStore still decodes historical snapshots.
-func UnmarshalConfigProto(configBytes []byte, rec *store.ComponentRecord) error {
+func unmarshalConfigProto(configBytes []byte, rec *store.ComponentRecord) error {
 	if len(configBytes) == 0 {
 		return nil
 	}
@@ -313,9 +311,7 @@ func UnmarshalConfigProto(configBytes []byte, rec *store.ComponentRecord) error 
 	return nil
 }
 
-// UnmarshalAccessStatus decodes an AccessPayload column into rec.Status. It is exported only while
-// SpannerStore still decodes historical snapshots.
-func UnmarshalAccessStatus(accessBytes []byte, rec *store.ComponentRecord) error {
+func unmarshalAccessStatus(accessBytes []byte, rec *store.ComponentRecord) error {
 	if len(accessBytes) == 0 {
 		rec.Status = nil
 		return nil

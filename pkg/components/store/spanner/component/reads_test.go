@@ -69,12 +69,12 @@ func TestUnmarshalConfigProto(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &store.ComponentRecord{}
-			err := UnmarshalConfigProto(tt.payload, rec)
+			err := unmarshalConfigProto(tt.payload, rec)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("UnmarshalConfigProto() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("unmarshalConfigProto() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if diff := cmp.Diff(tt.want, rec, protocmp.Transform()); diff != "" {
-				t.Errorf("UnmarshalConfigProto() record mismatch (-want +got):\n%s", diff)
+				t.Errorf("unmarshalConfigProto() record mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -95,12 +95,12 @@ func TestUnmarshalAccessStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &store.ComponentRecord{Status: &componentspb.ComponentAccessStatus{HealthMessage: "previous"}}
-			err := UnmarshalAccessStatus(tt.payload, rec)
+			err := unmarshalAccessStatus(tt.payload, rec)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("UnmarshalAccessStatus() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("unmarshalAccessStatus() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if diff := cmp.Diff(tt.want, rec.Status, protocmp.Transform()); diff != "" {
-				t.Errorf("UnmarshalAccessStatus() status mismatch (-want +got):\n%s", diff)
+				t.Errorf("unmarshalAccessStatus() status mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

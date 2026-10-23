@@ -19,6 +19,7 @@ go_library(
     srcs = [
         "reads.go",
         "repository.go",
+        "snapshots.go",
     ],
     importpath = "xmanager_cloud/pkg/components/store/spanner/component",
     visibility = ["//pkg/components/store/spanner:__pkg__"],
@@ -33,7 +34,10 @@ go_library(
 
 go_test(
     name = "component_test",
-    srcs = ["reads_test.go"],
+    srcs = [
+        "reads_test.go",
+        "snapshots_test.go",
+    ],
     embed = [":component"],
     deps = [
         "//api/protos/components/v1alpha1",

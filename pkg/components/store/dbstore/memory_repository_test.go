@@ -39,12 +39,16 @@ type memoryRepository struct {
 type memoryRows struct {
 	components   map[int64]*store.ComponentRecord
 	dependencies map[int64][]int64 // Component ID to the IDs of its dependencies.
+	// snapshots maps a component ID and a locked generation to the stored payloads: only
+	// ComponentID, Generation, Spec, Labels and Status are set.
+	snapshots map[int64]map[int64]*store.ComponentRecord
 }
 
 func newMemoryRepository() *memoryRepository {
 	return &memoryRepository{committed: memoryRows{
 		components:   map[int64]*store.ComponentRecord{},
 		dependencies: map[int64][]int64{},
+		snapshots:    map[int64]map[int64]*store.ComponentRecord{},
 	}}
 }
 
@@ -59,17 +63,40 @@ func (m *memoryRepository) putComponent(rec *store.ComponentRecord, dependencyID
 	m.committed.dependencies[rec.ComponentID] = append([]int64(nil), dependencyIDs...)
 }
 
+// putSnapshot stores the payloads of rec as the snapshot of rec.ComponentID at rec.Generation.
+func (m *memoryRepository) putSnapshot(rec *store.ComponentRecord) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.committed.snapshots[rec.ComponentID] == nil {
+		m.committed.snapshots[rec.ComponentID] = map[int64]*store.ComponentRecord{}
+	}
+	m.committed.snapshots[rec.ComponentID][rec.Generation] = snapshotPayload(rec)
+}
+
+// snapshotPayload returns the columns that a snapshot row stores for rec.
+func snapshotPayload(rec *store.ComponentRecord) *store.ComponentRecord {
+	cp := store.CloneRecord(rec)
+	return &store.ComponentRecord{ComponentID: cp.ComponentID, Generation: cp.Generation, Spec: cp.Spec, Labels: cp.Labels, Status: cp.Status}
+}
+
 // clone returns a deep copy of the rows.
 func (r memoryRows) clone() memoryRows {
 	cp := memoryRows{
 		components:   make(map[int64]*store.ComponentRecord, len(r.components)),
 		dependencies: make(map[int64][]int64, len(r.dependencies)),
+		snapshots:    make(map[int64]map[int64]*store.ComponentRecord, len(r.snapshots)),
 	}
 	for id, rec := range r.components {
 		cp.components[id] = store.CloneRecord(rec)
 	}
 	for id, deps := range r.dependencies {
 		cp.dependencies[id] = append([]int64(nil), deps...)
+	}
+	for id, byGen := range r.snapshots {
+		cp.snapshots[id] = make(map[int64]*store.ComponentRecord, len(byGen))
+		for gen, snap := range byGen {
+			cp.snapshots[id][gen] = store.CloneRecord(snap)
+		}
 	}
 	return cp
 }
@@ -127,6 +154,40 @@ func (r *memoryReader) ListActiveComponents(_ context.Context) (map[string]*stor
 		}
 	}
 	return catalog, nil
+}
+
+func (r *memoryReader) GetSnapshot(_ context.Context, componentID, generation int64) (*store.ComponentRecord, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	snap, ok := r.rows.snapshots[componentID][generation]
+	if !ok {
+		return nil, store.ErrSnapshotNotFound
+	}
+	return store.CloneRecord(snap), nil
+}
+
+// GetSnapshotByName joins the snapshots with every incarnation named canonicalName, deleted ones
+// included, and returns the snapshot of the newest incarnation (by CreateTime, then ComponentID).
+func (r *memoryReader) GetSnapshotByName(_ context.Context, canonicalName string, generation int64) (*store.ComponentRecord, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	var owner *store.ComponentRecord
+	for id, rec := range r.rows.components {
+		if _, ok := r.rows.snapshots[id][generation]; !ok || rec.Name != canonicalName {
+			continue
+		}
+		if owner == nil || rec.CreateTime.After(owner.CreateTime) || (rec.CreateTime.Equal(owner.CreateTime) && id > owner.ComponentID) {
+			owner = rec
+		}
+	}
+	if owner == nil {
+		return nil, store.ErrSnapshotNotFound
+	}
+	snap := store.CloneRecord(r.rows.snapshots[owner.ComponentID][generation])
+	snap.CreateTime, snap.UpdateTime = owner.CreateTime, owner.UpdateTime
+	return snap, nil
 }
 
 // withDependencies returns a copy of rec with the sorted names of its active dependencies (nil
