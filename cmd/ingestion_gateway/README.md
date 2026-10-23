@@ -7,12 +7,12 @@ Two message bus backends are supported, selected with `-message_bus`:
 - **`redpanda`** (default) — publishes over the Kafka wire protocol with franz-go.
 - **`pubsub`** — publishes to a Google Cloud Pub/Sub topic.
 
-> [!IMPORTANT]
-> **Pub/Sub mode is a working producer, not a working end-to-end pipeline.** XMC has no consumer
-> service: ClickHouse consumes the metrics topic itself using its native `ENGINE = Kafka` table
-> (see `../../deploy/clickhouse/schema.sql`), and ClickHouse has no Pub/Sub table engine. With
-> `-message_bus=pubsub` records are published correctly, but nothing in XMC delivers them to
-> ClickHouse. Bring your own subscriber.
+> [!NOTE]
+> In Redpanda mode ClickHouse consumes the metrics topic itself through its native
+> `ENGINE = Kafka` table (see `../../deploy/clickhouse/schema.sql`). ClickHouse has no Pub/Sub
+> table engine, so in Pub/Sub mode the [metrics ingester](../metrics_ingester/README.md) pulls
+> from a subscription on the topic and inserts into ClickHouse. Deployment wiring for the
+> ingester is not in place yet.
 
 ---
 
