@@ -35,7 +35,7 @@ flowchart TD
 
 ## File Structure
 
-- **`install_venv.sh`**: Setup script compiling Bazel Python protos, creating a `.venv`, installing dependencies (`clickhouse-connect`, `grpcio`, etc.), and installing `xdash` and `xmc` SDKs in editable mode.
+- **`install_venv.sh`**: Setup script creating a `.venv`, installing dependencies (`clickhouse-connect`, `grpcio`, `xmanager`, etc.), compiling local XMC protos from `api/protos`, and installing `xdash` and `xmc` SDKs in editable mode.
 - **`launch.py`**: Client-side launch script creating the experiment, launching the WorkUnit, intercepting runtime IDs, and creating the dashboard.
 - **`worker.env`**: Environment configuration file pre-configured for the `xmcv2` GKE cluster and in-cluster ClickHouse instance (`clickhouse.xmc-metrics.svc.cluster.local`).
 - **`worker.py`**: WorkUnit container script generating synthetic DataEngine metrics and inserting them into ClickHouse.
@@ -50,12 +50,8 @@ flowchart TD
 1. **GKE Cluster with XMC Deployed**: An active XMC cluster with Experiment State Server and Dashboard Service running.
 2. **ClickHouse Addon Deployed**: ClickHouse deployed in the cluster (see `deploy/addons/metrics/clickhouse/README.md`).
 3. **Google Cloud CLI (`gcloud`) & Docker**: Authenticated to push container images to your project's Artifact Registry.
-4. **Bazel & Python 3.11+**: Installed on your workstation to build proto bindings.
-5. **Client-Side Dependencies (`requirements.txt`)**: Host Python dependencies needed to execute `launch.py`:
-   ```bash
-   pip install -r requirements.txt
-   ```
-6. **Authentication**: Run `xmanager login` and `export XMC_AUTH_TOKEN=$(xmanager login --print-token)` (used by the `DashboardService` step). You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+4. **Python 3.11+**: Installed on your workstation.
+5. **Authentication**: After initializing and activating `.venv` (`./install_venv.sh && source .venv/bin/activate`), run `xmanager login` and `export XMC_AUTH_TOKEN=$(xmanager login --print-token)` (used by the `DashboardService` step). You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ---
 
@@ -92,11 +88,13 @@ The example includes a pre-configured [`worker.env`](worker.env) file containing
 
 ### 1. Initialize Local Virtual Environment
 
-Run the automated setup script to build protobuf bindings, create `.venv`, and install required SDKs:
+Run the automated setup script to create `.venv`, install required dependencies and SDKs, and authenticate:
 
 ```bash
 ./install_venv.sh
 source .venv/bin/activate
+xmanager login
+export XMC_AUTH_TOKEN=$(xmanager login --print-token)
 ```
 
 ### 2. Build and Push the Worker Container Image

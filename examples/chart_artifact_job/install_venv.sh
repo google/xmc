@@ -17,22 +17,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-VENV_DIR="${SCRIPT_DIR}/.venv"
+VENV_DIR="${VENV_DIR:-${SCRIPT_DIR}/.venv}"
 
-echo "--> [1/4] Installing XManager library and xmanager_cloud proto bindings..."
-cd "${REPO_ROOT}"
-python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}"
+echo "--> [1/2] Setting up virtual environment, installing dependencies, and compiling local XMC protos..."
+python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" \
+  --venv "${VENV_DIR}" \
+  --requirements "${SCRIPT_DIR}/requirements.txt"
 
 PIP_BIN="${VENV_DIR}/bin/pip"
 
-echo "--> [2/4] Installing grpcio and runtime dependencies..."
-"${PIP_BIN}" install --upgrade pip
-"${PIP_BIN}" install -r "${SCRIPT_DIR}/requirements.txt"
-
-echo "--> [3/4] Installing Bazel-generated Dashboard Service Python protobuf modules..."
-python3 "${REPO_ROOT}/deploy/cli/install_xmanager.py" --venv "${VENV_DIR}" --dashboard-protos-only
-
-echo "--> [4/4] Installing xdash and xmc SDKs in editable mode..."
+echo "--> [2/2] Installing xdash and xmc SDKs in editable mode..."
 "${PIP_BIN}" install -e "${REPO_ROOT}/sdks/python/xdash"
 "${PIP_BIN}" install -e "${REPO_ROOT}/sdks/python/xmc"
 
