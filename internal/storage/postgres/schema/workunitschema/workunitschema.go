@@ -20,6 +20,8 @@ import (
 	"xmanager_cloud/api/filter/go/filtervisitor"
 	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/safesql"
+
+	pb "xmanager_cloud/api/protos/experiment"
 )
 
 const (
@@ -84,7 +86,7 @@ var (
 		Fields: map[querytools.TableField]querytools.Member{
 			xidTableField:                   {Name: xidTableField, QueryLiteral: safesql.New("wu.Xid"), Type: filtervisitor.Integer, Selectable: true, Indexed: true},
 			workUnitIDTableField:            {Name: workUnitIDTableField, QueryLiteral: safesql.New("wu.WorkUnitId"), Type: filtervisitor.Integer, Selectable: true, Indexed: true},
-			workUnitTypeTableField:          {Name: workUnitTypeTableField, QueryLiteral: safesql.New("wu.WorkUnitType"), Type: filtervisitor.Integer, Selectable: true},
+			workUnitTypeTableField:          {Name: workUnitTypeTableField, QueryLiteral: safesql.New("wu.WorkUnitType"), Type: filtervisitor.Integer, Selectable: true, EnumValues: pb.WorkUnit_WorkUnitType_value},
 			priorityTableField:              {Name: priorityTableField, QueryLiteral: safesql.New("wu.Priority"), Type: filtervisitor.Integer, Selectable: true},
 			urlsTableField:                  {Name: urlsTableField, QueryLiteral: safesql.New("wu.Urls"), Type: filtervisitor.ArrayType(&filtervisitor.Bytes), Selectable: true},
 			tagsTableField:                  {Name: tagsTableField, QueryLiteral: safesql.New("wu.Tags"), Type: filtervisitor.ArrayType(&filtervisitor.String), Selectable: true},
@@ -97,7 +99,7 @@ var (
 			executionMetadataTableField:     {Name: executionMetadataTableField, QueryLiteral: safesql.New("wu.ExecutionMetadata"), Type: filtervisitor.Bytes, Selectable: true},
 			workUnitStatusTableField:        {Name: workUnitStatusTableField, QueryLiteral: safesql.New("wu.WorkUnitStatus"), Type: filtervisitor.Bytes, Selectable: true},
 			queueNameTableField:             {Name: queueNameTableField, QueryLiteral: safesql.New("wu.QueueName"), Type: filtervisitor.String, Selectable: true},
-			executionStateTableField:        {Name: executionStateTableField, QueryLiteral: safesql.New("wu.ExecutionState"), Type: filtervisitor.Integer, Selectable: true},
+			executionStateTableField:        {Name: executionStateTableField, QueryLiteral: safesql.New("wu.ExecutionState"), Type: filtervisitor.Integer, Selectable: true, EnumValues: pb.WorkUnitStatus_WorkUnitState_value},
 			createdTableField:               {Name: createdTableField, QueryLiteral: safesql.New("wu.CreateTime"), Type: filtervisitor.Timestamp, Selectable: true},
 			updatedTableField:               {Name: updatedTableField, QueryLiteral: safesql.New("wu.UpdateTime"), Type: filtervisitor.Timestamp, Selectable: true},
 		},

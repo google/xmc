@@ -24,6 +24,8 @@ import (
 	"xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 	"xmanager_cloud/internal/query_generator/querytools"
+
+	pb "xmanager_cloud/api/protos/experiment"
 )
 
 func TestArtifactsTableView(t *testing.T) {
@@ -94,6 +96,21 @@ func TestArtifactsTableView(t *testing.T) {
 				"ORDER BY a.Priority, a.Xid, a.WorkUnitId ASC NULLS FIRST, a.ArtifactId LIMIT 11",
 			},
 			wantArgs: []any{int64(10), int64(5), int64(99), int64(5), int64(5)},
+		},
+		{
+			name:    "symbolic enum filter on lifecycle_phase and data_type",
+			filter:  `xid = 10 AND lifecycle_phase = EXECUTION AND data_type = "text"`,
+			orderBy: "",
+			wantSubstrings: []string{
+				"(a.Xid = $1)",
+				"(a.LifecyclePhase = $2)",
+				"(a.DataType = $3)",
+			},
+			wantArgs: []any{
+				int64(10),
+				int64(pb.Artifact_EXECUTION),
+				int64(pb.Artifact_TEXT),
+			},
 		},
 	}
 

@@ -1403,7 +1403,17 @@ func TestGenerateQuery_PageTokenValidationAndNullableCursors(t *testing.T) {
 func TestGeneratePostgresQuery(t *testing.T) {
 	pgAlbumsTable := Albums
 	pgAlbumsTable.Fields = map[TableField]Member{
-		SingerIDTableField:    {Name: SingerIDTableField, QueryLiteral: safesql.New("a.SingerId"), Type: filtervisitor.Integer, Selectable: true, Indexed: true},
+		SingerIDTableField: {
+			Name:         SingerIDTableField,
+			QueryLiteral: safesql.New("a.SingerId"),
+			Type:         filtervisitor.Integer,
+			Selectable:   true,
+			Indexed:      true,
+			EnumValues: map[string]int32{
+				"ACTIVE":    1,
+				"COMPLETED": 2,
+			},
+		},
 		AlbumIDTableField:     {Name: AlbumIDTableField, QueryLiteral: safesql.New("a.AlbumId"), Type: filtervisitor.Integer, Selectable: true, Indexed: true},
 		AlbumTitleTableField:  {Name: AlbumTitleTableField, QueryLiteral: safesql.New("a.AlbumTitle"), Type: filtervisitor.String, Selectable: true, DisjunctionOptimizable: true},
 		ReleaseDateTableField: {Name: ReleaseDateTableField, QueryLiteral: safesql.New("a.ReleaseDate"), Type: filtervisitor.String, Selectable: true, Nullable: true},
@@ -1421,6 +1431,7 @@ func TestGeneratePostgresQuery(t *testing.T) {
 		ptFields          map[TableField]any
 		wantStmt          *postgresdialect.Statement
 		wantFieldToIdxMap map[TableField]int
+		wantErrCode       codes.Code
 	}{
 		{
 			name:          "base filter, user disjunction filter, and cursor pagination bind positional args in order",
@@ -1468,6 +1479,50 @@ func TestGeneratePostgresQuery(t *testing.T) {
 				AlbumIDTableField:     3,
 			},
 		},
+		{
+			name:       "Member.EnumValues rewrites unquoted and quoted symbolic enum literals to integer on Integer column",
+			userFilter: `SingerId = ACTIVE OR SingerId = "completed"`,
+			wantStmt: &postgresdialect.Statement{
+				SQL:  "SELECT a.AlbumTitle, a.SingerId, a.AlbumId FROM Albums a WHERE ((a.SingerId = $1) OR (a.SingerId = $2)) ORDER BY a.SingerId, a.AlbumId",
+				Args: []any{int64(1), int64(2)},
+			},
+			wantFieldToIdxMap: map[TableField]int{
+				SingerIDTableField: 1,
+				AlbumIDTableField:  2,
+			},
+		},
+		{
+			name:          "Member.EnumValues coerces symbolic enum cursor value to int64 on Integer column",
+			orderByFields: []UserOrderedIndex{{TableField: SingerIDTableField, SortOrder: Asc}},
+			ptFields:      map[TableField]any{SingerIDTableField: "ACTIVE", AlbumIDTableField: int64(20)},
+			wantStmt: &postgresdialect.Statement{
+				SQL:  "SELECT a.AlbumTitle, a.SingerId, a.AlbumId FROM Albums a WHERE ((a.SingerId = $1 AND a.AlbumId > $2) OR (a.SingerId > $3)) ORDER BY a.SingerId, a.AlbumId",
+				Args: []any{int64(1), int64(20), int64(1)},
+			},
+			wantFieldToIdxMap: map[TableField]int{
+				SingerIDTableField: 1,
+				AlbumIDTableField:  2,
+			},
+		},
+		{
+			name:       "Member.EnumValues equality filter in conjunction omits both equality-filtered index columns from page token",
+			userFilter: `SingerId = ACTIVE AND AlbumId = 5`,
+			wantStmt: &postgresdialect.Statement{
+				SQL:  "SELECT a.AlbumTitle FROM Albums a WHERE ((a.SingerId = $1) AND (a.AlbumId = $2)) ORDER BY a.SingerId, a.AlbumId",
+				Args: []any{int64(1), int64(5)},
+			},
+			wantFieldToIdxMap: map[TableField]int{},
+		},
+		{
+			name:        "Member.EnumValues rejects unrecognized symbolic enum literal with InvalidArgument",
+			userFilter:  `SingerId = UNKNOWN_ENUM`,
+			wantErrCode: codes.InvalidArgument,
+		},
+		{
+			name:        "Member.EnumValues rejects unrecognized dotted Member expression with InvalidArgument",
+			userFilter:  `SingerId = foo.bar`,
+			wantErrCode: codes.InvalidArgument,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1498,6 +1553,12 @@ func TestGeneratePostgresQuery(t *testing.T) {
 				tc.ptFields,
 				nil,
 			)
+			if tc.wantErrCode != codes.OK {
+				if status.Code(err) != tc.wantErrCode {
+					t.Fatalf("GeneratePostgresQuery() error = %v (code %v), want code %v", err, status.Code(err), tc.wantErrCode)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("GenerateQuery() unexpected error: %v", err)
 			}

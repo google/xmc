@@ -21,10 +21,14 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	postgresdialect "xmanager_cloud/internal/query_generator/dialect/postgres"
 	"xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 	"xmanager_cloud/internal/query_generator/querytools"
+
+	pb "xmanager_cloud/api/protos/experiment"
 )
 
 func TestWorkUnitsTableView(t *testing.T) {
@@ -92,6 +96,43 @@ func TestWorkUnitsTableView(t *testing.T) {
 				time.Date(2026, 5, 2, 10, 0, 0, 0, time.UTC),
 			},
 		},
+		{
+			name:    "symbolic enum filter on state and type",
+			filter:  `xid = 100 AND state = RUNNING AND type = "standard"`,
+			orderBy: "",
+			wantSubstrings: []string{
+				"(wu.Xid = $1)",
+				"(wu.ExecutionState = $2)",
+				"(wu.WorkUnitType = $3)",
+			},
+			wantArgs: []any{
+				int64(100),
+				int64(pb.WorkUnitStatus_RUNNING),
+				int64(pb.WorkUnit_STANDARD),
+			},
+		},
+		{
+			name:    "symbolic enum cursor value on state order by",
+			filter:  "xid = 100",
+			orderBy: "state asc",
+			lastRowValues: map[string]any{
+				"state":        "RUNNING",
+				"xid":          int64(100),
+				"work_unit_id": int64(7),
+			},
+			wantSubstrings: []string{
+				"(wu.Xid = $1)",
+				"(wu.ExecutionState = $2 AND wu.WorkUnitId > $3)",
+				"(wu.ExecutionState > $4)",
+				"ORDER BY wu.ExecutionState, wu.Xid, wu.WorkUnitId LIMIT 11",
+			},
+			wantArgs: []any{
+				int64(100),
+				int64(pb.WorkUnitStatus_RUNNING),
+				int64(7),
+				int64(pb.WorkUnitStatus_RUNNING),
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -129,4 +170,22 @@ func TestWorkUnitsTableView(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("invalid symbolic enum literal returns InvalidArgument", func(t *testing.T) {
+		normalizedFilter, err := normalizer.Normalize("xid = 100 AND state = NOT_A_STATE", qg.Tables()[0])
+		if err != nil {
+			t.Fatalf("Normalize failed: %v", err)
+		}
+		err = liststatement.ListStatement(ctx, postgresdialect.NewStatement(""), liststatement.ListParams{
+			PageSize:              10,
+			Filter:                normalizedFilter,
+			QueryGen:              qg,
+			DefaultSelectFields:   WorkUnitSelectFields,
+			DefaultFullTextFields: WorkUnitFullTextFields,
+			ValidOrderByFields:    WorkUnitOrderByFields,
+		})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("ListStatement error = %v (code %v), want InvalidArgument", err, status.Code(err))
+		}
+	})
 }

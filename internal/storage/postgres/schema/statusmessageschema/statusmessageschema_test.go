@@ -25,6 +25,8 @@ import (
 	"xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 	"xmanager_cloud/internal/query_generator/querytools"
+
+	pb "xmanager_cloud/api/protos/experiment"
 )
 
 func TestStatusMessagesTableView(t *testing.T) {
@@ -81,6 +83,21 @@ func TestStatusMessagesTableView(t *testing.T) {
 				int64(123),
 				time.Date(2026, 6, 1, 8, 0, 0, 0, time.UTC),
 				time.Date(2026, 6, 1, 8, 0, 0, 0, time.UTC),
+			},
+		},
+		{
+			name:    "symbolic enum filter on severity and source",
+			filter:  `xid = 55 AND severity = ERROR AND source = "scheduler"`,
+			orderBy: "",
+			wantSubstrings: []string{
+				"(s.Xid = $1)",
+				"(s.Severity = $2)",
+				"(s.Source = $3)",
+			},
+			wantArgs: []any{
+				int64(55),
+				int64(pb.StructuredMessage_ERROR),
+				int64(pb.StructuredMessage_SCHEDULER),
 			},
 		},
 	}
