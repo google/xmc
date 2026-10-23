@@ -24,6 +24,7 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/artifact"
 	"xmanager_cloud/internal/storage/postgres/clilogincode"
+	"xmanager_cloud/internal/storage/postgres/component"
 	"xmanager_cloud/internal/storage/postgres/dashboard"
 	"xmanager_cloud/internal/storage/postgres/experiment"
 	"xmanager_cloud/internal/storage/postgres/operation"
@@ -65,6 +66,7 @@ type Storage struct {
 	pauseStateRepository   *pauseStateRepository
 	pausedTaskRepository   *pausedTaskRepository
 	cliLoginCodeRepository *cliLoginCodeRepository
+	componentRepository    *component.Repository
 }
 
 // NewStorage creates a new instance of the PostgreSQL-backed storage.
@@ -85,6 +87,7 @@ func NewStorage(pool *pgxpool.Pool) (*Storage, error) {
 		pauseStateRepository:    pausestate.NewRepository(pool),
 		pausedTaskRepository:    pausedtask.NewRepository(pool),
 		cliLoginCodeRepository:  clilogincode.NewRepository(pool),
+		componentRepository:     component.NewRepository(pool),
 	}, nil
 }
 
@@ -111,6 +114,7 @@ func (s *Storage) newTransaction(tx pgdb.DBTX) *storage.Transaction {
 		StatusHistory:  s.statusHistoryRepository.WithTx(tx),
 		PauseState:     s.pauseStateRepository.WithTx(tx),
 		PausedTasks:    s.pausedTaskRepository.WithTx(tx),
+		Components:     s.componentRepository.WithTx(tx),
 	}
 }
 
@@ -127,4 +131,9 @@ func (s *Storage) PausedTasks() storage.PausedTaskRepository {
 // CLILoginCodes returns the repository for one-time CLI login codes.
 func (s *Storage) CLILoginCodes() storage.CLILoginCodeRepository {
 	return s.cliLoginCodeRepository
+}
+
+// Components returns the repository for component catalog persistence.
+func (s *Storage) Components() storage.ComponentRepository {
+	return s.componentRepository
 }

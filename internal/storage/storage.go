@@ -27,6 +27,7 @@ import (
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/components/store"
 )
 
 // ExperimentUpdate represents an update to an experiment.
@@ -368,6 +369,20 @@ type CLILoginCodeStore interface {
 	CLILoginCodes() CLILoginCodeRepository
 }
 
+// ComponentRepository defines read operations for component catalog persistence on the storage facade.
+type ComponentRepository interface {
+	GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
+	GetComponentByID(ctx context.Context, componentID int64) (*store.ComponentRecord, error)
+}
+
+// ComponentTxRepository defines component catalog operations scoped to a read-write transaction.
+type ComponentTxRepository = ComponentRepository
+
+// ComponentStore exposes the repository accessor for component catalog persistence.
+type ComponentStore interface {
+	Components() ComponentRepository
+}
+
 // WorkUnitTxRepository defines work unit operations scoped to a read-write transaction.
 type WorkUnitTxRepository interface {
 	// FetchNextWorkUnitID retrieves the next available work unit ID for an experiment within the transaction.
@@ -427,6 +442,7 @@ type Transaction struct {
 	StatusHistory  StatusHistoryTxRepository
 	PauseState     PauseStateTxRepository
 	PausedTasks    PausedTaskTxRepository
+	Components     ComponentTxRepository
 }
 
 // TransactionRunner executes an operation within a read-write transaction.
@@ -451,4 +467,5 @@ type Storage interface {
 	XidEntryStore
 	PauseSchedulingStore
 	CLILoginCodeStore
+	ComponentStore
 }

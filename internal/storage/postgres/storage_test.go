@@ -83,13 +83,13 @@ func TestStorage(t *testing.T) {
 		{
 			name: "newTransaction",
 			check: func(t *testing.T) {
-				// Populating all 7 Transaction fields is verified here; binding the DBTX
+				// Populating all 8 Transaction fields is verified here; binding the DBTX
 				// handle into each wrapper's unexported tx field is covered by the
 				// per-subpackage TestNewRepository_BindsPoolAndTx tests.
 				tx := s.newTransaction(&fakeTx{})
 				if tx.WorkUnits == nil || tx.Experiments == nil || tx.XIDs == nil ||
 					tx.StatusMessages == nil || tx.StatusHistory == nil ||
-					tx.PauseState == nil || tx.PausedTasks == nil {
+					tx.PauseState == nil || tx.PausedTasks == nil || tx.Components == nil {
 					t.Errorf("newTransaction() returned incomplete transaction: %+v", tx)
 				}
 			},
@@ -99,6 +99,14 @@ func TestStorage(t *testing.T) {
 			check: func(t *testing.T) {
 				if s.cliLoginCodeRepository == nil || s.CLILoginCodes() != s.cliLoginCodeRepository {
 					t.Error("CLILoginCodes() did not return initialized cliLoginCodeRepository")
+				}
+			},
+		},
+		{
+			name: "Components",
+			check: func(t *testing.T) {
+				if s.componentRepository == nil || s.Components() != s.componentRepository {
+					t.Error("Components() did not return initialized componentRepository")
 				}
 			},
 		},
