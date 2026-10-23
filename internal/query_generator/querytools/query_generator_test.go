@@ -1429,6 +1429,7 @@ func TestGeneratePostgresQuery(t *testing.T) {
 		pageSize          int
 		offset            int
 		ptFields          map[TableField]any
+		options           []Option
 		wantStmt          *postgresdialect.Statement
 		wantFieldToIdxMap map[TableField]int
 		wantErrCode       codes.Code
@@ -1492,6 +1493,34 @@ func TestGeneratePostgresQuery(t *testing.T) {
 			},
 		},
 		{
+			name:       "Member.EnumValues rewrites quoted numeric literal to int64 on Integer column",
+			userFilter: `SingerId = "2" OR SingerId = '1'`,
+			wantStmt: &postgresdialect.Statement{
+				SQL:  "SELECT a.AlbumTitle, a.SingerId, a.AlbumId FROM Albums a WHERE ((a.SingerId = $1) OR (a.SingerId = $2)) ORDER BY a.SingerId, a.AlbumId",
+				Args: []any{int64(2), int64(1)},
+			},
+			wantFieldToIdxMap: map[TableField]int{
+				SingerIDTableField: 1,
+				AlbumIDTableField:  2,
+			},
+		},
+		{
+			name:       "EnumRewrites runs before Member.EnumValues validation and lookup",
+			userFilter: `SingerId = "LEGACY_ACTIVE"`,
+			options: []Option{
+				EnumRewrites(map[string]map[string]string{
+					"SingerId": {"LEGACY_ACTIVE": "ACTIVE"},
+				}),
+			},
+			wantStmt: &postgresdialect.Statement{
+				SQL:  "SELECT a.AlbumTitle, a.AlbumId FROM Albums a WHERE (a.SingerId = $1) ORDER BY a.SingerId, a.AlbumId",
+				Args: []any{int64(1)},
+			},
+			wantFieldToIdxMap: map[TableField]int{
+				AlbumIDTableField: 1,
+			},
+		},
+		{
 			name:          "Member.EnumValues coerces symbolic enum cursor value to int64 on Integer column",
 			orderByFields: []UserOrderedIndex{{TableField: SingerIDTableField, SortOrder: Asc}},
 			ptFields:      map[TableField]any{SingerIDTableField: "ACTIVE", AlbumIDTableField: int64(20)},
@@ -1527,7 +1556,7 @@ func TestGeneratePostgresQuery(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			qg, err := NewOptimizableGenerator([]TableView{pgAlbumsTable}, nil, tc.baseFilters, nil, true, false)
+			qg, err := NewOptimizableGenerator([]TableView{pgAlbumsTable}, nil, tc.baseFilters, nil, true, false, tc.options...)
 			if err != nil {
 				t.Fatalf("NewOptimizableGenerator() failed: %v", err)
 			}

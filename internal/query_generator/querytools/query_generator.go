@@ -215,63 +215,50 @@ func tryRewritePhraseRestrictionSide(r *fpb.Restriction, fieldExpr, valExpr *fpb
 }
 
 func (q *queryGen) translateRestriction(r *fpb.Restriction) *fpb.Restriction {
+	rewritten, _ := q.translateRestrictionWithValidation(r)
+	return rewritten
+}
+
+func (q *queryGen) translateRestrictionWithValidation(r *fpb.Restriction) (*fpb.Restriction, error) {
 	if len(q.options.rewrites) > 0 {
 		r = PhraseMap(q.options.rewrites)(r)
 	}
-	if rewritten, ok := q.tryRewriteEnumRestriction(r); ok {
-		return rewritten
+	field, m, ok := q.extractEnumMember(r)
+	if !ok {
+		return r, nil
 	}
-	return r
+	literal, ok := extractLiteralString(r.GetRhs())
+	if !ok {
+		return r, nil
+	}
+	if num, ok := lookupEnumValue(m.EnumValues, literal); ok {
+		return rewriteRestrictionRhsValue(r, strconv.FormatInt(int64(num), 10)), nil
+	}
+	if _, err := strconv.ParseInt(literal, 10, 64); err == nil {
+		if r.GetRhs().GetPhrase() != nil {
+			return rewriteRestrictionRhsValue(r, literal), nil
+		}
+		return r, nil
+	}
+	return r, status.Errorf(codes.InvalidArgument, "invalid enum literal %q for field %q", literal, field)
 }
 
-func (q *queryGen) tryRewriteEnumRestriction(r *fpb.Restriction) (*fpb.Restriction, bool) {
-	_, m, ok := q.extractEnumMember(r)
-	if !ok {
-		return nil, false
-	}
-	valExpr := r.GetRhs()
-	literal, ok := extractLiteralString(valExpr)
-	if !ok {
-		return nil, false
-	}
-	num, ok := lookupEnumValue(m.EnumValues, literal)
-	if !ok {
-		return nil, false
-	}
-	numStr := strconv.FormatInt(int64(num), 10)
-	if valExpr.WhichExpression() == fpb.Expression_Value_case && valExpr.GetValue() == numStr {
-		return nil, false
+func rewriteRestrictionRhsValue(r *fpb.Restriction, val string) *fpb.Restriction {
+	if r.GetRhs().WhichExpression() == fpb.Expression_Value_case && r.GetRhs().GetValue() == val {
+		return r
 	}
 	return fpb.Restriction_builder{
 		Comparator: r.GetComparator(),
 		Lhs:        r.GetLhs(),
-		Rhs:        fpb.Expression_builder{Value: proto.String(numStr)}.Build(),
-	}.Build(), true
-}
-
-func (q *queryGen) validateRestrictionEnumLiteral(r *fpb.Restriction) error {
-	field, m, ok := q.extractEnumMember(r)
-	if !ok {
-		return nil
-	}
-	literal, ok := extractLiteralString(r.GetRhs())
-	if !ok {
-		return nil
-	}
-	if _, ok := lookupEnumValue(m.EnumValues, literal); ok {
-		return nil
-	}
-	if _, err := strconv.ParseInt(literal, 10, 64); err == nil {
-		return nil
-	}
-	return status.Errorf(codes.InvalidArgument, "invalid enum literal %q for field %q", literal, field)
+		Rhs:        fpb.Expression_builder{Value: proto.String(val)}.Build(),
+	}.Build()
 }
 
 func (q *queryGen) extractEnumMember(r *fpb.Restriction) (string, Member, bool) {
-	if r.GetLhs() == nil || r.GetRhs() == nil {
+	if r.GetLhs() == nil || r.GetRhs() == nil || r.GetLhs().GetPhrase() != nil {
 		return "", Member{}, false
 	}
-	field, ok := extractFieldName(r.GetLhs())
+	field, ok := extractLiteralString(r.GetLhs())
 	if !ok {
 		return "", Member{}, false
 	}
@@ -280,21 +267,6 @@ func (q *queryGen) extractEnumMember(r *fpb.Restriction) (string, Member, bool) 
 		return "", Member{}, false
 	}
 	return field, m, true
-}
-
-func extractFieldName(expr *fpb.Expression) (string, bool) {
-	switch expr.WhichExpression() {
-	case fpb.Expression_Value_case:
-		val := expr.GetValue()
-		if val == "" || isQuotedString(val) {
-			return "", false
-		}
-		return val, true
-	case fpb.Expression_Member_case:
-		return joinMemberValues(expr.GetMember())
-	default:
-		return "", false
-	}
 }
 
 func extractLiteralString(valExpr *fpb.Expression) (string, bool) {
@@ -309,7 +281,7 @@ func extractLiteralString(valExpr *fpb.Expression) (string, bool) {
 		if valExpr.GetValue() == "" {
 			return "", false
 		}
-		return unquoteString(valExpr.GetValue()), true
+		return valExpr.GetValue(), true
 	case fpb.Expression_Member_case:
 		return joinMemberValues(valExpr.GetMember())
 	default:
@@ -330,17 +302,6 @@ func joinMemberValues(el *fpb.ExpressionList) (string, bool) {
 		parts = append(parts, elem.GetValue())
 	}
 	return strings.Join(parts, "."), true
-}
-
-func isQuotedString(s string) bool {
-	return len(s) >= 2 && ((strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\"")) || (strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'")))
-}
-
-func unquoteString(s string) string {
-	if isQuotedString(s) {
-		return s[1 : len(s)-1]
-	}
-	return s
 }
 
 func lookupEnumValue(enumValues map[string]int32, literal string) (int32, bool) {
@@ -1475,10 +1436,11 @@ func (q *queryGen) scoutUserFilterMembers(userFilterExp *fpb.Expression, fullTex
 		},
 		FunctionFunc: FunctionMap(q.functions),
 		RestrictionTranslate: func(r *fpb.Restriction) *fpb.Restriction {
-			if err := q.validateRestrictionEnumLiteral(r); err != nil && enumErr == nil {
+			rewritten, err := q.translateRestrictionWithValidation(r)
+			if err != nil && enumErr == nil {
 				enumErr = err
 			}
-			return q.translateRestriction(r)
+			return rewritten
 		},
 		TextSearchColumns: fullTextFields,
 		FilterBaseOptions: []queryfilter.FilterBaseOption{queryfilter.WithFullTextSearchEnabled},
