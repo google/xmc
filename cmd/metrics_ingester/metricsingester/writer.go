@@ -42,8 +42,9 @@ func NewClickHouseWriter(conn BatchPreparer) *ClickHouseWriter {
 	return &ClickHouseWriter{conn: conn}
 }
 
-// Write inserts metrics as one ClickHouse batch. It either sends every record or none of them, so a
-// failed call can be retried in full without partially duplicating the batch.
+// Write inserts metrics as one ClickHouse batch. Delivery is at-least-once: a failed call may still
+// have been committed server-side (or partially, across partitions), so a redelivered batch can
+// produce duplicate rows.
 func (w *ClickHouseWriter) Write(ctx context.Context, metrics []*pb.Metric) error {
 	if len(metrics) == 0 {
 		return nil
