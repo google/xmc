@@ -14,7 +14,7 @@ Follow these rules when adding or modifying code under `internal/storage/`:
       // Orchestrate reads and writes via tx.WorkUnits, tx.Experiments, etc.
   })
   ```
-- Expose composable, single-responsibility read and write primitives on the transaction-scoped repositories (`WorkUnitTxRepository`, `ExperimentTxRepository`, `StatusMessageTxRepository`, `StatusHistoryTxRepository`, `PauseStateTxRepository`, `PausedTaskTxRepository`) instead of creating monolithic transaction methods inside storage backends (see [`README.md`](README.md)).
+- Expose composable, single-responsibility read and write primitives on the transaction-scoped repositories (`WorkUnitTxRepository`, `ExperimentTxRepository`, `StatusMessageTxRepository`, `StatusHistoryTxRepository`, `PauseStateTxRepository`, `PausedTaskTxRepository`, `ComponentTxRepository`) instead of creating monolithic transaction methods inside storage backends (see [`README.md`](README.md)).
 - Inside `RunInTransaction` callbacks, propagate storage errors with `%w` so backend transaction runners can detect and retry transient contention errors (such as `status.Aborted`).
 
 ## 3. Keep Database-Specific Logic in Dedicated Subpackages
