@@ -234,6 +234,23 @@ func awaitModacks(t *testing.T, srv *pstest.Server, id string, count int) {
 	}
 }
 
+// awaitNack blocks until pstest records a zero-deadline modack (Nack) for message id.
+func awaitNack(t *testing.T, srv *pstest.Server, id string) {
+	t.Helper()
+	deadline := time.Now().Add(waitTimeout)
+	for {
+		for _, m := range srv.Message(id).Modacks {
+			if m.AckDeadline == 0 {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for nack (AckDeadline=0) on message %s; modacks=%+v", id, srv.Message(id).Modacks)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func metricWithStep(step int64) *pb.Metric {
 	m := testMetric()
 	m.Step = step
@@ -373,6 +390,8 @@ func TestIngesterInFlightWriteSurvivesCancellation(t *testing.T) {
 	ctx := context.Background()
 	srv, _, sub := newFakeSubscription(ctx, t)
 	gate := make(chan struct{})
+	closeGate := sync.OnceFunc(func() { close(gate) })
+	t.Cleanup(closeGate)
 	writer := newFakeWriter(0)
 	writer.beforeWrite = func() { <-gate }
 	_, stop := startIngester(t, sub, writer, 1, neverTick)
@@ -382,7 +401,7 @@ func TestIngesterInFlightWriteSurvivesCancellation(t *testing.T) {
 
 	stopped := make(chan error, 1)
 	go func() { stopped <- stop() }()
-	close(gate)
+	closeGate()
 
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run() error = %v, want nil", err)
@@ -487,6 +506,8 @@ func metricMessage(t *testing.T, id string, step int64) *pubsub.Message {
 
 func TestIngesterNacksInsteadOfBlockingWhenCallbackContextIsDone(t *testing.T) {
 	gate := make(chan struct{})
+	closeGate := sync.OnceFunc(func() { close(gate) })
+	t.Cleanup(closeGate)
 	writer := newFakeWriter(0)
 	writer.beforeWrite = func() { <-gate }
 	cancelled, cancel := context.WithCancel(context.Background())
@@ -496,7 +517,7 @@ func TestIngesterNacksInsteadOfBlockingWhenCallbackContextIsDone(t *testing.T) {
 		writer.awaitCalls(t, 1)
 		f(ctx, metricMessage(t, "2", 2))       // Fills the one-slot buffer.
 		f(cancelled, metricMessage(t, "3", 3)) // Buffer full and callback context done: nacked.
-		close(gate)
+		closeGate()
 		return nil
 	}}
 
@@ -572,14 +593,73 @@ func TestFlushEmptyIsNoOp(t *testing.T) {
 	}
 }
 
-func TestNackUntilClosedDrainsChannel(t *testing.T) {
-	msgCh := make(chan *pubsub.Message, 2)
-	msgCh <- &pubsub.Message{ID: "1"}
-	msgCh <- &pubsub.Message{ID: "2"}
-	close(msgCh)
+// receiveLeasedMessages opens a persistent subscription stream and forwards each delivered message
+// onto the returned channel.
+func receiveLeasedMessages(t *testing.T, sub *pubsub.Subscription) <-chan *pubsub.Message {
+	t.Helper()
+	subCtx, stopSub := context.WithCancel(context.Background())
+	leased := make(chan *pubsub.Message, 10)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = sub.Receive(subCtx, func(_ context.Context, msg *pubsub.Message) {
+			leased <- msg
+		})
+	}()
+	t.Cleanup(func() {
+		stopSub()
+		<-done
+	})
+	return leased
+}
 
-	nackUntilClosed(msgCh)
-	if n := len(msgCh); n != 0 {
-		t.Errorf("len(msgCh) = %d after nackUntilClosed, want 0", n)
+// takeLeasedMessage waits for the next message from ch and ensures its receipt modack landed.
+func takeLeasedMessage(t *testing.T, srv *pstest.Server, ch <-chan *pubsub.Message) *pubsub.Message {
+	t.Helper()
+	select {
+	case msg := <-ch:
+		awaitModacks(t, srv, msg.ID, 1)
+		return msg
+	case <-time.After(waitTimeout):
+		t.Fatal("timed out waiting for leased message")
+		return nil
+	}
+}
+
+func TestIngesterNacksMessagesArrivingAfterCancellation(t *testing.T) {
+	srv, _, sub := newFakeSubscription(context.Background(), t)
+	leased := receiveLeasedMessages(t, sub)
+	id1 := publishMetric(t, srv, metricWithStep(1))
+	first1 := takeLeasedMessage(t, srv, leased)
+	id2 := publishMetric(t, srv, metricWithStep(2))
+	first2 := takeLeasedMessage(t, srv, leased)
+
+	writer := newFakeWriter(0)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	source := &scriptedSource{script: func(rCtx context.Context, f func(context.Context, *pubsub.Message)) error {
+		f(rCtx, first1)
+		cancel()
+		awaitNack(t, srv, id1) // batchLoop entered ctx.Done() and is now in nackUntilClosed.
+		f(context.Background(), first2)
+		return nil
+	}}
+
+	if err := NewIngester(source, writer, &Config{BatchSize: 100, BatchInterval: neverTick}).Run(ctx); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got := writer.snapshot(); len(got) != 0 {
+		t.Fatalf("writes = %v, want none on cancelled shutdown", got)
+	}
+	awaitNack(t, srv, id2)
+	if got := srv.Message(id2).Acks; got != 0 {
+		t.Errorf("message %s Acks = %d, want 0", id2, got)
+	}
+
+	takeLeasedMessage(t, srv, leased).Ack()
+	takeLeasedMessage(t, srv, leased).Ack()
+	awaitAcks(t, srv, id1, id2)
+	if got := srv.Message(id2).Deliveries; got < 2 {
+		t.Errorf("message %s Deliveries = %d, want at least 2 after nack", id2, got)
 	}
 }
