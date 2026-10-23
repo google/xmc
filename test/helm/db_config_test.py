@@ -40,6 +40,15 @@ ENABLE_OPTIONAL_DEPLOYMENTS: dict[str, str] = {
     "rodDeployment.enabled": "true",
 }
 
+# The PostgreSQL settings that have no default and must be set when the backend is postgres.
+POSTGRES_REQUIRED_VALUES: dict[str, str] = {
+    "database.backend": "postgres",
+    "database.postgres.host": "pg.internal",
+    "database.postgres.user": "xmc_user",
+    "database.postgres.essDatabase": "ess_db",
+    "database.postgres.xidDatabase": "xid_db",
+}
+
 
 def configmap_value(manifest: str, key: str) -> str:
     """Returns the quoted value of key in a rendered ConfigMap."""
@@ -93,12 +102,8 @@ class DbConfigChartTest(unittest.TestCase):
     def test_postgres_backend_renders_only_postgres_settings(self) -> None:
         """database.backend: postgres renders the PostgreSQL keys instead of the Spanner keys."""
         values = {
-            "database.backend": "postgres",
-            "database.postgres.host": "pg.internal",
+            **POSTGRES_REQUIRED_VALUES,
             "database.postgres.port": "5433",
-            "database.postgres.user": "xmc_user",
-            "database.postgres.essDatabase": "ess_db",
-            "database.postgres.xidDatabase": "xid_db",
             "database.postgres.sslMode": "require",
         }
         manifest = render_template(DB_CONFIG_TEMPLATE, values)
@@ -111,6 +116,24 @@ class DbConfigChartTest(unittest.TestCase):
         self.assertIn('POSTGRES_XID_DATABASE: "xid_db"', manifest)
         self.assertIn('POSTGRES_SSLMODE: "require"', manifest)
         self.assertNotIn("SPANNER_", manifest)
+
+    def test_postgres_backend_defaults_to_port_5432_and_verify_full(self) -> None:
+        """Only the port and sslMode have defaults, and sslMode does not default to plaintext."""
+        manifest = render_template(DB_CONFIG_TEMPLATE, POSTGRES_REQUIRED_VALUES)
+
+        self.assertIn('POSTGRES_PORT: "5432"', manifest)
+        self.assertIn('POSTGRES_SSLMODE: "verify-full"', manifest)
+
+    def test_postgres_backend_without_connection_settings_fails_rendering(self) -> None:
+        """database.backend: postgres fails the render unless host, user and databases are set."""
+        for key in ("host", "user", "essDatabase", "xidDatabase"):
+            with self.subTest(key=key):
+                values = dict(POSTGRES_REQUIRED_VALUES)
+                del values[f"database.postgres.{key}"]
+                with self.assertRaises(RuntimeError) as raised:
+                    render_template(DB_CONFIG_TEMPLATE, values)
+
+                self.assertIn(f"database.postgres.{key} is required", str(raised.exception))
 
     def test_unknown_backend_fails_rendering(self) -> None:
         """An unsupported database.backend fails the render instead of defaulting to Spanner."""

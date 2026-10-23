@@ -24,12 +24,12 @@ data:
   DB_BACKEND: {{ $backend | quote }}
 {{- if eq $backend "postgres" }}
 {{- $pg := default (dict) $db.postgres }}
-  POSTGRES_HOST: {{ default "postgres.xmc.svc.cluster.local" $pg.host | quote }}
-  POSTGRES_PORT: {{ default "5432" $pg.port | toString | quote }}
-  POSTGRES_USER: {{ default "postgres" $pg.user | quote }}
-  POSTGRES_ESS_DATABASE: {{ default "ess" $pg.essDatabase | quote }}
-  POSTGRES_XID_DATABASE: {{ default "xid" $pg.xidDatabase | quote }}
-  POSTGRES_SSLMODE: {{ default "disable" $pg.sslMode | quote }}
+  POSTGRES_HOST: {{ required "database.postgres.host is required when database.backend is postgres" $pg.host | quote }}
+  POSTGRES_PORT: {{ default 5432 $pg.port | toString | quote }}
+  POSTGRES_USER: {{ required "database.postgres.user is required when database.backend is postgres" $pg.user | quote }}
+  POSTGRES_ESS_DATABASE: {{ required "database.postgres.essDatabase is required when database.backend is postgres" $pg.essDatabase | quote }}
+  POSTGRES_XID_DATABASE: {{ required "database.postgres.xidDatabase is required when database.backend is postgres" $pg.xidDatabase | quote }}
+  POSTGRES_SSLMODE: {{ default "verify-full" $pg.sslMode | quote }}
 {{- else }}
   SPANNER_ESS_DATABASE: {{ include "xmanager-cloud.essSpannerDatabase" . | quote }}
   SPANNER_XID_DATABASE: {{ include "xmanager-cloud.xidSpannerDatabase" . | quote }}
