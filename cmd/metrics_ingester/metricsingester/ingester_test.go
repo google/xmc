@@ -318,8 +318,8 @@ func TestIngesterAcksAndSkipsMalformedMessages(t *testing.T) {
 	if diff := cmp.Diff([][]*pb.Metric{{testMetric()}}, writer.snapshot(), protocmp.Transform()); diff != "" {
 		t.Errorf("writes mismatch (-want +got):\n%s", diff)
 	}
-	if got := in.DroppedMessages(); got != 3 {
-		t.Errorf("DroppedMessages() = %d, want 3", got)
+	if got := in.droppedMessages.Load(); got != 3 {
+		t.Errorf("droppedMessages = %d, want 3", got)
 	}
 }
 
@@ -513,6 +513,7 @@ func TestIngesterNacksInsteadOfBlockingWhenCallbackContextIsDone(t *testing.T) {
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 	source := &scriptedSource{script: func(ctx context.Context, f func(context.Context, *pubsub.Message)) error {
+		defer closeGate()                // Runs before Run's deferred <-loopDone, even on t.Fatalf.
 		f(ctx, metricMessage(t, "1", 1)) // Taken by the loop, whose write then blocks on gate.
 		writer.awaitCalls(t, 1)
 		f(ctx, metricMessage(t, "2", 2))       // Fills the one-slot buffer.

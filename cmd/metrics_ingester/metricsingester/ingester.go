@@ -75,12 +75,6 @@ func NewIngester(source MessageSource, writer MetricWriter, cfg *Config) *Ingest
 	}
 }
 
-// DroppedMessages returns the number of messages acked and dropped because their payload failed
-// protobuf wire unmarshaling.
-func (in *Ingester) DroppedMessages() uint64 {
-	return in.droppedMessages.Load()
-}
-
 // IsRunning reports whether Run's receive loop is active.
 func (in *Ingester) IsRunning() bool {
 	return in.running.Load()
