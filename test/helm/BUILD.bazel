@@ -201,3 +201,19 @@ py_test(
     ],
     deps = [":chart_test_lib"],
 )
+
+py_test(
+    name = "db_config_test",
+    srcs = ["db_config_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "db_config_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)

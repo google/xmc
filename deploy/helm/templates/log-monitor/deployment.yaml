@@ -53,6 +53,9 @@ spec:
           value: {{ .Values.projectId | quote }}
         - name: PUBSUB_SUBSCRIPTION_ID
           value: {{ .Values.logMonitor.subscriptionId | quote }}
+        envFrom:
+        - configMapRef:
+            name: db-config
         args:
         - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"
         - "-quota_project_id={{ .Values.projectId }}"

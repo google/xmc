@@ -107,6 +107,8 @@ spec:
             name: health-config
         - configMapRef:
             name: feature-flags-config
+        - configMapRef:
+            name: db-config
         readinessProbe:
           httpGet:
             path: /readyz

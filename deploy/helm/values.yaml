@@ -337,3 +337,19 @@ kueue:
 remoteK8s:
   enabled: false
   secretName: "remote-k8s-config"
+
+# Database settings, rendered into the db-config ConfigMap. The Spanner database names come from
+# experimentStateServer.spannerDatabaseName, xidService.spannerDatabaseName and projectId.
+database:
+  # "spanner" or "postgres".
+  backend: "spanner"
+  postgres:
+    # host, user, essDatabase and xidDatabase are required when backend is "postgres".
+    # No password: db-config is a plain ConfigMap.
+    host: ""
+    port: 5432
+    user: ""
+    essDatabase: ""
+    xidDatabase: ""
+    # libpq sslmode. Plaintext ("disable") must be chosen explicitly.
+    sslMode: "verify-full"

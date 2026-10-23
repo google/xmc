@@ -1,0 +1,37 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+{{- $db := default (dict) .Values.database }}
+{{- $backend := include "xmanager-cloud.dbBackend" . }}
+{{- if not (has $backend (list "spanner" "postgres")) }}
+{{- fail (printf `database.backend must be "spanner" or "postgres", got %q` $backend) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-config
+data:
+  DB_BACKEND: {{ $backend | quote }}
+{{- if eq $backend "postgres" }}
+{{- $pg := default (dict) $db.postgres }}
+  POSTGRES_HOST: {{ required "database.postgres.host is required when database.backend is postgres" $pg.host | quote }}
+  POSTGRES_PORT: {{ default 5432 $pg.port | toString | quote }}
+  POSTGRES_USER: {{ required "database.postgres.user is required when database.backend is postgres" $pg.user | quote }}
+  POSTGRES_ESS_DATABASE: {{ required "database.postgres.essDatabase is required when database.backend is postgres" $pg.essDatabase | quote }}
+  POSTGRES_XID_DATABASE: {{ required "database.postgres.xidDatabase is required when database.backend is postgres" $pg.xidDatabase | quote }}
+  POSTGRES_SSLMODE: {{ default "verify-full" $pg.sslMode | quote }}
+{{- else }}
+  SPANNER_ESS_DATABASE: {{ include "xmanager-cloud.essSpannerDatabase" . | quote }}
+  SPANNER_XID_DATABASE: {{ include "xmanager-cloud.xidSpannerDatabase" . | quote }}
+  SPANNER_QUOTA_PROJECT_ID: {{ .Values.projectId | quote }}
+{{- end }}

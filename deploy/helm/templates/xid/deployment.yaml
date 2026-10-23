@@ -83,6 +83,8 @@ spec:
         envFrom:
         - configMapRef:
             name: xid-config
+        - configMapRef:
+            name: db-config
         env:
         - name: IAP_EXPECTED_HTTP_AUDIENCE
           value: {{ .Values.experimentStateServer.iap.httpAudience | quote }}

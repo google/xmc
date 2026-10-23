@@ -241,6 +241,29 @@ templates/metrics/clickhouse-secret.yaml out of a Helm value.
 {{- end -}}
 
 {{/*
+database.backend, or "spanner" when unset.
+*/}}
+{{- define "xmanager-cloud.dbBackend" -}}
+{{- (default (dict) .Values.database).backend | default "spanner" -}}
+{{- end -}}
+
+{{/*
+ESS Spanner database: experimentStateServer.spannerDatabaseName, or the default path for
+projectId and environment.
+*/}}
+{{- define "xmanager-cloud.essSpannerDatabase" -}}
+{{- (default (dict) .Values.experimentStateServer).spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) -}}
+{{- end -}}
+
+{{/*
+XID Spanner database: xidService.spannerDatabaseName, or the default path for projectId and
+environment.
+*/}}
+{{- define "xmanager-cloud.xidSpannerDatabase" -}}
+{{- (default (dict) .Values.xidService).spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/xids-db-%s" .Values.projectId .Values.environment .Values.environment) -}}
+{{- end -}}
+
+{{/*
 Common GCP Secrets Volume definition.
 */}}
 {{- define "xmanager-cloud.gcpSecretsVolume" -}}
