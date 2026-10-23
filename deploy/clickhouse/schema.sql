@@ -80,3 +80,40 @@ SELECT
     now64(6, 'UTC') AS created_at
 FROM xmc_metrics_queue
 WHERE xid != 0 AND metric_name != '' AND execution_id != 0;
+
+-- 4. Null-engine landing table for the Pub/Sub message bus (ingestion gateway -message_bus=pubsub).
+-- ClickHouse has no Pub/Sub table engine, so cmd/metrics_ingester subscribes to the metrics topic and
+-- inserts each decoded Metric here. The Null engine stores nothing: every inserted block is handed to
+-- the materialized view below and then discarded. Columns mirror xmc_metrics_queue exactly, so both
+-- message buses land the same raw shape. Harmless when the Pub/Sub path is unused.
+CREATE TABLE IF NOT EXISTS xmc_metrics_pubsub_queue
+(
+    xid Int64,
+    work_unit_id Int64,
+    execution_id Int64,
+    job_name String,
+    replica_id String,
+    metric_name LowCardinality(String),
+    metric_value Float64,
+    step Int64,
+    timestamp Int64
+)
+ENGINE = Null;
+
+-- 5. Materialized View for the Pub/Sub path, populating xmc_metrics from xmc_metrics_pubsub_queue.
+-- Its SELECT must stay identical to xmc_metrics_mv's (apart from the source table) so both message
+-- buses apply the same filtering, defaults and timestamp sanitization.
+CREATE MATERIALIZED VIEW IF NOT EXISTS xmc_metrics_pubsub_mv TO xmc_metrics AS
+SELECT
+    xid,
+    work_unit_id,
+    execution_id,
+    job_name,
+    if(replica_id = '', '0', replica_id) AS replica_id,
+    metric_name,
+    metric_value,
+    step,
+    if(timestamp < 1577836800000000 OR timestamp > 2524608000000000, now64(6, 'UTC'), fromUnixTimestamp64Micro(timestamp, 'UTC')) AS timestamp,
+    now64(6, 'UTC') AS created_at
+FROM xmc_metrics_pubsub_queue
+WHERE xid != 0 AND metric_name != '' AND execution_id != 0;
