@@ -41,7 +41,7 @@ on:
         type: boolean
         default: false
       xmanager_version:
-        description: 'Optional xmanager PyPI version override (e.g. 0.8.2 or 0.8.4; defaults to requirements.txt)'
+        description: 'Optional xmanager PyPI version override (e.g. 0.8.5.post1; defaults to requirements.txt)'
         required: false
         default: ''
         type: string
@@ -68,7 +68,7 @@ on:
         type: boolean
         default: false
       xmanager_version:
-        description: 'Optional xmanager PyPI version override (e.g. 0.8.2 or 0.8.4; defaults to requirements.txt)'
+        description: 'Optional xmanager PyPI version override (e.g. 0.8.5.post1; defaults to requirements.txt)'
         required: false
         default: ''
         type: string
