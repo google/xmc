@@ -22,6 +22,7 @@ import (
 	"time"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 	"xmanager_cloud/pkg/components/naming"
 )
 
@@ -314,18 +315,18 @@ func extractStringMap(raw any) map[string]string {
 
 // ParseWrapperRef extracts WrapperRef from unstructured custom resource spec map.
 // Target coordinates are resolved by parseWrapperRef so their key aliases are defined once.
-func ParseWrapperRef(specObj any, defaultNamespace string) WrapperRef {
+func ParseWrapperRef(specObj any, defaultNamespace string) statusdetector.WrapperRef {
 	specMap, ok := specObj.(map[string]any)
 	if !ok || specMap == nil {
-		return WrapperRef{Namespace: defaultNamespace}
+		return statusdetector.WrapperRef{Namespace: defaultNamespace}
 	}
 	target := parseWrapperRef(specMap)
 	if target == nil {
-		return WrapperRef{}
+		return statusdetector.WrapperRef{}
 	}
 	// parseWrapperRef returned a target, so spec.wrapperRef is a non-nil map.
 	wrapperRaw, _ := specMap["wrapperRef"].(map[string]any)
-	ref := ToBridgeWrapperRef(target, defaultNamespace)
+	ref := statusdetector.ToBridgeWrapperRef(target, defaultNamespace)
 	ref.ObservedGenerationPath = firstStr(wrapperRaw, "observedGenerationPath", "observed_generation_path")
 	ref.ReadyConditionPath = firstStr(wrapperRaw, "readyConditionPath", "ready_condition_path", "readyPath")
 	ref.ExpectedReadyValue = firstStr(wrapperRaw, "expectedReadyValue", "expected_ready_value")

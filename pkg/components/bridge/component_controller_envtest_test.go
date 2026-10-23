@@ -52,6 +52,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/memory"
 )
 
 // envtestProbeInterval is long enough that no Component is re-probed during a test: every
@@ -270,7 +271,7 @@ func createEnvtestNamespace(t *testing.T, cfg *rest.Config, namespace string) {
 // stopped or the test ends.
 func runControllerEnv(t *testing.T, cfg *rest.Config, mgrCfg ComponentManagerConfig) *controllerEnv {
 	t.Helper()
-	return runControllerEnvWithStore(t, cfg, mgrCfg, store.NewMemoryStore(), nil)
+	return runControllerEnvWithStore(t, cfg, mgrCfg, memory.NewMemoryStore(), nil)
 }
 
 func runControllerEnvWithStore(t *testing.T, cfg *rest.Config, mgrCfg ComponentManagerConfig, cmsStore store.Store, id *componentspb.ClusterIdentity) *controllerEnv {
@@ -338,7 +339,7 @@ func testFencedStandbyAndTakeover(t *testing.T, cfg *rest.Config) {
 	ctx := context.Background()
 	const ns = "fenced"
 	createEnvtestNamespace(t, cfg, ns)
-	cmsStore := store.NewMemoryStore()
+	cmsStore := memory.NewMemoryStore()
 	if _, err := cmsStore.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: testPrimaryClusterUID, Name: "primary", Epoch: 2}); err != nil {
 		t.Fatalf("DeclareClusterEpoch(primary) failed: %v", err)
 	}
@@ -380,7 +381,7 @@ func testSameClusterRecreateAdoptsCMSRecord(t *testing.T, cfg *rest.Config) {
 		oldUID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	)
 	createEnvtestNamespace(t, cfg, ns)
-	cmsStore := store.NewMemoryStore()
+	cmsStore := memory.NewMemoryStore()
 	if _, err := cmsStore.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: testPrimaryClusterUID, Name: "primary", Epoch: 1}); err != nil {
 		t.Fatalf("DeclareClusterEpoch() failed: %v", err)
 	}
@@ -433,7 +434,7 @@ func testConflictingCRDeletionPreservesOwner(t *testing.T, cfg *rest.Config) {
 	const nsOwner, nsDupe, name = "del-owner", "del-dupe", "env-shared-comp"
 	createEnvtestNamespace(t, cfg, nsOwner)
 	createEnvtestNamespace(t, cfg, nsDupe)
-	cmsStore := store.NewMemoryStore()
+	cmsStore := memory.NewMemoryStore()
 	clusterID := &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary", Epoch: 1}
 
 	envOwner := runControllerEnvWithStore(t, cfg, ComponentManagerConfig{Namespace: nsOwner}, cmsStore, clusterID)

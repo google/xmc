@@ -10,15 +10,16 @@ The worker (`worker.py`) reads the per-work-unit GCS destination from the `XMC_M
 
 1. Set up your `.env` configuration file in the repository root as described in the CLI installation instructions (`PROJECT_ID`, `QUEUE_NAME`, `XMC_DOMAIN`).
 2. Managed xprof must be configured for the cluster so the Actuator injects the `XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER` env var, and the workload's service account must have write access to the managed-xprof GCS bucket.
-3. Ensure you have the `xmc` CLI python virtual environment active and install dependencies:
+3. Create a Python virtual environment, install dependencies, and compile local XMC protos:
    ```bash
-   source ../../deploy/cli/venv/bin/activate
-   pip install -r requirements.txt
+   python3 ../../deploy/cli/install_xmanager.py --venv .venv --requirements requirements.txt
+   source .venv/bin/activate
    ```
 4. Build and push the docker image for the worker script (optional if using pre-built image):
    ```bash
    ./build_and_push.sh
    ```
+5. **Authentication**: With `.venv` activated, run `xmanager login`. You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ## Running the Example
 

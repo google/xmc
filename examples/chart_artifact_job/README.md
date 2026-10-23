@@ -52,9 +52,9 @@ flowchart TD
 
 ## File Structure
 
-- **`install_venv.sh`**: Setup script compiling Bazel Python protos, creating a `.venv`,
-  installing dependencies (`grpcio`, `absl-py`, etc.), and installing `xdash` and `xmc`
-  SDKs in editable mode.
+- **`install_venv.sh`**: Setup script creating a `.venv`, installing dependencies from
+  `requirements.txt` (including `xmanager`), compiling local XMC protos from `api/protos`,
+  and installing `xdash` and `xmc` SDKs in editable mode.
 - **`launch.py`**: Client-side launch script creating the experiment, launching the
   WorkUnit, intercepting runtime IDs, creating the dashboard and attaching the artifacts.
 - **`training_metrics.py`**: Metric names and the randomized sampler, shared by the
@@ -84,11 +84,8 @@ flowchart TD
    [ClickHouse Addon README](../../deploy/addons/metrics/clickhouse/README.md)).
 3. **Google Cloud CLI (`gcloud`) & Docker**: Authenticated to push container images to
    your project's Artifact Registry.
-4. **Bazel & Python 3.11+**: Installed on your workstation to build proto bindings.
-5. **Client-Side Dependencies (`requirements.txt`)**: Host Python dependencies needed to execute `launch.py`:
-   ```bash
-   pip install -r requirements.txt
-   ```
+4. **Python 3.11+**: Installed on your workstation.
+5. **Authentication**: After initializing and activating `.venv` (`./install_venv.sh && source .venv/bin/activate`), run `xmanager login` and `export XMC_AUTH_TOKEN=$(xmanager login --print-token)` (used by the `DashboardService` step). You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ---
 
@@ -126,6 +123,8 @@ the `xmcv2` environment. A `.env` file in the repo root takes precedence over it
 ```bash
 ./install_venv.sh
 source .venv/bin/activate
+xmanager login
+export XMC_AUTH_TOKEN=$(xmanager login --print-token)
 ```
 
 ### 2. Build and Push the Worker Container Image

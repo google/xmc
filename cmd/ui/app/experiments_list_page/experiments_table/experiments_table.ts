@@ -34,7 +34,7 @@ import { ResourceChip } from 'app/common/components/resource_chip/resource_chip'
 import {
   ResourceChipData,
   resourceSetsToResourceChipsData,
-} from 'app/common/components/resource_chip/utils/resource_set_to_resource_chips';
+} from 'app/common/components/resource_chip/resource_set_to_resource_chips';
 import { StatusChip, StatusOption } from 'app/common/components/status_chip/status_chip';
 import { StatusMessage } from 'app/common/components/status_message/status_message';
 import { StatusMessageFilter } from 'app/common/components/status_message_filter/status_message_filter';

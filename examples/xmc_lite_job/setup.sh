@@ -37,9 +37,12 @@ gcloud container clusters get-credentials "${GKE_CLUSTER}" \
   --project="${PROJECT_ID}"
 
 VENV_DIR="${VENV_DIR:-${SCRIPT_DIR}/.venv}"
-if [[ ! -d "${VENV_DIR}" ]]; then
+if [[ ! -x "${VENV_DIR}/bin/pip" ]]; then
   python3 -m venv "${VENV_DIR}"
 fi
 
 "${VENV_DIR}/bin/pip" install --upgrade pip
 "${VENV_DIR}/bin/pip" install -r "${SCRIPT_DIR}/requirements.txt"
+if [[ -n "${XMANAGER_VERSION:-}" ]]; then
+  "${VENV_DIR}/bin/pip" install "xmanager==${XMANAGER_VERSION}"
+fi

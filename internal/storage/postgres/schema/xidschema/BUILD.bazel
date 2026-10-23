@@ -1,0 +1,28 @@
+# Copyright 2026 Google LLC
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "xidschema",
+    srcs = ["xidschema.go"],
+    importpath = "xmanager_cloud/internal/storage/postgres/schema/xidschema",
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/query_generator/querytools",
+        "//internal/safesql",
+    ],
+)
+
+go_test(
+    name = "xidschema_test",
+    srcs = ["xidschema_test.go"],
+    embed = [":xidschema"],
+    deps = [
+        "//internal/query_generator/dialect/postgres",
+        "//internal/query_generator/liststatement",
+        "//internal/query_generator/normalizer",
+        "//internal/query_generator/querytools",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

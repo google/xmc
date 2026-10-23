@@ -23,7 +23,6 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
@@ -33,10 +32,6 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/bridge"
 )
-
-// lifecycleWaitTimeout bounds each lifecycle transition. It exceeds the bridge's 30s
-// DeactivationBlocked recheck interval, which gates how soon a blocked deactivation is retried.
-const lifecycleWaitTimeout = 90 * time.Second
 
 // TestComponentsLifecycle verifies Component lifecycle control-plane behavior on a KinD API server
 // running the production Component CRD, reconciled by an in-process bridge controller manager per
@@ -109,19 +104,6 @@ func assertComponentsDisabled(ctx context.Context, t *testing.T, h *kindClusterH
 	}
 }
 
-// assertCMSComponent verifies that the CMS record of the Component u is in wantState at the CR
-// generation. Repeated bridge passes must not bump the CMS generation past the CR generation.
-func assertCMSComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, u *unstructured.Unstructured, wantState componentspb.ComponentState) {
-	t.Helper()
-	rec, err := h.cmsServer.Store().GetComponent(ctx, u.GetName())
-	if err != nil {
-		t.Fatalf("CMS GetComponent(%s) failed: %v", u.GetName(), err)
-	}
-	if rec.State != wantState || rec.Generation != u.GetGeneration() {
-		t.Errorf("%s CMS state = %v, generation = %d; want %v, CR generation %d", u.GetName(), rec.State, rec.Generation, wantState, u.GetGeneration())
-	}
-}
-
 // testFinalizerCleanup verifies the deletion path through the full bridge persistence flow: the
 // bridge finalizer holds a deleted CR until CMS ExecuteDeletion runs, after which the finalizer is
 // released and the CR disappears. The running bridge can release the finalizer before a GET
@@ -154,13 +136,13 @@ func testFinalizerCleanup(ctx context.Context, t *testing.T, h *kindClusterHarne
 // an earlier MODIFIED event showed its deletion held by finalizer.
 func assertFinalizerHeldDeletion(ctx context.Context, t *testing.T, w watch.Interface, finalizer string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(ctx, lifecycleWaitTimeout)
+	ctx, cancel := context.WithTimeout(ctx, componentTransitionTimeout)
 	defer cancel()
 	held := false
 	for {
 		select {
 		case <-ctx.Done():
-			t.Fatalf("Component was not deleted within %v (deletion held by %s observed: %v)", lifecycleWaitTimeout, finalizer, held)
+			t.Fatalf("Component was not deleted within %v (deletion held by %s observed: %v)", componentTransitionTimeout, finalizer, held)
 		case ev, ok := <-w.ResultChan():
 			if !ok {
 				t.Fatalf("watch closed before the Component was deleted (deletion held by %s observed: %v)", finalizer, held)
@@ -202,43 +184,6 @@ func applyLifecycleComponent(ctx context.Context, t *testing.T, h *kindClusterHa
 	})
 }
 
-// waitForComponent waits until cond holds for the named Component, as persisted by the namespace
-// bridge, described by desc in failures. cond receives nil once the Component no longer exists.
-func waitForComponent(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, name, desc string, cond func(*unstructured.Unstructured) bool) *unstructured.Unstructured {
-	t.Helper()
-	var last *unstructured.Unstructured
-	var lastErr error
-	ok := waitUntil(ctx, lifecycleWaitTimeout, 500*time.Millisecond, func() bool {
-		u, err := h.dynClient.Resource(componentGVR).Namespace(ns).Get(ctx, name, metav1.GetOptions{})
-		switch {
-		case apierrors.IsNotFound(err):
-			last = nil
-		case err != nil:
-			lastErr = err
-			return false
-		default:
-			last = u
-		}
-		return cond(last)
-	})
-	if !ok {
-		t.Fatalf("timed out waiting for Component %s/%s to be %s (last err: %v); last object: %v", ns, name, desc, lastErr, last)
-	}
-	return last
-}
-
-func isObservedComponent(u *unstructured.Unstructured) bool {
-	if u == nil {
-		return false
-	}
-	obsGen, _, _ := unstructured.NestedInt64(u.Object, "status", "observedGeneration")
-	return obsGen == u.GetGeneration()
-}
-
-func isExistingComponentReady(u *unstructured.Unstructured) bool {
-	return u != nil && isComponentReady(u)
-}
-
 func isComponentInState(want componentspb.ComponentState) func(*unstructured.Unstructured) bool {
 	return func(u *unstructured.Unstructured) bool {
 		if !isObservedComponent(u) {
@@ -246,31 +191,6 @@ func isComponentInState(want componentspb.ComponentState) func(*unstructured.Uns
 		}
 		state, _, _ := unstructured.NestedString(u.Object, "status", "state")
 		return state == want.String()
-	}
-}
-
-// conditionField returns field of the status condition condType, or "" if u is nil or the condition
-// is absent.
-func conditionField(u *unstructured.Unstructured, condType, field string) string {
-	if u == nil {
-		return ""
-	}
-	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
-	for _, raw := range conds {
-		if m, ok := raw.(map[string]any); ok && m["type"] == condType {
-			v, _ := m[field].(string)
-			return v
-		}
-	}
-	return ""
-}
-
-// assertCondition verifies that the status condition condType of u has wantStatus and wantReason.
-func assertCondition(t *testing.T, u *unstructured.Unstructured, condType, wantStatus, wantReason string) {
-	t.Helper()
-	gotStatus, gotReason := conditionField(u, condType, "status"), conditionField(u, condType, "reason")
-	if gotStatus != wantStatus || gotReason != wantReason {
-		t.Errorf("%s %s condition = %s/%s, want %s/%s", u.GetName(), condType, gotStatus, gotReason, wantStatus, wantReason)
 	}
 }
 

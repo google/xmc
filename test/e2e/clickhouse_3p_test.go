@@ -22,17 +22,9 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
 	"xmanager_cloud/pkg/components/crreader"
-)
-
-const (
-	clickhouseImage      = "clickhouse/clickhouse-server:24.3-alpine"
-	clickhouseSecretName = "clickhouse-secret"
-	clickhouseSecretKey  = "password"
-	clickhouseTestPass   = "xmc-clickhouse-e2e-pass"
 )
 
 func TestClickHouse3PComponentE2E(t *testing.T) {
@@ -81,25 +73,6 @@ func TestClickHouse3PComponentE2E(t *testing.T) {
 			assertClickHouseWorkloadQuery(ctx, t, harness, ns, tc.podName, envVars, tc.marker)
 		})
 	}
-}
-
-func deployClickHouseInstance(ctx context.Context, t *testing.T, h *kindClusterHarness, ns string) {
-	t.Helper()
-	passRef := &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: clickhouseSecretName}, Key: clickhouseSecretKey}
-	deploySingleContainerService(ctx, t, h, serviceInstanceSpec{
-		Namespace: ns, AppName: "clickhouse", SecretName: clickhouseSecretName,
-		SecretData: map[string]string{clickhouseSecretKey: clickhouseTestPass},
-		Ports:      map[string]int32{"http": 8123, "tcp": 9000},
-		Container: corev1.Container{
-			Name: "clickhouse", Image: clickhouseImage, ImagePullPolicy: corev1.PullIfNotPresent,
-			Env:   []corev1.EnvVar{{Name: "CLICKHOUSE_PASSWORD", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: passRef}}},
-			Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8123}, {Name: "tcp", ContainerPort: 9000}},
-			ReadinessProbe: &corev1.Probe{
-				ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/ping", Port: intstr.FromInt(8123)}},
-				InitialDelaySeconds: 1, PeriodSeconds: 2,
-			},
-		},
-	})
 }
 
 func assertClickHouseComponentResolver(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, wantAddr string) {

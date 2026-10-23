@@ -23,6 +23,7 @@ import (
 
 	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/logging"
+	spannerdialect "xmanager_cloud/internal/query_generator/dialect/spanner"
 	ls "xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 	storagedata "xmanager_cloud/internal/storage/data"
@@ -94,12 +95,12 @@ func (r *Repository) ListDashboards(ctx context.Context, pageSize int32, pageTok
 		return nil, "", err
 	}
 
-	stmt, err := ls.ListStatement(ctx, listParams)
-	if err != nil {
+	stmt := spannerdialect.NewStatement(nil)
+	if err := ls.ListStatement(ctx, stmt, listParams); err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
 
-	logging.Debug(ctx, "Generated list statement", "stmt", stmt)
+	logging.Debug(ctx, "Generated list statement", "stmt", stmt.Spanner())
 
 	// 3. Execute query on Spanner. A multi-use transaction is needed because the chart links live in
 	// a second table and have to be read at the same snapshot as the dashboards themselves.
@@ -109,7 +110,7 @@ func (r *Repository) ListDashboards(ctx context.Context, pageSize int32, pageTok
 	}
 	defer txn.Close()
 
-	iter := txn.Query(ctx, *stmt)
+	iter := txn.Query(ctx, *stmt.Spanner())
 	defer iter.Stop()
 
 	// 4. Convert rows into Dashboard protos.

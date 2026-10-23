@@ -29,6 +29,9 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/bridge"
+	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/helm"
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
@@ -305,17 +308,17 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	}
 	cachedDiscovery := memory.NewMemCacheClient(discoveryClient)
 	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedDiscovery)
-	detector := bridge.NewK8sStatusDetector(dynamicClient, mapper)
-	netProber := bridge.NewNetworkHealthProber(bridge.WithHealthProbeTimeout(cfg.ProbeTimeout))
-	bridgeProber := bridge.NewBridgeProber(detector, netProber, cfg.ProbeTimeout)
+	detector := statusdetector.NewK8sStatusDetector(dynamicClient, mapper)
+	netProber := healthprobe.NewNetworkHealthProber(healthprobe.WithHealthProbeTimeout(cfg.ProbeTimeout))
+	bridgeProber := healthprobe.NewBridgeProber(detector, netProber, cfg.ProbeTimeout)
 
-	helmOpts := []bridge.HelmManagerOption{
-		bridge.WithKubeconfig(cfg.Kubeconfig),
+	helmOpts := []helm.HelmManagerOption{
+		helm.WithKubeconfig(cfg.Kubeconfig),
 	}
 	if cfg.ChartPath != "" {
-		helmOpts = append(helmOpts, bridge.WithChartPath(cfg.ChartPath))
+		helmOpts = append(helmOpts, helm.WithChartPath(cfg.ChartPath))
 	}
-	helmMgr := bridge.NewK8sHelmManager(k8sClient, cfg.Namespace, cfg.ReleaseName, helmOpts...)
+	helmMgr := helm.NewK8sHelmManager(k8sClient, cfg.Namespace, cfg.ReleaseName, helmOpts...)
 	// The leader's runnable drains the Helm worker on a graceful shutdown. This stops the worker on every other
 	// return path too: a follower that never led, an early error, or a lost Lease, where Helm work is cancelled
 	// rather than awaited, so exit waits only for the cancelled Helm actions to return.
@@ -352,7 +355,7 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	// Helm hydration and the Helm worker's shutdown run only while this process holds the Lease.
 	// A lost Lease stops the manager without a grace period; RunBridge then cancels in-flight Helm work
 	// and returns, and the process exits, so that no Helm write outlives the Lease.
-	if err := mgr.Add(bridge.NewHelmLeaderRunnable(helmMgr)); err != nil {
+	if err := mgr.Add(helm.NewHelmLeaderRunnable(helmMgr)); err != nil {
 		return fmt.Errorf("failed to add Helm manager runnable: %w", err)
 	}
 	if err := mgr.Add(fence); err != nil {

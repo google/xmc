@@ -47,6 +47,8 @@ import (
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/memory"
+	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -232,10 +234,10 @@ func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, s
 		store.OwnershipGaugeReader
 	}
 	if spannerClient != nil {
-		cmsStore = store.NewSpannerStore(spannerClient)
+		cmsStore = spannerstore.NewSpannerStore(spannerClient)
 		logging.Info(ctx, "Using SpannerStore for Component Manager Service")
 	} else {
-		cmsStore = store.NewMemoryStore()
+		cmsStore = memory.NewMemoryStore()
 		logging.Warn(ctx, "Spanner client not initialized; using in-memory MemoryStore fallback for Component Manager Service")
 	}
 	collectorCtx, cancel := context.WithCancel(ctx)

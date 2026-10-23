@@ -47,8 +47,8 @@ import {
   TAB_RESOURCE_AVAILABILITY,
   TAB_SMART_FINDER,
 } from './components/subnav_tabs/subnav_tabs';
-import { matchesResourceFilter } from './utils/resource_filter';
-import { mapPeriodToRangePreset } from './utils/resource_velocity';
+import { matchesResourceFilter } from './resource_filter';
+import { mapPeriodToRangePreset } from './resource_velocity';
 
 /**
  * Resource Observability Dashboard (ROD) primary layout container component.

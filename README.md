@@ -17,6 +17,9 @@ Explore the folders and guides below to set up, build, or deploy XMC:
 * ### [Installation & Deployment Guide](INSTALL.md)
   Step-by-step setup guides covering automated agent skills, Cluster Toolkit v2 blueprints, and direct Terraform/Helm commands, alongside the global configuration reference table.
 
+* ### [Authentication & Experiment Access](docs/authentication.md)
+  Signing clients in as yourself with `xmanager login`, authenticating CI jobs with a service account, and sharing experiments through ACLs.
+
 * ### [Local & Hybrid Development Guide](tools/dev_env/README.md)
   Inner-loop local development using KinD (`dev_env up`), fast microservice reload (`dev_env reload`), and the hybrid execution model (`--remote-k8s`) pairing a local KinD control plane with a remote GKE data plane for real JobSet scheduling.
 

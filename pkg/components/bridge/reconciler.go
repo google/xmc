@@ -32,9 +32,16 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/helm"
+	"xmanager_cloud/pkg/components/bridge/statusdetector"
 	"xmanager_cloud/pkg/components/naming"
 	"xmanager_cloud/pkg/components/store"
 )
+
+func componentKey(namespace, componentName string) string {
+	return namespace + "/" + componentName
+}
 
 const (
 	// ReasonDependenciesNotReady marks an enabled component waiting on unready spec.dependencies.
@@ -115,8 +122,8 @@ func NewAPIReaderLiveUID(reader client.Reader) LiveUIDReader {
 // Reconciler executes reconciliation cycles for XMC Component custom resources.
 type Reconciler struct {
 	cmsClient     CMSClient
-	prober        StatusDetectorHealthProber
-	helmManager   HelmManager
+	prober        healthprobe.StatusDetectorHealthProber
+	helmManager   helm.HelmManager
 	fence         *ClusterFence
 	liveUIDReader LiveUIDReader
 	syncTracker   cmsSyncTracker
@@ -143,7 +150,7 @@ func WithLiveUIDReader(reader LiveUIDReader) ReconcilerOption {
 // prober is an optional health prober for component health checks.
 // helmMgr is an optional HelmManager for provisioning 1P component workloads via Helm releases.
 // opts configure optional dependencies such as WithClusterFence.
-func NewReconciler(cms CMSClient, prober StatusDetectorHealthProber, helmMgr HelmManager, opts ...ReconcilerOption) (*Reconciler, error) {
+func NewReconciler(cms CMSClient, prober healthprobe.StatusDetectorHealthProber, helmMgr helm.HelmManager, opts ...ReconcilerOption) (*Reconciler, error) {
 	if cms == nil {
 		return nil, errors.New("cms client must not be nil")
 	}
@@ -211,8 +218,8 @@ type ReconcileComponentInput struct {
 	ExistingConditions []Condition
 	// ExistingAccess contains status.access previously reported on the custom resource.
 	ExistingAccess *AccessStatus
-	HelmOpts       HelmComponentOptions
-	WrapperOpts    WrapperRef
+	HelmOpts       helm.HelmComponentOptions
+	WrapperOpts    statusdetector.WrapperRef
 	// Dependencies optionally resolves readiness of Spec.Dependencies. When nil, activation
 	// is not gated on dependency readiness.
 	Dependencies DependencyReadiness
@@ -403,7 +410,7 @@ func (r *Reconciler) actuateAndEvaluate(ctx context.Context, in ReconcileCompone
 }
 
 // resolveComponentRef returns the ComponentRef from HelmOpts with fallback to input Name, Namespace, and UID.
-func resolveComponentRef(in ReconcileComponentInput) ComponentRef {
+func resolveComponentRef(in ReconcileComponentInput) helm.ComponentRef {
 	ref := in.HelmOpts.Ref
 	if ref.Name == "" {
 		ref.Name = in.Name
@@ -894,7 +901,7 @@ func (r *Reconciler) ReconcileWithDependencies(ctx context.Context, obj *unstruc
 		return nil, errors.New("unstructured object must not be nil")
 	}
 	spec, _, enabled := ParseSpecFromUnstructured(obj.Object["spec"])
-	opts := ParseHelmComponentOptions(obj.GetName(), obj.GetNamespace(), obj.Object["spec"], spec)
+	opts := helm.ParseHelmComponentOptions(obj.GetName(), obj.GetNamespace(), obj.Object["spec"], spec)
 	wopts := ParseWrapperRef(obj.Object["spec"], obj.GetNamespace())
 	return r.ReconcileComponent(ctx, ReconcileComponentInput{
 		Namespace:                  obj.GetNamespace(),

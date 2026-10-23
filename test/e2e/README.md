@@ -213,3 +213,29 @@ bazel test //test/e2e:components_lifecycle_test \
   --test_env=KIND_CLUSTER_NAME=xmc-dev --test_output=streamed
 ```
 
+---
+
+## Profile Migration KinD E2E Suite (`profile_migration_test.go`)
+
+`TestProfileMigrationE2E` upgrades the `Component` CRs of a profile while workloads keep running. It is the only KinD suite that enables the harness `helmActuation` option, which wires a real in-process `helm.K8sHelmManager` (`pkg/components/bridge/helm`). With it, the bridge installs and upgrades 1P Helm releases through the Helm Go SDK; the other suites keep a nil Helm manager. Unlike `cmd/xmc_bridge` with `--chart-path`, the harness sets no chart base path, so the absolute `parameters.chartPath` override is accepted without the base-directory containment check. The suite therefore does not prove the production `chartPath` resolution.
+
+- **Baseline**: Renders the real [stable-2026a](../../deploy/profiles/stable-2026a/README.md) profile with `helm template`, using the admin values in [stable-2026a-values.yaml](testdata/profile_migration/stable-2026a-values.yaml) plus per-run values. ClickHouse (3P, operator-less) points at an in-cluster ClickHouse server. `ingestion-gateway` (1P) uses `parameters.chartPath` to install the test-only [rolling-gateway](testdata/profile_migration/rolling-gateway/Chart.yaml) chart. That chart runs the public `registry.k8s.io/e2e-test-images/agnhost` image as 2 non-root replicas with `maxSurge: 1` and `maxUnavailable: 0`.
+- **Candidate**: [stable-2026b-overlay.yaml](testdata/profile_migration/stable-2026b-overlay.yaml) is a **test-only fixture, not a product profile**. The suite re-renders stable-2026a with the overlay's `global.imageTag`. It then rewrites each CR's `xmc.dev/profile` label, `spec.chartVersion`, and `spec.version`, because the profile catalog fixes those fields. The bridge ignores `spec.chartVersion`. The workload rolls because of the image tag bump: the profile renders `global.imageTag` as `spec.imageTag`, which the bridge uses as the image tag in preference to `spec.version`.
+- **Assertions**:
+  - A continuous in-cluster HTTP probe against the gateway Service (about 5 requests/s, a new connection per request) records zero failed requests from the start of the upgrade. After the last old gateway Pod exits, it makes 75 more successful requests, and at least one of them is served by a new-ReplicaSet Pod.
+  - A continuous ClickHouse `INSERT`/`SELECT` stream, which reads `.status.access.envVars`, records zero failed iterations. ClickHouse itself is not rolled: this shows that the bridge re-reconciling the bumped 3P spec does not disrupt the endpoint. `.status.access.envVars` stays unchanged across the upgrade.
+  - The gateway rolls onto a new ReplicaSet with all replicas available, and the old ReplicaSet scales to 0.
+  - Each enabled Component is `Ready=True` (`ComponentHealthy`), not `Stalled`, with `status.observedGeneration == metadata.generation`. Its generation and `status.componentGeneration` have advanced, and CMS is `COMPONENT_STATE_ENABLED` at the new generation.
+  - A CMS snapshot locked before the upgrade keeps the baseline spec. Its generation now differs from `status.componentGeneration`, the predicate behind the actuator's component drift warning annotation. The suite checks only this predicate input, not the actuator or any UI.
+
+> [!NOTE]
+> The Go KinD harness always installs the Component CRD and runs an in-process bridge per test namespace, so this suite does not depend on the deployment's `enable_components` setting.
+
+```bash
+bazel test //test/e2e:profile_migration_test --test_output=streamed
+
+# Optionally reuse an existing KinD cluster:
+bazel test //test/e2e:profile_migration_test \
+  --test_env=KIND_CLUSTER_NAME=xmc-dev --test_output=streamed
+```
+

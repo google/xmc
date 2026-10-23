@@ -106,6 +106,7 @@ Cloud Spanner may abort and re-run the `RunInTransaction` callback when a transa
 
 - **Service unit tests**: Use `storage.MockStorage` ([`test_utils.go`](test_utils.go)) to test handler logic in memory. Set `MockStorage.RunInTransactionAttempts = 2` to verify that a transaction callback behaves properly when retried.
 - **Spanner integration tests**: Tests under `internal/storage/spanner/...` run against the Spanner emulator to test SQL queries, mutations, and schema constraints.
+- **PostgreSQL integration tests**: Tests under `internal/storage/postgres/...` call `postgrestest.Setup(ctx, t)` ([`postgres/testing/`](postgres/testing/)) to get isolated databases with the canonical schema on a shared `postgres:16-alpine` container; their `go_test` targets need `tags = ["local"]` for Docker access. [`postgres/pausestate/`](postgres/pausestate/) holds the reference repository tests, including the concurrency test required by [`AGENTS.md`](AGENTS.md).
 
 ```bash
 # Unit tests (MockStorage)
@@ -113,4 +114,7 @@ bazel test //internal/storage/...
 
 # Spanner emulator tests
 bazel test //internal/storage/spanner/...
+
+# PostgreSQL tests (requires Docker)
+bazel test //internal/storage/postgres/...
 ```

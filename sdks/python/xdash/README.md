@@ -58,8 +58,10 @@ The CLI exposes the same override as `--insecure`.
 
 When connecting to an IAP-protected XMC deployment, `DashboardClient` attaches an `authorization: Bearer <token>` gRPC metadata header using the following precedence:
 
-1. **Static Bearer Token (`XMC_AUTH_TOKEN` or `AUTH_TOKEN`)**: Uses a pre-minted OIDC token directly from the environment.
-2. **Automatic IAM OIDC Token Generation (`XMC_CLIENT_SA` + `IAP_CLIENT_ID`)**: When `XMC_AUTH_TOKEN` and `AUTH_TOKEN` are unset and both `XMC_CLIENT_SA` and `IAP_CLIENT_ID` are set in the environment, `DashboardClient` automatically mints an OIDC ID token via the IAM Credentials `generateIdToken` API (using Application Default Credentials) and caches it across RPC calls for 55 minutes.
+1. **Static Bearer Token (`XMC_AUTH_TOKEN` or `AUTH_TOKEN`)**: Uses a pre-minted token directly from the environment. To sign in as yourself, run `xmanager login`, then `export XMC_AUTH_TOKEN=$(xmanager login --print-token)`.
+2. **Automatic IAM OIDC Token Generation (`XMC_CLIENT_SA` + `IAP_CLIENT_ID`)**: When `XMC_AUTH_TOKEN` and `AUTH_TOKEN` are unset and both `XMC_CLIENT_SA` and `IAP_CLIENT_ID` are set in the environment, `DashboardClient` automatically mints an OIDC ID token via the IAM Credentials `generateIdToken` API (using Application Default Credentials) and caches it across RPC calls for 55 minutes. Use this for CI; the service account must be admitted to the deployment.
+
+See [Authentication and Experiment Access](../../../docs/authentication.md) for both paths.
 
 ### Building Custom Charts and Plots
 

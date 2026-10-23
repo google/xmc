@@ -21,7 +21,6 @@ import (
 	"strconv"
 
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"cloud.google.com/go/spanner"
 	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/status"
 	anypb "google.golang.org/protobuf/types/known/anypb"
@@ -76,7 +75,6 @@ type Client struct {
 	dynamicClient          dynamic.Interface
 	ManagerClient          runtimeclient.Reader
 	storage                storage.Storage
-	spannerClient          *spanner.Client
 	RuntimeConfig          ActuatorRuntimeConfig
 	preconditionsValidator preconditionsvalidator.Validator
 }
@@ -116,7 +114,7 @@ func buildRESTConfig() (*rest.Config, error) {
 }
 
 // New creates a new Kubernetes client. It respects KUBECONFIG if set, falling back to in-cluster config.
-func New(runtimeConfig ActuatorRuntimeConfig, storage storage.Storage, spannerClient *spanner.Client) (*Client, error) {
+func New(runtimeConfig ActuatorRuntimeConfig, storage storage.Storage) (*Client, error) {
 	config, err := buildRESTConfig()
 	if err != nil {
 		return nil, err
@@ -142,7 +140,6 @@ func New(runtimeConfig ActuatorRuntimeConfig, storage storage.Storage, spannerCl
 		dynamicClient:          dynamicClient,
 		ManagerClient:          managerClient,
 		storage:                storage,
-		spannerClient:          spannerClient,
 		RuntimeConfig:          runtimeConfig,
 		preconditionsValidator: preconditionsvalidator.New(),
 	}, nil
@@ -154,12 +151,11 @@ func (c *Client) SetManagerClient(managerClient runtimeclient.Reader) {
 }
 
 // NewWithClients creates a new Kubernetes client with the given clientset and dynamic client.
-func NewWithClients(clientset kubernetes.Interface, dynamicClient dynamic.Interface, runtimeConfig ActuatorRuntimeConfig, preconditionsValidator preconditionsvalidator.Validator, storage storage.Storage, spannerClient *spanner.Client) *Client {
+func NewWithClients(clientset kubernetes.Interface, dynamicClient dynamic.Interface, runtimeConfig ActuatorRuntimeConfig, preconditionsValidator preconditionsvalidator.Validator, storage storage.Storage) *Client {
 	return &Client{
 		clientset:              clientset,
 		dynamicClient:          dynamicClient,
 		storage:                storage,
-		spannerClient:          spannerClient,
 		RuntimeConfig:          runtimeConfig,
 		preconditionsValidator: preconditionsValidator,
 	}

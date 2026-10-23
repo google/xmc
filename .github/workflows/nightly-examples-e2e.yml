@@ -40,6 +40,11 @@ on:
         required: false
         type: boolean
         default: false
+      xmanager_version:
+        description: 'Optional xmanager PyPI version override (e.g. 0.8.2 or 0.8.4; defaults to requirements.txt)'
+        required: false
+        default: ''
+        type: string
   workflow_call:
     inputs:
       queue_name:
@@ -62,6 +67,11 @@ on:
         required: false
         type: boolean
         default: false
+      xmanager_version:
+        description: 'Optional xmanager PyPI version override (e.g. 0.8.2 or 0.8.4; defaults to requirements.txt)'
+        required: false
+        default: ''
+        type: string
     outputs:
       launched_xids:
         description: 'A JSON string map of launched Example IDs to their XIDs / Dashboard IDs'
@@ -321,14 +331,15 @@ jobs:
         env:
           EXAMPLE_PATH: '${{ matrix.example.example_path }}'
           VERIFY_UI: '${{ matrix.example.verify_ui }}'
+          XMANAGER_VERSION: '${{ inputs.xmanager_version }}'
         run: |
-          python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv"
+          req_args=()
+          if [ -n "${EXAMPLE_PATH:-}" ] && [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
+            req_args=(--requirements "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt")
+          fi
+          python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv" "${req_args[@]}"
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xdash
-          "${GITHUB_WORKSPACE}/.venv/bin/pip" install absl-py python-dotenv
-          if [ -n "${EXAMPLE_PATH:-}" ] && [ -f "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt" ]; then
-            "${GITHUB_WORKSPACE}/.venv/bin/pip" install -r "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}/requirements.txt"
-          fi
           if [ "${VERIFY_UI:-}" = "true" ]; then
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install "playwright==1.51.0"
             "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium --with-deps

@@ -29,7 +29,6 @@ from xmanager_cloud.experiment_state_server.proto import (
     resources_pb2,
     work_unit_pb2,
 )
-from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 # Bypass remote git repository check for standalone launch execution
 snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
@@ -163,9 +162,7 @@ def main() -> None:
 
     with xm_cloud.create_experiment(
         experiment_title=args.experiment_name,
-        acls=xid_messages_pb2.XidAcls(
-            owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
-        ),
+        # No `acls`: XMC makes you (the creator) the owner. See docs/authentication.md.
     ) as experiment:
         stub = experiment._experiment_state_stub
         xid = int(experiment.resource_name.split("/")[-1])

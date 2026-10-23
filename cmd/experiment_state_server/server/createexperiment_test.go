@@ -21,8 +21,11 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
@@ -159,13 +162,6 @@ func TestCreateExperiment_BadPaths(t *testing.T) {
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
-			name: "missing_acls",
-			req: prototest.Modify(baseReq, func(r *msgpb.CreateExperimentRequest) {
-				r.Experiment.Acls = nil
-			}),
-			wantErr: grpcerr.ErrInvalidArgument,
-		},
-		{
 			name: "creator_not_in_writers",
 			req: prototest.Modify(baseReq, func(r *msgpb.CreateExperimentRequest) {
 				r.Experiment.Acls = &xidmsgpb.XidAcls{
@@ -225,8 +221,7 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 		{
 			name: "storage_creation_fails",
 			xidClient: &mockXidClient{
-				createXidEntryResp:         &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
-				checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 			},
 			storage: &storage.MockStorage{
 				InsertExperimentErr: fmt.Errorf("Storage creation failed"),
@@ -245,7 +240,8 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var opts []testServerOpt
+			// A valid execution environment is required to reach the XID and storage calls.
+			opts := []testServerOpt{withConfig(&config.Config{DefaultExecutionEnvironment: "gke"})}
 			if tc.storage != nil {
 				opts = append(opts, withStorage(tc.storage))
 			}
@@ -259,6 +255,147 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 			_, err := server.CreateExperiment(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("CreateExperiment() returned error %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func userRole(user string) *xidmsgpb.XidAcls_Role {
+	return &xidmsgpb.XidAcls_Role{Principal: &xidmsgpb.XidAcls_Role_User{User: user}}
+}
+
+func TestCreateExperiment_CreatorAuthorization(t *testing.T) {
+	ctx := context.Background()
+	creatorOwner := &xidmsgpb.XidAcls{Owners: []*xidmsgpb.XidAcls_Role{userRole("test@example.com")}}
+	baseReq := &msgpb.CreateExperimentRequest{
+		Experiment: &msgpb.Experiment{Title: "test experiment", Acls: creatorOwner},
+	}
+	withACLs := func(acls *xidmsgpb.XidAcls) *msgpb.CreateExperimentRequest {
+		return prototest.Modify(baseReq, func(r *msgpb.CreateExperimentRequest) { r.Experiment.Acls = acls })
+	}
+	creatorWriter := &xidmsgpb.XidAcls{
+		Owners:  []*xidmsgpb.XidAcls_Role{userRole("other@example.com")},
+		Writers: []*xidmsgpb.XidAcls_Role{userRole("test@example.com")},
+	}
+	creatorReader := &xidmsgpb.XidAcls{
+		Owners:  []*xidmsgpb.XidAcls_Role{userRole("other@example.com")},
+		Readers: []*xidmsgpb.XidAcls_Role{userRole("test@example.com")},
+	}
+	creatorAbsent := &xidmsgpb.XidAcls{Owners: []*xidmsgpb.XidAcls_Role{userRole("other@example.com")}}
+	domainWriter := &xidmsgpb.XidAcls{
+		Owners:  []*xidmsgpb.XidAcls_Role{userRole("other@example.com")},
+		Writers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_Domain{Domain: "example.com"}}},
+	}
+	allAuthenticatedOwner := &xidmsgpb.XidAcls{
+		Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_AllAuthenticatedUsers{AllAuthenticatedUsers: true}}},
+	}
+	groupWriter := &xidmsgpb.XidAcls{
+		Owners:  []*xidmsgpb.XidAcls_Role{userRole("other@example.com")},
+		Writers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_Group{Group: "team@example.com"}}},
+	}
+
+	testCases := []struct {
+		name string
+		req  *msgpb.CreateExperimentRequest
+		// authorizer overrides the default test authorizer, which evaluates ACLs with the real
+		// internal/auth logic but cannot resolve Cloud Identity group memberships.
+		authorizer         *mockAuthenticator
+		createXidEntryErr  error
+		wantCode           codes.Code
+		wantCreateXidCalls int
+		wantXidACLs        *xidmsgpb.XidAcls
+	}{
+		{name: "creator_owner", req: baseReq, wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: creatorOwner},
+		{name: "creator_writer", req: withACLs(creatorWriter), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: creatorWriter},
+		{name: "creator_domain_writer", req: withACLs(domainWriter), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: domainWriter},
+		{name: "all_authenticated_users_owner", req: withACLs(allAuthenticatedOwner), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: allAuthenticatedOwner},
+		{name: "group_writer_allowed_by_fake_authorizer", req: withACLs(groupWriter), authorizer: &mockAuthenticator{}, wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: groupWriter},
+		{name: "nil_acls_default_to_creator_owner", req: withACLs(nil), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: creatorOwner},
+		{name: "empty_acls_default_to_creator_owner", req: withACLs(&xidmsgpb.XidAcls{}), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: creatorOwner},
+		{name: "writers_without_owners_invalid", req: withACLs(&xidmsgpb.XidAcls{Writers: []*xidmsgpb.XidAcls_Role{userRole("test@example.com")}}), wantCode: codes.InvalidArgument},
+		{name: "role_without_principal_invalid", req: withACLs(&xidmsgpb.XidAcls{Owners: []*xidmsgpb.XidAcls_Role{{}}}), wantCode: codes.InvalidArgument},
+		{name: "creator_reader_only_denied", req: withACLs(creatorReader), wantCode: codes.PermissionDenied},
+		{name: "creator_absent_denied", req: withACLs(creatorAbsent), wantCode: codes.PermissionDenied},
+		{name: "authorizer_denies", req: baseReq, authorizer: &mockAuthenticator{denyAuthorization: true}, wantCode: codes.PermissionDenied},
+		{name: "authorizer_error", req: baseReq, authorizer: &mockAuthenticator{isUserAuthorizedErr: errors.New("invalid email")}, wantCode: codes.PermissionDenied},
+		{
+			// Non-status XID client errors are reported as Internal.
+			name:               "xid_creation_fails_after_authorization",
+			req:                baseReq,
+			createXidEntryErr:  errors.New("XID creation failed"),
+			wantCode:           codes.Internal,
+			wantCreateXidCalls: 1,
+			wantXidACLs:        creatorOwner,
+		},
+		{
+			// gRPC status errors from the XID service keep their code.
+			name:               "xid_status_code_preserved",
+			req:                baseReq,
+			createXidEntryErr:  status.Error(codes.InvalidArgument, "invalid acls"),
+			wantCode:           codes.InvalidArgument,
+			wantCreateXidCalls: 1,
+			wantXidACLs:        creatorOwner,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			xidClient := &mockXidClient{
+				createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
+				createXidEntryErr:  tc.createXidEntryErr,
+			}
+			opts := []testServerOpt{
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
+				withXidClient(xidClient),
+			}
+			if tc.authorizer != nil {
+				opts = append(opts, withAuthorizer(tc.authorizer))
+			}
+			server := newTestServer(t, opts...)
+
+			_, err := server.CreateExperiment(ctx, tc.req)
+
+			if got := status.Code(err); got != tc.wantCode {
+				t.Errorf("CreateExperiment() returned code %v (error %v), want %v", got, err, tc.wantCode)
+			}
+			if xidClient.createXidEntryCalls != tc.wantCreateXidCalls {
+				t.Errorf("CreateExperiment() made %d CreateXidEntry calls, want %d", xidClient.createXidEntryCalls, tc.wantCreateXidCalls)
+			}
+			if diff := cmp.Diff(tc.wantXidACLs, xidClient.gotCreateXidEntryReq.GetXidEntry().GetAcls(), protocmp.Transform()); diff != "" {
+				t.Errorf("CreateExperiment() sent unexpected ACLs to CreateXidEntry (-want +got):\n%s", diff)
+			}
+			if tc.authorizer != nil && tc.authorizer.gotIsUserAuthorizedRole != auth.Writer {
+				t.Errorf("CreateExperiment() checked role %v, want %v", tc.authorizer.gotIsUserAuthorizedRole, auth.Writer)
+			}
+		})
+	}
+}
+
+func TestCreateExperiment_DefaultACLs(t *testing.T) {
+	ctx := context.Background()
+	server, _ := createExperimentStateServer(ctx, t)
+	wantACLs := &xidmsgpb.XidAcls{Owners: []*xidmsgpb.XidAcls_Role{userRole("test@example.com")}}
+	baseReq := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "test experiment"}}
+
+	testCases := []struct {
+		name string
+		acls *xidmsgpb.XidAcls
+	}{
+		{name: "nil_acls", acls: nil},
+		{name: "empty_acls", acls: &xidmsgpb.XidAcls{}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := prototest.Modify(baseReq, func(r *msgpb.CreateExperimentRequest) { r.Experiment.Acls = tc.acls })
+
+			got, err := server.CreateExperiment(ctx, req)
+			if err != nil {
+				t.Fatalf("CreateExperiment() returned an unexpected error: %v", err)
+			}
+
+			if diff := cmp.Diff(wantACLs, got.GetAcls(), protocmp.Transform()); diff != "" {
+				t.Errorf("CreateExperiment() returned unexpected ACLs (-want +got):\n%s", diff)
 			}
 		})
 	}

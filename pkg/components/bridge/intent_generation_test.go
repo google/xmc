@@ -33,6 +33,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	cmsserver "xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/memory"
 )
 
 func TestReconcileComponent_IntentCarriesCRGeneration(t *testing.T) {
@@ -69,7 +70,7 @@ func TestReconcileComponent_IntentCarriesCRGeneration(t *testing.T) {
 // the CR generation nor reset the observed ENABLED state.
 func TestReconcileComponent_UnchangedIntentKeepsCMSRecord(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	r, err := NewReconciler(NewCMSClientAdapter(cmsserver.NewServer(ms, cmsserver.WithAuthorizer(cmsserver.NewDisabledAuthorizer()))), nil, nil)
 	if err != nil {
 		t.Fatalf("NewReconciler() error = %v", err)
@@ -96,7 +97,7 @@ func TestReconcileComponent_UnchangedIntentKeepsCMSRecord(t *testing.T) {
 
 func TestReconcileComponent_SourcedIntentAndSameClusterRecreateAdoption(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	cmsClient := NewCMSClientAdapter(cmsserver.NewServer(ms, cmsserver.WithAuthorizer(cmsserver.NewDisabledAuthorizer())))
 	cluster := &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary", Epoch: 1}
 	fence, err := NewClusterFence(cmsClient, cluster, ClusterFenceOptions{})
@@ -231,7 +232,7 @@ func TestReconcileComponent_SourcedIntentAndSameClusterRecreateAdoption(t *testi
 
 func TestReconcileComponent_SourceNamespaceConflictAndStaleGeneration(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	cmsClient := NewCMSClientAdapter(cmsserver.NewServer(ms, cmsserver.WithAuthorizer(cmsserver.NewDisabledAuthorizer())))
 	cluster := &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary", Epoch: 1}
 	fence, err := NewClusterFence(cmsClient, cluster, ClusterFenceOptions{})
@@ -380,7 +381,7 @@ func TestReconcileComponent_ComponentIDPropagation(t *testing.T) {
 
 func TestReconcileDeletion_OwnershipAndFencedCleanup(t *testing.T) {
 	ctx := context.Background()
-	ms := store.NewMemoryStore()
+	ms := memory.NewMemoryStore()
 	cmsClient := NewCMSClientAdapter(cmsserver.NewServer(ms, cmsserver.WithAuthorizer(cmsserver.NewDisabledAuthorizer())))
 	cluster := &componentspb.ClusterIdentity{Uid: testPrimaryClusterUID, Name: "primary", Epoch: 1}
 	fence, err := NewClusterFence(cmsClient, cluster, ClusterFenceOptions{})
