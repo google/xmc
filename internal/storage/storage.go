@@ -376,6 +376,7 @@ type ComponentRepository interface {
 	GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
 	// GetComponentByID returns the non-deleted record of componentID with its active dependencies sorted by name.
 	GetComponentByID(ctx context.Context, componentID int64) (*store.ComponentRecord, error)
+	ListActiveComponents(ctx context.Context) (map[string]*store.ComponentRecord, error)
 }
 
 // ComponentTxRepository defines component catalog operations scoped to a read-write transaction.

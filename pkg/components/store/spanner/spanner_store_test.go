@@ -33,6 +33,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage/data"
+	spannerstorage "xmanager_cloud/internal/storage/spanner"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	spannerstore "xmanager_cloud/pkg/components/store/spanner"
@@ -41,7 +42,11 @@ import (
 func setupTestStore(ctx context.Context, t *testing.T) (*spannerstore.SpannerStore, *spanner.Client) {
 	t.Helper()
 	_, essClient := emulator.Setup(ctx, t)
-	return spannerstore.NewSpannerStore(essClient), essClient
+	st, err := spannerstorage.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	return spannerstore.NewSpannerStore(essClient, st), essClient
 }
 
 func TestSpannerStore_SetComponentIntent_Success(t *testing.T) {

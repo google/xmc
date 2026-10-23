@@ -53,3 +53,8 @@ func (r *Repository) GetActiveComponent(ctx context.Context, canonicalName strin
 func (r *Repository) GetComponentByID(ctx context.Context, componentID int64) (*store.ComponentRecord, error) {
 	return nil, status.Error(codes.Unimplemented, "postgres component store: GetComponentByID is not implemented")
 }
+
+// ListActiveComponents retrieves all non-deleted components keyed by canonical name.
+func (r *Repository) ListActiveComponents(ctx context.Context) (map[string]*store.ComponentRecord, error) {
+	return nil, status.Error(codes.Unimplemented, "postgres component store: ListActiveComponents is not implemented")
+}
