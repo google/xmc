@@ -21,7 +21,7 @@ internal/storage/{spanner,postgres}/
 
 ## Connection Settings (`dbconfig`)
 
-The Helm chart renders the `database.*` values into the `db-config` ConfigMap, which the XMC workloads load as environment variables. [`dbconfig.Load()`](dbconfig/dbconfig.go) reads them into one typed `Config`, and returns an error for an invalid value instead of falling back to another backend or a default:
+The Helm chart renders the `database.*` values into the `db-config` ConfigMap, which the XMC workloads load as environment variables. [`dbconfig.Load()`](dbconfig/dbconfig.go) reads `DB_BACKEND` and the selected backend's settings into one typed `Config`, and returns an error for an invalid value instead of falling back to another backend or a default:
 
 - `DB_BACKEND` selects `spanner` (the default) or `postgres`.
 - `Config.Spanner` carries `SPANNER_ESS_DATABASE`, `SPANNER_XID_DATABASE`, and `SPANNER_QUOTA_PROJECT_ID`.
