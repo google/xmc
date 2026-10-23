@@ -26,7 +26,6 @@ go_library(
     importpath = "xmanager_cloud/cmd/metrics_ingester/metricsingester",
     visibility = [
         "//cmd/metrics_ingester:__subpackages__",
-        "//test/metrics:__pkg__",
     ],
     deps = [
         "//api/protos/metrics:metrics_go_proto",
