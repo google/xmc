@@ -187,10 +187,15 @@ func TestConnectAndQueryLifecycle(t *testing.T) {
 				{Name: "max_ts", Type: "TIMESTAMP"},
 				{Name: "active", Type: "BOOLEAN"},
 			}},
-			TotalRows: 1,
-			Rows: []*bqapi.TableRow{{F: []*bqapi.TableCell{
-				{V: "100"}, {V: "0.875"}, {V: "train/loss"}, {V: strconv.FormatInt(sampleTS.UnixMicro(), 10)}, {V: "true"},
-			}}},
+			TotalRows: 2,
+			Rows: []*bqapi.TableRow{
+				{F: []*bqapi.TableCell{
+					{V: "100"}, {V: "0.875"}, {V: "train/loss"}, {V: strconv.FormatInt(sampleTS.UnixMicro(), 10)}, {V: "true"},
+				}},
+				{F: []*bqapi.TableCell{
+					{V: nil}, {V: nil}, {V: nil}, {V: nil}, {V: nil},
+				}},
+			},
 		},
 	}
 	t.Setenv("BIGQUERY_PROJECT_ID", "test-proj")
@@ -236,6 +241,15 @@ func TestConnectAndQueryLifecycle(t *testing.T) {
 	}
 	if step != 100 || avgVal != 0.875 || metricName != "train/loss" || !maxTS.Equal(sampleTS) || !active {
 		t.Errorf("scanned (%d, %f, %q, %v, %v), want (100, 0.875, \"train/loss\", %v, true)", step, avgVal, metricName, maxTS, active, sampleTS)
+	}
+	if !rows.Next() {
+		t.Fatalf("second rows.Next() = false, want NULL row (err = %v)", rows.Err())
+	}
+	if err := rows.Scan(&step, &avgVal, &metricName, &maxTS, &active); err != nil {
+		t.Fatalf("second rows.Scan() with NULL columns unexpected error: %v", err)
+	}
+	if step != 0 || avgVal != 0 || metricName != "" || !maxTS.IsZero() || active {
+		t.Errorf("scanned NULL row (%d, %f, %q, %v, %v), want zero values", step, avgVal, metricName, maxTS, active)
 	}
 	if rows.Next() || rows.Err() != nil {
 		t.Errorf("exhausted iterator state Next()=true or Err()=%v", rows.Err())

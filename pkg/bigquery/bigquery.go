@@ -179,15 +179,13 @@ func (r *rowIteratorRows) Next() bool {
 	if r.closed || r.err != nil {
 		return false
 	}
-	var row []bigquery.Value
-	if err := r.it.Next(&row); err != nil {
+	if err := r.it.Next(&r.current); err != nil {
 		if !errors.Is(err, iterator.Done) {
 			r.err = err
 		}
 		r.current = nil
 		return false
 	}
-	r.current = row
 	return true
 }
 
@@ -218,8 +216,12 @@ func assignColumn(idx int, dest any, src bigquery.Value) error {
 	if !dv.IsValid() || dv.Kind() != reflect.Pointer || dv.IsNil() {
 		return fmt.Errorf("column %d destination must be a non-nil pointer, got %T", idx, dest)
 	}
+	if src == nil {
+		dv.Elem().SetZero()
+		return nil
+	}
 	sv := reflect.ValueOf(src)
-	if !sv.IsValid() || !sv.Type().AssignableTo(dv.Elem().Type()) {
+	if !sv.Type().AssignableTo(dv.Elem().Type()) {
 		return fmt.Errorf("column %d cannot scan %T into %T", idx, src, dest)
 	}
 	dv.Elem().Set(sv)
