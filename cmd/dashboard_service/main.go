@@ -444,6 +444,9 @@ func run() int {
 	}
 	defer authenticator.Close()
 	de := initDataEngine(ctx, cfg)
+	if de != nil {
+		defer de.Close()
+	}
 
 	spannerDB := getSpannerDatabaseName()
 	sc, err := initSpannerClient(ctx, spannerDB, cfg.ProjectID)

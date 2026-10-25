@@ -27,7 +27,7 @@ import (
 	"xmanager_cloud/internal/logging"
 )
 
-// defaultRetryInterval bounds how often a Provider redials ClickHouse.
+// defaultRetryInterval bounds how often a Provider redials the metrics store.
 //
 // Readiness probes and chart requests both drive reconnection, so unbounded retries would turn a
 // struggling ClickHouse into a dial flood from every dashboard service pod at once.
@@ -39,7 +39,7 @@ const defaultCloseGracePeriod = time.Minute
 
 // dialKey names the shared connection attempt. A Provider dials one destination, so every caller
 // waiting for an engine waits on the same key.
-const dialKey = "clickhouse"
+const dialKey = "dataengine"
 
 // Connector opens the ClickHouse connection a DataEngine runs its queries through.
 type Connector func(ctx context.Context) (ClickHouseConn, error)
@@ -47,14 +47,20 @@ type Connector func(ctx context.Context) (ClickHouseConn, error)
 // Resolver resolves the active ClickHouse configuration fingerprint and a Connector bound to that configuration.
 type Resolver func(ctx context.Context) (fingerprint string, connect Connector, err error)
 
+// EngineBuilder opens and initializes a backend-agnostic DataEngine instance.
+type EngineBuilder func(ctx context.Context) (*DataEngine, error)
+
+// EngineResolver resolves the active metrics store configuration fingerprint and an EngineBuilder bound to it.
+type EngineResolver func(ctx context.Context) (fingerprint string, build EngineBuilder, err error)
+
 // Provider hands out a DataEngine, building one on first use and rebuilding it after a failure.
 //
 // ClickHouse comes up on its own schedule and can be restarted underneath a running pod. Building
 // the engine once at startup left the process permanently without one in both cases, so callers
 // ask the Provider instead and it retries, at a bounded rate, until a connection succeeds.
 type Provider struct {
-	connect          Connector
-	resolve          Resolver
+	buildEngine      EngineBuilder
+	resolveEngine    EngineResolver
 	retryInterval    time.Duration
 	closeGracePeriod time.Duration
 
@@ -101,8 +107,16 @@ func NewProvider(connect Connector, opts ...ProviderOption) *Provider {
 	if connect == nil {
 		panic("connect must not be nil")
 	}
+	return NewEngineProvider(connectorEngineBuilder(connect), opts...)
+}
+
+// NewEngineProvider creates a Provider that builds engines via buildEngine on demand.
+func NewEngineProvider(buildEngine EngineBuilder, opts ...ProviderOption) *Provider {
+	if buildEngine == nil {
+		panic("buildEngine must not be nil")
+	}
 	provider := &Provider{
-		connect:          connect,
+		buildEngine:      buildEngine,
 		retryInterval:    defaultRetryInterval,
 		closeGracePeriod: defaultCloseGracePeriod,
 	}
@@ -118,8 +132,17 @@ func NewDynamicProvider(resolve Resolver, opts ...ProviderOption) *Provider {
 	if resolve == nil {
 		panic("resolve must not be nil")
 	}
+	return NewDynamicEngineProvider(resolverEngineResolver(resolve), opts...)
+}
+
+// NewDynamicEngineProvider creates a Provider that resolves backend-agnostic configuration on initial
+// dial and swaps the cached engine on readiness Ping whenever the resolved fingerprint changes.
+func NewDynamicEngineProvider(resolveEngine EngineResolver, opts ...ProviderOption) *Provider {
+	if resolveEngine == nil {
+		panic("resolveEngine must not be nil")
+	}
 	provider := &Provider{
-		resolve:          resolve,
+		resolveEngine:    resolveEngine,
 		retryInterval:    defaultRetryInterval,
 		closeGracePeriod: defaultCloseGracePeriod,
 	}
@@ -127,6 +150,37 @@ func NewDynamicProvider(resolve Resolver, opts ...ProviderOption) *Provider {
 		opt(provider)
 	}
 	return provider
+}
+
+func connectorEngineBuilder(connect Connector) EngineBuilder {
+	return func(ctx context.Context) (*DataEngine, error) {
+		conn, err := connect(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to clickhouse: %w", err)
+		}
+		if conn == nil {
+			return nil, fmt.Errorf("failed to connect to clickhouse: connection is nil")
+		}
+		engine, err := New(conn)
+		if err != nil {
+			closeConn(conn)
+			return nil, fmt.Errorf("failed to initialize data engine: %w", err)
+		}
+		return engine, nil
+	}
+}
+
+func resolverEngineResolver(resolve Resolver) EngineResolver {
+	return func(ctx context.Context) (string, EngineBuilder, error) {
+		fp, connect, err := resolve(ctx)
+		if err != nil {
+			return "", nil, err
+		}
+		if connect == nil {
+			return fp, nil, nil
+		}
+		return fp, connectorEngineBuilder(connect), nil
+	}
 }
 
 // Engine returns the data engine, building it when the Provider does not hold one yet.
@@ -171,25 +225,25 @@ func (p *Provider) Ping(ctx context.Context) error {
 		}
 		return engine.Ping(ctx)
 	}
-	if p.resolve != nil {
+	if p.resolveEngine != nil {
 		return p.pingDynamic(ctx)
 	}
 	return p.engine.Load().Ping(ctx)
 }
 
 func (p *Provider) pingDynamic(ctx context.Context) error {
-	fp, connect, err := p.resolve(ctx)
+	fp, buildEngine, err := p.resolveEngine(ctx)
 	if err != nil {
-		logging.Warn(ctx, "Failed to resolve ClickHouse configuration during readiness check, keeping active engine", "error", err)
-		return p.pingActive(ctx, fmt.Errorf("failed to resolve clickhouse configuration: %w", err))
+		logging.Warn(ctx, "Failed to resolve data engine configuration during readiness check, keeping active engine", "error", err)
+		return p.pingActive(ctx, fmt.Errorf("failed to resolve data engine configuration: %w", err))
 	}
-	if connect == nil {
-		logging.Warn(ctx, "Resolved nil ClickHouse connector during readiness check, keeping active engine")
-		return p.pingActive(ctx, fmt.Errorf("failed to resolve clickhouse configuration: connector must not be nil"))
+	if buildEngine == nil {
+		logging.Warn(ctx, "Resolved nil engine builder during readiness check, keeping active engine")
+		return p.pingActive(ctx, fmt.Errorf("failed to resolve data engine configuration: engine builder must not be nil"))
 	}
 	if !p.hasFingerprint(fp) {
-		if err := p.rebuildIfChanged(ctx, fp, connect); err != nil {
-			logging.Warn(ctx, "Failed to rebuild ClickHouse data engine after configuration change, keeping active engine", "error", err)
+		if err := p.rebuildIfChanged(ctx, fp, buildEngine); err != nil {
+			logging.Warn(ctx, "Failed to rebuild data engine after configuration change, keeping active engine", "error", err)
 			return p.pingActive(ctx, err)
 		}
 	}
@@ -203,34 +257,29 @@ func (p *Provider) pingActive(ctx context.Context, candidateErr error) error {
 	return candidateErr
 }
 
-func (p *Provider) rebuildIfChanged(ctx context.Context, fingerprint string, connect Connector) error {
+func (p *Provider) rebuildIfChanged(ctx context.Context, fingerprint string, buildEngine EngineBuilder) error {
 	p.rebuildMu.Lock()
 	defer p.rebuildMu.Unlock()
 	if p.hasFingerprint(fingerprint) {
 		return nil
 	}
-	return p.rebuild(ctx, fingerprint, connect)
+	return p.rebuild(ctx, fingerprint, buildEngine)
 }
 
-func (p *Provider) rebuild(ctx context.Context, fingerprint string, connect Connector) error {
+func (p *Provider) rebuild(ctx context.Context, fingerprint string, buildEngine EngineBuilder) error {
 	dialCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.dialTimeout())
 	defer cancel()
 
-	conn, err := connect(dialCtx)
+	engine, err := buildEngine(dialCtx)
 	if err != nil {
-		return fmt.Errorf("failed to connect to clickhouse: %w", err)
+		return err
 	}
-	if conn == nil {
-		return fmt.Errorf("connector returned nil connection")
-	}
-	engine, err := New(conn)
-	if err != nil {
-		closeConn(conn)
-		return fmt.Errorf("failed to initialize data engine: %w", err)
+	if engine == nil {
+		return fmt.Errorf("engine builder returned nil engine")
 	}
 	if err := engine.Ping(dialCtx); err != nil {
-		closeConn(conn)
-		return fmt.Errorf("failed to ping clickhouse: %w", err)
+		closeEngine(engine)
+		return fmt.Errorf("failed to ping data engine: %w", err)
 	}
 	old := p.storeEngine(engine, fingerprint)
 	p.scheduleCloseEngine(old)
@@ -244,7 +293,7 @@ func (p *Provider) attemptDue() bool {
 	return p.lastAttempt.IsZero() || time.Since(p.lastAttempt) >= p.retryInterval
 }
 
-// build dials ClickHouse and caches either the resulting engine or the reason there is none.
+// build dials the metrics store and caches either the resulting engine or the reason there is none.
 //
 // It runs as the shared singleflight attempt, so at most one instance is ever in flight.
 func (p *Provider) build(ctx context.Context) (*DataEngine, error) {
@@ -265,37 +314,32 @@ func (p *Provider) build(ctx context.Context) (*DataEngine, error) {
 	dialCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.dialTimeout())
 	defer cancel()
 
-	conn, fp, err := p.dial(dialCtx)
+	engine, fp, err := p.dialEngine(dialCtx)
 	if err != nil {
-		return nil, p.recordAttempt(fmt.Errorf("failed to connect to clickhouse: %w", err))
+		return nil, p.recordAttempt(err)
 	}
-	if conn == nil {
-		return nil, p.recordAttempt(fmt.Errorf("failed to connect to clickhouse: connection is nil"))
-	}
-	engine, err := New(conn)
-	if err != nil {
-		closeConn(conn)
-		return nil, p.recordAttempt(fmt.Errorf("failed to initialize data engine: %w", err))
+	if engine == nil {
+		return nil, p.recordAttempt(fmt.Errorf("engine builder returned nil engine"))
 	}
 
 	p.storeEngine(engine, fp)
 	return engine, nil
 }
 
-func (p *Provider) dial(ctx context.Context) (ClickHouseConn, string, error) {
-	if p.resolve == nil {
-		conn, err := p.connect(ctx)
-		return conn, "", err
+func (p *Provider) dialEngine(ctx context.Context) (*DataEngine, string, error) {
+	if p.resolveEngine == nil {
+		engine, err := p.buildEngine(ctx)
+		return engine, "", err
 	}
-	fp, connect, err := p.resolve(ctx)
+	fp, buildEngine, err := p.resolveEngine(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("failed to resolve data engine: %w", err)
 	}
-	if connect == nil {
-		return nil, "", fmt.Errorf("resolved connector must not be nil")
+	if buildEngine == nil {
+		return nil, "", fmt.Errorf("resolved engine builder must not be nil")
 	}
-	conn, err := connect(ctx)
-	return conn, fp, err
+	engine, err := buildEngine(ctx)
+	return engine, fp, err
 }
 
 // beginAttempt reports whether a fresh attempt is due, and if not, why the last one failed.
@@ -352,8 +396,20 @@ func closeConn(conn ClickHouseConn) {
 
 func closeEngine(engine *DataEngine) {
 	if engine != nil {
-		closeConn(engine.conn)
+		_ = engine.Close()
 	}
+}
+
+// Close releases any cached DataEngine held by the Provider.
+func (p *Provider) Close() error {
+	if p == nil {
+		return nil
+	}
+	old := p.storeEngine(nil, "")
+	if old == nil {
+		return nil
+	}
+	return old.Close()
 }
 
 // dialTimeout bounds a single connection attempt.

@@ -764,3 +764,50 @@ func TestDynamicProviderConcurrentPingAndFetchChartData(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestEngineProviderAndCloseLifecycle(t *testing.T) {
+	t.Parallel()
+	for _, fn := range []func(){
+		func() { NewEngineProvider(nil) },
+		func() { NewDynamicEngineProvider(nil) },
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Error("expected panic on nil builder/resolver")
+				}
+			}()
+			fn()
+		}()
+	}
+
+	var nilProvider *Provider
+	if err := nilProvider.Close(); err != nil {
+		t.Errorf("nilProvider.Close() = %v, want nil", err)
+	}
+	nilBuildProvider := NewEngineProvider(func(context.Context) (*DataEngine, error) { return nil, nil })
+	if _, err := nilBuildProvider.Engine(context.Background()); err == nil {
+		t.Error("Engine() with nil-returning EngineBuilder succeeded, want error")
+	}
+	if err := nilBuildProvider.Close(); err != nil {
+		t.Errorf("unbuilt Provider.Close() = %v, want nil", err)
+	}
+
+	conn := newSummaryConn("loss", 0.4)
+	step := atomic.Int32{}
+	dyn := NewDynamicEngineProvider(func(context.Context) (string, EngineBuilder, error) {
+		if step.Add(1) == 1 {
+			return "fp-1", func(context.Context) (*DataEngine, error) { return New(conn) }, nil
+		}
+		return "fp-2", func(context.Context) (*DataEngine, error) { return nil, nil }, nil
+	}, WithRetryInterval(0))
+	if err := dyn.Ping(context.Background()); err != nil {
+		t.Fatalf("initial Ping() error: %v", err)
+	}
+	if err := dyn.Ping(context.Background()); err != nil {
+		t.Fatalf("second Ping() with nil replacement engine error: %v", err)
+	}
+	if err := dyn.Close(); err != nil || !conn.closed.Load() {
+		t.Errorf("dyn.Close() err=%v, closed=%v; want nil, true", err, conn.closed.Load())
+	}
+}
