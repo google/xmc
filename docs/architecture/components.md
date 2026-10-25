@@ -116,14 +116,15 @@ The operator-facing diagnostic and scheduling control surface, reachable at `/v1
 
 Backs the metrics visualisation experience. Dashboard and chart *definitions* are CRUD resources in
 Spanner (`CreateDashboard`, `ListCharts`, `UpdateChart`, …); chart *data* is produced on demand by
-`GetChartData`, which compiles the chart definition into a ClickHouse query.
+`GetChartData`, which compiles the chart definition into a ClickHouse or BigQuery query depending on
+the active `METRICS_STORE` (`clickhouse` or `bigquery`).
 
 The query compiler is [`internal/dashboard/dataengine`](../../internal/dashboard/dataengine): it
 turns predicates, series definitions, and summary boxes into SQL executed through
-[`pkg/clickhouse`](../../pkg/clickhouse). Keeping the engine separate from the RPC handlers means
-chart semantics are unit-testable without a server.
+[`pkg/clickhouse`](../../pkg/clickhouse) or [`pkg/bigquery`](../../pkg/bigquery). Keeping the engine
+separate from the RPC handlers means chart semantics are unit-testable without a server.
 
-**Depends on:** Cloud Spanner, ClickHouse, Cloud Identity API.
+**Depends on:** Cloud Spanner, ClickHouse or BigQuery, Cloud Identity API.
 
 ### 2.5 ROD Data Provider
 
