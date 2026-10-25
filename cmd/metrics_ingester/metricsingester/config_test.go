@@ -31,9 +31,32 @@ func baseFlags() Flags {
 	}
 }
 
+// baseResolvedConfig returns the Config produced by LoadConfig(baseFlags()) with a clean env.
+func baseResolvedConfig() Config {
+	return Config{
+		Port:              defaultPort,
+		ProjectID:         "test-project",
+		SubscriptionID:    "xmc-metrics-ingester",
+		MetricsStore:      StoreClickHouse,
+		BigQueryProjectID: "test-project",
+		BigQueryDataset:   defaultBigQueryDataset,
+		BigQueryTable:     defaultBigQueryTable,
+		BatchSize:         defaultBatchSize,
+		BatchInterval:     defaultBatchInterval,
+	}
+}
+
 func clearConfigEnv(t *testing.T) {
 	t.Helper()
-	for _, key := range []string{"PORT", "GOOGLE_CLOUD_PROJECT", "PUBSUB_SUBSCRIPTION_ID"} {
+	for _, key := range []string{
+		"PORT",
+		"GOOGLE_CLOUD_PROJECT",
+		"PUBSUB_SUBSCRIPTION_ID",
+		"METRICS_STORE",
+		"BIGQUERY_PROJECT_ID",
+		"BIGQUERY_DATASET",
+		"BIGQUERY_TABLE",
+	} {
 		t.Setenv(key, "")
 	}
 }
@@ -54,12 +77,32 @@ func TestRegisterFlagsDefaults(t *testing.T) {
 func TestRegisterFlagsParsesValues(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	f := RegisterFlags(fs)
-	args := []string{"-port=9090", "-project_id=p", "-subscription_id=s", "-batch_size=5", "-batch_interval=2s"}
+	args := []string{
+		"-port=9090",
+		"-project_id=p",
+		"-subscription_id=s",
+		"-metrics_store=bigquery",
+		"-bigquery_project_id=bqp",
+		"-bigquery_dataset=bqd",
+		"-bigquery_table=bqt",
+		"-batch_size=5",
+		"-batch_interval=2s",
+	}
 	if err := fs.Parse(args); err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
-	want := Flags{Port: "9090", ProjectID: "p", SubscriptionID: "s", BatchSize: 5, BatchInterval: 2 * time.Second}
+	want := Flags{
+		Port:              "9090",
+		ProjectID:         "p",
+		SubscriptionID:    "s",
+		MetricsStore:      "bigquery",
+		BigQueryProjectID: "bqp",
+		BigQueryDataset:   "bqd",
+		BigQueryTable:     "bqt",
+		BatchSize:         5,
+		BatchInterval:     2 * time.Second,
+	}
 	if *f != want {
 		t.Errorf("RegisterFlags() parsed = %+v, want %+v", *f, want)
 	}
@@ -67,31 +110,78 @@ func TestRegisterFlagsParsesValues(t *testing.T) {
 
 func TestLoadConfigResolvesPrecedence(t *testing.T) {
 	tests := []struct {
-		name   string
-		mutate func(*Flags)
-		env    map[string]string
-		want   Config
+		name     string
+		mutate   func(*Flags)
+		env      map[string]string
+		wantDiff func(*Config)
 	}{
 		{
-			name: "flags only, default port",
-			want: Config{Port: defaultPort, ProjectID: "test-project", SubscriptionID: "xmc-metrics-ingester", BatchSize: defaultBatchSize, BatchInterval: defaultBatchInterval},
+			name: "flags only, default port and clickhouse store",
 		},
 		{
-			name:   "environment fills unset flags",
+			name:   "environment fills unset flags including bigquery settings",
 			mutate: func(f *Flags) { f.ProjectID, f.SubscriptionID = "", "" },
-			env:    map[string]string{"PORT": "7070", "GOOGLE_CLOUD_PROJECT": "env-project", "PUBSUB_SUBSCRIPTION_ID": "env-sub"},
-			want:   Config{Port: "7070", ProjectID: "env-project", SubscriptionID: "env-sub", BatchSize: defaultBatchSize, BatchInterval: defaultBatchInterval},
+			env: map[string]string{
+				"PORT":                   "7070",
+				"GOOGLE_CLOUD_PROJECT":   "env-project",
+				"PUBSUB_SUBSCRIPTION_ID": "env-sub",
+				"METRICS_STORE":          " BIGQUERY ",
+				"BIGQUERY_PROJECT_ID":    "bq-env-project",
+				"BIGQUERY_DATASET":       "bq_env_ds",
+				"BIGQUERY_TABLE":         "bq_env_tbl",
+			},
+			wantDiff: func(c *Config) {
+				c.Port = "7070"
+				c.ProjectID = "env-project"
+				c.SubscriptionID = "env-sub"
+				c.MetricsStore = StoreBigQuery
+				c.BigQueryProjectID = "bq-env-project"
+				c.BigQueryDataset = "bq_env_ds"
+				c.BigQueryTable = "bq_env_tbl"
+			},
 		},
 		{
-			name:   "explicit flags beat environment",
-			mutate: func(f *Flags) { f.Port = "9090" },
-			env:    map[string]string{"PORT": "7070", "GOOGLE_CLOUD_PROJECT": "env-project", "PUBSUB_SUBSCRIPTION_ID": "env-sub"},
-			want:   Config{Port: "9090", ProjectID: "test-project", SubscriptionID: "xmc-metrics-ingester", BatchSize: defaultBatchSize, BatchInterval: defaultBatchInterval},
+			name: "bigquery project falls back to project_id when unset",
+			mutate: func(f *Flags) {
+				f.MetricsStore = StoreBigQuery
+			},
+			wantDiff: func(c *Config) {
+				c.MetricsStore = StoreBigQuery
+			},
+		},
+		{
+			name: "explicit flags beat environment",
+			mutate: func(f *Flags) {
+				f.Port = "9090"
+				f.MetricsStore = StoreBigQuery
+				f.BigQueryProjectID = "bq-flag-proj"
+				f.BigQueryDataset = "bq_flag_ds"
+				f.BigQueryTable = "bq_flag_tbl"
+			},
+			env: map[string]string{
+				"PORT":                   "7070",
+				"GOOGLE_CLOUD_PROJECT":   "env-project",
+				"PUBSUB_SUBSCRIPTION_ID": "env-sub",
+				"METRICS_STORE":          "clickhouse",
+				"BIGQUERY_PROJECT_ID":    "bq-env-proj",
+				"BIGQUERY_DATASET":       "bq_env_ds",
+				"BIGQUERY_TABLE":         "bq_env_tbl",
+			},
+			wantDiff: func(c *Config) {
+				c.Port = "9090"
+				c.MetricsStore = StoreBigQuery
+				c.BigQueryProjectID = "bq-flag-proj"
+				c.BigQueryDataset = "bq_flag_ds"
+				c.BigQueryTable = "bq_flag_tbl"
+			},
 		},
 		{
 			name:   "whitespace is trimmed",
 			mutate: func(f *Flags) { f.ProjectID = "  padded  " },
-			want:   Config{Port: defaultPort, ProjectID: "padded", SubscriptionID: "xmc-metrics-ingester", BatchSize: defaultBatchSize, BatchInterval: defaultBatchInterval},
+			wantDiff: func(c *Config) {
+				c.ProjectID = "padded"
+				c.BigQueryProjectID = "padded"
+			},
 		},
 	}
 	for _, tc := range tests {
@@ -104,13 +194,17 @@ func TestLoadConfigResolvesPrecedence(t *testing.T) {
 			if tc.mutate != nil {
 				tc.mutate(&f)
 			}
+			want := baseResolvedConfig()
+			if tc.wantDiff != nil {
+				tc.wantDiff(&want)
+			}
 
 			got, err := LoadConfig(&f)
 			if err != nil {
 				t.Fatalf("LoadConfig() error = %v", err)
 			}
-			if *got != tc.want {
-				t.Errorf("LoadConfig() = %+v, want %+v", *got, tc.want)
+			if *got != want {
+				t.Errorf("LoadConfig() = %+v, want %+v", *got, want)
 			}
 		})
 	}
@@ -127,6 +221,22 @@ func TestLoadConfigRejectsInvalid(t *testing.T) {
 		{name: "missing subscription", mutate: func(f *Flags) { f.SubscriptionID = "" }, wantErr: "subscription_id is required"},
 		{name: "zero batch size", mutate: func(f *Flags) { f.BatchSize = 0 }, wantErr: "batch_size must be positive"},
 		{name: "negative batch interval", mutate: func(f *Flags) { f.BatchInterval = -time.Second }, wantErr: "batch_interval must be positive"},
+		{name: "unsupported store", mutate: func(f *Flags) { f.MetricsStore = "postgres" }, wantErr: "unsupported metrics_store"},
+		{
+			name:    "bigquery project contains slash",
+			mutate:  func(f *Flags) { f.MetricsStore = StoreBigQuery; f.BigQueryProjectID = "projects/p" },
+			wantErr: "bigquery_project_id",
+		},
+		{
+			name:    "bigquery dataset contains slash",
+			mutate:  func(f *Flags) { f.MetricsStore = StoreBigQuery; f.BigQueryDataset = "datasets/d" },
+			wantErr: "bigquery_dataset",
+		},
+		{
+			name:    "bigquery table contains slash",
+			mutate:  func(f *Flags) { f.MetricsStore = StoreBigQuery; f.BigQueryTable = "tables/t" },
+			wantErr: "bigquery_table",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
