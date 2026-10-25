@@ -97,7 +97,7 @@ func openClickHouseStore(ctx context.Context, connect func(context.Context) (cli
 	}, nil
 }
 
-func openBigQueryStoreWithOptions(ctx context.Context, cfg *Config, bqOpts, mwOpts []option.ClientOption) (_ *RuntimeStore, retErr error) {
+func openBigQueryStoreWithOptions(ctx context.Context, cfg *Config, bqOpts, mwOpts []option.ClientOption) (store *RuntimeStore, retErr error) {
 	var cleanups []func() error
 	defer func() {
 		if retErr != nil {
