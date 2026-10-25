@@ -17,32 +17,46 @@ package dataengine
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"google.golang.org/api/option"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/dashboard/dataengine"
+	xmcbigquery "xmanager_cloud/pkg/bigquery"
 	"xmanager_cloud/pkg/clickhouse"
+)
+
+const (
+	// StoreClickHouse executes the harness against ClickHouse.
+	StoreClickHouse = "clickhouse"
+	// StoreBigQuery executes the harness against Google Cloud BigQuery.
+	StoreBigQuery = "bigquery"
 )
 
 // HarnessOptions controls the execution of the DataEngine test harness.
 type HarnessOptions struct {
-	EnvFile        string
-	SeedData       bool
-	CleanData      bool
-	UpdateGolden   bool
-	TestCaseFilter string
-	TableName      string
-	SeedFile       string
-	TestCasesFile  string
-	GoldenDir      string
+	Store                 string
+	EnvFile               string
+	SeedData              bool
+	CleanData             bool
+	UpdateGolden          bool
+	TestCaseFilter        string
+	TableName             string
+	SeedFile              string
+	TestCasesFile         string
+	GoldenDir             string
+	BigQueryClientOptions []option.ClientOption
 }
 
 // DefaultHarnessOptions returns standard default options.
 func DefaultHarnessOptions() *HarnessOptions {
 	return &HarnessOptions{
+		Store:         StoreClickHouse,
 		EnvFile:       ".env",
 		SeedData:      true,
 		CleanData:     false,
@@ -71,6 +85,13 @@ func Run(ctx context.Context, opts *HarnessOptions) ([]*TestResult, error) {
 	}
 
 	_ = LoadEnvFile(opts.EnvFile)
+	store, err := resolveHarnessStore(opts.Store)
+	if err != nil {
+		return nil, err
+	}
+	if store == StoreBigQuery {
+		return runBigQuery(ctx, opts)
+	}
 
 	conn, err := clickhouse.Connect(ctx)
 	if err != nil {
@@ -127,6 +148,69 @@ func prepareSeedData(ctx context.Context, conn driver.Conn, opts *HarnessOptions
 	}
 	fmt.Printf("--> Seeded %d records into %s\n", count, opts.TableName)
 	return nil
+}
+
+func resolveHarnessStore(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		raw = os.Getenv("METRICS_STORE")
+	}
+	switch s := strings.ToLower(strings.TrimSpace(raw)); s {
+	case "", StoreClickHouse:
+		return StoreClickHouse, nil
+	case StoreBigQuery:
+		return StoreBigQuery, nil
+	default:
+		return "", fmt.Errorf("unsupported store %q: must be %q or %q", raw, StoreClickHouse, StoreBigQuery)
+	}
+}
+
+func runBigQuery(ctx context.Context, opts *HarnessOptions) ([]*TestResult, error) {
+	bqOpts, err := xmcbigquery.GetOptions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load BigQuery options: %w", err)
+	}
+	if opts.TableName != "" && opts.TableName != xmcbigquery.DefaultTable {
+		bqOpts.Table = opts.TableName
+	}
+	if err := EnsureBigQuerySchema(ctx, bqOpts, opts.BigQueryClientOptions...); err != nil {
+		return nil, fmt.Errorf("failed to ensure BigQuery schema: %w", err)
+	}
+	conn, err := xmcbigquery.ConnectWithOptions(ctx, bqOpts, opts.BigQueryClientOptions...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to BigQuery: %w", err)
+	}
+	defer conn.Close()
+
+	var seedXIDs []int64
+	if opts.SeedData || opts.CleanData {
+		seedXIDs, err = ExtractSeedXIDs(opts.SeedFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract seed XIDs: %w", err)
+		}
+	}
+	if opts.SeedData {
+		_ = CleanupBigQueryTestMetrics(ctx, conn, seedXIDs...)
+		count, err := SeedBigQueryDataset(ctx, conn, opts.SeedFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to seed BigQuery dataset: %w", err)
+		}
+		fmt.Printf("--> Seeded %d records into %s\n", count, conn.TableRef())
+	}
+	engine, err := dataengine.NewBigQuery(conn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize BigQuery DataEngine: %w", err)
+	}
+	testCases, err := LoadTestCases(opts.TestCasesFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load test cases: %w", err)
+	}
+	results := runTestCases(ctx, engine, testCases, opts)
+	if opts.CleanData {
+		if err := CleanupBigQueryTestMetrics(ctx, conn, seedXIDs...); err != nil {
+			fmt.Printf("WARNING: Failed to cleanup BigQuery test metrics: %v\n", err)
+		}
+	}
+	return results, nil
 }
 
 func runTestCases(ctx context.Context, engine *dataengine.DataEngine, testCases []*TestCase, opts *HarnessOptions) []*TestResult {
