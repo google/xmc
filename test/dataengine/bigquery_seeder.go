@@ -102,7 +102,10 @@ func SeedBigQueryDataset(ctx context.Context, conn xmcbigquery.Conn, seedFilePat
 	if err != nil || len(records) == 0 {
 		return 0, err
 	}
-	rows := toBigQuerySeedRows(records)
+	rows, err := toBigQuerySeedRows(records)
+	if err != nil {
+		return 0, err
+	}
 	query := fmt.Sprintf(`
 		INSERT INTO %s (xid, work_unit_id, execution_id, job_name, replica_id, metric_name, metric_value, step, timestamp, created_at)
 		SELECT r.xid, r.work_unit_id, r.execution_id, r.job_name, r.replica_id, r.metric_name, r.metric_value, r.step, r.timestamp, CURRENT_TIMESTAMP()
@@ -148,9 +151,13 @@ func loadSeedRecords(seedFilePath string) ([]MetricRecord, error) {
 	return records, nil
 }
 
-func toBigQuerySeedRows(records []MetricRecord) []bigQuerySeedRow {
+func toBigQuerySeedRows(records []MetricRecord) ([]bigQuerySeedRow, error) {
 	out := make([]bigQuerySeedRow, len(records))
 	for i, r := range records {
+		ts, err := parseSeedTimestamp(r.TimestampStr)
+		if err != nil {
+			return nil, fmt.Errorf("seed record %d: %w", i, err)
+		}
 		replicaID := r.ReplicaId
 		if replicaID == "" {
 			replicaID = "0"
@@ -164,18 +171,18 @@ func toBigQuerySeedRows(records []MetricRecord) []bigQuerySeedRow {
 			MetricName:  r.MetricName,
 			MetricValue: r.MetricValue,
 			Step:        r.Step,
-			Timestamp:   parseSeedTimestamp(r.TimestampStr),
+			Timestamp:   ts,
 		}
 	}
-	return out
+	return out, nil
 }
 
-func parseSeedTimestamp(raw string) time.Time {
+func parseSeedTimestamp(raw string) (time.Time, error) {
 	if ts, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-		return ts.UTC()
+		return ts.UTC(), nil
 	}
 	if ts, err := time.Parse(time.RFC3339, raw); err == nil {
-		return ts.UTC()
+		return ts.UTC(), nil
 	}
-	return time.Now().UTC()
+	return time.Time{}, fmt.Errorf("invalid RFC3339 seed timestamp %q", raw)
 }

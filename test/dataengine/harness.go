@@ -188,6 +188,15 @@ func runBigQuery(ctx context.Context, opts *HarnessOptions) ([]*TestResult, erro
 			return nil, fmt.Errorf("failed to extract seed XIDs: %w", err)
 		}
 	}
+	if opts.CleanData {
+		defer func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := CleanupBigQueryTestMetrics(cleanupCtx, conn, seedXIDs...); err != nil {
+				fmt.Printf("WARNING: Failed to cleanup BigQuery test metrics: %v\n", err)
+			}
+		}()
+	}
 	if opts.SeedData {
 		_ = CleanupBigQueryTestMetrics(ctx, conn, seedXIDs...)
 		count, err := SeedBigQueryDataset(ctx, conn, opts.SeedFile)
@@ -204,13 +213,7 @@ func runBigQuery(ctx context.Context, opts *HarnessOptions) ([]*TestResult, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to load test cases: %w", err)
 	}
-	results := runTestCases(ctx, engine, testCases, opts)
-	if opts.CleanData {
-		if err := CleanupBigQueryTestMetrics(ctx, conn, seedXIDs...); err != nil {
-			fmt.Printf("WARNING: Failed to cleanup BigQuery test metrics: %v\n", err)
-		}
-	}
-	return results, nil
+	return runTestCases(ctx, engine, testCases, opts), nil
 }
 
 func runTestCases(ctx context.Context, engine *dataengine.DataEngine, testCases []*TestCase, opts *HarnessOptions) []*TestResult {

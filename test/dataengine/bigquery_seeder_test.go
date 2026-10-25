@@ -173,11 +173,17 @@ func TestSeedAndCleanupBigQueryDataset(t *testing.T) {
 		t.Error("SeedBigQueryDataset(missing) succeeded, want error")
 	}
 
+	badTSPath := filepath.Join(tmpDir, "bad_ts.json")
+	_ = os.WriteFile(badTSPath, []byte(`[{"xid":9001,"work_unit_id":1,"execution_id":1,"job_name":"w","metric_name":"loss","metric_value":1.0,"step":1,"timestamp":"not-a-timestamp"}]`), 0600)
+	if _, err := SeedBigQueryDataset(ctx, conn, badTSPath); err == nil {
+		t.Error("SeedBigQueryDataset(invalid timestamp) succeeded, want error")
+	}
+
 	seedPath := filepath.Join(tmpDir, "seed.json")
 	seedJSON := `[
 		{"xid":9001,"work_unit_id":1,"execution_id":1,"job_name":"worker","replica_id":"","metric_name":"loss","metric_value":1.5,"step":10,"timestamp":"2026-08-11T10:00:00.123456Z"},
 		{"xid":9001,"work_unit_id":1,"execution_id":1,"job_name":"worker","replica_id":"1","metric_name":"loss","metric_value":1.2,"step":20,"timestamp":"2026-08-11T10:01:00Z"},
-		{"xid":9002,"work_unit_id":2,"execution_id":1,"job_name":"eval","replica_id":"0","metric_name":"acc","metric_value":0.9,"step":20,"timestamp":"not-a-timestamp"}
+		{"xid":9002,"work_unit_id":2,"execution_id":1,"job_name":"eval","replica_id":"0","metric_name":"acc","metric_value":0.9,"step":20,"timestamp":"2026-08-11T10:02:00Z"}
 	]`
 	_ = os.WriteFile(seedPath, []byte(seedJSON), 0600)
 	count, err := SeedBigQueryDataset(ctx, conn, seedPath)
@@ -256,5 +262,27 @@ func TestRunBigQueryHarnessWorkflow(t *testing.T) {
 	}
 	if len(results) != 1 || !results[0].Passed {
 		t.Fatalf("Run(StoreBigQuery) result = %+v, want 1 passing test case", results[0])
+	}
+
+	earlyFailAPI := &fakeSeederAPI{}
+	if _, err := Run(ctx, &HarnessOptions{
+		Store:                 StoreBigQuery,
+		EnvFile:               filepath.Join(tmpDir, "missing.env"),
+		SeedData:              true,
+		CleanData:             true,
+		SeedFile:              seedPath,
+		TestCasesFile:         filepath.Join(tmpDir, "missing_cases.json"),
+		BigQueryClientOptions: startFakeSeederServer(t, earlyFailAPI),
+	}); err == nil {
+		t.Error("Run(missing test cases) succeeded, want error")
+	}
+	earlyFailAPI.mu.Lock()
+	var lastSQL string
+	if n := len(earlyFailAPI.queries); n > 0 {
+		lastSQL = earlyFailAPI.queries[n-1].Query
+	}
+	earlyFailAPI.mu.Unlock()
+	if !strings.HasPrefix(lastSQL, "DELETE FROM ") {
+		t.Errorf("deferred cleanup did not run on early failure; last query = %q", lastSQL)
 	}
 }
