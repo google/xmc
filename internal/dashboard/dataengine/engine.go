@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	dpb "xmanager_cloud/api/protos/dashboard"
+	xmcbigquery "xmanager_cloud/pkg/bigquery"
 )
 
 const (
@@ -56,6 +57,22 @@ func New(conn ClickHouseConn, opts ...Option) (*DataEngine, error) {
 		backend:   clickHouseBackend{conn: conn},
 		tableName: defaultMetricsTable,
 	}
+	for _, opt := range opts {
+		opt(engine)
+	}
+	return engine, nil
+}
+
+// NewBigQuery creates a new DataEngine backed by a BigQuery connection.
+func NewBigQuery(conn xmcbigquery.Conn, opts ...Option) (*DataEngine, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("bigquery connection must not be nil")
+	}
+	tableName := conn.TableRef()
+	if tableName == "" {
+		tableName = defaultMetricsTable
+	}
+	engine := &DataEngine{backend: bigQueryBackend{conn: conn}, tableName: tableName}
 	for _, opt := range opts {
 		opt(engine)
 	}

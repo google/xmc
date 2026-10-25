@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -48,6 +49,7 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/dashboard"
 	"xmanager_cloud/pkg/auth/oauth2"
+	xmcbigquery "xmanager_cloud/pkg/bigquery"
 	"xmanager_cloud/pkg/clickhouse"
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
 	"xmanager_cloud/pkg/components/crreader"
@@ -185,7 +187,39 @@ func resolveClickHouseWithDialer(src componentconfig.Source, initErr error, dial
 	}
 }
 
-// initDataEngine prepares the chart data engine, for deployments that configure ClickHouse.
+const (
+	storeClickHouse = "clickhouse"
+	storeBigQuery   = "bigquery"
+)
+
+func resolveMetricsStore(cfg *server.Config) (string, error) {
+	raw := os.Getenv("METRICS_STORE")
+	if cfg != nil && cfg.MetricsStore != "" {
+		raw = cfg.MetricsStore
+	}
+	switch store := strings.ToLower(strings.TrimSpace(raw)); store {
+	case "", storeClickHouse, storeBigQuery:
+		return store, nil
+	default:
+		return "", fmt.Errorf("unsupported metrics_store %q: must be %q or %q", raw, storeClickHouse, storeBigQuery)
+	}
+}
+
+func buildStaticBigQueryEngine(projectID string, dial func(context.Context, *xmcbigquery.Options) (xmcbigquery.Conn, error)) dataengine.EngineBuilder {
+	return func(ctx context.Context) (*dataengine.DataEngine, error) {
+		opts, err := xmcbigquery.GetOptions(projectID)
+		if err != nil {
+			return nil, err
+		}
+		conn, err := dial(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		return dataengine.NewBigQuery(conn)
+	}
+}
+
+// initDataEngine prepares the chart data engine, for deployments that configure ClickHouse or BigQuery.
 //
 // A failed first attempt is not fatal. The provider dials again on demand, and readiness holds the
 // pod out of the service endpoints until one of those attempts succeeds.
@@ -194,21 +228,32 @@ func initDataEngine(ctx context.Context, cfg *server.Config) *dataengine.Provide
 }
 
 func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGetter crreader.Getter) *dataengine.Provider {
-	enableComponents := false
-	componentsNamespace := "xmc"
+	store, err := resolveMetricsStore(cfg)
+	if err != nil {
+		logging.Error(ctx, "Invalid metrics store configuration", "error", err)
+		return nil
+	}
+	enableComponents, componentsNamespace, projectID := false, "xmc", ""
 	if cfg != nil {
-		enableComponents = cfg.EnableComponents
-		componentsNamespace = cfg.ComponentsNamespace
+		enableComponents, componentsNamespace, projectID = cfg.EnableComponents, cfg.ComponentsNamespace, cfg.ProjectID
+	}
+	if store == storeBigQuery || (store == "" && !isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter) && xmcbigquery.Configured()) {
+		return warmProvider(ctx, "BigQuery", dataengine.NewEngineProvider(buildStaticBigQueryEngine(projectID, func(dialCtx context.Context, opts *xmcbigquery.Options) (xmcbigquery.Conn, error) {
+			return xmcbigquery.ConnectWithOptions(dialCtx, opts)
+		})))
 	}
 	if !isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter) {
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
-	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(enableComponents, componentsNamespace, customGetter))
+	return warmProvider(ctx, "ClickHouse", dataengine.NewDynamicProvider(buildClickHouseResolver(enableComponents, componentsNamespace, customGetter)))
+}
+
+func warmProvider(ctx context.Context, name string, provider *dataengine.Provider) *dataengine.Provider {
 	dialCtx, cancel := context.WithTimeout(ctx, dataEngineStartupTimeout)
 	defer cancel()
 	if _, err := provider.Engine(dialCtx); err != nil {
-		logging.Warn(ctx, "ClickHouse connection not available at startup, the data engine is retried on demand", "error", err)
+		logging.Warn(ctx, name+" connection not available at startup, the data engine is retried on demand", "error", err)
 	}
 	return provider
 }
@@ -436,6 +481,10 @@ func run() int {
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
+	if _, err := resolveMetricsStore(cfg); err != nil {
+		logging.Error(ctx, "Failed to validate metrics store configuration", "error", err)
+		return 1
+	}
 
 	authenticator, oauthCfg, err := initAuthenticator(ctx, cfg.ProjectID)
 	if err != nil {

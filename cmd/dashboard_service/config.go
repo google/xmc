@@ -29,6 +29,7 @@ type Config struct {
 	ProjectID           string
 	SpannerDatabaseName string
 	XidServiceAddr      string
+	MetricsStore        string
 	EnableComponents    bool
 	ComponentsNamespace string
 }
@@ -48,11 +49,13 @@ func init() {
 	flag.StringVar(&cfg.Port, "port", defaultPort, "The HTTP server port to listen on.")
 	flag.StringVar(&cfg.GRPCPort, "grpc_port", "50051", "The gRPC server port to listen on.")
 	flag.StringVar(&cfg.ProjectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
+	flag.StringVar(&cfg.MetricsStore, "metrics_store", cfg.MetricsStore, "Metrics storage backend: clickhouse or bigquery (default auto-detect).")
 }
 
 func loadEnvConfig() {
 	configutil.StringEnv(&cfg.SpannerDatabaseName, "dashboard_spanner_database_name", "")
 	configutil.StringEnv(&cfg.XidServiceAddr, "dashboard_xid_service_addr", "xid-svc:50051")
+	configutil.StringEnv(&cfg.MetricsStore, "METRICS_STORE", "")
 	configutil.BoolEnv(&cfg.EnableComponents, "enable_components", false)
 	configutil.StringEnv(&cfg.ComponentsNamespace, "components_namespace", "xmc")
 }
@@ -68,6 +71,7 @@ func LoadConfig() *server.Config {
 		GRPCPort:            cfg.GRPCPort,
 		ProjectID:           cfg.ProjectID,
 		XidServiceAddr:      cfg.XidServiceAddr,
+		MetricsStore:        cfg.MetricsStore,
 		EnableComponents:    cfg.EnableComponents,
 		ComponentsNamespace: cfg.ComponentsNamespace,
 	}
