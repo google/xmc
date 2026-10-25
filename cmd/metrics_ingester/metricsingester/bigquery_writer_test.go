@@ -212,6 +212,17 @@ func TestBigQueryWriterWriteWrapsAppendError(t *testing.T) {
 	if err := NewBigQueryWriter(nil).Write(context.Background(), nil); err == nil {
 		t.Fatal("NewBigQueryWriter(nil).Write() = nil, want non-nil error")
 	}
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	canceledAppender := &fakeRowAppender{}
+	if err := NewBigQueryWriter(canceledAppender).Write(canceledCtx, []*pb.Metric{testMetric()}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Write(canceledCtx) error = %v, want wrapping context.Canceled", err)
+	}
+	if len(canceledAppender.calls) != 0 {
+		t.Fatalf("AppendRows calls on canceled ctx = %d, want 0", len(canceledAppender.calls))
+	}
+
 	boom := errors.New("stream broken")
 	writer := NewBigQueryWriter(&fakeRowAppender{err: boom}, WithClock(nil), WithMaxAppendBytes(0))
 	err := writer.Write(context.Background(), []*pb.Metric{testMetric()})

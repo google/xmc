@@ -99,6 +99,9 @@ func (w *BigQueryWriter) Write(ctx context.Context, metrics []*pb.Metric) error 
 
 func (w *BigQueryWriter) appendChunked(ctx context.Context, rows [][]byte) error {
 	for start := 0; start < len(rows); {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("failed to append metrics to bigquery: %w", err)
+		}
 		end, chunkBytes := start, 0
 		for end < len(rows) && (end == start || chunkBytes+len(rows[end]) <= w.maxAppendBytes) {
 			chunkBytes += len(rows[end])
