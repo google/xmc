@@ -42,7 +42,6 @@ var osHostname = os.Hostname
 type ProdServer struct {
 	Handler       *workunittaskhandler.Handler
 	K8sClient     *k8sclient.Client
-	StorageClient storage.Storage
 	dbHealth      health.ReadinessChecker
 	RedisClient   redisclient.Consumer
 	PauseListener *pausescheduling.Listener
@@ -88,16 +87,16 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		}
 	}()
 
-	storage, err := initStorage(ctx)
+	dbStorage, err := initStorage(ctx)
 	if err != nil {
 		return nil, err
 	}
 	cleanups = append(cleanups, func() error {
-		storage.Close()
+		dbStorage.Close()
 		return nil
 	})
 
-	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, storage)
+	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, dbStorage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
@@ -130,7 +129,7 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	logging.Info(ctx, "Initialized Redis task queue and started cleanup worker", "addr", cfg.RedisConfig.RedisAddr, "cleanup_worker_id", cleanupWorkerID)
 
 	pauseCache := pausescheduling.NewCache()
-	pauseListener, err := initPauseListener(ctx, cfg, pauseCache, storage)
+	pauseListener, err := initPauseListener(ctx, cfg, pauseCache, dbStorage)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +138,7 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		cleanups = append(cleanups, pauseListener.Close)
 	}
 
-	pauseHandler, err := initPauseHandler(cfg, pauseCache, storage)
+	pauseHandler, err := initPauseHandler(cfg, pauseCache, dbStorage)
 	if err != nil {
 		return nil, err
 	}
@@ -176,8 +175,7 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	return &ProdServer{
 		Handler:       handler,
 		K8sClient:     k8sClient,
-		StorageClient: storage,
-		dbHealth:      storage,
+		dbHealth:      dbStorage,
 		RedisClient:   redisConsumer,
 		PauseListener: pauseListener,
 		PauseHandler:  pauseHandler,

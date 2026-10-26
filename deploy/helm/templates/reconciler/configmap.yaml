@@ -19,6 +19,9 @@ metadata:
   labels:
     app: reconciler
 data:
+  # Deprecated: retained for one-release rollout compatibility; reconciler reads db-config.
+  # TODO: Remove spanner_database_name once all deployments run db-config images.
+  spanner_database_name: {{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
   quota_project_id: {{ .Values.projectId | quote }}
   batcher_tick_duration: "250ms"
   kueue_sync_tick_duration: "60s"

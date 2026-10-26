@@ -30,6 +30,12 @@ var allDBEnvVars = []string{
 	"SPANNER_ESS_DATABASE",
 	"SPANNER_XID_DATABASE",
 	"SPANNER_QUOTA_PROJECT_ID",
+	"ess_spanner_database_name",
+	"spanner_database_name",
+	"xid_spanner_database_name",
+	"ess_quota_project_id",
+	"xid_quota_project_id",
+	"quota_project_id",
 	"POSTGRES_HOST",
 	"POSTGRES_PORT",
 	"POSTGRES_USER",
@@ -119,6 +125,41 @@ func TestLoad(t *testing.T) {
 				"POSTGRES_HOST": "db.internal",
 			},
 			want: Config{Backend: BackendSpanner},
+		},
+		{
+			name: "spanner backend falls back to legacy per-service env vars when SPANNER_* unset",
+			env: map[string]string{
+				"spanner_database_name":     "projects/p/instances/i/databases/legacy-ess-db",
+				"xid_spanner_database_name": "projects/p/instances/i/databases/legacy-xid-db",
+				"quota_project_id":          "legacy-quota-proj",
+			},
+			want: Config{
+				Backend: BackendSpanner,
+				Spanner: Spanner{
+					EssDatabase:    "projects/p/instances/i/databases/legacy-ess-db",
+					XidDatabase:    "projects/p/instances/i/databases/legacy-xid-db",
+					QuotaProjectID: "legacy-quota-proj",
+				},
+			},
+		},
+		{
+			name: "SPANNER_* settings take precedence over legacy per-service env vars",
+			env: map[string]string{
+				"SPANNER_ESS_DATABASE":      "projects/p/instances/i/databases/ess-db",
+				"ess_spanner_database_name": "projects/p/instances/i/databases/legacy-ess-db",
+				"SPANNER_XID_DATABASE":      "projects/p/instances/i/databases/xid-db",
+				"xid_spanner_database_name": "projects/p/instances/i/databases/legacy-xid-db",
+				"SPANNER_QUOTA_PROJECT_ID":  "quota-proj",
+				"ess_quota_project_id":      "legacy-quota-proj",
+			},
+			want: Config{
+				Backend: BackendSpanner,
+				Spanner: Spanner{
+					EssDatabase:    "projects/p/instances/i/databases/ess-db",
+					XidDatabase:    "projects/p/instances/i/databases/xid-db",
+					QuotaProjectID: "quota-proj",
+				},
+			},
 		},
 		{
 			name: "postgres defaults, ignoring spanner settings",

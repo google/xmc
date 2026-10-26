@@ -108,7 +108,7 @@ func CheckSchemaVersion(ctx context.Context, client SchemaVersionClient, expecte
 	return nil
 }
 
-// ReadinessChecker returns an error unless a dependency, such as a store opened by
+// ReadinessChecker returns an error unless a dependency, such as a Storage opened by
 // internal/storage/factory, is ready to serve requests.
 type ReadinessChecker interface {
 	CheckReady(ctx context.Context) error

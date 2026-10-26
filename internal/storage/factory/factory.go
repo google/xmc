@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package dbfactory opens the storage backend that the db-config settings select.
-package dbfactory
+// Package factory opens the storage backend that the db-config settings select.
+package factory
 
 import (
 	"context"

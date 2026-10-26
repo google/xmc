@@ -18,6 +18,7 @@ package dbconfig
 
 import (
 	"fmt"
+	"log/slog"
 	"math"
 	"net"
 	"net/url"
@@ -105,11 +106,30 @@ func Load() (Config, error) {
 }
 
 func loadSpanner() Spanner {
-	var s Spanner
-	configutil.StringEnv(&s.EssDatabase, "SPANNER_ESS_DATABASE", "")
-	configutil.StringEnv(&s.XidDatabase, "SPANNER_XID_DATABASE", "")
-	configutil.StringEnv(&s.QuotaProjectID, "SPANNER_QUOTA_PROJECT_ID", "")
-	return s
+	return Spanner{
+		EssDatabase:    spannerSetting("SPANNER_ESS_DATABASE", "ess_spanner_database_name", "spanner_database_name"),
+		XidDatabase:    spannerSetting("SPANNER_XID_DATABASE", "xid_spanner_database_name"),
+		QuotaProjectID: spannerSetting("SPANNER_QUOTA_PROJECT_ID", "ess_quota_project_id", "xid_quota_project_id", "quota_project_id"),
+	}
+}
+
+// spannerSetting reads key from the environment, falling back to deprecated legacy per-service keys
+// when key is unset.
+// TODO: Remove legacy per-service environment variable fallbacks once non-Helm consumers migrate to db-config.
+func spannerSetting(key string, legacyKeys ...string) string {
+	var val string
+	configutil.StringEnv(&val, key, "")
+	if val != "" {
+		return val
+	}
+	for _, legacyKey := range legacyKeys {
+		configutil.StringEnv(&val, legacyKey, "")
+		if val != "" {
+			slog.Warn("Using deprecated database environment variable; migrate to db-config", "deprecated_env", legacyKey, "replacement_env", key)
+			return val
+		}
+	}
+	return ""
 }
 
 func loadPostgres() (Postgres, error) {

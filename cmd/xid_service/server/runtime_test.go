@@ -21,7 +21,7 @@ import (
 
 	"xmanager_cloud/cmd/xid_service/config"
 	"xmanager_cloud/internal/storage/dbconfig"
-	"xmanager_cloud/internal/storage/factory"
+	dbfactory "xmanager_cloud/internal/storage/factory"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
