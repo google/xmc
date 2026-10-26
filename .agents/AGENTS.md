@@ -37,6 +37,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 | PR Creation & Authoring | [XMC Create PR Skill](skills/xmc_create_pr/SKILL.md) & [GitHub Authoring Standards](rules/github_authoring_and_prs.md) |
 | PR Sizing & Vertical Splitting | [XMC PR Split Verification Skill](skills/xmc_pr_split_verification/SKILL.md) & [GitHub Authoring Standards](rules/github_authoring_and_prs.md) |
 | Addressing PR Comments | [Address PR Comment Skill](skills/xmc_address_pr_comment/SKILL.md) & [PR Review Guidelines](rules/pr_review_guidelines.md) |
+| Documentation Drift Review | [XMC Review Docs Drift Skill](skills/xmc_review_docs_drift/SKILL.md) & [Markdown Guidelines](rules/languages/markdown.md) |
 | Feature Development & Refactoring | [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
 | Release Orchestration | [XMC Release Skill](skills/xmc_release/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
 | Release Notes Generation | [XMC Generate Release Notes Skill](skills/xmc_generate_release_notes/SKILL.md) & [Release Notes Taxonomy](skills/xmc_generate_release_notes/references/release_notes_taxonomy.md) |
@@ -56,6 +57,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 - 🛠️ [Skills & Automation Guidelines](rules/skills_and_automation.md): Extracting complex logic into testable Python scripts, applying DRY/KISS to skills, preventing context creep, and delegating work to subagents.
 - 🪜 [Rule Authoring Standards](rules/rule_authoring_standards.md): Root-cause routing via the seven-rung control ladder (Eliminate, Automate, Tool, Route, Document, Annotate, Discard), the mandatory Lint-First Test, the causal chain requirement gating discard, the invariant-vs-procedure applicability router, evidence-based boundary derivation (positive/negative/undecided sets, two-positive minimum, complement-aware search), the merge-first rule budget, and the documented deviation protocol.
 - 🚀 [XMC Release Skill](skills/xmc_release/SKILL.md): End-to-end release orchestration playbook coordinating deployment to nightly, automated E2E and visual snapshot verification, abort gates, structured release notes synthesis, and confirmed publishing.
+- 📚 [XMC Review Docs Drift Skill](skills/xmc_review_docs_drift/SKILL.md): Repository documentation drift auditing playbook supporting full repository (`from-scratch`) and delta (`by-delta`) sweeps, testable assertion verification, link integrity validation, and structured triage reporting.
 
 ### GitHub & PR Workflows
 - 🚀 [GitHub Authoring & PR Creation](rules/github_authoring_and_prs.md): Git branch prefixes (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `koder/`), mandatory session initialization branch check policy, Conventional Commit standards, PR sizing gates, PR title & body formatting rules, mandatory assumptions disclosure in PR bodies, mandatory tags (`TAG=agy`), pre-commit linter policy, forbidden raw log dumps, and CI wait buffer policy.
