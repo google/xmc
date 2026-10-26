@@ -85,7 +85,7 @@ git grep -E '(StringVar|IntVar|BoolVar|Flag)\([^,]*"[^"]*"' cmd/
 git grep -E 'os\.(Getenv|LookupEnv)\("([A-Z0-9_]+)"\)' pkg/ internal/ cmd/
 
 # 3. Verify Python Environment Variable consumption
-git grep -E 'os\.(environ\.get|getenv)\(["'\''"]([A-Z0-9_]+)["'\''"]' sdks/ examples/
+git grep -E 'os\.(environ\.get|getenv)\(['\''"][A-Z0-9_]+['\''"][,)]' sdks/ examples/
 
 # 4. Verify Helm Parameter exists in values.yaml
 grep -E '^[a-zA-Z0-9_]+:' deploy/helm/values.yaml
