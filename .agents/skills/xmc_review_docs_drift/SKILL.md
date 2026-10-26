@@ -176,7 +176,7 @@ Once the initial discovery run finishes and `${ARTIFACT_DIR:-<appDataDir>/brain/
 > Discovery agents scanning large file sets can misread conditional prose, overlook example overrides, or miss fallback wiring in a sibling source file. Spawning a fresh, independent session with clean context and the dual-anchored candidate table eliminates false positives before reporting to the user.
 
 ### 1. Context Provided to the Independent Verifier Session
-Pass to the verifier session (or parallel domain verifier sessions when the candidate table exceeds ~15 items):
+Pass to the verifier session (or parallel domain verifier slices of $\le 15$ candidates each when the candidate table exceeds 15 items):
 1. The path to the dual-anchored Candidate Discrepancy Table (`${ARTIFACT_DIR:-<appDataDir>/brain/<conv_id>}/docs_drift_candidates.md`).
 2. The exact repository workspace path (`/usr/local/google/home/janzak/Documents/XMC`) and current `HEAD` commit SHA.
 3. Explicit instructions to use `read_file` on **both** the cited `Doc Location` and the cited `Code Location` (never relying on `code_search`, which searches internal Piper rather than the local GitHub repository).
@@ -244,7 +244,7 @@ The skill must produce two structured deliverables:
 
 | ID | Category | Doc Location & Claim | Code Location & Evidence | Verdict & Severity | Required Action |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `DOC-01` | Broken External Link | `deploy/addons/metrics/clickhouse/README.md:71`<br>``helm pull clickhouse/clickhouse --version 3.4.0`` | `deploy/addons/metrics/clickhouse/README.md:55,90`<br>``helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts`` (chart is `clickstack/clickstack`) | `[CONFIRMED]`<br>`[BLOCKING]` | Update command to `helm pull clickstack/clickstack --version <ver>` |
+| `DOC-01` | Undefined Helm Repo Alias | `deploy/addons/metrics/clickhouse/README.md:71`<br>``helm pull clickhouse/clickhouse --version 3.4.0`` | `deploy/addons/metrics/clickhouse/README.md:55` & `deploy/profiles/stable-2026a/components/clickhouse/README.md:53`<br>Line 55 only registers `clickhouse-operator` (`https://docs.altinity.com/clickhouse-operator/`); `clickhouse/` alias is never added (official ClickStack repo is in `stable-2026a`) | `[REFINED]`<br>`[BLOCKING]` | Register the `clickhouse` Helm repo before `helm pull` or align with `stable-2026a` `clickstack/clickstack-operators` |
 | `DOC-02` | Broken Relative Link | `docs/design/topologies.md:16`<br>`[deploy/ctk_v1/README.md](../../deploy/ctk_v1/README.md)` | `deploy/ctk_v2/README.md:1`<br>`deploy/ctk_v1/` was removed in the CTK v2 migration | `[CONFIRMED]`<br>`[BLOCKING]` | Update link to `[deploy/ctk_v2/README.md](../../deploy/ctk_v2/README.md)` |
 | `DOC-03` | Stale Relative Path | `deploy/profiles/stable-2026a/components/clickhouse/README.md:138`<br>`../../../../pkg/clickhouse/componentconfig/resolver.go` | `pkg/clickhouse/componentconfig/resolver.go:1`<br>Doc is 5 directory levels deep; `../../../../` resolves to `deploy/pkg/...` | `[CONFIRMED]`<br>`[BLOCKING]` | Prepend one `../` (`../../../../../pkg/clickhouse/componentconfig/resolver.go`) |
 
