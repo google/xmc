@@ -21,11 +21,11 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"xmanager_cloud/internal/configutil"
 )
 
 // Options aliases the underlying ClickHouse driver options type.
@@ -104,15 +104,8 @@ func PasswordFromFileEnv() (string, bool, error) {
 		return "", false, nil
 	}
 
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", true, fmt.Errorf("failed to read CLICKHOUSE_PASSWORD_FILE %q: %w", path, err)
-	}
-
-	// Secret Manager payloads routinely carry a trailing newline, which is not part of the password.
-	// Only the line terminator is stripped: a space is a legal password character, so trimming all
-	// surrounding whitespace would corrupt a valid credential into an authentication failure.
-	return strings.TrimRight(string(content), "\r\n"), true, nil
+	pw, err := configutil.ReadSecretFile(path, "CLICKHOUSE_PASSWORD_FILE")
+	return pw, true, err
 }
 
 // getPassword reads the ClickHouse password, preferring the file CLICKHOUSE_PASSWORD_FILE names.

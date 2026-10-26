@@ -15,6 +15,7 @@
 package dbconfig
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -154,7 +155,6 @@ func TestLoad(t *testing.T) {
 			name: "postgres secrets and pool size",
 			env: map[string]string{
 				"DB_BACKEND":             "postgres",
-				"POSTGRES_PASSWORD":      "env-secret",
 				"POSTGRES_PASSWORD_FILE": "/etc/gcp-secrets/postgres-password",
 				"POSTGRES_MAX_CONNS":     "25",
 			},
@@ -163,7 +163,6 @@ func TestLoad(t *testing.T) {
 				Postgres: Postgres{
 					Port:         5432,
 					SSLMode:      "verify-full",
-					Password:     "env-secret",
 					PasswordFile: "/etc/gcp-secrets/postgres-password",
 					MaxConns:     25,
 				},
@@ -198,6 +197,49 @@ func TestLoad_InvalidBackend(t *testing.T) {
 				t.Errorf("Load() error = %v, want an error naming DB_BACKEND", err)
 			}
 		})
+	}
+}
+
+func TestLoad_InvalidPostgresIntegers(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "non-numeric port", key: "POSTGRES_PORT", value: "54x2"},
+		{name: "zero port", key: "POSTGRES_PORT", value: "0"},
+		{name: "negative port", key: "POSTGRES_PORT", value: "-1"},
+		{name: "port above 65535", key: "POSTGRES_PORT", value: "65536"},
+		{name: "non-numeric max conns", key: "POSTGRES_MAX_CONNS", value: "abc"},
+		{name: "negative max conns", key: "POSTGRES_MAX_CONNS", value: "-1"},
+		{name: "max conns above MaxInt32", key: "POSTGRES_MAX_CONNS", value: "2147483648"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			clearDBEnv(t)
+			t.Setenv("DB_BACKEND", "postgres")
+			t.Setenv(tc.key, tc.value)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), tc.key) {
+				t.Errorf("Load() with %s=%q error = %v, want error naming %s", tc.key, tc.value, err, tc.key)
+			}
+		})
+	}
+}
+
+func TestLoad_DoesNotIncludePasswordInFormattedConfig(t *testing.T) {
+	clearDBEnv(t)
+	setRequiredPostgresEnv(t)
+	const secret = "s3cr3t-pg-pass"
+	t.Setenv("POSTGRES_PASSWORD", secret)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if formatted := fmt.Sprintf("%+v", cfg); strings.Contains(formatted, secret) {
+		t.Errorf("fmt.Sprintf(\"%%+v\", cfg) leaked password: %s", formatted)
 	}
 }
 

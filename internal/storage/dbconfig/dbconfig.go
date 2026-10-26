@@ -18,17 +18,19 @@ package dbconfig
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"os"
 	"strconv"
-	"strings"
 
 	"xmanager_cloud/internal/configutil"
 )
 
 const (
 	defaultPostgresPort    = 5432
+	minPostgresPort        = 1
+	maxPostgresPort        = 65535
 	defaultPostgresSSLMode = "verify-full"
 )
 
@@ -68,13 +70,13 @@ type Spanner struct {
 	QuotaProjectID string
 }
 
-// Postgres holds the PostgreSQL settings. Port defaults to 5432 and SSLMode to verify-full; the
-// other fields are empty when unset.
+// Postgres holds the PostgreSQL settings. Port defaults to 5432 and SSLMode to verify-full;
+// MaxConns is an optional POSTGRES_MAX_CONNS override (0 uses the driver default), and the other
+// fields are empty when unset.
 type Postgres struct {
 	Host         string
 	Port         int
 	User         string
-	Password     string
 	PasswordFile string
 	EssDatabase  string
 	XidDatabase  string
@@ -83,7 +85,8 @@ type Postgres struct {
 }
 
 // Load reads DB_BACKEND and the settings of the backend it selects; the other backend's settings
-// stay empty. An unknown DB_BACKEND returns an error instead of falling back to another backend.
+// stay empty. An unknown DB_BACKEND or invalid integer setting returns an error instead of falling
+// back to a default.
 func Load() (Config, error) {
 	var rawBackend string
 	configutil.StringEnv(&rawBackend, "DB_BACKEND", "")
@@ -94,7 +97,11 @@ func Load() (Config, error) {
 	if backend == BackendSpanner {
 		return Config{Backend: backend, Spanner: loadSpanner()}, nil
 	}
-	return Config{Backend: backend, Postgres: loadPostgres()}, nil
+	pg, err := loadPostgres()
+	if err != nil {
+		return Config{}, err
+	}
+	return Config{Backend: backend, Postgres: pg}, nil
 }
 
 func loadSpanner() Spanner {
@@ -105,13 +112,20 @@ func loadSpanner() Spanner {
 	return s
 }
 
-func loadPostgres() Postgres {
+func loadPostgres() (Postgres, error) {
+	port, err := intSetting("POSTGRES_PORT", defaultPostgresPort, minPostgresPort, maxPostgresPort)
+	if err != nil {
+		return Postgres{}, err
+	}
+	maxConns, err := intSetting("POSTGRES_MAX_CONNS", 0, 0, math.MaxInt32)
+	if err != nil {
+		return Postgres{}, err
+	}
 	var p Postgres
-	var maxConns int
+	p.Port = port
+	p.MaxConns = int32(maxConns)
 	configutil.StringEnv(&p.Host, "POSTGRES_HOST", "")
-	configutil.IntEnv(&p.Port, "POSTGRES_PORT", defaultPostgresPort)
 	configutil.StringEnv(&p.User, "POSTGRES_USER", "")
-	configutil.StringEnv(&p.Password, "POSTGRES_PASSWORD", "")
 	configutil.StringEnv(&p.PasswordFile, "POSTGRES_PASSWORD_FILE", "")
 	configutil.StringEnv(&p.EssDatabase, "POSTGRES_ESS_DATABASE", "")
 	configutil.StringEnv(&p.XidDatabase, "POSTGRES_XID_DATABASE", "")
@@ -119,9 +133,19 @@ func loadPostgres() Postgres {
 	if p.SSLMode == "" {
 		p.SSLMode = defaultPostgresSSLMode
 	}
-	configutil.IntEnv(&maxConns, "POSTGRES_MAX_CONNS", 0)
-	p.MaxConns = int32(maxConns)
-	return p
+	return p, nil
+}
+
+func intSetting(key string, def, minVal, maxVal int) (int, error) {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return def, nil
+	}
+	val, err := strconv.Atoi(raw)
+	if err != nil || val < minVal || val > maxVal {
+		return 0, fmt.Errorf("invalid %s %q: must be an integer between %d and %d", key, raw, minVal, maxVal)
+	}
+	return val, nil
 }
 
 // EssDSN returns the PostgreSQL connection URL for the ESS database.
@@ -176,16 +200,13 @@ func userInfo(user, password string) *url.Userinfo {
 	return url.UserPassword(user, password)
 }
 
-// resolvePassword prefers PasswordFile over Password. An unreadable file is an error, as in
-// pkg/clickhouse.
+// resolvePassword prefers PasswordFile over POSTGRES_PASSWORD. An unreadable file is an error, as
+// in pkg/clickhouse.
 func (p Postgres) resolvePassword() (string, error) {
 	if p.PasswordFile == "" {
-		return p.Password, nil
+		var password string
+		configutil.StringEnv(&password, "POSTGRES_PASSWORD", "")
+		return password, nil
 	}
-	content, err := os.ReadFile(p.PasswordFile)
-	if err != nil {
-		return "", fmt.Errorf("failed to read POSTGRES_PASSWORD_FILE %q: %w", p.PasswordFile, err)
-	}
-	// Strip only trailing line terminators so significant whitespace in passwords is preserved.
-	return strings.TrimRight(string(content), "\r\n"), nil
+	return configutil.ReadSecretFile(p.PasswordFile, "POSTGRES_PASSWORD_FILE")
 }

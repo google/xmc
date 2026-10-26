@@ -16,9 +16,11 @@
 package configutil
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -114,4 +116,15 @@ func Float64Env(p *float64, key string, defaultVal float64) {
 		return
 	}
 	*p = f
+}
+
+// ReadSecretFile reads a secret from path and strips only trailing CR/LF line terminators so
+// significant whitespace in credentials is preserved. envKey names the file-path environment
+// variable in any read error.
+func ReadSecretFile(path, envKey string) (string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to read %s %q: %w", envKey, path, err)
+	}
+	return strings.TrimRight(string(content), "\r\n"), nil
 }

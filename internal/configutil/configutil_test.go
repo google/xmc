@@ -14,6 +14,9 @@
 package configutil
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -120,5 +123,25 @@ func TestFloat64Env(t *testing.T) {
 	Float64Env(&val, "TEST_FLOAT_VAR", 1.0)
 	if val != 1.0 {
 		t.Errorf("Float64Env got %f, want %f (default on parse error)", val, 1.0)
+	}
+}
+
+func TestReadSecretFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(path, []byte(" secret value \r\n"), 0o600); err != nil {
+		t.Fatalf("failed to write secret file: %v", err)
+	}
+
+	got, err := ReadSecretFile(path, "TEST_SECRET_FILE")
+	if err != nil {
+		t.Fatalf("ReadSecretFile() failed: %v", err)
+	}
+	if got != " secret value " {
+		t.Errorf("ReadSecretFile() = %q, want %q", got, " secret value ")
+	}
+
+	missing := filepath.Join(t.TempDir(), "missing")
+	if _, err := ReadSecretFile(missing, "TEST_SECRET_FILE"); err == nil || !strings.Contains(err.Error(), "TEST_SECRET_FILE") {
+		t.Errorf("ReadSecretFile(missing) error = %v, want error naming TEST_SECRET_FILE", err)
 	}
 }

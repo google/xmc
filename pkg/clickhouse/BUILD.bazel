@@ -20,6 +20,7 @@ go_library(
     importpath = "xmanager_cloud/pkg/clickhouse",
     visibility = ["//visibility:public"],
     deps = [
+        "//internal/configutil",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
     ],
