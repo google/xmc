@@ -1,6 +1,6 @@
 ---
 name: XMC Review Docs Drift
-description: Audits the repository for documentation drift between source code (Go services, flags, env vars, proto contracts, Helm charts, Cluster Toolkit blueprints, Python SDKs, examples, tools) and all documentation files (READMEs, INSTALL.md, docs/**, .agents/**). Operates in two modes: from-scratch (full repository baseline audit) and by-delta (PR or time-window audit). Generates an actionable triage report in the conversation artifact directory.
+description: "Audits the repository for documentation drift between source code (Go services, flags, env vars, proto contracts, Helm charts, Cluster Toolkit blueprints, Python SDKs, examples, tools) and all documentation files (READMEs, INSTALL.md, docs/**, .agents/**). Operates in two modes: from-scratch (full repository baseline audit) and by-delta (PR or time-window audit). Generates an actionable triage report in the conversation artifact directory."
 ---
 
 # Documentation Drift Review Playbook (`/xmc_review_docs_drift`)
