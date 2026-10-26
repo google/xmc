@@ -49,9 +49,8 @@ func (r OperationRow) InsertArgs() pgx.StrictNamedArgs {
 // UpdateArgs returns the strict named arguments required by the Operations UPDATE statement.
 func (r OperationRow) UpdateArgs() pgx.StrictNamedArgs {
 	return pgx.StrictNamedArgs{
-		"xid": r.Xid, "workunitid": r.WorkUnitID, "operationid": r.OperationID,
-		"done": r.Done, "status": r.Status, "response": r.Response,
-		"operationmetadata": r.OperationMetadata, "updatetime": r.UpdateTime,
+		"xid": r.Xid, "workunitid": r.WorkUnitID, "operationid": r.OperationID, "done": r.Done,
+		"status": r.Status, "response": r.Response, "operationmetadata": r.OperationMetadata, "updatetime": r.UpdateTime,
 	}
 }
 
@@ -99,9 +98,7 @@ func setOperationResult(op *longrunningpb.Operation, statusBytes, responseBytes 
 			return fmt.Errorf("failed to unmarshal Response: %w", err)
 		}
 		op.Result = &longrunningpb.Operation_Response{Response: anyResponse}
-		return nil
-	}
-	if statusBytes != nil {
+	} else if statusBytes != nil {
 		st, err := UnmarshalProto[statuspb.Status](statusBytes)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal Status: %w", err)

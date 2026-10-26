@@ -45,9 +45,12 @@ const entityName = "operation"
 var (
 	insertOperationSQL = safesql.New(`INSERT INTO Operations (Xid, WorkUnitId, OperationId, Done, Status, Response, OperationMetadata, CreateTime, UpdateTime)
 VALUES (@xid, @workunitid, @operationid, @done, @status, @response, @operationmetadata, @createtime, @updatetime)`)
+
 	selectOperationSQL = safesql.New(`SELECT Xid, WorkUnitId, OperationId, Done, Status, Response, OperationMetadata FROM Operations WHERE Xid = $1 AND WorkUnitId = $2 AND OperationId = $3`)
+
 	// lockOperationSQL locks the row with FOR NO KEY UPDATE so foreign-key FOR KEY SHARE checks do not conflict.
-	lockOperationSQL   = safesql.Concat(selectOperationSQL, safesql.New(" FOR NO KEY UPDATE"))
+	lockOperationSQL = safesql.Concat(selectOperationSQL, safesql.New(" FOR NO KEY UPDATE"))
+
 	updateOperationSQL = safesql.New(`UPDATE Operations SET Done = @done, Status = @status, Response = @response, OperationMetadata = @operationmetadata, UpdateTime = @updatetime WHERE Xid = @xid AND WorkUnitId = @workunitid AND OperationId = @operationid`)
 )
 
