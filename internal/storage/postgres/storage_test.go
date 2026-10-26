@@ -86,7 +86,7 @@ func TestStorage(t *testing.T) {
 				// Populating all 7 Transaction fields is verified here; binding the DBTX
 				// handle into each wrapper's unexported tx field is covered by the
 				// per-subpackage TestNewRepository_BindsPoolAndTx tests.
-				tx := s.newTransaction(&fakeTx{})
+				tx := s.newTransaction(s.pool)
 				if tx.WorkUnits == nil || tx.Experiments == nil || tx.XIDs == nil ||
 					tx.StatusMessages == nil || tx.StatusHistory == nil ||
 					tx.PauseState == nil || tx.PausedTasks == nil {
@@ -140,45 +140,6 @@ func TestStorage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.check(t)
-		})
-	}
-}
-
-func TestStorage_RunInTransactionUsesBeginner(t *testing.T) {
-	callbackErr := errors.New("callback failed")
-	tests := []struct {
-		name           string
-		fnErr          error
-		wantCommitted  int
-		wantRolledBack int
-	}{
-		{name: "commits after the callback succeeds", wantCommitted: 1},
-		{name: "rolls back when the callback fails", fnErr: callbackErr, wantRolledBack: 1},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s, err := NewStorage(newLazyTestPool(t))
-			if err != nil {
-				t.Fatalf("NewStorage() failed: %v", err)
-			}
-			pgTx := &fakeTx{}
-			s.beginner = &fakeBeginner{txs: []*fakeTx{pgTx}}
-
-			var gotTx *storage.Transaction
-			err = s.RunInTransaction(context.Background(), func(_ context.Context, tx *storage.Transaction) error {
-				gotTx = tx
-				return tt.fnErr
-			})
-			if !errors.Is(err, tt.fnErr) {
-				t.Fatalf("RunInTransaction() error = %v, want %v", err, tt.fnErr)
-			}
-			if gotTx == nil {
-				t.Error("RunInTransaction() did not pass a transaction to the callback")
-			}
-			if pgTx.committed != tt.wantCommitted || pgTx.rolledBack != tt.wantRolledBack {
-				t.Errorf("committed=%d rolledBack=%d, want %d/%d", pgTx.committed, pgTx.rolledBack, tt.wantCommitted, tt.wantRolledBack)
-			}
 		})
 	}
 }

@@ -19,7 +19,6 @@ go_library(
     srcs = [
         "pool.go",
         "storage.go",
-        "tx.go",
     ],
     importpath = "xmanager_cloud/internal/storage/postgres",
     visibility = ["//:__subpackages__"],
@@ -48,15 +47,11 @@ go_test(
     srcs = [
         "pool_test.go",
         "storage_test.go",
-        "tx_test.go",
     ],
     embed = [":postgres"],
     deps = [
         "//internal/grpcerr",
         "//internal/storage",
-        "//internal/storage/postgres/pgdb",
-        "@com_github_jackc_pgx_v5//:pgx",
-        "@com_github_jackc_pgx_v5//pgconn",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

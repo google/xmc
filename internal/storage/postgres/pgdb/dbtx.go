@@ -42,3 +42,14 @@ func FromPool(pool *pgxpool.Pool) DBTX {
 	}
 	return pool
 }
+
+// QueryRow executes sql, scans a single row into Row by column name, and translates any error.
+func QueryRow[Row any](ctx context.Context, db DBTX, sql, entity string, args ...any) (Row, error) {
+	var zero Row
+	rows, err := db.Query(ctx, sql, args...)
+	if err != nil {
+		return zero, TranslateError(err, entity)
+	}
+	row, err := pgx.CollectOneRow(rows, pgx.RowToStructByNameLax[Row])
+	return row, TranslateError(err, entity)
+}
