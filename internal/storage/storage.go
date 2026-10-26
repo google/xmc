@@ -370,8 +370,11 @@ type CLILoginCodeStore interface {
 }
 
 // ComponentRepository defines read operations for component catalog persistence on the storage facade.
+// A read that finds no matching component returns store.ErrComponentNotFound itself, not another NotFound error.
 type ComponentRepository interface {
+	// GetActiveComponent returns the non-deleted record of canonicalName with its active dependencies sorted by name.
 	GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
+	// GetComponentByID returns the non-deleted record of componentID with its active dependencies sorted by name.
 	GetComponentByID(ctx context.Context, componentID int64) (*store.ComponentRecord, error)
 }
 
