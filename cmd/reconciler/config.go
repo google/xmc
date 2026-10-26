@@ -24,6 +24,7 @@ import (
 // Config holds the configuration for the Reconciler.
 type Config struct {
 	RuntimeConfig                    k8sclient.ActuatorRuntimeConfig
+	QuotaProjectID                   string
 	BatcherTickDuration              time.Duration
 	MaxConcurrentReconciles          int
 	MaxParallelExperiments           int
@@ -43,7 +44,6 @@ type Config struct {
 // Flags and ConfigMap configurations.
 var (
 	createNewNamespaces              bool
-	spannerDatabaseName              string
 	quotaProjectID                   string
 	batcherTickDuration              time.Duration
 	maxConcurrentReconciles          int
@@ -79,7 +79,6 @@ func init() {
 
 // registerConfigs loads ConfigMap managed values using configutil.
 func registerConfigs() {
-	configutil.StringEnv(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
 	configutil.StringEnv(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
 	configutil.DurationEnv(&batcherTickDuration, "batcher_tick_duration", 250*time.Millisecond)
 	configutil.DurationEnv(&kueueSyncTickDuration, "kueue_sync_tick_duration", 60*time.Second)
@@ -99,10 +98,9 @@ func Load() Config {
 	return Config{
 		RuntimeConfig: k8sclient.ActuatorRuntimeConfig{
 			CreateNewNamespaces:         createNewNamespaces,
-			SpannerDatabaseName:         spannerDatabaseName,
-			QuotaProjectID:              quotaProjectID,
 			DefaultExecutionEnvironment: defaultExecutionEnvironment,
 		},
+		QuotaProjectID:                   quotaProjectID,
 		BatcherTickDuration:              batcherTickDuration,
 		MaxConcurrentReconciles:          maxConcurrentReconciles,
 		MaxParallelExperiments:           maxParallelExperiments,

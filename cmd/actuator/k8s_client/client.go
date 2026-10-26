@@ -47,8 +47,6 @@ type ActuatorRuntimeConfig struct {
 
 	// The execution environment to use.
 	DefaultExecutionEnvironment string
-	SpannerDatabaseName         string
-	QuotaProjectID              string
 
 	// Decides whether XMC metrics are enabled.
 	MetricsEnabled bool

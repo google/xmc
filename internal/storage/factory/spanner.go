@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package factory
+package dbfactory
 
 import (
 	"context"
@@ -26,8 +26,8 @@ import (
 	spannerversion "xmanager_cloud/internal/storage/spanner/migrations/version"
 )
 
-// openSpanner opens a Spanner client for db and wraps it in a Store that owns the client.
-func openSpanner(ctx context.Context, cfg dbconfig.Spanner, db Database) (*Store, error) {
+// openSpanner opens a Spanner client for db and wraps it in a Storage that owns the client.
+func openSpanner(ctx context.Context, cfg dbconfig.Spanner, db Database) (*Storage, error) {
 	database, expectedVersion := spannerDatabase(cfg, db)
 	if database == "" {
 		return nil, fmt.Errorf("no spanner database is configured for %s", db)
@@ -41,7 +41,7 @@ func openSpanner(ctx context.Context, cfg dbconfig.Spanner, db Database) (*Store
 		client.Close()
 		return nil, fmt.Errorf("failed to create spanner storage for %s: %w", database, err)
 	}
-	return &Store{
+	return &Storage{
 		Storage:         st,
 		SpannerClient:   client,
 		schemaVersion:   health.NewSpannerHealthClient(client),

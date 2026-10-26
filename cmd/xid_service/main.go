@@ -31,6 +31,7 @@ import (
 	"xmanager_cloud/cmd/xid_service/config"
 	"xmanager_cloud/cmd/xid_service/server"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage/dbconfig"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
@@ -54,8 +55,13 @@ func main() {
 		oauthCfg.GCPProjectID = cfg.QuotaProjectID
 	}
 
+	dbCfg, err := dbconfig.Load()
+	if err != nil {
+		logging.Fatal(ctx, "failed to load database configuration", "error", err)
+	}
+
 	// 2. Initialize runtime server.
-	runtimeServer, err := server.NewRuntimeServer(ctx, &cfg, oauthCfg)
+	runtimeServer, err := server.NewRuntimeServer(ctx, &cfg, dbCfg, oauthCfg)
 	if err != nil {
 		logging.Fatal(ctx, "failed to initialize runtime server", "error", err)
 	}

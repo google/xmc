@@ -26,7 +26,7 @@ import (
 
 const (
 	healthCheckInterval       = 5 * time.Second
-	spannerTimeout            = 2 * time.Second
+	databaseTimeout           = 2 * time.Second
 	xidServiceHealthCheckName = "xmc.XidService"
 )
 
@@ -39,30 +39,30 @@ func RegisterHealthServer(s *grpc.Server) *health.Server {
 }
 
 // StartHealthMonitor periodically checks dependencies and updates the gRPC health server.
-func StartHealthMonitor(ctx context.Context, sc commonhealth.SpannerHealthClient, healthServer *health.Server) {
+func StartHealthMonitor(ctx context.Context, db commonhealth.ReadinessChecker, healthServer *health.Server) {
 	ticker := time.NewTicker(healthCheckInterval)
 	defer ticker.Stop()
 
 	// Initial check
-	updateHealthStatus(ctx, sc, healthServer)
+	updateHealthStatus(ctx, db, healthServer)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			updateHealthStatus(ctx, sc, healthServer)
+			updateHealthStatus(ctx, db, healthServer)
 		}
 	}
 }
 
-func updateHealthStatus(ctx context.Context, sc commonhealth.SpannerHealthClient, healthServer *health.Server) {
-	if sc == nil {
-		logging.Error(ctx, "Active health check failed: spanner health client is nil")
+func updateHealthStatus(ctx context.Context, db commonhealth.ReadinessChecker, healthServer *health.Server) {
+	if db == nil {
+		logging.Error(ctx, "Active health check failed: database readiness checker is nil")
 		healthServer.SetServingStatus(xidServiceHealthCheckName, healthpb.HealthCheckResponse_NOT_SERVING)
 		return
 	}
-	if err := checkSpanner(ctx, sc); err != nil {
+	if err := checkDatabase(ctx, db); err != nil {
 		logging.Error(ctx, "Active health check failed", "error", err)
 		healthServer.SetServingStatus(xidServiceHealthCheckName, healthpb.HealthCheckResponse_NOT_SERVING)
 		return
@@ -70,9 +70,9 @@ func updateHealthStatus(ctx context.Context, sc commonhealth.SpannerHealthClient
 	healthServer.SetServingStatus(xidServiceHealthCheckName, healthpb.HealthCheckResponse_SERVING)
 }
 
-func checkSpanner(ctx context.Context, sc commonhealth.SpannerHealthClient) error {
-	ctx, cancel := context.WithTimeout(ctx, spannerTimeout)
+func checkDatabase(ctx context.Context, db commonhealth.ReadinessChecker) error {
+	ctx, cancel := context.WithTimeout(ctx, databaseTimeout)
 	defer cancel()
 
-	return commonhealth.CheckSpannerXID(ctx, sc)
+	return db.CheckReady(ctx)
 }

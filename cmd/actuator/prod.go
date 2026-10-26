@@ -21,8 +21,6 @@ import (
 	"os"
 	"slices"
 
-	"cloud.google.com/go/spanner"
-	"google.golang.org/api/option"
 	k8sclient "xmanager_cloud/cmd/actuator/k8s_client"
 	"xmanager_cloud/cmd/actuator/pausescheduling"
 	"xmanager_cloud/cmd/actuator/workunittaskhandler"
@@ -32,7 +30,8 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/keyreloader"
 	"xmanager_cloud/internal/storage"
-	ss "xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/dbconfig"
+	dbfactory "xmanager_cloud/internal/storage/factory"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/pkg/auth/jwks"
 )
@@ -43,7 +42,8 @@ var osHostname = os.Hostname
 type ProdServer struct {
 	Handler       *workunittaskhandler.Handler
 	K8sClient     *k8sclient.Client
-	SpannerClient *spanner.Client
+	StorageClient storage.Storage
+	dbHealth      health.ReadinessChecker
 	RedisClient   redisclient.Consumer
 	PauseListener *pausescheduling.Listener
 	PauseHandler  pausescheduling.PauseHandler
@@ -51,7 +51,7 @@ type ProdServer struct {
 }
 
 // HealthCheckers returns the health client interfaces required for active readiness checks.
-func (p *ProdServer) HealthCheckers() (k8sHealthClient, health.SpannerHealthClient, redisclient.Consumer) {
+func (p *ProdServer) HealthCheckers() (k8sHealthClient, health.ReadinessChecker, redisclient.Consumer) {
 	if p == nil {
 		return nil, nil, nil
 	}
@@ -59,11 +59,7 @@ func (p *ProdServer) HealthCheckers() (k8sHealthClient, health.SpannerHealthClie
 	if p.K8sClient != nil {
 		k8s = p.K8sClient
 	}
-	var spHealth health.SpannerHealthClient
-	if p.SpannerClient != nil {
-		spHealth = health.NewSpannerHealthClient(p.SpannerClient)
-	}
-	return k8s, spHealth, p.RedisClient
+	return k8s, p.dbHealth, p.RedisClient
 }
 
 // Close closes all underlying production client connections in reverse initialization order.
@@ -92,18 +88,16 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		}
 	}()
 
-	spannerClient, storageClient, err := initSpannerStorage(ctx, cfg)
+	storage, err := initStorage(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if spannerClient != nil {
-		cleanups = append(cleanups, func() error {
-			spannerClient.Close()
-			return nil
-		})
-	}
+	cleanups = append(cleanups, func() error {
+		storage.Close()
+		return nil
+	})
 
-	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, storageClient)
+	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, storage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
@@ -136,7 +130,7 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	logging.Info(ctx, "Initialized Redis task queue and started cleanup worker", "addr", cfg.RedisConfig.RedisAddr, "cleanup_worker_id", cleanupWorkerID)
 
 	pauseCache := pausescheduling.NewCache()
-	pauseListener, err := initPauseListener(ctx, cfg, pauseCache, storageClient)
+	pauseListener, err := initPauseListener(ctx, cfg, pauseCache, storage)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +139,7 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		cleanups = append(cleanups, pauseListener.Close)
 	}
 
-	pauseHandler, err := initPauseHandler(cfg, pauseCache, storageClient)
+	pauseHandler, err := initPauseHandler(cfg, pauseCache, storage)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +176,8 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	return &ProdServer{
 		Handler:       handler,
 		K8sClient:     k8sClient,
-		SpannerClient: spannerClient,
+		StorageClient: storage,
+		dbHealth:      storage,
 		RedisClient:   redisConsumer,
 		PauseListener: pauseListener,
 		PauseHandler:  pauseHandler,
@@ -285,32 +280,10 @@ func initPauseHandler(cfg *Config, cache pausescheduling.Cache, storageClient st
 	return handler, nil
 }
 
-func initSpannerStorage(ctx context.Context, cfg *Config) (*spanner.Client, storage.Storage, error) {
-	if cfg.RuntimeConfig.SpannerDatabaseName == "" {
-		return nil, nil, nil
-	}
-
-	sessionPoolConfig := spanner.SessionPoolConfig{
-		TrackSessionHandles: true,
-		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-			ActionOnInactiveTransaction: spanner.Warn,
-		},
-	}
-	spannerClient, err := spanner.NewClientWithConfig(
-		ctx,
-		cfg.RuntimeConfig.SpannerDatabaseName,
-		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-		option.WithQuotaProject(cfg.RuntimeConfig.QuotaProjectID),
-	)
+func initStorage(ctx context.Context) (*dbfactory.Storage, error) {
+	dbCfg, err := dbconfig.Load()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create spanner client: %w", err)
+		return nil, fmt.Errorf("failed to load database config: %w", err)
 	}
-
-	storageClient, err := ss.NewStorage(spannerClient)
-	if err != nil {
-		spannerClient.Close()
-		return nil, nil, fmt.Errorf("failed to create storage: %w", err)
-	}
-
-	return spannerClient, storageClient, nil
+	return dbfactory.NewStorage(ctx, dbCfg, dbfactory.ESS)
 }

@@ -83,7 +83,6 @@ go_test(
     embed = [":experiment_state_server_lib"],
     deps = [
         "//cmd/experiment_state_server/server",
-        "//internal/storage/spanner/migrations/version",
     ],
 )
 

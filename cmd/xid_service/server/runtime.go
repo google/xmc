@@ -21,35 +21,35 @@ import (
 	"sync"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	"google.golang.org/api/cloudidentity/v1beta1"
 	"google.golang.org/api/option"
 	apipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/xid_service/config"
 	authz "xmanager_cloud/internal/auth"
 	commonhealth "xmanager_cloud/internal/common/health"
-	ss "xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/dbconfig"
+	dbfactory "xmanager_cloud/internal/storage/factory"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
 var _ apipb.XidServiceServer = (*RuntimeServer)(nil)
 
-// RuntimeServer encapsulates the live runtime XIDServer instance along with its real cloud infrastructure dependencies (Cloud Spanner, Cloud Identity, OAuth2) and lifecycle management. It serves as the runtime composition root across deployed environments, in contrast to unit-test environments which instantiate XIDServer directly with test doubles via New(Params).
+// RuntimeServer encapsulates the live runtime XIDServer instance along with its real cloud infrastructure dependencies (the XID database, Cloud Identity, OAuth2) and lifecycle management. It serves as the runtime composition root across deployed environments, in contrast to unit-test environments which instantiate XIDServer directly with test doubles via New(Params).
 type RuntimeServer struct {
 	*XIDServer
-	spannerClient *spanner.Client
-	cleanup       func() error
-	closeOnce     sync.Once
-	closeErr      error
+	dbHealth  commonhealth.ReadinessChecker
+	cleanup   func() error
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // HealthCheckers returns the health client interfaces required for active readiness checks.
-func (r *RuntimeServer) HealthCheckers() commonhealth.SpannerHealthClient {
-	if r == nil || r.spannerClient == nil {
+func (r *RuntimeServer) HealthCheckers() commonhealth.ReadinessChecker {
+	if r == nil {
 		return nil
 	}
-	return commonhealth.NewSpannerHealthClient(r.spannerClient)
+	return r.dbHealth
 }
 
 // Close closes all underlying runtime client connections in a thread-safe, idempotent manner.
@@ -63,21 +63,6 @@ func (r *RuntimeServer) Close() error {
 		}
 	})
 	return r.closeErr
-}
-
-func initSpannerClient(ctx context.Context, cfg *config.Config) (*spanner.Client, error) {
-	sessionPoolConfig := spanner.SessionPoolConfig{
-		TrackSessionHandles: true,
-		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-			ActionOnInactiveTransaction: spanner.Warn,
-		},
-	}
-	return spanner.NewClientWithConfig(
-		ctx,
-		cfg.SpannerDatabaseName,
-		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-		option.WithQuotaProject(cfg.QuotaProjectID),
-	)
 }
 
 // initAuth builds the gRPC authorizer. admission runs the same allowlist and project IAM admission
@@ -110,8 +95,8 @@ func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, a
 	return auth, nil
 }
 
-// NewRuntimeServer creates and initializes a live runtime XIDServer instance with real cloud infrastructure dependencies (Spanner, Cloud Identity, OAuth2) and automated LIFO rollback cleanup on error.
-func NewRuntimeServer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_ *RuntimeServer, retErr error) {
+// NewRuntimeServer creates and initializes a live runtime XIDServer instance with real cloud infrastructure dependencies (the XID database that dbCfg selects, Cloud Identity, OAuth2) and automated LIFO rollback cleanup on error.
+func NewRuntimeServer(ctx context.Context, cfg *config.Config, dbCfg dbconfig.Config, oauthCfg *oauth.Config) (_ *RuntimeServer, retErr error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config cannot be nil")
 	}
@@ -128,19 +113,14 @@ func NewRuntimeServer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.C
 		}
 	}()
 
-	spannerClient, err := initSpannerClient(ctx, cfg)
+	storage, err := dbfactory.NewStorage(ctx, dbCfg, dbfactory.XID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create spanner client: %w", err)
+		return nil, fmt.Errorf("failed to open storage: %w", err)
 	}
 	cleanups = append(cleanups, func() error {
-		spannerClient.Close()
+		storage.Close()
 		return nil
 	})
-
-	storage, err := ss.NewStorage(spannerClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create storage: %w", err)
-	}
 
 	authenticator := oauth.NewAuthenticator(oauthCfg)
 	cleanups = append(cleanups, authenticator.Close)
@@ -170,8 +150,8 @@ func NewRuntimeServer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.C
 	}
 
 	return &RuntimeServer{
-		XIDServer:     srv,
-		spannerClient: spannerClient,
-		cleanup:       cleanup,
+		XIDServer: srv,
+		dbHealth:  storage,
+		cleanup:   cleanup,
 	}, nil
 }

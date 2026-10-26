@@ -26,17 +26,15 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	healthzpkg "sigs.k8s.io/controller-runtime/pkg/healthz"
 	"xmanager_cloud/cmd/actuator/k8s_client"
-	migversion "xmanager_cloud/internal/storage/spanner/migrations/version"
+	"xmanager_cloud/internal/common/health"
 )
 
-type mockSpannerHealthClient struct {
-	version int64
-	dirty   bool
-	err     error
+type mockReadinessChecker struct {
+	err error
 }
 
-func (m *mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
-	return m.version, m.dirty, m.err
+func (m *mockReadinessChecker) CheckReady(ctx context.Context) error {
+	return m.err
 }
 
 type mockDiscovery struct {
@@ -88,8 +86,6 @@ func (f *fakeHealthManager) AddReadyzCheck(name string, check healthzpkg.Checker
 }
 
 func TestActiveHealthChecker_Combinations(t *testing.T) {
-	expectedSchemaVersion := migversion.EssExpectedSchemaVersion()
-
 	mockCSSuccess := mockClientset{
 		discoveryFunc: func() discovery.DiscoveryInterface {
 			return mockDiscovery{
@@ -115,78 +111,62 @@ func TestActiveHealthChecker_Combinations(t *testing.T) {
 	tests := []struct {
 		name      string
 		k8s       *k8sclient.Client
-		spClient  *mockSpannerHealthClient
+		db        health.ReadinessChecker
 		wantError bool
 	}{
 		{
 			name:      "both clients nil",
 			k8s:       nil,
-			spClient:  nil,
+			db:        nil,
 			wantError: false,
 		},
 		{
-			name:      "k8s nil, spanner success",
+			name:      "k8s nil, database success",
 			k8s:       nil,
-			spClient:  &mockSpannerHealthClient{version: expectedSchemaVersion, dirty: false, err: nil},
+			db:        &mockReadinessChecker{},
 			wantError: false,
 		},
 		{
-			name:      "k8s nil, spanner query error",
+			name:      "k8s nil, database error",
 			k8s:       nil,
-			spClient:  &mockSpannerHealthClient{version: 0, dirty: false, err: errors.New("spanner connection refused")},
+			db:        &mockReadinessChecker{err: errors.New("database connection refused")},
 			wantError: true,
 		},
 		{
-			name:      "k8s nil, spanner dirty schema",
-			k8s:       nil,
-			spClient:  &mockSpannerHealthClient{version: expectedSchemaVersion, dirty: true, err: nil},
-			wantError: true,
-		},
-		{
-			name:      "k8s nil, spanner version mismatch",
-			k8s:       nil,
-			spClient:  &mockSpannerHealthClient{version: expectedSchemaVersion + 100, dirty: false, err: nil},
-			wantError: true,
-		},
-		{
-			name:      "k8s success, spanner nil",
+			name:      "k8s success, database nil",
 			k8s:       k8sClientSuccess,
-			spClient:  nil,
+			db:        nil,
 			wantError: false,
 		},
 		{
-			name:      "k8s failure, spanner nil",
+			name:      "k8s failure, database nil",
 			k8s:       k8sClientFailure,
-			spClient:  nil,
+			db:        nil,
 			wantError: true,
 		},
 		{
-			name:      "both k8s and spanner success",
+			name:      "both k8s and database success",
 			k8s:       k8sClientSuccess,
-			spClient:  &mockSpannerHealthClient{version: expectedSchemaVersion, dirty: false, err: nil},
+			db:        &mockReadinessChecker{},
 			wantError: false,
 		},
 		{
-			name:      "k8s failure with spanner success",
+			name:      "k8s failure with database success",
 			k8s:       k8sClientFailure,
-			spClient:  &mockSpannerHealthClient{version: expectedSchemaVersion, dirty: false, err: nil},
+			db:        &mockReadinessChecker{},
 			wantError: true,
 		},
 		{
-			name:      "k8s success with spanner failure",
+			name:      "k8s success with database failure",
 			k8s:       k8sClientSuccess,
-			spClient:  &mockSpannerHealthClient{version: 0, dirty: false, err: errors.New("spanner failure")},
+			db:        &mockReadinessChecker{err: errors.New("database failure")},
 			wantError: true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var sp spClientInterface
-			if tc.spClient != nil {
-				sp = tc.spClient
-			}
-			checker := activeHealthChecker(tc.k8s, sp)
+			checker := activeHealthChecker(tc.k8s, tc.db)
 			req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 			err := checker(req)
 			if (err != nil) != tc.wantError {
@@ -194,10 +174,6 @@ func TestActiveHealthChecker_Combinations(t *testing.T) {
 			}
 		})
 	}
-}
-
-type spClientInterface = interface {
-	QuerySchemaVersion(ctx context.Context) (int64, bool, error)
 }
 
 func TestRegisterHealthChecks(t *testing.T) {

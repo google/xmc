@@ -107,3 +107,9 @@ func CheckSchemaVersion(ctx context.Context, client SchemaVersionClient, expecte
 	logging.Debug(ctx, "Schema migration version check completed successfully", "version", versionVal)
 	return nil
 }
+
+// ReadinessChecker returns an error unless a dependency, such as a store opened by
+// internal/storage/factory, is ready to serve requests.
+type ReadinessChecker interface {
+	CheckReady(ctx context.Context) error
+}

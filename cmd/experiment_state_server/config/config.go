@@ -35,7 +35,6 @@ type Config struct {
 	HTTPPort                    string
 	ProjectID                   string
 	QuotaProjectID              string
-	SpannerDatabaseName         string
 	XidServiceAddr              string
 	EndpointURL                 string
 	ActuatorURL                 string
@@ -77,7 +76,6 @@ func init() {
 func (c *Config) registerConfigs() {
 	configutil.StringEnv(&c.ProjectID, "ess_gcp_project_id", "xmc-test-project-1")
 	configutil.StringEnv(&c.QuotaProjectID, "ess_quota_project_id", "xmc-test-project-1")
-	configutil.StringEnv(&c.SpannerDatabaseName, "ess_spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
 	configutil.StringEnv(&c.XidServiceAddr, "ess_xid_service_addr", "localhost:50053")
 	configutil.StringEnv(&c.EndpointURL, "ess_endpoint_url", "http://localhost:50051")
 	configutil.StringEnv(&c.ActuatorURL, "ess_actuator_url", "https://actuator.xmanager.xmc.svc.cluster.local/actuate")

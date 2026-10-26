@@ -28,15 +28,18 @@ type TaskQueueClient interface {
 	PingRedis(ctx context.Context) error
 }
 
-// activeHealthCheck performs active checks against Spanner, XID Service, and Redis.
-func activeHealthCheck(spClient commonhealth.SpannerHealthClient, xidClient xidgrpcpb.XidServiceClient, tqClient TaskQueueClient) http.HandlerFunc {
+// activeHealthCheck performs active checks against the database, XID Service, and Redis.
+func activeHealthCheck(db commonhealth.ReadinessChecker, xidClient xidgrpcpb.XidServiceClient, tqClient TaskQueueClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		eg, ctx := errgroup.WithContext(ctx)
 
-		// 1. Spanner check
+		// 1. Database check
 		eg.Go(func() error {
-			return commonhealth.CheckSpannerESS(ctx, spClient)
+			if db == nil {
+				return fmt.Errorf("database: %w", commonhealth.ErrNilClient)
+			}
+			return db.CheckReady(ctx)
 		})
 
 		// 2. XID Service check

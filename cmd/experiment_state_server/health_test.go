@@ -24,7 +24,6 @@ import (
 	xidgrpcpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	commonhealth "xmanager_cloud/internal/common/health"
-	"xmanager_cloud/internal/storage/spanner/migrations/version"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
@@ -40,32 +39,25 @@ func (f *fakeTaskQueueClient) PingRedis(ctx context.Context) error {
 	return f.PingErr
 }
 
-type mockSpannerClient struct {
-	pingErr    error
-	versionVal int64
-	dirty      bool
-	versionErr error
+type fakeReadinessChecker struct {
+	err error
 }
 
-func (m mockSpannerClient) Ping(ctx context.Context) error {
-	return m.pingErr
-}
-
-func (m mockSpannerClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
-	return m.versionVal, m.dirty, m.versionErr
+func (f fakeReadinessChecker) CheckReady(ctx context.Context) error {
+	return f.err
 }
 
 func TestActiveHealthCheck(t *testing.T) {
 	tests := []struct {
-		name        string
-		mockSpanner commonhealth.SpannerHealthClient
-		setupTq     func() TaskQueueClient
-		wantCode    int
-		wantBody    string
+		name     string
+		mockDB   commonhealth.ReadinessChecker
+		setupTq  func() TaskQueueClient
+		wantCode int
+		wantBody string
 	}{
 		{
-			name:        "redis_ping_error",
-			mockSpanner: mockSpannerClient{versionVal: version.EssExpectedSchemaVersion()},
+			name:   "redis_ping_error",
+			mockDB: fakeReadinessChecker{},
 			setupTq: func() TaskQueueClient {
 				return &fakeTaskQueueClient{PingErr: fmt.Errorf("fake redis error")}
 			},
@@ -73,8 +65,8 @@ func TestActiveHealthCheck(t *testing.T) {
 			wantBody: "fake redis error",
 		},
 		{
-			name:        "all_valid",
-			mockSpanner: mockSpannerClient{versionVal: version.EssExpectedSchemaVersion()},
+			name:   "all_valid",
+			mockDB: fakeReadinessChecker{},
 			setupTq: func() TaskQueueClient {
 				return &fakeTaskQueueClient{}
 			},
@@ -82,44 +74,16 @@ func TestActiveHealthCheck(t *testing.T) {
 			wantBody: "OK",
 		},
 		{
-			name:        "nil_spanner",
-			mockSpanner: nil,
-			setupTq:     func() TaskQueueClient { return &fakeTaskQueueClient{} },
-			wantCode:    http.StatusInternalServerError,
-			wantBody:    "spanner: client is nil",
-		},
-		{
-			name: "spanner_version_older",
-			mockSpanner: mockSpannerClient{
-				versionVal: version.EssExpectedSchemaVersion() - 1,
-			},
+			name:     "nil_database",
+			mockDB:   nil,
 			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
 			wantCode: http.StatusInternalServerError,
-			wantBody: "does not match expected version",
+			wantBody: "database: client is nil",
 		},
 		{
-			name: "spanner_version_dirty",
-			mockSpanner: mockSpannerClient{
-				versionVal: version.EssExpectedSchemaVersion(),
-				dirty:      true,
-			},
-			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
-			wantCode: http.StatusInternalServerError,
-			wantBody: "is in a dirty state",
-		},
-		{
-			name: "spanner_query_error",
-			mockSpanner: mockSpannerClient{
-				versionErr: fmt.Errorf("failed to query SchemaMigrations: table not found"),
-			},
-			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
-			wantCode: http.StatusInternalServerError,
-			wantBody: "SchemaMigrations",
-		},
-		{
-			name: "spanner_version_newer",
-			mockSpanner: mockSpannerClient{
-				versionVal: version.EssExpectedSchemaVersion() + 1,
+			name: "database_not_ready",
+			mockDB: fakeReadinessChecker{
+				err: fmt.Errorf("schema version 1 does not match expected version 2"),
 			},
 			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
 			wantCode: http.StatusInternalServerError,
@@ -135,7 +99,7 @@ func TestActiveHealthCheck(t *testing.T) {
 			}
 
 			var xidClient xidgrpcpb.XidServiceClient = &fakeXidClient{}
-			handler := activeHealthCheck(tc.mockSpanner, xidClient, tqClient)
+			handler := activeHealthCheck(tc.mockDB, xidClient, tqClient)
 
 			req := httptest.NewRequest("GET", "/readyz", nil)
 			rr := httptest.NewRecorder()

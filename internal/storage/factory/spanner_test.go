@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package factory
+package dbfactory
 
 import (
 	"context"
@@ -36,18 +36,18 @@ func TestOpen_Spanner(t *testing.T) {
 
 	for _, db := range []Database{ESS, XID} {
 		t.Run(string(db), func(t *testing.T) {
-			store, err := Open(ctx, cfg, db)
+			st, err := NewStorage(ctx, cfg, db)
 			if err != nil {
-				t.Fatalf("Open(%q) failed: %v", db, err)
+				t.Fatalf("NewStorage(%q) failed: %v", db, err)
 			}
-			defer store.Close()
+			defer st.Close()
 
 			wantDatabase, _ := spannerDatabase(cfg.Spanner, db)
-			if got := store.SpannerClient.DatabaseName(); got != wantDatabase {
+			if got := st.SpannerClient.DatabaseName(); got != wantDatabase {
 				t.Errorf("SpannerClient.DatabaseName() = %q, want %q", got, wantDatabase)
 			}
 			noop := func(context.Context, *storage.Transaction) error { return nil }
-			if err := store.RunInTransaction(ctx, noop); err != nil {
+			if err := st.RunInTransaction(ctx, noop); err != nil {
 				t.Errorf("RunInTransaction() failed: %v", err)
 			}
 		})

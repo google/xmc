@@ -25,7 +25,7 @@ import (
 	"xmanager_cloud/internal/common/health"
 )
 
-func activeHealthChecker(k8s *k8sclient.Client, spClient health.SpannerHealthClient) func(req *http.Request) error {
+func activeHealthChecker(k8s *k8sclient.Client, db health.ReadinessChecker) func(req *http.Request) error {
 	return func(req *http.Request) error {
 		ctx := req.Context()
 		eg, ctx := errgroup.WithContext(ctx)
@@ -37,10 +37,10 @@ func activeHealthChecker(k8s *k8sclient.Client, spClient health.SpannerHealthCli
 			})
 		}
 
-		// 2. Spanner check
-		if spClient != nil {
+		// 2. Database check
+		if db != nil {
 			eg.Go(func() error {
-				return health.CheckSpannerESS(ctx, spClient)
+				return db.CheckReady(ctx)
 			})
 		}
 
@@ -48,7 +48,7 @@ func activeHealthChecker(k8s *k8sclient.Client, spClient health.SpannerHealthCli
 	}
 }
 
-func registerHealthChecks(mgr ctrl.Manager, k8sClient *k8sclient.Client, spHealth health.SpannerHealthClient) error {
+func registerHealthChecks(mgr ctrl.Manager, k8sClient *k8sclient.Client, dbHealth health.ReadinessChecker) error {
 	if mgr == nil {
 		return errors.New("manager cannot be nil")
 	}
@@ -56,7 +56,7 @@ func registerHealthChecks(mgr ctrl.Manager, k8sClient *k8sclient.Client, spHealt
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up health check: %w", err)
 	}
-	if err := mgr.AddReadyzCheck("readyz", activeHealthChecker(k8sClient, spHealth)); err != nil {
+	if err := mgr.AddReadyzCheck("readyz", activeHealthChecker(k8sClient, dbHealth)); err != nil {
 		return fmt.Errorf("unable to set up ready check: %w", err)
 	}
 	return nil

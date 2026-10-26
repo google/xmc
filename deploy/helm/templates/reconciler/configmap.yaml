@@ -19,7 +19,6 @@ metadata:
   labels:
     app: reconciler
 data:
-  spanner_database_name: {{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
   quota_project_id: {{ .Values.projectId | quote }}
   batcher_tick_duration: "250ms"
   kueue_sync_tick_duration: "60s"

@@ -37,7 +37,8 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/keyreloader"
 	"xmanager_cloud/internal/storage"
-	ss "xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/dbconfig"
+	dbfactory "xmanager_cloud/internal/storage/factory"
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
@@ -49,6 +50,7 @@ var _ apipb.ExperimentStateServiceServer = (*ProdServer)(nil)
 type ProdServer struct {
 	*Server
 	storage         storage.Storage
+	dbHealth        commonhealth.ReadinessChecker
 	spannerClient   *spanner.Client
 	xidClient       xidgrpcpb.XidServiceClient
 	taskQueueClient *tq.Client
@@ -57,11 +59,11 @@ type ProdServer struct {
 }
 
 // HealthCheckers returns the health client interfaces required for active readiness checks.
-func (p *ProdServer) HealthCheckers() (commonhealth.SpannerHealthClient, xidgrpcpb.XidServiceClient, *tq.Client) {
+func (p *ProdServer) HealthCheckers() (commonhealth.ReadinessChecker, xidgrpcpb.XidServiceClient, *tq.Client) {
 	if p == nil {
 		return nil, nil, nil
 	}
-	return commonhealth.NewSpannerHealthClient(p.spannerClient), p.xidClient, p.taskQueueClient
+	return p.dbHealth, p.xidClient, p.taskQueueClient
 }
 
 // SpannerClient returns the underlying Spanner client.
@@ -92,21 +94,6 @@ func (p *ProdServer) Close() error {
 		return nil
 	}
 	return p.cleanup()
-}
-
-func initSpannerClient(ctx context.Context, cfg *config.Config) (*spanner.Client, error) {
-	sessionPoolConfig := spanner.SessionPoolConfig{
-		TrackSessionHandles: true,
-		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-			ActionOnInactiveTransaction: spanner.Warn,
-		},
-	}
-	return spanner.NewClientWithConfig(
-		ctx,
-		cfg.SpannerDatabaseName,
-		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-		option.WithQuotaProject(cfg.QuotaProjectID),
-	)
 }
 
 func initXidClient(ctx context.Context, cfg *config.Config) (xidgrpcpb.XidServiceClient, *grpc.ClientConn, error) {
@@ -229,19 +216,19 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 		}
 	}()
 
-	spannerClient, err := initSpannerClient(ctx, cfg)
+	dbCfg, err := dbconfig.Load()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create spanner client: %w", err)
+		return nil, fmt.Errorf("failed to load database config: %w", err)
+	}
+
+	storage, err := dbfactory.NewStorage(ctx, dbCfg, dbfactory.ESS)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize storage: %w", err)
 	}
 	cleanups = append(cleanups, func() error {
-		spannerClient.Close()
+		storage.Close()
 		return nil
 	})
-
-	storage, err := ss.NewStorage(spannerClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create storage: %w", err)
-	}
 
 	auth, err := NewGRPCAuthorizer(ctx, cfg, oauthCfg, admission)
 	if err != nil {
@@ -300,7 +287,8 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	return &ProdServer{
 		Server:          srv,
 		storage:         storage,
-		spannerClient:   spannerClient,
+		dbHealth:        storage,
+		spannerClient:   storage.SpannerClient,
 		xidClient:       xidClient,
 		taskQueueClient: taskQueueClient,
 		bgTaskWG:        &bgTaskWG,

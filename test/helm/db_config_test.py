@@ -20,8 +20,6 @@ import unittest
 from chart_test_lib import render_template, require_helm
 
 DB_CONFIG_TEMPLATE = "templates/db-config.yaml"
-ESS_CONFIGMAP = "templates/ess/configmap.yaml"
-XID_CONFIGMAP = "templates/xid/configmap.yaml"
 
 WORKLOAD_DEPLOYMENTS: tuple[str, ...] = (
     "templates/actuator/deployment.yaml",
@@ -31,6 +29,13 @@ WORKLOAD_DEPLOYMENTS: tuple[str, ...] = (
     "templates/log-monitor/deployment.yaml",
     "templates/reconciler/deployment.yaml",
     "templates/rod/deployment.yaml",
+    "templates/xid/deployment.yaml",
+)
+
+CHECKSUM_DEPLOYMENTS: tuple[str, ...] = (
+    "templates/actuator/deployment.yaml",
+    "templates/ess/deployment.yaml",
+    "templates/reconciler/deployment.yaml",
     "templates/xid/deployment.yaml",
 )
 
@@ -52,11 +57,11 @@ POSTGRES_REQUIRED_VALUES: dict[str, str] = {
 }
 
 
-def configmap_value(manifest: str, key: str) -> str:
-    """Returns the quoted value of key in a rendered ConfigMap."""
-    match = re.search(rf'^\s*{re.escape(key)}: (".*")$', manifest, re.MULTILINE)
+def db_config_checksum(manifest: str) -> str:
+    """Returns the checksum/db-config pod annotation of a rendered Deployment."""
+    match = re.search(r"^\s*checksum/db-config: (\S+)$", manifest, re.MULTILINE)
     if match is None:
-        raise AssertionError(f"{key} not found in the rendered manifest")
+        raise AssertionError("checksum/db-config not found in the rendered manifest")
     return match.group(1)
 
 
@@ -68,24 +73,32 @@ class DbConfigChartTest(unittest.TestCase):
         require_helm()
 
     def test_default_values_render_spanner_settings(self) -> None:
-        """Default values select Spanner, with the settings the per-service ConfigMaps use."""
-        manifest = render_template(DB_CONFIG_TEMPLATE, {})
-        ess_configmap = render_template(ESS_CONFIGMAP, {})
-        xid_configmap = render_template(XID_CONFIGMAP, {})
-        ess_database = configmap_value(ess_configmap, "ess_spanner_database_name")
-        xid_database = configmap_value(xid_configmap, "xid_spanner_database_name")
-        quota_project = configmap_value(xid_configmap, "xid_quota_project_id")
+        """Without per-service database overrides, Spanner derives the environment database names."""
+        manifest = render_template(
+            DB_CONFIG_TEMPLATE,
+            {
+                "projectId": "my-project",
+                "environment": "dev",
+                "experimentStateServer.spannerDatabaseName": "",
+            },
+        )
 
         self.assertIn("kind: ConfigMap", manifest)
         self.assertIn("name: db-config", manifest)
         self.assertIn('DB_BACKEND: "spanner"', manifest)
-        self.assertIn(f"SPANNER_ESS_DATABASE: {ess_database}", manifest)
-        self.assertIn(f"SPANNER_XID_DATABASE: {xid_database}", manifest)
-        self.assertIn(f"SPANNER_QUOTA_PROJECT_ID: {quota_project}", manifest)
+        self.assertIn(
+            'SPANNER_ESS_DATABASE: "projects/my-project/instances/xmc-dev/databases/experiment-db-dev"',
+            manifest,
+        )
+        self.assertIn(
+            'SPANNER_XID_DATABASE: "projects/my-project/instances/xmc-dev/databases/xids-db-dev"',
+            manifest,
+        )
+        self.assertIn('SPANNER_QUOTA_PROJECT_ID: "my-project"', manifest)
         self.assertNotIn("POSTGRES_", manifest)
 
     def test_spanner_settings_follow_per_service_values(self) -> None:
-        """The Spanner keys use the values the per-service ConfigMaps already use."""
+        """The Spanner keys follow experimentStateServer and xidService spannerDatabaseName."""
         values = {
             "projectId": "my-project",
             "experimentStateServer.spannerDatabaseName": "projects/p/instances/i/databases/ess-v1",
@@ -96,10 +109,6 @@ class DbConfigChartTest(unittest.TestCase):
         self.assertIn('SPANNER_ESS_DATABASE: "projects/p/instances/i/databases/ess-v1"', manifest)
         self.assertIn('SPANNER_XID_DATABASE: "projects/p/instances/i/databases/xid-v1"', manifest)
         self.assertIn('SPANNER_QUOTA_PROJECT_ID: "my-project"', manifest)
-        self.assertIn(
-            'ess_spanner_database_name: "projects/p/instances/i/databases/ess-v1"',
-            render_template(ESS_CONFIGMAP, values),
-        )
 
     def test_postgres_backend_renders_only_postgres_settings(self) -> None:
         """database.backend: postgres renders the PostgreSQL keys instead of the Spanner keys."""
@@ -159,6 +168,18 @@ class DbConfigChartTest(unittest.TestCase):
             with self.subTest(template=template):
                 manifest = render_template(template, ENABLE_OPTIONAL_DEPLOYMENTS)
                 self.assertRegex(manifest, r"(?m)^\s*- configMapRef:\s*\n\s*name: db-config$")
+
+    def test_workloads_restart_when_db_config_changes(self) -> None:
+        """Each workload carries the db-config checksum, so a db-config change restarts it."""
+        changed_values = {
+            **ENABLE_OPTIONAL_DEPLOYMENTS,
+            "xidService.spannerDatabaseName": "projects/p/instances/i/databases/xid-v2",
+        }
+        for template in CHECKSUM_DEPLOYMENTS:
+            with self.subTest(template=template):
+                default = db_config_checksum(render_template(template, ENABLE_OPTIONAL_DEPLOYMENTS))
+                changed = db_config_checksum(render_template(template, changed_values))
+                self.assertNotEqual(default, changed)
 
 
 if __name__ == "__main__":

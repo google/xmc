@@ -32,8 +32,8 @@ type k8sHealthClient interface {
 	Clientset() kubernetes.Interface
 }
 
-// activeHealthCheck performs active checks against Kubernetes, Spanner, and Redis.
-func activeHealthCheck(k8s k8sHealthClient, spClient health.SpannerHealthClient, redis redisclient.Consumer) http.HandlerFunc {
+// activeHealthCheck performs active checks against Kubernetes, the database, and Redis.
+func activeHealthCheck(k8s k8sHealthClient, db health.ReadinessChecker, redis redisclient.Consumer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		eg, ctx := errgroup.WithContext(ctx)
@@ -46,12 +46,12 @@ func activeHealthCheck(k8s k8sHealthClient, spClient health.SpannerHealthClient,
 			return health.CheckKubernetes(k8s.Clientset())
 		})
 
-		// 2. Spanner check
+		// 2. Database check
 		eg.Go(func() error {
-			if spClient == nil {
+			if db == nil {
 				return nil
 			}
-			return health.CheckSpannerESS(ctx, spClient)
+			return db.CheckReady(ctx)
 		})
 
 		// 3. Redis check

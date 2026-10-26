@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"sync"
 
-	"cloud.google.com/go/spanner"
-	"google.golang.org/api/option"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -40,8 +38,8 @@ import (
 	"xmanager_cloud/internal/common/health"
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
-	ss "xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/dbconfig"
+	dbfactory "xmanager_cloud/internal/storage/factory"
 )
 
 // healthProbeBindAddress is the address on which the manager serves the
@@ -50,13 +48,13 @@ const healthProbeBindAddress = ":8080"
 
 // Manager encapsulates the controller-runtime Manager and its underlying dependencies and lifecycle.
 type Manager struct {
-	ctrlMgr       ctrl.Manager
-	batcher       *shared.UpdateBatcher
-	k8sClient     *k8sclient.Client
-	spannerClient *spanner.Client
-	cleanup       func() error
-	closeOnce     sync.Once
-	closeErr      error
+	ctrlMgr   ctrl.Manager
+	batcher   *shared.UpdateBatcher
+	k8sClient *k8sclient.Client
+	dbHealth  health.ReadinessChecker
+	cleanup   func() error
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // CtrlManager returns the underlying controller-runtime Manager.
@@ -68,15 +66,11 @@ func (m *Manager) CtrlManager() ctrl.Manager {
 }
 
 // HealthCheckers returns the client interfaces required for active readiness checks.
-func (m *Manager) HealthCheckers() (*k8sclient.Client, health.SpannerHealthClient) {
+func (m *Manager) HealthCheckers() (*k8sclient.Client, health.ReadinessChecker) {
 	if m == nil {
 		return nil, nil
 	}
-	var spClient health.SpannerHealthClient
-	if m.spannerClient != nil {
-		spClient = health.NewSpannerHealthClient(m.spannerClient)
-	}
-	return m.k8sClient, spClient
+	return m.k8sClient, m.dbHealth
 }
 
 // Close closes all underlying client connections using LIFO cleanup.
@@ -105,33 +99,12 @@ func startManager(ctx context.Context, mgr ctrl.Manager) error {
 	return nil
 }
 
-func initSpannerAndStorage(ctx context.Context, cfg Config) (*spanner.Client, storage.Storage, error) {
-	if cfg.RuntimeConfig.SpannerDatabaseName == "" {
-		return nil, nil, nil
-	}
-	sessionPoolConfig := spanner.SessionPoolConfig{
-		TrackSessionHandles: true,
-		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-			ActionOnInactiveTransaction: spanner.Warn,
-		},
-	}
-	spannerClient, err := spanner.NewClientWithConfig(
-		ctx,
-		cfg.RuntimeConfig.SpannerDatabaseName,
-		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-		option.WithQuotaProject(cfg.RuntimeConfig.QuotaProjectID),
-	)
+func initStorage(ctx context.Context) (*dbfactory.Storage, error) {
+	dbCfg, err := dbconfig.Load()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create spanner client: %w", err)
+		return nil, fmt.Errorf("failed to load database config: %w", err)
 	}
-
-	storage, err := ss.NewStorage(spannerClient)
-	if err != nil {
-		spannerClient.Close()
-		return nil, nil, fmt.Errorf("failed to create storage: %w", err)
-	}
-
-	return spannerClient, storage, nil
+	return dbfactory.NewStorage(ctx, dbCfg, dbfactory.ESS)
 }
 
 func metricsBindAddress(port int) string {
@@ -223,16 +196,14 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 		return nil, fmt.Errorf("failed to get GCE metadata: %w", err)
 	}
 
-	spannerClient, storage, err := initSpannerAndStorage(ctx, cfg)
+	storage, err := initStorage(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if spannerClient != nil {
-		cleanups = append(cleanups, func() error {
-			spannerClient.Close()
-			return nil
-		})
-	}
+	cleanups = append(cleanups, func() error {
+		storage.Close()
+		return nil
+	})
 
 	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, storage)
 	if err != nil {
@@ -282,10 +253,10 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 	}
 
 	return &Manager{
-		ctrlMgr:       ctrlMgr,
-		batcher:       batcher,
-		k8sClient:     k8sClient,
-		spannerClient: spannerClient,
-		cleanup:       cleanup,
+		ctrlMgr:   ctrlMgr,
+		batcher:   batcher,
+		k8sClient: k8sClient,
+		dbHealth:  storage,
+		cleanup:   cleanup,
 	}, nil
 }
