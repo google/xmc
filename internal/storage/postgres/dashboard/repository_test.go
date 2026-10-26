@@ -16,106 +16,47 @@ package dashboard
 
 import (
 	"context"
+	"strings"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/validator"
 )
 
-func TestRepository_Unimplemented(t *testing.T) {
-	repo := NewRepository(nil)
-	if repo == nil {
-		t.Fatal("NewRepository() returned nil")
-	}
-
+func TestNewRepository_NilPoolFailsPreconditionOnTransactionalWrites(t *testing.T) {
 	ctx := context.Background()
-	tests := []struct {
-		name string
-		call func() error
-	}{
-		{
-			name: "CreateDashboard",
-			call: func() error {
-				return repo.CreateDashboard(ctx, nil, nil)
-			},
-		},
-		{
-			name: "GetDashboard",
-			call: func() error {
-				_, err := repo.GetDashboard(ctx, "dash-1")
-				return err
-			},
-		},
-		{
-			name: "ListDashboards",
-			call: func() error {
-				_, _, err := repo.ListDashboards(ctx, 10, "", "", "", 0)
-				return err
-			},
-		},
-		{
-			name: "UpdateDashboard",
-			call: func() error {
-				_, err := repo.UpdateDashboard(ctx, nil, nil)
-				return err
-			},
-		},
-		{
-			name: "DeleteDashboard",
-			call: func() error {
-				return repo.DeleteDashboard(ctx, "dash-1")
-			},
-		},
-		{
-			name: "CreateChart",
-			call: func() error {
-				return repo.CreateChart(ctx, nil)
-			},
-		},
-		{
-			name: "GetChart",
-			call: func() error {
-				_, err := repo.GetChart(ctx, "chart-1")
-				return err
-			},
-		},
-		{
-			name: "ListCharts",
-			call: func() error {
-				_, _, err := repo.ListCharts(ctx, "dashboards/dash-1", 10, "", "", "", 0)
-				return err
-			},
-		},
-		{
-			name: "UpdateChart",
-			call: func() error {
-				_, err := repo.UpdateChart(ctx, nil, nil)
-				return err
-			},
-		},
-		{
-			name: "DeleteChart",
-			call: func() error {
-				return repo.DeleteChart(ctx, "chart-1")
-			},
-		},
+	repo := NewRepository(nil)
+	if repo.db != nil || repo.pool != nil {
+		t.Fatalf("NewRepository(nil) = {db:%v, pool:%v}, want both nil", repo.db, repo.pool)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.call()
-			if got := status.Code(err); got != codes.Unimplemented {
-				t.Errorf("%s code = %v, want %v (err: %v)", tt.name, got, codes.Unimplemented, err)
-			}
-		})
-	}
+	dash := blankDashboardProto(validator.ConstructDashboardName("d-nil-pool"))
+	assertErrorIs(t, "CreateDashboard(nil pool)", repo.CreateDashboard(ctx, dash, nil), grpcerr.ErrFailedPrecondition)
+
+	_, err := repo.UpdateDashboard(ctx, dash, nil)
+	assertErrorIs(t, "UpdateDashboard(nil pool)", err, grpcerr.ErrFailedPrecondition)
+
+	chart := blankChartProto("c-nil-pool", 100, 1)
+	assertErrorIs(t, "CreateChart(nil pool)", repo.CreateChart(ctx, chart), grpcerr.ErrFailedPrecondition)
+
+	_, err = repo.UpdateChart(ctx, chart, nil)
+	assertErrorIs(t, "UpdateChart(nil pool)", err, grpcerr.ErrFailedPrecondition)
+
+	assertErrorIs(t, "DeleteChart(nil pool)", repo.DeleteChart(ctx, "c-nil-pool"), grpcerr.ErrFailedPrecondition)
 }
 
-func TestNewRepository_BindsPool(t *testing.T) {
-	pool := &pgxpool.Pool{}
-	repo := NewRepository(pool)
-	if repo.db != pool {
-		t.Errorf("NewRepository(pool).db = %v, want %p", repo.db, pool)
+func TestLockingSQL_UsesForNoKeyUpdate(t *testing.T) {
+	for name, sql := range map[string]string{
+		"lockDashboardSQL": lockDashboardSQL.String(),
+		"lockChartSQL":     lockChartSQL.String(),
+		"lockChartKeySQL":  lockChartKeySQL.String(),
+	} {
+		if !strings.Contains(sql, "FOR NO KEY UPDATE") {
+			t.Errorf("%s = %q, want FOR NO KEY UPDATE", name, sql)
+		}
+		withoutNoKey := strings.ReplaceAll(sql, "FOR NO KEY UPDATE", "")
+		if strings.Contains(withoutNoKey, "FOR UPDATE") {
+			t.Errorf("%s = %q contains bare FOR UPDATE", name, sql)
+		}
 	}
 }
