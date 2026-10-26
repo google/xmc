@@ -46,8 +46,6 @@ func TestLoadConfig(t *testing.T) {
 				Port:                 "8080",
 				BatchSize:            100,
 				BatchInterval:        5 * time.Second,
-				SpannerDatabaseName:  "test-db",
-				QuotaProjectID:       "xmc-test-project-1",
 				LogKeyword:           "XMC LOG:",
 				MaxConcurrentUpdates: 10,
 			},
@@ -57,8 +55,6 @@ func TestLoadConfig(t *testing.T) {
 				Port:                 "8080",
 				BatchSize:            100,
 				BatchInterval:        5 * time.Second,
-				SpannerDatabaseName:  "test-db",
-				QuotaProjectID:       "xmc-test-project-1",
 				LogKeyword:           "XMC LOG:",
 				MaxConcurrentUpdates: 10,
 			},
@@ -67,12 +63,10 @@ func TestLoadConfig(t *testing.T) {
 		{
 			name: "Missing ProjectID",
 			inputConfig: Config{
-				ProjectID:           "",
-				SubscriptionID:      "test-subscription",
-				BatchSize:           100,
-				BatchInterval:       5 * time.Second,
-				SpannerDatabaseName: "test-db",
-				QuotaProjectID:      "xmc-test-project-1",
+				ProjectID:      "",
+				SubscriptionID: "test-subscription",
+				BatchSize:      100,
+				BatchInterval:  5 * time.Second,
 			},
 			wantConfig:  nil,
 			expectError: true,
@@ -80,12 +74,10 @@ func TestLoadConfig(t *testing.T) {
 		{
 			name: "Missing SubscriptionID",
 			inputConfig: Config{
-				ProjectID:           "test-project",
-				SubscriptionID:      "",
-				BatchSize:           100,
-				BatchInterval:       5 * time.Second,
-				SpannerDatabaseName: "test-db",
-				QuotaProjectID:      "xmc-test-project-1",
+				ProjectID:      "test-project",
+				SubscriptionID: "",
+				BatchSize:      100,
+				BatchInterval:  5 * time.Second,
 			},
 			wantConfig:  nil,
 			expectError: true,
@@ -93,12 +85,10 @@ func TestLoadConfig(t *testing.T) {
 		{
 			name: "Invalid BatchSize",
 			inputConfig: Config{
-				ProjectID:           "test-project",
-				SubscriptionID:      "test-subscription",
-				BatchSize:           0,
-				BatchInterval:       5 * time.Second,
-				SpannerDatabaseName: "test-db",
-				QuotaProjectID:      "xmc-test-project-1",
+				ProjectID:      "test-project",
+				SubscriptionID: "test-subscription",
+				BatchSize:      0,
+				BatchInterval:  5 * time.Second,
 			},
 			wantConfig:  nil,
 			expectError: true,
@@ -106,41 +96,10 @@ func TestLoadConfig(t *testing.T) {
 		{
 			name: "Invalid BatchInterval",
 			inputConfig: Config{
-				ProjectID:           "test-project",
-				SubscriptionID:      "test-subscription",
-				BatchSize:           100,
-				BatchInterval:       0,
-				SpannerDatabaseName: "test-db",
-				QuotaProjectID:      "xmc-test-project-1",
-			},
-			wantConfig:  nil,
-			expectError: true,
-		},
-		{
-			name: "Missing SpannerDatabaseName",
-			inputConfig: Config{
-				ProjectID:           "test-project",
-				SubscriptionID:      "test-subscription",
-				Port:                "8080",
-				BatchSize:           100,
-				BatchInterval:       5 * time.Second,
-				SpannerDatabaseName: "",
-				QuotaProjectID:      "xmc-test-project-1",
-			},
-			wantConfig:  nil,
-			expectError: true,
-		},
-		{
-			name: "Missing QuotaProjectID",
-			inputConfig: Config{
-				ProjectID:            "test-project",
-				SubscriptionID:       "test-subscription",
-				Port:                 "8080",
-				BatchSize:            100,
-				BatchInterval:        5 * time.Second,
-				SpannerDatabaseName:  "test-db",
-				QuotaProjectID:       "",
-				MaxConcurrentUpdates: 10,
+				ProjectID:      "test-project",
+				SubscriptionID: "test-subscription",
+				BatchSize:      100,
+				BatchInterval:  0,
 			},
 			wantConfig:  nil,
 			expectError: true,
@@ -153,8 +112,6 @@ func TestLoadConfig(t *testing.T) {
 				Port:                 "8080",
 				BatchSize:            100,
 				BatchInterval:        5 * time.Second,
-				SpannerDatabaseName:  "test-db",
-				QuotaProjectID:       "xmc-test-project-1",
 				LogKeyword:           "XMC LOG:",
 				MaxConcurrentUpdates: 0,
 			},
@@ -171,8 +128,6 @@ func TestLoadConfig(t *testing.T) {
 			port = tc.inputConfig.Port
 			batchSize = tc.inputConfig.BatchSize
 			batchInterval = tc.inputConfig.BatchInterval
-			spannerDatabaseName = tc.inputConfig.SpannerDatabaseName
-			quotaProjectID = tc.inputConfig.QuotaProjectID
 			logKeyword = tc.inputConfig.LogKeyword
 			maxConcurrentUpdates = tc.inputConfig.MaxConcurrentUpdates
 

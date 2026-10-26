@@ -228,13 +228,12 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
 
         self.assertEqual(rendered_clickhouse_env_vars(manifest), set())
 
-    def test_spanner_and_xid_config_remain_wired(self) -> None:
+    def test_xid_and_component_config_remain_wired(self) -> None:
         """Guards the pre-existing ConfigMap contract read by cmd/dashboard_service/config.go."""
         manifest = render_template(
             DASHBOARD_CONFIGMAP, {"dashboardServiceDeployment.enabled": "true"}
         )
 
-        self.assertIn("dashboard_spanner_database_name:", manifest)
         self.assertIn("dashboard_xid_service_addr:", manifest)
         self.assertIn('enable_components: "false"', manifest)
         self.assertIn("components_namespace:", manifest)

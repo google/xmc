@@ -27,7 +27,6 @@ type Config struct {
 	Port                string
 	GRPCPort            string
 	ProjectID           string
-	SpannerDatabaseName string
 	XidServiceAddr      string
 	EnableComponents    bool
 	ComponentsNamespace string
@@ -51,14 +50,9 @@ func init() {
 }
 
 func loadEnvConfig() {
-	configutil.StringEnv(&cfg.SpannerDatabaseName, "dashboard_spanner_database_name", "")
 	configutil.StringEnv(&cfg.XidServiceAddr, "dashboard_xid_service_addr", "xid-svc:50051")
 	configutil.BoolEnv(&cfg.EnableComponents, "enable_components", false)
 	configutil.StringEnv(&cfg.ComponentsNamespace, "components_namespace", "xmc")
-}
-
-func getSpannerDatabaseName() string {
-	return cfg.SpannerDatabaseName
 }
 
 // LoadConfig loads and returns the configuration.

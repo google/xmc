@@ -16,7 +16,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -28,7 +27,6 @@ import (
 	"syscall"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/api/cloudidentity/v1beta1"
 	"google.golang.org/api/option"
@@ -46,7 +44,8 @@ import (
 	commonhealth "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/dashboard/dataengine"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/dashboard"
+	"xmanager_cloud/internal/storage/dbconfig"
+	dbfactory "xmanager_cloud/internal/storage/factory"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/clickhouse"
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
@@ -254,16 +253,16 @@ func chartDataEngine(provider *dataengine.Provider) server.ChartDataEngine {
 // usefully serve without belong here. A release that configures ClickHouse expects chart data to
 // work, which makes an unbuildable data engine disqualifying; a release without ClickHouse passes
 // no provider and is unaffected.
-func newReadinessCheck(sc *spanner.Client, provider *dataengine.Provider) func(context.Context) error {
-	if sc == nil && provider == nil {
+func newReadinessCheck(db commonhealth.ReadinessChecker, provider *dataengine.Provider) func(context.Context) error {
+	if db == nil && provider == nil {
 		return nil
 	}
 	return func(ctx context.Context) error {
 		checkCtx, cancel := context.WithTimeout(ctx, readinessTimeout)
 		defer cancel()
 
-		if sc != nil {
-			if err := commonhealth.CheckSpanner(checkCtx, sc); err != nil {
+		if db != nil {
+			if err := db.CheckReady(checkCtx); err != nil {
 				return err
 			}
 		}
@@ -278,36 +277,6 @@ func newReadinessCheck(sc *spanner.Client, provider *dataengine.Provider) func(c
 		}
 		return nil
 	}
-}
-
-func initSpannerClient(ctx context.Context, databaseName string, projectID string) (*spanner.Client, error) {
-	if databaseName == "" {
-		return nil, errors.New("spanner_database_name is required but not configured")
-	}
-	sessionPoolConfig := spanner.SessionPoolConfig{
-		TrackSessionHandles: true,
-		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-			ActionOnInactiveTransaction: spanner.Warn,
-		},
-	}
-	sc, err := spanner.NewClientWithConfig(
-		ctx,
-		databaseName,
-		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-		option.WithQuotaProject(projectID),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create spanner client: %w", err)
-	}
-	return sc, nil
-}
-
-func initRepository(ctx context.Context, sc *spanner.Client) (server.DashboardRepository, error) {
-	spannerRepo, err := dashboard.NewRepository(sc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize dashboard repository: %w", err)
-	}
-	return spannerRepo, nil
 }
 
 // initAuthorizer builds the gRPC authorizer. admission must come from the same oauth2.Authenticator
@@ -364,7 +333,7 @@ func initGRPCServer(ctx context.Context, cfg *server.Config, repo server.Dashboa
 	return grpcServer, lis, nil
 }
 
-func initHTTPServer(ctx context.Context, cfg *server.Config, authenticator *oauth2.Authenticator, sc *spanner.Client, de *dataengine.Provider, errChan chan<- error) (*http.Server, error) {
+func initHTTPServer(ctx context.Context, cfg *server.Config, authenticator *oauth2.Authenticator, db commonhealth.ReadinessChecker, de *dataengine.Provider, errChan chan<- error) (*http.Server, error) {
 	gwmux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(oauth2.IncomingHeaderMatcher))
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -374,7 +343,7 @@ func initHTTPServer(ctx context.Context, cfg *server.Config, authenticator *oaut
 		return nil, fmt.Errorf("failed to register gateway: %w", err)
 	}
 
-	handler := setupHTTPHandler(authenticator, gwmux, newReadinessCheck(sc, de))
+	handler := setupHTTPHandler(authenticator, gwmux, newReadinessCheck(db, de))
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	httpServer := &http.Server{
@@ -445,19 +414,18 @@ func run() int {
 	defer authenticator.Close()
 	de := initDataEngine(ctx, cfg)
 
-	spannerDB := getSpannerDatabaseName()
-	sc, err := initSpannerClient(ctx, spannerDB, cfg.ProjectID)
+	dbCfg, err := dbconfig.Load()
 	if err != nil {
-		logging.Error(ctx, "Failed to initialize Spanner client", "error", err)
+		logging.Error(ctx, "Failed to load database configuration", "error", err)
 		return 1
 	}
-	defer sc.Close()
+	storage, err := dbfactory.NewStorage(ctx, dbCfg, dbfactory.ESS)
+	if err != nil {
+		logging.Error(ctx, "Failed to initialize storage", "error", err)
+		return 1
+	}
+	defer storage.Close()
 
-	repo, err := initRepository(ctx, sc)
-	if err != nil {
-		logging.Error(ctx, "Failed to initialize dashboard repository", "error", err)
-		return 1
-	}
 	authorizer, err := initAuthorizer(ctx, cfg.ProjectID, oauthCfg, auth.DeploymentAdmission(authenticator))
 	if err != nil {
 		logging.Error(ctx, "Failed to initialize authorizer", "error", err)
@@ -472,14 +440,14 @@ func run() int {
 	defer xidConn.Close()
 
 	errChan := make(chan error, 2)
-	grpcServer, lis, err := initGRPCServer(ctx, cfg, repo, authorizer, xidClient, de, errChan)
+	grpcServer, lis, err := initGRPCServer(ctx, cfg, storage, authorizer, xidClient, de, errChan)
 	if err != nil {
 		logging.Error(ctx, "Failed to initialize gRPC server", "error", err)
 		return 1
 	}
 	defer lis.Close()
 
-	httpServer, err := initHTTPServer(ctx, cfg, authenticator, sc, de, errChan)
+	httpServer, err := initHTTPServer(ctx, cfg, authenticator, storage, de, errChan)
 	if err != nil {
 		logging.Error(ctx, "Failed to initialize HTTP server", "error", err)
 		return 1

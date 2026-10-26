@@ -27,8 +27,6 @@ type Config struct {
 	Port                 string
 	BatchSize            int
 	BatchInterval        time.Duration
-	SpannerDatabaseName  string
-	QuotaProjectID       string
 	LogKeyword           string
 	MaxConcurrentUpdates int
 }
@@ -39,8 +37,6 @@ var (
 	port                 string
 	batchSize            int
 	batchInterval        time.Duration
-	spannerDatabaseName  string
-	quotaProjectID       string
 	logKeyword           string
 	maxConcurrentUpdates int
 )
@@ -55,8 +51,6 @@ func init() {
 	flag.StringVar(&port, "port", defaultPort, "The HTTP server port to listen on.")
 	flag.IntVar(&batchSize, "batch_size", 1000, "The maximum number of messages to process in a batch.")
 	flag.DurationVar(&batchInterval, "batch_interval", 250*time.Millisecond, "The maximum time to wait before processing a batch.")
-	flag.StringVar(&spannerDatabaseName, "spanner_database_name", "", "The name of the Spanner database.")
-	flag.StringVar(&quotaProjectID, "quota_project_id", "", "The ID of the quota project to use.")
 	flag.StringVar(&logKeyword, "log_keyword", "XMC LOG:", "The keyword that is used in logging sink to filter logs.")
 	flag.IntVar(&maxConcurrentUpdates, "max_concurrent_updates", 10, "The maximum number of concurrent updates to Spanner.")
 }
@@ -69,8 +63,6 @@ func LoadConfig() (*Config, error) {
 		Port:                 port,
 		BatchSize:            batchSize,
 		BatchInterval:        batchInterval,
-		SpannerDatabaseName:  spannerDatabaseName,
-		QuotaProjectID:       quotaProjectID,
 		LogKeyword:           logKeyword,
 		MaxConcurrentUpdates: maxConcurrentUpdates,
 	}
@@ -89,12 +81,6 @@ func LoadConfig() (*Config, error) {
 	}
 	if cfg.MaxConcurrentUpdates <= 0 {
 		return nil, fmt.Errorf("max_concurrent_updates must be positive")
-	}
-	if cfg.SpannerDatabaseName == "" {
-		return nil, fmt.Errorf("spanner_database_name must be set")
-	}
-	if cfg.QuotaProjectID == "" {
-		return nil, fmt.Errorf("quota_project_id must be set")
 	}
 
 	return cfg, nil

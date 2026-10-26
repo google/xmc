@@ -19,30 +19,23 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"xmanager_cloud/internal/storage/spanner/migrations/version"
 )
 
-type mockSpannerHealthClient struct {
-	version int64
-	dirty   bool
-	err     error
+type mockReadinessChecker struct {
+	err error
 }
 
-func (m *mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
-	return m.version, m.dirty, m.err
+func (m *mockReadinessChecker) CheckReady(ctx context.Context) error {
+	return m.err
 }
 
 func TestActiveHealthCheck(t *testing.T) {
 	t.Run("serving when all ok", func(t *testing.T) {
-		mockClient := &mockSpannerHealthClient{
-			version: version.EssExpectedSchemaVersion(),
-			dirty:   false,
-		}
+		mockDB := &mockReadinessChecker{}
 		listener := &Listener{}
 		listener.isRunning.Store(true)
 
-		handler := activeHealthCheck(mockClient, listener)
+		handler := activeHealthCheck(mockDB, listener)
 		req := httptest.NewRequest("GET", "/readyz", nil)
 		w := httptest.NewRecorder()
 
@@ -54,14 +47,11 @@ func TestActiveHealthCheck(t *testing.T) {
 	})
 
 	t.Run("503 when listener unhealthy", func(t *testing.T) {
-		mockClient := &mockSpannerHealthClient{
-			version: version.EssExpectedSchemaVersion(),
-			dirty:   false,
-		}
+		mockDB := &mockReadinessChecker{}
 		listener := &Listener{}
 		listener.isRunning.Store(false)
 
-		handler := activeHealthCheck(mockClient, listener)
+		handler := activeHealthCheck(mockDB, listener)
 		req := httptest.NewRequest("GET", "/readyz", nil)
 		w := httptest.NewRecorder()
 
@@ -72,14 +62,29 @@ func TestActiveHealthCheck(t *testing.T) {
 		}
 	})
 
-	t.Run("503 when spanner down", func(t *testing.T) {
-		mockClient := &mockSpannerHealthClient{
-			err: errors.New("spanner down"),
+	t.Run("503 when database down", func(t *testing.T) {
+		mockDB := &mockReadinessChecker{
+			err: errors.New("database down"),
 		}
 		listener := &Listener{}
 		listener.isRunning.Store(true)
 
-		handler := activeHealthCheck(mockClient, listener)
+		handler := activeHealthCheck(mockDB, listener)
+		req := httptest.NewRequest("GET", "/readyz", nil)
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("expected status ServiceUnavailable, got %v", w.Code)
+		}
+	})
+
+	t.Run("503 when database nil", func(t *testing.T) {
+		listener := &Listener{}
+		listener.isRunning.Store(true)
+
+		handler := activeHealthCheck(nil, listener)
 		req := httptest.NewRequest("GET", "/readyz", nil)
 		w := httptest.NewRecorder()
 

@@ -19,6 +19,5 @@ metadata:
   name: rod-data-provider-config
   labels:
     app: rod-data-provider
-data:
-  spanner_database_name: {{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
+data: {}
 {{- end }}

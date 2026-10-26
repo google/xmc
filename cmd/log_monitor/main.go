@@ -26,7 +26,6 @@ import (
 	"syscall"
 
 	"cloud.google.com/go/pubsub"
-	"xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/logging"
 )
 
@@ -42,12 +41,11 @@ func main() {
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
 
-	stgComp, err := newStorage(ctx, cfg)
+	storage, err := newStorage(ctx)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create storage", "error", err)
 	}
-	defer stgComp.Cleanup()
-	stg := stgComp.Storage
+	defer storage.Close()
 
 	pubsubClient, err := pubsub.NewClient(ctx, cfg.ProjectID)
 	if err != nil {
@@ -55,7 +53,7 @@ func main() {
 	}
 	defer pubsubClient.Close()
 
-	logProcessor := NewLogProcessor(stg, cfg.LogKeyword, cfg.MaxConcurrentUpdates)
+	logProcessor := NewLogProcessor(storage, cfg.LogKeyword, cfg.MaxConcurrentUpdates)
 
 	listener := NewListener(cfg, logProcessor, pubsubClient)
 
@@ -73,7 +71,7 @@ func main() {
 
 	// HTTP server for health checks
 	mux := http.NewServeMux()
-	mux.HandleFunc("/readyz", activeHealthCheck(health.NewSpannerHealthClient(stgComp.Client), listener))
+	mux.HandleFunc("/readyz", activeHealthCheck(storage, listener))
 	mux.HandleFunc("/healthz", livenessCheck(listener))
 
 	addr := fmt.Sprintf(":%s", cfg.Port)

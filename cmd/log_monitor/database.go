@@ -17,44 +17,14 @@ import (
 	"context"
 	"fmt"
 
-	"cloud.google.com/go/spanner"
-	"google.golang.org/api/option"
-	"xmanager_cloud/internal/storage"
-	ss "xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/dbconfig"
+	dbfactory "xmanager_cloud/internal/storage/factory"
 )
 
-// StorageComponents holds initialized Spanner and storage clients along with cleanup callback.
-type StorageComponents struct {
-	Storage storage.Storage
-	Client  *spanner.Client
-	Cleanup func()
-}
-
-func newStorage(ctx context.Context, config *Config) (StorageComponents, error) {
-	sc, err := spanner.NewClientWithConfig(
-		ctx,
-		config.SpannerDatabaseName,
-		spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{
-			TrackSessionHandles: true,
-			InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-				ActionOnInactiveTransaction: spanner.Warn,
-			},
-		}},
-		option.WithQuotaProject(config.QuotaProjectID),
-	)
+func newStorage(ctx context.Context) (*dbfactory.Storage, error) {
+	dbCfg, err := dbconfig.Load()
 	if err != nil {
-		return StorageComponents{}, fmt.Errorf("failed to create spanner client: %w", err)
+		return nil, fmt.Errorf("failed to load database config: %w", err)
 	}
-
-	stg, err := ss.NewStorage(sc)
-	if err != nil {
-		sc.Close()
-		return StorageComponents{}, fmt.Errorf("failed to create storage: %w", err)
-	}
-
-	return StorageComponents{
-		Storage: stg,
-		Client:  sc,
-		Cleanup: func() { sc.Close() },
-	}, nil
+	return dbfactory.NewStorage(ctx, dbCfg, dbfactory.ESS)
 }

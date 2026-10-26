@@ -106,9 +106,19 @@ resource "google_cloud_run_v2_service" "log_monitor" {
         name  = "GOOGLE_CLOUD_PROJECT"
         value = var.project_id
       }
+      env {
+        name  = "DB_BACKEND"
+        value = "spanner"
+      }
+      env {
+        name  = "SPANNER_ESS_DATABASE"
+        value = "projects/${var.project_id}/instances/xmc-${var.environment}/databases/experiment-db-${var.environment}"
+      }
+      env {
+        name  = "SPANNER_QUOTA_PROJECT_ID"
+        value = var.project_id
+      }
       args = [
-        "-spanner_database_name=projects/${var.project_id}/instances/xmc-${var.environment}/databases/experiment-db-${var.environment}",
-        "-quota_project_id=${var.project_id}",
         "-log_keyword=${var.logging_sink_custom_keyword}",
         "-max_concurrent_updates=${var.max_concurrent_updates}",
       ]

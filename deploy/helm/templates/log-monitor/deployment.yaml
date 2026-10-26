@@ -25,6 +25,8 @@ spec:
       app: log-monitor
   template:
     metadata:
+      annotations:
+        checksum/db-config: {{ include (print $.Template.BasePath "/db-config.yaml") . | sha256sum }}
       labels:
         app: log-monitor
     spec:
@@ -57,8 +59,6 @@ spec:
         - configMapRef:
             name: db-config
         args:
-        - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"
-        - "-quota_project_id={{ .Values.projectId }}"
         - "-log_keyword={{ .Values.logMonitor.logKeyword }}"
         - "-max_concurrent_updates={{ .Values.logMonitor.maxConcurrentUpdates }}"
         # /readyz checks Spanner and the Pub/Sub listener. /healthz checks only the listener, so a
