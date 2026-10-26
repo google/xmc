@@ -43,10 +43,12 @@ import (
 type fakeBigQueryWriteServer struct {
 	storagepb.UnimplementedBigQueryWriteServer
 
-	mu             sync.Mutex
-	getStreamErr   error
-	appendRespCode codes.Code
-	serializedRows [][]byte
+	mu                            sync.Mutex
+	getStreamErr                  error
+	transientUnavailableRemaining int
+	appendRespCode                codes.Code
+	appendAttempts                int
+	serializedRows                [][]byte
 }
 
 func (s *fakeBigQueryWriteServer) GetWriteStream(_ context.Context, req *storagepb.GetWriteStreamRequest) (*storagepb.WriteStream, error) {
@@ -81,6 +83,15 @@ func (s *fakeBigQueryWriteServer) AppendRows(stream storagepb.BigQueryWrite_Appe
 func (s *fakeBigQueryWriteServer) handleAppend(req *storagepb.AppendRowsRequest) *storagepb.AppendRowsResponse {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.appendAttempts++
+	if s.transientUnavailableRemaining > 0 {
+		s.transientUnavailableRemaining--
+		return &storagepb.AppendRowsResponse{
+			Response: &storagepb.AppendRowsResponse_Error{
+				Error: &status.Status{Code: int32(codes.Unavailable), Message: "transient unavailable"},
+			},
+		}
+	}
 	if s.appendRespCode != codes.OK {
 		return &storagepb.AppendRowsResponse{
 			Response: &storagepb.AppendRowsResponse_Error{
@@ -199,10 +210,23 @@ func TestOpenBigQueryStoreWriteReadinessAndIdempotentClose(t *testing.T) {
 	}
 
 	writeSrv.mu.Lock()
-	writeSrv.appendRespCode = codes.Unavailable
+	writeSrv.transientUnavailableRemaining = 1
 	writeSrv.mu.Unlock()
+	if err := store.Writer().Write(context.Background(), []*pb.Metric{testMetric()}); err != nil {
+		t.Fatalf("Writer().Write() after transient Unavailable error = %v, want automatic retry success", err)
+	}
+	writeSrv.mu.Lock()
+	gotAttempts := writeSrv.appendAttempts
+	writeSrv.appendRespCode = codes.InvalidArgument
+	writeSrv.mu.Unlock()
+	if gotAttempts != 3 {
+		t.Errorf("appendAttempts after 1 initial write + 1 retried write = %d, want 3", gotAttempts)
+	}
+	if got := len(writeSrv.snapshotRows()); got != 2 {
+		t.Errorf("persisted rows after retried write = %d, want 2", got)
+	}
 	if err := store.Writer().Write(context.Background(), []*pb.Metric{testMetric()}); err == nil {
-		t.Error("Writer().Write() succeeded when AppendRows returned Unavailable, want error")
+		t.Error("Writer().Write() succeeded when AppendRows returned non-retryable InvalidArgument, want error")
 	}
 
 	if err := store.Close(); err != nil {
