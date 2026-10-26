@@ -149,6 +149,7 @@ func OpenBigQueryStream(ctx context.Context, client *managedwriter.Client, proje
 		managedwriter.WithDestinationTable(tableName),
 		managedwriter.WithType(managedwriter.DefaultStream),
 		managedwriter.WithSchemaDescriptor(MetricRowDescriptor()),
+		managedwriter.EnableWriteRetries(true),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to open bigquery write stream for %s: %w", tableName, err)
