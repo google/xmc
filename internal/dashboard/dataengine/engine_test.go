@@ -79,13 +79,13 @@ func TestPing(t *testing.T) {
 	}{
 		{
 			name:   "reachable",
-			engine: &DataEngine{conn: &mockClickHouseConn{}},
+			engine: &DataEngine{backend: clickHouseBackend{conn: &mockClickHouseConn{}}},
 		},
 		{
 			name: "unreachable",
-			engine: &DataEngine{conn: &mockClickHouseConn{
+			engine: &DataEngine{backend: clickHouseBackend{conn: &mockClickHouseConn{
 				pingFn: func(context.Context) error { return pingErr },
-			}},
+			}}},
 			wantErr: true,
 		},
 		{
@@ -316,5 +316,29 @@ func TestDataEngineCloseAndMultiPlotOrdering(t *testing.T) {
 		},
 	}, nil); err == nil {
 		t.Error("multi-plot FetchChartData() with failing query succeeded, want error")
+	}
+
+	var capturedSQL string
+	clampEngine, _ := New(&mockClickHouseConn{
+		queryFn: func(_ context.Context, query string, _ ...any) (driver.Rows, error) {
+			capturedSQL = query
+			return &mockRows{}, nil
+		},
+	})
+	if _, err := clampEngine.FetchChartData(context.Background(), &dpb.Chart{
+		Name: "clamp", Xid: 1, Wid: 1,
+		Plots: []*dpb.PlotSpec{{
+			PlotId: "p1",
+			Type:   dpb.PlotType_SCATTER,
+			Data: &dpb.DataSpec{
+				Metrics: []string{"loss"},
+				Ranges:  []*dpb.DataSpec_DataRange{{End: &dpb.DataSpec_DataRange_EndStep{EndStep: 8000}}},
+			},
+		}},
+	}, &dpb.GetChartDataRequest{ChartWidthPixels: 100000}); err != nil {
+		t.Fatalf("clamped FetchChartData() error: %v", err)
+	}
+	if !strings.Contains(capturedSQL, "intDiv(step, 2)") {
+		t.Errorf("oversized ChartWidthPixels SQL = %q, want bucket size 2 after clamping to %d", capturedSQL, maxChartWidthPixels)
 	}
 }

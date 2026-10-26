@@ -15,9 +15,12 @@
 package dataengine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -25,6 +28,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	dpb "xmanager_cloud/api/protos/dashboard"
+	"xmanager_cloud/internal/logging"
 )
 
 // countingConnector records how many times it ran, so tests can assert on retry behavior.
@@ -638,11 +642,11 @@ func TestDynamicProviderRebuildDetachesFromCallerCancellation(t *testing.T) {
 	connV2 := newSummaryConn("loss", 0.2)
 
 	var (
-		mu            sync.Mutex
-		currentFP     = "fp-v1"
-		dialStarted   = make(chan struct{})
-		releaseDial   = make(chan struct{})
-		errDuringDial error
+		mu          sync.Mutex
+		currentFP   = "fp-v1"
+		dialStarted = make(chan struct{})
+		releaseDial = make(chan struct{})
+		dialErrCh   = make(chan error, 1)
 	)
 
 	provider := NewDynamicProvider(func(ctx context.Context) (string, Connector, error) {
@@ -655,7 +659,7 @@ func TestDynamicProviderRebuildDetachesFromCallerCancellation(t *testing.T) {
 		return fp, func(dialCtx context.Context) (ClickHouseConn, error) {
 			close(dialStarted)
 			<-releaseDial
-			errDuringDial = dialCtx.Err()
+			dialErrCh <- dialCtx.Err()
 			return connV2, nil
 		}, nil
 	}, WithRetryInterval(0), WithCloseGracePeriod(0))
@@ -676,20 +680,31 @@ func TestDynamicProviderRebuildDetachesFromCallerCancellation(t *testing.T) {
 
 	<-dialStarted
 	cancelProbe()
-	close(releaseDial)
 
-	// Because probeCtx was cancelled, the final active engine Ping(probeCtx) may see context.Canceled,
-	// but the rebuild itself must have completed with an uncanceled dialCtx and swapped to connV2.
-	<-pingDone
-	if errDuringDial != nil {
+	// Ping(probeCtx) must abort promptly upon caller cancellation without blocking on releaseDial.
+	select {
+	case <-pingDone:
+	case <-time.After(time.Second):
+		t.Fatal("Ping(probeCtx) remained blocked on slow rebuild after caller cancellation")
+	}
+
+	close(releaseDial)
+	if errDuringDial := <-dialErrCh; errDuringDial != nil {
 		t.Errorf("rebuild dial context err = %v after probe cancellation, want nil", errDuringDial)
 	}
-	data, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
-	if err != nil {
-		t.Fatalf("FetchChartData() after rebuild error: %v", err)
-	}
-	if got := data.GetPlotsData()[0].GetSummaryData().GetLatestValue(); got != 0.2 {
-		t.Errorf("summary LatestValue after rebuild = %v, want 0.2 from connV2", got)
+	deadline := time.Now().Add(time.Second)
+	for {
+		data, err := provider.FetchChartData(context.Background(), summaryTestChart(), nil)
+		if err != nil {
+			t.Fatalf("FetchChartData() after rebuild error: %v", err)
+		}
+		if data.GetPlotsData()[0].GetSummaryData().GetLatestValue() == 0.2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("summary LatestValue after rebuild = %v, want 0.2 from connV2", data.GetPlotsData()[0].GetSummaryData().GetLatestValue())
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -794,20 +809,89 @@ func TestEngineProviderAndCloseLifecycle(t *testing.T) {
 	}
 
 	conn := newSummaryConn("loss", 0.4)
+	var logBuf bytes.Buffer
+	logCtx := logging.WithLogger(context.Background(), slog.New(slog.NewTextHandler(&logBuf, nil)))
 	step := atomic.Int32{}
 	dyn := NewDynamicEngineProvider(func(context.Context) (string, EngineBuilder, error) {
-		if step.Add(1) == 1 {
+		switch step.Add(1) {
+		case 1:
 			return "fp-1", func(context.Context) (*DataEngine, error) { return New(conn) }, nil
+		case 2:
+			return "", nil, errors.New("resolver unreachable")
+		case 3:
+			return "fp-2", nil, nil
+		default:
+			return "fp-3", func(context.Context) (*DataEngine, error) { return nil, nil }, nil
 		}
-		return "fp-2", func(context.Context) (*DataEngine, error) { return nil, nil }, nil
 	}, WithRetryInterval(0))
-	if err := dyn.Ping(context.Background()); err != nil {
-		t.Fatalf("initial Ping() error: %v", err)
+	for range 4 {
+		if err := dyn.Ping(logCtx); err != nil {
+			t.Fatalf("dyn.Ping() error: %v", err)
+		}
 	}
-	if err := dyn.Ping(context.Background()); err != nil {
-		t.Fatalf("second Ping() with nil replacement engine error: %v", err)
+	logs := logBuf.String()
+	for _, wantWarn := range []string{
+		"Failed to resolve data engine configuration during readiness check, keeping active engine",
+		"Resolved nil engine builder during readiness check, keeping active engine",
+		"Failed to rebuild data engine after configuration change, keeping active engine",
+	} {
+		if !strings.Contains(logs, wantWarn) {
+			t.Errorf("Ping() warning logs = %q, missing substring %q", logs, wantWarn)
+		}
 	}
 	if err := dyn.Close(); err != nil || !conn.closed.Load() {
 		t.Errorf("dyn.Close() err=%v, closed=%v; want nil, true", err, conn.closed.Load())
+	}
+}
+
+func TestDynamicProviderRebuildRateLimitsAndDeduplicates(t *testing.T) {
+	t.Parallel()
+	connV1 := newSummaryConn("loss", 0.5)
+	var (
+		fp        atomic.Value
+		dialCount atomic.Int32
+		gate      = make(chan struct{})
+	)
+	fp.Store("fp-v1")
+
+	provider := NewDynamicProvider(func(context.Context) (string, Connector, error) {
+		cur := fp.Load().(string)
+		if cur == "fp-v1" {
+			return cur, func(context.Context) (ClickHouseConn, error) { return connV1, nil }, nil
+		}
+		return cur, func(context.Context) (ClickHouseConn, error) {
+			dialCount.Add(1)
+			<-gate
+			return nil, errors.New("unreachable v2")
+		}, nil
+	}, WithRetryInterval(time.Hour))
+
+	if err := provider.Ping(context.Background()); err != nil {
+		t.Fatalf("initial Ping() error: %v", err)
+	}
+	fp.Store("fp-v2")
+
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = provider.Ping(context.Background())
+		}()
+	}
+	for dialCount.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	close(gate)
+	wg.Wait()
+
+	// Subsequent Ping calls within retryInterval (1h) must be rate-limited without dialing again.
+	for range 3 {
+		if err := provider.Ping(context.Background()); err != nil {
+			t.Fatalf("rate-limited Ping() with healthy v1 engine error: %v", err)
+		}
+	}
+	if got := dialCount.Load(); got != 1 {
+		t.Errorf("rebuild dialCount across concurrent + cooldown Pings = %d, want 1", got)
 	}
 }

@@ -39,7 +39,10 @@ const defaultCloseGracePeriod = time.Minute
 
 // dialKey names the shared connection attempt. A Provider dials one destination, so every caller
 // waiting for an engine waits on the same key.
-const dialKey = "dataengine"
+const (
+	dialKey    = "dataengine"
+	rebuildKey = "dataengine-rebuild"
+)
 
 // Connector opens the ClickHouse connection a DataEngine runs its queries through.
 type Connector func(ctx context.Context) (ClickHouseConn, error)
@@ -69,20 +72,21 @@ type Provider struct {
 	// will not make them take.
 	engine atomic.Pointer[DataEngine]
 
-	// group collapses concurrent dials into one shared attempt whose result every caller receives.
+	// group collapses concurrent dials and dynamic rebuilds into shared attempts.
 	group singleflight.Group
 
-	// rebuildMu serializes engine swaps once a configuration fingerprint change is detected.
-	rebuildMu sync.Mutex
-
 	// mu guards the bookkeeping the retry interval is computed from and the active config fingerprint.
-	// Only the goroutine running the shared attempt or serialized readiness check touches these, so the
-	// lock is uncontended; it is kept because relying on singleflight's internal ordering for that
-	// guarantee would be an easy thing to break later.
-	mu          sync.Mutex
-	fingerprint string
-	lastErr     error
-	lastAttempt time.Time
+	// Only the goroutine running the shared attempt touches these, so the lock is uncontended; it is
+	// kept because relying on singleflight's internal ordering for that guarantee would be an easy
+	// thing to break later.
+	mu                 sync.Mutex
+	closed             bool
+	fingerprint        string
+	lastErr            error
+	lastAttempt        time.Time
+	lastRebuildFP      string
+	lastRebuildErr     error
+	lastRebuildAttempt time.Time
 }
 
 // ProviderOption configures Provider settings.
@@ -258,12 +262,26 @@ func (p *Provider) pingActive(ctx context.Context, candidateErr error) error {
 }
 
 func (p *Provider) rebuildIfChanged(ctx context.Context, fingerprint string, buildEngine EngineBuilder) error {
-	p.rebuildMu.Lock()
-	defer p.rebuildMu.Unlock()
-	if p.hasFingerprint(fingerprint) {
-		return nil
+	shared := p.group.DoChan(rebuildKey, func() (any, error) {
+		return nil, p.rebuildOnce(ctx, fingerprint, buildEngine)
+	})
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case result := <-shared:
+		return result.Err
 	}
-	return p.rebuild(ctx, fingerprint, buildEngine)
+}
+
+func (p *Provider) rebuildOnce(ctx context.Context, fingerprint string, buildEngine EngineBuilder) error {
+	due, cachedErr := p.beginRebuildAttempt(fingerprint)
+	if !due {
+		return cachedErr
+	}
+	if err := p.rebuild(ctx, fingerprint, buildEngine); err != nil {
+		return p.recordRebuildAttempt(err)
+	}
+	return nil
 }
 
 func (p *Provider) rebuild(ctx context.Context, fingerprint string, buildEngine EngineBuilder) error {
@@ -281,7 +299,11 @@ func (p *Provider) rebuild(ctx context.Context, fingerprint string, buildEngine 
 		closeEngine(engine)
 		return fmt.Errorf("failed to ping data engine: %w", err)
 	}
-	old := p.storeEngine(engine, fingerprint)
+	old, stored := p.storeEngine(engine, fingerprint)
+	if !stored {
+		closeEngine(engine)
+		return fmt.Errorf("data engine provider is closed")
+	}
 	p.scheduleCloseEngine(old)
 	return nil
 }
@@ -322,7 +344,10 @@ func (p *Provider) build(ctx context.Context) (*DataEngine, error) {
 		return nil, p.recordAttempt(fmt.Errorf("engine builder returned nil engine"))
 	}
 
-	p.storeEngine(engine, fp)
+	if _, stored := p.storeEngine(engine, fp); !stored {
+		closeEngine(engine)
+		return nil, fmt.Errorf("data engine provider is closed")
+	}
 	return engine, nil
 }
 
@@ -361,18 +386,45 @@ func (p *Provider) recordAttempt(err error) error {
 	return err
 }
 
+func (p *Provider) beginRebuildAttempt(fingerprint string) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.fingerprint == fingerprint {
+		return false, nil
+	}
+	if p.lastRebuildFP == fingerprint && !p.lastRebuildAttempt.IsZero() && time.Since(p.lastRebuildAttempt) < p.retryInterval {
+		return false, p.lastRebuildErr
+	}
+	p.lastRebuildFP = fingerprint
+	p.lastRebuildAttempt = time.Now()
+	return true, nil
+}
+
+func (p *Provider) recordRebuildAttempt(err error) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.lastRebuildErr = err
+	return err
+}
+
 func (p *Provider) hasFingerprint(fingerprint string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.fingerprint == fingerprint
 }
 
-func (p *Provider) storeEngine(engine *DataEngine, fingerprint string) *DataEngine {
+func (p *Provider) storeEngine(engine *DataEngine, fingerprint string) (*DataEngine, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.closed && engine != nil {
+		return nil, false
+	}
 	p.fingerprint = fingerprint
 	p.lastErr = nil
-	return p.engine.Swap(engine)
+	p.lastRebuildFP = ""
+	p.lastRebuildErr = nil
+	p.lastRebuildAttempt = time.Time{}
+	return p.engine.Swap(engine), true
 }
 
 func (p *Provider) scheduleCloseEngine(engine *DataEngine) {
@@ -405,7 +457,15 @@ func (p *Provider) Close() error {
 	if p == nil {
 		return nil
 	}
-	old := p.storeEngine(nil, "")
+	p.mu.Lock()
+	p.closed = true
+	p.fingerprint = ""
+	p.lastErr = nil
+	p.lastRebuildFP = ""
+	p.lastRebuildErr = nil
+	p.lastRebuildAttempt = time.Time{}
+	old := p.engine.Swap(nil)
+	p.mu.Unlock()
 	if old == nil {
 		return nil
 	}
