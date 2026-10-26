@@ -1,41 +1,33 @@
-# XMC Documentation Topography Map & Source of Truth Registry
+# XMC Documentation Topography Map & Source of Truth Guide
 
-This document serves as the canonical navigation instrument for the **XMC Review Docs Drift Skill** ([`SKILL.md`](../SKILL.md)). It maps every major codebase quadrant to its authoritative documentation files, catalogs the identifier sources of truth, indexes known drift magnets, and defines the verification rubric for testable assertions.
-
----
-
-## 1. Code-to-Docs Topography Mapping Matrix
-
-When a source file changes in a delta audit (Mode 2) or during a full repository sweep (Mode 1), consult this matrix to locate the corresponding documentation files that must remain synchronized:
-
-| Codebase Quadrant | Core Source Directories / Files | Authoritative Documentation Files |
-| :--- | :--- | :--- |
-| **Control Plane Services & CLI** | `cmd/actuator/`<br>`cmd/experiment_state_server/`<br>`cmd/ingestion_gateway/`<br>`cmd/ui/`<br>`cmd/xmc_bridge/` | `cmd/**/README.md`<br>`docs/architecture/components.md`<br>`docs/architecture/overview.md`<br>`docs/architecture/execution_model.md`<br>`docs/design/gateway.md`<br>`docs/design/topologies.md` |
-| **Core Flows & Workflows** | `pkg/lifecycle/`<br>`pkg/reconciliation/`<br>`pkg/metrics/`<br>`internal/storage/` | `docs/flows/experiment_lifecycle.md`<br>`docs/flows/work_unit_lifecycle.md`<br>`docs/flows/reconciliation.md`<br>`docs/flows/metrics_and_observability.md`<br>`docs/flows/README.md` |
-| **gRPC & Protobuf Contracts** | `api/protos/**/*.proto`<br>`api/v1alpha1/**/*.go` | `docs/architecture/components.md`<br>`docs/flows/`<br>`cmd/ingestion_gateway/README.md`<br>`cmd/experiment_state_server/README.md` |
-| **Cluster Toolkit & Blueprints** | `deploy/ctk_v2/xmanager-cloud.yaml`<br>`deploy/ctk_v2/xmc-deployment-template.yaml`<br>`deploy/ctk_v2/modules/` | `INSTALL.md`<br>`deploy/ctk_v2/README.md`<br>`docs/developer.md` |
-| **Helm Charts & Profiles** | `deploy/helm/`<br>`deploy/profiles/`<br>`deploy/addons/` | `deploy/helm/README.md`<br>`deploy/profiles/**/README.md`<br>`deploy/addons/metrics/**/README.md`<br>`INSTALL.md` |
-| **Python SDKs (`xmc`, `xdash`)** | `sdks/python/xmc/`<br>`sdks/python/xdash/`<br>`pyproject.toml` | `sdks/python/xmc/README.md`<br>`sdks/python/xdash/README.md`<br>`README.md`<br>`docs/authentication.md`<br>`docs/developer.md` |
-| **Examples & Workloads** | `examples/**/launch.py`<br>`examples/**/worker.py`<br>`examples/**/worker.env`<br>`examples/**/Dockerfile` | `examples/README.md`<br>`examples/**/README.md`<br>`README.md` |
-| **Diagnostic & Dev Tools** | `tools/xmc-diag/`<br>`tools/dev_env/`<br>`tools/release/`<br>`tools/nightly_tests/` | `tools/README.md`<br>`tools/**/README.md`<br>`docs/ci_runner_infrastructure.md` |
-| **Multi-Agent Guidelines & Rules**| `.agents/rules/`<br>`.agents/skills/` | `.agents/AGENTS.md`<br>`.agents/rules/*.md`<br>`docs/agent_workflows.md` |
+This document serves as the navigation and verification guide for the **XMC Review Docs Drift Skill** ([`SKILL.md`](../SKILL.md)). Together with the canonical machine-readable topography registry ([`xmc_docs_topography_map.json`](xmc_docs_topography_map.json)), it defines how source paths map to authoritative documentation files, how identifier claims are verified against source code, which areas act as recurring drift magnets, and how testable assertions are mechanically evaluated.
 
 ---
 
-## 2. Identifier Sources of Truth Registry
+## 1. Code-to-Docs Topography Mapping Registry (`quadrants`)
 
-Documentation frequently asserts facts regarding CLI flags, environment variables, default ports, Kubernetes resource kinds, and configuration parameters. These assertions MUST be tested against their code sources of truth, never against other documentation or human memory:
+To uphold the **One Canonical Home per Fact** rule and avoid fragile Markdown table regex parsing, the authoritative Code-to-Docs mapping matrix is maintained in [`xmc_docs_topography_map.json`](xmc_docs_topography_map.json) under the `quadrants` key.
 
-| Documented Identifier Type | Canonical Source of Truth in Code | Verification Method / Regex |
-| :--- | :--- | :--- |
-| **CLI Flags & Defaults** | `cmd/<service>/main.go`<br>`pkg/cli/` | Search flag definitions (`flag.StringVar`, `pflag`, `cobra.Command`). Compare flag name and default value. |
-| **Environment Variables** | `pkg/**/`<br>`internal/**/`<br>`cmd/**/`<br>`sdks/python/**` | Search `os.Getenv("VAR")`, `os.LookupEnv("VAR")` in Go, or `os.environ.get("VAR")` in Python. Verify exact spelling and fallback default. |
-| **Network Ports & Protocols** | Service manifests (`deploy/helm/templates/`), `main.go`, `values.yaml` | Compare documented port (e.g. `8123`, `9000`, `8080`, `50051`) against container port declarations and server listen addresses. |
-| **Helm Chart Parameters** | `deploy/helm/values.yaml`<br>`deploy/profiles/**/values.yaml` | Verify that every parameter documented in the chart README's markdown table exists in `values.yaml` with the documented default. |
-| **Cluster Toolkit Blueprint Vars** | `deploy/ctk_v2/xmanager-cloud.yaml`<br>`deploy/ctk_v2/xmc-deployment-template.yaml`<br>`deploy/ctk_v2/modules/**/variables.tf` | Verify `vars:` keys, default values, and module input requirements against blueprint schema. |
-| **Protobuf RPCs & Field Names** | `api/protos/**/*.proto` | Check that RPC method names, package names, and field names in prose or JSON examples match the `.proto` definitions. |
-| **Python SDK Methods & Signatures** | `sdks/python/xmc/src/xmc/`<br>`sdks/python/xdash/src/xdash/` | Verify documented method names, arguments, keyword parameters, and return types against public module exports (`__all__`). |
-| **Container Images & Registries** | `deploy/helm/values.yaml`, example `Dockerfile`s, `build_and_push.sh` | Confirm that image repository paths (e.g., `us-docker.pkg.dev/...`) match active build manifests and Artifact Registry repositories. |
+Each entry in `quadrants` defines:
+- `name`: The codebase quadrant name (e.g., `Control Plane Services & CLI`, `Helm Charts, Addons & Profiles`, `Python SDKs (xmc, xdash)`).
+- `source_patterns`: Repository-relative `PurePosixPath` glob patterns matching the core source directories and files in that quadrant.
+- `doc_patterns`: Repository-relative `PurePosixPath` glob patterns matching the authoritative Markdown documentation files that must remain synchronized when `source_patterns` change.
+
+[`tools/lint/check_docs_topography_map.py`](../../../../tools/lint/check_docs_topography_map.py) continuously validates `quadrants` against `git ls-files` on every commit to enforce:
+1. **`[DEAD_MAP_ENTRY]`**: Every glob in `source_patterns` and `doc_patterns` matches at least one tracked file.
+2. **`[UNMAPPED_DOC_FILE]`**: Every tracked `.md` file in `git ls-files '*.md'` matches at least one pattern in `doc_patterns`.
+3. **`[UNMAPPED_SOURCE_DIR]`**: Every top-level component directory under `cmd/*/`, `sdks/*/*/`, `deploy/*/`, `pkg/*/`, `internal/*/`, `api/*/`, `examples/*/`, and `tools/*/` has at least one tracked file matched by `source_patterns`.
+
+---
+
+## 2. Identifier Sources of Truth Registry (`identifier_sources`)
+
+Documentation frequently asserts facts regarding CLI flags, environment variables, default network ports, Kubernetes resource kinds, and configuration parameters. These assertions MUST be tested against their code sources of truth—never against other documentation or human memory.
+
+The canonical registry of identifier sources is maintained in [`xmc_docs_topography_map.json`](xmc_docs_topography_map.json) under the `identifier_sources` key:
+- `identifier_type`: The category of documented identifier (`CLI Flags & Defaults`, `Environment Variables`, `Network Ports & Protocols`, `Helm Chart Parameters`, `Cluster Toolkit Blueprint Vars`, `Protobuf RPCs & Field Names`, `Python SDK Methods & Signatures`, `Container Images & Registries`).
+- `source_patterns`: Repository-relative `PurePosixPath` globs pointing to the authoritative source files (validated by `check_docs_topography_map.py` against `DEAD_MAP_ENTRY`).
+- `verification_command`: The mechanical `git grep` or `grep` probe used to verify documented identifiers against code truth.
 
 ---
 
@@ -78,6 +70,9 @@ Experience with customer reports and repository evolution has identified recurri
 When auditing a document, treat every specific claim as a hypothesis that must be mechanically proven or disproven against the codebase:
 
 ```bash
+# 0. Verify Bi-Directional Topography Map Integrity (xmc_docs_topography_map.json <-> git ls-files)
+python3 tools/lint/check_docs_topography_map.py
+
 # 1. Verify Go CLI Flag existence and default value
 git grep -E '(StringVar|IntVar|BoolVar|Flag)\([^,]*"[^"]*"' cmd/
 
