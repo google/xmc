@@ -19,7 +19,10 @@ go_library(
     srcs = ["dbconfig.go"],
     importpath = "xmanager_cloud/internal/storage/dbconfig",
     visibility = ["//:__subpackages__"],
-    deps = ["//internal/configutil"],
+    deps = [
+        "//internal/configutil",
+        "//internal/logging",
+    ],
 )
 
 go_test(

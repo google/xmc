@@ -17,8 +17,8 @@
 package dbconfig
 
 import (
+	"context"
 	"fmt"
-	"log/slog"
 	"math"
 	"net"
 	"net/url"
@@ -26,6 +26,7 @@ import (
 	"strconv"
 
 	"xmanager_cloud/internal/configutil"
+	"xmanager_cloud/internal/logging"
 )
 
 const (
@@ -125,7 +126,7 @@ func spannerSetting(key string, legacyKeys ...string) string {
 	for _, legacyKey := range legacyKeys {
 		configutil.StringEnv(&val, legacyKey, "")
 		if val != "" {
-			slog.Warn("Using deprecated database environment variable; migrate to db-config", "deprecated_env", legacyKey, "replacement_env", key)
+			logging.Warn(context.Background(), "Using deprecated database environment variable; migrate to db-config", "deprecated_env", legacyKey, "replacement_env", key)
 			return val
 		}
 	}
