@@ -26,7 +26,6 @@ import (
 // ClickHouseConn abstracts ClickHouse database connection methods required by DataEngine.
 type ClickHouseConn interface {
 	Query(ctx context.Context, query string, args ...any) (driver.Rows, error)
-	QueryRow(ctx context.Context, query string, args ...any) driver.Row
 	Ping(ctx context.Context) error
 }
 

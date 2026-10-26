@@ -25,11 +25,11 @@ import (
 const (
 	defaultMetricsTable = "xmc_metrics"
 	maxConcurrentPlots  = 8
+	maxChartWidthPixels = 4000
 )
 
 // DataEngine orchestrates analytics queries against the configured metrics backend.
 type DataEngine struct {
-	conn      ClickHouseConn
 	backend   queryBackend
 	tableName string
 }
@@ -52,7 +52,6 @@ func New(conn ClickHouseConn, opts ...Option) (*DataEngine, error) {
 		return nil, fmt.Errorf("clickhouse connection must not be nil")
 	}
 	engine := &DataEngine{
-		conn:      conn,
 		backend:   clickHouseBackend{conn: conn},
 		tableName: defaultMetricsTable,
 	}
@@ -63,13 +62,10 @@ func New(conn ClickHouseConn, opts ...Option) (*DataEngine, error) {
 }
 
 func (e *DataEngine) activeBackend() queryBackend {
-	if e.backend != nil {
-		return e.backend
+	if e == nil {
+		return nil
 	}
-	if e.conn != nil {
-		return clickHouseBackend{conn: e.conn}
-	}
-	return nil
+	return e.backend
 }
 
 // Ping checks that the database connection behind the engine is still usable.
@@ -77,7 +73,7 @@ func (e *DataEngine) activeBackend() queryBackend {
 // A built engine says only that a connection was established once. Readiness needs to know whether
 // queries would work now, and the only way to find that out is to ask the backend.
 func (e *DataEngine) Ping(ctx context.Context) error {
-	if e == nil || e.activeBackend() == nil {
+	if e.activeBackend() == nil {
 		return fmt.Errorf("data engine is not initialized")
 	}
 	return e.activeBackend().Ping(ctx)
@@ -85,7 +81,7 @@ func (e *DataEngine) Ping(ctx context.Context) error {
 
 // Close releases any underlying client resources held by the DataEngine.
 func (e *DataEngine) Close() error {
-	if e == nil || e.activeBackend() == nil {
+	if e.activeBackend() == nil {
 		return nil
 	}
 	return e.activeBackend().Close()
@@ -95,7 +91,7 @@ func (e *DataEngine) Close() error {
 func (e *DataEngine) FetchChartData(ctx context.Context, chart *dpb.Chart, req *dpb.GetChartDataRequest) (*dpb.ChartData, error) {
 	// The engine is optional at startup, so a caller can end up holding a nil one. Report that as an
 	// error rather than letting the plot fetchers take down the process on a nil dereference.
-	if e == nil || e.activeBackend() == nil {
+	if e.activeBackend() == nil {
 		return nil, fmt.Errorf("data engine is not initialized")
 	}
 	if chart == nil {
@@ -115,7 +111,7 @@ func (e *DataEngine) FetchChartData(ctx context.Context, chart *dpb.Chart, req *
 
 	widthPixels := int32(0)
 	if req != nil {
-		widthPixels = req.GetChartWidthPixels()
+		widthPixels = min(req.GetChartWidthPixels(), maxChartWidthPixels)
 	}
 	if len(plots) == 1 {
 		pd, err := e.fetchPlotData(ctx, chart.GetXid(), chart.GetWid(), plots[0], widthPixels)
