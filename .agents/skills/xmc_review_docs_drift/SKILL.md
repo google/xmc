@@ -1,6 +1,6 @@
 ---
 name: XMC Review Docs Drift
-description: "Audits the repository for documentation drift between source code (Go services, flags, env vars, proto contracts, Helm charts, Cluster Toolkit blueprints, Python SDKs, examples, tools) and all documentation files (READMEs, INSTALL.md, docs/**, .agents/**). Operates in two modes: from-scratch (full repository baseline audit) and by-delta (PR or time-window audit). Generates an actionable triage report in the conversation artifact directory."
+description: "Audits the repository for documentation drift between source code (Go services, flags, env vars, proto contracts, Helm charts, Cluster Toolkit blueprints, Python SDKs, examples, tools) and all documentation files (READMEs, INSTALL.md, docs/**, .agents/**). Operates in two modes: from-scratch (full repository baseline audit) and by-delta (PR or time-window audit). Compiles a dual-anchored candidate discrepancy table (doc location + quote vs code location + proof) and spawns an independent verification session to confirm or falsify every finding before generating the final triage report."
 ---
 
 # Documentation Drift Review Playbook (`/xmc_review_docs_drift`)
@@ -23,21 +23,22 @@ graph TD
     A["User triggers /xmc_review_docs_drift"] --> B{"Select Operational Mode"}
     
     B -->|"Mode 1: from-scratch (Full Repo Audit)"| C["Phase 1: Partition Codebase into 5 Analysis Domains"]
-    C --> D["Phase 2: Spawn Parallel Research Subagents (Context Preservation)"]
+    C --> D["Phase 2: Spawn Parallel Discovery Subagents (Context Preservation)"]
     D --> E["Domain 1: Services, Flags & Proto Contracts"]
     D --> F["Domain 2: Deployments, Helm & CTK Blueprints"]
     D --> G["Domain 3: Python SDKs & Build Tooling"]
     D --> H["Domain 4: Examples, Workloads & Diagnostic Scripts"]
     D --> I["Domain 5: Relative & External Links Integrity"]
-    E & F & G & H & I --> J["Phase 3: Aggregate & Falsify Findings"]
+    E & F & G & H & I --> J["Phase 3: Compile Dual-Anchored Candidate Discrepancy Table (Doc + Code Evidence)"]
 
     B -->|"Mode 2: by-delta (PR or Time-Window Audit)"| K["Phase 1: Collect Changed Files & Commit Surface"]
-    K --> L["Phase 2: Code -> Docs Mapping (Identify impacted docs)"]
-    K --> M["Phase 3: Docs -> Source Verification (Audit touched docs against code truth)"]
+    K --> L["Phase 2A: Code -> Docs Mapping (Identify impacted docs)"]
+    K --> M["Phase 2B: Docs -> Source Verification (Audit touched docs against code truth)"]
     L & M --> J
 
-    J --> N["Phase 4: Classify Severities (Blocking vs Advisory)"]
-    N --> O["Phase 5: Output Triage Report in Artifact Directory & Chat"]
+    J --> N["Phase 4: Spawn Independent Verification Session (Adversarial Falsifier Pass)"]
+    N --> O["Phase 5: Filter Falsified Items & Classify Severities (Blocking vs Advisory)"]
+    O --> P["Phase 6: Output Verified Triage Report in Artifact Directory & Chat"]
 ```
 
 ---
@@ -70,8 +71,10 @@ To prevent false positives from git-ignored or untracked local directories, alwa
   - Tooling manuals: `tools/**/README.md`, `test/**/README.md`.
   - Multi-agent rules: `.agents/**/*.md`.
 
-### Phase 2: Parallel Subagent Domain Sweep (Context Preservation Gate)
-Per [Skills & Automation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines), running a full-repository audit inside the primary coordinator conversation will exhaust context memory. The coordinator MUST partition the audit into 5 domain sweeps and spawn worker subagents (`invoke_subagent` with `TypeName: "research-google"`):
+### Phase 2: Parallel Discovery Subagent Sweep (Context Preservation Gate)
+Per [Skills & Automation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines), running a full-repository audit inside the primary coordinator conversation will exhaust context memory. The coordinator MUST partition the initial discovery sweep into 5 domains and spawn worker subagents (`invoke_subagent` or `run_workflow` `parallel(...)` with `type_name="research-google"`).
+
+Every discovery subagent MUST record both the exact **Documentation Location + Verbatim Claim** and the **Code Location + Verbatim Evidence** for every candidate discrepancy it finds:
 
 #### Subagent 1: Control Plane Services, Flags & API Contracts
 - **Scope**: `cmd/`, `pkg/`, `internal/`, `api/protos/` vs `cmd/**/README.md`, `docs/architecture/`, `docs/design/`, `docs/flows/`.
@@ -126,7 +129,7 @@ Use this mode during pull request reviews, before merge, or for periodic delta a
    - **Source Code Changed?** Map to affected documentation via the [Topography Map](references/xmc_docs_topography_and_map.md) (Direction 1).
    - **Documentation Changed?** Verify new claims against source code at HEAD (Direction 2).
 
-### Phase 2: Direction 1 — Code → Docs Audit
+### Phase 2A: Direction 1 — Code → Docs Audit
 For every modified source file:
 1. Locate its documented canonical pages using the [Topography Map](references/xmc_docs_topography_and_map.md).
 2. Check if the code change modified any **testable assertion**:
@@ -135,9 +138,9 @@ For every modified source file:
    - Did a default configuration value or port change?
    - Was an API schema or Protobuf contract updated?
    - Was a Helm `values.yaml` key modified?
-3. Check the mapped documentation files: Did the PR update the documentation in those exact spots? If not, flag as **Documentation Drift (Missing Update)**.
+3. Check the mapped documentation files: Did the PR update the documentation in those exact spots? If not, record a row in the Candidate Discrepancy Table pointing to both the modified code location and the un-updated documentation location.
 
-### Phase 3: Direction 2 — Docs → Source & Rules Audit
+### Phase 2B: Direction 2 — Docs → Source & Rules Audit
 For every documentation file touched in the delta:
 1. **Verify Against Code Truth**: Every identifier, command, flag, default value, or path in the updated prose must match the actual source code at HEAD.
 2. **Verify Repository Rules**:
@@ -145,6 +148,51 @@ For every documentation file touched in the delta:
    - **No PR-Status Prose**: Docs must describe the system as it is on `main`. Sentences like *"PR #123 adds..."* or *"Currently proposing..."* rot immediately and are forbidden.
    - **Broken Links**: Ensure no newly introduced relative links or external URLs are broken.
    - **Open-Source Link Compliance**: Verify compliance with [Markdown Documentation Guidelines](../../rules/languages/markdown.md#1-markdown-formatting--structure).
+
+---
+
+## Phase 3: Compile the Dual-Anchored Candidate Discrepancy Table
+
+Before running the verification pass, aggregate all candidate discrepancies from Mode 1 or Mode 2 into a structured **Candidate Discrepancy Table** saved to `${ARTIFACT_DIR:-<appDataDir>/brain/<conv_id>}/docs_drift_candidates.md`.
+
+Every row in the table MUST explicitly point to **both places** (the documentation file:line and the code file:line) along with concrete verbatim evidence from both sides supporting that a discrepancy exists:
+
+| Candidate ID | Category | Doc Location (`file:line`) | Doc Claim (Verbatim Quote / Snippet) | Code Location (`file:line`) | Code Evidence (Verbatim Snippet / Probe Output) | Proposed Severity | Required Action |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `CAND-01` | CLI Flags & Defaults | `cmd/xmc_bridge/README.md:59-60` | ``--cms-address \| CMS_ADDRESS \| "localhost:50051"`` | `cmd/xmc_bridge/main.go:97,125,142-144` | ``flag.StringVar(&cfg.CMSAddress, "cms-address", envOr("CMS_ADDRESS", ""), ...)``; `if cfg.CMSAddress == "" { return fmt.Errorf("cms-address must be specified") }` | `[BLOCKING]` | Mark `--cms-address` as required with empty default `""` |
+
+> [!CAUTION]
+> **No Unanchored or Single-Sided Claims**:
+> Any candidate that omits either the exact `Doc Location` + `Doc Claim` or the exact `Code Location` + `Code Evidence` (e.g., vague assertions without file and line proof) is invalid and must be completed before Phase 4.
+
+---
+
+## Phase 4: Mandatory Second-Pass Independent Verification Session
+
+Once the initial discovery run finishes and `${ARTIFACT_DIR:-<appDataDir>/brain/<conv_id>}/docs_drift_candidates.md` is written, the coordinator MUST spawn a **separate, independent verification session** (via `invoke_subagent` with `TypeName: "research-google"`, or as a dedicated verification stage in `run_workflow` after the discovery agents complete) to audit the candidate list and verify whether each discrepancy is genuinely real.
+
+> [!IMPORTANT]
+> **Why a Separate Verification Session Is Mandatory**:
+> Discovery agents scanning large file sets can misread conditional prose, overlook example overrides, or miss fallback wiring in a sibling source file. Spawning a fresh, independent session with clean context and the dual-anchored candidate table eliminates false positives before reporting to the user.
+
+### 1. Context Provided to the Independent Verifier Session
+Pass to the verifier session (or parallel domain verifier sessions when the candidate table exceeds ~15 items):
+1. The path to the dual-anchored Candidate Discrepancy Table (`${ARTIFACT_DIR:-<appDataDir>/brain/<conv_id>}/docs_drift_candidates.md`).
+2. The exact repository workspace path (`/usr/local/google/home/janzak/Documents/XMC`) and current `HEAD` commit SHA.
+3. Explicit instructions to use `read_file` on **both** the cited `Doc Location` and the cited `Code Location` (never relying on `code_search`, which searches internal Piper rather than the local GitHub repository).
+
+### 2. Verifier Falsification Protocol
+For every candidate row (`CAND-01` .. `CAND-N`), the independent verifier session MUST execute this 3-point check using `read_file`:
+1. **Verify the Documentation Side (`Doc Location`)**:
+   - Read the cited Markdown file around `Doc Location`.
+   - Confirm the quoted `Doc Claim` actually appears at those lines and is stated as a current fact (not an explicit hypothetical, historical note, or intentional override example).
+2. **Verify the Code Side (`Code Location` & Sibling Files)**:
+   - Read the cited source file around `Code Location` (plus any referenced `BUILD.bazel`, Helm `_helpers.tpl`, config loader, or caller file).
+   - Confirm that the code genuinely contradicts the documentation claim and that no wrapper script, entrypoint, or fallback satisfies the documented behavior elsewhere.
+3. **Assign an Explicit Verification Verdict**:
+   - **`[CONFIRMED]`**: Both the doc claim and code contradiction are verified at the cited locations. Keep in the final Triage Report.
+   - **`[REFINED]`**: The discrepancy is real, but the line numbers, file path, severity, or required action needed adjustment. Update the row and keep in the final Triage Report.
+   - **`[FALSIFIED]`**: The discrepancy is disproven (false positive). Remove from the active Triage Table and record the falsification proof in the report's `<details><summary>Falsified / Discarded Candidates</summary>` audit log.
 
 ---
 
@@ -167,7 +215,7 @@ A testable assertion is any factual claim in documentation that can be proven or
 
 ## Severity Classification Rubric
 
-Classify all findings into two unambiguous tiers:
+Classify all confirmed findings into two unambiguous tiers:
 
 ### 1. `[BLOCKING]`
 Documentation states something demonstrably false, breaks developer workflows, or misleads users:
@@ -190,17 +238,19 @@ Style drift, maintainability issues, or non-fatal discrepancies:
 
 The skill must produce two structured deliverables:
 
-### 1. Interactive Triage Table in Chat
-A concise markdown table summarizing all verified findings:
+### 1. Interactive Triage Summary & Roster in Chat
+1. **Subagent & Verifier Session Roster**: A table listing each discovery subagent and the independent Verifier Session(s) with clickable `[<conv_id>](conversation://<conv_id>)` links and confirmed vs. falsified counts.
+2. **Verified Discrepancy Triage Table**: A dual-anchored markdown table showing every `[CONFIRMED]` / `[REFINED]` discrepancy with both the **Doc Location + Claim** and the **Code Location + Evidence**:
 
-| ID | Category | Doc Location | Source of Truth / Evidence | Severity | Required Action |
+| ID | Category | Doc Location & Claim | Code Location & Evidence | Verdict & Severity | Required Action |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `DOC-01` | Broken External Link | `deploy/addons/metrics/clickhouse/README.md:71` | Upstream chart is `clickstack/clickstack`, not `clickhouse/clickhouse` | `[BLOCKING]` | Update command to `helm pull clickstack/clickstack --version <ver>` |
-| `DOC-02` | Broken Relative Link | `docs/design/topologies.md:16` | Path `deploy/ctk_v1/` was deleted in CTK v2 migration | `[BLOCKING]` | Update link to point to `deploy/ctk_v2/README.md` |
-| `DOC-03` | Stale Relative Path | `deploy/profiles/stable-2026a/components/clickhouse/README.md:138` | Target path requires 5 levels of traversal (`../../../../../`) | `[BLOCKING]` | Fix relative path depth to resolver.go |
+| `DOC-01` | Broken External Link | `deploy/addons/metrics/clickhouse/README.md:71`<br>``helm pull clickhouse/clickhouse --version 3.4.0`` | `deploy/addons/metrics/clickhouse/README.md:55,90`<br>``helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts`` (chart is `clickstack/clickstack`) | `[CONFIRMED]`<br>`[BLOCKING]` | Update command to `helm pull clickstack/clickstack --version <ver>` |
+| `DOC-02` | Broken Relative Link | `docs/design/topologies.md:16`<br>`[deploy/ctk_v1/README.md](../../deploy/ctk_v1/README.md)` | `deploy/ctk_v2/README.md:1`<br>`deploy/ctk_v1/` was removed in the CTK v2 migration | `[CONFIRMED]`<br>`[BLOCKING]` | Update link to `[deploy/ctk_v2/README.md](../../deploy/ctk_v2/README.md)` |
+| `DOC-03` | Stale Relative Path | `deploy/profiles/stable-2026a/components/clickhouse/README.md:138`<br>`../../../../pkg/clickhouse/componentconfig/resolver.go` | `pkg/clickhouse/componentconfig/resolver.go:1`<br>Doc is 5 directory levels deep; `../../../../` resolves to `deploy/pkg/...` | `[CONFIRMED]`<br>`[BLOCKING]` | Prepend one `../` (`../../../../../pkg/clickhouse/componentconfig/resolver.go`) |
 
 ### 2. Persistent Triage Report in Artifact Directory
 Write the complete report to `${ARTIFACT_DIR:-<appDataDir>/brain/<conv_id>}/docs_drift_triage_report.md` containing:
-- Executive Summary (mode, scope, total docs inspected, total assertions checked, blocker/advisory counts).
-- Comprehensive findings breakdown with complete reproduction steps and suggested diffs.
-- Recommended PR patches or follow-up issue backlog.
+- Executive Summary (mode, scope, total docs inspected, candidate count, confirmed vs. falsified count, blocker/advisory breakdown).
+- Subagent & Verifier Session Roster with `conversation://` links.
+- Dual-anchored Verified Discrepancy Table with full verbatim doc quotes, code evidence snippets, and suggested diffs.
+- Collapsible `<details><summary>Falsified / Discarded Candidates Audit Log</summary>` documenting any candidate items rejected by the independent verifier session and why.
