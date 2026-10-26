@@ -51,6 +51,7 @@ To prevent hallucination, attentional bias, and context bloat, agents executing 
    - Owns documentation rules: canonical home (one home per fact), link-don't-summarize, no PR-status prose (e.g., "PR #123 adds..."), no broken relative links, and [Open-Source Compliance & Prohibited Internal Links](../../rules/languages/markdown.md#1-markdown-formatting--structure).
 2. **XMC Documentation Topography Map ([`references/xmc_docs_topography_and_map.md`](references/xmc_docs_topography_and_map.md))**:
    - Owns the **Code-to-Docs Mapping Matrix** (which source paths map to which docs), the **Identifier Sources Registry** (which code files own flags, env vars, ports, schemas), and the **Known Drift Magnets** (ClickHouse charts, Helm tables, relative link depth changes, CTK v1 vs v2 renames).
+   - Validated continuously against `git ls-files` by [`tools/lint/check_docs_topography_map.py`](../../../tools/lint/check_docs_topography_map.py) (enforcing zero dead map entries, zero unmapped `.md` files, and zero unmapped component directories).
 
 ---
 
@@ -59,17 +60,17 @@ To prevent hallucination, attentional bias, and context bloat, agents executing 
 Use this mode for comprehensive repository health checks, milestone reviews, or addressing systemic docs debt.
 
 ### Phase 1: Enumerate Tracked Repository Docs & Exclude Build Artifacts
-To prevent false positives from git-ignored or untracked local directories, always enumerate the target documentation surface via `git ls-files '*.md'`:
+First, run `python3 tools/lint/check_docs_topography_map.py` to confirm the Topography Map is in 100% bi-directional sync with `git ls-files`. To prevent false positives from git-ignored or untracked local directories, always enumerate the target documentation surface via `git ls-files '*.md'`:
 - **Excluded / Git-Ignored Paths**: `ctk-out/`, `cluster-toolkit/`, `xmc-v2/`, `node_modules/`, `.terraform/`, `.venv/`, `.venv_e2e/`, `venv_e2e/`, `.git/`, `.angular/`, `.pytest_cache/`, `bazel-*/`, `pr_review_checklist*.md`.
 - **Target Documentation Surface** (`git ls-files '*.md'`):
   - Root documents: `README.md`, `INSTALL.md`, `CONTRIBUTING.md`, `ABSENCE.md`.
   - Architecture & flow specifications: `docs/**/*.md`.
-  - Component & service manuals: `cmd/**/README.md`, `pkg/**/README.md`, `internal/**/README.md`.
+  - Component & service manuals: `cmd/**/README.md`, `pkg/**/README.md`, `internal/**/README.md`, `internal/storage/AGENTS.md`.
   - Deployment & infrastructure manuals: `deploy/**/README.md`.
   - SDK manuals: `sdks/python/**/README.md`.
   - Example walkthroughs: `examples/**/README.md`.
-  - Tooling manuals: `tools/**/README.md`, `test/**/README.md`.
-  - Multi-agent rules: `.agents/**/*.md`.
+  - Tooling & CI manuals: `tools/**/README.md`, `test/**/README.md`, `.github/**/*.md`.
+  - Multi-agent rules & skills: `.agents/**/*.md`.
 
 ### Phase 2: Parallel Discovery Subagent Sweep (Context Preservation Gate)
 Per [Skills & Automation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines), running a full-repository audit inside the primary coordinator conversation will exhaust context memory. The coordinator MUST partition the initial discovery sweep into 5 domains and spawn worker subagents (`invoke_subagent` or `run_workflow` `parallel(...)` with `type_name="research-google"`).
@@ -95,7 +96,7 @@ Every discovery subagent MUST record both the exact **Documentation Location + V
 #### Subagent 3: Python SDKs & Build Tooling
 - **Scope**: `sdks/python/xmc/`, `sdks/python/xdash/`, `pyproject.toml`, `MODULE.bazel`, `go.mod` vs SDK READMEs, `docs/developer.md`, `README.md`.
 - **Verifications**:
-  1. SDK API Signatures: Verify that documented SDK functions (e.g., `xmc.init()`, `xmc.log_metric()`, `xdash.Dashboard`) match actual Python exports in `src/xmc/` and `src/xdash/`.
+  1. SDK API Signatures: Verify that documented SDK functions (e.g., `xmc.init()`, `xmc.log_metric()`, `xdash.Dashboard`) match actual Python exports in `sdks/python/xmc/` and `sdks/python/xdash/`.
   2. Setup Instructions: Verify editable install commands (`pip install -e sdks/python/xmc`), poetry/uv/pip requirements, and Python version compatibility (Python 3.10+ / 3.14+).
   3. Bazel Targets: Confirm that documented test and build targets in `docs/developer.md` exist in `BUILD.bazel` files.
 
@@ -207,7 +208,7 @@ A testable assertion is any factual claim in documentation that can be proven or
 | **Default Port** | `"Default port is 50051"` | Check server bind address or Helm container ports. |
 | **Helm Parameter** | `"Set clickhouse.enabled=true"` | Verify `clickhouse.enabled` exists in `deploy/helm/values.yaml`. |
 | **Blueprint Variable** | `"Configure project_id variable"` | Check `vars:` in `deploy/ctk_v2/xmanager-cloud.yaml` and `deploy/ctk_v2/xmc-deployment-template.yaml`. |
-| **SDK API Method** | `"Call xmc.init()"` | Check `__all__` in `sdks/python/xmc/src/xmc/__init__.py`. |
+| **SDK API Method** | `"Call xmc.init()"` | Check `__all__` in `sdks/python/xmc/__init__.py`. |
 | **Relative Path** | `"[Schema](../../../deploy/clickhouse/schema.sql)"` | Check file existence at resolved filesystem path. |
 | **External URL** | `"helm repo add clickstack https://..."` | Send HTTP `HEAD` / `GET` request to probe repository availability. |
 

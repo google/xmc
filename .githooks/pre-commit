@@ -144,6 +144,14 @@ check_examples_coverage() {
   fi
 }
 
+check_docs_topography_map() {
+  echo "--> Checking Documentation Topography Map Coverage..."
+  if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_docs_topography_map.py >/dev/null; then
+    echo "❌ Documentation topography map check failed."
+    FAILED=1
+  fi
+}
+
 
 check_ui() {
   local ui_files
@@ -468,6 +476,7 @@ main() {
   check_go
   check_legacy_imports
   check_examples_coverage
+  check_docs_topography_map
   check_ui
   check_license
   check_python

@@ -34,3 +34,17 @@ py_test(
         "//tools/common:tool_utils",
     ],
 )
+
+py_library(
+    name = "check_docs_topography_map_lib",
+    srcs = ["check_docs_topography_map.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "check_docs_topography_map_test",
+    size = "small",
+    srcs = ["check_docs_topography_map_test.py"],
+    imports = ["../.."],
+    deps = [":check_docs_topography_map_lib"],
+)

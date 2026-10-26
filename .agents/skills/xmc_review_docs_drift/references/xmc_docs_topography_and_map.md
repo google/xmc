@@ -10,15 +10,15 @@ When a source file changes in a delta audit (Mode 2) or during a full repository
 
 | Codebase Quadrant | Core Source Directories / Files | Authoritative Documentation Files |
 | :--- | :--- | :--- |
-| **Control Plane Services & CLI** | `cmd/actuator/`<br>`cmd/experiment_state_server/`<br>`cmd/ingestion_gateway/`<br>`cmd/ui/`<br>`cmd/xmc_bridge/` | `cmd/**/README.md`<br>`docs/architecture/components.md`<br>`docs/architecture/overview.md`<br>`docs/architecture/execution_model.md`<br>`docs/design/gateway.md`<br>`docs/design/topologies.md` |
-| **Core Flows & Workflows** | `pkg/lifecycle/`<br>`pkg/reconciliation/`<br>`pkg/metrics/`<br>`internal/storage/` | `docs/flows/experiment_lifecycle.md`<br>`docs/flows/work_unit_lifecycle.md`<br>`docs/flows/reconciliation.md`<br>`docs/flows/metrics_and_observability.md`<br>`docs/flows/README.md` |
-| **gRPC & Protobuf Contracts** | `api/protos/**/*.proto`<br>`api/v1alpha1/**/*.go` | `docs/architecture/components.md`<br>`docs/flows/`<br>`cmd/ingestion_gateway/README.md`<br>`cmd/experiment_state_server/README.md` |
-| **Cluster Toolkit & Blueprints** | `deploy/ctk_v2/xmanager-cloud.yaml`<br>`deploy/ctk_v2/xmc-deployment-template.yaml`<br>`deploy/ctk_v2/modules/` | `INSTALL.md`<br>`deploy/ctk_v2/README.md`<br>`docs/developer.md` |
-| **Helm Charts & Profiles** | `deploy/helm/`<br>`deploy/profiles/`<br>`deploy/addons/` | `deploy/helm/README.md`<br>`deploy/profiles/**/README.md`<br>`deploy/addons/metrics/**/README.md`<br>`INSTALL.md` |
+| **Control Plane Services & CLI** | `cmd/*/`<br>`pkg/apis/`<br>`pkg/auth/`<br>`pkg/clickhouse/`<br>`pkg/components/` | `README.md`<br>`CONTRIBUTING.md`<br>`ABSENCE.md`<br>`cmd/**/README.md`<br>`pkg/**/README.md`<br>`docs/architecture/*.md`<br>`docs/design/*.md` |
+| **Core Flows, Storage & Internal Packages** | `internal/*/` | `docs/flows/*.md`<br>`internal/**/README.md`<br>`internal/storage/AGENTS.md` |
+| **gRPC, Protobuf & Filter Contracts** | `api/protos/**/*.proto`<br>`api/filter/`<br>`api/testdata/` | `docs/architecture/components.md`<br>`docs/flows/*.md`<br>`cmd/ingestion_gateway/README.md`<br>`cmd/experiment_state_server/README.md` |
+| **Cluster Toolkit & Blueprints** | `deploy/ctk_v2/`<br>`deploy/clickhouse/`<br>`deploy/local/`<br>`deploy/cli/`<br>`deploy/ci/` | `INSTALL.md`<br>`deploy/ctk_v2/README.md`<br>`deploy/local/README.md`<br>`deploy/cli/README.md`<br>`deploy/ci/README.md`<br>`docs/developer.md` |
+| **Helm Charts, Addons & Profiles** | `deploy/helm/`<br>`deploy/profiles/`<br>`deploy/addons/` | `deploy/helm/README.md`<br>`deploy/profiles/**/README.md`<br>`deploy/addons/**/README.md`<br>`INSTALL.md` |
 | **Python SDKs (`xmc`, `xdash`)** | `sdks/python/xmc/`<br>`sdks/python/xdash/`<br>`pyproject.toml` | `sdks/python/xmc/README.md`<br>`sdks/python/xdash/README.md`<br>`README.md`<br>`docs/authentication.md`<br>`docs/developer.md` |
-| **Examples & Workloads** | `examples/**/launch.py`<br>`examples/**/worker.py`<br>`examples/**/worker.env`<br>`examples/**/Dockerfile` | `examples/README.md`<br>`examples/**/README.md`<br>`README.md` |
-| **Diagnostic & Dev Tools** | `tools/xmc-diag/`<br>`tools/dev_env/`<br>`tools/release/`<br>`tools/nightly_tests/` | `tools/README.md`<br>`tools/**/README.md`<br>`docs/ci_runner_infrastructure.md` |
-| **Multi-Agent Guidelines & Rules**| `.agents/rules/`<br>`.agents/skills/` | `.agents/AGENTS.md`<br>`.agents/rules/*.md`<br>`docs/agent_workflows.md` |
+| **Examples & Workloads** | `examples/*/`<br>`examples/**/launch.py`<br>`examples/**/worker.py`<br>`examples/**/worker.env`<br>`examples/**/Dockerfile` | `examples/**/README.md`<br>`README.md` |
+| **Diagnostic, CI & Dev Tools** | `tools/*/`<br>`tools/*.py` | `tools/README.md`<br>`tools/**/README.md`<br>`test/**/README.md`<br>`.github/**/*.md`<br>`docs/ci_runner_infrastructure.md` |
+| **Multi-Agent Guidelines & Rules** | `.agents/rules/`<br>`.agents/skills/` | `.agents/AGENTS.md`<br>`.agents/rules/**/*.md`<br>`.agents/skills/**/*.md`<br>`docs/agent_workflows.md` |
 
 ---
 
@@ -28,14 +28,14 @@ Documentation frequently asserts facts regarding CLI flags, environment variable
 
 | Documented Identifier Type | Canonical Source of Truth in Code | Verification Method / Regex |
 | :--- | :--- | :--- |
-| **CLI Flags & Defaults** | `cmd/<service>/main.go`<br>`pkg/cli/` | Search flag definitions (`flag.StringVar`, `pflag`, `cobra.Command`). Compare flag name and default value. |
-| **Environment Variables** | `pkg/**/`<br>`internal/**/`<br>`cmd/**/`<br>`sdks/python/**` | Search `os.Getenv("VAR")`, `os.LookupEnv("VAR")` in Go, or `os.environ.get("VAR")` in Python. Verify exact spelling and fallback default. |
-| **Network Ports & Protocols** | Service manifests (`deploy/helm/templates/`), `main.go`, `values.yaml` | Compare documented port (e.g. `8123`, `9000`, `8080`, `50051`) against container port declarations and server listen addresses. |
+| **CLI Flags & Defaults** | `cmd/<service>/main.go`<br>`internal/configutil/` | Search flag definitions (`flag.StringVar`, `pflag`, `cobra.Command`). Compare flag name and default value. |
+| **Environment Variables** | `pkg/**/`<br>`internal/**/`<br>`cmd/**/`<br>`sdks/python/**/` | Search `os.Getenv("VAR")`, `os.LookupEnv("VAR")` in Go, or `os.environ.get("VAR")` in Python. Verify exact spelling and fallback default. |
+| **Network Ports & Protocols** | `deploy/helm/templates/`<br>`cmd/<service>/main.go`<br>`deploy/helm/values.yaml` | Compare documented port (e.g. `8123`, `9000`, `8080`, `50051`) against container port declarations and server listen addresses. |
 | **Helm Chart Parameters** | `deploy/helm/values.yaml`<br>`deploy/profiles/**/values.yaml` | Verify that every parameter documented in the chart README's markdown table exists in `values.yaml` with the documented default. |
 | **Cluster Toolkit Blueprint Vars** | `deploy/ctk_v2/xmanager-cloud.yaml`<br>`deploy/ctk_v2/xmc-deployment-template.yaml`<br>`deploy/ctk_v2/modules/**/variables.tf` | Verify `vars:` keys, default values, and module input requirements against blueprint schema. |
 | **Protobuf RPCs & Field Names** | `api/protos/**/*.proto` | Check that RPC method names, package names, and field names in prose or JSON examples match the `.proto` definitions. |
-| **Python SDK Methods & Signatures** | `sdks/python/xmc/src/xmc/`<br>`sdks/python/xdash/src/xdash/` | Verify documented method names, arguments, keyword parameters, and return types against public module exports (`__all__`). |
-| **Container Images & Registries** | `deploy/helm/values.yaml`, example `Dockerfile`s, `build_and_push.sh` | Confirm that image repository paths (e.g., `us-docker.pkg.dev/...`) match active build manifests and Artifact Registry repositories. |
+| **Python SDK Methods & Signatures** | `sdks/python/xmc/`<br>`sdks/python/xdash/` | Verify documented method names, arguments, keyword parameters, and return types against public module exports (`__all__`). |
+| **Container Images & Registries** | `deploy/helm/values.yaml`<br>`examples/**/Dockerfile`<br>`examples/**/build_and_push.sh` | Confirm that image repository paths (e.g., `us-docker.pkg.dev/...`) match active build manifests and Artifact Registry repositories. |
 
 ---
 
@@ -78,6 +78,9 @@ Experience with customer reports and repository evolution has identified recurri
 When auditing a document, treat every specific claim as a hypothesis that must be mechanically proven or disproven against the codebase:
 
 ```bash
+# 0. Verify Bi-Directional Topography Map Integrity (Map <-> git ls-files)
+python3 tools/lint/check_docs_topography_map.py
+
 # 1. Verify Go CLI Flag existence and default value
 git grep -E '(StringVar|IntVar|BoolVar|Flag)\([^,]*"[^"]*"' cmd/
 
