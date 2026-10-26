@@ -46,7 +46,7 @@ def _map_clickhouse_type(ch_type: str) -> str:
     """Maps a ClickHouse column type declaration from xmc_metrics to its BigQuery equivalent."""
     normalized = " ".join(ch_type.split())
     for prefix, bq_type in _CH_TO_BQ_TYPES.items():
-        if normalized == prefix or normalized.startswith(f"{prefix} DEFAULT "):
+        if normalized == prefix or normalized.startswith(f"{prefix} "):
             return bq_type
     raise ValueError(f"unsupported ClickHouse column type: {ch_type!r}")
 
@@ -88,7 +88,8 @@ class BigQuerySchemaParityTest(unittest.TestCase):
             self.assertTrue(field.get("description", "").strip(), f"field {field['name']}")
 
     def test_parser_rejects_unknown_table_and_type(self) -> None:
-        """Asserts helper parsers fail fast on missing tables or unmapped ClickHouse types."""
+        """Asserts helper parsers handle column modifiers and fail fast on unmapped types."""
+        self.assertEqual(_map_clickhouse_type("Float64 CODEC(ZSTD(1))"), "FLOAT64")
         with self.assertRaisesRegex(AssertionError, "not found"):
             _clickhouse_table_columns(self.ch_sql, "missing_table")
         with self.assertRaisesRegex(ValueError, "unsupported ClickHouse column type"):
