@@ -64,6 +64,9 @@ func NormalizeMetrics(metrics []*pb.Metric, now time.Time) []NormalizedMetric {
 }
 
 func normalizeSingle(m *pb.Metric, nowMicros int64) (NormalizedMetric, bool) {
+	if m == nil {
+		return NormalizedMetric{}, false
+	}
 	if m.GetXid() == 0 || m.GetMetricName() == "" || m.GetExecutionId() == 0 {
 		return NormalizedMetric{}, false
 	}
