@@ -16,6 +16,8 @@ package dataengine
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -165,15 +167,15 @@ func resolveHarnessStore(raw string) (string, error) {
 }
 
 func runBigQuery(ctx context.Context, opts *HarnessOptions) ([]*TestResult, error) {
-	bqOpts, err := xmcbigquery.GetOptions()
+	bqOpts, ephemeral, err := resolveBigQueryOptions(opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load BigQuery options: %w", err)
+		return nil, err
 	}
-	if opts.TableName != "" && opts.TableName != xmcbigquery.DefaultTable {
-		bqOpts.Table = opts.TableName
-	}
-	if err := EnsureBigQuerySchema(ctx, bqOpts, opts.BigQueryClientOptions...); err != nil {
+	if err := ensureBigQueryTable(ctx, bqOpts, ephemeral, opts.BigQueryClientOptions...); err != nil {
 		return nil, fmt.Errorf("failed to ensure BigQuery schema: %w", err)
+	}
+	if ephemeral && opts.CleanData {
+		defer dropEphemeralBigQueryTable(bqOpts, opts.BigQueryClientOptions)
 	}
 	conn, err := xmcbigquery.ConnectWithOptions(ctx, bqOpts, opts.BigQueryClientOptions...)
 	if err != nil {
@@ -181,30 +183,92 @@ func runBigQuery(ctx context.Context, opts *HarnessOptions) ([]*TestResult, erro
 	}
 	defer conn.Close()
 
+	cleanup, err := prepareBigQuerySeedData(ctx, conn, ephemeral, opts)
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return executeBigQueryCases(ctx, conn, opts)
+}
+
+func resolveBigQueryOptions(opts *HarnessOptions) (*xmcbigquery.Options, bool, error) {
+	bqOpts, err := xmcbigquery.GetOptions()
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to load BigQuery options: %w", err)
+	}
+	if opts.TableName != "" && opts.TableName != xmcbigquery.DefaultTable {
+		bqOpts.Table = opts.TableName
+		return bqOpts, false, nil
+	}
+	if bqOpts.Table != xmcbigquery.DefaultTable {
+		return bqOpts, false, nil
+	}
+	if opts.SeedData {
+		bqOpts.Table = newEphemeralBigQueryTableName()
+		return bqOpts, true, nil
+	}
+	if opts.CleanData {
+		return nil, false, fmt.Errorf("refusing to clean default BigQuery table %q without -seed or explicit -table_name", bqOpts.Table)
+	}
+	return bqOpts, false, nil
+}
+
+func newEphemeralBigQueryTableName() string {
+	var suffix [4]byte
+	_, _ = rand.Read(suffix[:])
+	return fmt.Sprintf("xmc_metrics_e2e_%d_%s", time.Now().UTC().UnixMilli(), hex.EncodeToString(suffix[:]))
+}
+
+func prepareBigQuerySeedData(ctx context.Context, conn xmcbigquery.Conn, ephemeral bool, opts *HarnessOptions) (func(), error) {
 	var seedXIDs []int64
-	if opts.SeedData || opts.CleanData {
+	if (opts.SeedData || opts.CleanData) && !ephemeral {
+		var err error
 		seedXIDs, err = ExtractSeedXIDs(opts.SeedFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to extract seed XIDs: %w", err)
 		}
 	}
-	if opts.CleanData {
-		defer func() {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := CleanupBigQueryTestMetrics(cleanupCtx, conn, seedXIDs...); err != nil {
-				fmt.Printf("WARNING: Failed to cleanup BigQuery test metrics: %v\n", err)
-			}
-		}()
+	cleanup := buildBigQueryRowCleanup(conn, ephemeral, opts.CleanData, seedXIDs)
+	if !opts.SeedData {
+		return cleanup, nil
 	}
-	if opts.SeedData {
-		_ = CleanupBigQueryTestMetrics(ctx, conn, seedXIDs...)
-		count, err := SeedBigQueryDataset(ctx, conn, opts.SeedFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to seed BigQuery dataset: %w", err)
+	if !ephemeral {
+		if err := CleanupBigQueryTestMetrics(ctx, conn, seedXIDs...); err != nil {
+			return cleanup, fmt.Errorf("failed to purge pre-existing BigQuery seed rows: %w", err)
 		}
-		fmt.Printf("--> Seeded %d records into %s\n", count, conn.TableRef())
 	}
+	count, err := SeedBigQueryDataset(ctx, conn, opts.SeedFile)
+	if err != nil {
+		return cleanup, fmt.Errorf("failed to seed BigQuery dataset: %w", err)
+	}
+	fmt.Printf("--> Seeded %d records into %s\n", count, conn.TableRef())
+	return cleanup, nil
+}
+
+func dropEphemeralBigQueryTable(bqOpts *xmcbigquery.Options, clientOpts []option.ClientOption) {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := DropBigQueryTable(cleanupCtx, bqOpts, clientOpts...); err != nil {
+		fmt.Printf("WARNING: Failed to drop ephemeral BigQuery test table: %v\n", err)
+	}
+}
+
+func buildBigQueryRowCleanup(conn xmcbigquery.Conn, ephemeral, cleanData bool, seedXIDs []int64) func() {
+	if !cleanData || ephemeral {
+		return nil
+	}
+	return func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := CleanupBigQueryTestMetrics(cleanupCtx, conn, seedXIDs...); err != nil {
+			fmt.Printf("WARNING: Failed to cleanup BigQuery test metrics: %v\n", err)
+		}
+	}
+}
+
+func executeBigQueryCases(ctx context.Context, conn xmcbigquery.Conn, opts *HarnessOptions) ([]*TestResult, error) {
 	engine, err := dataengine.NewBigQuery(conn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize BigQuery DataEngine: %w", err)

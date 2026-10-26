@@ -29,7 +29,10 @@ import (
 	xmcbigquery "xmanager_cloud/pkg/bigquery"
 )
 
-const bigQueryInsertChunkSize = 500
+const (
+	bigQueryInsertChunkSize   = 500
+	ephemeralBigQueryTableTTL = 2 * time.Hour
+)
 
 type bigQuerySeedRow struct {
 	Xid         int64     `bigquery:"xid"`
@@ -45,6 +48,10 @@ type bigQuerySeedRow struct {
 
 // EnsureBigQuerySchema ensures the target partitioned and clustered BigQuery metrics table exists.
 func EnsureBigQuerySchema(ctx context.Context, opts *xmcbigquery.Options, clientOpts ...option.ClientOption) error {
+	return ensureBigQueryTable(ctx, opts, false, clientOpts...)
+}
+
+func ensureBigQueryTable(ctx context.Context, opts *xmcbigquery.Options, ephemeral bool, clientOpts ...option.ClientOption) error {
 	if err := opts.Validate(); err != nil {
 		return err
 	}
@@ -55,16 +62,41 @@ func EnsureBigQuerySchema(ctx context.Context, opts *xmcbigquery.Options, client
 	defer client.Close()
 
 	table := client.DatasetInProject(opts.ProjectID, opts.Dataset).Table(opts.Table)
-	_, err = table.Metadata(ctx)
-	if err == nil {
+	if _, err = table.Metadata(ctx); err == nil {
 		return nil
 	}
 	var apiErr *googleapi.Error
 	if !errors.As(err, &apiErr) || apiErr.Code != http.StatusNotFound {
 		return fmt.Errorf("failed to check bigquery table metadata: %w", err)
 	}
-	if err := table.Create(ctx, bigQueryMetricsTableMetadata()); err != nil {
+	meta := bigQueryMetricsTableMetadata()
+	if ephemeral {
+		meta.ExpirationTime = time.Now().UTC().Add(ephemeralBigQueryTableTTL)
+	}
+	if err := table.Create(ctx, meta); err != nil {
 		return fmt.Errorf("failed to create bigquery table %s.%s.%s: %w", opts.ProjectID, opts.Dataset, opts.Table, err)
+	}
+	return nil
+}
+
+// DropBigQueryTable deletes an ephemeral BigQuery test table if it exists.
+func DropBigQueryTable(ctx context.Context, opts *xmcbigquery.Options, clientOpts ...option.ClientOption) error {
+	if err := opts.Validate(); err != nil {
+		return err
+	}
+	client, err := bigquery.NewClient(ctx, opts.ProjectID, clientOpts...)
+	if err != nil {
+		return fmt.Errorf("failed to create bigquery client: %w", err)
+	}
+	defer client.Close()
+
+	err = client.DatasetInProject(opts.ProjectID, opts.Dataset).Table(opts.Table).Delete(ctx)
+	var apiErr *googleapi.Error
+	if errors.As(err, &apiErr) && apiErr.Code == http.StatusNotFound {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to delete bigquery table %s.%s.%s: %w", opts.ProjectID, opts.Dataset, opts.Table, err)
 	}
 	return nil
 }

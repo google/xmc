@@ -33,12 +33,14 @@ import (
 )
 
 type fakeSeederAPI struct {
-	mu           sync.Mutex
-	tableStatus  int
-	createStatus int
-	queryStatus  int
-	createdTable *bqapi.Table
-	queries      []*bqapi.QueryRequest
+	mu            sync.Mutex
+	tableStatus   int
+	createStatus  int
+	deleteStatus  int
+	queryStatus   int
+	createdTable  *bqapi.Table
+	deletedTables []string
+	queries       []*bqapi.QueryRequest
 }
 
 func (f *fakeSeederAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +68,19 @@ func (f *fakeSeederAPI) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":{"code":400,"message":"create failed","errors":[{"reason":"invalid"}]}}`, f.createStatus)
 			return
 		}
+		f.tableStatus = http.StatusOK
 		_ = json.NewEncoder(w).Encode(&tbl)
+	case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/tables/"):
+		f.deletedTables = append(f.deletedTables, r.URL.Path)
+		if f.deleteStatus != 0 && f.deleteStatus != http.StatusOK {
+			reason := "notFound"
+			if f.deleteStatus != http.StatusNotFound {
+				reason = "accessDenied"
+			}
+			http.Error(w, `{"error":{"code":`+jsonInt(f.deleteStatus)+`,"message":"delete err","errors":[{"reason":"`+reason+`"}]}}`, f.deleteStatus)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/queries"):
 		var req bqapi.QueryRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
@@ -261,11 +275,37 @@ func TestRunBigQueryHarnessWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run(StoreBigQuery) error: %v", err)
 	}
-	if len(results) != 1 || !results[0].Passed {
-		t.Fatalf("Run(StoreBigQuery) result = %+v, want 1 passing test case", results[0])
+	if len(results) != 1 {
+		t.Fatalf("Run(StoreBigQuery) returned %d results, want 1", len(results))
+	}
+	if !results[0].Passed {
+		t.Fatalf("Run(StoreBigQuery) result = %+v, want passing", results[0])
 	}
 
-	earlyFailAPI := &fakeSeederAPI{}
+	preCleanFailAPI := &fakeSeederAPI{queryStatus: http.StatusBadRequest}
+	if _, err := Run(ctx, &HarnessOptions{
+		Store:                 StoreBigQuery,
+		EnvFile:               filepath.Join(tmpDir, "missing.env"),
+		SeedData:              true,
+		TableName:             "custom_metrics",
+		SeedFile:              seedPath,
+		TestCasesFile:         casesPath,
+		GoldenDir:             goldenDir,
+		BigQueryClientOptions: startFakeSeederServer(t, preCleanFailAPI),
+	}); err == nil || !strings.Contains(err.Error(), "failed to purge pre-existing BigQuery seed rows") {
+		t.Errorf("Run(pre-clean failure) error = %v, want pre-clean failure error", err)
+	}
+
+	if _, err := Run(ctx, &HarnessOptions{
+		Store:     StoreBigQuery,
+		EnvFile:   filepath.Join(tmpDir, "missing.env"),
+		SeedData:  false,
+		CleanData: true,
+	}); err == nil || !strings.Contains(err.Error(), "refusing to clean default BigQuery table") {
+		t.Errorf("Run(-seed=false -clean=true on default table) error = %v, want refusal error", err)
+	}
+
+	ephemeralAPI := &fakeSeederAPI{tableStatus: http.StatusNotFound}
 	if _, err := Run(ctx, &HarnessOptions{
 		Store:                 StoreBigQuery,
 		EnvFile:               filepath.Join(tmpDir, "missing.env"),
@@ -273,16 +313,43 @@ func TestRunBigQueryHarnessWorkflow(t *testing.T) {
 		CleanData:             true,
 		SeedFile:              seedPath,
 		TestCasesFile:         filepath.Join(tmpDir, "missing_cases.json"),
-		BigQueryClientOptions: startFakeSeederServer(t, earlyFailAPI),
+		BigQueryClientOptions: startFakeSeederServer(t, ephemeralAPI),
 	}); err == nil {
 		t.Error("Run(missing test cases) succeeded, want error")
 	}
-	earlyFailAPI.mu.Lock()
-	var lastSQL string
-	if n := len(earlyFailAPI.queries); n > 0 {
-		lastSQL = earlyFailAPI.queries[n-1].Query
+	ephemeralAPI.mu.Lock()
+	created := ephemeralAPI.createdTable
+	deleted := append([]string(nil), ephemeralAPI.deletedTables...)
+	ephemeralAPI.mu.Unlock()
+	if created == nil || !strings.HasPrefix(created.TableReference.TableId, "xmc_metrics_e2e_") {
+		t.Fatalf("ephemeral Run() createdTable = %+v, want xmc_metrics_e2e_* table", created)
 	}
-	earlyFailAPI.mu.Unlock()
+	if created.ExpirationTime <= 0 {
+		t.Errorf("ephemeral table ExpirationTime = %d, want > 0", created.ExpirationTime)
+	}
+	if len(deleted) != 1 || !strings.HasSuffix(deleted[0], "/tables/"+created.TableReference.TableId) {
+		t.Errorf("deferred ephemeral table cleanup deletedTables = %v, want [/tables/%s]", deleted, created.TableReference.TableId)
+	}
+
+	customEarlyFailAPI := &fakeSeederAPI{}
+	if _, err := Run(ctx, &HarnessOptions{
+		Store:                 StoreBigQuery,
+		EnvFile:               filepath.Join(tmpDir, "missing.env"),
+		SeedData:              true,
+		CleanData:             true,
+		TableName:             "custom_metrics",
+		SeedFile:              seedPath,
+		TestCasesFile:         filepath.Join(tmpDir, "missing_cases.json"),
+		BigQueryClientOptions: startFakeSeederServer(t, customEarlyFailAPI),
+	}); err == nil {
+		t.Error("Run(custom table missing test cases) succeeded, want error")
+	}
+	customEarlyFailAPI.mu.Lock()
+	var lastSQL string
+	if n := len(customEarlyFailAPI.queries); n > 0 {
+		lastSQL = customEarlyFailAPI.queries[n-1].Query
+	}
+	customEarlyFailAPI.mu.Unlock()
 	if !strings.HasPrefix(lastSQL, "DELETE FROM ") {
 		t.Errorf("deferred cleanup did not run on early failure; last query = %q", lastSQL)
 	}
