@@ -112,7 +112,10 @@ stateDiagram-v2
 ```
 
 The diagram shows the transitions the platform drives; the authoritative enum and its comments are
-in [`status.proto`](../../api/protos/experiment/status.proto).
+in [`status.proto`](../../api/protos/experiment/status.proto). For the exact `JobSet`-to-`WorkUnitState`
+evaluation priority rules, storage transition guards, dual-loop synchronization mechanics, and
+end-to-end event sequences, see
+[JobSet, WorkUnitExecution, and WorkUnit States](jobset_and_work_unit_states.md).
 
 Two derived signals matter operationally:
 

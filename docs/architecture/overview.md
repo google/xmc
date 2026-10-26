@@ -13,6 +13,7 @@ This document is the entry point for the architecture documentation set:
 | **Architecture Overview** (this page) | System context, planes, component interaction map, data stores, cross-cutting concerns. |
 | [Component Reference](components.md) | Every deployed binary and shared library: responsibility, ports, dependencies. |
 | [Execution Model](execution_model.md) | Experiment/WorkUnit/WorkUnitExecution/JobSet hierarchy, state machine, retry contract, scheduling. |
+| [JobSet & WorkUnit States](jobset_and_work_unit_states.md) | Allowed states, `JobSet`-to-`WorkUnitState` mapping rules, storage transition guards, state synchronization, and event sequences. |
 | [Use Cases](use_cases.md) | End-to-end scenarios per persona, with the components each one touches. |
 | [Main Flows](../flows/README.md) | Sequence diagrams and narratives for the principal request and reconciliation flows. |
 
@@ -409,6 +410,7 @@ in [Deployment Topologies](../design/topologies.md), and installation is covered
 
 - To learn what a specific binary does → [Component Reference](components.md).
 - To understand states, retries, and scheduling → [Execution Model](execution_model.md).
+- To inspect exact `JobSet` ↔ `WorkUnit` state mapping, transition guards, and sync sequences → [JobSet & WorkUnit States](jobset_and_work_unit_states.md).
 - To trace a request end to end → [Main Flows](../flows/README.md).
 - To see how a persona uses the system → [Use Cases](use_cases.md).
 - To build, test, or debug locally → [Developer Documentation](../developer.md).
