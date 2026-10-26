@@ -74,6 +74,7 @@ go_test(
         "@org_golang_google_protobuf//reflect/protodesc",
         "@org_golang_google_protobuf//reflect/protoreflect",
         "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/descriptorpb",
         "@org_golang_google_protobuf//types/dynamicpb",
     ],
 )

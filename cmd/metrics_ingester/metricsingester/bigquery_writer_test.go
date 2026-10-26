@@ -30,6 +30,7 @@ import (
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
 	pb "xmanager_cloud/api/protos/metrics"
 	"xmanager_cloud/internal/prototest"
@@ -228,5 +229,80 @@ func TestBigQueryWriterWriteWrapsAppendError(t *testing.T) {
 	err := writer.Write(context.Background(), []*pb.Metric{testMetric()})
 	if !errors.Is(err, boom) || !strings.Contains(err.Error(), "failed to append metrics to bigquery") {
 		t.Fatalf("Write() error = %v, want wrapping %v", err, boom)
+	}
+}
+
+func TestMetricProtoMatchesBigQueryRowSchema(t *testing.T) {
+	metricFields := (&pb.Metric{}).ProtoReflect().Descriptor().Fields()
+	rowFields := MetricRowDescriptor().GetField()
+	if len(rowFields) != metricFields.Len()+1 {
+		t.Fatalf("MetricRowDescriptor() field count = %d, want %d (pb.Metric fields + created_at)", len(rowFields), metricFields.Len()+1)
+	}
+	createdAt := rowFields[metricFields.Len()]
+	if createdAt.GetName() != "created_at" || createdAt.GetNumber() != int32(metricFields.Len()+1) || createdAt.GetType() != descriptorpb.FieldDescriptorProto_TYPE_INT64 {
+		t.Fatalf("trailing BigQuery field = %v, want number=%d name=created_at TYPE_INT64", createdAt, metricFields.Len()+1)
+	}
+
+	m := &pb.Metric{}
+	refl := m.ProtoReflect()
+	for i := 0; i < metricFields.Len(); i++ {
+		fd := metricFields.Get(i)
+		rf := rowFields[i]
+		wantType := descriptorTypeForKind(t, fd)
+		if rf.GetNumber() != int32(fd.Number()) || rf.GetName() != string(fd.Name()) || rf.GetType() != wantType {
+			t.Fatalf("field %d mismatch: MetricRowDescriptor=(#%d %s %v), pb.Metric=(#%d %s %v)",
+				i, rf.GetNumber(), rf.GetName(), rf.GetType(), fd.Number(), fd.Name(), wantType)
+		}
+		refl.Set(fd, sampleValueForField(t, fd))
+	}
+
+	normalized := NormalizeMetrics([]*pb.Metric{m}, fixedIngestTime)
+	if len(normalized) != 1 {
+		t.Fatalf("NormalizeMetrics() len = %d, want 1", len(normalized))
+	}
+	msgDesc := loadCanonicalBQDescriptor(t)
+	dyn := dynamicpb.NewMessage(msgDesc)
+	if err := proto.Unmarshal(marshalMetricRow(normalized[0]), dyn); err != nil {
+		t.Fatalf("proto.Unmarshal(marshalMetricRow) error = %v", err)
+	}
+	for i := 0; i < metricFields.Len(); i++ {
+		fd := metricFields.Get(i)
+		bqFD := msgDesc.Fields().ByName(fd.Name())
+		if bqFD == nil || !dyn.Get(bqFD).Equal(refl.Get(fd)) {
+			t.Errorf("round-trip field %q = %v, want %v", fd.Name(), dyn.Get(bqFD), refl.Get(fd))
+		}
+	}
+}
+
+func descriptorTypeForKind(t *testing.T, fd protoreflect.FieldDescriptor) descriptorpb.FieldDescriptorProto_Type {
+	t.Helper()
+	switch fd.Kind() {
+	case protoreflect.Int64Kind:
+		return descriptorpb.FieldDescriptorProto_TYPE_INT64
+	case protoreflect.DoubleKind:
+		return descriptorpb.FieldDescriptorProto_TYPE_DOUBLE
+	case protoreflect.StringKind:
+		return descriptorpb.FieldDescriptorProto_TYPE_STRING
+	default:
+		t.Fatalf("unhandled pb.Metric field %q kind %v; update BigQuery schema and marshalMetricRow", fd.Name(), fd.Kind())
+		return 0
+	}
+}
+
+func sampleValueForField(t *testing.T, fd protoreflect.FieldDescriptor) protoreflect.Value {
+	t.Helper()
+	switch fd.Kind() {
+	case protoreflect.Int64Kind:
+		if fd.Name() == "timestamp" {
+			return protoreflect.ValueOfInt64(MinValidTimestampMicros + int64(fd.Number())*1000)
+		}
+		return protoreflect.ValueOfInt64(int64(fd.Number()) * 101)
+	case protoreflect.DoubleKind:
+		return protoreflect.ValueOfFloat64(float64(fd.Number()) + 0.375)
+	case protoreflect.StringKind:
+		return protoreflect.ValueOfString("val-" + string(fd.Name()))
+	default:
+		t.Fatalf("unhandled pb.Metric field %q kind %v", fd.Name(), fd.Kind())
+		return protoreflect.Value{}
 	}
 }
