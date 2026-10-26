@@ -74,13 +74,13 @@ func run(ctx context.Context, cfg *Config) error {
 		logging.Warn(ctx, "Kueue manager setup failed or running out-of-cluster", "error", err)
 	}
 
-	storage, err := initStorage(ctx)
+	dbStorage, err := initStorage(ctx)
 	if err != nil {
 		return err
 	}
-	defer storage.Close()
+	defer dbStorage.Close()
 
-	grpcComp, err := buildGRPCServer(cfg, kueueCache, storage, storage)
+	grpcComp, err := buildGRPCServer(cfg, kueueCache, dbStorage, dbStorage)
 	if err != nil {
 		return fmt.Errorf("failed to build gRPC server: %w", err)
 	}

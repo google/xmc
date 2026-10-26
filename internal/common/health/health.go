@@ -21,31 +21,12 @@ import (
 	"fmt"
 
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/migrations/version"
 
-	"cloud.google.com/go/spanner"
-	"google.golang.org/api/iterator"
 	"k8s.io/client-go/kubernetes"
 )
 
 // ErrNilClient is returned when a client is nil.
 var ErrNilClient = errors.New("client is nil")
-
-// CheckSpanner validates that a Spanner client is connected and ready using a simple query.
-func CheckSpanner(ctx context.Context, sc *spanner.Client) error {
-	if sc == nil {
-		return fmt.Errorf("spanner: %w", ErrNilClient)
-	}
-
-	iter := sc.Single().Query(ctx, spanner.Statement{SQL: "SELECT 1"})
-	defer iter.Stop()
-	_, err := iter.Next()
-	if err != nil && err != iterator.Done {
-		return fmt.Errorf("spanner reachability: %w", err)
-	}
-	logging.Debug(ctx, "Spanner health check completed successfully")
-	return nil
-}
 
 // CheckKubernetes validates that a Kubernetes clientset is connected and ready.
 func CheckKubernetes(clientset kubernetes.Interface) error {
@@ -57,24 +38,6 @@ func CheckKubernetes(clientset kubernetes.Interface) error {
 		return fmt.Errorf("kubernetes reachability: %w", err)
 	}
 	return nil
-}
-
-// CheckSpannerESS checks Spanner readiness against the ESS expected schema version.
-func CheckSpannerESS(ctx context.Context, sc SpannerHealthClient) error {
-	return checkSpannerWithVersion(ctx, sc, version.EssExpectedSchemaVersion())
-}
-
-// CheckSpannerXID checks Spanner readiness against the XID expected schema version.
-func CheckSpannerXID(ctx context.Context, sc SpannerHealthClient) error {
-	return checkSpannerWithVersion(ctx, sc, version.XidExpectedSchemaVersion())
-}
-
-// checkSpannerWithVersion validates that Spanner is connected, ready, and has the expected schema version by querying the SchemaMigrations table.
-func checkSpannerWithVersion(ctx context.Context, sc SpannerHealthClient, expectedVersion int64) error {
-	if sc == nil {
-		return fmt.Errorf("spanner: %w", ErrNilClient)
-	}
-	return CheckSchemaVersion(ctx, sc, expectedVersion)
 }
 
 // SchemaVersionClient reads a database's schema version and whether its last migration is dirty.

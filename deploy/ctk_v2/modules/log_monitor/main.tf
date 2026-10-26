@@ -106,6 +106,8 @@ resource "google_cloud_run_v2_service" "log_monitor" {
         name  = "GOOGLE_CLOUD_PROJECT"
         value = var.project_id
       }
+      # The Cloud Run log_monitor path only supports Cloud Spanner; PostgreSQL deployments must run
+      # log_monitor in GKE (log_monitor_deployment_enabled = true).
       env {
         name  = "DB_BACKEND"
         value = "spanner"

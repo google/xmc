@@ -13,7 +13,6 @@ go_library(
     importpath = "xmanager_cloud/internal/common/health",
     deps = [
         "//internal/logging",
-        "//internal/storage/spanner/migrations/version",
         "@com_github_jackc_pgx_v5//:pgx",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@com_google_cloud_go_spanner//:spanner",
@@ -30,8 +29,6 @@ go_test(
     ],
     embed = [":health"],
     deps = [
-        "//internal/storage/spanner/emulator",
-        "//internal/storage/spanner/migrations/version",
         "@com_github_jackc_pgx_v5//:pgx",
         "@io_k8s_apimachinery//pkg/version",
         "@io_k8s_client_go//discovery",

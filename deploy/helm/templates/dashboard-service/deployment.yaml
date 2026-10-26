@@ -71,9 +71,10 @@ spec:
             name: dashboard-config
         - configMapRef:
             name: db-config
-        # /readyz checks Spanner and, when the metrics pipeline is enabled, that the chart data
-        # engine has a ClickHouse connection. The handler spends at most 5s on that, which the
-        # default 1s probe timeout would cut short and report as an unexplained failure.
+        # /readyz checks that the ESS database is reachable and at the expected schema version and,
+        # when the metrics pipeline is enabled, that the chart data engine has a ClickHouse
+        # connection. The handler spends at most 5s on that, which the default 1s probe timeout
+        # would cut short and report as an unexplained failure.
         readinessProbe:
           httpGet:
             path: /readyz

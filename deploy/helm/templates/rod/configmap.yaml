@@ -19,5 +19,8 @@ metadata:
   name: rod-data-provider-config
   labels:
     app: rod-data-provider
-data: {}
+data:
+  # Deprecated: retained for one-release rollout compatibility; service reads db-config.
+  # TODO: Remove spanner_database_name once all deployments run db-config images.
+  spanner_database_name: {{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
 {{- end }}

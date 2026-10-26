@@ -21,40 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
-	"xmanager_cloud/internal/storage/spanner/emulator"
-	migversion "xmanager_cloud/internal/storage/spanner/migrations/version"
 )
-
-func TestCheckSpanner(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("nil client returns ErrNilClient", func(t *testing.T) {
-		if err := CheckSpanner(ctx, nil); !errors.Is(err, ErrNilClient) {
-			t.Errorf("CheckSpanner(ctx, nil) = %v, want %v", err, ErrNilClient)
-		}
-	})
-
-	t.Run("healthy client returns no error", func(t *testing.T) {
-		clients := emulator.SetupWithEmulator(ctx, t)
-		xidClient := clients.XIDClient
-		// xidClient is automatically closed by Cleanup in emulator.SetupWithEmulator
-
-		if err := CheckSpanner(ctx, xidClient); err != nil {
-			t.Errorf("CheckSpanner(ctx, healthyClient) = %v, want nil", err)
-		}
-	})
-
-	t.Run("closed client returns error", func(t *testing.T) {
-		// We need a real client to close it.
-		clients := emulator.SetupWithEmulator(ctx, t)
-		xidClient := clients.XIDClient
-		xidClient.Close()
-
-		if err := CheckSpanner(ctx, xidClient); err == nil {
-			t.Error("CheckSpanner(ctx, closedClient) succeeded, want error")
-		}
-	})
-}
 
 type mockSpannerHealthClient struct {
 	version int64
@@ -138,87 +105,6 @@ func TestCheckKubernetes(t *testing.T) {
 			t.Errorf("CheckKubernetes(healthy) = %v, want nil", err)
 		}
 	})
-}
-
-func TestCheckSpannerServices(t *testing.T) {
-	ctx := context.Background()
-
-	cases := []struct {
-		name       string
-		versionOff int64
-		dirty      bool
-		dbErr      error
-		isNil      bool
-		wantErr    bool
-	}{
-		{
-			name:    "success when version matches",
-			wantErr: false,
-		},
-		{
-			name:       "fails when version mismatch (higher)",
-			versionOff: 1,
-			wantErr:    true,
-		},
-		{
-			name:       "fails when version mismatch (lower)",
-			versionOff: -1,
-			wantErr:    true,
-		},
-		{
-			name:    "fails when dirty",
-			dirty:   true,
-			wantErr: true,
-		},
-		{
-			name:    "fails on spanner error",
-			dbErr:   errors.New("spanner error"),
-			wantErr: true,
-		},
-		{
-			name:    "fails when client is nil",
-			isNil:   true,
-			wantErr: true,
-		},
-	}
-
-	services := []struct {
-		name            string
-		checkFn         func(context.Context, SpannerHealthClient) error
-		expectedVersion int64
-	}{
-		{
-			name:            "ESS",
-			checkFn:         CheckSpannerESS,
-			expectedVersion: migversion.EssExpectedSchemaVersion(),
-		},
-		{
-			name:            "XID",
-			checkFn:         CheckSpannerXID,
-			expectedVersion: migversion.XidExpectedSchemaVersion(),
-		},
-	}
-
-	for _, svc := range services {
-		t.Run(svc.name, func(t *testing.T) {
-			for _, tc := range cases {
-				t.Run(tc.name, func(t *testing.T) {
-					var client SpannerHealthClient
-					if !tc.isNil {
-						client = mockSpannerHealthClient{
-							version: svc.expectedVersion + tc.versionOff,
-							dirty:   tc.dirty,
-							err:     tc.dbErr,
-						}
-					}
-					err := svc.checkFn(ctx, client)
-					if (err != nil) != tc.wantErr {
-						t.Errorf("checkFn() error = %v, wantErr %v", err, tc.wantErr)
-					}
-				})
-			}
-		})
-	}
 }
 
 func TestCheckSchemaVersion(t *testing.T) {
