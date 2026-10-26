@@ -25,6 +25,7 @@ import (
 	"sync"
 	"testing"
 
+	"cloud.google.com/go/bigquery"
 	"github.com/google/go-cmp/cmp"
 	bqapi "google.golang.org/api/bigquery/v2"
 	"google.golang.org/api/option"
@@ -284,5 +285,26 @@ func TestRunBigQueryHarnessWorkflow(t *testing.T) {
 	earlyFailAPI.mu.Unlock()
 	if !strings.HasPrefix(lastSQL, "DELETE FROM ") {
 		t.Errorf("deferred cleanup did not run on early failure; last query = %q", lastSQL)
+	}
+}
+
+func TestBigQueryMetricsTableMetadataMatchesDeploySchema(t *testing.T) {
+	schemaPath, err := FindFile(filepath.Join("deploy", "bigquery", "schema.json"))
+	if err != nil {
+		t.Fatalf("FindFile(deploy/bigquery/schema.json) error: %v", err)
+	}
+	raw, err := os.ReadFile(schemaPath)
+	if err != nil {
+		t.Fatalf("os.ReadFile(%q) error: %v", schemaPath, err)
+	}
+	wantSchema, err := bigquery.SchemaFromJSON(raw)
+	if err != nil {
+		t.Fatalf("bigquery.SchemaFromJSON() error: %v", err)
+	}
+	for _, f := range wantSchema {
+		f.Description = ""
+	}
+	if diff := cmp.Diff(wantSchema, bigQueryMetricsTableMetadata().Schema); diff != "" {
+		t.Errorf("bigQueryMetricsTableMetadata().Schema mismatch against deploy/bigquery/schema.json (-want +got):\n%s", diff)
 	}
 }

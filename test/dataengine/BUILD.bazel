@@ -85,11 +85,14 @@ go_test(
 go_test(
     name = "bigquery_seeder_test",
     srcs = ["bigquery_seeder_test.go"],
-    data = glob(["testdata/**"]),
+    data = glob(["testdata/**"]) + [
+        "//deploy/bigquery:schema.json",
+    ],
     embed = [":dataengine_harness"],
     deps = [
         "//pkg/bigquery",
         "@com_github_google_go_cmp//cmp",
+        "@com_google_cloud_go_bigquery//:bigquery",
         "@org_golang_google_api//bigquery/v2:bigquery",
         "@org_golang_google_api//option",
     ],
