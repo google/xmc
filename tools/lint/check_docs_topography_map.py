@@ -16,32 +16,32 @@
 """Bi-directional linter for the XMC Documentation Topography Map.
 
 Enforces three invariants between `.agents/skills/xmc_review_docs_drift/
-references/xmc_docs_topography_and_map.md` and `git ls-files`:
-1. DEAD_MAP_ENTRY (Map -> Repo): Every path/glob in Section 1 (Columns 2 & 3)
-   and Section 2 (Column 2) matches at least one tracked file.
+references/xmc_docs_topography_map.json` and `git ls-files`:
+1. DEAD_MAP_ENTRY (Map -> Repo): Every path/glob in `quadrants`
+   (`source_patterns` and `doc_patterns`) and `identifier_sources`
+   (`source_patterns`) matches at least one tracked file.
 2. UNMAPPED_DOC_FILE (Repo Docs -> Map): Every tracked `.md` file matches at
-   least one authoritative documentation pattern in Section 1 Column 3.
+   least one documentation pattern in `quadrants[*].doc_patterns`.
 3. UNMAPPED_SOURCE_DIR (Repo Code -> Map): Every top-level component directory
    under `cmd/*/`, `sdks/*/*/`, `deploy/*/`, `pkg/*/`, `internal/*/`, `api/*/`,
    `examples/*/`, and `tools/*/` has at least one tracked file matched by a
-   source pattern in Section 1 Column 2.
+   source pattern in `quadrants[*].source_patterns`.
 """
 
 from __future__ import annotations
 
 import argparse
-import re
+import json
 import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from fnmatch import fnmatchcase
+from pathlib import Path, PurePosixPath
 
 DEFAULT_MAP_PATH = Path(
-    ".agents/skills/xmc_review_docs_drift/references/xmc_docs_topography_and_map.md"
+    ".agents/skills/xmc_review_docs_drift/references/xmc_docs_topography_map.json"
 )
-SECTION_1_HEADER = "## 1. Code-to-Docs Topography Mapping Matrix"
-SECTION_2_HEADER = "## 2. Identifier Sources of Truth Registry"
 
 SINGLE_LEVEL_COMPONENT_ROOTS: tuple[str, ...] = (
     "cmd",
@@ -54,14 +54,10 @@ SINGLE_LEVEL_COMPONENT_ROOTS: tuple[str, ...] = (
 )
 TWO_LEVEL_COMPONENT_ROOTS: tuple[str, ...] = ("sdks",)
 
-_BACKTICK_TOKEN_RE = re.compile(r"`([^`]+)`")
-_PLACEHOLDER_RE = re.compile(r"<[^/>]+>")
-_GLOB_TOKEN_RE = re.compile(r"/\*\*/|\*\*/|/\*\*|\*\*|\*|\?|[^/*?]+|/")
-
 
 @dataclass(frozen=True)
 class TopographyPatterns:
-    """Extracted path and glob patterns from the topography map document."""
+    """Extracted path and glob patterns from the JSON topography map."""
 
     source_patterns: tuple[str, ...]
     doc_patterns: tuple[str, ...]
@@ -81,78 +77,39 @@ class ValidationReport:
         return not (self.dead_map_entries or self.unmapped_doc_files or self.unmapped_source_dirs)
 
 
-def normalize_pattern(raw_pattern: str) -> str:
-    """Normalizes `<placeholder>` segments to `*` and strips whitespace."""
-    return _PLACEHOLDER_RE.sub("*", raw_pattern.strip())
+def _match_parts(path_parts: tuple[str, ...], pat_parts: tuple[str, ...]) -> bool:
+    """Matches path segments against glob segments supporting `**`."""
+    if not pat_parts:
+        return not path_parts
+    if pat_parts[0] == "**":
+        return _match_parts(path_parts, pat_parts[1:]) or (
+            bool(path_parts) and _match_parts(path_parts[1:], pat_parts)
+        )
+    if not path_parts:
+        return False
+    return fnmatchcase(path_parts[0], pat_parts[0]) and _match_parts(path_parts[1:], pat_parts[1:])
 
 
-def _translate_glob_token(token: str) -> str:
-    """Translates a single glob token into its regular expression fragment."""
-    token_map = {
-        "/**/": r"(?:/.*)?/",
-        "**/": r"(?:.*/)?",
-        "/**": r"/.*",
-        "**": r".*",
-        "*": r"[^/]*",
-        "?": r"[^/]",
-    }
-    if token in token_map:
-        return token_map[token]
-    return re.escape(token)
+def matches_pattern(file_path: str, pattern: str) -> bool:
+    """Returns True if `file_path` matches the glob `pattern`."""
+    return _match_parts(PurePosixPath(file_path).parts, PurePosixPath(pattern).parts)
 
 
-def compile_glob_regex(raw_pattern: str) -> re.Pattern[str]:
-    """Compiles a repository path or glob pattern into a full-path regex."""
-    normalized = normalize_pattern(raw_pattern)
-    if normalized.endswith("/"):
-        normalized = normalized[:-1] if normalized.endswith("/**/") else f"{normalized}**"
-    fragments = [_translate_glob_token(tok) for tok in _GLOB_TOKEN_RE.findall(normalized)]
-    return re.compile(f"^{''.join(fragments)}$")
-
-
-def extract_backtick_tokens(cell_text: str) -> list[str]:
-    """Extracts all backtick-delimited strings from a Markdown table cell."""
-    return [match.strip() for match in _BACKTICK_TOKEN_RE.findall(cell_text) if match.strip()]
-
-
-def extract_section_body(markdown_text: str, section_header: str) -> str:
-    """Returns the Markdown text under `section_header` up to the next H2."""
-    header_index = markdown_text.find(section_header)
-    if header_index == -1:
-        raise ValueError(f"Missing required section header: {section_header}")
-    body_start = header_index + len(section_header)
-    next_h2 = re.search(r"(?m)^##\s+", markdown_text[body_start:])
-    if next_h2 is None:
-        return markdown_text[body_start:]
-    return markdown_text[body_start : body_start + next_h2.start()]
-
-
-def parse_markdown_table_rows(section_text: str) -> list[list[str]]:
-    """Extracts data cells from Markdown table rows in `section_text`."""
-    table_lines = [
-        line.strip() for line in section_text.splitlines() if line.strip().startswith("|")
-    ]
-    if len(table_lines) <= 2:
-        return []
-    rows: list[list[str]] = []
-    for line in table_lines[2:]:
-        cells = [cell.strip() for cell in line.strip("|").split("|")]
-        rows.append(cells)
-    return rows
-
-
-def parse_topography_map(markdown_text: str) -> TopographyPatterns:
-    """Parses Section 1 and Section 2 tables into `TopographyPatterns`."""
-    sec1_rows = parse_markdown_table_rows(extract_section_body(markdown_text, SECTION_1_HEADER))
-    sec2_rows = parse_markdown_table_rows(extract_section_body(markdown_text, SECTION_2_HEADER))
+def load_topography_map(json_text: str) -> TopographyPatterns:
+    """Parses the JSON topography map into `TopographyPatterns`."""
+    payload = json.loads(json_text)
+    if not isinstance(payload, dict):
+        raise ValueError("Topography map JSON root must be an object.")
+    quadrants = payload.get("quadrants", [])
+    identifier_sources = payload.get("identifier_sources", [])
     source_patterns = [
-        tok for row in sec1_rows if len(row) >= 3 for tok in extract_backtick_tokens(row[1])
+        str(pattern) for quadrant in quadrants for pattern in quadrant.get("source_patterns", [])
     ]
     doc_patterns = [
-        tok for row in sec1_rows if len(row) >= 3 for tok in extract_backtick_tokens(row[2])
+        str(pattern) for quadrant in quadrants for pattern in quadrant.get("doc_patterns", [])
     ]
     registry_patterns = [
-        tok for row in sec2_rows if len(row) >= 2 for tok in extract_backtick_tokens(row[1])
+        str(pattern) for entry in identifier_sources for pattern in entry.get("source_patterns", [])
     ]
     return TopographyPatterns(
         source_patterns=tuple(source_patterns),
@@ -165,7 +122,7 @@ def discover_component_directories(tracked_files: Sequence[str]) -> list[str]:
     """Returns sorted top-level component directories containing tracked files."""
     directories: set[str] = set()
     for file_path in tracked_files:
-        parts = file_path.split("/")
+        parts = PurePosixPath(file_path).parts
         if len(parts) >= 3 and parts[0] in SINGLE_LEVEL_COMPONENT_ROOTS:
             directories.add(f"{parts[0]}/{parts[1]}/")
         if len(parts) >= 4 and parts[0] in TWO_LEVEL_COMPONENT_ROOTS:
@@ -188,8 +145,7 @@ def find_dead_map_entries(
         if pattern in seen:
             continue
         seen.add(pattern)
-        regex = compile_glob_regex(pattern)
-        if not any(regex.match(path) for path in tracked_files):
+        if not any(matches_pattern(path, pattern) for path in tracked_files):
             dead.append(pattern)
     return tuple(dead)
 
@@ -197,11 +153,12 @@ def find_dead_map_entries(
 def find_unmapped_doc_files(
     doc_patterns: Sequence[str], tracked_files: Sequence[str]
 ) -> tuple[str, ...]:
-    """Returns tracked `.md` files not covered by any Section 1 Col 3 pattern."""
-    compiled = [compile_glob_regex(pattern) for pattern in doc_patterns]
+    """Returns tracked `.md` files not covered by any `doc_patterns` entry."""
     markdown_files = sorted(path for path in tracked_files if path.endswith(".md"))
     return tuple(
-        md_file for md_file in markdown_files if not any(regex.match(md_file) for regex in compiled)
+        md_file
+        for md_file in markdown_files
+        if not any(matches_pattern(md_file, pattern) for pattern in doc_patterns)
     )
 
 
@@ -209,12 +166,13 @@ def find_unmapped_source_dirs(
     source_patterns: Sequence[str], tracked_files: Sequence[str]
 ) -> tuple[str, ...]:
     """Returns top-level component directories with no mapped tracked files."""
-    compiled = [compile_glob_regex(pattern) for pattern in source_patterns]
     component_dirs = discover_component_directories(tracked_files)
     unmapped: list[str] = []
     for comp_dir in component_dirs:
         dir_files = [path for path in tracked_files if path.startswith(comp_dir)]
-        if not any(regex.match(path) for path in dir_files for regex in compiled):
+        if not any(
+            matches_pattern(path, pattern) for path in dir_files for pattern in source_patterns
+        ):
             unmapped.append(comp_dir)
     return tuple(unmapped)
 
@@ -249,11 +207,11 @@ def format_failures(report: ValidationReport) -> list[str]:
         for entry in report.dead_map_entries
     ]
     lines.extend(
-        f"[UNMAPPED_DOC_FILE] Tracked Markdown file not covered by Section 1 Col 3: `{doc}`"
+        f"[UNMAPPED_DOC_FILE] Tracked Markdown file not covered by doc_patterns: `{doc}`"
         for doc in report.unmapped_doc_files
     )
     lines.extend(
-        f"[UNMAPPED_SOURCE_DIR] Component directory not covered by Section 1 Col 2: `{src_dir}`"
+        f"[UNMAPPED_SOURCE_DIR] Component directory not covered by source_patterns: `{src_dir}`"
         for src_dir in report.unmapped_source_dirs
     )
     return lines
@@ -262,7 +220,7 @@ def format_failures(report: ValidationReport) -> list[str]:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parses command-line arguments for the topography map linter."""
     parser = argparse.ArgumentParser(
-        description="Validate XMC Documentation Topography Map against git ls-files."
+        description="Validate XMC Documentation Topography Map JSON against git ls-files."
     )
     parser.add_argument(
         "--repo-root",
@@ -274,7 +232,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--map-file",
         type=Path,
         default=DEFAULT_MAP_PATH,
-        help="Path to xmc_docs_topography_and_map.md relative to repo root.",
+        help="Path to xmc_docs_topography_map.json relative to repo root.",
     )
     return parser.parse_args(argv)
 
@@ -290,7 +248,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 1
 
-    patterns = parse_topography_map(map_path.read_text(encoding="utf-8"))
+    patterns = load_topography_map(map_path.read_text(encoding="utf-8"))
     tracked_files = list_tracked_files(args.repo_root)
     report = validate_topography_map(patterns, tracked_files)
     if report.is_valid():

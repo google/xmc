@@ -49,8 +49,9 @@ To prevent hallucination, attentional bias, and context bloat, agents executing 
 
 1. **Repository Rules & Standards ([Markdown Documentation Guidelines](../../rules/languages/markdown.md) & [Core Engineering Guidelines](../../AGENTS.md))**:
    - Owns documentation rules: canonical home (one home per fact), link-don't-summarize, no PR-status prose (e.g., "PR #123 adds..."), no broken relative links, and [Open-Source Compliance & Prohibited Internal Links](../../rules/languages/markdown.md#1-markdown-formatting--structure).
-2. **XMC Documentation Topography Map ([`references/xmc_docs_topography_and_map.md`](references/xmc_docs_topography_and_map.md))**:
-   - Owns the **Code-to-Docs Mapping Matrix** (which source paths map to which docs), the **Identifier Sources Registry** (which code files own flags, env vars, ports, schemas), and the **Known Drift Magnets** (ClickHouse charts, Helm tables, relative link depth changes, CTK v1 vs v2 renames).
+2. **XMC Documentation Topography Registry & Guide ([`references/xmc_docs_topography_map.json`](references/xmc_docs_topography_map.json) & [`references/xmc_docs_topography_and_map.md`](references/xmc_docs_topography_and_map.md))**:
+   - [`references/xmc_docs_topography_map.json`](references/xmc_docs_topography_map.json) owns the canonical machine-readable **Code-to-Docs Mapping Matrix (`quadrants`)** and **Identifier Sources Registry (`identifier_sources`)**.
+   - [`references/xmc_docs_topography_and_map.md`](references/xmc_docs_topography_and_map.md) owns the **Known Drift Magnets** (ClickHouse charts, Helm tables, relative link depth changes, CTK v1 vs v2 renames) and the **Testable Assertion Verification Rubric**.
    - Validated continuously against `git ls-files` by [`tools/lint/check_docs_topography_map.py`](../../../tools/lint/check_docs_topography_map.py) (enforcing zero dead map entries, zero unmapped `.md` files, and zero unmapped component directories).
 
 ---
@@ -127,12 +128,12 @@ Use this mode during pull request reviews, before merge, or for periodic delta a
    - Time window: `git log --since="<date>" --until="<date>" --name-only --pretty=format:"" origin/main`.
    - Merged PRs in window: `gh pr list --state merged --search "merged:>=YYYY-MM-DD" --json number,title,files`.
 2. **Classify Changed Files**:
-   - **Source Code Changed?** Map to affected documentation via the [Topography Map](references/xmc_docs_topography_and_map.md) (Direction 1).
+   - **Source Code Changed?** Map to affected documentation via [`references/xmc_docs_topography_map.json`](references/xmc_docs_topography_map.json) and the [Topography Guide](references/xmc_docs_topography_and_map.md) (Direction 1).
    - **Documentation Changed?** Verify new claims against source code at HEAD (Direction 2).
 
 ### Phase 2A: Direction 1 — Code → Docs Audit
 For every modified source file:
-1. Locate its documented canonical pages using the [Topography Map](references/xmc_docs_topography_and_map.md).
+1. Locate its documented canonical pages using [`references/xmc_docs_topography_map.json`](references/xmc_docs_topography_map.json).
 2. Check if the code change modified any **testable assertion**:
    - Did a CLI flag name, type, or default value change?
    - Was an environment variable added, removed, or renamed?

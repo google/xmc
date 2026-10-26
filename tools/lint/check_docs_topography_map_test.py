@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import io
+import json
 import subprocess
 import tempfile
 import unittest
@@ -25,21 +26,36 @@ from unittest.mock import patch
 
 from tools.lint import check_docs_topography_map as linter
 
-SAMPLE_VALID_MAP = """# Sample Topography Map
-
-## 1. Code-to-Docs Topography Mapping Matrix
-
-| Codebase Quadrant | Core Source Directories / Files | Authoritative Documentation Files |
-| :--- | :--- | :--- |
-| **Services** | `cmd/*/`<br>`pkg/auth/` | `README.md`<br>`cmd/**/README.md`<br>`docs/**/*.md` |
-| **SDKs** | `sdks/python/xmc/` | `sdks/python/**/README.md`<br>`.agents/**/*.md` |
-
-## 2. Identifier Sources of Truth Registry
-
-| Documented Identifier Type | Canonical Source of Truth in Code | Verification Method / Regex |
-| :--- | :--- | :--- |
-| **CLI Flags** | `cmd/<service>/main.go`<br>`pkg/**/` | Search flags |
-"""
+SAMPLE_VALID_MAP_JSON = json.dumps(
+    {
+        "quadrants": [
+            {
+                "name": "Services",
+                "source_patterns": ["cmd/**", "pkg/auth/**"],
+                "doc_patterns": [
+                    "README.md",
+                    "cmd/**/README.md",
+                    "docs/**/*.md",
+                ],
+            },
+            {
+                "name": "SDKs",
+                "source_patterns": ["sdks/python/xmc/**"],
+                "doc_patterns": [
+                    "sdks/python/**/README.md",
+                    ".agents/**/*.md",
+                ],
+            },
+        ],
+        "identifier_sources": [
+            {
+                "identifier_type": "CLI Flags",
+                "source_patterns": ["cmd/*/main.go", "pkg/**"],
+                "verification_command": "git grep StringVar cmd/",
+            }
+        ],
+    }
+)
 
 SAMPLE_TRACKED_FILES: tuple[str, ...] = (
     "README.md",
@@ -58,57 +74,21 @@ SAMPLE_TRACKED_FILES: tuple[str, ...] = (
 class CheckDocsTopographyMapTest(unittest.TestCase):
     """Tests for bi-directional documentation topography map verification."""
 
-    def test_normalize_pattern_replaces_placeholders(self) -> None:
-        """Verifies `<placeholder>` segments normalize to `*` wildcards."""
-        self.assertEqual(
-            linter.normalize_pattern("  cmd/<service>/main.go "),
-            "cmd/*/main.go",
-        )
-        self.assertEqual(
-            linter.normalize_pattern("sdks/<lang>/<pkg>/README.md"),
-            "sdks/*/*/README.md",
-        )
+    def test_matches_pattern_uses_pure_posix_path_full_match(self) -> None:
+        """Verifies `matches_pattern` evaluates standard globs via PurePosixPath."""
+        self.assertTrue(linter.matches_pattern("cmd/actuator/main.go", "cmd/**"))
+        self.assertFalse(linter.matches_pattern("pkg/actuator/main.go", "cmd/**"))
+        self.assertTrue(linter.matches_pattern("docs/developer.md", "docs/**/*.md"))
+        self.assertTrue(linter.matches_pattern("docs/architecture/overview.md", "docs/**/*.md"))
+        self.assertTrue(linter.matches_pattern("cmd/actuator/main.go", "cmd/*/main.go"))
+        self.assertFalse(linter.matches_pattern("cmd/actuator/sub/main.go", "cmd/*/main.go"))
 
-    def test_compile_glob_regex_matches_expected_paths(self) -> None:
-        """Verifies glob patterns compile to accurate full-path regexes."""
-        dir_regex = linter.compile_glob_regex("cmd/actuator/")
-        self.assertIsNotNone(dir_regex.match("cmd/actuator/main.go"))
-        self.assertIsNone(dir_regex.match("cmd/actuator_v2/main.go"))
-
-        wildcard_dir_regex = linter.compile_glob_regex("pkg/**/")
-        self.assertIsNotNone(wildcard_dir_regex.match("pkg/auth/jwks.go"))
-
-        double_star_regex = linter.compile_glob_regex("docs/**/*.md")
-        self.assertIsNotNone(double_star_regex.match("docs/developer.md"))
-        self.assertIsNotNone(double_star_regex.match("docs/architecture/overview.md"))
-        self.assertIsNone(double_star_regex.match("cmd/ui/README.md"))
-
-        leading_glob_regex = linter.compile_glob_regex("**/README.md")
-        self.assertIsNotNone(leading_glob_regex.match("README.md"))
-        self.assertIsNotNone(leading_glob_regex.match("a/b/README.md"))
-
-        single_char_regex = linter.compile_glob_regex("docs/v?.md")
-        self.assertIsNotNone(single_char_regex.match("docs/v1.md"))
-        self.assertIsNone(single_char_regex.match("docs/v10.md"))
-
-    def test_extract_section_body_raises_on_missing_header(self) -> None:
-        """Verifies `extract_section_body` raises ValueError when absent."""
-        with self.assertRaises(ValueError):
-            linter.extract_section_body("# Empty Doc\n", linter.SECTION_1_HEADER)
-
-    def test_parse_markdown_table_rows_handles_empty_section(self) -> None:
-        """Verifies `parse_markdown_table_rows` returns empty list without rows."""
-        self.assertEqual(
-            linter.parse_markdown_table_rows("No markdown table here."),
-            [],
-        )
-
-    def test_parse_topography_map_extracts_all_columns(self) -> None:
-        """Verifies Section 1 and Section 2 backtick tokens are extracted."""
-        patterns = linter.parse_topography_map(SAMPLE_VALID_MAP)
+    def test_load_topography_map_extracts_all_pattern_groups(self) -> None:
+        """Verifies JSON `quadrants` and `identifier_sources` load cleanly."""
+        patterns = linter.load_topography_map(SAMPLE_VALID_MAP_JSON)
         self.assertEqual(
             patterns.source_patterns,
-            ("cmd/*/", "pkg/auth/", "sdks/python/xmc/"),
+            ("cmd/**", "pkg/auth/**", "sdks/python/xmc/**"),
         )
         self.assertEqual(
             patterns.doc_patterns,
@@ -122,8 +102,13 @@ class CheckDocsTopographyMapTest(unittest.TestCase):
         )
         self.assertEqual(
             patterns.registry_patterns,
-            ("cmd/<service>/main.go", "pkg/**/"),
+            ("cmd/*/main.go", "pkg/**"),
         )
+
+    def test_load_topography_map_raises_on_non_dict_root(self) -> None:
+        """Verifies `load_topography_map` rejects non-object JSON roots."""
+        with self.assertRaises(ValueError):
+            linter.load_topography_map("[]")
 
     def test_discover_component_directories_identifies_all_roots(self) -> None:
         """Verifies single-level and two-level component directories are found."""
@@ -146,7 +131,7 @@ class CheckDocsTopographyMapTest(unittest.TestCase):
 
     def test_validate_topography_map_passes_when_complete(self) -> None:
         """Verifies all three checks pass on a synchronized map and file list."""
-        patterns = linter.parse_topography_map(SAMPLE_VALID_MAP)
+        patterns = linter.load_topography_map(SAMPLE_VALID_MAP_JSON)
         report = linter.validate_topography_map(patterns, SAMPLE_TRACKED_FILES)
         self.assertTrue(report.is_valid())
         self.assertEqual(report.dead_map_entries, ())
@@ -156,19 +141,23 @@ class CheckDocsTopographyMapTest(unittest.TestCase):
     def test_check_1_detects_dead_map_entry(self) -> None:
         """Verifies Check 1 flags map entries matching zero tracked files."""
         patterns = linter.TopographyPatterns(
-            source_patterns=("cmd/*/", "pkg/nonexistent/", "pkg/nonexistent/"),
+            source_patterns=(
+                "cmd/**",
+                "pkg/nonexistent/**",
+                "pkg/nonexistent/**",
+            ),
             doc_patterns=("README.md", "docs/deleted.md"),
-            registry_patterns=("cmd/<service>/missing.go",),
+            registry_patterns=("cmd/*/missing.go",),
         )
         dead = linter.find_dead_map_entries(patterns, SAMPLE_TRACKED_FILES)
         self.assertEqual(
             dead,
-            ("pkg/nonexistent/", "docs/deleted.md", "cmd/<service>/missing.go"),
+            ("pkg/nonexistent/**", "docs/deleted.md", "cmd/*/missing.go"),
         )
 
     def test_check_2_detects_unmapped_doc_file(self) -> None:
-        """Verifies Check 2 flags tracked `.md` files missing from Section 1."""
-        patterns = linter.parse_topography_map(SAMPLE_VALID_MAP)
+        """Verifies Check 2 flags tracked `.md` files missing from doc_patterns."""
+        patterns = linter.load_topography_map(SAMPLE_VALID_MAP_JSON)
         files_with_extra_doc = (
             *SAMPLE_TRACKED_FILES,
             "deploy/new_profile/README.md",
@@ -181,8 +170,8 @@ class CheckDocsTopographyMapTest(unittest.TestCase):
         )
 
     def test_check_3_detects_unmapped_source_dir(self) -> None:
-        """Verifies Check 3 flags component directories missing from Section 1."""
-        patterns = linter.parse_topography_map(SAMPLE_VALID_MAP)
+        """Verifies Check 3 flags component directories missing from source_patterns."""
+        patterns = linter.load_topography_map(SAMPLE_VALID_MAP_JSON)
         files_with_new_component = (
             *SAMPLE_TRACKED_FILES,
             "internal/new_subsystem/service.go",
@@ -221,9 +210,9 @@ class CheckDocsTopographyMapTest(unittest.TestCase):
         """Verifies `main` exits 0 when all bi-directional checks pass."""
         mock_list_files.return_value = list(SAMPLE_TRACKED_FILES)
         with tempfile.TemporaryDirectory() as tmp_dir:
-            map_file = Path(tmp_dir) / "map.md"
-            map_file.write_text(SAMPLE_VALID_MAP, encoding="utf-8")
-            exit_code = linter.main(["--repo-root", tmp_dir, "--map-file", "map.md"])
+            map_file = Path(tmp_dir) / "map.json"
+            map_file.write_text(SAMPLE_VALID_MAP_JSON, encoding="utf-8")
+            exit_code = linter.main(["--repo-root", tmp_dir, "--map-file", "map.json"])
             self.assertEqual(exit_code, 0)
 
     @patch.object(linter, "list_tracked_files")
@@ -237,8 +226,8 @@ class CheckDocsTopographyMapTest(unittest.TestCase):
             "pkg/unmapped_pkg/file.go",
         ]
         with tempfile.TemporaryDirectory() as tmp_dir:
-            map_file = Path(tmp_dir) / "map.md"
-            map_file.write_text(SAMPLE_VALID_MAP, encoding="utf-8")
+            map_file = Path(tmp_dir) / "map.json"
+            map_file.write_text(SAMPLE_VALID_MAP_JSON, encoding="utf-8")
             stderr_buf = io.StringIO()
             with patch("sys.stderr", stderr_buf):
                 exit_code = linter.main(["--repo-root", tmp_dir, "--map-file", str(map_file)])
@@ -253,7 +242,7 @@ class CheckDocsTopographyMapTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             stderr_buf = io.StringIO()
             with patch("sys.stderr", stderr_buf):
-                exit_code = linter.main(["--repo-root", tmp_dir, "--map-file", "missing.md"])
+                exit_code = linter.main(["--repo-root", tmp_dir, "--map-file", "missing.json"])
             self.assertEqual(exit_code, 1)
             self.assertIn("[DEAD_MAP_ENTRY]", stderr_buf.getvalue())
 
