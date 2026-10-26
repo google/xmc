@@ -597,7 +597,7 @@ sequenceDiagram
         Act->>K8s: Get/Delete JobSet -> NotFound (idempotent no-op)
         Act->>DB: UpdateOperation(done=true)
     else Cluster-backed non-terminal state
-        ESS->>DB: Tx: state -> STOPPING (time-check bypassed; locks forward to STOPPED)
+        ESS->>DB: Tx: state -> STOPPING (time-check bypassed <br> locks forward to STOPPED)
         ESS-->>Client: Operation (done=false)
         Redis->>Act: XREADGROUP Delete task
         Act->>K8s: Delete JobSet (Preconditions: UID, EID <= N)
