@@ -20,6 +20,7 @@ import unittest
 from chart_test_lib import render_template, require_helm
 
 DB_CONFIG_TEMPLATE = "templates/db-config.yaml"
+POSTGRES_SECRET_TEMPLATE = "templates/postgres-secret.yaml"
 HEALTH_DEPLOYMENT = "templates/health-service/deployment.yaml"
 
 WORKLOAD_DEPLOYMENTS: tuple[str, ...] = (
@@ -254,6 +255,53 @@ class DbConfigChartTest(unittest.TestCase):
             "- name: db-config-volume\n          configMap:\n            name: db-config", manifest
         )
         self.assertIn("- name: db-config-volume\n            mountPath: /config/db", manifest)
+
+    def test_workloads_source_postgres_password_from_secret(self) -> None:
+        """Every workload receives POSTGRES_PASSWORD from postgres-secret when database.backend is postgres."""
+        values = {
+            **ENABLE_OPTIONAL_DEPLOYMENTS,
+            **POSTGRES_REQUIRED_VALUES,
+            "database.postgres.password": "s3cret",
+        }
+        for template in WORKLOAD_DEPLOYMENTS:
+            with self.subTest(template=template):
+                manifest = render_template(template, values)
+                self.assertNotIn("s3cret", manifest)
+                self.assertIn(
+                    "- name: POSTGRES_PASSWORD\n"
+                    "          valueFrom:\n"
+                    "            secretKeyRef:\n"
+                    "              name: postgres-secret\n"
+                    "              key: postgres-password",
+                    manifest,
+                )
+
+    def test_workloads_omit_postgres_password_when_spanner_backend(self) -> None:
+        """Spanner deployments do not inject POSTGRES_PASSWORD."""
+        for template in WORKLOAD_DEPLOYMENTS:
+            with self.subTest(template=template):
+                manifest = render_template(template, ENABLE_OPTIONAL_DEPLOYMENTS)
+                self.assertNotIn("POSTGRES_PASSWORD", manifest)
+
+    def test_postgres_secret_carries_configured_password(self) -> None:
+        """postgres-secret renders with the configured password when database.backend is postgres."""
+        manifest = render_template(
+            POSTGRES_SECRET_TEMPLATE,
+            {
+                **POSTGRES_REQUIRED_VALUES,
+                "database.postgres.password": "s3cret",
+            },
+        )
+        self.assertIn("name: postgres-secret", manifest)
+        self.assertIn('postgres-password: "s3cret"', manifest)
+
+    def test_postgres_secret_is_not_rendered_when_spanner_backend(self) -> None:
+        """postgres-secret is omitted when backend is Spanner."""
+        manifest = render_template(
+            POSTGRES_SECRET_TEMPLATE, {"database.postgres.password": "s3cret"}
+        )
+        self.assertNotIn("kind: Secret", manifest)
+        self.assertNotIn("s3cret", manifest)
 
 
 if __name__ == "__main__":
