@@ -20,12 +20,13 @@ go_library(
     importpath = "xmanager_cloud/internal/storage/postgres/clilogincode",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//internal/safesql",
         "//internal/storage",
         "//internal/storage/postgres/pgdb",
         "//pkg/auth/oauth2",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgtype",
         "@com_github_jackc_pgx_v5//pgxpool",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
     ],
 )
 
@@ -33,8 +34,13 @@ go_test(
     name = "clilogincode_test",
     srcs = ["repository_test.go"],
     embed = [":clilogincode"],
+    tags = ["local"],
     deps = [
+        "//internal/grpcerr",
+        "//internal/storage/postgres/testing",
         "//pkg/auth/oauth2",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_jackc_pgx_v5//pgtype",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
