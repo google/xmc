@@ -23,13 +23,12 @@ def _verify_owner_metadata(
     resource: dict[str, Any], kind: str, name: str, owners: set[str], ns: str
 ) -> None:
     """Verifies Helm managed-by label and release ownership annotations match expected owners."""
-    meta = resource.get("metadata") or {}
-    annotations = meta.get("annotations") or {}
-    owner, owner_ns = (
-        annotations.get("meta.helm.sh/release-name", ""),
-        annotations.get("meta.helm.sh/release-namespace", ""),
-    )
-    if (meta.get("labels") or {}).get("app.kubernetes.io/managed-by") != "Helm":
+    meta = resource["metadata"] if isinstance(resource.get("metadata"), dict) else {}
+    annotations = meta["annotations"] if isinstance(meta.get("annotations"), dict) else {}
+    labels = meta["labels"] if isinstance(meta.get("labels"), dict) else {}
+    owner = annotations.get("meta.helm.sh/release-name", "")
+    owner_ns = annotations.get("meta.helm.sh/release-namespace", "")
+    if labels.get("app.kubernetes.io/managed-by") != "Helm":
         raise HandledError(
             f"{kind}/{name} is missing label 'app.kubernetes.io/managed-by=Helm'.",
             f"Run 'kubectl label {kind} {name} -n {ns} app.kubernetes.io/managed-by=Helm --overwrite'.",
@@ -43,7 +42,13 @@ def _verify_owner_metadata(
 
 def _uninstall_orphaned_component_release(ns: str, targets: list[tuple[str, str]]) -> None:
     """Safely uninstalls orphaned xmc-cmp-ingestion-gateway release after stamping keep."""
-    if fetch_live_resource("components.xmc.dev", "ingestion-gateway", ns, required=False):
+    try:
+        cr = fetch_live_resource("components.xmc.dev", "ingestion-gateway", ns, required=False)
+    except HandledError as e:
+        if "resource type" not in str(e).lower() and "no matches for kind" not in str(e).lower():
+            raise
+        cr = None
+    if cr is not None:
         raise HandledError(
             f"Cannot undo handoff while Component/ingestion-gateway exists in '{ns}'.",
             "Uninstall xmc-profile with deletionPolicy=Orphan first before running handoff --undo.",
@@ -54,12 +59,8 @@ def _uninstall_orphaned_component_release(ns: str, targets: list[tuple[str, str]
     if fetch_live_resource("networkpolicy", "ingestion-gateway-network-policy", ns, required=False):
         annotate_resource("networkpolicy", "ingestion-gateway-network-policy", ns, keep)
     try:
-        run_command(
-            ["helm", "uninstall", GATEWAY_COMPONENT_RELEASE, "-n", ns],
-            capture_output=True,
-            log_on_error=False,
-            stream=sys.stderr,
-        )
+        cmd = ["helm", "uninstall", GATEWAY_COMPONENT_RELEASE, "-n", ns]
+        run_command(cmd, capture_output=True, log_on_error=False, stream=sys.stderr)
     except (FileNotFoundError, subprocess.CalledProcessError) as e:
         err = (getattr(e, "stderr", "") or str(e)).strip()
         raise HandledError(
@@ -103,10 +104,7 @@ def execute_resource_handoff(release: str, namespace: str, *, undo: bool = False
 
 def _collect_validated_targets(release: str, namespace: str) -> list[tuple[str, str]]:
     """Fetches Deployment, Service, and optional HPA and verifies their current Helm owners."""
-    targets: list[tuple[str, str]] = [
-        ("deployment", GATEWAY_DEPLOYMENT_NAME),
-        ("service", GATEWAY_SERVICE_NAME),
-    ]
+    targets = [("deployment", GATEWAY_DEPLOYMENT_NAME), ("service", GATEWAY_SERVICE_NAME)]
     hpa = fetch_live_resource(
         "horizontalpodautoscaler", GATEWAY_HPA_NAME, namespace, required=False
     )

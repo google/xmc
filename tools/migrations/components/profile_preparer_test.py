@@ -103,13 +103,14 @@ class TestProfilePreparer(unittest.TestCase):
 
         flags_tls_off = dict(flags, tls_enabled="false")
         gw_no_hpa = profile_preparer.build_gateway_parameters(
-            {"ingestionGatewayDeployment": {"replicas": None}},
+            {"ingestionGatewayDeployment": {"replicas": None, "sasl": True, "tls": "invalid"}},
             {"spec": {"replicas": 0, "template": dep["spec"]["template"]}},
             None,
             flags_tls_off,
         )
         self.assertFalse(gw_no_hpa["hpaEnabled"])
         self.assertEqual(gw_no_hpa["replicas"], 0)
+        self.assertFalse(gw_no_hpa["saslEnabled"])
         self.assertFalse(gw_no_hpa["tlsEnabled"])
         self.assertNotIn("tlsSecretName", gw_no_hpa)
         self.assertNotIn("tlsCaFile", gw_no_hpa)
@@ -222,7 +223,7 @@ class TestProfilePreparer(unittest.TestCase):
             mock_umbrella.return_value = {
                 "ingestion_gateway_custom_image": "gcr.io/p/ig:1.0",
                 "ingestionGatewayDeployment": {"enabled": True},
-                "secrets": {"csi": {"enabled": "false"}},
+                "secrets": {"csi": "disabled"},
             }
             mock_live.side_effect = [
                 _baseline_deployment(),
@@ -234,6 +235,15 @@ class TestProfilePreparer(unittest.TestCase):
             self.assertTrue(res_on["gateway_enabled"])
             self.assertEqual(mock_secret.call_count, 2)  # TLS + ClickHouse
             self.assertEqual(mock_validate.call_count, 2)
+
+            mock_umbrella.return_value = {"ingestionGatewayDeployment": {"enabled": "false"}}
+            mock_validate.side_effect = HandledError("lint failed", "fix")
+            with self.assertRaises(HandledError):
+                profile_preparer.prepare_profile_values(
+                    "xmc", "tenant-a", out, Path(tmp), Path(tmp)
+                )
+            self.assertFalse(out.exists())
+            mock_validate.side_effect = None
 
             mock_helm_ver.side_effect = RuntimeError("helm v3.12.0 < 3.14.0")
             with self.assertRaises(HandledError):

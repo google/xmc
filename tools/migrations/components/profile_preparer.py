@@ -97,11 +97,8 @@ def audit_live_gateway_deployment(deployment: dict[str, Any]) -> dict[str, str]:
             "Live ingestion-gateway defines custom env/envFrom (e.g. MESSAGE_BUS=pubsub).",
             "Remove custom env vars before migrating to the Redpanda component gateway.",
         )
-    extra_vols = [
-        v.get("name", "")
-        for v in (pod_spec.get("volumes") or [])
-        if v.get("name") not in _KNOWN_VOLUME_NAMES
-    ]
+    vols = pod_spec.get("volumes") or []
+    extra_vols = [v.get("name", "") for v in vols if v.get("name") not in _KNOWN_VOLUME_NAMES]
     if extra_vols:
         raise HandledError(
             f"Live ingestion-gateway mounts unmapped volumes: {extra_vols}.",
@@ -225,7 +222,8 @@ def _apply_auth_parameters(
     vol_secrets: dict[str, str],
 ) -> None:
     """Populates SASL and TLS parameters from live flags/volumes and umbrella values."""
-    sasl, tls = ig.get("sasl") or {}, ig.get("tls") or {}
+    sasl = ig["sasl"] if isinstance(ig.get("sasl"), dict) else {}
+    tls = ig["tls"] if isinstance(ig.get("tls"), dict) else {}
     sasl_raw = live_flags.get("sasl_enabled")
     sasl_on = parse_bool_flag(sasl_raw if sasl_raw is not None else sasl.get("enabled"))
     params["saslEnabled"] = sasl_on
@@ -316,20 +314,20 @@ def validate_profile_values(
     """Validates profile-values.yaml via helm template (JSON Schema) and component-linter."""
     with tempfile.TemporaryDirectory(prefix="xmc_profile_lint_") as tmp_dir:
         try:
-            args = ["template", "xmc-profile", str(profile_dir), "-n", namespace]
-            rendered = run_command(
-                ["helm", *args, "-f", str(values_path)],
+            cmd = ["helm", "template", "xmc-profile", str(profile_dir), "-n", namespace]
+            res_h = run_command(
+                [*cmd, "-f", str(values_path)],
                 capture_output=True,
                 log_on_error=False,
                 stream=sys.stderr,
-            ).stdout
+            )
         except (FileNotFoundError, subprocess.CalledProcessError) as e:
             err = (getattr(e, "stderr", "") or str(e)).strip()
             raise HandledError(
                 f"Helm template validation failed: {err}",
                 "Check generated profile-values.yaml against values.schema.json.",
             ) from e
-        (Path(tmp_dir) / "profile.yaml").write_text(rendered, encoding="utf-8")
+        (Path(tmp_dir) / "profile.yaml").write_text(res_h.stdout, encoding="utf-8")
         target = LintTarget(manifests_dir=Path(tmp_dir), rules_config=profile_dir / "rules.yaml")
         res = run_linter_on_target(
             target, resolve_linter_binary(None, repo_root), "json", cwd=repo_root
@@ -367,7 +365,11 @@ def prepare_profile_values(
         raise HandledError(f"Failed to write '{output_path}': {e}", "Check --output path.") from e
     resolved_root = repo_root or Path(__file__).resolve().parents[3]
     resolved_profile = profile_dir or (resolved_root / "deploy" / "profiles" / "stable-2026a")
-    validate_profile_values(output_path, namespace, resolved_profile, resolved_root)
+    try:
+        validate_profile_values(output_path, namespace, resolved_profile, resolved_root)
+    except Exception:
+        output_path.unlink(missing_ok=True)
+        raise
     return {
         "output_path": str(output_path),
         "namespace": namespace,
@@ -392,9 +394,9 @@ def _build_enabled_profile_doc(umbrella_values: dict[str, Any], namespace: str) 
         verify_secret_exists(str(gw_params["saslSecretName"]), namespace, field_label="SASL")
     if gw_params.get("tlsEnabled") and gw_params.get("tlsSecretName"):
         verify_secret_exists(str(gw_params["tlsSecretName"]), namespace, field_label="TLS")
-    csi_on = parse_bool_flag(
-        (((umbrella_values.get("secrets") or {}).get("csi")) or {}).get("enabled")
-    )
+    secrets_val = umbrella_values.get("secrets")
+    csi_val = secrets_val.get("csi") if isinstance(secrets_val, dict) else None
+    csi_on = parse_bool_flag(csi_val.get("enabled") if isinstance(csi_val, dict) else None)
     if not csi_on:
         verify_secret_exists(str(ch_params["secretName"]), namespace, field_label="ClickHouse")
     param_map = {
