@@ -58,3 +58,9 @@ packages = ["xmc", "xmc.integrations"]
 [tool.setuptools.package-data]
 "xmc" = ["py.typed"]
 
+# Inherit the repository Ruff config but lint against this SDK's declared
+# minimum (requires-python) so modernization rules never break supported users.
+[tool.ruff]
+extend = "../../../pyproject.toml"
+target-version = "py39"
+
