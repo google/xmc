@@ -203,6 +203,16 @@ func TestHybridAuthorizationPipeline(t *testing.T) {
 			want:           false,
 		},
 		{
+			name:           "Stage 1: Empty email does not match a blank allowlist entry",
+			allowedDomains: []string{"company.com"},
+			allowedEmails:  []string{" "},
+			gcpProjectID:   "my-project",
+			targetRole:     "roles/viewer",
+			emailToCheck:   "  ",
+			mockAuth:       true,
+			want:           false,
+		},
+		{
 			name:           "Stage 3 Mock: Match simulated IAM admin",
 			allowedDomains: []string{"company.com"},
 			allowedEmails:  []string{"guest@external.com"},

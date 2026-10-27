@@ -175,6 +175,10 @@ func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (boo
 	if len(a.Config.AllowedEmails) == 0 && len(a.Config.AllowedDomains) == 0 && a.Config.GCPProjectID == "" {
 		return false, fmt.Errorf("fail-closed: AllowedEmails, AllowedDomains, and GCPProjectID are all empty; access is denied unless DISABLE_AUTHENTICATION=true")
 	}
+	// An empty identity must never match a blank (misconfigured) allowlist entry.
+	if canonicalEmail == "" {
+		return false, nil
+	}
 
 	// 1. STAGE 1: Local Guest/Admin Email Allowlist Check (Fast Path)
 	if len(a.Config.AllowedEmails) > 0 {
