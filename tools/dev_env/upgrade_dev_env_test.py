@@ -465,6 +465,56 @@ class TestStepSubprocesses(unittest.TestCase):
             upgrade_dev_env.step_check(cfg)
         self.assertEqual(cm.exception.code, 1)
 
+    @mock.patch("tools.dev_env.upgrade_dev_env.verify_helm_min_version", return_value="v3.15.0")
+    @mock.patch("shutil.which", return_value="/usr/bin/tool")
+    def test_step_check_fails_missing_profile_values_when_components_enabled(
+        self, _mock_which, _mock_helm
+    ):
+        from dataclasses import replace
+
+        cfg = replace(
+            self.config,
+            enable_components=True,
+            profile_values="/tmp/nonexistent-profile-values-1429.yaml",
+        )
+        with self.assertRaises(SystemExit) as cm:
+            upgrade_dev_env.step_check(cfg)
+        self.assertEqual(cm.exception.code, 1)
+
+    @mock.patch(
+        "tools.dev_env.upgrade_dev_env.execute_step",
+        side_effect=FileNotFoundError("missing profile values"),
+    )
+    def test_run_pipeline_catches_oserror_and_quotes_profile_values_in_recovery_cmd(
+        self, _mock_exec
+    ):
+        import io
+        from contextlib import redirect_stdout
+        from dataclasses import replace
+
+        parsed = upgrade_dev_env.parse_args(
+            [
+                "--enable-components",
+                "--profile-values",
+                "/tmp/my dir/profile values.yaml",
+                "--start-from",
+                "app",
+            ]
+        )
+        cfg = replace(
+            self.config,
+            enable_components=True,
+            profile_values="/tmp/my dir/profile values.yaml",
+        )
+        buf = io.StringIO()
+        with redirect_stdout(buf), self.assertRaises(SystemExit) as cm:
+            upgrade_dev_env.run_pipeline(parsed, cfg, upgrade_dev_env.STEPS)
+        self.assertEqual(cm.exception.code, 1)
+        out = buf.getvalue()
+        self.assertIn("--enable-components", out)
+        self.assertIn("--profile-values '/tmp/my dir/profile values.yaml'", out)
+        self.assertIn("--start-from app", out)
+
 
 if __name__ == "__main__":
     unittest.main()

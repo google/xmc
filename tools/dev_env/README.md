@@ -281,6 +281,7 @@ python3 tools/dev_env/dev_env.py gke-deploy \
 - `--skip-terraform-init`: Skip `terraform init` during deployment.
 - `--skip-migrations`: Skip automatic Cloud Spanner database schema migrations.
 - `--skip-verification`: Skip environment health verification step.
+- `--profile-values`: Optional values YAML file passed to `helm -f` when deploying `xmc-profile` (requires `helm >= 3.14.0` when `enable_components` is enabled).
 
 > [!NOTE]
 > The `compile` step (and the `app` step of `gke-upgrade`) deletes `ctk-out/<deployment_name>/.ghpc/staged/` before running `gcluster create --force`, so Helm templates removed from the repository are not re-deployed from a stale staged copy. It also passes a SHA-256 of `deploy/helm` as the `helm_chart_content_hash` blueprint variable (recorded in the umbrella Helm release description), so template-only chart changes trigger a real Helm upgrade that prunes removed objects.
@@ -307,6 +308,7 @@ python3 tools/dev_env/dev_env.py gke-upgrade \
 - `--run-migrations`, `-m`: Run Cloud Spanner database schema migrations during upgrade.
 - `--start-from`: Start upgrade from a specific step (`images`, `migrate`, `helm`, `finalize`).
 - `--only`: Execute only a single upgrade step (`images`, `migrate`, `helm`, `finalize`).
+- `--profile-values`: Optional values YAML file passed to `helm -f` when deploying `xmc-profile` (requires `helm >= 3.14.0` when `enable_components` is enabled).
 
 ---
 
