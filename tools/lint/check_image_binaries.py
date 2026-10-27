@@ -143,7 +143,13 @@ def collect_targets(build_files: dict[str, str]) -> Targets:
     for path, source in build_files.items():
         parent = Path(path).parent.as_posix()
         package = "" if parent == "." else parent
-        module = ast.parse(source)
+        try:
+            module = ast.parse(source)
+        except SyntaxError as e:
+            raise HandledError(
+                f"Failed to parse {path}: {e}",
+                "Ensure the BUILD file contains valid Starlark syntax.",
+            ) from e
         parsed_images = 0
         for call in parse_calls(module):
             name = call.kwargs.get("name")

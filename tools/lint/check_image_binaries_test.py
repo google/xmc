@@ -169,6 +169,10 @@ class FindViolationsTest(unittest.TestCase):
                     ],
                 )
 
+    def test_raises_handled_error_on_build_syntax_error(self) -> None:
+        with self.assertRaisesRegex(HandledError, "Failed to parse cmd/svc/BUILD.bazel"):
+            cli.collect_targets({"cmd/svc/BUILD.bazel": 'go_binary(name = "svc"\n'})
+
     def test_ignores_non_call_statements_and_unnamed_calls(self) -> None:
         files = {
             "BUILD.bazel": 'X = 1\npkg.rule(name = "a")\ngo_binary(**kwargs)\ngo_binary(name = NAME)\n'
