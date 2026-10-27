@@ -126,9 +126,11 @@ func (a *Authorizer) isUserInGroup(ctx context.Context, userEmail, groupEmail st
 		return false, fmt.Errorf("invalid group email: %w", err)
 	}
 
-	// The cache key is a combination of the canonical user and group emails, so differently-cased
-	// spellings of the same principals share one entry.
-	cacheKey := NormalizePrincipal(userEmail) + ":" + NormalizePrincipal(groupEmail)
+	// Canonicalize both principals up front so the cache key and the membership API query use the
+	// same form, and differently-cased spellings of the same principals share one cache entry.
+	userEmail = NormalizePrincipal(userEmail)
+	groupEmail = NormalizePrincipal(groupEmail)
+	cacheKey := userEmail + ":" + groupEmail
 
 	// --- Step 1: Check the cache (Read Lock) ---
 	a.cacheLock.RLock()

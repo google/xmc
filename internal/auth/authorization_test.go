@@ -221,6 +221,27 @@ func TestIsUserInGroup_CaseInsensitiveCacheKey(t *testing.T) {
 	}
 }
 
+func TestIsUserInGroup_MixedCaseCacheMissQueriesCanonicalEmails(t *testing.T) {
+	server, responses := NewTestServer()
+	defer server.Close()
+
+	a := NewTestAuthorizer(t, 10*time.Minute, 1*time.Minute, server)
+	ctx := context.Background()
+
+	// The mock server matches lookups and memberships exactly, so a hit proves that the API was
+	// queried with canonical (lowercase) principals.
+	responses.lookup["group@example.com"] = "groups/123"
+	responses.membership["groups/123:member@example.com"] = true
+
+	isMember, err := a.isUserInGroup(ctx, "Member@Example.com", "Group@Example.com")
+	if err != nil {
+		t.Fatalf("isUserInGroup() returned unexpected error: %v", err)
+	}
+	if !isMember {
+		t.Errorf("isUserInGroup(mixed case, cache miss) = false, want true")
+	}
+}
+
 func TestIsUserInGroup_CachingAndAPI(t *testing.T) {
 	server, responses := NewTestServer()
 	defer server.Close()
