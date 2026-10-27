@@ -24,11 +24,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	taskqueuepb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/internal/logging"
 	storagepkg "xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/internal/workunit"
 )
 
 // UpdateSource indicates the origin of a WorkUnitExecutionUpdate.
@@ -122,6 +125,14 @@ var (
 		},
 		[]string{"xid"},
 	)
+
+	lifecycleEventsPublishedTotal = MetricsFactory.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "xmc_actuator_batcher_lifecycle_events_published_total",
+			Help: "Total number of artifact lifecycle events published to Redis.",
+		},
+		[]string{"state"},
+	)
 )
 
 // StorageUpdater defines the interface for updating work unit executions.
@@ -144,6 +155,7 @@ type UpdateBatcher struct {
 	tickDuration           time.Duration
 	maxParallelExperiments int
 	Storage                StorageUpdater // Use an interface for testability
+	LifecycleNotifier      LifecycleNotifier
 
 	// retries holds updates whose flush failed transiently, keyed by
 	// (xid, wid, source). Guarded by UpdatesMu; lazily initialized.
@@ -312,7 +324,14 @@ func (b *UpdateBatcher) callUpdateWorkUnitExecutions(ctx context.Context, xid in
 	defer cancel()
 
 	logging.Info(taskCtx, "Update work unit executions for xid", "xid", xid, "numUpdates", len(updatesToSend))
-	res, err := b.Storage.UpdateWorkUnitExecutions(taskCtx, xid, updatesToSend)
+	var res map[int64]*essmsgpb.WorkUnitExecution
+	var transitions map[int64]workunit.StateTransition
+	var err error
+	if tu, ok := b.Storage.(TransitionStorageUpdater); ok {
+		res, transitions, err = tu.UpdateWorkUnitExecutionsWithTransitions(taskCtx, xid, updatesToSend)
+	} else {
+		res, err = b.Storage.UpdateWorkUnitExecutions(taskCtx, xid, updatesToSend)
+	}
 
 	duration := time.Since(storageCallStartTime).Seconds()
 	updateWorkUnitExecutionsDuration.WithLabelValues(xidStr).Observe(duration)
@@ -324,7 +343,52 @@ func (b *UpdateBatcher) callUpdateWorkUnitExecutions(ctx context.Context, xid in
 	}
 	logging.Info(taskCtx, "Updated work unit executions for xid", "xid", xid, "res", res)
 	updateWorkUnitExecutionsSuccess.WithLabelValues(xidStr).Inc()
+
+	b.notifyLifecycleEvents(taskCtx, xid, updatesToSend, transitions)
 	return nil
+}
+
+func (b *UpdateBatcher) notifyLifecycleEvents(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate, transitions map[int64]workunit.StateTransition) {
+	if b.LifecycleNotifier == nil {
+		return
+	}
+	for _, update := range updates {
+		if update == nil {
+			continue
+		}
+		trans, hasTrans := transitions[update.WID]
+		shouldNotify := false
+		var oldState, newState essmsgpb.WorkUnitStatus_WorkUnitState
+		if hasTrans {
+			oldState = trans.OldState
+			newState = trans.NewState
+			if (oldState != newState || update.ForceNotify) && MatchesNotifyWhen(newState, update.NotifyWhen) {
+				shouldNotify = true
+			}
+		} else if update.ForceNotify && update.WorkUnitExecution != nil && update.WorkUnitExecution.Status != nil && MatchesNotifyWhen(update.WorkUnitExecution.Status.State, update.NotifyWhen) {
+			shouldNotify = true
+			newState = update.WorkUnitExecution.Status.State
+		}
+
+		if shouldNotify {
+			event := &taskqueuepb.ArtifactLifecycleEvent{
+				ExperimentId:        proto.Int64(xid),
+				WorkUnitId:          proto.Int64(update.WID),
+				WorkUnitExecutionId: proto.Int64(update.EID),
+				OldState:            oldState.Enum(),
+				NewState:            newState.Enum(),
+				Payload: &taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext{
+					JobSetRuntimeContext: update.RuntimeContext,
+				},
+			}
+			lifecycleEventsPublishedTotal.WithLabelValues(newState.String()).Inc()
+			if notifyErr := b.LifecycleNotifier.NotifyLifecycleEvent(ctx, event); notifyErr != nil {
+				logging.Error(ctx, "Failed to publish artifact lifecycle event", "xid", xid, "wid", update.WID, "eid", update.EID, "error", notifyErr)
+			} else {
+				logging.Info(ctx, "Published artifact lifecycle event to Redis", "xid", xid, "wid", update.WID, "eid", update.EID, "oldState", oldState.String(), "newState", newState.String())
+			}
+		}
+	}
 }
 
 // storageFailureReason returns the metric label for a storage error: its gRPC

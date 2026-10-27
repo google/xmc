@@ -17,8 +17,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "artifactlifecycle",
     srcs = [
+        "consumer.go",
         "managed_xprof_rule.go",
         "registry.go",
+        "worker.go",
     ],
     importpath = "xmanager_cloud/cmd/experiment_state_server/artifactlifecycle",
     visibility = ["//visibility:public"],
@@ -29,7 +31,9 @@ go_library(
         "//internal/kubernetes/common/constants",
         "//internal/logging",
         "//internal/storage",
+        "//internal/task_queue_redis/redisclient",
         "//internal/validator",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//types/known/fieldmaskpb",
     ],
 )
@@ -37,8 +41,10 @@ go_library(
 go_test(
     name = "artifactlifecycle_test",
     srcs = [
+        "consumer_test.go",
         "managed_xprof_rule_test.go",
         "registry_test.go",
+        "worker_test.go",
     ],
     embed = [":artifactlifecycle"],
     deps = [
@@ -46,7 +52,9 @@ go_test(
         "//api/protos/task_queue:task_go_proto",
         "//internal/hypercomputeclient",
         "//internal/storage",
+        "//internal/task_queue_redis/redisclient",
         "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],

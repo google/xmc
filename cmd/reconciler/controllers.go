@@ -29,8 +29,10 @@ import (
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/cmd/reconciler/workload"
 	"xmanager_cloud/internal/hypercomputeclient"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/internal/workunit"
 )
 
@@ -108,6 +110,15 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		return nil, fmt.Errorf("unable to setup clusterqueue controller: %w", err)
 	}
 
+	var lifecycleNotifier shared.LifecycleNotifier
+	if p.cfg.RedisAddr != "" {
+		redisClient := redisclient.NewPublisher(
+			redisclient.Config{Addr: p.cfg.RedisAddr},
+			constants.RedisArtifactLifecycleStream,
+		)
+		lifecycleNotifier = jobset.NewRedisLifecycleNotifier(redisClient)
+	}
+
 	updater := workunit.NewUpdater(p.storage)
 	batcher := shared.NewUpdateBatcher(
 		ctx,
@@ -117,6 +128,7 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		},
 		updater,
 	)
+	batcher.LifecycleNotifier = lifecycleNotifier
 
 	jobsetReconciler, err := jobset.NewReconciler(jobset.Params{
 		Client:                   p.mgr.GetClient(),
@@ -131,6 +143,7 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		StartupPodErrorCheckTime: p.cfg.StartupPodErrorCheckTime,
 		Storage:                  newJobSetStorage(p.storage, updater),
 		MLRunClient:              p.mlRunClient,
+		LifecycleNotifier:        lifecycleNotifier,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create jobset reconciler: %w", err)

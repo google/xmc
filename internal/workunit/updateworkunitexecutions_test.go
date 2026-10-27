@@ -1741,3 +1741,79 @@ func TestUpdateWorkUnitExecutionsInTx_MissingWorkUnit(t *testing.T) {
 		t.Errorf("work unit 1 state = %v, want unchanged %v (no partial writes)", got, want)
 	}
 }
+
+func TestUpdateWorkUnitExecutionsWithTransitions(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storageClient, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
+	}
+
+	const xid = 130
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 1)
+
+	// Update work unit 1 from UNASSIGNED to STARTING
+	updates := []*storage.WorkUnitExecutionUpdate{
+		{
+			WID: 1,
+			EID: 1,
+			WorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Status: &essmsgpb.WorkUnitStatus{
+					State:           essmsgpb.WorkUnitStatus_STARTING,
+					StateUpdateTime: timestamppb.New(time.Now()),
+				},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
+		},
+	}
+
+	updater := workunit.NewUpdater(storageClient)
+	execs, transitions, err := updater.UpdateWorkUnitExecutionsWithTransitions(ctx, xid, updates)
+	if err != nil {
+		t.Fatalf("UpdateWorkUnitExecutionsWithTransitions failed: %v", err)
+	}
+	if execs[1].GetStatus().GetState() != essmsgpb.WorkUnitStatus_STARTING {
+		t.Errorf("expected state STARTING, got %v", execs[1].GetStatus().GetState())
+	}
+	trans, ok := transitions[1]
+	if !ok {
+		t.Fatalf("expected transition for wid 1")
+	}
+	if trans.OldState != essmsgpb.WorkUnitStatus_INITIALIZING {
+		t.Errorf("expected OldState INITIALIZING, got %v", trans.OldState)
+	}
+	if trans.NewState != essmsgpb.WorkUnitStatus_STARTING {
+		t.Errorf("expected NewState STARTING, got %v", trans.NewState)
+	}
+
+	// Update work unit 1 from STARTING to RUNNING
+	updates2 := []*storage.WorkUnitExecutionUpdate{
+		{
+			WID: 1,
+			EID: 1,
+			WorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Status: &essmsgpb.WorkUnitStatus{
+					State:           essmsgpb.WorkUnitStatus_RUNNING,
+					StateUpdateTime: timestamppb.New(time.Now()),
+				},
+			},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
+		},
+	}
+	_, transitions2, err := updater.UpdateWorkUnitExecutionsWithTransitions(ctx, xid, updates2)
+	if err != nil {
+		t.Fatalf("UpdateWorkUnitExecutionsWithTransitions failed: %v", err)
+	}
+	trans2, ok := transitions2[1]
+	if !ok {
+		t.Fatalf("expected transition for wid 1")
+	}
+	if trans2.OldState != essmsgpb.WorkUnitStatus_STARTING {
+		t.Errorf("expected OldState STARTING, got %v", trans2.OldState)
+	}
+	if trans2.NewState != essmsgpb.WorkUnitStatus_RUNNING {
+		t.Errorf("expected NewState RUNNING, got %v", trans2.NewState)
+	}
+}

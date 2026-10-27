@@ -26,11 +26,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	metricspb "github.com/prometheus/client_model/go"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	taskqueuepb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/internal/grpcerr"
 	storagepkg "xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/workunit"
 )
 
 // mockStorageUpdater is a mock implementation of the StorageUpdater interface.
@@ -594,4 +597,81 @@ func metricFound(mfs []*metricspb.MetricFamily, name, xid string) bool {
 		}
 	}
 	return false
+}
+
+type mockTransitionStorageUpdater struct {
+	mockStorageUpdater
+	transitions map[int64]workunit.StateTransition
+}
+
+func (m *mockTransitionStorageUpdater) UpdateWorkUnitExecutionsWithTransitions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, map[int64]workunit.StateTransition, error) {
+	res, err := m.UpdateWorkUnitExecutions(ctx, xid, updates)
+	return res, m.transitions, err
+}
+
+type mockLifecycleNotifier struct {
+	events []*taskqueuepb.ArtifactLifecycleEvent
+}
+
+func (m *mockLifecycleNotifier) NotifyLifecycleEvent(ctx context.Context, event *taskqueuepb.ArtifactLifecycleEvent) error {
+	m.events = append(m.events, event)
+	return nil
+}
+
+func TestBatcher_NotifyLifecycleEvents(t *testing.T) {
+	ctx := context.Background()
+	mockStorage := &mockTransitionStorageUpdater{
+		transitions: map[int64]workunit.StateTransition{
+			1: {
+				OldState: essmsgpb.WorkUnitStatus_STARTING,
+				NewState: essmsgpb.WorkUnitStatus_RUNNING,
+			},
+			2: {
+				OldState: essmsgpb.WorkUnitStatus_RUNNING,
+				NewState: essmsgpb.WorkUnitStatus_RUNNING,
+			},
+		},
+	}
+	notifier := &mockLifecycleNotifier{}
+	batcher := NewUpdateBatcher(ctx, &BatcherConfig{
+		TickDuration:           10 * time.Millisecond,
+		MaxParallelExperiments: 1,
+	}, mockStorage)
+	batcher.LifecycleNotifier = notifier
+
+	// WU 1: state transitioned STARTING -> RUNNING, notifyWhen includes RUNNING -> should notify
+	update1 := testUpdate(1, 1, essmsgpb.WorkUnitStatus_RUNNING)
+	update1.NotifyWhen = "STARTING.RUNNING.COMPLETED"
+	update1.RuntimeContext = &taskqueuepb.JobSetRuntimeContext{
+		JobSetName: proto.String("jobset-1"),
+	}
+
+	// WU 2: state did not transition (RUNNING -> RUNNING), ForceNotify false -> should NOT notify
+	update2 := testUpdate(2, 1, essmsgpb.WorkUnitStatus_RUNNING)
+	update2.NotifyWhen = "STARTING.RUNNING.COMPLETED"
+
+	// WU 3: state did not transition, but ForceNotify true -> should notify
+	update3 := testUpdate(3, 1, essmsgpb.WorkUnitStatus_RUNNING)
+	update3.NotifyWhen = "STARTING.RUNNING.COMPLETED"
+	update3.ForceNotify = true
+
+	batcher.Add(ctx, 100, update1, JobsetSource)
+	batcher.Add(ctx, 100, update2, JobsetSource)
+	batcher.Add(ctx, 100, update3, JobsetSource)
+
+	batcher.processBatches(ctx)
+
+	if len(notifier.events) != 2 {
+		t.Fatalf("expected 2 lifecycle events, got %d", len(notifier.events))
+	}
+
+	if notifier.events[0].GetWorkUnitId() != 1 || notifier.events[0].GetNewState() != essmsgpb.WorkUnitStatus_RUNNING {
+		t.Errorf("unexpected event 0: %v", notifier.events[0])
+	}
+	if notifier.events[0].GetJobSetRuntimeContext().GetJobSetName() != "jobset-1" {
+		t.Errorf("unexpected runtime context for event 0: %v", notifier.events[0].GetJobSetRuntimeContext())
+	}
+	if notifier.events[1].GetWorkUnitId() != 3 || notifier.events[1].GetNewState() != essmsgpb.WorkUnitStatus_RUNNING {
+		t.Errorf("unexpected event 1: %v", notifier.events[1])
+	}
 }

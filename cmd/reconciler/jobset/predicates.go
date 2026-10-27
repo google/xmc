@@ -104,7 +104,9 @@ func jobSetChanged(oldJobSet, newJobSet *v1alpha2.JobSet) bool {
 	newSus := newJobSet.Spec.Suspend != nil && *newJobSet.Spec.Suspend
 	specSame := generationSame && oldSus == newSus && calculateTotalReplicas(oldJobSet) == calculateTotalReplicas(newJobSet)
 
-	return !(specSame && labelsSame && statusSame && deletionSame)
+	notifyWhenSame := oldJobSet.Annotations[constants.NotifyWhenAnnotation] == newJobSet.Annotations[constants.NotifyWhenAnnotation]
+
+	return !(specSame && labelsSame && statusSame && deletionSame && notifyWhenSame)
 }
 
 func isJobSetStatusEqual(old, new *v1alpha2.JobSetStatus) bool {

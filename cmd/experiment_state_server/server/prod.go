@@ -284,13 +284,11 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 		return nil, fmt.Errorf("failed to create server: %w", err)
 	}
 
-	if cfg.FeatureFlags.PauseSchedulingEnabled {
-		consumer, err := startResumptionConsumer(ctx, cfg, taskQueueClient, storage)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
-		}
-		cleanups = append(cleanups, consumer.Close)
+	consumerCleanups, err := initConsumers(ctx, cfg, storage, taskQueueClient, lifecycleRegistry)
+	if err != nil {
+		return nil, err
 	}
+	cleanups = append(cleanups, consumerCleanups...)
 
 	return &ProdServer{
 		Server:          srv,
@@ -304,6 +302,26 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	}, nil
 }
 
+func initConsumers(ctx context.Context, cfg *config.Config, storage storage.Storage, taskQueueClient resumption.TaskQueue, lifecycleRegistry *artifactlifecycle.Registry) ([]func() error, error) {
+	var cleanups []func() error
+	if cfg.FeatureFlags.PauseSchedulingEnabled {
+		consumer, err := startResumptionConsumer(ctx, cfg, taskQueueClient, storage)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
+		}
+		cleanups = append(cleanups, consumer.Close)
+	}
+
+	if cfg.RedisAddr != "" {
+		consumer, err := startArtifactLifecycleConsumer(ctx, cfg, storage, lifecycleRegistry)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize artifact lifecycle consumer: %w", err)
+		}
+		cleanups = append(cleanups, consumer.Close)
+	}
+	return cleanups, nil
+}
+
 // startResumptionConsumer wires the resumption worker to the Redis trigger stream.
 // The Redis consumer also serves as the worker's ClaimExtender.
 func startResumptionConsumer(ctx context.Context, cfg *config.Config, taskQueue resumption.TaskQueue, storageClient storage.Storage) (*resumption.Consumer, error) {
@@ -313,6 +331,14 @@ func startResumptionConsumer(ctx context.Context, cfg *config.Config, taskQueue 
 	}
 	worker := resumption.NewResumptionWorker(storageClient, taskQueue, redisConsumer)
 	return resumption.StartConsumer(ctx, resumption.ConsumerConfig{Client: redisConsumer}, worker)
+}
+
+// startArtifactLifecycleConsumer wires the artifact lifecycle worker to the Redis trigger stream.
+func startArtifactLifecycleConsumer(ctx context.Context, cfg *config.Config, storageClient storage.Storage, registry *artifactlifecycle.Registry) (*artifactlifecycle.Consumer, error) {
+	worker := artifactlifecycle.NewWorker(storageClient, registry)
+	return artifactlifecycle.StartConsumer(ctx, artifactlifecycle.ConsumerConfig{
+		RedisAddr: cfg.RedisAddr,
+	}, worker)
 }
 
 func initMLRunClient(ctx context.Context, cfg *config.Config) artifactlifecycle.MLRunClient {
