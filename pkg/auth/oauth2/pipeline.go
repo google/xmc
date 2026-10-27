@@ -165,7 +165,7 @@ func (a *Authenticator) getIamPolicy(ctx context.Context) (*iampb.Policy, error)
 
 // IsUserAuthorized implements the 3-stage Hybrid Pipeline: Local Email Allowlist -> Domain Allowlist -> GCP IAM Policy Check.
 func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (bool, error) {
-	if DevAuthCompiledIn() && a.Config != nil && a.Config.DisableAuthentication {
+	if DevAuthCompiledIn() && a.Config.DisableAuthentication {
 		return true, nil
 	}
 	emailLower := strings.ToLower(strings.TrimSpace(email))
