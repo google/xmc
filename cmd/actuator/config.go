@@ -55,8 +55,6 @@ type Config struct {
 var (
 	port                        string
 	createNewNamespaces         bool
-	spannerDatabaseName         string
-	quotaProjectID              string
 	xmanagerServiceAccount      string
 	audience                    string
 	jwksURL                     string
@@ -98,8 +96,6 @@ func init() {
 // registerConfigs loads ConfigMap managed values using configutil.
 func registerConfigs() {
 	configutil.StringEnv(&port, "port", "8080")
-	configutil.StringEnv(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
-	configutil.StringEnv(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
 	configutil.StringEnv(&xmanagerServiceAccount, "xmanager_service_account", "")
 	configutil.StringEnv(&audience, "audience", "")
 	configutil.StringEnv(&jwksURL, "jwks_url", "")
@@ -155,8 +151,6 @@ func Load() Config {
 		Port: port,
 		RuntimeConfig: k8sclient.ActuatorRuntimeConfig{
 			CreateNewNamespaces:         createNewNamespaces,
-			SpannerDatabaseName:         spannerDatabaseName,
-			QuotaProjectID:              quotaProjectID,
 			DefaultExecutionEnvironment: defaultExecutionEnvironment,
 			MetricsEnabled:              metricsEnabled,
 			AllowPrivilegedContainers:   allowPrivilegedContainers,

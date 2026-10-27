@@ -57,10 +57,10 @@ func TestOpen_InvalidRequests(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			store, err := Open(ctx, tc.cfg, tc.db)
+			st, err := NewStorage(ctx, tc.cfg, tc.db)
 			if err == nil {
-				store.Close()
-				t.Fatalf("Open(%q) succeeded, want error", tc.db)
+				st.Close()
+				t.Fatalf("NewStorage(%q) succeeded, want error", tc.db)
 			}
 		})
 	}
@@ -130,7 +130,7 @@ func (f fakeSchemaVersionClient) QuerySchemaVersion(context.Context) (int64, boo
 	return f.version, false, nil
 }
 
-func TestStore_CheckReady(t *testing.T) {
+func TestStorage_CheckReady(t *testing.T) {
 	tests := []struct {
 		name    string
 		version int64
@@ -142,23 +142,23 @@ func TestStore_CheckReady(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			store := &Store{schemaVersion: fakeSchemaVersionClient{version: tc.version}, expectedVersion: 3}
-			if err := store.CheckReady(context.Background()); (err != nil) != tc.wantErr {
+			st := &Storage{schemaVersion: fakeSchemaVersionClient{version: tc.version}, expectedVersion: 3}
+			if err := st.CheckReady(context.Background()); (err != nil) != tc.wantErr {
 				t.Errorf("CheckReady() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}
 }
 
-func TestStore_Close(t *testing.T) {
+func TestStorage_Close(t *testing.T) {
 	calls := 0
-	store := &Store{closeFn: func() { calls++ }}
-	store.Close()
-	store.Close()
+	st := &Storage{closeFn: func() { calls++ }}
+	st.Close()
+	st.Close()
 	if calls != 1 {
 		t.Errorf("Close() twice released the connections %d times, want 1", calls)
 	}
 
-	// A Store that was not opened through Open, such as a test double, has nothing to release.
-	(&Store{}).Close()
+	// A Storage that was not opened through NewStorage, such as a test double, has nothing to release.
+	(&Storage{}).Close()
 }

@@ -30,7 +30,7 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	cfg := Load()
-	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.RuntimeConfig.QuotaProjectID)
+	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.QuotaProjectID)
 	slog.SetDefault(logger)
 	ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))
 	ctx = logging.WithLogger(ctx, logger)

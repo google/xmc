@@ -35,18 +35,18 @@ func TestOpen_Postgres(t *testing.T) {
 
 	for _, db := range []Database{ESS, XID} {
 		t.Run(string(db), func(t *testing.T) {
-			store, err := Open(ctx, cfg, db)
+			storage, err := NewStorage(ctx, cfg, db)
 			if err != nil {
-				t.Fatalf("Open(%q) failed: %v", db, err)
+				t.Fatalf("NewStorage(%q) failed: %v", db, err)
 			}
-			defer store.Close()
+			defer storage.Close()
 
-			if store.SpannerClient != nil {
+			if storage.SpannerClient != nil {
 				t.Error("SpannerClient is set for the postgres backend, want nil")
 			}
 			// The harness stamps each database with the version that this binary expects, so a
 			// mixed-up database or expected version fails here.
-			if err := store.CheckReady(ctx); err != nil {
+			if err := storage.CheckReady(ctx); err != nil {
 				t.Errorf("CheckReady() = %v, want nil", err)
 			}
 		})

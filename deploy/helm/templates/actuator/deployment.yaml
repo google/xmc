@@ -24,6 +24,8 @@ spec:
       app: actuator
   template:
     metadata:
+      annotations:
+        checksum/db-config: {{ include (print $.Template.BasePath "/db-config.yaml") . | sha256sum }}
       labels:
         app: actuator
     spec:

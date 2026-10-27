@@ -20,6 +20,8 @@ metadata:
     app: actuator
 data:
   port: "8080"
+  # Deprecated: retained for one-release rollout compatibility; actuator reads db-config.
+  # TODO: Remove spanner_database_name and quota_project_id once all deployments run db-config images.
   spanner_database_name: {{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
   quota_project_id: {{ .Values.projectId | quote }}
   redis_addr: {{ .Values.redisAddr | quote }}

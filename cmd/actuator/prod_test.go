@@ -146,11 +146,8 @@ func TestNewProd_Validation(t *testing.T) {
 	})
 
 	t.Run("invalid_spanner_database_name", func(t *testing.T) {
-		cfg := Config{
-			RuntimeConfig: k8sclient.ActuatorRuntimeConfig{
-				SpannerDatabaseName: "invalid-db-format",
-			},
-		}
+		t.Setenv("SPANNER_ESS_DATABASE", "invalid-db-format")
+		cfg := Config{}
 		server, err := NewProd(ctx, &cfg, "test-project")
 		if err == nil {
 			t.Fatalf("NewProd(invalid spanner db) expected error, got nil (server: %v)", server)
@@ -163,11 +160,8 @@ func TestNewProd_Validation(t *testing.T) {
 	t.Run("k8s_incluster_error_with_spanner_rollback", func(t *testing.T) {
 		// Outside GKE cluster, k8sclient.New fails to find in-cluster config,
 		// verifying the LIFO rollback stack cleanly closes the Spanner client on error.
-		cfg := Config{
-			RuntimeConfig: k8sclient.ActuatorRuntimeConfig{
-				SpannerDatabaseName: "projects/test-project/instances/test-instance/databases/test-db",
-			},
-		}
+		t.Setenv("SPANNER_ESS_DATABASE", "projects/test-project/instances/test-instance/databases/test-db")
+		cfg := Config{}
 		server, err := NewProd(ctx, &cfg, "test-project")
 		if err == nil {
 			t.Fatalf("NewProd outside GKE expected k8s config error, got nil (server: %v)", server)

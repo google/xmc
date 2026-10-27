@@ -95,12 +95,9 @@ func TestHealthMonitoring_Integration(t *testing.T) {
 	s := grpc.NewServer()
 	healthServer := RegisterHealthServer(s)
 
-	mockClient := &mockSpannerHealthClient{
-		version: 1,
-		dirty:   false,
-	}
+	db := &fakeReadinessChecker{}
 
-	go StartHealthMonitor(ctx, mockClient, healthServer)
+	go StartHealthMonitor(ctx, db, healthServer)
 
 	// Allow initial health check to process
 	time.Sleep(100 * time.Millisecond)

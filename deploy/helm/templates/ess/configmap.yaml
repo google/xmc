@@ -23,6 +23,8 @@ data:
   ess_gcp_project_id: {{ .Values.projectId | quote }}
   ess_xid_service_addr: "xid-svc.xmc.svc.cluster.local:50051"
   ess_dashboard_service_addr: "dashboard-service.xmc.svc.cluster.local:50051"
+  # Deprecated: retained for one-release rollout compatibility; ESS reads db-config.
+  # TODO: Remove ess_spanner_database_name once all deployments run db-config images.
   ess_spanner_database_name: {{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
   ess_actuator_url: {{ printf "https://actuator.api.%s.%s/actuate" .Values.environment .Values.domainSuffix | quote }}
   ess_endpoint_url: {{ printf "http://api.%s.%s" .Values.environment .Values.domainSuffix | quote }}

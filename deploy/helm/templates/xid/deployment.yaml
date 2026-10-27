@@ -25,6 +25,8 @@ spec:
       app: xid-service
   template:
     metadata:
+      annotations:
+        checksum/db-config: {{ include (print $.Template.BasePath "/db-config.yaml") . | sha256sum }}
       labels:
         app: xid-service
     spec:

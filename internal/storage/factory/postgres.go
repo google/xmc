@@ -24,9 +24,9 @@ import (
 	pgversion "xmanager_cloud/internal/storage/postgres/migrations/version"
 )
 
-// openPostgres opens a connection pool for db and wraps it in a Store that owns the pool. Errors
+// openPostgres opens a connection pool for db and wraps it in a Storage that owns the pool. Errors
 // name the database rather than the connection URL, which may contain the password.
-func openPostgres(ctx context.Context, cfg dbconfig.Postgres, db Database) (*Store, error) {
+func openPostgres(ctx context.Context, cfg dbconfig.Postgres, db Database) (*Storage, error) {
 	dsn, expectedVersion, err := postgresDatabase(cfg, db)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build the postgres %s connection URL: %w", db, err)
@@ -40,7 +40,7 @@ func openPostgres(ctx context.Context, cfg dbconfig.Postgres, db Database) (*Sto
 		pool.Close()
 		return nil, fmt.Errorf("failed to create postgres storage for %s: %w", db, err)
 	}
-	return &Store{
+	return &Storage{
 		Storage:         st,
 		schemaVersion:   health.NewPostgresHealthClient(pool),
 		expectedVersion: expectedVersion,

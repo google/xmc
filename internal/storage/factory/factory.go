@@ -36,8 +36,8 @@ const (
 	XID Database = "xid"
 )
 
-// Store is an open XMC database: its storage, a readiness check and Close.
-type Store struct {
+// Storage is an open XMC database: its storage, a readiness check and Close.
+type Storage struct {
 	storage.Storage
 
 	// SpannerClient is set only on the Spanner backend, for the components store.
@@ -51,20 +51,20 @@ type Store struct {
 
 // CheckReady returns an error unless the database is reachable and migrated to the schema version
 // that this binary expects.
-func (s *Store) CheckReady(ctx context.Context) error {
+func (s *Storage) CheckReady(ctx context.Context) error {
 	return health.CheckSchemaVersion(ctx, s.schemaVersion, s.expectedVersion)
 }
 
-// Close releases the database connections. Later calls do nothing, and the Store must not be used
+// Close releases the database connections. Later calls do nothing, and the Storage must not be used
 // afterwards.
-func (s *Store) Close() {
+func (s *Storage) Close() {
 	if s.closeFn != nil {
 		s.closeOnce.Do(s.closeFn)
 	}
 }
 
-// Open connects to db through the backend that cfg selects.
-func Open(ctx context.Context, cfg dbconfig.Config, db Database) (*Store, error) {
+// NewStorage connects to db through the backend that cfg selects.
+func NewStorage(ctx context.Context, cfg dbconfig.Config, db Database) (*Storage, error) {
 	if db != ESS && db != XID {
 		return nil, fmt.Errorf("unknown database %q: must be %q or %q", db, ESS, XID)
 	}

@@ -19,8 +19,9 @@ import (
 	"errors"
 	"testing"
 
-	"cloud.google.com/go/spanner"
 	"xmanager_cloud/cmd/xid_service/config"
+	"xmanager_cloud/internal/storage/dbconfig"
+	dbfactory "xmanager_cloud/internal/storage/factory"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
@@ -134,7 +135,7 @@ func TestNewRuntimeServer_Validation(t *testing.T) {
 
 	t.Run("nil config", func(t *testing.T) {
 		t.Parallel()
-		rs, err := NewRuntimeServer(context.Background(), nil, nil)
+		rs, err := NewRuntimeServer(context.Background(), nil, dbconfig.Config{}, nil)
 		if rs != nil || err == nil {
 			t.Errorf("NewRuntimeServer(nil, nil) = (%v, %v), want (nil, error)", rs, err)
 		}
@@ -142,7 +143,7 @@ func TestNewRuntimeServer_Validation(t *testing.T) {
 
 	t.Run("nil oauth config", func(t *testing.T) {
 		t.Parallel()
-		rs, err := NewRuntimeServer(context.Background(), &config.Config{}, nil)
+		rs, err := NewRuntimeServer(context.Background(), &config.Config{}, dbconfig.Config{}, nil)
 		if rs != nil || err == nil {
 			t.Errorf("NewRuntimeServer(cfg, nil) = (%v, %v), want (nil, error)", rs, err)
 		}
@@ -151,16 +152,32 @@ func TestNewRuntimeServer_Validation(t *testing.T) {
 	t.Run("invalid spanner database name returns error", func(t *testing.T) {
 		t.Parallel()
 		cfg := &config.Config{
-			SpannerDatabaseName: "invalid-database-name",
-			QuotaProjectID:      "test-proj",
+			QuotaProjectID: "test-proj",
+		}
+		dbCfg := dbconfig.Config{
+			Backend: dbconfig.BackendSpanner,
+			Spanner: dbconfig.Spanner{XidDatabase: "invalid-database-name", QuotaProjectID: "test-proj"},
 		}
 		oauthCfg := &oauth.Config{
 			ClientID:  "test-client-id",
 			JWTSecret: "test-secret",
 		}
-		rs, err := NewRuntimeServer(context.Background(), cfg, oauthCfg)
+		rs, err := NewRuntimeServer(context.Background(), cfg, dbCfg, oauthCfg)
 		if rs != nil || err == nil {
 			t.Errorf("NewRuntimeServer(invalidDbName) = (%v, %v), want (nil, error)", rs, err)
+		}
+	})
+
+	t.Run("unset xid database returns error", func(t *testing.T) {
+		t.Parallel()
+		dbCfg := dbconfig.Config{Backend: dbconfig.BackendSpanner}
+		oauthCfg := &oauth.Config{
+			ClientID:  "test-client-id",
+			JWTSecret: "test-secret",
+		}
+		rs, err := NewRuntimeServer(context.Background(), &config.Config{}, dbCfg, oauthCfg)
+		if rs != nil || err == nil {
+			t.Errorf("NewRuntimeServer(unsetXidDatabase) = (%v, %v), want (nil, error)", rs, err)
 		}
 	})
 }
@@ -171,29 +188,29 @@ func TestRuntimeServer_HealthCheckers(t *testing.T) {
 	t.Run("nil RuntimeServer returns nil checkers", func(t *testing.T) {
 		t.Parallel()
 		var rs *RuntimeServer
-		sp := rs.HealthCheckers()
-		if sp != nil {
-			t.Errorf("HealthCheckers() on nil RuntimeServer = %v, want nil", sp)
+		db := rs.HealthCheckers()
+		if db != nil {
+			t.Errorf("HealthCheckers() on nil RuntimeServer = %v, want nil", db)
 		}
 	})
 
-	t.Run("nil spanner client returns nil checkers", func(t *testing.T) {
+	t.Run("nil store returns nil checkers", func(t *testing.T) {
 		t.Parallel()
 		rs := &RuntimeServer{}
-		sp := rs.HealthCheckers()
-		if sp != nil {
-			t.Errorf("HealthCheckers() on RuntimeServer with nil spannerClient = %v, want nil", sp)
+		db := rs.HealthCheckers()
+		if db != nil {
+			t.Errorf("HealthCheckers() on RuntimeServer with nil store = %v, want nil", db)
 		}
 	})
 
-	t.Run("non-nil spanner client returns checkers", func(t *testing.T) {
+	t.Run("non-nil storage returns checkers", func(t *testing.T) {
 		t.Parallel()
 		rs := &RuntimeServer{
-			spannerClient: &spanner.Client{},
+			dbHealth: &dbfactory.Storage{},
 		}
-		sp := rs.HealthCheckers()
-		if sp == nil {
-			t.Error("HealthCheckers() on RuntimeServer with non-nil spannerClient returned nil, want non-nil")
+		db := rs.HealthCheckers()
+		if db == nil {
+			t.Error("HealthCheckers() on RuntimeServer with non-nil store returned nil, want non-nil")
 		}
 	})
 }

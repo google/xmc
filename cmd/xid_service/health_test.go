@@ -22,17 +22,17 @@ import (
 
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"xmanager_cloud/internal/storage/spanner/migrations/version"
 )
 
-type mockSpannerHealthClient struct {
-	version int64
-	dirty   bool
-	err     error
+// fakeReadinessChecker returns err from CheckReady and records whether the context had a deadline.
+type fakeReadinessChecker struct {
+	err         error
+	hadDeadline bool
 }
 
-func (m *mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
-	return m.version, m.dirty, m.err
+func (f *fakeReadinessChecker) CheckReady(ctx context.Context) error {
+	_, f.hadDeadline = ctx.Deadline()
+	return f.err
 }
 
 func TestRegisterHealthServer(t *testing.T) {
@@ -57,14 +57,11 @@ func TestRegisterHealthServer(t *testing.T) {
 func TestUpdateHealthStatus(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("SERVING when spanner ok", func(t *testing.T) {
-		mockClient := &mockSpannerHealthClient{
-			version: version.XidExpectedSchemaVersion(),
-			dirty:   false,
-		}
+	t.Run("SERVING when database ready", func(t *testing.T) {
+		db := &fakeReadinessChecker{}
 		healthServer := RegisterHealthServer(grpc.NewServer())
 
-		updateHealthStatus(ctx, mockClient, healthServer)
+		updateHealthStatus(ctx, db, healthServer)
 
 		resp, err := healthServer.Check(ctx, &healthpb.HealthCheckRequest{Service: xidServiceHealthCheckName})
 		if err != nil {
@@ -84,13 +81,13 @@ func TestUpdateHealthStatus(t *testing.T) {
 		}
 	})
 
-	t.Run("NOT_SERVING when spanner down", func(t *testing.T) {
-		mockClient := &mockSpannerHealthClient{
-			err: errors.New("spanner down"),
+	t.Run("NOT_SERVING when database not ready", func(t *testing.T) {
+		db := &fakeReadinessChecker{
+			err: errors.New("database down"),
 		}
 		healthServer := RegisterHealthServer(grpc.NewServer())
 
-		updateHealthStatus(ctx, mockClient, healthServer)
+		updateHealthStatus(ctx, db, healthServer)
 
 		resp, err := healthServer.Check(ctx, &healthpb.HealthCheckRequest{Service: xidServiceHealthCheckName})
 		if err != nil {
@@ -100,7 +97,7 @@ func TestUpdateHealthStatus(t *testing.T) {
 			t.Errorf("healthServer.Check(%q).Status = %v, want %v", xidServiceHealthCheckName, resp.Status, healthpb.HealthCheckResponse_NOT_SERVING)
 		}
 
-		// Empty service name should STILL be SERVING even if Spanner is down
+		// Empty service name should STILL be SERVING even if the database is down
 		respEmpty, err := healthServer.Check(ctx, &healthpb.HealthCheckRequest{Service: ""})
 		if err != nil {
 			t.Fatalf("healthServer.Check(%q) failed: %v", "", err)
@@ -110,7 +107,7 @@ func TestUpdateHealthStatus(t *testing.T) {
 		}
 	})
 
-	t.Run("NOT_SERVING when spanner client is nil", func(t *testing.T) {
+	t.Run("NOT_SERVING when readiness checker is nil", func(t *testing.T) {
 		healthServer := RegisterHealthServer(grpc.NewServer())
 
 		updateHealthStatus(ctx, nil, healthServer)
@@ -123,66 +120,30 @@ func TestUpdateHealthStatus(t *testing.T) {
 			t.Errorf("healthServer.Check(%q).Status = %v, want %v", xidServiceHealthCheckName, resp.Status, healthpb.HealthCheckResponse_NOT_SERVING)
 		}
 	})
-
-	t.Run("NOT_SERVING when spanner dirty schema", func(t *testing.T) {
-		mockClient := &mockSpannerHealthClient{
-			version: version.XidExpectedSchemaVersion(),
-			dirty:   true,
-		}
-		healthServer := RegisterHealthServer(grpc.NewServer())
-
-		updateHealthStatus(ctx, mockClient, healthServer)
-
-		resp, err := healthServer.Check(ctx, &healthpb.HealthCheckRequest{Service: xidServiceHealthCheckName})
-		if err != nil {
-			t.Fatalf("healthServer.Check(%q) failed: %v", xidServiceHealthCheckName, err)
-		}
-		if resp.Status != healthpb.HealthCheckResponse_NOT_SERVING {
-			t.Errorf("healthServer.Check(%q).Status = %v, want %v", xidServiceHealthCheckName, resp.Status, healthpb.HealthCheckResponse_NOT_SERVING)
-		}
-	})
-
-	t.Run("NOT_SERVING when spanner version mismatch", func(t *testing.T) {
-		mockClient := &mockSpannerHealthClient{
-			version: version.XidExpectedSchemaVersion() - 1,
-			dirty:   false,
-		}
-		healthServer := RegisterHealthServer(grpc.NewServer())
-
-		updateHealthStatus(ctx, mockClient, healthServer)
-
-		resp, err := healthServer.Check(ctx, &healthpb.HealthCheckRequest{Service: xidServiceHealthCheckName})
-		if err != nil {
-			t.Fatalf("healthServer.Check(%q) failed: %v", xidServiceHealthCheckName, err)
-		}
-		if resp.Status != healthpb.HealthCheckResponse_NOT_SERVING {
-			t.Errorf("healthServer.Check(%q).Status = %v, want %v", xidServiceHealthCheckName, resp.Status, healthpb.HealthCheckResponse_NOT_SERVING)
-		}
-	})
 }
 
-func TestCheckSpanner(t *testing.T) {
+func TestCheckDatabase(t *testing.T) {
 	t.Parallel()
 
-	t.Run("success", func(t *testing.T) {
+	t.Run("success within a deadline", func(t *testing.T) {
 		t.Parallel()
-		mockClient := &mockSpannerHealthClient{
-			version: version.XidExpectedSchemaVersion(),
-			dirty:   false,
+		db := &fakeReadinessChecker{}
+		if err := checkDatabase(context.Background(), db); err != nil {
+			t.Errorf("checkDatabase() error = %v, want nil", err)
 		}
-		if err := checkSpanner(context.Background(), mockClient); err != nil {
-			t.Errorf("checkSpanner() error = %v, want nil", err)
+		if !db.hadDeadline {
+			t.Error("checkDatabase() called CheckReady without a deadline, want databaseTimeout")
 		}
 	})
 
 	t.Run("error", func(t *testing.T) {
 		t.Parallel()
-		expectedErr := errors.New("spanner connection failure")
-		mockClient := &mockSpannerHealthClient{
+		expectedErr := errors.New("database connection failure")
+		db := &fakeReadinessChecker{
 			err: expectedErr,
 		}
-		if err := checkSpanner(context.Background(), mockClient); err == nil {
-			t.Errorf("checkSpanner() = nil, want error")
+		if err := checkDatabase(context.Background(), db); !errors.Is(err, expectedErr) {
+			t.Errorf("checkDatabase() = %v, want %v", err, expectedErr)
 		}
 	})
 }
@@ -191,15 +152,12 @@ func TestStartHealthMonitor_Cancellation(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	mockClient := &mockSpannerHealthClient{
-		version: version.XidExpectedSchemaVersion(),
-		dirty:   false,
-	}
+	db := &fakeReadinessChecker{}
 	healthServer := RegisterHealthServer(grpc.NewServer())
 
 	done := make(chan struct{})
 	go func() {
-		StartHealthMonitor(ctx, mockClient, healthServer)
+		StartHealthMonitor(ctx, db, healthServer)
 		close(done)
 	}()
 

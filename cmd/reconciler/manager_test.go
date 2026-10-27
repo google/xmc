@@ -56,15 +56,15 @@ func TestManager_HealthCheckers_NilManager(t *testing.T) {
 func TestManager_HealthCheckers_NonNilManager(t *testing.T) {
 	k8sClient := k8sclient.NewWithClients(nil, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil)
 	m := &Manager{
-		k8sClient:     k8sClient,
-		spannerClient: nil,
+		k8sClient: k8sClient,
+		dbHealth:  nil,
 	}
-	k8s, sp := m.HealthCheckers()
+	k8s, db := m.HealthCheckers()
 	if k8s != k8sClient {
 		t.Errorf("HealthCheckers() k8sClient = %v, want %v", k8s, k8sClient)
 	}
-	if sp != nil {
-		t.Errorf("HealthCheckers() spannerClient = %v, want nil", sp)
+	if db != nil {
+		t.Errorf("HealthCheckers() db = %v, want nil", db)
 	}
 }
 
@@ -154,16 +154,13 @@ func TestManager_Close(t *testing.T) {
 	})
 }
 
-func TestInitSpannerAndStorage_EmptyDBName(t *testing.T) {
-	sp, st, err := initSpannerAndStorage(context.Background(), Config{})
-	if err != nil {
-		t.Fatalf("initSpannerAndStorage() unexpected error: %v", err)
+func TestInitStorage_EmptyDBName(t *testing.T) {
+	storage, err := initStorage(context.Background())
+	if err == nil {
+		t.Fatal("initStorage() with empty database config succeeded, want error")
 	}
-	if sp != nil {
-		t.Errorf("initSpannerAndStorage() spannerClient = %v, want nil", sp)
-	}
-	if st != nil {
-		t.Errorf("initSpannerAndStorage() storage = %v, want nil", st)
+	if storage != nil {
+		t.Errorf("initStorage() storage = %v, want nil", storage)
 	}
 }
 
