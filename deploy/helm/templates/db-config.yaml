@@ -16,6 +16,9 @@
 {{- if not (has $backend (list "spanner" "postgres")) }}
 {{- fail (printf `database.backend must be "spanner" or "postgres", got %q` $backend) }}
 {{- end }}
+{{- if and (eq $backend "postgres") (not $db.experimentalPostgres) }}
+{{- fail `database.backend "postgres" is experimental: set database.experimentalPostgres=true to use it` }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

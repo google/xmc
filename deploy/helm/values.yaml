@@ -341,8 +341,10 @@ remoteK8s:
 # Database settings, rendered into the db-config ConfigMap. The Spanner database names come from
 # experimentStateServer.spannerDatabaseName, xidService.spannerDatabaseName and projectId.
 database:
-  # "spanner" or "postgres".
+  # "spanner" or "postgres". "postgres" also needs experimentalPostgres: true.
   backend: "spanner"
+  # Opt-in for the experimental PostgreSQL backend.
+  experimentalPostgres: false
   postgres:
     # host, user, essDatabase and xidDatabase are required when backend is "postgres".
     # No password: db-config is a plain ConfigMap.

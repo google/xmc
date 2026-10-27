@@ -40,9 +40,11 @@ ENABLE_OPTIONAL_DEPLOYMENTS: dict[str, str] = {
     "rodDeployment.enabled": "true",
 }
 
-# The PostgreSQL settings that have no default and must be set when the backend is postgres.
+# The PostgreSQL opt-in plus the settings that have no default and must be set when the backend is
+# postgres.
 POSTGRES_REQUIRED_VALUES: dict[str, str] = {
     "database.backend": "postgres",
+    "database.experimentalPostgres": "true",
     "database.postgres.host": "pg.internal",
     "database.postgres.user": "xmc_user",
     "database.postgres.essDatabase": "ess_db",
@@ -134,6 +136,15 @@ class DbConfigChartTest(unittest.TestCase):
                     render_template(DB_CONFIG_TEMPLATE, values)
 
                 self.assertIn(f"database.postgres.{key} is required", str(raised.exception))
+
+    def test_postgres_backend_without_opt_in_fails_rendering(self) -> None:
+        """database.backend: postgres needs database.experimentalPostgres: true."""
+        values = dict(POSTGRES_REQUIRED_VALUES)
+        del values["database.experimentalPostgres"]
+        with self.assertRaises(RuntimeError) as raised:
+            render_template(DB_CONFIG_TEMPLATE, values)
+
+        self.assertIn("set database.experimentalPostgres=true", str(raised.exception))
 
     def test_unknown_backend_fails_rendering(self) -> None:
         """An unsupported database.backend fails the render instead of defaulting to Spanner."""
