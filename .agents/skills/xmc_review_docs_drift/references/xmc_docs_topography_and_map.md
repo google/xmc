@@ -1,17 +1,17 @@
 # XMC Documentation Topography Map & Source of Truth Guide
 
-This document serves as the navigation and verification guide for the **XMC Review Docs Drift Skill** ([`SKILL.md`](../SKILL.md)). Together with the canonical machine-readable topography registry ([`xmc_docs_topography_map.json`](xmc_docs_topography_map.json)), it defines how source paths map to authoritative documentation files, how identifier claims are verified against source code, which areas act as recurring drift magnets, and how testable assertions are mechanically evaluated.
+This document serves as the navigation and verification guide for the **XMC Review Docs Drift Skill** ([`SKILL.md`](../SKILL.md)). Together with the canonical machine-readable topography registry ([`xmc_docs_topography_map.json`](xmc_docs_topography_map.json)), it defines how source paths map to authoritative documentation files by audit strictness, how identifier claims are verified against source code, which areas act as recurring drift magnets, and how testable assertions are mechanically evaluated.
 
 ---
 
 ## 1. Code-to-Docs Topography Mapping Registry (`quadrants`)
 
-To uphold the **One Canonical Home per Fact** rule, the authoritative Code-to-Docs mapping matrix is maintained in [`xmc_docs_topography_map.json`](xmc_docs_topography_map.json) under the `quadrants` key.
+To uphold the **One Canonical Home per Fact** rule, the authoritative Code-to-Docs mapping matrix is maintained in [`xmc_docs_topography_map.json`](xmc_docs_topography_map.json) under the `quadrants` key. To prevent pedantic completeness nitpicks on high-level overviews, each quadrant explicitly separates its mapped documentation into two distinct audit tiers:
 
-Each entry in `quadrants` defines:
 - `name`: The codebase quadrant name (e.g., `Control Plane Services & CLI`, `Helm Charts, Addons & Profiles`, `Python SDKs (xmc, xdash)`).
 - `source_patterns`: Repository-relative `PurePosixPath` glob patterns matching the core source directories and files in that quadrant.
-- `doc_patterns`: Repository-relative `PurePosixPath` glob patterns matching the authoritative Markdown documentation files that must remain synchronized when `source_patterns` change.
+- `reference_doc_patterns` (**Component Reference Manuals** — e.g., `cmd/**/README.md`, `deploy/helm/README.md`, `deploy/profiles/**/README.md`, `sdks/python/**/README.md`, `examples/**/README.md`, `tools/**/README.md`): Audited for **both** factual accuracy **and** explicit parameter/flag/env-var Reference Table completeness (when the manual already maintains an exhaustive parameter table).
+- `orientation_doc_patterns` (**Orientation / Overview / Architecture Docs** — e.g., `README.md`, `INSTALL.md`, `CONTRIBUTING.md`, `ABSENCE.md`, `docs/architecture/*.md`, `docs/design/*.md`, `docs/flows/*.md`, `docs/developer.md`, `.agents/AGENTS.md`): Audited **strictly** for broken links, deleted/renamed file paths, and direct factual contradictions (**never** for exhaustive flag, environment variable, or directory-tree completeness).
 
 ---
 
