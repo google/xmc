@@ -316,6 +316,30 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
         self.assertIn('resourceNames: ["clickhouse"]', manifest)
         self.assertNotIn('resources: ["secrets"]', manifest)
 
+    def test_custom_clickhouse_secret_name_wired_across_deployment_secret_and_rbac(self) -> None:
+        """Overriding metrics.clickhouse.secretName updates the Secret, env secretKeyRef, and Role."""
+        values = {
+            "dashboardServiceDeployment.enabled": "true",
+            "componentsDeployment.enabled": "true",
+            "metrics.enabled": "true",
+            "metrics.clickhouse.secretName": "custom-ch-secret",
+            "metrics.clickhouse.password": "s3cret",
+        }
+        deployment = render_template(DASHBOARD_DEPLOYMENT, values)
+        secret = render_template(CLICKHOUSE_SECRET, values)
+        rbac = render_template(DASHBOARD_SERVICEACCOUNT, values)
+
+        self.assertIn(
+            "- name: CLICKHOUSE_PASSWORD\n"
+            "          valueFrom:\n"
+            "            secretKeyRef:\n"
+            "              name: custom-ch-secret\n"
+            "              key: clickhouse-password",
+            deployment,
+        )
+        self.assertIn("name: custom-ch-secret", secret)
+        self.assertIn('resourceNames: ["custom-ch-secret"]', rbac)
+
 
 if __name__ == "__main__":
     unittest.main()

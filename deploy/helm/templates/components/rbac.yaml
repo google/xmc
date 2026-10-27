@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-{{- if .Values.componentsDeployment.enabled }}
+{{- if and .Values.componentsDeployment .Values.componentsDeployment.enabled }}
 # xmc-bridge-role is namespaced to the release namespace and lists only the requests xmc-bridge and
 # its Helm client make. create cannot be limited by resourceNames; every other verb is limited to
 # fixed object names where the bridge knows them.

@@ -17,9 +17,9 @@ package ingestiongateway
 import (
 	"context"
 	"errors"
-	"reflect"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
@@ -307,6 +307,70 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 			wantTopic: "xmc-metrics-from-component",
 		},
 		{
+			name: "preserves multi-broker spec.parameters.brokerEndpoints when status.access.envVars.ENDPOINT has only single probed broker",
+			cfg: &Config{
+				Port:                "8080",
+				MessageBus:          MessageBusRedpanda,
+				RedpandaBrokers:     []string{"static-broker:9092"},
+				TopicName:           "static-topic",
+				MinPartitions:       1,
+				MinReplicas:         1,
+				EnableComponents:    true,
+				ComponentsNamespace: "xmc",
+			},
+			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
+				u := baselineRedpandaComponent()
+				_ = unstructured.SetNestedField(
+					u.Object,
+					"redpanda-0.redpanda.xmc.svc.cluster.local, redpanda-1.redpanda.xmc.svc.cluster.local:9095, redpanda-2.redpanda.xmc.svc.cluster.local",
+					"spec", "parameters", "brokerEndpoints",
+				)
+				_ = unstructured.SetNestedField(u.Object, "9092", "spec", "parameters", "kafkaPort")
+				_ = unstructured.SetNestedField(u.Object, "redpanda-0.redpanda.xmc.svc.cluster.local", "status", "access", "envVars", "ENDPOINT")
+				_ = unstructured.SetNestedField(u.Object, "9999", "status", "access", "envVars", "PORT")
+				return u
+			}()},
+			wantBrokers: []string{
+				"redpanda-0.redpanda.xmc.svc.cluster.local:9092",
+				"redpanda-1.redpanda.xmc.svc.cluster.local:9095",
+				"redpanda-2.redpanda.xmc.svc.cluster.local:9092",
+			},
+			wantTopic: "xmc-metrics-from-component",
+		},
+		{
+			name: "prefers multi-broker status.access.envVars.ENDPOINT over multi-broker spec.parameters.brokerEndpoints",
+			cfg: &Config{
+				Port:                "8080",
+				MessageBus:          MessageBusRedpanda,
+				RedpandaBrokers:     []string{"static-broker:9092"},
+				TopicName:           "static-topic",
+				MinPartitions:       1,
+				MinReplicas:         1,
+				EnableComponents:    true,
+				ComponentsNamespace: "xmc",
+			},
+			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
+				u := baselineRedpandaComponent()
+				_ = unstructured.SetNestedField(
+					u.Object,
+					"spec-0.redpanda.xmc.svc.cluster.local:9092,spec-1.redpanda.xmc.svc.cluster.local:9092",
+					"spec", "parameters", "brokerEndpoints",
+				)
+				_ = unstructured.SetNestedField(
+					u.Object,
+					"live-0.redpanda.xmc.svc.cluster.local,live-1.redpanda.xmc.svc.cluster.local:9096",
+					"status", "access", "envVars", "ENDPOINT",
+				)
+				_ = unstructured.SetNestedField(u.Object, "9094", "status", "access", "envVars", "PORT")
+				return u
+			}()},
+			wantBrokers: []string{
+				"live-0.redpanda.xmc.svc.cluster.local:9094",
+				"live-1.redpanda.xmc.svc.cluster.local:9096",
+			},
+			wantTopic: "xmc-metrics-from-component",
+		},
+		{
 			name: "restores original brokers and topic when cfg.Validate fails",
 			cfg: &Config{
 				Port:             "invalid-port",
@@ -361,11 +425,124 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("ResolveRedpandaComponentConfig() error = %v, wantErr %v", err, tc.wantErr)
 			}
-			if !reflect.DeepEqual(tc.cfg.RedpandaBrokers, tc.wantBrokers) {
-				t.Errorf("RedpandaBrokers = %v, want %v", tc.cfg.RedpandaBrokers, tc.wantBrokers)
+			if diff := cmp.Diff(tc.wantBrokers, tc.cfg.RedpandaBrokers); diff != "" {
+				t.Errorf("RedpandaBrokers mismatch (-want +got):\n%s", diff)
 			}
 			if tc.cfg.TopicName != tc.wantTopic {
 				t.Errorf("TopicName = %q, want %q", tc.cfg.TopicName, tc.wantTopic)
+			}
+		})
+	}
+}
+
+func TestResolveBrokersFromComponent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		params      map[string]string
+		envVars     map[string]string
+		wantBrokers []string
+		wantSource  string
+	}{
+		{
+			name: "multi-broker ENDPOINT wins over multi-broker brokerEndpoints using PORT",
+			params: map[string]string{
+				"brokerEndpoints": "spec-0:9092,spec-1:9092,spec-2:9092",
+				"kafkaPort":       "9092",
+			},
+			envVars: map[string]string{
+				"ENDPOINT": "live-0, live-1:9095",
+				"PORT":     "9093",
+			},
+			wantBrokers: []string{"live-0:9093", "live-1:9095"},
+			wantSource:  "status.access.envVars.ENDPOINT",
+		},
+		{
+			name: "multi-broker ENDPOINT falls back to spec kafkaPort when PORT is empty",
+			params: map[string]string{
+				"brokerEndpoints": "spec-0:9092",
+				"kafkaPort":       "9094",
+			},
+			envVars: map[string]string{
+				"ENDPOINT": "live-0, live-1",
+			},
+			wantBrokers: []string{"live-0:9094", "live-1:9094"},
+			wantSource:  "status.access.envVars.ENDPOINT",
+		},
+		{
+			name: "multi-broker brokerEndpoints wins over single-broker ENDPOINT and applies spec kafkaPort",
+			params: map[string]string{
+				"brokerEndpoints": "rp-0.redpanda.xmc.svc.cluster.local, rp-1.redpanda.xmc.svc.cluster.local:9095, rp-2.redpanda.xmc.svc.cluster.local",
+				"kafkaPort":       "9092",
+			},
+			envVars: map[string]string{
+				"ENDPOINT": "rp-0.redpanda.xmc.svc.cluster.local",
+				"PORT":     "19092",
+			},
+			wantBrokers: []string{
+				"rp-0.redpanda.xmc.svc.cluster.local:9092",
+				"rp-1.redpanda.xmc.svc.cluster.local:9095",
+				"rp-2.redpanda.xmc.svc.cluster.local:9092",
+			},
+			wantSource: "spec.parameters.brokerEndpoints",
+		},
+		{
+			name: "trailing comma on single-broker ENDPOINT does not mask multi-broker brokerEndpoints",
+			params: map[string]string{
+				"brokerEndpoints": "rp-0:9092,rp-1:9092",
+				"kafkaPort":       "9092",
+			},
+			envVars: map[string]string{
+				"ENDPOINT": "rp-0,",
+				"PORT":     "9092",
+			},
+			wantBrokers: []string{"rp-0:9092", "rp-1:9092"},
+			wantSource:  "spec.parameters.brokerEndpoints",
+		},
+		{
+			name: "single-broker ENDPOINT wins over single-broker brokerEndpoints",
+			params: map[string]string{
+				"brokerEndpoints": "spec-single:9092",
+				"kafkaPort":       "9092",
+			},
+			envVars: map[string]string{
+				"ENDPOINT": "live-single",
+				"PORT":     "9093",
+			},
+			wantBrokers: []string{"live-single:9093"},
+			wantSource:  "status.access.envVars.ENDPOINT",
+		},
+		{
+			name: "single-broker brokerEndpoints fallback appends spec kafkaPort",
+			params: map[string]string{
+				"brokerEndpoints": "spec-single",
+				"kafkaPort":       "9092",
+			},
+			envVars: map[string]string{
+				"PORT": "19092",
+			},
+			wantBrokers: []string{"spec-single:9092"},
+			wantSource:  "spec.parameters.brokerEndpoints",
+		},
+		{
+			name:        "returns nil and empty source when both ENDPOINT and brokerEndpoints are empty",
+			params:      map[string]string{"kafkaPort": "9092"},
+			envVars:     map[string]string{"PORT": "9092", "ENDPOINT": " , "},
+			wantBrokers: nil,
+			wantSource:  "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotBrokers, gotSource := resolveBrokersFromComponent(tc.params, tc.envVars)
+			if diff := cmp.Diff(tc.wantBrokers, gotBrokers); diff != "" {
+				t.Errorf("resolveBrokersFromComponent() brokers mismatch (-want +got):\n%s", diff)
+			}
+			if gotSource != tc.wantSource {
+				t.Errorf("resolveBrokersFromComponent() source = %q, want %q", gotSource, tc.wantSource)
 			}
 		})
 	}
@@ -393,8 +570,8 @@ func TestK8sComponentGetter_FakeDynamicClient(t *testing.T) {
 		t.Fatalf("ResolveRedpandaComponentConfig() failed: %v", err)
 	}
 	wantBrokers := []string{"redpanda-live.xmc.svc.cluster.local:9092"}
-	if !reflect.DeepEqual(cfg.RedpandaBrokers, wantBrokers) {
-		t.Errorf("RedpandaBrokers = %v, want %v", cfg.RedpandaBrokers, wantBrokers)
+	if diff := cmp.Diff(wantBrokers, cfg.RedpandaBrokers); diff != "" {
+		t.Errorf("RedpandaBrokers mismatch (-want +got):\n%s", diff)
 	}
 	if cfg.TopicName != "xmc-metrics-from-component" {
 		t.Errorf("TopicName = %q, want %q", cfg.TopicName, "xmc-metrics-from-component")
@@ -403,13 +580,46 @@ func TestK8sComponentGetter_FakeDynamicClient(t *testing.T) {
 
 func TestEnsureEndpointPort(t *testing.T) {
 	t.Parallel()
-	if got := ensureEndpointPort("redpanda-0.redpanda.xmc.svc.cluster.local", ""); got != "redpanda-0.redpanda.xmc.svc.cluster.local" {
-		t.Errorf("ensureEndpointPort with empty port = %q", got)
+
+	tests := []struct {
+		name     string
+		endpoint string
+		port     string
+		want     string
+	}{
+		{
+			name:     "empty port returns endpoint unchanged",
+			endpoint: "redpanda-0.redpanda.xmc.svc.cluster.local",
+			port:     "",
+			want:     "redpanda-0.redpanda.xmc.svc.cluster.local",
+		},
+		{
+			name:     "appends port when endpoint has no port",
+			endpoint: "redpanda-0.redpanda.xmc.svc.cluster.local",
+			port:     "9092",
+			want:     "redpanda-0.redpanda.xmc.svc.cluster.local:9092",
+		},
+		{
+			name:     "preserves existing port on endpoint",
+			endpoint: "redpanda-0.redpanda.xmc.svc.cluster.local:9092",
+			port:     "9093",
+			want:     "redpanda-0.redpanda.xmc.svc.cluster.local:9092",
+		},
+		{
+			name:     "formats bracketed IPv6 host without port",
+			endpoint: "[::1]",
+			port:     "9092",
+			want:     "[::1]:9092",
+		},
 	}
-	if got := ensureEndpointPort("redpanda-0.redpanda.xmc.svc.cluster.local", "9092"); got != "redpanda-0.redpanda.xmc.svc.cluster.local:9092" {
-		t.Errorf("ensureEndpointPort with 9092 = %q", got)
-	}
-	if got := ensureEndpointPort("redpanda-0.redpanda.xmc.svc.cluster.local:9092", "9093"); got != "redpanda-0.redpanda.xmc.svc.cluster.local:9092" {
-		t.Errorf("ensureEndpointPort with existing port = %q", got)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := ensureEndpointPort(tc.endpoint, tc.port)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("ensureEndpointPort(%q, %q) mismatch (-want +got):\n%s", tc.endpoint, tc.port, diff)
+			}
+		})
 	}
 }

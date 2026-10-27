@@ -15,6 +15,7 @@
 package ingestiongateway
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net"
@@ -135,21 +136,34 @@ func applyRedpandaComponentOverrides(ctx context.Context, cfg *Config, ns string
 }
 
 func resolveBrokersFromComponent(params, envVars map[string]string) ([]string, string) {
-	port := strings.TrimSpace(envVars["PORT"])
-	if port == "" {
-		port = strings.TrimSpace(params["kafkaPort"])
+	specPort := strings.TrimSpace(params["kafkaPort"])
+	envPort := cmp.Or(strings.TrimSpace(envVars["PORT"]), specPort)
+
+	envBrokers := parseBrokersWithPort(envVars["ENDPOINT"], envPort)
+	if len(envBrokers) > 1 {
+		return envBrokers, "status.access.envVars.ENDPOINT"
 	}
-	if endpoint := strings.TrimSpace(envVars["ENDPOINT"]); endpoint != "" {
-		brokers := parseBrokers(endpoint)
-		for i, b := range brokers {
-			brokers[i] = ensureEndpointPort(b, port)
-		}
-		return brokers, "status.access.envVars.ENDPOINT"
+
+	specBrokers := parseBrokersWithPort(params["brokerEndpoints"], specPort)
+	if len(specBrokers) > 1 {
+		return specBrokers, "spec.parameters.brokerEndpoints"
 	}
-	if brokerEndpoints := strings.TrimSpace(params["brokerEndpoints"]); brokerEndpoints != "" {
-		return parseBrokers(brokerEndpoints), "spec.parameters.brokerEndpoints"
+
+	if len(envBrokers) > 0 {
+		return envBrokers, "status.access.envVars.ENDPOINT"
+	}
+	if len(specBrokers) > 0 {
+		return specBrokers, "spec.parameters.brokerEndpoints"
 	}
 	return nil, ""
+}
+
+func parseBrokersWithPort(raw, port string) []string {
+	brokers := parseBrokers(raw)
+	for i, b := range brokers {
+		brokers[i] = ensureEndpointPort(b, port)
+	}
+	return brokers
 }
 
 func ensureEndpointPort(endpoint, port string) string {
@@ -159,5 +173,6 @@ func ensureEndpointPort(endpoint, port string) string {
 	if _, _, err := net.SplitHostPort(endpoint); err == nil {
 		return endpoint
 	}
-	return net.JoinHostPort(endpoint, port)
+	cleanHost := strings.TrimPrefix(strings.TrimSuffix(endpoint, "]"), "[")
+	return net.JoinHostPort(cleanHost, port)
 }

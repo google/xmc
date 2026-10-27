@@ -151,6 +151,7 @@ metrics:
     port: "9000"
     database: "default"
     user: "default"
+    secretName: "clickhouse-secret" # Kubernetes Secret name when secrets.csi.enabled is false
     password: "" # rendered into the clickhouse-secret Secret, not a ConfigMap
 ```
 

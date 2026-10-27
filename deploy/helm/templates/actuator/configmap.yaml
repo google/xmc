@@ -27,7 +27,7 @@ data:
   redis_addr: {{ .Values.redisAddr | quote }}
   xmanager_service_account: {{ required "gcpServiceAccount is required" .Values.gcpServiceAccount | quote }}
   audience: {{ printf "https://actuator.api.%s.%s/actuate" .Values.environment .Values.domainSuffix | quote }}
-  enable_components: {{ .Values.componentsDeployment.enabled | quote }}
+  enable_components: {{ (default (dict) .Values.componentsDeployment).enabled | default false | quote }}
   jwks_url: {{ if and .Values.auth .Values.auth.jwksUrl }}{{ .Values.auth.jwksUrl | quote }}{{ else if and .Values.auth .Values.auth.issuerUrl }}{{ printf "%s/keys" (.Values.auth.issuerUrl | trimSuffix "/") | quote }}{{ else }}""{{ end }}
   oidc_issuer_url: {{ if and .Values.auth .Values.auth.issuerUrl }}{{ .Values.auth.issuerUrl | quote }}{{ else }}""{{ end }}
   {{- if .Values.redisMaxRetries }}

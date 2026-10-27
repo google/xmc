@@ -85,6 +85,8 @@ metrics:
     port: "9000"
     database: "default"
     user: "default"
+    # Name of the Kubernetes Secret holding clickhouse-password when secrets.csi.enabled is false.
+    secretName: "clickhouse-secret"
     # Ignored when secrets.csi.enabled is true: the password is then read from Secret Manager
     # through the CSI mount rather than travelling through the release as a Helm value.
     password: ""
