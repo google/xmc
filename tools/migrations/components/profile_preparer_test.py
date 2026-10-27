@@ -174,6 +174,45 @@ class TestProfilePreparer(unittest.TestCase):
                 self.assertEqual(rp["kafkaPort"], expected_port)
                 self.assertEqual(rp["brokerEndpoints"], brokers)
 
+    def test_non_dict_malformed_helm_and_k8s_mappings_fallback_safely(self) -> None:
+        dep_malformed = {
+            "spec": {
+                "replicas": 4,
+                "template": {
+                    "spec": {
+                        "containers": [
+                            "not-a-dict",
+                            {
+                                "name": "ingestion-gateway",
+                                "image": "gcr.io/p/ig:1.0",
+                                "args": "not-a-list",
+                                "resources": {"requests": "bad", "limits": ["bad"]},
+                            },
+                        ]
+                    }
+                },
+            }
+        }
+        self.assertEqual(profile_preparer.parse_gateway_cli_flags(dep_malformed), {})
+        gw = profile_preparer.build_gateway_parameters(
+            {"ingestionGatewayDeployment": "not-a-dict"},
+            dep_malformed,
+            {"spec": "not-a-dict"},
+            {},
+        )
+        self.assertEqual(gw["hpaMinReplicas"], 3)
+        self.assertEqual(gw["hpaMaxReplicas"], 10)
+        gw2 = profile_preparer.build_gateway_parameters(
+            {"ingestionGatewayDeployment": {"hpa": "bad", "resources": "bad"}},
+            dep_malformed,
+            None,
+            {},
+        )
+        self.assertEqual(gw2["replicas"], 4)
+        for bad_metrics in ({"metrics": "bad"}, {"metrics": {"clickhouse": ["bad"]}}):
+            ch = profile_preparer.build_clickhouse_parameters(bad_metrics)
+            self.assertEqual(ch["host"], "clickhouse.xmc-metrics.svc.cluster.local")
+
     def test_render_profile_yaml_types_and_guards(self) -> None:
         rendered = profile_preparer.render_profile_yaml({"empty": {}, "ratio": 0.5, "flag": False})
         self.assertIn("empty: {}", rendered)
@@ -210,6 +249,11 @@ class TestProfilePreparer(unittest.TestCase):
                 with self.assertRaises(HandledError):
                     profile_preparer.prepare_profile_values("xmc", bad_ns, out)
 
+            mock_umbrella.return_value = {"ingestionGatewayDeployment": "not-a-dict"}
+            self.assertFalse(
+                profile_preparer.prepare_profile_values("xmc", "tenant-a", out)["gateway_enabled"]
+            )
+
             mock_umbrella.return_value = {"ingestionGatewayDeployment": {"enabled": "false"}}
             with self.assertRaises(HandledError):
                 profile_preparer.prepare_profile_values("xmc", "tenant-a", Path(tmp))
@@ -235,7 +279,7 @@ class TestProfilePreparer(unittest.TestCase):
             )
             self.assertTrue(res_on["gateway_enabled"])
             self.assertEqual(mock_secret.call_count, 2)  # TLS + ClickHouse
-            self.assertEqual(mock_validate.call_count, 2)
+            self.assertEqual(mock_validate.call_count, 3)
 
             mock_umbrella.return_value = {"ingestionGatewayDeployment": {"enabled": "false"}}
             mock_validate.side_effect = HandledError("lint failed", "fix")
