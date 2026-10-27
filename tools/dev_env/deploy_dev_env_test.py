@@ -1368,6 +1368,35 @@ image_tag: latest
             deploy_dev_env.run_checks(cfg, self.dns_project, self.dns_zone)
         self.assertEqual(cm.exception.code, 1)
 
+    @patch(
+        "tools.dev_env.deploy_dev_env.verify_helm_min_version",
+        side_effect=PermissionError("helm not executable"),
+    )
+    @patch("tools.dev_env.deploy_dev_env._check_terraform_version")
+    @patch("tools.dev_env.deploy_dev_env._verify_binaries")
+    def test_run_checks_helm_oserror_when_components_enabled(self, _mock_bin, _mock_tf, _mock_helm):
+        cfg = replace(self.valid_config, enable_components=True)
+        with self.assertRaises(SystemExit) as cm:
+            deploy_dev_env.run_checks(cfg, self.dns_project, self.dns_zone)
+        self.assertEqual(cm.exception.code, 1)
+
+    def test_build_resume_cmd_quotes_profile_values(self):
+        parsed = deploy_dev_env.parse_args(
+            [
+                "--config",
+                "cfg.yaml",
+                "--dns-project",
+                "dns-proj",
+                "--dns-zone",
+                "dns-zone",
+                "--profile-values",
+                "/tmp/my dir/profile values.yaml",
+            ]
+        )
+        cmd = deploy_dev_env._build_resume_cmd(parsed, "app")
+        self.assertIn("--profile-values '/tmp/my dir/profile values.yaml' ", cmd)
+        self.assertTrue(cmd.endswith("--start-from app"))
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first_arg_ignored", "-v"])

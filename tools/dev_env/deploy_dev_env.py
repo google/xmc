@@ -20,6 +20,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -281,7 +282,7 @@ def run_checks(config: DeploymentConfig, dns_project: str, dns_zone: str) -> Non
     if config.enable_components:
         try:
             verify_helm_min_version()
-        except (subprocess.CalledProcessError, RuntimeError, ValueError) as e:
+        except (subprocess.CalledProcessError, RuntimeError, ValueError, OSError) as e:
             error_exit(f"Failed Helm version check: {e}")
     _check_gcp_project_alignment(config.project_id)
     _check_dns_access(dns_project, dns_zone)
@@ -866,7 +867,7 @@ def _build_resume_cmd(args: argparse.Namespace, current_step: str) -> str:
     if getattr(args, "skip_verification", False):
         resume_cmd += "--skip-verification "
     if getattr(args, "profile_values", None):
-        resume_cmd += f"--profile-values {args.profile_values} "
+        resume_cmd += f"--profile-values {shlex.quote(args.profile_values)} "
     if args.only:
         resume_cmd += f"--only {current_step}"
     else:

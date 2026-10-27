@@ -452,6 +452,19 @@ class TestStepSubprocesses(unittest.TestCase):
             upgrade_dev_env.step_check(cfg)
         self.assertEqual(cm.exception.code, 1)
 
+    @mock.patch(
+        "tools.dev_env.upgrade_dev_env.verify_helm_min_version",
+        side_effect=PermissionError("helm not executable"),
+    )
+    @mock.patch("shutil.which", return_value="/usr/bin/tool")
+    def test_step_check_fails_helm_oserror_when_components_enabled(self, _mock_which, _mock_helm):
+        from dataclasses import replace
+
+        cfg = replace(self.config, enable_components=True)
+        with self.assertRaises(SystemExit) as cm:
+            upgrade_dev_env.step_check(cfg)
+        self.assertEqual(cm.exception.code, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -456,10 +456,22 @@ MIN_HELM_VERSION = "3.14.0"
 
 
 def parse_semver_prefix(raw: str) -> tuple[int, int, int]:
-    """Extracts a (major, minor, patch) integer tuple from a version string."""
+    """Extracts a (major, minor, patch) integer tuple from a version string.
+
+    Args:
+        raw: Version string to parse (e.g. 'v3.14.2+g0a1b2c' or 'v3.14').
+
+    Returns:
+        Tuple of (major, minor, patch) integers, zero-padded if fewer than 3 parts.
+
+    Raises:
+        ValueError: If raw contains no numeric version segments.
+    """
     parts = [int(p) for p in re.findall(r"\d+", raw)[:3]]
-    if len(parts) < 3:
+    if not parts:
         raise ValueError(f"Could not parse semantic version from '{raw}'.")
+    while len(parts) < 3:
+        parts.append(0)
     return parts[0], parts[1], parts[2]
 
 
@@ -468,7 +480,19 @@ def verify_helm_min_version(
     *,
     stream: TextIO | None = None,
 ) -> str:
-    """Verifies the installed Helm CLI meets min_version (required for --reset-then-reuse-values)."""
+    """Verifies the installed Helm CLI meets min_version (required for --reset-then-reuse-values).
+
+    Args:
+        min_version: Minimum required semantic version string.
+        stream: Optional text stream forwarded to run_command for logging.
+
+    Returns:
+        Detected raw Helm CLI version string.
+
+    Raises:
+        RuntimeError: If the installed Helm version is older than min_version.
+        ValueError: If Helm or min_version output cannot be parsed.
+    """
     out = run_command(
         ["helm", "version", "--template={{.Version}}"],
         capture_output=True,
@@ -484,7 +508,15 @@ def deploy_component_profile(
     config: DeploymentConfig,
     values_file: str | None = None,
 ) -> None:
-    """Deploys default XMC component profile (stable-2026a) when components are enabled."""
+    """Deploys default XMC component profile (stable-2026a) when components are enabled.
+
+    Args:
+        config: Loaded DeploymentConfig instance.
+        values_file: Optional path overriding config.profile_values for helm -f.
+
+    Raises:
+        FileNotFoundError: If an effective profile values file is specified and missing.
+    """
     if not config.enable_components:
         return
     ns = config.namespace or "xmc"
@@ -492,6 +524,10 @@ def deploy_component_profile(
     effective_values = values_file if values_file is not None else config.profile_values
     cmd = ["helm", "upgrade", "--install", "--reset-then-reuse-values", "xmc-profile", chart]
     if effective_values:
+        if not Path(effective_values).is_file():
+            raise FileNotFoundError(
+                f"Profile values file '{effective_values}' does not exist or is not a file."
+            )
         cmd.extend(["-f", effective_values])
     cmd.extend(["-n", ns, "--wait"])
     log_info(f"Deploying default component profile (stable-2026a) into namespace '{ns}'...")

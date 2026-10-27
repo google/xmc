@@ -155,7 +155,7 @@ def step_check(config: UpgradeConfig) -> None:
     if config.enable_components:
         try:
             verify_helm_min_version()
-        except (subprocess.CalledProcessError, RuntimeError, ValueError) as e:
+        except (subprocess.CalledProcessError, RuntimeError, ValueError, OSError) as e:
             error_exit(f"Failed Helm version check: {e}")
 
     gcluster_path = Path("./cluster-toolkit/gcluster")
