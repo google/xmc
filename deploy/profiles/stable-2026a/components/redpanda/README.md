@@ -17,7 +17,7 @@ The following fields are structural constants of the Redpanda blueprint hardcode
 | `metadata.labels["app.kubernetes.io/name"]` | `"redpanda"` | Standard Kubernetes application label. |
 | `spec.componentType` | `COMPONENT_TYPE_CUSTOM_3P_WRAPPER` | Hardcoded as a 3P Wrapper Component (`Redpanda` is always a third-party event-streaming service, never a 1P XMC component). |
 | `spec.componentClass` | `"event-stream"` | Canonical service class used by XMC workloads to discover the event-streaming broker. |
-| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.0"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
+| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.1"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
 
 ---
 
@@ -28,7 +28,7 @@ The following fields are structural constants of the Redpanda blueprint hardcode
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `enabled` | `bool` | `false` | Enables or disables the Redpanda component in the XMC catalog. Defaults to `false` so non-component deployments (`enable_components: false`) are unaffected. |
-| `namespace` | `string` | `"xmc"` | Namespace where the `Component` CR is installed. |
+| `namespace` | `string` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | Namespace where the `Component` CR is installed. |
 | `deletionProtection` | `bool` | `true` | Prevents accidental deletion of the `Component` CR when enabled. |
 | `deletionPolicy` | `string` | `"Delete"` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
 | `dependencies` | `list[string]` | `[]` | Optional list of prerequisite XMC Component names that must be healthy before Redpanda is reconciled. |
@@ -117,8 +117,8 @@ spec:
   enabled: true
   componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
   componentClass: "event-stream"
-  version: "0.1.0"
-  chartVersion: "0.1.0"
+  version: "0.1.1"
+  chartVersion: "0.1.1"
   deletionProtection: true
   deletionPolicy: "Delete"
   parameters:

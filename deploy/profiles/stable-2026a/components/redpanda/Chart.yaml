@@ -16,4 +16,4 @@ apiVersion: v2
 name: redpanda
 description: XMC 3P Wrapper Component blueprint for Redpanda event-streaming broker
 type: application
-version: 0.1.0
+version: 0.1.1

@@ -16,7 +16,7 @@ The following fields are structural constants of the Ingestion Gateway blueprint
 | `metadata.labels["app.kubernetes.io/name"]` | `"ingestion-gateway"` | Standard Kubernetes application label. |
 | `spec.componentType` | `COMPONENT_TYPE_CUSTOM_1P_COMPONENT` | Hardcoded as a 1P Native Component actuated via Helm by `xmc-bridge`. |
 | `spec.componentClass` | `"metrics-ingestion"` | Canonical service class for the experiment metrics ingestion pipeline. |
-| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.0"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
+| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.1"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
 | `spec.dependencies` | `["redpanda", "clickhouse"]` | Declares upstream dependencies on the `redpanda` and `clickhouse` 3P Wrapper Components: the gateway publishes to Redpanda, and without ClickHouse the metrics have no store. `xmc-bridge` waits for both to be Ready before actuating, and CMS blocks disabling either while the gateway is enabled. |
 
 ---
@@ -34,7 +34,17 @@ All entries in `spec.parameters` are serialized as quoted strings (`| toString |
 | `parameters.redpandaBrokers` | `"redpanda-0.redpanda.xmc.svc.cluster.local:9092"` | `-redpanda_brokers` | Static fallback Kafka broker addresses when dynamic discovery from `Component/redpanda` is inactive. |
 | `parameters.topicName` | `"xmc-metrics"` | `-topic_name` | Default Kafka topic for ingested telemetry and experiment metrics. |
 | `parameters.minPartitions` | `128` (`"128"`) | `-min_partitions` | Minimum partition count when auto-creating the Kafka topic. |
-| `parameters.minReplicas` | `1` (`"1"`) | `-min_replicas` | Minimum replication factor for the Kafka topic (matches the umbrella chart default). |
+| `parameters.minReplicas` | `1` (`"1"`) | `-min_replicas` | Minimum replication factor for the Kafka topic. |
+| `parameters.serviceAccountName` | `"default"` | `PodSpec.serviceAccountName` & `RoleBinding.subjects` | ServiceAccount bound to the gateway pods and `ingestion-gateway-components-reader` RoleBinding. |
+| `parameters.image` | `""` | Container `image` | Optional full container image override (including tag or `@sha256:...` digest). |
+| `parameters.imageRepository` | `""` | Container `image` | Optional custom image repository paired with `imageTag` / `global.imageTag`. |
+| `parameters.hpaEnabled` | `true` | `HorizontalPodAutoscaler` guard | Renders `ingestion-gateway-hpa` when `true`; when `false`, omits HPA and sets static `Deployment.spec.replicas`. |
+| `parameters.hpaMinReplicas` / `parameters.hpaMaxReplicas` | `2` / `10` | `HPA.spec.minReplicas` / `maxReplicas` | Autoscaler replica bounds when `hpaEnabled` is `true`. |
+| `parameters.replicas` | `1` | `Deployment.spec.replicas` | Static replica count used only when `hpaEnabled` is `false`. |
+| `parameters.saslEnabled` / `parameters.saslMechanism` / `parameters.saslSecretName` | `false` / `"SCRAM-SHA-256"` / `""` | `-sasl_*` & `kafka-sasl-credentials` volume | Kafka SASL authentication flags and mounted credentials `Secret`. |
+| `parameters.tlsEnabled` / `parameters.tlsSecretName` | `false` / `""` | `-tls_enabled` & `kafka-tls-credentials` volume | Kafka TLS flag and optional CA/mTLS `Secret` mounted at `/etc/kafka/tls`. |
+| `parameters.tlsCaFile` / `parameters.tlsCertFile` / `parameters.tlsKeyFile` | `""` / `""` / `""` | `-tls_ca_file` / `-tls_cert_file` / `-tls_key_file` | Optional CA and client mTLS certificate/key file paths (for example under `/etc/kafka/tls/`). |
+| `parameters.cpuRequest` / `parameters.memoryRequest` / `parameters.cpuLimit` / `parameters.memoryLimit` | `"10m"` / `"64Mi"` / `"100m"` / `"256Mi"` | `Container.resources` | Flat scalar overrides for container CPU/memory requests and limits. |
 
 ---
 

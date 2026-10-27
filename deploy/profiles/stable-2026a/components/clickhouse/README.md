@@ -17,7 +17,7 @@ The following fields are structural constants encapsulated in [`templates/compon
 | `metadata.labels["app.kubernetes.io/name"]` | `"clickhouse"` | Standard Kubernetes application label. |
 | `spec.componentType` | `COMPONENT_TYPE_CUSTOM_3P_WRAPPER` | Hardcoded as a 3P Wrapper Component (`ClickHouse` is always an external/third-party database service, never a 1P XMC microservice). |
 | `spec.componentClass` | `"analytical-db"` | Canonical service class used by XMC workloads to discover the analytical database. |
-| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.0"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
+| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.1"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
 
 ---
 
@@ -28,7 +28,7 @@ The following fields are structural constants encapsulated in [`templates/compon
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `enabled` | `bool` | `false` | Enables or disables the ClickHouse component in the XMC catalog. Defaults to `false` so non-component deployments (`enable_components: false`) are unaffected. |
-| `namespace` | `string` | `"xmc"` | Namespace where the `Component` CR is installed. |
+| `namespace` | `string` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | Namespace where the `Component` CR is installed. |
 | `deletionProtection` | `bool` | `true` | Prevents accidental deletion of the `Component` CR when enabled. |
 | `deletionPolicy` | `string` | `"Delete"` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
 | `dependencies` | `list[string]` | `[]` | Optional list of prerequisite XMC Component names that must be healthy before ClickHouse is reconciled. |
@@ -114,8 +114,8 @@ spec:
   enabled: true
   componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
   componentClass: "analytical-db"
-  version: "0.1.0"
-  chartVersion: "0.1.0"
+  version: "0.1.1"
+  chartVersion: "0.1.1"
   deletionProtection: true
   deletionPolicy: "Delete"
   parameters:

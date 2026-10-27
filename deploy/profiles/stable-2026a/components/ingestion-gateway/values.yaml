@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 enabled: false
 deployWorkload: false
-namespace: xmc
+namespace: ""
 global: { imageTag: "" }
 image: { repository: "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway", tag: "latest" }
 imageTag: ""

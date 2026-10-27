@@ -14,17 +14,19 @@
 
 {{/*
 Resolve the container image for ingestion-gateway:
-1. Explicit .Values.ingestionGatewayDeployment.image (appending tag only if untagged and not a digest)
-2. .Values.image.repository with (.Values.global.imageTag | .Values.imageTag | .Values.image.tag | "latest")
+1. Explicit .Values.ingestionGatewayDeployment.image or .Values.parameters.image (appending tag only if untagged and not a digest)
+2. (.Values.ingestionGatewayDeployment.imageRepository | .Values.parameters.imageRepository | .Values.image.repository) with (.Values.global.imageTag | .Values.imageTag | .Values.image.tag | "latest")
 */}}
 {{- define "ingestion-gateway.image" -}}
 {{- $ig := .Values.ingestionGatewayDeployment | default dict -}}
+{{- $params := .Values.parameters | default dict -}}
 {{- $imgCfg := .Values.image | default dict -}}
 {{- $global := .Values.global | default dict -}}
 {{- $tag := $global.imageTag | default .Values.imageTag | default $imgCfg.tag | default "latest" -}}
-{{- $repo := $imgCfg.repository | default "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway" -}}
-{{- if $ig.image -}}
-  {{- $igImg := $ig.image | toString -}}
+{{- $repo := $ig.imageRepository | default $params.imageRepository | default $imgCfg.repository | default "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway" -}}
+{{- $explicitImg := $ig.image | default $params.image -}}
+{{- if $explicitImg -}}
+  {{- $igImg := $explicitImg | toString -}}
   {{- if or (contains "@sha256:" $igImg) (regexMatch ":[^:/]+$" $igImg) -}}
     {{- $igImg -}}
   {{- else -}}

@@ -17,12 +17,52 @@
 {{- $params := .Values.parameters | default dict -}}
 {{- $port := $ig.port | default $params.port | default 8080 -}}
 {{- $sasl := $ig.sasl | default .Values.sasl | default dict -}}
+{{- $saslRaw := "false" -}}
+{{- if hasKey $ig "saslEnabled" -}}
+  {{- $saslRaw = ($ig.saslEnabled | toString | lower | trim) -}}
+{{- else if hasKey $params "saslEnabled" -}}
+  {{- $saslRaw = ($params.saslEnabled | toString | lower | trim) -}}
+{{- else if hasKey $sasl "enabled" -}}
+  {{- $saslRaw = ($sasl.enabled | toString | lower | trim) -}}
+{{- end -}}
+{{- $saslEnabled := or (eq $saslRaw "true") (eq $saslRaw "1") -}}
+{{- $saslSecretName := ($ig.saslSecretName | default $params.saslSecretName | default $sasl.secretName | default "") | toString -}}
+{{- $saslMechanism := ($ig.saslMechanism | default $params.saslMechanism | default $sasl.mechanism | default "SCRAM-SHA-256") | toString -}}
+{{- $useSasl := and $saslEnabled (ne $saslSecretName "") -}}
 {{- $tls := $ig.tls | default .Values.tls | default dict -}}
-{{- $useSasl := and $sasl.enabled $sasl.secretName -}}
-{{- $useTls := and $tls.enabled $tls.secretName -}}
+{{- $tlsRaw := "false" -}}
+{{- if hasKey $ig "tlsEnabled" -}}
+  {{- $tlsRaw = ($ig.tlsEnabled | toString | lower | trim) -}}
+{{- else if hasKey $params "tlsEnabled" -}}
+  {{- $tlsRaw = ($params.tlsEnabled | toString | lower | trim) -}}
+{{- else if hasKey $tls "enabled" -}}
+  {{- $tlsRaw = ($tls.enabled | toString | lower | trim) -}}
+{{- end -}}
+{{- $tlsEnabled := or (eq $tlsRaw "true") (eq $tlsRaw "1") -}}
+{{- $tlsSecretName := ($ig.tlsSecretName | default $params.tlsSecretName | default $tls.secretName | default "") | toString -}}
+{{- $tlsCaFile := ($ig.tlsCaFile | default $params.tlsCaFile | default $tls.caFile | default "") | toString -}}
+{{- $tlsCertFile := ($ig.tlsCertFile | default $params.tlsCertFile | default $tls.certFile | default "") | toString -}}
+{{- $tlsKeyFile := ($ig.tlsKeyFile | default $params.tlsKeyFile | default $tls.keyFile | default "") | toString -}}
+{{- $useTls := and $tlsEnabled (ne $tlsSecretName "") -}}
+{{- $hpaMap := $ig.hpa | default dict -}}
+{{- $hpaRaw := "true" -}}
+{{- if hasKey $ig "hpaEnabled" -}}
+  {{- $hpaRaw = ($ig.hpaEnabled | toString | lower | trim) -}}
+{{- else if hasKey $params "hpaEnabled" -}}
+  {{- $hpaRaw = ($params.hpaEnabled | toString | lower | trim) -}}
+{{- else if hasKey $hpaMap "enabled" -}}
+  {{- $hpaRaw = ($hpaMap.enabled | toString | lower | trim) -}}
+{{- end -}}
+{{- $hpaEnabled := or (eq $hpaRaw "true") (eq $hpaRaw "1") -}}
+{{- $replicas := 1 -}}
+{{- if hasKey $ig "replicas" -}}
+  {{- $replicas = $ig.replicas -}}
+{{- else if hasKey $params "replicas" -}}
+  {{- $replicas = $params.replicas -}}
+{{- end -}}
 {{- $managedBy := .Release.Service | default "Helm" | quote -}}
-{{- $saName := $ig.serviceAccountName | default .Values.serviceAccountName | default "default" -}}
-{{- $ns := .Values.namespace | default .Release.Namespace | default "xmc" }}
+{{- $saName := ($ig.serviceAccountName | default $params.serviceAccountName | default .Values.serviceAccountName | default "default") | toString -}}
+{{- $ns := (.Values.namespace | default (ternary .Release.Namespace "xmc" (and (ne .Release.Namespace "") (ne .Release.Namespace "default")))) | toString }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,8 +72,8 @@ metadata:
     app.kubernetes.io/name: ingestion-gateway
     app.kubernetes.io/managed-by: {{ $managedBy }}
 spec:
-  {{- if $ig.replicas }}
-  replicas: {{ $ig.replicas }}
+  {{- if not $hpaEnabled }}
+  replicas: {{ $replicas }}
   {{- end }}
   strategy:
     type: RollingUpdate
@@ -45,7 +85,7 @@ spec:
       labels:
         app: ingestion-gateway
     spec:
-      serviceAccountName: {{ $saName }}
+      serviceAccountName: {{ $saName | quote }}
       {{- if ($ig.terminationGracePeriodSeconds | default .Values.terminationGracePeriodSeconds) }}
       terminationGracePeriodSeconds: {{ $ig.terminationGracePeriodSeconds | default .Values.terminationGracePeriodSeconds }}
       {{- end }}
@@ -57,12 +97,12 @@ spec:
       {{- if $useSasl }}
       - name: kafka-sasl-credentials
         secret:
-          secretName: {{ $sasl.secretName }}
+          secretName: {{ $saslSecretName | quote }}
       {{- end }}
       {{- if $useTls }}
       - name: kafka-tls-credentials
         secret:
-          secretName: {{ $tls.secretName }}
+          secretName: {{ $tlsSecretName | quote }}
       {{- end }}
       {{- end }}
       containers:
@@ -102,15 +142,24 @@ spec:
         - "-min_partitions={{ $ig.minPartitions | default $params.minPartitions | default 128 }}"
         - "-min_replicas={{ $ig.minReplicas | default $params.minReplicas | default 1 }}"
         - "-project_id={{ $ig.projectId | default .Values.projectId }}"
-        {{- if $sasl }}
-        - "-sasl_enabled={{ $sasl.enabled | default false }}"
+        {{- if or $sasl (hasKey $ig "saslEnabled") (hasKey $params "saslEnabled") }}
+        - "-sasl_enabled={{ $saslEnabled }}"
         {{- if $useSasl }}
-        - "-sasl_mechanism={{ $sasl.mechanism | default "SCRAM-SHA-256" }}"
+        - "-sasl_mechanism={{ $saslMechanism }}"
         - "-sasl_credentials_dir=/etc/kafka/credentials"
         {{- end }}
         {{- end }}
-        {{- if $tls }}
-        - "-tls_enabled={{ $tls.enabled | default false }}"
+        {{- if or $tls (hasKey $ig "tlsEnabled") (hasKey $params "tlsEnabled") }}
+        - "-tls_enabled={{ $tlsEnabled }}"
+        {{- if ne $tlsCaFile "" }}
+        - "-tls_ca_file={{ $tlsCaFile }}"
+        {{- end }}
+        {{- if ne $tlsCertFile "" }}
+        - "-tls_cert_file={{ $tlsCertFile }}"
+        {{- end }}
+        {{- if ne $tlsKeyFile "" }}
+        - "-tls_key_file={{ $tlsKeyFile }}"
+        {{- end }}
         {{- end }}
         readinessProbe:
           httpGet:
@@ -124,10 +173,26 @@ spec:
             port: {{ $port }}
           initialDelaySeconds: 10
           periodSeconds: 10
-        {{- $resources := $ig.resources | default .Values.resources }}
-        {{- if $resources }}
+        {{- $baseRes := deepCopy ($ig.resources | default .Values.resources | default dict) }}
+        {{- $cpuReq := $ig.cpuRequest | default $params.cpuRequest }}
+        {{- $memReq := $ig.memoryRequest | default $params.memoryRequest }}
+        {{- if or $cpuReq $memReq }}
+          {{- $reqs := deepCopy ($baseRes.requests | default dict) }}
+          {{- if $cpuReq }}{{- $_ := set $reqs "cpu" ($cpuReq | toString) }}{{- end }}
+          {{- if $memReq }}{{- $_ := set $reqs "memory" ($memReq | toString) }}{{- end }}
+          {{- $_ := set $baseRes "requests" $reqs }}
+        {{- end }}
+        {{- $cpuLim := $ig.cpuLimit | default $params.cpuLimit }}
+        {{- $memLim := $ig.memoryLimit | default $params.memoryLimit }}
+        {{- if or $cpuLim $memLim }}
+          {{- $lims := deepCopy ($baseRes.limits | default dict) }}
+          {{- if $cpuLim }}{{- $_ := set $lims "cpu" ($cpuLim | toString) }}{{- end }}
+          {{- if $memLim }}{{- $_ := set $lims "memory" ($memLim | toString) }}{{- end }}
+          {{- $_ := set $baseRes "limits" $lims }}
+        {{- end }}
+        {{- if $baseRes }}
         resources:
-          {{- toYaml $resources | nindent 10 }}
+          {{- toYaml $baseRes | nindent 10 }}
         {{- end }}
 ---
 apiVersion: v1
@@ -148,6 +213,7 @@ spec:
   - port: {{ $port }}
     name: http-port
     targetPort: http-port
+{{- if $hpaEnabled }}
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -162,8 +228,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: ingestion-gateway-deployment
-  minReplicas: {{ ($ig.hpa | default dict).minReplicas | default .Values.minReplicas | default 2 }}
-  maxReplicas: {{ ($ig.hpa | default dict).maxReplicas | default .Values.maxReplicas | default 10 }}
+  minReplicas: {{ $ig.hpaMinReplicas | default $params.hpaMinReplicas | default $hpaMap.minReplicas | default .Values.minReplicas | default 2 }}
+  maxReplicas: {{ $ig.hpaMaxReplicas | default $params.hpaMaxReplicas | default $hpaMap.maxReplicas | default .Values.maxReplicas | default 10 }}
   metrics:
   - type: Resource
     resource:
@@ -171,6 +237,7 @@ spec:
       target:
         type: Utilization
         averageUtilization: 80
+{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -194,8 +261,8 @@ metadata:
     app.kubernetes.io/part-of: xmanager-cloud
 subjects:
 - kind: ServiceAccount
-  name: {{ $saName }}
-  namespace: {{ $ns }}
+  name: {{ $saName | quote }}
+  namespace: {{ $ns | quote }}
 roleRef:
   kind: Role
   name: ingestion-gateway-components-reader

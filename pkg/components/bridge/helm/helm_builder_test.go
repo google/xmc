@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
@@ -253,6 +254,125 @@ func TestResolveImage(t *testing.T) {
 			got := ResolveImage(tt.component, tt.imageTag, tt.parameters)
 			if got != tt.wantImage {
 				t.Errorf("ResolveImage(%q, %q, %+v) = %q, want %q", tt.component, tt.imageTag, tt.parameters, got, tt.wantImage)
+			}
+		})
+	}
+}
+
+func TestBuildHelmValues_DefaultEnvImageAndCustomNamespace(t *testing.T) {
+	tests := []struct {
+		name          string
+		namespace     string
+		defaultEnvImg string
+		protoVersion  string
+		rawSpec       map[string]any
+		want          map[string]any
+	}{
+		{
+			name:          "chart version keeps DEFAULT_INGESTION_GATEWAY_IMAGE digest verbatim",
+			namespace:     "custom-ns",
+			defaultEnvImg: "us-central1-docker.pkg.dev/proj/xmc/ingestion_gateway@sha256:abcdef123456",
+			protoVersion:  "0.1.1",
+			rawSpec:       map[string]any{"version": "0.1.1", "chartVersion": "0.1.1"},
+			want: map[string]any{
+				"namespace": "custom-ns",
+				"ingestionGatewayDeployment": map[string]any{
+					"enabled": true,
+					"image":   "us-central1-docker.pkg.dev/proj/xmc/ingestion_gateway@sha256:abcdef123456",
+				},
+			},
+		},
+		{
+			name:          "chart version without DEFAULT_INGESTION_GATEWAY_IMAGE does not leak chartVersion as imageTag",
+			namespace:     "xmc",
+			defaultEnvImg: "",
+			protoVersion:  "0.1.1",
+			rawSpec:       map[string]any{"version": "0.1.1", "chartVersion": "0.1.1"},
+			want: map[string]any{
+				"namespace": "xmc",
+				"ingestionGatewayDeployment": map[string]any{
+					"enabled": true,
+				},
+			},
+		},
+		{
+			name:          "chart version with parameters.imageRepository resolves latest when imageTag omitted",
+			namespace:     "xmc",
+			defaultEnvImg: "",
+			protoVersion:  "0.1.1",
+			rawSpec: map[string]any{
+				"version":      "0.1.1",
+				"chartVersion": "0.1.1",
+				"parameters":   map[string]any{"imageRepository": "custom.registry.io/xmc/ig"},
+			},
+			want: map[string]any{
+				"namespace": "xmc",
+				"ingestionGatewayDeployment": map[string]any{
+					"enabled": true,
+					"image":   "custom.registry.io/xmc/ig:latest",
+				},
+			},
+		},
+		{
+			name:          "standalone spec.version without chartVersion applies version tag over env image repo",
+			namespace:     "xmc",
+			defaultEnvImg: "localhost:5000/xmc/ingestion_gateway:old-tag",
+			protoVersion:  "v2.0.0",
+			rawSpec:       map[string]any{"version": "v2.0.0"},
+			want: map[string]any{
+				"namespace": "xmc",
+				"global":    map[string]any{"imageTag": "v2.0.0"},
+				"ingestionGatewayDeployment": map[string]any{
+					"enabled": true,
+					"image":   "localhost:5000/xmc/ingestion_gateway:v2.0.0",
+				},
+			},
+		},
+		{
+			name:          "explicit spec.imageTag derives repository from DEFAULT_INGESTION_GATEWAY_IMAGE",
+			namespace:     "custom-ns",
+			defaultEnvImg: "localhost:5000/xmc/ingestion_gateway:old-tag",
+			protoVersion:  "0.1.1",
+			rawSpec:       map[string]any{"version": "0.1.1", "chartVersion": "0.1.1", "imageTag": "v2.4.0"},
+			want: map[string]any{
+				"namespace": "custom-ns",
+				"global":    map[string]any{"imageTag": "v2.4.0"},
+				"ingestionGatewayDeployment": map[string]any{
+					"enabled": true,
+					"image":   "localhost:5000/xmc/ingestion_gateway:v2.4.0",
+				},
+			},
+		},
+		{
+			name:          "parameters.image overrides both DEFAULT_INGESTION_GATEWAY_IMAGE and spec.imageTag",
+			namespace:     "xmc",
+			defaultEnvImg: "us-central1-docker.pkg.dev/proj/xmc/ingestion_gateway:default",
+			protoVersion:  "0.1.1",
+			rawSpec:       map[string]any{"imageTag": "v2.4.0", "parameters": map[string]any{"image": "gcr.io/pinned/ig:1.0"}},
+			want: map[string]any{
+				"namespace": "xmc",
+				"global":    map[string]any{"imageTag": "v2.4.0"},
+				"ingestionGatewayDeployment": map[string]any{
+					"enabled": true,
+					"image":   "gcr.io/pinned/ig:1.0",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DEFAULT_INGESTION_GATEWAY_IMAGE", tt.defaultEnvImg)
+			t.Setenv("PROJECT_ID", "")
+			opts := ParseHelmComponentOptions(
+				"ingestion-gateway",
+				tt.namespace,
+				tt.rawSpec,
+				&componentspb.ComponentSpec{Version: tt.protoVersion},
+			)
+			got := BuildHelmValues(opts)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("BuildHelmValues() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

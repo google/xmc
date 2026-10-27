@@ -260,11 +260,11 @@ First-party (1P) components are managed natively through XMC Helm charts. Rather
 
 Production-grade lifecycle controls and graceful deactivation policies for first-party components:
 
-- **4-Tier Image Resolution Precedence**: Deterministically resolves container image overrides:
+- **4-Tier Image Resolution Precedence**: Deterministically resolves container image overrides (treating `spec.version` matching `spec.chartVersion` as a chart revision rather than a container image tag):
   1. `opts.Parameters["image"]` (highest priority explicit container image override)
-  2. `opts.Parameters["imageRepository"]` + `opts.ImageTag` (repository customization)
-  3. `defaultImage` + `opts.ImageTag` (standard component image with version override)
-  4. `defaultImage:latest` (fallback default)
+  2. `opts.Parameters["imageRepository"]` + `effectiveTag` (or `:latest` when no explicit `imageTag` is set)
+  3. `DEFAULT_<COMPONENT>_IMAGE` environment variable verbatim when `effectiveTag` is empty, or its repository + `effectiveTag` when an explicit image tag override is set
+  4. `DefaultComponentRepository(componentName)` + `effectiveTag` (or `:latest` fallback default)
 - **Graceful Connection Draining**: Automatically injects a `preStop` sleep hook (`/bin/sleep <seconds>`) and clamps `TerminationGracePeriodSeconds` to at least 5s greater than the drain timeout to guarantee pod termination ordering.
 - **`Orphan` Deletion Policy**: Supports `spec.deletionPolicy: Orphan`, preserving live configuration during component de-registration while still deactivating managed controllers.
 
