@@ -200,10 +200,30 @@ class DbConfigChartTest(unittest.TestCase):
             },
         }
         service_templates = (
-            ("templates/ess/configmap.yaml", "ess_spanner_database_name", "SPANNER_ESS_DATABASE", "ess_quota_project_id"),
-            ("templates/xid/configmap.yaml", "xid_spanner_database_name", "SPANNER_XID_DATABASE", "xid_quota_project_id"),
-            ("templates/actuator/configmap.yaml", "spanner_database_name", "SPANNER_ESS_DATABASE", "quota_project_id"),
-            ("templates/reconciler/configmap.yaml", "spanner_database_name", "SPANNER_ESS_DATABASE", "quota_project_id"),
+            (
+                "templates/ess/configmap.yaml",
+                "ess_spanner_database_name",
+                "SPANNER_ESS_DATABASE",
+                "ess_quota_project_id",
+            ),
+            (
+                "templates/xid/configmap.yaml",
+                "xid_spanner_database_name",
+                "SPANNER_XID_DATABASE",
+                "xid_quota_project_id",
+            ),
+            (
+                "templates/actuator/configmap.yaml",
+                "spanner_database_name",
+                "SPANNER_ESS_DATABASE",
+                "quota_project_id",
+            ),
+            (
+                "templates/reconciler/configmap.yaml",
+                "spanner_database_name",
+                "SPANNER_ESS_DATABASE",
+                "quota_project_id",
+            ),
         )
 
         for scenario_name, values in scenarios.items():
@@ -211,8 +231,12 @@ class DbConfigChartTest(unittest.TestCase):
             for template, legacy_db_key, db_config_key, legacy_quota_key in service_templates:
                 with self.subTest(scenario=scenario_name, template=template):
                     svc_manifest = render_template(template, values)
-                    expected_db = re.search(rf"^\s*{db_config_key}: (.+)$", db_manifest, re.MULTILINE)
-                    expected_quota = re.search(r"^\s*SPANNER_QUOTA_PROJECT_ID: (.+)$", db_manifest, re.MULTILINE)
+                    expected_db = re.search(
+                        rf"^\s*{db_config_key}: (.+)$", db_manifest, re.MULTILINE
+                    )
+                    expected_quota = re.search(
+                        r"^\s*SPANNER_QUOTA_PROJECT_ID: (.+)$", db_manifest, re.MULTILINE
+                    )
                     self.assertIsNotNone(expected_db)
                     self.assertIsNotNone(expected_quota)
                     self.assertIn(f"{legacy_db_key}: {expected_db.group(1)}", svc_manifest)
