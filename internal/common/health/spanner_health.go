@@ -22,10 +22,8 @@ import (
 	"google.golang.org/api/iterator"
 )
 
-// SpannerHealthClient defines the subset of Spanner functionality needed for health checks.
-type SpannerHealthClient interface {
-	QuerySchemaVersion(ctx context.Context) (version int64, dirty bool, err error)
-}
+// SpannerHealthClient is an alias of SchemaVersionClient.
+type SpannerHealthClient = SchemaVersionClient
 
 type realSpannerHealthClient struct {
 	client *spanner.Client
@@ -63,12 +61,4 @@ func (c *realSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (versi
 	}
 
 	return versionVal.Int64, !dirtyVal.Valid || dirtyVal.Bool, nil
-}
-
-// Close closes the underlying Spanner client connection if non-nil.
-func (c *realSpannerHealthClient) Close() error {
-	if c.client != nil {
-		c.client.Close()
-	}
-	return nil
 }
