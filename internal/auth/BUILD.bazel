@@ -22,6 +22,7 @@ go_library(
         "auth.go",
         "authentication.go",
         "authorization.go",
+        "principal.go",
         "test_utils.go",
     ],
     importpath = "xmanager_cloud/internal/auth",
@@ -42,10 +43,13 @@ go_library(
 go_test(
     name = "auth_test",
     srcs = [
+        "acl_fixtures_test.go",
         "admission_test.go",
         "auth_test.go",
         "authentication_test.go",
         "authorization_test.go",
+        "principal_test.go",
+        "test_utils_test.go",
     ],
     embed = [":auth"],
     deps = [

@@ -157,6 +157,70 @@ func TestIsAuthorized_PrincipalTypes(t *testing.T) {
 	})
 }
 
+func TestIsAuthorized_CaseInsensitivePrincipals(t *testing.T) {
+	a := &Authorizer{}
+	ctx := context.Background()
+
+	testCases := []struct {
+		name      string
+		user      string
+		principal *xpb.XidAcls_Role
+		want      bool
+	}{
+		{"mixed-case user ACL, lowercase caller", "first.last@example.com", userRole("First.Last@Example.com"), true},
+		{"lowercase user ACL, mixed-case caller", "First.Last@Example.com", userRole("first.last@example.com"), true},
+		{"user ACL with whitespace", "user@example.com", userRole(" user@example.com "), true},
+		{"mixed-case service account ACL", "sa@project.iam.gserviceaccount.com", saRole("SA@Project.iam.gserviceaccount.com"), true},
+		{"mixed-case domain ACL", "user@example.com", domainRole("Example.COM"), true},
+		{"mixed-case caller domain", "user@EXAMPLE.com", domainRole("example.com"), true},
+		{"domain ACL with whitespace", "user@example.com", domainRole(" example.com "), true},
+		{"different user", "other@example.com", userRole("User@Example.com"), false},
+		{"different domain", "user@other.com", domainRole("Example.com"), false},
+		{"subdomain is not domain", "user@sub.example.com", domainRole("example.com"), false},
+		{"kelvin sign ACL does not match k", "kate@corp.com", userRole("\u212Aate@corp.com"), false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			acls := &xpb.XidAcls{Readers: []*xpb.XidAcls_Role{tc.principal}}
+			got, err := a.IsUserAuthorized(ctx, tc.user, acls, Reader)
+			if err != nil {
+				t.Fatalf("IsUserAuthorized(%q) returned unexpected error: %v", tc.user, err)
+			}
+			if got != tc.want {
+				t.Errorf("IsUserAuthorized(%q, %v, Reader) = %v, want %v", tc.user, tc.principal, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsUserInGroup_CaseInsensitiveCacheKey(t *testing.T) {
+	server, responses := NewTestServer()
+	defer server.Close()
+
+	a := NewTestAuthorizer(t, 10*time.Minute, 1*time.Minute, server)
+	ctx := context.Background()
+
+	responses.lookup["group@example.com"] = "groups/123"
+	responses.membership["groups/123:member@example.com"] = true
+
+	if _, err := a.isUserInGroup(ctx, "member@example.com", "group@example.com"); err != nil {
+		t.Fatalf("isUserInGroup() returned unexpected error: %v", err)
+	}
+	atomic.StoreInt64(&responses.apiCalls, 0)
+
+	isMember, err := a.isUserInGroup(ctx, "Member@Example.com", "Group@Example.com")
+	if err != nil {
+		t.Fatalf("isUserInGroup() returned unexpected error: %v", err)
+	}
+	if !isMember {
+		t.Errorf("isUserInGroup(mixed case) = false, want true from cache")
+	}
+	if calls := atomic.LoadInt64(&responses.apiCalls); calls != 0 {
+		t.Errorf("isUserInGroup(mixed case) made %d API calls, want 0 (cache hit)", calls)
+	}
+}
+
 func TestIsUserInGroup_CachingAndAPI(t *testing.T) {
 	server, responses := NewTestServer()
 	defer server.Close()

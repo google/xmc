@@ -32,16 +32,22 @@ import (
 var validate = idtoken.Validate
 
 // AuthenticateUserFromContext authenticates a user's identity from the context and then runs the
-// deployment admission check on it.
+// deployment admission check on it. The returned email is in canonical form (see canonicalEmail);
+// identities whose email is not a plain ASCII address are rejected as unauthenticated.
 func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
 	ident, err := a.resolveIdentity(ctx)
 	if err != nil {
 		return "", "", err
 	}
-	if err := a.admit(ctx, ident.email); err != nil {
+	email, err := canonicalEmail(ident.email)
+	if err != nil {
+		logging.Warn(ctx, "Rejecting identity with an unsupported email address", "error", err)
+		return "", "", fmt.Errorf("unsupported email address: %w", grpcerr.ErrUnauthenticated)
+	}
+	if err := a.admit(ctx, email); err != nil {
 		return "", "", err
 	}
-	return ident.email, ident.userID, nil
+	return email, ident.userID, nil
 }
 
 type authIdentity struct {
@@ -162,7 +168,8 @@ func (a *Authorizer) authenticateViaJWKS(ctx context.Context, jwt string) (*auth
 	}
 	userID := claims.Subject
 	if userID == "" {
-		userID = email
+		// Match the canonical email that AuthenticateUserFromContext returns.
+		userID = asciiLower(email)
 	}
 	logging.Info(ctx, "Authenticated request via JWKS", "email", email, "user_id", userID)
 	return &authIdentity{email: email, userID: userID}, nil
