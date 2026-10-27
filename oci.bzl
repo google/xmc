@@ -35,13 +35,17 @@ def dev_binary_guard_test(name, binary, expect_dev_binary = False):
         binary,
     )
     query = name + "_dev_binaries"
+    clauses = ["attr(name, '_dev$', $bins)"] + [
+        "attr(gotags, '\\b%s\\b', $bins)" % tag
+        for tag in _DEV_BUILD_TAGS
+    ]
     native.genquery(
         name = query,
-        expression = "let bins = kind(go_binary, deps({label})) in attr(name, '_dev$', $bins) + {tagged}".format(
+        expression = "let bins = kind(go_binary, deps({label})) in {clauses}".format(
             label = label,
-            tagged = " + ".join(["attr(gotags, '\\b%s\\b', $bins)" % tag for tag in _DEV_BUILD_TAGS]),
+            clauses = " + ".join(clauses),
         ),
-        scope = [binary],
+        scope = [label],
         testonly = True,
     )
     py_test(
