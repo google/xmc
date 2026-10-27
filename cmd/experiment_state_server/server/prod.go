@@ -23,17 +23,20 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/cloudidentity/v1beta1"
+	"google.golang.org/api/impersonate"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	dashboard_pb "xmanager_cloud/api/protos/dashboard"
 	apipb "xmanager_cloud/api/protos/experiment"
 	xidgrpcpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/cmd/experiment_state_server/artifactlifecycle"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/cmd/experiment_state_server/resumption"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	authz "xmanager_cloud/internal/auth"
 	commonhealth "xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/hypercomputeclient"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/keyreloader"
 	"xmanager_cloud/internal/storage"
@@ -264,6 +267,8 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	}
 	cleanups = append(cleanups, obsCleanup)
 
+	lifecycleRegistry := initArtifactLifecycleRegistry(ctx, cfg)
+
 	srv, err := New(Params{
 		Config:            cfg,
 		Storage:           storage,
@@ -271,18 +276,17 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 		XidClient:         xidClient,
 		WorkUnitActuator:  taskQueueClient,
 		ArtifactObservers: observers,
+		ArtifactLifecycle: lifecycleRegistry,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create server: %w", err)
 	}
 
-	if cfg.FeatureFlags.PauseSchedulingEnabled {
-		consumer, err := startResumptionConsumer(ctx, cfg, taskQueueClient, storage)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
-		}
-		cleanups = append(cleanups, consumer.Close)
+	consumerCleanups, err := initConsumers(ctx, cfg, storage, taskQueueClient, lifecycleRegistry)
+	if err != nil {
+		return nil, err
 	}
+	cleanups = append(cleanups, consumerCleanups...)
 
 	return &ProdServer{
 		Server:          srv,
@@ -296,6 +300,35 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	}, nil
 }
 
+func initArtifactLifecycleRegistry(ctx context.Context, cfg *config.Config) *artifactlifecycle.Registry {
+	if cfg == nil || !cfg.FeatureFlags.ArtifactLifecycleEnabled {
+		return artifactlifecycle.NewRegistry()
+	}
+	mlClient := initMLRunClient(ctx, cfg)
+	managedXprofRule := artifactlifecycle.NewManagedXprofRule(mlClient, cfg.MLRunProject, cfg.MLRunLocation)
+	return artifactlifecycle.NewRegistry(managedXprofRule)
+}
+
+func initConsumers(ctx context.Context, cfg *config.Config, storage storage.Storage, taskQueueClient resumption.TaskQueue, lifecycleRegistry *artifactlifecycle.Registry) ([]func() error, error) {
+	var cleanups []func() error
+	if cfg.FeatureFlags.PauseSchedulingEnabled {
+		consumer, err := startResumptionConsumer(ctx, cfg, taskQueueClient, storage)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
+		}
+		cleanups = append(cleanups, consumer.Close)
+	}
+
+	if cfg.FeatureFlags.ArtifactLifecycleEnabled && cfg.RedisAddr != "" {
+		consumer, err := startArtifactLifecycleConsumer(ctx, cfg, storage, lifecycleRegistry)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize artifact lifecycle consumer: %w", err)
+		}
+		cleanups = append(cleanups, consumer.Close)
+	}
+	return cleanups, nil
+}
+
 // startResumptionConsumer wires the resumption worker to the Redis trigger stream.
 // The Redis consumer also serves as the worker's ClaimExtender.
 func startResumptionConsumer(ctx context.Context, cfg *config.Config, taskQueue resumption.TaskQueue, storageClient storage.Storage) (*resumption.Consumer, error) {
@@ -305,4 +338,47 @@ func startResumptionConsumer(ctx context.Context, cfg *config.Config, taskQueue 
 	}
 	worker := resumption.NewResumptionWorker(storageClient, taskQueue, redisConsumer)
 	return resumption.StartConsumer(ctx, resumption.ConsumerConfig{Client: redisConsumer}, worker)
+}
+
+// startArtifactLifecycleConsumer wires the artifact lifecycle worker to the Redis trigger stream.
+func startArtifactLifecycleConsumer(ctx context.Context, cfg *config.Config, storageClient storage.Storage, registry *artifactlifecycle.Registry) (*artifactlifecycle.Consumer, error) {
+	worker := artifactlifecycle.NewWorker(storageClient, registry)
+	return artifactlifecycle.StartConsumer(ctx, artifactlifecycle.ConsumerConfig{
+		RedisAddr: cfg.RedisAddr,
+	}, worker)
+}
+
+func initMLRunClient(ctx context.Context, cfg *config.Config) artifactlifecycle.MLRunClient {
+	project := cfg.MLRunProject
+	if project == "" {
+		project = cfg.ProjectID
+	}
+	env := cfg.MLDiagnosticsEnvironment
+	if env == "" {
+		env = "prod"
+	}
+	location := cfg.MLRunLocation
+	if location == "" {
+		location = "us-central1"
+	}
+
+	var opts []hypercomputeclient.Option
+	if cfg.MLRunImpersonateSA != "" {
+		ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
+			TargetPrincipal: cfg.MLRunImpersonateSA,
+			Scopes:          []string{"https://www.googleapis.com/auth/cloud-platform"},
+		})
+		if err != nil {
+			logging.Error(ctx, "Failed to create impersonated token source for ESS MLRun client", "targetSA", cfg.MLRunImpersonateSA, "error", err)
+			return nil
+		}
+		opts = append(opts, hypercomputeclient.WithTokenSource(ts))
+	}
+
+	client, err := hypercomputeclient.NewControlPlaneClient(ctx, project, env, location, opts...)
+	if err != nil {
+		logging.Warn(ctx, "Failed to initialize ESS MLRun control plane client", "error", err)
+		return nil
+	}
+	return client
 }

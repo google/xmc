@@ -962,3 +962,145 @@ func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckNotifyWhenUpdate(t *testing.T) {
+	r := &Reconciler{}
+
+	// Case 1: JobSet initially has no annotations. Should record "" and return false.
+	js := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-jobset",
+		},
+		Spec: v1alpha2.JobSetSpec{
+			ReplicatedJobs: []v1alpha2.ReplicatedJob{{Replicas: 1}},
+		},
+		Status: v1alpha2.JobSetStatus{
+			ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Ready: 1, Active: 1}},
+		},
+	}
+	if r.checkNotifyWhenUpdate(js) {
+		t.Errorf("expected false for initial JobSet without notify-when annotation")
+	}
+
+	// Case 2: JobSet is patched with notify-when="STARTING.RUNNING". Should detect change from "" and return true.
+	js.Annotations = map[string]string{
+		constants.NotifyWhenAnnotation: "STARTING.RUNNING",
+	}
+	if !r.checkNotifyWhenUpdate(js) {
+		t.Errorf("expected true when notify-when is patched onto running JobSet")
+	}
+
+	// Case 3: Reconcile repeats without changes. Should return false.
+	if r.checkNotifyWhenUpdate(js) {
+		t.Errorf("expected false on repeated reconcile with identical notify-when annotation")
+	}
+
+	// Case 4: A new JobSet is seen for the first time with notify-when="STARTING.RUNNING" in running state.
+	// (e.g. reconciler restart or created with annotation). Should return true.
+	jsNew := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "new-jobset",
+			Annotations: map[string]string{
+				constants.NotifyWhenAnnotation: "STARTING.RUNNING",
+			},
+		},
+		Spec: v1alpha2.JobSetSpec{
+			ReplicatedJobs: []v1alpha2.ReplicatedJob{{Replicas: 1}},
+		},
+		Status: v1alpha2.JobSetStatus{
+			ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Ready: 1, Active: 1}},
+		},
+	}
+	if !r.checkNotifyWhenUpdate(jsNew) {
+		t.Errorf("expected true for first-seen JobSet matching notify-when")
+	}
+}
+
+func TestSyncJobSetStatus_ArtifactLifecycleFlagCoexistence(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = v1alpha2.AddToScheme(scheme)
+
+	makeJobSet := func() *v1alpha2.JobSet {
+		js := withManagedXprofEnvs(&v1alpha2.JobSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "test-jobset",
+				Labels: map[string]string{
+					constants.ExperimentIDLabel: "10",
+					constants.WorkUnitIDLabel:   "20",
+					constants.ExecutionIDLabel:  "30",
+				},
+				Annotations: map[string]string{
+					constants.NotifyWhenAnnotation: "STARTING.RUNNING",
+				},
+			},
+		})
+		js.Spec.ReplicatedJobs[0].Replicas = 1
+		js.Status = v1alpha2.JobSetStatus{
+			ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Ready: 1, Active: 1}},
+		}
+		return js
+	}
+
+	t.Run("flag false calls legacy syncMLRun and skips ForceNotify", func(t *testing.T) {
+		js := makeJobSet()
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(js).Build()
+		store := &mockStorageUpdater{
+			fetchRes: &spb.WorkUnitExecution{Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_RUNNING}},
+		}
+		batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: time.Hour, MaxParallelExperiments: 1}, store)
+		mlRun := &mockMLRunCreator{retRes: map[string]any{"name": "projects/p/locations/l/machineLearningRuns/run-1"}}
+
+		r, err := NewReconciler(Params{
+			Client:                   fakeClient,
+			Scheme:                   scheme,
+			Batcher:                  batcher,
+			Project:                  "test-proj",
+			Location:                 "us-central1",
+			ClusterName:              "test-cluster",
+			Storage:                  store,
+			MLRunClient:              mlRun,
+			ArtifactLifecycleEnabled: false,
+		})
+		if err != nil {
+			t.Fatalf("NewReconciler() error = %v", err)
+		}
+		if _, err := r.syncJobSetStatus(t.Context(), js); err != nil {
+			t.Fatalf("syncJobSetStatus() error = %v", err)
+		}
+		if mlRun.createCalls != 1 {
+			t.Errorf("legacy syncMLRun createCalls = %d, want 1", mlRun.createCalls)
+		}
+	})
+
+	t.Run("flag true skips legacy syncMLRun and evaluates checkNotifyWhenUpdate", func(t *testing.T) {
+		js := makeJobSet()
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(js).Build()
+		store := &mockStorageUpdater{}
+		batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: time.Hour, MaxParallelExperiments: 1}, store)
+		mlRun := &mockMLRunCreator{}
+
+		r, err := NewReconciler(Params{
+			Client:                   fakeClient,
+			Scheme:                   scheme,
+			Batcher:                  batcher,
+			Project:                  "test-proj",
+			Location:                 "us-central1",
+			ClusterName:              "test-cluster",
+			Storage:                  store,
+			MLRunClient:              mlRun,
+			ArtifactLifecycleEnabled: true,
+		})
+		if err != nil {
+			t.Fatalf("NewReconciler() error = %v", err)
+		}
+		if _, err := r.syncJobSetStatus(t.Context(), js); err != nil {
+			t.Fatalf("syncJobSetStatus() error = %v", err)
+		}
+		if mlRun.createCalls != 0 {
+			t.Errorf("legacy syncMLRun createCalls = %d, want 0 when ArtifactLifecycleEnabled is true", mlRun.createCalls)
+		}
+	})
+}

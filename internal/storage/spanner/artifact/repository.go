@@ -26,11 +26,28 @@ import (
 	"xmanager_cloud/internal/storage/spanner/schema/artifactschema"
 )
 
-var _ storage.ArtifactStore = (*Repository)(nil)
+var (
+	_ storage.ArtifactStore        = (*Repository)(nil)
+	_ storage.ArtifactTxRepository = (*TxRepository)(nil)
+)
 
 type spannerTransaction interface {
 	ReadRow(ctx context.Context, table string, key spanner.Key, columns []string) (*spanner.Row, error)
 	Query(ctx context.Context, stmt spanner.Statement) *spanner.RowIterator
+}
+
+// TxRepository manages transactional persistence for artifact entities in Cloud Spanner.
+type TxRepository struct {
+	*Repository
+	tx *spanner.ReadWriteTransaction
+}
+
+// WithTx returns a wrapper bound to the given read-write transaction.
+func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
+	return &TxRepository{
+		Repository: r,
+		tx:         tx,
+	}
 }
 
 // Repository manages persistence for artifact entities in Cloud Spanner.

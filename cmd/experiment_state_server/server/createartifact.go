@@ -24,6 +24,7 @@ import (
 	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -131,6 +132,11 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *msgpb.CreateA
 		}
 	}
 
+	// 6.3. If created for a WorkUnit, synchronize notify-when annotation on the live JobSet.
+	if parentWID != 0 {
+		h.syncWorkUnitNotifyWhen(ctx, parentXID, parentWID)
+	}
+
 	// 7. Return the successful response.
 	logging.Info(ctx, "Created artifact")
 	return retArtifact, nil
@@ -169,4 +175,31 @@ func (h *ArtifactHandler) fillManagedXprofDefaults(ctx context.Context, artifact
 	}
 	validator.DefaultManagedXprofMetadata(mx, exp.GetTitle(), wid)
 	return nil
+}
+
+// syncWorkUnitNotifyWhen computes the required notify-when annotation for the work unit
+// and asynchronously dispatches an UpdateAction to the Actuator to stamp it on the live JobSet.
+func (h *ArtifactHandler) syncWorkUnitNotifyWhen(ctx context.Context, xid, wid int64) {
+	if h.artifactLifecycle == nil || h.actuator == nil {
+		return
+	}
+	notifyWhen := h.requiredNotifyWhen(ctx, validator.ConstructWorkUnitName(xid, wid))
+	if notifyWhen == "" {
+		return
+	}
+
+	wu, err := h.storage.FetchWorkUnit(ctx, xid, wid)
+	if err != nil {
+		logging.Warn(ctx, "Failed to fetch work unit for notify_when synchronization", "wid", wid, "error", err)
+		return
+	}
+	cur := wu.GetCurrentWorkUnitExecution()
+	if cur == nil {
+		return
+	}
+
+	action := client.UpdateNotifyWhenAction(notifyWhen)
+	if err := h.actuator.EnqueueWorkUnitTask(ctx, cur.GetName(), wu, action, ""); err != nil {
+		logging.Warn(ctx, "Failed to enqueue notify_when update task", "wid", wid, "error", err)
+	}
 }

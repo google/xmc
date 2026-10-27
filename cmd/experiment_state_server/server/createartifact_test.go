@@ -28,6 +28,7 @@ import (
 
 	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/cmd/experiment_state_server/artifactlifecycle"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	"xmanager_cloud/internal/auth"
@@ -547,5 +548,51 @@ func TestCreateArtifact_ManagedXprofDefaults(t *testing.T) {
 				t.Errorf("RunGroup = %q, want %q", mx.GetRunGroup(), tc.wantRunGroup)
 			}
 		})
+	}
+}
+
+func TestCreateArtifact_SyncsNotifyWhen(t *testing.T) {
+	ctx := context.Background()
+	server, fakeActuator := createExperimentStateServer(ctx, t)
+	server.ArtifactLifecycle().Register(artifactlifecycle.NewManagedXprofRule(nil, "test-proj", "us-central1"))
+	exp := mustCreateExperiment(ctx, t, server, nil)
+	xid, err := validator.ValidateExperimentName(exp.GetName())
+	if err != nil {
+		t.Fatalf("ValidateExperimentName failed: %v", err)
+	}
+	mustCreateWorkUnit(ctx, t, server, exp.GetName(), 1, nil)
+	wuName := validator.ConstructWorkUnitName(xid, 1)
+
+	initialTaskCount := len(fakeActuator.EnqueuedTasks)
+
+	// Create ManagedXprof artifact for the work unit
+	artifact := &msgpb.Artifact{
+		Payload: &msgpb.ArtifactPayload{
+			Type: &msgpb.ArtifactPayload_ManagedXprof{
+				ManagedXprof: &msgpb.ManagedXprofArtifact{},
+			},
+		},
+	}
+	req := &msgpb.CreateArtifactRequest{
+		Parent:   wuName,
+		Artifact: artifact,
+	}
+
+	_, err = server.CreateArtifact(ctx, req)
+	if err != nil {
+		t.Fatalf("CreateArtifact() returned an unexpected error: %v", err)
+	}
+
+	if len(fakeActuator.EnqueuedTasks) != initialTaskCount+1 {
+		t.Fatalf("Expected %d tasks enqueued, got %d", initialTaskCount+1, len(fakeActuator.EnqueuedTasks))
+	}
+
+	lastTask := fakeActuator.EnqueuedTasks[len(fakeActuator.EnqueuedTasks)-1]
+	updateAct := lastTask.Action.GetUpdate()
+	if updateAct == nil {
+		t.Fatalf("Expected UpdateAction, got %v", lastTask.Action)
+	}
+	if updateAct.GetNotifyWhen() != "STARTING.RUNNING.COMPLETED.FAILED.STOPPED" {
+		t.Errorf("NotifyWhen = %q, want %q", updateAct.GetNotifyWhen(), "STARTING.RUNNING.COMPLETED.FAILED.STOPPED")
 	}
 }

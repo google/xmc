@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
@@ -228,7 +229,7 @@ func (c *Client) CreateWorkUnit(ctx context.Context, payload *actuatortaskpb.Act
 			ExperimentPriority: act.GetExperimentPriority(),
 		}
 
-		err := c.createJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), act.GetAuthor(), payload.GetCreateTime().AsTime(), priorities)
+		err := c.createJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), act.GetAuthor(), payload.GetCreateTime().AsTime(), priorities, act.GetNotifyWhen())
 		if err != nil && apierrors.IsAlreadyExists(err) {
 			if vErr := c.verifyDuplicateJobSet(ctx, payload); vErr != nil {
 				return vErr
@@ -260,7 +261,7 @@ func (c *Client) RestartWorkUnit(ctx context.Context, payload *actuatortaskpb.Ac
 			WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
 			ExperimentPriority: act.GetExperimentPriority(),
 		}
-		return c.restartJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), act.GetAuthor(), payload.GetCreateTime().AsTime(), priorities)
+		return c.restartJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), act.GetAuthor(), payload.GetCreateTime().AsTime(), priorities, act.GetNotifyWhen())
 	})
 }
 
@@ -269,19 +270,30 @@ func (c *Client) Clientset() kubernetes.Interface {
 	return c.clientset
 }
 
-// UpdateWorkUnit updates a WorkUnit in Kubernetes. Currently only updates the kueue priority of the
-// corresponding JobSet.
+// UpdateWorkUnit updates a WorkUnit in Kubernetes.
 func (c *Client) UpdateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
 	ctx = logging.WithWorkUnitExecutionName(ctx, payload.GetTarget())
 	ctx = logging.WithOperationName(ctx, payload.GetMetadata().GetOperationName())
 
-	priorities := Priorities{
-		WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
-		ExperimentPriority: payload.GetAction().GetUpdate().GetExperimentPriority(),
+	update := payload.GetAction().GetUpdate()
+	paths := update.GetUpdateMask().GetPaths()
+
+	if slices.Contains(paths, "notify_when") || update.GetNotifyWhen() != "" {
+		if err := c.updateJobSetNotifyWhen(ctx, payload.GetWorkUnit(), payload.GetTarget(), update.GetNotifyWhen()); err != nil {
+			logging.Warn(ctx, "Failed to update JobSet notify-when for target", "target", payload.GetTarget(), "error", err)
+			return err
+		}
 	}
-	if err := c.updateJobSetPriority(ctx, payload.GetTarget(), priorities); err != nil {
-		logging.Warn(ctx, "Failed to update JobSet priority for target", "target", payload.GetTarget(), "error", err)
-		return fmt.Errorf("failed to update JobSet priority for target %q: %w", payload.GetTarget(), err)
+
+	if len(paths) == 0 || slices.Contains(paths, "priority") {
+		priorities := Priorities{
+			WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
+			ExperimentPriority: update.GetExperimentPriority(),
+		}
+		if err := c.updateJobSetPriority(ctx, payload.GetTarget(), priorities); err != nil {
+			logging.Warn(ctx, "Failed to update JobSet priority for target", "target", payload.GetTarget(), "error", err)
+			return fmt.Errorf("failed to update JobSet priority for target %q: %w", payload.GetTarget(), err)
+		}
 	}
 	return nil
 }

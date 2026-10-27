@@ -83,6 +83,7 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 			StatusHistory:  s.StatusHistoryRepository.WithTx(spannerTx),
 			PauseState:     s.pauseStateRepository.WithTx(spannerTx),
 			PausedTasks:    s.pausedTaskRepository.WithTx(spannerTx),
+			Artifacts:      s.ArtifactRepository.WithTx(spannerTx),
 		}
 		return fn(txCtx, tx)
 	})

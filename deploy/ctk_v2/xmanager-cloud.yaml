@@ -81,6 +81,7 @@ vars:
   health_scheduling_resume_batch_size: 100
   health_scheduling_resume_max_backlog: 500
   pause_scheduling_enabled: true
+  artifact_lifecycle_enabled: false
   # SHA-256 of the deploy/helm chart contents, recorded in the umbrella Helm release description.
   # Terraform does not detect template-only chart changes; a changed hash forces a real Helm upgrade
   # so removed templates are pruned. Set automatically by tools/dev_env; optional elsewhere.
@@ -492,6 +493,9 @@ deployment_groups:
         type: auto
       - name: featureFlags.pause_scheduling_enabled
         value: $(vars.pause_scheduling_enabled)
+        type: auto
+      - name: featureFlags.artifact_lifecycle_enabled
+        value: $(vars.artifact_lifecycle_enabled)
         type: auto
       - name: redisAddr
         value: "$(redis.redis_host):$(redis.redis_port)"

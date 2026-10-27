@@ -17,6 +17,9 @@ package constants
 import "time"
 
 const (
+	// NotifyWhenAnnotation is the annotation used to filter WorkUnitExecution state transitions.
+	NotifyWhenAnnotation = "xmc.google.com/notify-when"
+
 	// AuthorAnnotation is the annotation used to identify the author of a JobSet.
 	AuthorAnnotation = "xmc.google.com/author"
 
@@ -123,6 +126,14 @@ const (
 	RedisResumeStream = "xmc-scheduling-resume-stream"
 	// RedisESSGroup is the name of the Redis consumer group for ESS resumption workers.
 	RedisESSGroup = "ess-group"
+	// RedisArtifactLifecycleStream is the name of the Redis stream used for Reconciler -> ESS artifact lifecycle events.
+	RedisArtifactLifecycleStream = "xmc-artifact-lifecycle-stream"
+	// RedisESSArtifactLifecycleGroup is the name of the Redis consumer group for ESS artifact lifecycle workers.
+	RedisESSArtifactLifecycleGroup = "xmc-ess-artifact-lifecycle-group"
+	// ESSArtifactLifecycleWorkerID is the prefix for the ID of the ESS artifact lifecycle worker.
+	ESSArtifactLifecycleWorkerID = "ess-artifact-lifecycle"
+	// ESSArtifactLifecycleCleanupWorkerID is the prefix for the ID of the ESS artifact lifecycle cleanup worker.
+	ESSArtifactLifecycleCleanupWorkerID = "ess-artifact-lifecycle-cleanup"
 	// ESSResumptionWorkerID is the prefix for the ID of the ESS resumption worker.
 	ESSResumptionWorkerID = "ess-resumption-worker"
 	// ESSResumptionCleanupWorkerID is the prefix for the ID of the ESS resumption cleanup worker.

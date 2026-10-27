@@ -217,6 +217,17 @@ func TestJobSetPredicate_Update(t *testing.T) {
 			want: true,
 		},
 		{
+			name:   "NotifyWhen annotation added",
+			oldObj: baseJobSet,
+			newObj: mutateJobSet(baseJobSet, func(js *v1alpha2.JobSet) {
+				if js.Annotations == nil {
+					js.Annotations = make(map[string]string)
+				}
+				js.Annotations[constants.NotifyWhenAnnotation] = "STARTING.RUNNING"
+			}),
+			want: true,
+		},
+		{
 			name:   "ResourceVersion is the same",
 			oldObj: baseJobSet,
 			newObj: mutateJobSet(baseJobSet, func(js *v1alpha2.JobSet) { js.ResourceVersion = "1"; js.Spec.Suspend = ptr.To(true) }),

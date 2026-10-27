@@ -24,8 +24,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
 	"xmanager_cloud/cmd/reconciler/shared"
+	"xmanager_cloud/internal/hypercomputeclient"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
 )

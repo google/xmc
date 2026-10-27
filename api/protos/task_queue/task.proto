@@ -21,6 +21,7 @@ import "google/api/field_behavior.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
 import "xmanager_cloud/experiment_state_server/proto/priority.proto";
+import "xmanager_cloud/experiment_state_server/proto/status.proto";
 import "xmanager_cloud/experiment_state_server/proto/work_unit.proto";
 
 // ActuatorPayload is the structured, versioned message sent via Cloud Tasks
@@ -97,6 +98,8 @@ message CreateAction {
   Priority experiment_priority = 1 [(google.api.field_behavior) = REQUIRED];
   // The author of the experiment.
   string author = 2 [(google.api.field_behavior) = REQUIRED];
+  // Dot-separated list of target execution states to notify (e.g. "STARTING.RUNNING.COMPLETED.FAILED.STOPPED").
+  string notify_when = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message DeleteAction {}
@@ -108,14 +111,45 @@ message RestartAction {
   Priority experiment_priority = 1 [(google.api.field_behavior) = REQUIRED];
   // The author of the experiment.
   string author = 2 [(google.api.field_behavior) = REQUIRED];
+  // Dot-separated list of target execution states to notify.
+  string notify_when = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message UpdateAction {
   // Mask for the fields to update. Supported fields are:
   // - priority
+  // - notify_when
   google.protobuf.FieldMask update_mask = 1
       [(google.api.field_behavior) = REQUIRED];
   // The experiment priority to update to. If priority is not in the update
   // mask, this field will be ignored.
   Priority experiment_priority = 2 [(google.api.field_behavior) = OPTIONAL];
+  // Dot-separated list of target execution states to notify.
+  string notify_when = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// ArtifactLifecycleEvent is emitted by the Reconciler to Redis when a WorkUnitExecution
+// state transition matches the xmc.google.com/notify-when annotation.
+message ArtifactLifecycleEvent {
+  int64 experiment_id = 1 [(google.api.field_behavior) = REQUIRED];
+  int64 work_unit_id = 2 [(google.api.field_behavior) = REQUIRED];
+  int64 work_unit_execution_id = 3 [(google.api.field_behavior) = REQUIRED];
+  WorkUnitStatus.WorkUnitState old_state = 4 [(google.api.field_behavior) = OPTIONAL];
+  WorkUnitStatus.WorkUnitState new_state = 5 [(google.api.field_behavior) = REQUIRED];
+
+  // Extensible runtime payload carrying JobSet context without coupling Spanner schema to specific artifacts.
+  oneof payload {
+    JobSetRuntimeContext job_set_runtime_context = 6;
+  }
+}
+
+// JobSetRuntimeContext carries Kubernetes JobSet runtime metadata for lifecycle rules.
+message JobSetRuntimeContext {
+  google.protobuf.Timestamp creation_time = 1 [(google.api.field_behavior) = OPTIONAL];
+  map<string, string> environment_variables = 2 [(google.api.field_behavior) = OPTIONAL];
+  map<string, string> labels = 3 [(google.api.field_behavior) = OPTIONAL];
+  map<string, string> annotations = 4 [(google.api.field_behavior) = OPTIONAL];
+  string cluster = 5 [(google.api.field_behavior) = OPTIONAL];
+  string namespace = 6 [(google.api.field_behavior) = OPTIONAL];
+  string job_set_name = 7 [(google.api.field_behavior) = OPTIONAL];
 }

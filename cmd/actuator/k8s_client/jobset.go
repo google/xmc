@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
@@ -55,11 +56,11 @@ var (
 	}
 )
 
-func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target, author string, operationTime time.Time, priorities Priorities) error {
+func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target, author string, operationTime time.Time, priorities Priorities, notifyWhen ...string) error {
 	ctx = logging.WithWorkUnitExecutionName(ctx, target)
 	namespace := getNamespaceFromWorkUnit(workUnit)
 
-	jobSet, err := c.constructJobSet(ctx, workUnit, target, author, namespace, operationTime, priorities)
+	jobSet, err := c.constructJobSet(ctx, workUnit, target, author, namespace, operationTime, priorities, notifyWhen...)
 	if err != nil {
 		logging.Warn(ctx, "Failed to construct JobSet manifest", "error", err)
 		return fmt.Errorf("failed to construct JobSet manifest: %w", err)
@@ -183,7 +184,7 @@ func (c *Client) waitForJobSetDeletion(ctx context.Context, namespace, jobSetNam
 	return nil
 }
 
-func (c *Client) restartJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target, author string, operationTime time.Time, priorities Priorities) error {
+func (c *Client) restartJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target, author string, operationTime time.Time, priorities Priorities, notifyWhen ...string) error {
 	ctx = logging.WithWorkUnitExecutionName(ctx, target)
 
 	logging.Info(ctx, "Restart JobSet", "target", target)
@@ -207,7 +208,7 @@ func (c *Client) restartJobSet(ctx context.Context, workUnit *esspb.WorkUnit, ta
 	newTarget := workUnit.GetCurrentWorkUnitExecution().GetName()
 	ensureQueueName(workUnit, namespace)
 
-	if err := c.createJobSet(ctx, workUnit, newTarget, author, operationTime, priorities); err != nil {
+	if err := c.createJobSet(ctx, workUnit, newTarget, author, operationTime, priorities, notifyWhen...); err != nil {
 		return fmt.Errorf("failed to create JobSet %q in Kubernetes during restart: %w", buildJobSetName(target), err)
 	}
 	logging.Info(ctx, "Restarted JobSet", "target", target)
@@ -263,6 +264,41 @@ func (c *Client) updateJobSetPriority(ctx context.Context, target string, priori
 		return fmt.Errorf("failed to patch JobSet %q in namespace %q: %w", jobSetName, namespace, err)
 	}
 	logging.Info(ctx, "Updated JobSet priority", "namespace", namespace, "priorityClassName", priorityClassName)
+	return nil
+}
+
+func (c *Client) updateJobSetNotifyWhen(ctx context.Context, workUnit *esspb.WorkUnit, target, notifyWhen string) error {
+	ctx = logging.WithWorkUnitExecutionName(ctx, target)
+	logging.Info(ctx, "Update JobSet notify-when annotation", "target", target, "notifyWhen", notifyWhen)
+
+	jobSetName := buildJobSetName(target)
+	if jobSetName == "" {
+		return fmt.Errorf("failed to generate jobset name for target %q", target)
+	}
+	ctx = logging.WithJobSetName(ctx, jobSetName, nil)
+
+	namespace, err := c.getNamespaceFromWorkUnitWithFallback(ctx, workUnit, target)
+	if err != nil {
+		return err
+	}
+
+	patchPayload := map[string]any{
+		"metadata": map[string]any{
+			"annotations": map[string]string{
+				constants.NotifyWhenAnnotation: notifyWhen,
+			},
+		},
+	}
+	patchBytes, err := json.Marshal(patchPayload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal notify-when patch payload for jobset %q: %w", jobSetName, err)
+	}
+
+	if _, err := c.dynamicClient.Resource(JobSetGVR).Namespace(namespace).Patch(ctx, jobSetName, types.MergePatchType, patchBytes, metav1.PatchOptions{}); err != nil {
+		logging.Warn(ctx, "Failed to patch JobSet notify-when annotation", "namespace", namespace, "error", err)
+		return err
+	}
+	logging.Info(ctx, "Updated JobSet notify-when annotation", "namespace", namespace, "notifyWhen", notifyWhen)
 	return nil
 }
 

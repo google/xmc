@@ -19,6 +19,7 @@ import (
 
 	"xmanager_cloud/cmd/actuator/k8s_client"
 	"xmanager_cloud/internal/configutil"
+	"xmanager_cloud/internal/featureflags"
 )
 
 // Config holds the configuration for the Reconciler.
@@ -39,6 +40,8 @@ type Config struct {
 	MLRunImpersonateSA               string
 	MetricsPort                      int
 	ReconciliationTimeout            time.Duration
+	RedisAddr                        string
+	FeatureFlags                     featureflags.Flags
 }
 
 // Flags and ConfigMap configurations.
@@ -60,6 +63,7 @@ var (
 	mlRunImpersonateSA               string
 	metricsPort                      int
 	reconciliationTimeout            time.Duration
+	redisAddr                        string
 )
 
 // init runs when the package is imported. It defines CLI flags and loads ConfigMaps.
@@ -74,6 +78,7 @@ func init() {
 	flag.StringVar(&mlRunLocation, "mlrun_location", "", "Optional target location for the Hypercompute Cluster ML Run API (defaults to cluster location).")
 	flag.StringVar(&mlRunImpersonateSA, "mlrun_impersonate_sa", "", "Optional service account to impersonate for the Hypercompute Cluster ML Run API.")
 	flag.IntVar(&metricsPort, "metrics_port", 8082, "The port on which the reconciler serves Prometheus metrics.")
+	flag.StringVar(&redisAddr, "redis_addr", "", "Redis address for lifecycle event publishing.")
 	registerConfigs()
 }
 
@@ -91,6 +96,7 @@ func registerConfigs() {
 	configutil.StringEnv(&mlRunImpersonateSA, "mlrun_impersonate_sa", "")
 	configutil.IntEnv(&metricsPort, "metrics_port", 8082)
 	configutil.DurationEnv(&reconciliationTimeout, "reconciliation_timeout", 2*time.Minute)
+	configutil.StringEnv(&redisAddr, "redis_addr", "")
 }
 
 // Load returns a Config struct populated with values from ConfigMaps and parsed flags.
@@ -115,5 +121,7 @@ func Load() Config {
 		MLRunImpersonateSA:               mlRunImpersonateSA,
 		MetricsPort:                      metricsPort,
 		ReconciliationTimeout:            reconciliationTimeout,
+		RedisAddr:                        redisAddr,
+		FeatureFlags:                     featureflags.Load(),
 	}
 }

@@ -1019,6 +1019,10 @@ func TestConvertJobSetToWorkUnitExecutionUpdate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			time := time.Now()
 
+			if tc.want != nil && tc.want.RuntimeContext == nil {
+				tc.want.RuntimeContext = ExtractJobSetRuntimeContext(tc.jobSet, "test-cluster")
+			}
+
 			got := ConvertJobSetToWorkUnitExecutionUpdate(t.Context(), tc.jobSet, tc.wid, tc.eid, "test-project", "test-location", "test-cluster", tc.podErrorMsg, tc.startupWarningMsg)
 			if diff := cmp.Diff(tc.want, got, protocmp.Transform(), protocmp.IgnoreFields(&spb.StructuredMessage{}, "create_time"), protocmp.IgnoreFields(&spb.WorkUnitStatus{}, "state_update_time")); diff != "" {
 				t.Errorf("ConvertJobSetToWorkUnitExecutionUpdate() returned diff (-want +got):\n%s", diff)

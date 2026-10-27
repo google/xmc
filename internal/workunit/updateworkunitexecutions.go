@@ -35,6 +35,18 @@ import (
 	"xmanager_cloud/internal/validator"
 )
 
+// StateTransition records the old and new state of a work unit execution during an update.
+type StateTransition struct {
+	OldState essmsgpb.WorkUnitStatus_WorkUnitState
+	NewState essmsgpb.WorkUnitStatus_WorkUnitState
+}
+
+type updateExecutionsResult struct {
+	updatedExecutions map[int64]*essmsgpb.WorkUnitExecution
+	transitions       map[int64]StateTransition
+	exp               *essmsgpb.Experiment
+}
+
 // Updater orchestrates work unit execution updates across storage repositories.
 type Updater struct {
 	txRunner storage.TransactionRunner
@@ -50,11 +62,18 @@ func NewUpdater(txRunner storage.TransactionRunner) *Updater {
 // If any referenced work unit does not exist, nothing is written and the error wraps a
 // *storage.WorkUnitNotFoundError listing every missing WID.
 func (u *Updater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
+	execs, _, err := u.UpdateWorkUnitExecutionsWithTransitions(ctx, xid, updates)
+	return execs, err
+}
+
+// UpdateWorkUnitExecutionsWithTransitions updates the executions of a work unit and returns both the
+// canonical executions and the committed StateTransition for each updated WorkUnit.
+func (u *Updater) UpdateWorkUnitExecutionsWithTransitions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, map[int64]StateTransition, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	logging.Info(ctx, "Update work unit executions", "updates", updates)
 
 	if len(updates) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	for _, update := range updates {
@@ -62,21 +81,20 @@ func (u *Updater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updat
 		logging.Info(ctx, "Process work unit execution update", "update", update.WorkUnitExecution)
 	}
 
-	var updatedExecutions map[int64]*essmsgpb.WorkUnitExecution
-	var exp *essmsgpb.Experiment
+	var res updateExecutionsResult
 	err := u.txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		var err error
-		updatedExecutions, exp, err = updateWorkUnitExecutionsInTxn(ctx, tx, xid, updates)
+		res, err = updateWorkUnitExecutionsInTxn(ctx, tx, xid, updates)
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	logging.Info(ctx, "Updated work unit executions", "updatedExecutions", updatedExecutions)
-	logging.Info(ctx, "Updated Experiment", "exp", exp)
+	logging.Info(ctx, "Updated work unit executions", "updatedExecutions", res.updatedExecutions)
+	logging.Info(ctx, "Updated Experiment", "exp", res.exp)
 
-	return updatedExecutions, nil
+	return res.updatedExecutions, res.transitions, nil
 }
 
 // UpdateWorkUnitExecutionsInTx updates the executions of a work unit using the bound read-write
@@ -84,18 +102,27 @@ func (u *Updater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updat
 // status denormalization as Updater.UpdateWorkUnitExecutions, but the writes only take effect
 // when the caller's transaction commits.
 func UpdateWorkUnitExecutionsInTx(ctx context.Context, tx *storage.Transaction, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
+	execs, _, err := UpdateWorkUnitExecutionsInTxWithTransitions(ctx, tx, xid, updates)
+	return execs, err
+}
+
+// UpdateWorkUnitExecutionsInTxWithTransitions updates executions within tx and returns state transitions.
+func UpdateWorkUnitExecutionsInTxWithTransitions(ctx context.Context, tx *storage.Transaction, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, map[int64]StateTransition, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	if len(updates) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	updatedExecutions, _, err := updateWorkUnitExecutionsInTxn(ctx, tx, xid, updates)
-	return updatedExecutions, err
+	res, err := updateWorkUnitExecutionsInTxn(ctx, tx, xid, updates)
+	if err != nil {
+		return nil, nil, err
+	}
+	return res.updatedExecutions, res.transitions, nil
 }
 
 // updateWorkUnitExecutionsInTxn applies the updates within tx and returns the canonical
-// executions and the experiment read within the transaction.
-func updateWorkUnitExecutionsInTxn(ctx context.Context, tx *storage.Transaction, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, *essmsgpb.Experiment, error) {
+// executions, state transitions, and the experiment read within the transaction.
+func updateWorkUnitExecutionsInTxn(ctx context.Context, tx *storage.Transaction, xid int64, updates []*storage.WorkUnitExecutionUpdate) (updateExecutionsResult, error) {
 	wids := make([]int64, len(updates))
 	for i, update := range updates {
 		wids[i] = update.WID
@@ -105,7 +132,7 @@ func updateWorkUnitExecutionsInTxn(ctx context.Context, tx *storage.Transaction,
 	// duration of the transaction using the `FOR UPDATE` hint.
 	workUnits, err := tx.WorkUnits.FetchUpdatingWorkUnits(ctx, xid, wids)
 	if err != nil {
-		return nil, nil, err
+		return updateExecutionsResult{}, err
 	}
 
 	// 1.1. Process the rows and build a map of WorkUnitExecutions keyed by WorkUnitId.
@@ -129,34 +156,66 @@ func updateWorkUnitExecutionsInTxn(ctx context.Context, tx *storage.Transaction,
 
 	executionDeltas, err := processExecutionUpdates(ctx, tx, xid, workUnits, updatedExecutions, updates)
 	if err != nil {
-		return nil, nil, err
+		return updateExecutionsResult{}, err
 	}
 
 	// 2.1. Update the database with the processed updates.
+	if err := persistUpdatedExecutions(ctx, tx, xid, originalExecutions, updatedExecutions); err != nil {
+		return updateExecutionsResult{}, err
+	}
+
+	exp, err := updateExperimentFromExecutions(ctx, tx, xid, executionDeltas, updatedExecutions)
+	if err != nil {
+		return updateExecutionsResult{}, err
+	}
+
+	transitions := computeStateTransitions(originalExecutions, updatedExecutions)
+
+	return updateExecutionsResult{
+		updatedExecutions: updatedExecutions,
+		transitions:       transitions,
+		exp:               exp,
+	}, nil
+}
+
+func persistUpdatedExecutions(ctx context.Context, tx *storage.Transaction, xid int64, originalExecutions, updatedExecutions map[int64]*essmsgpb.WorkUnitExecution) error {
 	for wid, execution := range updatedExecutions {
 		_, _, eid, err := validator.ValidateWorkUnitExecutionName(execution.GetName())
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to validate work unit execution name %q: %w", execution.GetName(), err)
+			return fmt.Errorf("failed to validate work unit execution name %q: %w", execution.GetName(), err)
 		}
 		if eid == 0 {
-			return nil, nil, fmt.Errorf("invalid eid 0 from work unit execution name %q: %w", execution.GetName(), grpcerr.ErrInternal)
+			return fmt.Errorf("invalid eid 0 from work unit execution name %q: %w", execution.GetName(), grpcerr.ErrInternal)
 		}
 
 		ctx := logging.WithWorkUnitExecutionName(ctx, execution.GetName())
 		protoDiff := diff.Diff(prototext.Format(originalExecutions[wid]), prototext.Format(execution))
 
 		if err := tx.WorkUnits.UpdateCurrentWorkUnitExecution(ctx, xid, wid, eid, execution); err != nil {
-			return nil, nil, fmt.Errorf("failed to update current work unit execution: %w", err)
+			return fmt.Errorf("failed to update current work unit execution: %w", err)
 		}
 		logging.Info(ctx, fmt.Sprintf("Updated work unit execution: %s", protoDiff), "execution", execution)
 	}
+	return nil
+}
 
-	exp, err := updateExperimentFromExecutions(ctx, tx, xid, executionDeltas, updatedExecutions)
-	if err != nil {
-		return nil, nil, err
+func computeStateTransitions(originalExecutions, updatedExecutions map[int64]*essmsgpb.WorkUnitExecution) map[int64]StateTransition {
+	transitions := make(map[int64]StateTransition, len(updatedExecutions))
+	for wid, newExec := range updatedExecutions {
+		var oldState essmsgpb.WorkUnitStatus_WorkUnitState
+		if orig, ok := originalExecutions[wid]; ok && orig.GetStatus() != nil {
+			oldState = orig.GetStatus().GetState()
+		}
+		var newState essmsgpb.WorkUnitStatus_WorkUnitState
+		if newExec.GetStatus() != nil {
+			newState = newExec.GetStatus().GetState()
+		}
+		transitions[wid] = StateTransition{
+			OldState: oldState,
+			NewState: newState,
+		}
 	}
-
-	return updatedExecutions, exp, nil
+	return transitions
 }
 
 func processExecutionUpdates(ctx context.Context, tx *storage.Transaction, xid int64, workUnits map[int64]*essmsgpb.WorkUnit, updatedExecutions map[int64]*essmsgpb.WorkUnitExecution, updates []*storage.WorkUnitExecutionUpdate) ([]*state.WorkUnitStateDelta, error) {

@@ -21,3 +21,4 @@ metadata:
     {{- include "xmanager-cloud.labels" . | nindent 4 }}
 data:
   XMC_PAUSE_SCHEDULING_ENABLED: {{ .Values.featureFlags.pause_scheduling_enabled | quote }}
+  XMC_ARTIFACT_LIFECYCLE_ENABLED: {{ .Values.featureFlags.artifact_lifecycle_enabled | quote }}

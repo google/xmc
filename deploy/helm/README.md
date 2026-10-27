@@ -33,7 +33,8 @@ global:
 isDevEnvironment: false    # Set to true for local development / KinD clusters
 
 featureFlags:
-  pause_scheduling_enabled: true  # Enable global workload scheduling pause (XMC_PAUSE_SCHEDULING_ENABLED)
+  pause_scheduling_enabled: true    # Enable global workload scheduling pause (XMC_PAUSE_SCHEDULING_ENABLED)
+  artifact_lifecycle_enabled: false # Enable ESS-driven artifact lifecycle management (XMC_ARTIFACT_LIFECYCLE_ENABLED)
 ```
 
 ### 2. Microservice Deployment Settings

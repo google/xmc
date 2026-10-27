@@ -216,16 +216,19 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 	}
 
 	cqCache := clusterqueue.NewNameCache()
-	mlRunProject := cfg.MLRunProject
-	if mlRunProject == "" {
-		mlRunProject = gceMeta.ProjectID
+	var mlRunClient jobset.MLRunCreator
+	if !cfg.FeatureFlags.ArtifactLifecycleEnabled {
+		mlRunProject := cfg.MLRunProject
+		if mlRunProject == "" {
+			mlRunProject = gceMeta.ProjectID
+		}
+		mlRunLocation := cfg.MLRunLocation
+		if mlRunLocation == "" {
+			mlRunLocation = gceMeta.Location
+		}
+		mlRunClient = jobset.NewInstrumentedMLRunCreator(
+			newMLRunCreator(ctx, mlRunProject, cfg.MldiagnosticsEnvironment, mlRunLocation, cfg.MLRunImpersonateSA))
 	}
-	mlRunLocation := cfg.MLRunLocation
-	if mlRunLocation == "" {
-		mlRunLocation = gceMeta.Location
-	}
-	mlRunClient := jobset.NewInstrumentedMLRunCreator(
-		newMLRunCreator(ctx, mlRunProject, cfg.MldiagnosticsEnvironment, mlRunLocation, cfg.MLRunImpersonateSA))
 
 	batcher, err := registerControllers(ctx, controllerRegistrationParams{
 		mgr:         ctrlMgr,

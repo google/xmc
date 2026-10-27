@@ -10,6 +10,7 @@ The **Experiment State Server (ESS)** is the central control plane service in XM
 - **gRPC & HTTP APIs**: Implements AIP-compliant APIs defined in `api/protos/experiment/` (`GetExperiment`, `FetchExperimentStatus`, `ListExperiments`, `CreateExperiment`, `UpdateExperiment`).
 - **Component Drift Evaluation**: Dynamically evaluates live component drift against locked snapshot generations on read endpoints, propagating warning banners to client consoles (see [Dynamic Drift Detection](#dynamic-drift-detection)).
 - **Paused Task Resumption (`resumption/`)**: When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled, runs a background consumer on `xmc-scheduling-resume-stream` (`ess-group`) that claims resumption triggers from the Health Service, fences concurrent workers via `PauseSchedulingState.ResumptionWorkerId`, filters obsolete/terminal tasks, and replays buffered `PausedTasks` back to `xmc-tasks-stream` with backlog throttling.
+- **Artifact Lifecycle Management (`artifactlifecycle/`)**: When `XMC_ARTIFACT_LIFECYCLE_ENABLED` is enabled, evaluates registered `LifecycleRule` implementations (`ManagedXprofRule`), derives selective `xmc.google.com/notify-when` JobSet annotations, and runs a background consumer on `xmc-artifact-lifecycle-stream` (`ess-artifact-lifecycle-group`) to synchronize external `MLRun` lifecycles and persist `xprof_url` directly on `Artifact` rows.
 - **Authentication & Authorization**: Integrates OAuth2/OIDC token verification and Google Cloud IAM validation (`auth_dev.go` / `auth_prod.go`).
 
 ---

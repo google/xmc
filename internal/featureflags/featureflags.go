@@ -22,12 +22,16 @@ import (
 const (
 	// PauseSchedulingFlagName is the configuration key name for the pause scheduling feature flag.
 	PauseSchedulingFlagName = "XMC_PAUSE_SCHEDULING_ENABLED"
+	// ArtifactLifecycleFlagName is the configuration key name for the ESS artifact lifecycle feature flag.
+	ArtifactLifecycleFlagName = "XMC_ARTIFACT_LIFECYCLE_ENABLED"
 )
 
 // Flags represents the global feature flags across XMC services.
 type Flags struct {
 	// PauseSchedulingEnabled toggles the global scheduling pause feature flag across Actuator, ESS, Health Service, and UI.
 	PauseSchedulingEnabled bool
+	// ArtifactLifecycleEnabled toggles ESS-driven artifact lifecycle management and edge-triggered Reconciler notifications.
+	ArtifactLifecycleEnabled bool
 }
 
 // Load initializes and returns a Flags instance populated from environment variables.
@@ -40,6 +44,7 @@ func Load() Flags {
 		defVal bool
 	}{
 		{&f.PauseSchedulingEnabled, PauseSchedulingFlagName, true},
+		{&f.ArtifactLifecycleEnabled, ArtifactLifecycleFlagName, false},
 	}
 
 	for _, flag := range flags {

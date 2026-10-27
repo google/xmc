@@ -16,13 +16,17 @@ package jobset
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/url"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	spb "xmanager_cloud/api/protos/experiment"
+	taskqueuepb "xmanager_cloud/api/protos/task_queue"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
 	"xmanager_cloud/internal/logging"
 	storagepkg "xmanager_cloud/internal/storage"
@@ -280,10 +284,18 @@ func ConvertJobSetToWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha
 		deferToExistingMessage = true
 	}
 
+	var notifyWhen string
+	if jobSet.Annotations != nil {
+		notifyWhen = jobSet.Annotations[constants.NotifyWhenAnnotation]
+	}
+	runtimeCtx := ExtractJobSetRuntimeContext(jobSet, clusterName)
+
 	return &storagepkg.WorkUnitExecutionUpdate{
 		WID:                    wid,
 		EID:                    eid,
 		DeferToExistingMessage: deferToExistingMessage,
+		NotifyWhen:             notifyWhen,
+		RuntimeContext:         runtimeCtx,
 		WorkUnitExecution: &spb.WorkUnitExecution{
 			Status: &spb.WorkUnitStatus{
 				State: state,
@@ -396,5 +408,37 @@ func setMLRunURL(update *storagepkg.WorkUnitExecutionUpdate, mlRunURL string) {
 	update.WorkUnitExecution.Metadata.MlrunUrl = mlRunURL
 	if update.UpdateMask != nil {
 		update.UpdateMask.Paths = append(update.UpdateMask.Paths, "metadata.mlrun_url")
+	}
+}
+
+// ExtractJobSetRuntimeContext extracts runtime snapshot metadata from a JobSet.
+func ExtractJobSetRuntimeContext(jobSet *v1alpha2.JobSet, clusterName string) *taskqueuepb.JobSetRuntimeContext {
+	if jobSet == nil {
+		return nil
+	}
+	var creationTime *timestamppb.Timestamp
+	if !jobSet.CreationTimestamp.IsZero() {
+		creationTime = timestamppb.New(jobSet.CreationTimestamp.Time)
+	}
+
+	envVars := make(map[string]string)
+	for _, rJob := range jobSet.Spec.ReplicatedJobs {
+		for _, container := range rJob.Template.Spec.Template.Spec.Containers {
+			for _, env := range container.Env {
+				if env.Name != "" && env.Value != "" {
+					envVars[env.Name] = env.Value
+				}
+			}
+		}
+	}
+
+	return &taskqueuepb.JobSetRuntimeContext{
+		CreationTime:         creationTime,
+		EnvironmentVariables: envVars,
+		Labels:               maps.Clone(jobSet.Labels),
+		Annotations:          maps.Clone(jobSet.Annotations),
+		Cluster:              proto.String(clusterName),
+		Namespace:            proto.String(jobSet.Namespace),
+		JobSetName:           proto.String(jobSet.Name),
 	}
 }

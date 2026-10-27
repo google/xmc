@@ -20,9 +20,11 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/protobuf/proto"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/api/protos/experiment"
+	taskqueuepb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/kubernetes/common/labels"
@@ -90,6 +93,8 @@ type Params struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
+	LifecycleNotifier        shared.LifecycleNotifier
+	ArtifactLifecycleEnabled bool
 }
 
 // Reconciler implements reconcile.Reconciler for JobSets.
@@ -106,6 +111,9 @@ type Reconciler struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
+	LifecycleNotifier        shared.LifecycleNotifier
+	ArtifactLifecycleEnabled bool
+	lastSeenNotifyWhen       sync.Map
 
 	// now returns the current time; injectable so tests can control the
 	// STOPPED-write retry budget.
@@ -136,6 +144,8 @@ func NewReconciler(p Params) (*Reconciler, error) {
 		StartupPodErrorCheckTime: p.StartupPodErrorCheckTime,
 		Storage:                  p.Storage,
 		MLRunClient:              p.MLRunClient,
+		LifecycleNotifier:        p.LifecycleNotifier,
+		ArtifactLifecycleEnabled: p.ArtifactLifecycleEnabled,
 		now:                      time.Now,
 	}, nil
 }
@@ -252,7 +262,12 @@ func (r *Reconciler) buildDeletionUpdate(ctx context.Context, jobSet *v1alpha2.J
 	case spb.WorkUnitStatus_COMPLETED, spb.WorkUnitStatus_FAILED:
 		return ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, "", "")
 	default:
-		return createStoppedUpdate(wid, eid)
+		update := createStoppedUpdate(wid, eid)
+		if jobSet.Annotations != nil {
+			update.NotifyWhen = jobSet.Annotations[constants.NotifyWhenAnnotation]
+		}
+		update.RuntimeContext = ExtractJobSetRuntimeContext(jobSet, r.ClusterName)
+		return update
 	}
 }
 
@@ -295,6 +310,24 @@ func (r *Reconciler) persistStoppedOnDelete(ctx context.Context, jobSet *v1alpha
 		return nil
 	}
 	logging.Debug(ctx, "Persisted terminal status for deleting JobSet", "namespace", jobSet.Namespace)
+	if r.LifecycleNotifier != nil && update != nil && update.WorkUnitExecution != nil && update.WorkUnitExecution.Status != nil {
+		stoppedState := update.WorkUnitExecution.Status.State
+		if shared.MatchesNotifyWhen(stoppedState, update.NotifyWhen) {
+			event := &taskqueuepb.ArtifactLifecycleEvent{
+				ExperimentId:        proto.Int64(xid),
+				WorkUnitId:          proto.Int64(wid),
+				WorkUnitExecutionId: proto.Int64(eid),
+				OldState:            spb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED.Enum(),
+				NewState:            stoppedState.Enum(),
+				Payload: &taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext{
+					JobSetRuntimeContext: update.RuntimeContext,
+				},
+			}
+			if notifyErr := r.LifecycleNotifier.NotifyLifecycleEvent(ctx, event); notifyErr != nil {
+				logging.Error(ctx, "Failed to publish artifact lifecycle event for stopped JobSet", "xid", xid, "wid", wid, "eid", eid, "error", notifyErr)
+			}
+		}
+	}
 	r.evictPendingJobSetUpdate(xid, wid, eid)
 	return nil
 }
@@ -339,6 +372,7 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 		return r.handlePatchError(ctx, jobSet, err)
 	}
 
+	r.lastSeenNotifyWhen.Delete(fmt.Sprintf("%s/%s", jobSet.Namespace, jobSet.Name))
 	logging.Debug(ctx, "Successfully patched finalizer from JobSet", "namespace", jobSet.Namespace)
 	return ctrl.Result{}, nil
 }
@@ -381,10 +415,13 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 		result, podErrorMsg, startupWarningMsg = checkRes.Result, checkRes.PodErrorMsg, checkRes.StartupWarningMsg
 	}
 
-	mlRunURL := r.syncMLRun(ctx, jobSet, xid, wid, eid)
-
 	update := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
-	setMLRunURL(update, mlRunURL)
+	if r.ArtifactLifecycleEnabled {
+		update.ForceNotify = r.checkNotifyWhenUpdate(jobSet)
+	} else {
+		mlRunURL := r.syncMLRun(ctx, jobSet, xid, wid, eid)
+		setMLRunURL(update, mlRunURL)
+	}
 	logging.Debug(ctx, "Successfully converted JobSet", "namespace", jobSet.Namespace)
 
 	updatesSentTotal.WithLabelValues().Inc()
@@ -393,6 +430,33 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
 
 	return result, nil
+}
+
+func (r *Reconciler) checkNotifyWhenUpdate(jobSet *v1alpha2.JobSet) bool {
+	if jobSet == nil {
+		return false
+	}
+	var currentNotifyWhen string
+	if jobSet.Annotations != nil {
+		currentNotifyWhen = jobSet.Annotations[constants.NotifyWhenAnnotation]
+	}
+	jobSetKey := fmt.Sprintf("%s/%s", jobSet.Namespace, jobSet.Name)
+	lastSeenVal, ok := r.lastSeenNotifyWhen.Load(jobSetKey)
+	r.lastSeenNotifyWhen.Store(jobSetKey, currentNotifyWhen)
+
+	if currentNotifyWhen == "" {
+		return false
+	}
+	curState := ToWorkUnitState(jobSet)
+	if !ok {
+		// First time seeing this JobSet with notify-when annotation set.
+		return shared.MatchesNotifyWhen(curState, currentNotifyWhen)
+	}
+	lastSeen, _ := lastSeenVal.(string)
+	if lastSeen == currentNotifyWhen {
+		return false
+	}
+	return shared.MatchesNotifyWhen(curState, currentNotifyWhen) && !shared.MatchesNotifyWhen(curState, lastSeen)
 }
 
 // SetupWithManager sets up the controller with the Manager.

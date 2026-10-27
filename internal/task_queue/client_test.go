@@ -724,3 +724,27 @@ func TestEnqueueResumedWorkUnitTask(t *testing.T) {
 		t.Errorf("Metadata mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestActionsWithNotifyWhen(t *testing.T) {
+	createAct := CreateAction(essmsgpb.Priority_HIGH, "test-user", "STARTING.RUNNING")
+	if createAct.GetCreate().GetNotifyWhen() != "STARTING.RUNNING" {
+		t.Errorf("CreateAction notify_when = %q, want %q", createAct.GetCreate().GetNotifyWhen(), "STARTING.RUNNING")
+	}
+
+	restartAct := RestartAction(essmsgpb.Priority_LOW, "test-user", "COMPLETED.FAILED")
+	if restartAct.GetRestart().GetNotifyWhen() != "COMPLETED.FAILED" {
+		t.Errorf("RestartAction notify_when = %q, want %q", restartAct.GetRestart().GetNotifyWhen(), "COMPLETED.FAILED")
+	}
+
+	updateAct := UpdateNotifyWhenAction("STARTING.RUNNING.COMPLETED")
+	upd := updateAct.GetUpdate()
+	if upd == nil {
+		t.Fatalf("UpdateAction is nil")
+	}
+	if upd.GetNotifyWhen() != "STARTING.RUNNING.COMPLETED" {
+		t.Errorf("UpdateAction notify_when = %q, want %q", upd.GetNotifyWhen(), "STARTING.RUNNING.COMPLETED")
+	}
+	if len(upd.GetUpdateMask().GetPaths()) != 1 || upd.GetUpdateMask().GetPaths()[0] != "notify_when" {
+		t.Errorf("UpdateAction update_mask paths = %v, want ['notify_when']", upd.GetUpdateMask().GetPaths())
+	}
+}

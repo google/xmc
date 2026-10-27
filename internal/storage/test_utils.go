@@ -157,6 +157,7 @@ type MockStorage struct {
 	ListArtifactsErr   error
 	UpdateArtifactErr  error
 	UpdateArtifactResp *essmsgpb.Artifact
+	LastArtifactUpdate *ArtifactUpdate
 	DeleteArtifactErr  error
 
 	FetchExperimentErr                error
@@ -236,9 +237,10 @@ type MockStorage struct {
 	PauseStateRepository   PauseStateRepository
 	PausedTaskRepository   PausedTaskRepository
 	CLILoginCodeRepository CLILoginCodeRepository
+	ArtifactTxRepository   ArtifactTxRepository
 	// Transaction optionally overrides Transaction.XIDs, Transaction.StatusMessages,
-	// Transaction.StatusHistory, Transaction.PauseState, and Transaction.PausedTasks
-	// passed to RunInTransaction callbacks; other fields are ignored.
+	// Transaction.StatusHistory, Transaction.PauseState, Transaction.PausedTasks,
+	// and Transaction.Artifacts passed to RunInTransaction callbacks; other fields are ignored.
 	Transaction *Transaction
 }
 
@@ -313,6 +315,7 @@ func (s *MockStorage) ListArtifacts(ctx context.Context, parent string, pageSize
 
 // UpdateArtifact mocks artifact updating.
 func (s *MockStorage) UpdateArtifact(ctx context.Context, update *ArtifactUpdate) (UpdatedArtifacts, error) {
+	s.LastArtifactUpdate = update
 	if s.UpdateArtifactErr != nil {
 		return UpdatedArtifacts{}, s.UpdateArtifactErr
 	}
@@ -403,6 +406,10 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 	if s.StatusHistoryTxRepository != nil {
 		statusHistTx = s.StatusHistoryTxRepository
 	}
+	artifactsTx := ArtifactTxRepository(s)
+	if s.ArtifactTxRepository != nil {
+		artifactsTx = s.ArtifactTxRepository
+	}
 	tx := &Transaction{
 		WorkUnits:      s,
 		Experiments:    s,
@@ -411,6 +418,7 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 		StatusHistory:  statusHistTx,
 		PauseState:     pauseStateTx,
 		PausedTasks:    pausedTaskTx,
+		Artifacts:      artifactsTx,
 	}
 	applyTransactionOverrides(tx, s.Transaction)
 	for attempt := 1; attempt < s.RunInTransactionAttempts; attempt++ {
@@ -439,6 +447,9 @@ func applyTransactionOverrides(tx, overrides *Transaction) {
 	}
 	if overrides.PausedTasks != nil {
 		tx.PausedTasks = overrides.PausedTasks
+	}
+	if overrides.Artifacts != nil {
+		tx.Artifacts = overrides.Artifacts
 	}
 }
 

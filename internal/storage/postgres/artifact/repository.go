@@ -39,6 +39,11 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{db: pgdb.FromPool(pool)}
 }
 
+// WithTx returns a transactional variant of the repository bound to the given transaction.
+func (r *Repository) WithTx(tx pgdb.DBTX) storage.ArtifactTxRepository {
+	return &Repository{db: tx}
+}
+
 // CreateArtifact creates a new artifact.
 func (r *Repository) CreateArtifact(ctx context.Context, artifact *essmsgpb.Artifact) (*essmsgpb.Artifact, error) {
 	return nil, status.Error(codes.Unimplemented, "postgres artifact store: CreateArtifact is not implemented")

@@ -151,7 +151,8 @@ func (h *WorkUnitHandler) enqueueWorkUnitOnCreation(ctx context.Context, xid, wi
 		return fmt.Errorf("failed to fetch experiment: experiment %d not found: %w", xid, grpcerr.ErrInternal)
 	}
 
-	err = h.actuator.EnqueueWorkUnitTask(ctx, newWorkUnit.GetCurrentWorkUnitExecution().GetName(), newWorkUnit, client.CreateAction(exp.GetPriority(), email), operation.GetName())
+	notifyWhen := h.requiredNotifyWhen(ctx, newWorkUnit.GetName())
+	err = h.actuator.EnqueueWorkUnitTask(ctx, newWorkUnit.GetCurrentWorkUnitExecution().GetName(), newWorkUnit, client.CreateAction(exp.GetPriority(), email, notifyWhen), operation.GetName())
 	if err != nil {
 		logging.Error(ctx, "Failed to enqueue work unit for scheduling", "name", newWorkUnit.GetName(), "error", err)
 		enqueueErr := err
