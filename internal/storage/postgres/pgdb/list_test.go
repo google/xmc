@@ -62,26 +62,32 @@ func TestList_ValidationAndQueryErrors(t *testing.T) {
 	ctx := t.Context()
 	identity := func(r itemRow) (int64, error) { return r.ID, nil }
 	cursor := func(id int64) (map[string]any, error) { return map[string]any{"id": id}, nil }
+	emptyQGen, err := querytools.NewQueryGenerator(nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("NewQueryGenerator(nil) failed: %v", err)
+	}
 
 	tests := []struct {
 		name      string
 		pageToken string
-		filter    string
-		orderBy   string
+		mutate    func(*liststatement.ListParams)
 		wantCode  codes.Code
 	}{
-		{name: "invalid filter syntax", filter: "id = = 1", wantCode: codes.InvalidArgument},
-		{name: "unclosed quote in filter", filter: `name = "unclosed`, wantCode: codes.InvalidArgument},
+		{name: "nil QueryGen", mutate: func(p *liststatement.ListParams) { p.QueryGen = nil }, wantCode: codes.FailedPrecondition},
+		{name: "empty QueryGen tables", mutate: func(p *liststatement.ListParams) { p.QueryGen = emptyQGen }, wantCode: codes.FailedPrecondition},
+		{name: "invalid filter syntax", mutate: func(p *liststatement.ListParams) { p.Filter = "id = = 1" }, wantCode: codes.InvalidArgument},
+		{name: "unclosed quote in filter", mutate: func(p *liststatement.ListParams) { p.Filter = `name = "unclosed` }, wantCode: codes.InvalidArgument},
 		{name: "invalid page token", pageToken: "not-valid-base64!!!", wantCode: codes.InvalidArgument},
-		{name: "invalid orderBy field", orderBy: "unknown_field", wantCode: codes.InvalidArgument},
+		{name: "invalid orderBy field", mutate: func(p *liststatement.ListParams) { p.OrderBy = "unknown_field" }, wantCode: codes.InvalidArgument},
 		{name: "nil DBTX", wantCode: codes.FailedPrecondition},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			params := newTestListParams(t)
-			params.Filter = tc.filter
-			params.OrderBy = tc.orderBy
+			if tc.mutate != nil {
+				tc.mutate(&params)
+			}
 			_, _, err := List(ctx, nil, "item", tc.pageToken, params, identity, cursor)
 			if got := status.Code(err); got != tc.wantCode {
 				t.Errorf("status.Code(err) = %v, want %v (err: %v)", got, tc.wantCode, err)

@@ -44,7 +44,7 @@ var (
 VALUES (@parentxid, @creator, @originatingsystem, @endpoint, @acls, @createtime, @updatetime)
 RETURNING Xid`)
 
-	selectXidSQL = safesql.New(`SELECT Xid, ParentXid, Creator, OriginatingSystem, Endpoint, Acls, CreateTime, UpdateTime FROM Xids WHERE Xid = $1`)
+	selectXidSQL = safesql.New(`SELECT Xid, ParentXid, Creator, OriginatingSystem, Acls, CreateTime, UpdateTime FROM Xids WHERE Xid = $1`)
 
 	// lockXidSQL locks the row with FOR NO KEY UPDATE so foreign-key FOR KEY SHARE checks do not conflict.
 	lockXidSQL = safesql.Concat(selectXidSQL, safesql.New(" FOR NO KEY UPDATE"))
