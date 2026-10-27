@@ -145,7 +145,7 @@
         "cmd/**",
         "sdks/python/**"
       ],
-      "verification_command": "git grep -E 'os\\.(Getenv|LookupEnv)\\(\"([A-Z0-9_]+)\"\\)' pkg/ internal/ cmd/"
+      "verification_command": "git grep -E '(os\\.(Getenv|LookupEnv)\\(\"[A-Z0-9_]+\"\\)|os\\.(environ\\.get|getenv)\\([\"\\''][A-Z0-9_]+[\"\\''][,)])' pkg/ internal/ cmd/ sdks/python/"
     },
     {
       "identifier_type": "Network Ports & Protocols",
@@ -178,7 +178,7 @@
       "source_patterns": [
         "api/protos/**/*.proto"
       ],
-      "verification_command": "git grep -E '^(service|rpc|message) ' api/protos/"
+      "verification_command": "git grep -E '^[[:space:]]*(service|rpc|message) ' api/protos/"
     },
     {
       "identifier_type": "Python SDK Methods & Signatures",
