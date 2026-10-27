@@ -418,6 +418,14 @@ type StatusHistoryTxRepository interface {
 	SaveWorkUnitStatusHistory(ctx context.Context, xid, wid int64, eid *int64, queueName string, prevState, newState *essmsgpb.WorkUnitStatus_WorkUnitState, resources map[string]int64, timestamp time.Time) error
 }
 
+// ArtifactTxRepository defines artifact operations scoped to a read-write transaction.
+type ArtifactTxRepository interface {
+	// FetchArtifact retrieves an artifact by its unique ID within the transaction.
+	FetchArtifact(ctx context.Context, aid int64) (*essmsgpb.Artifact, error)
+	// UpdateArtifact updates an artifact with the given update mask within the transaction.
+	UpdateArtifact(ctx context.Context, update *ArtifactUpdate) (UpdatedArtifacts, error)
+}
+
 // Transaction holds the domain repositories scoped to a single read-write transaction.
 type Transaction struct {
 	WorkUnits      WorkUnitTxRepository
@@ -427,6 +435,7 @@ type Transaction struct {
 	StatusHistory  StatusHistoryTxRepository
 	PauseState     PauseStateTxRepository
 	PausedTasks    PausedTaskTxRepository
+	Artifacts      ArtifactTxRepository
 }
 
 // TransactionRunner executes an operation within a read-write transaction.

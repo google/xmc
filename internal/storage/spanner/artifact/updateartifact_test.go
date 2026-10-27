@@ -155,3 +155,60 @@ func TestUpdateArtifact_EmptyMask(t *testing.T) {
 		t.Errorf("UpdateArtifact with empty mask returned error %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }
+
+func TestUpdateArtifact_InTransaction(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	s, _ := spanner.NewStorage(essClient)
+
+	xid := int64(123)
+	aid := int64(456)
+	spanner.CreateBlankExperiment(ctx, t, s, xid)
+	artifactProto := spanner.BlankArtifactProto(xid, aid)
+	createdArt := spanner.CreateAndStoreArtifact(ctx, t, s, artifactProto)
+
+	update := &storage.ArtifactUpdate{
+		AID: aid,
+		Artifact: &essmsgpb.Artifact{
+			Notes: "notes-from-txn",
+			Url:   &essmsgpb.Url{Url: "http://example.com/xprof"},
+		},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"notes", "url"}},
+	}
+
+	var res storage.UpdatedArtifacts
+	err := s.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+		fetched, err := tx.Artifacts.FetchArtifact(ctx, aid)
+		if err != nil {
+			return err
+		}
+		if fetched.GetName() != createdArt.GetName() {
+			t.Errorf("FetchArtifact in txn name = %q, want %q", fetched.GetName(), createdArt.GetName())
+		}
+
+		res, err = tx.Artifacts.UpdateArtifact(ctx, update)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("RunInTransaction failed: %v", err)
+	}
+
+	if res.Updated.GetNotes() != "notes-from-txn" {
+		t.Errorf("updated notes = %q, want %q", res.Updated.GetNotes(), "notes-from-txn")
+	}
+	if res.Updated.GetUrl().GetUrl() != "http://example.com/xprof" {
+		t.Errorf("updated url = %q, want http://example.com/xprof", res.Updated.GetUrl().GetUrl())
+	}
+
+	// Verify persistence outside transaction
+	gotArt, err := s.FetchArtifact(ctx, aid)
+	if err != nil {
+		t.Fatalf("FetchArtifact outside txn failed: %v", err)
+	}
+	if gotArt.GetNotes() != "notes-from-txn" {
+		t.Errorf("persisted notes = %q, want %q", gotArt.GetNotes(), "notes-from-txn")
+	}
+	if gotArt.GetUrl().GetUrl() != "http://example.com/xprof" {
+		t.Errorf("persisted url = %q, want http://example.com/xprof", gotArt.GetUrl().GetUrl())
+	}
+}

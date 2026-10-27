@@ -111,6 +111,7 @@ func (s *Storage) newTransaction(tx pgdb.DBTX) *storage.Transaction {
 		StatusHistory:  s.statusHistoryRepository.WithTx(tx),
 		PauseState:     s.pauseStateRepository.WithTx(tx),
 		PausedTasks:    s.pausedTaskRepository.WithTx(tx),
+		Artifacts:      s.artifactRepository.WithTx(tx),
 	}
 }
 
