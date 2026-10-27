@@ -19,6 +19,14 @@ internal/storage/{spanner,postgres}/
 └── Backend repositories, schemas, and migrations
 ```
 
+## Connection Settings (`dbconfig`)
+
+The Helm chart renders the `database.*` values into the `db-config` ConfigMap, which the XMC workloads load as environment variables. [`dbconfig.Load()`](dbconfig/dbconfig.go) reads `DB_BACKEND` and the selected backend's settings into one typed `Config`, and returns an error for an unknown backend instead of falling back to another backend:
+
+- `DB_BACKEND` selects `spanner` (the default) or `postgres`.
+- `Config.Spanner` carries `SPANNER_ESS_DATABASE`, `SPANNER_XID_DATABASE`, and `SPANNER_QUOTA_PROJECT_ID`.
+- `Config.Postgres` carries `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_ESS_DATABASE`, `POSTGRES_XID_DATABASE`, and `POSTGRES_SSLMODE` from `db-config`, plus the optional `POSTGRES_MAX_CONNS` environment override (`0` uses the driver default). Only the port (`5432`) and sslmode (`verify-full`) have defaults, and `EssDSN()` / `XidDSN()` fail when the host, the user or the database is not set. The password never goes into `db-config`: `dbconfig` reads it from `POSTGRES_PASSWORD_FILE` (preferred) or `POSTGRES_PASSWORD`.
+
 ## Schemas and Migrations
 
 Both Cloud Spanner and PostgreSQL maintain canonical full schemas (`schema/{ess,xid}-schema.sql`) and version-aligned SQL migrations (`migrations/{ess,xid}/`):
