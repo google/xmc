@@ -44,6 +44,7 @@ from tools.common.tool_utils import (  # noqa: E402
     log_info,
     log_success,
     run_command,
+    verify_helm_min_version,
 )
 from tools.dev_env.blueprint_compiler import compile_blueprint  # noqa: E402
 
@@ -103,6 +104,11 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help="Automatically run pending migrations if detected.",
     )
     parser.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument(
+        "--profile-values",
+        default=None,
+        help="Optional values YAML file passed to helm -f when deploying xmc-profile.",
+    )
 
     parsed = parser.parse_args(args)
 
@@ -146,6 +152,11 @@ def step_check(config: UpgradeConfig) -> None:
     for binary in ["gcloud", "kubectl", "helm", "bazel"]:
         if not shutil.which(binary):
             error_exit(f"Required CLI tool '{binary}' is not installed or not in PATH.")
+    if config.enable_components:
+        try:
+            verify_helm_min_version()
+        except (subprocess.CalledProcessError, RuntimeError, ValueError) as e:
+            error_exit(f"Failed Helm version check: {e}")
 
     gcluster_path = Path("./cluster-toolkit/gcluster")
     if not gcluster_path.is_file() or not os.access(gcluster_path, os.X_OK):
@@ -578,6 +589,8 @@ def run_upgrade(args: argparse.Namespace) -> None:
     config = load_config(args.config, run_migrations=args.run_migrations)
     if getattr(args, "enable_components", None) is not None:
         config = replace(config, enable_components=args.enable_components)
+    if getattr(args, "profile_values", None):
+        config = replace(config, profile_values=args.profile_values)
     run_pipeline(args, config, STEPS)
 
 

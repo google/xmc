@@ -435,6 +435,23 @@ class TestStepSubprocesses(unittest.TestCase):
             self.assertIn("xmc", cmd)
             self.assertIn("--timeout=180s", cmd)
 
+    def test_parse_args_profile_values(self):
+        parsed = upgrade_dev_env.parse_args(["--profile-values", "/tmp/pv.yaml"])
+        self.assertEqual(parsed.profile_values, "/tmp/pv.yaml")
+
+    @mock.patch(
+        "tools.dev_env.upgrade_dev_env.verify_helm_min_version",
+        side_effect=RuntimeError("Helm version must be >= 3.14.0"),
+    )
+    @mock.patch("shutil.which", return_value="/usr/bin/tool")
+    def test_step_check_fails_old_helm_when_components_enabled(self, _mock_which, _mock_helm):
+        from dataclasses import replace
+
+        cfg = replace(self.config, enable_components=True)
+        with self.assertRaises(SystemExit) as cm:
+            upgrade_dev_env.step_check(cfg)
+        self.assertEqual(cm.exception.code, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

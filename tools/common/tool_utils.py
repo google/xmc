@@ -42,6 +42,7 @@ class DeploymentConfig:
     domain_name: str | None = None
     enable_components: bool = False
     log_monitor_deployment_enabled: bool = False
+    profile_values: str | None = None
 
     @property
     def gke_cluster(self) -> str:
@@ -451,24 +452,48 @@ def build_and_push_images(config: DeploymentConfig) -> None:
     log_success("All XMC service container images compiled and pushed from current branch state.")
 
 
-def deploy_component_profile(config: DeploymentConfig) -> None:
+MIN_HELM_VERSION = "3.14.0"
+
+
+def parse_semver_prefix(raw: str) -> tuple[int, int, int]:
+    """Extracts a (major, minor, patch) integer tuple from a version string."""
+    parts = [int(p) for p in re.findall(r"\d+", raw)[:3]]
+    if len(parts) < 3:
+        raise ValueError(f"Could not parse semantic version from '{raw}'.")
+    return parts[0], parts[1], parts[2]
+
+
+def verify_helm_min_version(
+    min_version: str = MIN_HELM_VERSION,
+    *,
+    stream: TextIO | None = None,
+) -> str:
+    """Verifies the installed Helm CLI meets min_version (required for --reset-then-reuse-values)."""
+    out = run_command(
+        ["helm", "version", "--template={{.Version}}"],
+        capture_output=True,
+        log_cmd=False,
+        stream=stream,
+    ).stdout.strip()
+    if parse_semver_prefix(out) < parse_semver_prefix(min_version):
+        raise RuntimeError(f"Helm version must be >= {min_version} (found: {out}).")
+    return out
+
+
+def deploy_component_profile(
+    config: DeploymentConfig,
+    values_file: str | None = None,
+) -> None:
     """Deploys default XMC component profile (stable-2026a) when components are enabled."""
     if not config.enable_components:
         return
     ns = config.namespace or "xmc"
     chart = str(Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a")
+    effective_values = values_file if values_file is not None else config.profile_values
+    cmd = ["helm", "upgrade", "--install", "--reset-then-reuse-values", "xmc-profile", chart]
+    if effective_values:
+        cmd.extend(["-f", effective_values])
+    cmd.extend(["-n", ns, "--wait"])
     log_info(f"Deploying default component profile (stable-2026a) into namespace '{ns}'...")
-    run_command(
-        [
-            "helm",
-            "upgrade",
-            "--install",
-            "--reset-then-reuse-values",
-            "xmc-profile",
-            chart,
-            "-n",
-            ns,
-            "--wait",
-        ]
-    )
+    run_command(cmd)
     log_success("Default component profile (stable-2026a) deployed.")

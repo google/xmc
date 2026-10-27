@@ -1357,6 +1357,17 @@ image_tag: latest
         self.assertEqual(mock_run.call_count, 90)
         self.assertEqual(mock_sleep.call_count, 90)
 
+    @patch("tools.dev_env.deploy_dev_env.verify_helm_min_version", side_effect=RuntimeError("old"))
+    @patch("tools.dev_env.deploy_dev_env._check_terraform_version")
+    @patch("tools.dev_env.deploy_dev_env._verify_binaries")
+    def test_run_checks_helm_version_low_when_components_enabled(
+        self, _mock_bin, _mock_tf, _mock_helm
+    ):
+        cfg = replace(self.valid_config, enable_components=True)
+        with self.assertRaises(SystemExit) as cm:
+            deploy_dev_env.run_checks(cfg, self.dns_project, self.dns_zone)
+        self.assertEqual(cm.exception.code, 1)
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first_arg_ignored", "-v"])

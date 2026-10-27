@@ -36,9 +36,11 @@ from tools.common.tool_utils import (
     load_and_validate_config,
     log_info,
     parse_bool_flag,
+    parse_semver_prefix,
     parse_yaml_vars,
     run_command,
     run_tool,
+    verify_helm_min_version,
 )
 
 
@@ -591,6 +593,31 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         )
         self.assertTrue(cmd[5].endswith("deploy/profiles/stable-2026a"))
         self.assertEqual(cmd[6:], ["-n", "xmc", "--wait"])
+
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_with_values_file(self, mock_run):
+        cfg = replace(
+            self.base_config,
+            enable_components=True,
+            namespace="tenant-a",
+            profile_values="/tmp/profile-values.yaml",
+        )
+        deploy_component_profile(cfg)
+        cmd = mock_run.call_args[0][0]
+        self.assertEqual(cmd[6:], ["-f", "/tmp/profile-values.yaml", "-n", "tenant-a", "--wait"])
+
+    def test_parse_semver_prefix(self):
+        self.assertEqual(parse_semver_prefix("v3.14.2+g0a1b2c"), (3, 14, 2))
+        with self.assertRaises(ValueError):
+            parse_semver_prefix("invalid")
+
+    @patch("tools.common.tool_utils.run_command")
+    def test_verify_helm_min_version(self, mock_run):
+        mock_run.return_value = MagicMock(stdout="v3.15.0\n")
+        self.assertEqual(verify_helm_min_version(), "v3.15.0")
+        mock_run.return_value = MagicMock(stdout="v3.13.3\n")
+        with self.assertRaises(RuntimeError):
+            verify_helm_min_version()
 
 
 if __name__ == "__main__":
