@@ -368,19 +368,25 @@ func TestListStatusMessages_SameCreateTimePagination(t *testing.T) {
 	postgrestest.SeedExperiment(ctx, t, pool, testXID)
 
 	sameTime := time.Date(2026, time.April, 13, 12, 0, 0, 0, time.UTC)
-	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123", "SameTime One", sameTime))
-	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123", "SameTime Two", sameTime))
+	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123", "SameTime Exp", sameTime))
+	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123/workUnits/2", "SameTime WU2", sameTime))
+	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123/workUnits/1", "SameTime WU1", sameTime))
 
-	page1, token, err := repo.ListStatusMessages(ctx, "experiments/123", 1, "", "", "", 0)
-	if err != nil || len(page1) != 1 || token == "" {
-		t.Fatalf("ListStatusMessages(page 1) = (%d msgs, token %q, err %v), want (1, non-empty, nil)", len(page1), token, err)
+	var collected []string
+	pageToken := ""
+	for page := 1; page <= 3; page++ {
+		msgs, nextToken, err := repo.ListStatusMessages(ctx, "experiments/123", 1, pageToken, "", "", 0)
+		if err != nil || len(msgs) != 1 {
+			t.Fatalf("page %d = (%d msgs, err %v), want (1, nil)", page, len(msgs), err)
+		}
+		collected = append(collected, msgs[0].GetContent().GetUserFacingText())
+		if (page < 3) != (nextToken != "") {
+			t.Fatalf("page %d nextPageToken = %q, wantNonEmpty=%v", page, nextToken, page < 3)
+		}
+		pageToken = nextToken
 	}
-	page2, token2, err := repo.ListStatusMessages(ctx, "experiments/123", 1, token, "", "", 0)
-	if err != nil || len(page2) != 1 || token2 != "" {
-		t.Fatalf("ListStatusMessages(page 2) = (%d msgs, token %q, err %v), want (1, \"\", nil)", len(page2), token2, err)
-	}
-	if page1[0].GetName() == page2[0].GetName() {
-		t.Errorf("page 1 and page 2 returned identical message %q", page1[0].GetName())
+	if diff := cmp.Diff([]string{"SameTime Exp", "SameTime WU1", "SameTime WU2"}, collected); diff != "" {
+		t.Errorf("same-create_time keyset order mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -443,17 +449,6 @@ func TestExtractStatusMessageCursor(t *testing.T) {
 				},
 			},
 			wantWID: int64(456),
-		},
-		{
-			name: "work unit status message falls back to parent when name omits workUnits segment",
-			msg: &essmsgpb.StatusMessage{
-				Name: "experiments/123/statusMessages/10",
-				Content: &essmsgpb.StructuredMessage{
-					Parent:     "experiments/123/workUnits/789",
-					CreateTime: timestamppb.New(testTime),
-				},
-			},
-			wantWID: int64(789),
 		},
 		{
 			name:    "invalid status message name returns error",

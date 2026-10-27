@@ -46,6 +46,7 @@ go_test(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
         "@com_github_jackc_pgx_v5//pgtype",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_rpc//status",

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -105,10 +106,8 @@ func TestStatusMessageProtoAndRowRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("StatusMessageProtoToRow() failed: %v", err)
 			}
-			if row.Xid != tc.wantRow.Xid || row.WorkUnitID != tc.wantRow.WorkUnitID ||
-				row.MessageID != tc.wantRow.MessageID || row.ExecutionID != tc.wantRow.ExecutionID ||
-				!row.CreateTime.Equal(tc.wantRow.CreateTime) {
-				t.Errorf("StatusMessageProtoToRow() scalar fields = %+v, want %+v", row, tc.wantRow)
+			if diff := cmp.Diff(tc.wantRow, row, cmpopts.IgnoreFields(StatusMessageRow{}, "UserFacingURL", "PreviousMessage", "AuxiliaryInfo")); diff != "" {
+				t.Errorf("StatusMessageProtoToRow() row diff (-want +got):\n%s", diff)
 			}
 			if (tc.previousMsg == nil) != (row.PreviousMessage == nil) {
 				t.Errorf("row.PreviousMessage nil = %v, want %v", row.PreviousMessage == nil, tc.previousMsg == nil)

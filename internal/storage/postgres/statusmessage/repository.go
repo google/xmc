@@ -117,11 +117,6 @@ func ExtractStatusMessageCursor(msg *essmsgpb.StatusMessage) (map[string]any, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate status message name %q: %w", msg.GetName(), err)
 	}
-	if wid == 0 && msg.GetContent().GetParent() != "" {
-		if _, parentWID, err := validator.ValidateStatusMessageParent(msg.GetContent().GetParent()); err == nil {
-			wid = parentWID
-		}
-	}
 	var workUnitID any
 	if wid != 0 {
 		workUnitID = wid
