@@ -181,6 +181,43 @@ class DbConfigChartTest(unittest.TestCase):
                 changed = db_config_checksum(render_template(template, changed_values))
                 self.assertNotEqual(default, changed)
 
+    def test_legacy_service_configmap_keys_match_db_config(self) -> None:
+        """Deprecated per-service ConfigMap keys render the same values as db-config."""
+        scenarios = {
+            "default": {
+                "projectId": "my-project",
+                "environment": "dev",
+                "experimentStateServer.spannerDatabaseName": "",
+                "xidService.spannerDatabaseName": "",
+                "gcpServiceAccount": "sa@my-project.iam.gserviceaccount.com",
+            },
+            "overridden": {
+                "projectId": "my-project",
+                "environment": "dev",
+                "experimentStateServer.spannerDatabaseName": "projects/p/instances/i/databases/ess-v1",
+                "xidService.spannerDatabaseName": "projects/p/instances/i/databases/xid-v1",
+                "gcpServiceAccount": "sa@my-project.iam.gserviceaccount.com",
+            },
+        }
+        service_templates = (
+            ("templates/ess/configmap.yaml", "ess_spanner_database_name", "SPANNER_ESS_DATABASE", "ess_quota_project_id"),
+            ("templates/xid/configmap.yaml", "xid_spanner_database_name", "SPANNER_XID_DATABASE", "xid_quota_project_id"),
+            ("templates/actuator/configmap.yaml", "spanner_database_name", "SPANNER_ESS_DATABASE", "quota_project_id"),
+            ("templates/reconciler/configmap.yaml", "spanner_database_name", "SPANNER_ESS_DATABASE", "quota_project_id"),
+        )
+
+        for scenario_name, values in scenarios.items():
+            db_manifest = render_template(DB_CONFIG_TEMPLATE, values)
+            for template, legacy_db_key, db_config_key, legacy_quota_key in service_templates:
+                with self.subTest(scenario=scenario_name, template=template):
+                    svc_manifest = render_template(template, values)
+                    expected_db = re.search(rf"^\s*{db_config_key}: (.+)$", db_manifest, re.MULTILINE)
+                    expected_quota = re.search(r"^\s*SPANNER_QUOTA_PROJECT_ID: (.+)$", db_manifest, re.MULTILINE)
+                    self.assertIsNotNone(expected_db)
+                    self.assertIsNotNone(expected_quota)
+                    self.assertIn(f"{legacy_db_key}: {expected_db.group(1)}", svc_manifest)
+                    self.assertIn(f"{legacy_quota_key}: {expected_quota.group(1)}", svc_manifest)
+
 
 if __name__ == "__main__":
     unittest.main()
