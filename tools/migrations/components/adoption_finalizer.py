@@ -23,6 +23,7 @@ from tools.migrations.components.cluster_inspector import (
     fetch_live_resource,
     fetch_rendered_release_objects,
     validate_dns1123_namespace,
+    validate_helm_release,
 )
 
 _COMPONENT_NETPOL_NAME = "ingestion-gateway-network-policy"
@@ -108,7 +109,7 @@ def _compare_deployment_and_service(
     if l_ctrs[0].get("image") != r_ctrs[0].get("image"):
         raise HandledError("Adopted Deployment image drifts from rendered chart.", "Inspect.")
     l_args, r_args = list(l_ctrs[0].get("args") or []), list(r_ctrs[0].get("args") or [])
-    if set(l_args) != set(r_args) or "-enable_components=true" not in l_args:
+    if l_args != r_args or "-enable_components=true" not in l_args:
         raise HandledError("Adopted Deployment CLI args drift or lack -enable_components=true.", "")
     l_vols = {v.get("name") for v in (l_spec.get("volumes") or [])}
     r_vols = {v.get("name") for v in (r_spec.get("volumes") or [])}
@@ -203,7 +204,7 @@ def _assert_pod_healthy(pod: dict[str, Any]) -> None:
     name = (pod.get("metadata") or {}).get("name", "<unknown>")
     st = pod.get("status") or {}
     statuses = st.get("containerStatuses") or []
-    for cs in statuses:
+    for cs in (st.get("initContainerStatuses") or []) + statuses:
         reason = (((cs.get("state") or {}).get("waiting")) or {}).get("reason", "")
         if reason in _FATAL_WAIT_REASONS:
             raise HandledError(f"Pod {name} is in fatal waiting state '{reason}'.", "Check logs.")
@@ -225,10 +226,10 @@ def _strip_keep_and_cleanup_netpol(
     legacy_np = f"{release}-ingestion-gateway-network-policy"
     cleaned_np = False
     if fetch_live_resource("networkpolicy", _COMPONENT_NETPOL_NAME, ns, required=False):
-        del_cmd = ["kubectl", "delete", "networkpolicy", legacy_np, "-n", ns]
+        del_cmd = ["kubectl", "delete", "-n", ns, "--ignore-not-found=true", "--"]
         try:
             run_command(
-                [*del_cmd, "--ignore-not-found=true"],
+                [*del_cmd, "networkpolicy", legacy_np],
                 capture_output=True,
                 log_on_error=False,
                 stream=sys.stderr,
@@ -279,6 +280,7 @@ def finalize_adoption(
 ) -> dict[str, Any]:
     """Waits for Component Ready & rollout, checks zero drift, strips keep, and probes gateway."""
     validate_dns1123_namespace(ns)
+    validate_helm_release(release)
     if not skip_probe and not metrics_url:
         raise HandledError(
             "Metrics endpoint verification requires --metrics-url (or explicit --skip-probe).",

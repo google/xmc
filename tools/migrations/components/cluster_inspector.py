@@ -137,7 +137,7 @@ def helm_release_exists(release: str, namespace: str) -> bool:
 
 def fetch_helm_release_status(release: str, namespace: str) -> str:
     """Returns info.status (e.g. 'deployed') for a Helm release in namespace."""
-    cmd = ["helm", "status", release, "-n", namespace, "-o", "json"]
+    cmd = ["helm", "status", "-n", namespace, "-o", "json", "--", release]
     try:
         res = run_command(cmd, capture_output=True, log_on_error=False, stream=sys.stderr)
         data = json.loads(res.stdout or "{}")
@@ -170,7 +170,7 @@ def fetch_rendered_release_objects(
     release: str, namespace: str
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """Returns rendered objects for a Helm release keyed by (kind.lower(), metadata.name)."""
-    h_cmd = ["helm", "get", "manifest", release, "-n", namespace]
+    h_cmd = ["helm", "get", "manifest", "-n", namespace, "--", release]
     try:
         manifest = run_command(
             h_cmd, capture_output=True, log_on_error=False, stream=sys.stderr

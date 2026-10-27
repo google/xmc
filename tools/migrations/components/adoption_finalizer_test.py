@@ -170,6 +170,8 @@ class TestAdoptionFinalizer(unittest.TestCase):
         with self.assertRaises(HandledError):
             adoption_finalizer.finalize_adoption("xmc", "xmc", metrics_url="", skip_probe=False)
         with self.assertRaises(HandledError):
+            adoption_finalizer.finalize_adoption("-bad", "xmc", skip_probe=True)
+        with self.assertRaises(HandledError):
             adoption_finalizer._probe_metrics_endpoint("file:///etc/passwd", 0)
 
         # Empty active pods when expected_replicas > 0 fails closed.
@@ -191,22 +193,56 @@ class TestAdoptionFinalizer(unittest.TestCase):
         with self.assertRaises(HandledError):
             adoption_finalizer._verify_rollout_and_pods("xmc", 10, expected_replicas=1)
 
+        # Init container in fatal waiting state fails fast with fatal waiting reason.
+        init_fatal = json.dumps(
+            {
+                "items": [
+                    {
+                        "metadata": {"name": "p-init"},
+                        "status": {
+                            "phase": "Pending",
+                            "initContainerStatuses": [
+                                {"state": {"waiting": {"reason": "ImagePullBackOff"}}}
+                            ],
+                            "containerStatuses": [
+                                {"state": {"waiting": {"reason": "PodInitializing"}}}
+                            ],
+                        },
+                    }
+                ]
+            }
+        )
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=init_fatal),
+        ]
+        with self.assertRaises(HandledError) as ctx:
+            adoption_finalizer._verify_rollout_and_pods("xmc", 10, expected_replicas=1)
+        self.assertIn("fatal waiting state 'ImagePullBackOff'", ctx.exception.message)
+
     @patch("tools.migrations.components.adoption_finalizer.fetch_live_resource")
     @patch("tools.migrations.components.adoption_finalizer.fetch_rendered_release_objects")
     @patch(
         "tools.migrations.components.adoption_finalizer.fetch_helm_release_status",
         return_value="deployed",
     )
-    def test_drift_detection_catches_missing_enable_components_flag(
+    def test_drift_detection_catches_missing_or_reordered_cli_args(
         self, _mock_status: MagicMock, mock_rendered: MagicMock, mock_live: MagicMock
     ) -> None:
         objs = _rendered_objects()
         mock_rendered.return_value = objs
-        drifted_dep = json.loads(json.dumps(objs[("deployment", "ingestion-gateway-deployment")]))
-        drifted_dep["spec"]["template"]["spec"]["containers"][0]["args"] = ["-port=8080"]
-        mock_live.side_effect = [drifted_dep, objs[("service", "ingestion-gateway-service")]]
-        with self.assertRaises(HandledError):
-            adoption_finalizer._verify_adopted_objects_and_drift("xmc")
+        for drifted_args in (
+            ["-port=8080"],
+            ["-enable_components=true", "-port=8080"],
+            ["-port=8080", "-enable_components=true", "-port=8080"],
+        ):
+            drifted_dep = json.loads(
+                json.dumps(objs[("deployment", "ingestion-gateway-deployment")])
+            )
+            drifted_dep["spec"]["template"]["spec"]["containers"][0]["args"] = drifted_args
+            mock_live.side_effect = [drifted_dep, objs[("service", "ingestion-gateway-service")]]
+            with self.assertRaises(HandledError):
+                adoption_finalizer._verify_adopted_objects_and_drift("xmc")
 
 
 if __name__ == "__main__":

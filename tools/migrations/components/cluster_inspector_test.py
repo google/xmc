@@ -119,6 +119,10 @@ class TestClusterInspector(unittest.TestCase):
             cluster_inspector.fetch_helm_release_status("xmc-cmp-ingestion-gateway", "xmc"),
             "deployed",
         )
+        self.assertEqual(
+            mock_run.call_args[0][0],
+            ["helm", "status", "-n", "xmc", "-o", "json", "--", "xmc-cmp-ingestion-gateway"],
+        )
         stream = (
             '{"kind": "Deployment", "metadata": {"name": "ingestion-gateway-deployment"}}\n'
             '{"kind": "List", "items": [{"kind": "Service", "metadata": {"name": "s1"}}]}\n'
