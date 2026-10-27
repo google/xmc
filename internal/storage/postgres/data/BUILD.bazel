@@ -19,31 +19,39 @@ go_library(
     srcs = [
         "operation.go",
         "proto.go",
+        "xid.go",
     ],
     importpath = "xmanager_cloud/internal/storage/postgres/data",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//api/protos/xid:messages_go_proto",
         "//internal/validator",
         "@com_github_jackc_pgx_v5//:pgx",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
 go_test(
     name = "data_test",
-    srcs = ["operation_test.go"],
+    srcs = [
+        "operation_test.go",
+        "xid_test.go",
+    ],
     embed = [":data"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//api/protos/xid:messages_go_proto",
         "@com_github_google_go_cmp//cmp",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
