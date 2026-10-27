@@ -94,11 +94,7 @@
     {
       "name": "Examples & Workloads",
       "source_patterns": [
-        "examples/**",
-        "examples/**/launch.py",
-        "examples/**/worker.py",
-        "examples/**/worker.env",
-        "examples/**/Dockerfile"
+        "examples/**"
       ],
       "doc_patterns": [
         "examples/**/README.md",
@@ -108,8 +104,7 @@
     {
       "name": "Diagnostic, CI & Dev Tools",
       "source_patterns": [
-        "tools/**",
-        "tools/*.py"
+        "tools/**"
       ],
       "doc_patterns": [
         "tools/README.md",
