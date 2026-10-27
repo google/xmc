@@ -21,6 +21,7 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/components/v1alpha1",
+        "//internal/grpcerr",
         "//internal/storage",
         "//pkg/components/store",
         "@com_google_cloud_go_spanner//:spanner",

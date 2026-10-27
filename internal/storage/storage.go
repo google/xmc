@@ -379,7 +379,12 @@ type ComponentRepository interface {
 }
 
 // ComponentTxRepository defines component catalog operations scoped to a read-write transaction.
-type ComponentTxRepository = ComponentRepository
+type ComponentTxRepository interface {
+	// GetActiveComponent returns the non-deleted record of canonicalName with its active dependencies sorted by name.
+	GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
+	// GetComponentByID returns the non-deleted record of componentID with its active dependencies sorted by name.
+	GetComponentByID(ctx context.Context, componentID int64) (*store.ComponentRecord, error)
+}
 
 // ComponentStore exposes the repository accessor for component catalog persistence.
 type ComponentStore interface {

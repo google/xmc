@@ -92,7 +92,9 @@ type spannerQueryable interface {
 // SpannerStore provides a Cloud Spanner backed production implementation of Store.
 type SpannerStore struct {
 	client *spanner.Client
-	repo   *component.Repository
+	// TODO: Replace repo and the Spanner-specific component helpers with storage.Storage and
+	// RunInTransaction once the remaining Spanner reads and transactions move out of this store.
+	repo *component.Repository
 	// beforeIntentWrite, when non-nil, runs before SetComponentIntent falls back to its read-write
 	// transaction. Tests use it to count fallbacks and to inject concurrent writes.
 	beforeIntentWrite func()

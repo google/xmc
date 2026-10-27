@@ -17,6 +17,7 @@ package component
 import (
 	"context"
 	"errors"
+	"maps"
 	"testing"
 	"time"
 
@@ -141,4 +142,145 @@ func TestRepository_ReadsAndWithTx(t *testing.T) {
 			t.Fatalf("ReadWriteTransaction() failed: %v", err)
 		}
 	})
+}
+
+// componentRowColumns lists the columns of ComponentColumnsSQL in order.
+var componentRowColumns = []string{
+	"ComponentId", "Name", "ComponentClass", "ConfigProto", "AccessPayload", "State", "Generation", "ObservedGeneration",
+	"CreateTime", "UpdateTime", "SourceUid", "SourceGeneration", "SourceNamespace", "SourceClusterUid", "SourceEpoch", "SourceLastSeenTime",
+}
+
+var rowSpec = &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.2.0"}
+
+func mustMarshal(t *testing.T, m proto.Message) []byte {
+	t.Helper()
+	b, err := proto.Marshal(m)
+	if err != nil {
+		t.Fatalf("proto.Marshal(%T) failed: %v", m, err)
+	}
+	return b
+}
+
+// newComponentRow returns the Components row of an ENABLED component "app" with no status, observed
+// generation or owner, with the columns in set replaced.
+func newComponentRow(t *testing.T, set map[string]any) *spanner.Row {
+	t.Helper()
+	values := map[string]any{
+		"ComponentId": int64(7), "Name": "app", "ComponentClass": spanner.NullString{},
+		"ConfigProto":   mustMarshal(t, &componentspb.Component{Spec: rowSpec, Labels: map[string]string{"env": "prod"}}),
+		"AccessPayload": []byte(nil), "State": int64(componentspb.ComponentState_COMPONENT_STATE_ENABLED), "Generation": int64(1),
+		"ObservedGeneration": spanner.NullInt64{}, "CreateTime": baseTime, "UpdateTime": baseTime,
+		"SourceUid": spanner.NullString{}, "SourceGeneration": spanner.NullInt64{}, "SourceNamespace": spanner.NullString{},
+		"SourceClusterUid": spanner.NullString{}, "SourceEpoch": spanner.NullInt64{}, "SourceLastSeenTime": spanner.NullTime{},
+	}
+	maps.Copy(values, set)
+	vals := make([]any, len(componentRowColumns))
+	for i, col := range componentRowColumns {
+		vals[i] = values[col]
+	}
+	row, err := spanner.NewRow(componentRowColumns, vals)
+	if err != nil {
+		t.Fatalf("spanner.NewRow() failed: %v", err)
+	}
+	return row
+}
+
+func TestRowToComponentRecord(t *testing.T) {
+	// A bare ComponentSpec whose fields do not decode as a Component spec or labels, as old rows store.
+	legacySpec := &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN}
+	status := &componentspb.ComponentAccessStatus{State: componentspb.ComponentState_COMPONENT_STATE_ENABLED, ObservedGeneration: 1}
+	owner := &store.SourceOwner{UID: "uid-a", Generation: 3, Namespace: "xmc", ClusterUID: "cluster-a", Epoch: 2}
+	observedGen := int64(1)
+	deleteTime := baseTime
+	tests := []struct {
+		name    string
+		set     map[string]any
+		modify  func(*store.ComponentRecord)
+		wantErr bool
+	}{
+		{name: "component without status, observed generation or owner"},
+		{
+			name:   "legacy ComponentSpec config",
+			set:    map[string]any{"ConfigProto": mustMarshal(t, legacySpec)},
+			modify: func(r *store.ComponentRecord) { r.Spec, r.Labels = legacySpec, nil },
+		},
+		{name: "corrupt config", set: map[string]any{"ConfigProto": []byte{0xff}}, wantErr: true},
+		{
+			name:   "access status and observed generation",
+			set:    map[string]any{"AccessPayload": mustMarshal(t, status), "ObservedGeneration": spanner.NullInt64{Int64: 1, Valid: true}},
+			modify: func(r *store.ComponentRecord) { r.Status, r.ObservedGeneration = status, &observedGen },
+		},
+		{
+			name: "recorded owner",
+			set: map[string]any{
+				"SourceUid": spanner.NullString{StringVal: owner.UID, Valid: true}, "SourceGeneration": spanner.NullInt64{Int64: owner.Generation, Valid: true},
+				"SourceNamespace": spanner.NullString{StringVal: owner.Namespace, Valid: true}, "SourceClusterUid": spanner.NullString{StringVal: owner.ClusterUID, Valid: true},
+				"SourceEpoch": spanner.NullInt64{Int64: owner.Epoch, Valid: true}, "SourceLastSeenTime": spanner.NullTime{Time: baseTime, Valid: true},
+			},
+			modify: func(r *store.ComponentRecord) { r.Owner, r.SourceLastSeenTime = owner, baseTime },
+		},
+		{
+			name: "deleted record is deleted at its update time",
+			set:  map[string]any{"State": int64(componentspb.ComponentState_COMPONENT_STATE_DELETED)},
+			modify: func(r *store.ComponentRecord) {
+				r.State, r.DeleteTime = componentspb.ComponentState_COMPONENT_STATE_DELETED, &deleteTime
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := RowToComponentRecord(newComponentRow(t, tt.set))
+			if gotErr := err != nil; gotErr != tt.wantErr {
+				t.Fatalf("RowToComponentRecord() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			want := &store.ComponentRecord{
+				ComponentID: 7, Name: "app", Spec: rowSpec, Labels: map[string]string{"env": "prod"},
+				State: componentspb.ComponentState_COMPONENT_STATE_ENABLED, Generation: 1, CreateTime: baseTime, UpdateTime: baseTime,
+			}
+			if tt.modify != nil {
+				tt.modify(want)
+			}
+			want.Etag = store.GenerateEtag(want)
+			if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("RowToComponentRecord() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestRepository_WithReadOnlyTransaction reads through a repository bound to a read-only
+// transaction, as ResolveComponentSnapshot does.
+func TestRepository_WithReadOnlyTransaction(t *testing.T) {
+	ctx := context.Background()
+	_, client := emulator.Setup(ctx, t)
+	wantApp, _ := seedCatalog(t, client)
+	ro := client.ReadOnlyTransaction()
+	defer ro.Close()
+
+	got, err := NewRepository(client).WithTx(ro).GetComponentByID(ctx, wantApp.ComponentID)
+	if err != nil {
+		t.Fatalf("WithTx(ReadOnlyTransaction).GetComponentByID(%d) failed: %v", wantApp.ComponentID, err)
+	}
+	if diff := cmp.Diff(wantApp, got, protocmp.Transform()); diff != "" {
+		t.Errorf("WithTx(ReadOnlyTransaction).GetComponentByID(%d) mismatch (-want +got):\n%s", wantApp.ComponentID, diff)
+	}
+}
+
+// TestRepository_NilClientOrTransaction checks that a read without a client, or through WithTx
+// without a transaction, fails instead of dereferencing nil.
+func TestRepository_NilClientOrTransaction(t *testing.T) {
+	repos := map[string]interface {
+		GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
+	}{
+		"NewRepository(nil)": NewRepository(nil),
+		"WithTx(nil)":        NewRepository(nil).WithTx(nil),
+	}
+	for name, r := range repos {
+		if _, err := r.GetActiveComponent(context.Background(), "app"); err == nil {
+			t.Errorf("%s.GetActiveComponent() error = nil, want an error", name)
+		}
+	}
 }
