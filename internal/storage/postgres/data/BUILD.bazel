@@ -20,6 +20,7 @@ go_library(
         "operation.go",
         "proto.go",
         "statusmessage.go",
+        "workunit.go",
         "xid.go",
     ],
     importpath = "xmanager_cloud/internal/storage/postgres/data",
@@ -43,6 +44,7 @@ go_test(
     srcs = [
         "operation_test.go",
         "statusmessage_test.go",
+        "workunit_test.go",
         "xid_test.go",
     ],
     embed = [":data"],
