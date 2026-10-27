@@ -594,8 +594,9 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         self.assertTrue(cmd[5].endswith("deploy/profiles/stable-2026a"))
         self.assertEqual(cmd[6:], ["-n", "xmc", "--wait"])
 
+    @patch("tools.common.tool_utils.Path.is_file", return_value=True)
     @patch("tools.common.tool_utils.run_command")
-    def test_deploy_component_profile_with_values_file(self, mock_run):
+    def test_deploy_component_profile_with_values_file(self, mock_run, mock_is_file):
         cfg = replace(
             self.base_config,
             enable_components=True,
@@ -603,11 +604,28 @@ class TestComponentProfileAndFlags(unittest.TestCase):
             profile_values="/tmp/profile-values.yaml",
         )
         deploy_component_profile(cfg)
+        mock_is_file.assert_called_once()
         cmd = mock_run.call_args[0][0]
         self.assertEqual(cmd[6:], ["-f", "/tmp/profile-values.yaml", "-n", "tenant-a", "--wait"])
 
+    @patch("tools.common.tool_utils.Path.is_file", return_value=False)
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_missing_values_file(self, mock_run, _mock_is_file):
+        cfg = replace(
+            self.base_config,
+            enable_components=True,
+            profile_values="/tmp/missing-profile-values.yaml",
+        )
+        with self.assertRaises(FileNotFoundError):
+            deploy_component_profile(cfg)
+        mock_run.assert_not_called()
+
     def test_parse_semver_prefix(self):
         self.assertEqual(parse_semver_prefix("v3.14.2+g0a1b2c"), (3, 14, 2))
+        self.assertEqual(parse_semver_prefix("v3.14"), (3, 14, 0))
+        self.assertEqual(parse_semver_prefix("3"), (3, 0, 0))
+        self.assertEqual(parse_semver_prefix("v3.14-rc1"), (3, 14, 0))
+        self.assertEqual(parse_semver_prefix("v3.14+build2"), (3, 14, 0))
         with self.assertRaises(ValueError):
             parse_semver_prefix("invalid")
 

@@ -17,7 +17,7 @@ The following fields are structural constants encapsulated in [`templates/compon
 | `metadata.labels["app.kubernetes.io/name"]` | `"clickhouse"` | Standard Kubernetes application label. |
 | `spec.componentType` | `COMPONENT_TYPE_CUSTOM_3P_WRAPPER` | Hardcoded as a 3P Wrapper Component (`ClickHouse` is always an external/third-party database service, never a 1P XMC microservice). |
 | `spec.componentClass` | `"analytical-db"` | Canonical service class used by XMC workloads to discover the analytical database. |
-| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.1"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
+| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.0"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
 
 ---
 
@@ -114,8 +114,8 @@ spec:
   enabled: true
   componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
   componentClass: "analytical-db"
-  version: "0.1.1"
-  chartVersion: "0.1.1"
+  version: "0.1.0"
+  chartVersion: "0.1.0"
   deletionProtection: true
   deletionPolicy: "Delete"
   parameters:
@@ -135,7 +135,7 @@ spec:
 
 ## 4. Downstream Consumer Resolution (`dashboard-service` & `pkg/clickhouse/componentconfig`)
 
-When `enable_components` is `true`, `dashboard-service` resolves ClickHouse connection options from the `clickhouse` `Component` CR via [`pkg/clickhouse/componentconfig`](../../../../pkg/clickhouse/componentconfig/resolver.go):
+When `enable_components` is `true`, `dashboard-service` resolves ClickHouse connection options from the `clickhouse` `Component` CR via [`pkg/clickhouse/componentconfig`](../../../../../pkg/clickhouse/componentconfig/resolver.go):
 
 1. **Endpoint Precedence**: Reads `status.access.envVars` (`HOST` / `PORT` or `ENDPOINT`) published by `xmc-bridge` first, falling back to `spec.parameters` (`clusterEndpoints` or `host` + `nativePort`, default `9000`).
 2. **Database & User**: Reads `spec.parameters.defaultDatabase` (default `"default"`) and `spec.parameters.user` (default `"default"`).

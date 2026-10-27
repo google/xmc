@@ -167,12 +167,17 @@ func parseBrokersWithPort(raw, port string) []string {
 }
 
 func ensureEndpointPort(endpoint, port string) string {
-	if port == "" {
+	endpoint = strings.TrimSpace(endpoint)
+	port = strings.TrimSpace(port)
+	if endpoint == "" || port == "" {
 		return endpoint
 	}
 	if _, _, err := net.SplitHostPort(endpoint); err == nil {
 		return endpoint
 	}
 	cleanHost := strings.TrimPrefix(strings.TrimSuffix(endpoint, "]"), "[")
+	if cleanHost == "" {
+		return ""
+	}
 	return net.JoinHostPort(cleanHost, port)
 }
