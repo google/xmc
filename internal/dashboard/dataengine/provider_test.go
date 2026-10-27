@@ -895,3 +895,98 @@ func TestDynamicProviderRebuildRateLimitsAndDeduplicates(t *testing.T) {
 		t.Errorf("rebuild dialCount across concurrent + cooldown Pings = %d, want 1", got)
 	}
 }
+
+func TestProviderCloseRaceAndPostCloseRejection(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name         string
+		postCloseFP  string
+		closeInBuild bool
+	}{
+		{name: "pingDynamic close with empty fingerprint", postCloseFP: ""},
+		{name: "pingDynamic close with changed fingerprint", postCloseFP: "fp-2"},
+		{name: "rebuild close during in-flight dial", postCloseFP: "fp-2", closeInBuild: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			connV2 := newSummaryConn("loss", 0.9)
+			var dyn *Provider
+			var step atomic.Int32
+			dyn = NewDynamicEngineProvider(func(context.Context) (string, EngineBuilder, error) {
+				if step.Add(1) == 1 {
+					return "fp-1", func(context.Context) (*DataEngine, error) { return New(newSummaryConn("loss", 0.1)) }, nil
+				}
+				if !tc.closeInBuild {
+					_ = dyn.Close()
+				}
+				return tc.postCloseFP, func(context.Context) (*DataEngine, error) {
+					if tc.closeInBuild {
+						_ = dyn.Close()
+					}
+					return New(connV2)
+				}, nil
+			}, WithRetryInterval(0))
+
+			if err := dyn.Ping(context.Background()); err != nil {
+				t.Fatalf("initial Ping() error: %v", err)
+			}
+			if err := dyn.Ping(context.Background()); !errors.Is(err, errProviderClosed) {
+				t.Errorf("Ping() during Close() = %v, want %v", err, errProviderClosed)
+			}
+			if tc.closeInBuild && !connV2.closed.Load() {
+				t.Error("expected rebuilt engine connection to be closed when provider closed mid-rebuild")
+			}
+		})
+	}
+
+	t.Run("initial build close during in-flight dial and post-close within retryInterval", func(t *testing.T) {
+		t.Parallel()
+		conn := newSummaryConn("loss", 0.2)
+		var dials atomic.Int32
+		var provider *Provider
+		provider = NewEngineProvider(func(context.Context) (*DataEngine, error) {
+			dials.Add(1)
+			_ = provider.Close()
+			return New(conn)
+		}, WithRetryInterval(time.Hour))
+
+		if _, err := provider.Engine(context.Background()); !errors.Is(err, errProviderClosed) {
+			t.Fatalf("Engine() closed mid-build = %v, want %v", err, errProviderClosed)
+		}
+		if !conn.closed.Load() {
+			t.Error("expected built engine connection to be closed when provider closed mid-build")
+		}
+		if err := provider.Ping(context.Background()); !errors.Is(err, errProviderClosed) {
+			t.Errorf("post-Close Ping() within retryInterval = %v, want %v", err, errProviderClosed)
+		}
+		if got := dials.Load(); got != 1 {
+			t.Errorf("connector dials = %d, want 1 (post-Close calls must not redial)", got)
+		}
+	})
+
+	t.Run("concurrent static Ping and Close", func(t *testing.T) {
+		t.Parallel()
+		provider := NewProvider(func(context.Context) (ClickHouseConn, error) {
+			return newSummaryConn("loss", 0.3), nil
+		}, WithRetryInterval(time.Hour))
+		if err := provider.Ping(context.Background()); err != nil {
+			t.Fatalf("initial Ping() error: %v", err)
+		}
+
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for range 50 {
+					if err := provider.Ping(context.Background()); err != nil && !errors.Is(err, errProviderClosed) {
+						t.Errorf("concurrent Ping() = %v, want nil or errProviderClosed", err)
+						return
+					}
+				}
+			}()
+		}
+		_ = provider.Close()
+		wg.Wait()
+	})
+}

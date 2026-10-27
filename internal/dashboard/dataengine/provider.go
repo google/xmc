@@ -16,6 +16,7 @@ package dataengine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -43,6 +44,8 @@ const (
 	dialKey    = "dataengine"
 	rebuildKey = "dataengine-rebuild"
 )
+
+var errProviderClosed = errors.New("data engine provider is closed")
 
 // Connector opens the ClickHouse connection a DataEngine runs its queries through.
 type Connector func(ctx context.Context) (ClickHouseConn, error)
@@ -232,7 +235,7 @@ func (p *Provider) Ping(ctx context.Context) error {
 	if p.resolveEngine != nil {
 		return p.pingDynamic(ctx)
 	}
-	return p.engine.Load().Ping(ctx)
+	return p.pingActive(ctx, errProviderClosed)
 }
 
 func (p *Provider) pingDynamic(ctx context.Context) error {
@@ -251,7 +254,7 @@ func (p *Provider) pingDynamic(ctx context.Context) error {
 			return p.pingActive(ctx, err)
 		}
 	}
-	return p.engine.Load().Ping(ctx)
+	return p.pingActive(ctx, errProviderClosed)
 }
 
 func (p *Provider) pingActive(ctx context.Context, candidateErr error) error {
@@ -302,7 +305,7 @@ func (p *Provider) rebuild(ctx context.Context, fingerprint string, buildEngine 
 	old, stored := p.storeEngine(engine, fingerprint)
 	if !stored {
 		closeEngine(engine)
-		return fmt.Errorf("data engine provider is closed")
+		return errProviderClosed
 	}
 	p.scheduleCloseEngine(old)
 	return nil
@@ -346,7 +349,7 @@ func (p *Provider) build(ctx context.Context) (*DataEngine, error) {
 
 	if _, stored := p.storeEngine(engine, fp); !stored {
 		closeEngine(engine)
-		return nil, fmt.Errorf("data engine provider is closed")
+		return nil, errProviderClosed
 	}
 	return engine, nil
 }
@@ -371,6 +374,9 @@ func (p *Provider) dialEngine(ctx context.Context) (*DataEngine, string, error) 
 func (p *Provider) beginAttempt() (bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.closed {
+		return false, errProviderClosed
+	}
 	if !p.attemptDue() {
 		return false, p.lastErr
 	}
@@ -389,6 +395,9 @@ func (p *Provider) recordAttempt(err error) error {
 func (p *Provider) beginRebuildAttempt(fingerprint string) (bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.closed {
+		return false, errProviderClosed
+	}
 	if p.fingerprint == fingerprint {
 		return false, nil
 	}
