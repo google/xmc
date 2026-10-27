@@ -24,10 +24,10 @@ import (
 	"xmanager_cloud/internal/logging"
 )
 
-// healthCheckTimeout bounds the ClickHouse ping made by the readiness probe.
+// healthCheckTimeout bounds the metrics store readiness check made by the /readyz probe.
 const healthCheckTimeout = 2 * time.Second
 
-// Pinger is the subset of driver.Conn that the readiness probe needs.
+// Pinger checks whether the configured metrics store is reachable and ready.
 type Pinger interface {
 	Ping(ctx context.Context) error
 }
@@ -39,9 +39,9 @@ type RunningReporter interface {
 
 // NewHealthMux serves /healthz (liveness) and /readyz (readiness).
 //
-// Liveness only checks the receive loop, so a ClickHouse outage takes the pod out of readiness
-// without restarting it. Unwritten messages are nacked and redelivered once ClickHouse recovers.
-func NewHealthMux(ingester RunningReporter, clickhouse Pinger) *http.ServeMux {
+// Liveness only checks the receive loop, so a metrics store outage takes the pod out of readiness
+// without restarting it. Unwritten messages are nacked and redelivered once the store recovers.
+func NewHealthMux(ingester RunningReporter, store Pinger) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthHandler(func(context.Context) error {
 		return checkRunning(ingester)
@@ -50,8 +50,8 @@ func NewHealthMux(ingester RunningReporter, clickhouse Pinger) *http.ServeMux {
 		if err := checkRunning(ingester); err != nil {
 			return err
 		}
-		if err := clickhouse.Ping(ctx); err != nil {
-			return fmt.Errorf("clickhouse ping failed: %w", err)
+		if err := store.Ping(ctx); err != nil {
+			return fmt.Errorf("metrics store ping failed: %w", err)
 		}
 		return nil
 	}))
