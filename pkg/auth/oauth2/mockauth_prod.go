@@ -16,6 +16,14 @@
 
 package oauth2
 
+// mockAuthCompiledIn reports that this binary was built without the mockauth tag, so LoadConfig
+// rejects MOCK_AUTH instead of silently ignoring it.
+const mockAuthCompiledIn = false
+
+// devOnlyJWTSecret is empty in binaries built without the mockauth tag so the well-known dev
+// signing key is never compiled into production binaries; LoadConfig then requires JWT_SECRET.
+const devOnlyJWTSecret = ""
+
 // configureMockIfEnabled is a no-op in binaries built without the mockauth tag, so they never
 // install mock authentication even when MOCK_AUTH is set.
 func configureMockIfEnabled(*Authenticator) {}

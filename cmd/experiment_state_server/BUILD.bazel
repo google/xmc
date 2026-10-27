@@ -64,6 +64,8 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
+# Local development only: compiles in mock authentication (MOCK_AUTH). Never package this binary
+# into an image; tools/lint/check_image_binaries.py enforces that in CI.
 go_binary(
     name = "experiment_state_server_dev",
     embed = [":experiment_state_server_lib"],
@@ -74,7 +76,7 @@ go_binary(
 
 oci_image_for_service(
     name = "experiment_state_server_image",
-    binary = ":experiment_state_server_dev",
+    binary = ":experiment_state_server",
 )
 
 go_test(

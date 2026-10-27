@@ -18,6 +18,23 @@ load("@rules_python//python:py_test.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "check_image_binaries_lib",
+    srcs = ["check_image_binaries.py"],
+    imports = ["../.."],
+    deps = ["//tools/common:tool_utils"],
+)
+
+py_test(
+    name = "check_image_binaries_test",
+    srcs = ["check_image_binaries_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_image_binaries_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "check_legacy_imports_lib",
     srcs = ["check_legacy_imports.py"],
     data = ["legacy_imports_baseline.json"],

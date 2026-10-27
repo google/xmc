@@ -38,3 +38,29 @@ func TestNewAuthenticatorMockAuthTag(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadConfigAcceptsMockAuthWithMockAuthTag(t *testing.T) {
+	tests := []struct {
+		name          string
+		jwtSecret     string
+		wantJWTSecret string
+	}{
+		{name: "missing secret falls back to dev-only secret", jwtSecret: "", wantJWTSecret: devOnlyJWTSecret},
+		{name: "short secret allowed", jwtSecret: "short-secret", wantJWTSecret: "short-secret"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MOCK_AUTH", "true")
+			t.Setenv("DISABLE_AUTHENTICATION", "false")
+			t.Setenv("JWT_SECRET", tt.jwtSecret)
+			cfg, err := LoadConfig()
+			if err != nil {
+				t.Fatalf("LoadConfig() error = %v, want nil", err)
+			}
+			if !cfg.MockAuth || cfg.JWTSecret != tt.wantJWTSecret {
+				t.Errorf("LoadConfig() = {MockAuth: %v, JWTSecret: %q}, want {MockAuth: true, JWTSecret: %q}", cfg.MockAuth, cfg.JWTSecret, tt.wantJWTSecret)
+			}
+		})
+	}
+}
