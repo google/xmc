@@ -681,6 +681,42 @@ func TestUpdateJobSetPriority(t *testing.T) {
 	}
 }
 
+func TestUpdateJobSetNotifyWhen(t *testing.T) {
+	target := "experiments/111/workUnits/222/executions/1"
+	fix := setupPopulateTest(t, target)
+	client := fix.client
+	ctx := t.Context()
+	jobSetName := buildJobSetName(target)
+
+	notifyWhen := "STARTING.RUNNING.COMPLETED"
+	if err := client.updateJobSetNotifyWhen(ctx, baseCPUWorkUnit, target, notifyWhen); err != nil {
+		t.Fatalf("updateJobSetNotifyWhen(%v) returned unexpected error: %v", target, err)
+	}
+
+	jobSetAfter, err := client.dynamicClient.Resource(JobSetGVR).Namespace(testNamespace).Get(ctx, jobSetName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Getting jobset after updateJobSetNotifyWhen failed: %v", err)
+	}
+
+	annotationsAfter := jobSetAfter.GetAnnotations()
+	if annotationsAfter[constants.NotifyWhenAnnotation] != notifyWhen {
+		t.Errorf("Expected notify-when annotation to be %q, but got %q", notifyWhen, annotationsAfter[constants.NotifyWhenAnnotation])
+	}
+}
+
+func TestUpdateJobSetNotifyWhen_NotFound(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	target := "experiments/999/workUnits/888/executions/1"
+
+	err := client.updateJobSetNotifyWhen(ctx, baseCPUWorkUnit, target, "STARTING.RUNNING")
+	if err == nil {
+		t.Fatalf("expected error when JobSet does not exist, got nil")
+	}
+	if !apierrors.IsNotFound(err) {
+		t.Errorf("expected apierrors.IsNotFound(err) to be true, got %v", err)
+	}
+}
+
 func TestGetPriorityClassName(t *testing.T) {
 	tests := []struct {
 		priorities Priorities
@@ -1194,5 +1230,21 @@ func TestConstructJobSet_KubernetesJobAnnotationsPropagation(t *testing.T) {
 	jobTemplateAnnotations["test-mutation-key"] = "mutated"
 	if _, ok := podTemplateAnnotations["test-mutation-key"]; ok {
 		t.Errorf("PodTemplateSpec.Annotations shared map pointer with JobTemplateSpec.Annotations")
+	}
+}
+
+func TestConstructJobSet_NotifyWhenAnnotation(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+
+	workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {})
+
+	notifyWhen := "STARTING.RUNNING.COMPLETED.FAILED.STOPPED"
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{}, notifyWhen)
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if gotAnn := got.Annotations[constants.NotifyWhenAnnotation]; gotAnn != notifyWhen {
+		t.Errorf("JobSet.Annotations[%q] = %q, want %q", constants.NotifyWhenAnnotation, gotAnn, notifyWhen)
 	}
 }

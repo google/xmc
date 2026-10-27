@@ -72,6 +72,7 @@ type ExperimentHandler struct {
 // ArtifactHandler handles artifact operations.
 type ArtifactHandler struct {
 	baseHandler
+	actuator          WorkUnitActuator
 	artifactObservers []ArtifactObserver
 }
 
@@ -100,9 +101,10 @@ func newExperimentHandler(base baseHandler, server apipb.ExperimentStateServiceS
 	}
 }
 
-func newArtifactHandler(base baseHandler, observers ...ArtifactObserver) *ArtifactHandler {
+func newArtifactHandler(base baseHandler, actuator WorkUnitActuator, observers ...ArtifactObserver) *ArtifactHandler {
 	return &ArtifactHandler{
 		baseHandler:       base,
+		actuator:          actuator,
 		artifactObservers: observers,
 	}
 }
@@ -167,7 +169,7 @@ func New(p Params) (*Server, error) {
 	s := &Server{}
 	s.ExperimentHandler = newExperimentHandler(base, s)
 	s.WorkUnitHandler = newWorkUnitHandler(base, p.WorkUnitActuator, s)
-	s.ArtifactHandler = newArtifactHandler(base, p.ArtifactObservers...)
+	s.ArtifactHandler = newArtifactHandler(base, p.WorkUnitActuator, p.ArtifactObservers...)
 	s.StatusMessageHandler = newStatusMessageHandler(base)
 	return s, nil
 }

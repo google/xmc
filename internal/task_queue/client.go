@@ -44,6 +44,7 @@ import (
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -491,13 +492,17 @@ func (c *Client) createJwtToken(bodyHash string) (string, error) {
 }
 
 // CreateAction creates an action for the Actuator to create a WorkUnit.
-func CreateAction(experimentPriority essmsgpb.Priority, author string) *actuatortaskpb.Action {
+func CreateAction(experimentPriority essmsgpb.Priority, author string, notifyWhen ...string) *actuatortaskpb.Action {
+	create := &actuatortaskpb.CreateAction{
+		ExperimentPriority: experimentPriority.Enum(),
+		Author:             proto.String(author),
+	}
+	if len(notifyWhen) > 0 && notifyWhen[0] != "" {
+		create.NotifyWhen = proto.String(notifyWhen[0])
+	}
 	return &actuatortaskpb.Action{
 		Action: &actuatortaskpb.Action_Create{
-			Create: &actuatortaskpb.CreateAction{
-				ExperimentPriority: experimentPriority.Enum(),
-				Author:             proto.String(author),
-			},
+			Create: create,
 		},
 	}
 }
@@ -512,12 +517,28 @@ func DeleteAction() *actuatortaskpb.Action {
 }
 
 // RestartAction creates an action for the Actuator to restart a WorkUnit.
-func RestartAction(experimentPriority essmsgpb.Priority, author string) *actuatortaskpb.Action {
+func RestartAction(experimentPriority essmsgpb.Priority, author string, notifyWhen ...string) *actuatortaskpb.Action {
+	restart := &actuatortaskpb.RestartAction{
+		ExperimentPriority: experimentPriority.Enum(),
+		Author:             proto.String(author),
+	}
+	if len(notifyWhen) > 0 && notifyWhen[0] != "" {
+		restart.NotifyWhen = proto.String(notifyWhen[0])
+	}
 	return &actuatortaskpb.Action{
 		Action: &actuatortaskpb.Action_Restart{
-			Restart: &actuatortaskpb.RestartAction{
-				ExperimentPriority: experimentPriority.Enum(),
-				Author:             proto.String(author),
+			Restart: restart,
+		},
+	}
+}
+
+// UpdateNotifyWhenAction creates an action for the Actuator to update notify_when on a WorkUnit's JobSet.
+func UpdateNotifyWhenAction(notifyWhen string) *actuatortaskpb.Action {
+	return &actuatortaskpb.Action{
+		Action: &actuatortaskpb.Action_Update{
+			Update: &actuatortaskpb.UpdateAction{
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"notify_when"}},
+				NotifyWhen: proto.String(notifyWhen),
 			},
 		},
 	}

@@ -305,7 +305,8 @@ func isK8sRetryableError(err error) bool {
 	}
 	return apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) ||
 		apierrors.IsTooManyRequests(err) || apierrors.IsServiceUnavailable(err) ||
-		apierrors.IsInternalError(err) || apierrors.IsConflict(err)
+		apierrors.IsInternalError(err) || apierrors.IsConflict(err) ||
+		apierrors.IsNotFound(err)
 }
 
 func isRetryableError(err error) bool {

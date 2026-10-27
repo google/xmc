@@ -1154,7 +1154,7 @@ func TestIsRetryableError(t *testing.T) {
 		{
 			name: "not_found_error",
 			err:  apierrors.NewNotFound(gr, "not found"),
-			want: false,
+			want: true,
 		},
 		{
 			name: "already_exists_error",
@@ -1230,6 +1230,11 @@ func TestIsRetryableError(t *testing.T) {
 			name: "wrapped_non_retryable_error",
 			err:  fmt.Errorf("failed: %w", apierrors.NewBadRequest("invalid")),
 			want: false,
+		},
+		{
+			name: "k8s_not_found",
+			err:  apierrors.NewNotFound(schema.GroupResource{Group: "jobset.x-k8s.io", Resource: "jobsets"}, "my-jobset"),
+			want: true,
 		},
 		{
 			name: "googleapi_503_service_unavailable",
