@@ -37,6 +37,8 @@ var (
 	port                 string
 	batchSize            int
 	batchInterval        time.Duration
+	spannerDatabaseName  string
+	quotaProjectID       string
 	logKeyword           string
 	maxConcurrentUpdates int
 )
@@ -51,6 +53,10 @@ func init() {
 	flag.StringVar(&port, "port", defaultPort, "The HTTP server port to listen on.")
 	flag.IntVar(&batchSize, "batch_size", 1000, "The maximum number of messages to process in a batch.")
 	flag.DurationVar(&batchInterval, "batch_interval", 250*time.Millisecond, "The maximum time to wait before processing a batch.")
+	// Deprecated: retained for one-release rollout compatibility; service reads db-config.
+	// TODO: Remove -spanner_database_name and -quota_project_id flags once all deployments pass db-config.
+	flag.StringVar(&spannerDatabaseName, "spanner_database_name", "", "Deprecated: use SPANNER_ESS_DATABASE via db-config.")
+	flag.StringVar(&quotaProjectID, "quota_project_id", "", "Deprecated: use SPANNER_QUOTA_PROJECT_ID via db-config.")
 	flag.StringVar(&logKeyword, "log_keyword", "XMC LOG:", "The keyword that is used in logging sink to filter logs.")
 	flag.IntVar(&maxConcurrentUpdates, "max_concurrent_updates", 10, "The maximum number of concurrent updates to Spanner.")
 }

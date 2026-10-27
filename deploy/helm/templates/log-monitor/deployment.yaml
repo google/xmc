@@ -59,6 +59,10 @@ spec:
         - configMapRef:
             name: db-config
         args:
+        # Deprecated: retained for one-release rollout compatibility; service reads db-config.
+        # TODO: Remove -spanner_database_name and -quota_project_id once all deployments run db-config images.
+        - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"
+        - "-quota_project_id={{ .Values.projectId }}"
         - "-log_keyword={{ .Values.logMonitor.logKeyword }}"
         - "-max_concurrent_updates={{ .Values.logMonitor.maxConcurrentUpdates }}"
         # /readyz checks Spanner and the Pub/Sub listener. /healthz checks only the listener, so a

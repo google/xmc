@@ -121,6 +121,10 @@ resource "google_cloud_run_v2_service" "log_monitor" {
         value = var.project_id
       }
       args = [
+        # Deprecated: retained for one-release rollout compatibility; service reads SPANNER_* env vars.
+        # TODO: Remove -spanner_database_name and -quota_project_id once all deployments run db-config images.
+        "-spanner_database_name=projects/${var.project_id}/instances/xmc-${var.environment}/databases/experiment-db-${var.environment}",
+        "-quota_project_id=${var.project_id}",
         "-log_keyword=${var.logging_sink_custom_keyword}",
         "-max_concurrent_updates=${var.max_concurrent_updates}",
       ]
