@@ -32,18 +32,23 @@ SAMPLE_VALID_MAP_JSON = json.dumps(
             {
                 "name": "Services",
                 "source_patterns": ["cmd/**", "pkg/auth/**"],
-                "doc_patterns": [
-                    "README.md",
+                "reference_doc_patterns": [
                     "cmd/**/README.md",
+                ],
+                "orientation_doc_patterns": [
+                    "README.md",
                     "docs/**/*.md",
                 ],
             },
             {
                 "name": "SDKs",
                 "source_patterns": ["sdks/python/xmc/**"],
-                "doc_patterns": [
+                "reference_doc_patterns": [
                     "sdks/python/**/README.md",
-                    ".agents/**/*.md",
+                    ".agents/skills/**/*.md",
+                ],
+                "orientation_doc_patterns": [
+                    ".agents/AGENTS.md",
                 ],
             },
         ],
@@ -74,7 +79,9 @@ SAMPLE_TRACKED_FILES: tuple[str, ...] = (
 class CheckDocsTopographyMapTest(unittest.TestCase):
     """Tests for bi-directional documentation topography map verification."""
 
-    def test_matches_pattern_evaluates_recursive_and_single_segment_globs(self) -> None:
+    def test_matches_pattern_evaluates_recursive_and_single_segment_globs(
+        self,
+    ) -> None:
         """Verifies `matches_pattern` evaluates standard globs via PurePosixPath."""
         self.assertTrue(linter.matches_pattern("cmd/actuator/main.go", "cmd/**"))
         self.assertFalse(linter.matches_pattern("pkg/actuator/main.go", "cmd/**"))
@@ -91,13 +98,30 @@ class CheckDocsTopographyMapTest(unittest.TestCase):
             ("cmd/**", "pkg/auth/**", "sdks/python/xmc/**"),
         )
         self.assertEqual(
-            patterns.doc_patterns,
+            patterns.reference_doc_patterns,
+            (
+                "cmd/**/README.md",
+                "sdks/python/**/README.md",
+                ".agents/skills/**/*.md",
+            ),
+        )
+        self.assertEqual(
+            patterns.orientation_doc_patterns,
             (
                 "README.md",
-                "cmd/**/README.md",
                 "docs/**/*.md",
+                ".agents/AGENTS.md",
+            ),
+        )
+        self.assertEqual(
+            patterns.doc_patterns,
+            (
+                "cmd/**/README.md",
                 "sdks/python/**/README.md",
-                ".agents/**/*.md",
+                ".agents/skills/**/*.md",
+                "README.md",
+                "docs/**/*.md",
+                ".agents/AGENTS.md",
             ),
         )
         self.assertEqual(
@@ -109,6 +133,39 @@ class CheckDocsTopographyMapTest(unittest.TestCase):
         """Verifies `load_topography_map` rejects non-object JSON roots."""
         with self.assertRaises(ValueError):
             linter.load_topography_map("[]")
+
+    def test_load_topography_map_rejects_legacy_or_empty_doc_tiers(
+        self,
+    ) -> None:
+        """Verifies quadrants must use reference/orientation doc tiers."""
+        legacy_json = json.dumps(
+            {
+                "quadrants": [
+                    {
+                        "name": "Legacy",
+                        "source_patterns": ["cmd/**"],
+                        "doc_patterns": ["README.md"],
+                    }
+                ]
+            }
+        )
+        with self.assertRaises(ValueError):
+            linter.load_topography_map(legacy_json)
+
+        empty_docs_json = json.dumps(
+            {
+                "quadrants": [
+                    {
+                        "name": "EmptyDocs",
+                        "source_patterns": ["cmd/**"],
+                        "reference_doc_patterns": [],
+                        "orientation_doc_patterns": [],
+                    }
+                ]
+            }
+        )
+        with self.assertRaises(ValueError):
+            linter.load_topography_map(empty_docs_json)
 
     def test_discover_component_directories_identifies_all_roots(self) -> None:
         """Verifies single-level and two-level component directories are found."""
@@ -146,7 +203,8 @@ class CheckDocsTopographyMapTest(unittest.TestCase):
                 "pkg/nonexistent/**",
                 "pkg/nonexistent/**",
             ),
-            doc_patterns=("README.md", "docs/deleted.md"),
+            reference_doc_patterns=("cmd/**/README.md",),
+            orientation_doc_patterns=("README.md", "docs/deleted.md"),
             registry_patterns=("cmd/*/missing.go",),
         )
         dead = linter.find_dead_map_entries(patterns, SAMPLE_TRACKED_FILES)

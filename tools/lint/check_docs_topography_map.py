@@ -18,10 +18,12 @@
 Enforces three invariants between `.agents/skills/xmc_review_docs_drift/
 references/xmc_docs_topography_map.json` and `git ls-files`:
 1. DEAD_MAP_ENTRY (Map -> Repo): Every path/glob in `quadrants`
-   (`source_patterns` and `doc_patterns`) and `identifier_sources`
-   (`source_patterns`) matches at least one tracked file.
+   (`source_patterns`, `reference_doc_patterns`, and `orientation_doc_patterns`)
+   and `identifier_sources` (`source_patterns`) matches at least one tracked
+   file.
 2. UNMAPPED_DOC_FILE (Repo Docs -> Map): Every tracked `.md` file matches at
-   least one documentation pattern in `quadrants[*].doc_patterns`.
+   least one documentation pattern in `quadrants[*].reference_doc_patterns` or
+   `quadrants[*].orientation_doc_patterns`.
 3. UNMAPPED_SOURCE_DIR (Repo Code -> Map): Every top-level component directory
    under `cmd/*/`, `sdks/*/*/`, `deploy/*/`, `pkg/*/`, `internal/*/`, `api/*/`,
    `examples/*/`, and `tools/*/` has at least one tracked file matched by a
@@ -60,8 +62,14 @@ class TopographyPatterns:
     """Extracted path and glob patterns from the JSON topography map."""
 
     source_patterns: tuple[str, ...]
-    doc_patterns: tuple[str, ...]
+    reference_doc_patterns: tuple[str, ...]
+    orientation_doc_patterns: tuple[str, ...]
     registry_patterns: tuple[str, ...]
+
+    @property
+    def doc_patterns(self) -> tuple[str, ...]:
+        """Returns all authoritative documentation patterns across both tiers."""
+        return (*self.reference_doc_patterns, *self.orientation_doc_patterns)
 
 
 @dataclass(frozen=True)
@@ -95,6 +103,23 @@ def matches_pattern(file_path: str, pattern: str) -> bool:
     return _match_parts(PurePosixPath(file_path).parts, PurePosixPath(pattern).parts)
 
 
+def _validate_quadrant_doc_tiers(quadrant: dict[str, object]) -> None:
+    """Validates that a quadrant defines reference/orientation doc patterns."""
+    name = str(quadrant.get("name", "<unnamed>"))
+    if "doc_patterns" in quadrant:
+        raise ValueError(
+            f"Quadrant '{name}' must split 'doc_patterns' into "
+            "'reference_doc_patterns' and 'orientation_doc_patterns'."
+        )
+    ref_docs = quadrant.get("reference_doc_patterns", [])
+    orient_docs = quadrant.get("orientation_doc_patterns", [])
+    if not ref_docs and not orient_docs:
+        raise ValueError(
+            f"Quadrant '{name}' must define at least one pattern in "
+            "'reference_doc_patterns' or 'orientation_doc_patterns'."
+        )
+
+
 def load_topography_map(json_text: str) -> TopographyPatterns:
     """Parses the JSON topography map into `TopographyPatterns`."""
     payload = json.loads(json_text)
@@ -102,18 +127,28 @@ def load_topography_map(json_text: str) -> TopographyPatterns:
         raise ValueError("Topography map JSON root must be an object.")
     quadrants = payload.get("quadrants", [])
     identifier_sources = payload.get("identifier_sources", [])
+    for quadrant in quadrants:
+        _validate_quadrant_doc_tiers(quadrant)
     source_patterns = [
         str(pattern) for quadrant in quadrants for pattern in quadrant.get("source_patterns", [])
     ]
-    doc_patterns = [
-        str(pattern) for quadrant in quadrants for pattern in quadrant.get("doc_patterns", [])
+    reference_doc_patterns = [
+        str(pattern)
+        for quadrant in quadrants
+        for pattern in quadrant.get("reference_doc_patterns", [])
+    ]
+    orientation_doc_patterns = [
+        str(pattern)
+        for quadrant in quadrants
+        for pattern in quadrant.get("orientation_doc_patterns", [])
     ]
     registry_patterns = [
         str(pattern) for entry in identifier_sources for pattern in entry.get("source_patterns", [])
     ]
     return TopographyPatterns(
         source_patterns=tuple(source_patterns),
-        doc_patterns=tuple(doc_patterns),
+        reference_doc_patterns=tuple(reference_doc_patterns),
+        orientation_doc_patterns=tuple(orientation_doc_patterns),
         registry_patterns=tuple(registry_patterns),
     )
 

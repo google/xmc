@@ -9,12 +9,14 @@
         "pkg/clickhouse/**",
         "pkg/components/**"
       ],
-      "doc_patterns": [
+      "reference_doc_patterns": [
+        "cmd/**/README.md",
+        "pkg/**/README.md"
+      ],
+      "orientation_doc_patterns": [
         "README.md",
         "CONTRIBUTING.md",
         "ABSENCE.md",
-        "cmd/**/README.md",
-        "pkg/**/README.md",
         "docs/architecture/*.md",
         "docs/design/*.md"
       ]
@@ -24,10 +26,12 @@
       "source_patterns": [
         "internal/**"
       ],
-      "doc_patterns": [
-        "docs/flows/*.md",
+      "reference_doc_patterns": [
         "internal/**/README.md",
         "internal/storage/AGENTS.md"
+      ],
+      "orientation_doc_patterns": [
+        "docs/flows/*.md"
       ]
     },
     {
@@ -37,11 +41,13 @@
         "api/filter/**",
         "api/testdata/**"
       ],
-      "doc_patterns": [
-        "docs/architecture/components.md",
-        "docs/flows/*.md",
+      "reference_doc_patterns": [
         "cmd/ingestion_gateway/README.md",
         "cmd/experiment_state_server/README.md"
+      ],
+      "orientation_doc_patterns": [
+        "docs/architecture/components.md",
+        "docs/flows/*.md"
       ]
     },
     {
@@ -53,12 +59,14 @@
         "deploy/cli/**",
         "deploy/ci/**"
       ],
-      "doc_patterns": [
-        "INSTALL.md",
+      "reference_doc_patterns": [
         "deploy/ctk_v2/README.md",
         "deploy/local/README.md",
         "deploy/cli/README.md",
-        "deploy/ci/README.md",
+        "deploy/ci/README.md"
+      ],
+      "orientation_doc_patterns": [
+        "INSTALL.md",
         "docs/developer.md"
       ]
     },
@@ -69,10 +77,12 @@
         "deploy/profiles/**",
         "deploy/addons/**"
       ],
-      "doc_patterns": [
+      "reference_doc_patterns": [
         "deploy/helm/README.md",
         "deploy/profiles/**/README.md",
-        "deploy/addons/**/README.md",
+        "deploy/addons/**/README.md"
+      ],
+      "orientation_doc_patterns": [
         "INSTALL.md"
       ]
     },
@@ -83,9 +93,11 @@
         "sdks/python/xdash/**",
         "pyproject.toml"
       ],
-      "doc_patterns": [
+      "reference_doc_patterns": [
         "sdks/python/xmc/README.md",
-        "sdks/python/xdash/README.md",
+        "sdks/python/xdash/README.md"
+      ],
+      "orientation_doc_patterns": [
         "README.md",
         "docs/authentication.md",
         "docs/developer.md"
@@ -96,8 +108,10 @@
       "source_patterns": [
         "examples/**"
       ],
-      "doc_patterns": [
-        "examples/**/README.md",
+      "reference_doc_patterns": [
+        "examples/**/README.md"
+      ],
+      "orientation_doc_patterns": [
         "README.md"
       ]
     },
@@ -106,10 +120,12 @@
       "source_patterns": [
         "tools/**"
       ],
-      "doc_patterns": [
-        "tools/README.md",
+      "reference_doc_patterns": [
         "tools/**/README.md",
-        "test/**/README.md",
+        "test/**/README.md"
+      ],
+      "orientation_doc_patterns": [
+        "tools/README.md",
         ".github/**/*.md",
         "docs/ci_runner_infrastructure.md"
       ]
@@ -120,10 +136,12 @@
         ".agents/rules/**",
         ".agents/skills/**"
       ],
-      "doc_patterns": [
-        ".agents/AGENTS.md",
+      "reference_doc_patterns": [
         ".agents/rules/**/*.md",
-        ".agents/skills/**/*.md",
+        ".agents/skills/**/*.md"
+      ],
+      "orientation_doc_patterns": [
+        ".agents/AGENTS.md",
         "docs/agent_workflows.md"
       ]
     }
