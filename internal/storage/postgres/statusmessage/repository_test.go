@@ -64,6 +64,19 @@ func messageTexts(msgs []*essmsgpb.StatusMessage) []string {
 	return texts
 }
 
+func newStructuredMessage(parent, text string, createTime time.Time) *essmsgpb.StructuredMessage {
+	msg := &essmsgpb.StructuredMessage{
+		Parent:         parent,
+		Severity:       essmsgpb.StructuredMessage_INFO,
+		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+		UserFacingText: text,
+	}
+	if !createTime.IsZero() {
+		msg.CreateTime = timestamppb.New(createTime)
+	}
+	return msg
+}
+
 func TestNewRepository_BindsPoolAndTx(t *testing.T) {
 	pool := &pgxpool.Pool{}
 	repo := NewRepository(pool)
@@ -71,10 +84,8 @@ func TestNewRepository_BindsPoolAndTx(t *testing.T) {
 		t.Errorf("NewRepository(pool).db = %v, want %p", repo.db, pool)
 	}
 
-	// Any DBTX implementation can stand in for the transaction handle.
 	var tx pgdb.DBTX = &pgxpool.Pool{}
-	txRepo := repo.WithTx(tx)
-	if txRepo.tx != tx {
+	if txRepo := repo.WithTx(tx); txRepo.tx != tx {
 		t.Errorf("WithTx(tx).tx = %v, want %v", txRepo.tx, tx)
 	}
 }
@@ -87,13 +98,7 @@ func TestSaveStatusMessageHistory_SuccessAndNullRoundTrips(t *testing.T) {
 	baseTime := time.Date(2026, time.April, 13, 10, 0, 0, 0, time.UTC)
 
 	t.Run("experiment message with NULL optional columns", func(t *testing.T) {
-		expMsg := &essmsgpb.StructuredMessage{
-			Parent:         "experiments/123",
-			Severity:       essmsgpb.StructuredMessage_INFO,
-			Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-			UserFacingText: "experiment-level status",
-			CreateTime:     timestamppb.New(baseTime),
-		}
+		expMsg := newStructuredMessage("experiments/123", "experiment-level status", baseTime)
 		insertStatusMessage(ctx, t, repo, pool, nil, nil, expMsg)
 
 		const nullCheckSQL = `SELECT WorkUnitId IS NULL, ExecutionId IS NULL, UserFacingUrl IS NULL, PreviousMessage IS NULL, AuxiliaryInfo IS NULL
@@ -113,11 +118,8 @@ FROM StatusMessages WHERE Xid = $1 AND UserFacingText = $2`
 		if token != "" || len(msgs) != 1 {
 			t.Fatalf("ListStatusMessages() = (%d msgs, token %q), want (1, \"\")", len(msgs), token)
 		}
-		if !strings.HasPrefix(msgs[0].GetName(), "experiments/123/statusMessages/") {
-			t.Errorf("msgs[0].Name = %q, want prefix \"experiments/123/statusMessages/\"", msgs[0].GetName())
-		}
-		if msgs[0].GetExecutionId() != 0 {
-			t.Errorf("msgs[0].ExecutionId = %d, want 0", msgs[0].GetExecutionId())
+		if !strings.HasPrefix(msgs[0].GetName(), "experiments/123/statusMessages/") || msgs[0].GetExecutionId() != 0 {
+			t.Errorf("msgs[0] = (name=%q, eid=%d), want prefix \"experiments/123/statusMessages/\" and eid 0", msgs[0].GetName(), msgs[0].GetExecutionId())
 		}
 		if diff := cmp.Diff(expMsg, msgs[0].GetContent(), protocmp.Transform()); diff != "" {
 			t.Errorf("msgs[0].Content mismatch (-want +got):\n%s", diff)
@@ -159,17 +161,11 @@ FROM StatusMessages WHERE Xid = $1 AND UserFacingText = $2`
 		}
 
 		msgs, _, err := repo.ListStatusMessages(ctx, "experiments/123/workUnits/456", 10, "", "", "", 0)
-		if err != nil {
-			t.Fatalf("ListStatusMessages(workUnit) failed: %v", err)
+		if err != nil || len(msgs) != 1 {
+			t.Fatalf("ListStatusMessages(workUnit) = (%d msgs, err %v), want (1, nil)", len(msgs), err)
 		}
-		if len(msgs) != 1 {
-			t.Fatalf("ListStatusMessages(workUnit) returned %d messages, want 1", len(msgs))
-		}
-		if !strings.HasPrefix(msgs[0].GetName(), "experiments/123/workUnits/456/statusMessages/") {
-			t.Errorf("msgs[0].Name = %q, want prefix \"experiments/123/workUnits/456/statusMessages/\"", msgs[0].GetName())
-		}
-		if msgs[0].GetExecutionId() != eid {
-			t.Errorf("msgs[0].ExecutionId = %d, want %d", msgs[0].GetExecutionId(), eid)
+		if !strings.HasPrefix(msgs[0].GetName(), "experiments/123/workUnits/456/statusMessages/") || msgs[0].GetExecutionId() != eid {
+			t.Errorf("msgs[0] = (name=%q, eid=%d), want prefix \"experiments/123/workUnits/456/statusMessages/\" and eid %d", msgs[0].GetName(), msgs[0].GetExecutionId(), eid)
 		}
 		if diff := cmp.Diff(newMsg, msgs[0].GetContent(), protocmp.Transform()); diff != "" {
 			t.Errorf("msgs[0].Content mismatch (-want +got):\n%s", diff)
@@ -184,8 +180,8 @@ func TestTxRepository_SaveStatusMessageHistory_ValidationAndErrors(t *testing.T)
 	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
 
-	validMsg := &essmsgpb.StructuredMessage{Parent: "experiments/123", UserFacingText: "ok"}
-	invalidParentMsg := &essmsgpb.StructuredMessage{Parent: "invalid-parent", UserFacingText: "bad"}
+	validMsg := newStructuredMessage("experiments/123", "ok", time.Time{})
+	invalidParentMsg := newStructuredMessage("invalid-parent", "bad", time.Time{})
 
 	tests := []struct {
 		name     string
@@ -255,25 +251,12 @@ func TestListStatusMessages(t *testing.T) {
 	repo, pool := newTestRepository(t)
 	postgrestest.SeedExperiment(ctx, t, pool, testXID)
 
-	insertStatusMessage(ctx, t, repo, pool, nil, nil, &essmsgpb.StructuredMessage{
-		UserFacingText: "Test experiment message",
-		Severity:       essmsgpb.StructuredMessage_INFO,
-		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-		Parent:         "experiments/123",
-	})
-	insertStatusMessage(ctx, t, repo, pool, nil, nil, &essmsgpb.StructuredMessage{
-		UserFacingText: "Test work unit message",
-		Severity:       essmsgpb.StructuredMessage_INFO,
-		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-		Parent:         "experiments/123/workUnits/456",
-	})
+	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123", "Test experiment message", time.Time{}))
+	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123/workUnits/456", "Test work unit message", time.Time{}))
 
 	gotExpMessages, gotPageToken, err := repo.ListStatusMessages(ctx, "experiments/123", 10, "", "", "", 0)
-	if err != nil {
-		t.Fatalf("ListStatusMessages(experiment) failed: %v", err)
-	}
-	if len(gotExpMessages) != 2 || gotPageToken != "" {
-		t.Errorf("ListStatusMessages(experiment) = (%d msgs, token %q), want (2, \"\")", len(gotExpMessages), gotPageToken)
+	if err != nil || len(gotExpMessages) != 2 || gotPageToken != "" {
+		t.Fatalf("ListStatusMessages(experiment) = (%d msgs, token %q, err %v), want (2, \"\", nil)", len(gotExpMessages), gotPageToken, err)
 	}
 
 	gotWUMessages, _, err := repo.ListStatusMessages(ctx, "experiments/123/workUnits/456", 10, "", "", "", 0)
@@ -290,12 +273,7 @@ func TestListStatusMessages_Filtering(t *testing.T) {
 	repo, pool := newTestRepository(t)
 	postgrestest.SeedExperiment(ctx, t, pool, testXID)
 
-	insertStatusMessage(ctx, t, repo, pool, nil, nil, &essmsgpb.StructuredMessage{
-		UserFacingText: "Message One",
-		Severity:       essmsgpb.StructuredMessage_INFO,
-		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-		Parent:         "experiments/123",
-	})
+	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123", "Message One", time.Time{}))
 	insertStatusMessage(ctx, t, repo, pool, nil, nil, &essmsgpb.StructuredMessage{
 		UserFacingText: "Message Two",
 		Severity:       essmsgpb.StructuredMessage_ERROR,
@@ -308,21 +286,9 @@ func TestListStatusMessages_Filtering(t *testing.T) {
 		filter    string
 		wantTexts []string
 	}{
-		{
-			name:      "filter by source enum string",
-			filter:    `source = "XMANAGER_BACKEND"`,
-			wantTexts: []string{"Message One"},
-		},
-		{
-			name:      "filter by severity enum identifier",
-			filter:    `severity = ERROR`,
-			wantTexts: []string{"Message Two"},
-		},
-		{
-			name:      "filter by user_facing_text",
-			filter:    `user_facing_text = "Message One"`,
-			wantTexts: []string{"Message One"},
-		},
+		{name: "filter by source enum string", filter: `source = "XMANAGER_BACKEND"`, wantTexts: []string{"Message One"}},
+		{name: "filter by severity enum identifier", filter: `severity = ERROR`, wantTexts: []string{"Message Two"}},
+		{name: "filter by user_facing_text", filter: `user_facing_text = "Message One"`, wantTexts: []string{"Message One"}},
 	}
 
 	for _, tc := range tests {
@@ -344,35 +310,16 @@ func TestListStatusMessages_OrderingAndPagination(t *testing.T) {
 	postgrestest.SeedExperiment(ctx, t, pool, testXID)
 
 	baseTime := time.Date(2026, time.April, 13, 0, 0, 0, 0, time.UTC)
-	insertStatusMessage(ctx, t, repo, pool, nil, nil, &essmsgpb.StructuredMessage{
-		UserFacingText: "Oldest Message",
-		Severity:       essmsgpb.StructuredMessage_INFO,
-		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-		Parent:         "experiments/123",
-		CreateTime:     timestamppb.New(baseTime),
-	})
-	insertStatusMessage(ctx, t, repo, pool, nil, nil, &essmsgpb.StructuredMessage{
-		UserFacingText: "Middle Message",
-		Severity:       essmsgpb.StructuredMessage_INFO,
-		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-		Parent:         "experiments/123/workUnits/1",
-		CreateTime:     timestamppb.New(baseTime.Add(time.Hour)),
-	})
-	insertStatusMessage(ctx, t, repo, pool, nil, nil, &essmsgpb.StructuredMessage{
-		UserFacingText: "Newest Message",
-		Severity:       essmsgpb.StructuredMessage_INFO,
-		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-		Parent:         "experiments/123",
-		CreateTime:     timestamppb.New(baseTime.Add(2 * time.Hour)),
-	})
+	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123", "Oldest Message", baseTime))
+	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123/workUnits/1", "Middle Message", baseTime.Add(time.Hour)))
+	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123", "Newest Message", baseTime.Add(2*time.Hour)))
 
 	t.Run("default ordering is create_time desc across experiment and work unit messages", func(t *testing.T) {
 		msgs, _, err := repo.ListStatusMessages(ctx, "experiments/123", 10, "", "", "", 0)
 		if err != nil {
 			t.Fatalf("ListStatusMessages() failed: %v", err)
 		}
-		want := []string{"Newest Message", "Middle Message", "Oldest Message"}
-		if diff := cmp.Diff(want, messageTexts(msgs)); diff != "" {
+		if diff := cmp.Diff([]string{"Newest Message", "Middle Message", "Oldest Message"}, messageTexts(msgs)); diff != "" {
 			t.Errorf("default ordering mismatch (-want +got):\n%s", diff)
 		}
 	})
@@ -382,8 +329,7 @@ func TestListStatusMessages_OrderingAndPagination(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListStatusMessages(create_time asc) failed: %v", err)
 		}
-		want := []string{"Oldest Message", "Middle Message", "Newest Message"}
-		if diff := cmp.Diff(want, messageTexts(msgs)); diff != "" {
+		if diff := cmp.Diff([]string{"Oldest Message", "Middle Message", "Newest Message"}, messageTexts(msgs)); diff != "" {
 			t.Errorf("ascending ordering mismatch (-want +got):\n%s", diff)
 		}
 	})
@@ -393,23 +339,16 @@ func TestListStatusMessages_OrderingAndPagination(t *testing.T) {
 		pageToken := ""
 		for page := 1; page <= 3; page++ {
 			msgs, nextToken, err := repo.ListStatusMessages(ctx, "experiments/123", 1, pageToken, "", "", 0)
-			if err != nil {
-				t.Fatalf("ListStatusMessages(page %d) failed: %v", page, err)
-			}
-			if len(msgs) != 1 {
-				t.Fatalf("page %d returned %d messages, want 1", page, len(msgs))
+			if err != nil || len(msgs) != 1 {
+				t.Fatalf("page %d = (%d msgs, err %v), want (1, nil)", page, len(msgs), err)
 			}
 			collected = append(collected, msgs[0].GetContent().GetUserFacingText())
-			if page < 3 && nextToken == "" {
-				t.Fatalf("page %d returned empty nextPageToken", page)
-			}
-			if page == 3 && nextToken != "" {
-				t.Errorf("final page returned non-empty nextPageToken %q", nextToken)
+			if (page < 3) != (nextToken != "") {
+				t.Fatalf("page %d nextPageToken = %q, wantNonEmpty=%v", page, nextToken, page < 3)
 			}
 			pageToken = nextToken
 		}
-		want := []string{"Newest Message", "Middle Message", "Oldest Message"}
-		if diff := cmp.Diff(want, collected); diff != "" {
+		if diff := cmp.Diff([]string{"Newest Message", "Middle Message", "Oldest Message"}, collected); diff != "" {
 			t.Errorf("paginated messages mismatch (-want +got):\n%s", diff)
 		}
 	})
@@ -421,20 +360,8 @@ func TestListStatusMessages_SameCreateTimePagination(t *testing.T) {
 	postgrestest.SeedExperiment(ctx, t, pool, testXID)
 
 	sameTime := time.Date(2026, time.April, 13, 12, 0, 0, 0, time.UTC)
-	insertStatusMessage(ctx, t, repo, pool, nil, nil, &essmsgpb.StructuredMessage{
-		UserFacingText: "SameTime One",
-		Severity:       essmsgpb.StructuredMessage_INFO,
-		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-		Parent:         "experiments/123",
-		CreateTime:     timestamppb.New(sameTime),
-	})
-	insertStatusMessage(ctx, t, repo, pool, nil, nil, &essmsgpb.StructuredMessage{
-		UserFacingText: "SameTime Two",
-		Severity:       essmsgpb.StructuredMessage_INFO,
-		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-		Parent:         "experiments/123",
-		CreateTime:     timestamppb.New(sameTime),
-	})
+	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123", "SameTime One", sameTime))
+	insertStatusMessage(ctx, t, repo, pool, nil, nil, newStructuredMessage("experiments/123", "SameTime Two", sameTime))
 
 	page1, token, err := repo.ListStatusMessages(ctx, "experiments/123", 1, "", "", "", 0)
 	if err != nil || len(page1) != 1 || token == "" {
@@ -462,39 +389,11 @@ func TestListStatusMessages_ValidationErrors(t *testing.T) {
 		orderBy   string
 		wantCode  codes.Code
 	}{
-		{
-			name:     "nil db returns FailedPrecondition",
-			repo:     NewRepository(nil),
-			parent:   "experiments/123",
-			wantCode: codes.FailedPrecondition,
-		},
-		{
-			name:     "empty parent returns InvalidArgument",
-			repo:     repo,
-			parent:   "",
-			wantCode: codes.InvalidArgument,
-		},
-		{
-			name:      "invalid pageToken returns InvalidArgument",
-			repo:      repo,
-			parent:    "experiments/123",
-			pageToken: "not-valid-base64!!!",
-			wantCode:  codes.InvalidArgument,
-		},
-		{
-			name:     "invalid filter returns InvalidArgument",
-			repo:     repo,
-			parent:   "experiments/123",
-			filter:   "unknown_field = 1",
-			wantCode: codes.InvalidArgument,
-		},
-		{
-			name:     "invalid orderBy returns InvalidArgument",
-			repo:     repo,
-			parent:   "experiments/123",
-			orderBy:  "unknown_field asc",
-			wantCode: codes.InvalidArgument,
-		},
+		{name: "nil db returns FailedPrecondition", repo: NewRepository(nil), parent: "experiments/123", wantCode: codes.FailedPrecondition},
+		{name: "empty parent returns InvalidArgument", repo: repo, parent: "", wantCode: codes.InvalidArgument},
+		{name: "invalid pageToken returns InvalidArgument", repo: repo, parent: "experiments/123", pageToken: "not-valid-base64!!!", wantCode: codes.InvalidArgument},
+		{name: "invalid filter returns InvalidArgument", repo: repo, parent: "experiments/123", filter: "unknown_field = 1", wantCode: codes.InvalidArgument},
+		{name: "invalid orderBy returns InvalidArgument", repo: repo, parent: "experiments/123", orderBy: "unknown_field asc", wantCode: codes.InvalidArgument},
 	}
 
 	for _, tc := range tests {

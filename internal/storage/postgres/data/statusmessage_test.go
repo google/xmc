@@ -30,9 +30,23 @@ var testStatusMessageTime = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UT
 func TestStatusMessageProtoAndRowRoundTrip(t *testing.T) {
 	eid := int64(555)
 	prevMsg := &essmsgpb.StructuredMessage{UserFacingText: "previous text"}
-	testURL := &essmsgpb.Url{Url: "https://example.com", DisplayName: "Example"}
-	testAux := &essmsgpb.AuxiliaryInfo{
-		Detail: &essmsgpb.AuxiliaryInfo_StackTrace{StackTrace: "test stack trace"},
+	wuMsg := &essmsgpb.StructuredMessage{
+		Parent:         "experiments/123/workUnits/456",
+		Severity:       essmsgpb.StructuredMessage_INFO,
+		Source:         essmsgpb.StructuredMessage_XMANAGER_CLIENT,
+		UserFacingText: "Test message",
+		UserFacingUrl:  &essmsgpb.Url{Url: "https://example.com", DisplayName: "Example"},
+		CreateTime:     timestamppb.New(testStatusMessageTime),
+		AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
+			Detail: &essmsgpb.AuxiliaryInfo_StackTrace{StackTrace: "test stack trace"},
+		},
+	}
+	expMsg := &essmsgpb.StructuredMessage{
+		Parent:         "experiments/123",
+		Severity:       essmsgpb.StructuredMessage_ERROR,
+		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+		UserFacingText: "Experiment message",
+		CreateTime:     timestamppb.New(testStatusMessageTime),
 	}
 
 	tests := []struct {
@@ -45,30 +59,14 @@ func TestStatusMessageProtoAndRowRoundTrip(t *testing.T) {
 		wantRow     StatusMessageRow
 	}{
 		{
-			name: "work unit message with all fields",
-			msg: &essmsgpb.StructuredMessage{
-				Parent:         "experiments/123/workUnits/456",
-				Severity:       essmsgpb.StructuredMessage_INFO,
-				Source:         essmsgpb.StructuredMessage_XMANAGER_CLIENT,
-				UserFacingText: "Test message",
-				UserFacingUrl:  testURL,
-				CreateTime:     timestamppb.New(testStatusMessageTime),
-				AuxiliaryInfo:  testAux,
-			},
+			name:        "work unit message with all fields",
+			msg:         wuMsg,
 			messageID:   789,
 			eid:         &eid,
 			previousMsg: prevMsg,
 			want: &essmsgpb.StatusMessage{
-				Name: "experiments/123/workUnits/456/statusMessages/789",
-				Content: &essmsgpb.StructuredMessage{
-					Parent:         "experiments/123/workUnits/456",
-					Severity:       essmsgpb.StructuredMessage_INFO,
-					Source:         essmsgpb.StructuredMessage_XMANAGER_CLIENT,
-					UserFacingText: "Test message",
-					UserFacingUrl:  testURL,
-					CreateTime:     timestamppb.New(testStatusMessageTime),
-					AuxiliaryInfo:  testAux,
-				},
+				Name:        "experiments/123/workUnits/456/statusMessages/789",
+				Content:     wuMsg,
 				ExecutionId: 555,
 			},
 			wantRow: StatusMessageRow{
@@ -83,24 +81,12 @@ func TestStatusMessageProtoAndRowRoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name: "experiment message with nullable fields unset",
-			msg: &essmsgpb.StructuredMessage{
-				Parent:         "experiments/123",
-				Severity:       essmsgpb.StructuredMessage_ERROR,
-				Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-				UserFacingText: "Experiment message",
-				CreateTime:     timestamppb.New(testStatusMessageTime),
-			},
+			name:      "experiment message with nullable fields unset",
+			msg:       expMsg,
 			messageID: 101,
 			want: &essmsgpb.StatusMessage{
-				Name: "experiments/123/statusMessages/101",
-				Content: &essmsgpb.StructuredMessage{
-					Parent:         "experiments/123",
-					Severity:       essmsgpb.StructuredMessage_ERROR,
-					Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-					UserFacingText: "Experiment message",
-					CreateTime:     timestamppb.New(testStatusMessageTime),
-				},
+				Name:    "experiments/123/statusMessages/101",
+				Content: expMsg,
 			},
 			wantRow: StatusMessageRow{
 				Xid:            123,
@@ -127,9 +113,8 @@ func TestStatusMessageProtoAndRowRoundTrip(t *testing.T) {
 			if (tc.previousMsg == nil) != (row.PreviousMessage == nil) {
 				t.Errorf("row.PreviousMessage nil = %v, want %v", row.PreviousMessage == nil, tc.previousMsg == nil)
 			}
-			insertArgs := row.GetInsertArgs()
-			if len(insertArgs) != 11 || insertArgs["messageid"] != tc.messageID {
-				t.Errorf("row.GetInsertArgs() = %v, want 11 entries with messageid=%d", insertArgs, tc.messageID)
+			if args := row.GetInsertArgs(); len(args) != 11 || args["messageid"] != tc.messageID {
+				t.Errorf("row.GetInsertArgs() = %v, want 11 entries with messageid=%d", args, tc.messageID)
 			}
 			got, err := StatusMessageRowToProto(row)
 			if err != nil {
