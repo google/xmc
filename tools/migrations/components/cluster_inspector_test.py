@@ -25,8 +25,13 @@ class TestClusterInspector(unittest.TestCase):
         self.assertEqual(got, {"ingestionGatewayDeployment": {"enabled": True}})
         self.assertEqual(
             mock_run.call_args[0][0],
-            ["helm", "get", "values", "xmc", "-n", "tenant-a", "-a", "-o", "json"],
+            ["helm", "get", "values", "-n", "tenant-a", "-a", "-o", "json", "--", "xmc"],
         )
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="null", stderr=""
+        )
+        self.assertEqual(cluster_inspector.fetch_umbrella_values("xmc", "tenant-a"), {})
 
     @patch(
         "tools.migrations.components.cluster_inspector.run_command",
@@ -68,8 +73,12 @@ class TestClusterInspector(unittest.TestCase):
     @patch("tools.migrations.components.cluster_inspector.run_command")
     def test_validate_namespace_and_annotate_resource(self, mock_run: MagicMock) -> None:
         cluster_inspector.validate_dns1123_namespace("tenant-a")
+        cluster_inspector.validate_helm_release("xmc.v1")
         with self.assertRaises(HandledError):
             cluster_inspector.validate_dns1123_namespace("BAD_NS")
+        for bad_rel in ("", "-bad", "BAD_REL"):
+            with self.assertRaises(HandledError):
+                cluster_inspector.validate_helm_release(bad_rel)
 
         mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
         cluster_inspector.annotate_resource("service", "s1", "tenant-a", ["k=v"])
@@ -83,6 +92,9 @@ class TestClusterInspector(unittest.TestCase):
             args=[], returncode=0, stdout='{"kind": "Secret"}', stderr=""
         )
         cluster_inspector.verify_secret_exists("ch-sec", "xmc", field_label="ClickHouse")
+        for bad_sec in ("", "-l=app=foo"):
+            with self.assertRaises(HandledError):
+                cluster_inspector.verify_secret_exists(bad_sec, "xmc", field_label="ClickHouse")
         self.assertTrue(cluster_inspector.helm_release_exists("xmc-cmp-ingestion-gateway", "xmc"))
 
         mock_run.return_value = subprocess.CompletedProcess(

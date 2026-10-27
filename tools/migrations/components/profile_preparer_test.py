@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for profile_preparer."""
 
+import math
 import shutil
 import tempfile
 import unittest
@@ -55,8 +56,12 @@ class TestProfilePreparer(unittest.TestCase):
             _baseline_deployment(
                 container_patch={"env": [{"name": "MESSAGE_BUS", "value": "pubsub"}]}
             ),
+            _baseline_deployment(container_patch={"command": ["/custom/bin"]}),
             _baseline_deployment(volumes=[{"name": "extra-vol"}]),
             _baseline_deployment(container_patch={"args": ["-message_bus=pubsub"]}),
+            _baseline_deployment(container_patch={"args": ["positional"]}),
+            _baseline_deployment(container_patch={"args": ["-project_id"]}),
+            _baseline_deployment(container_patch={"args": ["--", "-port=8080"]}),
         ]
         for bad_dep in bad_cases:
             with self.assertRaises(HandledError):
@@ -99,13 +104,14 @@ class TestProfilePreparer(unittest.TestCase):
 
         flags_tls_off = dict(flags, tls_enabled="false")
         gw_no_hpa = profile_preparer.build_gateway_parameters(
-            {"ingestionGatewayDeployment": {"replicas": None}},
+            {"ingestionGatewayDeployment": {"replicas": None, "sasl": True, "tls": "invalid"}},
             {"spec": {"replicas": 0, "template": dep["spec"]["template"]}},
             None,
             flags_tls_off,
         )
         self.assertFalse(gw_no_hpa["hpaEnabled"])
         self.assertEqual(gw_no_hpa["replicas"], 0)
+        self.assertFalse(gw_no_hpa["saslEnabled"])
         self.assertFalse(gw_no_hpa["tlsEnabled"])
         self.assertNotIn("tlsSecretName", gw_no_hpa)
         self.assertNotIn("tlsCaFile", gw_no_hpa)
@@ -116,10 +122,57 @@ class TestProfilePreparer(unittest.TestCase):
 
         rp = profile_preparer.build_redpanda_parameters(gw)
         self.assertEqual(rp["brokerEndpoints"], "rp-0:9092,rp-1:9092")
+        self.assertEqual(rp["kafkaPort"], 9092)
         ch = profile_preparer.build_clickhouse_parameters(umbrella)
         self.assertEqual(ch["clusterEndpoints"], "[fd00::1]:9000")
         self.assertEqual(ch["healthCheckEndpoint"], "http://[fd00::1]:8123/ping")
         self.assertEqual(ch["user"], "writer")
+
+    def test_parse_gateway_cli_flags_space_separated_bool_and_terminator(self) -> None:
+        dep = _baseline_deployment(
+            container_patch={
+                "args": [
+                    "positional-ignored",
+                    "-",
+                    "-tls_enabled",
+                    "-port",
+                    "9090",
+                    "--topic_name",
+                    "custom-metrics",
+                    "-project_id",
+                    "--min_partitions=64",
+                    "--",
+                    "-port=9999",
+                ]
+            }
+        )
+        parsed = profile_preparer.parse_gateway_cli_flags(dep)
+        self.assertEqual(
+            parsed,
+            {
+                "tls_enabled": "true",
+                "port": "9090",
+                "topic_name": "custom-metrics",
+                "min_partitions": "64",
+            },
+        )
+
+    def test_build_redpanda_parameters_ipv6_and_port_edge_cases(self) -> None:
+        cases = [
+            ("fd00::1", 9092),
+            ("fd00::1,fd00::2", 9092),
+            ("[fd00::1]:9094", 9094),
+            ("[fd00::1]", 9092),
+            ("rp-0", 9092),
+            ("rp-0:19092", 19092),
+            ("rp-0:0", 9092),
+            ("rp-0:70000", 9092),
+        ]
+        for brokers, expected_port in cases:
+            with self.subTest(brokers=brokers):
+                rp = profile_preparer.build_redpanda_parameters({"redpandaBrokers": brokers})
+                self.assertEqual(rp["kafkaPort"], expected_port)
+                self.assertEqual(rp["brokerEndpoints"], brokers)
 
     def test_render_profile_yaml_types_and_guards(self) -> None:
         rendered = profile_preparer.render_profile_yaml({"empty": {}, "ratio": 0.5, "flag": False})
@@ -128,6 +181,8 @@ class TestProfilePreparer(unittest.TestCase):
         self.assertIn("flag: false", rendered)
         with self.assertRaises(ValueError):
             profile_preparer.render_profile_yaml({"bad": None})
+        with self.assertRaises(ValueError):
+            profile_preparer.render_profile_yaml({"nan": math.nan})
 
     @patch("tools.migrations.components.profile_preparer.validate_profile_values")
     @patch("tools.migrations.components.profile_preparer.verify_secret_exists")
@@ -145,12 +200,20 @@ class TestProfilePreparer(unittest.TestCase):
         mock_secret: MagicMock,
         mock_validate: MagicMock,
     ) -> None:
+        with self.assertRaises(HandledError):
+            profile_preparer.build_gateway_parameters(
+                {}, _baseline_deployment(), None, {"port": "abc"}
+            )
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "pv.yaml"
-            with self.assertRaises(HandledError):
-                profile_preparer.prepare_profile_values("xmc", "INVALID_NS", out)
+            for bad_ns in ("INVALID_NS", "tenant-a\n"):
+                with self.assertRaises(HandledError):
+                    profile_preparer.prepare_profile_values("xmc", bad_ns, out)
 
             mock_umbrella.return_value = {"ingestionGatewayDeployment": {"enabled": "false"}}
+            with self.assertRaises(HandledError):
+                profile_preparer.prepare_profile_values("xmc", "tenant-a", Path(tmp))
+
             res_off = profile_preparer.prepare_profile_values(
                 "xmc", "tenant-a", out, Path(tmp), Path(tmp)
             )
@@ -161,7 +224,7 @@ class TestProfilePreparer(unittest.TestCase):
             mock_umbrella.return_value = {
                 "ingestion_gateway_custom_image": "gcr.io/p/ig:1.0",
                 "ingestionGatewayDeployment": {"enabled": True},
-                "secrets": {"csi": {"enabled": "false"}},
+                "secrets": {"csi": "disabled"},
             }
             mock_live.side_effect = [
                 _baseline_deployment(),
@@ -173,6 +236,15 @@ class TestProfilePreparer(unittest.TestCase):
             self.assertTrue(res_on["gateway_enabled"])
             self.assertEqual(mock_secret.call_count, 2)  # TLS + ClickHouse
             self.assertEqual(mock_validate.call_count, 2)
+
+            mock_umbrella.return_value = {"ingestionGatewayDeployment": {"enabled": "false"}}
+            mock_validate.side_effect = HandledError("lint failed", "fix")
+            with self.assertRaises(HandledError):
+                profile_preparer.prepare_profile_values(
+                    "xmc", "tenant-a", out, Path(tmp), Path(tmp)
+                )
+            self.assertFalse(out.exists())
+            mock_validate.side_effect = None
 
             mock_helm_ver.side_effect = RuntimeError("helm v3.12.0 < 3.14.0")
             with self.assertRaises(HandledError):
