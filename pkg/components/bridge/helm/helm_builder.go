@@ -78,12 +78,12 @@ type HelmComponentOptions struct {
 // BuildHelmValues converts HelmComponentOptions into a structured values map suitable for Helm upgrade.
 func BuildHelmValues(opts HelmComponentOptions) map[string]any {
 	values := make(map[string]any)
-	if opts.Ref.Namespace != "" {
-		values["namespace"] = opts.Ref.Namespace
+	if ns := strings.TrimSpace(opts.Ref.Namespace); ns != "" {
+		values["namespace"] = ns
 	}
 
 	defaultEnvImg := defaultComponentEnvImage(opts.Ref.Name)
-	effectiveTag := opts.ImageTag
+	effectiveTag := strings.TrimSpace(opts.ImageTag)
 	if opts.ImageTagFromChartVersion {
 		effectiveTag = ""
 	}
@@ -102,10 +102,11 @@ func buildComponentDeploymentValues(opts HelmComponentOptions, effectiveTag, def
 		compValues["drainTimeoutSeconds"] = opts.DrainTimeoutSeconds
 		compValues["terminationGracePeriodSeconds"] = int64(opts.DrainTimeoutSeconds) + terminationGracePeriodBufferSeconds
 	}
-	if effectiveTag != "" || opts.Parameters["image"] != "" || opts.Parameters["imageRepository"] != "" || defaultEnvImg != "" {
+	hasImgOverride := strings.TrimSpace(opts.Parameters["image"]) != "" || strings.TrimSpace(opts.Parameters["imageRepository"]) != ""
+	if effectiveTag != "" || hasImgOverride || defaultEnvImg != "" {
 		compValues["image"] = ResolveImage(opts.Ref.Name, effectiveTag, opts.Parameters)
 	}
-	if projID := os.Getenv("PROJECT_ID"); projID != "" {
+	if projID := strings.TrimSpace(os.Getenv("PROJECT_ID")); projID != "" {
 		compValues["projectId"] = projID
 	}
 	for k, v := range opts.Parameters {
@@ -121,12 +122,12 @@ func buildComponentDeploymentValues(opts HelmComponentOptions, effectiveTag, def
 }
 
 func defaultComponentEnvImage(componentName string) string {
-	return os.Getenv("DEFAULT_" + strings.ToUpper(strings.ReplaceAll(componentName, "-", "_")) + "_IMAGE")
+	return strings.TrimSpace(os.Getenv("DEFAULT_" + strings.ToUpper(strings.ReplaceAll(componentName, "-", "_")) + "_IMAGE"))
 }
 
 // repositoryFromImageRef strips any @digest or :tag suffix from a container image reference.
 func repositoryFromImageRef(imageRef string) string {
-	ref := imageRef
+	ref := strings.TrimSpace(imageRef)
 	if idx := strings.Index(ref, "@"); idx >= 0 {
 		ref = ref[:idx]
 	}
@@ -152,12 +153,13 @@ func DefaultComponentRepository(componentName string) string {
 //     or its repository + explicit imageTag override when imageTag is set
 //  4. Default repository (DefaultComponentRepository) + imageTag (or ":latest")
 func ResolveImage(componentName string, imageTag string, parameters map[string]string) string {
-	if img, ok := parameters["image"]; ok && img != "" {
+	if img := strings.TrimSpace(parameters["image"]); img != "" {
 		return img
 	}
-	repo := parameters["imageRepository"]
+	repo := strings.TrimSpace(parameters["imageRepository"])
+	tag := strings.TrimSpace(imageTag)
 	envImg := defaultComponentEnvImage(componentName)
-	if repo == "" && imageTag == "" && envImg != "" {
+	if repo == "" && tag == "" && envImg != "" {
 		return envImg
 	}
 	if repo == "" && envImg != "" {
@@ -166,7 +168,6 @@ func ResolveImage(componentName string, imageTag string, parameters map[string]s
 	if repo == "" {
 		repo = DefaultComponentRepository(componentName)
 	}
-	tag := imageTag
 	if tag == "" {
 		tag = "latest"
 	}
@@ -225,7 +226,7 @@ func toCamelCase(s string) string {
 func ParseHelmComponentOptions(name, namespace string, specObj any, spec *componentspb.ComponentSpec) HelmComponentOptions {
 	opts := HelmComponentOptions{
 		Ref: ComponentRef{
-			Namespace: namespace,
+			Namespace: strings.TrimSpace(namespace),
 			Name:      name,
 		},
 		ReleaseName: DefaultHelmReleaseName,
@@ -244,13 +245,13 @@ func applyProtoSpec(opts *HelmComponentOptions, spec *componentspb.ComponentSpec
 	if spec == nil {
 		return
 	}
-	if ver := spec.GetVersion(); ver != "" {
+	if ver := strings.TrimSpace(spec.GetVersion()); ver != "" {
 		opts.ImageTag = ver
 	}
 	for k, v := range spec.GetParameters() {
 		opts.Parameters[k] = v
 	}
-	if cp := opts.Parameters["chartPath"]; cp != "" {
+	if cp := strings.TrimSpace(opts.Parameters["chartPath"]); cp != "" {
 		opts.ChartPath = cp
 	}
 	if lc := spec.GetLifecycleControl(); lc != nil && lc.GetDrainingTimeout() != nil {
@@ -265,25 +266,30 @@ func applyUnstructuredSpec(opts *HelmComponentOptions, specMap map[string]any) {
 	if dt := parseDrainingTimeout(specMap["lifecycleControl"]); dt > 0 {
 		opts.DrainTimeoutSeconds = dt
 	}
-	if rel, ok := specMap["releaseName"].(string); ok && rel != "" {
-		opts.ReleaseName = rel
+	if rel, ok := specMap["releaseName"].(string); ok && strings.TrimSpace(rel) != "" {
+		opts.ReleaseName = strings.TrimSpace(rel)
 	}
+	applyVersionAndImageTag(opts, specMap)
+	extractParams(specMap["parameters"], opts.Parameters)
+	if cp := strings.TrimSpace(opts.Parameters["chartPath"]); cp != "" {
+		opts.ChartPath = cp
+	}
+	extractRawValues(specMap["values"], opts.RawValues)
+}
+
+func applyVersionAndImageTag(opts *HelmComponentOptions, specMap map[string]any) {
 	chartVer, _ := specMap["chartVersion"].(string)
-	if ver, ok := specMap["version"].(string); ok && ver != "" && opts.ImageTag == "" {
-		opts.ImageTag = ver
+	chartVer = strings.TrimSpace(chartVer)
+	if ver, ok := specMap["version"].(string); ok && strings.TrimSpace(ver) != "" && opts.ImageTag == "" {
+		opts.ImageTag = strings.TrimSpace(ver)
 	}
 	if chartVer != "" && opts.ImageTag == chartVer {
 		opts.ImageTagFromChartVersion = true
 	}
-	if tag, ok := specMap["imageTag"].(string); ok && tag != "" {
-		opts.ImageTag = tag
+	if tag, ok := specMap["imageTag"].(string); ok && strings.TrimSpace(tag) != "" {
+		opts.ImageTag = strings.TrimSpace(tag)
 		opts.ImageTagFromChartVersion = false
 	}
-	extractParams(specMap["parameters"], opts.Parameters)
-	if opts.Parameters["chartPath"] != "" {
-		opts.ChartPath = opts.Parameters["chartPath"]
-	}
-	extractRawValues(specMap["values"], opts.RawValues)
 }
 
 func extractParams(raw any, target map[string]string) {
