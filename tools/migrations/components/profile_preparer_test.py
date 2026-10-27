@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for profile_preparer."""
 
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -147,6 +148,8 @@ class TestProfilePreparer(unittest.TestCase):
         self.assertIn("flag: false", rendered)
         with self.assertRaises(ValueError):
             profile_preparer.render_profile_yaml({"bad": None})
+        with self.assertRaises(ValueError):
+            profile_preparer.render_profile_yaml({"nan": math.nan})
 
     @patch("tools.migrations.components.profile_preparer.fetch_live_resource")
     @patch("tools.migrations.components.profile_preparer.fetch_umbrella_values")
@@ -160,12 +163,20 @@ class TestProfilePreparer(unittest.TestCase):
         mock_umbrella: MagicMock,
         mock_live: MagicMock,
     ) -> None:
+        with self.assertRaises(HandledError):
+            profile_preparer.build_gateway_parameters(
+                {}, _baseline_deployment(), None, {"port": "abc"}
+            )
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "pv.yaml"
-            with self.assertRaises(HandledError):
-                profile_preparer.prepare_profile_values("xmc", "INVALID_NS", out)
+            for bad_ns in ("INVALID_NS", "tenant-a\n"):
+                with self.assertRaises(HandledError):
+                    profile_preparer.prepare_profile_values("xmc", bad_ns, out)
 
             mock_umbrella.return_value = {"ingestionGatewayDeployment": {"enabled": "false"}}
+            with self.assertRaises(HandledError):
+                profile_preparer.prepare_profile_values("xmc", "tenant-a", Path(tmp))
+
             res_off = profile_preparer.prepare_profile_values("xmc", "tenant-a", out)
             self.assertFalse(res_off["gateway_enabled"])
             self.assertIn("enabled: false", out.read_text(encoding="utf-8"))

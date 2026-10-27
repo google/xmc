@@ -25,8 +25,13 @@ class TestClusterInspector(unittest.TestCase):
         self.assertEqual(got, {"ingestionGatewayDeployment": {"enabled": True}})
         self.assertEqual(
             mock_run.call_args[0][0],
-            ["helm", "get", "values", "xmc", "-n", "tenant-a", "-a", "-o", "json"],
+            ["helm", "get", "values", "-n", "tenant-a", "-a", "-o", "json", "--", "xmc"],
         )
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="null", stderr=""
+        )
+        self.assertEqual(cluster_inspector.fetch_umbrella_values("xmc", "tenant-a"), {})
 
     @patch(
         "tools.migrations.components.cluster_inspector.run_command",

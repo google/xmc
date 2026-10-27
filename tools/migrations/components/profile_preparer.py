@@ -20,7 +20,7 @@ from tools.migrations.components.cluster_inspector import (
 
 _COMPONENTS = ("redpanda", "clickhouse", "ingestion-gateway")
 _DEFAULT_BROKERS = "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
-_DNS1123_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+_DNS1123_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?\Z")
 _BOOL_FLAGS = ("enable_components", "sasl_enabled", "tls_enabled", "tls_insecure_skip_verify")
 
 
@@ -180,9 +180,8 @@ def render_profile_yaml(doc: dict[str, Any], indent: int = 0) -> str:
         if val is None:
             raise ValueError(f"Null value not permitted in profile YAML for key '{key}'")
         if isinstance(val, dict):
-            lines.append(f"{pad}{key}:" if val else f"{pad}{key}: {{}}")
-            if val:
-                lines.append(render_profile_yaml(val, indent + 2).rstrip("\n"))
+            sub = render_profile_yaml(val, indent + 2).rstrip("\n") if val else ""
+            lines.extend((f"{pad}{key}:", sub) if val else (f"{pad}{key}: {{}}",))
         elif isinstance(val, bool):
             lines.append(f"{pad}{key}: {'true' if val else 'false'}")
         elif isinstance(val, int | float):
@@ -207,8 +206,12 @@ def prepare_profile_values(release: str, namespace: str, output_path: Path) -> d
     ig_enabled = parse_bool_flag(ig.get("enabled"))
     off = {"components": {n: {"enabled": False, "namespace": namespace} for n in _COMPONENTS}}
     doc = _build_enabled_profile_doc(umbrella_values, namespace) if ig_enabled else off
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(render_profile_yaml(doc), encoding="utf-8")
+    rendered = render_profile_yaml(doc)
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered, encoding="utf-8")
+    except OSError as e:
+        raise HandledError(f"Failed to write '{output_path}': {e}", "Check --output path.") from e
     return {
         "output_path": str(output_path),
         "namespace": namespace,

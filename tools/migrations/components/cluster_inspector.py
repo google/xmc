@@ -17,7 +17,7 @@ def fetch_umbrella_values(release: str, namespace: str) -> dict[str, Any]:
     """Fetches computed Helm values (defaults + overrides) for the umbrella release."""
     try:
         res = run_command(
-            ["helm", "get", "values", release, "-n", namespace, "-a", "-o", "json"],
+            ["helm", "get", "values", "-n", namespace, "-a", "-o", "json", "--", release],
             capture_output=True,
             log_on_error=False,
             stream=sys.stderr,
