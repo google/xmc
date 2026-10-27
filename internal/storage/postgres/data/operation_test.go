@@ -87,13 +87,13 @@ func TestOperationProtoAndRowRoundTrip(t *testing.T) {
 			if !row.CreateTime.Equal(testOperationTime) || !row.UpdateTime.Equal(testOperationTime) {
 				t.Errorf("row timestamps = (%v, %v), want %v", row.CreateTime, row.UpdateTime, testOperationTime)
 			}
-			insertArgs := row.InsertArgs()
+			insertArgs := row.GetInsertArgs()
 			if len(insertArgs) != 9 || insertArgs["createtime"] != testOperationTime {
-				t.Errorf("row.InsertArgs() = %v, want 9 entries with matching createtime", insertArgs)
+				t.Errorf("row.GetInsertArgs() = %v, want 9 entries with matching createtime", insertArgs)
 			}
-			updateArgs := row.UpdateArgs()
+			updateArgs := row.GetUpdateArgs()
 			if len(updateArgs) != 8 || updateArgs["operationid"] != row.OperationID {
-				t.Errorf("row.UpdateArgs() = %v, want 8 entries with matching operationid", updateArgs)
+				t.Errorf("row.GetUpdateArgs() = %v, want 8 entries with matching operationid", updateArgs)
 			}
 			got, err := OperationRowToProto(row)
 			if err != nil {

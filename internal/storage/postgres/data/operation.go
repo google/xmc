@@ -39,15 +39,15 @@ type OperationRow struct {
 	UpdateTime        time.Time `db:"updatetime"`
 }
 
-// InsertArgs returns the strict named arguments required by the Operations INSERT statement.
-func (r OperationRow) InsertArgs() pgx.StrictNamedArgs {
-	args := r.UpdateArgs()
+// GetInsertArgs returns the strict named arguments required by the Operations INSERT statement.
+func (r OperationRow) GetInsertArgs() pgx.StrictNamedArgs {
+	args := r.GetUpdateArgs()
 	args["createtime"] = r.CreateTime
 	return args
 }
 
-// UpdateArgs returns the strict named arguments required by the Operations UPDATE statement.
-func (r OperationRow) UpdateArgs() pgx.StrictNamedArgs {
+// GetUpdateArgs returns the strict named arguments required by the Operations UPDATE statement.
+func (r OperationRow) GetUpdateArgs() pgx.StrictNamedArgs {
 	return pgx.StrictNamedArgs{
 		"xid": r.Xid, "workunitid": r.WorkUnitID, "operationid": r.OperationID, "done": r.Done,
 		"status": r.Status, "response": r.Response, "operationmetadata": r.OperationMetadata, "updatetime": r.UpdateTime,

@@ -77,7 +77,7 @@ func (r *Repository) AddWorkUnitOperation(ctx context.Context, xid int64, wid in
 	if err != nil {
 		return nil, err
 	}
-	if _, err := r.pool.Exec(ctx, insertOperationSQL.String(), row.InsertArgs()); err != nil {
+	if _, err := r.pool.Exec(ctx, insertOperationSQL.String(), row.GetInsertArgs()); err != nil {
 		logging.Error(ctx, "Failed to add work unit operation", "error", err)
 		return nil, pgdb.TranslateError(err, entityName)
 	}
@@ -122,7 +122,7 @@ func (r *Repository) UpdateWorkUnitOperation(ctx context.Context, operationUpdat
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, updateOperationSQL.String(), row.UpdateArgs()); err != nil {
+		if _, err := tx.Exec(ctx, updateOperationSQL.String(), row.GetUpdateArgs()); err != nil {
 			return pgdb.TranslateError(err, entityName)
 		}
 		mutated = true
