@@ -16,7 +16,7 @@ A spicy, vibrant Italian-style pizza featuring fiery peperoncino, aromatic tomat
 
 ### 1. Pizza Dough (65% Hydration)
 - **Tipo 00 flour** (or high-protein unbleached bread flour): 500g (~4 cups)
-- **Water** (lukewarm, ~25°C / 77°F): 325g (1 1/3 cups)
+- **Water** (cool, ~18°C–20°C / 64°F–68°F): 325g (1 1/3 cups)
 - **Fine sea salt**: 12g (2 tsp)
 - **Instant dry yeast**: 1.5g (1/2 tsp)
 - **Extra virgin olive oil** (recommended for standard home ovens): 10g (2 tsp)
@@ -45,9 +45,9 @@ A spicy, vibrant Italian-style pizza featuring fiery peperoncino, aromatic tomat
 ## Instructions
 
 ### Step 1: Prepare the Dough
-1. **Mix**: In a large bowl, dissolve yeast in lukewarm water. Gradually incorporate the flour until a shaggy dough forms. Cover and let rest for 20 minutes (autolyse).
+1. **Mix**: In a large bowl, dissolve yeast in cool water. Gradually incorporate the flour until a shaggy dough forms. Cover and let rest for 20 minutes (fermentolyse).
 2. **Knead**: Sprinkle salt (and olive oil, if using) across the dough. Knead on a lightly floured surface for 8–10 minutes until smooth, supple, and elastic.
-3. **Cold Fermentation**: Form into a ball, place in an oiled bowl, cover tightly, and allow to ferment at room temperature for 2 hours, then refrigerate for 24–48 hours for deep flavor development and light, airy crust.
+3. **Cold Fermentation**: Form into a ball, place in an oiled bowl, cover tightly, and allow to ferment at room temperature for 30 minutes, then refrigerate for 24–48 hours for deep flavor development and light, airy crust.
 4. **Ball the Dough**: About 2–3 hours before baking, divide into two equal balls (~420g each). Place in a proofing box or covered container at room temperature to relax and expand.
 
 ### Step 2: Prepare Sauce & Toppings
