@@ -17,7 +17,7 @@ The following fields are structural constants of the Redpanda blueprint hardcode
 | `metadata.labels["app.kubernetes.io/name"]` | `"redpanda"` | Standard Kubernetes application label. |
 | `spec.componentType` | `COMPONENT_TYPE_CUSTOM_3P_WRAPPER` | Hardcoded as a 3P Wrapper Component (`Redpanda` is always a third-party event-streaming service, never a 1P XMC component). |
 | `spec.componentClass` | `"event-stream"` | Canonical service class used by XMC workloads to discover the event-streaming broker. |
-| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.1"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
+| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.0"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
 
 ---
 
@@ -117,8 +117,8 @@ spec:
   enabled: true
   componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
   componentClass: "event-stream"
-  version: "0.1.1"
-  chartVersion: "0.1.1"
+  version: "0.1.0"
+  chartVersion: "0.1.0"
   deletionProtection: true
   deletionPolicy: "Delete"
   parameters:

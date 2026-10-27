@@ -21,6 +21,7 @@ the latest code in the current repository branch.
 import argparse
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -155,8 +156,12 @@ def step_check(config: UpgradeConfig) -> None:
     if config.enable_components:
         try:
             verify_helm_min_version()
-        except (subprocess.CalledProcessError, RuntimeError, ValueError) as e:
+        except (subprocess.CalledProcessError, RuntimeError, ValueError, OSError) as e:
             error_exit(f"Failed Helm version check: {e}")
+        if config.profile_values and not Path(config.profile_values).is_file():
+            error_exit(
+                f"Profile values file '{config.profile_values}' does not exist or is not a file."
+            )
 
     gcluster_path = Path("./cluster-toolkit/gcluster")
     if not gcluster_path.is_file() or not os.access(gcluster_path, os.X_OK):
@@ -542,6 +547,37 @@ def execute_step(step_name: str, config: UpgradeConfig) -> None:
     step_fn(config)
 
 
+def _build_resume_cmd(args: argparse.Namespace, config: UpgradeConfig, step: str) -> str:
+    """Constructs the suggested command to resume a failed upgrade.
+
+    Args:
+        args: Parsed command-line arguments.
+        config: Loaded UpgradeConfig instance.
+        step: Pipeline step name that failed.
+
+    Returns:
+        Shell-safe command string for resuming or re-running the step.
+    """
+    cmd = f"python3 tools/dev_env/upgrade_dev_env.py --config {shlex.quote(config.config_path)}"
+    if getattr(args, "enable_components", None) is not None:
+        flag = "--enable-components" if args.enable_components else "--no-enable-components"
+        cmd += f" {flag}"
+    if getattr(args, "profile_values", None):
+        cmd += f" --profile-values {shlex.quote(args.profile_values)}"
+    step_flag = "--only" if args.only else "--start-from"
+    return f"{cmd} {step_flag} {step}"
+
+
+def _run_step_or_exit(args: argparse.Namespace, config: UpgradeConfig, step: str) -> None:
+    """Executes a single pipeline step or prints a recovery command and exits."""
+    try:
+        execute_step(step, config)
+    except (subprocess.CalledProcessError, OSError) as e:
+        print(f"\n{RED}Error executing step '{step}': {e}{NC}")
+        print(f"Suggested recovery command:\n  {_build_resume_cmd(args, config, step)}")
+        sys.exit(1)
+
+
 def run_pipeline(args: argparse.Namespace, config: UpgradeConfig, steps: list[str]) -> None:
     """Executes the upgrade pipeline according to --only or --start-from.
 
@@ -551,15 +587,7 @@ def run_pipeline(args: argparse.Namespace, config: UpgradeConfig, steps: list[st
       steps: Ordered list of pipeline step names.
     """
     if args.only:
-        try:
-            execute_step(args.only, config)
-        except subprocess.CalledProcessError as e:
-            print(f"\n{RED}Error executing step '{args.only}': {e}{NC}")
-            print(
-                "Suggested recovery command:\n  python3 tools/dev_env/upgrade_dev_env.py"
-                f" --config {config.config_path} --start-from {args.only}"
-            )
-            sys.exit(1)
+        _run_step_or_exit(args, config, args.only)
         return
 
     should_run = not bool(args.start_from)
@@ -567,15 +595,7 @@ def run_pipeline(args: argparse.Namespace, config: UpgradeConfig, steps: list[st
         if step == args.start_from:
             should_run = True
         if should_run:
-            try:
-                execute_step(step, config)
-            except subprocess.CalledProcessError as e:
-                print(f"\n{RED}Error executing step '{step}': {e}{NC}")
-                print(
-                    "Suggested recovery command:\n  python3 tools/dev_env/upgrade_dev_env.py"
-                    f" --config {config.config_path} --start-from {step}"
-                )
-                sys.exit(1)
+            _run_step_or_exit(args, config, step)
 
     log_success("Upgrade completed end-to-end successfully!")
 

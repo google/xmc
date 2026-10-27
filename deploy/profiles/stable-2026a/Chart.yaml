@@ -19,6 +19,6 @@ description: >-
   catalog component in this profile from a single admin values file.
 type: application
 # Bump the patch version whenever any components/<name>/Chart.yaml version changes.
-version: 1.0.1
+version: 1.0.0
 annotations:
   xmc.dev/profile: stable-2026a
