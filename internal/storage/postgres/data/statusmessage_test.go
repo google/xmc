@@ -148,17 +148,17 @@ func TestStatusMessageRowToProto_PreservesEmptyNonNilProtoBytes(t *testing.T) {
 }
 
 func TestStatusMessageProtoToRow_DefaultCreateTime(t *testing.T) {
-	before := time.Now()
+	before := time.Now().UTC()
 	row, err := StatusMessageProtoToRow(&essmsgpb.StructuredMessage{
 		Parent:         "experiments/123",
 		UserFacingText: "msg",
 	}, 1, nil, nil)
-	after := time.Now()
+	after := time.Now().UTC()
 	if err != nil {
 		t.Fatalf("StatusMessageProtoToRow() failed: %v", err)
 	}
-	if row.CreateTime.Before(before) || row.CreateTime.After(after) {
-		t.Errorf("row.CreateTime = %v, want between %v and %v", row.CreateTime, before, after)
+	if row.CreateTime.Location() != time.UTC || row.CreateTime.Before(before) || row.CreateTime.After(after) {
+		t.Errorf("row.CreateTime = %v (loc=%v), want UTC between %v and %v", row.CreateTime, row.CreateTime.Location(), before, after)
 	}
 }
 

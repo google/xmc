@@ -96,6 +96,9 @@ func (r *TxRepository) SaveStatusMessageHistory(ctx context.Context, eid *int64,
 	if err := r.validateTxContext(ctx); err != nil {
 		return err
 	}
+	if newMsg == nil {
+		return pgdb.WrapStatusError("new status message must not be nil", grpcerr.ErrInvalidArgument, nil)
+	}
 	messageID, err := generateMessageID()
 	if err != nil {
 		return fmt.Errorf("failed to generate message ID: %w", err)
@@ -186,13 +189,13 @@ func (r *Repository) queryStatusMessages(ctx context.Context, stmt *postgresdial
 	if err != nil {
 		return nil, pgdb.TranslateError(err, entityName)
 	}
-	messages := make([]*essmsgpb.StatusMessage, 0, len(rawRows))
-	for _, row := range rawRows {
+	messages := make([]*essmsgpb.StatusMessage, len(rawRows))
+	for i, row := range rawRows {
 		msg, err := postgresdata.StatusMessageRowToProto(row)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode status message row: %w", err)
 		}
-		messages = append(messages, msg)
+		messages[i] = msg
 	}
 	return messages, nil
 }
@@ -215,5 +218,5 @@ func generateMessageID() (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to generate random MessageId: %w", err)
 	}
-	return n.Int64(), nil
+	return n.Int64() + 1, nil
 }

@@ -85,7 +85,7 @@ func StatusMessageProtoToRow(msg *essmsgpb.StructuredMessage, messageID int64, e
 	if err != nil {
 		return StatusMessageRow{}, fmt.Errorf("failed to validate status message parent %q: %w", msg.GetParent(), err)
 	}
-	createTime := time.Now()
+	createTime := time.Now().UTC()
 	if msg.GetCreateTime() != nil {
 		createTime = msg.GetCreateTime().AsTime()
 	}

@@ -215,6 +215,14 @@ func TestTxRepository_SaveStatusMessageHistory_ValidationAndErrors(t *testing.T)
 			wantErr:  grpcerr.ErrFailedPrecondition,
 		},
 		{
+			name: "nil newMsg returns InvalidArgument",
+			call: func() error {
+				return repo.WithTx(pool).SaveStatusMessageHistory(ctx, nil, nil, nil)
+			},
+			wantCode: codes.InvalidArgument,
+			wantErr:  grpcerr.ErrInvalidArgument,
+		},
+		{
 			name: "invalid parent returns InvalidArgument",
 			call: func() error {
 				return pgdb.RunInTx(ctx, pool, func(txCtx context.Context, tx pgx.Tx) error {
@@ -448,10 +456,13 @@ func TestExtractStatusMessageCursor(t *testing.T) {
 			wantWID: int64(789),
 		},
 		{
-			name: "invalid status message name returns error",
-			msg: &essmsgpb.StatusMessage{
-				Name: "invalid-name",
-			},
+			name:    "invalid status message name returns error",
+			msg:     &essmsgpb.StatusMessage{Name: "invalid-name"},
+			wantErr: true,
+		},
+		{
+			name:    "nil status message returns error without panicking",
+			msg:     nil,
 			wantErr: true,
 		},
 	}
