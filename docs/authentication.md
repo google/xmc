@@ -14,6 +14,8 @@ A deployment admits an identity if one of these is true, checked in this order:
 
 The check applies to the web UI, to `xmanager login`, and to every gRPC request. See the [Configuration Reference](../INSTALL.md#configuration-reference) for how to set these values.
 
+Emails, domains, and IAM members match the same way as [ACL principals](#experiment-access-acls): surrounding whitespace is ignored and only ASCII letters are case-insensitive, so `Alice@Example.com` matches `alice@example.com`, but a non-ASCII look-alike such as the Kelvin sign (U+212A) never matches `k`. Sign-in through the Dashboard or CLI login also requires a [plain ASCII email address](#experiment-access-acls); other identities are not admitted.
+
 ## Interactive Use: `xmanager login`
 
 Sign in as yourself with the `xmanager` CLI (requires `xmanager >= 0.8.5.post1` and XMC `>= 0.16.0`), installed via `pip install "xmanager>=0.8.5.post1"` or [`install_xmanager.py`](../deploy/cli/README.md):

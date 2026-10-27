@@ -184,6 +184,25 @@ func TestHybridAuthorizationPipeline(t *testing.T) {
 			wantErr:        false,
 		},
 		{
+			name:           "Stage 1: Email allowlist matches ASCII case-insensitively",
+			allowedDomains: []string{"company.com"},
+			allowedEmails:  []string{" Kate@External.com "},
+			gcpProjectID:   "my-project",
+			emailToCheck:   "KATE@external.COM",
+			mockAuth:       true,
+			want:           true,
+		},
+		{
+			name:           "Stage 1: Kelvin sign does not alias an allowlisted email",
+			allowedDomains: []string{"company.com"},
+			allowedEmails:  []string{"kate@external.com"},
+			gcpProjectID:   "my-project",
+			targetRole:     "roles/viewer",
+			emailToCheck:   "\u212Aate@external.com",
+			mockAuth:       true,
+			want:           false,
+		},
+		{
 			name:           "Stage 3 Mock: Match simulated IAM admin",
 			allowedDomains: []string{"company.com"},
 			allowedEmails:  []string{"guest@external.com"},
@@ -1355,6 +1374,7 @@ func TestVerifyUserInfo(t *testing.T) {
 	admitted := identityResult{Email: loginTestEmail, Name: "Test User", Picture: "https://example.com/p.png"}
 	rejected := admitted
 	rejected.NotAdmitted, rejected.Err = true, true
+	noEmail := identityResult{Name: "Test User", Picture: "https://example.com/p.png", NotAdmitted: true, Err: true}
 	tests := []struct {
 		name   string
 		mutate func(*GoogleUserInfo)
@@ -1362,7 +1382,10 @@ func TestVerifyUserInfo(t *testing.T) {
 	}{
 		{name: "verified user", want: admitted},
 		{name: "email is normalized", mutate: func(u *GoogleUserInfo) { u.Email = " User@MyCompany.COM " }, want: admitted},
-		{name: "missing email", mutate: func(u *GoogleUserInfo) { u.Email = " " }, want: identityResult{Name: "Test User", Picture: "https://example.com/p.png", NotAdmitted: true, Err: true}},
+		{name: "kelvin sign is rejected", mutate: func(u *GoogleUserInfo) { u.Email = "\u212Aate@MyCompany.com" }, want: noEmail},
+		{name: "non-ASCII email is rejected", mutate: func(u *GoogleUserInfo) { u.Email = "JOSÉ@mycompany.com" }, want: noEmail},
+		{name: "display name is rejected", mutate: func(u *GoogleUserInfo) { u.Email = "Eve <user@mycompany.com>" }, want: noEmail},
+		{name: "missing email", mutate: func(u *GoogleUserInfo) { u.Email = " " }, want: noEmail},
 		{name: "unverified email", mutate: func(u *GoogleUserInfo) { u.EmailVerified = false }, want: rejected},
 	}
 	for _, tt := range tests {

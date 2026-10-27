@@ -39,6 +39,7 @@ go_library(
         "//internal/storage/spanner",
         "//internal/task_queue",
         "//pkg/auth/oauth2",
+        "//pkg/auth/principal",
         "//pkg/components/cms",
         "//pkg/components/store",
         "//pkg/components/store/memory",

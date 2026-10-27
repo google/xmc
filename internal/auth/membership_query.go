@@ -19,14 +19,14 @@ import (
 )
 
 // celStringEscaper escapes the characters that terminate or escape a single-quoted CEL string
-// literal. Member emails are validated with validatePlainEmail before a query is built, which
-// already excludes backslashes and leaves apostrophes as the only special character, so escaping
-// is redundant with validation; it is kept as defense in depth.
+// literal. Member emails are validated with principal.ValidatePlainEmail before a query is built,
+// which already excludes backslashes and leaves apostrophes as the only special character, so
+// escaping is redundant with validation; it is kept as defense in depth.
 var celStringEscaper = strings.NewReplacer(`\`, `\\`, `'`, `\'`)
 
 // transitiveMembershipQuery returns the CEL query that checks transitive group membership of
 // memberEmail, with memberEmail escaped as a single-quoted CEL string literal. Callers must
-// validate memberEmail with validatePlainEmail first.
+// validate memberEmail with principal.ValidatePlainEmail first.
 func transitiveMembershipQuery(memberEmail string) string {
 	return fmt.Sprintf("member_key.id == '%s'", celStringEscaper.Replace(memberEmail))
 }

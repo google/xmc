@@ -65,65 +65,6 @@ func TestNormalizeACLs(t *testing.T) {
 	}
 }
 
-func TestCanonicalEmail(t *testing.T) {
-	testCases := []struct {
-		name    string
-		email   string
-		want    string
-		wantErr bool
-	}{
-		{name: "already canonical", email: "user@example.com", want: "user@example.com"},
-		{name: "mixed case", email: "First.Last@Example.COM", want: "first.last@example.com"},
-		{name: "apostrophe", email: "O'Brien@Example.com", want: "o'brien@example.com"},
-		{name: "service account", email: "SA@project.iam.gserviceaccount.com", want: "sa@project.iam.gserviceaccount.com"},
-		{name: "kelvin sign", email: "\u212Aate@corp.com", wantErr: true},
-		{name: "non-ASCII letter", email: "jos\u00e9@corp.com", wantErr: true},
-		{name: "leading whitespace", email: " a@corp.com", wantErr: true},
-		{name: "trailing whitespace", email: "a@corp.com ", wantErr: true},
-		{name: "display name", email: "Eve <a@corp.com>", wantErr: true},
-		{name: "angle brackets only", email: "<a@corp.com>", wantErr: true},
-		{name: "comment", email: "a@corp.com (Eve)", wantErr: true},
-		{name: "quoted local part", email: `"x@evil.com"@corp.com`, wantErr: true},
-		{name: "unsupported character", email: "a|b@corp.com", wantErr: true},
-		{name: "dotless domain", email: "a@localhost", wantErr: true},
-		{name: "no at sign", email: "1029384756", wantErr: true},
-		{name: "empty", email: "", wantErr: true},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := canonicalEmail(tc.email)
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("canonicalEmail(%q) error = %v, wantErr %v", tc.email, err, tc.wantErr)
-			}
-			if got != tc.want {
-				t.Errorf("canonicalEmail(%q) = %q, want %q", tc.email, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestNormalizePrincipal(t *testing.T) {
-	testCases := []struct {
-		name      string
-		principal string
-		want      string
-	}{
-		{"already canonical", "user@example.com", "user@example.com"},
-		{"mixed case", "First.Last@Example.COM", "first.last@example.com"},
-		{"surrounding whitespace", " \tuser@example.com\n", "user@example.com"},
-		{"domain", " Example.com ", "example.com"},
-		{"non-ASCII is not folded", "\u212Aate@corp.com", "\u212Aate@corp.com"},
-		{"empty", "", ""},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := NormalizePrincipal(tc.principal); got != tc.want {
-				t.Errorf("NormalizePrincipal(%q) = %q, want %q", tc.principal, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestPrincipalsMatch(t *testing.T) {
 	testCases := []struct {
 		name string

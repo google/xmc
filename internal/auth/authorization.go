@@ -21,6 +21,7 @@ import (
 
 	xpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/pkg/auth/principal"
 )
 
 // IsUserAuthorized checks if a user is authorized for a given role on an XidEntry.
@@ -32,7 +33,7 @@ func (a *Authorizer) IsUserAuthorized(ctx context.Context, user string, acls *xp
 	}
 
 	// Principals are compared in canonical form because email addresses are case-insensitive.
-	c := newCaller(ctx, NormalizePrincipal(user))
+	c := newCaller(ctx, principal.Normalize(user))
 
 	// All roles check Owners
 	if a.isPrincipalInList(ctx, c, acls.GetOwners()) {
@@ -73,11 +74,12 @@ type caller struct {
 }
 
 // newCaller returns the caller for a canonical email. Group membership is only checked for plain
-// ASCII email addresses (see validatePlainEmail), so that user input cannot alter the membership
-// query; other emails are logged once and evaluated against the remaining principal types.
+// ASCII email addresses (see principal.ValidatePlainEmail), so that user input cannot alter the
+// membership query; other emails are logged once and evaluated against the remaining principal
+// types.
 func newCaller(ctx context.Context, email string) caller {
 	c := caller{email: email, domain: emailDomain(email), groupEligible: true}
-	if err := validatePlainEmail(email); err != nil {
+	if err := principal.ValidatePlainEmail(email); err != nil {
 		logging.Info(ctx, "Skipping group-based authorization for unsupported email", "user", email, "reason", err)
 		c.groupEligible = false
 	}
@@ -149,14 +151,14 @@ func (a *Authorizer) isUserInGroup(ctx context.Context, userEmail, groupEmail st
 	// Reject member emails that could alter the membership query before consulting the cache or
 	// the API. IsUserAuthorized already skips group checks for such emails; this guard is defense
 	// in depth.
-	if err := validatePlainEmail(userEmail); err != nil {
+	if err := principal.ValidatePlainEmail(userEmail); err != nil {
 		return false, err
 	}
 
 	// Canonicalize both principals up front so the cache key and the membership API query use the
 	// same form, and differently-cased spellings of the same principals share one cache entry.
-	userEmail = NormalizePrincipal(userEmail)
-	groupEmail = NormalizePrincipal(groupEmail)
+	userEmail = principal.Normalize(userEmail)
+	groupEmail = principal.Normalize(groupEmail)
 	cacheKey := userEmail + ":" + groupEmail
 
 	// --- Step 1: Check the cache (Read Lock) ---
