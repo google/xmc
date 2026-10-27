@@ -14,7 +14,7 @@ GATEWAY_COMPONENT_RELEASE = "xmc-cmp-ingestion-gateway"
 GATEWAY_DEPLOYMENT_NAME = "ingestion-gateway-deployment"
 GATEWAY_SERVICE_NAME = "ingestion-gateway-service"
 GATEWAY_HPA_NAME = "ingestion-gateway-hpa"
-_DNS1123_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+_DNS1123_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?\Z")
 
 
 def validate_dns1123_namespace(namespace: str) -> None:
@@ -44,7 +44,7 @@ def fetch_umbrella_values(release: str, namespace: str) -> dict[str, Any]:
     """Fetches computed Helm values (defaults + overrides) for the umbrella release."""
     try:
         res = run_command(
-            ["helm", "get", "values", release, "-n", namespace, "-a", "-o", "json"],
+            ["helm", "get", "values", "-n", namespace, "-a", "-o", "json", "--", release],
             capture_output=True,
             log_on_error=False,
             stream=sys.stderr,

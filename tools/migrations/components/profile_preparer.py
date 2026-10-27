@@ -28,6 +28,7 @@ from tools.migrations.components.cluster_inspector import (
 
 _COMPONENTS = ("redpanda", "clickhouse", "ingestion-gateway")
 _DEFAULT_BROKERS = "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
+_BOOL_FLAGS = ("enable_components", "sasl_enabled", "tls_enabled", "tls_insecure_skip_verify")
 _KNOWN_GATEWAY_FLAGS = frozenset(
     [
         "port",
@@ -48,6 +49,7 @@ _KNOWN_GATEWAY_FLAGS = frozenset(
     ]
 )
 _KNOWN_VOLUME_NAMES = frozenset({"kafka-sasl-credentials", "kafka-tls-credentials"})
+_FLAG_ERR_HINT = "Component gateway supports Redpanda ingestion flags only."
 
 
 def _pod_spec(deployment: dict[str, Any]) -> dict[str, Any]:
@@ -109,18 +111,27 @@ def audit_live_gateway_deployment(deployment: dict[str, Any]) -> dict[str, str]:
 
 
 def parse_gateway_cli_flags(deployment: dict[str, Any], *, strict: bool = False) -> dict[str, str]:
-    """Extracts key=value CLI flags from the primary ingestion-gateway container."""
+    """Extracts --key=value, -key value, and bare bool CLI flags from ingestion-gateway."""
     parsed: dict[str, str] = {}
-    for arg in _primary_container(deployment).get("args") or []:
-        key, sep, val = arg.lstrip("-").partition("=")
-        if not sep or (strict and key not in _KNOWN_GATEWAY_FLAGS):
+    args = _primary_container(deployment).get("args") or []
+    i = 0
+    while i < len(args):
+        arg, i = args[i], i + 1
+        if arg == "--" and not strict:
+            break
+        if not arg.startswith("-") or arg == "-":
             if strict:
-                raise HandledError(
-                    f"Unsupported gateway CLI argument '{arg}'.",
-                    "Component gateway supports Redpanda ingestion flags only.",
-                )
+                raise HandledError(f"Unsupported gateway CLI argument '{arg}'.", _FLAG_ERR_HINT)
             continue
-        parsed[key] = val
+        key, sep, val = (arg[2:] if arg.startswith("--") else arg[1:]).partition("=")
+        if strict and key not in _KNOWN_GATEWAY_FLAGS:
+            raise HandledError(f"Unsupported gateway CLI argument '{arg}'.", _FLAG_ERR_HINT)
+        if sep or key in _BOOL_FLAGS:
+            parsed[key] = val if sep else "true"
+        elif i < len(args) and not args[i].startswith("-"):
+            parsed[key], i = args[i], i + 1
+        elif strict:
+            raise HandledError(f"Unsupported gateway CLI argument '{arg}'.", _FLAG_ERR_HINT)
     return parsed
 
 
@@ -245,11 +256,14 @@ def build_redpanda_parameters(gateway_params: dict[str, Any]) -> dict[str, Any]:
     """Prefills Redpanda 3P wrapper parameters from gateway broker and topic settings."""
     brokers = str(gateway_params.get("redpandaBrokers") or _DEFAULT_BROKERS)
     first = brokers.partition(",")[0].strip()
-    _, sep, raw_port = first.rpartition(":")
-    port = int(raw_port) if sep and raw_port.isdigit() else 9092
+    if first.startswith("["):
+        raw_port = first.partition("]:")[2]
+    else:
+        raw_port = first.partition(":")[2] if first.count(":") == 1 else ""
+    port = int(raw_port) if raw_port.isascii() and raw_port.isdigit() else 9092
     return {
         "brokerEndpoints": brokers,
-        "kafkaPort": port,
+        "kafkaPort": port if 1 <= port <= 65535 else 9092,
         "defaultTopic": str(gateway_params.get("topicName") or "xmc-metrics"),
     }
 
@@ -283,9 +297,8 @@ def render_profile_yaml(doc: dict[str, Any], indent: int = 0) -> str:
         if val is None:
             raise ValueError(f"Null value not permitted in profile YAML for key '{key}'")
         if isinstance(val, dict):
-            lines.append(f"{pad}{key}:" if val else f"{pad}{key}: {{}}")
-            if val:
-                lines.append(render_profile_yaml(val, indent + 2).rstrip("\n"))
+            sub = render_profile_yaml(val, indent + 2).rstrip("\n") if val else ""
+            lines.extend((f"{pad}{key}:", sub) if val else (f"{pad}{key}: {{}}",))
         elif isinstance(val, bool):
             lines.append(f"{pad}{key}: {'true' if val else 'false'}")
         elif isinstance(val, int | float):
@@ -342,16 +355,16 @@ def prepare_profile_values(
     except (FileNotFoundError, subprocess.CalledProcessError, RuntimeError, ValueError) as e:
         raise HandledError(str(e), "Upgrade Helm CLI to >= 3.14.0 before migrating.") from e
     umbrella_values = fetch_umbrella_values(release, namespace)
-    ig_enabled = parse_bool_flag(
-        (umbrella_values.get("ingestionGatewayDeployment") or {}).get("enabled")
-    )
-    doc = (
-        _build_enabled_profile_doc(umbrella_values, namespace)
-        if ig_enabled
-        else {"components": {n: {"enabled": False, "namespace": namespace} for n in _COMPONENTS}}
-    )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(render_profile_yaml(doc), encoding="utf-8")
+    ig = umbrella_values.get("ingestionGatewayDeployment") or {}
+    ig_enabled = parse_bool_flag(ig.get("enabled"))
+    off = {"components": {n: {"enabled": False, "namespace": namespace} for n in _COMPONENTS}}
+    doc = _build_enabled_profile_doc(umbrella_values, namespace) if ig_enabled else off
+    rendered = render_profile_yaml(doc)
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered, encoding="utf-8")
+    except OSError as e:
+        raise HandledError(f"Failed to write '{output_path}': {e}", "Check --output path.") from e
     resolved_root = repo_root or Path(__file__).resolve().parents[3]
     resolved_profile = profile_dir or (resolved_root / "deploy" / "profiles" / "stable-2026a")
     validate_profile_values(output_path, namespace, resolved_profile, resolved_root)
