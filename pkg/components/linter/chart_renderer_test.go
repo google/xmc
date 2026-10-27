@@ -228,8 +228,8 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 					Enabled:            boolPtr(false),
 					ComponentType:      "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
 					ComponentClass:     "event-stream",
-					Version:            "0.1.1",
-					ChartVersion:       "0.1.1",
+					Version:            "0.1.0",
+					ChartVersion:       "0.1.0",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
 					Parameters: map[string]string{
@@ -261,8 +261,8 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 					Enabled:            boolPtr(false),
 					ComponentType:      "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
 					ComponentClass:     "analytical-db",
-					Version:            "0.1.1",
-					ChartVersion:       "0.1.1",
+					Version:            "0.1.0",
+					ChartVersion:       "0.1.0",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
 					Parameters: map[string]string{
@@ -313,8 +313,8 @@ parameters:
 					Enabled:            boolPtr(true),
 					ComponentType:      "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
 					ComponentClass:     "analytical-db",
-					Version:            "0.1.1",
-					ChartVersion:       "0.1.1",
+					Version:            "0.1.0",
+					ChartVersion:       "0.1.0",
 					DeletionProtection: false,
 					DeletionPolicy:     "Orphan",
 					Parameters: map[string]string{
@@ -532,8 +532,8 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 			Enabled:            &enabled,
 			ComponentType:      "COMPONENT_TYPE_CUSTOM_1P_COMPONENT",
 			ComponentClass:     "metrics-ingestion",
-			Version:            "0.1.1",
-			ChartVersion:       "0.1.1",
+			Version:            "0.1.0",
+			ChartVersion:       "0.1.0",
 			DeletionProtection: true,
 			DeletionPolicy:     "Delete",
 			Dependencies: []linter.ComponentDependencyRef{
