@@ -1109,3 +1109,66 @@ func TestConvertK8sJobSetStatusToProto(t *testing.T) {
 		})
 	}
 }
+
+func TestSetMLRunURL(t *testing.T) {
+	const runURL = "https://mlrun.example/run-1"
+	tests := []struct {
+		name       string
+		update     *storagepkg.WorkUnitExecutionUpdate
+		mlRunURL   string
+		wantURL    string
+		wantInMask bool
+	}{
+		{
+			name:       "nil metadata is instantiated",
+			update:     &storagepkg.WorkUnitExecutionUpdate{WorkUnitExecution: &spb.WorkUnitExecution{}, UpdateMask: &fmpb.FieldMask{}},
+			mlRunURL:   runURL,
+			wantURL:    runURL,
+			wantInMask: true,
+		},
+		{
+			name:       "existing metadata is reused",
+			update:     &storagepkg.WorkUnitExecutionUpdate{WorkUnitExecution: &spb.WorkUnitExecution{Metadata: &spb.WorkUnitExecutionMetadata{}}, UpdateMask: &fmpb.FieldMask{}},
+			mlRunURL:   runURL,
+			wantURL:    runURL,
+			wantInMask: true,
+		},
+		{
+			name:       "empty url is a no-op",
+			update:     &storagepkg.WorkUnitExecutionUpdate{WorkUnitExecution: &spb.WorkUnitExecution{}, UpdateMask: &fmpb.FieldMask{}},
+			mlRunURL:   "",
+			wantURL:    "",
+			wantInMask: false,
+		},
+		{
+			name:       "nil update mask still sets url",
+			update:     &storagepkg.WorkUnitExecutionUpdate{WorkUnitExecution: &spb.WorkUnitExecution{}},
+			mlRunURL:   runURL,
+			wantURL:    runURL,
+			wantInMask: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			setMLRunURL(tc.update, tc.mlRunURL)
+			got := ""
+			if tc.update.WorkUnitExecution.Metadata != nil {
+				got = tc.update.WorkUnitExecution.Metadata.MlrunUrl
+			}
+			if got != tc.wantURL {
+				t.Errorf("MlrunUrl = %q, want %q", got, tc.wantURL)
+			}
+			inMask := false
+			if tc.update.UpdateMask != nil {
+				for _, p := range tc.update.UpdateMask.Paths {
+					if p == "metadata.mlrun_url" {
+						inMask = true
+					}
+				}
+			}
+			if inMask != tc.wantInMask {
+				t.Errorf("mask has metadata.mlrun_url = %v, want %v", inMask, tc.wantInMask)
+			}
+		})
+	}
+}

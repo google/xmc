@@ -20,7 +20,9 @@ import (
 	"testing"
 	"time"
 
+	apipb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/experiment_state_server/config"
+	"xmanager_cloud/internal/featureflags"
 )
 
 func TestProdServer_Close(t *testing.T) {
@@ -137,6 +139,39 @@ func TestProdServer_HealthCheckers(t *testing.T) {
 		}
 		if ps.Storage() != nil {
 			t.Errorf("Storage() on nil ProdServer = %v, want nil", ps.Storage())
+		}
+	})
+}
+
+func TestInitArtifactLifecycleRegistry(t *testing.T) {
+	t.Parallel()
+	arts := []*apipb.Artifact{{
+		Payload: &apipb.ArtifactPayload{
+			Type: &apipb.ArtifactPayload_ManagedXprof{
+				ManagedXprof: &apipb.ManagedXprofArtifact{},
+			},
+		},
+	}}
+
+	t.Run("flag disabled returns empty registry", func(t *testing.T) {
+		t.Parallel()
+		reg := initArtifactLifecycleRegistry(t.Context(), &config.Config{
+			FeatureFlags: featureflags.Flags{ArtifactLifecycleEnabled: false},
+		})
+		if got := reg.RequiredNotifyWhenAnnotation(arts); got != "" {
+			t.Errorf("RequiredNotifyWhenAnnotation() with flag disabled = %q, want empty", got)
+		}
+	})
+
+	t.Run("flag enabled registers ManagedXprofRule", func(t *testing.T) {
+		t.Parallel()
+		reg := initArtifactLifecycleRegistry(t.Context(), &config.Config{
+			ProjectID:                "test-proj",
+			MLDiagnosticsEnvironment: "invalid-env",
+			FeatureFlags:             featureflags.Flags{ArtifactLifecycleEnabled: true},
+		})
+		if got := reg.RequiredNotifyWhenAnnotation(arts); got == "" {
+			t.Errorf("RequiredNotifyWhenAnnotation() with flag enabled = empty, want non-empty")
 		}
 	})
 }

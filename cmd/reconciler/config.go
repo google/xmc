@@ -19,6 +19,7 @@ import (
 
 	"xmanager_cloud/cmd/actuator/k8s_client"
 	"xmanager_cloud/internal/configutil"
+	"xmanager_cloud/internal/featureflags"
 )
 
 // Config holds the configuration for the Reconciler.
@@ -33,9 +34,14 @@ type Config struct {
 	StartupPodErrorCheckTime         time.Duration
 	KubeAPIQPS                       float64
 	KubeAPIBurst                     int
+	MldiagnosticsEnvironment         string
+	MLRunProject                     string
+	MLRunLocation                    string
+	MLRunImpersonateSA               string
 	MetricsPort                      int
 	ReconciliationTimeout            time.Duration
 	RedisAddr                        string
+	FeatureFlags                     featureflags.Flags
 }
 
 // Flags and ConfigMap configurations.
@@ -51,6 +57,10 @@ var (
 	startupPodErrorCheckTime         time.Duration
 	kubeAPIQPS                       float64
 	kubeAPIBurst                     int
+	mldiagnosticsEnvironment         string
+	mlRunProject                     string
+	mlRunLocation                    string
+	mlRunImpersonateSA               string
 	metricsPort                      int
 	reconciliationTimeout            time.Duration
 	redisAddr                        string
@@ -63,6 +73,10 @@ func init() {
 	flag.IntVar(&maxConcurrentReconciles, "max_concurrent_reconciles", 10, "The maximum number of concurrent reconciles.")
 	flag.IntVar(&maxParallelExperiments, "max_parallel_experiments", 10, "The maximum number of goroutines concurrently processing experiment updates.")
 	flag.StringVar(&defaultExecutionEnvironment, "default_execution_environment", "gke", "The execution environment to use if not specified in the request.")
+	flag.StringVar(&mldiagnosticsEnvironment, "mldiagnostics_environment", "prod", "The ML Diagnostics (Hypercompute Cluster ML Run) control-plane environment: one of autopush, staging, or prod.")
+	flag.StringVar(&mlRunProject, "mlrun_project", "", "Optional target GCP project for the Hypercompute Cluster ML Run API (defaults to cluster project).")
+	flag.StringVar(&mlRunLocation, "mlrun_location", "", "Optional target location for the Hypercompute Cluster ML Run API (defaults to cluster location).")
+	flag.StringVar(&mlRunImpersonateSA, "mlrun_impersonate_sa", "", "Optional service account to impersonate for the Hypercompute Cluster ML Run API.")
 	flag.IntVar(&metricsPort, "metrics_port", 8082, "The port on which the reconciler serves Prometheus metrics.")
 	flag.StringVar(&redisAddr, "redis_addr", "", "Redis address for lifecycle event publishing.")
 	registerConfigs()
@@ -77,6 +91,9 @@ func registerConfigs() {
 	configutil.DurationEnv(&startupPodErrorCheckTime, "startup_pod_error_check_time", 2*time.Minute)
 	configutil.Float64Env(&kubeAPIQPS, "kube_api_qps", 100)
 	configutil.IntEnv(&kubeAPIBurst, "kube_api_burst", 200)
+	configutil.StringEnv(&mlRunProject, "mlrun_project", "")
+	configutil.StringEnv(&mlRunLocation, "mlrun_location", "")
+	configutil.StringEnv(&mlRunImpersonateSA, "mlrun_impersonate_sa", "")
 	configutil.IntEnv(&metricsPort, "metrics_port", 8082)
 	configutil.DurationEnv(&reconciliationTimeout, "reconciliation_timeout", 2*time.Minute)
 	configutil.StringEnv(&redisAddr, "redis_addr", "")
@@ -98,8 +115,13 @@ func Load() Config {
 		StartupPodErrorCheckTime:         startupPodErrorCheckTime,
 		KubeAPIQPS:                       kubeAPIQPS,
 		KubeAPIBurst:                     kubeAPIBurst,
+		MldiagnosticsEnvironment:         mldiagnosticsEnvironment,
+		MLRunProject:                     mlRunProject,
+		MLRunLocation:                    mlRunLocation,
+		MLRunImpersonateSA:               mlRunImpersonateSA,
 		MetricsPort:                      metricsPort,
 		ReconciliationTimeout:            reconciliationTimeout,
 		RedisAddr:                        redisAddr,
+		FeatureFlags:                     featureflags.Load(),
 	}
 }

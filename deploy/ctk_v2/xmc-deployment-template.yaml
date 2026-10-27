@@ -105,6 +105,9 @@ vars:
   # Feature flag to allow pausing workload scheduling
   pause_scheduling_enabled: true
 
+  # Feature flag to enable ESS-driven artifact lifecycle management
+  artifact_lifecycle_enabled: false
+
   # The physical address range allowed to call the GKE control plane
   authorized_cidr: 0.0.0.0/0
 

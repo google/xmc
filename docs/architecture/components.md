@@ -66,6 +66,11 @@ Responsibilities beyond CRUD:
   ([`cmd/experiment_state_server/resumption`](../../cmd/experiment_state_server/resumption)) that
   claims resumption triggers published by the Health Service and replays buffered `PausedTasks`
   from Spanner back to `xmc-tasks-stream` in priority order with backlog throttling.
+- **Artifact lifecycle worker.** When `XMC_ARTIFACT_LIFECYCLE_ENABLED` is enabled, ESS runs a
+  consumer in the `ess-artifact-lifecycle-group` consumer group on `xmc-artifact-lifecycle-stream`
+  ([`cmd/experiment_state_server/artifactlifecycle`](../../cmd/experiment_state_server/artifactlifecycle))
+  that evaluates registered `LifecycleRule` implementations (such as `ManagedXprofRule`) against
+  edge-triggered work unit execution state transitions published by the Reconciler.
 - **OAuth2 endpoints.** The application-level OAuth2 login, callback, and session handling live in
   [`pkg/auth/oauth2`](../../pkg/auth/oauth2) and are mounted by ESS.
 
@@ -317,7 +322,8 @@ declarations fail the build rather than a deployment.
 | [`internal/task_queue`](../../internal/task_queue) | Builds, signs, and enqueues actuator payloads. Owns the idempotency key and JWT/OIDC signing scheme. |
 | [`internal/task_queue_redis`](../../internal/task_queue_redis) | Redis Streams publisher and consumer with consumer groups, retries, abandoned-message reclamation, and dead-lettering. |
 | [`internal/broadcast`](../../internal/broadcast) | Redis Streams broadcast publisher and consumer used to fan out scheduling pause and resume events (`xmc-pause-stream`) to Actuator replicas. |
-| [`internal/featureflags`](../../internal/featureflags) | Unified feature flag definitions (`XMC_PAUSE_SCHEDULING_ENABLED`) and environment-variable loading across services. |
+| [`internal/featureflags`](../../internal/featureflags) | Unified feature flag definitions (`XMC_PAUSE_SCHEDULING_ENABLED`, `XMC_ARTIFACT_LIFECYCLE_ENABLED`) and environment-variable loading across services. |
+| [`internal/hypercomputeclient`](../../internal/hypercomputeclient) | Hypercompute Cluster MLRun control-plane client shared by ESS (`ManagedXprofRule`) and the Reconciler. |
 | [`internal/auth`](../../internal/auth) | Authentication context extraction and authorization decisions shared across services. |
 | [`pkg/auth/oauth2`](../../pkg/auth/oauth2) | OAuth2/OIDC provider integration, session lifecycle, middleware, and the gateway auth pipeline. |
 | [`internal/domain`](../../internal/domain) | Domain rules for experiment creation and work unit resource derivation, kept free of transport and storage concerns. |

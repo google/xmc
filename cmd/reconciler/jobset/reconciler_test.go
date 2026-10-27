@@ -47,10 +47,36 @@ type mockStorageUpdater struct {
 	calls     map[int64][]*storagepkg.WorkUnitExecutionUpdate
 	updateErr error
 	updateRes map[int64]*spb.WorkUnitExecution
+	fetchErr  error
+	fetchRes  *spb.WorkUnitExecution
+
+	// listArtifacts is returned by ListArtifacts. The reconciler reads a single
+	// page, so no pagination is modeled. listArtifactsErr, when set, is returned
+	// instead.
+	listArtifacts      []*spb.Artifact
+	listArtifactsErr   error
+	listArtifactsCalls int
+
+	// gotFilters records the filter argument passed to each ListArtifacts call so
+	// tests can assert the reconciler applies the server-side ManagedXprof filter.
+	gotFilters []string
 
 	// onUpdate, when set, is invoked at the start of each UpdateWorkUnitExecutions
 	// call so tests can observe external state (e.g. finalizers) at write time.
 	onUpdate func(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate)
+}
+
+func (m *mockStorageUpdater) FetchCurrentWorkUnitExecution(ctx context.Context, xid, wid int64) (*spb.WorkUnitExecution, error) {
+	return m.fetchRes, m.fetchErr
+}
+
+func (m *mockStorageUpdater) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Artifact, string, error) {
+	m.gotFilters = append(m.gotFilters, filter)
+	m.listArtifactsCalls++
+	if m.listArtifactsErr != nil {
+		return nil, "", m.listArtifactsErr
+	}
+	return m.listArtifacts, "", nil
 }
 
 func (m *mockStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*spb.WorkUnitExecution, error) {
@@ -742,7 +768,7 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 				batcher.Add(t.Context(), 123, *tc.pending, shared.JobsetSource)
 			}
 			var gotWrites []stoppedWrite
-			var store shared.StorageUpdater
+			var store ReconcilerStorage
 			if !tc.nilStorage {
 				mockStore := &mockStorageUpdater{updateErr: tc.updateErr}
 				mockStore.onUpdate = func(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) {
@@ -930,7 +956,7 @@ func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
 	for _, mf := range mfs {
 		registered[mf.GetName()] = true
 	}
-	for _, name := range []string{"jobset_reconcile_total", "jobset_reconcile_errors_total", "jobset_reconcile_duration_milliseconds", "jobset_updates_sent_to_batcher_total", "jobset_stopped_write_abandoned_total"} {
+	for _, name := range []string{"jobset_reconcile_total", "jobset_reconcile_errors_total", "jobset_reconcile_duration_milliseconds", "jobset_updates_sent_to_batcher_total", "jobset_stopped_write_abandoned_total", "jobset_reconciler_mlrun_sync_duration_seconds"} {
 		if !registered[name] {
 			t.Errorf("metric family %q not registered on ctrlmetrics.Registry", name)
 		}
@@ -990,4 +1016,91 @@ func TestCheckNotifyWhenUpdate(t *testing.T) {
 	if !r.checkNotifyWhenUpdate(jsNew) {
 		t.Errorf("expected true for first-seen JobSet matching notify-when")
 	}
+}
+
+func TestSyncJobSetStatus_ArtifactLifecycleFlagCoexistence(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = v1alpha2.AddToScheme(scheme)
+
+	makeJobSet := func() *v1alpha2.JobSet {
+		js := withManagedXprofEnvs(&v1alpha2.JobSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "test-jobset",
+				Labels: map[string]string{
+					constants.ExperimentIDLabel: "10",
+					constants.WorkUnitIDLabel:   "20",
+					constants.ExecutionIDLabel:  "30",
+				},
+				Annotations: map[string]string{
+					constants.NotifyWhenAnnotation: "STARTING.RUNNING",
+				},
+			},
+		})
+		js.Spec.ReplicatedJobs[0].Replicas = 1
+		js.Status = v1alpha2.JobSetStatus{
+			ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Ready: 1, Active: 1}},
+		}
+		return js
+	}
+
+	t.Run("flag false calls legacy syncMLRun and skips ForceNotify", func(t *testing.T) {
+		js := makeJobSet()
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(js).Build()
+		store := &mockStorageUpdater{
+			fetchRes: &spb.WorkUnitExecution{Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_RUNNING}},
+		}
+		batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: time.Hour, MaxParallelExperiments: 1}, store)
+		mlRun := &mockMLRunCreator{retRes: map[string]any{"name": "projects/p/locations/l/machineLearningRuns/run-1"}}
+
+		r, err := NewReconciler(Params{
+			Client:                   fakeClient,
+			Scheme:                   scheme,
+			Batcher:                  batcher,
+			Project:                  "test-proj",
+			Location:                 "us-central1",
+			ClusterName:              "test-cluster",
+			Storage:                  store,
+			MLRunClient:              mlRun,
+			ArtifactLifecycleEnabled: false,
+		})
+		if err != nil {
+			t.Fatalf("NewReconciler() error = %v", err)
+		}
+		if _, err := r.syncJobSetStatus(t.Context(), js); err != nil {
+			t.Fatalf("syncJobSetStatus() error = %v", err)
+		}
+		if mlRun.createCalls != 1 {
+			t.Errorf("legacy syncMLRun createCalls = %d, want 1", mlRun.createCalls)
+		}
+	})
+
+	t.Run("flag true skips legacy syncMLRun and evaluates checkNotifyWhenUpdate", func(t *testing.T) {
+		js := makeJobSet()
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(js).Build()
+		store := &mockStorageUpdater{}
+		batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: time.Hour, MaxParallelExperiments: 1}, store)
+		mlRun := &mockMLRunCreator{}
+
+		r, err := NewReconciler(Params{
+			Client:                   fakeClient,
+			Scheme:                   scheme,
+			Batcher:                  batcher,
+			Project:                  "test-proj",
+			Location:                 "us-central1",
+			ClusterName:              "test-cluster",
+			Storage:                  store,
+			MLRunClient:              mlRun,
+			ArtifactLifecycleEnabled: true,
+		})
+		if err != nil {
+			t.Fatalf("NewReconciler() error = %v", err)
+		}
+		if _, err := r.syncJobSetStatus(t.Context(), js); err != nil {
+			t.Fatalf("syncJobSetStatus() error = %v", err)
+		}
+		if mlRun.createCalls != 0 {
+			t.Errorf("legacy syncMLRun createCalls = %d, want 0 when ArtifactLifecycleEnabled is true", mlRun.createCalls)
+		}
+	})
 }

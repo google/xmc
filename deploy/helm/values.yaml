@@ -38,6 +38,7 @@ xmc_bridge_custom_image: ""
 
 featureFlags:
   pause_scheduling_enabled: true
+  artifact_lifecycle_enabled: false
 
 componentsDeployment:
   enabled: false

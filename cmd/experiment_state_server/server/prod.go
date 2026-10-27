@@ -267,9 +267,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	}
 	cleanups = append(cleanups, obsCleanup)
 
-	mlClient := initMLRunClient(ctx, cfg)
-	managedXprofRule := artifactlifecycle.NewManagedXprofRule(mlClient, cfg.MLRunProject, cfg.MLRunLocation)
-	lifecycleRegistry := artifactlifecycle.NewRegistry(managedXprofRule)
+	lifecycleRegistry := initArtifactLifecycleRegistry(ctx, cfg)
 
 	srv, err := New(Params{
 		Config:            cfg,
@@ -302,6 +300,15 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	}, nil
 }
 
+func initArtifactLifecycleRegistry(ctx context.Context, cfg *config.Config) *artifactlifecycle.Registry {
+	if cfg == nil || !cfg.FeatureFlags.ArtifactLifecycleEnabled {
+		return artifactlifecycle.NewRegistry()
+	}
+	mlClient := initMLRunClient(ctx, cfg)
+	managedXprofRule := artifactlifecycle.NewManagedXprofRule(mlClient, cfg.MLRunProject, cfg.MLRunLocation)
+	return artifactlifecycle.NewRegistry(managedXprofRule)
+}
+
 func initConsumers(ctx context.Context, cfg *config.Config, storage storage.Storage, taskQueueClient resumption.TaskQueue, lifecycleRegistry *artifactlifecycle.Registry) ([]func() error, error) {
 	var cleanups []func() error
 	if cfg.FeatureFlags.PauseSchedulingEnabled {
@@ -312,7 +319,7 @@ func initConsumers(ctx context.Context, cfg *config.Config, storage storage.Stor
 		cleanups = append(cleanups, consumer.Close)
 	}
 
-	if cfg.RedisAddr != "" {
+	if cfg.FeatureFlags.ArtifactLifecycleEnabled && cfg.RedisAddr != "" {
 		consumer, err := startArtifactLifecycleConsumer(ctx, cfg, storage, lifecycleRegistry)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize artifact lifecycle consumer: %w", err)

@@ -33,6 +33,7 @@ import (
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/cmd/actuator/k8s_client"
 	"xmanager_cloud/cmd/reconciler/clusterqueue"
+	"xmanager_cloud/cmd/reconciler/jobset"
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/internal/common/health"
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
@@ -215,6 +216,19 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 	}
 
 	cqCache := clusterqueue.NewNameCache()
+	var mlRunClient jobset.MLRunCreator
+	if !cfg.FeatureFlags.ArtifactLifecycleEnabled {
+		mlRunProject := cfg.MLRunProject
+		if mlRunProject == "" {
+			mlRunProject = gceMeta.ProjectID
+		}
+		mlRunLocation := cfg.MLRunLocation
+		if mlRunLocation == "" {
+			mlRunLocation = gceMeta.Location
+		}
+		mlRunClient = jobset.NewInstrumentedMLRunCreator(
+			newMLRunCreator(ctx, mlRunProject, cfg.MldiagnosticsEnvironment, mlRunLocation, cfg.MLRunImpersonateSA))
+	}
 
 	batcher, err := registerControllers(ctx, controllerRegistrationParams{
 		mgr:         ctrlMgr,
@@ -222,6 +236,7 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 		storage:     storage,
 		k8sClient:   k8sClient,
 		cqCache:     cqCache,
+		mlRunClient: mlRunClient,
 		projectID:   gceMeta.ProjectID,
 		location:    gceMeta.Location,
 		clusterName: gceMeta.ClusterName,

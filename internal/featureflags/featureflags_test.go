@@ -21,27 +21,39 @@ import (
 
 func TestLoad_Default(t *testing.T) {
 	os.Unsetenv(PauseSchedulingFlagName)
+	os.Unsetenv(ArtifactLifecycleFlagName)
 
 	flags := Load()
 	if !flags.PauseSchedulingEnabled {
 		t.Errorf("Load() PauseSchedulingEnabled = false; want true")
+	}
+	if flags.ArtifactLifecycleEnabled {
+		t.Errorf("Load() ArtifactLifecycleEnabled = true; want false")
 	}
 }
 
 func TestLoad_EnvTrue(t *testing.T) {
 	t.Setenv(PauseSchedulingFlagName, "true")
+	t.Setenv(ArtifactLifecycleFlagName, "true")
 
 	flags := Load()
 	if !flags.PauseSchedulingEnabled {
 		t.Errorf("Load() PauseSchedulingEnabled = false; want true")
 	}
+	if !flags.ArtifactLifecycleEnabled {
+		t.Errorf("Load() ArtifactLifecycleEnabled = false; want true")
+	}
 }
 
 func TestLoad_EnvFalse(t *testing.T) {
 	t.Setenv(PauseSchedulingFlagName, "false")
+	t.Setenv(ArtifactLifecycleFlagName, "false")
 
 	flags := Load()
 	if flags.PauseSchedulingEnabled {
 		t.Errorf("Load() PauseSchedulingEnabled = true; want false")
+	}
+	if flags.ArtifactLifecycleEnabled {
+		t.Errorf("Load() ArtifactLifecycleEnabled = true; want false")
 	}
 }
