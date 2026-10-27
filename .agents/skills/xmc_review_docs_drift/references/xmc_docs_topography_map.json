@@ -145,7 +145,7 @@
         "cmd/**",
         "sdks/python/**"
       ],
-      "verification_command": "git grep -E '(os\\.(Getenv|LookupEnv)\\(\"[A-Z0-9_]+\"\\)|os\\.(environ\\.get|getenv)\\([\"\\''][A-Z0-9_]+[\"\\''][,)])' pkg/ internal/ cmd/ sdks/python/"
+      "verification_command": "git grep -E '(os\\.(Getenv|LookupEnv)\\(\"[A-Z0-9_]+\"\\)|os\\.(environ\\.get|getenv)\\(['\\''\"][A-Z0-9_]+['\\''\"][,)])' pkg/ internal/ cmd/ sdks/python/"
     },
     {
       "identifier_type": "Network Ports & Protocols",
