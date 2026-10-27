@@ -17,7 +17,6 @@ package clilogincode
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -70,7 +69,7 @@ func (r *Repository) Save(ctx context.Context, code oauth2.CLILoginCode) error {
 // redemptions of the same code succeed at most once.
 func (r *Repository) Consume(ctx context.Context, hash []byte) (oauth2.CLILoginCode, error) {
 	row, err := pgdb.QueryRow[cliLoginCodeRow](ctx, r.db, consumeCodeSQL.String(), entityName, hash)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if pgdb.IsNotFound(err) {
 		return oauth2.CLILoginCode{}, oauth2.ErrCLICodeNotFound
 	}
 	if err != nil {
@@ -85,7 +84,7 @@ func insertArgs(code oauth2.CLILoginCode) pgx.StrictNamedArgs {
 		"email":         code.Email,
 		"name":          pgtype.Text{String: code.Name, Valid: code.Name != ""},
 		"codechallenge": code.CodeChallenge,
-		"expiresat":     code.ExpiresAt,
+		"expiresat":     code.ExpiresAt.UTC(),
 	}
 }
 
