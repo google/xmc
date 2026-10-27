@@ -160,14 +160,16 @@ class CheckDocsTopographyMapTest(unittest.TestCase):
         patterns = linter.load_topography_map(SAMPLE_VALID_MAP_JSON)
         files_with_extra_doc = (
             *SAMPLE_TRACKED_FILES,
-            "deploy/new_profile/README.md",
+            "cmd/actuator/UNMAPPED.md",
         )
         report = linter.validate_topography_map(patterns, files_with_extra_doc)
         self.assertFalse(report.is_valid())
         self.assertEqual(
             report.unmapped_doc_files,
-            ("deploy/new_profile/README.md",),
+            ("cmd/actuator/UNMAPPED.md",),
         )
+        self.assertEqual(report.unmapped_source_dirs, ())
+        self.assertEqual(report.dead_map_entries, ())
 
     def test_check_3_detects_unmapped_source_dir(self) -> None:
         """Verifies Check 3 flags component directories missing from source_patterns."""
