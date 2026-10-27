@@ -1,0 +1,46 @@
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "components_migration_lib",
+    srcs = [
+        "cluster_inspector.py",
+        "migrate.py",
+        "profile_preparer.py",
+    ],
+    imports = ["../../.."],
+    deps = ["//tools/common:tool_utils"],
+)
+
+py_binary(
+    name = "migrate",
+    srcs = ["migrate.py"],
+    deps = [":components_migration_lib"],
+)
+
+py_test(
+    name = "cluster_inspector_test",
+    size = "small",
+    srcs = ["cluster_inspector_test.py"],
+    deps = [":components_migration_lib"],
+)
+
+py_test(
+    name = "profile_preparer_test",
+    size = "small",
+    srcs = ["profile_preparer_test.py"],
+    deps = [":components_migration_lib"],
+)
+
+py_test(
+    name = "migrate_test",
+    size = "small",
+    srcs = ["migrate_test.py"],
+    deps = [":components_migration_lib"],
+)

@@ -13,6 +13,7 @@ tools/
 ├── common/             # Shared utilities, virtualenv management, and container builders
 ├── components/         # XMC component profiles discovery runner and linting harness
 ├── dev_env/            # Developer environment deployment and live upgrade tools
+├── migrations/         # One-time cluster migration helpers (legacy umbrella -> components)
 ├── pr_review/          # GitHub PR review automation, audit generation, and comment verification
 ├── benchmark/          # Subagent trajectory benchmarks, telemetry extraction, and diff analysis
 ├── lint/               # Static analyzers, AST syntax walkers, and test determinism linters
@@ -81,6 +82,12 @@ Tooling and automation for release metadata extraction, SemVer calculations, and
 Offline syntax walkers and static validation tooling:
 - [`check_go_determinism`](lint/check_go_determinism/): Ultra-fast (<50ms) Go AST analyzer checking Go test files for `os.Setenv` usage and arbitrary second-level `time.Sleep` calls.
 - [`check_legacy_imports.py`](lint/check_legacy_imports.py): Ratchet lint preventing regression of google3 migration leftovers (legacy Go import roots, unresolved `xmanager_cloud/...` module paths, `compat_go_*` targets, `gazelle:resolve` overrides, `third_party/` proto paths, google3 Helm flags, legacy UI/Python paths) against the zeroed [`legacy_imports_baseline.json`](lint/legacy_imports_baseline.json). Fails when any count grows above zero. Runs in pre-commit and the lint CI job. Tracking: [#1066](https://github.com/google/xmc/issues/1066).
+
+### 8. [`tools/migrations/components/`](migrations/components/README.md) (One-Time Component Migration CLI)
+Deterministic operator CLI for migrating legacy umbrella Ingestion Gateway installs to XMC Components:
+- [`migrate.py`](migrations/components/migrate.py): Structured CLI entrypoint (`prepare`) generating `profile-values.yaml` from live umbrella Helm values and workload state.
+- [`profile_preparer.py`](migrations/components/profile_preparer.py): Gateway/Redpanda/ClickHouse parameter synthesis and deterministic YAML serialization.
+- [`cluster_inspector.py`](migrations/components/cluster_inspector.py): Read-only Helm and Kubernetes resource inspection queries.
 
 ---
 
