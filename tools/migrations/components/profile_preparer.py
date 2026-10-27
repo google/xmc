@@ -23,6 +23,7 @@ from tools.migrations.components.cluster_inspector import (
     fetch_live_resource,
     fetch_umbrella_values,
     validate_dns1123_namespace,
+    validate_helm_release,
     verify_secret_exists,
 )
 
@@ -92,10 +93,10 @@ def audit_live_gateway_deployment(deployment: dict[str, Any]) -> dict[str, str]:
             "Inspect live Deployment YAML before migrating.",
         )
     container = containers[0]
-    if container.get("env") or container.get("envFrom"):
+    if container.get("command") or container.get("env") or container.get("envFrom"):
         raise HandledError(
-            "Live ingestion-gateway defines custom env/envFrom (e.g. MESSAGE_BUS=pubsub).",
-            "Remove custom env vars before migrating to the Redpanda component gateway.",
+            "Live ingestion-gateway defines custom command/env/envFrom (e.g. MESSAGE_BUS=pubsub).",
+            "Remove custom command/env vars before migrating to the Redpanda component gateway.",
         )
     vols = pod_spec.get("volumes") or []
     extra_vols = [v.get("name", "") for v in vols if v.get("name") not in _KNOWN_VOLUME_NAMES]
@@ -314,9 +315,9 @@ def validate_profile_values(
     """Validates profile-values.yaml via helm template (JSON Schema) and component-linter."""
     with tempfile.TemporaryDirectory(prefix="xmc_profile_lint_") as tmp_dir:
         try:
-            cmd = ["helm", "template", "xmc-profile", str(profile_dir), "-n", namespace]
+            cmd = ["helm", "template", "-n", namespace, f"--values={values_path}", "--"]
             res_h = run_command(
-                [*cmd, "-f", str(values_path)],
+                [*cmd, "xmc-profile", str(profile_dir)],
                 capture_output=True,
                 log_on_error=False,
                 stream=sys.stderr,
@@ -348,6 +349,7 @@ def prepare_profile_values(
 ) -> dict[str, Any]:
     """Generates and validates profile-values.yaml from live umbrella values and gateway state."""
     validate_dns1123_namespace(namespace)
+    validate_helm_release(release)
     try:
         helm_ver = verify_helm_min_version(stream=sys.stderr)
     except (FileNotFoundError, subprocess.CalledProcessError, RuntimeError, ValueError) as e:
@@ -390,10 +392,10 @@ def _build_enabled_profile_doc(umbrella_values: dict[str, Any], namespace: str) 
         umbrella_values, live_dep, live_hpa, audit_live_gateway_deployment(live_dep)
     )
     ch_params = build_clickhouse_parameters(umbrella_values)
-    if gw_params.get("saslEnabled") and gw_params.get("saslSecretName"):
-        verify_secret_exists(str(gw_params["saslSecretName"]), namespace, field_label="SASL")
-    if gw_params.get("tlsEnabled") and gw_params.get("tlsSecretName"):
-        verify_secret_exists(str(gw_params["tlsSecretName"]), namespace, field_label="TLS")
+    if gw_params.get("saslEnabled"):
+        verify_secret_exists(gw_params.get("saslSecretName", ""), namespace, field_label="SASL")
+    if gw_params.get("tlsEnabled"):
+        verify_secret_exists(gw_params.get("tlsSecretName", ""), namespace, field_label="TLS")
     secrets_val = umbrella_values.get("secrets")
     csi_val = secrets_val.get("csi") if isinstance(secrets_val, dict) else None
     csi_on = parse_bool_flag(csi_val.get("enabled") if isinstance(csi_val, dict) else None)

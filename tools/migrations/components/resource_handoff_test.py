@@ -57,8 +57,8 @@ class TestResourceHandoff(unittest.TestCase):
         mock_annotate: MagicMock,
         mock_run: MagicMock,
     ) -> None:
-        # 1. Active Component CR present -> refused!
-        mock_exists.return_value = True
+        # 1. Active Component CR present -> refused even when helm release is not yet installed!
+        mock_exists.return_value = False
         mock_fetch.side_effect = [
             None,  # hpa
             _owned("xmc-cmp-ingestion-gateway"),  # deployment
@@ -69,6 +69,7 @@ class TestResourceHandoff(unittest.TestCase):
             resource_handoff.execute_resource_handoff("xmc", "tenant-a", undo=True)
 
         # 2. Orphaned release (Component CR absent) -> stamps keep, helm uninstalls, then reverts!
+        mock_exists.return_value = True
         mock_annotate.reset_mock()
         mock_fetch.side_effect = [
             None,  # hpa absent
@@ -85,7 +86,7 @@ class TestResourceHandoff(unittest.TestCase):
         mock_run.assert_called_once()
         self.assertEqual(
             mock_run.call_args[0][0],
-            ["helm", "uninstall", "xmc-cmp-ingestion-gateway", "-n", "tenant-a"],
+            ["helm", "uninstall", "-n", "tenant-a", "--", "xmc-cmp-ingestion-gateway"],
         )
         # First 3 annotate calls stamp keep; final 2 revert owner to xmc and strip keep.
         self.assertEqual(mock_annotate.call_count, 5)

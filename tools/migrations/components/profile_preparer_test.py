@@ -56,6 +56,7 @@ class TestProfilePreparer(unittest.TestCase):
             _baseline_deployment(
                 container_patch={"env": [{"name": "MESSAGE_BUS", "value": "pubsub"}]}
             ),
+            _baseline_deployment(container_patch={"command": ["/custom/bin"]}),
             _baseline_deployment(volumes=[{"name": "extra-vol"}]),
             _baseline_deployment(container_patch={"args": ["-message_bus=pubsub"]}),
             _baseline_deployment(container_patch={"args": ["positional"]}),

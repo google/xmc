@@ -23,11 +23,17 @@ def validate_dns1123_namespace(namespace: str) -> None:
         raise HandledError(f"Invalid Kubernetes namespace {namespace!r}.", "Use a DNS-1123 label.")
 
 
+def validate_helm_release(release: str) -> None:
+    """Validates that release is a valid Helm release name (1-53 DNS-1123 dot-separated labels)."""
+    if not release or len(release) > 53 or not all(map(_DNS1123_RE.match, release.split("."))):
+        raise HandledError(f"Invalid Helm release {release!r}.", "Use a valid Helm release name.")
+
+
 def annotate_resource(kind: str, name: str, namespace: str, annotations: list[str]) -> None:
     """Applies or removes annotations on a Kubernetes resource via kubectl annotate --overwrite."""
     try:
         run_command(
-            ["kubectl", "annotate", kind, name, "-n", namespace, "--overwrite", *annotations],
+            ["kubectl", "annotate", "-n", namespace, "--overwrite", "--", kind, name, *annotations],
             capture_output=True,
             log_on_error=False,
             stream=sys.stderr,
@@ -98,18 +104,17 @@ def fetch_live_resource(
 
 def verify_secret_exists(secret_name: str, namespace: str, *, field_label: str) -> None:
     """Raises HandledError if the named Kubernetes Secret is absent in namespace."""
-    if fetch_live_resource("secret", secret_name, namespace, required=False) is None:
-        raise HandledError(
-            f"{field_label} Secret '{secret_name}' was not found in namespace '{namespace}'.",
-            f"Create Secret '{secret_name}' in namespace '{namespace}' before migrating.",
-        )
+    invalid = not secret_name or secret_name.startswith("-")
+    if invalid or fetch_live_resource("secret", secret_name, namespace, required=False) is None:
+        msg = f"{field_label} Secret '{secret_name}' was not found in namespace '{namespace}'."
+        raise HandledError(msg, f"Create Secret '{secret_name}' in '{namespace}' before migrating.")
 
 
 def helm_release_exists(release: str, namespace: str) -> bool:
     """Returns True if Helm release exists in namespace, False if not found, else raises."""
     try:
         res = run_command(
-            ["helm", "status", release, "-n", namespace, "-o", "json"],
+            ["helm", "status", "-n", namespace, "-o", "json", "--", release],
             check=False,
             capture_output=True,
             log_on_error=False,
